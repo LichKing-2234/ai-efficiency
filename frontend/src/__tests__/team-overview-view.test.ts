@@ -5,10 +5,9 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import TeamOverviewMemberTrendChart from '@/components/team-usage/TeamOverviewMemberTrendChart.vue'
 import TeamOverviewView from '@/views/TeamOverviewView.vue'
 import { setLocale } from '@/i18n'
-import type { TeamOverviewMember, TeamOverviewResponse, TeamUsageMembersResponse, TeamUsageOrganizationDepartment, TeamUsageOrganizationParams, TeamUsageOrganizationResponse, TeamUsageSummaryResponse, TeamUsageTrendResponse } from '@/types'
+import type { TeamOverviewMember, TeamUsageMembersResponse, TeamUsageOrganizationDepartment, TeamUsageOrganizationParams, TeamUsageOrganizationResponse, TeamUsageSummaryResponse, TeamUsageTrendResponse } from '@/types'
 
 vi.mock('@/api/teamUsage', () => ({
-  getTeamUsageOverview: vi.fn(),
   getTeamUsageMembers: vi.fn(),
   getTeamUsageOrganization: vi.fn(),
   getTeamUsageSummary: vi.fn(),
@@ -23,23 +22,79 @@ vi.mock('@/components/charts/LineChartCanvas.vue', () => ({
   },
 }))
 
-const mockGetTeamUsageOverview = vi.mocked((await import('@/api/teamUsage')).getTeamUsageOverview)
 const mockGetTeamUsageMembers = vi.mocked((await import('@/api/teamUsage')).getTeamUsageMembers)
 const mockGetTeamUsageOrganization = vi.mocked((await import('@/api/teamUsage')).getTeamUsageOrganization)
 const mockGetTeamUsageSummary = vi.mocked((await import('@/api/teamUsage')).getTeamUsageSummary)
 const mockGetTeamUsageTrend = vi.mocked((await import('@/api/teamUsage')).getTeamUsageTrend)
 
-const overviewFixture: TeamOverviewResponse = {
-  configured: true,
-  is_representative: true,
-  window: {
-    start_date: '2026-06-01',
-    end_date: '2026-06-30',
-    granularity: 'day',
-    today: '2026-06-28',
-    rolling_days: 30,
-    timezone: 'Asia/Shanghai',
+const windowFixture: TeamUsageSummaryResponse['window'] = {
+  start_date: '2026-06-01',
+  end_date: '2026-06-30',
+  granularity: 'day',
+  today: '2026-06-28',
+  rolling_days: 30,
+  timezone: 'Asia/Shanghai',
+}
+
+const memberRowsFixture: TeamUsageMembersResponse['items'] = [
+  {
+    rank: 1,
+    user_id: 101,
+    display_name: 'Alice',
+    email: 'alice@example.com',
+    department_external_id: 'department-alpha',
+    department_display_path: 'Department Alpha',
+    relay_user_id: 1001,
+    range_actual_cost: 24.5,
+    today_actual_cost: 1.25,
+    total_actual_cost: 24.5,
+    total_tokens: 12000,
+    subscription_count: 2,
+    selectable: true,
   },
+  {
+    rank: 2,
+    user_id: 0,
+    directory_member_external_id: 'member-bob',
+    display_name: 'Bob',
+    email: 'bob@example.org',
+    department_external_id: 'department-alpha-team-one',
+    department_display_path: 'Department Alpha / Team One',
+    relay_user_id: 1002,
+    range_actual_cost: 3.5,
+    today_actual_cost: 0,
+    total_actual_cost: 3.5,
+    total_tokens: 900,
+    subscription_count: null,
+    selectable: false,
+  },
+  {
+    rank: 3,
+    user_id: 0,
+    directory_member_external_id: 'member-carol',
+    display_name: 'Carol',
+    email: 'carol@example.net',
+    department_external_id: 'department-alpha-team-one',
+    department_display_path: 'Department Alpha / Team One',
+    relay_user_id: null,
+    range_actual_cost: 0,
+    today_actual_cost: 0,
+    total_actual_cost: 0,
+    total_tokens: null,
+    subscription_count: null,
+    selectable: false,
+  },
+]
+
+const summaryFixture: TeamUsageSummaryResponse = {
+  as_of: '2026-07-16T08:00:00Z',
+  fresh_until: '2026-07-16T08:00:54Z',
+  stale_until: '2026-07-16T08:04:30Z',
+  cache_status: 'fresh',
+  source_status: 'ok',
+  scope_version: 'scope-version-1',
+  request_id: 'request-summary-1',
+  window: windowFixture,
   summary: {
     unavailable: false,
     unavailable_reason: null,
@@ -51,226 +106,6 @@ const overviewFixture: TeamOverviewResponse = {
     total_actual_cost: 24.5,
     unit_label: 'USD',
   },
-  top_members: [
-    {
-      rank: 1,
-      user_id: 101,
-      display_name: 'Alice',
-      email: 'alice@example.com',
-      department_external_id: 'department-alpha',
-      department_display_path: 'Department Alpha',
-      relay_user_id: 1001,
-      range_actual_cost: 24.5,
-      today_actual_cost: 1.25,
-      total_actual_cost: 24.5,
-      total_tokens: 12000,
-      subscription_count: 2,
-      selectable: true,
-    },
-  ],
-  top_member_trend: {
-    unit_label: 'USD',
-    rank_basis: 'range_total_tokens',
-    unavailable: false,
-    unavailable_reason: null,
-    series: [
-      {
-        user_id: 101,
-        display_name: 'Alice',
-        rank: 1,
-        unavailable: false,
-        unavailable_reason: null,
-        points: [
-          { date: '2026-06-27', actual_cost: 0.75, total_tokens: 5000 },
-          { date: '2026-06-28', actual_cost: 1.25, total_tokens: 7000 },
-        ],
-      },
-    ],
-  },
-  department_trend: {
-    unit_label: 'USD',
-    unavailable: false,
-    unavailable_reason: null,
-    comparison_total_count: 2,
-    comparison_truncated: false,
-    series: [
-      {
-        series_type: 'team_total',
-        display_name: 'Team total',
-        rank: 0,
-        unavailable: false,
-        unavailable_reason: null,
-        points: [
-          { date: '2026-06-27', actual_cost: 3.75, total_tokens: 5900 },
-          { date: '2026-06-28', actual_cost: 4.25, total_tokens: 7000 },
-        ],
-      },
-      {
-        series_type: 'department',
-        department_external_id: 'department-alpha-team-one',
-        display_name: 'Team One',
-        rank: 1,
-        unavailable: false,
-        unavailable_reason: null,
-        points: [
-          { date: '2026-06-27', actual_cost: 3.0, total_tokens: 900 },
-          { date: '2026-06-28', actual_cost: 3.5, total_tokens: 1200 },
-        ],
-      },
-      {
-        series_type: 'department',
-        department_external_id: 'department-alpha-team-two',
-        display_name: 'Team Two',
-        rank: 2,
-        unavailable: false,
-        unavailable_reason: null,
-        points: [
-          { date: '2026-06-27', actual_cost: 0.75, total_tokens: 5000 },
-          { date: '2026-06-28', actual_cost: 0.75, total_tokens: 5800 },
-        ],
-      },
-    ],
-  },
-  members: [
-    {
-      rank: 1,
-      user_id: 101,
-      display_name: 'Alice',
-      email: 'alice@example.com',
-      department_external_id: 'department-alpha',
-      department_display_path: 'Department Alpha',
-      relay_user_id: 1001,
-      range_actual_cost: 24.5,
-      today_actual_cost: 1.25,
-      total_actual_cost: 24.5,
-      total_tokens: 12000,
-      subscription_count: 2,
-      selectable: true,
-    },
-    {
-      rank: 2,
-      user_id: 0,
-      directory_member_external_id: 'member-bob',
-      display_name: 'Bob',
-      email: 'bob@example.org',
-      department_external_id: 'department-alpha-team-one',
-      department_display_path: 'Department Alpha / Team One',
-      relay_user_id: 1002,
-      range_actual_cost: 3.5,
-      today_actual_cost: 0,
-      total_actual_cost: 3.5,
-      total_tokens: 900,
-      subscription_count: null,
-      selectable: false,
-    },
-    {
-      rank: 3,
-      user_id: 0,
-      directory_member_external_id: 'member-carol',
-      display_name: 'Carol',
-      email: 'carol@example.net',
-      department_external_id: 'department-alpha-team-one',
-      department_display_path: 'Department Alpha / Team One',
-      relay_user_id: null,
-      range_actual_cost: 0,
-      today_actual_cost: 0,
-      total_actual_cost: 0,
-      total_tokens: null,
-      subscription_count: null,
-      selectable: false,
-    },
-  ],
-  member_tree: [
-    {
-      department_external_id: 'department-alpha',
-      name: 'Department Alpha',
-      display_path: 'Department Alpha',
-      depth: 0,
-      child_count: 1,
-      member_count: 3,
-      connected_member_count: 2,
-      range_actual_cost: 28,
-      range_total_tokens: 12900,
-      members: [
-        {
-          rank: 1,
-          user_id: 101,
-          display_name: 'Alice',
-          email: 'alice@example.com',
-          department_external_id: 'department-alpha',
-          department_display_path: 'Department Alpha',
-          relay_user_id: 1001,
-          range_actual_cost: 24.5,
-          today_actual_cost: 1.25,
-          total_actual_cost: 24.5,
-          total_tokens: 12000,
-          subscription_count: 2,
-          selectable: true,
-        },
-      ],
-      children: [
-        {
-          department_external_id: 'department-alpha-team-one',
-          parent_external_id: 'department-alpha',
-          name: 'Team One',
-          display_path: 'Department Alpha / Team One',
-          depth: 1,
-          child_count: 0,
-          member_count: 2,
-          connected_member_count: 1,
-          range_actual_cost: 3.5,
-          range_total_tokens: 900,
-          members: [
-            {
-              rank: 2,
-              user_id: 0,
-              directory_member_external_id: 'member-bob',
-              display_name: 'Bob',
-              email: 'bob@example.org',
-              department_external_id: 'department-alpha-team-one',
-              department_display_path: 'Department Alpha / Team One',
-              relay_user_id: 1002,
-              range_actual_cost: 3.5,
-              today_actual_cost: 0,
-              total_actual_cost: 3.5,
-              total_tokens: 900,
-              subscription_count: null,
-              selectable: false,
-            },
-            {
-              rank: 3,
-              user_id: 0,
-              directory_member_external_id: 'member-carol',
-              display_name: 'Carol',
-              email: 'carol@example.net',
-              department_external_id: 'department-alpha-team-one',
-              department_display_path: 'Department Alpha / Team One',
-              relay_user_id: null,
-              range_actual_cost: 0,
-              today_actual_cost: 0,
-              total_actual_cost: 0,
-              total_tokens: null,
-              subscription_count: null,
-              selectable: false,
-            },
-          ],
-          children: [],
-        },
-      ],
-    },
-  ],
-}
-
-const summaryFixture: TeamUsageSummaryResponse = {
-  as_of: '2026-07-16T08:00:00Z',
-  fresh_until: '2026-07-16T08:00:54Z',
-  stale_until: '2026-07-16T08:04:30Z',
-  cache_status: 'fresh',
-  source_status: 'ok',
-  scope_version: 'scope-version-1',
-  request_id: 'request-summary-1',
-  window: overviewFixture.window,
-  summary: overviewFixture.summary,
 }
 
 const trendFixture: TeamUsageTrendResponse = {
@@ -281,10 +116,58 @@ const trendFixture: TeamUsageTrendResponse = {
   source_status: 'ok',
   scope_version: 'scope-version-1',
   request_id: 'request-trend-1',
-  window: overviewFixture.window,
-  top_members: overviewFixture.top_members,
-  top_member_trend: overviewFixture.top_member_trend,
-  department_trend: overviewFixture.department_trend!,
+  window: windowFixture,
+  top_members: [memberRowsFixture[0]],
+  top_member_trend: {
+    unit_label: 'USD',
+    rank_basis: 'range_total_tokens',
+    unavailable: false,
+    unavailable_reason: null,
+    series: [{
+      user_id: 101,
+      display_name: 'Alice',
+      rank: 1,
+      unavailable: false,
+      unavailable_reason: null,
+      points: [
+        { date: '2026-06-27', actual_cost: 0.75, total_tokens: 5000 },
+        { date: '2026-06-28', actual_cost: 1.25, total_tokens: 7000 },
+      ],
+    }],
+  },
+  department_trend: {
+    unit_label: 'USD',
+    unavailable: false,
+    unavailable_reason: null,
+    comparison_total_count: 2,
+    comparison_truncated: false,
+    series: [
+      {
+        series_type: 'team_total', display_name: 'Team total', rank: 0,
+        unavailable: false, unavailable_reason: null,
+        points: [
+          { date: '2026-06-27', actual_cost: 3.75, total_tokens: 5900 },
+          { date: '2026-06-28', actual_cost: 4.25, total_tokens: 7000 },
+        ],
+      },
+      {
+        series_type: 'department', department_external_id: 'department-alpha-team-one', display_name: 'Team One', rank: 1,
+        unavailable: false, unavailable_reason: null,
+        points: [
+          { date: '2026-06-27', actual_cost: 3.0, total_tokens: 900 },
+          { date: '2026-06-28', actual_cost: 3.5, total_tokens: 1200 },
+        ],
+      },
+      {
+        series_type: 'department', department_external_id: 'department-alpha-team-two', display_name: 'Team Two', rank: 2,
+        unavailable: false, unavailable_reason: null,
+        points: [
+          { date: '2026-06-27', actual_cost: 0.75, total_tokens: 5000 },
+          { date: '2026-06-28', actual_cost: 0.75, total_tokens: 5800 },
+        ],
+      },
+    ],
+  },
 }
 
 const membersFixture: TeamUsageMembersResponse = {
@@ -295,9 +178,9 @@ const membersFixture: TeamUsageMembersResponse = {
   source_status: 'ok',
   scope_version: 'scope-version-1',
   request_id: 'request-members-1',
-  window: overviewFixture.window,
-  items: overviewFixture.members,
-  total_count: overviewFixture.members.length,
+  window: windowFixture,
+  items: memberRowsFixture,
+  total_count: memberRowsFixture.length,
 }
 
 function pagedMember(rank: number, prefix = 'Split Member'): TeamOverviewMember {
@@ -388,10 +271,10 @@ function defaultOrganizationResponse(params?: TeamUsageOrganizationParams) {
       organizationDepartment('department-alpha-team-two', 'Team Two', {
         parent_external_id: 'department-alpha', depth: 1,
       }),
-    ], [overviewFixture.member_tree![0].members[0]])
+    ], [membersFixture.items[0]])
   }
   if (parent === 'department-alpha-team-one') {
-    return organizationPage(parent, [], overviewFixture.member_tree![0].children[0].members)
+    return organizationPage(parent, [], membersFixture.items.slice(1))
   }
   return organizationPage(null, [rootOrganizationDepartment])
 }
@@ -422,7 +305,7 @@ describe('TeamOverviewView', () => {
     mockGetTeamUsageOrganization.mockImplementation(async (params?: TeamUsageOrganizationParams) => ({ data: { data: defaultOrganizationResponse(params) } } as any))
   })
 
-  it('loads a shallow organization root without calling the compatibility overview', async () => {
+  it('loads a shallow organization root from the split organization endpoint', async () => {
     const roots = Array.from({ length: 25 }, (_, index) => organizationDepartment(`department-root-${index + 1}`, `Root ${index + 1}`))
     const moreRoots = Array.from({ length: 10 }, (_, index) => organizationDepartment(`department-root-${index + 26}`, `Root ${index + 26}`))
     mockGetTeamUsageOrganization
@@ -439,7 +322,6 @@ describe('TeamOverviewView', () => {
     expect(wrapper.findAll('[data-testid^="team-overview-department-department-root-"]')).toHaveLength(25)
     expect(mockGetTeamUsageOrganization).toHaveBeenCalledTimes(1)
     expect(mockGetTeamUsageOrganization.mock.calls[0][0]).toEqual(expect.objectContaining({ department_limit: 25, member_limit: 50 }))
-    expect(mockGetTeamUsageOverview).not.toHaveBeenCalled()
 
     await wrapper.get('[data-testid="team-overview-departments-more-root"]').trigger('click')
     await flushPromises()
@@ -702,10 +584,7 @@ describe('TeamOverviewView', () => {
   })
 
   it('renders only the 50 split ranking rows from a 500-member result', async () => {
-    const compatibilityFixture = structuredClone(overviewFixture)
-    compatibilityFixture.members = Array.from({ length: 500 }, (_, index) => pagedMember(index + 1, 'Legacy Member'))
     mockGetTeamUsageMembers.mockResolvedValue({ data: { data: membersPage(1, 50, 500, 'cursor-page-2') } } as any)
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: compatibilityFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -718,14 +597,12 @@ describe('TeamOverviewView', () => {
     const rows = wrapper.findAll('[data-testid^="team-overview-member-user-"]')
     expect(rows).toHaveLength(50)
     expect(wrapper.get('[data-testid="team-overview-ranking-table"]').text()).toContain('Split Member 1')
-    expect(wrapper.get('[data-testid="team-overview-ranking-table"]').text()).not.toContain('Legacy Member')
     expect(wrapper.get('[data-testid="team-overview-member-pagination"]').text()).toContain('1-50')
     expect(wrapper.get('[data-testid="team-overview-member-pagination"]').text()).toContain('500')
   })
 
   it('keeps summary, trend, and organization available while members are delayed', async () => {
     mockGetTeamUsageMembers.mockImplementation(() => new Promise(() => {}) as any)
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -744,7 +621,6 @@ describe('TeamOverviewView', () => {
 
   it('keeps summary, trend, and organization available when members fail', async () => {
     mockGetTeamUsageMembers.mockRejectedValue(new Error('synthetic members failure'))
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -783,7 +659,6 @@ describe('TeamOverviewView', () => {
       .mockResolvedValueOnce({ data: { data: membersPage(1, 50, 100, 'cursor-page-2') } } as any)
       .mockResolvedValueOnce({ data: { data: membersPage(51, 50, 100) } } as any)
       .mockResolvedValueOnce({ data: { data: membersPage(1, 50, 100, 'cursor-page-2') } } as any)
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -816,7 +691,6 @@ describe('TeamOverviewView', () => {
       mockGetTeamUsageMembers
         .mockResolvedValueOnce({ data: { data: membersPage(1, 50, 100, 'cursor-page-2') } } as any)
         .mockResolvedValueOnce({ data: { data: membersPage(51, 50, 100) } } as any)
-      mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
       const router = createTestRouter()
       await router.push('/usage/team')
       await router.isReady()
@@ -847,7 +721,6 @@ describe('TeamOverviewView', () => {
       .mockResolvedValueOnce({ data: { data: membersPage(1, 50, 100, 'cursor-page-2') } } as any)
       .mockRejectedValueOnce({ response: { status: 409, data: { message: 'snapshot_expired' } } })
       .mockResolvedValueOnce({ data: { data: membersPage(1, 50, 100, 'cursor-page-2') } } as any)
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -872,7 +745,6 @@ describe('TeamOverviewView', () => {
     mockGetTeamUsageMembers.mockResolvedValue({
       data: { data: { ...membersPage(1, 3, 3), cache_status: 'stale', source_status: 'error' } },
     } as any)
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -892,7 +764,6 @@ describe('TeamOverviewView', () => {
     mockGetTeamUsageTrend.mockImplementation(() => new Promise((resolve) => {
       resolveTrend = resolve
     }) as any)
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -977,7 +848,6 @@ describe('TeamOverviewView', () => {
 
   it('keeps successful summary and member content visible when trend fails', async () => {
     mockGetTeamUsageTrend.mockRejectedValue(new Error('synthetic trend failure'))
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1009,7 +879,6 @@ describe('TeamOverviewView', () => {
         },
       },
     } as any)
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1025,12 +894,8 @@ describe('TeamOverviewView', () => {
     expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(false)
   })
 
-  it('keeps successful compatibility sections visible when summary fails', async () => {
+  it('keeps successful split sections visible when summary fails', async () => {
     mockGetTeamUsageSummary.mockRejectedValue(new Error('synthetic summary failure'))
-    const compatibilityFixture = structuredClone(overviewFixture)
-    compatibilityFixture.top_member_trend.series = []
-    compatibilityFixture.department_trend!.series = []
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: compatibilityFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1049,7 +914,6 @@ describe('TeamOverviewView', () => {
     mockGetTeamUsageSummary.mockResolvedValue({
       data: { data: { ...summaryFixture, cache_status: 'stale', source_status: 'error' } },
     } as any)
-    mockGetTeamUsageOverview.mockImplementation(() => new Promise(() => {}) as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1067,7 +931,6 @@ describe('TeamOverviewView', () => {
     mockGetTeamUsageTrend.mockResolvedValue({
       data: { data: { ...trendFixture, cache_status: 'stale', source_status: 'error' } },
     } as any)
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1081,37 +944,8 @@ describe('TeamOverviewView', () => {
     expect(wrapper.find('[data-testid="team-summary-stale-marker"]').exists()).toBe(false)
   })
 
-  it('ignores trend fields from the compatibility overview', async () => {
-    mockGetTeamUsageOverview.mockResolvedValue({
-      data: {
-        data: {
-          ...overviewFixture,
-          top_member_trend: {
-            ...overviewFixture.top_member_trend,
-            series: [{
-              ...overviewFixture.top_member_trend.series[0],
-              display_name: 'Legacy Trend Member',
-            }],
-          },
-        },
-      },
-    } as any)
-    const router = createTestRouter()
-    await router.push('/usage/team')
-    await router.isReady()
-
-    const wrapper = mount(TeamOverviewView, {
-      global: { plugins: [createPinia(), router] },
-    })
-    await flushPromises()
-
-    const trend = wrapper.get('[data-testid="team-member-trend-chart"]')
-    expect(trend.text()).toContain('Alice')
-    expect(trend.text()).not.toContain('Legacy Trend Member')
-  })
 
   it('renders top member trend and member table without quota controls', async () => {
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1133,7 +967,6 @@ describe('TeamOverviewView', () => {
   })
 
   it('renders each top member once in the top trend chart area', async () => {
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1149,7 +982,6 @@ describe('TeamOverviewView', () => {
   })
 
   it('renders the Top 12 trend unit and time window next to the chart title', async () => {
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1167,7 +999,6 @@ describe('TeamOverviewView', () => {
   })
 
   it('renders team total independently and compares multiple subteam token trends apart from Top 12 members', async () => {
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1207,7 +1038,7 @@ describe('TeamOverviewView', () => {
   })
 
   it('keeps a single leaf team trend as an independent team total chart', async () => {
-    const leafFixture: TeamOverviewResponse = structuredClone(overviewFixture)
+    const leafFixture: TeamUsageTrendResponse = structuredClone(trendFixture)
     leafFixture.department_trend = {
       unit_label: 'USD',
       unavailable: false,
@@ -1254,7 +1085,6 @@ describe('TeamOverviewView', () => {
 
   it('renders team overview chrome in Chinese without English table labels', async () => {
     setLocale('zh-CN')
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1288,7 +1118,6 @@ describe('TeamOverviewView', () => {
   })
 
   it('requests an explicit 30-day overview window on first load', async () => {
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1318,7 +1147,6 @@ describe('TeamOverviewView', () => {
   })
 
   it('switches Team Overview between today, 7-day, and 30-day windows', async () => {
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1379,7 +1207,6 @@ describe('TeamOverviewView', () => {
   })
 
   it('omits subscription count from team member details', async () => {
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1395,7 +1222,6 @@ describe('TeamOverviewView', () => {
   })
 
   it('disables member open action when member usage is not selectable', async () => {
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1426,7 +1252,6 @@ describe('TeamOverviewView', () => {
         },
       },
     } as any)
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1467,20 +1292,6 @@ describe('TeamOverviewView', () => {
         },
       },
     } as any)
-    mockGetTeamUsageOverview.mockResolvedValue({
-      data: {
-        data: {
-          ...overviewFixture,
-          summary: {
-            ...overviewFixture.summary,
-            unavailable: true,
-            unavailable_reason: 'provider_error',
-            range_actual_cost: null,
-            range_total_tokens: null,
-          },
-        },
-      },
-    } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1495,13 +1306,10 @@ describe('TeamOverviewView', () => {
     expect(wrapper.text()).toContain('Alice')
   })
 
-  it('renders no-scope state when overview load is rejected with 403', async () => {
+  it('renders no-scope state when the split summary is rejected with 403', async () => {
 		mockGetTeamUsageSummary.mockRejectedValue({
 			response: { status: 403, data: { code: 'not_representative' } },
 		})
-    mockGetTeamUsageOverview.mockRejectedValue({
-      response: { status: 403, data: { code: 'not_representative' } },
-    })
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1531,7 +1339,6 @@ describe('TeamOverviewView', () => {
   })
 
   it('shows selected-window token usage in summary and member details', async () => {
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1552,22 +1359,18 @@ describe('TeamOverviewView', () => {
   })
 
   it('abbreviates large token totals in summary trend legend and member details', async () => {
-    const largeTokenFixture: TeamOverviewResponse = structuredClone(overviewFixture)
+    const largeSummaryFixture: TeamUsageSummaryResponse = structuredClone(summaryFixture)
     const largeTrendFixture: TeamUsageTrendResponse = structuredClone(trendFixture)
     const largeMembersFixture: TeamUsageMembersResponse = structuredClone(membersFixture)
-    largeTokenFixture.summary.range_total_tokens = 12_285_557_755
+    largeSummaryFixture.summary.range_total_tokens = 12_285_557_755
     largeTrendFixture.top_member_trend.series[0].points = [
       { date: '2026-06-27', actual_cost: 0.75, total_tokens: 3_000_000_000 },
       { date: '2026-06-28', actual_cost: 1.25, total_tokens: 3_052_813_773 },
     ]
-    largeTokenFixture.members[0].total_tokens = 805_033_680
     largeMembersFixture.items[0].total_tokens = 805_033_680
 		mockGetTeamUsageSummary.mockResolvedValue({
 			data: {
-				data: {
-					...summaryFixture,
-					summary: largeTokenFixture.summary,
-				},
+				data: largeSummaryFixture,
 			},
 		} as any)
     mockGetTeamUsageTrend.mockResolvedValue({ data: { data: largeTrendFixture } } as any)
@@ -1604,7 +1407,6 @@ describe('TeamOverviewView', () => {
   })
 
   it('defaults member details to ranking view and switches to an admin-style organization tree', async () => {
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1667,7 +1469,7 @@ describe('TeamOverviewView', () => {
 
   it('collapses organization departments that only contain direct members', async () => {
     const directRoot = { ...rootOrganizationDepartment, child_count: 0, has_children: false, direct_member_count: 3 }
-    mockGetTeamUsageOrganization.mockImplementation(async (params?: TeamUsageOrganizationParams) => ({ data: { data: params?.parent_department_external_id ? organizationPage('department-alpha', [], overviewFixture.members) : organizationPage(null, [directRoot]) } } as any))
+    mockGetTeamUsageOrganization.mockImplementation(async (params?: TeamUsageOrganizationParams) => ({ data: { data: params?.parent_department_external_id ? organizationPage('department-alpha', [], membersFixture.items) : organizationPage(null, [directRoot]) } } as any))
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1715,7 +1517,6 @@ describe('TeamOverviewView', () => {
   })
 
   it('marks unconnected members in red with localized status', async () => {
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1738,7 +1539,6 @@ describe('TeamOverviewView', () => {
   })
 
   it('routes View details action to the selected member detail page', async () => {
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1793,9 +1593,9 @@ describe('TeamOverviewMemberTrendChart', () => {
   it('uses selected-window token totals for the Top 12 trend chart data and axis', async () => {
     const wrapper = mount(TeamOverviewMemberTrendChart, {
       props: {
-        state: overviewFixture.top_member_trend,
-        departmentTrend: overviewFixture.department_trend,
-        window: overviewFixture.window,
+        state: trendFixture.top_member_trend,
+        departmentTrend: trendFixture.department_trend,
+        window: trendFixture.window,
       },
     })
     await flushPromises()
@@ -1814,7 +1614,7 @@ describe('TeamOverviewMemberTrendChart', () => {
   })
 
   it('keeps all trend legends at the same scrollable max height', () => {
-    const state = structuredClone(overviewFixture.top_member_trend)
+    const state = structuredClone(trendFixture.top_member_trend)
     state.series = Array.from({ length: 12 }, (_, index) => ({
       user_id: 100 + index,
       display_name: `Member ${index + 1}`,
@@ -1828,8 +1628,8 @@ describe('TeamOverviewMemberTrendChart', () => {
     const wrapper = mount(TeamOverviewMemberTrendChart, {
       props: {
         state,
-        departmentTrend: overviewFixture.department_trend,
-        window: overviewFixture.window,
+        departmentTrend: trendFixture.department_trend,
+        window: trendFixture.window,
       },
     })
 

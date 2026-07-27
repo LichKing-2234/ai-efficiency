@@ -1026,21 +1026,6 @@ export interface TeamOverviewMember {
   selectable: boolean
 }
 
-export interface TeamOverviewMemberNode {
-  department_external_id: string
-  parent_external_id?: string | null
-  name: string
-  display_path: string
-  depth: number
-  child_count: number
-  member_count: number
-  connected_member_count: number
-  range_actual_cost: number
-  range_total_tokens?: number | null
-  members: TeamOverviewMember[]
-  children: TeamOverviewMemberNode[]
-}
-
 export interface TeamUsageTrendPoint {
   date: string
   actual_cost: number
@@ -1128,18 +1113,6 @@ export interface TeamUsageOrganizationResponse extends TeamUsageSnapshotFreshnes
   next_member_cursor?: string
 }
 
-export interface TeamOverviewResponse {
-  configured: boolean
-  is_representative: boolean
-  window: TeamOverviewWindow
-  summary: TeamOverviewSummary
-  top_members: TeamOverviewMember[]
-  top_member_trend: TeamMemberTrendState
-  department_trend?: TeamDepartmentTrendState
-  members: TeamOverviewMember[]
-  member_tree?: TeamOverviewMemberNode[]
-}
-
 export interface TeamUsageScopeResponse {
   is_representative: boolean
   departments: TeamUsageDepartment[]
@@ -1157,8 +1130,6 @@ export interface TeamUsageOverviewParams {
   end_date?: string
   granularity?: 'day' | 'hour'
   timezone?: string
-  page?: number
-  page_size?: number
 }
 
 export interface TeamUsageMembersParams extends TeamUsageOverviewParams {

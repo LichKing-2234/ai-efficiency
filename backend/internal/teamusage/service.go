@@ -332,74 +332,6 @@ func (s *Service) readTrendSnapshotForRequest(ctx context.Context, request *spli
 	return result, nil
 }
 
-func (s *Service) Overview(ctx context.Context, actorUserID int, params OverviewParams) (*OverviewResponse, error) {
-	request, err := s.newSplitReadRequest(ctx, actorUserID, params)
-	if err != nil {
-		return nil, err
-	}
-	summary, trend, members, err := s.readOverviewSnapshotsForRequest(ctx, request)
-	if errors.Is(err, errPrewarmAuthorizationChanged) {
-		request, err = s.newSplitReadRequest(ctx, actorUserID, params)
-		if err != nil {
-			return nil, err
-		}
-		request.bypassPrewarm = true
-		summary, trend, members, err = s.readOverviewSnapshotsForRequest(ctx, request)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	overviewSubjects := request.scope.OverviewSubjects
-	if len(overviewSubjects) == 0 {
-		overviewSubjects = request.scope.Subjects
-	}
-	memberTree := []OverviewMemberNode{}
-	if len(overviewSubjects) <= s.fullScopeCap || len(members.Snapshot.Members) > 0 {
-		memberTree = projectOverviewCompatibilityMemberTree(request.scope, members.Snapshot.Members)
-	}
-	return &OverviewResponse{
-		Configured:       true,
-		IsRepresentative: true,
-		Window:           summary.Snapshot.Window,
-		Summary:          overviewSummaryFromAggregate(summary.Snapshot.Summary),
-		TopMembers:       append([]OverviewMember{}, trend.Snapshot.TopMembers...),
-		TopMemberTrend:   trend.Snapshot.TopMemberTrend,
-		DepartmentTrend:  trend.Snapshot.DepartmentTrend,
-		Members:          append([]OverviewMember{}, members.Snapshot.Members...),
-		MemberTree:       memberTree,
-	}, nil
-}
-
-func (s *Service) readOverviewSnapshotsForRequest(
-	ctx context.Context,
-	request *splitReadRequest,
-) (*SummaryCacheResult, *TrendCacheResult, *MembersCacheResult, error) {
-	summary, err := s.readSummarySnapshotForRequest(ctx, request)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	trend, err := s.readTrendSnapshotForRequest(ctx, request)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	members, err := s.readMembersSnapshotForRequest(ctx, request)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	return summary, trend, members, nil
-}
-
-func overviewSummaryFromAggregate(summary SummaryAggregate) OverviewSummary {
-	return OverviewSummary{
-		Unavailable: summary.Unavailable, UnavailableReason: summary.UnavailableReason,
-		MemberCount: summary.MemberCount, RelayMemberCount: summary.RelayMemberCount,
-		RangeActualCost: summary.RangeActualCost, RangeTotalTokens: summary.RangeTotalTokens,
-		TodayActualCost: summary.TodayActualCost, TotalActualCost: summary.TotalActualCost,
-		UnitLabel: summary.UnitLabel,
-	}
-}
-
 func (s *Service) readSummarySnapshot(ctx context.Context, actorUserID int, params OverviewParams) (*SummaryCacheResult, string, error) {
 	request, err := s.newSplitReadRequest(ctx, actorUserID, params)
 	if err != nil {
@@ -1752,7 +1684,6 @@ func normalizeOverviewParams(params OverviewParams) (OverviewParams, error) {
 	normalized := OverviewParams{
 		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
 		Granularity: strings.ToLower(strings.TrimSpace(params.Granularity)), Timezone: strings.TrimSpace(params.Timezone),
-		Page: params.Page, PageSize: params.PageSize,
 	}
 	if normalized.Timezone == "" {
 		normalized.Timezone = "UTC"

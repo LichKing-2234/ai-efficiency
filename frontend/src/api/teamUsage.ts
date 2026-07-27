@@ -12,7 +12,6 @@ import type {
   TeamUsageOverviewParams,
   TeamUsageSummaryResponse,
   TeamUsageTrendResponse,
-  TeamOverviewResponse,
   TeamUsageScopeResponse,
   UpdateTeamUsageRateMultiplierRequest,
   UpdateTeamUsageRateMultiplierResponse,
@@ -29,13 +28,6 @@ export function listTeamUsageSubjects(params?: { q?: string; page?: number; page
 
 export function getTeamUsageSubjectDashboard(userID: number, params: UserUsageDashboardParams) {
   return client.get<ApiResponse<SelectedSubjectUsageSnapshot>>(`/user/team-usage/subjects/${userID}/usage/dashboard`, { params })
-}
-
-export function getTeamUsageOverview(params?: TeamUsageOverviewParams) {
-  return client.get<ApiResponse<TeamOverviewResponse>>('/user/team-usage/overview', {
-    params,
-    timeout: 45000,
-  })
 }
 
 export function getTeamUsageSummary(params?: TeamUsageOverviewParams) {
