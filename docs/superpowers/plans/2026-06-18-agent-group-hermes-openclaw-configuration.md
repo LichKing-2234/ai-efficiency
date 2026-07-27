@@ -8,7 +8,7 @@
 
 **Tech Stack:** Vue 3, TypeScript, TailwindCSS, Vitest, Vue Test Utils, existing `frontend/src/i18n.ts`, Markdown docs.
 
-**Status:** In progress. The original Agent group implementation is complete. A 2026-07-28 follow-up removes the stale platform allowlist from Agent application-import selection; red/green and full frontend verification are complete, while review and release remain.
+**Status:** Complete. The 2026-07-28 follow-up removed the stale platform allowlist from Agent application-import selection, merged as PR #200, and shipped in `v0.1.0-preview.76`. GitHub Release run `30286445861`, the multi-architecture GHCR manifest, Helm revision 73, both production deployments, and the external readiness response were verified.
 
 ## Global Constraints
 
@@ -923,5 +923,5 @@ Report:
 - [x] Add the failing regression assertion that every `Agent` prefix group resolves Hermes/OpenClaw imports regardless of platform.
 - [x] Remove the platform allowlist from the Agent branch in `resolveCCSwitchAppsForGroup` and rerun the focused test to green.
 - [x] Run the complete frontend test suite and production build.
-- [ ] Complete review, merge the fix, and publish the next platform preview release.
-- [ ] Verify the GitHub Release, GHCR manifest, Helm rollout, deployed image, and production readiness response.
+- [x] Complete review, merge the fix, and publish the next platform preview release.
+- [x] Verify the GitHub Release, GHCR manifest, Helm rollout, deployed image, and production readiness response.
