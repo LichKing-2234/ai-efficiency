@@ -1,7 +1,7 @@
 # Agent Group Hermes/OpenClaw Configuration Design
 
 **Date:** 2026-06-18
-**Status:** Approved design; awaiting user review of written spec
+**Status:** Implemented current contract
 **Scope:** `frontend/src/views/UserView.vue`, `frontend/src/utils/userSetupReview.ts`, `frontend/src/i18n.ts`, `frontend/src/__tests__/user-setup-review.test.ts`, `frontend/src/__tests__/user-view.test.ts`, `docs/architecture.md`
 **Related:**
 - [2026-06-14-user-api-key-first-onboarding-design.md](./2026-06-14-user-api-key-first-onboarding-design.md)
@@ -55,7 +55,7 @@
 2. `Agent` 接入组只展示 Hermes Agent、OpenClaw 和 Custom Agent，不展示 Codex、Claude Code、Gemini 配置或导入。
 3. 普通接入组保持现状，继续展示 Codex、Claude Code、Gemini 对应的手动配置、CC Switch 导入和 `ae-cli` 自动配置路径。
 4. 将 Hermes/OpenClaw 的命令式 onboarding 和文件片段归入 `手动配置`。
-5. 将 Hermes/OpenClaw 的 CC Switch provider import 归入 `应用导入`，不伪装成官方自有 deep link；对所有 Agent platform 明确说明导入使用 OpenAI-compatible `/v1` endpoint。
+5. 将 Hermes/OpenClaw 的 CC Switch provider import 归入 `应用导入`，不伪装成官方自有 deep link；只要接入组名称以 `Agent` 开头就提供这两个导入目标，不再额外限制 group platform，并明确说明导入使用 OpenAI-compatible `/v1` endpoint。
 6. 对 Custom Agent 提供平台化通用模板，用于任何支持当前协议的自定义 Agent。
 7. 不改变后端 provider/group/API key 合同，不新增后端 API。
 8. 不改变 `ae-cli discover`、hooks、repo attribution 或 doctor 的命令语义。
@@ -252,6 +252,8 @@ Custom Agent 不进入应用导入，因为没有稳定 app target。
 - `Import to Hermes Agent`
 - `Import to OpenClaw`
 
+这两个导入目标只由 `group_name.startsWith("Agent")` 决定。group platform 仍用于连接测试、模型读取和手动模板选择，但不得再次作为应用导入配置方式的准入条件。
+
 不展示：
 
 - `Import to Codex`
@@ -287,7 +289,7 @@ CC Switch import builder 应区分两层能力：
 
 因此 AE 第一版不把 `openai` / `anthropic` / `gemini` platform 语义映射为 native Agent 协议。它应当：
 
-- 对所有 `Agent` platform 生成 Hermes/OpenClaw import link。
+- 对所有 `Agent` 前缀 group 生成 Hermes/OpenClaw import link，包括 platform 不在当前已知枚举中的 group。
 - 在 link 中携带 Agent 归一化后的 `/v1` endpoint、API key、model、provider name。
 - 使用 CC Switch 默认的 OpenClaw `api = "openai-completions"` 和 Hermes `api_mode = "chat_completions"`。
 - 不再提示 Anthropic/Gemini Agent group 手动调整 OpenClaw `api` 或 Hermes `api_mode`，因为 Agent 分支统一走 OpenAI-compatible Chat Completions。
@@ -296,11 +298,9 @@ CC Switch import builder 应区分两层能力：
 
 ```ts
 type AgentImportApp = 'hermes' | 'openclaw'
-type ProviderPlatform = 'openai' | 'anthropic' | 'gemini'
 
 type AgentProviderImportInput = {
   app: AgentImportApp
-  platform: ProviderPlatform
   name: string
   endpoint: string // normalized Agent endpoint, normally <provider.base_url>/v1
   apiKey: string
@@ -338,7 +338,7 @@ Agent 配置继续沿用当前 `/user` 敏感信息策略：
 
 - 普通组保持当前 unsupported 行为。
 - `Agent` 组手动配置显示 Custom Agent 的通用参数摘要，但不生成不确定命令。
-- `Agent` 组应用导入不生成 Hermes/OpenClaw link，并提示当前 platform 暂不支持应用导入。
+- `Agent` 组仍生成 Hermes/OpenClaw link；CC Switch 导入合同只需要 provider endpoint、API key、model 和 name，不依赖 group platform 枚举。
 
 ## Data Flow
 
@@ -399,7 +399,7 @@ Agent 组文案避免“CC Switch 配置”这个过窄标题，使用更准确�
 - Import to Hermes Agent
 - Import to OpenClaw
 - Hermes CC Switch version compatibility warning
-- Unsupported Agent platform import warning
+- Agent import compatibility warning
 
 文案不应使用“完成”“已验证”等会暗示浏览器已经检查本机状态的词。
 
@@ -407,7 +407,7 @@ Agent 组文案避免“CC Switch 配置”这个过窄标题，使用更准确�
 
 1. 没有 API key：不生成包含 secret 的片段或 import link，提示先创建当前接入组 API key。
 2. 没有 selected group：隐藏配置方式区域，保持当前页面行为。
-3. `Agent` group + unsupported platform：只展示通用参数摘要，不生成不确定命令或 import link。
+3. `Agent` group + unsupported platform：手动配置只展示通用参数摘要，不生成不确定命令；应用导入仍提供 Hermes/OpenClaw link。
 4. Hermes import 失败：页面无法检测本机失败，只能在文案中提示升级 CC Switch 或改用手动配置。
 5. OpenClaw/Hermes 命令不可用：页面不探测本机，只提供安装/官方入口提示；真实失败由用户本机命令输出处理。
 
@@ -429,6 +429,7 @@ Agent 组文案避免“CC Switch 配置”这个过窄标题，使用更准确�
 10. 普通 group 的 CC Switch import apps 继续按 `codex/claude/gemini` 生成。
 11. Claude Desktop 不出现在任何 generated import target 中。
 12. Agent group 的 Hermes/OpenClaw import link 使用 `endpoint`、`apiKey`、`model` URL 参数，不复用 Codex/Claude/Gemini 的 app-specific config payload。
+13. `resolveCCSwitchAppsForGroup('unknown', 'Agentunknown')` 仍返回 `hermes/openclaw`，证明 Agent 应用导入不受 platform 白名单限制。
 
 ### View Tests
 
@@ -475,3 +476,4 @@ Agent 组文案避免“CC Switch 配置”这个过窄标题，使用更准确�
 9. Claude Desktop 不作为 generated deep link target。
 10. API key 敏感复制确认规则保持不变。
 11. 相关 helper 和 view tests 覆盖普通组与 Agent 组分支。
+12. platform 不在已知枚举内的 `Agent` 前缀 group 仍显示 Hermes/OpenClaw 应用导入。
