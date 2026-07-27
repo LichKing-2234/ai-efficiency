@@ -4,7 +4,7 @@
 
 **Issue:** [#137](https://github.com/LichKing-2234/ai-efficiency/issues/137)
 
-**Status:** Implementation, verification, review, and ready PR [#198](https://github.com/LichKing-2234/ai-efficiency/pull/198) delivery are complete. The compatibility release and production zero-caller evidence are complete; implementation is isolated on `refactor/team-overview-contract-removal-137` from baseline `02bce300`. Backend, frontend, and ae-cli suites pass. After merge, #137 still requires a normal platform release and production smoke before closure. The rollback point is `v0.1.0-preview.74` / `d3292d249cf030b7454db67f46ff64ffb8a2d215`, Helm production revision 71.
+**Status:** Complete. PR [#198](https://github.com/LichKing-2234/ai-efficiency/pull/198) merged as `d9f3229936bfc025c93edc37625880cb8f21c48f`; normal platform release [`v0.1.0-preview.75`](https://github.com/LichKing-2234/ai-efficiency/releases/tag/v0.1.0-preview.75) and production Helm revision 72 published the removal. Production smoke passed for all four split contracts and selected-member detail, and the retired Overview URL returns the standard 404. Rollback remains available to `v0.1.0-preview.74` / `d3292d249cf030b7454db67f46ff64ffb8a2d215`, Helm production revision 71.
 
 **Goal:** Remove the deprecated monolithic Team Overview HTTP contract after its completed compatibility window, leaving Summary, Trend, Members, and Organization as the only current Team Usage read contracts.
 
@@ -12,15 +12,15 @@
 
 **Tech Stack:** Go 1.24, Gin, Ent, Redis readcache, Vue 3, TypeScript, Vitest.
 
-## Global Constraints
+## Implementation Constraints
 
-- Work only in `/Users/admin/ai-efficiency/.worktrees/team-overview-contract-removal-137` on `refactor/team-overview-contract-removal-137`.
+- Implementation work was isolated in `/Users/admin/ai-efficiency/.worktrees/team-overview-contract-removal-137` on `refactor/team-overview-contract-removal-137`; both were removed after PR merge.
 - Do not modify Summary, Trend, Members, Organization, Redis generation/manifest, prewarmer, Relay, Sub2API, or Helm behavior.
 - Do not retain a `410 Gone` tombstone route; an unmatched removed route must return the normal API 404 behavior.
 - Keep shared request/member/window types when current split contracts still consume them; this ticket is not a naming migration.
 - Use only synthetic identities and domains in tests.
 - Update each checkbox immediately after the action completes.
-- Do not release, tag, deploy, or sample production in this plan.
+- Do not release, tag, deploy, or sample production during the implementation tasks below; post-merge acceptance is a separate operator phase.
 
 ---
 
@@ -145,8 +145,16 @@
 
   Push `refactor/team-overview-contract-removal-137` and open a ready PR to `main` referencing #137. Do not merge or deploy.
 
-## Post-Merge Acceptance Remaining
+## Post-Merge Acceptance
 
-- [ ] Publish the removal through a normal platform release and record its release/tag/commit.
-- [ ] Smoke Summary, Trend, Members, Organization, and selected-member detail in production; confirm the retired Overview URL returns the standard 404.
-- [ ] Record the production Helm revision and confirm rollback remains available to `v0.1.0-preview.74` / `d3292d249cf030b7454db67f46ff64ffb8a2d215`, Helm revision 71.
+- [x] Publish the removal through a normal platform release and record its release/tag/commit.
+
+  Release workflow [run 30249874552](https://github.com/LichKing-2234/ai-efficiency/actions/runs/30249874552) published `v0.1.0-preview.75` from `d9f3229936bfc025c93edc37625880cb8f21c48f`. The release is non-draft, non-prerelease, and repository latest; GHCR index digest `sha256:1c3212cb3ae1f7811b21fa878ab35d68a997db5a31e6e6427909860b1e5d2a52` contains Linux amd64 and arm64 images.
+
+- [x] Smoke Summary, Trend, Members, Organization, and selected-member detail in production; confirm the retired Overview URL returns the standard 404.
+
+  Authenticated 30-day production smoke returned HTTP 200 for Summary, Trend, Members, Organization, and selected-member detail. The four split lanes reported `source_status=ok`; selected-member detail returned a configured dashboard with 29 trend points. The retired authenticated Overview URL returned HTTP 404.
+
+- [x] Record the production Helm revision and confirm rollback remains available to `v0.1.0-preview.74` / `d3292d249cf030b7454db67f46ff64ffb8a2d215`, Helm revision 71.
+
+  `ai-efficiency-prod` deployed chart `0.1.63` / app `v0.1.0-preview.75` as Helm revision 72. Backend and prewarmer both became Ready with zero restarts, and live readiness reported database, Redis, and Relay `up`. Revision 71 remains the immediately preceding complete revision on `v0.1.0-preview.74`.
