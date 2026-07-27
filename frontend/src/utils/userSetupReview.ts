@@ -436,7 +436,7 @@ export function resolveDiscoverToolForPlatform(platform: string): DiscoverTool |
 
 export function resolveCCSwitchAppsForGroup(platform: string, groupName?: string | null): CCSwitchApp[] {
   if (isAgentAccessGroup(groupName)) {
-    return normalizeAgentPlatform(platform) ? ['hermes', 'openclaw'] : []
+    return ['hermes', 'openclaw']
   }
   const app = resolveCCSwitchAppForPlatform(platform)
   return app ? [app] : []

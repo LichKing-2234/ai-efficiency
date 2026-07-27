@@ -8,7 +8,7 @@
 
 **Tech Stack:** Vue 3, TypeScript, TailwindCSS, Vitest, Vue Test Utils, existing `frontend/src/i18n.ts`, Markdown docs.
 
-**Status:** Complete. Agent group helpers, `/user` rendering, architecture docs, focused tests, build, and diff checks are complete in this worktree. Code-review follow-up updated Hermes/OpenClaw manual snippets to emit complete active provider config fragments instead of partial provider values.
+**Status:** In progress. The original Agent group implementation is complete. A 2026-07-28 follow-up removes the stale platform allowlist from Agent application-import selection; red/green and full frontend verification are complete, while review and release remain.
 
 ## Global Constraints
 
@@ -18,6 +18,7 @@
 - `Agent` access groups must not show the `ae-cli` automatic configuration card.
 - `Agent` manual configuration must include Hermes Agent, OpenClaw, and Custom Agent.
 - `Agent` app import must include only Hermes Agent and OpenClaw.
+- `Agent` app import selection depends only on the case-sensitive `Agent` group-name prefix and must not be blocked by an unknown or future group platform value.
 - Hermes/OpenClaw CC Switch import links use `ccswitch://v1/import` provider import with URL parameters `resource`, `app`, `name`, `endpoint`, `apiKey`, `model`, and `enabled`; do not reuse Codex/Claude/Gemini app-specific config payloads for these apps.
 - `Agent` `anthropic` and `gemini` groups still use OpenAI-compatible `/v1` Agent endpoints; their backend platform does not switch Hermes/OpenClaw to native Anthropic or Gemini client protocols.
 - Claude Desktop must not be generated as a deep-link target.
@@ -226,7 +227,7 @@ it('resolves CC Switch apps by ordinary versus Agent group', () => {
   expect(resolveCCSwitchAppsForGroup('anthropic', 'Agentanthropic')).toEqual(['hermes', 'openclaw'])
   expect(resolveCCSwitchAppsForGroup('gemini', 'Agentgemini')).toEqual(['hermes', 'openclaw'])
   expect(resolveCCSwitchAppsForGroup('openai', 'Agent')).toEqual(['hermes', 'openclaw'])
-  expect(resolveCCSwitchAppsForGroup('unknown', 'Agentunknown')).toEqual([])
+  expect(resolveCCSwitchAppsForGroup('unknown', 'Agentunknown')).toEqual(['hermes', 'openclaw'])
 })
 ```
 
@@ -480,7 +481,7 @@ export function resolveCCSwitchAppForPlatform(platform: string): CCSwitchApp | n
 
 export function resolveCCSwitchAppsForGroup(platform: string, groupName?: string | null): CCSwitchApp[] {
   if (isAgentAccessGroup(groupName)) {
-    return normalizeAgentPlatform(platform) ? ['hermes', 'openclaw'] : []
+    return ['hermes', 'openclaw']
   }
   const app = resolveCCSwitchAppForPlatform(platform)
   return app ? [app] : []
@@ -914,3 +915,13 @@ Report:
 - Work in `/Users/admin/ai-efficiency/.worktrees/agent-group-hermes-openclaw-config-spec` unless the user explicitly chooses another location.
 - If `frontend/node_modules` is missing in this worktree, install dependencies with `cd frontend && npm install` before running tests. Do not commit generated dependency directories.
 - Do not use real user emails, API keys, provider URLs, group names, passwords, tokens, or company domains in tests. Use `example.com`, `alice@example.com`, `sk-*` fake keys, `Group Alpha`, and `Agent*` test group names only.
+
+## 2026-07-28 Agent Prefix Import Follow-up
+
+- [x] Reproduce the missing application-import method with `resolveCCSwitchAppsForGroup('unknown', 'Agentunknown')` returning an empty list.
+- [x] Verify the current CC Switch parser/import contract accepts `hermes` and `openclaw` provider links with `endpoint`, `apiKey`, and `model` URL parameters.
+- [x] Add the failing regression assertion that every `Agent` prefix group resolves Hermes/OpenClaw imports regardless of platform.
+- [x] Remove the platform allowlist from the Agent branch in `resolveCCSwitchAppsForGroup` and rerun the focused test to green.
+- [x] Run the complete frontend test suite and production build.
+- [ ] Complete review, merge the fix, and publish the next platform preview release.
+- [ ] Verify the GitHub Release, GHCR manifest, Helm rollout, deployed image, and production readiness response.

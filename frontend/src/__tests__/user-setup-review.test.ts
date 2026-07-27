@@ -298,7 +298,7 @@ describe('userSetupReview command builders', () => {
     expect(resolveCCSwitchAppsForGroup('anthropic', 'Agentanthropic')).toEqual(['hermes', 'openclaw'])
     expect(resolveCCSwitchAppsForGroup('gemini', 'Agentgemini')).toEqual(['hermes', 'openclaw'])
     expect(resolveCCSwitchAppsForGroup('openai', 'Agent')).toEqual(['hermes', 'openclaw'])
-    expect(resolveCCSwitchAppsForGroup('unknown', 'Agentunknown')).toEqual([])
+    expect(resolveCCSwitchAppsForGroup('unknown', 'Agentunknown')).toEqual(['hermes', 'openclaw'])
   })
 
   it('builds an app-specific CC Switch provider import link', () => {
