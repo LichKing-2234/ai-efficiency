@@ -4,7 +4,7 @@
 
 **Issue:** [#137](https://github.com/LichKing-2234/ai-efficiency/issues/137)
 
-**Status:** Local implementation verification is complete; final review and PR delivery remain. The compatibility release and production zero-caller evidence are complete; implementation is isolated on `refactor/team-overview-contract-removal-137` at `02bce300`. Backend, frontend, and ae-cli suites pass. After merge, #137 still requires a normal platform release and production smoke before closure. The rollback point is `v0.1.0-preview.74` / `d3292d249cf030b7454db67f46ff64ffb8a2d215`, Helm production revision 71.
+**Status:** Implementation, verification, review, and ready PR [#198](https://github.com/LichKing-2234/ai-efficiency/pull/198) delivery are complete. The compatibility release and production zero-caller evidence are complete; implementation is isolated on `refactor/team-overview-contract-removal-137` from baseline `02bce300`. Backend, frontend, and ae-cli suites pass. After merge, #137 still requires a normal platform release and production smoke before closure. The rollback point is `v0.1.0-preview.74` / `d3292d249cf030b7454db67f46ff64ffb8a2d215`, Helm production revision 71.
 
 **Goal:** Remove the deprecated monolithic Team Overview HTTP contract after its completed compatibility window, leaving Summary, Trend, Members, and Organization as the only current Team Usage read contracts.
 
@@ -135,7 +135,7 @@
   cd .. && bash deploy/test/release-frontend-embed-test.sh
   ```
 
-- [ ] **Step 5: Review, commit, push, and open the PR**
+- [x] **Step 5: Review, commit, push, and open the PR**
 
   Require no Critical/Important review finding, then commit with:
 
