@@ -298,11 +298,9 @@ CC Switch import builder 应区分两层能力：
 
 ```ts
 type AgentImportApp = 'hermes' | 'openclaw'
-type ProviderPlatform = 'openai' | 'anthropic' | 'gemini'
 
 type AgentProviderImportInput = {
   app: AgentImportApp
-  platform: ProviderPlatform
   name: string
   endpoint: string // normalized Agent endpoint, normally <provider.base_url>/v1
   apiKey: string
