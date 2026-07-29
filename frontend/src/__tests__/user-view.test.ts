@@ -383,7 +383,7 @@ describe('UserView', () => {
     expect(ccswitchPanel).toContain('Download CC Switch')
   })
 
-  it('passes the selected Claude model in the CC Switch import link', async () => {
+  it('does not map the selected connection-test model in the Claude CC Switch import link', async () => {
     const { wrapper } = await mountUserView()
 
     await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
@@ -397,8 +397,6 @@ describe('UserView', () => {
       env: {
         ANTHROPIC_BASE_URL: 'https://prod.example.com',
         ANTHROPIC_AUTH_TOKEN: 'sk-existing-claude-123456',
-        ANTHROPIC_MODEL: 'claude-sonnet-4-6',
-        ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-sonnet-4-6',
         CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
         CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
       },
