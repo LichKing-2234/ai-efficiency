@@ -391,7 +391,7 @@ describe('userSetupReview command builders', () => {
     })
   })
 
-  it('stores the selected Claude model inside the imported config', () => {
+  it('does not infer Claude model mappings from the selected connection-test model', () => {
     const link = buildCCSwitchProviderImportLink({
       app: 'claude',
       name: 'Production / Group Alpha',
@@ -404,8 +404,6 @@ describe('userSetupReview command builders', () => {
       env: {
         ANTHROPIC_BASE_URL: 'https://prod.example.com',
         ANTHROPIC_AUTH_TOKEN: 'sk-claude',
-        ANTHROPIC_MODEL: 'claude-sonnet-4-6',
-        ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-sonnet-4-6',
         CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
         CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
       },

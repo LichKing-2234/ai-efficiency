@@ -162,14 +162,6 @@ function buildCodexCCSwitchConfig(name: string, baseUrl: string, apiKey: string,
   }
 }
 
-function resolveClaudeDefaultModelEnv(model: string) {
-  const normalized = model.trim().toLowerCase()
-  if (normalized.includes('haiku')) return 'ANTHROPIC_DEFAULT_HAIKU_MODEL'
-  if (normalized.includes('sonnet')) return 'ANTHROPIC_DEFAULT_SONNET_MODEL'
-  if (normalized.includes('opus')) return 'ANTHROPIC_DEFAULT_OPUS_MODEL'
-  return null
-}
-
 function encodeBase64(value: string) {
   const bytes = new TextEncoder().encode(value)
   let binary = ''
@@ -180,17 +172,8 @@ function encodeBase64(value: string) {
   return btoa(binary)
 }
 
-function buildClaudeCCSwitchConfig(baseUrl: string, apiKey: string, model?: string) {
-  const env: Record<string, string> = buildClaudeSettingsEnv(baseUrl, apiKey)
-  const selectedModel = model?.trim()
-  if (selectedModel) {
-    env.ANTHROPIC_MODEL = selectedModel
-    const defaultModelEnv = resolveClaudeDefaultModelEnv(selectedModel)
-    if (defaultModelEnv) {
-      env[defaultModelEnv] = selectedModel
-    }
-  }
-  return { env }
+function buildClaudeCCSwitchConfig(baseUrl: string, apiKey: string) {
+  return { env: buildClaudeSettingsEnv(baseUrl, apiKey) }
 }
 
 function buildGeminiCCSwitchConfig(baseUrl: string, apiKey: string, model?: string) {
@@ -450,7 +433,7 @@ export function buildCCSwitchProviderImportLink(input: CCSwitchProviderImportInp
       name: input.name,
       enabled: String(input.enabled ?? true),
       configFormat: 'json',
-      config: encodeBase64(JSON.stringify(buildClaudeCCSwitchConfig(input.endpoint, input.apiKey, input.model))),
+      config: encodeBase64(JSON.stringify(buildClaudeCCSwitchConfig(input.endpoint, input.apiKey))),
     })
     return `ccswitch://v1/import?${params.toString()}`
   }
