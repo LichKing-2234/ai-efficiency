@@ -10,12 +10,32 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	maxDepartmentOverrides               = 100
+	maxDepartmentMetadataAppendValues    = 100
+	representativeExternalIDsMetadataKey = "representative_external_ids"
+)
+
 type DSL struct {
-	Version int          `json:"version" yaml:"version"`
-	Scope   string       `json:"scope" yaml:"scope"`
-	Auth    AuthConfig   `json:"auth" yaml:"auth"`
-	Limits  Limits       `json:"limits" yaml:"limits"`
-	Steps   []StepConfig `json:"steps" yaml:"steps"`
+	Version   int            `json:"version" yaml:"version"`
+	Scope     string         `json:"scope" yaml:"scope"`
+	Auth      AuthConfig     `json:"auth" yaml:"auth"`
+	Limits    Limits         `json:"limits" yaml:"limits"`
+	Steps     []StepConfig   `json:"steps" yaml:"steps"`
+	Overrides OverrideConfig `json:"overrides" yaml:"overrides"`
+}
+
+type OverrideConfig struct {
+	Departments []DepartmentOverride `json:"departments" yaml:"departments"`
+}
+
+type DepartmentOverride struct {
+	ExternalID string                             `json:"external_id" yaml:"external_id"`
+	Metadata   map[string]MetadataAppendOperation `json:"metadata" yaml:"metadata"`
+}
+
+type MetadataAppendOperation struct {
+	Append []string `json:"append" yaml:"append"`
 }
 
 type AuthConfig struct {
@@ -165,6 +185,45 @@ func ValidateDSL(ctx context.Context, cfg *DSL, credentialExists func(context.Co
 		if step.Map.Member != nil {
 			if strings.TrimSpace(step.Map.Member.Email) == "" {
 				add(prefix+".map.member.email", "member email mapping is required")
+			}
+		}
+	}
+	if len(cfg.Overrides.Departments) > maxDepartmentOverrides {
+		add("overrides.departments", fmt.Sprintf("must contain at most %d entries", maxDepartmentOverrides))
+	}
+	seenOverrideDepartments := map[string]struct{}{}
+	for index, override := range cfg.Overrides.Departments {
+		prefix := fmt.Sprintf("overrides.departments[%d]", index)
+		externalID := strings.TrimSpace(override.ExternalID)
+		if externalID == "" {
+			add(prefix+".external_id", "external_id is required")
+		} else if _, exists := seenOverrideDepartments[externalID]; exists {
+			add(prefix+".external_id", "external_id must be unique within department overrides")
+		} else {
+			seenOverrideDepartments[externalID] = struct{}{}
+		}
+		if len(override.Metadata) == 0 {
+			add(prefix+".metadata", "metadata append operation is required")
+			continue
+		}
+		for key, operation := range override.Metadata {
+			keyPath := prefix + ".metadata." + key
+			if strings.TrimSpace(key) != representativeExternalIDsMetadataKey {
+				add(keyPath, "only representative_external_ids append overrides are supported")
+				continue
+			}
+			appendPath := keyPath + ".append"
+			if len(operation.Append) == 0 {
+				add(appendPath, "append must contain at least one value")
+				continue
+			}
+			if len(operation.Append) > maxDepartmentMetadataAppendValues {
+				add(appendPath, fmt.Sprintf("append must contain at most %d values", maxDepartmentMetadataAppendValues))
+			}
+			for valueIndex, value := range operation.Append {
+				if strings.TrimSpace(value) == "" {
+					add(fmt.Sprintf("%s[%d]", appendPath, valueIndex), "append value must not be blank")
+				}
 			}
 		}
 	}

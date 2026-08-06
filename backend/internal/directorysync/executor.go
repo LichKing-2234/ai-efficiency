@@ -147,8 +147,32 @@ func (e *Executor) Execute(ctx context.Context, cfg *DSL, credentials Credential
 		}
 		stepItems[step.ID] = extractedForStep
 	}
+	if err := applyDepartmentOverrides(result.Departments, cfg.Overrides.Departments); err != nil {
+		return nil, err
+	}
 
 	return result, nil
+}
+
+func applyDepartmentOverrides(departments []DepartmentRecord, overrides []DepartmentOverride) error {
+	departmentIndexes := make(map[string]int, len(departments))
+	for index, department := range departments {
+		departmentIndexes[strings.TrimSpace(department.ExternalID)] = index
+	}
+	for _, override := range overrides {
+		index, ok := departmentIndexes[strings.TrimSpace(override.ExternalID)]
+		if !ok {
+			return fmt.Errorf("department metadata override target %q was not mapped", strings.TrimSpace(override.ExternalID))
+		}
+		if departments[index].Metadata == nil {
+			departments[index].Metadata = map[string]any{}
+		}
+		for key, operation := range override.Metadata {
+			current := compactStringValues(departments[index].Metadata[key])
+			departments[index].Metadata[key] = appendUniqueStrings(current, operation.Append...)
+		}
+	}
+	return nil
 }
 
 func cloneMap(in map[string]any) map[string]any {
