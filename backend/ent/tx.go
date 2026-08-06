@@ -14,6 +14,10 @@ type Tx struct {
 	config
 	// AdminSubscriptionJob is the client for interacting with the AdminSubscriptionJob builders.
 	AdminSubscriptionJob *AdminSubscriptionJobClient
+	// AttributionAllocationRevision is the client for interacting with the AttributionAllocationRevision builders.
+	AttributionAllocationRevision *AttributionAllocationRevisionClient
+	// AttributionUsageBucket is the client for interacting with the AttributionUsageBucket builders.
+	AttributionUsageBucket *AttributionUsageBucketClient
 	// CommitCheckpoint is the client for interacting with the CommitCheckpoint builders.
 	CommitCheckpoint *CommitCheckpointClient
 	// CommitRewrite is the client for interacting with the CommitRewrite builders.
@@ -52,6 +56,8 @@ type Tx struct {
 	RelayProvider *RelayProviderClient
 	// RepoConfig is the client for interacting with the RepoConfig builders.
 	RepoConfig *RepoConfigClient
+	// ReportingInstallation is the client for interacting with the ReportingInstallation builders.
+	ReportingInstallation *ReportingInstallationClient
 	// ScmProvider is the client for interacting with the ScmProvider builders.
 	ScmProvider *ScmProviderClient
 	// SystemSetting is the client for interacting with the SystemSetting builders.
@@ -196,6 +202,8 @@ func (tx *Tx) Client() *Client {
 
 func (tx *Tx) init() {
 	tx.AdminSubscriptionJob = NewAdminSubscriptionJobClient(tx.config)
+	tx.AttributionAllocationRevision = NewAttributionAllocationRevisionClient(tx.config)
+	tx.AttributionUsageBucket = NewAttributionUsageBucketClient(tx.config)
 	tx.CommitCheckpoint = NewCommitCheckpointClient(tx.config)
 	tx.CommitRewrite = NewCommitRewriteClient(tx.config)
 	tx.Credential = NewCredentialClient(tx.config)
@@ -215,6 +223,7 @@ func (tx *Tx) init() {
 	tx.QuotaResetRequestEvent = NewQuotaResetRequestEventClient(tx.config)
 	tx.RelayProvider = NewRelayProviderClient(tx.config)
 	tx.RepoConfig = NewRepoConfigClient(tx.config)
+	tx.ReportingInstallation = NewReportingInstallationClient(tx.config)
 	tx.ScmProvider = NewScmProviderClient(tx.config)
 	tx.SystemSetting = NewSystemSettingClient(tx.config)
 	tx.TeamUsageRateMultiplierAudit = NewTeamUsageRateMultiplierAuditClient(tx.config)

@@ -46,6 +46,24 @@ func (s syncCapableFakeUploader) ToolUsageClient() attributionlocal.BackendClien
 	return noopToolUsageClient{}
 }
 
+type noopCompactBackendClient struct{}
+
+func (noopCompactBackendClient) SendAttributionBuckets(context.Context, []client.AttributionBucket) error {
+	return nil
+}
+
+func (noopCompactBackendClient) SendAttributionRevision(context.Context, string, client.AttributionRevision) error {
+	return nil
+}
+
+type compactSyncCapableFakeUploader struct {
+	*fakeUploader
+}
+
+func (s compactSyncCapableFakeUploader) CompactUsageClient() attributionlocal.CompactBackendClient {
+	return noopCompactBackendClient{}
+}
+
 type recordingBackendHookClient struct {
 	checkpoints []client.CommitCheckpointRequest
 	toolUsage   []client.ToolUsageEventRequest
@@ -233,6 +251,85 @@ func TestPostCommitResolvedQueuesOnlyWithStableBinding(t *testing.T) {
 	}
 	if len(items) != 0 {
 		t.Fatalf("unstable queued items = %d, want 0", len(items))
+	}
+}
+
+func TestCompactPostCommitSkipsLegacySnapshotAndStartsBackgroundSync(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+	if err := attributionlocal.SaveJSON(attributionlocal.CompactStatePath(), attributionlocal.CompactState{
+		Version: 2, EnabledAt: time.Now().UTC(), SeenAtoms: map[string]bool{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	workspaceRoot := git2(t, repo, "rev-parse", "--show-toplevel")
+	codex, claude, kiro := writeCollectorFixtures(t, workspaceRoot)
+	t.Setenv("AE_CODEX_SESSION_FILES", codex)
+	t.Setenv("AE_CLAUDE_SESSION_FILES", claude)
+	t.Setenv("AE_KIRO_SESSION_FILES", kiro)
+
+	spawned := false
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error {
+		spawned = true
+		return nil
+	}
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
+
+	uploader := compactSyncCapableFakeUploader{fakeUploader: &fakeUploader{}}
+	if err := NewHandler(uploader).PostCommitResolved(context.Background(), execCtx); err != nil {
+		t.Fatal(err)
+	}
+	if !spawned {
+		t.Fatal("compact post-commit did not start the detached sync runner")
+	}
+	if len(uploader.events) != 1 || len(uploader.events[0].AgentSnapshot) != 0 {
+		t.Fatalf("compact checkpoint retained legacy agent snapshot: %+v", uploader.events)
+	}
+	cachePath := filepath.Join(attributionlocal.AttributionRootDir(), "workspaces", execCtx.WorkspaceID, "collectors", "latest.json")
+	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
+		t.Fatalf("compact hook wrote legacy collector cache: %v", err)
+	}
+}
+
+func TestCommitLineageEvidenceRequiresReflogAndExplicitSourceCommit(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	baseBranch := git2(t, repo, "rev-parse", "--abbrev-ref", "HEAD")
+	baseSHA := git2(t, repo, "rev-parse", "HEAD")
+	git2(t, repo, "checkout", "-q", "-b", "source")
+	if err := os.WriteFile(filepath.Join(repo, "feature.txt"), []byte("feature\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git2(t, repo, "add", "feature.txt")
+	git2(t, repo, "commit", "-q", "-m", "feature")
+	sourceSHA := git2(t, repo, "rev-parse", "HEAD")
+	git2(t, repo, "checkout", "-q", baseBranch)
+	if git2(t, repo, "rev-parse", "HEAD") != baseSHA {
+		t.Fatal("base branch moved unexpectedly")
+	}
+	if err := os.WriteFile(filepath.Join(repo, "target.txt"), []byte("target\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git2(t, repo, "add", "target.txt")
+	git2(t, repo, "commit", "-q", "-m", "target base")
+	git2(t, repo, "cherry-pick", sourceSHA)
+	head := git2(t, repo, "rev-parse", "HEAD")
+	if head == sourceSHA {
+		t.Fatal("test setup produced identical source and cherry-pick commits")
+	}
+	kind, source := commitLineageEvidence(repo, head)
+	if kind != "" || source != "" {
+		t.Fatalf("completed cherry-pick without source evidence = (%q, %q), want no lineage", kind, source)
+	}
+	gitDir := git2(t, repo, "rev-parse", "--absolute-git-dir")
+	if err := os.WriteFile(filepath.Join(gitDir, "CHERRY_PICK_HEAD"), []byte(sourceSHA+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	kind, source = commitLineageEvidence(repo, head)
+	if kind != "cherry-pick" || source != sourceSHA {
+		t.Fatalf("explicit cherry-pick evidence = (%q, %q), want (%q, %q)", kind, source, "cherry-pick", sourceSHA)
 	}
 }
 

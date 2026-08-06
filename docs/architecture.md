@@ -619,9 +619,12 @@ performance claim.
 
 ## Current Runtime Flow
 
-The current implementation now uses one formal attribution path:
-
-- sessionless flow centered on `ae-cli init`, `ae-cli sync`, tool-local artifacts, and git checkpoints
+The current implementation has a compact Codex Token-ledger path plus the
+existing sessionless compatibility path for older CLIs, Claude, and Kiro. The
+compact path is centered on one machine enrollment, global Git checkpoints,
+local edge aggregation, immutable usage buckets, and append-only allocation
+revisions. It does not require per-repository `ae-cli init` when the repository
+is already backend-known and reporting-enabled.
 
 ```mermaid
 sequenceDiagram
@@ -640,22 +643,21 @@ sequenceDiagram
         CLI->>BE: /oauth/device/code + /oauth/token polling
         Browser->>BE: /oauth/device/verify
     end
+    CLI->>BE: best-effort reporting installation enrollment
     Dev->>CLI: ae-cli discover
     CLI->>BE: GET /api/v1/user/providers
     CLI->>Tool: configure Codex / Claude / Gemini locally
-    Dev->>CLI: ae-cli hooks enable --global
-    CLI->>WS: install machine-level managed hooks
-    Dev->>CLI: cd <repo> && ae-cli init
-    CLI->>BE: explicit repo registration from local git remote
-    CLI->>WS: maintain ~/.ae-cli state and eligibility cache
-    Dev->>Tool: run Codex / Claude / other tools
-    Tool->>WS: write local Codex / Claude / Kiro artifacts
+    Dev->>CLI: ae-cli attribution enable
+    CLI->>WS: baseline existing Codex atoms + install global hooks
+    CLI->>Tool: optionally configure trace-safe Codex OTLP
+    Dev->>Tool: run Codex
+    Tool->>WS: write local Codex JSONL
     WS->>BE: resolve reporting-enabled repo by local git remote
-    WS->>WS: short-lived sync scans local artifacts
-    WS->>BE: tool_usage_events ingest with repo_config_id (single or batch)
-    WS->>BE: checkpoint events + rewrite events with repo_config_id
-    BE->>BE: bind tool_usage_events to commit checkpoints
-    BE->>BE: refresh active PR usage snapshots from checkpoint-bound usage
+    WS->>BE: minimized checkpoint/rewrite evidence
+    WS->>WS: detached runner compacts Token atoms
+    WS->>BE: immutable usage buckets + allocation revisions
+    Tool->>BE: optional OTLP Request ID correlation only
+    BE->>BE: project current allocation to repo -> commit -> PR
 ```
 
 ### Runtime Boundaries
@@ -664,14 +666,14 @@ sequenceDiagram
   `member.metadata.wecom_userid` mapping. The workflow snapshots only that
   allowlisted notification identity and never treats a generic member external
   id, local user id, or email address as a WeCom userid.
-- `ae-cli` owns the sessionless CLI workflow: explicit repo registration, hook management, short-lived attribution sync, and diagnostics.
+- `ae-cli` owns installation enrollment, compact Codex baseline/state, global or repo-local hook management, edge aggregation, legacy sessionless compatibility, and diagnostics. `ae-cli init` remains an explicit repo-registration and fallback-hook command, not a mandatory step for every backend-known repository.
 - `ae-cli discover` is intentionally deterministic in the current codebase: no backend LLM loop and no `/api/v1/tools/discover` endpoint. It uses the selected provider directly (primary by default, `--provider` to override), maps installed tools to the backend-returned `group.platform`, and writes only the matching tool-native config files or environment hooks.
 - `ae-cli` login selection is split between browser PKCE and device flow, but both paths still end in the same backend-issued JWT and `~/.ae-cli/token.json` storage model, with automatic refresh against `/api/v1/auth/refresh` when the stored token is nearing expiry.
-- The backend owns durable state, repo discovery/ensure from local git remotes, repo configuration, user/provider mapping, attribution, PR usage snapshots, and SCM/webhook handling.
+- The backend owns durable repo configuration, compact reporting installations, immutable Token buckets, append-only allocation revisions, checkpoint-backed allocation authorization, attribution reports, legacy PR usage snapshots, and SCM/webhook handling.
 - The backend auth chain prefers LDAP for implicit login requests when the LDAP provider is registered, falls back to relay SSO when registered, and resolves/provisions relay identities for LDAP users with relay-side generated credentials rather than the LDAP login password. LDAP identity resolution first reuses an exact relay email match, then falls back to canonical username or legacy username lookup; a linked relay role of `admin` or `user` is synced into the local user record so LDAP login does not downgrade an existing relay admin account. Relay SSO stores the relay password encrypted for later relay user JWT acquisition only after the upstream relay login succeeds; it does not create missing relay users, so admins must provision or assign those relay accounts outside the SSO login attempt. LDAP logins preserve any saved relay SSO password when reusing the same local user. New LDAP users provisioned into relay receive a generated relay-side password that is stored encrypted, then get relay default subscriptions assigned by the relay adapter when configured; the relay adapter first skips active subscriptions already present for those default groups, and duplicate assignment responses are idempotent only when sub2api clearly reports the assignment already exists or a follow-up list proves the active group exists. Existing `provisioned_by_ai_efficiency_ldap` relay users with no group facts can be given those default subscriptions on later LDAP login. If auth or `/user` key creation finds a missing relay binding, a stored binding whose upstream relay user no longer exists, missing local relay password, or stale stored relay password, the backend resolves/creates the relay user as needed, rotates a generated relay password through the relay admin API, stores it encrypted, and uses it only for user-JWT key writes.
 - The backend OAuth handler now manages both short-lived authorization codes and short-lived device entries in memory.
 - In the current embedded-frontend deployment, OAuth browser entry routes such as `/oauth/authorize` and `/oauth/device` serve the bundled SPA directly by path, so proxy scheme/host rewriting cannot turn `frontend_url` into a self-redirect loop. Deployments without an embedded frontend still use the configured redirect.
-- Relay/sub2api remains the upstream auth/LLM/usage integration boundary, admin subscription management boundary, and attribution fallback source.
+- Relay/sub2api remains the upstream auth/LLM/usage integration boundary and admin subscription management boundary. It is not a second source for the compact Codex Token ledger.
 - SCM providers now reference reusable credentials instead of storing raw secret blobs inline.
 - Repo-to-`scm_provider` binding remains admin-managed, but the backend now performs deterministic auto-binding when exactly one active Code Platform matches a newly created repo's canonical remote host. GitHub SaaS provider URLs such as `https://api.github.com` match `github.com` remotes. GitHub Enterprise and Bitbucket Server match by canonical host, and Code Platforms can also configure `ssh_host` for split API/SSH deployments where the clone host differs from `base_url`. Existing unbound repos can be repaired through an admin-only batch action; ambiguous and no-match repos remain manually bindable.
 - Active SCM-dependent product features such as PR sync and webhook registration require a bound repo and return `repo_unbound` when invoked before binding.
@@ -684,87 +686,74 @@ sequenceDiagram
 
 ## Attribution Runtime Status
 
-The formal workflow uses the sessionless local attribution path that reads local tool artifacts and binds them to checkpoints without requiring a long-lived local daemon. The old session/local-proxy runtime has been retired.
+The Codex POC uses a compact local attribution path that reads Token atoms,
+reduces repository evidence locally, and uploads commit/change-set buckets rather
+than request rows. It has no long-lived local daemon. The older sessionless
+`tool_usage_events` runtime remains available only as a compatibility lane; the
+old session/local-proxy runtime remains retired.
 
 ```mermaid
 flowchart LR
-    Tools["Codex / Claude / Kiro"]
+    Codex["Codex"]
 
     subgraph Local["Developer machine"]
-        CLI["ae-cli init / sync / doctor"]
-        GlobalHooks["Global hook scripts<br/>~/.ae-cli/git-hooks"]
-        RepoHooks["Repo-local hook scripts<br/><git common dir>/ae-hooks"]
-        Artifacts["Local tool artifacts<br/>~/.codex / ~/.claude / ~/.kiro / Kiro globalStorage"]
-        Collector["collector<br/>build latest Snapshot"]
-        Scanner["attributionlocal scanner<br/>build LocalToolUsageEvent[]"]
-        State["CLI state<br/>~/.ae-cli/state/hooks + attribution"]
+        CLI["ae-cli login / attribution enable / sync / doctor"]
+        Hooks["managed global hooks<br/>repo-local fallback"]
+        JSONL["Codex JSONL token_count<br/>SQLite fallback"]
+        Compact["attributionlocal compact runner<br/>Token atoms -> buckets/revisions"]
+        State["0600 reporting config + compact state<br/>no raw payload cache"]
     end
 
     subgraph Backend["ai-efficiency backend"]
-        Register["explicit repo registration<br/>init only"]
-        Resolve["read-only repo resolve<br/>resolve-remote"]
-        Checkpoint["commit_checkpoint / commit_rewrite ingest<br/>repo_config_id + agent_snapshot"]
-        Usage["tool_usage_events ingest<br/>repo_config_id + authenticated user"]
-        Bind["bind usage to checkpoints"]
-        PRSyncJobs["pr_sync_jobs<br/>async PR metadata sync progress"]
-        PRUsage["refresh active PR usage snapshots"]
+        Install["reporting_installations<br/>reporter + OTLP token hashes"]
+        Resolve["read-only repo resolve"]
+        Checkpoint["minimized commit checkpoints / rewrites"]
+        Buckets["immutable attribution_usage_buckets"]
+        Revisions["append-only allocation revisions"]
+        Correlation["bounded Request ID evidence<br/>shared read-cache only"]
+        Report["repo -> commit -> PR report"]
     end
 
-    UI["Repo PR list / details view"]
-    Relay["sub2api / relay"]
+    UI["/attribution"]
 
-    CLI --> Register
-    CLI -->|"enable/disable/status/refresh"| GlobalHooks
-    CLI -->|"enable/disable/status/refresh"| RepoHooks
+    CLI --> Install
+    CLI --> Hooks
     CLI --> State
-    CLI -->|"manual sync"| Scanner
-    Tools --> Artifacts
-    GlobalHooks --> Resolve
-    RepoHooks --> Resolve
-    CLI -->|"sync resolve-first"| Resolve
-    GlobalHooks -->|"eligible repo only"| Collector
-    RepoHooks -->|"eligible repo only"| Collector
-    GlobalHooks -->|"flush pending hook queue"| Checkpoint
-    RepoHooks -->|"flush pending hook queue"| Checkpoint
-    GlobalHooks -->|"post-commit checkpoint upload"| Checkpoint
-    RepoHooks -->|"post-commit checkpoint upload"| Checkpoint
-    GlobalHooks -->|"post-rewrite rewrite upload"| Checkpoint
-    RepoHooks -->|"post-rewrite rewrite upload"| Checkpoint
-    GlobalHooks -->|"mark pending sync + start async runner"| State
-    RepoHooks -->|"mark pending sync + start async runner"| State
-    State -->|"pending sync task"| Scanner
-    Artifacts --> Collector
-    Artifacts --> Scanner
-    Collector -->|"Snapshot -> agent_snapshot"| Checkpoint
-    Scanner -->|"normalized managed tool_usage_events"| Usage
-    Resolve --> Checkpoint
-    Resolve --> Usage
-    Usage --> Bind
-    Checkpoint --> Bind
-    Bind --> PRUsage
-    UI -->|"start / reuse sync job"| PRSyncJobs
-    PRSyncJobs -->|"phase + counters"| UI
-    PRSyncJobs -->|"active PR usage refresh"| PRUsage
-    PRUsage --> UI
-    Relay --> Backend
+    Codex --> JSONL
+    Codex -->|"optional trace-safe OTLP JSON"| Correlation
+    Hooks --> Resolve
+    Hooks --> Checkpoint
+    Hooks -->|"durable trigger + detached task"| State
+    State --> Compact
+    JSONL --> Compact
+    Compact --> Buckets
+    Compact --> Revisions
+    Checkpoint --> Revisions
+    Correlation -->|"quality + count + digest only"| Buckets
+    Buckets --> Report
+    Revisions --> Report
+    Checkpoint --> Report
+    Report --> UI
 ```
 
 ### Status
 
-- Current formal CLI/runtime path:
-  `ae-cli hooks enable --global` is the recommended one-time machine-level hook setup in the `/user` guide, while `ae-cli init` remains the per-repo registration/cache bootstrap command and can still optionally enable managed hooks with `--hooks repo` or `--hooks global`; the default is `--hooks none`. `ae-cli sync` remains a manual backfill/recovery command, but it now works through the same workspace-level pending sync task and async runner contract as managed hooks. Unlike the hidden git hook path, foreground `ae-cli sync` may refresh current-repo eligibility with its own longer timeout before consuming pending hook events, so cache misses or slow backend resolve calls do not make the explicit recovery command fail on the hook-time short resolve window. Managed git hooks are resolve-first paths: they use read-only `resolve-remote`, run only for backend-known reporting-enabled repositories, and never create repos. If a stable hook binding already has an expired positive eligibility cache entry with `repo_config_id`, and the fresh `resolve-remote` refresh is unavailable or times out inside the hook eligibility window, the hook may use that stale positive entry to keep checkpoint upload and pending sync task creation durable; an explicit fresh not-eligible response still wins over stale cache. All checkpoint, rewrite, and managed tool-usage uploads carry `repo_config_id`. The local collection layer is split in two: `ae-cli/internal/collector` builds bounded hook-time `agent_snapshot` caches, while `ae-cli/internal/attributionlocal` extracts `tool_usage_events` for backend ingest. `Codex` is normalized under `tool = "codex"`; the scanner reads global `~/.codex/sessions/**/*.jsonl` plus a compatibility `~/.codex/logs_2.sqlite` branch gated by jsonl-discovered session ids, with first-run sqlite reads limited to a recent row window before normal watermark-based incrementals. The sqlite parser handles both older text counters and newer websocket `response.completed` JSON usage payloads. Codex session matching accepts exact `session_meta.cwd` matches and same-Git-common-dir linked worktree matches, so a Codex process launched from the canonical checkout can still be attributed to a commit made from a linked worktree. `Kiro` is normalized under `tool = "kiro"` across legacy `~/.kiro/sessions/cli/*.json`, modern `~/Library/Application Support/kiro-cli/data.sqlite3`, and Kiro IDE execution metadata under `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/**`; Kiro IDE attribution uses `workspace-sessions/<workspace>/sessions.json` as the chat-session index and execution detail JSON files with `usageSummary[].unit=credit` as the durable credit fact source, so the current stable Kiro contract is credits/request-count rather than tokens. Backend ingests `tool_usage_events`, binds them to checkpoints, and refreshes PR usage snapshots from checkpoint-bound usage.
-- Trigger boundary:
-  `collector` is only triggered inside eligible git-hook handling (`post-commit` / `post-rewrite`) and writes hook-time `Snapshot` data into checkpoint `agent_snapshot`. Hook commands run with a short overall timeout and fail open on timeout so local artifact scanning, backend calls, or queued replay cannot block `git commit`. Before a new checkpoint or rewrite is uploaded, the current code replays only queued workspace hook events whose `server_url`, `auth_subject`, `repo_config_id`, `repo_key`, and `workspace_id` match the current stable context. `post-commit` no longer performs the full `tool_usage_events` scan inline; instead it writes or refreshes a workspace `sync-task.json`, then opportunistically starts a detached async runner. Full `Codex` / `Claude` / `Kiro` artifact scanning and managed tool-usage upload now happen in that async runner or via a later manual `ae-cli sync`, outside the hook timeout. Pending/running/error state for the runner is tracked under attribution workspace state and surfaced through CLI diagnostics; a running task is only considered active while its `runner_pid` is still alive, so stale runner leases can be recovered by diagnostics or a later sync. Runner execution is bounded by a total runtime timeout, and each managed tool-usage HTTP upload attempt has its own shorter timeout, so a stuck backend connection leaves a recoverable pending task instead of an indefinitely running process. Durable sync first replays already-spooled events before scanning current artifacts, then writes newly scanned events into `spool.json` and replays them with newest `observed_end_at` first; this keeps scanned backlog visible even if a cold scan is slow while still preventing fresh usage from being hidden behind older newly-merged spool entries. Managed tool-usage replay uses `/api/v1/tool-usage-events/batch` in bounded chunks when the backend supports it, falling back to the single-event endpoint for older servers or validation isolation; this keeps historical backlog catch-up from spending one HTTPS round trip per event. Managed tool-usage spool files and uploads omit raw local source paths, source locators, and raw payloads; transient 429/502/503/504 upload responses are retried before the remaining events stay in spool, and spooling after a failed upload is still reported as runner failure so the workspace task remains retryable. `attributionlocal` scanning remains the only source that produces `tool_usage_events` for PR/commit aggregation.
+- Current compact Codex path:
+  `ae-cli login` best-effort enrolls a stable machine installation without rolling back a successful login when enrollment is temporarily unavailable. `ae-cli attribution enable` records the no-backfill Codex baseline, enables reporter/OTLP flags, configures optional trace-safe Codex OTLP, and installs the existing machine-level managed hooks. Backend-known reporting-enabled repositories do not need a separate `ae-cli init`; global hooks use read-only `resolve-remote` and never create repositories. `ae-cli init` remains the explicit registration/cache bootstrap and repo-hook fallback. Codex JSONL `token_count` is the primary Token source and `logs_2.sqlite` is selected only when the same conversation has no measured JSONL facts. The normalized primary metric is `fresh_input + cache_read + cache_write + output`; reasoning remains an output subset. Tool metadata is reduced locally to repo/worktree evidence, and only compact buckets plus allocation revisions are uploaded. Claude/Kiro and older CLIs retain the existing `tool_usage_events` compatibility path.
+- Compact trigger boundary:
+  In compact mode, hook-time snapshot collection is skipped and the reporter checkpoint API accepts a strict minimized DTO that excludes `agent_snapshot`, `session_id`, and raw payload fields. `post-commit` and `post-rewrite` first persist small Git triggers, then coalesce a workspace task and opportunistically start the detached runner. Retained triggers prevent late Codex JSONL writes from missing their first qualifying commit and allow amend/rebase/squash rewrites to restate the current allocation. Explicit cherry-pick reflog evidence plus stable patch ID creates a non-counting inherited commit reference. The runner scans/compacts outside the hook timeout, retries immutable buckets idempotently, and sends append-only complete allocation revisions. Legacy mode keeps the existing collector, spool, and `tool_usage_events` behavior.
 - Reporting durability:
-  Reporting durability is now at-least-once for locally captured events while local state is writable. Hook checkpoint/rewrite failures are stored in a locked workspace queue, first-run repo eligibility failures are stored in an unresolved hook queue, and tool-usage events are spooled before scan state advances. Replay never deletes events solely because the current auth/server/repo binding differs; those events remain pending for the binding that can upload them. Events that the backend permanently rejects are moved to visible dead-letter files instead of blocking later valid events.
+  Compact reporting is at-least-once while local state is writable. Bucket IDs and source digests are deterministic, backend bucket facts are immutable, and allocation corrections are append-only revisions. Pending compact buckets remain local until accepted; seen atom state advances only after acceptance. The older hook queue, unresolved queue, tool-usage spool, and dead-letter behavior remains active for the compatibility path.
 - Local state and hook ownership:
-  Active user-level CLI state lives under `~/.ae-cli/`: auth in `~/.ae-cli/token.json`, global managed hook scripts in `~/.ae-cli/git-hooks`, hook eligibility and installation state under `~/.ae-cli/state/hooks`, and attribution state under `~/.ae-cli/state/attribution`. Attribution workspace state now includes `scan-state.json`, `spool.json`, `hooks.jsonl`, `upload-ledger.jsonl`, `dead-letter-tool-usage.jsonl`, and workspace-level `sync-task.json`; unresolved first-run hook events live in `~/.ae-cli/state/hooks/unresolved-hooks.jsonl`. Repo-local managed hooks live under the canonical git common directory at `<git common dir>/ae-hooks`. Managed hooks resolve the runtime binary from `AE_CLI_BIN`, then `~/.local/bin/ae-cli`, then `PATH`. AE-managed hook installation owns the configured `core.hooksPath` layer it writes and does not chain previous hooks; `--force` authorizes overwriting the relevant path.
+  Active user-level CLI state lives under `~/.ae-cli/`: OAuth auth in `token.json`, the installation ID and scoped reporter/OTLP credentials in mode-`0600` `reporting.json`, global managed hooks in `git-hooks`, hook eligibility under `state/hooks`, compact state in `state/attribution/compact/state.json`, and compatibility state under the existing attribution workspace directories. Compact state stores atom digests, pending/closed buckets, and minimized Git triggers; it does not cache raw JSONL, paths, prompts, tool output, or spans. Repo-local managed hooks live under the canonical Git common directory at `<git common dir>/ae-hooks`. Git exposes one effective `core.hooksPath` per resolution scope; AE-managed installation owns the layer it writes and does not chain an unrelated previous path unless that behavior is added explicitly. `--force` authorizes overwriting the relevant managed path.
+- Installation and correlation boundary:
+  `reporting_installations` stores owner/status/enable flags and only hashes of the independently scoped `aer_*` reporter and `aeo_*` OTLP credentials. Authenticated rotation replaces both credentials and invalidates their prior values. The only Codex OTLP route is `/api/v1/attribution/otel/v1/traces`; prompt logging is disabled and no logs ingest route exists. The bounded JSON payload is reduced in memory to conversation/Request ID/time/status/error evidence. Raw spans are discarded. Success evidence has a per-item 24-hour shared-cache retention, failure evidence has a separate per-item 30-day retention, later writes do not extend older evidence, and durable buckets retain only correlation quality, count, and digest.
 - Current formal frontend surface:
-  the repo list page is a scoped inventory workbench: `GET /api/v1/repos/inventory` summarizes Platform -> org/project scopes, using stable `provider_key` values (`scm_provider:<id>` for bound providers and `unbound` for unbound repos) for tab/query selection while `name` remains display text; `GET /api/v1/repos` accepts `scm_provider_id`, `scope`, and `binding_state` so repo table pagination applies only to the selected platform scope. Repo detail pages show PR usage summaries and commit usage details directly, rather than user-facing attribution status controls. `POST /api/v1/repos/:id/sync-prs` creates or reuses a backend `pr_sync_jobs` record and the backend process performs PR metadata sync plus active PR usage refresh asynchronously. Repo detail pages recover the latest repo-level sync job through `GET /api/v1/repos/:id/pr-sync-job/latest`, then poll `GET /api/v1/pr-sync-jobs/:id` while the job is active. `StartSyncJob` abandons stale queued/running jobs that have not recorded progress for more than one hour, which prevents a lost in-process worker from permanently blocking a new sync attempt. PR list pagination defaults to 20 rows and is capped at 100; invalid or nonpositive limits return to the default, while invalid or negative offsets become zero. The page freshness service defensively rejects more than 100 distinct PR IDs before issuing SQL. PR list summaries use bounded aggregate queries, while freshness for the current page uses three bulk fact shapes: snapshots bounded by at most 100 returned PR IDs, repository-scoped pending usage evidence, and usage-event counts/latest observation grouped by checkpoint ID. The checkpoint aggregate uses one PostgreSQL array argument with `= ANY(...)`, so its bind-parameter count does not grow with checkpoint count. The list path performs no per-PR or per-commit freshness reads; selected detail delegates through the same deterministic classifier. List `usage_status`, `usage_status_reason`, optional `usage_status_checked_at`, filtering, summary, and open/merged/other then `created_at DESC` ordering remain compatible. Bitbucket Server PR sync records SCM `createdDate` so recent-window filters are based on actual PR age rather than first ingestion time. PR usage numbers still come from `tool_usage_events -> commit_checkpoints -> pr_commit_usage_snapshots`; freshness fields explain missing or stale usage without counting unbound evidence as valid PR usage.
+  `/attribution` is the primary Codex compact-ledger surface. It provides time-range summaries, explicit `measured = bound + unbound` validation, repository -> commit -> PR projection, worktree/branch lineage, non-counting inherited Token, and expandable bucket normalization/correlation/revision evidence. The existing repo inventory and PR detail pages remain in place for repository operations and legacy PR usage snapshots.
 - Current global event surface:
-  `/events` is a protected top-level page for browsing backend-ingested `tool_usage_events`. It shows summary cards plus event-level rows, scopes regular users to their own events, and only exposes full raw source/path/payload detail to admins. Summary and list share database-side authorization/filter predicates. Summary values are SQL aggregates; list totals and pages are counted/ordered in PostgreSQL with default 20, maximum 100, and `observed_end_at`/`id` descending order. List projection excludes raw payloads and detail loads the selected diagnostic record on demand. The Vue page mounts only the active mobile or desktop row representation and formats admin raw JSON only after expansion.
+  `/events` remains a protected compatibility page for previously ingested `tool_usage_events`, but it is hidden from the primary sidebar. Compact Codex reporting does not create event rows or upload raw detail to this surface.
 - Remaining direction:
-  richer reporting surfaces and any later cleanup of historical attribution-only fields/tables that are no longer product-primary
+  evaluate compact-trigger retention/claim deadlines from POC distributions, migrate Claude/Kiro to the generic bucket contract, and decide whether delivery-effectiveness correlation is useful. Cost allocation, individual ranking, and production rollout are not implied.
 
 ## Module Responsibilities
 
@@ -784,7 +773,7 @@ flowchart LR
 | HTTP runtime and telemetry | `backend/internal/httpclient`, `backend/internal/health`, `backend/internal/telemetry`, `backend/internal/middleware` | Bounded reusable downstream transports, parallel deadline-bounded readiness, validated request IDs, normalized request/Relay logs and Prometheus histograms, database/Redis pool collectors, closed application-cache events, fixed-memory Web Vitals aggregation, and the internal-only scrape registry |
 | SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization, and active-PR usage snapshot refresh |
 | Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Explicit repo registration, read-only hook eligibility resolution, deterministic repo binding from configured SCM metadata, bounded SQL inventory aggregation, transactionally versioned optional Redis inventory reads, PR labeling, and dashboard-facing summary inputs |
-| Session and attribution | `backend/internal/checkpoint`, `backend/internal/attribution`, `backend/internal/prusage` | Commit checkpoints, rewrite mapping, checkpoint-bound tool usage propagation, and PR usage summary/detail snapshot generation |
+| Session and attribution | `backend/internal/checkpoint`, `backend/internal/attributionledger`, `backend/internal/attribution`, `backend/internal/prusage` | Minimized and legacy commit checkpoints, reporting-installation authentication, immutable compact Token buckets, append-only allocation revisions, bounded Request ID correlation, repo/commit/PR ledger reports, and legacy checkpoint-bound PR usage snapshots |
 | API surface | `backend/internal/handler`, `backend/internal/middleware` | HTTP handlers, routing, auth middleware, settings endpoints, representative `/user/team-usage/*` endpoints, quota reset user/admin endpoints including approver candidate lookup, work item count endpoint, protected and rate-limited Web Vitals ingestion, admin team-usage audit, admin-users direct relay-user disablement/subscription jobs, and admin directory sync/offboarding endpoints |
 | Embedded frontend delivery | `backend/internal/web`, `backend/internal/oauth`, `backend/internal/handler` | Resolve embedded files and SPA fallbacks before applying gzip and cache policy, serve browser GET/HEAD consistently, and reuse the embedded index representation for OAuth authorize/device browser entry routes |
 
@@ -792,7 +781,7 @@ flowchart LR
 
 | Area | Paths | Responsibility |
 | --- | --- | --- |
-| Views | `frontend/src/views` | Dashboard, Work Items, repos, events, oauth, personal AI Usage, selected-member usage detail, representative Team Overview, admin users with on-demand department browsing and one responsive user-row tree, paginated admin Directory offboarding, and admin/settings pages with immediate affected-mutation count refresh |
+| Views | `frontend/src/views` | Dashboard, Work Items, compact Token attribution, repos, compatibility events, oauth, personal AI Usage, selected-member usage detail, representative Team Overview, admin users with on-demand department browsing and one responsive user-row tree, paginated admin Directory offboarding, and admin/settings pages with immediate affected-mutation count refresh |
 | Data access | `frontend/src/api`, `frontend/src/stores` | Backend API clients, independent repository list/inventory state and stable server-selection hydration, representative team-usage clients, bounded administrator department option/child clients, paginated Directory clients, the generation-safe Work Items count store with completion-based 20-second freshness, invalidation/reset ownership and one queued forced follow-up, plus the shared Settings credential/Directory-source owner with five-minute reuse, request deduplication, auth-session reset/invalidation, and serialized mutation refresh |
 | Browser session and identity | `frontend/src/auth/browserSession.ts`, `frontend/src/stores/auth.ts`, `frontend/src/api/client.ts` | Generation-aware credential ownership shared by Pinia and Axios, per-generation current-user single-flight, same-session refresh rotation, final adapter-boundary retry validation, and auth-expiry publication |
 | Route and session policy | `frontend/src/router/authGuard.ts`, `frontend/src/router/index.ts` | Parallel public/ordinary chunk and identity scheduling, fail-closed administrator role verification, exact attempt-generation lifecycle settlement, navigation-generation-gated follow-ups, failed-attempt recovery, and confirmation-based destination expiry consumption |
@@ -804,8 +793,8 @@ flowchart LR
 
 | Area | Paths | Responsibility |
 | --- | --- | --- |
-| Auth and backend access | `ae-cli/internal/auth`, `ae-cli/internal/client` | Login flow, backend API calls, token usage |
-| Sessionless runtime | `ae-cli/internal/session`, `ae-cli/internal/hooks`, `ae-cli/internal/hookstate`, `ae-cli/internal/collector`, `ae-cli/internal/attributionlocal` | Git-context workspace identity, hook management, context-bound hook state, hook-time snapshot collection, and local tool-usage event extraction/upload |
+| Auth and backend access | `ae-cli/internal/auth`, `ae-cli/internal/reporting`, `ae-cli/internal/client` | Login flow, machine reporting enrollment, scoped credential storage/rotation recovery, and backend API calls |
+| Attribution runtime | `ae-cli/internal/session`, `ae-cli/internal/hooks`, `ae-cli/internal/hookstate`, `ae-cli/internal/collector`, `ae-cli/internal/attributionlocal` | Git-context identity, global/repo hook management, compact Codex baseline and edge aggregation, retained commit/rewrite evidence, detached bucket/revision upload, and legacy snapshot/tool-usage compatibility |
 | Tool selection | `ae-cli/internal/router` | Lightweight tool-routing helpers used by the current CLI surface |
 
 ## Documentation Expectations

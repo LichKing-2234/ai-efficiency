@@ -18,6 +18,7 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
 	"github.com/ai-efficiency/ae-cli/internal/hookstate"
+	"github.com/ai-efficiency/ae-cli/internal/reporting"
 )
 
 func runGitOutput(t *testing.T, dir string, args ...string) string {
@@ -197,6 +198,43 @@ func TestHookPostCommitUsesResolvedRepoConfigID(t *testing.T) {
 	}
 	if u.events[0].AuthSubject != "user:123" || u.events[0].RepoKey != "github.com/acme/repo" {
 		t.Fatalf("event binding = %+v", u.events[0])
+	}
+}
+
+func TestHookResolveUsesReporterTokenWithoutOAuthLoginState(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/attribution/repos/resolve-remote" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer reporter-token" {
+			t.Fatalf("authorization = %q", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": client.RepoEligibilityResponse{
+			Eligible: true, RepoConfigID: 123, RepoKey: "github.com/acme/repo",
+		}})
+	}))
+	defer server.Close()
+	if err := reporting.Save("", &reporting.Config{
+		Version: 1, InstallationID: "11111111-1111-4111-8111-111111111111",
+		ServerURL: server.URL, AuthSubject: "user:123", ReporterToken: "reporter-token", ReportingEnabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	originalAPIClient := apiClient
+	apiClient = nil
+	t.Cleanup(func() { apiClient = originalAPIClient })
+
+	gitCtx, err := hooks.DetectGitContext(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	execCtx, ok := resolveHookExecutionContext(context.Background(), gitCtx)
+	if !ok || execCtx.RepoConfigID != 123 || execCtx.AuthSubject != "user:123" {
+		t.Fatalf("execution context = %+v, ok=%t", execCtx, ok)
 	}
 }
 

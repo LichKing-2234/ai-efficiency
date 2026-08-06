@@ -7,6 +7,90 @@ export interface User {
   relay_auth_password?: string | null
 }
 
+export interface AttributionTokens {
+  fresh_input_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
+  output_tokens: number
+  reasoning_tokens: number
+  provider_total_tokens: number
+  processed_total_tokens: number
+}
+
+export interface AttributionPRReport {
+  id: number
+  scm_pr_id: number
+  title: string
+  url: string
+  status: string
+}
+
+export interface AttributionCommitReport {
+  commit_sha: string
+  lineage: string
+  tokens: number
+  inherited_tokens: number
+  inherited_from_commit_shas: string[]
+  prs: AttributionPRReport[]
+}
+
+export interface AttributionRepoReport {
+  repo_config_id: number
+  repo_key: string
+  name: string
+  tokens: number
+  processed_tokens: number
+  unbound_tokens: number
+  shared_tokens: number
+  inherited_tokens: number
+  worktrees: string[]
+  branches: string[]
+  commits: AttributionCommitReport[]
+}
+
+export interface AttributionEvidenceReport {
+  measured_buckets: number
+  historical_advisory_buckets: number
+  invalid_buckets: number
+  exact_correlation_buckets: number
+  advisory_correlation_buckets: number
+  unlinked_correlation_buckets: number
+}
+
+export interface AttributionBucketReport {
+  bucket_id: string
+  tool: string
+  model: string
+  observed_start_at: string
+  observed_end_at: string
+  tokens: AttributionTokens
+  request_count: number
+  token_quality: string
+  request_correlation_quality: string
+  request_id_coverage_count: number
+  coverage_gap_count: number
+  allocation_status: string
+  allocation_revision: number
+  allocation_revision_reason: string
+}
+
+export interface AttributionReport {
+  from: string
+  to: string
+  measured_tokens: number
+  bound_tokens: number
+  unbound_tokens: number
+  shared_tokens: number
+  historical_advisory_tokens: number
+  allocation_rate: number
+  coverage_gap_count: number
+  request_id_coverage_count: number
+  bucket_count: number
+  repositories: AttributionRepoReport[]
+  evidence: AttributionEvidenceReport
+  buckets: AttributionBucketReport[]
+}
+
 export interface SCMProvider {
   id: number
   name: string

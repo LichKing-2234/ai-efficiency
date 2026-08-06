@@ -58,6 +58,11 @@ const router = createRouter({
       component: () => import('@/views/repos/RepoListView.vue'),
     },
     {
+      path: '/attribution',
+      name: 'Attribution',
+      component: () => import('@/views/attribution/AttributionView.vue'),
+    },
+    {
       path: '/events',
       name: 'Events',
       component: () => import('@/views/events/EventsView.vue'),

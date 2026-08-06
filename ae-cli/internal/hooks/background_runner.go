@@ -74,13 +74,27 @@ func RunPendingSyncTask(ctx context.Context, execCtx ExecutionContext, uploader 
 	}
 
 	syncClient := h.attributionSyncClient()
-	if syncClient == nil {
+	compactClient := h.compactAttributionSyncClient()
+	if compactClient != nil {
+		if err := (&attributionlocal.CompactSyncEngine{Client: compactClient}).Run(ctx, attributionlocal.CompactRunOptions{
+			InstallationID: compactInstallationID(uploader),
+			RepoRoot:       execCtx.RepoRoot,
+			RepoConfigID:   execCtx.RepoConfigID,
+			RepoKey:        execCtx.RepoKey,
+			WorkspaceID:    execCtx.WorkspaceID,
+			CommitSHA:      task.TriggerCommitSHA,
+			Branch:         task.TriggerBranch,
+			TriggerKind:    task.TriggerKind,
+			Cutoff:         task.LastRequestedAt,
+		}); err != nil {
+			_ = MarkSyncTaskFailure(task, time.Now().UTC(), err)
+			return err
+		}
+	} else if syncClient == nil {
 		err := fmt.Errorf("sync uploader does not expose tool usage client")
 		_ = MarkSyncTaskFailure(task, time.Now().UTC(), err)
 		return err
-	}
-
-	if err := runAttributionSync(ctx, attributionlocal.RunOptions{
+	} else if err := runAttributionSync(ctx, attributionlocal.RunOptions{
 		WorkspaceRoot: execCtx.RepoRoot,
 		WorkspaceID:   execCtx.WorkspaceID,
 		ServerURL:     execCtx.ServerURL,
@@ -105,4 +119,15 @@ func RunPendingSyncTask(ctx context.Context, execCtx ExecutionContext, uploader 
 		return MarkSyncTaskSuccess(current, time.Now().UTC())
 	}
 	return DeleteSyncTask(execCtx.WorkspaceID)
+}
+
+type compactInstallationIdentity interface {
+	InstallationID() string
+}
+
+func compactInstallationID(uploader Uploader) string {
+	if identified, ok := uploader.(compactInstallationIdentity); ok {
+		return identified.InstallationID()
+	}
+	return ""
 }

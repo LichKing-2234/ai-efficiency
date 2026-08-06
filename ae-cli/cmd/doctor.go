@@ -15,6 +15,7 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/doctorcheck"
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
+	"github.com/ai-efficiency/ae-cli/internal/reporting"
 	"github.com/ai-efficiency/ae-cli/internal/toolconfig"
 	"github.com/spf13/cobra"
 )
@@ -73,6 +74,7 @@ var doctorCmd = &cobra.Command{
 		} else {
 			return fmt.Errorf("stat attribution state dir: %w", err)
 		}
+		printCompactReportingStatus(out)
 		if status, err := hooks.StatusForRepo(hooks.StatusOptions{CWD: ctx.repoRoot, Binding: currentHookBinding()}); err == nil {
 			printHookStatus(out, status)
 		}
@@ -99,6 +101,41 @@ var doctorCmd = &cobra.Command{
 		printRecentFailures(out, doctorRecentFailures)
 		return nil
 	},
+}
+
+func printCompactReportingStatus(out io.Writer) {
+	style := doctorOutputStyleFor(out)
+	config, err := reporting.Load("")
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintf(out, "Compact reporting: not enrolled %s (login again or run 'ae-cli attribution enable')\n", style.badge("warn"))
+			return
+		}
+		fmt.Fprintf(out, "Compact reporting: unavailable %s (%v)\n", style.badge(doctorcheck.StatusFailed), err)
+		return
+	}
+	credentialStatus := doctorcheck.StatusOK
+	credentialLabel := "available"
+	if strings.TrimSpace(config.ReporterToken) == "" || strings.TrimSpace(config.OTLPToken) == "" {
+		credentialStatus = doctorcheck.StatusFailed
+		credentialLabel = "degraded"
+	}
+	reportingStatus := "disabled"
+	if config.ReportingEnabled {
+		reportingStatus = "enabled"
+	}
+	otelStatus := "disabled"
+	if config.OTelEnabled {
+		otelStatus = "enabled"
+	}
+	fmt.Fprintf(out, "Compact reporting\n")
+	fmt.Fprintf(out, "  Installation: %s\n", config.InstallationID)
+	fmt.Fprintf(out, "  Credentials:  %s %s\n", credentialLabel, style.badge(credentialStatus))
+	fmt.Fprintf(out, "  Buckets:      %s %s\n", reportingStatus, style.badge(enabledStatus(config.ReportingEnabled)))
+	fmt.Fprintf(out, "  Codex OTLP:   %s %s\n", otelStatus, style.badge(enabledStatus(config.OTelEnabled)))
+	if state, stateErr := attributionlocal.LoadCompactState(); stateErr == nil {
+		fmt.Fprintf(out, "  Pending:      buckets=%d triggers=%d\n", len(state.Pending), len(state.Triggers))
+	}
 }
 
 // printRecentFailures renders the most recent non-2xx Codex Responses requests

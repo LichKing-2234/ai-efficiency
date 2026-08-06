@@ -9,6 +9,12 @@ import (
 // AdminSubscriptionJob is the predicate function for adminsubscriptionjob builders.
 type AdminSubscriptionJob func(*sql.Selector)
 
+// AttributionAllocationRevision is the predicate function for attributionallocationrevision builders.
+type AttributionAllocationRevision func(*sql.Selector)
+
+// AttributionUsageBucket is the predicate function for attributionusagebucket builders.
+type AttributionUsageBucket func(*sql.Selector)
+
 // CommitCheckpoint is the predicate function for commitcheckpoint builders.
 type CommitCheckpoint func(*sql.Selector)
 
@@ -65,6 +71,9 @@ type RelayProvider func(*sql.Selector)
 
 // RepoConfig is the predicate function for repoconfig builders.
 type RepoConfig func(*sql.Selector)
+
+// ReportingInstallation is the predicate function for reportinginstallation builders.
+type ReportingInstallation func(*sql.Selector)
 
 // ScmProvider is the predicate function for scmprovider builders.
 type ScmProvider func(*sql.Selector)

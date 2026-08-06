@@ -30,6 +30,9 @@ type SyncTask struct {
 	AuthSubject        string         `json:"auth_subject"`
 	RepoConfigID       int            `json:"repo_config_id"`
 	RepoKey            string         `json:"repo_key"`
+	TriggerKind        string         `json:"trigger_kind,omitempty"`
+	TriggerCommitSHA   string         `json:"trigger_commit_sha,omitempty"`
+	TriggerBranch      string         `json:"trigger_branch,omitempty"`
 	Status             SyncTaskStatus `json:"status"`
 	LastRequestedAt    time.Time      `json:"last_requested_at"`
 	LastStartedAt      *time.Time     `json:"last_started_at,omitempty"`

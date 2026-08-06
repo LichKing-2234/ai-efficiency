@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
+	"github.com/ai-efficiency/backend/ent/attributionallocationrevision"
+	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
@@ -25,6 +27,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestevent"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
+	"github.com/ai-efficiency/backend/ent/reportinginstallation"
 	"github.com/ai-efficiency/backend/ent/schema"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/ent/systemsetting"
@@ -70,6 +73,106 @@ func init() {
 	adminsubscriptionjob.DefaultUpdatedAt = adminsubscriptionjobDescUpdatedAt.Default.(func() time.Time)
 	// adminsubscriptionjob.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	adminsubscriptionjob.UpdateDefaultUpdatedAt = adminsubscriptionjobDescUpdatedAt.UpdateDefault.(func() time.Time)
+	attributionallocationrevisionFields := schema.AttributionAllocationRevision{}.Fields()
+	_ = attributionallocationrevisionFields
+	// attributionallocationrevisionDescRevisionID is the schema descriptor for revision_id field.
+	attributionallocationrevisionDescRevisionID := attributionallocationrevisionFields[0].Descriptor()
+	// attributionallocationrevision.RevisionIDValidator is a validator for the "revision_id" field. It is called by the builders before save.
+	attributionallocationrevision.RevisionIDValidator = attributionallocationrevisionDescRevisionID.Validators[0].(func(string) error)
+	// attributionallocationrevisionDescReason is the schema descriptor for reason field.
+	attributionallocationrevisionDescReason := attributionallocationrevisionFields[3].Descriptor()
+	// attributionallocationrevision.ReasonValidator is a validator for the "reason" field. It is called by the builders before save.
+	attributionallocationrevision.ReasonValidator = attributionallocationrevisionDescReason.Validators[0].(func(string) error)
+	// attributionallocationrevisionDescEvidenceVersion is the schema descriptor for evidence_version field.
+	attributionallocationrevisionDescEvidenceVersion := attributionallocationrevisionFields[4].Descriptor()
+	// attributionallocationrevision.EvidenceVersionValidator is a validator for the "evidence_version" field. It is called by the builders before save.
+	attributionallocationrevision.EvidenceVersionValidator = attributionallocationrevisionDescEvidenceVersion.Validators[0].(func(string) error)
+	// attributionallocationrevisionDescRestatedAt is the schema descriptor for restated_at field.
+	attributionallocationrevisionDescRestatedAt := attributionallocationrevisionFields[6].Descriptor()
+	// attributionallocationrevision.DefaultRestatedAt holds the default value on creation for the restated_at field.
+	attributionallocationrevision.DefaultRestatedAt = attributionallocationrevisionDescRestatedAt.Default.(func() time.Time)
+	// attributionallocationrevisionDescCreatedAt is the schema descriptor for created_at field.
+	attributionallocationrevisionDescCreatedAt := attributionallocationrevisionFields[7].Descriptor()
+	// attributionallocationrevision.DefaultCreatedAt holds the default value on creation for the created_at field.
+	attributionallocationrevision.DefaultCreatedAt = attributionallocationrevisionDescCreatedAt.Default.(func() time.Time)
+	attributionusagebucketFields := schema.AttributionUsageBucket{}.Fields()
+	_ = attributionusagebucketFields
+	// attributionusagebucketDescBucketID is the schema descriptor for bucket_id field.
+	attributionusagebucketDescBucketID := attributionusagebucketFields[0].Descriptor()
+	// attributionusagebucket.BucketIDValidator is a validator for the "bucket_id" field. It is called by the builders before save.
+	attributionusagebucket.BucketIDValidator = attributionusagebucketDescBucketID.Validators[0].(func(string) error)
+	// attributionusagebucketDescSchemaVersion is the schema descriptor for schema_version field.
+	attributionusagebucketDescSchemaVersion := attributionusagebucketFields[1].Descriptor()
+	// attributionusagebucket.DefaultSchemaVersion holds the default value on creation for the schema_version field.
+	attributionusagebucket.DefaultSchemaVersion = attributionusagebucketDescSchemaVersion.Default.(int)
+	// attributionusagebucketDescTool is the schema descriptor for tool field.
+	attributionusagebucketDescTool := attributionusagebucketFields[4].Descriptor()
+	// attributionusagebucket.ToolValidator is a validator for the "tool" field. It is called by the builders before save.
+	attributionusagebucket.ToolValidator = attributionusagebucketDescTool.Validators[0].(func(string) error)
+	// attributionusagebucketDescFreshInputTokens is the schema descriptor for fresh_input_tokens field.
+	attributionusagebucketDescFreshInputTokens := attributionusagebucketFields[10].Descriptor()
+	// attributionusagebucket.DefaultFreshInputTokens holds the default value on creation for the fresh_input_tokens field.
+	attributionusagebucket.DefaultFreshInputTokens = attributionusagebucketDescFreshInputTokens.Default.(int64)
+	// attributionusagebucketDescCacheReadTokens is the schema descriptor for cache_read_tokens field.
+	attributionusagebucketDescCacheReadTokens := attributionusagebucketFields[11].Descriptor()
+	// attributionusagebucket.DefaultCacheReadTokens holds the default value on creation for the cache_read_tokens field.
+	attributionusagebucket.DefaultCacheReadTokens = attributionusagebucketDescCacheReadTokens.Default.(int64)
+	// attributionusagebucketDescCacheWriteTokens is the schema descriptor for cache_write_tokens field.
+	attributionusagebucketDescCacheWriteTokens := attributionusagebucketFields[12].Descriptor()
+	// attributionusagebucket.DefaultCacheWriteTokens holds the default value on creation for the cache_write_tokens field.
+	attributionusagebucket.DefaultCacheWriteTokens = attributionusagebucketDescCacheWriteTokens.Default.(int64)
+	// attributionusagebucketDescOutputTokens is the schema descriptor for output_tokens field.
+	attributionusagebucketDescOutputTokens := attributionusagebucketFields[13].Descriptor()
+	// attributionusagebucket.DefaultOutputTokens holds the default value on creation for the output_tokens field.
+	attributionusagebucket.DefaultOutputTokens = attributionusagebucketDescOutputTokens.Default.(int64)
+	// attributionusagebucketDescReasoningTokens is the schema descriptor for reasoning_tokens field.
+	attributionusagebucketDescReasoningTokens := attributionusagebucketFields[14].Descriptor()
+	// attributionusagebucket.DefaultReasoningTokens holds the default value on creation for the reasoning_tokens field.
+	attributionusagebucket.DefaultReasoningTokens = attributionusagebucketDescReasoningTokens.Default.(int64)
+	// attributionusagebucketDescProviderTotalTokens is the schema descriptor for provider_total_tokens field.
+	attributionusagebucketDescProviderTotalTokens := attributionusagebucketFields[15].Descriptor()
+	// attributionusagebucket.DefaultProviderTotalTokens holds the default value on creation for the provider_total_tokens field.
+	attributionusagebucket.DefaultProviderTotalTokens = attributionusagebucketDescProviderTotalTokens.Default.(int64)
+	// attributionusagebucketDescProcessedTotalTokens is the schema descriptor for processed_total_tokens field.
+	attributionusagebucketDescProcessedTotalTokens := attributionusagebucketFields[16].Descriptor()
+	// attributionusagebucket.DefaultProcessedTotalTokens holds the default value on creation for the processed_total_tokens field.
+	attributionusagebucket.DefaultProcessedTotalTokens = attributionusagebucketDescProcessedTotalTokens.Default.(int64)
+	// attributionusagebucketDescRequestCount is the schema descriptor for request_count field.
+	attributionusagebucketDescRequestCount := attributionusagebucketFields[17].Descriptor()
+	// attributionusagebucket.DefaultRequestCount holds the default value on creation for the request_count field.
+	attributionusagebucket.DefaultRequestCount = attributionusagebucketDescRequestCount.Default.(int)
+	// attributionusagebucketDescSourceEventCount is the schema descriptor for source_event_count field.
+	attributionusagebucketDescSourceEventCount := attributionusagebucketFields[18].Descriptor()
+	// attributionusagebucket.DefaultSourceEventCount holds the default value on creation for the source_event_count field.
+	attributionusagebucket.DefaultSourceEventCount = attributionusagebucketDescSourceEventCount.Default.(int)
+	// attributionusagebucketDescSourceDigest is the schema descriptor for source_digest field.
+	attributionusagebucketDescSourceDigest := attributionusagebucketFields[19].Descriptor()
+	// attributionusagebucket.SourceDigestValidator is a validator for the "source_digest" field. It is called by the builders before save.
+	attributionusagebucket.SourceDigestValidator = attributionusagebucketDescSourceDigest.Validators[0].(func(string) error)
+	// attributionusagebucketDescImmutableDigest is the schema descriptor for immutable_digest field.
+	attributionusagebucketDescImmutableDigest := attributionusagebucketFields[20].Descriptor()
+	// attributionusagebucket.ImmutableDigestValidator is a validator for the "immutable_digest" field. It is called by the builders before save.
+	attributionusagebucket.ImmutableDigestValidator = attributionusagebucketDescImmutableDigest.Validators[0].(func(string) error)
+	// attributionusagebucketDescExtractorVersion is the schema descriptor for extractor_version field.
+	attributionusagebucketDescExtractorVersion := attributionusagebucketFields[21].Descriptor()
+	// attributionusagebucket.ExtractorVersionValidator is a validator for the "extractor_version" field. It is called by the builders before save.
+	attributionusagebucket.ExtractorVersionValidator = attributionusagebucketDescExtractorVersion.Validators[0].(func(string) error)
+	// attributionusagebucketDescNormalizationVersion is the schema descriptor for normalization_version field.
+	attributionusagebucketDescNormalizationVersion := attributionusagebucketFields[22].Descriptor()
+	// attributionusagebucket.DefaultNormalizationVersion holds the default value on creation for the normalization_version field.
+	attributionusagebucket.DefaultNormalizationVersion = attributionusagebucketDescNormalizationVersion.Default.(int)
+	// attributionusagebucketDescRequestIDCoverageCount is the schema descriptor for request_id_coverage_count field.
+	attributionusagebucketDescRequestIDCoverageCount := attributionusagebucketFields[25].Descriptor()
+	// attributionusagebucket.DefaultRequestIDCoverageCount holds the default value on creation for the request_id_coverage_count field.
+	attributionusagebucket.DefaultRequestIDCoverageCount = attributionusagebucketDescRequestIDCoverageCount.Default.(int)
+	// attributionusagebucketDescCoverageGapCount is the schema descriptor for coverage_gap_count field.
+	attributionusagebucketDescCoverageGapCount := attributionusagebucketFields[27].Descriptor()
+	// attributionusagebucket.DefaultCoverageGapCount holds the default value on creation for the coverage_gap_count field.
+	attributionusagebucket.DefaultCoverageGapCount = attributionusagebucketDescCoverageGapCount.Default.(int)
+	// attributionusagebucketDescCreatedAt is the schema descriptor for created_at field.
+	attributionusagebucketDescCreatedAt := attributionusagebucketFields[28].Descriptor()
+	// attributionusagebucket.DefaultCreatedAt holds the default value on creation for the created_at field.
+	attributionusagebucket.DefaultCreatedAt = attributionusagebucketDescCreatedAt.Default.(func() time.Time)
 	commitcheckpointFields := schema.CommitCheckpoint{}.Fields()
 	_ = commitcheckpointFields
 	// commitcheckpointDescWorkspaceID is the schema descriptor for workspace_id field.
@@ -678,6 +781,38 @@ func init() {
 	repoconfig.DefaultUpdatedAt = repoconfigDescUpdatedAt.Default.(func() time.Time)
 	// repoconfig.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	repoconfig.UpdateDefaultUpdatedAt = repoconfigDescUpdatedAt.UpdateDefault.(func() time.Time)
+	reportinginstallationFields := schema.ReportingInstallation{}.Fields()
+	_ = reportinginstallationFields
+	// reportinginstallationDescInstallationID is the schema descriptor for installation_id field.
+	reportinginstallationDescInstallationID := reportinginstallationFields[0].Descriptor()
+	// reportinginstallation.InstallationIDValidator is a validator for the "installation_id" field. It is called by the builders before save.
+	reportinginstallation.InstallationIDValidator = reportinginstallationDescInstallationID.Validators[0].(func(string) error)
+	// reportinginstallationDescReporterTokenHash is the schema descriptor for reporter_token_hash field.
+	reportinginstallationDescReporterTokenHash := reportinginstallationFields[4].Descriptor()
+	// reportinginstallation.ReporterTokenHashValidator is a validator for the "reporter_token_hash" field. It is called by the builders before save.
+	reportinginstallation.ReporterTokenHashValidator = reportinginstallationDescReporterTokenHash.Validators[0].(func(string) error)
+	// reportinginstallationDescOtlpTokenHash is the schema descriptor for otlp_token_hash field.
+	reportinginstallationDescOtlpTokenHash := reportinginstallationFields[5].Descriptor()
+	// reportinginstallation.OtlpTokenHashValidator is a validator for the "otlp_token_hash" field. It is called by the builders before save.
+	reportinginstallation.OtlpTokenHashValidator = reportinginstallationDescOtlpTokenHash.Validators[0].(func(string) error)
+	// reportinginstallationDescReportingEnabled is the schema descriptor for reporting_enabled field.
+	reportinginstallationDescReportingEnabled := reportinginstallationFields[6].Descriptor()
+	// reportinginstallation.DefaultReportingEnabled holds the default value on creation for the reporting_enabled field.
+	reportinginstallation.DefaultReportingEnabled = reportinginstallationDescReportingEnabled.Default.(bool)
+	// reportinginstallationDescOtelEnabled is the schema descriptor for otel_enabled field.
+	reportinginstallationDescOtelEnabled := reportinginstallationFields[7].Descriptor()
+	// reportinginstallation.DefaultOtelEnabled holds the default value on creation for the otel_enabled field.
+	reportinginstallation.DefaultOtelEnabled = reportinginstallationDescOtelEnabled.Default.(bool)
+	// reportinginstallationDescCreatedAt is the schema descriptor for created_at field.
+	reportinginstallationDescCreatedAt := reportinginstallationFields[10].Descriptor()
+	// reportinginstallation.DefaultCreatedAt holds the default value on creation for the created_at field.
+	reportinginstallation.DefaultCreatedAt = reportinginstallationDescCreatedAt.Default.(func() time.Time)
+	// reportinginstallationDescUpdatedAt is the schema descriptor for updated_at field.
+	reportinginstallationDescUpdatedAt := reportinginstallationFields[11].Descriptor()
+	// reportinginstallation.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	reportinginstallation.DefaultUpdatedAt = reportinginstallationDescUpdatedAt.Default.(func() time.Time)
+	// reportinginstallation.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	reportinginstallation.UpdateDefaultUpdatedAt = reportinginstallationDescUpdatedAt.UpdateDefault.(func() time.Time)
 	scmproviderFields := schema.ScmProvider{}.Fields()
 	_ = scmproviderFields
 	// scmproviderDescName is the schema descriptor for name field.

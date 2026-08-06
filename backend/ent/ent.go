@@ -13,6 +13,8 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
+	"github.com/ai-efficiency/backend/ent/attributionallocationrevision"
+	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
@@ -32,6 +34,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestevent"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
+	"github.com/ai-efficiency/backend/ent/reportinginstallation"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/ent/systemsetting"
 	"github.com/ai-efficiency/backend/ent/teamusageratemultiplieraudit"
@@ -99,6 +102,8 @@ func checkColumn(table, column string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
 			adminsubscriptionjob.Table:          adminsubscriptionjob.ValidColumn,
+			attributionallocationrevision.Table: attributionallocationrevision.ValidColumn,
+			attributionusagebucket.Table:        attributionusagebucket.ValidColumn,
 			commitcheckpoint.Table:              commitcheckpoint.ValidColumn,
 			commitrewrite.Table:                 commitrewrite.ValidColumn,
 			credential.Table:                    credential.ValidColumn,
@@ -118,6 +123,7 @@ func checkColumn(table, column string) error {
 			quotaresetrequestevent.Table:        quotaresetrequestevent.ValidColumn,
 			relayprovider.Table:                 relayprovider.ValidColumn,
 			repoconfig.Table:                    repoconfig.ValidColumn,
+			reportinginstallation.Table:         reportinginstallation.ValidColumn,
 			scmprovider.Table:                   scmprovider.ValidColumn,
 			systemsetting.Table:                 systemsetting.ValidColumn,
 			teamusageratemultiplieraudit.Table:  teamusageratemultiplieraudit.ValidColumn,

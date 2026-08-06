@@ -385,9 +385,10 @@ describe('production auth navigation hydration', () => {
     expect(replaceSpy).not.toHaveBeenCalled()
 
     identityB.resolve(userResponse(alice))
-    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/'))
+    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/repos'))
     expect(replaceSpy).not.toHaveBeenCalled()
     expect(pushSpy).toHaveBeenCalledTimes(1)
+    expect(pushSpy).toHaveBeenCalledWith('/repos')
   })
 
   it('keeps OAuth current when superseded Admin hydration resolves non-admin', async () => {

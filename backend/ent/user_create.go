@@ -10,8 +10,10 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
+	"github.com/ai-efficiency/backend/ent/reportinginstallation"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
 )
@@ -196,6 +198,36 @@ func (uc *UserCreate) AddToolUsageEvents(t ...*ToolUsageEvent) *UserCreate {
 		ids[i] = t[i].ID
 	}
 	return uc.AddToolUsageEventIDs(ids...)
+}
+
+// AddReportingInstallationIDs adds the "reporting_installations" edge to the ReportingInstallation entity by IDs.
+func (uc *UserCreate) AddReportingInstallationIDs(ids ...int) *UserCreate {
+	uc.mutation.AddReportingInstallationIDs(ids...)
+	return uc
+}
+
+// AddReportingInstallations adds the "reporting_installations" edges to the ReportingInstallation entity.
+func (uc *UserCreate) AddReportingInstallations(r ...*ReportingInstallation) *UserCreate {
+	ids := make([]int, len(r))
+	for i := range r {
+		ids[i] = r[i].ID
+	}
+	return uc.AddReportingInstallationIDs(ids...)
+}
+
+// AddAttributionUsageBucketIDs adds the "attribution_usage_buckets" edge to the AttributionUsageBucket entity by IDs.
+func (uc *UserCreate) AddAttributionUsageBucketIDs(ids ...int) *UserCreate {
+	uc.mutation.AddAttributionUsageBucketIDs(ids...)
+	return uc
+}
+
+// AddAttributionUsageBuckets adds the "attribution_usage_buckets" edges to the AttributionUsageBucket entity.
+func (uc *UserCreate) AddAttributionUsageBuckets(a ...*AttributionUsageBucket) *UserCreate {
+	ids := make([]int, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return uc.AddAttributionUsageBucketIDs(ids...)
 }
 
 // Mutation returns the UserMutation object of the builder.
@@ -398,6 +430,38 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := uc.mutation.ReportingInstallationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReportingInstallationsTable,
+			Columns: []string{user.ReportingInstallationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(reportinginstallation.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := uc.mutation.AttributionUsageBucketsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AttributionUsageBucketsTable,
+			Columns: []string{user.AttributionUsageBucketsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(attributionusagebucket.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

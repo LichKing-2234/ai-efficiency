@@ -128,6 +128,11 @@ describe('Router Guards', () => {
     expect(eventsRoute?.path).toBe('/events')
   })
 
+  it('includes the compact attribution route', () => {
+    const attributionRoute = router.getRoutes().find((route) => route.name === 'Attribution')
+    expect(attributionRoute?.path).toBe('/attribution')
+  })
+
   it('includes user route in the router', () => {
     const userRoute = router.getRoutes().find((route) => route.name === 'User')
     expect(userRoute?.path).toBe('/user')

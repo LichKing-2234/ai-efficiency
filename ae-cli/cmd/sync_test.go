@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
+	"github.com/ai-efficiency/ae-cli/internal/reporting"
 )
 
 func ptrTimeValue(t time.Time) *time.Time {
@@ -75,6 +77,36 @@ func TestDoctorPrintsPendingSyncTask(t *testing.T) {
 		if !bytes.Contains(buf.Bytes(), []byte(want)) {
 			t.Fatalf("doctor output missing %q:\n%s", want, output)
 		}
+	}
+}
+
+func TestDoctorPrintsCompactReportingStatusWithoutCredentials(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := reporting.Save("", &reporting.Config{
+		Version: 1, InstallationID: "installation-test", ServerURL: "https://ae.example.com",
+		ReporterToken: "reporter-secret", OTLPToken: "otlp-secret", ReportingEnabled: true, OTelEnabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := attributionlocal.SaveJSON(attributionlocal.CompactStatePath(), attributionlocal.CompactState{
+		Version: 2, EnabledAt: time.Now().UTC(), SeenAtoms: map[string]bool{},
+		Pending: []attributionlocal.CompactPending{{}}, Triggers: []attributionlocal.CompactTrigger{{}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	printCompactReportingStatus(&output)
+	for _, want := range []string{
+		"Compact reporting", "Installation: installation-test", "Credentials:  available [ok]",
+		"Buckets:      enabled [ok]", "Codex OTLP:   enabled [ok]", "Pending:      buckets=1 triggers=1",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("compact doctor output missing %q:\n%s", want, output.String())
+		}
+	}
+	if strings.Contains(output.String(), "reporter-secret") || strings.Contains(output.String(), "otlp-secret") {
+		t.Fatalf("compact doctor leaked credentials: %s", output.String())
 	}
 }
 

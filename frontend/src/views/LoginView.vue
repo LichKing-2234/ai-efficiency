@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { getAuthOptions } from '@/api/auth'
 import AuthShell from '@/components/AuthShell.vue'
 import { useI18n } from '@/i18n'
+import { resolveSafeRedirect } from '@/router/authGuard'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -42,9 +43,7 @@ async function handleLogin() {
   loading.value = true
   try {
     await auth.login({ username: username.value, password: password.value, source: source.value })
-    const raw = (router.currentRoute.value.query.redirect as string) || '/'
-    const redirect = raw.startsWith('/') && !raw.startsWith('//') ? raw : '/'
-    router.push(redirect)
+    router.push(resolveSafeRedirect(router.currentRoute.value.query.redirect))
   } catch (e: any) {
     error.value = e.response?.data?.message || t('auth.loginFailed')
   } finally {
@@ -58,7 +57,7 @@ async function handleDevLogin() {
   try {
     const user = await auth.devLogin()
     if (user) {
-      router.push('/')
+      router.push(resolveSafeRedirect(router.currentRoute.value.query.redirect))
     }
   } catch (e: any) {
     error.value = e.response?.data?.message || t('auth.devLoginFailed')

@@ -15,6 +15,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	_ "github.com/ai-efficiency/backend/ent/runtime"
 	"github.com/ai-efficiency/backend/internal/attribution"
+	"github.com/ai-efficiency/backend/internal/attributionledger"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/buildinfo"
 	"github.com/ai-efficiency/backend/internal/checkpoint"
@@ -523,6 +524,7 @@ func main() {
 			RequestLogger:            logger,
 			RequestObserver:          metrics.RequestObserver(),
 			WebVitalsHandler:         webVitalsHandler,
+			AttributionCorrelation:   attributionledger.NewCorrelationStore(redisStore, cfg.Redis.Namespace),
 			Release:                  versionInfo.Version,
 			RequestTimeout:           time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
 		},

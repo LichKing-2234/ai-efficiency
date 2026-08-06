@@ -11,9 +11,11 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/predicate"
+	"github.com/ai-efficiency/backend/ent/reportinginstallation"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
 )
@@ -245,6 +247,36 @@ func (uu *UserUpdate) AddToolUsageEvents(t ...*ToolUsageEvent) *UserUpdate {
 	return uu.AddToolUsageEventIDs(ids...)
 }
 
+// AddReportingInstallationIDs adds the "reporting_installations" edge to the ReportingInstallation entity by IDs.
+func (uu *UserUpdate) AddReportingInstallationIDs(ids ...int) *UserUpdate {
+	uu.mutation.AddReportingInstallationIDs(ids...)
+	return uu
+}
+
+// AddReportingInstallations adds the "reporting_installations" edges to the ReportingInstallation entity.
+func (uu *UserUpdate) AddReportingInstallations(r ...*ReportingInstallation) *UserUpdate {
+	ids := make([]int, len(r))
+	for i := range r {
+		ids[i] = r[i].ID
+	}
+	return uu.AddReportingInstallationIDs(ids...)
+}
+
+// AddAttributionUsageBucketIDs adds the "attribution_usage_buckets" edge to the AttributionUsageBucket entity by IDs.
+func (uu *UserUpdate) AddAttributionUsageBucketIDs(ids ...int) *UserUpdate {
+	uu.mutation.AddAttributionUsageBucketIDs(ids...)
+	return uu
+}
+
+// AddAttributionUsageBuckets adds the "attribution_usage_buckets" edges to the AttributionUsageBucket entity.
+func (uu *UserUpdate) AddAttributionUsageBuckets(a ...*AttributionUsageBucket) *UserUpdate {
+	ids := make([]int, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return uu.AddAttributionUsageBucketIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (uu *UserUpdate) Mutation() *UserMutation {
 	return uu.mutation
@@ -311,6 +343,48 @@ func (uu *UserUpdate) RemoveToolUsageEvents(t ...*ToolUsageEvent) *UserUpdate {
 		ids[i] = t[i].ID
 	}
 	return uu.RemoveToolUsageEventIDs(ids...)
+}
+
+// ClearReportingInstallations clears all "reporting_installations" edges to the ReportingInstallation entity.
+func (uu *UserUpdate) ClearReportingInstallations() *UserUpdate {
+	uu.mutation.ClearReportingInstallations()
+	return uu
+}
+
+// RemoveReportingInstallationIDs removes the "reporting_installations" edge to ReportingInstallation entities by IDs.
+func (uu *UserUpdate) RemoveReportingInstallationIDs(ids ...int) *UserUpdate {
+	uu.mutation.RemoveReportingInstallationIDs(ids...)
+	return uu
+}
+
+// RemoveReportingInstallations removes "reporting_installations" edges to ReportingInstallation entities.
+func (uu *UserUpdate) RemoveReportingInstallations(r ...*ReportingInstallation) *UserUpdate {
+	ids := make([]int, len(r))
+	for i := range r {
+		ids[i] = r[i].ID
+	}
+	return uu.RemoveReportingInstallationIDs(ids...)
+}
+
+// ClearAttributionUsageBuckets clears all "attribution_usage_buckets" edges to the AttributionUsageBucket entity.
+func (uu *UserUpdate) ClearAttributionUsageBuckets() *UserUpdate {
+	uu.mutation.ClearAttributionUsageBuckets()
+	return uu
+}
+
+// RemoveAttributionUsageBucketIDs removes the "attribution_usage_buckets" edge to AttributionUsageBucket entities by IDs.
+func (uu *UserUpdate) RemoveAttributionUsageBucketIDs(ids ...int) *UserUpdate {
+	uu.mutation.RemoveAttributionUsageBucketIDs(ids...)
+	return uu
+}
+
+// RemoveAttributionUsageBuckets removes "attribution_usage_buckets" edges to AttributionUsageBucket entities.
+func (uu *UserUpdate) RemoveAttributionUsageBuckets(a ...*AttributionUsageBucket) *UserUpdate {
+	ids := make([]int, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return uu.RemoveAttributionUsageBucketIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -569,6 +643,96 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if uu.mutation.ReportingInstallationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReportingInstallationsTable,
+			Columns: []string{user.ReportingInstallationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(reportinginstallation.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uu.mutation.RemovedReportingInstallationsIDs(); len(nodes) > 0 && !uu.mutation.ReportingInstallationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReportingInstallationsTable,
+			Columns: []string{user.ReportingInstallationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(reportinginstallation.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uu.mutation.ReportingInstallationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReportingInstallationsTable,
+			Columns: []string{user.ReportingInstallationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(reportinginstallation.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if uu.mutation.AttributionUsageBucketsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AttributionUsageBucketsTable,
+			Columns: []string{user.AttributionUsageBucketsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(attributionusagebucket.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uu.mutation.RemovedAttributionUsageBucketsIDs(); len(nodes) > 0 && !uu.mutation.AttributionUsageBucketsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AttributionUsageBucketsTable,
+			Columns: []string{user.AttributionUsageBucketsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(attributionusagebucket.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uu.mutation.AttributionUsageBucketsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AttributionUsageBucketsTable,
+			Columns: []string{user.AttributionUsageBucketsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(attributionusagebucket.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if n, err = sqlgraph.UpdateNodes(ctx, uu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{user.Label}
@@ -803,6 +967,36 @@ func (uuo *UserUpdateOne) AddToolUsageEvents(t ...*ToolUsageEvent) *UserUpdateOn
 	return uuo.AddToolUsageEventIDs(ids...)
 }
 
+// AddReportingInstallationIDs adds the "reporting_installations" edge to the ReportingInstallation entity by IDs.
+func (uuo *UserUpdateOne) AddReportingInstallationIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.AddReportingInstallationIDs(ids...)
+	return uuo
+}
+
+// AddReportingInstallations adds the "reporting_installations" edges to the ReportingInstallation entity.
+func (uuo *UserUpdateOne) AddReportingInstallations(r ...*ReportingInstallation) *UserUpdateOne {
+	ids := make([]int, len(r))
+	for i := range r {
+		ids[i] = r[i].ID
+	}
+	return uuo.AddReportingInstallationIDs(ids...)
+}
+
+// AddAttributionUsageBucketIDs adds the "attribution_usage_buckets" edge to the AttributionUsageBucket entity by IDs.
+func (uuo *UserUpdateOne) AddAttributionUsageBucketIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.AddAttributionUsageBucketIDs(ids...)
+	return uuo
+}
+
+// AddAttributionUsageBuckets adds the "attribution_usage_buckets" edges to the AttributionUsageBucket entity.
+func (uuo *UserUpdateOne) AddAttributionUsageBuckets(a ...*AttributionUsageBucket) *UserUpdateOne {
+	ids := make([]int, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return uuo.AddAttributionUsageBucketIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (uuo *UserUpdateOne) Mutation() *UserMutation {
 	return uuo.mutation
@@ -869,6 +1063,48 @@ func (uuo *UserUpdateOne) RemoveToolUsageEvents(t ...*ToolUsageEvent) *UserUpdat
 		ids[i] = t[i].ID
 	}
 	return uuo.RemoveToolUsageEventIDs(ids...)
+}
+
+// ClearReportingInstallations clears all "reporting_installations" edges to the ReportingInstallation entity.
+func (uuo *UserUpdateOne) ClearReportingInstallations() *UserUpdateOne {
+	uuo.mutation.ClearReportingInstallations()
+	return uuo
+}
+
+// RemoveReportingInstallationIDs removes the "reporting_installations" edge to ReportingInstallation entities by IDs.
+func (uuo *UserUpdateOne) RemoveReportingInstallationIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.RemoveReportingInstallationIDs(ids...)
+	return uuo
+}
+
+// RemoveReportingInstallations removes "reporting_installations" edges to ReportingInstallation entities.
+func (uuo *UserUpdateOne) RemoveReportingInstallations(r ...*ReportingInstallation) *UserUpdateOne {
+	ids := make([]int, len(r))
+	for i := range r {
+		ids[i] = r[i].ID
+	}
+	return uuo.RemoveReportingInstallationIDs(ids...)
+}
+
+// ClearAttributionUsageBuckets clears all "attribution_usage_buckets" edges to the AttributionUsageBucket entity.
+func (uuo *UserUpdateOne) ClearAttributionUsageBuckets() *UserUpdateOne {
+	uuo.mutation.ClearAttributionUsageBuckets()
+	return uuo
+}
+
+// RemoveAttributionUsageBucketIDs removes the "attribution_usage_buckets" edge to AttributionUsageBucket entities by IDs.
+func (uuo *UserUpdateOne) RemoveAttributionUsageBucketIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.RemoveAttributionUsageBucketIDs(ids...)
+	return uuo
+}
+
+// RemoveAttributionUsageBuckets removes "attribution_usage_buckets" edges to AttributionUsageBucket entities.
+func (uuo *UserUpdateOne) RemoveAttributionUsageBuckets(a ...*AttributionUsageBucket) *UserUpdateOne {
+	ids := make([]int, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return uuo.RemoveAttributionUsageBucketIDs(ids...)
 }
 
 // Where appends a list predicates to the UserUpdate builder.
@@ -1150,6 +1386,96 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if uuo.mutation.ReportingInstallationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReportingInstallationsTable,
+			Columns: []string{user.ReportingInstallationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(reportinginstallation.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uuo.mutation.RemovedReportingInstallationsIDs(); len(nodes) > 0 && !uuo.mutation.ReportingInstallationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReportingInstallationsTable,
+			Columns: []string{user.ReportingInstallationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(reportinginstallation.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uuo.mutation.ReportingInstallationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReportingInstallationsTable,
+			Columns: []string{user.ReportingInstallationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(reportinginstallation.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if uuo.mutation.AttributionUsageBucketsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AttributionUsageBucketsTable,
+			Columns: []string{user.AttributionUsageBucketsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(attributionusagebucket.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uuo.mutation.RemovedAttributionUsageBucketsIDs(); len(nodes) > 0 && !uuo.mutation.AttributionUsageBucketsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AttributionUsageBucketsTable,
+			Columns: []string{user.AttributionUsageBucketsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(attributionusagebucket.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uuo.mutation.AttributionUsageBucketsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AttributionUsageBucketsTable,
+			Columns: []string{user.AttributionUsageBucketsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(attributionusagebucket.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

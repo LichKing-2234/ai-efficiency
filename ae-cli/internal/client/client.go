@@ -405,13 +405,21 @@ func (c *Client) EnsureRepoFromRemote(ctx context.Context, remoteURL, branch str
 }
 
 func (c *Client) ResolveRepoFromRemote(ctx context.Context, req ResolveRepoRequest) (*RepoEligibilityResponse, error) {
+	return c.resolveRepoFromRemote(ctx, "/api/v1/repos/resolve-remote", req)
+}
+
+func (c *Client) ResolveAttributionRepoFromRemote(ctx context.Context, req ResolveRepoRequest) (*RepoEligibilityResponse, error) {
+	return c.resolveRepoFromRemote(ctx, "/api/v1/attribution/repos/resolve-remote", req)
+}
+
+func (c *Client) resolveRepoFromRemote(ctx context.Context, path string, req ResolveRepoRequest) (*RepoEligibilityResponse, error) {
 	if req.ClientCacheVersion == "" {
 		req.ClientCacheVersion = RepoEligibilityVersion
 	}
 	var envelope struct {
 		Data RepoEligibilityResponse `json:"data"`
 	}
-	if err := c.postJSON(ctx, "/api/v1/repos/resolve-remote", req, &envelope); err != nil {
+	if err := c.postJSON(ctx, path, req, &envelope); err != nil {
 		return nil, err
 	}
 	return &envelope.Data, nil

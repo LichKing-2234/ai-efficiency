@@ -110,7 +110,7 @@ function handleNavigate() {
       </RouterLink>
 
       <RouterLink
-        to="/events"
+        to="/attribution"
         class="flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
         active-class="bg-gray-800"
         @click="handleNavigate"
@@ -119,7 +119,7 @@ function handleNavigate() {
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
             d="M9 17v-6m3 6V7m3 10v-4m3 8H6a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2v14a2 2 0 01-2 2z" />
         </svg>
-        {{ t('nav.usageRecords') }}
+        {{ t('nav.attribution') }}
       </RouterLink>
 
       <div class="mt-5 border-t border-gray-800 pt-4">

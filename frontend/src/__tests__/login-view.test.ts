@@ -21,6 +21,7 @@ function createTestRouter(initialPath = '/login') {
       { path: '/login', component: LoginView },
       { path: '/', component: { template: '<div>Dashboard</div>' } },
       { path: '/repos', component: { template: '<div>Repos</div>' } },
+      { path: '/attribution', component: { template: '<div>Attribution</div>' } },
     ],
   })
 }
@@ -189,6 +190,31 @@ describe('LoginView', () => {
       auth_source: 'dev',
     })
     expect(router.currentRoute.value.path).toBe('/')
+  })
+
+  it('dev login returns to a safe requested attribution route', async () => {
+    const { devLogin: mockDevLogin, getMe: mockGetMe } = await import('@/api/auth')
+    ;(mockDevLogin as any).mockResolvedValue({
+      data: { data: { token: 'dev-token', refresh_token: 'dev-refresh' } },
+    })
+    ;(mockGetMe as any).mockResolvedValue({
+      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin' } },
+    })
+
+    const router = createTestRouter()
+    await router.push('/login?redirect=/attribution')
+    await router.isReady()
+
+    const wrapper = mount(LoginView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    const devBtn = wrapper.findAll('button').find((button) => button.text().includes('Dev Login'))
+    await devBtn!.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/attribution')
   })
 
   // --- New tests for uncovered lines ---

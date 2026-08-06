@@ -11,6 +11,7 @@ import (
 	"github.com/ai-efficiency/ae-cli/config"
 	"github.com/ai-efficiency/ae-cli/internal/auth"
 	"github.com/ai-efficiency/ae-cli/internal/buildinfo"
+	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/spf13/cobra"
 )
 
@@ -20,6 +21,7 @@ var (
 	loginFlow          = auth.Login
 	loginDeviceFlow    = auth.LoginDevice
 	headlessBrowserEnv = auth.IsHeadlessLinux
+	enrollAfterLogin   = ensureReportingEnrollment
 )
 
 var loginCmd = &cobra.Command{
@@ -73,6 +75,9 @@ var loginCmd = &cobra.Command{
 
 		if err := auth.WriteToken(tokenPath, token); err != nil {
 			return fmt.Errorf("save token: %w", err)
+		}
+		if _, enrollErr := enrollAfterLogin(context.Background(), client.New(serverURL, result.AccessToken), serverURL, token.AuthSubject); enrollErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: login succeeded, but reporting installation enrollment is degraded: %v\n", enrollErr)
 		}
 
 		fmt.Fprintf(cmd.OutOrStdout(), "Login successful! Token saved to %s\n", tokenPath)

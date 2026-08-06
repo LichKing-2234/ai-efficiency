@@ -48,7 +48,9 @@ def clear_auth_routes(page):
         "**/api/v1/auth/me",
         "**/api/v1/efficiency/dashboard",
         "**/api/v1/user/providers",
+        "**/api/v1/work-items/counts",
         "**/api/v1/events**",
+        "**/api/v1/attribution/report**",
         "**/api/v1/scm-providers**",
         "**/api/v1/admin/providers**",
         "**/api/v1/admin/credentials**",
@@ -124,6 +126,81 @@ def mock_auth_endpoints(page, role="admin"):
         status=200,
         content_type="application/json",
         body=json.dumps({"code": 0, "data": {"providers": []}}),
+    ))
+    page.route("**/api/v1/work-items/counts", lambda route: route.fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps({"code": 0, "data": {}}),
+    ))
+    page.route("**/api/v1/attribution/report**", lambda route: route.fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps({
+            "code": 0,
+            "data": {
+                "from": "2026-08-01T00:00:00Z",
+                "to": "2026-08-08T00:00:00Z",
+                "measured_tokens": 190000,
+                "bound_tokens": 162000,
+                "unbound_tokens": 28000,
+                "shared_tokens": 16000,
+                "historical_advisory_tokens": 0,
+                "allocation_rate": 0.8526,
+                "coverage_gap_count": 2,
+                "request_id_coverage_count": 2,
+                "bucket_count": 4,
+                "evidence": {
+                    "measured_buckets": 4,
+                    "historical_advisory_buckets": 0,
+                    "invalid_buckets": 0,
+                    "exact_correlation_buckets": 0,
+                    "advisory_correlation_buckets": 2,
+                    "unlinked_correlation_buckets": 2,
+                },
+                "repositories": [
+                    {
+                        "repo_config_id": 0,
+                        "repo_key": "unbound",
+                        "name": "Unbound",
+                        "tokens": 0,
+                        "processed_tokens": 12000,
+                        "unbound_tokens": 12000,
+                        "shared_tokens": 0,
+                        "inherited_tokens": 0,
+                        "worktrees": None,
+                        "branches": None,
+                        "commits": None,
+                    },
+                    {
+                        "repo_config_id": 7,
+                        "repo_key": "github.com/example-org/ai-efficiency",
+                        "name": "example-org/ai-efficiency",
+                        "tokens": 162000,
+                        "processed_tokens": 162000,
+                        "unbound_tokens": 0,
+                        "shared_tokens": 16000,
+                        "inherited_tokens": 0,
+                        "worktrees": ["worktree/ai-efficiency"],
+                        "branches": ["codex/poc-token-attribution"],
+                        "commits": [{
+                            "commit_sha": "3f4a9d9f25c582ea38b7347c7498692fb01022ab",
+                            "lineage": "",
+                            "tokens": 162000,
+                            "inherited_tokens": 0,
+                            "inherited_from_commit_shas": [],
+                            "prs": [{
+                                "id": 42,
+                                "scm_pr_id": 42,
+                                "title": "Compact Codex attribution",
+                                "url": "https://example.com/pull/42",
+                                "status": "open",
+                            }],
+                        }],
+                    },
+                ],
+                "buckets": [],
+            },
+        }),
     ))
     page.route("**/api/v1/events**", lambda route: route.fulfill(
         status=200,
@@ -319,6 +396,72 @@ def test_user_role_admin_users_blocked(page):
     do_logout(page)
 
 
+def test_attribution_route_layout_and_responsive_style(page):
+    """Protected attribution returns after login and renders inside the shared shell."""
+    print("\n🧪 Attribution — Route, Layout, and Responsive Style")
+
+    mock_auth_endpoints(page, role="admin")
+    page.goto(f"{BASE}/login")
+    page.evaluate("localStorage.clear()")
+
+    page_errors = []
+    on_page_error = lambda error: page_errors.append(str(error))
+    page.on("pageerror", on_page_error)
+
+    page.goto(f"{BASE}/attribution")
+    page.wait_for_load_state("networkidle")
+    report("Protected attribution preserves the requested redirect",
+           page.url == f"{BASE}/login?redirect=/attribution",
+           f"URL: {page.url}")
+
+    page.locator("button:has-text('Dev Login')").click()
+    page.wait_for_timeout(600)
+    report("Dev login returns to /attribution",
+           page.url == f"{BASE}/attribution",
+           f"URL: {page.url}")
+
+    if page.url != f"{BASE}/attribution":
+        page.goto(f"{BASE}/attribution")
+    page.wait_for_timeout(800)
+
+    sidebar = page.locator("aside")
+    attribution_link = page.locator("aside a[href='/attribution']")
+    report("Attribution uses the shared desktop app shell",
+           sidebar.count() == 1 and sidebar.is_visible(),
+           f"aside count: {sidebar.count()}")
+    report("Attribution navigation is active",
+           attribution_link.count() == 1 and "bg-gray-800" in (attribution_link.get_attribute("class") or ""),
+           f"class: {attribution_link.get_attribute('class') if attribution_link.count() else None}")
+    report("Attribution ledger renders compact API data",
+           page.locator("[data-testid='attribution-measured']").count() == 1
+           and page.locator("[data-testid='attribution-measured']").inner_text() == "190,000")
+    report("Nullable compact collections do not crash the page",
+           not page_errors,
+           repr(page_errors))
+    report("Attribution page has no desktop horizontal overflow",
+           page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"))
+    report("Attribution refresh uses the platform primary color",
+           page.locator("[data-testid='attribution-refresh']").count() == 1
+           and page.locator("[data-testid='attribution-refresh']").evaluate(
+               "element => getComputedStyle(element).backgroundColor"
+           ) == "rgb(14, 116, 144)")
+    screenshot(page, "05_attribution_desktop")
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.reload()
+    page.wait_for_timeout(800)
+    report("Attribution uses the shared mobile header",
+           page.locator("header button:has-text('Menu')").is_visible())
+    report("Attribution page has no mobile horizontal overflow",
+           page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"))
+    screenshot(page, "06_attribution_mobile")
+
+    page.remove_listener("pageerror", on_page_error)
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.evaluate("localStorage.clear()")
+    clear_auth_routes(page)
+
+
 def run_all():
     global passed, failed
 
@@ -326,13 +469,14 @@ def run_all():
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(viewport={"width": 1280, "height": 800})
+        context = browser.new_context(viewport={"width": 1440, "height": 900})
         page = context.new_page()
 
         tests = [
             ("Admin (Dev Login) Settings", lambda: test_dev_login_settings(page)),
             ("User Role Settings Blocked", lambda: test_user_role_settings_blocked(page)),
             ("User Role /admin/users Blocked", lambda: test_user_role_admin_users_blocked(page)),
+            ("Attribution Route and Layout", lambda: test_attribution_route_layout_and_responsive_style(page)),
         ]
 
         for name, fn in tests:
