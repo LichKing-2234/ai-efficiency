@@ -60,6 +60,99 @@ func (fn directoryRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, e
 	return fn(req)
 }
 
+func TestExecutorAppliesDepartmentMetadataAppendOverrideToExactTarget(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, []map[string]any{
+			{"id": "department-root", "name": "Department Root", "leader_ids": []string{"member-existing"}},
+			{"id": "department-sibling", "name": "Department Sibling", "leader_ids": []string{"member-sibling"}},
+		})
+	}))
+	defer server.Close()
+
+	raw := `
+version: 1
+scope: full_company
+auth:
+  type: header
+  header: X-Directory-API-Key
+  credential_ref: directory_api_key
+limits:
+  timeout_seconds: 5
+  max_response_bytes: 1048576
+  max_items: 100
+steps:
+  - id: departments
+    request:
+      method: GET
+      url: ` + server.URL + `
+    extract:
+      items: $
+    map:
+      department:
+        external_id: $.id
+        name: $.name
+        metadata:
+          representative_external_ids: $.leader_ids
+overrides:
+  departments:
+    - external_id: department-root
+      metadata:
+        representative_external_ids:
+          append:
+            - member-existing
+            - member-added
+`
+	cfg, err := ParseDSL(raw)
+	if err != nil {
+		t.Fatalf("ParseDSL: %v", err)
+	}
+	result, err := NewExecutor(ExecutorOptions{AllowHTTP: true}).Execute(
+		context.Background(),
+		cfg,
+		staticCredentialResolver{"directory_api_key": "test-directory-secret"},
+	)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if got, want := fmt.Sprint(result.Departments[0].Metadata["representative_external_ids"]), "[member-existing member-added]"; got != want {
+		t.Fatalf("root representatives = %s, want %s", got, want)
+	}
+	if got, want := fmt.Sprint(result.Departments[1].Metadata["representative_external_ids"]), "[member-sibling]"; got != want {
+		t.Fatalf("sibling representatives = %s, want %s", got, want)
+	}
+}
+
+func TestExecutorRejectsDepartmentMetadataOverrideForMissingTarget(t *testing.T) {
+	injected := &http.Client{Transport: directoryRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"data":{"departments":[{"id":"department-root","name":"Department Root"}]}}`)),
+			Request:    req,
+		}, nil
+	})}
+	cfg, err := ParseDSL(validDirectoryDSL)
+	if err != nil {
+		t.Fatalf("ParseDSL: %v", err)
+	}
+	cfg.Steps = cfg.Steps[:1]
+	cfg.Overrides.Departments = []DepartmentOverride{{
+		ExternalID: "department-missing",
+		Metadata: map[string]MetadataAppendOperation{
+			"representative_external_ids": {Append: []string{"member-added"}},
+		},
+	}}
+
+	_, err = NewExecutor(ExecutorOptions{HTTPClient: injected}).Execute(
+		context.Background(),
+		cfg,
+		staticCredentialResolver{"directory_api_key": "test-directory-secret"},
+	)
+	if err == nil || !strings.Contains(err.Error(), `department metadata override target "department-missing" was not mapped`) {
+		t.Fatalf("Execute error = %v, want missing override target", err)
+	}
+}
+
 func TestExecutorRunsForeachAndNormalizesMembers(t *testing.T) {
 	var seenAuthHeaders []string
 	var seenDepartmentQueries []string

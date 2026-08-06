@@ -380,6 +380,14 @@ steps:
         status: $.status
         metadata:
           leader_department_ids: $.leader_department_ids
+
+overrides:
+  departments:
+    - external_id: department-root
+      metadata:
+        representative_external_ids:
+          append:
+            - member-added
 ```
 
 Supported first-version features:
@@ -399,6 +407,13 @@ Supported first-version features:
   and `member.metadata.leader_department_ids`. The known notification identity
   field is `member.metadata.wecom_userid`; WeCom-backed sources must map it
   explicitly when quota-reset robot notifications should mention approvers.
+- Department metadata overrides: optional `overrides.departments` entries may
+  append synthetic or administrator-supplied directory member external ids to
+  `department.metadata.representative_external_ids` for one exact mapped
+  department. Overrides run after all source steps, preserve mapped values, and
+  trim and deduplicate the combined list. They do not modify sibling or child
+  departments and do not support replacement, removal, arbitrary metadata
+  keys, filters, or executable expressions.
 - Templates: `{{ item.field }}` and `{{ source.field }}` only. In a `foreach` member step, `item` refers to the member row and `source` refers to the outer iteration item, such as the department row.
 - Limits: timeout, response size, and total item caps
 
@@ -439,6 +454,14 @@ Validation rules:
     secret, password, credential, and API-key variants are rejected in request
     headers/query parameters. Secret-looking values such as bearer/basic/token
     credentials, JWT-shaped strings, and common API-token prefixes are rejected.
+13. `overrides.departments` accepts at most 100 unique, non-empty
+    `external_id` targets. Each target supports only
+    `metadata.representative_external_ids.append`, with 1 to 100 non-blank
+    string values. These values are directory member external ids, not display
+    names or email addresses.
+14. Every department override target must exist in the complete mapped
+    department result. Preview and apply fail closed when a target is absent;
+    the executor must not silently skip, create, or fuzzy-match a department.
 
 ## Backend API
 
@@ -856,12 +879,15 @@ Apply behavior:
    running apply run.
 2. Mark run `running`.
 3. Execute steps with limits.
-4. Normalize departments/members.
-5. Validate required member emails.
-6. Compute diff.
-7. Resolve the effective department hierarchy in bounded, deterministic,
+4. Apply validated department metadata append overrides to the complete mapped
+   department result. A missing exact target fails the run before any facts are
+   persisted.
+5. Normalize departments/members.
+6. Validate required member emails.
+7. Compute diff.
+8. Resolve the effective department hierarchy in bounded, deterministic,
    non-recursive application work before mutating current facts.
-8. In a transaction, replace current facts for the source, including each
+9. In a transaction, replace current facts for the source, including each
    department's effective parent, mark the run
    `completed` or `completed_with_warnings`, and set source `last_run_id` /
    `last_successful_run_id`, then advance the work-item counts revision before
@@ -937,6 +963,9 @@ Partial offboarding failure must be visible in the UI so admins can retry or inv
 8. Token revocation is local and does not depend on LDAP availability.
 9. Directory sync must not write to external organization systems.
 10. Directory sync must not mutate relay subscriptions.
+11. Department overrides are bounded, exact-target, append-only operations for
+    representative external ids. They cannot execute code, select departments
+    dynamically, or mutate source response data outside the normalized result.
 
 ## Testing
 
@@ -945,6 +974,12 @@ Backend tests:
 - DSL schema validation accepts valid templates and rejects unsupported features.
 - Credential references resolve without exposing secret values in run summaries.
 - Executor handles simple GET, header auth, query templates, foreach, JSONPath extraction including root-array responses, and limits.
+- Executor applies representative external-id overrides only to the named
+  mapped department, preserves existing values, trims and deduplicates appended
+  values, leaves sibling departments unchanged, and rejects missing targets.
+- DSL validation rejects duplicate or blank department targets, unsupported
+  metadata keys, empty or blank append values, more than 100 overrides, and
+  more than 100 append values per override.
 - Preview run does not update `directory_members`.
 - Failed apply run does not change current facts or offboarding candidates.
 - Successful full-company apply updates departments, members, and `last_successful_run_id`.

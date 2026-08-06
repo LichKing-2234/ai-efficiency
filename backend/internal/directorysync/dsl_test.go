@@ -2,6 +2,7 @@ package directorysync
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -76,6 +77,132 @@ func TestValidateDSLAcceptsRootArrayExtractPath(t *testing.T) {
 	})
 	if len(issues) != 0 {
 		t.Fatalf("issues = %#v, want none", issues)
+	}
+}
+
+func TestParseAndValidateDSLAcceptsDepartmentMetadataAppendOverride(t *testing.T) {
+	cfg, err := ParseDSL(validDirectoryDSL + `
+overrides:
+  departments:
+    - external_id: department-root
+      metadata:
+        representative_external_ids:
+          append:
+            - member-added
+`)
+	if err != nil {
+		t.Fatalf("ParseDSL: %v", err)
+	}
+	issues := ValidateDSL(context.Background(), cfg, func(_ context.Context, ref string) bool {
+		return ref == "directory_api_key"
+	})
+	if len(issues) != 0 {
+		t.Fatalf("issues = %#v, want none", issues)
+	}
+	if got := cfg.Overrides.Departments[0].Metadata["representative_external_ids"].Append; len(got) != 1 || got[0] != "member-added" {
+		t.Fatalf("override append = %#v, want member-added", got)
+	}
+}
+
+func TestValidateDSLRejectsInvalidDepartmentMetadataAppendOverrides(t *testing.T) {
+	tests := []struct {
+		name      string
+		mutate    func(*DSL)
+		wantIssue string
+	}{
+		{
+			name: "missing department external id",
+			mutate: func(cfg *DSL) {
+				cfg.Overrides.Departments[0].ExternalID = ""
+			},
+			wantIssue: "overrides.departments[0].external_id",
+		},
+		{
+			name: "duplicate department target",
+			mutate: func(cfg *DSL) {
+				cfg.Overrides.Departments = append(cfg.Overrides.Departments, cfg.Overrides.Departments[0])
+			},
+			wantIssue: "overrides.departments[1].external_id",
+		},
+		{
+			name: "missing metadata operation",
+			mutate: func(cfg *DSL) {
+				cfg.Overrides.Departments[0].Metadata = nil
+			},
+			wantIssue: "overrides.departments[0].metadata",
+		},
+		{
+			name: "unsupported metadata key",
+			mutate: func(cfg *DSL) {
+				cfg.Overrides.Departments[0].Metadata = map[string]MetadataAppendOperation{
+					"unrecognized_flag": {Append: []string{"value"}},
+				}
+			},
+			wantIssue: "overrides.departments[0].metadata.unrecognized_flag",
+		},
+		{
+			name: "empty append",
+			mutate: func(cfg *DSL) {
+				cfg.Overrides.Departments[0].Metadata["representative_external_ids"] = MetadataAppendOperation{}
+			},
+			wantIssue: "overrides.departments[0].metadata.representative_external_ids.append",
+		},
+		{
+			name: "blank append value",
+			mutate: func(cfg *DSL) {
+				cfg.Overrides.Departments[0].Metadata["representative_external_ids"] = MetadataAppendOperation{Append: []string{" "}}
+			},
+			wantIssue: "overrides.departments[0].metadata.representative_external_ids.append[0]",
+		},
+		{
+			name: "too many department overrides",
+			mutate: func(cfg *DSL) {
+				cfg.Overrides.Departments = make([]DepartmentOverride, 101)
+				for index := range cfg.Overrides.Departments {
+					cfg.Overrides.Departments[index] = DepartmentOverride{
+						ExternalID: fmt.Sprintf("department-%d", index),
+						Metadata: map[string]MetadataAppendOperation{
+							"representative_external_ids": {Append: []string{"member-added"}},
+						},
+					}
+				}
+			},
+			wantIssue: "overrides.departments",
+		},
+		{
+			name: "too many append values",
+			mutate: func(cfg *DSL) {
+				cfg.Overrides.Departments[0].Metadata["representative_external_ids"] = MetadataAppendOperation{Append: make([]string, 101)}
+				for index := range cfg.Overrides.Departments[0].Metadata["representative_external_ids"].Append {
+					cfg.Overrides.Departments[0].Metadata["representative_external_ids"].Append[index] = fmt.Sprintf("member-%d", index)
+				}
+			},
+			wantIssue: "overrides.departments[0].metadata.representative_external_ids.append",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := ParseDSL(validDirectoryDSL + `
+overrides:
+  departments:
+    - external_id: department-root
+      metadata:
+        representative_external_ids:
+          append:
+            - member-added
+`)
+			if err != nil {
+				t.Fatalf("ParseDSL: %v", err)
+			}
+			tt.mutate(cfg)
+			issues := ValidateDSL(context.Background(), cfg, func(_ context.Context, ref string) bool {
+				return ref == "directory_api_key"
+			})
+			if !containsIssuePath(issues, tt.wantIssue) {
+				t.Fatalf("issues = %#v, want path %q", issues, tt.wantIssue)
+			}
+		})
 	}
 }
 

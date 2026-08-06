@@ -61,6 +61,19 @@
 
 **Follow-up Status (2026-07-02, multi-department membership):** Complete. Directory members now keep canonical email identity plus explicit membership links, Admin Users department filters/counts use those links, and backend/frontend verification has passed.
 
+**Follow-up Status (2026-08-06, department metadata append overrides):** Complete. The public seam is `directorysync.Executor.Execute`: a validated DSL override appends and deduplicates representative external ids only on the named existing department, while missing targets fail closed. Focused and full backend tests plus diff/data-hygiene checks passed. No production DSL update, release, or apply run was part of this follow-up.
+
+## 2026-08-06 Follow-up: Department Metadata Append Overrides
+
+- [x] Add a failing executor test for a synthetic root-department representative append override.
+- [x] Add DSL parsing and validation coverage for bounded department metadata append overrides.
+- [x] Implement exact-target metadata append and deduplication after source mapping.
+- [x] Reject duplicate override targets, empty metadata appends, and missing mapped departments.
+- [x] Update the current Directory Sync contract and project architecture documentation.
+- [x] Verify `cd backend && go test -count=1 ./internal/directorysync`.
+- [x] Verify `cd backend && go test -count=1 ./...`.
+- [x] Verify `git diff --check` and scan the diff for real user/company data.
+
 ## 2026-07-02 Follow-up: Multi-department Membership
 
 - [x] Add current membership persistence through `directory_member_departments`.
