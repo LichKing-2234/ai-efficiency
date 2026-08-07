@@ -694,6 +694,77 @@ func TestServicePreviewDoesNotUpdateFactsAndApplyDoes(t *testing.T) {
 	}
 }
 
+func TestServicePreviewAndApplyFailClosedForMissingMetadataOverrideTarget(t *testing.T) {
+	tests := []struct {
+		name      string
+		override  string
+		wantError string
+	}{
+		{
+			name: "department target",
+			override: `
+overrides:
+  departments:
+    - external_id: department-missing
+      metadata:
+        representative_external_ids:
+          remove:
+            - member-alice
+`,
+			wantError: `department metadata override target "department-missing" was not mapped`,
+		},
+		{
+			name: "member target",
+			override: `
+overrides:
+  members:
+    - external_id: member-missing
+      metadata:
+        leader_department_ids:
+          remove:
+            - department-alpha
+`,
+			wantError: `member metadata override target "member-missing" was not mapped`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := testdb.Open(t)
+			ctx := context.Background()
+			server := newDirectoryServiceTestServer(t, []string{"alice@example.com"})
+			source := createDirectoryTestSource(t, ctx, client, server.URL)
+			client.DirectorySource.UpdateOneID(source.ID).SetDsl(source.Dsl + tt.override).ExecX(ctx)
+			svc := NewService(client, ServiceOptions{
+				Executor:    NewExecutor(ExecutorOptions{AllowHTTP: true}),
+				Credentials: staticCredentialResolver{"directory_api_key": "test-directory-secret"},
+			})
+
+			for _, mode := range []string{"preview", "apply"} {
+				t.Run(mode, func(t *testing.T) {
+					run, err := svc.RunSource(ctx, source.ID, mode, "manual")
+					if err != nil {
+						t.Fatalf("RunSource: %v", err)
+					}
+					_, err = svc.ExecuteRun(ctx, run.ID)
+					if err == nil || !strings.Contains(err.Error(), tt.wantError) {
+						t.Fatalf("ExecuteRun error = %v, want %q", err, tt.wantError)
+					}
+					if reloaded := client.DirectorySyncRun.GetX(ctx, run.ID); reloaded.Status != directorysyncrun.StatusFailed {
+						t.Fatalf("run status = %q, want failed", reloaded.Status)
+					}
+					if count := client.DirectoryDepartment.Query().Where(directorydepartment.SourceIDEQ(source.ID)).CountX(ctx); count != 0 {
+						t.Fatalf("department facts after failed %s = %d, want 0", mode, count)
+					}
+					if count := client.DirectoryMember.Query().Where(directorymember.SourceIDEQ(source.ID)).CountX(ctx); count != 0 {
+						t.Fatalf("member facts after failed %s = %d, want 0", mode, count)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestCompleteApplyPersistsVersionedEffectiveHierarchy(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()

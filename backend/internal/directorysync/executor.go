@@ -147,32 +147,93 @@ func (e *Executor) Execute(ctx context.Context, cfg *DSL, credentials Credential
 		}
 		stepItems[step.ID] = extractedForStep
 	}
-	if err := applyDepartmentOverrides(result.Departments, cfg.Overrides.Departments); err != nil {
+	if err := applyMetadataOverrides(result, cfg.Overrides); err != nil {
 		return nil, err
 	}
 
 	return result, nil
 }
 
-func applyDepartmentOverrides(departments []DepartmentRecord, overrides []DepartmentOverride) error {
-	departmentIndexes := make(map[string]int, len(departments))
-	for index, department := range departments {
-		departmentIndexes[strings.TrimSpace(department.ExternalID)] = index
+func applyMetadataOverrides(result *ExecutionResult, overrides OverrideConfig) error {
+	departmentTargets := make(map[string]struct{}, len(overrides.Departments))
+	for _, override := range overrides.Departments {
+		departmentTargets[strings.TrimSpace(override.ExternalID)] = struct{}{}
 	}
-	for _, override := range overrides {
-		index, ok := departmentIndexes[strings.TrimSpace(override.ExternalID)]
-		if !ok {
+	departmentIndexes := make(map[string]int, len(departmentTargets))
+	for index, department := range result.Departments {
+		externalID := strings.TrimSpace(department.ExternalID)
+		if _, targeted := departmentTargets[externalID]; !targeted {
+			continue
+		}
+		if _, exists := departmentIndexes[externalID]; exists {
+			return fmt.Errorf("department metadata override target %q was mapped more than once", externalID)
+		}
+		departmentIndexes[externalID] = index
+	}
+	memberTargets := make(map[string]struct{}, len(overrides.Members))
+	for _, override := range overrides.Members {
+		memberTargets[strings.TrimSpace(override.ExternalID)] = struct{}{}
+	}
+	memberIndexes := make(map[string]int, len(memberTargets))
+	for index, member := range result.Members {
+		externalID := strings.TrimSpace(member.ExternalID)
+		if _, targeted := memberTargets[externalID]; !targeted {
+			continue
+		}
+		if _, exists := memberIndexes[externalID]; exists {
+			return fmt.Errorf("member metadata override target %q was mapped more than once", externalID)
+		}
+		memberIndexes[externalID] = index
+	}
+
+	// Resolve every exact target before mutating the mapped result so a missing
+	// target fails the entire preview/apply closed.
+	for _, override := range overrides.Departments {
+		if _, ok := departmentIndexes[strings.TrimSpace(override.ExternalID)]; !ok {
 			return fmt.Errorf("department metadata override target %q was not mapped", strings.TrimSpace(override.ExternalID))
 		}
-		if departments[index].Metadata == nil {
-			departments[index].Metadata = map[string]any{}
-		}
-		for key, operation := range override.Metadata {
-			current := compactStringValues(departments[index].Metadata[key])
-			departments[index].Metadata[key] = appendUniqueStrings(current, operation.Append...)
+	}
+	for _, override := range overrides.Members {
+		if _, ok := memberIndexes[strings.TrimSpace(override.ExternalID)]; !ok {
+			return fmt.Errorf("member metadata override target %q was not mapped", strings.TrimSpace(override.ExternalID))
 		}
 	}
+
+	for _, override := range overrides.Departments {
+		index := departmentIndexes[strings.TrimSpace(override.ExternalID)]
+		if result.Departments[index].Metadata == nil {
+			result.Departments[index].Metadata = map[string]any{}
+		}
+		applyMetadataOperations(result.Departments[index].Metadata, override.Metadata)
+	}
+	for _, override := range overrides.Members {
+		index := memberIndexes[strings.TrimSpace(override.ExternalID)]
+		if result.Members[index].Metadata == nil {
+			result.Members[index].Metadata = map[string]any{}
+		}
+		applyMetadataOperations(result.Members[index].Metadata, override.Metadata)
+	}
 	return nil
+}
+
+func applyMetadataOperations(metadata map[string]any, operations map[string]MetadataOverrideOperation) {
+	for key, operation := range operations {
+		current := compactStringValues(metadata[key])
+		removed := make(map[string]struct{}, len(operation.Remove))
+		for _, value := range operation.Remove {
+			value = strings.TrimSpace(value)
+			if value != "" {
+				removed[value] = struct{}{}
+			}
+		}
+		kept := current[:0]
+		for _, value := range current {
+			if _, shouldRemove := removed[value]; !shouldRemove {
+				kept = append(kept, value)
+			}
+		}
+		metadata[key] = appendUniqueStrings(kept, operation.Append...)
+	}
 }
 
 func cloneMap(in map[string]any) map[string]any {
