@@ -168,6 +168,38 @@ func TestBuildOverviewDepartmentTrendComparesSecondLevelForSingleRepresentedRoot
 	}
 }
 
+func TestBuildOverviewDepartmentTrendExpandsChildrenAfterExtraneousRootIsRemoved(t *testing.T) {
+	teamOneTokens := int64(100)
+	teamTwoTokens := int64(300)
+	extraneousTokens := int64(10)
+	departments := []representativescope.DepartmentScope{
+		{ExternalID: "department-primary", Name: "Department Primary", DisplayPath: "Department Primary", ChildCount: 2},
+		{ExternalID: "department-primary-team-one", ParentExternalID: stringPtr("department-primary"), Name: "Team One", DisplayPath: "Department Primary / Team One", Depth: 1},
+		{ExternalID: "department-primary-team-two", ParentExternalID: stringPtr("department-primary"), Name: "Team Two", DisplayPath: "Department Primary / Team Two", Depth: 1},
+		{ExternalID: "department-extraneous", Name: "Department Extraneous", DisplayPath: "Department Extraneous"},
+	}
+	subjects := []representativescope.Subject{
+		{SubjectType: "member", UserID: 1, DepartmentExternalID: "department-primary-team-one", RelayUserID: intPtr(1001)},
+		{SubjectType: "member", UserID: 2, DepartmentExternalID: "department-primary-team-two", RelayUserID: intPtr(1002)},
+		{SubjectType: "member", UserID: 3, DepartmentExternalID: "department-extraneous", RelayUserID: intPtr(1003)},
+	}
+	pointsByUser := map[int64][]relay.UsageTrendPoint{
+		1001: {{Date: "2026-06-28", ActualCost: 1, TotalTokens: &teamOneTokens}},
+		1002: {{Date: "2026-06-28", ActualCost: 3, TotalTokens: &teamTwoTokens}},
+		1003: {{Date: "2026-06-28", ActualCost: 0.1, TotalTokens: &extraneousTokens}},
+	}
+
+	before := BuildOverviewDepartmentTrend(departments, []string{"department-primary", "department-extraneous"}, subjects, pointsByUser)
+	if got := []string{before.Series[1].DepartmentExternalID, before.Series[2].DepartmentExternalID}; !reflect.DeepEqual(got, []string{"department-primary", "department-extraneous"}) {
+		t.Fatalf("multi-root comparison ids = %#v, want represented roots", got)
+	}
+
+	after := BuildOverviewDepartmentTrend(departments[:3], []string{"department-primary"}, subjects[:2], pointsByUser)
+	if got := []string{after.Series[1].DepartmentExternalID, after.Series[2].DepartmentExternalID}; !reflect.DeepEqual(got, []string{"department-primary-team-two", "department-primary-team-one"}) {
+		t.Fatalf("single-root comparison ids = %#v, want primary child departments", got)
+	}
+}
+
 func TestBuildOverviewDepartmentTrendSkipsSingleWrapperBeforeComparingSecondLevel(t *testing.T) {
 	cloudTokens := int64(100)
 	dataTokens := int64(300)

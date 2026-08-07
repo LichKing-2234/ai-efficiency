@@ -386,8 +386,16 @@ overrides:
     - external_id: department-root
       metadata:
         representative_external_ids:
+          remove:
+            - member-alice
           append:
-            - member-added
+            - member-bob
+  members:
+    - external_id: member-alice
+      metadata:
+        leader_department_ids:
+          remove:
+            - department-root
 ```
 
 Supported first-version features:
@@ -407,13 +415,19 @@ Supported first-version features:
   and `member.metadata.leader_department_ids`. The known notification identity
   field is `member.metadata.wecom_userid`; WeCom-backed sources must map it
   explicitly when quota-reset robot notifications should mention approvers.
-- Department metadata overrides: optional `overrides.departments` entries may
-  append synthetic or administrator-supplied directory member external ids to
+- Representative metadata overrides: optional `overrides.departments` entries
+  may append and/or remove directory member external ids from
   `department.metadata.representative_external_ids` for one exact mapped
-  department. Overrides run after all source steps, preserve mapped values, and
-  trim and deduplicate the combined list. They do not modify sibling or child
-  departments and do not support replacement, removal, arbitrary metadata
-  keys, filters, or executable expressions.
+  department. Optional `overrides.members` entries provide the same operations
+  for department external ids in `member.metadata.leader_department_ids` on one
+  exact mapped member. Overrides run after all source steps; each operation
+  removes first, appends second, then trims and deduplicates the final list while
+  preserving unrelated mapped values. Removing an absent value is idempotent.
+  They do not modify sibling or child records and do not support replacement,
+  arbitrary metadata keys, filters, or executable expressions. Representative
+  scope is the union of department and member declarations, so a relationship
+  declared by both sources remains effective until the matching declaration is
+  removed from both exact targets.
 - Templates: `{{ item.field }}` and `{{ source.field }}` only. In a `foreach` member step, `item` refers to the member row and `source` refers to the outer iteration item, such as the department row.
 - Limits: timeout, response size, and total item caps
 
@@ -454,14 +468,20 @@ Validation rules:
     secret, password, credential, and API-key variants are rejected in request
     headers/query parameters. Secret-looking values such as bearer/basic/token
     credentials, JWT-shaped strings, and common API-token prefixes are rejected.
-13. `overrides.departments` accepts at most 100 unique, non-empty
-    `external_id` targets. Each target supports only
-    `metadata.representative_external_ids.append`, with 1 to 100 non-blank
-    string values. These values are directory member external ids, not display
-    names or email addresses.
-14. Every department override target must exist in the complete mapped
-    department result. Preview and apply fail closed when a target is absent;
-    the executor must not silently skip, create, or fuzzy-match a department.
+13. `overrides.departments` and `overrides.members` each accept at most 100
+    unique, non-empty `external_id` targets. Department targets support only
+    `metadata.representative_external_ids`; member targets support only
+    `metadata.leader_department_ids`. Each metadata operation must contain at
+    least one non-empty `append` or `remove` list. Each list accepts at most 100
+    unique, non-blank normalized string values, and the same normalized value
+    cannot appear in both lists for one operation. Department values are
+    directory member external ids; member values are department external ids,
+    not display names or email addresses.
+14. Every department and member override target must match exactly one record
+    in the complete mapped result. Preview and apply fail closed before any
+    override mutation when a target is absent or mapped more than once; the
+    executor must not silently skip, create, fuzzy-match, or choose between
+    ambiguous targets.
 
 ## Backend API
 
@@ -879,9 +899,11 @@ Apply behavior:
    running apply run.
 2. Mark run `running`.
 3. Execute steps with limits.
-4. Apply validated department metadata append overrides to the complete mapped
-   department result. A missing exact target fails the run before any facts are
-   persisted.
+4. Resolve every validated department/member metadata override target against
+   the complete mapped result before mutation. A missing exact target fails the
+   run before any facts are persisted. For every resolved operation, remove
+   mapped values first, append configured values second, then trim and
+   deduplicate the final value.
 5. Normalize departments/members.
 6. Validate required member emails.
 7. Compute diff.
@@ -963,9 +985,10 @@ Partial offboarding failure must be visible in the UI so admins can retry or inv
 8. Token revocation is local and does not depend on LDAP availability.
 9. Directory sync must not write to external organization systems.
 10. Directory sync must not mutate relay subscriptions.
-11. Department overrides are bounded, exact-target, append-only operations for
-    representative external ids. They cannot execute code, select departments
-    dynamically, or mutate source response data outside the normalized result.
+11. Department/member representative overrides are bounded, exact-target
+    append/remove operations applied only to the complete normalized result.
+    They cannot execute code, select targets dynamically, replace arbitrary
+    metadata, or mutate source response data. Missing targets fail closed.
 
 ## Testing
 
@@ -974,12 +997,19 @@ Backend tests:
 - DSL schema validation accepts valid templates and rejects unsupported features.
 - Credential references resolve without exposing secret values in run summaries.
 - Executor handles simple GET, header auth, query templates, foreach, JSONPath extraction including root-array responses, and limits.
-- Executor applies representative external-id overrides only to the named
-  mapped department, preserves existing values, trims and deduplicates appended
-  values, leaves sibling departments unchanged, and rejects missing targets.
-- DSL validation rejects duplicate or blank department targets, unsupported
-  metadata keys, empty or blank append values, more than 100 overrides, and
-  more than 100 append values per override.
+- Executor applies representative external-id overrides only to exact mapped
+  department/member targets, removes before appending, preserves unrelated
+  values, trims and deduplicates results, treats absent removals idempotently,
+  leaves sibling records unchanged, and rejects any missing target before
+  mutation.
+- DSL validation rejects duplicate or blank department/member targets,
+  unsupported metadata keys, empty operations, blank or duplicate values, one
+  normalized value in both append/remove lists, more than 100 overrides of each
+  target type, and more than 100 values in either list per operation.
+- Representative-scope tests prove the department/member metadata union remains
+  effective after removing only one declaration and disappears after removing
+  both; Team Usage tests prove the resulting single-root comparison expands to
+  child departments.
 - Preview run does not update `directory_members`.
 - Failed apply run does not change current facts or offboarding candidates.
 - Successful full-company apply updates departments, members, and `last_successful_run_id`.

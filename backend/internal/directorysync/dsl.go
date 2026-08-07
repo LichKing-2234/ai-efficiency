@@ -12,8 +12,10 @@ import (
 
 const (
 	maxDepartmentOverrides               = 100
-	maxDepartmentMetadataAppendValues    = 100
+	maxMemberOverrides                   = 100
+	maxMetadataOperationValues           = 100
 	representativeExternalIDsMetadataKey = "representative_external_ids"
+	leaderDepartmentIDsMetadataKey       = "leader_department_ids"
 )
 
 type DSL struct {
@@ -27,15 +29,22 @@ type DSL struct {
 
 type OverrideConfig struct {
 	Departments []DepartmentOverride `json:"departments" yaml:"departments"`
+	Members     []MemberOverride     `json:"members" yaml:"members"`
 }
 
 type DepartmentOverride struct {
-	ExternalID string                             `json:"external_id" yaml:"external_id"`
-	Metadata   map[string]MetadataAppendOperation `json:"metadata" yaml:"metadata"`
+	ExternalID string                               `json:"external_id" yaml:"external_id"`
+	Metadata   map[string]MetadataOverrideOperation `json:"metadata" yaml:"metadata"`
 }
 
-type MetadataAppendOperation struct {
+type MemberOverride struct {
+	ExternalID string                               `json:"external_id" yaml:"external_id"`
+	Metadata   map[string]MetadataOverrideOperation `json:"metadata" yaml:"metadata"`
+}
+
+type MetadataOverrideOperation struct {
 	Append []string `json:"append" yaml:"append"`
+	Remove []string `json:"remove" yaml:"remove"`
 }
 
 type AuthConfig struct {
@@ -203,31 +212,88 @@ func ValidateDSL(ctx context.Context, cfg *DSL, credentialExists func(context.Co
 			seenOverrideDepartments[externalID] = struct{}{}
 		}
 		if len(override.Metadata) == 0 {
-			add(prefix+".metadata", "metadata append operation is required")
+			add(prefix+".metadata", "metadata operation is required")
 			continue
 		}
 		for key, operation := range override.Metadata {
 			keyPath := prefix + ".metadata." + key
-			if strings.TrimSpace(key) != representativeExternalIDsMetadataKey {
-				add(keyPath, "only representative_external_ids append overrides are supported")
+			if key != representativeExternalIDsMetadataKey {
+				add(keyPath, "only representative_external_ids append/remove overrides are supported")
 				continue
 			}
-			appendPath := keyPath + ".append"
-			if len(operation.Append) == 0 {
-				add(appendPath, "append must contain at least one value")
+			validateMetadataOperation(keyPath, operation, add)
+		}
+	}
+	if len(cfg.Overrides.Members) > maxMemberOverrides {
+		add("overrides.members", fmt.Sprintf("must contain at most %d entries", maxMemberOverrides))
+	}
+	seenOverrideMembers := map[string]struct{}{}
+	for index, override := range cfg.Overrides.Members {
+		prefix := fmt.Sprintf("overrides.members[%d]", index)
+		externalID := strings.TrimSpace(override.ExternalID)
+		if externalID == "" {
+			add(prefix+".external_id", "external_id is required")
+		} else if _, exists := seenOverrideMembers[externalID]; exists {
+			add(prefix+".external_id", "external_id must be unique within member overrides")
+		} else {
+			seenOverrideMembers[externalID] = struct{}{}
+		}
+		if len(override.Metadata) == 0 {
+			add(prefix+".metadata", "metadata operation is required")
+			continue
+		}
+		for key, operation := range override.Metadata {
+			keyPath := prefix + ".metadata." + key
+			if key != leaderDepartmentIDsMetadataKey {
+				add(keyPath, "only leader_department_ids append/remove overrides are supported")
 				continue
 			}
-			if len(operation.Append) > maxDepartmentMetadataAppendValues {
-				add(appendPath, fmt.Sprintf("append must contain at most %d values", maxDepartmentMetadataAppendValues))
-			}
-			for valueIndex, value := range operation.Append {
-				if strings.TrimSpace(value) == "" {
-					add(fmt.Sprintf("%s[%d]", appendPath, valueIndex), "append value must not be blank")
-				}
-			}
+			validateMetadataOperation(keyPath, operation, add)
 		}
 	}
 	return issues
+}
+
+func validateMetadataOperation(path string, operation MetadataOverrideOperation, add func(string, string)) {
+	if len(operation.Append) == 0 && len(operation.Remove) == 0 {
+		add(path, "append or remove must contain at least one value")
+		return
+	}
+
+	appendValues := validateMetadataValues(path+".append", "append", operation.Append, add)
+	validateMetadataValues(path+".remove", "remove", operation.Remove, func(issuePath, message string) {
+		add(issuePath, message)
+	})
+	for index, value := range operation.Remove {
+		normalized := strings.TrimSpace(value)
+		if normalized == "" {
+			continue
+		}
+		if _, exists := appendValues[normalized]; exists {
+			add(fmt.Sprintf("%s.remove[%d]", path, index), "value must not also appear in append")
+		}
+	}
+}
+
+func validateMetadataValues(path, operationName string, values []string, add func(string, string)) map[string]struct{} {
+	if len(values) > maxMetadataOperationValues {
+		add(path, fmt.Sprintf("%s must contain at most %d values", operationName, maxMetadataOperationValues))
+	}
+	seen := make(map[string]struct{}, len(values))
+	for index, value := range values {
+		normalized := strings.TrimSpace(value)
+		valuePath := fmt.Sprintf("%s[%d]", path, index)
+		if normalized == "" {
+			add(valuePath, operationName+" value must not be blank")
+			continue
+		}
+		if _, exists := seen[normalized]; exists {
+			add(valuePath, operationName+" value must be unique")
+			continue
+		}
+		seen[normalized] = struct{}{}
+	}
+	return seen
 }
 
 func validateHTTPSURL(raw string) error {

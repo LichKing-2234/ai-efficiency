@@ -122,6 +122,108 @@ overrides:
 	}
 }
 
+func TestExecutorAppliesRepresentativeMetadataRemoveAndAppendOverrides(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/departments":
+			writeJSON(t, w, []map[string]any{
+				{"id": "department-root", "name": "Department Root", "leader_ids": []string{" member-keep ", "member-remove", "member-keep"}},
+				{"id": "department-sibling", "name": "Department Sibling", "leader_ids": []string{"member-sibling"}},
+			})
+		case "/members":
+			writeJSON(t, w, []map[string]any{
+				{"id": "member-actor", "email": "actor@example.com", "leader_department_ids": []string{" department-keep ", "department-remove", "department-keep"}},
+				{"id": "member-sibling", "email": "sibling@example.org", "leader_department_ids": []string{"department-sibling"}},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	raw := `
+version: 1
+scope: full_company
+auth:
+  type: header
+  header: X-Directory-API-Key
+  credential_ref: directory_api_key
+limits:
+  timeout_seconds: 5
+  max_response_bytes: 1048576
+  max_items: 100
+steps:
+  - id: departments
+    request:
+      method: GET
+      url: ` + server.URL + `/departments
+    extract:
+      items: $
+    map:
+      department:
+        external_id: $.id
+        name: $.name
+        metadata:
+          representative_external_ids: $.leader_ids
+  - id: members
+    request:
+      method: GET
+      url: ` + server.URL + `/members
+    extract:
+      items: $
+    map:
+      member:
+        external_id: $.id
+        email: $.email
+        metadata:
+          leader_department_ids: $.leader_department_ids
+overrides:
+  departments:
+    - external_id: department-root
+      metadata:
+        representative_external_ids:
+          remove:
+            - member-remove
+            - member-absent
+          append:
+            - " member-added "
+  members:
+    - external_id: member-actor
+      metadata:
+        leader_department_ids:
+          remove:
+            - department-remove
+            - department-absent
+          append:
+            - " department-added "
+`
+	cfg, err := ParseDSL(raw)
+	if err != nil {
+		t.Fatalf("ParseDSL: %v", err)
+	}
+
+	result, err := NewExecutor(ExecutorOptions{AllowHTTP: true}).Execute(
+		context.Background(),
+		cfg,
+		staticCredentialResolver{"directory_api_key": "test-directory-secret"},
+	)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if got, want := fmt.Sprint(result.Departments[0].Metadata["representative_external_ids"]), "[member-keep member-added]"; got != want {
+		t.Fatalf("root representatives = %s, want %s", got, want)
+	}
+	if got, want := fmt.Sprint(result.Departments[1].Metadata["representative_external_ids"]), "[member-sibling]"; got != want {
+		t.Fatalf("sibling representatives = %s, want %s", got, want)
+	}
+	if got, want := fmt.Sprint(result.Members[0].Metadata["leader_department_ids"]), "[department-keep department-added]"; got != want {
+		t.Fatalf("actor leader departments = %s, want %s", got, want)
+	}
+	if got, want := fmt.Sprint(result.Members[1].Metadata["leader_department_ids"]), "[department-sibling]"; got != want {
+		t.Fatalf("sibling leader departments = %s, want %s", got, want)
+	}
+}
+
 func TestExecutorRejectsDepartmentMetadataOverrideForMissingTarget(t *testing.T) {
 	injected := &http.Client{Transport: directoryRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
@@ -138,7 +240,7 @@ func TestExecutorRejectsDepartmentMetadataOverrideForMissingTarget(t *testing.T)
 	cfg.Steps = cfg.Steps[:1]
 	cfg.Overrides.Departments = []DepartmentOverride{{
 		ExternalID: "department-missing",
-		Metadata: map[string]MetadataAppendOperation{
+		Metadata: map[string]MetadataOverrideOperation{
 			"representative_external_ids": {Append: []string{"member-added"}},
 		},
 	}}
@@ -150,6 +252,138 @@ func TestExecutorRejectsDepartmentMetadataOverrideForMissingTarget(t *testing.T)
 	)
 	if err == nil || !strings.Contains(err.Error(), `department metadata override target "department-missing" was not mapped`) {
 		t.Fatalf("Execute error = %v, want missing override target", err)
+	}
+}
+
+func TestExecutorRejectsMemberMetadataOverrideForMissingTarget(t *testing.T) {
+	injected := &http.Client{Transport: directoryRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"data":{"users":[{"id":"member-alpha","email":"alpha@example.com"}]}}`)),
+			Request:    req,
+		}, nil
+	})}
+	cfg, err := ParseDSL(validDirectoryDSL)
+	if err != nil {
+		t.Fatalf("ParseDSL: %v", err)
+	}
+	cfg.Steps = cfg.Steps[1:]
+	cfg.Steps[0].Foreach = ""
+	cfg.Overrides.Members = []MemberOverride{{
+		ExternalID: "member-missing",
+		Metadata: map[string]MetadataOverrideOperation{
+			"leader_department_ids": {Remove: []string{"department-beta"}},
+		},
+	}}
+
+	_, err = NewExecutor(ExecutorOptions{HTTPClient: injected}).Execute(
+		context.Background(),
+		cfg,
+		staticCredentialResolver{"directory_api_key": "test-directory-secret"},
+	)
+	if err == nil || !strings.Contains(err.Error(), `member metadata override target "member-missing" was not mapped`) {
+		t.Fatalf("Execute error = %v, want missing member override target", err)
+	}
+}
+
+func TestExecutorRejectsAmbiguousMemberMetadataOverrideTarget(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, []map[string]any{
+			{"id": "member-shared", "email": "alice@example.com"},
+			{"id": "member-shared", "email": "bob@example.org"},
+		})
+	}))
+	defer server.Close()
+
+	raw := `
+version: 1
+scope: full_company
+auth:
+  type: header
+  header: X-Directory-API-Key
+  credential_ref: directory_api_key
+steps:
+  - id: members
+    request:
+      method: GET
+      url: ` + server.URL + `
+    extract:
+      items: $
+    map:
+      member:
+        external_id: $.id
+        email: $.email
+overrides:
+  members:
+    - external_id: member-shared
+      metadata:
+        leader_department_ids:
+          remove:
+            - department-alpha
+`
+	cfg, err := ParseDSL(raw)
+	if err != nil {
+		t.Fatalf("ParseDSL: %v", err)
+	}
+
+	_, err = NewExecutor(ExecutorOptions{AllowHTTP: true}).Execute(
+		context.Background(),
+		cfg,
+		staticCredentialResolver{"directory_api_key": "test-directory-secret"},
+	)
+	if err == nil || !strings.Contains(err.Error(), `member metadata override target "member-shared" was mapped more than once`) {
+		t.Fatalf("Execute error = %v, want ambiguous exact member target", err)
+	}
+}
+
+func TestExecutorRejectsAmbiguousDepartmentMetadataOverrideTarget(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, []map[string]any{
+			{"id": "department-shared", "name": "Department Alpha"},
+			{"id": "department-shared", "name": "Department Beta"},
+		})
+	}))
+	defer server.Close()
+
+	raw := `
+version: 1
+scope: full_company
+auth:
+  type: header
+  header: X-Directory-API-Key
+  credential_ref: directory_api_key
+steps:
+  - id: departments
+    request:
+      method: GET
+      url: ` + server.URL + `
+    extract:
+      items: $
+    map:
+      department:
+        external_id: $.id
+        name: $.name
+overrides:
+  departments:
+    - external_id: department-shared
+      metadata:
+        representative_external_ids:
+          remove:
+            - member-alpha
+`
+	cfg, err := ParseDSL(raw)
+	if err != nil {
+		t.Fatalf("ParseDSL: %v", err)
+	}
+
+	_, err = NewExecutor(ExecutorOptions{AllowHTTP: true}).Execute(
+		context.Background(),
+		cfg,
+		staticCredentialResolver{"directory_api_key": "test-directory-secret"},
+	)
+	if err == nil || !strings.Contains(err.Error(), `department metadata override target "department-shared" was mapped more than once`) {
+		t.Fatalf("Execute error = %v, want ambiguous exact department target", err)
 	}
 }
 

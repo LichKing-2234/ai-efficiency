@@ -131,6 +131,21 @@ steps:
         status: $.status
         metadata:
           leader_department_ids: $.leader_department_ids
+overrides:
+  departments:
+    - external_id: department-alpha
+      metadata:
+        representative_external_ids:
+          remove:
+            - member-alice
+          append:
+            - member-bob
+  members:
+    - external_id: member-alice
+      metadata:
+        leader_department_ids:
+          remove:
+            - department-alpha
 `,
   },
   {
@@ -847,7 +862,22 @@ steps:
         email: $.email
         display_name: $.name
         department_external_id: "{{ source.external_id }}"
-        status: $.status`,
+        status: $.status
+        metadata:
+          leader_department_ids: $.leader_department_ids
+overrides:
+  departments:
+    - external_id: department-alpha
+      metadata:
+        representative_external_ids:
+          remove:
+            - member-alice
+  members:
+    - external_id: member-alice
+      metadata:
+        leader_department_ids:
+          remove:
+            - department-alpha`,
     '',
     t('directorySync.aiPromptStructuresTitle'),
     '- department.external_id: required stable department id',
@@ -864,6 +894,10 @@ steps:
     '- member.metadata.leader_department_ids: optional array of department ids where this member is the representative or leader',
     '- member.metadata.wecom_userid: required when quota reset approval notifications must @ approvers through WeCom; map only the source authoritative WeCom userid, never member.external_id, local user ids, or email addresses',
     '- metadata mappings are explicit allowlists; include only non-sensitive ids or role flags needed by this system',
+    t('directorySync.aiPromptOverrideRule'),
+    t('directorySync.aiPromptOverrideOrdering'),
+    t('directorySync.aiPromptOverrideUnion'),
+    t('directorySync.aiPromptOverrideLimits'),
     '',
     t('directorySync.aiPromptEvidenceTitle'),
     t('directorySync.aiPromptEvidenceTools'),
@@ -947,7 +981,7 @@ steps:
 
         <div class="rounded-md border border-gray-200 p-3">
           <div class="mb-2 flex flex-wrap gap-2">
-            <button v-for="template in templates" :key="template.nameKey" type="button" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50" @click="applyTemplate(template.dsl)">
+            <button v-for="(template, index) in templates" :key="template.nameKey" :data-testid="`directory-template-${index}`" type="button" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50" @click="applyTemplate(template.dsl)">
               {{ t(template.nameKey) }}
             </button>
           </div>

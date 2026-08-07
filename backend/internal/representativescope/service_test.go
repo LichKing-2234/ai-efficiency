@@ -77,6 +77,37 @@ func TestResolveRepresentativeScopeFromMemberLeaderDepartmentIDs(t *testing.T) {
 	}
 }
 
+func TestResolveRepresentativeScopeUnionsRepresentativeMetadataUntilBothDeclarationsAreRemoved(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	source := createScopeSource(t, client, true)
+	actor := createScopeUser(t, client, "actor", "actor@example.com", nil)
+	primary := createScopeDepartment(t, client, source.ID, "department-primary", "Department Primary", nil, map[string]any{"representative_external_ids": []string{"member-actor"}})
+	extraneous := createScopeDepartment(t, client, source.ID, "department-extraneous", "Department Extraneous", nil, map[string]any{"representative_external_ids": []string{"member-actor"}})
+	member := createScopeMember(t, client, source.ID, "member-actor", actor.Email, primary.ExternalID, &actor.ID, map[string]any{"leader_department_ids": []string{primary.ExternalID, extraneous.ExternalID}})
+
+	assertRoots := func(want []string) {
+		t.Helper()
+		scope, err := New(client).Resolve(ctx, actor.ID)
+		if err != nil {
+			t.Fatalf("Resolve() error = %v", err)
+		}
+		if got := scope.MemberTreeRootIDs; !reflect.DeepEqual(got, want) {
+			t.Fatalf("member tree roots = %#v, want %#v", got, want)
+		}
+	}
+
+	assertRoots([]string{extraneous.ExternalID, primary.ExternalID})
+	if err := client.DirectoryDepartment.UpdateOneID(extraneous.ID).SetMetadata(map[string]any{}).Exec(ctx); err != nil {
+		t.Fatalf("remove department representative declaration: %v", err)
+	}
+	assertRoots([]string{extraneous.ExternalID, primary.ExternalID})
+	if err := client.DirectoryMember.UpdateOneID(member.ID).SetMetadata(map[string]any{"leader_department_ids": []string{primary.ExternalID}}).Exec(ctx); err != nil {
+		t.Fatalf("remove member leader declaration: %v", err)
+	}
+	assertRoots([]string{primary.ExternalID})
+}
+
 func TestResolveRepresentativeScopeParsesNumericLeaderDepartmentIDs(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()
