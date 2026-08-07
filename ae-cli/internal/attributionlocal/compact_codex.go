@@ -40,8 +40,7 @@ type compactCodexSessionContext struct {
 }
 
 var (
-	toolDirectoryPattern = regexp.MustCompile(`(?i)"(?:workdir|path)"\s*:\s*"([^"\r\n]+)"`)
-	patchPathPattern     = regexp.MustCompile(`(?m)^\*\*\* (?:Add|Update|Delete) File:\s*(.+?)\s*$`)
+	patchPathPattern = regexp.MustCompile(`(?m)^\*\*\* (?:Add|Update|Delete) File:\s*(.+?)\s*$`)
 )
 
 func ScanCompactCodexAtoms(ctx context.Context, currentRepoRoot string) ([]CompactCodexAtom, error) {
@@ -172,7 +171,7 @@ func parseCompactCodexFile(ctx context.Context, path, currentRepoRoot string) ([
 			if row.Payload.Type != "custom_tool_call" && row.Payload.Type != "function_call" {
 				return nil
 			}
-			for _, candidate := range compactToolPathCandidates(row.Payload.Input + "\n" + row.Payload.Arguments) {
+			for _, candidate := range compactToolPathCandidates(row.Payload.Name, row.Payload.Input, row.Payload.Arguments, turnCWD) {
 				root := cachedGitRoot(candidate, rootCache)
 				if root != "" {
 					evidenceRoots[root] = struct{}{}
@@ -310,26 +309,75 @@ func sortCompactAtoms(atoms []CompactCodexAtom) {
 	})
 }
 
-func compactToolPathCandidates(input string) []string {
+func compactToolPathCandidates(toolName, input, arguments, turnCWD string) []string {
 	seen := map[string]struct{}{}
 	var candidates []string
-	for _, pattern := range []*regexp.Regexp{toolDirectoryPattern, patchPathPattern} {
-		for _, match := range pattern.FindAllStringSubmatch(input, -1) {
+	workdirs := compactExplicitWorkdirs(input, arguments)
+	appendCandidate := func(candidate string) {
+		candidate = strings.TrimSpace(strings.ReplaceAll(candidate, `\/`, `/`))
+		if candidate == "" || !filepath.IsAbs(candidate) {
+			return
+		}
+		if _, ok := seen[candidate]; ok {
+			return
+		}
+		seen[candidate] = struct{}{}
+		candidates = append(candidates, candidate)
+	}
+	for _, workdir := range workdirs {
+		appendCandidate(workdir)
+	}
+	if compactIsPatchTool(toolName) {
+		patchBase := strings.TrimSpace(turnCWD)
+		if len(workdirs) == 1 {
+			patchBase = workdirs[0]
+		}
+		for _, match := range patchPathPattern.FindAllStringSubmatch(input+"\n"+arguments, -1) {
 			if len(match) < 2 {
 				continue
 			}
 			candidate := strings.TrimSpace(strings.ReplaceAll(match[1], `\/`, `/`))
-			if candidate == "" || !filepath.IsAbs(candidate) {
-				continue
+			if candidate != "" && !filepath.IsAbs(candidate) && patchBase != "" {
+				candidate = filepath.Join(patchBase, candidate)
 			}
-			if _, ok := seen[candidate]; ok {
-				continue
-			}
-			seen[candidate] = struct{}{}
-			candidates = append(candidates, candidate)
+			appendCandidate(candidate)
 		}
 	}
 	return candidates
+}
+
+func compactExplicitWorkdirs(values ...string) []string {
+	seen := map[string]struct{}{}
+	var workdirs []string
+	for _, value := range values {
+		var object map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(strings.TrimSpace(value)), &object); err != nil {
+			continue
+		}
+		raw, ok := object["workdir"]
+		if !ok {
+			continue
+		}
+		var workdir string
+		if err := json.Unmarshal(raw, &workdir); err != nil {
+			continue
+		}
+		workdir = strings.TrimSpace(strings.ReplaceAll(workdir, `\/`, `/`))
+		if workdir == "" || !filepath.IsAbs(workdir) {
+			continue
+		}
+		if _, ok := seen[workdir]; ok {
+			continue
+		}
+		seen[workdir] = struct{}{}
+		workdirs = append(workdirs, workdir)
+	}
+	return workdirs
+}
+
+func compactIsPatchTool(toolName string) bool {
+	name := strings.ToLower(strings.TrimSpace(toolName))
+	return name == "apply_patch" || strings.HasSuffix(name, ".apply_patch") || strings.HasSuffix(name, "__apply_patch")
 }
 
 func cachedGitRoot(candidate string, cache map[string]string) string {

@@ -1,6 +1,7 @@
 package attributionledger
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -263,6 +264,27 @@ func TestInstallationCredentialRotationInvalidatesOldTokens(t *testing.T) {
 	}
 }
 
+func TestInstallationIdentityDoesNotCollapseMachinesWithTheSameHostnameLabel(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	user := client.User.Create().SetUsername("erin").SetEmail("erin@example.com").SetAuthSource("ldap").SaveX(ctx)
+	service := NewInstallationService(client)
+	firstID := uuid.NewString()
+	secondID := uuid.NewString()
+	if _, err := service.Ensure(ctx, user.ID, firstID, "developer-mac", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Ensure(ctx, user.ID, secondID, "developer-mac", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Ensure(ctx, user.ID, firstID, "developer-mac", "test-new"); err != nil {
+		t.Fatal(err)
+	}
+	if count := client.ReportingInstallation.Query().CountX(ctx); count != 2 {
+		t.Fatalf("reporting installations = %d, want two stable IDs despite the same hostname label", count)
+	}
+}
+
 func TestLateOTLPEvidenceRefreshesOnlyCorrelationMetadata(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()
@@ -364,8 +386,8 @@ func TestCorrelationStoreKeepsSuccessAndFailureRetentionSeparate(t *testing.T) {
 	}
 	beforeSuccessSets := store.sets[successKey]
 	store.mu.Unlock()
-	if valueCount != 2 {
-		t.Fatalf("stored evidence keys = %d, want separate success and failure keys", valueCount)
+	if valueCount != 4 {
+		t.Fatalf("stored evidence keys = %d, want separate success/failure indexes and item values", valueCount)
 	}
 	if retentionErr != "" {
 		t.Fatal(retentionErr)
@@ -431,6 +453,87 @@ func TestCorrelationStoreDoesNotRefreshExistingEvidenceRetention(t *testing.T) {
 	}
 }
 
+func TestCorrelationStoreDoesNotPhysicallyRetainOlderRequestIDForNewerItemTTL(t *testing.T) {
+	store := &attributionMemoryStore{values: map[string][]byte{}}
+	correlation := NewCorrelationStore(store, "test")
+	firstObservedAt := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
+	currentTime := firstObservedAt
+	correlation.now = func() time.Time { return currentTime }
+	if err := correlation.Put(context.Background(), "installation-a", []RequestEvidence{{
+		ConversationID: "conversation-a", RequestID: "request-old", ObservedAt: firstObservedAt,
+		EventName: "codex.api_request", Transport: "http",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	currentTime = firstObservedAt.Add(12 * time.Hour)
+	if err := correlation.Put(context.Background(), "installation-a", []RequestEvidence{{
+		ConversationID: "conversation-a", RequestID: "request-new", ObservedAt: currentTime,
+		EventName: "codex.api_request", Transport: "http",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	var oldTTL, newTTL time.Duration
+	for key, payload := range store.values {
+		hasOld := bytes.Contains(payload, []byte("request-old"))
+		hasNew := bytes.Contains(payload, []byte("request-new"))
+		if hasOld && hasNew {
+			t.Fatalf("older and newer raw Request IDs share one retained value: key=%s payload=%s", key, payload)
+		}
+		if hasOld {
+			oldTTL = store.ttls[key]
+		}
+		if hasNew {
+			newTTL = store.ttls[key]
+		}
+	}
+	if oldTTL != 12*time.Hour || newTTL != requestEvidenceTTL {
+		t.Fatalf("raw Request ID TTLs old=%s new=%s, want %s/%s", oldTTL, newTTL, 12*time.Hour, requestEvidenceTTL)
+	}
+}
+
+func TestCorrelationStoreCapsEachConversationRetentionClassAt128Items(t *testing.T) {
+	store := &attributionMemoryStore{values: map[string][]byte{}}
+	correlation := NewCorrelationStore(store, "test")
+	observedAt := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
+	correlation.now = func() time.Time { return observedAt.Add(130 * time.Second) }
+	evidence := make([]RequestEvidence, 0, 130)
+	for index := 0; index < 130; index++ {
+		evidence = append(evidence, RequestEvidence{
+			ConversationID: "conversation-a", RequestID: fmt.Sprintf("request-%03d", index), ObservedAt: observedAt.Add(time.Duration(index) * time.Second),
+			EventName: "codex.api_request", Transport: "http",
+		})
+	}
+	if err := correlation.Put(context.Background(), "installation-a", evidence); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := correlation.Match(context.Background(), "installation-a", []SessionSlice{{
+		ConversationID: "conversation-a", ObservedStart: observedAt, ObservedEnd: observedAt.Add(130 * time.Second),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.RequestIDCount != 128 {
+		t.Fatalf("request ID count = %d, want 128", summary.RequestIDCount)
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	rawItemCount := 0
+	for _, payload := range store.values {
+		if bytes.Contains(payload, []byte(`"request_id"`)) {
+			rawItemCount++
+			if bytes.Contains(payload, []byte("request-000")) || bytes.Contains(payload, []byte("request-001")) {
+				t.Fatalf("oldest capped Request ID remained physically retained: %s", payload)
+			}
+		}
+	}
+	if rawItemCount != 128 {
+		t.Fatalf("physically retained raw Request ID items = %d, want 128", rawItemCount)
+	}
+}
+
 type attributionMemoryStore struct {
 	mu     sync.Mutex
 	values map[string][]byte
@@ -460,6 +563,14 @@ func (s *attributionMemoryStore) Set(_ context.Context, key string, value []byte
 	s.values[key] = append([]byte(nil), value...)
 	s.ttls[key] = ttl
 	s.sets[key]++
+	return nil
+}
+
+func (s *attributionMemoryStore) Delete(_ context.Context, key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.values, key)
+	delete(s.ttls, key)
 	return nil
 }
 

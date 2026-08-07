@@ -66,6 +66,10 @@ func (s *RedisStore) Set(ctx context.Context, key string, value []byte, ttl time
 	return s.client.Set(ctx, key, value, ttl).Err()
 }
 
+func (s *RedisStore) Delete(ctx context.Context, key string) error {
+	return s.client.Del(ctx, key).Err()
+}
+
 func (s *RedisStore) MGet(ctx context.Context, keys ...string) ([][]byte, error) {
 	if len(keys) == 0 {
 		return [][]byte{}, nil

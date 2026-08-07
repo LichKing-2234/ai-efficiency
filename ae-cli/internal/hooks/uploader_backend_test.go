@@ -24,7 +24,7 @@ func (r *recordingCheckpointSender) SendCommitRewrite(ctx context.Context, req c
 }
 
 func TestBackendUploaderMapsCheckpointEvent(t *testing.T) {
-	now := time.Now().UTC().Truncate(time.Second)
+	now := time.Date(2026, 8, 5, 10, 0, 0, 123_456_789, time.UTC)
 	sender := &recordingCheckpointSender{}
 	uploader := NewBackendUploader(sender)
 
@@ -41,7 +41,7 @@ func TestBackendUploaderMapsCheckpointEvent(t *testing.T) {
 		BranchSnapshot: "main",
 		HeadSnapshot:   "abc123",
 		AgentSnapshot:  map[string]any{"codex": map[string]any{"total_tokens": 10}},
-		CapturedAt:     now.Format(time.RFC3339),
+		CapturedAt:     now.Format(time.RFC3339Nano),
 	})
 	if err != nil {
 		t.Fatalf("UploadHookEvent: %v", err)
@@ -54,6 +54,9 @@ func TestBackendUploaderMapsCheckpointEvent(t *testing.T) {
 	}
 	if sender.checkpoints[0].RepoConfigID != 123 {
 		t.Fatalf("repo_config_id = %d, want 123", sender.checkpoints[0].RepoConfigID)
+	}
+	if sender.checkpoints[0].CapturedAt == nil || !sender.checkpoints[0].CapturedAt.Equal(now) {
+		t.Fatalf("captured_at = %v, want %v", sender.checkpoints[0].CapturedAt, now)
 	}
 }
 

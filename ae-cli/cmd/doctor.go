@@ -75,7 +75,7 @@ var doctorCmd = &cobra.Command{
 			return fmt.Errorf("stat attribution state dir: %w", err)
 		}
 		printCompactReportingStatus(out)
-		if status, err := hooks.StatusForRepo(hooks.StatusOptions{CWD: ctx.repoRoot, Binding: currentHookBinding()}); err == nil {
+		if status, err := hooks.StatusForRepo(hooks.StatusOptions{CWD: ctx.repoRoot, Uploads: true, Binding: currentHookBinding()}); err == nil {
 			printHookStatus(out, status)
 		}
 		task, recovered, err := hooks.LoadSyncTaskRecovering(ctx.workspaceID)
@@ -108,18 +108,24 @@ func printCompactReportingStatus(out io.Writer) {
 	config, err := reporting.Load("")
 	if err != nil {
 		if os.IsNotExist(err) {
+			if identity, identityErr := reporting.LoadInstallationIdentity(""); identityErr == nil {
+				fmt.Fprintf(out, "Compact reporting\n")
+				fmt.Fprintf(out, "  Installation: %s\n", identity.InstallationID)
+				fmt.Fprintf(out, "  Reporter credential: missing %s\n", style.badge(doctorcheck.StatusFailed))
+				fmt.Fprintf(out, "  OTLP credential:     missing %s\n", style.badge(doctorcheck.StatusFailed))
+				fmt.Fprintf(out, "  Buckets:      unknown %s\n", style.badge("warn"))
+				fmt.Fprintf(out, "  Codex OTLP:   unknown %s\n", style.badge("warn"))
+				fmt.Fprintf(out, "  Recovery:     login again to recover credentials for this installation\n")
+				return
+			}
 			fmt.Fprintf(out, "Compact reporting: not enrolled %s (login again or run 'ae-cli attribution enable')\n", style.badge("warn"))
 			return
 		}
 		fmt.Fprintf(out, "Compact reporting: unavailable %s (%v)\n", style.badge(doctorcheck.StatusFailed), err)
 		return
 	}
-	credentialStatus := doctorcheck.StatusOK
-	credentialLabel := "available"
-	if strings.TrimSpace(config.ReporterToken) == "" || strings.TrimSpace(config.OTLPToken) == "" {
-		credentialStatus = doctorcheck.StatusFailed
-		credentialLabel = "degraded"
-	}
+	reporterCredentialAvailable := strings.TrimSpace(config.ReporterToken) != ""
+	otlpCredentialAvailable := strings.TrimSpace(config.OTLPToken) != ""
 	reportingStatus := "disabled"
 	if config.ReportingEnabled {
 		reportingStatus = "enabled"
@@ -130,12 +136,81 @@ func printCompactReportingStatus(out io.Writer) {
 	}
 	fmt.Fprintf(out, "Compact reporting\n")
 	fmt.Fprintf(out, "  Installation: %s\n", config.InstallationID)
-	fmt.Fprintf(out, "  Credentials:  %s %s\n", credentialLabel, style.badge(credentialStatus))
+	fmt.Fprintf(out, "  Reporter credential: %s %s\n", availableLabel(reporterCredentialAvailable), style.badge(availableStatus(reporterCredentialAvailable)))
+	fmt.Fprintf(out, "  OTLP credential:     %s %s\n", availableLabel(otlpCredentialAvailable), style.badge(availableStatus(otlpCredentialAvailable)))
 	fmt.Fprintf(out, "  Buckets:      %s %s\n", reportingStatus, style.badge(enabledStatus(config.ReportingEnabled)))
 	fmt.Fprintf(out, "  Codex OTLP:   %s %s\n", otelStatus, style.badge(enabledStatus(config.OTelEnabled)))
+	homeDir, homeErr := os.UserHomeDir()
+	if homeErr != nil {
+		fmt.Fprintf(out, "  Codex OTLP config: unavailable %s (%v)\n", style.badge(doctorcheck.StatusFailed), homeErr)
+	} else {
+		endpoint := strings.TrimRight(strings.TrimSpace(config.ServerURL), "/") + "/api/v1/attribution/otel/v1/traces"
+		inspection, inspectErr := toolconfig.InspectCodexOTLP(homeDir, endpoint, config.OTLPToken)
+		if inspectErr != nil {
+			fmt.Fprintf(out, "  Codex OTLP config: unavailable %s (%v)\n", style.badge(doctorcheck.StatusFailed), inspectErr)
+		} else {
+			label := "degraded"
+			status := doctorcheck.StatusFailed
+			if inspection.Healthy() {
+				label = "healthy"
+				status = doctorcheck.StatusOK
+			}
+			fmt.Fprintf(out, "  Codex OTLP config: %s %s (endpoint=%s credential=%s protocol=%s prompt_logging=%s trace_only=%t)\n",
+				label,
+				style.badge(status),
+				matchLabel(inspection.EndpointMatches),
+				credentialMatchLabel(inspection),
+				jsonProtocolLabel(inspection.ProtocolJSON),
+				promptLoggingLabel(inspection.PromptLoggingDisabled),
+				inspection.TraceOnly,
+			)
+		}
+	}
 	if state, stateErr := attributionlocal.LoadCompactState(); stateErr == nil {
 		fmt.Fprintf(out, "  Pending:      buckets=%d triggers=%d\n", len(state.Pending), len(state.Triggers))
 	}
+}
+
+func availableLabel(available bool) string {
+	if available {
+		return "available"
+	}
+	return "missing"
+}
+
+func availableStatus(available bool) string {
+	if available {
+		return doctorcheck.StatusOK
+	}
+	return doctorcheck.StatusFailed
+}
+
+func matchLabel(matches bool) string {
+	if matches {
+		return "match"
+	}
+	return "mismatch"
+}
+
+func credentialMatchLabel(inspection toolconfig.CodexOTLPInspection) string {
+	if !inspection.CredentialAvailable {
+		return "missing"
+	}
+	return matchLabel(inspection.CredentialMatches)
+}
+
+func jsonProtocolLabel(matches bool) string {
+	if matches {
+		return "json"
+	}
+	return "mismatch"
+}
+
+func promptLoggingLabel(disabled bool) string {
+	if disabled {
+		return "disabled"
+	}
+	return "enabled"
 }
 
 // printRecentFailures renders the most recent non-2xx Codex Responses requests

@@ -88,7 +88,7 @@ func (r *recordingBackendHookClient) SendToolUsageEvent(ctx context.Context, req
 
 func git2(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
@@ -254,6 +254,29 @@ func TestPostCommitResolvedQueuesOnlyWithStableBinding(t *testing.T) {
 	}
 }
 
+func TestPostCommitResolvedPreservesSubsecondCaptureTime(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	u := &fakeUploader{}
+	if err := NewHandler(u).PostCommitResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("PostCommitResolved: %v", err)
+	}
+	if len(u.events) != 1 {
+		t.Fatalf("uploaded events = %d, want 1", len(u.events))
+	}
+	capturedAt := u.events[0].CapturedAt
+	parsed, err := time.Parse(time.RFC3339Nano, capturedAt)
+	if err != nil {
+		t.Fatalf("CapturedAt = %q, want RFC3339Nano: %v", capturedAt, err)
+	}
+	if !strings.Contains(capturedAt, ".") || parsed.Nanosecond() == 0 {
+		t.Fatalf("CapturedAt = %q, want preserved subsecond precision", capturedAt)
+	}
+}
+
 func TestCompactPostCommitSkipsLegacySnapshotAndStartsBackgroundSync(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()
@@ -288,13 +311,27 @@ func TestCompactPostCommitSkipsLegacySnapshotAndStartsBackgroundSync(t *testing.
 	if len(uploader.events) != 1 || len(uploader.events[0].AgentSnapshot) != 0 {
 		t.Fatalf("compact checkpoint retained legacy agent snapshot: %+v", uploader.events)
 	}
+	state, err := attributionlocal.LoadCompactState()
+	if err != nil {
+		t.Fatalf("LoadCompactState: %v", err)
+	}
+	if len(state.Triggers) != 1 || state.Triggers[0].CapturedAt.Nanosecond() == 0 {
+		t.Fatalf("compact trigger lost subsecond capture time: %+v", state.Triggers)
+	}
+	task, err := LoadSyncTask(execCtx.WorkspaceID)
+	if err != nil {
+		t.Fatalf("LoadSyncTask: %v", err)
+	}
+	if task == nil || !task.LastRequestedAt.Equal(state.Triggers[0].CapturedAt) {
+		t.Fatalf("detached sync task capture time = %+v, trigger = %+v", task, state.Triggers[0])
+	}
 	cachePath := filepath.Join(attributionlocal.AttributionRootDir(), "workspaces", execCtx.WorkspaceID, "collectors", "latest.json")
 	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
 		t.Fatalf("compact hook wrote legacy collector cache: %v", err)
 	}
 }
 
-func TestCommitLineageEvidenceRequiresReflogAndExplicitSourceCommit(t *testing.T) {
+func TestCompletedCherryPickNoLongerExposesSourceCommit(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	baseBranch := git2(t, repo, "rev-parse", "--abbrev-ref", "HEAD")
 	baseSHA := git2(t, repo, "rev-parse", "HEAD")
@@ -323,13 +360,97 @@ func TestCommitLineageEvidenceRequiresReflogAndExplicitSourceCommit(t *testing.T
 	if kind != "" || source != "" {
 		t.Fatalf("completed cherry-pick without source evidence = (%q, %q), want no lineage", kind, source)
 	}
-	gitDir := git2(t, repo, "rev-parse", "--absolute-git-dir")
-	if err := os.WriteFile(filepath.Join(gitDir, "CHERRY_PICK_HEAD"), []byte(sourceSHA+"\n"), 0o600); err != nil {
+}
+
+func TestManagedPostCommitCapturesCherryPickSourceWhileGitStateExists(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	baseBranch := git2(t, repo, "rev-parse", "--abbrev-ref", "HEAD")
+	baseSHA := git2(t, repo, "rev-parse", "HEAD")
+	git2(t, repo, "checkout", "-q", "-b", "source")
+	if err := os.WriteFile(filepath.Join(repo, "feature.txt"), []byte("feature\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	kind, source = commitLineageEvidence(repo, head)
-	if kind != "cherry-pick" || source != sourceSHA {
-		t.Fatalf("explicit cherry-pick evidence = (%q, %q), want (%q, %q)", kind, source, "cherry-pick", sourceSHA)
+	git2(t, repo, "add", "feature.txt")
+	git2(t, repo, "commit", "-q", "-m", "feature")
+	sourceSHA := git2(t, repo, "rev-parse", "HEAD")
+	git2(t, repo, "checkout", "-q", baseBranch)
+	if git2(t, repo, "rev-parse", "HEAD") != baseSHA {
+		t.Fatal("base branch moved unexpectedly")
+	}
+	if err := os.WriteFile(filepath.Join(repo, "target.txt"), []byte("target\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git2(t, repo, "add", "target.txt")
+	git2(t, repo, "commit", "-q", "-m", "target base")
+
+	if err := EnableRepo(InstallOptions{CWD: repo, Force: true, NonInteractive: true, GeneratorVersion: "test"}); err != nil {
+		t.Fatalf("EnableRepo: %v", err)
+	}
+	testBinary, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	capturePath := filepath.Join(t.TempDir(), "hook-capture.json")
+	shimPath := filepath.Join(t.TempDir(), "ae-cli-hook-shim")
+	shim := "#!/bin/sh\nAE_TEST_HOOK_ARGS=\"$*\"\nexport AE_TEST_HOOK_ARGS\nexec \"$AE_TEST_BINARY\" -test.run '^TestManagedPostCommitShimProcess$' -test.count=1\n"
+	if err := os.WriteFile(shimPath, []byte(shim), 0o700); err != nil {
+		t.Fatalf("write hook shim: %v", err)
+	}
+	t.Setenv("AE_CLI_BIN", shimPath)
+	t.Setenv("AE_TEST_BINARY", testBinary)
+	t.Setenv("AE_TEST_CHERRY_PICK_HOOK", "1")
+	t.Setenv("AE_TEST_CHERRY_PICK_CAPTURE", capturePath)
+
+	git2(t, repo, "cherry-pick", sourceSHA)
+	payload, err := os.ReadFile(capturePath)
+	if err != nil {
+		t.Fatalf("read hook capture: %v", err)
+	}
+	var capture struct {
+		Args            string `json:"args"`
+		LineageKind     string `json:"lineage_kind"`
+		SourceCommitSHA string `json:"source_commit_sha"`
+	}
+	if err := json.Unmarshal(payload, &capture); err != nil {
+		t.Fatalf("decode hook capture: %v", err)
+	}
+	if capture.Args != "hook post-commit" {
+		t.Fatalf("managed hook args = %q, want hook post-commit", capture.Args)
+	}
+	if capture.LineageKind != "cherry-pick" || capture.SourceCommitSHA != sourceSHA {
+		t.Fatalf("managed hook lineage = %+v, want cherry-pick source %s", capture, sourceSHA)
+	}
+}
+
+func TestManagedPostCommitShimProcess(t *testing.T) {
+	if os.Getenv("AE_TEST_CHERRY_PICK_HOOK") != "1" {
+		return
+	}
+	repo, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	head, err := gitOutput(repo, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("resolve HEAD: %v", err)
+	}
+	lineageKind, sourceCommitSHA := commitLineageEvidence(repo, head)
+	payload, err := json.Marshal(struct {
+		Args            string `json:"args"`
+		LineageKind     string `json:"lineage_kind"`
+		SourceCommitSHA string `json:"source_commit_sha"`
+	}{
+		Args:            os.Getenv("AE_TEST_HOOK_ARGS"),
+		LineageKind:     lineageKind,
+		SourceCommitSHA: sourceCommitSHA,
+	})
+	if err != nil {
+		t.Fatalf("encode hook capture: %v", err)
+	}
+	if err := os.WriteFile(os.Getenv("AE_TEST_CHERRY_PICK_CAPTURE"), payload, 0o600); err != nil {
+		t.Fatalf("write hook capture: %v", err)
 	}
 }
 
@@ -750,6 +871,29 @@ func TestPostRewriteResolvedQueuesEventsWhenUploadFails(t *testing.T) {
 	}
 	if ev.EventID != wantID {
 		t.Fatalf("queued event_id = %q, want %q", ev.EventID, wantID)
+	}
+}
+
+func TestPostRewriteResolvedPreservesSubsecondCaptureTime(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	u := &fakeUploader{}
+	if err := NewHandler(u).PostRewriteResolved(context.Background(), execCtx, "amend", strings.NewReader("oldsha1 newsha1\n")); err != nil {
+		t.Fatalf("PostRewriteResolved: %v", err)
+	}
+	if len(u.events) != 1 {
+		t.Fatalf("uploaded events = %d, want 1", len(u.events))
+	}
+	capturedAt := u.events[0].CapturedAt
+	parsed, err := time.Parse(time.RFC3339Nano, capturedAt)
+	if err != nil {
+		t.Fatalf("CapturedAt = %q, want RFC3339Nano: %v", capturedAt, err)
+	}
+	if !strings.Contains(capturedAt, ".") || parsed.Nanosecond() == 0 {
+		t.Fatalf("CapturedAt = %q, want preserved subsecond precision", capturedAt)
 	}
 }
 

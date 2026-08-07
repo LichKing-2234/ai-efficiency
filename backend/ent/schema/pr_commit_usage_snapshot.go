@@ -62,5 +62,6 @@ func (PRCommitUsageSnapshot) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("pr_record_id", "commit_sha").
 			Unique(),
+		index.Fields("commit_sha", "pr_record_id"),
 	}
 }

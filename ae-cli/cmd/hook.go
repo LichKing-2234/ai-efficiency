@@ -258,7 +258,7 @@ func queueUnresolvedPostCommit(gitCtx *hooks.GitContext) {
 		ParentSHAs:     hooks.ParentSHAsForHook(repoRoot),
 		BranchSnapshot: firstNonEmpty(gitCtx.Branch, hooks.BranchSnapshotForHook(repoRoot)),
 		HeadSnapshot:   head,
-		CapturedAt:     time.Now().UTC().Format(time.RFC3339),
+		CapturedAt:     time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	if err := hooks.EnqueueUnresolvedHookEvent(ev); err != nil {
 		fmt.Fprintf(os.Stderr, "ae-cli: failed to queue unresolved checkpoint event: %v\n", err)
@@ -281,7 +281,7 @@ func queueUnresolvedPostRewrite(gitCtx *hooks.GitContext, rewriteType string, st
 	if shouldSkipUnresolvedHookQueue(serverURL, authSubject, gitCtx.RepoKey) {
 		return
 	}
-	capturedAt := time.Now().UTC().Format(time.RFC3339)
+	capturedAt := time.Now().UTC().Format(time.RFC3339Nano)
 	for _, p := range pairs {
 		ev := hooks.UnresolvedHookEvent{
 			Kind:         "post-rewrite",

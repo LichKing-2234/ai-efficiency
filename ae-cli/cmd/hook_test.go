@@ -336,6 +336,13 @@ func TestHookPostCommitQueuesUnresolvedWhenInitialResolveTimesOut(t *testing.T) 
 	if len(items) != 1 || items[0].RemoteURL != "https://github.com/acme/repo.git" || items[0].CommitSHA == "" {
 		t.Fatalf("unresolved items = %+v, want unresolved post-commit", items)
 	}
+	capturedAt, err := time.Parse(time.RFC3339Nano, items[0].CapturedAt)
+	if err != nil {
+		t.Fatalf("CapturedAt = %q, want RFC3339Nano: %v", items[0].CapturedAt, err)
+	}
+	if !strings.Contains(items[0].CapturedAt, ".") || capturedAt.Nanosecond() == 0 {
+		t.Fatalf("CapturedAt = %q, want preserved subsecond precision", items[0].CapturedAt)
+	}
 }
 
 func TestHookPostRewriteQueuesUnresolvedWhenInitialResolveTimesOut(t *testing.T) {
@@ -390,6 +397,13 @@ func TestHookPostRewriteQueuesUnresolvedWhenInitialResolveTimesOut(t *testing.T)
 	}
 	if len(items) != 1 || items[0].Kind != "post-rewrite" || items[0].RemoteURL != "https://github.com/acme/repo.git" || items[0].OldCommitSHA != "oldsha1" || items[0].NewCommitSHA != "newsha1" || items[0].RewriteType != "amend" {
 		t.Fatalf("unresolved items = %+v, want unresolved post-rewrite", items)
+	}
+	capturedAt, err := time.Parse(time.RFC3339Nano, items[0].CapturedAt)
+	if err != nil {
+		t.Fatalf("CapturedAt = %q, want RFC3339Nano: %v", items[0].CapturedAt, err)
+	}
+	if !strings.Contains(items[0].CapturedAt, ".") || capturedAt.Nanosecond() == 0 {
+		t.Fatalf("CapturedAt = %q, want preserved subsecond precision", items[0].CapturedAt)
 	}
 }
 

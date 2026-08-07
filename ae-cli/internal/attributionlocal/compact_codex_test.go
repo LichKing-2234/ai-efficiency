@@ -21,7 +21,7 @@ func TestParseCompactCodexFileUsesLastUsageAndOutputRepository(t *testing.T) {
 	rows := []any{
 		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "conversation-a", "cwd": repoA}},
 		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-a", "cwd": repoA, "model": "gpt-test"}},
-		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "input": `{"path":"` + filepath.Join(repoB, "internal", "value.go") + `"}`}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Update File: " + filepath.Join(repoB, "internal", "value.go") + "\n*** End Patch"}},
 		compactTokenRow("2026-08-05T10:00:00Z", map[string]any{
 			"input_tokens": 100, "cached_input_tokens": 40, "cache_write_input_tokens": 10, "output_tokens": 20,
 			"reasoning_output_tokens": 5, "total_tokens": 120,
@@ -46,6 +46,99 @@ func TestParseCompactCodexFileUsesLastUsageAndOutputRepository(t *testing.T) {
 	}
 	if len(fromA) != 0 {
 		t.Fatalf("launch repository received output attributed to B: %+v", fromA)
+	}
+}
+
+func TestScanCompactCodexAtomsIgnoresReadOnlyPathAsRepositoryEvidence(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repoA := compactTestRepo(t, "repo-a")
+	repoB := compactTestRepo(t, "repo-b")
+	path := filepath.Join(home, ".codex", "sessions", "2026", "08", "05", "read-only.jsonl")
+	writeJSONLines(t, path, []any{
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "conversation-read-only", "cwd": repoA}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-read-only", "cwd": repoA, "model": "gpt-test"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{
+			"type": "function_call", "name": "read_file", "arguments": `{"path":"` + filepath.Join(repoB, "internal", "value.go") + `"}`,
+		}},
+		compactTokenRow("2026-08-05T10:00:00Z", map[string]any{"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}, nil),
+	})
+
+	fromA, err := ScanCompactCodexAtoms(context.Background(), repoA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fromA) != 1 || fromA[0].Evidence != "weak_cwd" {
+		t.Fatalf("repo A atoms = %+v, want one cwd-only atom", fromA)
+	}
+	fromB, err := ScanCompactCodexAtoms(context.Background(), repoB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fromB) != 0 {
+		t.Fatalf("read-only path falsely produced direct evidence for repo B: %+v", fromB)
+	}
+}
+
+func TestScanCompactCodexAtomsUsesExplicitWorkdirAsRepositoryEvidence(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repoA := compactTestRepo(t, "repo-a")
+	repoB := compactTestRepo(t, "repo-b")
+	path := filepath.Join(home, ".codex", "sessions", "2026", "08", "05", "workdir.jsonl")
+	writeJSONLines(t, path, []any{
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "conversation-workdir", "cwd": repoA}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-workdir", "cwd": repoA, "model": "gpt-test"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{
+			"type": "function_call", "name": "exec_command", "arguments": `{"cmd":"git status","workdir":"` + repoB + `","metadata":{"path":"` + repoA + `"}}`,
+		}},
+		compactTokenRow("2026-08-05T10:00:00Z", map[string]any{"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}, nil),
+	})
+
+	fromB, err := ScanCompactCodexAtoms(context.Background(), repoB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fromB) != 1 || fromB[0].Evidence != "direct" {
+		t.Fatalf("repo B atoms = %+v, want explicit workdir evidence", fromB)
+	}
+	fromA, err := ScanCompactCodexAtoms(context.Background(), repoA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fromA) != 0 {
+		t.Fatalf("turn cwd or nested path overrode explicit workdir: %+v", fromA)
+	}
+}
+
+func TestScanCompactCodexAtomsUsesConfirmedPatchTargetAsRepositoryEvidence(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repoA := compactTestRepo(t, "repo-a")
+	repoB := compactTestRepo(t, "repo-b")
+	path := filepath.Join(home, ".codex", "sessions", "2026", "08", "05", "patch.jsonl")
+	writeJSONLines(t, path, []any{
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "conversation-patch", "cwd": repoA}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-patch", "cwd": repoA, "model": "gpt-test"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{
+			"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: " + filepath.Join(repoB, "feature.go") + "\n*** End Patch",
+		}},
+		compactTokenRow("2026-08-05T10:00:00Z", map[string]any{"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}, nil),
+	})
+
+	fromB, err := ScanCompactCodexAtoms(context.Background(), repoB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fromB) != 1 || fromB[0].Evidence != "direct" {
+		t.Fatalf("repo B atoms = %+v, want confirmed patch-target evidence", fromB)
+	}
+	fromA, err := ScanCompactCodexAtoms(context.Background(), repoA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fromA) != 0 {
+		t.Fatalf("turn cwd overrode confirmed patch target: %+v", fromA)
 	}
 }
 
@@ -103,7 +196,7 @@ func TestParseCompactCodexFileDistinguishesRealLinkedWorktrees(t *testing.T) {
 	writeJSONLines(t, path, []any{
 		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "conversation-linked", "cwd": mainRepo}},
 		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-linked", "cwd": mainRepo, "model": "gpt-test"}},
-		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "input": `{"path":"` + filepath.Join(linkedRepo, "feature.go") + `"}`}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Update File: " + filepath.Join(linkedRepo, "feature.go") + "\n*** End Patch"}},
 		compactTokenRow("2026-08-05T10:00:00Z", map[string]any{"input_tokens": 20, "cached_input_tokens": 5, "output_tokens": 5, "total_tokens": 25}, nil),
 	})
 
@@ -306,6 +399,53 @@ func TestCompactSyncEngineRetainsCommitTriggerForLateJSONLVisibility(t *testing.
 	}
 	if len(fake.buckets) != 1 || fake.buckets[0].InitialRevision.Allocations[0].Target.CommitSHA != commitSHA {
 		t.Fatalf("late-visible bucket = %+v", fake.buckets)
+	}
+}
+
+func TestCompactSyncEngineUsesExactSubsecondCommitBoundary(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repo := compactTestRepo(t, "repo")
+	commitSHA := compactCommitFile(t, repo, "main.go", "package main\n", "commit")
+	writeCompactState(t, CompactState{Version: 2, EnabledAt: time.Date(2026, 8, 5, 9, 0, 0, 0, time.UTC), SeenAtoms: map[string]bool{}})
+
+	commitAt := time.Date(2026, 8, 5, 10, 10, 0, 500_000_000, time.UTC)
+	if err := QueueCompactTrigger(context.Background(), CompactTrigger{
+		ID: "subsecond-commit", Kind: "post-commit", RepoConfigID: 11, RepoKey: "repo:a", WorkspaceID: "workspace-a",
+		CommitSHA: commitSHA, Branch: "feature/a", CapturedAt: commitAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	patch := "*** Begin Patch\n*** Update File: " + filepath.Join(repo, "main.go") + "\n*** End Patch"
+	writeJSONLines(t, filepath.Join(home, ".codex", "sessions", "2026", "08", "05", "subsecond.jsonl"), []any{
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "conversation-subsecond", "cwd": repo}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-before", "cwd": repo, "model": "gpt-test"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": patch}},
+		compactTokenRow("2026-08-05T10:10:00.100000000Z", map[string]any{"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}, nil),
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-after", "cwd": repo, "model": "gpt-test"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": patch}},
+		compactTokenRow("2026-08-05T10:10:00.900000000Z", map[string]any{"input_tokens": 20, "output_tokens": 4, "total_tokens": 24}, nil),
+	})
+
+	fake := &compactBackendFake{}
+	engine := &CompactSyncEngine{Client: fake}
+	if err := engine.Run(context.Background(), CompactRunOptions{
+		InstallationID: "installation-a", RepoRoot: repo, RepoConfigID: 11, RepoKey: "repo:a", WorkspaceID: "workspace-a", Cutoff: commitAt.Add(time.Second),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.buckets) != 2 {
+		t.Fatalf("buckets = %+v, want one before-commit and one after-commit bucket", fake.buckets)
+	}
+	targets := map[string]client.AttributionTarget{}
+	for _, bucket := range fake.buckets {
+		targets[bucket.ChangeSetID] = bucket.InitialRevision.Allocations[0].Target
+	}
+	if got := targets["codex:conversation-subsecond:turn-before"]; got.Status != "bound_auto" || got.CommitSHA != commitSHA {
+		t.Fatalf("before-commit target = %+v, want commit %s", got, commitSHA)
+	}
+	if got := targets["codex:conversation-subsecond:turn-after"]; got.Status != "unbound" || got.CommitSHA != "" {
+		t.Fatalf("after-commit target = %+v, want unbound", got)
 	}
 }
 
@@ -574,7 +714,7 @@ func writeCompactSession(t *testing.T, home, launchRepo, conversationID, turnID,
 		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": turnID, "cwd": launchRepo, "model": "gpt-test"}},
 	}
 	for _, outputPath := range outputPaths {
-		rows = append(rows, map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "input": `{"path":"` + outputPath + `"}`}})
+		rows = append(rows, map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Update File: " + outputPath + "\n*** End Patch"}})
 	}
 	rows = append(rows, compactTokenRow(timestamp, map[string]any{
 		"input_tokens": 100, "cached_input_tokens": 40, "output_tokens": 20,
@@ -588,7 +728,7 @@ func writeCompactSessionFile(t *testing.T, path, repo, conversationID, turnID, t
 	writeJSONLines(t, path, []any{
 		map[string]any{"type": "session_meta", "payload": map[string]any{"id": conversationID, "cwd": repo}},
 		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": turnID, "cwd": repo, "model": "gpt-test"}},
-		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "input": `{"path":"` + filepath.Join(repo, "main.go") + `"}`}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Update File: " + filepath.Join(repo, "main.go") + "\n*** End Patch"}},
 		compactTokenRow(timestamp, map[string]any{"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}, nil),
 	})
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
 	"github.com/ai-efficiency/ae-cli/internal/reporting"
+	"github.com/ai-efficiency/ae-cli/internal/toolconfig"
 )
 
 func ptrTimeValue(t time.Time) *time.Time {
@@ -56,6 +57,19 @@ func TestDoctorPrintsPendingSyncTask(t *testing.T) {
 	if err := hooks.SaveSyncTask(task); err != nil {
 		t.Fatalf("SaveSyncTask: %v", err)
 	}
+	uploadedAt := time.Date(2026, 5, 26, 8, 55, 0, 0, time.UTC)
+	if err := hooks.AppendLedger(gitCtx.WorkspaceID, hooks.LedgerRecord{
+		Kind: "checkpoint", DedupeKey: "uploaded-a", ServerURL: "https://ae.example.com", AuthSubject: "user:123",
+		RepoConfigID: 123, RepoKey: gitCtx.RepoKey, WorkspaceID: gitCtx.WorkspaceID, Status: "uploaded", AttemptedAt: uploadedAt, UploadedAt: &uploadedAt,
+	}); err != nil {
+		t.Fatalf("AppendLedger uploaded: %v", err)
+	}
+	if err := hooks.AppendLedger(gitCtx.WorkspaceID, hooks.LedgerRecord{
+		Kind: "checkpoint", DedupeKey: "failed-a", ServerURL: "https://ae.example.com", AuthSubject: "user:123",
+		RepoConfigID: 123, RepoKey: gitCtx.RepoKey, WorkspaceID: gitCtx.WorkspaceID, Status: "failed", AttemptedAt: uploadedAt.Add(time.Minute), LastError: "upload failed locally",
+	}); err != nil {
+		t.Fatalf("AppendLedger failed: %v", err)
+	}
 
 	wd, err := os.Getwd()
 	if err != nil {
@@ -73,7 +87,7 @@ func TestDoctorPrintsPendingSyncTask(t *testing.T) {
 		t.Fatalf("doctorCmd.RunE: %v", err)
 	}
 	output := buf.String()
-	for _, want := range []string{"Sync Task: pending", "spawn failed", "attempt_count: 3"} {
+	for _, want := range []string{"Sync Task: pending", "spawn failed", "attempt_count: 3", "last_success=2026-05-26T08:55:00Z", "last_error=upload failed locally"} {
 		if !bytes.Contains(buf.Bytes(), []byte(want)) {
 			t.Fatalf("doctor output missing %q:\n%s", want, output)
 		}
@@ -83,10 +97,14 @@ func TestDoctorPrintsPendingSyncTask(t *testing.T) {
 func TestDoctorPrintsCompactReportingStatusWithoutCredentials(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	endpoint := "https://ae.example.com/api/v1/attribution/otel/v1/traces"
 	if err := reporting.Save("", &reporting.Config{
 		Version: 1, InstallationID: "installation-test", ServerURL: "https://ae.example.com",
 		ReporterToken: "reporter-secret", OTLPToken: "otlp-secret", ReportingEnabled: true, OTelEnabled: true,
 	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := toolconfig.ConfigureCodexOTLP(home, endpoint, "otlp-secret"); err != nil {
 		t.Fatal(err)
 	}
 	if err := attributionlocal.SaveJSON(attributionlocal.CompactStatePath(), attributionlocal.CompactState{
@@ -98,8 +116,9 @@ func TestDoctorPrintsCompactReportingStatusWithoutCredentials(t *testing.T) {
 	var output bytes.Buffer
 	printCompactReportingStatus(&output)
 	for _, want := range []string{
-		"Compact reporting", "Installation: installation-test", "Credentials:  available [ok]",
+		"Compact reporting", "Installation: installation-test", "Reporter credential: available [ok]", "OTLP credential:     available [ok]",
 		"Buckets:      enabled [ok]", "Codex OTLP:   enabled [ok]", "Pending:      buckets=1 triggers=1",
+		"Codex OTLP config: healthy [ok]", "endpoint=match", "credential=match", "prompt_logging=disabled", "trace_only=true",
 	} {
 		if !strings.Contains(output.String(), want) {
 			t.Fatalf("compact doctor output missing %q:\n%s", want, output.String())
@@ -107,6 +126,34 @@ func TestDoctorPrintsCompactReportingStatusWithoutCredentials(t *testing.T) {
 	}
 	if strings.Contains(output.String(), "reporter-secret") || strings.Contains(output.String(), "otlp-secret") {
 		t.Fatalf("compact doctor leaked credentials: %s", output.String())
+	}
+}
+
+func TestDoctorShowsStableInstallationWhenCredentialConfigIsMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	config, err := reporting.LoadOrCreate("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := reporting.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatalf("remove credential config: %v", err)
+	}
+
+	var output bytes.Buffer
+	printCompactReportingStatus(&output)
+	for _, want := range []string{
+		"Compact reporting", "Installation: " + config.InstallationID,
+		"Reporter credential: missing [failed]", "OTLP credential:     missing [failed]",
+		"login again to recover credentials for this installation",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("compact doctor output missing %q:\n%s", want, output.String())
+		}
 	}
 }
 

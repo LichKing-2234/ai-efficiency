@@ -603,6 +603,11 @@ var (
 				Unique:  true,
 				Columns: []*schema.Column{PrCommitUsageSnapshotsColumns[13], PrCommitUsageSnapshotsColumns[1]},
 			},
+			{
+				Name:    "prcommitusagesnapshot_commit_sha_pr_record_id",
+				Unique:  false,
+				Columns: []*schema.Column{PrCommitUsageSnapshotsColumns[1], PrCommitUsageSnapshotsColumns[13]},
+			},
 		},
 	}
 	// PrSyncJobsColumns holds the columns for the "pr_sync_jobs" table.

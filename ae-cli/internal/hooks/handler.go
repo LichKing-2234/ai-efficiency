@@ -127,7 +127,7 @@ func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionConte
 		ParentSHAs:     parentSHAs(repoRoot),
 		BranchSnapshot: firstNonEmptyValue(execCtx.Branch, branchSnapshot(repoRoot)),
 		HeadSnapshot:   head,
-		CapturedAt:     time.Now().UTC().Format(time.RFC3339),
+		CapturedAt:     time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	lineageKind, sourceCommitSHA := commitLineageEvidence(repoRoot, head)
 	h.queueCompactTrigger(ctx, attributionlocal.CompactTrigger{
@@ -236,7 +236,7 @@ func (h *Handler) PostRewriteResolved(ctx context.Context, execCtx ExecutionCont
 			RewriteType:   rewriteType,
 			OldCommitSHA:  oldSHA,
 			NewCommitSHA:  newSHA,
-			CapturedAt:    time.Now().UTC().Format(time.RFC3339),
+			CapturedAt:    time.Now().UTC().Format(time.RFC3339Nano),
 		}
 		h.queueCompactTrigger(ctx, attributionlocal.CompactTrigger{
 			ID:           ev.EventID,
