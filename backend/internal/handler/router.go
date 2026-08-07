@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/internal/activity"
 	"github.com/ai-efficiency/backend/internal/attributionledger"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/middleware"
@@ -48,6 +49,7 @@ type RouterOptions struct {
 	RequestObserver          telemetry.RequestObserver
 	WebVitalsHandler         *WebVitalsHandler
 	AttributionCorrelation   *attributionledger.CorrelationStore
+	ActivityCache            *activity.Cache
 	Release                  string
 	RequestTimeout           time.Duration
 }
@@ -221,6 +223,11 @@ func setupRouter(
 	eventsHandler := NewEventsHandler(toolusage.NewQueryService(entClient))
 	installationService := attributionledger.NewInstallationService(entClient)
 	attributionHandler := NewAttributionHandler(installationService, attributionledger.NewService(entClient, options.AttributionCorrelation), options.AttributionCorrelation)
+	activityHandler := NewActivityHandler(activity.NewService(entClient, options.AttributionCorrelation, activity.ServiceOptions{
+		ScopeResolver: representativescope.NewWithCache(entClient, options.RepresentativeScopeCache),
+		CursorSecret:  options.TeamUsageCursorSecret,
+		Cache:         options.ActivityCache,
+	}))
 	userSetupService := usersetup.NewService(entClient, providerHandler, encryptionKey)
 	userSetupHandler := NewUserSetupHandler(userSetupService)
 	adminUsersHandler := NewAdminUsersHandler(entClient, encryptionKey)
@@ -384,6 +391,8 @@ func setupRouter(
 	{
 		attributionOTLPGroup.POST("/v1/traces", attributionHandler.IngestOTLP)
 	}
+
+	RegisterActivityRoutes(protected.Group("/activity"), activityHandler)
 
 	RegisterWorkItemsRoutes(protected, workItemsHandler)
 	RegisterWebVitalsRoutes(protected, options.WebVitalsHandler)
