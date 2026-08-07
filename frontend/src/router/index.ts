@@ -1,6 +1,15 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type LocationQueryRaw, type RouteLocationGeneric } from 'vue-router'
 import { installAuthNavigationGuards } from '@/router/authGuard'
 import { reloadOnceForChunkError } from '@/utils/chunkReload'
+
+function activityRedirect(to: RouteLocationGeneric) {
+  const query: LocationQueryRaw = {}
+  for (const key of ['from', 'to', 'range', 'days']) {
+    const value = to.query?.[key]
+    if (typeof value === 'string') query[key] = value
+  }
+  return { path: '/activity', query }
+}
 
 const router = createRouter({
   history: createWebHistory(),
@@ -58,14 +67,34 @@ const router = createRouter({
       component: () => import('@/views/repos/RepoListView.vue'),
     },
     {
+      path: '/activity',
+      name: 'Activity',
+      component: () => import('@/views/activity/ActivityView.vue'),
+    },
+    {
+      path: '/activity/teams',
+      name: 'ActivityTeams',
+      component: () => import('@/views/activity/ActivityTeamsView.vue'),
+    },
+    {
+      path: '/activity/teams/:team_id',
+      name: 'ActivityTeam',
+      component: () => import('@/views/activity/ActivityTeamView.vue'),
+    },
+    {
+      path: '/activity/members/:user_id',
+      name: 'ActivityMember',
+      component: () => import('@/views/activity/ActivityView.vue'),
+    },
+    {
       path: '/attribution',
       name: 'Attribution',
-      component: () => import('@/views/attribution/AttributionView.vue'),
+      redirect: activityRedirect,
     },
     {
       path: '/events',
       name: 'Events',
-      component: () => import('@/views/events/EventsView.vue'),
+      redirect: activityRedirect,
     },
     {
       path: '/user',

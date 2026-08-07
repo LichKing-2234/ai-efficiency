@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-05
 **Status:** Implemented POC; not released or deployed
-**Scope:** `ae-cli`, backend compact attribution APIs and storage, frontend `/attribution`
+**Scope:** `ae-cli`, backend compact attribution writes and Activity read models, frontend `/activity`
 **Related:**
 
 - [Sessionless Local Tool Attribution](./2026-05-13-sessionless-local-tool-attribution-design.md)
@@ -17,10 +17,12 @@ POC. For a reporting installation with compact reporting enabled, it replaces
 the legacy Codex path that uploads one `tool_usage_event` per response and a
 checkpoint `agent_snapshot`.
 
-The older endpoints, `/events` route, and Claude/Kiro scanner path remain for
-CLI compatibility. The new endpoints live under `/api/v1/attribution/*`, so an
-old CLI can keep using the existing checkpoint and tool-usage APIs. `/events`
-remains routable but is no longer present in the primary navigation.
+The older endpoints and Claude/Kiro scanner path remain for CLI compatibility.
+Compact installation, checkpoint, bucket, revision, and OTLP writes live under
+`/api/v1/attribution/*`, so an old CLI can keep using the existing checkpoint
+and tool-usage APIs. Bounded product reads live under `/api/v1/activity/*`.
+The legacy `/events` and `/attribution` browser routes redirect to `/activity`
+and are no longer present in the primary navigation.
 
 This is a local POC only. It does not authorize a Kubernetes, Helm, cloud, or
 production rollout.
@@ -275,6 +277,26 @@ POST /api/v1/attribution/installations/:installation_id/credentials/rotate
 GET  /api/v1/attribution/report
 ```
 
+The attribution report remains a compatibility read. The current product read
+surface is the protected Activity namespace:
+
+```text
+GET /api/v1/activity/scope
+GET /api/v1/activity/summary
+GET /api/v1/activity/members
+GET /api/v1/activity/members/:user_id
+GET /api/v1/activity/teams/:team_id
+GET /api/v1/activity/repos/:repo_id
+GET /api/v1/activity/buckets/:bucket_id
+```
+
+Activity defaults to a 30-day `[from,to)` window. Member, PR, commit, and Bucket
+collections have independent signed cursors. PR counts are lower bounds when
+relevant repository sync coverage is incomplete. Each request revalidates the
+actor role and current directory scope before consulting the short-lived read
+cache; cached membership never authorizes a request. Bucket detail and retained
+Request IDs are restricted to the Bucket owner and Admin.
+
 Reporter-token endpoints:
 
 ```text
@@ -296,21 +318,29 @@ keep resolving backend-known repositories after the OAuth login/refresh window
 expires. The separate namespace is the compatibility boundary; no breaking
 replacement of the old CLI APIs is required.
 
-## Reporting Surface
+## Activity Surface
 
-The protected `/attribution` page is the primary compact-ledger UI. It provides:
+The protected `/activity` page is the canonical product UI and defaults to the
+latest 30 days. Its headline fields are participating PRs, merged PRs, active
+repositories, and latest activity; Token is never a hero, team ranking, or
+composite performance metric. PRs appear before commits and incomplete PR sync
+is shown explicitly as `≥N`. Quality counts keep unbound/shared and invalid
+facts separate from repository output.
 
-- 7/30/90-day and custom ranges;
-- measured, bound, unbound/shared, coverage-gap, and Request ID summaries;
-- the explicit conservation check;
-- repository -> commit -> PR projection;
-- worktree, branch, rewrite lineage, and non-counting inherited Token details;
-- bucket-level normalization, evidence, correlation, and allocation revision
-  explanation.
+`/activity/members/:user_id` is the authorized member drill-down.
+`/activity/teams` and `/activity/teams/:team_id` expose the current authorized
+directory subtree to representatives and all current active teams/members to
+Admins; directory-only members remain visible as unavailable. `/repos/:id` is
+Activity-first, while repository configuration, webhook repair, explicit PR
+sync, and legacy PR usage remain in a lazy Operations section. Opening or
+filtering Activity never starts PR sync.
 
-The page reads `GET /api/v1/attribution/report`. Normal users see their own
-ledger. An admin may request another `user_id`; this does not change bucket
-ownership or allocation semantics.
+The owner and Admin may expand a Bucket to inspect the Token breakdown, current
+allocation revision, extractor/normalization versions, correlation state, and
+retained Request IDs. Representatives can inspect member/repository/PR/commit
+and quality summaries but do not receive Bucket rows or raw Request IDs. The UI
+never exposes prompts, responses, code, commands, local paths, raw spans, or
+conversation identifiers.
 
 ## POC Acceptance Criteria
 

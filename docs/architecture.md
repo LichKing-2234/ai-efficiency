@@ -711,10 +711,10 @@ flowchart LR
         Buckets["immutable attribution_usage_buckets"]
         Revisions["append-only allocation revisions"]
         Correlation["bounded Request ID evidence<br/>shared read-cache only"]
-        Report["repo -> commit -> PR report"]
+        Activity["scoped Activity read models<br/>member / team / repo / Bucket"]
     end
 
-    UI["/attribution"]
+    UI["/activity<br/>personal / team / repository"]
 
     CLI --> Install
     CLI --> Hooks
@@ -730,10 +730,10 @@ flowchart LR
     Compact --> Revisions
     Checkpoint --> Revisions
     Correlation -->|"quality + count + digest only"| Buckets
-    Buckets --> Report
-    Revisions --> Report
-    Checkpoint --> Report
-    Report --> UI
+    Buckets --> Activity
+    Revisions --> Activity
+    Checkpoint --> Activity
+    Activity --> UI
 ```
 
 ### Status
@@ -748,10 +748,10 @@ flowchart LR
   Active user-level CLI state lives under `~/.ae-cli/`: OAuth auth in `token.json`, the installation ID and scoped reporter/OTLP credentials in mode-`0600` `reporting.json`, global managed hooks in `git-hooks`, hook eligibility under `state/hooks`, compact state in `state/attribution/compact/state.json`, and compatibility state under the existing attribution workspace directories. Compact state stores atom digests, pending/closed buckets, and minimized Git triggers; it does not cache raw JSONL, paths, prompts, tool output, or spans. Repo-local managed hooks live under the canonical Git common directory at `<git common dir>/ae-hooks`. Git exposes one effective `core.hooksPath` per resolution scope; AE-managed installation owns the layer it writes and does not chain an unrelated previous path unless that behavior is added explicitly. `--force` authorizes overwriting the relevant managed path.
 - Installation and correlation boundary:
   `reporting_installations` stores owner/status/enable flags and only hashes of the independently scoped `aer_*` reporter and `aeo_*` OTLP credentials. Authenticated rotation replaces both credentials and invalidates their prior values. The only Codex OTLP route is `/api/v1/attribution/otel/v1/traces`; prompt logging is disabled and no logs ingest route exists. The bounded JSON payload is reduced in memory to conversation/Request ID/time/status/error evidence. Raw spans are discarded. Success evidence has a per-item 24-hour shared-cache retention, failure evidence has a separate per-item 30-day retention, later writes do not extend older evidence, and durable buckets retain only correlation quality, count, and digest.
-- Current formal frontend surface:
-  `/attribution` is the primary Codex compact-ledger surface. It provides time-range summaries, explicit `measured = bound + unbound` validation, repository -> commit -> PR projection, worktree/branch lineage, non-counting inherited Token, and expandable bucket normalization/correlation/revision evidence. The existing repo inventory and PR detail pages remain in place for repository operations and legacy PR usage snapshots.
-- Current global event surface:
-  `/events` remains a protected compatibility page for previously ingested `tool_usage_events`, but it is hidden from the primary sidebar. Compact Codex reporting does not create event rows or upload raw detail to this surface.
+- Current Activity surface:
+  `/activity` is the canonical personal AI Coding Activity surface, with authorized member drill-down at `/activity/members/:user_id` and representative/Admin organization views at `/activity/teams` and `/activity/teams/:team_id`. It defaults to 30 days, presents PRs before commits, renders incomplete PR-sync totals as lower bounds, keeps Token out of headline/team metrics, and loads restricted Bucket/Request ID evidence only for the owner or Admin. `/events` and `/attribution` redirect to `/activity` while preserving safe range query state.
+- Repository surface:
+  `/repos/:id` defaults to scoped Activity and loads the repository Operations section lazily. Operations owns repository health/configuration, SCM binding, webhook repair, explicit PR sync, and legacy PR usage detail. Activity reads never trigger PR sync.
 - Remaining direction:
   evaluate compact-trigger retention/claim deadlines from POC distributions, migrate Claude/Kiro to the generic bucket contract, and decide whether delivery-effectiveness correlation is useful. Cost allocation, individual ranking, and production rollout are not implied.
 
@@ -773,7 +773,7 @@ flowchart LR
 | HTTP runtime and telemetry | `backend/internal/httpclient`, `backend/internal/health`, `backend/internal/telemetry`, `backend/internal/middleware` | Bounded reusable downstream transports, parallel deadline-bounded readiness, validated request IDs, normalized request/Relay logs and Prometheus histograms, database/Redis pool collectors, closed application-cache events, fixed-memory Web Vitals aggregation, and the internal-only scrape registry |
 | SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization, and active-PR usage snapshot refresh |
 | Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Explicit repo registration, read-only hook eligibility resolution, deterministic repo binding from configured SCM metadata, bounded SQL inventory aggregation, transactionally versioned optional Redis inventory reads, PR labeling, and dashboard-facing summary inputs |
-| Session and attribution | `backend/internal/checkpoint`, `backend/internal/attributionledger`, `backend/internal/attribution`, `backend/internal/prusage` | Minimized and legacy commit checkpoints, reporting-installation authentication, immutable compact Token buckets, append-only allocation revisions, bounded Request ID correlation, repo/commit/PR ledger reports, and legacy checkpoint-bound PR usage snapshots |
+| Session and attribution | `backend/internal/checkpoint`, `backend/internal/attributionledger`, `backend/internal/activity`, `backend/internal/attribution`, `backend/internal/prusage` | Minimized and legacy commit checkpoints, reporting-installation authentication, immutable compact Token buckets, append-only allocation revisions, bounded Request ID correlation, authorization-revalidated and cursor-bounded personal/team/repository Activity projections, restricted Bucket detail, compatibility ledger reports, and legacy checkpoint-bound PR usage snapshots |
 | API surface | `backend/internal/handler`, `backend/internal/middleware` | HTTP handlers, routing, auth middleware, settings endpoints, representative `/user/team-usage/*` endpoints, quota reset user/admin endpoints including approver candidate lookup, work item count endpoint, protected and rate-limited Web Vitals ingestion, admin team-usage audit, admin-users direct relay-user disablement/subscription jobs, and admin directory sync/offboarding endpoints |
 | Embedded frontend delivery | `backend/internal/web`, `backend/internal/oauth`, `backend/internal/handler` | Resolve embedded files and SPA fallbacks before applying gzip and cache policy, serve browser GET/HEAD consistently, and reuse the embedded index representation for OAuth authorize/device browser entry routes |
 
@@ -781,8 +781,8 @@ flowchart LR
 
 | Area | Paths | Responsibility |
 | --- | --- | --- |
-| Views | `frontend/src/views` | Dashboard, Work Items, compact Token attribution, repos, compatibility events, oauth, personal AI Usage, selected-member usage detail, representative Team Overview, admin users with on-demand department browsing and one responsive user-row tree, paginated admin Directory offboarding, and admin/settings pages with immediate affected-mutation count refresh |
-| Data access | `frontend/src/api`, `frontend/src/stores` | Backend API clients, independent repository list/inventory state and stable server-selection hydration, representative team-usage clients, bounded administrator department option/child clients, paginated Directory clients, the generation-safe Work Items count store with completion-based 20-second freshness, invalidation/reset ownership and one queued forced follow-up, plus the shared Settings credential/Directory-source owner with five-minute reuse, request deduplication, auth-session reset/invalidation, and serialized mutation refresh |
+| Views | `frontend/src/views` | Dashboard, Work Items, personal/member/team AI Coding Activity, Activity-first repository detail with lazy Operations, repos, oauth, personal AI Usage, selected-member usage detail, representative Team Overview, admin users with on-demand department browsing and one responsive user-row tree, paginated admin Directory offboarding, and admin/settings pages with immediate affected-mutation count refresh |
+| Data access | `frontend/src/api`, `frontend/src/stores`, `frontend/src/composables` | Backend API clients, stale-response-safe Activity orchestration and independent cursors, a business-neutral on-demand organization branch browser shared with Team Usage, independent repository list/inventory state and stable server-selection hydration, representative team-usage clients, bounded administrator department option/child clients, paginated Directory clients, the generation-safe Work Items count store with completion-based 20-second freshness, invalidation/reset ownership and one queued forced follow-up, plus the shared Settings credential/Directory-source owner with five-minute reuse, request deduplication, auth-session reset/invalidation, and serialized mutation refresh |
 | Browser session and identity | `frontend/src/auth/browserSession.ts`, `frontend/src/stores/auth.ts`, `frontend/src/api/client.ts` | Generation-aware credential ownership shared by Pinia and Axios, per-generation current-user single-flight, same-session refresh rotation, final adapter-boundary retry validation, and auth-expiry publication |
 | Route and session policy | `frontend/src/router/authGuard.ts`, `frontend/src/router/index.ts` | Parallel public/ordinary chunk and identity scheduling, fail-closed administrator role verification, exact attempt-generation lifecycle settlement, navigation-generation-gated follow-ups, failed-attempt recovery, and confirmation-based destination expiry consumption |
 | App shell | `frontend/src/components`, `frontend/src/router` | Layout, navigation with a freshness-bounded pending-work badge across protected routes and mobile remounts, route composition, and representative `/team-usage` route entry |

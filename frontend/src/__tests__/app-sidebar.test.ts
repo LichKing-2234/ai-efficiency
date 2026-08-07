@@ -23,6 +23,8 @@ function createTestRouter(initialPath = '/') {
       { path: '/work-items', component: { template: '<div>Work Items</div>' } },
       { path: '/repos', component: { template: '<div>Repos</div>' } },
       { path: '/attribution', component: { template: '<div>Attribution</div>' } },
+      { path: '/activity', component: { template: '<div>Activity</div>' } },
+      { path: '/activity/members/:user_id', component: { template: '<div>Member Activity</div>' } },
       { path: '/events', component: { template: '<div>Events</div>' } },
       { path: '/user', component: { template: '<div>User</div>' } },
       { path: '/usage', component: { template: '<div>Usage</div>' } },
@@ -99,7 +101,7 @@ describe('AppSidebar', () => {
 
     expect(linkTexts).toContain('AI Usage Center')
     expect(linkTexts).toContain('Work Items')
-    expect(linkTexts).toContain('Engineering Tokens')
+    expect(linkTexts).toContain('AI Coding Activity')
     expect(linkTexts).not.toContain('Usage Records')
     expect(linkTexts).toContain('Code Repositories')
     expect(linkTexts).toContain('AI Setup & Configuration')
@@ -107,7 +109,7 @@ describe('AppSidebar', () => {
     expect(linkTexts).not.toContain('My Usage')
     expect(links.map((l) => l.attributes('href'))).toContain('/usage')
     expect(links.map((l) => l.attributes('href'))).toContain('/work-items')
-    expect(links.map((l) => l.attributes('href'))).toContain('/attribution')
+    expect(links.map((l) => l.attributes('href'))).toContain('/activity')
     expect(links.map((l) => l.attributes('href'))).not.toContain('/events')
     expect(links.map((l) => l.attributes('href'))).not.toContain('/user/usage')
     expect(links.map((l) => l.attributes('href'))).not.toContain('/team-usage')
@@ -121,6 +123,15 @@ describe('AppSidebar', () => {
     expect(wrapper.text()).not.toContain('Administration')
     expect(linkTexts).not.toContain('Sessions')
     expect(linkTexts).not.toContain('Admin Console')
+  })
+
+  it('keeps AI Coding Activity active on descendant routes', async () => {
+    const router = createTestRouter()
+    await router.push('/activity/members/7')
+    await router.isReady()
+    const wrapper = mount(AppSidebar, { global: { plugins: [createPinia(), router] } })
+    const link = wrapper.get('a[href="/activity"]')
+    expect(link.classes()).toContain('bg-gray-800')
   })
 
   it('shows the Work Items badge when there is pending work', async () => {
@@ -465,7 +476,7 @@ describe('AppSidebar', () => {
     expect(linkTexts).toContain('AI 使用中心')
     expect(linkTexts).toContain('AI 接入与配置')
     expect(linkTexts).not.toContain('我的用量')
-    expect(linkTexts).toContain('研发 Token')
+    expect(linkTexts).toContain('AI 开发动态')
     expect(linkTexts).not.toContain('使用记录')
     expect(linkTexts).not.toContain('团队用量')
     expect(linkTexts).toContain('代码仓库')
