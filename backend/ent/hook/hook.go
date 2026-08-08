@@ -21,6 +21,30 @@ func (f AdminSubscriptionJobFunc) Mutate(ctx context.Context, m ent.Mutation) (e
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AdminSubscriptionJobMutation", m)
 }
 
+// The AttributionAllocationRevisionFunc type is an adapter to allow the use of ordinary
+// function as AttributionAllocationRevision mutator.
+type AttributionAllocationRevisionFunc func(context.Context, *ent.AttributionAllocationRevisionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AttributionAllocationRevisionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AttributionAllocationRevisionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AttributionAllocationRevisionMutation", m)
+}
+
+// The AttributionUsageBucketFunc type is an adapter to allow the use of ordinary
+// function as AttributionUsageBucket mutator.
+type AttributionUsageBucketFunc func(context.Context, *ent.AttributionUsageBucketMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AttributionUsageBucketFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AttributionUsageBucketMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AttributionUsageBucketMutation", m)
+}
+
 // The CommitCheckpointFunc type is an adapter to allow the use of ordinary
 // function as CommitCheckpoint mutator.
 type CommitCheckpointFunc func(context.Context, *ent.CommitCheckpointMutation) (ent.Value, error)
@@ -247,6 +271,18 @@ func (f RepoConfigFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RepoConfigMutation", m)
+}
+
+// The ReportingInstallationFunc type is an adapter to allow the use of ordinary
+// function as ReportingInstallation mutator.
+type ReportingInstallationFunc func(context.Context, *ent.ReportingInstallationMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ReportingInstallationFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ReportingInstallationMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ReportingInstallationMutation", m)
 }
 
 // The ScmProviderFunc type is an adapter to allow the use of ordinary

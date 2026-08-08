@@ -26,6 +26,9 @@ var hookEligibilityResolveTimeout = 2 * time.Second
 var runBackgroundSyncTask = hooks.RunPendingSyncTask
 
 var newHookUploader = func() hooks.Uploader {
+	if reportingConfig, ok := loadEnabledReportingConfig(); ok {
+		return hooks.NewCompactBackendUploader(client.New(reportingConfig.ServerURL, reportingConfig.ReporterToken), reportingConfig.InstallationID)
+	}
 	if apiClient == nil {
 		return hooks.UnsupportedUploader{}
 	}
@@ -126,15 +129,23 @@ func resolveHookExecutionContext(ctx context.Context, gitCtx *hooks.GitContext) 
 	}
 	tokenPath, _ := auth.DefaultTokenPath()
 	tf := readTokenFile(tokenPath)
-	if tf == nil || !tf.IsValid() {
+	reportingConfig, compactEnabled := loadEnabledReportingConfig()
+	if !compactEnabled && (tf == nil || !tf.IsValid()) {
 		observeHookRepo(gitCtx, hookstate.Context{RepoKey: gitCtx.RepoKey})
 		return hooks.ExecutionContext{}, false
 	}
-	serverURL := tf.ServerURL
-	if cfg != nil && cfg.Server.URL != "" {
-		serverURL = cfg.Server.URL
+	serverURL := ""
+	authSubject := ""
+	if compactEnabled {
+		serverURL = reportingConfig.ServerURL
+		authSubject = reportingConfig.AuthSubject
+	} else {
+		serverURL = tf.ServerURL
+		authSubject = tf.StableAuthSubject()
+		if cfg != nil && cfg.Server.URL != "" {
+			serverURL = cfg.Server.URL
+		}
 	}
-	authSubject := tf.StableAuthSubject()
 	binding := hookstate.Context{ServerURL: serverURL, AuthSubject: authSubject, RepoKey: gitCtx.RepoKey}
 	observeHookRepo(gitCtx, binding)
 	now := time.Now()
@@ -156,7 +167,16 @@ func resolveHookExecutionContext(ctx context.Context, gitCtx *hooks.GitContext) 
 		stalePositive, hasStalePositive = cache.LookupStalePositive(binding, true)
 	}
 
-	resolver := hookRepoResolverFor(serverURL, tf.AccessToken)
+	var resolver hookRepoResolver
+	if compactEnabled {
+		resolver = attributionHookRepoResolverFor(serverURL, reportingConfig.ReporterToken)
+	} else {
+		resolverToken := ""
+		if tf != nil && tf.IsValid() {
+			resolverToken = tf.AccessToken
+		}
+		resolver = hookRepoResolverFor(serverURL, resolverToken)
+	}
 	if resolver == nil {
 		if hasStalePositive {
 			return executionContextFromEligibility(gitCtx, binding, stalePositive, true), true
@@ -238,7 +258,7 @@ func queueUnresolvedPostCommit(gitCtx *hooks.GitContext) {
 		ParentSHAs:     hooks.ParentSHAsForHook(repoRoot),
 		BranchSnapshot: firstNonEmpty(gitCtx.Branch, hooks.BranchSnapshotForHook(repoRoot)),
 		HeadSnapshot:   head,
-		CapturedAt:     time.Now().UTC().Format(time.RFC3339),
+		CapturedAt:     time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	if err := hooks.EnqueueUnresolvedHookEvent(ev); err != nil {
 		fmt.Fprintf(os.Stderr, "ae-cli: failed to queue unresolved checkpoint event: %v\n", err)
@@ -261,7 +281,7 @@ func queueUnresolvedPostRewrite(gitCtx *hooks.GitContext, rewriteType string, st
 	if shouldSkipUnresolvedHookQueue(serverURL, authSubject, gitCtx.RepoKey) {
 		return
 	}
-	capturedAt := time.Now().UTC().Format(time.RFC3339)
+	capturedAt := time.Now().UTC().Format(time.RFC3339Nano)
 	for _, p := range pairs {
 		ev := hooks.UnresolvedHookEvent{
 			Kind:         "post-rewrite",
@@ -282,6 +302,9 @@ func queueUnresolvedPostRewrite(gitCtx *hooks.GitContext, rewriteType string, st
 }
 
 func unresolvedHookBinding() (string, string) {
+	if reportingConfig, ok := loadEnabledReportingConfig(); ok {
+		return reportingConfig.ServerURL, reportingConfig.AuthSubject
+	}
 	tokenPath, _ := auth.DefaultTokenPath()
 	tf := readTokenFile(tokenPath)
 	if tf == nil {
@@ -309,6 +332,21 @@ func shouldSkipUnresolvedHookQueue(serverURL, authSubject, repoKey string) bool 
 
 type hookRepoResolver interface {
 	ResolveRepoFromRemote(ctx context.Context, req client.ResolveRepoRequest) (*client.RepoEligibilityResponse, error)
+}
+
+type attributionHookRepoResolver struct {
+	client *client.Client
+}
+
+func (r attributionHookRepoResolver) ResolveRepoFromRemote(ctx context.Context, req client.ResolveRepoRequest) (*client.RepoEligibilityResponse, error) {
+	return r.client.ResolveAttributionRepoFromRemote(ctx, req)
+}
+
+func attributionHookRepoResolverFor(serverURL, token string) hookRepoResolver {
+	if strings.TrimSpace(serverURL) == "" || strings.TrimSpace(token) == "" {
+		return nil
+	}
+	return attributionHookRepoResolver{client: client.New(serverURL, token)}
 }
 
 func hookRepoResolverFor(serverURL, token string) hookRepoResolver {

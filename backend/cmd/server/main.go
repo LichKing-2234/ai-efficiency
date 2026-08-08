@@ -14,7 +14,9 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	_ "github.com/ai-efficiency/backend/ent/runtime"
+	"github.com/ai-efficiency/backend/internal/activity"
 	"github.com/ai-efficiency/backend/internal/attribution"
+	"github.com/ai-efficiency/backend/internal/attributionledger"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/buildinfo"
 	"github.com/ai-efficiency/backend/internal/checkpoint"
@@ -328,6 +330,10 @@ func main() {
 	if err != nil {
 		logger.Fatal("initialize representative scope cache", zap.Error(err))
 	}
+	activityCache, err := activity.NewCache(redisStore, activity.CacheOptions{Namespace: cfg.Redis.Namespace})
+	if err != nil {
+		logger.Fatal("initialize Activity cache", zap.Error(err))
+	}
 	teamUsageSnapshotCache, err := teamusage.NewSnapshotCache(
 		redisStore,
 		teamusage.SnapshotCacheOptions{
@@ -523,6 +529,8 @@ func main() {
 			RequestLogger:            logger,
 			RequestObserver:          metrics.RequestObserver(),
 			WebVitalsHandler:         webVitalsHandler,
+			AttributionCorrelation:   attributionledger.NewCorrelationStore(redisStore, cfg.Redis.Namespace),
+			ActivityCache:            activityCache,
 			Release:                  versionInfo.Version,
 			RequestTimeout:           time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
 		},

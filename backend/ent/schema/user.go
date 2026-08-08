@@ -57,6 +57,8 @@ func (User) Edges() []ent.Edge {
 		edge.To("commit_checkpoints", CommitCheckpoint.Type),
 		edge.To("commit_rewrites", CommitRewrite.Type),
 		edge.To("tool_usage_events", ToolUsageEvent.Type),
+		edge.To("reporting_installations", ReportingInstallation.Type),
+		edge.To("attribution_usage_buckets", AttributionUsageBucket.Type),
 	}
 }
 

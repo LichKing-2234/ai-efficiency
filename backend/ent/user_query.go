@@ -12,9 +12,11 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/predicate"
+	"github.com/ai-efficiency/backend/ent/reportinginstallation"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
 )
@@ -22,13 +24,15 @@ import (
 // UserQuery is the builder for querying User entities.
 type UserQuery struct {
 	config
-	ctx                   *QueryContext
-	order                 []user.OrderOption
-	inters                []Interceptor
-	predicates            []predicate.User
-	withCommitCheckpoints *CommitCheckpointQuery
-	withCommitRewrites    *CommitRewriteQuery
-	withToolUsageEvents   *ToolUsageEventQuery
+	ctx                         *QueryContext
+	order                       []user.OrderOption
+	inters                      []Interceptor
+	predicates                  []predicate.User
+	withCommitCheckpoints       *CommitCheckpointQuery
+	withCommitRewrites          *CommitRewriteQuery
+	withToolUsageEvents         *ToolUsageEventQuery
+	withReportingInstallations  *ReportingInstallationQuery
+	withAttributionUsageBuckets *AttributionUsageBucketQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -124,6 +128,50 @@ func (uq *UserQuery) QueryToolUsageEvents() *ToolUsageEventQuery {
 			sqlgraph.From(user.Table, user.FieldID, selector),
 			sqlgraph.To(toolusageevent.Table, toolusageevent.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, user.ToolUsageEventsTable, user.ToolUsageEventsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(uq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryReportingInstallations chains the current query on the "reporting_installations" edge.
+func (uq *UserQuery) QueryReportingInstallations() *ReportingInstallationQuery {
+	query := (&ReportingInstallationClient{config: uq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := uq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := uq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(reportinginstallation.Table, reportinginstallation.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.ReportingInstallationsTable, user.ReportingInstallationsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(uq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryAttributionUsageBuckets chains the current query on the "attribution_usage_buckets" edge.
+func (uq *UserQuery) QueryAttributionUsageBuckets() *AttributionUsageBucketQuery {
+	query := (&AttributionUsageBucketClient{config: uq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := uq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := uq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(attributionusagebucket.Table, attributionusagebucket.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.AttributionUsageBucketsTable, user.AttributionUsageBucketsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(uq.driver.Dialect(), step)
 		return fromU, nil
@@ -318,14 +366,16 @@ func (uq *UserQuery) Clone() *UserQuery {
 		return nil
 	}
 	return &UserQuery{
-		config:                uq.config,
-		ctx:                   uq.ctx.Clone(),
-		order:                 append([]user.OrderOption{}, uq.order...),
-		inters:                append([]Interceptor{}, uq.inters...),
-		predicates:            append([]predicate.User{}, uq.predicates...),
-		withCommitCheckpoints: uq.withCommitCheckpoints.Clone(),
-		withCommitRewrites:    uq.withCommitRewrites.Clone(),
-		withToolUsageEvents:   uq.withToolUsageEvents.Clone(),
+		config:                      uq.config,
+		ctx:                         uq.ctx.Clone(),
+		order:                       append([]user.OrderOption{}, uq.order...),
+		inters:                      append([]Interceptor{}, uq.inters...),
+		predicates:                  append([]predicate.User{}, uq.predicates...),
+		withCommitCheckpoints:       uq.withCommitCheckpoints.Clone(),
+		withCommitRewrites:          uq.withCommitRewrites.Clone(),
+		withToolUsageEvents:         uq.withToolUsageEvents.Clone(),
+		withReportingInstallations:  uq.withReportingInstallations.Clone(),
+		withAttributionUsageBuckets: uq.withAttributionUsageBuckets.Clone(),
 		// clone intermediate query.
 		sql:  uq.sql.Clone(),
 		path: uq.path,
@@ -362,6 +412,28 @@ func (uq *UserQuery) WithToolUsageEvents(opts ...func(*ToolUsageEventQuery)) *Us
 		opt(query)
 	}
 	uq.withToolUsageEvents = query
+	return uq
+}
+
+// WithReportingInstallations tells the query-builder to eager-load the nodes that are connected to
+// the "reporting_installations" edge. The optional arguments are used to configure the query builder of the edge.
+func (uq *UserQuery) WithReportingInstallations(opts ...func(*ReportingInstallationQuery)) *UserQuery {
+	query := (&ReportingInstallationClient{config: uq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	uq.withReportingInstallations = query
+	return uq
+}
+
+// WithAttributionUsageBuckets tells the query-builder to eager-load the nodes that are connected to
+// the "attribution_usage_buckets" edge. The optional arguments are used to configure the query builder of the edge.
+func (uq *UserQuery) WithAttributionUsageBuckets(opts ...func(*AttributionUsageBucketQuery)) *UserQuery {
+	query := (&AttributionUsageBucketClient{config: uq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	uq.withAttributionUsageBuckets = query
 	return uq
 }
 
@@ -443,10 +515,12 @@ func (uq *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	var (
 		nodes       = []*User{}
 		_spec       = uq.querySpec()
-		loadedTypes = [3]bool{
+		loadedTypes = [5]bool{
 			uq.withCommitCheckpoints != nil,
 			uq.withCommitRewrites != nil,
 			uq.withToolUsageEvents != nil,
+			uq.withReportingInstallations != nil,
+			uq.withAttributionUsageBuckets != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -485,6 +559,24 @@ func (uq *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 		if err := uq.loadToolUsageEvents(ctx, query, nodes,
 			func(n *User) { n.Edges.ToolUsageEvents = []*ToolUsageEvent{} },
 			func(n *User, e *ToolUsageEvent) { n.Edges.ToolUsageEvents = append(n.Edges.ToolUsageEvents, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := uq.withReportingInstallations; query != nil {
+		if err := uq.loadReportingInstallations(ctx, query, nodes,
+			func(n *User) { n.Edges.ReportingInstallations = []*ReportingInstallation{} },
+			func(n *User, e *ReportingInstallation) {
+				n.Edges.ReportingInstallations = append(n.Edges.ReportingInstallations, e)
+			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := uq.withAttributionUsageBuckets; query != nil {
+		if err := uq.loadAttributionUsageBuckets(ctx, query, nodes,
+			func(n *User) { n.Edges.AttributionUsageBuckets = []*AttributionUsageBucket{} },
+			func(n *User, e *AttributionUsageBucket) {
+				n.Edges.AttributionUsageBuckets = append(n.Edges.AttributionUsageBuckets, e)
+			}); err != nil {
 			return nil, err
 		}
 	}
@@ -572,6 +664,66 @@ func (uq *UserQuery) loadToolUsageEvents(ctx context.Context, query *ToolUsageEv
 	}
 	query.Where(predicate.ToolUsageEvent(func(s *sql.Selector) {
 		s.Where(sql.InValues(s.C(user.ToolUsageEventsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (uq *UserQuery) loadReportingInstallations(ctx context.Context, query *ReportingInstallationQuery, nodes []*User, init func(*User), assign func(*User, *ReportingInstallation)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(reportinginstallation.FieldUserID)
+	}
+	query.Where(predicate.ReportingInstallation(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.ReportingInstallationsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (uq *UserQuery) loadAttributionUsageBuckets(ctx context.Context, query *AttributionUsageBucketQuery, nodes []*User, init func(*User), assign func(*User, *AttributionUsageBucket)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(attributionusagebucket.FieldUserID)
+	}
+	query.Where(predicate.AttributionUsageBucket(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.AttributionUsageBucketsColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {

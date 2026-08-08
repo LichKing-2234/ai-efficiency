@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/internal/activity"
+	"github.com/ai-efficiency/backend/internal/attributionledger"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
@@ -46,6 +48,8 @@ type RouterOptions struct {
 	RequestLogger            *zap.Logger
 	RequestObserver          telemetry.RequestObserver
 	WebVitalsHandler         *WebVitalsHandler
+	AttributionCorrelation   *attributionledger.CorrelationStore
+	ActivityCache            *activity.Cache
 	Release                  string
 	RequestTimeout           time.Duration
 }
@@ -217,6 +221,13 @@ func setupRouter(
 	efficiencyHandler := NewEfficiencyHandler(entClient)
 	toolUsageHandler := NewToolUsageHandler(toolusage.NewService(entClient))
 	eventsHandler := NewEventsHandler(toolusage.NewQueryService(entClient))
+	installationService := attributionledger.NewInstallationService(entClient)
+	attributionHandler := NewAttributionHandler(installationService, attributionledger.NewService(entClient, options.AttributionCorrelation), options.AttributionCorrelation)
+	activityHandler := NewActivityHandler(activity.NewService(entClient, options.AttributionCorrelation, activity.ServiceOptions{
+		ScopeResolver: representativescope.NewWithCache(entClient, options.RepresentativeScopeCache),
+		CursorSecret:  options.TeamUsageCursorSecret,
+		Cache:         options.ActivityCache,
+	}))
 	userSetupService := usersetup.NewService(entClient, providerHandler, encryptionKey)
 	userSetupHandler := NewUserSetupHandler(userSetupService)
 	adminUsersHandler := NewAdminUsersHandler(entClient, encryptionKey)
@@ -354,6 +365,34 @@ func setupRouter(
 		eventsGroup.GET("", eventsHandler.List)
 		eventsGroup.GET("/:id", eventsHandler.Get)
 	}
+
+	attributionReadGroup := protected.Group("/attribution")
+	{
+		attributionReadGroup.POST("/installations", attributionHandler.EnsureInstallation)
+		attributionReadGroup.PUT("/installations/:installation_id", attributionHandler.SetInstallationEnabled)
+		attributionReadGroup.POST("/installations/:installation_id/credentials/rotate", attributionHandler.RotateInstallationCredentials)
+		attributionReadGroup.GET("/report", attributionHandler.Report)
+	}
+
+	attributionReporterGroup := api.Group("/attribution")
+	attributionReporterGroup.Use(requireInstallationToken(installationService, false))
+	{
+		attributionReporterGroup.POST("/repos/resolve-remote", repoHandler.ResolveRemote)
+		attributionReporterGroup.POST("/usage-buckets/batch", attributionHandler.CreateBuckets)
+		attributionReporterGroup.POST("/usage-buckets/:bucket_id/revisions", attributionHandler.CreateRevision)
+		if checkpointHandler != nil {
+			attributionReporterGroup.POST("/checkpoints/commit", checkpointHandler.CompactCommit)
+			attributionReporterGroup.POST("/checkpoints/rewrite", checkpointHandler.CompactRewrite)
+		}
+	}
+
+	attributionOTLPGroup := api.Group("/attribution/otel")
+	attributionOTLPGroup.Use(requireInstallationToken(installationService, true))
+	{
+		attributionOTLPGroup.POST("/v1/traces", attributionHandler.IngestOTLP)
+	}
+
+	RegisterActivityRoutes(protected.Group("/activity"), activityHandler)
 
 	RegisterWorkItemsRoutes(protected, workItemsHandler)
 	RegisterWebVitalsRoutes(protected, options.WebVitalsHandler)

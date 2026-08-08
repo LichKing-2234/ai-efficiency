@@ -27,6 +27,11 @@ type syncCapableUploader interface {
 	ToolUsageClient() attributionlocal.BackendClient
 }
 
+type compactSyncCapableUploader interface {
+	Uploader
+	CompactUsageClient() attributionlocal.CompactBackendClient
+}
+
 type Handler struct {
 	uploader Uploader
 }
@@ -73,6 +78,17 @@ func (h *Handler) attributionSyncClient() attributionlocal.BackendClient {
 	return u.ToolUsageClient()
 }
 
+func (h *Handler) compactAttributionSyncClient() attributionlocal.CompactBackendClient {
+	if h == nil || h.uploader == nil {
+		return nil
+	}
+	u, ok := h.uploader.(compactSyncCapableUploader)
+	if !ok {
+		return nil
+	}
+	return u.CompactUsageClient()
+}
+
 func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionContext) error {
 	repoRoot := strings.TrimSpace(execCtx.RepoRoot)
 	if repoRoot == "" {
@@ -86,8 +102,11 @@ func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionConte
 	if workspaceID == "" {
 		return nil
 	}
-	snapshot := collectSnapshotForHook(repoRoot)
-	persistSnapshotCache(workspaceID, snapshot)
+	var snapshot *collector.Snapshot
+	if h.compactAttributionSyncClient() == nil {
+		snapshot = collectSnapshotForHook(repoRoot)
+		persistSnapshotCache(workspaceID, snapshot)
+	}
 	repoHint := firstNonEmptyValue(execCtx.RepoFullName, execCtx.RepoKey)
 	eventID, err := CheckpointEventID(eventIDRepoHint(execCtx), head)
 	if err != nil {
@@ -108,19 +127,32 @@ func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionConte
 		ParentSHAs:     parentSHAs(repoRoot),
 		BranchSnapshot: firstNonEmptyValue(execCtx.Branch, branchSnapshot(repoRoot)),
 		HeadSnapshot:   head,
-		CapturedAt:     time.Now().UTC().Format(time.RFC3339),
+		CapturedAt:     time.Now().UTC().Format(time.RFC3339Nano),
 	}
+	lineageKind, sourceCommitSHA := commitLineageEvidence(repoRoot, head)
+	h.queueCompactTrigger(ctx, attributionlocal.CompactTrigger{
+		ID:              ev.EventID,
+		Kind:            ev.Kind,
+		RepoConfigID:    ev.RepoConfigID,
+		RepoKey:         ev.RepoKey,
+		WorkspaceID:     ev.WorkspaceID,
+		CommitSHA:       ev.CommitSHA,
+		Branch:          ev.BranchSnapshot,
+		LineageKind:     lineageKind,
+		SourceCommitSHA: sourceCommitSHA,
+		CapturedAt:      parseCompactTriggerTime(ev.CapturedAt),
+	})
 	if h == nil || h.uploader == nil {
 		queueForReplayOrWarn(execCtx, ev)
 	} else if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
 		queueForReplayOrWarn(execCtx, ev)
 	}
 
-	h.schedulePendingSync(execCtx)
+	h.schedulePendingSync(execCtx, &ev)
 	return nil
 }
 
-func (h *Handler) schedulePendingSync(execCtx ExecutionContext) {
+func (h *Handler) schedulePendingSync(execCtx ExecutionContext, trigger *HookEvent) {
 	workspaceID := strings.TrimSpace(execCtx.WorkspaceID)
 	repoRoot := strings.TrimSpace(execCtx.RepoRoot)
 	if workspaceID == "" || repoRoot == "" {
@@ -136,13 +168,21 @@ func (h *Handler) schedulePendingSync(execCtx ExecutionContext) {
 		Status:          SyncTaskStatusPending,
 		LastRequestedAt: time.Now().UTC(),
 	}
+	if trigger != nil {
+		task.TriggerKind = strings.TrimSpace(trigger.Kind)
+		task.TriggerCommitSHA = strings.TrimSpace(trigger.CommitSHA)
+		task.TriggerBranch = strings.TrimSpace(trigger.BranchSnapshot)
+		if capturedAt, err := time.Parse(time.RFC3339, trigger.CapturedAt); err == nil {
+			task.LastRequestedAt = capturedAt.UTC()
+		}
+	}
 	currentTask := &task
-	syncClient := h.attributionSyncClient()
+	canRunSync := h.attributionSyncClient() != nil || h.compactAttributionSyncClient() != nil
 	if err := UpsertPendingSyncTask(task); err == nil {
 		if loadedTask, loadErr := LoadSyncTask(workspaceID); loadErr == nil && loadedTask != nil {
 			currentTask = loadedTask
 		}
-		if syncClient != nil {
+		if canRunSync {
 			claimSpawn, claimedTask, claimErr := TryClaimSyncTaskSpawn(workspaceID, time.Now().UTC(), syncTaskSpawnCooldown)
 			if claimedTask != nil {
 				currentTask = claimedTask
@@ -196,8 +236,19 @@ func (h *Handler) PostRewriteResolved(ctx context.Context, execCtx ExecutionCont
 			RewriteType:   rewriteType,
 			OldCommitSHA:  oldSHA,
 			NewCommitSHA:  newSHA,
-			CapturedAt:    time.Now().UTC().Format(time.RFC3339),
+			CapturedAt:    time.Now().UTC().Format(time.RFC3339Nano),
 		}
+		h.queueCompactTrigger(ctx, attributionlocal.CompactTrigger{
+			ID:           ev.EventID,
+			Kind:         ev.Kind,
+			RepoConfigID: ev.RepoConfigID,
+			RepoKey:      ev.RepoKey,
+			WorkspaceID:  ev.WorkspaceID,
+			OldCommitSHA: ev.OldCommitSHA,
+			NewCommitSHA: ev.NewCommitSHA,
+			RewriteType:  ev.RewriteType,
+			CapturedAt:   parseCompactTriggerTime(ev.CapturedAt),
+		})
 		if h == nil || h.uploader == nil {
 			queueForReplayOrWarn(execCtx, ev)
 			continue
@@ -206,8 +257,49 @@ func (h *Handler) PostRewriteResolved(ctx context.Context, execCtx ExecutionCont
 			queueForReplayOrWarn(execCtx, ev)
 		}
 	}
-	h.schedulePendingSync(execCtx)
+	h.schedulePendingSync(execCtx, nil)
 	return nil
+}
+
+func (h *Handler) queueCompactTrigger(ctx context.Context, trigger attributionlocal.CompactTrigger) {
+	if h == nil || h.compactAttributionSyncClient() == nil {
+		return
+	}
+	if err := attributionlocal.QueueCompactTrigger(ctx, trigger); err != nil {
+		fmt.Fprintf(hookStderr, "ae-cli: compact attribution trigger could not be persisted; run 'ae-cli sync' after repairing local state: %v\n", err)
+	}
+}
+
+func parseCompactTriggerTime(raw string) time.Time {
+	parsed, _ := time.Parse(time.RFC3339, strings.TrimSpace(raw))
+	return parsed.UTC()
+}
+
+func commitLineageEvidence(repoRoot, head string) (string, string) {
+	reflog, err := gitOutput(repoRoot, "reflog", "-1", "--format=%gs", "HEAD")
+	if err != nil || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(reflog)), "cherry-pick:") {
+		return "", ""
+	}
+	sourcePath, err := gitOutput(repoRoot, "rev-parse", "--git-path", "CHERRY_PICK_HEAD")
+	if err != nil {
+		return "", ""
+	}
+	if !filepath.IsAbs(sourcePath) {
+		sourcePath = filepath.Join(repoRoot, sourcePath)
+	}
+	payload, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return "", ""
+	}
+	source := strings.TrimSpace(string(payload))
+	if source == "" || source == strings.TrimSpace(head) {
+		return "", ""
+	}
+	verified, err := gitOutput(repoRoot, "rev-parse", "-q", "--verify", source+"^{commit}")
+	if err != nil || strings.TrimSpace(verified) != source {
+		return "", ""
+	}
+	return "cherry-pick", source
 }
 
 func (h *Handler) FlushResolved(ctx context.Context, execCtx ExecutionContext) error {

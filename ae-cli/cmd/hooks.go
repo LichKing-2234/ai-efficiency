@@ -141,6 +141,13 @@ func usableToken() string {
 }
 
 func currentHookBinding() hookstate.Context {
+	if reportingConfig, ok := loadEnabledReportingConfig(); ok {
+		repoKey := ""
+		if gitCtx, err := hooks.DetectGitContext("."); err == nil {
+			repoKey = gitCtx.RepoKey
+		}
+		return hookstate.Context{ServerURL: reportingConfig.ServerURL, AuthSubject: reportingConfig.AuthSubject, RepoKey: repoKey}
+	}
 	serverURL := ""
 	if cfg != nil {
 		serverURL = cfg.Server.URL

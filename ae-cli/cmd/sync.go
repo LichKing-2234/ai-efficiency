@@ -25,7 +25,8 @@ var syncCmd = &cobra.Command{
 		if cfg != nil {
 			configToken = cfg.Server.Token
 		}
-		if resolveToken(configToken, "") == "" {
+		_, compactEnabled := loadEnabledReportingConfig()
+		if resolveToken(configToken, "") == "" && !compactEnabled {
 			return fmt.Errorf("not logged in — run 'ae-cli login'")
 		}
 		attrCtx, err := detectAttributionContext()
@@ -50,6 +51,7 @@ var syncCmd = &cobra.Command{
 			AuthSubject:     execCtx.AuthSubject,
 			RepoConfigID:    execCtx.RepoConfigID,
 			RepoKey:         execCtx.RepoKey,
+			TriggerKind:     "manual",
 			Status:          hooks.SyncTaskStatusPending,
 			LastRequestedAt: time.Now().UTC(),
 		}); err != nil {
@@ -81,7 +83,12 @@ func resolveSyncExecutionContext(ctx context.Context, gitCtx *hooks.GitContext) 
 
 	binding := currentHookBinding()
 	binding.RepoKey = firstNonEmpty(binding.RepoKey, gitCtx.RepoKey)
-	resolver := hookRepoResolverFor(binding.ServerURL, usableToken())
+	var resolver hookRepoResolver
+	if reportingConfig, ok := loadEnabledReportingConfig(); ok {
+		resolver = attributionHookRepoResolverFor(binding.ServerURL, reportingConfig.ReporterToken)
+	} else {
+		resolver = hookRepoResolverFor(binding.ServerURL, usableToken())
+	}
 	if resolver == nil {
 		return hooks.ExecutionContext{}, false, nil
 	}

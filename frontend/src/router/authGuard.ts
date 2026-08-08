@@ -30,7 +30,7 @@ type PendingExpiryRedirect = {
   targetFullPath: string
 }
 
-function resolveSafeRedirect(raw: unknown, fallback = '/') {
+export function resolveSafeRedirect(raw: unknown, fallback = '/') {
   if (typeof raw !== 'string') {
     return fallback
   }

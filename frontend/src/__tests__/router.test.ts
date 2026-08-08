@@ -123,9 +123,24 @@ describe('Router Guards', () => {
     expect(oauthDevice?.meta.redirectOnAuthExpiry).toBe(true)
   })
 
-  it('includes events route in the router', () => {
+
+  it('redirects legacy event and attribution routes to canonical Activity while preserving query state', () => {
     const eventsRoute = router.getRoutes().find((route) => route.name === 'Events')
-    expect(eventsRoute?.path).toBe('/events')
+    const attributionRoute = router.getRoutes().find((route) => route.name === 'Attribution')
+    expect(eventsRoute?.redirect).toBeTypeOf('function')
+    expect(attributionRoute?.redirect).toBeTypeOf('function')
+    expect((eventsRoute?.redirect as Function)({ query: { from: '2026-08-01' }, hash: '' })).toEqual({ path: '/activity', query: { from: '2026-08-01' } })
+    expect((attributionRoute?.redirect as Function)({ query: { to: '2026-08-31', days: '7', unsafe: 'discard-me' }, hash: '' })).toEqual({
+      path: '/activity',
+      query: { to: '2026-08-31', days: '7' },
+    })
+  })
+
+  it('includes personal, team, and member Activity routes', () => {
+    expect(router.getRoutes().find((route) => route.name === 'Activity')?.path).toBe('/activity')
+    expect(router.getRoutes().find((route) => route.name === 'ActivityTeams')?.path).toBe('/activity/teams')
+    expect(router.getRoutes().find((route) => route.name === 'ActivityTeam')?.path).toBe('/activity/teams/:team_id')
+    expect(router.getRoutes().find((route) => route.name === 'ActivityMember')?.path).toBe('/activity/members/:user_id')
   })
 
   it('includes user route in the router', () => {

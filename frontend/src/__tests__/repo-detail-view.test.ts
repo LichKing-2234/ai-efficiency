@@ -28,6 +28,16 @@ vi.mock('@/api/scmProvider', () => ({
   }),
 }))
 
+vi.mock('@/api/activity', () => ({
+  getActivityRepository: vi.fn(),
+  normalizeRepository: (value: any) => ({
+    ...value,
+    members: { ...value.members, items: value.members?.items ?? [] },
+    prs: { ...value.prs, items: value.prs?.items ?? [] },
+    commits: { ...value.commits, items: value.commits?.items ?? [] },
+  }),
+}))
+
 function createTestRouter() {
   return createRouter({
     history: createMemoryHistory(),
@@ -94,6 +104,7 @@ async function mountRepoDetail(
   repoOverride?: Record<string, unknown>,
   pinia?: Pinia,
   options?: {
+    section?: 'activity' | 'operations'
     prs?: Record<string, unknown>[]
     total?: number
     summary?: Record<string, unknown>
@@ -179,7 +190,7 @@ async function mountRepoDetail(
   }
 
   const router = createTestRouter()
-  await router.push('/repos/9')
+  await router.push(options?.section === 'activity' ? '/repos/9' : '/repos/9?tab=operations')
   await router.isReady()
 
   const activePinia = pinia ?? createPinia()
@@ -202,6 +213,329 @@ describe('RepoDetailView', () => {
     ;(listProviders as any).mockResolvedValue({
       data: { data: [{ id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active' }] },
     })
+    const { getActivityRepository } = await import('@/api/activity')
+    ;(getActivityRepository as any).mockResolvedValue({
+      data: {
+        data: {
+          contract_version: 'activity-v1',
+          scope_version: 'scope-1',
+          window: { from: '2026-07-07T00:00:00Z', to: '2026-08-06T00:00:00Z' },
+          repository: { repo_config_id: 9, name: 'org/repo-a' },
+          participating_members: 2,
+          metrics: {
+            participating_prs: { value: 2, lower_bound: true },
+            merged_prs: { value: 1, lower_bound: true },
+            active_repositories: 1,
+            commit_count: 1,
+            latest_activity: '2026-08-05T12:00:00Z',
+          },
+          sync_coverage: {
+            complete: false,
+            affected_repositories: 1,
+            unsynced_repositories: 1,
+            stale_repositories: 0,
+            partially_synced_repositories: 0,
+            failed_repositories: 0,
+          },
+          members: { items: [] },
+          prs: {
+            items: [{
+              repo_config_id: 9,
+              repo_name: 'org/repo-a',
+              pr_record_id: 101,
+              scm_pr_id: 88,
+              title: 'Activity PR',
+              url: 'https://github.com/org/repo-a/pull/88',
+              status: 'merged',
+              commits: [{ repo_config_id: 9, commit_sha: 'abc123' }],
+            }],
+          },
+          commits: {
+            items: [{
+              repo_config_id: 9,
+              repo_name: 'org/repo-a',
+              commit_sha: 'abc123',
+              latest_activity: '2026-08-05T12:00:00Z',
+              processed_tokens: 1700,
+              prs: [{ repo_config_id: 9, pr_record_id: 101, scm_pr_id: 88 }],
+            }],
+          },
+        },
+      },
+    })
+  })
+
+  it('loads repository Activity first without starting operations requests', async () => {
+    const activity = await import('@/api/activity')
+    const pr = await import('@/api/pr')
+    const scm = await import('@/api/scmProvider')
+
+    const { wrapper } = await mountRepoDetail(undefined, undefined, { section: 'activity' })
+
+    expect(activity.getActivityRepository).toHaveBeenCalledOnce()
+    expect(activity.getActivityRepository).toHaveBeenCalledWith(9, expect.objectContaining({
+      member_limit: 50,
+      pr_limit: 20,
+      commit_limit: 20,
+    }))
+    const params = vi.mocked(activity.getActivityRepository).mock.calls[0][1]!
+    expect(new Date(params.to!).getTime() - new Date(params.from!).getTime()).toBe(30 * 24 * 60 * 60 * 1000)
+    expect(pr.listPRs).not.toHaveBeenCalled()
+    expect(pr.getLatestPRSyncJob).not.toHaveBeenCalled()
+    expect(pr.syncPRs).not.toHaveBeenCalled()
+    expect(scm.listProviders).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="repo-activity"]').text()).toContain('Activity PR')
+    expect(wrapper.get('[data-testid="repo-activity-latest"]').text()).toContain('2026')
+    expect(wrapper.find('[data-testid="repo-pr-row"]').exists()).toBe(false)
+  })
+
+  it('reloads repository identity when the routed repository changes in the same view instance', async () => {
+    const repoAPI = await import('@/api/repo')
+    const { wrapper, router } = await mountRepoDetail(undefined, undefined, { section: 'activity' })
+    vi.mocked(repoAPI.getRepo).mockResolvedValueOnce({
+      data: {
+        data: {
+          id: 10,
+          repo_key: 'github.com/org/repo-b',
+          name: 'repo-b',
+          full_name: 'org/repo-b',
+          clone_url: 'https://github.com/org/repo-b.git',
+          default_branch: 'main',
+          status: 'active',
+          binding_state: 'bound',
+          group_id: 1,
+          created_at: '2026-01-01T00:00:00Z',
+          edges: {},
+        },
+      },
+    } as any)
+
+    await router.push('/repos/10')
+    await flushPromises()
+
+    expect(repoAPI.getRepo).toHaveBeenNthCalledWith(2, 10)
+    expect(wrapper.text()).toContain('repo-b')
+    expect(wrapper.text()).not.toContain('repo-a')
+  })
+
+  it('expands PR commits while keeping one commit row for multiple PR associations', async () => {
+    const activity = await import('@/api/activity')
+    vi.mocked(activity.getActivityRepository).mockResolvedValueOnce({
+      data: {
+        data: {
+          contract_version: 'activity-v1',
+          scope_version: 'scope-1',
+          window: { from: '2026-07-07T00:00:00Z', to: '2026-08-06T00:00:00Z' },
+          repository: { repo_config_id: 9, name: 'org/repo-a' },
+          participating_members: 2,
+          metrics: {
+            participating_prs: { value: 2, lower_bound: false },
+            merged_prs: { value: 1, lower_bound: false },
+            active_repositories: 1,
+            commit_count: 1,
+            latest_activity: '2026-08-05T12:00:00Z',
+          },
+          sync_coverage: { complete: true, affected_repositories: 0, unsynced_repositories: 0, stale_repositories: 0, partially_synced_repositories: 0, failed_repositories: 0 },
+          members: { items: [] },
+          prs: {
+            items: [
+              { repo_config_id: 9, repo_name: 'org/repo-a', pr_record_id: 101, scm_pr_id: 88, title: 'First PR', url: 'https://example.com/88', status: 'merged', commits: [{ repo_config_id: 9, commit_sha: 'shared123456' }] },
+              { repo_config_id: 9, repo_name: 'org/repo-a', pr_record_id: 102, scm_pr_id: 89, title: 'Second PR', url: 'https://example.com/89', status: 'open', commits: [{ repo_config_id: 9, commit_sha: 'shared123456' }] },
+            ],
+          },
+          commits: {
+            items: [{
+              repo_config_id: 9,
+              repo_name: 'org/repo-a',
+              commit_sha: 'shared123456',
+              latest_activity: '2026-08-05T12:00:00Z',
+              processed_tokens: 1700,
+              prs: [
+                { repo_config_id: 9, pr_record_id: 101, scm_pr_id: 88 },
+                { repo_config_id: 9, pr_record_id: 102, scm_pr_id: 89 },
+              ],
+            }],
+          },
+        },
+      },
+    } as any)
+
+    const { wrapper } = await mountRepoDetail(undefined, undefined, { section: 'activity' })
+    const activitySection = wrapper.get('[data-testid="repo-activity"]')
+    expect(activitySection.text()).not.toContain('Token')
+    expect(activitySection.html().indexOf('data-testid="repo-activity-prs"')).toBeLessThan(activitySection.html().indexOf('data-testid="repo-activity-commits"'))
+    expect(wrapper.find('[data-testid="repo-activity-pr-commits-101"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="repo-activity-pr-toggle-101"]').trigger('click')
+
+    expect(wrapper.get('[data-testid="repo-activity-pr-commits-101"]').text()).toContain('shared1234')
+    expect(wrapper.findAll('[data-testid="repo-activity-commit-9-shared123456"]')).toHaveLength(1)
+    expect(wrapper.get('[data-testid="repo-activity-commit-9-shared123456"]').text()).toContain('PR #88')
+    expect(wrapper.get('[data-testid="repo-activity-commit-9-shared123456"]').text()).toContain('PR #89')
+  })
+
+  it('pages repository PRs without replacing the summary or commit projection', async () => {
+    const api = await import('@/api/activity')
+    const first = {
+      data: {
+        data: {
+          contract_version: 'activity-v1',
+          scope_version: 'scope-1',
+          window: { from: '2026-07-07T00:00:00Z', to: '2026-08-06T00:00:00Z' },
+          repository: { repo_config_id: 9, name: 'org/repo-a' },
+          participating_members: 2,
+          metrics: {
+            participating_prs: { value: 2, lower_bound: false },
+            merged_prs: { value: 1, lower_bound: false },
+            active_repositories: 1,
+            commit_count: 1,
+            latest_activity: '2026-08-05T12:00:00Z',
+          },
+          sync_coverage: { complete: true, affected_repositories: 0, unsynced_repositories: 0, stale_repositories: 0, partially_synced_repositories: 0, failed_repositories: 0 },
+          members: { items: [] },
+          prs: {
+            items: [{ repo_config_id: 9, repo_name: 'org/repo-a', pr_record_id: 101, scm_pr_id: 88, title: 'First PR page', url: 'https://example.com/88', status: 'merged', commits: [] }],
+            next_cursor: 'signed-repo-pr-cursor',
+          },
+          commits: {
+            items: [{ repo_config_id: 9, repo_name: 'org/repo-a', commit_sha: 'keepcommit123', latest_activity: '2026-08-05T12:00:00Z', processed_tokens: 1700, prs: [{ repo_config_id: 9, pr_record_id: 101, scm_pr_id: 88 }] }],
+          },
+        },
+      },
+    }
+    const next = structuredClone(first) as any
+    next.data.data.participating_members = 99
+    next.data.data.prs = {
+      items: [{ repo_config_id: 9, repo_name: 'org/repo-a', pr_record_id: 102, scm_pr_id: 89, title: 'Second PR page', url: 'https://example.com/89', status: 'open', commits: [] }],
+    }
+    next.data.data.commits.items[0].commit_sha = 'must-not-replace'
+    vi.mocked(api.getActivityRepository)
+      .mockResolvedValueOnce(first as any)
+      .mockResolvedValueOnce(next as any)
+
+    const { wrapper } = await mountRepoDetail(undefined, undefined, { section: 'activity' })
+    await wrapper.get('[data-testid="repo-activity-prs-next"]').trigger('click')
+    await flushPromises()
+
+    expect(api.getActivityRepository).toHaveBeenNthCalledWith(2, 9, expect.objectContaining({
+      pr_limit: 20,
+      pr_cursor: 'signed-repo-pr-cursor',
+    }))
+    expect(wrapper.get('[data-testid="repo-activity-prs"]').text()).toContain('Second PR page')
+    expect(wrapper.get('[data-testid="repo-activity-prs"]').text()).not.toContain('First PR page')
+    expect(wrapper.get('[data-testid="repo-activity"]').text()).toContain('2')
+    expect(wrapper.get('[data-testid="repo-activity-commits"]').text()).toContain('keepcommit')
+    expect(wrapper.get('[data-testid="repo-activity-commits"]').text()).not.toContain('must-not-replace')
+  })
+
+  it('returns to the first repository PR page using the saved cursor', async () => {
+    const api = await import('@/api/activity')
+    const first = {
+      data: {
+        data: {
+          contract_version: 'activity-v1',
+          scope_version: 'scope-1',
+          window: { from: '2026-07-07T00:00:00Z', to: '2026-08-06T00:00:00Z' },
+          repository: { repo_config_id: 9, name: 'org/repo-a' },
+          participating_members: 2,
+          metrics: {
+            participating_prs: { value: 2, lower_bound: false },
+            merged_prs: { value: 1, lower_bound: false },
+            active_repositories: 1,
+            commit_count: 1,
+            latest_activity: '2026-08-05T12:00:00Z',
+          },
+          sync_coverage: { complete: true, affected_repositories: 0, unsynced_repositories: 0, stale_repositories: 0, partially_synced_repositories: 0, failed_repositories: 0 },
+          members: { items: [] },
+          prs: {
+            items: [{ repo_config_id: 9, repo_name: 'org/repo-a', pr_record_id: 101, scm_pr_id: 88, title: 'First PR page', url: 'https://example.com/88', status: 'merged', commits: [] }],
+            next_cursor: 'signed-repo-pr-cursor',
+          },
+          commits: { items: [] },
+        },
+      },
+    }
+    const second = structuredClone(first) as any
+    second.data.data.prs = {
+      items: [{ repo_config_id: 9, repo_name: 'org/repo-a', pr_record_id: 102, scm_pr_id: 89, title: 'Second PR page', url: 'https://example.com/89', status: 'open', commits: [] }],
+    }
+    vi.mocked(api.getActivityRepository)
+      .mockResolvedValueOnce(first as any)
+      .mockResolvedValueOnce(second as any)
+      .mockResolvedValueOnce(first as any)
+
+    const { wrapper } = await mountRepoDetail(undefined, undefined, { section: 'activity' })
+    await wrapper.get('[data-testid="repo-activity-prs-next"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="repo-activity-prs-previous"]').trigger('click')
+    await flushPromises()
+
+    expect(api.getActivityRepository).toHaveBeenNthCalledWith(3, 9, expect.not.objectContaining({
+      pr_cursor: expect.anything(),
+    }))
+    expect(wrapper.get('[data-testid="repo-activity-prs"]').text()).toContain('First PR page')
+    expect(wrapper.get('[data-testid="repo-activity-prs"]').text()).not.toContain('Second PR page')
+  })
+
+  it('keeps a new repository Activity range when an older PR page arrives late', async () => {
+    const api = await import('@/api/activity')
+    const first = {
+      data: {
+        data: {
+          contract_version: 'activity-v1',
+          scope_version: 'scope-1',
+          window: { from: '2026-07-07T00:00:00Z', to: '2026-08-06T00:00:00Z' },
+          repository: { repo_config_id: 9, name: 'org/repo-a' },
+          participating_members: 2,
+          metrics: {
+            participating_prs: { value: 2, lower_bound: false },
+            merged_prs: { value: 1, lower_bound: false },
+            active_repositories: 1,
+            commit_count: 1,
+            latest_activity: '2026-08-05T12:00:00Z',
+          },
+          sync_coverage: { complete: true, affected_repositories: 0, unsynced_repositories: 0, stale_repositories: 0, partially_synced_repositories: 0, failed_repositories: 0 },
+          members: { items: [] },
+          prs: {
+            items: [{ repo_config_id: 9, repo_name: 'org/repo-a', pr_record_id: 101, scm_pr_id: 88, title: 'Initial range PR', url: 'https://example.com/88', status: 'merged', commits: [] }],
+            next_cursor: 'old-range-cursor',
+          },
+          commits: { items: [] },
+        },
+      },
+    }
+    const stalePage = structuredClone(first) as any
+    stalePage.data.data.prs = {
+      items: [{ repo_config_id: 9, repo_name: 'org/repo-a', pr_record_id: 102, scm_pr_id: 89, title: 'Stale page PR', url: 'https://example.com/89', status: 'open', commits: [] }],
+    }
+    const freshRange = structuredClone(first) as any
+    freshRange.data.data.prs = {
+      items: [{ repo_config_id: 9, repo_name: 'org/repo-a', pr_record_id: 103, scm_pr_id: 90, title: 'Fresh seven day PR', url: 'https://example.com/90', status: 'open', commits: [] }],
+      next_cursor: 'fresh-range-cursor',
+    }
+    let resolveStalePage!: (value: unknown) => void
+    const pendingPage = new Promise((resolve) => { resolveStalePage = resolve })
+    vi.mocked(api.getActivityRepository)
+      .mockResolvedValueOnce(first as any)
+      .mockReturnValueOnce(pendingPage as any)
+      .mockResolvedValueOnce(freshRange as any)
+
+    const { wrapper } = await mountRepoDetail(undefined, undefined, { section: 'activity' })
+    await wrapper.get('[data-testid="repo-activity-prs-next"]').trigger('click')
+    await wrapper.get('[data-testid="activity-range-7"]').trigger('click')
+    await flushPromises()
+
+    expect(api.getActivityRepository).toHaveBeenNthCalledWith(3, 9, expect.not.objectContaining({
+      pr_cursor: expect.anything(),
+    }))
+    expect(wrapper.get('[data-testid="repo-activity-prs"]').text()).toContain('Fresh seven day PR')
+
+    resolveStalePage(stalePage)
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="repo-activity-prs"]').text()).toContain('Fresh seven day PR')
+    expect(wrapper.get('[data-testid="repo-activity-prs"]').text()).not.toContain('Stale page PR')
+    expect(wrapper.get('[data-testid="repo-activity-prs-next"]').attributes('disabled')).toBeUndefined()
   })
 
   it('renders conclusion-first PR usage summary and readable default columns', async () => {

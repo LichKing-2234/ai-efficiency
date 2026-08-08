@@ -14,6 +14,7 @@ AI Efficiency Platform（AI 效能平台）是一个独立于 `sub2api` 的系�
 
 1. 当前代码
 2. 最新且最贴近问题域的 spec：
+   - `docs/superpowers/specs/2026-08-05-codex-token-attribution-ledger-poc-design.md`
    - `docs/superpowers/specs/2026-07-25-stateless-team-usage-prewarm-worker-design.md`
    - `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md`
    - `docs/superpowers/specs/2026-06-22-configurable-directory-sync-design.md`
@@ -208,6 +209,7 @@ chore(deploy): update Docker Compose configuration
 ## Important Files
 
 - `docs/architecture.md` — 项目级架构总览与图示
+- `docs/superpowers/specs/2026-08-05-codex-token-attribution-ledger-poc-design.md` — 当前 Codex compact Token 归属、reporting installation、OTLP Request ID 关联与 `/attribution` POC 主设计
 - `docs/superpowers/specs/2026-07-25-stateless-team-usage-prewarm-worker-design.md` — 当前 Team Usage prewarm worker、Redis generation/manifest 与 backend 只读 fallback 主设计
 - `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md` — 当前全站加载性能、Redis read model、Team Overview 拆分和 serving/observability 主设计
 - `docs/superpowers/specs/2026-06-22-configurable-directory-sync-design.md` — 当前可配置组织架构同步、部门视图、离职禁用与 token 失效主设计
