@@ -24,6 +24,7 @@ SCREENSHOT_DIR = "/tmp/ae-e2e-role"
 passed = 0
 failed = 0
 errors = []
+unmocked_matrix_requests = set()
 
 VIEWPORTS = (
     ("mobile", 390, 844),
@@ -32,10 +33,32 @@ VIEWPORTS = (
 )
 
 USER_ROUTE_CASES = (
-    {"path": "/usage", "selector": "[data-testid='usage-center-tabs']"},
-    {"path": "/usage/team", "selector": "[data-testid='team-overview-content']"},
-    {"path": "/usage/members/7", "selector": "[data-testid='member-usage-back']"},
-    {"path": "/usage/quota-reset", "selector": "[data-testid='quota-reset-queue-selector']"},
+    {
+        "path": "/usage",
+        "selector": "[data-testid='usage-center-tabs']",
+        "state_selectors": ("[data-testid='usage-group-quotas']", "[data-model-row]"),
+    },
+    {
+        "path": "/usage/team",
+        "selector": "[data-testid='team-overview-content']",
+        "state_selectors": (
+            "[data-testid='team-overview-summary']",
+            "[data-testid='team-overview-trend']",
+            "[data-testid='team-overview-ranking-table']",
+        ),
+        "exercise": "team-views",
+    },
+    {
+        "path": "/usage/members/7",
+        "selector": "[data-testid='member-usage-back']",
+        "state_selectors": ("[data-subscription-row]", "[data-model-row]"),
+    },
+    {
+        "path": "/usage/quota-reset",
+        "selector": "[data-testid='quota-reset-queue-selector']",
+        "state_selectors": ("[data-testid='quota-reset-row-1']",),
+        "exercise": "quota-user",
+    },
     {"path": "/work-items", "selector": "main h1:has-text('Work Items')"},
     {"path": "/repos", "selector": "[data-testid='repo-binding-filter']", "exercise": "repo-dialog"},
     {"path": "/repos/9", "selector": "[data-testid='repo-tab-activity']"},
@@ -47,7 +70,18 @@ USER_ROUTE_CASES = (
 )
 
 ADMIN_ROUTE_CASES = (
-    {"path": "/admin/users", "selector": "[data-testid='admin-users-view-users']"},
+    {
+        "path": "/usage/quota-reset",
+        "selector": "[data-testid='quota-reset-tab-admin']",
+        "exercise": "quota-admin",
+    },
+    {
+        "path": "/admin/users",
+        "selector": "[data-testid='admin-users-view-users']",
+        "state_selectors": ("[data-admin-user-list='mobile']", "[data-admin-user-row]"),
+        "desktop_state_selectors": ("[data-admin-user-list='desktop']", "[data-admin-user-row]"),
+        "desktop_fit_selectors": ("[data-admin-user-list='desktop'] .el-tag",),
+    },
     {
         "path": "/admin/directory/offboarding",
         "selector": "[data-testid='offboarding-search']",
@@ -141,7 +175,170 @@ def activity_member_row():
     }
 
 
+def team_usage_member():
+    return {
+        "rank": 1,
+        "user_id": 7,
+        "display_name": "Alice",
+        "email": "alice@example.com",
+        "department_external_id": "team-alpha",
+        "department_external_ids": ["team-alpha"],
+        "department_display_path": "Team Alpha",
+        "relay_user_id": 107,
+        "range_actual_cost": 12.5,
+        "today_actual_cost": 1.5,
+        "total_actual_cost": 12.5,
+        "total_tokens": 4200,
+        "subscription_count": 1,
+        "selectable": True,
+    }
+
+
+def team_usage_snapshot():
+    return {
+        "as_of": "2026-08-08T08:00:00Z",
+        "fresh_until": "2026-08-08T08:01:00Z",
+        "stale_until": "2026-08-08T08:05:00Z",
+        "cache_status": "fresh",
+        "source_status": "ok",
+        "scope_version": "scope-e2e",
+        "request_id": "request-e2e",
+        "window": {
+            "start_date": "2026-07-10",
+            "end_date": "2026-08-08",
+            "granularity": "day",
+            "today": "2026-08-08",
+            "rolling_days": 30,
+            "timezone": "Asia/Shanghai",
+        },
+    }
+
+
+def quota_reset_request(request_id, requester_name, requester_email):
+    return {
+        "id": request_id,
+        "requester_user_id": 7,
+        "requester_display_name": requester_name,
+        "requester_email": requester_email,
+        "provider_id": 3,
+        "group_id": f"group-{request_id}",
+        "group_name": "Group Alpha" if request_id == 1 else "Group Beta",
+        "group_platform": "openai",
+        "reason": "Need reset for representative E2E validation",
+        "status": "pending",
+        "workflow_version": 2,
+        "current_step": 0,
+        "workflow_steps": [{
+            "step_number": 1,
+            "label": "Company / Team Alpha",
+            "admin_fallback": False,
+            "status": "active",
+        }],
+        "resolved_approver_user_ids": [999],
+        "matched_department_paths": [],
+        "created_at": "2026-08-08T07:00:00Z",
+        "updated_at": "2026-08-08T07:00:00Z",
+    }
+
+
+def user_usage_snapshot():
+    return {
+        "configured": True,
+        "range": {
+            "start_date": "2026-07-10",
+            "end_date": "2026-08-08",
+            "granularity": "day",
+            "timezone": "Asia/Shanghai",
+        },
+        "stats": {
+            "total_requests": 12,
+            "total_input_tokens": 1000,
+            "total_output_tokens": 500,
+            "total_cache_creation_tokens": 20,
+            "total_cache_read_tokens": 30,
+            "total_tokens": 1550,
+            "total_cost": 0.25,
+            "total_actual_cost": 0.2,
+            "today_requests": 2,
+            "today_input_tokens": 100,
+            "today_output_tokens": 50,
+            "today_cache_creation_tokens": 2,
+            "today_cache_read_tokens": 3,
+            "today_tokens": 155,
+            "today_cost": 0.025,
+            "today_actual_cost": 0.02,
+            "average_duration_ms": 850,
+            "rpm": 2,
+            "tpm": 3000,
+        },
+        "trend": [{
+            "date": "2026-08-08",
+            "requests": 2,
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "cache_creation_tokens": 2,
+            "cache_read_tokens": 3,
+            "total_tokens": 155,
+            "cost": 0.025,
+            "actual_cost": 0.02,
+        }],
+        "models": [{
+            "model": "example-model",
+            "requests": 12,
+            "input_tokens": 1000,
+            "output_tokens": 500,
+            "cache_creation_tokens": 20,
+            "cache_read_tokens": 30,
+            "total_tokens": 1550,
+            "cost": 0.25,
+            "actual_cost": 0.2,
+        }],
+        "group_quotas": {
+            "status": "ok",
+            "unit_label": "USD",
+            "message": "",
+            "groups": [{
+                "group_id": "group-1",
+                "group_name": "Group Alpha",
+                "platform": "openai",
+                "used_amount": 12.5,
+                "quota_amount": 100,
+                "is_unlimited": False,
+                "quota_source": "api_key",
+            }],
+        },
+        "usage_freshness": {
+            "as_of": "2026-08-08T08:00:00Z",
+            "fresh_until": "2026-08-08T08:01:00Z",
+            "stale_until": "2026-08-08T08:05:00Z",
+            "cache_status": "fresh",
+            "source_status": "ok",
+        },
+    }
+
+
+def admin_user():
+    return {
+        "id": 7,
+        "username": "alice",
+        "email": "alice@example.com",
+        "role": "user",
+        "auth_source": "ldap",
+        "relay_user_id": 107,
+        "relay_auth_password": "",
+        "department": {
+            "external_id": "team-alpha",
+            "name": "Team Alpha",
+            "path": "team-alpha",
+            "display_path": "Team Alpha",
+        },
+        "created_at": "2026-08-01T00:00:00Z",
+        "updated_at": "2026-08-08T08:00:00Z",
+    }
+
+
 def mock_matrix_api(route, role):
+    global unmocked_matrix_requests
     path = urlparse(route.request.url).path
     repo = {
         "id": 9,
@@ -165,7 +362,13 @@ def mock_matrix_api(route, role):
         "member_count": 1,
     }
 
+    snapshot = team_usage_snapshot()
+    member = team_usage_member()
+    mine_request = quota_reset_request(1, "Alice", "alice@example.com")
+    approval_request = quota_reset_request(2, "Bob", "bob@example.org")
+    usage_snapshot = user_usage_snapshot()
     responses = {
+        "/api/v1/telemetry/web-vitals": {},
         "/api/v1/user/team-usage/scope": {
             "is_representative": True,
             "departments": [{
@@ -176,7 +379,132 @@ def mock_matrix_api(route, role):
                 "matched_user_count": 1,
             }],
         },
-        "/api/v1/user/quota-reset/requests": {"items": [], "page": 1, "page_size": 20, "total": 0},
+        "/api/v1/user/team-usage/summary": {
+            **snapshot,
+            "summary": {
+                "unavailable": False,
+                "unavailable_reason": None,
+                "member_count": 1,
+                "relay_member_count": 1,
+                "range_actual_cost": 12.5,
+                "range_total_tokens": 4200,
+                "today_actual_cost": 1.5,
+                "total_actual_cost": 12.5,
+                "unit_label": "USD",
+            },
+        },
+        "/api/v1/user/team-usage/trend": {
+            **snapshot,
+            "top_members": [member],
+            "top_member_trend": {
+                "unit_label": "USD",
+                "rank_basis": "range_total_tokens",
+                "unavailable": False,
+                "unavailable_reason": None,
+                "series": [{
+                    "user_id": 7,
+                    "display_name": "Alice",
+                    "rank": 1,
+                    "unavailable": False,
+                    "unavailable_reason": None,
+                    "points": [{"date": "2026-08-08", "actual_cost": 1.5, "total_tokens": 4200}],
+                }],
+            },
+            "department_trend": {
+                "unit_label": "USD",
+                "unavailable": False,
+                "unavailable_reason": None,
+                "comparison_total_count": 1,
+                "comparison_truncated": False,
+                "series": [{
+                    "series_type": "team_total",
+                    "display_name": "Team total",
+                    "rank": 0,
+                    "unavailable": False,
+                    "unavailable_reason": None,
+                    "points": [{"date": "2026-08-08", "actual_cost": 1.5, "total_tokens": 4200}],
+                }],
+            },
+        },
+        "/api/v1/user/team-usage/members": {
+            **snapshot,
+            "items": [member],
+            "total_count": 1,
+        },
+        "/api/v1/user/team-usage/organization": {
+            **snapshot,
+            "parent_department_external_id": None,
+            "departments": [{
+                "department_external_id": "team-alpha",
+                "parent_external_id": None,
+                "name": "Team Alpha",
+                "display_path": "Team Alpha",
+                "depth": 0,
+                "child_count": 0,
+                "has_children": False,
+                "direct_member_count": 1,
+                "aggregate_member_count": 1,
+                "connected_member_count": 1,
+                "range_actual_cost": 12.5,
+                "range_total_tokens": 4200,
+            }],
+            "members": [],
+        },
+        "/api/v1/user/usage/dashboard": usage_snapshot,
+        "/api/v1/user/usage/group-quotas": {
+            "group_quotas": usage_snapshot["group_quotas"],
+            "quota_freshness": {
+                "as_of": "2026-08-08T08:00:00Z",
+                "cache_status": "uncached",
+                "source_status": "ok",
+            },
+        },
+        "/api/v1/user/team-usage/subjects/7/usage/dashboard": {
+            **usage_snapshot,
+            "subject": {
+                "subject_type": "member",
+                "user_id": 7,
+                "display_name": "Alice",
+                "email": "alice@example.com",
+                "department_external_id": "team-alpha",
+                "department_external_ids": ["team-alpha"],
+                "department_display_path": "Team Alpha",
+                "relay_user_id": 107,
+                "selectable": True,
+            },
+            "subject_subscription_groups": [{
+                "group_id": "group-1",
+                "group_name": "Group Alpha",
+                "platform": "openai",
+                "subscription_status": "active",
+                "system_default_multiplier": 1,
+                "inherited_default_multiplier": 1,
+                "effective_multiplier": 1,
+                "multiplier_source": "system",
+                "daily_display_used_usd": 1,
+                "weekly_display_used_usd": 5,
+                "monthly_display_used_usd": 12.5,
+                "daily_usage_usd": 1,
+                "weekly_usage_usd": 5,
+                "monthly_usage_usd": 12.5,
+                "monthly_effective_allowance_usd": 100,
+                "usage_value_basis": "raw_actual_cost",
+                "quota_window_basis": "calendar_month",
+                "editable": True,
+            }],
+        },
+        "/api/v1/user/quota-reset/requests": {
+            "items": [mine_request], "page": 1, "page_size": 20, "total": 1,
+        },
+        "/api/v1/user/quota-reset/approvals": {
+            "items": [approval_request], "page": 1, "page_size": 20, "total": 1,
+        },
+        "/api/v1/admin/quota-reset/requests": {
+            "items": [approval_request] if role == "admin" else [],
+            "page": 1,
+            "page_size": 20,
+            "total": 1 if role == "admin" else 0,
+        },
         "/api/v1/repos": {"items": [repo], "total": 1, "page": 1, "page_size": 20},
         "/api/v1/repos/inventory": [{
             "provider_key": "scm_provider:3",
@@ -228,7 +556,7 @@ def mock_matrix_api(route, role):
             "prs": {"items": []},
             "commits": {"items": []},
         },
-        "/api/v1/admin/users": {"items": [], "total": 0, "page": 1, "page_size": 20},
+        "/api/v1/admin/users": {"items": [admin_user()], "total": 1, "page": 1, "page_size": 20},
         "/api/v1/admin/users/department-options": {
             "items": [], "selected": None, "total": 0, "page": 1, "page_size": 20,
         },
@@ -253,6 +581,7 @@ def mock_matrix_api(route, role):
     if path in responses:
         fulfill_json(route, responses[path])
         return
+    unmocked_matrix_requests.add(path)
     fulfill_json(route, {"message": f"No E2E mock for {path}"}, status=503)
 
 
@@ -358,7 +687,16 @@ def mock_auth_endpoints(page, role="admin"):
     page.route("**/api/v1/work-items/counts", lambda route: route.fulfill(
         status=200,
         content_type="application/json",
-        body=json.dumps({"code": 0, "data": {}}),
+        body=json.dumps({
+            "code": 0,
+            "data": {
+                "quota_reset_approval_count": 1,
+                "quota_reset_admin_count": 1 if role == "admin" else 0,
+                "ai_access_setup_count": 0,
+                "offboarding_count": 0,
+                "total_count": 1,
+            },
+        }),
     ))
     activity_member = {
         "contract_version": "activity-v1",
@@ -549,17 +887,51 @@ def do_logout(page):
 
 
 def overflow_state(page):
-    return page.evaluate("""() => ({
-        viewport: window.innerWidth,
-        documentWidth: document.documentElement.scrollWidth,
-        bodyWidth: document.body.scrollWidth,
-    })""")
+    return page.evaluate("""() => {
+        const main = document.querySelector('main')
+        return {
+            viewport: window.innerWidth,
+            documentWidth: document.documentElement.scrollWidth,
+            bodyWidth: document.body.scrollWidth,
+            mainWidth: main?.clientWidth ?? 0,
+            mainContentWidth: main?.scrollWidth ?? 0,
+        }
+    }""")
 
 
 def expected_selector(case, width):
     if width >= 1280 and case.get("desktop_selector"):
         return case["desktop_selector"]
     return case["selector"]
+
+
+def expected_state_selectors(case, width):
+    if width >= 1280 and case.get("desktop_state_selectors"):
+        return case["desktop_state_selectors"]
+    return case.get("state_selectors", ())
+
+
+def expected_fit_selectors(case, width):
+    if width >= 1280 and case.get("desktop_fit_selectors"):
+        return case["desktop_fit_selectors"]
+    return case.get("fit_selectors", ())
+
+
+def content_fits_containers(page, selectors):
+    for selector in selectors:
+        elements = page.locator(selector)
+        if elements.count() == 0:
+            return False
+        if not elements.evaluate_all("""elements => elements.every((element) => {
+            const container = element.closest('.cell') ?? element.parentElement
+            if (!container) return false
+            const elementRect = element.getBoundingClientRect()
+            const containerRect = container.getBoundingClientRect()
+            return elementRect.left >= containerRect.left - 0.5
+                && elementRect.right <= containerRect.right + 0.5
+        })"""):
+            return False
+    return True
 
 
 def protected_shell_state(page, width):
@@ -571,6 +943,35 @@ def protected_shell_state(page, width):
 
 
 def exercise_route_control(page, exercise):
+    if exercise == "team-views":
+        page.locator("[data-testid='team-overview-organization-view']").click()
+        organization = page.locator("[data-testid='team-overview-organization-tree']")
+        organization.wait_for(state="visible")
+        opened = organization.is_visible()
+        page.locator("[data-testid='team-overview-ranking-view']").click()
+        page.locator("[data-testid='team-overview-ranking-table']").wait_for(state="visible")
+        return opened, "Team organization view did not open"
+    if exercise == "quota-user":
+        page.locator("[data-testid='quota-reset-row-1']").wait_for(state="visible")
+        page.locator("[data-testid='quota-reset-tab-approvals']").click()
+        page.locator("[data-testid='quota-reset-row-2']").wait_for(state="visible")
+        page.locator("[data-testid='quota-reset-approve-2']").click()
+        dialog = page.locator("[data-testid='quota-reset-decision-dialog']")
+        dialog.wait_for(state="visible")
+        opened = dialog.is_visible() and page.locator("[data-testid='quota-reset-tab-admin']").count() == 0
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="hidden")
+        return opened, "Approver decision dialog did not open or admin queue leaked to user"
+    if exercise == "quota-admin":
+        page.locator("[data-testid='quota-reset-tab-admin']").click()
+        page.locator("[data-testid='quota-reset-row-2']").wait_for(state="visible")
+        page.locator("[data-testid='quota-reset-approve-2']").click()
+        dialog = page.locator("[data-testid='quota-reset-decision-dialog']")
+        dialog.wait_for(state="visible")
+        opened = dialog.is_visible()
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="hidden")
+        return opened, "Administrator decision dialog did not open"
     if exercise == "repo-dialog":
         page.locator("main button:has-text('Add Repo')").click()
         dialog = page.locator(".el-dialog").first
@@ -599,6 +1000,7 @@ def exercise_route_control(page, exercise):
 
 
 def visit_matrix_case(page, role, case, viewport):
+    global unmocked_matrix_requests
     viewport_name, width, height = viewport
     page.set_viewport_size({"width": width, "height": height})
     page_errors = []
@@ -607,11 +1009,17 @@ def visit_matrix_case(page, role, case, viewport):
     path = case["path"]
     label = f"{role} {path.split('?')[0]} @ {width}"
     try:
+        unmocked_matrix_requests.clear()
         page.goto(f"{BASE}{path}")
         page.wait_for_load_state("networkidle")
         selector = expected_selector(case, width)
         critical = page.locator(selector).first
         critical.wait_for(state="visible", timeout=5000)
+        states = [page.locator(state_selector).first for state_selector in expected_state_selectors(case, width)]
+        for state in states:
+            state.wait_for(state="visible", timeout=5000)
+        states_visible = all(state.is_visible() for state in states)
+        content_fits = content_fits_containers(page, expected_fit_selectors(case, width))
         exercised, exercise_detail = exercise_route_control(page, case.get("exercise"))
         overflow = overflow_state(page)
         expected_path = case.get("expected_path", path.split("?")[0])
@@ -619,10 +1027,17 @@ def visit_matrix_case(page, role, case, viewport):
         checks = {
             "path": actual_path == expected_path,
             "critical": critical.is_visible(),
+            "states": states_visible,
+            "content_fit": content_fits,
             "shell": protected_shell_state(page, width),
-            "overflow": overflow["documentWidth"] <= overflow["viewport"],
+            "overflow": (
+                overflow["documentWidth"] <= overflow["viewport"]
+                and overflow["bodyWidth"] <= overflow["viewport"]
+                and overflow["mainContentWidth"] <= overflow["mainWidth"]
+            ),
             "interaction": exercised,
             "page_errors": not page_errors,
+            "mocked_api": not unmocked_matrix_requests,
         }
         report(
             label,
@@ -633,6 +1048,7 @@ def visit_matrix_case(page, role, case, viewport):
                 "overflow": overflow,
                 "exercise": exercise_detail,
                 "errors": page_errors,
+                "unmocked_requests": sorted(unmocked_matrix_requests),
                 "url": page.url,
             }),
         )
