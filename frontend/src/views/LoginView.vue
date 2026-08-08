@@ -99,7 +99,6 @@ async function handleDevLogin() {
             autocomplete="current-password"
             data-testid="password-field"
             required
-            show-password
             type="password"
             :prefix-icon="Lock"
           />

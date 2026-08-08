@@ -51,6 +51,9 @@ describe('LoginView', () => {
     expect(wrapper.find('[data-testid="auth-language-toggle"]').exists()).toBe(true)
     expect(wrapper.find('input[data-testid="username-field"]').exists()).toBe(true)
     expect(wrapper.find('input[data-testid="password-field"]').exists()).toBe(true)
+    const passwordControl = wrapper.findAllComponents({ name: 'ElInput' })
+      .find((component) => component.props('type') === 'password')
+    expect(passwordControl?.props('showPassword')).not.toBe(true)
     expect(wrapper.find('[data-testid="auth-source"]').exists()).toBe(true)
   })
 

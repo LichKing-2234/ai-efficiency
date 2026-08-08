@@ -96,7 +96,7 @@ async function handleTestLDAP() {
 
         <div>
           <label class="block text-sm font-medium text-gray-700">{{ t('settings.bindPassword') }}</label>
-          <ElInput v-model="ldapForm.bind_password" type="password" show-password :placeholder="t('settings.keepCurrentPlaceholder')" class="mt-1" />
+          <ElInput v-model="ldapForm.bind_password" type="password" :placeholder="t('settings.keepCurrentPlaceholder')" class="mt-1" />
         </div>
 
         <div>

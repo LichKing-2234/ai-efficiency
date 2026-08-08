@@ -307,7 +307,7 @@ function cancelCredentialDelete(event: MouseEvent, close: (event: MouseEvent) =>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">{{ t('settings.password') }}</label>
-            <ElInput v-model="credentialForm.password" type="password" show-password class="mt-1" />
+            <ElInput v-model="credentialForm.password" type="password" class="mt-1" />
           </div>
         </template>
         <template v-else>
@@ -321,7 +321,7 @@ function cancelCredentialDelete(event: MouseEvent, close: (event: MouseEvent) =>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">{{ t('settings.passphrase') }}</label>
-            <ElInput v-model="credentialForm.passphrase" type="password" show-password class="mt-1" />
+            <ElInput v-model="credentialForm.passphrase" type="password" class="mt-1" />
           </div>
         </template>
         <ElAlert v-if="credentialFormError" type="error" :title="credentialFormError" :closable="false" />

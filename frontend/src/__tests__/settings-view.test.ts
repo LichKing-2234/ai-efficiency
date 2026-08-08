@@ -783,6 +783,11 @@ describe('SettingsView', () => {
     await addBtn!.trigger('click')
     await flushPromises()
 
+    const apiKeyControl = wrapper.findAllComponents({ name: 'ElInput' })
+      .find((component) => component.find('input[name="relay-provider-admin-api-key"]').exists())
+    expect(apiKeyControl).toBeDefined()
+    expect(apiKeyControl!.props('showPassword')).not.toBe(true)
+
     await wrapper.find('input[name="relay-provider-name"]').setValue('relay-main')
     await wrapper.find('input[name="relay-provider-display-name"]').setValue('Relay Main')
     await wrapper.find('input[name="relay-provider-base-url"]').setValue('https://relay.example.com')

@@ -311,7 +311,7 @@ function cancelRelayDelete(event: MouseEvent, close: (event: MouseEvent) => void
         </div>
         <div class="md:col-span-2">
           <label class="block text-sm font-medium text-gray-700">{{ t('settings.adminApiKey') }}</label>
-          <ElInput name="relay-provider-admin-api-key" v-model="relayForm.admin_api_key" type="password" show-password :placeholder="editingRelayId ? t('settings.keepCurrentPlaceholder') : 'admin-...'" class="mt-1" />
+          <ElInput name="relay-provider-admin-api-key" v-model="relayForm.admin_api_key" type="password" :placeholder="editingRelayId ? t('settings.keepCurrentPlaceholder') : 'admin-...'" class="mt-1" />
           <p class="mt-1 text-xs text-gray-400">{{ t('settings.relayKeyHelp') }}</p>
         </div>
         <div class="flex items-center">
