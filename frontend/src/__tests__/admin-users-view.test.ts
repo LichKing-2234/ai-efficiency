@@ -1182,18 +1182,8 @@ describe('AdminUsersView', () => {
     expect(rowText).not.toContain('cycle-a')
   })
 
-  it('mounts one 100-row viewport tree, swaps without reload or duplicate selection, and removes the exact listener', async () => {
-    const users = Array.from({ length: 100 }, (_, index) => ({
-      id: index + 1,
-      username: `user-${index + 1}`,
-      email: `user-${index + 1}@example.com`,
-      role: 'user',
-      auth_source: 'ldap',
-      relay_user_id: index + 1001,
-      relay_auth_password: '',
-      created_at: '2026-05-26T00:00:00Z',
-      updated_at: '2026-05-26T01:00:00Z',
-    }))
+  it('mounts only the active viewport tree for a 100-row page', async () => {
+    const users = Array.from({ length: 100 }, (_, index) => userRow(index + 1, `user-${index + 1}`))
     const { wrapper, listAdminUsers } = await mountAdminUsersView('/admin/users', () => ({
       items: users,
       total: 100,
@@ -1203,10 +1193,21 @@ describe('AdminUsersView', () => {
 
     expect(matchMediaController.matchMedia).toHaveBeenCalledTimes(1)
     expect(matchMediaController.addEventListener).toHaveBeenCalledTimes(1)
-    const listener = matchMediaController.addEventListener.mock.calls[0][1]
     expect(wrapper.find('[data-admin-user-list="desktop"]').exists()).toBe(true)
     expect(wrapper.find('[data-admin-user-list="mobile"]').exists()).toBe(false)
     expect(wrapper.findAll('[data-admin-user-row]')).toHaveLength(100)
+    expect(listAdminUsers).toHaveBeenCalledTimes(1)
+  })
+
+  it('swaps viewports without reloading or duplicating selection and removes the exact listener', async () => {
+    const users = [userRow(1, 'user-1'), userRow(2, 'user-2')]
+    const { wrapper, listAdminUsers } = await mountAdminUsersView('/admin/users', () => ({
+      items: users,
+      total: users.length,
+      page: 1,
+      page_size: 100,
+    }))
+    const listener = matchMediaController.addEventListener.mock.calls[0][1]
 
     await setElementCheckbox(wrapper, 'select-user-1')
     matchMediaController.change(false)
@@ -1215,7 +1216,7 @@ describe('AdminUsersView', () => {
     expect(listAdminUsers).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-admin-user-list="desktop"]').exists()).toBe(false)
     expect(wrapper.find('[data-admin-user-list="mobile"]').exists()).toBe(true)
-    expect(wrapper.findAll('[data-admin-user-row]')).toHaveLength(100)
+    expect(wrapper.findAll('[data-admin-user-row]')).toHaveLength(users.length)
     expect((wrapper.get('[data-testid="select-user-mobile-1"]').get('input').element as HTMLInputElement).checked).toBe(true)
 
     matchMediaController.change(true)
