@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue'
 import type { UserUsageModelStat } from '@/types'
-import { useMediaQuery } from '@/composables/useMediaQuery'
+import { useWideContentLayout } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
 import { formatTokenCount } from '@/utils/formatters'
 
@@ -16,7 +16,7 @@ const props = withDefaults(defineProps<{
 })
 
 const { t } = useI18n()
-const isDesktop = useMediaQuery('(min-width: 768px)')
+const isDesktop = useWideContentLayout()
 
 const colors = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#db2777', '#0891b2', '#65a30d']
 

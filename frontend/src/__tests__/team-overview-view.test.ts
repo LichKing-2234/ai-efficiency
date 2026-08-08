@@ -41,7 +41,7 @@ function installMatchMedia(matches: boolean) {
     configurable: true,
     value: vi.fn(() => ({
       matches,
-      media: '(min-width: 768px)',
+      media: '(min-width: 1280px)',
       onchange: null,
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),

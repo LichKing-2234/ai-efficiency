@@ -9,7 +9,7 @@ import {
   updateQuotaResetNotificationSettings,
 } from '@/api/quotaReset'
 import { listDirectoryDepartments } from '@/api/directory'
-import { useMediaQuery } from '@/composables/useMediaQuery'
+import { useWideContentLayout } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
 import type {
   Credential,
@@ -41,7 +41,7 @@ const departmentOptions = ref<DirectoryDepartment[]>([])
 const approverCandidates = ref<QuotaResetApproverCandidate[]>([])
 const approverFilter = ref('')
 const unmatchedRepresentatives = ref<QuotaResetUnmatchedApproverRepresentative[]>([])
-const desktopApproverConfigs = useMediaQuery('(min-width: 1280px)')
+const desktopApproverConfigs = useWideContentLayout()
 let departmentSearchRequestSeq = 0
 
 const configForm = ref({

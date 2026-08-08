@@ -292,7 +292,7 @@ onMounted(() => {
         <ElRadioGroup
           data-testid="quota-reset-queue-selector"
           :model-value="activeQueue"
-          :class="['!grid w-full gap-1 sm:!inline-flex sm:w-auto', auth.isAdmin ? 'grid-cols-3' : 'grid-cols-2']"
+          :class="['!grid min-w-0 w-full gap-1 sm:!inline-flex sm:w-auto', auth.isAdmin ? 'grid-cols-3' : 'grid-cols-2']"
         >
           <ElRadioButton
             data-testid="quota-reset-tab-mine"
@@ -312,7 +312,7 @@ onMounted(() => {
             <ElTag
               v-if="approvalTotal > 0"
               data-testid="quota-reset-tab-approvals-count"
-              class="ml-2"
+              class="ml-2 !hidden sm:!inline-flex"
               size="small"
               round
               :effect="activeQueue === 'approvals' ? 'dark' : 'plain'"
@@ -331,7 +331,7 @@ onMounted(() => {
             <ElTag
               v-if="adminTotal > 0"
               data-testid="quota-reset-tab-admin-count"
-              class="ml-2"
+              class="ml-2 !hidden sm:!inline-flex"
               size="small"
               round
               :effect="activeQueue === 'admin' ? 'dark' : 'plain'"

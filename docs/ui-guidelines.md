@@ -42,6 +42,10 @@ theme until a product requirement justifies one.
 - Critical user and administrator workflows must remain fully operable on
   mobile. Tailwind owns grids, flex layout, breakpoints, width constraints, and
   responsive ordering around Element Plus controls.
+- When a table and stacked cards are mutually exclusive render trees, use the
+  shared media-query composables aligned with Tailwind's `md` and `xl`
+  breakpoints. Keep the table on the `xl` boundary when the desktop sidebar
+  leaves too little content width at 768 pixels.
 - Use scan-friendly tables on wide screens. When a table cannot remain usable on
   mobile, provide a card or stacked presentation rather than horizontal page
   overflow.

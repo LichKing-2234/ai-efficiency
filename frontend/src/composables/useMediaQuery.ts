@@ -37,3 +37,11 @@ export function useMediaQuery(
 
   return readonly(matches)
 }
+
+export function useDesktopLayout() {
+  return useMediaQuery('(min-width: 768px)')
+}
+
+export function useWideContentLayout() {
+  return useMediaQuery('(min-width: 1280px)')
+}

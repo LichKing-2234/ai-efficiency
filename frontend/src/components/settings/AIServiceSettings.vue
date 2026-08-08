@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { createRelayProvider, deleteRelayProvider, listRelayProviders, updateRelayProvider } from '@/api/relayProvider'
-import { useMediaQuery } from '@/composables/useMediaQuery'
+import { useWideContentLayout } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
 import type { RelayProvider } from '@/types'
 
 const { t } = useI18n()
-const isDesktop = useMediaQuery('(min-width: 1280px)')
+const isDesktop = useWideContentLayout()
 const relayLoading = ref(true)
 const relayProviders = ref<RelayProvider[]>([])
 const confirmingRelayId = ref<number | null>(null)

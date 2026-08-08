@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import type { SubjectSubscriptionGroup, UpdateTeamUsageRateMultiplierRequest } from '@/types'
 import TeamRateMultiplierModal from '@/components/user/usage/TeamRateMultiplierModal.vue'
-import { useMediaQuery } from '@/composables/useMediaQuery'
+import { useWideContentLayout } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
 
 const props = defineProps<{
@@ -19,7 +19,7 @@ const activeRow = ref<SubjectSubscriptionGroup | null>(null)
 const submitting = ref(false)
 const errorMessage = ref('')
 const { t } = useI18n()
-const isDesktop = useMediaQuery('(min-width: 768px)')
+const isDesktop = useWideContentLayout()
 
 const sortedRows = computed(() => [...props.rows].sort((a, b) => a.group_name.localeCompare(b.group_name)))
 

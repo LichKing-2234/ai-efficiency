@@ -2,13 +2,13 @@
 import { onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { createCredential, deleteCredential, updateCredential } from '@/api/credential'
-import { useMediaQuery } from '@/composables/useMediaQuery'
+import { useWideContentLayout } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
 import { useSettingsResourcesStore } from '@/stores/settingsResources'
 import type { Credential } from '@/types'
 
 const { t } = useI18n()
-const isDesktop = useMediaQuery('(min-width: 1280px)')
+const isDesktop = useWideContentLayout()
 const settingsResources = useSettingsResourcesStore()
 const { credentials } = storeToRefs(settingsResources)
 const confirmingCredentialId = ref<number | null>(null)

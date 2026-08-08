@@ -32,7 +32,7 @@ function installMatchMedia(initialMatches: boolean) {
   const listeners = new Set<(event: { matches: boolean; media: string }) => void>()
   const mediaQuery = {
     matches: initialMatches,
-    media: '(min-width: 768px)',
+    media: '(min-width: 1280px)',
     onchange: null,
     addEventListener: vi.fn((type: string, listener: (event: { matches: boolean; media: string }) => void) => {
       if (type === 'change') listeners.add(listener)

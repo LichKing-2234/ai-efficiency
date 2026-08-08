@@ -43,7 +43,7 @@ function installMatchMedia(initialMatches: boolean) {
   })
   const mediaQuery = {
     matches: initialMatches,
-    media: '(min-width: 768px)',
+    media: '(min-width: 1280px)',
     onchange: null,
     addEventListener,
     removeEventListener,
@@ -52,7 +52,7 @@ function installMatchMedia(initialMatches: boolean) {
     dispatchEvent: vi.fn(() => true),
   }
   const matchMedia = vi.fn((query: string) => {
-    expect(query).toBe('(min-width: 768px)')
+    expect(query).toBe('(min-width: 1280px)')
     return mediaQuery
   })
   Object.defineProperty(window, 'matchMedia', {
@@ -1195,6 +1195,7 @@ describe('AdminUsersView', () => {
     expect(matchMediaController.addEventListener).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-admin-user-list="desktop"]').exists()).toBe(true)
     expect(wrapper.find('[data-admin-user-list="mobile"]').exists()).toBe(false)
+    expect(wrapper.get('[data-admin-user-list="desktop"]').classes()).toContain('xl:block')
     expect(wrapper.findAll('[data-admin-user-row]')).toHaveLength(100)
     expect(listAdminUsers).toHaveBeenCalledTimes(1)
   })
@@ -1216,6 +1217,7 @@ describe('AdminUsersView', () => {
     expect(listAdminUsers).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-admin-user-list="desktop"]').exists()).toBe(false)
     expect(wrapper.find('[data-admin-user-list="mobile"]').exists()).toBe(true)
+    expect(wrapper.get('[data-admin-user-list="mobile"]').classes()).toContain('xl:hidden')
     expect(wrapper.findAll('[data-admin-user-row]')).toHaveLength(users.length)
     expect((wrapper.get('[data-testid="select-user-mobile-1"]').get('input').element as HTMLInputElement).checked).toBe(true)
 

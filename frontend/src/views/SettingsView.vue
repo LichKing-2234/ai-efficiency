@@ -2,7 +2,7 @@
 import { computed, defineAsyncComponent, ref, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
-import { useMediaQuery } from '@/composables/useMediaQuery'
+import { useWideContentLayout } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
 
 type SettingsSection = 'ai-services' | 'code-platforms' | 'organization-login' | 'deployment-runtime' | 'advanced-credentials'
@@ -26,7 +26,7 @@ const settingsSectionComponents: Record<SettingsSection, Component> = {
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
-const hasWideSettingsNavigation = useMediaQuery('(min-width: 1280px)')
+const hasWideSettingsNavigation = useWideContentLayout()
 const activeSection = ref<SettingsSection>(initialSettingsSection())
 const settingsSections = computed<Array<{ id: SettingsSection; label: string; description: string }>>(() => [
   { id: 'ai-services', label: t('settings.aiServices'), description: t('settings.aiServicesHelp') },

@@ -4,7 +4,7 @@ import type { Directive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import AdminDepartmentPicker from '@/components/admin/AdminDepartmentPicker.vue'
-import { useMediaQuery } from '@/composables/useMediaQuery'
+import { useWideContentLayout } from '@/composables/useMediaQuery'
 import DepartmentTreeToggle from '@/components/DepartmentTreeToggle.vue'
 import {
   disableAdminUserAccess,
@@ -63,7 +63,7 @@ const loading = ref(false)
 const error = ref('')
 const rows = ref<AdminUser[]>([])
 const total = ref(0)
-const desktopUserRows = useMediaQuery('(min-width: 768px)')
+const desktopUserRows = useWideContentLayout()
 const rootDepartments = ref<LoadedDepartmentChildren | null>(null)
 const childrenByParentID = ref<Map<string, LoadedDepartmentChildren>>(new Map())
 const departmentsLoading = ref(false)
@@ -1313,7 +1313,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-	        <div v-if="showMobileUserRows" data-admin-user-list="mobile" class="mt-3 space-y-3 md:hidden">
+	        <div v-if="showMobileUserRows" data-admin-user-list="mobile" class="mt-3 space-y-3 xl:hidden">
 	          <div
 	            v-for="row in rows"
 	            :key="row.id"
@@ -1387,7 +1387,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-	        <div v-if="showDesktopUserRows" data-admin-user-list="desktop" class="mt-3 hidden overflow-x-auto md:block">
+	        <div v-if="showDesktopUserRows" data-admin-user-list="desktop" class="mt-3 hidden overflow-x-auto xl:block">
           <ElTable :data="rows" row-key="id" class="min-w-[1080px]">
             <ElTableColumn width="56" align="center">
               <template #header>
@@ -1427,7 +1427,11 @@ onBeforeUnmount(() => {
             </ElTableColumn>
             <ElTableColumn :label="t('adminUsers.accessStatus')" min-width="140">
               <template #default="{ row }">
-                <ElTag :type="accessStatusTagType(tableAdminUser(row))" effect="light">
+                <ElTag
+                  class="!h-auto max-w-full !whitespace-normal py-1 text-center !leading-tight"
+                  :type="accessStatusTagType(tableAdminUser(row))"
+                  effect="light"
+                >
                   {{ accessStatusLabel(tableAdminUser(row)) }}
                 </ElTag>
               </template>

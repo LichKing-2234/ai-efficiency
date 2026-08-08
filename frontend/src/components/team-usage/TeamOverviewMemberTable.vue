@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import type { Directive } from 'vue'
 import { useI18n } from '@/i18n'
 import TeamOverviewDepartmentNode from '@/components/team-usage/TeamOverviewDepartmentNode.vue'
-import { useMediaQuery } from '@/composables/useMediaQuery'
+import { useWideContentLayout } from '@/composables/useMediaQuery'
 import { formatTokenCount } from '@/utils/formatters'
 import type { TeamOverviewMember, TeamUsageOrganizationDepartment } from '@/types'
 import type { TeamUsageOrganizationBranchState } from '@/composables/useTeamUsageOrganization'
@@ -43,7 +43,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 type DetailView = 'ranking' | 'organization'
 const detailView = ref<DetailView>('ranking')
-const showDesktopRanking = useMediaQuery('(min-width: 768px)')
+const showDesktopRanking = useWideContentLayout()
 
 function tableMember(row: unknown) {
   return row as TeamOverviewMember

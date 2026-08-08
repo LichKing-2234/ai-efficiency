@@ -121,6 +121,8 @@ describe('ActivityTeamView', () => {
     const alice = wrapper.get('[data-testid="activity-member-7"]')
     expect(alice.text()).toContain('Alice')
     expect(alice.attributes('href')).toBe('/activity/members/7')
+    expect(alice.classes()).toContain('lg:grid-cols-[minmax(10rem,1fr)_7rem_7rem_7rem]')
+    expect(alice.classes()).not.toContain('sm:grid-cols-[minmax(10rem,1fr)_7rem_7rem_7rem]')
     const bob = wrapper.get('[data-testid="activity-member-directory-bob"]')
     expect(bob.text()).toContain('Bob')
     expect(bob.text()).toContain('No activity data')

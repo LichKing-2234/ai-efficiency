@@ -77,12 +77,12 @@ function memberKey(userID: number, directoryID?: string) {
               :key="memberKey(row.member.user_id, row.member.directory_member_external_id)"
               :data-testid="`activity-member-${memberKey(row.member.user_id, row.member.directory_member_external_id)}`"
               :to="row.member.user_id > 0 ? `/activity/members/${row.member.user_id}` : undefined"
-              class="grid min-w-0 gap-3 px-5 py-4 sm:grid-cols-[minmax(10rem,1fr)_7rem_7rem_7rem] sm:items-center"
+              class="grid min-w-0 gap-3 px-5 py-4 lg:grid-cols-[minmax(10rem,1fr)_7rem_7rem_7rem] lg:items-center"
             >
               <div class="min-w-0"><p class="truncate font-medium text-slate-950">{{ row.member.display_name }}</p><p class="truncate text-sm text-slate-500">{{ row.member.email }}</p><p v-if="!row.available" class="mt-1 text-xs font-medium text-amber-700">{{ t('activity.noActivityData') }}</p></div>
-              <div class="text-sm text-slate-600"><span class="sm:hidden">{{ t('activity.participatingPRs') }}: </span>{{ metric(row.metrics.participating_prs) }}</div>
-              <div class="text-sm text-slate-600"><span class="sm:hidden">{{ t('activity.mergedPRs') }}: </span>{{ metric(row.metrics.merged_prs) }}</div>
-              <div class="text-sm text-slate-600"><span class="sm:hidden">{{ t('activity.activeRepositories') }}: </span>{{ row.metrics.active_repositories }}</div>
+              <div class="text-sm text-slate-600"><span class="lg:hidden">{{ t('activity.participatingPRs') }}: </span>{{ metric(row.metrics.participating_prs) }}</div>
+              <div class="text-sm text-slate-600"><span class="lg:hidden">{{ t('activity.mergedPRs') }}: </span>{{ metric(row.metrics.merged_prs) }}</div>
+              <div class="text-sm text-slate-600"><span class="lg:hidden">{{ t('activity.activeRepositories') }}: </span>{{ row.metrics.active_repositories }}</div>
             </component>
           </div>
           <CursorPager
