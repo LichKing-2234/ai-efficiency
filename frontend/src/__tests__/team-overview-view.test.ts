@@ -664,7 +664,10 @@ describe('TeamOverviewView', () => {
 
     expect(wrapper.find('[data-testid="team-overview-summary"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="team-member-trend-chart"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="team-overview-members-error"]').exists()).toBe(true)
+    const membersAlert = wrapper.findAllComponents({ name: 'ElAlert' })
+      .find((component) => component.text().includes('Team usage is temporarily unavailable.'))
+    expect(membersAlert).toBeDefined()
+    expect(membersAlert!.props('type')).toBe('warning')
     await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
     expect(wrapper.find('[data-testid="team-overview-department-department-alpha"]').exists()).toBe(true)
   })
@@ -1369,7 +1372,10 @@ describe('TeamOverviewView', () => {
     await flushPromises()
 
     await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
-    expect(wrapper.get('[data-testid="team-overview-organization-error-root"]').text()).toContain('Team usage is temporarily unavailable.')
+    const organizationError = wrapper.findAllComponents({ name: 'ElAlert' })
+      .find((component) => component.text().includes('Team usage is temporarily unavailable.'))
+    expect(organizationError).toBeDefined()
+    expect(organizationError!.props('type')).toBe('warning')
     expect(wrapper.text()).not.toContain('network unavailable')
   })
 

@@ -262,7 +262,10 @@ describe('DashboardView', () => {
     const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="usage-stale-marker"]').text()).toContain('recent snapshot')
+    const staleAlert = wrapper.findAllComponents({ name: 'ElAlert' })
+      .find((component) => component.text().includes('recent snapshot'))
+    expect(staleAlert).toBeDefined()
+    expect(staleAlert!.props('type')).toBe('warning')
   })
 
   it('aborts superseded personal requests and ignores out-of-order responses', async () => {
@@ -517,6 +520,10 @@ describe('DashboardView', () => {
 
     expect(getUserProviders).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('Usage dashboard is temporarily unavailable')
+    const unavailableAlert = wrapper.findAllComponents({ name: 'ElAlert' })
+      .find((component) => component.text().includes('Usage dashboard is temporarily unavailable'))
+    expect(unavailableAlert).toBeDefined()
+    expect(unavailableAlert!.props('type')).toBe('error')
     expect(wrapper.text()).not.toContain('Go to AI Setup & Configuration')
   })
 

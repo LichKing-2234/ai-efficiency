@@ -198,13 +198,14 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
       >
         {{ t('settings.loading') }}
       </div>
-      <div
+      <ElAlert
         v-else-if="props.organizationRoot.error && !props.organizationRoot.loaded"
         data-testid="team-overview-organization-error-root"
-        class="py-3 text-sm text-slate-600"
-      >
-        {{ t('teamUsage.unavailable') }}
-      </div>
+        type="warning"
+        :closable="false"
+        show-icon
+        :title="t('teamUsage.unavailable')"
+      />
       <div v-else-if="props.organizationRoot.departments.length === 0" class="py-3 text-sm text-slate-500">-</div>
       <template v-else>
         <div class="overflow-hidden rounded-md border border-gray-200" role="tree">
@@ -253,13 +254,15 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
       {{ t('settings.loading') }}
     </div>
 
-    <div
+    <ElAlert
       v-else-if="props.memberError && props.members.length === 0"
       data-testid="team-overview-members-error"
-      class="px-4 py-4 text-sm text-slate-600"
-    >
-      {{ t('teamUsage.unavailable') }}
-    </div>
+      class="m-4"
+      type="warning"
+      :closable="false"
+      show-icon
+      :title="t('teamUsage.unavailable')"
+    />
 
     <div v-else-if="props.members.length === 0" class="px-4 py-4 text-sm text-slate-500">-</div>
 
@@ -343,13 +346,15 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
       </div>
     </div>
 
-    <div
+    <ElAlert
       v-if="detailView === 'ranking' && props.memberError && props.members.length > 0"
       data-testid="team-overview-members-error"
-      class="border-t border-slate-200 px-4 py-2 text-sm text-slate-600"
-    >
-      {{ t('teamUsage.unavailable') }}
-    </div>
+      class="m-4"
+      type="warning"
+      :closable="false"
+      show-icon
+      :title="t('teamUsage.unavailable')"
+    />
 
     <div
       v-if="detailView === 'ranking' && showMemberPagination"

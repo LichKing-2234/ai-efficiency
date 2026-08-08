@@ -50,30 +50,31 @@
       {{ t('usageDashboard.loading') }}
     </div>
 
-    <div v-else-if="setupRequired" class="rounded-lg border border-amber-200 bg-amber-50 p-6">
-      <h2 class="text-base font-semibold text-amber-900">{{ t('usageDashboard.setupTitle') }}</h2>
-      <p class="mt-2 text-sm text-amber-800">{{ t('usageDashboard.setupHelp') }}</p>
+    <ElAlert v-else-if="setupRequired" type="warning" :closable="false" show-icon>
+      <template #title>{{ t('usageDashboard.setupTitle') }}</template>
+      <p class="text-sm">{{ t('usageDashboard.setupHelp') }}</p>
       <router-link to="/user" class="mt-4 inline-flex rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700">
         {{ t('usageDashboard.openSetup') }}
       </router-link>
-    </div>
+    </ElAlert>
 
-    <div v-else-if="usageErrorMessage" class="rounded-lg border border-red-200 bg-red-50 p-6">
-      <h2 class="text-base font-semibold text-red-900">{{ usageErrorMessage }}</h2>
-      <p class="mt-2 text-sm text-red-800">{{ t('usageDashboard.retryHelp') }}</p>
+    <ElAlert v-else-if="usageErrorMessage" type="error" :closable="false" show-icon>
+      <template #title>{{ usageErrorMessage }}</template>
+      <p class="text-sm">{{ t('usageDashboard.retryHelp') }}</p>
       <router-link v-if="credentialError && !props.homeMode" to="/user" class="mt-4 inline-flex rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
         {{ t('usageDashboard.openSetup') }}
       </router-link>
-    </div>
+    </ElAlert>
 
     <div v-else class="space-y-6">
-      <div
+      <ElAlert
         v-if="usageIsStale"
         data-testid="usage-stale-marker"
-        class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-      >
-        {{ t('usageDashboard.staleSnapshot') }}
-      </div>
+        type="warning"
+        :closable="false"
+        show-icon
+        :title="t('usageDashboard.staleSnapshot')"
+      />
       <Suspense v-if="selectedMemberSubject && selectedSubjectSubscriptions.length > 0">
         <SelectedSubjectSubscriptionRows
           :subject-user-id="selectedMemberSubject.user_id"
