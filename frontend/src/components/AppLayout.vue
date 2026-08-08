@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { Close, Menu, Switch } from '@element-plus/icons-vue'
 import AppSidebar from './AppSidebar.vue'
 import { useElementPlusLocale } from '@/composables/useElementPlusLocale'
+import { useMediaQuery } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
 
 const mobileNavOpen = ref(false)
+const desktopLayout = useMediaQuery('(min-width: 768px)')
 const { languageToggleLabel, locale, t, toggleLocale } = useI18n()
 const elementLocale = useElementPlusLocale(locale)
 
@@ -16,6 +18,10 @@ function openMobileNav() {
 function closeMobileNav() {
   mobileNavOpen.value = false
 }
+
+watch(desktopLayout, (isDesktop) => {
+  if (isDesktop) closeMobileNav()
+})
 
 </script>
 
