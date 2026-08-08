@@ -49,7 +49,7 @@ function installMatchMedia(initialMatches: boolean) {
     removeListener: vi.fn(),
     dispatchEvent: vi.fn(() => true),
   }
-  const matchMedia = vi.fn(() => mediaQuery)
+  const matchMedia = vi.fn((_query: string) => mediaQuery)
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
     value: matchMedia,
