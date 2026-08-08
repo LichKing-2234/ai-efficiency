@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, ref, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
+import { useMediaQuery } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
 
 type SettingsSection = 'ai-services' | 'code-platforms' | 'organization-login' | 'deployment-runtime' | 'advanced-credentials'
@@ -25,8 +26,8 @@ const settingsSectionComponents: Record<SettingsSection, Component> = {
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const hasWideSettingsNavigation = useMediaQuery('(min-width: 1280px)')
 const activeSection = ref<SettingsSection>(initialSettingsSection())
-const activeSectionComponent = computed(() => settingsSectionComponents[activeSection.value])
 const settingsSections = computed<Array<{ id: SettingsSection; label: string; description: string }>>(() => [
   { id: 'ai-services', label: t('settings.aiServices'), description: t('settings.aiServicesHelp') },
   { id: 'code-platforms', label: t('settings.codePlatforms'), description: t('settings.codePlatformsHelp') },
@@ -48,24 +49,6 @@ function replaceSettingsQuery() {
   const query = activeSection.value === 'ai-services' ? {} : { section: activeSection.value }
   void router.replace({ query })
 }
-
-function selectSection(section: SettingsSection) {
-  activeSection.value = section
-}
-
-function onSettingsTabKeydown(event: KeyboardEvent, index: number) {
-  const keys = ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End']
-  if (!keys.includes(event.key)) return
-  event.preventDefault()
-  const sections = settingsSections.value
-  let nextIndex = index
-  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (index + 1) % sections.length
-  if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (index - 1 + sections.length) % sections.length
-  if (event.key === 'Home') nextIndex = 0
-  if (event.key === 'End') nextIndex = sections.length - 1
-  activeSection.value = sections[nextIndex].id
-  document.getElementById(`settings-tab-${sections[nextIndex].id}`)?.focus()
-}
 </script>
 
 <template>
@@ -76,34 +59,61 @@ function onSettingsTabKeydown(event: KeyboardEvent, index: number) {
         <p class="mt-1 text-sm text-gray-500">{{ t('settings.subtitle') }}</p>
       </div>
 
-      <div class="grid gap-2 lg:grid-cols-5" role="tablist" aria-label="Admin console sections">
-        <ElButton
-          v-for="(section, index) in settingsSections"
-          :key="section.id"
-          :id="`settings-tab-${section.id}`"
-          :data-testid="`settings-tab-${section.id}`"
-          class="!m-0 !h-auto min-h-20 !whitespace-normal !rounded-lg !px-3 !py-3 !text-left"
-          :class="activeSection === section.id ? 'border-blue-300 bg-blue-50 text-blue-950' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
-          native-type="button"
-          role="tab"
-          :aria-selected="activeSection === section.id"
-          :aria-controls="`settings-panel-${section.id}`"
-          :tabindex="activeSection === section.id ? 0 : -1"
-          @click="selectSection(section.id)"
-          @keydown="onSettingsTabKeydown($event, index)"
-        >
-          <span class="block text-sm font-semibold">{{ section.label }}</span>
-          <span class="mt-1 block text-xs text-slate-500">{{ section.description }}</span>
-        </ElButton>
-      </div>
-
-      <section
-        :id="`settings-panel-${activeSection}`"
-        role="tabpanel"
-        :aria-labelledby="`settings-tab-${activeSection}`"
+      <ElTabs
+        v-if="hasWideSettingsNavigation"
+        v-model="activeSection"
+        class="settings-section-tabs"
+        stretch
       >
-        <component :is="activeSectionComponent" />
+        <ElTabPane
+          v-for="section in settingsSections"
+          :key="section.id"
+          :name="section.id"
+          lazy
+        >
+          <template #label>
+            <span
+              :data-testid="`settings-tab-${section.id}`"
+              class="block min-w-0 py-2 text-left"
+            >
+              <span class="block text-sm font-semibold">{{ section.label }}</span>
+              <span class="mt-1 block truncate text-xs text-slate-500">{{ section.description }}</span>
+            </span>
+          </template>
+
+        </ElTabPane>
+      </ElTabs>
+
+      <ElSelect
+        v-else
+        v-model="activeSection"
+        data-testid="settings-section-select"
+        class="w-full"
+        :aria-label="t('nav.adminConsole')"
+      >
+        <ElOption
+          v-for="section in settingsSections"
+          :key="section.id"
+          :label="section.label"
+          :value="section.id"
+        />
+      </ElSelect>
+
+      <section :id="`settings-panel-${activeSection}`">
+        <component :is="settingsSectionComponents[activeSection]" />
       </section>
     </div>
   </AppLayout>
 </template>
+
+<style scoped>
+:deep(.settings-section-tabs > .el-tabs__header .el-tabs__item) {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 5rem;
+  min-width: 0;
+  padding-inline: 0.5rem;
+  white-space: normal;
+  width: 0;
+}
+</style>

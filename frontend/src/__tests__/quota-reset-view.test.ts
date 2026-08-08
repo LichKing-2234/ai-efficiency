@@ -167,8 +167,9 @@ describe('QuotaResetView', () => {
       '/usage/quota-reset?queue=approvals&request_id=2',
     )
 
-    expect(wrapper.get('[data-testid="quota-reset-tab-approvals"]').classes()).toContain('el-button')
-    expect(wrapper.get('[data-testid="quota-reset-tab-approvals"]').classes()).toContain('el-button--primary')
+    const approvals = wrapper.get('[data-testid="quota-reset-tab-approvals"]')
+    expect(approvals.classes()).toContain('el-radio-button')
+    expect((approvals.get('input[type="radio"]').element as HTMLInputElement).checked).toBe(true)
     expect(wrapper.find('[data-testid="quota-reset-workflow-timeline"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Group Beta')
   })
@@ -179,7 +180,7 @@ describe('QuotaResetView', () => {
       '/usage/quota-reset?queue=unknown&request_id=invalid',
     )
 
-    expect(wrapper.get('[data-testid="quota-reset-tab-mine"]').classes()).toContain('el-button--primary')
+    expect((wrapper.get('[data-testid="quota-reset-tab-mine"] input[type="radio"]').element as HTMLInputElement).checked).toBe(true)
     expect(wrapper.text()).toContain('Group Alpha')
   })
 
@@ -292,6 +293,21 @@ describe('QuotaResetView', () => {
 
     expect(wrapper.text()).toContain('Failed to load quota reset requests')
     expect(wrapper.text()).not.toContain('Group Alpha')
+  })
+
+  it('shows a queue load failure without a contradictory empty state and retries in place', async () => {
+    const api = await import('@/api/quotaReset') as any
+    api.listMyQuotaResetRequests.mockRejectedValueOnce(new Error('mine unavailable'))
+    const wrapper = await mountQuotaResetView()
+
+    expect(wrapper.text()).toContain('Failed to load quota reset requests')
+    expect(wrapper.text()).not.toContain('No quota reset requests yet.')
+
+    await wrapper.get('[data-testid="quota-reset-refresh"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Group Alpha')
+    expect(wrapper.text()).not.toContain('Failed to load quota reset requests')
   })
 
   it('refreshes invalidated counts without blocking refreshed queue history', async () => {
@@ -672,12 +688,12 @@ describe('QuotaResetView', () => {
     const wrapper = await mountQuotaResetView('admin')
 
     const queueSelector = wrapper.get('[data-testid="quota-reset-queue-selector"]')
-    expect(queueSelector.classes()).toContain('rounded-lg')
-    expect(queueSelector.classes()).toContain('bg-slate-100')
+    expect(queueSelector.classes()).toContain('el-radio-group')
+    expect((queueSelector.get('[data-testid="quota-reset-tab-mine"] input').element as HTMLInputElement).checked).toBe(true)
 
     const statusFilters = wrapper.get('[data-testid="quota-reset-status-filters"]')
-    expect(statusFilters.classes()).toContain('rounded-full')
-    expect(statusFilters.find('[data-testid="quota-reset-filter-all"]').classes()).toContain('text-xs')
+    expect(statusFilters.classes()).toContain('el-radio-group')
+    expect((statusFilters.get('[data-testid="quota-reset-filter-all"] input').element as HTMLInputElement).checked).toBe(true)
   })
 
   it('requires a decision comment and shows workflow history', async () => {

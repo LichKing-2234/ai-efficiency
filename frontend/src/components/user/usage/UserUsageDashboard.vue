@@ -22,15 +22,20 @@
         <p class="mt-1 break-words text-sm text-gray-500">{{ dashboardSubtitle }}</p>
       </div>
       <div class="flex max-w-full shrink-0 flex-wrap items-center gap-2 pb-1 sm:flex-nowrap sm:overflow-x-auto">
-        <ElButton data-test="range-today" :type="selectedRange === 'today' ? 'primary' : 'default'" @click="selectRange('today')">
-          {{ t('usageDashboard.today') }}
-        </ElButton>
-        <ElButton data-test="range-7d" :type="selectedRange === '7d' ? 'primary' : 'default'" @click="selectRange('7d')">
-          {{ t('usageDashboard.sevenDays') }}
-        </ElButton>
-        <ElButton data-test="range-30d" :type="selectedRange === '30d' ? 'primary' : 'default'" @click="selectRange('30d')">
-          {{ t('usageDashboard.thirtyDays') }}
-        </ElButton>
+        <ElRadioGroup
+          :model-value="selectedRange"
+          class="max-w-full shrink-0 flex-wrap sm:flex-nowrap sm:overflow-x-auto"
+        >
+          <ElRadioButton data-test="range-today" value="today" @click="selectRange('today')">
+            {{ t('usageDashboard.today') }}
+          </ElRadioButton>
+          <ElRadioButton data-test="range-7d" value="7d" @click="selectRange('7d')">
+            {{ t('usageDashboard.sevenDays') }}
+          </ElRadioButton>
+          <ElRadioButton data-test="range-30d" value="30d" @click="selectRange('30d')">
+            {{ t('usageDashboard.thirtyDays') }}
+          </ElRadioButton>
+        </ElRadioGroup>
         <ElButton
           :disabled="usageLoading"
           :loading="usageLoading"

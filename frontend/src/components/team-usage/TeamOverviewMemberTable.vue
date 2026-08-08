@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import type { Directive } from 'vue'
 import { useI18n } from '@/i18n'
 import TeamOverviewDepartmentNode from '@/components/team-usage/TeamOverviewDepartmentNode.vue'
+import { useMediaQuery } from '@/composables/useMediaQuery'
 import { formatTokenCount } from '@/utils/formatters'
 import type { TeamOverviewMember, TeamUsageOrganizationDepartment } from '@/types'
 import type { TeamUsageOrganizationBranchState } from '@/composables/useTeamUsageOrganization'
@@ -41,6 +43,15 @@ const emit = defineEmits<{
 const { t } = useI18n()
 type DetailView = 'ranking' | 'organization'
 const detailView = ref<DetailView>('ranking')
+const showDesktopRanking = useMediaQuery('(min-width: 768px)')
+
+function tableMember(row: unknown) {
+  return row as TeamOverviewMember
+}
+
+function selectDetailView(value: string | number | boolean | undefined) {
+  if (value === 'ranking' || value === 'organization') detailView.value = value
+}
 
 function formatCost(value: number) {
   return `${value.toFixed(2)} USD`
@@ -54,12 +65,25 @@ function memberTestID(member: TeamOverviewMember) {
   return `team-overview-member-${member.user_id > 0 ? `user-${member.user_id}` : `directory-${member.directory_member_external_id || member.email}`}`
 }
 
+function applyMemberTestID(element: HTMLElement, testID: string) {
+  element.closest('tr')?.setAttribute('data-testid', testID)
+}
+
+const vMemberTestId: Directive<HTMLElement, string> = {
+  mounted: (element, binding) => applyMemberTestID(element, binding.value),
+  updated: (element, binding) => applyMemberTestID(element, binding.value),
+}
+
 function canOpen(member: TeamOverviewMember) {
   return member.selectable && member.user_id > 0
 }
 
 function isConnected(member: TeamOverviewMember) {
   return member.relay_user_id != null
+}
+
+function memberRowClassName({ row }: { row: TeamOverviewMember }) {
+  return isConnected(row) ? '' : 'bg-red-50 text-red-950 hover:bg-red-50'
 }
 
 function openMember(member: TeamOverviewMember) {
@@ -145,22 +169,25 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
   <section class="rounded-lg border border-slate-200 bg-white shadow-sm">
     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
       <h2 class="text-base font-semibold text-slate-950">{{ t('teamUsage.memberTable') }}</h2>
-      <ElButtonGroup v-if="hasOrganization" aria-label="Member detail view">
-        <ElButton
+      <ElRadioGroup
+        v-if="hasOrganization"
+        :model-value="detailView"
+        aria-label="Member detail view"
+        @change="selectDetailView"
+      >
+        <ElRadioButton
           data-testid="team-overview-ranking-view"
-          :type="detailView === 'ranking' ? 'primary' : undefined"
-          @click="detailView = 'ranking'"
+          value="ranking"
         >
           {{ t('teamUsage.rankingView') }}
-        </ElButton>
-        <ElButton
+        </ElRadioButton>
+        <ElRadioButton
           data-testid="team-overview-organization-view"
-          :type="detailView === 'organization' ? 'primary' : undefined"
-          @click="detailView = 'organization'"
+          value="organization"
         >
           {{ t('teamUsage.organizationView') }}
-        </ElButton>
-      </ElButtonGroup>
+        </ElRadioButton>
+      </ElRadioGroup>
     </div>
 
     <div v-if="detailView === 'organization' && props.organizationRoot" class="p-4" data-testid="team-overview-organization-tree">
@@ -236,42 +263,84 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
 
     <div v-else-if="props.members.length === 0" class="px-4 py-4 text-sm text-slate-500">-</div>
 
-    <div v-else class="overflow-x-auto" data-testid="team-overview-ranking-table">
-      <table class="min-w-full divide-y divide-slate-100 text-sm">
-        <thead class="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
-          <tr>
-            <th class="whitespace-nowrap px-4 py-2 text-left">{{ t('teamUsage.memberName') }}</th>
-            <th class="whitespace-nowrap px-4 py-2 text-left">{{ t('teamUsage.memberEmail') }}</th>
-            <th class="whitespace-nowrap px-4 py-2 text-left">{{ t('teamUsage.memberDepartment') }}</th>
-            <th class="whitespace-nowrap px-4 py-2 text-right">{{ t('teamUsage.rangeTotalTokens') }}</th>
-            <th class="whitespace-nowrap px-4 py-2 text-right">{{ t('teamUsage.rangeActualCost') }}</th>
-            <th class="whitespace-nowrap px-4 py-2 text-right">{{ t('teamUsage.memberAction') }}</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-100">
-          <tr
-            v-for="member in props.members"
-            :key="memberKey(member)"
-            :data-testid="memberTestID(member)"
-            :class="[isConnected(member) ? 'hover:bg-slate-50' : 'bg-red-50 text-red-950 hover:bg-red-50']"
-          >
-            <td class="whitespace-nowrap px-4 py-2 font-medium text-slate-900">{{ member.display_name }}</td>
-            <td class="whitespace-nowrap px-4 py-2 text-slate-600">{{ member.email }}</td>
-            <td class="min-w-56 px-4 py-2 text-slate-600">{{ member.department_display_path || '-' }}</td>
-            <td class="whitespace-nowrap px-4 py-2 text-right tabular-nums text-slate-900">{{ formatTokenCount(member.total_tokens) }}</td>
-            <td class="whitespace-nowrap px-4 py-2 text-right tabular-nums text-slate-900">{{ formatCost(member.range_actual_cost) }}</td>
-            <td class="whitespace-nowrap px-4 py-2 text-right">
-              <span v-if="!isConnected(member)" class="mr-2 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">{{ t('teamUsage.notConnected') }}</span>
-              <ElButton
-                :disabled="!canOpen(member)"
-                @click="openMember(member)"
-              >
-                {{ t('teamUsage.openMember') }}
-              </ElButton>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <div v-else data-testid="team-overview-ranking-table">
+      <ElTable
+        v-if="showDesktopRanking"
+        :data="props.members"
+        :row-key="memberKey"
+        :row-class-name="memberRowClassName"
+      >
+        <ElTableColumn :label="t('teamUsage.memberName')" min-width="140">
+          <template #default="{ row: member }">
+            <span v-member-test-id="memberTestID(tableMember(member))" class="font-medium text-slate-900">
+              {{ member.display_name }}
+            </span>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn prop="email" :label="t('teamUsage.memberEmail')" min-width="200" />
+        <ElTableColumn :label="t('teamUsage.memberDepartment')" min-width="224">
+          <template #default="{ row: member }">
+            <span class="text-slate-600">{{ member.department_display_path || '-' }}</span>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('teamUsage.rangeTotalTokens')" min-width="150" align="right">
+          <template #default="{ row: member }">
+            <span class="tabular-nums text-slate-900">{{ formatTokenCount(member.total_tokens) }}</span>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('teamUsage.rangeActualCost')" min-width="150" align="right">
+          <template #default="{ row: member }">
+            <span class="tabular-nums text-slate-900">{{ formatCost(member.range_actual_cost) }}</span>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('teamUsage.memberAction')" min-width="190" align="right">
+          <template #default="{ row: member }">
+            <ElTag v-if="!isConnected(tableMember(member))" type="danger" effect="light" class="mr-2">
+              {{ t('teamUsage.notConnected') }}
+            </ElTag>
+            <ElButton :disabled="!canOpen(tableMember(member))" @click="openMember(tableMember(member))">
+              {{ t('teamUsage.openMember') }}
+            </ElButton>
+          </template>
+        </ElTableColumn>
+      </ElTable>
+
+      <div v-else class="divide-y divide-slate-100">
+        <article
+          v-for="member in props.members"
+          :key="memberKey(member)"
+          :data-testid="memberTestID(member)"
+          class="space-y-3 p-4"
+          :class="isConnected(member) ? '' : 'bg-red-50 text-red-950'"
+        >
+          <div class="flex min-w-0 items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="break-words font-medium text-slate-900">{{ member.display_name }}</div>
+              <div class="mt-1 break-all text-sm text-slate-600">{{ member.email }}</div>
+            </div>
+            <ElTag v-if="!isConnected(member)" type="danger" effect="light" class="shrink-0">
+              {{ t('teamUsage.notConnected') }}
+            </ElTag>
+          </div>
+          <dl class="grid grid-cols-2 gap-3 text-sm">
+            <div class="col-span-2">
+              <dt class="text-xs text-slate-500">{{ t('teamUsage.memberDepartment') }}</dt>
+              <dd class="mt-1 break-words text-slate-800">{{ member.department_display_path || '-' }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-500">{{ t('teamUsage.rangeTotalTokens') }}</dt>
+              <dd class="mt-1 tabular-nums text-slate-900">{{ formatTokenCount(member.total_tokens) }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-500">{{ t('teamUsage.rangeActualCost') }}</dt>
+              <dd class="mt-1 tabular-nums text-slate-900">{{ formatCost(member.range_actual_cost) }}</dd>
+            </div>
+          </dl>
+          <ElButton class="w-full" :disabled="!canOpen(member)" @click="openMember(member)">
+            {{ t('teamUsage.openMember') }}
+          </ElButton>
+        </article>
+      </div>
     </div>
 
     <div

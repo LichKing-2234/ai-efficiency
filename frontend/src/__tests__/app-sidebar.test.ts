@@ -70,6 +70,33 @@ describe('AppSidebar', () => {
     expect(wrapper.text()).toContain('AI Efficiency')
   })
 
+  it('uses semantic route navigation with Element Plus actions and badges', async () => {
+    const api = await import('@/api/workItems') as any
+    api.getWorkItemCounts.mockResolvedValueOnce({
+      data: {
+        data: {
+          quota_reset_approval_count: 2,
+          quota_reset_admin_count: 0,
+          ai_access_setup_count: 0,
+          offboarding_count: 0,
+          total_count: 2,
+        },
+      },
+    })
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(AppSidebar, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('nav').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="language-toggle"]').classes()).toContain('el-button')
+    expect(wrapper.findComponent({ name: 'ElBadge' }).exists()).toBe(true)
+  })
+
   it('places the language toggle in the sidebar header, away from the account footer', async () => {
     const router = createTestRouter()
     await router.push('/')

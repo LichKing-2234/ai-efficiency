@@ -244,6 +244,36 @@ describe('UserView', () => {
     expect(wrapper.text()).not.toContain('default_model')
   })
 
+  it('uses Element Plus radio options for access-provider selection', async () => {
+    const { wrapper } = await mountUserView()
+
+    const selectedProvider = wrapper.get('[data-testid="provider-2"]')
+    const alternateProvider = wrapper.get('[data-testid="provider-1"]')
+    expect(selectedProvider.element.closest('.el-radio-button')).not.toBeNull()
+    expect(selectedProvider.element.closest('.el-radio-button')?.classList).toContain('is-active')
+    expect(alternateProvider.element.closest('.el-radio-button')?.classList).not.toContain('is-active')
+  })
+
+  it('uses Element Plus radio options for access-group selection', async () => {
+    const { wrapper } = await mountUserView()
+
+    const selectedGroup = wrapper.get('[data-testid="group-43"]')
+    const alternateGroup = wrapper.get('[data-testid="group-42"]')
+    expect(selectedGroup.element.closest('.el-radio-button')).not.toBeNull()
+    expect(selectedGroup.element.closest('.el-radio-button')?.classList).toContain('is-active')
+    expect(alternateGroup.element.closest('.el-radio-button')?.classList).not.toContain('is-active')
+  })
+
+  it('uses Element Plus radio options for configuration-method selection', async () => {
+    const { wrapper } = await mountUserView()
+    const manualMethod = wrapper.get('[data-testid="config-method-manual"]')
+
+    expect(manualMethod.element.closest('.el-radio-button')).not.toBeNull()
+    await manualMethod.trigger('click')
+    expect(manualMethod.element.closest('.el-radio-button')?.classList).toContain('is-active')
+    expect(wrapper.text()).toContain('Manual configuration values')
+  })
+
   it('uses user-facing setup labels instead of raw credential labels', async () => {
     const { wrapper } = await mountUserView()
 
@@ -576,16 +606,24 @@ describe('UserView', () => {
     const loginFallback = wrapper.get('[data-testid="auto-login-fallback"]')
     const advancedDetails = wrapper.get('[data-testid="auto-advanced"]')
 
-    expect(installFallback.attributes('open')).toBeUndefined()
-    expect(loginFallback.attributes('open')).toBeUndefined()
-    expect(advancedDetails.attributes('open')).toBeUndefined()
+    expect(installFallback.classes()).toContain('el-collapse')
+    expect(loginFallback.classes()).toContain('el-collapse')
+    expect(advancedDetails.classes()).toContain('el-collapse')
 
     expect(wrapper.text()).toContain('Alternate OS installer')
     expect(wrapper.text()).toContain('Device login fallback')
 
-    await installFallback.find('summary').trigger('click')
-    await loginFallback.find('summary').trigger('click')
-    await advancedDetails.find('summary').trigger('click')
+    expect(installFallback.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('false')
+    expect(loginFallback.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('false')
+    expect(advancedDetails.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('false')
+
+    await installFallback.get('.el-collapse-item__header').trigger('click')
+    await loginFallback.get('.el-collapse-item__header').trigger('click')
+    await advancedDetails.get('.el-collapse-item__header').trigger('click')
+
+    expect(installFallback.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('true')
+    expect(loginFallback.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('true')
+    expect(advancedDetails.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('true')
 
     expect(wrapper.text()).toContain('ae-cli doctor')
     const advancedText = wrapper.text().slice(wrapper.text().indexOf('Advanced command reference'))

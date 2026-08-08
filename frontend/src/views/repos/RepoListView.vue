@@ -17,7 +17,7 @@ const repoStore = useRepoStore()
 const { t } = useI18n()
 const auth = useAuthStore()
 
-const showDeleteConfirm = ref<number | null>(null)
+const deletingRepoID = ref<number | null>(null)
 const bindingFilter = ref<BindingFilter>(initialBindingFilter())
 const selectedProviderKey = ref(queryString(route.query.provider))
 const selectedScope = ref(queryString(route.query.scope))
@@ -403,9 +403,16 @@ function autoSelectProvider(urlOrigin: string) {
 }
 
 async function confirmDelete(id: number) {
-  await repoStore.deleteRepo(id)
-  showDeleteConfirm.value = null
-  await refreshWorkbench()
+  if (deletingRepoID.value !== null) return
+  deletingRepoID.value = id
+  try {
+    await repoStore.deleteRepo(id)
+    await refreshWorkbench()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || error?.message || t('repos.deleteFailed'))
+  } finally {
+    deletingRepoID.value = null
+  }
 }
 
 async function handleAutoBindUnbound() {
@@ -573,7 +580,30 @@ function repoPrimaryAction(repo: RepoConfig) {
           </div>
         </div>
 
+        <el-alert
+          v-if="repoStore.error"
+          data-testid="repo-list-error"
+          class="m-5"
+          type="error"
+          :closable="false"
+          show-icon
+          :title="repoStore.error"
+        />
+        <el-alert
+          v-if="repoStore.inventoryError"
+          data-testid="repo-inventory-error"
+          class="m-5"
+          type="error"
+          :closable="false"
+          show-icon
+          :title="repoStore.inventoryError"
+        />
+
         <el-skeleton v-if="repoStore.loading && !repoStore.loaded" class="p-5" :rows="6" animated />
+
+        <div
+          v-else-if="repoStore.loaded && repoStore.repos.length === 0 && (repoStore.error || repoStore.inventoryError)"
+        />
 
         <el-empty
           v-else-if="repoStore.loaded && repoStore.inventoryLoaded && repoStore.repos.length === 0 && !hasInventory"
@@ -641,8 +671,8 @@ function repoPrimaryAction(repo: RepoConfig) {
           role="button"
           tabindex="0"
           @click="goToDetail(repo)"
-          @keydown.enter.prevent="goToDetail(repo)"
-          @keydown.space.prevent="goToDetail(repo)"
+          @keydown.enter.self.prevent="goToDetail(repo)"
+          @keydown.space.self.prevent="goToDetail(repo)"
         >
                   <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0">
@@ -674,18 +704,25 @@ function repoPrimaryAction(repo: RepoConfig) {
                     <el-button type="primary" link @click="goToDetail(repo)">
                       {{ repoPrimaryAction(repo) }}
                     </el-button>
-                    <el-button
-                      v-if="showDeleteConfirm !== repo.id"
-                      type="danger"
-                      link
-                      @click="showDeleteConfirm = repo.id"
+                    <el-popconfirm
+                      :title="`${t('repos.delete')} ${repo.name}?`"
+                      :confirm-button-text="t('repos.confirm')"
+                      :cancel-button-text="t('repos.cancel')"
+                      confirm-button-type="danger"
+                      :teleported="false"
+                      @confirm="confirmDelete(repo.id)"
                     >
-                      {{ t('repos.delete') }}
-                    </el-button>
-                    <template v-else>
-                      <el-button type="danger" link @click="confirmDelete(repo.id)">{{ t('repos.confirm') }}</el-button>
-                      <el-button link @click="showDeleteConfirm = null">{{ t('repos.cancel') }}</el-button>
-                    </template>
+                      <template #reference>
+                        <el-button
+                          type="danger"
+                          link
+                          :loading="deletingRepoID === repo.id"
+                          :disabled="deletingRepoID !== null"
+                        >
+                          {{ t('repos.delete') }}
+                        </el-button>
+                      </template>
+                    </el-popconfirm>
                   </div>
                 </article>
               </div>

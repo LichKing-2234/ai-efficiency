@@ -217,6 +217,18 @@ describe('DashboardView', () => {
     expect(getUserUsageGroupQuotas).toHaveBeenCalledTimes(1)
   })
 
+  it('renders the usage date range as one radio mode group', async () => {
+    const router = createTestRouter()
+    await router.push('/usage')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    const thirtyDays = wrapper.get('[data-test="range-30d"]')
+    expect(thirtyDays.classes()).toContain('el-radio-button')
+    expect((thirtyDays.get('input[type="radio"]').element as HTMLInputElement).checked).toBe(true)
+  })
+
   it('keeps usage visible when the independent quota request fails', async () => {
     const { getUserUsageDashboard, getUserUsageGroupQuotas } = await import('@/api/userUsage')
     ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })

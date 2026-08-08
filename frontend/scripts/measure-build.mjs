@@ -40,6 +40,7 @@ const sources = {
   adminUsers: 'src/views/admin/AdminUsersView.vue',
   english: 'src/locales/en-US.ts',
   chinese: 'src/locales/zh-CN.ts',
+  elementChinese: 'node_modules/element-plus/es/locale/lang/zh-cn.mjs',
   lineCanvas: 'src/components/charts/LineChartCanvas.vue',
   doughnutCanvas: 'src/components/charts/DoughnutChartCanvas.vue',
 }
@@ -105,7 +106,7 @@ assert([...canvasModules].some(isVueChartJsModule), 'canvas closures must contai
 assert(usageModules.has(sources.english), 'default English /usage closure must contain en-US')
 assertAbsent(
   usageModules,
-  [sources.chinese, sources.lineCanvas, sources.doughnutCanvas],
+  [sources.chinese, sources.elementChinese, sources.lineCanvas, sources.doughnutCanvas],
   'default English /usage closure',
 )
 assertNoChartRuntime(usageModules, 'default English /usage closure')

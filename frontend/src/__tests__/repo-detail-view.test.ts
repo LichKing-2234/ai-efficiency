@@ -785,11 +785,12 @@ describe('RepoDetailView', () => {
     expect(wrapper.text()).toContain('0')
   })
 
-  it('adds noopener protection to external PR links', async () => {
+  it('renders external PR navigation with an Element Plus link and noopener protection', async () => {
     const { wrapper } = await mountRepoDetail()
     const link = wrapper.find('a[href="https://github.com/org/repo-a/pull/88"]')
 
     expect(link.exists()).toBe(true)
+    expect(link.classes()).toContain('el-link')
     expect(link.attributes('target')).toBe('_blank')
     expect(link.attributes('rel')).toBe('noopener noreferrer')
   })

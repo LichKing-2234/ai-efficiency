@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import type { SubjectSubscriptionGroup, UpdateTeamUsageRateMultiplierRequest } from '@/types'
 import TeamRateMultiplierModal from '@/components/user/usage/TeamRateMultiplierModal.vue'
+import { useMediaQuery } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
 
 const props = defineProps<{
@@ -18,6 +19,7 @@ const activeRow = ref<SubjectSubscriptionGroup | null>(null)
 const submitting = ref(false)
 const errorMessage = ref('')
 const { t } = useI18n()
+const isDesktop = useMediaQuery('(min-width: 768px)')
 
 const sortedRows = computed(() => [...props.rows].sort((a, b) => a.group_name.localeCompare(b.group_name)))
 
@@ -80,11 +82,11 @@ async function confirm(payload: UpdateTeamUsageRateMultiplierRequest) {
     <div class="border-b border-slate-200 px-4 py-3">
       <h2 class="text-base font-semibold text-slate-950">{{ t('teamUsage.subscriptionGroups') }}</h2>
     </div>
-    <div class="overflow-x-auto">
-      <ElTable :data="sortedRows" row-key="group_id" class="min-w-[760px]">
+    <div v-if="isDesktop" data-subscription-list="desktop">
+      <ElTable :data="sortedRows" row-key="group_id">
         <ElTableColumn :label="t('teamUsage.subscriptionGroup')" min-width="180">
           <template #default="{ row }">
-              <div class="font-medium text-slate-950">{{ row.group_name }}</div>
+              <div data-subscription-row class="font-medium text-slate-950">{{ row.group_name }}</div>
               <div class="text-xs text-slate-500">{{ row.platform }}</div>
           </template>
         </ElTableColumn>
@@ -122,6 +124,54 @@ async function confirm(payload: UpdateTeamUsageRateMultiplierRequest) {
           </template>
         </ElTableColumn>
       </ElTable>
+    </div>
+    <div v-else data-subscription-list="mobile" class="space-y-3 p-3">
+      <ElCard
+        v-for="row in sortedRows"
+        :key="row.group_id"
+        data-subscription-row
+        shadow="never"
+      >
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="break-words font-medium text-slate-950">{{ row.group_name }}</div>
+            <div class="mt-1 text-xs text-slate-500">{{ row.platform }}</div>
+          </div>
+          <span class="shrink-0 text-xs text-slate-600">{{ subscriptionStatusLabel(row.subscription_status) }}</span>
+        </div>
+        <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <dt class="text-xs font-medium uppercase text-slate-500">{{ t('teamUsage.multiplier') }}</dt>
+            <dd class="mt-1 text-slate-900">
+              <span
+                v-if="isMultiplierMetadataUnavailable(row)"
+                role="status"
+                class="text-xs font-medium text-amber-700"
+                :data-testid="`multiplier-metadata-warning-${row.group_id}`"
+              >
+                {{ t('teamUsage.multiplierUnavailable') }}
+              </span>
+              <template v-else>{{ row.effective_multiplier }}x</template>
+            </dd>
+          </div>
+          <div>
+            <dt class="text-xs font-medium uppercase text-slate-500">{{ t('teamUsage.usedOverQuota') }}</dt>
+            <dd class="mt-1 text-slate-900">
+              {{ formatCurrency(row.monthly_display_used_usd) }} /
+              {{ formatCurrency(row.monthly_effective_allowance_usd, row.monthly_effective_allowance_unlimited) }}
+            </dd>
+          </div>
+        </dl>
+        <div class="mt-4 flex justify-end border-t border-slate-100 pt-3">
+          <ElButton
+            :data-testid="`edit-multiplier-${row.group_id}`"
+            :disabled="!row.editable || isMultiplierMetadataUnavailable(row)"
+            @click="openModal(row)"
+          >
+            {{ t('teamUsage.editMultiplier') }}
+          </ElButton>
+        </div>
+      </ElCard>
     </div>
 
     <TeamRateMultiplierModal

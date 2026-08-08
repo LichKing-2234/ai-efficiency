@@ -39,7 +39,9 @@ const hasVisibleWork = computed(() => aiAccessSetupCount.value > 0 || quotaReset
         type="warning"
       />
 
-      <div class="grid gap-3 lg:grid-cols-2">
+      <el-skeleton v-if="workItems.loading && !workItems.loaded" :rows="3" animated />
+
+      <div v-else class="grid gap-3 lg:grid-cols-2">
         <RouterLink
           v-if="aiAccessSetupCount > 0"
           to="/user"

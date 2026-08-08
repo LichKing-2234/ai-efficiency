@@ -945,7 +945,7 @@ overrides:
           <span class="block font-medium">{{ source.name }}</span>
           <span class="block text-xs text-gray-500">{{ source.enabled ? t('settings.enabled') : t('settings.disabled') }}</span>
         </ElButton>
-        <ElEmpty v-if="!loading && sources.length === 0" :description="t('directorySync.noSource')" :image-size="60" />
+        <ElEmpty v-if="!loading && !directorySourcesError && sources.length === 0" :description="t('directorySync.noSource')" :image-size="60" />
       </div>
 
       <div class="space-y-4">

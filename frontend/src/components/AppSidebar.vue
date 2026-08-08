@@ -80,14 +80,10 @@ function handleNavigate() {
     </div>
 
     <nav class="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 py-4">
-      <div class="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+      <div class="px-3 pb-2 text-[11px] font-semibold uppercase text-gray-500">
         {{ t('nav.myWorkSection') }}
       </div>
-      <RouterLink
-        to="/usage"
-        :class="usageLinkClass"
-        @click="handleNavigate"
-      >
+      <RouterLink to="/usage" :class="usageLinkClass" @click="handleNavigate">
         <el-icon class="mr-3"><House /></el-icon>
         {{ t('nav.myUsage') }}
       </RouterLink>
@@ -102,11 +98,7 @@ function handleNavigate() {
         {{ t('nav.mySetup') }}
       </RouterLink>
 
-      <RouterLink
-        to="/work-items"
-        :class="workItemsLinkClass"
-        @click="handleNavigate"
-      >
+      <RouterLink to="/work-items" :class="workItemsLinkClass" @click="handleNavigate">
         <el-icon class="mr-3"><Document /></el-icon>
         <span class="min-w-0 flex-1 truncate">{{ t('nav.workItems') }}</span>
         <el-badge
@@ -128,7 +120,7 @@ function handleNavigate() {
       </RouterLink>
 
       <div class="mt-5 border-t border-gray-800 pt-4">
-        <div class="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+        <div class="px-3 pb-2 text-[11px] font-semibold uppercase text-gray-500">
           {{ t('nav.codeSection') }}
         </div>
         <RouterLink
@@ -143,10 +135,9 @@ function handleNavigate() {
       </div>
 
       <div v-if="auth.isAdmin" class="mt-5 border-t border-gray-800 pt-4">
-        <div class="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+        <div class="px-3 pb-2 text-[11px] font-semibold uppercase text-gray-500">
           {{ t('nav.adminSection') }}
         </div>
-
         <RouterLink
           to="/admin/users"
           class="flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
@@ -177,7 +168,6 @@ function handleNavigate() {
           {{ t('nav.adminConsole') }}
         </RouterLink>
       </div>
-
     </nav>
 
     <div data-testid="sidebar-footer" class="border-t border-gray-700 p-4">

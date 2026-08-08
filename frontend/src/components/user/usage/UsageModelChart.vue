@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue'
 import type { UserUsageModelStat } from '@/types'
+import { useMediaQuery } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
 import { formatTokenCount } from '@/utils/formatters'
 
@@ -15,6 +16,7 @@ const props = withDefaults(defineProps<{
 })
 
 const { t } = useI18n()
+const isDesktop = useMediaQuery('(min-width: 768px)')
 
 const colors = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#db2777', '#0891b2', '#65a30d']
 
@@ -40,12 +42,17 @@ const chartOptions = { responsive: true, maintainAspectRatio: false, plugins: { 
       <div class="h-44">
         <DoughnutChartCanvas :data="chartData" :options="chartOptions" />
       </div>
-      <div data-testid="usage-model-table-scroll" class="min-w-0 overflow-x-auto pb-2">
-        <ElTable :data="data" row-key="model" class="min-w-[36rem] w-full">
+      <div
+        v-if="isDesktop"
+        data-testid="usage-model-table-scroll"
+        data-model-list="desktop"
+        class="min-w-0"
+      >
+        <ElTable :data="data" row-key="model" class="w-full">
           <ElTableColumn :label="t('usageDashboard.model')" min-width="150">
             <template #default="{ row: model }">
               <ElTooltip :content="model.model" placement="top" :show-after="400">
-                <span class="block max-w-[12rem] truncate font-medium text-gray-900">
+                <span data-model-row class="block max-w-[12rem] truncate font-medium text-gray-900">
                 {{ model.model }}
                 </span>
               </ElTooltip>
@@ -64,6 +71,29 @@ const chartOptions = { responsive: true, maintainAspectRatio: false, plugins: { 
             <template #default="{ row: model }"><span class="text-gray-500">${{ model.cost.toFixed(4) }}</span></template>
           </ElTableColumn>
         </ElTable>
+      </div>
+      <div v-else data-model-list="mobile" class="space-y-3">
+        <ElCard v-for="model in data" :key="model.model" data-model-row shadow="never">
+          <div class="break-words font-medium text-gray-900">{{ model.model }}</div>
+          <dl class="mt-3 grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <dt class="text-xs font-medium uppercase text-slate-500">{{ t('usageDashboard.requests') }}</dt>
+              <dd class="mt-1 text-slate-900">{{ model.requests.toLocaleString() }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium uppercase text-slate-500">{{ t('usageDashboard.tokens') }}</dt>
+              <dd class="mt-1 text-slate-900">{{ formatTokenCount(model.total_tokens) }}</dd>
+            </div>
+            <div v-if="!props.hideCost">
+              <dt class="text-xs font-medium uppercase text-slate-500">{{ t('usageDashboard.actual') }}</dt>
+              <dd class="mt-1 text-green-600">${{ model.actual_cost.toFixed(4) }}</dd>
+            </div>
+            <div v-if="!props.hideCost">
+              <dt class="text-xs font-medium uppercase text-slate-500">{{ t('usageDashboard.standard') }}</dt>
+              <dd class="mt-1 text-gray-500">${{ model.cost.toFixed(4) }}</dd>
+            </div>
+          </dl>
+        </ElCard>
       </div>
     </div>
   </section>

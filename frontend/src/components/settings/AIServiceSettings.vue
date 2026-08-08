@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { createRelayProvider, deleteRelayProvider, listRelayProviders, updateRelayProvider } from '@/api/relayProvider'
+import { useMediaQuery } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
 import type { RelayProvider } from '@/types'
 
 const { t } = useI18n()
+const isDesktop = useMediaQuery('(min-width: 768px)')
 const relayLoading = ref(true)
 const relayProviders = ref<RelayProvider[]>([])
-const showDeleteConfirm = ref<number | null>(null)
+const confirmingRelayId = ref<number | null>(null)
+const deletingRelayId = ref<number | null>(null)
 const showRelayDialog = ref(false)
 const editingRelayId = ref<number | null>(null)
 const relayForm = ref({
@@ -104,14 +107,34 @@ async function handleRelaySubmit() {
   }
 }
 
-async function confirmDeleteRelay(id: number) {
+async function confirmDeleteRelay(id: number, event: MouseEvent, close: (event: MouseEvent) => void) {
+  if (deletingRelayId.value !== null) return
+
+  deletingRelayId.value = id
   try {
     await deleteRelayProvider(id)
-    showDeleteConfirm.value = null
+    confirmingRelayId.value = null
+    close(event)
     await fetchRelayProviders()
   } catch {
     // Keep the row available for another attempt.
+  } finally {
+    deletingRelayId.value = null
   }
+}
+
+function setRelayDeleteVisibility(id: number, visible: boolean) {
+  if (visible) {
+    confirmingRelayId.value = id
+  } else if (confirmingRelayId.value === id && deletingRelayId.value === null) {
+    confirmingRelayId.value = null
+  }
+}
+
+function cancelRelayDelete(event: MouseEvent, close: (event: MouseEvent) => void) {
+  if (deletingRelayId.value !== null) return
+  confirmingRelayId.value = null
+  close(event)
 }
 </script>
 
@@ -131,7 +154,7 @@ async function confirmDeleteRelay(id: number) {
     <div v-if="relayLoading" class="text-center text-gray-500 py-12">{{ t('settings.loadingRelayProviders') }}</div>
 
     <div v-else class="rounded-lg bg-white shadow">
-      <div v-if="relayProviders.length > 0" class="space-y-3 p-4 md:hidden">
+      <div v-if="!isDesktop && relayProviders.length > 0" class="space-y-3 p-4">
         <article v-for="provider in relayProviders" :key="provider.id" class="rounded-lg border border-gray-100 p-4">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
@@ -154,25 +177,46 @@ async function confirmDeleteRelay(id: number) {
           </dl>
           <div class="mt-3 flex flex-wrap gap-3 text-sm">
             <ElButton :data-testid="`relay-provider-edit-${provider.id}`" link type="primary" @click="openEditRelayDialog(provider)">{{ t('settings.edit') }}</ElButton>
-            <ElButton
-              v-if="showDeleteConfirm !== provider.id"
-              :data-testid="`relay-provider-delete-${provider.id}`"
-              link
-              type="danger"
-              @click="showDeleteConfirm = provider.id"
-            >{{ t('settings.delete') }}</ElButton>
-            <template v-else>
-              <ElButton :data-testid="`relay-provider-confirm-delete-${provider.id}`" link type="danger" @click="confirmDeleteRelay(provider.id)">{{ t('settings.confirm') }}</ElButton>
-              <ElButton :data-testid="`relay-provider-cancel-delete-${provider.id}`" link @click="showDeleteConfirm = null">{{ t('settings.cancel') }}</ElButton>
-            </template>
+            <ElPopconfirm
+              :title="`${t('settings.confirm')} ${t('settings.delete')}?`"
+              :teleported="false"
+              :visible="confirmingRelayId === provider.id"
+              @update:visible="setRelayDeleteVisibility(provider.id, $event)"
+            >
+              <template #reference>
+                <ElButton
+                  :data-testid="`relay-provider-delete-${provider.id}`"
+                  :disabled="deletingRelayId !== null"
+                  link
+                  type="danger"
+                  @click="confirmingRelayId = provider.id"
+                >{{ t('settings.delete') }}</ElButton>
+              </template>
+              <template #actions="{ confirm, cancel }">
+                <ElButton
+                  :data-testid="`relay-provider-confirm-delete-${provider.id}`"
+                  :loading="deletingRelayId === provider.id"
+                  :disabled="deletingRelayId !== null"
+                  link
+                  type="danger"
+                  @click="confirmDeleteRelay(provider.id, $event, confirm)"
+                >{{ t('settings.confirm') }}</ElButton>
+                <ElButton
+                  :data-testid="`relay-provider-cancel-delete-${provider.id}`"
+                  :disabled="deletingRelayId !== null"
+                  link
+                  @click="cancelRelayDelete($event, cancel)"
+                >{{ t('settings.cancel') }}</ElButton>
+              </template>
+            </ElPopconfirm>
           </div>
         </article>
       </div>
-      <div v-else class="px-6 py-12 text-center text-sm text-gray-500 md:hidden">
+      <div v-else-if="!isDesktop" class="px-6 py-12 text-center text-sm text-gray-500">
         {{ t('settings.noRelayProviders') }}
       </div>
 
-      <table class="hidden min-w-full divide-y divide-gray-200 md:table">
+      <table v-if="isDesktop" class="min-w-full divide-y divide-gray-200">
         <thead class="bg-gray-50">
           <tr>
             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.name') }}</th>
@@ -200,17 +244,38 @@ async function confirmDeleteRelay(id: number) {
             </td>
             <td class="whitespace-nowrap px-6 py-4 text-right text-sm space-x-3">
               <ElButton :data-testid="`relay-provider-edit-${provider.id}`" link type="primary" @click="openEditRelayDialog(provider)">{{ t('settings.edit') }}</ElButton>
-              <ElButton
-                v-if="showDeleteConfirm !== provider.id"
-                :data-testid="`relay-provider-delete-${provider.id}`"
-                link
-                type="danger"
-                @click="showDeleteConfirm = provider.id"
-              >{{ t('settings.delete') }}</ElButton>
-              <span v-else class="space-x-2">
-                <ElButton :data-testid="`relay-provider-confirm-delete-${provider.id}`" link type="danger" @click="confirmDeleteRelay(provider.id)">{{ t('settings.confirm') }}</ElButton>
-                <ElButton :data-testid="`relay-provider-cancel-delete-${provider.id}`" link @click="showDeleteConfirm = null">{{ t('settings.cancel') }}</ElButton>
-              </span>
+              <ElPopconfirm
+                :title="`${t('settings.confirm')} ${t('settings.delete')}?`"
+                :teleported="false"
+                :visible="confirmingRelayId === provider.id"
+                @update:visible="setRelayDeleteVisibility(provider.id, $event)"
+              >
+                <template #reference>
+                  <ElButton
+                    :data-testid="`relay-provider-delete-${provider.id}`"
+                    :disabled="deletingRelayId !== null"
+                    link
+                    type="danger"
+                    @click="confirmingRelayId = provider.id"
+                  >{{ t('settings.delete') }}</ElButton>
+                </template>
+                <template #actions="{ confirm, cancel }">
+                  <ElButton
+                    :data-testid="`relay-provider-confirm-delete-${provider.id}`"
+                    :loading="deletingRelayId === provider.id"
+                    :disabled="deletingRelayId !== null"
+                    link
+                    type="danger"
+                    @click="confirmDeleteRelay(provider.id, $event, confirm)"
+                  >{{ t('settings.confirm') }}</ElButton>
+                  <ElButton
+                    :data-testid="`relay-provider-cancel-delete-${provider.id}`"
+                    :disabled="deletingRelayId !== null"
+                    link
+                    @click="cancelRelayDelete($event, cancel)"
+                  >{{ t('settings.cancel') }}</ElButton>
+                </template>
+              </ElPopconfirm>
             </td>
           </tr>
           <tr v-if="relayProviders.length === 0">

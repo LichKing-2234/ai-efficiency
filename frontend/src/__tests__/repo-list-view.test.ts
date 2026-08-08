@@ -2,9 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import RepoListView from '@/views/repos/RepoListView.vue'
 import { setLocale } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
+
+const messageError = vi.spyOn(ElMessage, 'error').mockImplementation(() => undefined as any)
 
 vi.mock('@/api/repo', () => ({
   listRepos: vi.fn().mockResolvedValue({ data: { data: { items: [], total: 0, page: 1, page_size: 20 } } }),
@@ -247,6 +250,17 @@ describe('RepoListView', () => {
     expect(wrapper.find('.el-skeleton').exists()).toBe(true)
   })
 
+  it('shows the initial repository load failure instead of an empty state', async () => {
+    const { listRepos, getRepoInventory } = await import('@/api/repo')
+    ;(listRepos as any).mockRejectedValue(new Error('repository request failed'))
+    ;(getRepoInventory as any).mockResolvedValue({ data: { data: [] } })
+
+    const { wrapper } = await mountRepoList(undefined, '/repos', { useCurrentMocks: true })
+
+    expect(wrapper.get('[data-testid="repo-list-error"]').text()).toContain('Failed to fetch repos')
+    expect(wrapper.find('.el-empty').exists()).toBe(false)
+  })
+
   it('sends explicit route selection immediately without waiting for inventory', async () => {
     const { listRepos, getRepoInventory } = await import('@/api/repo')
     ;(getRepoInventory as any).mockReturnValue(new Promise(() => {}))
@@ -383,6 +397,20 @@ describe('RepoListView', () => {
     const { wrapper } = await mountRepoList(undefined, '/repos', { useCurrentMocks: true })
     expect(wrapper.findAll('[data-testid="repo-row"]')).toHaveLength(1)
     expect(wrapper.text()).toContain('repo-a')
+    expect(wrapper.get('[data-testid="repo-inventory-error"]').text()).toContain('Failed to fetch repo inventory')
+  })
+
+  it('shows the initial inventory load failure instead of an empty state', async () => {
+    const { listRepos, getRepoInventory } = await import('@/api/repo')
+    ;(listRepos as any).mockResolvedValue({
+      data: { data: { items: [], total: 0, page: 1, page_size: 20 } },
+    })
+    ;(getRepoInventory as any).mockRejectedValue(new Error('inventory timeout'))
+
+    const { wrapper } = await mountRepoList(undefined, '/repos', { useCurrentMocks: true })
+
+    expect(wrapper.get('[data-testid="repo-inventory-error"]').text()).toContain('Failed to fetch repo inventory')
+    expect(wrapper.find('.el-empty').exists()).toBe(false)
   })
 
   it('mounts exactly one responsive row subtree per repository', async () => {
@@ -832,33 +860,75 @@ describe('RepoListView', () => {
     ;(deleteRepo as any).mockResolvedValue({ data: { data: null } })
 
     const { wrapper } = await mountRepoList(sampleRepos)
+    const confirmation = wrapper.findAllComponents({ name: 'ElPopconfirm' })[0]
 
-    const deleteBtn = wrapper.findAll('button').find((b) => b.text() === 'Delete')
-    await deleteBtn!.trigger('click')
-    await wrapper.vm.$nextTick()
-
-    // Click Confirm
-    const confirmBtn = wrapper.findAll('button').find((b) => b.text() === 'Confirm')
-    await confirmBtn!.trigger('click')
+    expect(confirmation.exists()).toBe(true)
+    confirmation.vm.$emit('confirm', new MouseEvent('click'))
     await flushPromises()
 
     expect(deleteRepo).toHaveBeenCalledWith(1)
   })
 
-  it('cancels delete confirm', async () => {
+  it('submits a repository deletion only once while confirmation is in flight', async () => {
+    const { deleteRepo } = await import('@/api/repo')
+    let resolveDelete!: (value: unknown) => void
+    ;(deleteRepo as any).mockImplementation(() => new Promise((resolve) => {
+      resolveDelete = resolve
+    }))
+
     const { wrapper } = await mountRepoList(sampleRepos)
+    const confirmation = wrapper.findAllComponents({ name: 'ElPopconfirm' })[0]
+    confirmation.vm.$emit('confirm', new MouseEvent('click'))
+    confirmation.vm.$emit('confirm', new MouseEvent('click'))
 
-    const deleteBtn = wrapper.findAll('button').find((b) => b.text() === 'Delete')
-    await deleteBtn!.trigger('click')
+    expect(deleteRepo).toHaveBeenCalledTimes(1)
+
+    resolveDelete({ data: { data: null } })
+    await flushPromises()
+  })
+
+  it('reports a rejected repository deletion and allows retry', async () => {
+    const { deleteRepo } = await import('@/api/repo')
+    ;(deleteRepo as any)
+      .mockRejectedValueOnce({ response: { data: { message: 'Repository deletion was rejected' } } })
+      .mockResolvedValueOnce({ data: { data: null } })
+
+    const { wrapper } = await mountRepoList(sampleRepos)
+    const confirmation = wrapper.findAllComponents({ name: 'ElPopconfirm' })[0]
+
+    confirmation.vm.$emit('confirm', new MouseEvent('click'))
+    await flushPromises()
+
+    expect(messageError).toHaveBeenCalledWith('Repository deletion was rejected')
+    const deleteButton = wrapper.findAll('button').find((button) => button.text() === 'Delete')!
+    expect(deleteButton.attributes('disabled')).toBeUndefined()
+
+    confirmation.vm.$emit('confirm', new MouseEvent('click'))
+    await flushPromises()
+    expect(deleteRepo).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not navigate the repository row when delete is activated from the keyboard', async () => {
+    const { wrapper, router } = await mountRepoList(sampleRepos)
+    const row = wrapper.get('[data-testid="repo-row"]')
+    const deleteButton = row.findAll('button').find((button) => button.text() === 'Delete')!
+
+    await deleteButton.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/repos')
+  })
+
+  it('cancels delete confirm', async () => {
+    const { deleteRepo } = await import('@/api/repo')
+    const { wrapper } = await mountRepoList(sampleRepos)
+    const confirmation = wrapper.findAllComponents({ name: 'ElPopconfirm' })[0]
+
+    confirmation.vm.$emit('cancel', new MouseEvent('click'))
     await wrapper.vm.$nextTick()
 
-    const cancelBtn = wrapper.findAll('button').find((b) => b.text() === 'Cancel')
-    await cancelBtn!.trigger('click')
-    await wrapper.vm.$nextTick()
-
-    // Delete button should be back
-    const deleteBtnAgain = wrapper.findAll('button').find((b) => b.text() === 'Delete')
-    expect(deleteBtnAgain).toBeTruthy()
+    expect(deleteRepo).not.toHaveBeenCalled()
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Delete')).toBe(true)
   })
 
   it('submits add repo form successfully', async () => {

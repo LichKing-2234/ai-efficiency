@@ -101,11 +101,20 @@ const sampleDetail = {
 async function mountEvents(
   isAdmin = false,
   path = '/events',
-  listData = { items: sampleRows, total: 45, page: 0, page_size: 20 },
+  listData: { items: typeof sampleRows; total: number; page: number; page_size: number } | Error = {
+    items: sampleRows,
+    total: 45,
+    page: 0,
+    page_size: 20,
+  },
 ) {
   const { getEventSummary, listEvents, getEventDetail, searchEventUsers } = await import('@/api/events')
   ;(getEventSummary as any).mockResolvedValue({ data: { data: sampleSummary } })
-  ;(listEvents as any).mockResolvedValue({ data: { data: listData } })
+  if (listData instanceof Error) {
+    ;(listEvents as any).mockRejectedValueOnce(listData)
+  } else {
+    ;(listEvents as any).mockResolvedValue({ data: { data: listData } })
+  }
   ;(getEventDetail as any).mockResolvedValue({ data: { data: isAdmin ? sampleDetail : { ...sampleDetail, raw_source_path: undefined, raw_source_locator: undefined, raw_payload: undefined } } })
   ;(searchEventUsers as any).mockResolvedValue({
     data: {
@@ -206,13 +215,8 @@ async function selectElementPlusOption(
 }
 
 async function openAdvancedDetails(wrapper: Awaited<ReturnType<typeof mountEvents>>['wrapper']) {
-  const details = wrapper.get('details')
-  Object.defineProperty(details.element, 'open', {
-    configurable: true,
-    value: true,
-  })
-  await details.trigger('toggle')
-  await wrapper.vm.$nextTick()
+  await wrapper.get('[data-testid="event-advanced-data"] .el-collapse-item__header').trigger('click')
+  await flushPromises()
 }
 
 function rawPayloadStringifyCount(spy: ReturnType<typeof vi.spyOn>) {
@@ -261,6 +265,26 @@ describe('EventsView', () => {
 
     const refresh = wrapper.findAll('button').find((button) => button.text() === 'Refresh')
     expect(refresh?.classes()).toContain('el-button')
+  })
+
+  it('shows an Element Plus alert when refreshing the event list fails', async () => {
+    const { wrapper, listEvents } = await mountEvents()
+    ;(listEvents as any).mockRejectedValueOnce(new Error('request failed'))
+
+    const refresh = wrapper.findAll('button').find((button) => button.text() === 'Refresh')
+    await refresh?.trigger('click')
+    await flushPromises()
+
+    const alert = wrapper.get('[data-testid="events-load-error"]')
+    expect(alert.find('.el-alert').exists()).toBe(true)
+    expect(alert.text()).toContain('Failed to load usage records')
+  })
+
+  it('does not present a failed initial event load as an empty result', async () => {
+    const { wrapper } = await mountEvents(false, '/events', new Error('request failed'))
+
+    expect(wrapper.get('[data-testid="events-load-error"]').text()).toContain('Failed to load usage records')
+    expect(wrapper.text()).not.toContain('No usage records')
   })
 
   it('uses a collapsible filter panel on mobile markup', async () => {
@@ -342,6 +366,19 @@ describe('EventsView', () => {
     expect(wrapper.text()).not.toContain('Raw Payload')
   })
 
+  it('shows an Element Plus alert in the drawer when event detail fails to load', async () => {
+    const { wrapper, getEventDetail } = await mountEvents(false)
+    ;(getEventDetail as any).mockRejectedValueOnce(new Error('request failed'))
+
+    await wrapper.find('tbody tr').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="event-detail-drawer"]').isVisible()).toBe(true)
+    const alert = wrapper.get('[data-testid="event-detail-error"]')
+    expect(alert.find('.el-alert').exists()).toBe(true)
+    expect(alert.text()).toContain('Failed to load record detail')
+  })
+
   it('closes the detail drawer with Escape', async () => {
     const { wrapper } = await mountEvents(false)
 
@@ -361,6 +398,7 @@ describe('EventsView', () => {
     await wrapper.find('tbody tr').trigger('click')
     await flushPromises()
 
+    expect(wrapper.get('[data-testid="event-advanced-data"]').classes()).toContain('el-collapse')
     expect(wrapper.text()).toContain('Raw Payload')
     await openAdvancedDetails(wrapper)
     expect(wrapper.text()).toContain('admin-only')
@@ -418,7 +456,7 @@ describe('EventsView', () => {
       await wrapper.find('tbody tr').trigger('click')
       await flushPromises()
 
-      expect((wrapper.get('details').element as HTMLDetailsElement).open).toBe(false)
+      expect(wrapper.get('[data-testid="event-advanced-data"] .el-collapse-item__header').attributes('aria-expanded')).toBe('false')
       expect(rawPayloadStringifyCount(stringifySpy)).toBe(1)
       expect(wrapper.text()).not.toContain(largeRawPayload.marker)
     } finally {
@@ -443,6 +481,36 @@ describe('EventsView', () => {
     const latestParams = (listEvents as any).mock.calls.at(-1)[0]
     expect(latestParams.user_id).toBe(2)
     expect(latestParams.offset).toBe(0)
+  })
+
+  it('shows an Element Plus alert when the admin user search fails', async () => {
+    const { wrapper, searchEventUsers } = await mountEvents(true)
+    ;(searchEventUsers as any).mockRejectedValueOnce(new Error('request failed'))
+
+    await wrapper.get('[data-testid="event-user-search"]').setValue('alice@example.com')
+    await wrapper.get('[data-testid="event-user-search-button"]').trigger('click')
+    await flushPromises()
+
+    const alert = wrapper.get('[data-testid="event-user-search-error"]')
+    expect(alert.find('.el-alert').exists()).toBe(true)
+    expect(alert.text()).toContain('Failed to search users')
+  })
+
+  it('removes results from the previous admin user query when the next search fails', async () => {
+    const { wrapper, searchEventUsers } = await mountEvents(true)
+
+    await wrapper.get('[data-testid="event-user-search"]').setValue('alice@example.com')
+    await wrapper.get('[data-testid="event-user-search-button"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="event-user-option-2"]').exists()).toBe(true)
+
+    ;(searchEventUsers as any).mockRejectedValueOnce(new Error('request failed'))
+    await wrapper.get('[data-testid="event-user-search"]').setValue('bob@example.org')
+    await wrapper.get('[data-testid="event-user-search-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="event-user-search-error"]').text()).toContain('Failed to search users')
+    expect(wrapper.find('[data-testid="event-user-option-2"]').exists()).toBe(false)
   })
 
   it('does not repeat the email when username matches email in user options', async () => {

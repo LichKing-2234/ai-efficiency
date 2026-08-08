@@ -98,6 +98,15 @@ async function setElementCheckbox(wrapper: VueWrapper, checkboxTestID: string, c
   await flushPromises()
 }
 
+async function selectElementRadio(wrapper: VueWrapper, radioTestID: string) {
+  const control = wrapper.get(`[data-testid="${radioTestID}"]`)
+  const input = control.element instanceof HTMLInputElement
+    ? control
+    : control.get('input[type="radio"]')
+  await input.setValue()
+  await flushPromises()
+}
+
 function userRow(id: number, username: string) {
   return {
     id,
@@ -486,6 +495,7 @@ describe('AdminUsersView', () => {
     expect(wrapper.text()).toContain('ldap')
     expect(wrapper.text()).toContain('42')
 	    expect(wrapper.text()).toContain('Configured')
+    expect(wrapper.get('[data-admin-user-list="desktop"]').find('.el-table').exists()).toBe(true)
     expect(wrapper.find('.el-tag').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('encrypted-relay-password-ciphertext')
     expect(wrapper.text()).toContain('120 total')
@@ -499,6 +509,7 @@ describe('AdminUsersView', () => {
 
     expect(wrapper.text()).toContain('synthetic user list failure')
     expect(wrapper.find('.el-alert--error').exists()).toBe(true)
+    expect(wrapper.find('.el-empty').exists()).toBe(false)
   })
 
   it('programmatically associates the visible department label with the picker value', async () => {
@@ -713,7 +724,8 @@ describe('AdminUsersView', () => {
     } = await mountAdminUsersView()
 
     expect(listAdminUserDepartmentChildren).not.toHaveBeenCalled()
-    await wrapper.get('[data-testid="admin-users-view-departments"]').trigger('click')
+    expect(wrapper.get('[data-testid="admin-users-view-departments"]').element.closest('.el-radio-button')).not.toBeNull()
+    await selectElementRadio(wrapper, 'admin-users-view-departments')
     await flushPromises()
 
     expect(listAdminUserDepartments).not.toHaveBeenCalled()
@@ -744,8 +756,8 @@ describe('AdminUsersView', () => {
     ;(listAdminUserDepartmentChildren as any).mockReset()
     ;(listAdminUserDepartmentChildren as any).mockImplementation(() => failed.promise)
 
-    await wrapper.get('[data-testid="admin-users-view-departments"]').trigger('click')
-    await wrapper.get('[data-testid="admin-users-view-departments"]').trigger('click')
+    await selectElementRadio(wrapper, 'admin-users-view-departments')
+    await selectElementRadio(wrapper, 'admin-users-view-departments')
     expect(listAdminUserDepartmentChildren).toHaveBeenCalledTimes(1)
 
     failed.reject(new Error('root request failed'))
@@ -764,8 +776,8 @@ describe('AdminUsersView', () => {
         },
       },
     })
-    await wrapper.get('[data-testid="admin-users-view-users"]').trigger('click')
-    await wrapper.get('[data-testid="admin-users-view-departments"]').trigger('click')
+    await selectElementRadio(wrapper, 'admin-users-view-users')
+    await selectElementRadio(wrapper, 'admin-users-view-departments')
     await flushPromises()
 
     expect(listAdminUserDepartmentChildren).toHaveBeenCalledTimes(1)
@@ -776,7 +788,7 @@ describe('AdminUsersView', () => {
 
   it('refreshes only the active users or root-departments collection', async () => {
     const { wrapper, listAdminUserDepartmentChildren, listAdminUsers } = await mountAdminUsersView()
-    await wrapper.get('[data-testid="admin-users-view-departments"]').trigger('click')
+    await selectElementRadio(wrapper, 'admin-users-view-departments')
     await flushPromises()
     ;(listAdminUserDepartmentChildren as any).mockClear()
     ;(listAdminUsers as any).mockClear()
@@ -787,7 +799,7 @@ describe('AdminUsersView', () => {
     expect(listAdminUserDepartmentChildren).toHaveBeenCalledWith({ page: 1, page_size: 25 })
     expect(listAdminUsers).not.toHaveBeenCalled()
 
-    await wrapper.get('[data-testid="admin-users-view-users"]').trigger('click')
+    await selectElementRadio(wrapper, 'admin-users-view-users')
     await wrapper.get('[data-testid="admin-users-refresh"]').trigger('click')
     await flushPromises()
     expect(listAdminUsers).toHaveBeenCalledTimes(1)
@@ -827,7 +839,7 @@ describe('AdminUsersView', () => {
       })
     })
 
-    await wrapper.get('[data-testid="admin-users-view-departments"]').trigger('click')
+    await selectElementRadio(wrapper, 'admin-users-view-departments')
     await flushPromises()
     await wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').trigger('click')
     await flushPromises()
@@ -869,7 +881,7 @@ describe('AdminUsersView', () => {
     const pendingChild = deferred<any>()
     const { wrapper, listAdminUserDepartmentChildren } = await mountAdminUsersView()
 
-    await wrapper.get('[data-testid="admin-users-view-departments"]').trigger('click')
+    await selectElementRadio(wrapper, 'admin-users-view-departments')
     await flushPromises()
     ;(listAdminUserDepartmentChildren as any).mockReset()
     let alphaRequests = 0
@@ -937,7 +949,7 @@ describe('AdminUsersView', () => {
   it('loads only one parent immediate page and renders hierarchy and subtree counts', async () => {
     const { wrapper, listAdminUserDepartmentChildren } = await mountAdminUsersView()
 
-    await wrapper.get('[data-testid="admin-users-view-departments"]').trigger('click')
+    await selectElementRadio(wrapper, 'admin-users-view-departments')
     await flushPromises()
     expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-team-one"]').exists()).toBe(false)
 
@@ -975,7 +987,7 @@ describe('AdminUsersView', () => {
     expect(wrapper.html()).toContain('Department Alpha')
     expect(wrapper.html()).not.toContain('1.781448')
 
-    await wrapper.get('[data-testid="admin-users-view-departments"]').trigger('click')
+    await selectElementRadio(wrapper, 'admin-users-view-departments')
     await flushPromises()
     expect(wrapper.find('[data-testid="admin-users-department-open-dept-gamma"]').exists()).toBe(true)
 
@@ -1005,7 +1017,7 @@ describe('AdminUsersView', () => {
   it('keeps keyboard activation on the department toggle scoped to expansion', async () => {
     const { wrapper, router, listAdminUsers } = await mountAdminUsersView()
 
-    await wrapper.get('[data-testid="admin-users-view-departments"]').trigger('click')
+    await selectElementRadio(wrapper, 'admin-users-view-departments')
     await flushPromises()
 
     const alphaToggle = wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]')
@@ -1149,7 +1161,7 @@ describe('AdminUsersView', () => {
       page_size: 20,
     }))
 
-    await wrapper.get('[data-testid="admin-users-view-departments"]').trigger('click')
+    await selectElementRadio(wrapper, 'admin-users-view-departments')
     await flushPromises()
     await wrapper.get('[data-testid="admin-users-department-toggle-dept-cycle-a"]').trigger('click')
     await flushPromises()
@@ -1208,13 +1220,14 @@ describe('AdminUsersView', () => {
 
     matchMediaController.change(true)
     await wrapper.vm.$nextTick()
+    await flushPromises()
     const remountedDesktopSelectAll = wrapper.get('[data-testid="select-all-users"]')
     expect((remountedDesktopSelectAll.get('input').element as HTMLInputElement).indeterminate).toBe(true)
     expect(remountedDesktopSelectAll.attributes('aria-checked')).toBe('mixed')
 
-    await wrapper.get('[data-testid="admin-users-view-departments"]').trigger('click')
+    await selectElementRadio(wrapper, 'admin-users-view-departments')
     await flushPromises()
-    await wrapper.get('[data-testid="admin-users-view-users"]').trigger('click')
+    await selectElementRadio(wrapper, 'admin-users-view-users')
     await wrapper.vm.$nextTick()
     const viewRoundTripSelectAll = wrapper.get('[data-testid="select-all-users"]')
     expect((viewRoundTripSelectAll.get('input').element as HTMLInputElement).indeterminate).toBe(true)

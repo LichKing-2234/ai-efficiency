@@ -648,16 +648,19 @@ onMounted(loadProviders)
             </div>
             <ElAlert v-if="selectedMessage" class="mt-3" type="info" :closable="false" :title="selectedMessage" />
             <ElAlert v-if="error" class="mt-3" type="error" :closable="false" :title="error" />
-            <div class="mt-4 space-y-3">
-              <ElButton
+            <ElRadioGroup
+              :model-value="selectedProviderId ?? undefined"
+              class="mt-4 flex w-full flex-col gap-3"
+            >
+              <ElRadioButton
                 v-for="provider in providers"
                 :key="provider.id"
                 :data-testid="`provider-${provider.id}`"
-                class="!ml-0 h-auto w-full justify-start px-4 py-3 text-left"
-                :type="provider.id === selectedProviderId ? 'primary' : 'default'"
+                class="provider-option !ml-0 w-full"
+                :value="provider.id"
                 @click="selectProvider(provider.id)"
               >
-                <div class="flex items-center justify-between gap-3">
+                <div class="flex w-full items-center justify-between gap-3 px-1 py-1">
                   <div>
                     <div class="font-medium">{{ provider.display_name }}</div>
                     <div class="text-xs" :class="provider.id === selectedProviderId ? 'text-gray-300' : 'text-gray-500'">{{ provider.name }}</div>
@@ -670,8 +673,8 @@ onMounted(loadProviders)
                     {{ t('user.primary') }}
                   </span>
                 </div>
-              </ElButton>
-            </div>
+              </ElRadioButton>
+            </ElRadioGroup>
           </section>
         </div>
 
@@ -711,18 +714,17 @@ onMounted(loadProviders)
                 </div>
 
                 <div v-if="selectedProvider" class="mt-4 space-y-4">
-                  <div class="flex flex-wrap gap-2">
-                    <ElButton
+                  <ElRadioGroup :model-value="selectedGroupId ?? undefined" class="flex max-w-full flex-wrap">
+                    <ElRadioButton
                       v-for="group in selectedProvider.groups"
                       :key="group.group_id"
                       :data-testid="`group-${group.group_id}`"
-                      round
-                      :type="group.group_id === selectedGroupId ? 'primary' : 'default'"
+                      :value="group.group_id"
                       @click="selectGroup(group.group_id)"
                     >
                       {{ group.group_name }}
-                    </ElButton>
-                  </div>
+                    </ElRadioButton>
+                  </ElRadioGroup>
 
                   <div v-if="selectedGroup" class="rounded-md bg-gray-50 p-4 text-sm text-gray-700">
                     <div class="font-medium text-gray-900">{{ credentialStatusLabel(selectedGroup.credential.state) }}</div>
@@ -902,43 +904,43 @@ onMounted(loadProviders)
                 <h3 class="text-base font-semibold text-gray-900">{{ t('user.configurationMethodsTitle') }}</h3>
                 <p class="mt-1 text-sm text-gray-600">{{ t('user.configurationMethodsHelp') }}</p>
 
-                <div class="mt-4 grid gap-3 md:grid-cols-3">
-                  <ElButton
+                <ElRadioGroup
+                  :model-value="selectedConfigMethod ?? undefined"
+                  class="mt-4 !grid w-full gap-3 md:grid-cols-3"
+                >
+                  <ElRadioButton
                     data-testid="config-method-manual"
-                    class="!ml-0 h-auto justify-start px-4 py-3 text-left"
-                    :type="selectedConfigMethod === 'manual' ? 'primary' : 'default'"
-                    :plain="selectedConfigMethod !== 'manual'"
+                    class="config-method-option !ml-0 w-full"
+                    value="manual"
                     @click="selectedConfigMethod = 'manual'"
                   >
                     <div class="font-medium text-gray-900">{{ t('user.manualConfigMethodTitle') }}</div>
                     <p class="mt-1 text-sm text-gray-600">{{ t('user.manualConfigMethodHelp') }}</p>
                     <p class="mt-3 text-xs text-gray-500">{{ t('user.manualConfigMethodAudience') }}</p>
-                  </ElButton>
-                  <ElButton
+                  </ElRadioButton>
+                  <ElRadioButton
                     v-if="showAutomaticConfigMethod"
                     data-testid="config-method-automatic"
-                    class="!ml-0 h-auto justify-start px-4 py-3 text-left"
-                    :type="selectedConfigMethod === 'automatic' ? 'primary' : 'default'"
-                    :plain="selectedConfigMethod !== 'automatic'"
+                    class="config-method-option !ml-0 w-full"
+                    value="automatic"
                     @click="selectedConfigMethod = 'automatic'"
                   >
                     <div class="font-medium text-gray-900">{{ t('user.automaticConfigMethodTitle') }}</div>
                     <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigMethodHelp') }}</p>
                     <p class="mt-3 text-xs text-gray-500">{{ t('user.automaticConfigMethodAudience') }}</p>
-                  </ElButton>
-                  <ElButton
+                  </ElRadioButton>
+                  <ElRadioButton
                     v-if="ccSwitchImports.length > 0"
                     data-testid="config-method-ccswitch"
-                    class="!ml-0 h-auto justify-start px-4 py-3 text-left"
-                    :type="selectedConfigMethod === 'ccswitch' ? 'primary' : 'default'"
-                    :plain="selectedConfigMethod !== 'ccswitch'"
+                    class="config-method-option !ml-0 w-full"
+                    value="ccswitch"
                     @click="selectedConfigMethod = 'ccswitch'"
                   >
                     <div class="font-medium text-gray-900">{{ ccSwitchMethodTitle }}</div>
                     <p class="mt-1 text-sm text-gray-600">{{ ccSwitchMethodHelp }}</p>
                     <p class="mt-3 text-xs text-gray-500">{{ ccSwitchMethodAudience }}</p>
-                  </ElButton>
-                </div>
+                  </ElRadioButton>
+                </ElRadioGroup>
 
                 <div v-if="selectedConfigMethod === 'manual'" class="mt-4 rounded-lg border border-gray-200 p-4">
                   <div class="font-medium text-gray-900">{{ t('user.manualConfigDetailsTitle') }}</div>
@@ -1020,23 +1022,25 @@ onMounted(loadProviders)
                           </ElButton>
                         </div>
                         <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.value }}</pre>
-                        <details
+                        <ElCollapse
                           v-if="command.fallback"
                           :data-testid="command.fallback.detailsTestId"
-                          class="mt-3 rounded-md border border-gray-200 bg-gray-50 p-3"
+                          class="mt-3 rounded-md border border-gray-200 bg-gray-50 px-3"
                         >
-                          <summary class="cursor-pointer text-sm font-medium leading-6 text-gray-700">
-                            {{ command.fallback.title }}
-                          </summary>
-                          <p class="mt-1.5 text-xs leading-5 text-gray-500">{{ command.fallback.help }}</p>
-                          <div class="mt-2 flex items-center justify-between gap-3">
-                            <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{{ command.fallback.label }}</div>
-                            <ElButton link type="primary" @click="copyCommand(command.fallback.copyKey, command.fallback.value)">
-                              {{ copyCommandLabel(command.fallback.copyKey) }}
-                            </ElButton>
-                          </div>
-                          <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.fallback.value }}</pre>
-                        </details>
+                          <ElCollapseItem name="fallback">
+                            <template #title>
+                              <span class="text-sm font-medium leading-6 text-gray-700">{{ command.fallback.title }}</span>
+                            </template>
+                            <p class="text-xs leading-5 text-gray-500">{{ command.fallback.help }}</p>
+                            <div class="mt-2 flex items-center justify-between gap-3">
+                              <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{{ command.fallback.label }}</div>
+                              <ElButton link type="primary" @click="copyCommand(command.fallback.copyKey, command.fallback.value)">
+                                {{ copyCommandLabel(command.fallback.copyKey) }}
+                              </ElButton>
+                            </div>
+                            <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.fallback.value }}</pre>
+                          </ElCollapseItem>
+                        </ElCollapse>
                       </div>
                     </div>
                   </section>
@@ -1057,30 +1061,32 @@ onMounted(loadProviders)
                     </div>
                   </section>
 
-                  <details data-testid="auto-advanced" class="mt-6 rounded-lg border border-gray-200 p-4">
-                    <summary class="cursor-pointer text-base font-semibold leading-6 text-gray-900">
-                      {{ t('user.commandReference') }}
-                    </summary>
-                    <p class="mt-2 text-sm leading-5 text-gray-600">{{ t('user.commandReferenceHelp') }}</p>
+                  <ElCollapse data-testid="auto-advanced" class="mt-6 rounded-lg border border-gray-200 px-4">
+                    <ElCollapseItem name="advanced">
+                      <template #title>
+                        <span class="text-base font-semibold leading-6 text-gray-900">{{ t('user.commandReference') }}</span>
+                      </template>
+                      <p class="text-sm leading-5 text-gray-600">{{ t('user.commandReferenceHelp') }}</p>
 
-                    <div class="mt-4 space-y-3 text-sm">
-                      <div
-                        v-for="command in automaticAdvancedCommands"
-                        :key="command.key"
-                        class="rounded-md border border-gray-200 p-3 shadow-sm"
-                      >
-                        <div class="font-medium leading-6 text-gray-900">{{ command.title }}</div>
-                        <p class="mt-1 text-sm leading-5 text-gray-600">{{ command.help }}</p>
-                        <div class="mt-3 flex items-center justify-between gap-3">
-                          <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{{ command.label }}</div>
-                          <ElButton link type="primary" @click="copyCommand(command.key, command.value)">
-                            {{ copyCommandLabel(command.key) }}
-                          </ElButton>
+                      <div class="mt-4 space-y-3 text-sm">
+                        <div
+                          v-for="command in automaticAdvancedCommands"
+                          :key="command.key"
+                          class="rounded-md border border-gray-200 p-3 shadow-sm"
+                        >
+                          <div class="font-medium leading-6 text-gray-900">{{ command.title }}</div>
+                          <p class="mt-1 text-sm leading-5 text-gray-600">{{ command.help }}</p>
+                          <div class="mt-3 flex items-center justify-between gap-3">
+                            <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{{ command.label }}</div>
+                            <ElButton link type="primary" @click="copyCommand(command.key, command.value)">
+                              {{ copyCommandLabel(command.key) }}
+                            </ElButton>
+                          </div>
+                          <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.value }}</pre>
                         </div>
-                        <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.value }}</pre>
                       </div>
-                    </div>
-                  </details>
+                    </ElCollapseItem>
+                  </ElCollapse>
                 </div>
 
                 <div v-if="selectedConfigMethod === 'ccswitch'" class="mt-4 rounded-lg border border-gray-200 p-4">
@@ -1131,3 +1137,28 @@ onMounted(loadProviders)
     </div>
   </AppLayout>
 </template>
+
+<style scoped>
+:deep(.provider-option .el-radio-button__inner) {
+  width: 100%;
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+  box-shadow: none;
+  text-align: left;
+}
+
+:deep(.config-method-option .el-radio-button__inner) {
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+  box-shadow: none;
+  padding: 12px 16px;
+  text-align: left;
+  white-space: normal;
+}
+
+:deep(.config-method-option.is-active .el-radio-button__inner *) {
+  color: inherit;
+}
+</style>

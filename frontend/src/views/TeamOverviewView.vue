@@ -206,6 +206,10 @@ function selectRange(range: RangeOption) {
   void loadOverview()
 }
 
+function handleRangeChange(range: string | number | boolean | undefined) {
+  if (range === 'today' || range === '7d' || range === '30d') selectRange(range)
+}
+
 function formatSummaryCost(value: number | null | undefined, unitLabel: string) {
   if (value == null) return '-'
   return `${value.toFixed(2)} ${unitLabel}`
@@ -223,17 +227,21 @@ onMounted(loadOverview)
     <div class="space-y-4">
       <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <UsageCenterTabs active="team" />
-        <div class="flex flex-wrap items-center gap-2">
-          <ElButton data-test="range-today" :type="selectedRange === 'today' ? 'primary' : undefined" :disabled="loading" @click="selectRange('today')">
+        <ElRadioGroup
+          :model-value="selectedRange"
+          :disabled="loading"
+          @change="handleRangeChange"
+        >
+          <ElRadioButton data-test="range-today" value="today">
             {{ t('usageDashboard.today') }}
-          </ElButton>
-          <ElButton data-test="range-7d" :type="selectedRange === '7d' ? 'primary' : undefined" :disabled="loading" @click="selectRange('7d')">
+          </ElRadioButton>
+          <ElRadioButton data-test="range-7d" value="7d">
             {{ t('usageDashboard.sevenDays') }}
-          </ElButton>
-          <ElButton data-test="range-30d" :type="selectedRange === '30d' ? 'primary' : undefined" :disabled="loading" @click="selectRange('30d')">
+          </ElRadioButton>
+          <ElRadioButton data-test="range-30d" value="30d">
             {{ t('usageDashboard.thirtyDays') }}
-          </ElButton>
-        </div>
+          </ElRadioButton>
+        </ElRadioGroup>
       </div>
 
       <ElAlert

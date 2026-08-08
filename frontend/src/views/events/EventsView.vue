@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { getEventDetail, getEventSummary, listEvents, searchEventUsers } from '@/api/events'
 import { useAuthStore } from '@/stores/auth'
+import { useMediaQuery } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
 import type {
   ToolUsageEventDetail,
@@ -16,24 +17,26 @@ const auth = useAuthStore()
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
-const eventRowsMediaQuery = window.matchMedia('(min-width: 768px)')
 const maxEventPageSize = 100
 
 const loading = ref(true)
+const pageError = ref('')
 const summary = ref<ToolUsageEventSummary | null>(null)
 const rows = ref<ToolUsageEventRow[]>([])
 const total = ref(0)
 const detailLoading = ref(false)
+const detailError = ref('')
 const selectedEvent = ref<ToolUsageEventDetail | null>(null)
 const selectedEventId = ref<number | null>(null)
 const mobileFiltersOpen = ref(false)
-const desktopEventRows = ref(eventRowsMediaQuery.matches)
-const advancedDetailsOpen = ref(false)
+const desktopEventRows = useMediaQuery('(min-width: 768px)')
+const advancedDetailSections = ref<string[]>([])
 const userSearch = ref('')
 const userOptions = ref<ToolUsageEventUserOption[]>([])
 const selectedUser = ref<ToolUsageEventUserOption | null>(null)
 const selectedUserId = ref<number | null>(queryNumber('user_id', 0) || null)
 const userSearchLoading = ref(false)
+const userSearchError = ref('')
 
 const defaultFrom = toDateTimeLocal(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
 const defaultTo = toDateTimeLocal(new Date())
@@ -56,6 +59,7 @@ const canGoPrev = computed(() => filters.offset > 0)
 const canGoNext = computed(() => filters.offset + filters.limit < total.value)
 const showMobileEventRows = computed(() => rows.value.length > 0 && !desktopEventRows.value)
 const showDesktopEventRows = computed(() => rows.value.length > 0 && desktopEventRows.value)
+const advancedDetailsOpen = computed(() => advancedDetailSections.value.includes('advanced'))
 const formattedRawPayload = computed(() => JSON.stringify(selectedEvent.value?.raw_payload, null, 2))
 const filterSummaryBadges = computed(() => {
   const badges = [timeFilterSummary()]
@@ -171,6 +175,7 @@ function buildQuery(includePagination = true) {
 
 async function loadPage() {
   loading.value = true
+  pageError.value = ''
   try {
     const summaryParams = buildQuery(false)
     const listParams = buildQuery(true)
@@ -182,6 +187,8 @@ async function loadPage() {
     const listData = listRes.data.data
     rows.value = listData?.items ?? []
     total.value = listData?.total ?? 0
+  } catch {
+    pageError.value = t('events.loadFailed')
   } finally {
     loading.value = false
   }
@@ -190,9 +197,13 @@ async function loadPage() {
 async function searchUsers() {
   if (!isAdmin.value) return
   userSearchLoading.value = true
+  userSearchError.value = ''
+  userOptions.value = []
   try {
     const res = await searchEventUsers({ q: userSearch.value, limit: 20 })
     userOptions.value = res.data.data ?? []
+  } catch {
+    userSearchError.value = t('events.userSearchFailed')
   } finally {
     userSearchLoading.value = false
   }
@@ -252,29 +263,26 @@ async function changePageSize() {
 }
 
 async function openDetail(row: ToolUsageEventRow) {
-  advancedDetailsOpen.value = false
+  advancedDetailSections.value = []
+  detailError.value = ''
+  selectedEvent.value = null
   selectedEventId.value = row.id
   detailLoading.value = true
   try {
     const res = await getEventDetail(row.id)
     selectedEvent.value = res.data.data ?? null
+  } catch {
+    detailError.value = t('events.detailLoadFailed')
   } finally {
     detailLoading.value = false
   }
 }
 
 function closeDetail() {
-  advancedDetailsOpen.value = false
+  advancedDetailSections.value = []
+  detailError.value = ''
   selectedEventId.value = null
   selectedEvent.value = null
-}
-
-function handleAdvancedDetailsToggle(event: Event) {
-  advancedDetailsOpen.value = (event.currentTarget as HTMLDetailsElement).open
-}
-
-function handleEventRowsMediaChange(event: MediaQueryListEvent) {
-  desktopEventRows.value = event.matches
 }
 
 function formatDate(value?: string | null) {
@@ -315,12 +323,8 @@ function shortSha(value?: string | null) {
 }
 
 onMounted(() => {
-  eventRowsMediaQuery.addEventListener('change', handleEventRowsMediaChange)
   normalizeRestoredPaginationQuery()
   void loadPage()
-})
-onUnmounted(() => {
-  eventRowsMediaQuery.removeEventListener('change', handleEventRowsMediaChange)
 })
 </script>
 
@@ -336,6 +340,15 @@ onUnmounted(() => {
           {{ t('events.refresh') }}
         </ElButton>
       </div>
+
+      <ElAlert
+        v-if="pageError"
+        data-testid="events-load-error"
+        type="error"
+        :title="pageError"
+        :closable="false"
+        show-icon
+      />
 
       <div class="grid gap-4 sm:grid-cols-4">
         <ElCard shadow="never">
@@ -472,6 +485,15 @@ onUnmounted(() => {
               <span class="ml-2 text-xs text-gray-500"> · {{ userMeta(option) }}</span>
             </ElButton>
           </div>
+          <ElAlert
+            v-if="userSearchError"
+            data-testid="event-user-search-error"
+            class="mt-2"
+            type="error"
+            :title="userSearchError"
+            :closable="false"
+            show-icon
+          />
         </div>
 
         <div class="mt-3 flex justify-end gap-2">
@@ -599,7 +621,7 @@ onUnmounted(() => {
             </ElTableColumn>
           </ElTable>
         </div>
-        <ElEmpty v-if="!loading && rows.length === 0" :description="t('events.empty')" />
+        <ElEmpty v-if="!loading && !pageError && rows.length === 0" :description="t('events.empty')" />
       </ElCard>
     </div>
 
@@ -621,6 +643,14 @@ onUnmounted(() => {
       </template>
 
       <div v-if="detailLoading" class="p-5 text-sm text-gray-500">{{ t('events.loadingDetail') }}</div>
+      <ElAlert
+        v-else-if="detailError"
+        data-testid="event-detail-error"
+        type="error"
+        :title="detailError"
+        :closable="false"
+        show-icon
+      />
       <div v-else-if="selectedEvent" class="space-y-5 text-sm text-gray-700">
         <div>
           <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">{{ t('events.basic') }}</h3>
@@ -663,23 +693,31 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <details class="rounded-md border border-gray-200 p-4" @toggle="handleAdvancedDetailsToggle">
-          <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wide text-gray-500">{{ t('events.advancedData') }}</summary>
-          <dl class="mt-3 space-y-2">
-            <div class="flex justify-between gap-4"><dt>{{ t('events.workspace') }}</dt><dd class="font-mono">{{ selectedEvent.workspace_id }}</dd></div>
-            <div class="flex justify-between gap-4"><dt>{{ t('events.toolSession') }}</dt><dd class="font-mono">{{ selectedEvent.tool_session_id }}</dd></div>
-            <div class="flex justify-between gap-4"><dt>{{ t('events.toolEvent') }}</dt><dd class="font-mono">{{ selectedEvent.tool_event_id || '—' }}</dd></div>
-            <div v-if="isAdmin" class="flex justify-between gap-4"><dt>{{ t('events.dedupeKey') }}</dt><dd class="font-mono">{{ selectedEvent.dedupe_key }}</dd></div>
-            <div v-if="isAdmin" class="flex justify-between gap-4"><dt>{{ t('events.source') }}</dt><dd>{{ selectedEvent.source_basename }}</dd></div>
-            <div v-if="isAdmin" class="flex justify-between gap-4"><dt>{{ t('events.rawPath') }}</dt><dd class="break-all text-right font-mono">{{ selectedEvent.raw_source_path || '—' }}</dd></div>
-            <div v-if="isAdmin" class="flex justify-between gap-4"><dt>{{ t('events.rawLocator') }}</dt><dd class="font-mono">{{ selectedEvent.raw_source_locator || '—' }}</dd></div>
-          </dl>
+        <ElCollapse
+          v-model="advancedDetailSections"
+          data-testid="event-advanced-data"
+          class="rounded-md border border-gray-200 px-4"
+        >
+          <ElCollapseItem name="advanced">
+            <template #title>
+              <span class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ t('events.advancedData') }}</span>
+            </template>
+            <dl class="space-y-2">
+              <div class="flex justify-between gap-4"><dt>{{ t('events.workspace') }}</dt><dd class="font-mono">{{ selectedEvent.workspace_id }}</dd></div>
+              <div class="flex justify-between gap-4"><dt>{{ t('events.toolSession') }}</dt><dd class="font-mono">{{ selectedEvent.tool_session_id }}</dd></div>
+              <div class="flex justify-between gap-4"><dt>{{ t('events.toolEvent') }}</dt><dd class="font-mono">{{ selectedEvent.tool_event_id || '—' }}</dd></div>
+              <div v-if="isAdmin" class="flex justify-between gap-4"><dt>{{ t('events.dedupeKey') }}</dt><dd class="font-mono">{{ selectedEvent.dedupe_key }}</dd></div>
+              <div v-if="isAdmin" class="flex justify-between gap-4"><dt>{{ t('events.source') }}</dt><dd>{{ selectedEvent.source_basename }}</dd></div>
+              <div v-if="isAdmin" class="flex justify-between gap-4"><dt>{{ t('events.rawPath') }}</dt><dd class="break-all text-right font-mono">{{ selectedEvent.raw_source_path || '—' }}</dd></div>
+              <div v-if="isAdmin" class="flex justify-between gap-4"><dt>{{ t('events.rawLocator') }}</dt><dd class="font-mono">{{ selectedEvent.raw_source_locator || '—' }}</dd></div>
+            </dl>
 
-          <div v-if="isAdmin && selectedEvent.raw_payload" class="mt-4">
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">{{ t('events.rawPayload') }}</h3>
-            <pre v-if="advancedDetailsOpen" class="mt-2 overflow-x-auto rounded-lg bg-gray-900 p-4 text-xs text-gray-100">{{ formattedRawPayload }}</pre>
-          </div>
-        </details>
+            <div v-if="isAdmin && selectedEvent.raw_payload" class="mt-4">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">{{ t('events.rawPayload') }}</h3>
+              <pre v-if="advancedDetailsOpen" class="mt-2 overflow-x-auto rounded-lg bg-gray-900 p-4 text-xs text-gray-100">{{ formattedRawPayload }}</pre>
+            </div>
+          </ElCollapseItem>
+        </ElCollapse>
       </div>
     </ElDrawer>
   </AppLayout>

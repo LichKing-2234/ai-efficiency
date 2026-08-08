@@ -28,10 +28,51 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
+async function openElementPlusSelect(wrapper: ReturnType<typeof mount>, testId: string) {
+  await wrapper.get(`[data-testid="${testId}"] .el-select__wrapper`).trigger('click')
+  await flushPromises()
+}
+
+function elementPlusSelectInput(wrapper: ReturnType<typeof mount>, testId: string) {
+  return wrapper.get(`[data-testid="${testId}"] input[role="combobox"]`)
+}
+
+function installMatchMedia(initialMatches: boolean) {
+  const listeners = new Set<(event: { matches: boolean; media: string }) => void>()
+  const mediaQuery = {
+    matches: initialMatches,
+    media: '(min-width: 768px)',
+    onchange: null,
+    addEventListener: vi.fn((type: string, listener: (event: { matches: boolean; media: string }) => void) => {
+      if (type === 'change') listeners.add(listener)
+    }),
+    removeEventListener: vi.fn((type: string, listener: (event: { matches: boolean; media: string }) => void) => {
+      if (type === 'change') listeners.delete(listener)
+    }),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(() => true),
+  }
+  const matchMedia = vi.fn(() => mediaQuery)
+  Object.defineProperty(window, 'matchMedia', { configurable: true, value: matchMedia })
+
+  return {
+    mediaQuery,
+    matchMedia,
+    change(matches: boolean) {
+      mediaQuery.matches = matches
+      for (const listener of listeners) listener({ matches, media: mediaQuery.media })
+    },
+  }
+}
+
+let matchMediaController: ReturnType<typeof installMatchMedia>
+
 beforeEach(async () => {
   setActivePinia(createPinia())
   setLocale('en-US')
   vi.clearAllMocks()
+  matchMediaController = installMatchMedia(true)
   const api = await import('@/api/quotaReset') as any
   api.getQuotaResetApproverConfigs.mockResolvedValue({ data: { data: { current_directory_source_id: 1, items: [] } } })
   api.listQuotaResetApproverCandidates.mockResolvedValue({
@@ -102,6 +143,24 @@ describe('QuotaResetApprovalSettings', () => {
     expect(wrapper.get('[data-testid="quota-reset-save-approvers"]').classes()).toContain('el-button')
   })
 
+  it('uses Element Plus selects for department and approver choices', async () => {
+    const wrapper = mount(QuotaResetApprovalSettings, { props: { credentials: [] } })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="quota-reset-department-select"]').classes()).toContain('el-select')
+    expect(wrapper.get('[data-testid="quota-reset-approver-select"]').classes()).toContain('el-select')
+  })
+
+  it('shows a settings load failure without a contradictory no-approvers state', async () => {
+    const api = await import('@/api/quotaReset') as any
+    api.getQuotaResetApproverConfigs.mockRejectedValueOnce(new Error('configs unavailable'))
+    const wrapper = mount(QuotaResetApprovalSettings, { props: { credentials: [] } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Failed to load quota reset approval settings')
+    expect(wrapper.text()).not.toContain('No approver configs yet.')
+  })
+
   it('removes existing approver rows with explicit full replacement save', async () => {
     const api = await import('@/api/quotaReset') as any
     api.getQuotaResetApproverConfigs.mockResolvedValueOnce({
@@ -135,6 +194,45 @@ describe('QuotaResetApprovalSettings', () => {
     await flushPromises()
 
     expect(api.saveQuotaResetApproverConfigs).toHaveBeenCalledWith([], 'replace_all')
+  })
+
+  it('mounts one responsive approver-config representation without horizontal scrolling', async () => {
+    const api = await import('@/api/quotaReset') as any
+    api.getQuotaResetApproverConfigs.mockResolvedValueOnce({
+      data: {
+        data: {
+          current_directory_source_id: 1,
+          items: [
+            {
+              id: 7,
+              directory_source_id: 1,
+              department_external_id: 'dept-alpha',
+              department_display_path: 'Department Alpha',
+              approver_user_id: 12,
+              approver_username: 'lead',
+              approver_email: 'lead@example.com',
+              enabled: true,
+              created_at: '',
+              updated_at: '',
+            },
+          ],
+        },
+      },
+    })
+    const wrapper = mount(QuotaResetApprovalSettings, { props: { credentials: [] } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-approver-config-list="desktop"]').exists()).toBe(true)
+    expect(wrapper.find('[data-approver-config-list="mobile"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-approver-config-row]')).toHaveLength(1)
+
+    matchMediaController.change(false)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-approver-config-list="desktop"]').exists()).toBe(false)
+    expect(wrapper.find('[data-approver-config-list="mobile"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-approver-config-row]')).toHaveLength(1)
+    expect(wrapper.find('[data-approver-config-list="mobile"]').classes()).not.toContain('overflow-x-auto')
   })
 
   it('saves webhook settings without exposing credential secrets', async () => {
@@ -230,34 +328,29 @@ describe('QuotaResetApprovalSettings', () => {
     const wrapper = mount(QuotaResetApprovalSettings, { props: { credentials: [] } })
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="quota-reset-department-search"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="quota-reset-department-search-button"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="quota-reset-department-filter"]').exists()).toBe(false)
-
-    await wrapper.find('[data-testid="quota-reset-department-select"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="quota-reset-department-filter"]').exists()).toBe(true)
-
-    await wrapper.find('[data-testid="quota-reset-department-filter"]').setValue('Platform')
-    await flushPromises()
+    await openElementPlusSelect(wrapper, 'quota-reset-department-select')
+    await elementPlusSelectInput(wrapper, 'quota-reset-department-select').setValue('Platform')
+    const directory = await import('@/api/directory') as any
+    await vi.waitFor(() => {
+      expect(directory.listDirectoryDepartments).toHaveBeenCalledWith({ source_id: 1, q: 'Platform' })
+    })
     await wrapper.find('[data-testid="quota-reset-department-option-dept-alpha"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.find('[data-testid="quota-reset-approver-ids"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="quota-reset-approver-filter"]').exists()).toBe(false)
 
     const picker = wrapper.get('[data-testid="quota-reset-approver-select"]')
-    await picker.trigger('click')
-    expect(wrapper.find('[data-testid="quota-reset-approver-filter"]').exists()).toBe(true)
+    await openElementPlusSelect(wrapper, 'quota-reset-approver-select')
     await wrapper.get('[data-testid="quota-reset-approver-option-12"]').trigger('click')
 
-    expect(wrapper.find('[data-testid="quota-reset-approver-filter"]').exists()).toBe(false)
+    expect(elementPlusSelectInput(wrapper, 'quota-reset-approver-select').attributes('aria-expanded')).toBe('false')
     expect(picker.text()).toContain('Lead Alpha')
     expect(picker.text()).toContain('lead-alpha@example.com')
     expect(picker.text()).toContain('Representative')
 
-    await picker.trigger('click')
-    await wrapper.get('[data-testid="quota-reset-approver-filter"]').setValue('beta')
+    await openElementPlusSelect(wrapper, 'quota-reset-approver-select')
+    await elementPlusSelectInput(wrapper, 'quota-reset-approver-select').setValue('beta')
+    await flushPromises()
     expect(wrapper.find('[data-testid="quota-reset-approver-option-12"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="quota-reset-approver-option-13"]').exists()).toBe(true)
     expect(picker.text()).toContain('Lead Alpha')
@@ -266,7 +359,6 @@ describe('QuotaResetApprovalSettings', () => {
     await wrapper.find('[data-testid="quota-reset-save-approvers"]').trigger('click')
     await flushPromises()
 
-    const directory = await import('@/api/directory') as any
     expect(directory.listDirectoryDepartments).toHaveBeenCalledWith({ source_id: 1, q: 'Platform' })
     expect(quotaReset.listQuotaResetApproverCandidates).toHaveBeenCalledWith({
       source_id: 1,
@@ -301,8 +393,7 @@ describe('QuotaResetApprovalSettings', () => {
 
     const wrapper = mount(QuotaResetApprovalSettings, { props: { credentials: [] } })
     await flushPromises()
-    await wrapper.get('[data-testid="quota-reset-department-select"]').trigger('click')
-    await flushPromises()
+    await openElementPlusSelect(wrapper, 'quota-reset-department-select')
 
     expect(directory.listDirectoryDepartments).toHaveBeenCalledWith(expect.objectContaining({ source_id: 2 }))
     expect(wrapper.text()).not.toContain('Old Directory')
@@ -336,14 +427,13 @@ describe('QuotaResetApprovalSettings', () => {
     })
     const wrapper = mount(QuotaResetApprovalSettings, { props: { credentials: [] } })
     await flushPromises()
-    await wrapper.get('[data-testid="quota-reset-department-select"]').trigger('click')
-    await flushPromises()
+    await openElementPlusSelect(wrapper, 'quota-reset-department-select')
     await wrapper.get('[data-testid="quota-reset-department-option-dept-alpha"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="quota-reset-approver-filter"]').exists()).toBe(false)
-    await wrapper.get('[data-testid="quota-reset-approver-select"]').trigger('click')
-    await wrapper.get('[data-testid="quota-reset-approver-filter"]').setValue('beta')
+    await openElementPlusSelect(wrapper, 'quota-reset-approver-select')
+    await elementPlusSelectInput(wrapper, 'quota-reset-approver-select').setValue('beta')
+    await flushPromises()
 
     expect(wrapper.find('[data-testid="quota-reset-approver-option-12"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="quota-reset-approver-option-13"]').exists()).toBe(true)
@@ -360,8 +450,11 @@ describe('QuotaResetApprovalSettings', () => {
     const wrapper = mount(QuotaResetApprovalSettings, { props: { credentials: [] } })
     await flushPromises()
 
-    await wrapper.find('[data-testid="quota-reset-department-select"]').trigger('click')
-    await wrapper.find('[data-testid="quota-reset-department-filter"]').setValue('Platform')
+    await openElementPlusSelect(wrapper, 'quota-reset-department-select')
+    await elementPlusSelectInput(wrapper, 'quota-reset-department-select').setValue('Platform')
+    await vi.waitFor(() => {
+      expect(directory.listDirectoryDepartments).toHaveBeenCalledWith({ source_id: 1, q: 'Platform' })
+    })
 
     filtered.resolve({
       data: {
@@ -423,8 +516,7 @@ describe('QuotaResetApprovalSettings', () => {
     const wrapper = mount(QuotaResetApprovalSettings, { props: { credentials: [] } })
     await flushPromises()
 
-    await wrapper.find('[data-testid="quota-reset-department-select"]').trigger('click')
-    await flushPromises()
+    await openElementPlusSelect(wrapper, 'quota-reset-department-select')
     await wrapper.find('[data-testid="quota-reset-department-option-dept-alpha"]').trigger('click')
     await flushPromises()
 

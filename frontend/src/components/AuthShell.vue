@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { Switch } from '@element-plus/icons-vue'
-import en from 'element-plus/es/locale/lang/en'
-import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import { useElementPlusLocale } from '@/composables/useElementPlusLocale'
 import { useI18n } from '@/i18n'
 import type { MessageKey } from '@/i18n'
 
@@ -13,7 +11,7 @@ defineProps<{
 }>()
 
 const { languageToggleLabel, locale, t, toggleLocale } = useI18n()
-const elementLocale = computed(() => locale.value === 'zh-CN' ? zhCn : en)
+const elementLocale = useElementPlusLocale(locale)
 </script>
 
 <template>

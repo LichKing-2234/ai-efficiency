@@ -31,6 +31,53 @@ const createDefaultSystemVersionResponse = () => ({
   },
 })
 
+function installMatchMedia(initialMatches: boolean) {
+  const listeners = new Set<(event: { matches: boolean; media: string }) => void>()
+  const addEventListener = vi.fn((type: string, listener: (event: { matches: boolean; media: string }) => void) => {
+    if (type === 'change') listeners.add(listener)
+  })
+  const removeEventListener = vi.fn((type: string, listener: (event: { matches: boolean; media: string }) => void) => {
+    if (type === 'change') listeners.delete(listener)
+  })
+  const mediaQuery = {
+    matches: initialMatches,
+    media: '(min-width: 768px)',
+    onchange: null,
+    addEventListener,
+    removeEventListener,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(() => true),
+  }
+  const matchMedia = vi.fn(() => mediaQuery)
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: matchMedia,
+  })
+
+  return {
+    matchMedia,
+    addEventListener,
+    removeEventListener,
+    change(matches: boolean) {
+      mediaQuery.matches = matches
+      for (const listener of Array.from(listeners)) {
+        listener({ matches, media: mediaQuery.media })
+      }
+    },
+  }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done
+    reject = fail
+  })
+  return { promise, resolve, reject }
+}
+
 vi.mock('@/api/scmProvider', () => ({
   listProviders: vi.fn(),
   createProvider: vi.fn(),
@@ -233,7 +280,19 @@ async function mountSettings(overrides?: { providers?: any[]; relayProviders?: a
 }
 
 async function openSettingsSection(wrapper: any, section: string) {
-  await wrapper.get(`[data-testid="settings-tab-${section}"]`).trigger('click')
+  const tab = wrapper.find(`[data-testid="settings-tab-${section}"]`)
+  if (tab.exists()) {
+    await tab.trigger('click')
+  } else {
+    const labels: Record<string, string> = {
+      'ai-services': 'AI Services',
+      'code-platforms': 'Code Platforms',
+      'organization-login': 'Organization & Login',
+      'deployment-runtime': 'Deployment & Runtime',
+      'advanced-credentials': 'Advanced Credentials',
+    }
+    await selectElementPlusOption(wrapper, 'settings-section-select', labels[section])
+  }
   await vi.dynamicImportSettled()
   await flushPromises()
 }
@@ -241,14 +300,22 @@ async function openSettingsSection(wrapper: any, section: string) {
 async function selectElementPlusOption(wrapper: any, testId: string, label: string) {
   await wrapper.get(`[data-testid="${testId}"] .el-select__wrapper`).trigger('click')
   await flushPromises()
+  const teleportedOptions = Array.from(document.body.querySelectorAll<HTMLElement>('.el-select-dropdown__item'))
+    .filter((item) => item.textContent === label)
   const option = wrapper.findAll('.el-select-dropdown__item').find((item: any) => item.text() === label)
+    ?? teleportedOptions[teleportedOptions.length - 1]
   if (!option) throw new Error(`Element Plus option ${label} was not rendered`)
-  await option.trigger('click')
+  if ('trigger' in option) {
+    await option.trigger('click')
+  } else {
+    option.click()
+  }
   await flushPromises()
 }
 
 describe('SettingsView', () => {
   beforeEach(async () => {
+    installMatchMedia(true)
     setActivePinia(createPinia())
     setLocale('en-US')
     await resetApiMocks()
@@ -280,7 +347,7 @@ describe('SettingsView', () => {
 
     const wrapper = await mountSettings(undefined, '/settings?section=constructor')
 
-    expect(wrapper.get('[data-testid="settings-tab-ai-services"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('[data-testid="settings-tab-ai-services"]').element.closest('[role="tab"]')?.getAttribute('aria-selected')).toBe('true')
     expect(wrapper.text()).toContain('Add Relay Provider')
     expect(listRelayProviders).toHaveBeenCalledTimes(1)
     expect(listProviders).not.toHaveBeenCalled()
@@ -373,10 +440,86 @@ describe('SettingsView', () => {
     expect(wrapper.text()).toContain('Add Credential')
   })
 
-  it('renders settings section navigation with Element Plus controls', async () => {
+  it('renders settings section navigation with Element Plus tabs', async () => {
+    const wrapper = await mountSettings()
+    const aiServicesLabel = wrapper.get('[data-testid="settings-tab-ai-services"]')
+
+    expect(wrapper.find('.el-tabs').exists()).toBe(true)
+    expect(wrapper.findAll('.el-tabs__item')).toHaveLength(5)
+    expect(aiServicesLabel.element.closest('.el-tabs__item')).not.toBeNull()
+  })
+
+  it('uses a mobile section selector without mounting the desktop tabs', async () => {
+    const media = installMatchMedia(false)
     const wrapper = await mountSettings()
 
-    expect(wrapper.get('[data-testid="settings-tab-ai-services"]').classes()).toContain('el-button')
+    expect(wrapper.find('.el-tabs').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="settings-section-select"]').classes()).toContain('el-select')
+    expect(media.matchMedia).toHaveBeenCalledWith('(min-width: 1280px)')
+
+    await selectElementPlusOption(wrapper, 'settings-section-select', 'Code Platforms')
+    await vi.dynamicImportSettled()
+    await flushPromises()
+
+    expect((wrapper.vm as any).$route.query.section).toBe('code-platforms')
+    expect(wrapper.find('#settings-panel-ai-services').exists()).toBe(false)
+    expect(wrapper.get('#settings-panel-code-platforms').text()).toContain('Add Platform')
+  })
+
+  it('mounts only the active responsive list for all provider and credential sections', async () => {
+    const media = installMatchMedia(true)
+    const wrapper = await mountSettings({
+      relayProviders: [
+        {
+          id: 1,
+          name: 'relay-main',
+          display_name: 'Relay Main',
+          base_url: 'https://relay.example.com',
+          admin_api_key: '***',
+          is_primary: true,
+          enabled: true,
+        },
+      ],
+      providers: [
+        {
+          id: 7,
+          name: 'GitHub',
+          type: 'github',
+          base_url: 'https://api.github.com',
+          ssh_host: 'github.com',
+          status: 'active',
+          created_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+    })
+
+    const assertDesktopOnly = (panel: any) => {
+      expect(panel.find('table').exists()).toBe(true)
+      expect(panel.find('article').exists()).toBe(false)
+    }
+    const assertMobileOnly = (panel: any) => {
+      expect(panel.find('table').exists()).toBe(false)
+      expect(panel.find('article').exists()).toBe(true)
+    }
+
+    assertDesktopOnly(wrapper.get('#settings-panel-ai-services'))
+    await openSettingsSection(wrapper, 'code-platforms')
+    assertDesktopOnly(wrapper.get('#settings-panel-code-platforms'))
+    await openSettingsSection(wrapper, 'advanced-credentials')
+    assertDesktopOnly(wrapper.get('#settings-panel-advanced-credentials'))
+
+    media.change(false)
+    await wrapper.vm.$nextTick()
+    assertMobileOnly(wrapper.get('#settings-panel-advanced-credentials'))
+    await openSettingsSection(wrapper, 'code-platforms')
+    assertMobileOnly(wrapper.get('#settings-panel-code-platforms'))
+    await openSettingsSection(wrapper, 'ai-services')
+    assertMobileOnly(wrapper.get('#settings-panel-ai-services'))
+
+    expect(media.matchMedia).toHaveBeenCalledWith('(min-width: 768px)')
+    expect(media.addEventListener).toHaveBeenCalled()
+    wrapper.unmount()
+    expect(media.removeEventListener).toHaveBeenCalled()
   })
 
   it('renders directory sync inside organization login settings', async () => {
@@ -402,7 +545,7 @@ describe('SettingsView', () => {
     const wrapper = await mountSettings(undefined, '/settings?section=code-platforms')
 
     expect(wrapper.text()).toContain('Code Platforms')
-    expect(wrapper.find('[data-testid="settings-tab-code-platforms"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('[data-testid="settings-tab-code-platforms"]').element.closest('[role="tab"]')?.getAttribute('aria-selected')).toBe('true')
 
     await openSettingsSection(wrapper, 'deployment-runtime')
 
@@ -457,6 +600,19 @@ describe('SettingsView', () => {
       kind: 'secret_text',
       payload: { text: 'ghp_test' },
     })
+  })
+
+  it('deletes a stored credential through Element Plus confirmation', async () => {
+    const { deleteCredential } = await import('@/api/credential')
+    const wrapper = await mountSettings(undefined, '/settings?section=advanced-credentials')
+
+    await wrapper.get('[data-testid="credential-delete-12"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.el-popconfirm').exists()).toBe(true)
+    await wrapper.get('[data-testid="credential-confirm-delete-12"]').trigger('click')
+    await flushPromises()
+    expect(deleteCredential).toHaveBeenCalledWith(12)
   })
 
   it('sends credential ids when creating a code platform', async () => {
@@ -539,6 +695,31 @@ describe('SettingsView', () => {
       base_url: 'https://bitbucket-api.example.com',
       ssh_host: 'git.example.com',
     }))
+  })
+
+  it('deletes a code platform through Element Plus confirmation', async () => {
+    const { deleteProvider } = await import('@/api/scmProvider')
+    const wrapper = await mountSettings({
+      providers: [
+        {
+          id: 7,
+          name: 'GitHub',
+          type: 'github',
+          base_url: 'https://api.github.com',
+          ssh_host: 'github.com',
+          status: 'active',
+          created_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+    }, '/settings?section=code-platforms')
+
+    await wrapper.get('[data-testid="provider-delete-7"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.el-popconfirm').exists()).toBe(true)
+    await wrapper.get('[data-testid="provider-confirm-delete-7"]').trigger('click')
+    await flushPromises()
+    expect(deleteProvider).toHaveBeenCalledWith(7)
   })
 
   it('renders relay providers returned from the backend', async () => {
@@ -697,12 +878,47 @@ describe('SettingsView', () => {
       ],
     })
 
-    await wrapper.find('[data-testid="relay-provider-delete-1"]').trigger('click')
+    await wrapper.get('[data-testid="relay-provider-delete-1"]').trigger('click')
     await flushPromises()
-    await wrapper.find('[data-testid="relay-provider-confirm-delete-1"]').trigger('click')
+    expect(wrapper.find('.el-popconfirm').exists()).toBe(true)
+    await wrapper.get('[data-testid="relay-provider-confirm-delete-1"]').trigger('click')
     await flushPromises()
 
     expect(deleteRelayProvider).toHaveBeenCalledWith(1)
+  })
+
+  it('prevents duplicate relay deletes while confirmation is in flight', async () => {
+    const { deleteRelayProvider } = await import('@/api/relayProvider')
+    const pendingDelete = deferred<{ data: { data: null } }>()
+    ;(deleteRelayProvider as any).mockReturnValueOnce(pendingDelete.promise)
+    const wrapper = await mountSettings({
+      relayProviders: [
+        {
+          id: 1,
+          name: 'relay-main',
+          display_name: 'Relay Main',
+          base_url: 'https://relay.example.com',
+          admin_api_key: '***',
+          is_primary: true,
+          enabled: true,
+        },
+      ],
+    })
+
+    await wrapper.get('[data-testid="relay-provider-delete-1"]').trigger('click')
+    await flushPromises()
+    const confirmButton = wrapper.get('[data-testid="relay-provider-confirm-delete-1"]')
+    await confirmButton.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(deleteRelayProvider).toHaveBeenCalledTimes(1)
+    expect(confirmButton.attributes('disabled')).toBeDefined()
+    expect(confirmButton.classes()).toContain('is-loading')
+    await confirmButton.trigger('click')
+    expect(deleteRelayProvider).toHaveBeenCalledTimes(1)
+
+    pendingDelete.resolve({ data: { data: null } })
+    await flushPromises()
   })
 
   it('renders system version and update check without binary upgrade controls', async () => {

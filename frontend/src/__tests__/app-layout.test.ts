@@ -109,6 +109,18 @@ describe('AppLayout', () => {
     expect(wrapper.get('[aria-controls="mobile-navigation"]').classes()).toContain('el-button')
   })
 
+  it('shows only the custom close action in the mobile navigation drawer', async () => {
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(AppLayout, {
+      global: { plugins: [createPinia(), router] },
+    })
+
+    expect(wrapper.findComponent({ name: 'ElDrawer' }).props('showClose')).toBe(false)
+  })
+
   it('bounds count loads across five protected route layout identities', async () => {
     vi.useFakeTimers()
     const pinia = createPinia()

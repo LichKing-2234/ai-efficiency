@@ -2,16 +2,19 @@
 import { onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { createProvider, deleteProvider, listProviders, updateProvider } from '@/api/scmProvider'
+import { useMediaQuery } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
 import { useSettingsResourcesStore } from '@/stores/settingsResources'
 import type { SCMProvider } from '@/types'
 
 const { locale, t } = useI18n()
+const isDesktop = useMediaQuery('(min-width: 768px)')
 const settingsResources = useSettingsResourcesStore()
 const { credentials } = storeToRefs(settingsResources)
 const providers = ref<SCMProvider[]>([])
 const loading = ref(true)
-const showDeleteConfirm = ref<number | null>(null)
+const confirmingProviderId = ref<number | null>(null)
+const deletingProviderId = ref<number | null>(null)
 const showDialog = ref(false)
 const editingId = ref<number | null>(null)
 const githubDefaultSSHHost = 'github.com'
@@ -133,14 +136,34 @@ async function handleSubmit() {
   }
 }
 
-async function confirmDelete(id: number) {
+async function confirmDelete(id: number, event: MouseEvent, close: (event: MouseEvent) => void) {
+  if (deletingProviderId.value !== null) return
+
+  deletingProviderId.value = id
   try {
     await deleteProvider(id)
-    showDeleteConfirm.value = null
+    confirmingProviderId.value = null
+    close(event)
     await fetchProviders()
   } catch {
     // Keep the row available for another attempt.
+  } finally {
+    deletingProviderId.value = null
   }
+}
+
+function setProviderDeleteVisibility(id: number, visible: boolean) {
+  if (visible) {
+    confirmingProviderId.value = id
+  } else if (confirmingProviderId.value === id && deletingProviderId.value === null) {
+    confirmingProviderId.value = null
+  }
+}
+
+function cancelProviderDelete(event: MouseEvent, close: (event: MouseEvent) => void) {
+  if (deletingProviderId.value !== null) return
+  confirmingProviderId.value = null
+  close(event)
 }
 </script>
 
@@ -159,7 +182,7 @@ async function confirmDelete(id: number) {
     <div v-if="loading" class="py-12 text-center text-gray-500">{{ t('settings.loading') }}</div>
 
     <div v-else class="rounded-lg bg-white shadow">
-      <div v-if="providers.length > 0" class="space-y-3 p-4 md:hidden">
+      <div v-if="!isDesktop && providers.length > 0" class="space-y-3 p-4">
         <article v-for="p in providers" :key="p.id" class="rounded-lg border border-gray-100 p-4">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
@@ -183,25 +206,46 @@ async function confirmDelete(id: number) {
           </dl>
           <div class="mt-3 flex flex-wrap gap-3 text-sm">
             <ElButton :data-testid="`provider-edit-${p.id}`" link type="primary" @click="openEditDialog(p)">{{ t('settings.edit') }}</ElButton>
-            <ElButton
-              v-if="showDeleteConfirm !== p.id"
-              :data-testid="`provider-delete-${p.id}`"
-              link
-              type="danger"
-              @click="showDeleteConfirm = p.id"
-            >{{ t('settings.delete') }}</ElButton>
-            <template v-else>
-              <ElButton :data-testid="`provider-confirm-delete-${p.id}`" link type="danger" @click="confirmDelete(p.id)">{{ t('settings.confirm') }}</ElButton>
-              <ElButton :data-testid="`provider-cancel-delete-${p.id}`" link @click="showDeleteConfirm = null">{{ t('settings.cancel') }}</ElButton>
-            </template>
+            <ElPopconfirm
+              :title="`${t('settings.confirm')} ${t('settings.delete')}?`"
+              :teleported="false"
+              :visible="confirmingProviderId === p.id"
+              @update:visible="setProviderDeleteVisibility(p.id, $event)"
+            >
+              <template #reference>
+                <ElButton
+                  :data-testid="`provider-delete-${p.id}`"
+                  :disabled="deletingProviderId !== null"
+                  link
+                  type="danger"
+                  @click="confirmingProviderId = p.id"
+                >{{ t('settings.delete') }}</ElButton>
+              </template>
+              <template #actions="{ confirm, cancel }">
+                <ElButton
+                  :data-testid="`provider-confirm-delete-${p.id}`"
+                  :loading="deletingProviderId === p.id"
+                  :disabled="deletingProviderId !== null"
+                  link
+                  type="danger"
+                  @click="confirmDelete(p.id, $event, confirm)"
+                >{{ t('settings.confirm') }}</ElButton>
+                <ElButton
+                  :data-testid="`provider-cancel-delete-${p.id}`"
+                  :disabled="deletingProviderId !== null"
+                  link
+                  @click="cancelProviderDelete($event, cancel)"
+                >{{ t('settings.cancel') }}</ElButton>
+              </template>
+            </ElPopconfirm>
           </div>
         </article>
       </div>
-      <div v-else class="px-6 py-12 text-center text-sm text-gray-500 md:hidden">
+      <div v-else-if="!isDesktop" class="px-6 py-12 text-center text-sm text-gray-500">
         {{ t('settings.noScmProviders') }}
       </div>
 
-      <table class="hidden min-w-full divide-y divide-gray-200 md:table">
+      <table v-if="isDesktop" class="min-w-full divide-y divide-gray-200">
         <thead class="bg-gray-50">
           <tr>
             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.name') }}</th>
@@ -229,17 +273,38 @@ async function confirmDelete(id: number) {
             <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{{ formatDate(p.created_at) }}</td>
             <td class="whitespace-nowrap px-6 py-4 text-right text-sm space-x-3">
               <ElButton :data-testid="`provider-edit-${p.id}`" link type="primary" @click="openEditDialog(p)">{{ t('settings.edit') }}</ElButton>
-              <ElButton
-                v-if="showDeleteConfirm !== p.id"
-                :data-testid="`provider-delete-${p.id}`"
-                link
-                type="danger"
-                @click="showDeleteConfirm = p.id"
-              >{{ t('settings.delete') }}</ElButton>
-              <span v-else class="space-x-2">
-                <ElButton :data-testid="`provider-confirm-delete-${p.id}`" link type="danger" @click="confirmDelete(p.id)">{{ t('settings.confirm') }}</ElButton>
-                <ElButton :data-testid="`provider-cancel-delete-${p.id}`" link @click="showDeleteConfirm = null">{{ t('settings.cancel') }}</ElButton>
-              </span>
+              <ElPopconfirm
+                :title="`${t('settings.confirm')} ${t('settings.delete')}?`"
+                :teleported="false"
+                :visible="confirmingProviderId === p.id"
+                @update:visible="setProviderDeleteVisibility(p.id, $event)"
+              >
+                <template #reference>
+                  <ElButton
+                    :data-testid="`provider-delete-${p.id}`"
+                    :disabled="deletingProviderId !== null"
+                    link
+                    type="danger"
+                    @click="confirmingProviderId = p.id"
+                  >{{ t('settings.delete') }}</ElButton>
+                </template>
+                <template #actions="{ confirm, cancel }">
+                  <ElButton
+                    :data-testid="`provider-confirm-delete-${p.id}`"
+                    :loading="deletingProviderId === p.id"
+                    :disabled="deletingProviderId !== null"
+                    link
+                    type="danger"
+                    @click="confirmDelete(p.id, $event, confirm)"
+                  >{{ t('settings.confirm') }}</ElButton>
+                  <ElButton
+                    :data-testid="`provider-cancel-delete-${p.id}`"
+                    :disabled="deletingProviderId !== null"
+                    link
+                    @click="cancelProviderDelete($event, cancel)"
+                  >{{ t('settings.cancel') }}</ElButton>
+                </template>
+              </ElPopconfirm>
             </td>
           </tr>
           <tr v-if="providers.length === 0">

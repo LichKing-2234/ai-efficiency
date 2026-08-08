@@ -143,6 +143,16 @@ describe('DirectorySyncSettings', () => {
     expect(wrapper.get('[data-testid="directory-copy-ai-prompt"]').classes()).toContain('el-button')
   })
 
+  it('shows a source load error without also showing the empty state', async () => {
+    const { wrapper } = await mountDirectorySyncSettings((api) => {
+      api.listDirectorySources.mockRejectedValue(new Error('synthetic source load failure'))
+    })
+
+    expect(wrapper.text()).toContain('synthetic source load failure')
+    expect(wrapper.find('.el-alert--error').exists()).toBe(true)
+    expect(wrapper.find('.el-empty').exists()).toBe(false)
+  })
+
   it('renders safe templates and copies an AI prompt with safety guidance', async () => {
     const { wrapper } = await mountDirectorySyncSettings()
 

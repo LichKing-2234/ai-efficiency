@@ -1,14 +1,13 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { Close, Menu, Switch } from '@element-plus/icons-vue'
-import en from 'element-plus/es/locale/lang/en'
-import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import AppSidebar from './AppSidebar.vue'
+import { useElementPlusLocale } from '@/composables/useElementPlusLocale'
 import { useI18n } from '@/i18n'
 
 const mobileNavOpen = ref(false)
 const { languageToggleLabel, locale, t, toggleLocale } = useI18n()
-const elementLocale = computed(() => locale.value === 'zh-CN' ? zhCn : en)
+const elementLocale = useElementPlusLocale(locale)
 
 function openMobileNav() {
   mobileNavOpen.value = true
@@ -48,6 +47,7 @@ function closeMobileNav() {
         v-model="mobileNavOpen"
         destroy-on-close
         direction="ltr"
+        :show-close="false"
         size="min(20rem, 86vw)"
       >
         <template #header>

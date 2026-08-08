@@ -27,6 +27,38 @@ const mockGetTeamUsageOrganization = vi.mocked((await import('@/api/teamUsage'))
 const mockGetTeamUsageSummary = vi.mocked((await import('@/api/teamUsage')).getTeamUsageSummary)
 const mockGetTeamUsageTrend = vi.mocked((await import('@/api/teamUsage')).getTeamUsageTrend)
 
+async function selectElementRadio(wrapper: any, selector: string) {
+  const control = wrapper.get(selector)
+  const input = control.element instanceof HTMLInputElement
+    ? control
+    : control.get('input[type="radio"]')
+  await input.setValue()
+}
+
+function installMatchMedia(matches: boolean) {
+  const previousMatchMedia = window.matchMedia
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: vi.fn(() => ({
+      matches,
+      media: '(min-width: 768px)',
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  })
+  return () => {
+    if (previousMatchMedia) {
+      Object.defineProperty(window, 'matchMedia', { configurable: true, value: previousMatchMedia })
+    } else {
+      Reflect.deleteProperty(window, 'matchMedia')
+    }
+  }
+}
+
 const windowFixture: TeamUsageSummaryResponse['window'] = {
   start_date: '2026-06-01',
   end_date: '2026-06-30',
@@ -317,7 +349,7 @@ describe('TeamOverviewView', () => {
 
     const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
-    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
 
     expect(wrapper.findAll('[data-testid^="team-overview-department-department-root-"]')).toHaveLength(25)
     expect(mockGetTeamUsageOrganization).toHaveBeenCalledTimes(1)
@@ -335,7 +367,7 @@ describe('TeamOverviewView', () => {
     await router.isReady()
     const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
-    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
 
     expect(wrapper.find('[data-testid="team-overview-department-department-alpha-team-one"]').exists()).toBe(false)
     await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')
@@ -358,7 +390,7 @@ describe('TeamOverviewView', () => {
     await router.isReady()
     const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
-    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
     await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')
     await flushPromises()
 
@@ -379,7 +411,7 @@ describe('TeamOverviewView', () => {
     await router.isReady()
     const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
-    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
     await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')
     await flushPromises()
 
@@ -407,7 +439,7 @@ describe('TeamOverviewView', () => {
     await router.isReady()
     const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
-    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
     await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="team-overview-members-more-department-alpha"]').trigger('click')
@@ -450,7 +482,7 @@ describe('TeamOverviewView', () => {
     await router.isReady()
     const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
-    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
 
     await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')
     await flushPromises()
@@ -507,7 +539,7 @@ describe('TeamOverviewView', () => {
     await router.isReady()
     const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
-    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
 
     await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')
     await flushPromises()
@@ -538,7 +570,7 @@ describe('TeamOverviewView', () => {
     await router.isReady()
     const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
-    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
     await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="team-overview-department-toggle-department-beta"]').trigger('click')
@@ -561,7 +593,7 @@ describe('TeamOverviewView', () => {
       if (rootParams == null) throw new Error('organization root request was not issued')
 
       vi.setSystemTime(new Date(2026, 6, 17, 0, 0, 1))
-      await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+      await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
       await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')
       await flushPromises()
       expect(mockGetTeamUsageOrganization.mock.calls[1][0]).toEqual(expect.objectContaining({
@@ -570,7 +602,7 @@ describe('TeamOverviewView', () => {
         parent_department_external_id: 'department-alpha',
       }))
 
-      await wrapper.get('[data-test="range-7d"]').trigger('click')
+      await selectElementRadio(wrapper, '[data-test="range-7d"]')
       await flushPromises()
       const resetCall = mockGetTeamUsageOrganization.mock.calls[2][0]
       if (resetCall == null) throw new Error('organization range reset request was not issued')
@@ -615,7 +647,7 @@ describe('TeamOverviewView', () => {
     expect(wrapper.find('[data-testid="team-overview-summary"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="team-member-trend-chart"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="team-overview-members-loading"]').exists()).toBe(true)
-    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
     expect(wrapper.find('[data-testid="team-overview-department-department-alpha"]').exists()).toBe(true)
   })
 
@@ -633,7 +665,7 @@ describe('TeamOverviewView', () => {
     expect(wrapper.find('[data-testid="team-overview-summary"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="team-member-trend-chart"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="team-overview-members-error"]').exists()).toBe(true)
-    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
     expect(wrapper.find('[data-testid="team-overview-department-department-alpha"]').exists()).toBe(true)
   })
 
@@ -650,7 +682,7 @@ describe('TeamOverviewView', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="team-overview-ranking-table"]').text()).toContain('Split Member 1')
-    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
     expect(wrapper.find('[data-testid="team-overview-organization-error-root"]').exists()).toBe(true)
   })
 
@@ -844,7 +876,7 @@ describe('TeamOverviewView', () => {
     expect(wrapper.text()).toContain('28.00 USD')
     expect(wrapper.find('[data-testid="team-overview-summary"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="team-member-trend-chart"]').exists()).toBe(true)
-    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
     expect(wrapper.find('[data-testid="team-overview-organization-error-root"]').exists()).toBe(true)
   })
 
@@ -1161,11 +1193,11 @@ describe('TeamOverviewView', () => {
     expect(wrapper.find('[data-test="range-today"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="range-7d"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="range-30d"]').exists()).toBe(true)
-    expect(wrapper.get('[data-test="range-today"]').classes()).toContain('el-button')
+    expect(wrapper.get('[data-test="range-today"]').element.closest('.el-radio-button')).not.toBeNull()
     expect(wrapper.text()).toContain('Billed usage in range')
 
     mockGetTeamUsageOrganization.mockClear()
-    await wrapper.get('[data-test="range-7d"]').trigger('click')
+    await selectElementRadio(wrapper, '[data-test="range-7d"]')
     await flushPromises()
 
     const params = mockGetTeamUsageOrganization.mock.calls[0][0] as {
@@ -1195,9 +1227,9 @@ describe('TeamOverviewView', () => {
       resolveRefresh = resolve
     }) as any)
 
-    await wrapper.get('[data-test="range-7d"]').trigger('click')
+    await selectElementRadio(wrapper, '[data-test="range-7d"]')
 
-    expect(wrapper.get('[data-test="range-7d"]').classes()).toContain('el-button--primary')
+    expect(wrapper.get('[data-test="range-7d"]').element.closest('.el-radio-button')?.classList).toContain('is-active')
     expect(wrapper.get('[data-testid="team-overview-refreshing"]').text()).toContain('Updating team usage...')
     expect(wrapper.get('[data-testid="team-overview-content"]').attributes('aria-busy')).toBe('true')
     expect(wrapper.text()).toContain('Alice')
@@ -1336,7 +1368,7 @@ describe('TeamOverviewView', () => {
     })
     await flushPromises()
 
-    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
     expect(wrapper.get('[data-testid="team-overview-organization-error-root"]').text()).toContain('Team usage is temporarily unavailable.')
     expect(wrapper.text()).not.toContain('network unavailable')
   })
@@ -1398,7 +1430,7 @@ describe('TeamOverviewView', () => {
     expect(wrapper.text()).toContain('6.05B tokens')
     const ranking = wrapper.get('[data-testid="team-overview-ranking-table"]')
     expect(ranking.text()).toContain('805.03M')
-    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
     const alpha = wrapper.get('[data-testid="team-overview-department-department-alpha"]')
     expect(alpha.text()).toContain('12.29B tokens')
     await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')
@@ -1419,13 +1451,13 @@ describe('TeamOverviewView', () => {
     })
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="team-overview-ranking-view"]').classes()).toContain('el-button')
-    expect(wrapper.get('[data-testid="team-overview-ranking-view"]').classes()).toContain('el-button--primary')
-    expect(wrapper.get('[data-testid="team-overview-organization-view"]').classes()).not.toContain('el-button--primary')
+    expect(wrapper.get('[data-testid="team-overview-ranking-view"]').element.closest('.el-radio-button')).not.toBeNull()
+    expect(wrapper.get('[data-testid="team-overview-ranking-view"]').element.closest('.el-radio-button')?.classList).toContain('is-active')
+    expect(wrapper.get('[data-testid="team-overview-organization-view"]').element.closest('.el-radio-button')?.classList).not.toContain('is-active')
     expect(wrapper.get('[data-testid="team-overview-ranking-table"]').text()).toContain('Alice')
     expect(wrapper.find('[data-testid="team-overview-department-department-alpha"]').exists()).toBe(false)
 
-    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
 
     const alpha = wrapper.get('[data-testid="team-overview-department-department-alpha"]')
     expect(alpha.attributes('role')).toBe('treeitem')
@@ -1471,6 +1503,51 @@ describe('TeamOverviewView', () => {
     expect(wrapper.find('[data-testid="team-overview-member-user-101"]').exists()).toBe(true)
   })
 
+  it('keeps the desktop member ranking within its container and scrolls wide columns inside the table', async () => {
+    const restoreMatchMedia = installMatchMedia(true)
+    try {
+      const router = createTestRouter()
+      await router.push('/usage/team')
+      await router.isReady()
+
+      const wrapper = mount(TeamOverviewView, {
+        global: { plugins: [createPinia(), router] },
+      })
+      await flushPromises()
+
+      const ranking = wrapper.get('[data-testid="team-overview-ranking-table"]')
+      const table = ranking.get('.el-table')
+      expect(table.classes()).not.toContain('min-w-[960px]')
+      expect(table.find('.el-table__body-wrapper .el-scrollbar__wrap').exists()).toBe(true)
+      expect(ranking.findAll('[data-testid^="team-overview-member-"]')).toHaveLength(3)
+    } finally {
+      restoreMatchMedia()
+    }
+  })
+
+  it('renders one stacked member-card tree on mobile without a horizontal ranking table', async () => {
+    const restoreMatchMedia = installMatchMedia(false)
+
+    try {
+      const router = createTestRouter()
+      await router.push('/usage/team')
+      await router.isReady()
+
+      const wrapper = mount(TeamOverviewView, {
+        global: { plugins: [createPinia(), router] },
+      })
+      await flushPromises()
+
+      const ranking = wrapper.get('[data-testid="team-overview-ranking-table"]')
+      expect(ranking.find('.el-table').exists()).toBe(false)
+      expect(ranking.classes()).not.toContain('overflow-x-auto')
+      expect(ranking.findAll('[data-testid^="team-overview-member-"]')).toHaveLength(3)
+      expect(ranking.get('[data-testid="team-overview-member-user-101"]').text()).toContain('Alice')
+    } finally {
+      restoreMatchMedia()
+    }
+  })
+
   it('collapses organization departments that only contain direct members', async () => {
     const directRoot = { ...rootOrganizationDepartment, child_count: 0, has_children: false, direct_member_count: 3 }
     mockGetTeamUsageOrganization.mockImplementation(async (params?: TeamUsageOrganizationParams) => ({ data: { data: params?.parent_department_external_id ? organizationPage('department-alpha', [], membersFixture.items) : organizationPage(null, [directRoot]) } } as any))
@@ -1483,7 +1560,7 @@ describe('TeamOverviewView', () => {
     })
     await flushPromises()
 
-    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
     const toggle = wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]')
     expect(toggle.attributes('aria-label')).toBe('Expand department')
     expect(wrapper.find('[data-testid="team-overview-member-user-101"]').exists()).toBe(false)
@@ -1512,7 +1589,7 @@ describe('TeamOverviewView', () => {
     })
     await flushPromises()
 
-    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
     await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')
     await flushPromises()
 

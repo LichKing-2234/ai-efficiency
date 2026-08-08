@@ -20,6 +20,7 @@ const loading = ref(false)
 const disableDialogOpen = ref(false)
 const selectedCandidate = ref<DirectoryOffboardingCandidate | null>(null)
 const disablingUserID = ref<number | null>(null)
+const disableError = ref('')
 const message = ref('')
 const error = ref('')
 
@@ -80,6 +81,7 @@ function openDisableDialog(candidate: DirectoryOffboardingCandidate) {
   if (disablingUserID.value !== null) return
   message.value = ''
   error.value = ''
+  disableError.value = ''
   selectedCandidate.value = candidate
   disableDialogOpen.value = true
 }
@@ -95,6 +97,7 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
   disablingUserID.value = candidate.user_id
   message.value = ''
   error.value = ''
+  disableError.value = ''
   try {
     await disableDirectoryRelayUser(candidate.user_id, {
       confirm_email: confirmations.value[candidate.user_id].trim(),
@@ -111,7 +114,7 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
     disableDialogOpen.value = false
     selectedCandidate.value = null
   } catch (e: any) {
-    error.value = e?.response?.data?.message || e?.message || t('directoryOffboarding.disableFailed')
+    disableError.value = e?.response?.data?.message || e?.message || t('directoryOffboarding.disableFailed')
   } finally {
     disablingUserID.value = null
   }
@@ -165,7 +168,7 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
 
       <div>
         <ElSkeleton v-if="loading" :rows="3" animated class="p-4" />
-        <ElEmpty v-else-if="!hasCandidates" :description="t('directoryOffboarding.empty')" />
+        <ElEmpty v-else-if="!error && !hasCandidates" :description="t('directoryOffboarding.empty')" />
         <div v-else class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <ElCard
             v-for="candidate in candidates"
@@ -272,6 +275,15 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
             :disabled="disablingUserID !== null"
           />
         </label>
+        <ElAlert
+          v-if="disableError"
+          data-testid="offboarding-disable-error"
+          class="mt-3"
+          type="error"
+          :closable="false"
+          show-icon
+          :title="disableError"
+        />
 
         <template #footer>
           <div class="flex justify-end gap-2">

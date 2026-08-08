@@ -125,6 +125,7 @@ describe('DirectoryOffboardingView', () => {
     })
 
     expect(wrapper.get('[data-testid="offboarding-error"]').find('.el-alert').exists()).toBe(true)
+    expect(wrapper.find('.el-empty').exists()).toBe(false)
   })
 
   it('renders an empty candidate result with Element Plus', async () => {
@@ -290,6 +291,21 @@ describe('DirectoryOffboardingView', () => {
 
     expect(api.disableDirectoryRelayUser).toHaveBeenCalledTimes(1)
     expect(confirm.classes()).toContain('is-loading')
+  })
+
+  it('keeps a failed disable result visible inside the active dialog', async () => {
+    const { wrapper } = await mountOffboarding((api) => {
+      api.disableDirectoryRelayUser.mockRejectedValue(new Error('synthetic disable failure'))
+    })
+
+    await wrapper.get('[data-testid="disable-relay-user-7"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-email-7"]').setValue('bob@example.org')
+    await wrapper.get('[data-testid="confirm-disable-relay-user-7"]').trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.get('[data-testid="offboarding-disable-dialog"]').element.closest('.el-dialog')
+    expect(dialog?.textContent).toContain('synthetic disable failure')
+    expect(dialog?.querySelector('[data-testid="offboarding-disable-error"] .el-alert--error')).not.toBeNull()
   })
 
   it('switches offboarding copy to Chinese', async () => {

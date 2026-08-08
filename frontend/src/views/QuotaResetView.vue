@@ -289,22 +289,23 @@ onMounted(() => {
       </div>
 
       <section class="space-y-3" aria-label="Quota reset queues and filters">
-        <div
+        <ElRadioGroup
           data-testid="quota-reset-queue-selector"
-          :class="['grid w-full gap-1 rounded-lg bg-slate-100 p-1 sm:w-auto', auth.isAdmin ? 'grid-cols-3' : 'grid-cols-2']"
+          :model-value="activeQueue"
+          :class="['!grid w-full gap-1 sm:!inline-flex sm:w-auto', auth.isAdmin ? 'grid-cols-3' : 'grid-cols-2']"
         >
-          <ElButton
+          <ElRadioButton
             data-testid="quota-reset-tab-mine"
-            class="!ml-0 min-h-10"
-            :type="activeQueue === 'mine' ? 'primary' : 'default'"
+            class="min-h-10 flex-1"
+            value="mine"
             @click="selectQueue('mine')"
           >
             {{ t('quotaReset.myRequests') }}
-          </ElButton>
-          <ElButton
+          </ElRadioButton>
+          <ElRadioButton
             data-testid="quota-reset-tab-approvals"
-            class="!ml-0 min-h-10"
-            :type="activeQueue === 'approvals' ? 'primary' : 'default'"
+            class="min-h-10 flex-1"
+            value="approvals"
             @click="selectQueue('approvals')"
           >
             {{ t('quotaReset.myApprovals') }}
@@ -318,12 +319,12 @@ onMounted(() => {
             >
               {{ countBadge(approvalTotal) }}
             </ElTag>
-          </ElButton>
-          <ElButton
+          </ElRadioButton>
+          <ElRadioButton
             v-if="auth.isAdmin"
             data-testid="quota-reset-tab-admin"
-            class="!ml-0 min-h-10"
-            :type="activeQueue === 'admin' ? 'primary' : 'default'"
+            class="min-h-10 flex-1"
+            value="admin"
             @click="selectQueue('admin')"
           >
             {{ t('quotaReset.adminQueue') }}
@@ -337,24 +338,26 @@ onMounted(() => {
             >
               {{ countBadge(adminTotal) }}
             </ElTag>
-          </ElButton>
-        </div>
+          </ElRadioButton>
+        </ElRadioGroup>
 
         <div class="flex flex-wrap items-center justify-between gap-3">
-          <div data-testid="quota-reset-status-filters" class="flex w-fit max-w-full flex-wrap gap-1 rounded-full bg-slate-100 p-1">
-            <ElButton
+          <ElRadioGroup
+            v-model="activeFilter"
+            data-testid="quota-reset-status-filters"
+            size="small"
+            class="max-w-full"
+          >
+            <ElRadioButton
               v-for="filter in filters"
               :key="filter"
-              size="small"
-              round
+              :value="filter"
               :data-testid="`quota-reset-filter-${filter}`"
-              class="!ml-0 text-xs"
-              :type="activeFilter === filter ? 'primary' : 'default'"
               @click="activeFilter = filter"
             >
               {{ filterLabel(filter) }}
-            </ElButton>
-          </div>
+            </ElRadioButton>
+          </ElRadioGroup>
           <ElButton
             data-testid="quota-reset-refresh"
             :loading="currentQueue.status === 'loading'"
@@ -369,6 +372,7 @@ onMounted(() => {
       <ElAlert v-if="currentQueue.error" type="error" :closable="false" :title="currentQueue.error" />
 
       <QuotaResetRequestList
+        v-if="!currentQueue.error"
         :items="visibleItems"
         :loading="currentQueue.status === 'loading' || currentQueue.actionBusy"
         :mode="activeQueue"

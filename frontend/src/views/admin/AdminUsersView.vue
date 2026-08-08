@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
+import type { Directive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import AdminDepartmentPicker from '@/components/admin/AdminDepartmentPicker.vue'
+import { useMediaQuery } from '@/composables/useMediaQuery'
 import DepartmentTreeToggle from '@/components/DepartmentTreeToggle.vue'
 import {
   disableAdminUserAccess,
@@ -40,6 +42,19 @@ type VisibleDepartmentRow = {
   depth: number
 }
 
+function markAdminUserRow(element: HTMLElement) {
+  element.closest('tr')?.setAttribute('data-admin-user-row', '')
+}
+
+const vAdminUserRow: Directive<HTMLElement> = {
+  mounted: markAdminUserRow,
+  updated: markAdminUserRow,
+}
+
+function tableAdminUser(row: unknown) {
+  return row as AdminUser
+}
+
 const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
@@ -48,7 +63,7 @@ const loading = ref(false)
 const error = ref('')
 const rows = ref<AdminUser[]>([])
 const total = ref(0)
-const desktopUserRows = ref(false)
+const desktopUserRows = useMediaQuery('(min-width: 768px)')
 const rootDepartments = ref<LoadedDepartmentChildren | null>(null)
 const childrenByParentID = ref<Map<string, LoadedDepartmentChildren>>(new Map())
 const departmentsLoading = ref(false)
@@ -118,7 +133,6 @@ let subscriptionJobPollTimer: number | undefined
 let userRequestGeneration = 0
 let rootDepartmentRequestGeneration = 0
 let childDepartmentRequestGeneration = 0
-let desktopUserRowsMediaQuery: MediaQueryList | null = null
 
 const filters = reactive({
   view: queryString('view') === 'departments' ? 'departments' : 'users',
@@ -171,10 +185,6 @@ const canSubmitSubscriptionManagement = computed(() => {
   if (subscriptionForm.operation === 'reset_quota' && !subscriptionForm.confirmResetQuota) return false
   return true
 })
-
-function handleDesktopUserRowsChange(event: MediaQueryListEvent) {
-  desktopUserRows.value = event.matches
-}
 
 async function loadUsers() {
   const generation = ++userRequestGeneration
@@ -384,6 +394,10 @@ async function setAdminUsersView(view: 'users' | 'departments') {
   if (view === 'departments' && rootDepartments.value === null && !departmentsLoading.value) {
     await loadRootDepartments(1)
   }
+}
+
+function handleAdminUsersViewChange(view: string | number | boolean | undefined) {
+  if (view === 'users' || view === 'departments') void setAdminUsersView(view)
 }
 
 async function refreshActiveView() {
@@ -914,9 +928,6 @@ watch(
 )
 
 onMounted(() => {
-  desktopUserRowsMediaQuery = window.matchMedia('(min-width: 768px)')
-  desktopUserRows.value = desktopUserRowsMediaQuery.matches
-  desktopUserRowsMediaQuery.addEventListener('change', handleDesktopUserRowsChange)
   void loadUsers()
   if (filters.view === 'departments') void loadRootDepartments(1)
   void loadSubscriptionOptions()
@@ -926,8 +937,6 @@ onBeforeUnmount(() => {
   userRequestGeneration += 1
   rootDepartmentRequestGeneration += 1
   childDepartmentRequestGeneration += 1
-  desktopUserRowsMediaQuery?.removeEventListener('change', handleDesktopUserRowsChange)
-  desktopUserRowsMediaQuery = null
   clearSearchTimer()
   stopSubscriptionJobPolling()
 })
@@ -951,22 +960,20 @@ onBeforeUnmount(() => {
         </ElButton>
       </div>
 
-      <ElButtonGroup>
-        <ElButton
+      <ElRadioGroup :model-value="filters.view" @change="handleAdminUsersViewChange">
+        <ElRadioButton
           data-testid="admin-users-view-users"
-          :type="filters.view === 'users' ? 'primary' : undefined"
-          @click="setAdminUsersView('users')"
+          value="users"
         >
           {{ t('adminUsers.userView') }}
-        </ElButton>
-        <ElButton
+        </ElRadioButton>
+        <ElRadioButton
           data-testid="admin-users-view-departments"
-          :type="filters.view === 'departments' ? 'primary' : undefined"
-          @click="setAdminUsersView('departments')"
+          value="departments"
         >
           {{ t('adminUsers.departmentView') }}
-        </ElButton>
-      </ElButtonGroup>
+        </ElRadioButton>
+      </ElRadioGroup>
 
       <div v-if="filters.view === 'users'" class="rounded-lg bg-white p-4 shadow">
         <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_180px_120px_auto]">
@@ -1381,91 +1388,92 @@ onBeforeUnmount(() => {
         </div>
 
 	        <div v-if="showDesktopUserRows" data-admin-user-list="desktop" class="mt-3 hidden overflow-x-auto md:block">
-          <table class="min-w-[1080px] divide-y divide-gray-100 text-sm">
-            <thead>
-              <tr class="text-xs uppercase text-gray-400">
-                <th class="w-10 px-3 py-2 text-left font-medium">
-                  <ElCheckbox
-                    data-testid="select-all-users"
-                    :model-value="allVisibleSelected"
-                    :indeterminate="visibleSelectionIndeterminate"
-                    :disabled="subscriptionForm.loading"
-                    @change="setAllVisibleSelected(Boolean($event))"
-                  />
-                </th>
-                <th class="px-3 py-2 text-left font-medium">{{ t('adminUsers.user') }}</th>
-                <th class="px-3 py-2 text-left font-medium">{{ t('adminUsers.role') }}</th>
-                <th class="px-3 py-2 text-left font-medium">{{ t('adminUsers.authSource') }}</th>
-                <th class="px-3 py-2 text-left font-medium">{{ t('adminUsers.department') }}</th>
-                <th class="px-3 py-2 text-left font-medium">{{ t('adminUsers.relayMapping') }}</th>
-                <th class="px-3 py-2 text-left font-medium">{{ t('adminUsers.accessStatus') }}</th>
-                <th class="px-3 py-2 text-left font-medium">{{ t('adminUsers.created') }}</th>
-                <th class="px-3 py-2 text-left font-medium">{{ t('adminUsers.updated') }}</th>
-                <th class="px-3 py-2 text-left font-medium">{{ t('adminUsers.actions') }}</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-50">
-	              <tr v-for="row in rows" :key="row.id" data-admin-user-row>
-                <td class="px-3 py-2 align-top">
+          <ElTable :data="rows" row-key="id" class="min-w-[1080px]">
+            <ElTableColumn width="56" align="center">
+              <template #header>
+                <ElCheckbox
+                  data-testid="select-all-users"
+                  :model-value="allVisibleSelected"
+                  :indeterminate="visibleSelectionIndeterminate"
+                  :disabled="subscriptionForm.loading"
+                  @change="setAllVisibleSelected(Boolean($event))"
+                />
+              </template>
+              <template #default="{ row }">
+                <span v-admin-user-row>
                   <ElCheckbox
                     :data-testid="`select-user-${row.id}`"
                     :model-value="selectedUserIds.has(row.id)"
                     :disabled="subscriptionForm.loading"
                     @change="setUserSelected(row.id, Boolean($event))"
                   />
-                </td>
-                <td class="px-3 py-2">
-                  <div class="font-medium text-gray-900">{{ row.username }}</div>
-                  <div class="text-xs text-gray-500">{{ row.email }}</div>
-                  <div class="mt-1 font-mono text-[11px] text-gray-400">{{ t('adminUsers.localId') }} #{{ row.id }}</div>
-                </td>
-                <td class="px-3 py-2 text-gray-700">{{ row.role }}</td>
-                <td class="px-3 py-2 text-gray-700">{{ row.auth_source }}</td>
-                <td class="px-3 py-2 text-gray-700">{{ departmentLabel(row) }}</td>
-                <td class="px-3 py-2 text-gray-700">{{ relayMappingLabel(row) }}</td>
-                <td class="px-3 py-2">
-                  <ElTag :type="accessStatusTagType(row)" effect="light">
-                    {{ accessStatusLabel(row) }}
-                  </ElTag>
-                </td>
-                <td class="whitespace-nowrap px-3 py-2 text-gray-600">{{ formatDate(row.created_at) }}</td>
-                <td class="whitespace-nowrap px-3 py-2 text-gray-600">{{ formatDate(row.updated_at) }}</td>
-                <td class="whitespace-nowrap px-3 py-2">
-                  <div class="flex flex-col gap-1">
-                    <ElButton
-                      :data-testid="`copy-encrypted-${row.id}`"
-                      class="!ml-0"
-                      :disabled="!row.relay_auth_password"
-                      @click="copyEncrypted(row)"
-                    >
-                      {{ t('adminUsers.copyEncrypted') }}
-                    </ElButton>
-                    <ElButton
-                      :data-testid="`copy-plaintext-${row.id}`"
-                      class="!ml-0"
-                      :disabled="!row.relay_auth_password"
-                      @click="requestPlaintextCopy(row)"
-                    >
-                      {{ t('adminUsers.copyPlaintext') }}
-                    </ElButton>
-                    <ElButton
-                      v-if="canDisableAccess(row)"
-                      :data-testid="`disable-access-${row.id}`"
-                      type="danger"
-                      plain
-                      class="!ml-0"
-                      :disabled="isDisablingAccess(row)"
-                      @click="requestDisableAccess(row)"
-                    >
-                      {{ t('adminUsers.disableUser') }}
-                    </ElButton>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                </span>
+              </template>
+            </ElTableColumn>
+            <ElTableColumn :label="t('adminUsers.user')" min-width="180">
+              <template #default="{ row }">
+                <div class="font-medium text-gray-900">{{ row.username }}</div>
+                <div class="text-xs text-gray-500">{{ row.email }}</div>
+                <div class="mt-1 font-mono text-[11px] text-gray-400">{{ t('adminUsers.localId') }} #{{ row.id }}</div>
+              </template>
+            </ElTableColumn>
+            <ElTableColumn prop="role" :label="t('adminUsers.role')" min-width="100" />
+            <ElTableColumn prop="auth_source" :label="t('adminUsers.authSource')" min-width="120" />
+            <ElTableColumn :label="t('adminUsers.department')" min-width="180">
+              <template #default="{ row }">{{ departmentLabel(tableAdminUser(row)) }}</template>
+            </ElTableColumn>
+            <ElTableColumn :label="t('adminUsers.relayMapping')" min-width="140">
+              <template #default="{ row }">{{ relayMappingLabel(tableAdminUser(row)) }}</template>
+            </ElTableColumn>
+            <ElTableColumn :label="t('adminUsers.accessStatus')" min-width="140">
+              <template #default="{ row }">
+                <ElTag :type="accessStatusTagType(tableAdminUser(row))" effect="light">
+                  {{ accessStatusLabel(tableAdminUser(row)) }}
+                </ElTag>
+              </template>
+            </ElTableColumn>
+            <ElTableColumn :label="t('adminUsers.created')" min-width="170">
+              <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
+            </ElTableColumn>
+            <ElTableColumn :label="t('adminUsers.updated')" min-width="170">
+              <template #default="{ row }">{{ formatDate(row.updated_at) }}</template>
+            </ElTableColumn>
+            <ElTableColumn :label="t('adminUsers.actions')" min-width="180">
+              <template #default="{ row }">
+                <div class="flex flex-col gap-1">
+                  <ElButton
+                    :data-testid="`copy-encrypted-${row.id}`"
+                    class="!ml-0"
+                    :disabled="!row.relay_auth_password"
+                    @click="copyEncrypted(tableAdminUser(row))"
+                  >
+                    {{ t('adminUsers.copyEncrypted') }}
+                  </ElButton>
+                  <ElButton
+                    :data-testid="`copy-plaintext-${row.id}`"
+                    class="!ml-0"
+                    :disabled="!row.relay_auth_password"
+                    @click="requestPlaintextCopy(tableAdminUser(row))"
+                  >
+                    {{ t('adminUsers.copyPlaintext') }}
+                  </ElButton>
+                  <ElButton
+                    v-if="canDisableAccess(tableAdminUser(row))"
+                    :data-testid="`disable-access-${row.id}`"
+                    type="danger"
+                    plain
+                    class="!ml-0"
+                    :disabled="isDisablingAccess(tableAdminUser(row))"
+                    @click="requestDisableAccess(tableAdminUser(row))"
+                  >
+                    {{ t('adminUsers.disableUser') }}
+                  </ElButton>
+                </div>
+              </template>
+            </ElTableColumn>
+          </ElTable>
         </div>
-	        <ElEmpty v-if="rows.length === 0" class="mt-3" :description="t('adminUsers.empty')" />
+	        <ElEmpty v-if="!error && rows.length === 0" class="mt-3" :description="t('adminUsers.empty')" />
       </div>
     </div>
 

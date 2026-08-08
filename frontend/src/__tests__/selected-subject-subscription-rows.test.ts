@@ -56,9 +56,61 @@ async function mountRows(options: Parameters<typeof mount>[1]) {
   return wrapper
 }
 
+function installMatchMedia(initialMatches: boolean) {
+  const listeners = new Set<(event: { matches: boolean; media: string }) => void>()
+  const mediaQuery = {
+    matches: initialMatches,
+    media: '(min-width: 768px)',
+    onchange: null,
+    addEventListener: vi.fn((type: string, listener: (event: { matches: boolean; media: string }) => void) => {
+      if (type === 'change') listeners.add(listener)
+    }),
+    removeEventListener: vi.fn((type: string, listener: (event: { matches: boolean; media: string }) => void) => {
+      if (type === 'change') listeners.delete(listener)
+    }),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(() => true),
+  }
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: vi.fn(() => mediaQuery),
+  })
+  return {
+    change(matches: boolean) {
+      mediaQuery.matches = matches
+      for (const listener of listeners) listener({ matches, media: mediaQuery.media })
+    },
+  }
+}
+
+let matchMediaController: ReturnType<typeof installMatchMedia>
+
 describe('SelectedSubjectSubscriptionRows', () => {
   beforeEach(() => {
     setLocale('en-US')
+    matchMediaController = installMatchMedia(true)
+  })
+
+  it('mounts one table-or-card subscription representation for the active breakpoint', async () => {
+    const wrapper = await mountRows({
+      props: {
+        subjectUserId: 101,
+        rows: [editableRow, zeroMultiplierRow],
+      },
+    })
+
+    expect(wrapper.find('[data-subscription-list="desktop"]').exists()).toBe(true)
+    expect(wrapper.find('[data-subscription-list="mobile"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-subscription-row]')).toHaveLength(2)
+
+    matchMediaController.change(false)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-subscription-list="desktop"]').exists()).toBe(false)
+    expect(wrapper.find('[data-subscription-list="mobile"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-subscription-row]')).toHaveLength(2)
+    expect(wrapper.find('[data-subscription-list="mobile"]').classes()).not.toContain('overflow-x-auto')
   })
 
   it('keeps Used / Quota in enforcement units when draft multiplier changes', async () => {
