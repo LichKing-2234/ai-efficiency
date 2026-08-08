@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import AdminDepartmentPicker from '@/components/admin/AdminDepartmentPicker.vue'
 import DepartmentTreeToggle from '@/components/DepartmentTreeToggle.vue'
-import { useModalFocus } from '@/composables/useModalFocus'
 import {
   disableAdminUserAccess,
   getAdminUserSubscriptionJob,
@@ -15,7 +14,6 @@ import {
   revealAdminUserRelayPassword,
   startAdminUserSubscriptionJob,
 } from '@/api/adminUsers'
-import { useToast } from '@/composables/useToast'
 import { useI18n } from '@/i18n'
 import type {
   AdminAssignableSubscriptionProvider,
@@ -43,7 +41,6 @@ type VisibleDepartmentRow = {
 }
 
 const { t, locale } = useI18n()
-const { showToast, dismissToast } = useToast()
 const route = useRoute()
 const router = useRouter()
 const departmentFilterLabelID = useId()
@@ -91,10 +88,7 @@ const disableAccessDialog = reactive<{
   messageType: '',
 })
 const selectedUserIds = ref<Set<number>>(new Set())
-const plaintextDialogPanel = ref<HTMLElement | null>(null)
-const disableAccessDialogPanel = ref<HTMLElement | null>(null)
-const disableAccessConfirmInput = ref<HTMLElement | null>(null)
-const selectAllUsersCheckbox = ref<HTMLInputElement | null>(null)
+const disableAccessConfirmInput = ref<{ input?: HTMLInputElement } | null>(null)
 const subscriptionJob = ref<AdminSubscriptionJob | null>(null)
 const subscriptionForm = reactive<{
   scope: AdminSubscriptionManageScope
@@ -147,21 +141,14 @@ const allVisibleSelected = computed(() => rows.value.length > 0 && rows.value.ev
 const visibleSelectionIndeterminate = computed(() => rows.value.some((row) => selectedUserIds.value.has(row.id)) && !allVisibleSelected.value)
 const bulkGroups = computed(() => subscriptionProviders.value.find((provider) => provider.id === subscriptionForm.provider_id)?.groups ?? [])
 const bulkUsesDays = computed(() => subscriptionForm.operation === 'add' || subscriptionForm.operation === 'extend')
+const bulkRequiresRemoveConfirmation = computed(() => subscriptionForm.operation === 'remove')
+const bulkRequiresResetConfirmation = computed(() => subscriptionForm.operation === 'reset_quota')
 const subscriptionResults = computed(() => subscriptionJob.value?.results ?? subscriptionForm.results)
 const disableAccessConfirmMatches = computed(() => {
   if (!disableAccessDialog.user) return false
   return disableAccessDialog.confirmEmail.trim().toLowerCase() === disableAccessDialog.user.email.trim().toLowerCase()
 })
 const disableAccessCompleted = computed(() => disableAccessDialog.messageType === 'success')
-const plaintextDialogOpen = computed(() => plaintextDialog.open)
-const disableAccessDialogOpen = computed(() => disableAccessDialog.open)
-const { handleKeydown: handlePlaintextDialogKeydown } = useModalFocus(plaintextDialogOpen, plaintextDialogPanel, {
-  onClose: closePlaintextDialog,
-})
-const { handleKeydown: handleDisableAccessDialogKeydown } = useModalFocus(disableAccessDialogOpen, disableAccessDialogPanel, {
-  initialFocus: disableAccessConfirmInput,
-  onClose: closeDisableAccessDialog,
-})
 const visibleDepartmentRows = computed<VisibleDepartmentRow[]>(() => flattenLoadedDepartmentRows(
   rootDepartments.value?.items ?? [],
   childrenByParentID.value,
@@ -463,11 +450,11 @@ function accessStatusText(status: AdminUserAccessStatus | '') {
   return t('adminUsers.allAccessStatuses')
 }
 
-function accessStatusClass(user: AdminUser) {
+function accessStatusTagType(user: AdminUser): 'danger' | 'success' | 'warning' {
   const status = adminUserAccessStatus(user)
-  if (status === 'disabled') return 'bg-red-100 text-red-800'
-  if (status === 'configured') return 'bg-emerald-100 text-emerald-800'
-  return 'bg-amber-100 text-amber-800'
+  if (status === 'disabled') return 'danger'
+  if (status === 'configured') return 'success'
+  return 'warning'
 }
 
 function canDisableAccess(user: AdminUser) {
@@ -746,12 +733,6 @@ function setAllVisibleSelected(checked: boolean) {
   clearSubscriptionFeedback()
 }
 
-function syncVisibleSelectionIndeterminate() {
-  if (selectAllUsersCheckbox.value) {
-    selectAllUsersCheckbox.value.indeterminate = visibleSelectionIndeterminate.value
-  }
-}
-
 function scopeSummaryLabel() {
   if (subscriptionForm.scope === 'selected') {
     return t('adminUsers.selectedUsersCount', { count: selectedCount.value })
@@ -814,19 +795,19 @@ async function submitSubscriptionManagement() {
 
 async function copyEncrypted(user: AdminUser) {
   if (!user.relay_auth_password) {
-    showToast({ message: t('adminUsers.noEncryptedPassword'), tone: 'error' })
+    ElMessage.error(t('adminUsers.noEncryptedPassword'))
     return
   }
   try {
     await navigator.clipboard.writeText(user.relay_auth_password)
-    showToast({ message: t('adminUsers.copiedEncrypted'), tone: 'success' })
+    ElMessage.success(t('adminUsers.copiedEncrypted'))
   } catch (err: any) {
-    showToast({ message: err.message || t('adminUsers.copyFailed'), tone: 'error' })
+    ElMessage.error(err.message || t('adminUsers.copyFailed'))
   }
 }
 
 function requestPlaintextCopy(user: AdminUser) {
-  dismissToast()
+  ElMessage.closeAll()
   plaintextDialog.open = true
   plaintextDialog.user = user
   plaintextDialog.loading = false
@@ -835,13 +816,14 @@ function requestPlaintextCopy(user: AdminUser) {
 }
 
 function requestDisableAccess(user: AdminUser) {
-  dismissToast()
+  ElMessage.closeAll()
   disableAccessDialog.open = true
   disableAccessDialog.user = user
   disableAccessDialog.confirmEmail = ''
   disableAccessDialog.loading = false
   disableAccessDialog.message = ''
   disableAccessDialog.messageType = ''
+  void focusDisableAccessConfirmation()
 }
 
 function closePlaintextDialog() {
@@ -859,6 +841,13 @@ function closeDisableAccessDialog() {
   disableAccessDialog.confirmEmail = ''
   disableAccessDialog.message = ''
   disableAccessDialog.messageType = ''
+}
+
+async function focusDisableAccessConfirmation() {
+  await nextTick()
+  await nextTick()
+  await nextTick()
+  disableAccessConfirmInput.value?.input?.focus()
 }
 
 async function confirmCopyPlaintext() {
@@ -924,12 +913,6 @@ watch(
 	}
 )
 
-watch(
-  [visibleSelectionIndeterminate, allVisibleSelected, desktopUserRows, () => filters.view, selectAllUsersCheckbox],
-  syncVisibleSelectionIndeterminate,
-  { flush: 'post' },
-)
-
 onMounted(() => {
   desktopUserRowsMediaQuery = window.matchMedia('(min-width: 768px)')
   desktopUserRows.value = desktopUserRowsMediaQuery.matches
@@ -938,7 +921,6 @@ onMounted(() => {
   if (filters.view === 'departments') void loadRootDepartments(1)
   void loadSubscriptionOptions()
   void recoverLatestSubscriptionJob()
-  syncVisibleSelectionIndeterminate()
 })
 onBeforeUnmount(() => {
   userRequestGeneration += 1
@@ -959,45 +941,41 @@ onBeforeUnmount(() => {
           <h1 class="text-2xl font-bold text-gray-900">{{ t('nav.userManagement') }}</h1>
           <p class="mt-1 text-sm text-gray-500">{{ t('adminUsers.subtitle') }}</p>
         </div>
-        <button
+        <ElButton
           data-testid="admin-users-refresh"
-          class="shrink-0 self-start whitespace-nowrap rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:self-auto"
+          class="shrink-0 self-start whitespace-nowrap sm:self-auto"
           :disabled="activeViewLoading"
           @click="refreshActiveView"
         >
           {{ activeViewLoading ? t('adminUsers.loading') : t('adminUsers.refresh') }}
-        </button>
+        </ElButton>
       </div>
 
-      <div class="inline-flex rounded-md border border-gray-200 bg-white p-1 shadow-sm">
-        <button
+      <ElButtonGroup>
+        <ElButton
           data-testid="admin-users-view-users"
-          type="button"
-          class="rounded px-3 py-1.5 text-sm font-medium"
-          :class="filters.view === 'users' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'"
+          :type="filters.view === 'users' ? 'primary' : undefined"
           @click="setAdminUsersView('users')"
         >
           {{ t('adminUsers.userView') }}
-        </button>
-        <button
+        </ElButton>
+        <ElButton
           data-testid="admin-users-view-departments"
-          type="button"
-          class="rounded px-3 py-1.5 text-sm font-medium"
-          :class="filters.view === 'departments' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'"
+          :type="filters.view === 'departments' ? 'primary' : undefined"
           @click="setAdminUsersView('departments')"
         >
           {{ t('adminUsers.departmentView') }}
-        </button>
-      </div>
+        </ElButton>
+      </ElButtonGroup>
 
       <div v-if="filters.view === 'users'" class="rounded-lg bg-white p-4 shadow">
-        <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_180px_120px_auto]">
+        <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_180px_120px_auto]">
           <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ t('adminUsers.search') }}
-            <input
+            <ElInput
               v-model="filters.q"
               data-testid="admin-users-search"
-              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
+              class="mt-1 w-full"
               :placeholder="t('adminUsers.searchPlaceholder')"
               @keyup.enter="applySearch"
             />
@@ -1012,44 +990,46 @@ onBeforeUnmount(() => {
 	          </div>
           <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ t('adminUsers.accessStatus') }}
-            <select
+            <ElSelect
               v-model="filters.access_status"
               data-testid="admin-users-access-status-filter"
-              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
+              class="mt-1 w-full"
+              :teleported="false"
               @change="changeAccessStatusFilter"
             >
-              <option value="">{{ t('adminUsers.allAccessStatuses') }}</option>
-              <option value="configured">{{ t('adminUsers.configured') }}</option>
-              <option value="disabled">{{ t('adminUsers.disabled') }}</option>
-              <option value="missing_credential">{{ t('adminUsers.missingRelayCredential') }}</option>
-            </select>
+              <ElOption data-testid="admin-users-access-status-option-all" value="" :label="t('adminUsers.allAccessStatuses')" />
+              <ElOption data-testid="admin-users-access-status-option-configured" value="configured" :label="t('adminUsers.configured')" />
+              <ElOption data-testid="admin-users-access-status-option-disabled" value="disabled" :label="t('adminUsers.disabled')" />
+              <ElOption data-testid="admin-users-access-status-option-missing-credential" value="missing_credential" :label="t('adminUsers.missingRelayCredential')" />
+            </ElSelect>
           </label>
           <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ t('adminUsers.pageSize') }}
-            <select
-              v-model.number="filters.page_size"
+            <ElSelect
+              v-model="filters.page_size"
               data-testid="admin-users-page-size"
-              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
+              class="mt-1 w-full"
+              :teleported="false"
               @change="changePageSize"
             >
-              <option :value="10">10</option>
-              <option :value="20">20</option>
-              <option :value="50">50</option>
-              <option :value="100">100</option>
-            </select>
+              <ElOption data-testid="admin-users-page-size-option-10" :value="10" label="10" />
+              <ElOption data-testid="admin-users-page-size-option-20" :value="20" label="20" />
+              <ElOption data-testid="admin-users-page-size-option-50" :value="50" label="50" />
+              <ElOption data-testid="admin-users-page-size-option-100" :value="100" label="100" />
+            </ElSelect>
           </label>
           <div class="flex items-end">
-            <button
+            <ElButton
               data-testid="admin-users-search-button"
-              class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+              type="primary"
               :disabled="loading"
               @click="applySearch"
             >
               {{ t('adminUsers.search') }}
-            </button>
+            </ElButton>
           </div>
         </div>
-        <p v-if="error" class="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</p>
+        <ElAlert v-if="error" class="mt-3" type="error" :closable="false" show-icon :title="error" />
 	      </div>
 
       <div v-if="filters.view === 'users'" class="rounded-lg bg-white p-4 shadow">
@@ -1058,123 +1038,132 @@ onBeforeUnmount(() => {
             <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('adminUsers.subscriptionManagement') }}</h2>
             <p class="mt-1 text-sm text-gray-500">{{ scopeSummaryLabel() }}</p>
           </div>
-          <button
+          <ElButton
             data-testid="manage-subscriptions-submit"
-            class="shrink-0 rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
+            type="primary"
+            class="shrink-0"
             :disabled="!canSubmitSubscriptionManagement"
             @click="submitSubscriptionManagement"
           >
             {{ subscriptionForm.loading ? t('adminUsers.working') : t('adminUsers.applySubscriptionChange') }}
-          </button>
+          </ElButton>
         </div>
 
-        <p v-if="subscriptionOptionsError" class="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">{{ subscriptionOptionsError }}</p>
+        <ElAlert v-if="subscriptionOptionsError" class="mt-3" type="error" :closable="false" show-icon :title="subscriptionOptionsError" />
 
         <div class="mt-4 grid gap-3 lg:grid-cols-[150px_150px_minmax(0,1fr)_minmax(0,1fr)_130px]">
           <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ t('adminUsers.subscriptionScope') }}
-            <select
+            <ElSelect
               data-testid="subscription-scope"
-              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
-              :value="subscriptionForm.scope"
+              class="mt-1 w-full"
+              :model-value="subscriptionForm.scope"
+              :teleported="false"
               :disabled="subscriptionForm.loading"
-              @change="setSubscriptionScope(($event.target as HTMLSelectElement).value)"
+              @change="setSubscriptionScope(String($event))"
             >
-              <option value="selected">{{ t('adminUsers.scopeSelected') }}</option>
-              <option value="current_filter">{{ t('adminUsers.scopeCurrentFilter') }}</option>
-              <option value="all_mapped">{{ t('adminUsers.scopeAllMapped') }}</option>
-            </select>
+              <ElOption data-testid="subscription-scope-option-selected" value="selected" :label="t('adminUsers.scopeSelected')" />
+              <ElOption data-testid="subscription-scope-option-current-filter" value="current_filter" :label="t('adminUsers.scopeCurrentFilter')" />
+              <ElOption data-testid="subscription-scope-option-all-mapped" value="all_mapped" :label="t('adminUsers.scopeAllMapped')" />
+            </ElSelect>
           </label>
 
           <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ t('adminUsers.subscriptionOperation') }}
-            <select
+            <ElSelect
               data-testid="subscription-operation"
-              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
-              :value="subscriptionForm.operation"
+              class="mt-1 w-full"
+              :model-value="subscriptionForm.operation"
+              :teleported="false"
               :disabled="subscriptionForm.loading"
-              @change="setSubscriptionOperation(($event.target as HTMLSelectElement).value)"
+              @change="setSubscriptionOperation(String($event))"
             >
-              <option value="add">{{ t('adminUsers.operationAdd') }}</option>
-              <option value="extend">{{ t('adminUsers.operationExtend') }}</option>
-              <option value="remove">{{ t('adminUsers.operationRemove') }}</option>
-              <option value="reset_quota">{{ t('adminUsers.operationResetQuota') }}</option>
-            </select>
+              <ElOption data-testid="subscription-operation-option-add" value="add" :label="t('adminUsers.operationAdd')" />
+              <ElOption data-testid="subscription-operation-option-extend" value="extend" :label="t('adminUsers.operationExtend')" />
+              <ElOption data-testid="subscription-operation-option-remove" value="remove" :label="t('adminUsers.operationRemove')" />
+              <ElOption data-testid="subscription-operation-option-reset-quota" value="reset_quota" :label="t('adminUsers.operationResetQuota')" />
+            </ElSelect>
           </label>
 
           <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ t('adminUsers.selectProvider') }}
-            <select
+            <ElSelect
               data-testid="subscription-provider"
-              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
-              :value="subscriptionForm.provider_id ?? ''"
+              class="mt-1 w-full"
+              :model-value="subscriptionForm.provider_id ?? ''"
+              :teleported="false"
               :disabled="subscriptionOptionsLoading || subscriptionForm.loading"
-              @change="setBulkProvider(($event.target as HTMLSelectElement).value)"
+              @change="setBulkProvider(String($event))"
             >
-              <option value="">{{ t('adminUsers.selectProvider') }}</option>
-              <option v-for="provider in subscriptionProviders" :key="provider.id" :value="provider.id">
-                {{ provider.display_name }}
-              </option>
-            </select>
+              <ElOption data-testid="subscription-provider-option-empty" value="" :label="t('adminUsers.selectProvider')" />
+              <ElOption
+                v-for="provider in subscriptionProviders"
+                :key="provider.id"
+                :data-testid="`subscription-provider-option-${provider.id}`"
+                :value="provider.id"
+                :label="provider.display_name"
+              />
+            </ElSelect>
           </label>
 
           <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ t('adminUsers.selectGroup') }}
-            <select
+            <ElSelect
               data-testid="subscription-group"
-              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
-              :value="subscriptionForm.group_id"
+              class="mt-1 w-full"
+              :model-value="subscriptionForm.group_id"
+              :teleported="false"
               :disabled="subscriptionOptionsLoading || subscriptionForm.loading || bulkGroups.length === 0"
-              @change="setBulkGroup(($event.target as HTMLSelectElement).value)"
+              @change="setBulkGroup(String($event))"
             >
-              <option value="">{{ t('adminUsers.selectGroup') }}</option>
-              <option v-for="group in bulkGroups" :key="group.group_id" :value="group.group_id">
-                {{ group.group_name }} · {{ group.platform }}
-              </option>
-            </select>
+              <ElOption data-testid="subscription-group-option-empty" value="" :label="t('adminUsers.selectGroup')" />
+              <ElOption
+                v-for="group in bulkGroups"
+                :key="group.group_id"
+                :data-testid="`subscription-group-option-${group.group_id}`"
+                :value="group.group_id"
+                :label="`${group.group_name} · ${group.platform}`"
+              />
+            </ElSelect>
           </label>
 
           <label v-if="bulkUsesDays" class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ operationDaysLabel() }}
-            <input
+            <ElInput
               data-testid="subscription-days"
-              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
+              class="mt-1 w-full"
               type="number"
               min="1"
-              :value="subscriptionForm.days"
+              :model-value="String(subscriptionForm.days)"
               :disabled="subscriptionForm.loading"
-              @input="setBulkDays(($event.target as HTMLInputElement).value)"
+              @input="setBulkDays(String($event))"
             />
           </label>
         </div>
 
-        <label v-if="subscriptionForm.operation === 'remove'" class="mt-3 flex items-start gap-2 text-sm text-amber-900">
-          <input
-            data-testid="confirm-remove-subscription"
-            class="mt-1 h-4 w-4 rounded border-gray-300"
-            type="checkbox"
-            :checked="subscriptionForm.confirmRemove"
-            :disabled="subscriptionForm.loading"
-            @change="subscriptionForm.confirmRemove = ($event.target as HTMLInputElement).checked"
-          />
-          <span>{{ t('adminUsers.confirmRemoveSubscription') }}</span>
-        </label>
+        <ElCheckbox
+          v-if="bulkRequiresRemoveConfirmation"
+          data-testid="confirm-remove-subscription"
+          class="mt-3"
+          :model-value="subscriptionForm.confirmRemove"
+          :disabled="subscriptionForm.loading"
+          @change="subscriptionForm.confirmRemove = Boolean($event)"
+        >
+          {{ t('adminUsers.confirmRemoveSubscription') }}
+        </ElCheckbox>
 
-        <label v-if="subscriptionForm.operation === 'reset_quota'" class="mt-3 flex items-start gap-2 text-sm text-amber-900">
-          <input
-            data-testid="confirm-reset-subscription-quota"
-            class="mt-1 h-4 w-4 rounded border-gray-300"
-            type="checkbox"
-            :checked="subscriptionForm.confirmResetQuota"
-            :disabled="subscriptionForm.loading"
-            @change="subscriptionForm.confirmResetQuota = ($event.target as HTMLInputElement).checked"
-          />
-          <span>{{ t('adminUsers.confirmResetSubscriptionQuota') }}</span>
-        </label>
+        <ElCheckbox
+          v-if="bulkRequiresResetConfirmation"
+          data-testid="confirm-reset-subscription-quota"
+          class="mt-3"
+          :model-value="subscriptionForm.confirmResetQuota"
+          :disabled="subscriptionForm.loading"
+          @change="subscriptionForm.confirmResetQuota = Boolean($event)"
+        >
+          {{ t('adminUsers.confirmResetSubscriptionQuota') }}
+        </ElCheckbox>
 
-        <p v-if="subscriptionForm.message" class="mt-3 rounded-md bg-gray-50 p-3 text-sm text-gray-700" aria-live="polite">
-          {{ subscriptionForm.message }}
-        </p>
+        <ElAlert v-if="subscriptionForm.message" class="mt-3" type="info" :closable="false" :title="subscriptionForm.message" />
         <div v-if="subscriptionJob" class="mt-3 flex flex-wrap gap-3 text-xs text-gray-500">
           <span>{{ subscriptionJob.processed_count }} / {{ subscriptionJob.total_count }}</span>
           <span>{{ t('adminUsers.subscriptionSuccessCount', { count: subscriptionJob.success_count }) }}</span>
@@ -1198,28 +1187,24 @@ onBeforeUnmount(() => {
           <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('adminUsers.departments') }}</h2>
 	        <div class="flex items-center gap-2 text-xs text-gray-500">
 	          <span>{{ rootDepartments?.total ?? 0 }} {{ t('adminUsers.totalSuffix') }}</span>
-	          <button
-	            type="button"
+	          <ElButton
 	            data-testid="admin-users-department-roots-prev"
-	            class="rounded border border-gray-200 px-2 py-1 disabled:opacity-40"
 	            :disabled="departmentsLoading || !canGoPreviousRootDepartmentPage"
 	            @click="previousRootDepartmentPage"
 	          >
 	            {{ t('adminUsers.prev') }}
-	          </button>
+	          </ElButton>
 	          <span>{{ t('adminUsers.page') }} {{ rootDepartments?.page ?? 1 }} / {{ rootDepartmentTotalPages }}</span>
-	          <button
-	            type="button"
+	          <ElButton
 	            data-testid="admin-users-department-roots-next"
-	            class="rounded border border-gray-200 px-2 py-1 disabled:opacity-40"
 	            :disabled="departmentsLoading || !canGoNextRootDepartmentPage"
 	            @click="nextRootDepartmentPage"
 	          >
 	            {{ t('adminUsers.next') }}
-	          </button>
+	          </ElButton>
 	        </div>
         </div>
-        <p v-if="departmentsError" class="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">{{ departmentsError }}</p>
+        <ElAlert v-if="departmentsError" class="mt-3" type="error" :closable="false" show-icon :title="departmentsError" />
         <div v-if="departmentsLoading" class="mt-3 text-sm text-gray-500">{{ t('adminUsers.loading') }}</div>
         <div v-else-if="visibleDepartmentRows.length === 0" class="mt-3 text-sm text-gray-400">{{ t('adminUsers.noDepartments') }}</div>
 	        <div v-else class="mt-3 overflow-hidden rounded-md border border-gray-200" role="tree">
@@ -1283,18 +1268,16 @@ onBeforeUnmount(() => {
               >
                 {{ representativeCountLabel(visibleRow.department) }}
               </span>
-	          <button
+	          <ElButton
 	            v-if="departmentExpanded(visibleRow.department) && canLoadMoreDepartmentChildren(visibleRow.department.external_id)"
-	            type="button"
 	            :data-testid="`admin-users-department-load-more-${visibleRow.department.external_id}`"
-	            class="rounded border border-gray-200 px-2 py-1 text-gray-700 hover:bg-gray-50 disabled:opacity-40"
 	            :disabled="departmentChildrenLoading(visibleRow.department.external_id)"
 	            @click.stop="loadMoreDepartmentChildren(visibleRow.department.external_id)"
 		            @keydown.enter.prevent.stop="loadMoreDepartmentChildren(visibleRow.department.external_id)"
 		            @keydown.space.prevent.stop="loadMoreDepartmentChildren(visibleRow.department.external_id)"
 	          >
 	            {{ t('adminUsers.next') }}
-	          </button>
+	          </ElButton>
             </div>
 	          </div>
 	        </div>
@@ -1305,23 +1288,21 @@ onBeforeUnmount(() => {
           <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('adminUsers.localUsers') }}</h2>
           <div class="flex items-center gap-2 text-xs text-gray-500">
             <span>{{ total }} {{ t('adminUsers.totalSuffix') }}</span>
-            <button
+            <ElButton
               data-testid="admin-users-prev-page"
-              class="rounded border border-gray-200 px-2 py-1 disabled:opacity-40"
               :disabled="!canGoPrev || loading"
               @click="previousPage"
             >
               {{ t('adminUsers.prev') }}
-            </button>
+            </ElButton>
             <span>{{ t('adminUsers.page') }} {{ filters.page }} / {{ totalPages }}</span>
-            <button
+            <ElButton
               data-testid="admin-users-next-page"
-              class="rounded border border-gray-200 px-2 py-1 disabled:opacity-40"
               :disabled="!canGoNext || loading"
               @click="nextPage"
             >
               {{ t('adminUsers.next') }}
-            </button>
+            </ElButton>
           </div>
         </div>
 
@@ -1334,13 +1315,12 @@ onBeforeUnmount(() => {
 	          >
             <div class="flex items-start justify-between gap-3">
               <label class="flex min-w-0 items-start gap-3">
-                <input
+                <ElCheckbox
                   :data-testid="`select-user-mobile-${row.id}`"
-                  class="mt-1 h-4 w-4 rounded border-gray-300"
-                  type="checkbox"
-                  :checked="selectedUserIds.has(row.id)"
+                  class="mt-1"
+                  :model-value="selectedUserIds.has(row.id)"
                   :disabled="subscriptionForm.loading"
-                  @change="setUserSelected(row.id, ($event.target as HTMLInputElement).checked)"
+                  @change="setUserSelected(row.id, Boolean($event))"
                 />
                 <span class="min-w-0">
                   <span class="block truncate font-medium text-gray-900">{{ row.username }}</span>
@@ -1348,12 +1328,9 @@ onBeforeUnmount(() => {
                   <span class="mt-1 block font-mono text-[11px] text-gray-400">{{ t('adminUsers.localId') }} #{{ row.id }}</span>
                 </span>
               </label>
-              <span
-                class="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
-                :class="accessStatusClass(row)"
-              >
+              <ElTag class="shrink-0" :type="accessStatusTagType(row)" effect="light">
                 {{ accessStatusLabel(row) }}
-              </span>
+              </ElTag>
             </div>
             <dl class="mt-3 grid grid-cols-2 gap-3 text-xs">
               <div>
@@ -1378,28 +1355,27 @@ onBeforeUnmount(() => {
               </div>
             </dl>
             <div class="mt-3 flex flex-wrap gap-2">
-              <button
-                class="rounded border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+              <ElButton
                 :disabled="!row.relay_auth_password"
                 @click="copyEncrypted(row)"
               >
                 {{ t('adminUsers.copyEncrypted') }}
-              </button>
-              <button
-                class="rounded border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+              </ElButton>
+              <ElButton
                 :disabled="!row.relay_auth_password"
                 @click="requestPlaintextCopy(row)"
               >
                 {{ t('adminUsers.copyPlaintext') }}
-              </button>
-              <button
+              </ElButton>
+              <ElButton
                 v-if="canDisableAccess(row)"
-                class="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-40"
+                type="danger"
+                plain
                 :disabled="isDisablingAccess(row)"
                 @click="requestDisableAccess(row)"
               >
                 {{ t('adminUsers.disableUser') }}
-              </button>
+              </ElButton>
             </div>
           </div>
         </div>
@@ -1409,15 +1385,12 @@ onBeforeUnmount(() => {
             <thead>
               <tr class="text-xs uppercase text-gray-400">
                 <th class="w-10 px-3 py-2 text-left font-medium">
-                  <input
-                    ref="selectAllUsersCheckbox"
+                  <ElCheckbox
                     data-testid="select-all-users"
-                    class="h-4 w-4 rounded border-gray-300"
-                    type="checkbox"
-                    :checked="allVisibleSelected"
-                    :aria-checked="visibleSelectionIndeterminate ? 'mixed' : allVisibleSelected"
+                    :model-value="allVisibleSelected"
+                    :indeterminate="visibleSelectionIndeterminate"
                     :disabled="subscriptionForm.loading"
-                    @change="setAllVisibleSelected(($event.target as HTMLInputElement).checked)"
+                    @change="setAllVisibleSelected(Boolean($event))"
                   />
                 </th>
                 <th class="px-3 py-2 text-left font-medium">{{ t('adminUsers.user') }}</th>
@@ -1434,13 +1407,11 @@ onBeforeUnmount(() => {
             <tbody class="divide-y divide-gray-50">
 	              <tr v-for="row in rows" :key="row.id" data-admin-user-row>
                 <td class="px-3 py-2 align-top">
-                  <input
+                  <ElCheckbox
                     :data-testid="`select-user-${row.id}`"
-                    class="h-4 w-4 rounded border-gray-300"
-                    type="checkbox"
-                    :checked="selectedUserIds.has(row.id)"
+                    :model-value="selectedUserIds.has(row.id)"
                     :disabled="subscriptionForm.loading"
-                    @change="setUserSelected(row.id, ($event.target as HTMLInputElement).checked)"
+                    @change="setUserSelected(row.id, Boolean($event))"
                   />
                 </td>
                 <td class="px-3 py-2">
@@ -1453,191 +1424,191 @@ onBeforeUnmount(() => {
                 <td class="px-3 py-2 text-gray-700">{{ departmentLabel(row) }}</td>
                 <td class="px-3 py-2 text-gray-700">{{ relayMappingLabel(row) }}</td>
                 <td class="px-3 py-2">
-                  <span
-                    class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium"
-                    :class="accessStatusClass(row)"
-                  >
+                  <ElTag :type="accessStatusTagType(row)" effect="light">
                     {{ accessStatusLabel(row) }}
-                  </span>
+                  </ElTag>
                 </td>
                 <td class="whitespace-nowrap px-3 py-2 text-gray-600">{{ formatDate(row.created_at) }}</td>
                 <td class="whitespace-nowrap px-3 py-2 text-gray-600">{{ formatDate(row.updated_at) }}</td>
                 <td class="whitespace-nowrap px-3 py-2">
                   <div class="flex flex-col gap-1">
-                    <button
+                    <ElButton
                       :data-testid="`copy-encrypted-${row.id}`"
-                      class="rounded border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                      class="!ml-0"
                       :disabled="!row.relay_auth_password"
                       @click="copyEncrypted(row)"
                     >
                       {{ t('adminUsers.copyEncrypted') }}
-                    </button>
-                    <button
+                    </ElButton>
+                    <ElButton
                       :data-testid="`copy-plaintext-${row.id}`"
-                      class="rounded border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                      class="!ml-0"
                       :disabled="!row.relay_auth_password"
                       @click="requestPlaintextCopy(row)"
                     >
                       {{ t('adminUsers.copyPlaintext') }}
-                    </button>
-                    <button
+                    </ElButton>
+                    <ElButton
                       v-if="canDisableAccess(row)"
                       :data-testid="`disable-access-${row.id}`"
-                      class="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-40"
+                      type="danger"
+                      plain
+                      class="!ml-0"
                       :disabled="isDisablingAccess(row)"
                       @click="requestDisableAccess(row)"
                     >
                       {{ t('adminUsers.disableUser') }}
-                    </button>
+                    </ElButton>
                   </div>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
-	        <div v-if="rows.length === 0" class="mt-3 text-sm text-gray-400">{{ t('adminUsers.empty') }}</div>
+	        <ElEmpty v-if="rows.length === 0" class="mt-3" :description="t('adminUsers.empty')" />
       </div>
     </div>
 
-    <div
-      v-if="plaintextDialog.open && plaintextDialog.user"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/45 px-4 py-6"
-      role="presentation"
-      @click.self="closePlaintextDialog"
+    <ElDialog
+      v-if="plaintextDialog.user"
+      :model-value="plaintextDialog.open"
+      :teleported="false"
+      :show-close="false"
+      align-center
+      width="min(100%, 28rem)"
+      :close-on-click-modal="!plaintextDialog.loading"
+      :close-on-press-escape="!plaintextDialog.loading"
+      @update:model-value="(value) => { if (!value) closePlaintextDialog() }"
     >
-      <section
-        ref="plaintextDialogPanel"
-        data-testid="plaintext-dialog"
-        class="w-full max-w-md rounded-lg bg-white p-5 shadow-xl"
-        role="dialog"
-        aria-modal="true"
-        tabindex="-1"
-        :aria-label="t('adminUsers.copyPlaintext')"
-        @keydown="handlePlaintextDialogKeydown"
-      >
-        <div class="flex items-start justify-between gap-4">
+      <template #header>
+        <div data-testid="plaintext-dialog" class="flex items-start justify-between gap-4">
           <div class="min-w-0">
             <h2 class="text-base font-semibold text-gray-900">{{ t('adminUsers.copyPlaintext') }}</h2>
             <p class="mt-1 truncate text-sm text-gray-500">{{ plaintextDialog.user.email }}</p>
           </div>
-          <button
-            type="button"
+          <ElButton
             data-testid="plaintext-dialog-close"
-            class="shrink-0 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+            class="shrink-0"
             :disabled="plaintextDialog.loading"
             @click="closePlaintextDialog"
           >
             {{ t('adminUsers.closeDialog') }}
-          </button>
+          </ElButton>
         </div>
-        <p class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">
-          {{ t('adminUsers.plaintextWarning') }}
-        </p>
-        <p
+      </template>
+      <ElAlert
+        type="warning"
+        :closable="false"
+        show-icon
+        :title="t('adminUsers.plaintextWarning')"
+      />
+      <ElAlert
           v-if="plaintextDialog.message"
-          class="mt-3 rounded-md p-3 text-sm"
-          :class="plaintextDialog.messageType === 'error' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'"
-          aria-live="polite"
-        >
-          {{ plaintextDialog.message }}
-        </p>
-        <div class="mt-5 flex justify-end gap-2">
-          <button
-            type="button"
-            class="rounded-md border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+          class="mt-3"
+          :type="plaintextDialog.messageType === 'error' ? 'error' : 'success'"
+          :closable="false"
+          show-icon
+          :title="plaintextDialog.message"
+        />
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <ElButton
             :disabled="plaintextDialog.loading"
             @click="closePlaintextDialog"
           >
             {{ t('adminUsers.cancelDisableUser') }}
-          </button>
-          <button
-            type="button"
+          </ElButton>
+          <ElButton
             :data-testid="`confirm-copy-plaintext-${plaintextDialog.user.id}`"
-            class="rounded-md bg-amber-700 px-3 py-2 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-40"
+            type="warning"
             :disabled="plaintextDialog.loading"
             @click="confirmCopyPlaintext"
           >
             {{ plaintextDialog.loading ? t('adminUsers.working') : t('adminUsers.confirmRevealAndCopy') }}
-          </button>
+          </ElButton>
         </div>
-      </section>
-    </div>
+      </template>
+    </ElDialog>
 
-    <div
-      v-if="disableAccessDialog.open && disableAccessDialog.user"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/45 px-4 py-6"
-      role="presentation"
-      @click.self="closeDisableAccessDialog"
+    <ElDialog
+      v-if="disableAccessDialog.user"
+      :model-value="disableAccessDialog.open"
+      :teleported="false"
+      :show-close="false"
+      align-center
+      width="min(100%, 32rem)"
+      :close-on-click-modal="!disableAccessDialog.loading"
+      :close-on-press-escape="!disableAccessDialog.loading"
+      @open="focusDisableAccessConfirmation"
+      @opened="focusDisableAccessConfirmation"
+      @update:model-value="(value) => { if (!value) closeDisableAccessDialog() }"
     >
-      <section
-        ref="disableAccessDialogPanel"
-        data-testid="disable-access-dialog"
-        class="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl"
-        role="dialog"
-        aria-modal="true"
-        tabindex="-1"
-        :aria-label="t('adminUsers.disableUserConfirmTitle')"
-        @keydown="handleDisableAccessDialogKeydown"
-      >
-        <div class="flex items-start justify-between gap-4">
+      <template #header>
+        <div
+          data-testid="disable-access-dialog"
+          class="flex items-start justify-between gap-4"
+          @keydown.esc.stop.prevent="closeDisableAccessDialog"
+        >
           <div class="min-w-0">
             <h2 class="text-base font-semibold text-gray-900">{{ t('adminUsers.disableUserConfirmTitle') }}</h2>
             <p class="mt-1 truncate text-sm text-gray-500">{{ disableAccessDialog.user.email }}</p>
           </div>
-          <button
-            type="button"
+          <ElButton
             data-testid="disable-access-dialog-close"
-            class="shrink-0 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+            class="shrink-0"
             :disabled="disableAccessDialog.loading"
             @click="closeDisableAccessDialog"
           >
             {{ t('adminUsers.closeDialog') }}
-          </button>
+          </ElButton>
         </div>
-        <p class="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm leading-6 text-red-800">
-          {{ t('adminUsers.disableUserWarning') }}
-        </p>
+      </template>
+      <ElAlert
+        type="error"
+        :closable="false"
+        show-icon
+        :title="t('adminUsers.disableUserWarning')"
+      />
         <label class="mt-4 block text-xs font-medium uppercase tracking-wide text-gray-500">
           {{ t('adminUsers.disableUserConfirmHint', { email: disableAccessDialog.user.email }) }}
-          <input
+          <ElInput
             ref="disableAccessConfirmInput"
             v-model="disableAccessDialog.confirmEmail"
             :data-testid="`disable-access-confirm-email-${disableAccessDialog.user.id}`"
-            class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:bg-gray-50 disabled:text-gray-400"
+            class="mt-1 block w-full"
+            autofocus
             :aria-label="t('adminUsers.disableUserConfirmHint', { email: disableAccessDialog.user.email })"
             :placeholder="disableAccessDialog.user.email"
             :disabled="disableAccessDialog.loading || disableAccessCompleted"
           />
         </label>
-        <p
+        <ElAlert
           v-if="disableAccessDialog.message"
-          class="mt-3 rounded-md p-3 text-sm"
-          :class="disableAccessDialog.messageType === 'error' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'"
-          aria-live="polite"
-        >
-          {{ disableAccessDialog.message }}
-        </p>
-        <div class="mt-5 flex justify-end gap-2">
-          <button
-            type="button"
+          class="mt-3"
+          :type="disableAccessDialog.messageType === 'error' ? 'error' : 'success'"
+          :closable="false"
+          show-icon
+          :title="disableAccessDialog.message"
+        />
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <ElButton
             data-testid="disable-access-dialog-cancel"
-            class="rounded-md border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
             :disabled="disableAccessDialog.loading"
             @click="closeDisableAccessDialog"
           >
             {{ disableAccessCompleted ? t('adminUsers.closeDialog') : t('adminUsers.cancelDisableUser') }}
-          </button>
-          <button
-            type="button"
+          </ElButton>
+          <ElButton
             :data-testid="`confirm-disable-access-${disableAccessDialog.user.id}`"
-            class="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-40"
+            type="danger"
             :disabled="!disableAccessConfirmMatches || disableAccessDialog.loading || disableAccessCompleted"
             @click="confirmDisableAccess"
           >
             {{ disableAccessDialog.loading ? t('adminUsers.working') : t('adminUsers.confirmDisableUser') }}
-          </button>
+          </ElButton>
         </div>
-      </section>
-    </div>
+      </template>
+    </ElDialog>
   </AppLayout>
 </template>

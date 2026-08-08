@@ -41,28 +41,29 @@ const chartOptions = { responsive: true, maintainAspectRatio: false, plugins: { 
         <DoughnutChartCanvas :data="chartData" :options="chartOptions" />
       </div>
       <div data-testid="usage-model-table-scroll" class="min-w-0 overflow-x-auto pb-2">
-        <table class="min-w-[36rem] w-full text-sm">
-          <thead>
-            <tr class="border-b border-gray-200 text-left text-xs uppercase text-gray-500">
-              <th class="pb-2">{{ t('usageDashboard.model') }}</th>
-              <th class="pb-2 text-right">{{ t('usageDashboard.requests') }}</th>
-              <th class="pb-2 text-right">{{ t('usageDashboard.tokens') }}</th>
-              <th v-if="!props.hideCost" class="pb-2 text-right">{{ t('usageDashboard.actual') }}</th>
-              <th v-if="!props.hideCost" class="pb-2 text-right">{{ t('usageDashboard.standard') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="model in data" :key="model.model" class="border-b border-gray-100 last:border-0">
-              <td class="max-w-[12rem] truncate py-2 font-medium text-gray-900" :title="model.model">
+        <ElTable :data="data" row-key="model" class="min-w-[36rem] w-full">
+          <ElTableColumn :label="t('usageDashboard.model')" min-width="150">
+            <template #default="{ row: model }">
+              <ElTooltip :content="model.model" placement="top" :show-after="400">
+                <span class="block max-w-[12rem] truncate font-medium text-gray-900">
                 {{ model.model }}
-              </td>
-              <td class="py-2 text-right text-gray-600">{{ model.requests.toLocaleString() }}</td>
-              <td class="py-2 text-right text-gray-600">{{ formatTokenCount(model.total_tokens) }}</td>
-              <td v-if="!props.hideCost" class="py-2 text-right text-green-600">${{ model.actual_cost.toFixed(4) }}</td>
-              <td v-if="!props.hideCost" class="py-2 text-right text-gray-500">${{ model.cost.toFixed(4) }}</td>
-            </tr>
-          </tbody>
-        </table>
+                </span>
+              </ElTooltip>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn :label="t('usageDashboard.requests')" align="right" min-width="100">
+            <template #default="{ row: model }">{{ model.requests.toLocaleString() }}</template>
+          </ElTableColumn>
+          <ElTableColumn :label="t('usageDashboard.tokens')" align="right" min-width="100">
+            <template #default="{ row: model }">{{ formatTokenCount(model.total_tokens) }}</template>
+          </ElTableColumn>
+          <ElTableColumn v-if="!props.hideCost" :label="t('usageDashboard.actual')" align="right" min-width="100">
+            <template #default="{ row: model }"><span class="text-green-600">${{ model.actual_cost.toFixed(4) }}</span></template>
+          </ElTableColumn>
+          <ElTableColumn v-if="!props.hideCost" :label="t('usageDashboard.standard')" align="right" min-width="100">
+            <template #default="{ row: model }"><span class="text-gray-500">${{ model.cost.toFixed(4) }}</span></template>
+          </ElTableColumn>
+        </ElTable>
       </div>
     </div>
   </section>

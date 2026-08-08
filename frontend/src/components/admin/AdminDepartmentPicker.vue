@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
+import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import { listAdminUserDepartmentOptions } from '@/api/adminUsers'
 import { useI18n } from '@/i18n'
 import type { AdminDepartmentOption } from '@/types'
@@ -20,8 +21,8 @@ const listboxID = `${pickerID}-listbox`
 const valueID = `${pickerID}-value`
 const allOptionID = `${pickerID}-option-all`
 const root = ref<HTMLElement | null>(null)
-const trigger = ref<HTMLButtonElement | null>(null)
-const searchInput = ref<HTMLInputElement | null>(null)
+const trigger = ref<{ ref?: HTMLButtonElement } | null>(null)
+const searchInput = ref<{ input?: HTMLInputElement } | null>(null)
 const open = ref(false)
 const loading = ref(false)
 const error = ref('')
@@ -157,7 +158,7 @@ async function openPicker() {
     await loadOptions(1)
   }
   await nextTick()
-  searchInput.value?.focus()
+  searchInput.value?.input?.focus()
 }
 
 async function toggleOpen() {
@@ -170,7 +171,7 @@ async function toggleOpen() {
 
 function close(restoreTriggerFocus = false) {
   if (!open.value) {
-    if (restoreTriggerFocus) trigger.value?.focus()
+    if (restoreTriggerFocus) trigger.value?.ref?.focus()
     return
   }
   open.value = false
@@ -179,7 +180,7 @@ function close(restoreTriggerFocus = false) {
   loading.value = false
   optionsRequested = hasLoadedOptions.value
   if (!error.value) searchQuery.value = committedQuery
-  if (restoreTriggerFocus) void nextTick(() => trigger.value?.focus())
+  if (restoreTriggerFocus) void nextTick(() => trigger.value?.ref?.focus())
 }
 
 function choose(value: string, option: AdminDepartmentOption | null, restoreTriggerFocus = false) {
@@ -235,25 +236,26 @@ function activateActiveOption() {
   if (option) choose(option.external_id, option, true)
 }
 
-function handleSearchKeydown(event: KeyboardEvent) {
-  if (event.key === 'ArrowDown') {
-    event.preventDefault()
+function handleSearchKeydown(event: Event | KeyboardEvent) {
+  const keyboardEvent = event as KeyboardEvent
+  if (keyboardEvent.key === 'ArrowDown') {
+    keyboardEvent.preventDefault()
     moveActiveOption(activeOptionIndex.value + 1)
-  } else if (event.key === 'ArrowUp') {
-    event.preventDefault()
+  } else if (keyboardEvent.key === 'ArrowUp') {
+    keyboardEvent.preventDefault()
     moveActiveOption(activeOptionIndex.value - 1)
-  } else if (event.key === 'Home') {
-    event.preventDefault()
+  } else if (keyboardEvent.key === 'Home') {
+    keyboardEvent.preventDefault()
     moveActiveOption(0)
-  } else if (event.key === 'End') {
-    event.preventDefault()
+  } else if (keyboardEvent.key === 'End') {
+    keyboardEvent.preventDefault()
     moveActiveOption(items.value.length)
-  } else if (event.key === 'Enter') {
-    event.preventDefault()
+  } else if (keyboardEvent.key === 'Enter') {
+    keyboardEvent.preventDefault()
     activateActiveOption()
-  } else if (event.key === 'Escape') {
-    event.preventDefault()
-    event.stopPropagation()
+  } else if (keyboardEvent.key === 'Escape') {
+    keyboardEvent.preventDefault()
+    keyboardEvent.stopPropagation()
     close(true)
   }
 }
@@ -290,11 +292,10 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="root" data-testid="admin-department-picker" class="relative mt-1" @focusout="handleFocusOut">
-    <button
+    <ElButton
       ref="trigger"
-      type="button"
       data-testid="admin-department-picker-trigger"
-      class="flex h-[38px] w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-left text-sm text-gray-700 hover:border-gray-400 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+      class="!ml-0 !flex h-[38px] w-full !justify-between gap-2 text-left"
       :aria-expanded="open"
       :aria-labelledby="triggerLabelledBy"
       aria-haspopup="listbox"
@@ -303,8 +304,8 @@ onBeforeUnmount(() => {
       @keydown.esc.stop.prevent="close(true)"
     >
       <span :id="valueID" class="min-w-0 truncate">{{ selectedLabel }}</span>
-      <span class="shrink-0 text-xs text-gray-400" aria-hidden="true">{{ open ? '-' : '+' }}</span>
-    </button>
+      <ElIcon class="shrink-0" aria-hidden="true"><ArrowUp v-if="open" /><ArrowDown v-else /></ElIcon>
+    </ElButton>
 
     <div
       v-if="open"
@@ -313,7 +314,7 @@ onBeforeUnmount(() => {
       @keydown.esc.stop.prevent="close(true)"
     >
       <div class="border-b border-gray-100 p-2">
-        <input
+        <ElInput
           ref="searchInput"
           v-model="searchQuery"
           data-testid="admin-department-picker-search"
@@ -323,7 +324,7 @@ onBeforeUnmount(() => {
           aria-expanded="true"
           :aria-controls="listboxID"
           :aria-activedescendant="activeOptionID"
-          class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 placeholder:text-gray-400 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+          class="w-full"
           :placeholder="t('adminUsers.search')"
           @input="scheduleSearch"
           @keydown="handleSearchKeydown"
@@ -331,11 +332,11 @@ onBeforeUnmount(() => {
       </div>
 
       <div :id="listboxID" class="max-h-64 overflow-y-auto py-1" role="listbox" :aria-label="t('adminUsers.department')">
-        <button
+        <ElButton
           :id="allOptionID"
-          type="button"
+          text
           data-testid="admin-department-picker-all"
-          class="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+          class="!ml-0 !flex w-full !justify-start px-3 py-2 text-left"
           :class="!modelValue || activeOptionIndex === 0 ? 'bg-gray-50 font-medium text-gray-900' : 'text-gray-700'"
           role="option"
           tabindex="-1"
@@ -344,16 +345,16 @@ onBeforeUnmount(() => {
           @click="choose('', null)"
         >
           {{ t('adminUsers.allDepartments') }}
-        </button>
+        </ElButton>
         <p v-if="loading" class="px-3 py-3 text-sm text-gray-500">{{ t('adminUsers.loading') }}</p>
-        <button
+        <ElButton
           v-for="(option, index) in items"
           v-else
           :key="option.external_id"
           :id="optionID(index + 1)"
-          type="button"
+          text
           :data-testid="`admin-department-picker-option-${option.external_id}`"
-          class="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+          class="!ml-0 !flex w-full !justify-start px-3 py-2 text-left"
           :class="modelValue === option.external_id || activeOptionIndex === index + 1 ? 'bg-gray-50 font-medium text-gray-900' : 'text-gray-700'"
           role="option"
           tabindex="-1"
@@ -362,7 +363,7 @@ onBeforeUnmount(() => {
           @click="choose(option.external_id, option)"
         >
           <span class="block truncate">{{ option.display_path || option.name }}</span>
-        </button>
+        </ElButton>
         <p
           v-if="!loading && !error && items.length === 0"
           data-testid="admin-department-picker-empty"
@@ -370,31 +371,27 @@ onBeforeUnmount(() => {
         >
           {{ t('adminUsers.noDepartments') }}
         </p>
-        <p v-if="error" data-testid="admin-department-picker-error" class="px-3 py-3 text-sm text-red-700">
-          {{ error }}
-        </p>
+        <div v-if="error" data-testid="admin-department-picker-error" class="px-3 py-3">
+          <ElAlert :title="error" type="error" :closable="false" show-icon />
+        </div>
       </div>
 
       <div class="flex items-center justify-between gap-2 border-t border-gray-100 px-2 py-2 text-xs text-gray-500">
-        <button
-          type="button"
+        <ElButton
           data-testid="admin-department-picker-prev"
-          class="rounded border border-gray-200 px-2 py-1 text-gray-700 disabled:opacity-40"
           :disabled="loading || !canGoPrevious"
           @click="previousPage"
         >
           {{ t('adminUsers.prev') }}
-        </button>
+        </ElButton>
         <span data-testid="admin-department-picker-page">{{ t('adminUsers.page') }} {{ page }} / {{ totalPages }}</span>
-        <button
-          type="button"
+        <ElButton
           data-testid="admin-department-picker-next"
-          class="rounded border border-gray-200 px-2 py-1 text-gray-700 disabled:opacity-40"
           :disabled="loading || !canGoNext"
           @click="nextPage"
         >
           {{ t('adminUsers.next') }}
-        </button>
+        </ElButton>
       </div>
     </div>
   </div>

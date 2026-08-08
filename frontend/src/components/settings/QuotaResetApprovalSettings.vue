@@ -313,8 +313,8 @@ function credentialOptionLabel(credential: Credential) {
     </div>
 
     <div v-if="loading" class="mt-4 text-sm text-gray-500">{{ t('settings.loading') }}</div>
-    <div v-if="error" class="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</div>
-    <div v-if="message" class="mt-4 rounded-md bg-emerald-50 p-3 text-sm text-emerald-700">{{ message }}</div>
+    <ElAlert v-if="error" class="mt-4" type="error" :title="error" :closable="false" />
+    <ElAlert v-if="message" class="mt-4" type="success" :title="message" :closable="false" />
 
     <div class="mt-5 space-y-4">
       <div>
@@ -349,17 +349,17 @@ function credentialOptionLabel(credential: Credential) {
 	                  </div>
 	                </td>
 	                <td class="px-3 py-2 text-gray-700">
-	                  <input v-model="config.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600" />
+	                  <ElSwitch v-model="config.enabled" />
 	                </td>
 	                <td class="px-3 py-2 text-right">
-	                  <button
-	                    type="button"
+	                  <ElButton
 	                    :data-testid="`quota-reset-config-remove-${config.id}`"
-	                    class="text-sm font-medium text-red-600 hover:text-red-700"
+	                    link
+	                    type="danger"
 	                    @click="removeConfig(index)"
 	                  >
 	                    {{ t('settings.delete') }}
-	                  </button>
+	                  </ElButton>
 	                </td>
 	              </tr>
 	              <tr v-if="configs.length === 0">
@@ -374,10 +374,9 @@ function credentialOptionLabel(credential: Credential) {
         <div class="block">
           <div class="relative">
             <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.departmentSearch') }}</span>
-            <button
-              type="button"
+            <ElButton
               data-testid="quota-reset-department-select"
-              class="mt-1 flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50 disabled:opacity-60"
+              class="mt-1 !flex !w-full !items-center !justify-between !gap-2 !px-3 !py-2 !text-left"
               aria-haspopup="listbox"
               :aria-expanded="departmentDropdownOpen ? 'true' : 'false'"
               :disabled="!selectedDirectorySourceID"
@@ -387,17 +386,15 @@ function credentialOptionLabel(credential: Credential) {
                 {{ selectedDepartmentLabel || t('quotaResetSettings.departmentSelectPlaceholder') }}
               </span>
               <span aria-hidden="true" class="text-xs text-gray-400">v</span>
-            </button>
+            </ElButton>
             <div
               v-if="departmentDropdownOpen"
               class="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white p-2 shadow-lg"
             >
-              <input
+              <ElInput
                 v-model="departmentSearch"
                 data-testid="quota-reset-department-filter"
-                type="text"
                 :placeholder="t('quotaResetSettings.departmentSearchPlaceholder')"
-                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                 @input="searchDepartments"
                 @keyup.enter="searchDepartments"
               />
@@ -409,18 +406,18 @@ function credentialOptionLabel(credential: Credential) {
                 class="mt-2 max-h-44 overflow-y-auto"
                 role="listbox"
               >
-                <button
+                <ElButton
                   v-for="department in departmentOptions"
                   :key="department.id"
-                  type="button"
                   :data-testid="`quota-reset-department-option-${department.external_id}`"
-                  class="block w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-50"
+                  text
+                  class="!m-0 !block !h-auto !w-full !whitespace-normal !rounded !px-3 !py-2 !text-left"
                   role="option"
                   @click="selectDepartment(department)"
                 >
                   <span class="block truncate font-medium text-slate-800">{{ departmentDisplayPath(department) }}</span>
                   <span class="block truncate text-xs text-slate-500">{{ department.external_id }}</span>
-                </button>
+                </ElButton>
               </div>
               <div v-else-if="departmentSearch" class="px-3 py-3 text-sm text-gray-500">
                 {{ t('quotaResetSettings.noDepartmentMatches') }}
@@ -431,10 +428,9 @@ function credentialOptionLabel(credential: Credential) {
         <div class="block">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.approverSelect') }}</span>
           <div class="relative">
-            <button
-              type="button"
+            <ElButton
               data-testid="quota-reset-approver-select"
-              class="mt-1 flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50 disabled:opacity-60"
+              class="mt-1 !flex !w-full !items-center !justify-between !gap-2 !px-3 !py-2 !text-left"
               :disabled="loadingApproverCandidates || !configForm.department_external_id || approverCandidates.length === 0"
               aria-haspopup="listbox"
               :aria-expanded="approverFilter !== null ? 'true' : 'false'"
@@ -446,40 +442,40 @@ function credentialOptionLabel(credential: Credential) {
                   : (loadingApproverCandidates ? t('settings.loading') : t('quotaResetSettings.selectApproverPlaceholder')) }}
               </span>
               <span aria-hidden="true" class="text-xs text-gray-400">v</span>
-            </button>
+            </ElButton>
             <div
               v-if="approverFilter !== null"
               class="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white p-2 shadow-lg"
             >
-              <input
+              <ElInput
                 v-model="approverFilter"
                 data-testid="quota-reset-approver-filter"
-                type="search"
-                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                 :placeholder="t('quotaResetSettings.selectApproverPlaceholder')"
               />
               <div class="mt-1 max-h-44 overflow-y-auto" role="listbox">
-                <button
+                <ElButton
                   v-for="candidate in filteredApproverCandidates"
                   :key="candidate.user_id"
-                  type="button"
                   :data-testid="`quota-reset-approver-option-${candidate.user_id}`"
-                  class="block w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-50"
+                  text
+                  class="!m-0 !block !h-auto !w-full !whitespace-normal !rounded !px-3 !py-2 !text-left"
                   role="option"
                   :aria-selected="candidate.user_id === configForm.approver_user_id ? 'true' : 'false'"
                   @click="selectApprover(candidate)"
                 >
                   {{ approverOptionLabel(candidate) }}
-                </button>
+                </ElButton>
               </div>
             </div>
           </div>
           <div v-if="configForm.department_external_id && !loadingApproverCandidates && approverCandidates.length === 0 && unmatchedRepresentatives.length === 0" class="mt-2 text-xs text-gray-500">
             {{ t('quotaResetSettings.noApproverCandidates') }}
           </div>
-          <div
+          <ElAlert
             v-else-if="configForm.department_external_id && !loadingApproverCandidates && approverCandidates.length === 0 && unmatchedRepresentatives.length > 0"
-            class="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800"
+            class="mt-2"
+            type="warning"
+            :closable="false"
             data-testid="quota-reset-unmatched-representatives"
           >
             <div>
@@ -490,17 +486,17 @@ function credentialOptionLabel(credential: Credential) {
                 {{ unmatchedRepresentativeLabel(representative) }}
               </div>
             </div>
-          </div>
+          </ElAlert>
         </div>
-        <button
-          type="button"
+        <ElButton
           data-testid="quota-reset-save-approvers"
-          class="self-start rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-60 md:mt-6"
-          :disabled="savingConfigs"
+          type="primary"
+          class="self-start md:mt-6"
+          :loading="savingConfigs"
           @click="saveConfigs"
         >
-          {{ savingConfigs ? t('settings.saving') : t('quotaResetSettings.saveApprovers') }}
-        </button>
+          {{ t('quotaResetSettings.saveApprovers') }}
+        </ElButton>
       </div>
     </div>
 
@@ -508,70 +504,62 @@ function credentialOptionLabel(credential: Credential) {
       <h4 class="text-sm font-semibold text-gray-900">{{ t('quotaResetSettings.webhook') }}</h4>
       <div class="mt-3 grid gap-3 md:grid-cols-2">
         <label class="flex items-center gap-2 text-sm text-gray-700">
-          <input
+          <ElSwitch
             v-model="notification.enabled"
             data-testid="quota-reset-webhook-enabled"
-            type="checkbox"
-            class="h-4 w-4 rounded border-gray-300 text-indigo-600"
           />
           {{ t('settings.enabled') }}
         </label>
         <label class="block">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.channel') }}</span>
-          <select
+          <ElSelect
             v-model="notification.channel"
             data-testid="quota-reset-webhook-channel"
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            class="mt-1 w-full"
+            :teleported="false"
           >
-            <option value="generic_webhook">{{ t('quotaResetSettings.channelGeneric') }}</option>
-            <option value="wecom_group_robot">{{ t('quotaResetSettings.channelWeCom') }}</option>
-          </select>
+            <ElOption value="generic_webhook" :label="t('quotaResetSettings.channelGeneric')" />
+            <ElOption value="wecom_group_robot" :label="t('quotaResetSettings.channelWeCom')" />
+          </ElSelect>
         </label>
         <label class="block md:col-span-2">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.webhookURL') }}</span>
-          <input
+          <ElInput
             v-model="notification.url"
             data-testid="quota-reset-webhook-url"
-            type="url"
             placeholder="https://hooks.example.com/ai-efficiency"
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            class="mt-1 w-full"
           />
         </label>
         <label class="block">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.authType') }}</span>
-          <select v-model="notification.auth_type" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
-            <option value="none">{{ t('quotaResetSettings.authNone') }}</option>
-            <option value="bearer_token">{{ t('quotaResetSettings.authBearer') }}</option>
-          </select>
+          <ElSelect v-model="notification.auth_type" class="mt-1 w-full" :teleported="false">
+            <ElOption value="none" :label="t('quotaResetSettings.authNone')" />
+            <ElOption value="bearer_token" :label="t('quotaResetSettings.authBearer')" />
+          </ElSelect>
         </label>
         <label class="block">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.credential') }}</span>
-          <select v-model.number="notification.credential_id" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" :disabled="notification.auth_type !== 'bearer_token'">
-            <option :value="null">{{ t('settings.selectApiCredential') }}</option>
-            <option v-for="credential in bearerCredentials" :key="credential.id" :value="credential.id">
-              {{ credentialOptionLabel(credential) }}
-            </option>
-          </select>
+          <ElSelect v-model="notification.credential_id" class="mt-1 w-full" :placeholder="t('settings.selectApiCredential')" :disabled="notification.auth_type !== 'bearer_token'" :teleported="false" clearable>
+            <ElOption v-for="credential in bearerCredentials" :key="credential.id" :value="credential.id" :label="credentialOptionLabel(credential)" />
+          </ElSelect>
         </label>
       </div>
       <div class="mt-4 flex flex-wrap justify-end gap-2">
-        <button
-          type="button"
-          class="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-          :disabled="testingNotification"
+        <ElButton
+          :loading="testingNotification"
           @click="testNotification"
         >
-          {{ testingNotification ? t('settings.testing') : t('quotaResetSettings.testWebhook') }}
-        </button>
-        <button
-          type="button"
+          {{ t('quotaResetSettings.testWebhook') }}
+        </ElButton>
+        <ElButton
           data-testid="quota-reset-save-notification"
-          class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
-          :disabled="savingNotification"
+          type="primary"
+          :loading="savingNotification"
           @click="saveNotification"
         >
-          {{ savingNotification ? t('settings.saving') : t('quotaResetSettings.saveWebhook') }}
-        </button>
+          {{ t('quotaResetSettings.saveWebhook') }}
+        </ElButton>
       </div>
     </div>
   </section>

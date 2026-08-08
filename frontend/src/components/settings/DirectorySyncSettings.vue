@@ -10,7 +10,6 @@ import {
   updateDirectorySource,
   validateDirectorySource,
 } from '@/api/directory'
-import { useToast } from '@/composables/useToast'
 import { useI18n, type MessageKey } from '@/i18n'
 import { useSettingsResourcesStore } from '@/stores/settingsResources'
 import { useWorkItemsStore } from '@/stores/workItems'
@@ -23,7 +22,6 @@ import type {
 } from '@/types'
 
 const { locale, t } = useI18n()
-const { showToast } = useToast()
 const workItems = useWorkItemsStore()
 const settingsResources = useSettingsResourcesStore()
 const {
@@ -916,9 +914,9 @@ overrides:
   ].join('\n')
   try {
     await navigator.clipboard.writeText(prompt)
-    showToast({ message: t('directorySync.aiPromptCopied'), tone: 'success' })
+    ElMessage.success(t('directorySync.aiPromptCopied'))
   } catch {
-    showToast({ message: t('directorySync.copyFailed'), tone: 'error' })
+    ElMessage.error(t('directorySync.copyFailed'))
   }
 }
 </script>
@@ -930,50 +928,49 @@ overrides:
         <h3 class="text-base font-semibold text-gray-900">{{ t('directorySync.title') }}</h3>
         <p class="text-sm text-gray-500">{{ t('directorySync.subtitle') }}</p>
       </div>
-      <button data-testid="directory-copy-ai-prompt" type="button" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="copyAIPrompt">
+      <ElButton data-testid="directory-copy-ai-prompt" @click="copyAIPrompt">
         {{ t('directorySync.copyAiPrompt') }}
-      </button>
+      </ElButton>
     </div>
 
     <div class="grid gap-4 lg:grid-cols-[220px_1fr]">
       <div class="space-y-2">
-        <button
+        <ElButton
           v-for="source in sources"
           :key="source.id"
-          type="button"
-          class="block w-full rounded-md border px-3 py-2 text-left text-sm"
+          class="!m-0 !h-auto !w-full !justify-start !whitespace-normal !rounded-md !px-3 !py-2 !text-left"
           :class="source.id === selectedSourceId ? 'border-indigo-500 bg-indigo-50 text-indigo-900' : 'border-gray-200 text-gray-700 hover:bg-gray-50'"
           @click="selectSource(source)"
         >
           <span class="block font-medium">{{ source.name }}</span>
           <span class="block text-xs text-gray-500">{{ source.enabled ? t('settings.enabled') : t('settings.disabled') }}</span>
-        </button>
-        <p v-if="!loading && sources.length === 0" class="text-sm text-gray-500">{{ t('directorySync.noSource') }}</p>
+        </ElButton>
+        <ElEmpty v-if="!loading && sources.length === 0" :description="t('directorySync.noSource')" :image-size="60" />
       </div>
 
       <div class="space-y-4">
         <div class="grid gap-3 md:grid-cols-2">
           <label class="text-sm font-medium text-gray-700">
             {{ t('settings.name') }}
-            <input data-testid="directory-source-name" v-model="form.name" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            <ElInput data-testid="directory-source-name" v-model="form.name" class="mt-1" />
           </label>
           <label class="text-sm font-medium text-gray-700">
             {{ t('directorySync.schedule') }}
-            <select v-model="form.schedule_interval" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
-              <option value="hourly">{{ t('directorySync.hourly') }}</option>
-              <option value="daily">{{ t('directorySync.daily') }}</option>
-              <option value="weekly">{{ t('directorySync.weekly') }}</option>
-            </select>
+            <ElSelect v-model="form.schedule_interval" class="mt-1 w-full" :teleported="false">
+              <ElOption value="hourly" :label="t('directorySync.hourly')" />
+              <ElOption value="daily" :label="t('directorySync.daily')" />
+              <ElOption value="weekly" :label="t('directorySync.weekly')" />
+            </ElSelect>
           </label>
         </div>
 
         <div class="flex flex-wrap items-center gap-4 text-sm text-gray-700">
           <label class="inline-flex items-center gap-2">
-            <input v-model="form.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600" />
+            <ElSwitch v-model="form.enabled" />
             {{ t('settings.enabled') }}
           </label>
           <label class="inline-flex items-center gap-2">
-            <input v-model="form.schedule_enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600" />
+            <ElSwitch v-model="form.schedule_enabled" />
             {{ t('directorySync.scheduledApply') }}
           </label>
           <span class="text-gray-500">{{ t('directorySync.credentialRef', { ref: currentCredentialRef }) }}</span>
@@ -981,21 +978,23 @@ overrides:
 
         <div class="rounded-md border border-gray-200 p-3">
           <div class="mb-2 flex flex-wrap gap-2">
-            <button v-for="(template, index) in templates" :key="template.nameKey" :data-testid="`directory-template-${index}`" type="button" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50" @click="applyTemplate(template.dsl)">
+            <ElButton v-for="(template, index) in templates" :key="template.nameKey" :data-testid="`directory-template-${index}`" size="small" @click="applyTemplate(template.dsl)">
               {{ t(template.nameKey) }}
-            </button>
+            </ElButton>
           </div>
           <p class="mb-2 text-xs text-gray-500">{{ t('directorySync.templatePlaceholderHelp') }}</p>
-          <textarea data-testid="directory-dsl" v-model="form.dsl" class="h-72 w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-xs" />
+          <ElInput data-testid="directory-dsl" v-model="form.dsl" type="textarea" :rows="18" class="w-full font-mono text-xs" />
         </div>
 
         <div class="rounded-md border border-gray-200 p-3">
           <label class="text-sm font-medium text-gray-700">
             {{ t('directorySync.aiContextLabel') }}
-            <textarea
+            <ElInput
               data-testid="directory-ai-context"
               v-model="aiPromptContext"
-              class="mt-2 h-28 w-full rounded-md border border-gray-300 px-3 py-2 text-xs"
+              type="textarea"
+              :rows="5"
+              class="mt-2 w-full text-xs"
               :placeholder="t('directorySync.aiContextPlaceholder')"
             />
           </label>
@@ -1011,15 +1010,15 @@ overrides:
           </div>
         </div>
 
-        <div v-if="message" class="rounded-md bg-green-50 p-3 text-sm text-green-700">{{ message }}</div>
-        <div v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</div>
-        <div v-if="activeRun && !isTerminalRun(activeRun)" class="rounded-md bg-blue-50 p-3 text-sm text-blue-900" aria-live="polite">
+        <ElAlert v-if="message" type="success" :title="message" :closable="false" />
+        <ElAlert v-if="error" type="error" :title="error" :closable="false" />
+        <ElAlert v-if="activeRun && !isTerminalRun(activeRun)" type="info" :closable="false" aria-live="polite">
           <p class="font-medium">{{ phaseLabel(activeRun.phase) }}</p>
           <p class="mt-1 text-xs text-blue-800">
             {{ t('directorySync.runProgressCounts', { departments: activeRun.department_count ?? 0, members: activeRun.member_count ?? 0, warnings: activeRun.warning_count ?? 0 }) }}
           </p>
-        </div>
-        <div v-if="runWarningSummaries.length > 0" class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        </ElAlert>
+        <ElAlert v-if="runWarningSummaries.length > 0" type="warning" :closable="false">
           <p class="font-medium">{{ t('directorySync.warningDetailsTitle') }}</p>
           <ul class="mt-2 space-y-2">
             <li v-for="summary in runWarningSummaries" :key="summary.code">
@@ -1027,29 +1026,27 @@ overrides:
               <p class="text-xs leading-5 text-amber-800">{{ t(summary.helpKey) }}</p>
             </li>
           </ul>
-        </div>
-        <div v-if="validationIssues.length > 0" class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        </ElAlert>
+        <ElAlert v-if="validationIssues.length > 0" type="warning" :closable="false">
           <p class="font-medium">{{ t('directorySync.validationIssueDetails') }}</p>
           <ul class="mt-2 space-y-1">
             <li v-for="issue in validationIssues" :key="`${issue.path}:${issue.message}`" class="font-mono text-xs">
               {{ issue.path }}: {{ issue.message }}
             </li>
           </ul>
-        </div>
+        </ElAlert>
 
         <div class="flex flex-wrap justify-end gap-2">
-          <button data-testid="directory-validate" type="button" :disabled="!selectedSourceId || Boolean(activeRun && !isTerminalRun(activeRun))" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="validateSource">
+          <ElButton data-testid="directory-validate" :disabled="!selectedSourceId || Boolean(activeRun && !isTerminalRun(activeRun))" @click="validateSource">
             {{ t('directorySync.validate') }}
-          </button>
-          <button data-testid="directory-preview" type="button" :disabled="!selectedSourceId || actionRequestPending !== null || Boolean(activeRun && !isTerminalRun(activeRun))" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="previewSource">
+          </ElButton>
+          <ElButton data-testid="directory-preview" :loading="activeRunAction === 'preview' && Boolean(activeRun && !isTerminalRun(activeRun))" :disabled="!selectedSourceId || actionRequestPending !== null || Boolean(activeRun && !isTerminalRun(activeRun))" @click="previewSource">
             {{ activeRunAction === 'preview' && activeRun && !isTerminalRun(activeRun) ? t('directorySync.previewing') : t('directorySync.preview') }}
-          </button>
-          <button data-testid="directory-run-now" type="button" :disabled="!selectedSourceId || actionRequestPending !== null || Boolean(activeRun && !isTerminalRun(activeRun))" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="runNow">
+          </ElButton>
+          <ElButton data-testid="directory-run-now" :loading="activeRunAction === 'apply' && Boolean(activeRun && !isTerminalRun(activeRun))" :disabled="!selectedSourceId || actionRequestPending !== null || Boolean(activeRun && !isTerminalRun(activeRun))" @click="runNow">
             {{ activeRunAction === 'apply' && activeRun && !isTerminalRun(activeRun) ? t('directorySync.running') : t('directorySync.runNow') }}
-          </button>
-          <button data-testid="directory-save" type="button" :disabled="saving" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50" @click="saveSource">
-            {{ saving ? t('settings.saving') : t('settings.save') }}
-          </button>
+          </ElButton>
+          <ElButton data-testid="directory-save" type="primary" :loading="saving" @click="saveSource">{{ t('settings.save') }}</ElButton>
         </div>
 
         <section data-testid="directory-run-history" class="border-t border-gray-200 pt-4">
@@ -1058,16 +1055,15 @@ overrides:
             <span class="text-xs text-gray-500">{{ t('directorySync.runHistoryTotal', { total: runTotal }) }}</span>
           </div>
 
-          <p v-if="runHistoryError" class="mt-3 text-sm text-red-700">{{ runHistoryError }}</p>
+          <ElAlert v-if="runHistoryError" class="mt-3" type="error" :title="runHistoryError" :closable="false" />
           <p v-if="runHistoryLoading && runSummaries.length === 0" class="mt-3 text-sm text-gray-500">{{ t('directorySync.runHistoryLoading') }}</p>
           <p v-else-if="!runHistoryError && runSummaries.length === 0" class="mt-3 text-sm text-gray-500">{{ t('directorySync.runHistoryEmpty') }}</p>
           <div v-if="runSummaries.length > 0" class="mt-3 divide-y divide-gray-200 border-y border-gray-200" role="list">
-            <button
+            <ElButton
               v-for="run in runSummaries"
               :key="run.id"
               :data-testid="`directory-run-row-${run.id}`"
-              type="button"
-              class="grid min-h-16 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-2 py-3 text-left hover:bg-gray-50"
+              class="!m-0 grid !h-auto min-h-16 !w-full grid-cols-[minmax(0,1fr)_auto] !justify-between gap-3 !whitespace-normal !rounded-none !border-0 !px-2 !py-3 !text-left"
               :class="selectedRunId === run.id ? 'bg-indigo-50' : ''"
               @click="selectRun(run)"
             >
@@ -1078,41 +1074,39 @@ overrides:
                   {{ t('directorySync.runProgressCounts', { departments: run.department_count, members: run.member_count, warnings: run.warning_count }) }}
                 </span>
               </span>
-              <span class="text-right text-xs font-medium text-gray-700">{{ statusLabel(run.status) }}</span>
-            </button>
+              <ElTag type="info">{{ statusLabel(run.status) }}</ElTag>
+            </ElButton>
           </div>
 
           <div class="mt-3 flex min-h-9 flex-wrap items-center justify-between gap-2">
-            <button
+            <ElButton
               data-testid="directory-run-prev"
-              type="button"
+              size="small"
               :disabled="!canLoadPreviousRuns"
-              class="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 disabled:opacity-40"
               @click="loadPreviousRunPage"
             >
               {{ t('directorySync.runHistoryPrevious') }}
-            </button>
+            </ElButton>
             <span data-testid="directory-run-page-meta" class="text-xs text-gray-500">
               {{ t('directorySync.runHistoryPage', { page: runPage + 1, pages: runPageCount }) }}
             </span>
-            <button
+            <ElButton
               data-testid="directory-run-next"
-              type="button"
+              size="small"
               :disabled="!canLoadNextRuns"
-              class="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 disabled:opacity-40"
               @click="loadNextRunPage"
             >
               {{ t('directorySync.runHistoryNext') }}
-            </button>
+            </ElButton>
           </div>
 
           <div v-if="selectedRunSummary" data-testid="directory-run-detail" class="mt-4 border-t border-gray-200 pt-4">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <h5 class="text-sm font-semibold text-gray-900">{{ t('directorySync.runDetailTitle', { id: selectedRunSummary.id }) }}</h5>
-              <span class="text-xs text-gray-500">{{ statusLabel(selectedRunSummary.status) }}</span>
+              <ElTag type="info">{{ statusLabel(selectedRunSummary.status) }}</ElTag>
             </div>
             <p v-if="selectedRunLoading" class="mt-3 text-sm text-gray-500">{{ t('directorySync.runDetailLoading') }}</p>
-            <p v-if="selectedRunError" class="mt-3 text-sm text-red-700">{{ selectedRunError }}</p>
+            <ElAlert v-if="selectedRunError" class="mt-3" type="error" :title="selectedRunError" :closable="false" />
             <div v-if="selectedRunDetail" class="mt-3 space-y-4 text-sm text-gray-700">
               <p>{{ t('directorySync.runProgressCounts', {
                 departments: selectedRunDetail.department_count ?? 0,

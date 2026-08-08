@@ -77,14 +77,14 @@ function onSettingsTabKeydown(event: KeyboardEvent, index: number) {
       </div>
 
       <div class="grid gap-2 lg:grid-cols-5" role="tablist" aria-label="Admin console sections">
-        <button
+        <ElButton
           v-for="(section, index) in settingsSections"
           :key="section.id"
           :id="`settings-tab-${section.id}`"
           :data-testid="`settings-tab-${section.id}`"
-          class="min-h-20 rounded-lg border px-3 py-3 text-left transition-colors"
+          class="!m-0 !h-auto min-h-20 !whitespace-normal !rounded-lg !px-3 !py-3 !text-left"
           :class="activeSection === section.id ? 'border-blue-300 bg-blue-50 text-blue-950' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
-          type="button"
+          native-type="button"
           role="tab"
           :aria-selected="activeSection === section.id"
           :aria-controls="`settings-panel-${section.id}`"
@@ -94,7 +94,7 @@ function onSettingsTabKeydown(event: KeyboardEvent, index: number) {
         >
           <span class="block text-sm font-semibold">{{ section.label }}</span>
           <span class="mt-1 block text-xs text-slate-500">{{ section.description }}</span>
-        </button>
+        </ElButton>
       </div>
 
       <section

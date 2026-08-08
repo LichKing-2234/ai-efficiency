@@ -238,6 +238,15 @@ async function openSettingsSection(wrapper: any, section: string) {
   await flushPromises()
 }
 
+async function selectElementPlusOption(wrapper: any, testId: string, label: string) {
+  await wrapper.get(`[data-testid="${testId}"] .el-select__wrapper`).trigger('click')
+  await flushPromises()
+  const option = wrapper.findAll('.el-select-dropdown__item').find((item: any) => item.text() === label)
+  if (!option) throw new Error(`Element Plus option ${label} was not rendered`)
+  await option.trigger('click')
+  await flushPromises()
+}
+
 describe('SettingsView', () => {
   beforeEach(async () => {
     setActivePinia(createPinia())
@@ -364,6 +373,12 @@ describe('SettingsView', () => {
     expect(wrapper.text()).toContain('Add Credential')
   })
 
+  it('renders settings section navigation with Element Plus controls', async () => {
+    const wrapper = await mountSettings()
+
+    expect(wrapper.get('[data-testid="settings-tab-ai-services"]').classes()).toContain('el-button')
+  })
+
   it('renders directory sync inside organization login settings', async () => {
     const wrapper = await mountSettings()
 
@@ -373,6 +388,14 @@ describe('SettingsView', () => {
     expect(wrapper.text()).toContain('Directory Sync')
     expect(wrapper.text()).toContain('Departments then members')
     expect(wrapper.text()).toContain('Copy AI Prompt')
+  })
+
+  it('renders the LDAP save action with Element Plus', async () => {
+    const wrapper = await mountSettings()
+    await openSettingsSection(wrapper, 'organization-login')
+
+    const saveButton = wrapper.findAll('button').find((button) => button.text() === 'Save')
+    expect(saveButton?.classes()).toContain('el-button')
   })
 
   it('restores and persists active settings section in the URL query', async () => {
@@ -422,7 +445,6 @@ describe('SettingsView', () => {
     await flushPromises()
 
     await wrapper.find('input[name="credential-name"]').setValue('GitHub PAT')
-    await wrapper.find('select[name="credential-kind"]').setValue('secret_text')
     await wrapper.find('textarea[name="credential-secret-text"]').setValue('ghp_test')
 
     const saveBtn = wrapper.findAll('button').find((b) => b.text().includes('Save Credential'))
@@ -452,9 +474,9 @@ describe('SettingsView', () => {
     await flushPromises()
 
     await wrapper.find('input[name="provider-name"]').setValue('GitHub Extensions')
-    await wrapper.find('select[name="provider-api-credential"]').setValue('12')
-    await wrapper.find('select[name="provider-clone-protocol"]').setValue('ssh')
-    await wrapper.find('select[name="provider-clone-credential"]').setValue('13')
+    await selectElementPlusOption(wrapper, 'provider-api-credential', 'GitHub PAT (secret_text)')
+    await selectElementPlusOption(wrapper, 'provider-clone-protocol', 'ssh')
+    await selectElementPlusOption(wrapper, 'provider-clone-credential', 'Bitbucket SSH')
 
     const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Create')
     await saveBtn!.trigger('click')
@@ -565,6 +587,13 @@ describe('SettingsView', () => {
     expect(wrapper.text()).toContain('No relay providers configured')
   })
 
+  it('renders the Relay provider action with Element Plus', async () => {
+    const wrapper = await mountSettings()
+
+    const addButton = wrapper.findAll('button').find((button) => button.text() === 'Add Relay Provider')
+    expect(addButton?.classes()).toContain('el-button')
+  })
+
   it('opens relay provider dialog and creates a relay provider', async () => {
     const { createRelayProvider } = await import('@/api/relayProvider')
     const wrapper = await mountSettings()
@@ -598,10 +627,10 @@ describe('SettingsView', () => {
     await addBtn!.trigger('click')
     await flushPromises()
 
-    await wrapper.get('[role="dialog"]').trigger('keydown', { key: 'Escape' })
-    await wrapper.vm.$nextTick()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))
+    await flushPromises()
 
-    expect(wrapper.text()).not.toContain('Create Relay Provider')
+    expect(wrapper.get('[data-testid="relay-provider-dialog"]').isVisible()).toBe(false)
   })
 
   it('validates missing relay provider fields', async () => {

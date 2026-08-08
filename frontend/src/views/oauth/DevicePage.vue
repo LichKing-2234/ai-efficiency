@@ -51,37 +51,39 @@ async function submit(approved: boolean) {
         <div class="mt-1 break-all text-sm font-medium text-blue-950">{{ signedInAccount }}</div>
       </div>
 
-      <label for="user-code" class="block text-sm font-medium text-gray-700">
-        {{ t('auth.userCode') }}
-      </label>
-      <input
-        id="user-code"
-        v-model="userCode"
-        type="text"
-        class="w-full rounded border border-gray-300 px-3 py-2"
-        :placeholder="t('auth.devicePlaceholder')"
-      />
+      <el-form label-position="top" @submit.prevent="submit(true)">
+        <el-form-item :label="t('auth.userCode')" label-for="user-code">
+          <el-input
+            id="user-code"
+            v-model="userCode"
+            data-testid="device-code"
+            :placeholder="t('auth.devicePlaceholder')"
+          />
+        </el-form-item>
+      </el-form>
 
-      <p v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</p>
-      <p v-if="result" class="rounded-md bg-emerald-50 p-3 text-sm text-emerald-700">{{ result }}</p>
+      <el-alert v-if="error" :closable="false" :title="error" show-icon type="error" />
+      <el-alert v-if="result" :closable="false" :title="result" show-icon type="success" />
 
       <div class="flex gap-3">
-        <button
+        <el-button
           data-action="deny"
-          class="flex-1 rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          class="flex-1"
           :disabled="loading"
+          plain
           @click="submit(false)"
         >
           {{ loading ? t('auth.processing') : t('auth.deny') }}
-        </button>
-        <button
+        </el-button>
+        <el-button
           data-action="approve"
-          class="flex-1 rounded bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800"
-          :disabled="loading"
+          class="flex-1"
+          :loading="loading"
+          type="primary"
           @click="submit(true)"
         >
           {{ loading ? t('auth.processing') : t('auth.authorize') }}
-        </button>
+        </el-button>
       </div>
     </div>
   </AuthShell>

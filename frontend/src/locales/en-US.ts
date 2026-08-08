@@ -1123,6 +1123,7 @@ const enUS = {
   'directoryOffboarding.sourceId': 'Source ID',
   'directoryOffboarding.searchPlaceholder': 'Search users',
   'directoryOffboarding.warning': 'After disabling, this user will no longer be able to access AI services. Confirm the user identity before continuing.',
+  'directoryOffboarding.effectNotice': 'This disables upstream AI access and revokes local AI Efficiency tokens. Existing subscriptions are not removed automatically.',
   'directoryOffboarding.relay': 'AI access',
   'directoryOffboarding.reason': 'Reason',
   'directoryOffboarding.confirmation': 'Confirmation',

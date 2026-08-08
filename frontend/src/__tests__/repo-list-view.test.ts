@@ -191,6 +191,13 @@ describe('RepoListView', () => {
     expect(wrapper.find('h1').text()).toBe('Code Repositories')
     const addBtn = wrapper.findAll('button').find((b) => b.text().includes('Add Repo'))
     expect(addBtn).toBeTruthy()
+    expect(addBtn!.classes()).toContain('el-button')
+  })
+
+  it('uses an Element Plus binding filter', async () => {
+    const { wrapper } = await mountRepoList()
+
+    expect(wrapper.get('[data-testid="repo-binding-filter"]').classes()).toContain('el-select')
   })
 
   it('starts list and inventory together and renders server-selected rows before inventory', async () => {
@@ -229,6 +236,15 @@ describe('RepoListView', () => {
     resolveInventory({ data: { data: buildInventory([sampleRepos[0]]) } })
     await flushPromises()
     expect(listRepos).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses an Element Plus loading state while repositories are pending', async () => {
+    const { listRepos } = await import('@/api/repo')
+    ;(listRepos as any).mockReturnValue(new Promise(() => {}))
+
+    const { wrapper } = await mountRepoList(undefined, '/repos', { useCurrentMocks: true })
+
+    expect(wrapper.find('.el-skeleton').exists()).toBe(true)
   })
 
   it('sends explicit route selection immediately without waiting for inventory', async () => {
@@ -403,6 +419,12 @@ describe('RepoListView', () => {
     expect(wrapper.text()).toContain('No repositories found')
   })
 
+  it('uses an Element Plus repository empty state', async () => {
+    const { wrapper } = await mountRepoList([])
+
+    expect(wrapper.find('.el-empty').exists()).toBe(true)
+  })
+
   it('shows an Unbound badge for repos without scm_provider', async () => {
     const { wrapper } = await mountRepoList([
       {
@@ -421,6 +443,12 @@ describe('RepoListView', () => {
     ])
 
     expect(wrapper.text()).toContain('Unbound')
+  })
+
+  it('presents repository binding state with Element Plus tags', async () => {
+    const { wrapper } = await mountRepoList(sampleRepos)
+
+    expect(wrapper.findAll('.el-tag').length).toBeGreaterThan(0)
   })
 
   it('shows auto-bind action only for admins', async () => {
@@ -460,6 +488,17 @@ describe('RepoListView', () => {
     expect(wrapper.text()).toContain('1 bound')
     expect(wrapper.text()).toContain('1 no match')
     expect(wrapper.text()).toContain('1 ambiguous')
+  })
+
+  it('presents repository operation feedback with Element Plus', async () => {
+    const { autoBindUnboundRepos } = await import('@/api/repo')
+    ;(autoBindUnboundRepos as any).mockResolvedValue({ data: { data: { summary: { bound: 1, skipped_no_match: 0, skipped_ambiguous: 0, webhook_failed: 0, errors: 0 } } } })
+    const { wrapper } = await mountRepoList(sampleRepos, '/repos', { admin: true })
+
+    await wrapper.get('[data-testid="repo-auto-bind-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.el-alert--success').exists()).toBe(true)
   })
 
   it('shows batch webhook repair only for admins', async () => {
@@ -518,16 +557,28 @@ describe('RepoListView', () => {
     expect(wrapper.find('input[placeholder*="github.com"]').exists()).toBe(true)
   })
 
+  it('uses an Element Plus add repository dialog', async () => {
+    const { wrapper } = await mountRepoList()
+
+    const addBtn = wrapper.findAll('button').find((button) => button.text().includes('Add Repo'))
+    await addBtn!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.el-dialog').exists()).toBe(true)
+  })
+
   it('closes add repository dialog with Escape', async () => {
     const { wrapper } = await mountRepoList()
     const addBtn = wrapper.findAll('button').find((b) => b.text().includes('Add Repo'))
     await addBtn!.trigger('click')
     await flushPromises()
 
-    await wrapper.get('[role="dialog"]').trigger('keydown', { key: 'Escape' })
-    await wrapper.vm.$nextTick()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))
+    await vi.waitFor(() => {
+      expect(wrapper.get('.el-overlay').attributes('style')).toContain('display: none')
+    })
 
-    expect(wrapper.text()).not.toContain('Add Repository')
+    expect(wrapper.get('.el-overlay').isVisible()).toBe(false)
   })
 
   it('auto-fills name and clone_url from GitHub URL', async () => {
@@ -544,6 +595,42 @@ describe('RepoListView', () => {
 
     expect(wrapper.text()).toContain('myorg/myrepo')
     expect(wrapper.text()).toContain('myrepo')
+  })
+
+  it('uses an Element Plus repository URL input', async () => {
+    const { wrapper } = await mountRepoList()
+
+    const addBtn = wrapper.findAll('button').find((button) => button.text().includes('Add Repo'))
+    await addBtn!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('input[placeholder*="github.com"]').classes()).toContain('el-input__inner')
+  })
+
+  it('uses an Element Plus code platform selector', async () => {
+    const { wrapper } = await mountRepoList()
+
+    const addBtn = wrapper.findAll('button').find((button) => button.text().includes('Add Repo'))
+    await addBtn!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('.el-select')).toHaveLength(2)
+  })
+
+  it('uses Element Plus for repository command buttons', async () => {
+    const { wrapper } = await mountRepoList(sampleRepos, '/repos', { admin: true })
+
+    const addBtn = wrapper.findAll('button').find((button) => button.text().includes('Add Repo'))
+    await addBtn!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('button').every((button) => button.classes().some((name) => name.startsWith('el-')))).toBe(true)
+  })
+
+  it('uses an Element Plus scope search input', async () => {
+    const { wrapper } = await mountRepoList(sampleRepos)
+
+    expect(wrapper.get('input[type="search"]').classes()).toContain('el-input__inner')
   })
 
   it('auto-fills from Bitbucket Server URL', async () => {
@@ -572,9 +659,11 @@ describe('RepoListView', () => {
 
     const cancelBtn = wrapper.findAll('button').find((b) => b.text() === 'Cancel')
     await cancelBtn!.trigger('click')
-    await wrapper.vm.$nextTick()
+    await vi.waitFor(() => {
+      expect(wrapper.get('.el-overlay').attributes('style')).toContain('display: none')
+    })
 
-    expect(wrapper.text()).not.toContain('Add Repository')
+    expect(wrapper.get('.el-overlay').isVisible()).toBe(false)
   })
 
   it('shows validation error when full_name is empty', async () => {
@@ -629,7 +718,11 @@ describe('RepoListView', () => {
 
     expect(wrapper.text()).toContain('Auto-discovered repositories need a code platform binding before PR sync can run.')
 
-    await wrapper.find('[data-testid="repo-binding-filter"]').setValue('unbound')
+    await wrapper.get('[data-testid="repo-binding-filter"] .el-select__wrapper').trigger('click')
+    await flushPromises()
+    const unboundOptions = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]'))
+      .filter((option) => option.textContent?.trim() === 'Unbound')
+    unboundOptions[unboundOptions.length - 1]!.click()
     await flushPromises()
 
     expect(wrapper.text()).toContain('repo-unbound')
@@ -657,7 +750,11 @@ describe('RepoListView', () => {
     expect(wrapper.text()).toContain('repo-unbound')
     expect(wrapper.text()).not.toContain('repo-a')
 
-    await wrapper.find('[data-testid="repo-binding-filter"]').setValue('all')
+    await wrapper.get('[data-testid="repo-binding-filter"] .el-select__wrapper').trigger('click')
+    await flushPromises()
+    const allOptions = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]'))
+      .filter((option) => option.textContent?.trim() === 'All Bindings')
+    allOptions[allOptions.length - 1]!.click()
     await flushPromises()
 
     expect(router.currentRoute.value.query.binding).toBeUndefined()
@@ -831,13 +928,25 @@ describe('RepoListView', () => {
     await wrapper.vm.$nextTick()
 
     // Click SSH button
-    const sshBtn = wrapper.findAll('button').find((b) => b.text() === 'SSH')
-    await sshBtn!.trigger('click')
+    await wrapper.get('.el-radio-button input[value="ssh"]').setValue()
     await wrapper.vm.$nextTick()
 
     // Clone URL should be SSH format
-    const cloneUrlInput = wrapper.find('input.font-mono')
+    const cloneUrlInput = wrapper.find('[data-testid="repo-clone-url"]')
     expect((cloneUrlInput.element as HTMLInputElement).value).toContain('git@github.com:myorg/myrepo.git')
+  })
+
+  it('uses an Element Plus clone protocol control', async () => {
+    const { wrapper } = await mountRepoList()
+
+    const addBtn = wrapper.findAll('button').find((button) => button.text().includes('Add Repo'))
+    await addBtn!.trigger('click')
+    await flushPromises()
+    const repoUrlInput = wrapper.get('input[placeholder*="github.com"]')
+    await repoUrlInput.setValue('https://github.com/myorg/myrepo')
+    await repoUrlInput.trigger('input')
+
+    expect(wrapper.find('.el-radio-group').exists()).toBe(true)
   })
 
   it('switches clone protocol to HTTP for GitHub', async () => {
@@ -854,15 +963,13 @@ describe('RepoListView', () => {
     await wrapper.vm.$nextTick()
 
     // Switch to SSH then back to HTTP
-    const sshBtn = wrapper.findAll('button').find((b) => b.text() === 'SSH')
-    await sshBtn!.trigger('click')
+    await wrapper.get('.el-radio-button input[value="ssh"]').setValue()
     await wrapper.vm.$nextTick()
 
-    const httpBtn = wrapper.findAll('button').find((b) => b.text() === 'HTTP')
-    await httpBtn!.trigger('click')
+    await wrapper.get('.el-radio-button input[value="http"]').setValue()
     await wrapper.vm.$nextTick()
 
-    const cloneUrlInput = wrapper.find('input.font-mono')
+    const cloneUrlInput = wrapper.find('[data-testid="repo-clone-url"]')
     expect((cloneUrlInput.element as HTMLInputElement).value).toContain('https://github.com/myorg/myrepo.git')
   })
 
@@ -880,11 +987,10 @@ describe('RepoListView', () => {
     await wrapper.vm.$nextTick()
 
     // Click SSH button
-    const sshBtn = wrapper.findAll('button').find((b) => b.text() === 'SSH')
-    await sshBtn!.trigger('click')
+    await wrapper.get('.el-radio-button input[value="ssh"]').setValue()
     await wrapper.vm.$nextTick()
 
-    const cloneUrlInput = wrapper.find('input.font-mono')
+    const cloneUrlInput = wrapper.find('[data-testid="repo-clone-url"]')
     expect((cloneUrlInput.element as HTMLInputElement).value).toContain('ssh://git@')
   })
 
@@ -902,8 +1008,7 @@ describe('RepoListView', () => {
     await wrapper.vm.$nextTick()
 
     // Switch to SSH
-    const sshBtn = wrapper.findAll('button').find((b) => b.text() === 'SSH')
-    await sshBtn!.trigger('click')
+    await wrapper.get('.el-radio-button input[value="ssh"]').setValue()
     await wrapper.vm.$nextTick()
 
     // Fill SSH host
@@ -912,7 +1017,7 @@ describe('RepoListView', () => {
     await sshHostInput.trigger('input')
     await wrapper.vm.$nextTick()
 
-    const cloneUrlInput = wrapper.find('input.font-mono')
+    const cloneUrlInput = wrapper.find('[data-testid="repo-clone-url"]')
     expect((cloneUrlInput.element as HTMLInputElement).value).toContain('git@git.example.com')
   })
 
@@ -928,7 +1033,7 @@ describe('RepoListView', () => {
     await repoUrlInput.trigger('input')
     await wrapper.vm.$nextTick()
 
-    const cloneUrlInput = wrapper.find('input.font-mono')
+    const cloneUrlInput = wrapper.find('[data-testid="repo-clone-url"]')
     expect((cloneUrlInput.element as HTMLInputElement).value).toContain('/scm/proj/my-repo.git')
   })
 
@@ -968,7 +1073,7 @@ describe('RepoListView', () => {
     await wrapper.vm.$nextTick()
 
     // Should not crash, no parsed info shown
-    expect(wrapper.find('input.font-mono').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="repo-clone-url"]').exists()).toBe(false)
   })
 
   it('auto-selects provider matching URL origin', async () => {
@@ -994,10 +1099,7 @@ describe('RepoListView', () => {
     await repoUrlInput.trigger('input')
     await wrapper.vm.$nextTick()
 
-    // The select should have the BB provider selected
-    const selects = wrapper.findAll('select')
-    const select = selects[selects.length - 1]
-    expect((select.element as HTMLSelectElement).value).toBe('2')
+    expect(wrapper.get('[data-testid="repo-provider-select"]').text()).toContain('BB')
   })
 
   it('handles listProviders error when opening add dialog', async () => {
@@ -1036,7 +1138,7 @@ describe('RepoListView', () => {
     await wrapper.vm.$nextTick()
 
     // No parsed info should be shown
-    expect(wrapper.find('input.font-mono').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="repo-clone-url"]').exists()).toBe(false)
   })
 
   it('handles providers returned as array directly', async () => {

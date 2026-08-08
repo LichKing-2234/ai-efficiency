@@ -50,19 +50,26 @@ const unavailableMultiplierRow = {
   editable: true,
 }
 
+async function mountRows(options: Parameters<typeof mount>[1]) {
+  const wrapper = mount(SelectedSubjectSubscriptionRows, options)
+  await flushPromises()
+  return wrapper
+}
+
 describe('SelectedSubjectSubscriptionRows', () => {
   beforeEach(() => {
     setLocale('en-US')
   })
 
   it('keeps Used / Quota in enforcement units when draft multiplier changes', async () => {
-    const wrapper = mount(SelectedSubjectSubscriptionRows, {
+    const wrapper = await mountRows({
       props: {
         subjectUserId: 101,
         rows: [editableRow],
       },
     })
 
+    expect(wrapper.get('[data-testid="edit-multiplier-42"]').classes()).toContain('el-button')
     await wrapper.get('[data-testid="edit-multiplier-42"]').trigger('click')
     await wrapper.get('[data-testid="multiplier-input"]').setValue('2')
 
@@ -73,7 +80,7 @@ describe('SelectedSubjectSubscriptionRows', () => {
 
   it('keeps the multiplier modal open and shows an error when update fails', async () => {
     const updateMultiplier = vi.fn().mockRejectedValue(new Error('network failed'))
-    const wrapper = mount(SelectedSubjectSubscriptionRows, {
+    const wrapper = await mountRows({
       props: {
         subjectUserId: 101,
         rows: [editableRow],
@@ -95,7 +102,7 @@ describe('SelectedSubjectSubscriptionRows', () => {
 
   it('allows setting a multiplier below the inherited default', async () => {
     const updateMultiplier = vi.fn().mockResolvedValue(undefined)
-    const wrapper = mount(SelectedSubjectSubscriptionRows, {
+    const wrapper = await mountRows({
       props: {
         subjectUserId: 101,
         rows: [editableRow],
@@ -120,7 +127,7 @@ describe('SelectedSubjectSubscriptionRows', () => {
 
   it('rejects multiplier values with more than two decimal places', async () => {
     const updateMultiplier = vi.fn()
-    const wrapper = mount(SelectedSubjectSubscriptionRows, {
+    const wrapper = await mountRows({
       props: {
         subjectUserId: 101,
         rows: [editableRow],
@@ -137,7 +144,7 @@ describe('SelectedSubjectSubscriptionRows', () => {
   })
 
   it('renders infinity for unlimited quota while keeping historical used amount', async () => {
-    const wrapper = mount(SelectedSubjectSubscriptionRows, {
+    const wrapper = await mountRows({
       props: {
         subjectUserId: 101,
         rows: [zeroMultiplierRow],
@@ -148,7 +155,7 @@ describe('SelectedSubjectSubscriptionRows', () => {
   })
 
   it('renders a compact warning and preserves usage when multiplier metadata is unavailable', async () => {
-    const wrapper = mount(SelectedSubjectSubscriptionRows, {
+    const wrapper = await mountRows({
       props: {
         subjectUserId: 101,
         rows: [unavailableMultiplierRow],
@@ -172,8 +179,8 @@ describe('SelectedSubjectSubscriptionRows', () => {
     expect(wrapper.find('[data-testid="multiplier-input"]').exists()).toBe(false)
   })
 
-  it('treats a missing multiplier metadata status as available for rolling upgrades', () => {
-    const wrapper = mount(SelectedSubjectSubscriptionRows, {
+  it('treats a missing multiplier metadata status as available for rolling upgrades', async () => {
+    const wrapper = await mountRows({
       props: {
         subjectUserId: 101,
         rows: [editableRow],
@@ -185,9 +192,9 @@ describe('SelectedSubjectSubscriptionRows', () => {
     expect(wrapper.get('[data-testid="edit-multiplier-42"]').attributes('disabled')).toBeUndefined()
   })
 
-  it('localizes unavailable multiplier metadata in Chinese', () => {
+  it('localizes unavailable multiplier metadata in Chinese', async () => {
     setLocale('zh-CN')
-    const wrapper = mount(SelectedSubjectSubscriptionRows, {
+    const wrapper = await mountRows({
       props: {
         subjectUserId: 101,
         rows: [unavailableMultiplierRow],
@@ -205,7 +212,7 @@ describe('SelectedSubjectSubscriptionRows', () => {
 
   it('localizes subscription rows and multiplier modal in Chinese', async () => {
     setLocale('zh-CN')
-    const wrapper = mount(SelectedSubjectSubscriptionRows, {
+    const wrapper = await mountRows({
       props: {
         subjectUserId: 101,
         rows: [editableRow],

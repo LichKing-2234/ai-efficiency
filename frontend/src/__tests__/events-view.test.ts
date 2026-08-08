@@ -157,7 +157,20 @@ function installMatchMedia(initialMatches: boolean) {
     removeListener: vi.fn(),
     dispatchEvent: vi.fn(),
   }
-  const matchMedia = vi.fn(() => mediaQueryList as unknown as MediaQueryList)
+  const fallbackMediaQueryList = {
+    matches: false,
+    media: '',
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }
+  const matchMedia = vi.fn((query: string) => {
+    if (query === mediaQueryList.media) return mediaQueryList as unknown as MediaQueryList
+    return { ...fallbackMediaQueryList, media: query } as unknown as MediaQueryList
+  })
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
     value: matchMedia,
@@ -177,6 +190,19 @@ function installMatchMedia(initialMatches: boolean) {
       }
     },
   }
+}
+
+async function selectElementPlusOption(
+  wrapper: Awaited<ReturnType<typeof mountEvents>>['wrapper'],
+  testId: string,
+  label: string,
+) {
+  await wrapper.get(`[data-testid="${testId}"] .el-select__wrapper`).trigger('click')
+  await flushPromises()
+  const option = wrapper.findAll('.el-select-dropdown__item').find((item) => item.text() === label)
+  if (!option) throw new Error(`Element Plus option ${label} was not rendered`)
+  await option.trigger('click')
+  await flushPromises()
 }
 
 async function openAdvancedDetails(wrapper: Awaited<ReturnType<typeof mountEvents>>['wrapper']) {
@@ -230,6 +256,13 @@ describe('EventsView', () => {
     expect(wrapper.text()).not.toContain('detail.jsonl')
   })
 
+  it('renders the refresh action as an Element Plus button', async () => {
+    const { wrapper } = await mountEvents()
+
+    const refresh = wrapper.findAll('button').find((button) => button.text() === 'Refresh')
+    expect(refresh?.classes()).toContain('el-button')
+  })
+
   it('uses a collapsible filter panel on mobile markup', async () => {
     const { wrapper } = await mountEvents()
 
@@ -254,7 +287,6 @@ describe('EventsView', () => {
     expect(wrapper.findAll('[data-event-row="mobile"]')).toHaveLength(3)
     expect(wrapper.findAll('[data-event-row="desktop"]')).toHaveLength(0)
     expect(wrapper.text()).toContain('View details')
-    expect(media.matchMedia).toHaveBeenCalledTimes(1)
     expect(media.matchMedia).toHaveBeenCalledWith('(min-width: 768px)')
   })
 
@@ -263,8 +295,7 @@ describe('EventsView', () => {
     const { wrapper } = await mountEvents()
 
     expect(wrapper.findAll('[data-event-row="mobile"]')).toHaveLength(0)
-    expect(wrapper.findAll('[data-event-row="desktop"]')).toHaveLength(3)
-    expect(media.matchMedia).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-event-list="desktop"]').findAll('.el-table__row')).toHaveLength(3)
     expect(media.matchMedia).toHaveBeenCalledWith('(min-width: 768px)')
   })
 
@@ -280,7 +311,7 @@ describe('EventsView', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.findAll('[data-event-row="mobile"]')).toHaveLength(0)
-    expect(wrapper.findAll('[data-event-row="desktop"]')).toHaveLength(3)
+    expect(wrapper.get('[data-event-list="desktop"]').findAll('.el-table__row')).toHaveLength(3)
 
     wrapper.unmount()
     expect(media.removeEventListener).toHaveBeenCalledTimes(1)
@@ -318,10 +349,10 @@ describe('EventsView', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('Record detail')
 
-    await wrapper.get('[role="dialog"]').trigger('keydown', { key: 'Escape' })
-    await wrapper.vm.$nextTick()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))
+    await flushPromises()
 
-    expect(wrapper.text()).not.toContain('Record detail')
+    expect(wrapper.get('[data-testid="event-detail-drawer"]').isVisible()).toBe(false)
   })
 
   it('shows raw payload for admin users in the detail drawer', async () => {
@@ -380,9 +411,9 @@ describe('EventsView', () => {
       expect(rawPayloadStringifyCount(stringifySpy)).toBe(1)
       expect(wrapper.text()).toContain(largeRawPayload.marker)
 
-      await wrapper.get('[role="dialog"] button').trigger('click')
-      await wrapper.vm.$nextTick()
-      expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+      await wrapper.get('[data-testid="event-detail-drawer"] button').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="event-detail-drawer"]').isVisible()).toBe(false)
 
       await wrapper.find('tbody tr').trigger('click')
       await flushPromises()
@@ -458,8 +489,7 @@ describe('EventsView', () => {
     await flushPromises()
     expect((listEvents as any).mock.calls.at(-1)[0].offset).toBe(20)
 
-    await wrapper.get('[data-testid="events-page-size"]').setValue('50')
-    await flushPromises()
+    await selectElementPlusOption(wrapper, 'events-page-size', '50')
     const latestParams = (listEvents as any).mock.calls.at(-1)[0]
     expect(latestParams.limit).toBe(50)
     expect(latestParams.offset).toBe(0)
@@ -492,7 +522,7 @@ describe('EventsView', () => {
       { items: sampleRows, total: 45, page: 0, page_size: 20 },
     )
 
-    expect((wrapper.get('[data-testid="events-page-size"]').element as HTMLSelectElement).value).toBe('20')
+    expect(wrapper.get('[data-testid="events-page-size"]').text()).toContain('20')
     expect(router.currentRoute.value.query.limit).toBeUndefined()
     expect(router.currentRoute.value.query.offset).toBeUndefined()
 

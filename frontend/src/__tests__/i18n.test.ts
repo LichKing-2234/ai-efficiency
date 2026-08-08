@@ -216,11 +216,12 @@ describe('i18n locale loading', () => {
     const englishKeys = Object.keys(enUS).sort()
     const chineseKeys = Object.keys(zhCN).sort()
 
-    expect(englishKeys).toHaveLength(1132)
-    expect(chineseKeys).toHaveLength(1132)
+    expect(englishKeys).toHaveLength(1133)
+    expect(chineseKeys).toHaveLength(1133)
     expect(englishKeys).toContain('activity.title')
     expect(englishKeys).toContain('activity.teamsTitle')
     expect(englishKeys).toContain('activity.repositoryActivity')
+    expect(englishKeys).toContain('directoryOffboarding.effectNotice')
     expect(chineseKeys).toEqual(englishKeys)
   })
 
@@ -259,11 +260,13 @@ describe('i18n locale loading', () => {
       expect(app.use).toHaveBeenCalledTimes(2)
       expect(mount).toHaveBeenCalledTimes(1)
       expect(mount).toHaveBeenCalledWith('#app')
-      expect(startWebVitalsReportingAfterRouterReady).toHaveBeenCalledTimes(1)
-      expect(startWebVitalsReportingAfterRouterReady).toHaveBeenCalledWith(router)
-      expect(mount.mock.invocationCallOrder[0]).toBeLessThan(
-        startWebVitalsReportingAfterRouterReady.mock.invocationCallOrder[0],
-      )
+      await vi.waitFor(() => {
+        expect(startWebVitalsReportingAfterRouterReady).toHaveBeenCalledTimes(1)
+        expect(startWebVitalsReportingAfterRouterReady).toHaveBeenCalledWith(router)
+        expect(mount.mock.invocationCallOrder[0]).toBeLessThan(
+          startWebVitalsReportingAfterRouterReady.mock.invocationCallOrder[0],
+        )
+      })
     } finally {
       vi.doUnmock('@/i18n')
       vi.doUnmock('vue')

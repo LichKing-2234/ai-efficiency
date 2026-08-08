@@ -201,15 +201,6 @@ function buildOverviewParams(range: RangeOption): TeamUsageOverviewParams {
   }
 }
 
-function rangeButtonClass(active: boolean) {
-  return [
-    'rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60',
-    active
-      ? 'bg-blue-600 text-white'
-      : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50',
-  ]
-}
-
 function selectRange(range: RangeOption) {
   selectedRange.value = range
   void loadOverview()
@@ -233,24 +224,25 @@ onMounted(loadOverview)
       <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <UsageCenterTabs active="team" />
         <div class="flex flex-wrap items-center gap-2">
-          <button data-test="range-today" type="button" :class="rangeButtonClass(selectedRange === 'today')" :disabled="loading" @click="selectRange('today')">
+          <ElButton data-test="range-today" :type="selectedRange === 'today' ? 'primary' : undefined" :disabled="loading" @click="selectRange('today')">
             {{ t('usageDashboard.today') }}
-          </button>
-          <button data-test="range-7d" type="button" :class="rangeButtonClass(selectedRange === '7d')" :disabled="loading" @click="selectRange('7d')">
+          </ElButton>
+          <ElButton data-test="range-7d" :type="selectedRange === '7d' ? 'primary' : undefined" :disabled="loading" @click="selectRange('7d')">
             {{ t('usageDashboard.sevenDays') }}
-          </button>
-          <button data-test="range-30d" type="button" :class="rangeButtonClass(selectedRange === '30d')" :disabled="loading" @click="selectRange('30d')">
+          </ElButton>
+          <ElButton data-test="range-30d" :type="selectedRange === '30d' ? 'primary' : undefined" :disabled="loading" @click="selectRange('30d')">
             {{ t('usageDashboard.thirtyDays') }}
-          </button>
+          </ElButton>
         </div>
       </div>
 
-      <section
+      <ElAlert
         v-if="summaryError === 'no_scope'"
-        class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm"
-      >
-        {{ t('teamUsage.noScope') }}
-      </section>
+        type="info"
+        :closable="false"
+        show-icon
+        :title="t('teamUsage.noScope')"
+      />
 
       <div
         v-else
@@ -258,36 +250,39 @@ onMounted(loadOverview)
         :aria-busy="loading ? 'true' : 'false'"
         :class="['space-y-4 transition-opacity', loading ? 'opacity-60' : 'opacity-100']"
       >
-        <div
+        <ElAlert
           v-if="loading && (summary || trend || membersPage)"
           data-testid="team-overview-refreshing"
-          class="rounded-lg border border-blue-100 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700"
-        >
-          {{ t('teamUsage.updating') }}
-        </div>
+          type="info"
+          :closable="false"
+          show-icon
+          :title="t('teamUsage.updating')"
+        />
 
-        <section
+        <ElAlert
           v-if="summaryLoading && !summary"
           data-testid="team-overview-summary-loading"
-          class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm"
-        >
-          {{ t('settings.loading') }}
-        </section>
-        <section
+          type="info"
+          :closable="false"
+          :title="t('settings.loading')"
+        />
+        <ElAlert
           v-else-if="summaryError === 'unavailable' && !summary"
           data-testid="team-overview-summary-error"
-          class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm"
-        >
-          {{ t('teamUsage.unavailable') }}
-        </section>
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="t('teamUsage.unavailable')"
+        />
         <div v-else-if="summary" data-testid="team-overview-summary" class="space-y-3">
-          <div
+          <ElAlert
             v-if="summary.cache_status === 'stale'"
             data-testid="team-summary-stale-marker"
-            class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800"
-          >
-            {{ t('usageDashboard.staleSnapshot') }}
-          </div>
+            type="warning"
+            :closable="false"
+            show-icon
+            :title="t('usageDashboard.staleSnapshot')"
+          />
 
           <section class="grid gap-3 md:grid-cols-4">
             <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -316,42 +311,46 @@ onMounted(loadOverview)
             </div>
           </section>
 
-          <section
+          <ElAlert
             v-if="scopeTooLarge"
-            class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
-          >
-            {{ t('teamUsage.scopeTooLarge') }}
-          </section>
-          <section
+            type="warning"
+            :closable="false"
+            show-icon
+            :title="t('teamUsage.scopeTooLarge')"
+          />
+          <ElAlert
             v-else-if="summaryPartiallyUnavailable"
-            class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
-          >
-            {{ t('teamUsage.summaryUnavailable') }}
-          </section>
+            type="warning"
+            :closable="false"
+            show-icon
+            :title="t('teamUsage.summaryUnavailable')"
+          />
         </div>
 
-        <section
+        <ElAlert
           v-if="trendLoading && !trend"
           data-testid="team-overview-trend-loading"
-          class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm"
-        >
-          {{ t('settings.loading') }}
-        </section>
-        <section
+          type="info"
+          :closable="false"
+          :title="t('settings.loading')"
+        />
+        <ElAlert
           v-else-if="trendError && !trend"
           data-testid="team-overview-trend-error"
-          class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm"
-        >
-          {{ trendError === 'no_scope' ? t('teamUsage.noScope') : t('teamUsage.unavailable') }}
-        </section>
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="trendError === 'no_scope' ? t('teamUsage.noScope') : t('teamUsage.unavailable')"
+        />
         <div v-else-if="trend" data-testid="team-overview-trend" class="space-y-3">
-          <div
+          <ElAlert
             v-if="trend.cache_status === 'stale'"
             data-testid="team-trend-stale-marker"
-            class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800"
-          >
-            {{ t('usageDashboard.staleSnapshot') }}
-          </div>
+            type="warning"
+            :closable="false"
+            show-icon
+            :title="t('usageDashboard.staleSnapshot')"
+          />
           <TeamOverviewMemberTrendChart
             :state="trend.top_member_trend"
             :department-trend="trend.department_trend"
@@ -359,13 +358,14 @@ onMounted(loadOverview)
           />
         </div>
 
-        <div
+        <ElAlert
           v-if="membersPage?.cache_status === 'stale'"
           data-testid="team-members-stale-marker"
-          class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800"
-        >
-          {{ t('usageDashboard.staleSnapshot') }}
-        </div>
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="t('usageDashboard.staleSnapshot')"
+        />
         <TeamOverviewMemberTable
           v-if="membersLoading || membersPage || membersError || organizationRoot"
           :members="membersPage?.items ?? []"

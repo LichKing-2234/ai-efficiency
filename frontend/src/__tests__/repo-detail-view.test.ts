@@ -559,6 +559,26 @@ describe('RepoDetailView', () => {
     expect(wrapper.text()).not.toContain('2,000')
   })
 
+  it('uses an Element Plus loading state while repository data is pending', async () => {
+    const { wrapper } = await mountRepoDetail(undefined, undefined, {
+      listPRsImpl: () => new Promise(() => {}),
+    })
+
+    expect(wrapper.find('.el-skeleton').exists()).toBe(true)
+  })
+
+  it('uses an Element Plus PR range selector', async () => {
+    const { wrapper } = await mountRepoDetail()
+
+    expect(wrapper.find('.el-select').exists()).toBe(true)
+  })
+
+  it('uses Element Plus for repository detail command buttons', async () => {
+    const { wrapper } = await mountRepoDetail(undefined, createAdminPinia())
+
+    expect(wrapper.findAll('button').every((button) => button.classes().some((name) => name.startsWith('el-')))).toBe(true)
+  })
+
   it('renders repository and PR core content while admin provider options are still pending', async () => {
     const { listProviders } = await import('@/api/scmProvider')
     let resolveProviders!: (value: any) => void
@@ -785,6 +805,12 @@ describe('RepoDetailView', () => {
     expect(wrapper.text()).toContain('auto-discovered by ae-cli')
   })
 
+  it('uses an Element Plus repository binding selector', async () => {
+    const { wrapper } = await mountRepoDetail({ binding_state: 'unbound', edges: {} }, createAdminPinia())
+
+    expect(wrapper.find('[data-testid="repo-binding-controls"] .el-select').exists()).toBe(true)
+  })
+
   it('shows repair webhook action for admin bound webhook_failed repo', async () => {
     const pinia = createAdminPinia()
 
@@ -798,6 +824,17 @@ describe('RepoDetailView', () => {
     expect(wrapper.text()).toContain('Repair webhook')
     expect(wrapper.text()).toContain('Force replace')
     expect(wrapper.find('[data-testid="repo-repair-webhook-button"]').exists()).toBe(true)
+  })
+
+  it('uses an Element Plus force-repair checkbox', async () => {
+    const { wrapper } = await mountRepoDetail({
+      status: 'webhook_failed',
+      binding_state: 'bound',
+      webhook_id: 'old-hook',
+      edges: { scm_provider: { id: 2, name: 'Bitbucket', type: 'bitbucket_server', base_url: 'https://bitbucket.example.com', status: 'active' } },
+    }, createAdminPinia())
+
+    expect(wrapper.find('.el-checkbox').exists()).toBe(true)
   })
 
   it('shows repair webhook action for admin bound repo with missing webhook id', async () => {
@@ -919,6 +956,12 @@ describe('RepoDetailView', () => {
     expect(wrapper.text()).not.toContain('No pull requests recorded yet.')
   })
 
+  it('uses an Element Plus empty state when no pull requests exist', async () => {
+    const { wrapper } = await mountRepoDetail(undefined, undefined, { prs: [], total: 0 })
+
+    expect(wrapper.find('.el-empty').exists()).toBe(true)
+  })
+
   it('preserves loaded PR rows when a later PR list refresh fails', async () => {
     const listPRsImpl = vi.fn()
       .mockResolvedValueOnce({
@@ -957,8 +1000,11 @@ describe('RepoDetailView', () => {
     const { wrapper } = await mountRepoDetail(undefined, undefined, { listPRsImpl })
     expect(wrapper.text()).toContain('Keep visible PR')
 
-    const range = wrapper.find('select')
-    await range.setValue('6')
+    await wrapper.get('[data-testid="repo-pr-range"] .el-select__wrapper').trigger('click')
+    await flushPromises()
+    const rangeOptions = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]'))
+      .filter((option) => option.textContent?.trim() === 'Last 6 months')
+    rangeOptions[rangeOptions.length - 1]!.click()
     await flushPromises()
 
     expect(wrapper.text()).toContain('Failed to load pull requests')
@@ -1012,6 +1058,12 @@ describe('RepoDetailView', () => {
     expect(wrapper.text()).toContain('No checkpoint for this commit')
   })
 
+  it('presents repository and PR status with Element Plus tags', async () => {
+    const { wrapper } = await mountRepoDetail()
+
+    expect(wrapper.findAll('.el-tag').length).toBeGreaterThan(0)
+  })
+
   it('shows PR sync error message', async () => {
     const { syncPRs } = await import('@/api/pr')
     ;(syncPRs as any).mockRejectedValue({ response: { data: { message: 'sync failed: upstream timeout' } } })
@@ -1024,5 +1076,17 @@ describe('RepoDetailView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('sync failed: upstream timeout')
+  })
+
+  it('presents repository errors with Element Plus alerts', async () => {
+    const { syncPRs } = await import('@/api/pr')
+    ;(syncPRs as any).mockRejectedValue({ response: { data: { message: 'sync failed: upstream timeout' } } })
+    const { wrapper } = await mountRepoDetail()
+
+    const syncButton = wrapper.findAll('button').find((button) => button.text() === 'Sync PRs')
+    await syncButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.el-alert--error').exists()).toBe(true)
   })
 })

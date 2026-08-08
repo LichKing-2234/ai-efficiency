@@ -2,11 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
-import AppToastHost from '@/components/AppToastHost.vue'
 import AdminUsersView from '@/views/admin/AdminUsersView.vue'
 import { setLocale } from '@/i18n'
-import { resetToastsForTest } from '@/composables/useToast'
+
+const messageSuccess = vi.spyOn(ElMessage, 'success').mockImplementation(() => undefined as any)
+const messageError = vi.spyOn(ElMessage, 'error').mockImplementation(() => undefined as any)
 
 vi.mock('@/api/adminUsers', () => ({
   assignAdminUserSubscription: vi.fn(),
@@ -82,6 +84,18 @@ function deferred<T>() {
     reject = fail
   })
   return { promise, resolve, reject }
+}
+
+async function selectElementOption(wrapper: VueWrapper, selectTestID: string, optionTestID: string) {
+  await wrapper.get(`[data-testid="${selectTestID}"]`).trigger('click')
+  await flushPromises()
+  await wrapper.get(`[data-testid="${optionTestID}"]`).trigger('click')
+  await flushPromises()
+}
+
+async function setElementCheckbox(wrapper: VueWrapper, checkboxTestID: string, checked = true) {
+  await wrapper.get(`[data-testid="${checkboxTestID}"]`).get('input').setValue(checked)
+  await flushPromises()
 }
 
 function userRow(id: number, username: string) {
@@ -388,8 +402,7 @@ async function mountAdminUsersView(
       plugins: [pinia, router],
       stubs: {
         AppLayout: {
-          components: { AppToastHost },
-          template: '<div><slot /><AppToastHost /></div>',
+          template: '<div><slot /></div>',
         },
       },
     },
@@ -431,7 +444,8 @@ describe('AdminUsersView', () => {
   beforeEach(() => {
     setLocale('en-US')
     vi.resetAllMocks()
-    resetToastsForTest()
+    messageSuccess.mockImplementation(() => undefined as any)
+    messageError.mockImplementation(() => undefined as any)
     matchMediaController = installMatchMedia(true)
   })
 
@@ -441,7 +455,6 @@ describe('AdminUsersView', () => {
     }
     mountedWrappers.clear()
     vi.useRealTimers()
-    resetToastsForTest()
     document.body.innerHTML = ''
   })
 
@@ -472,11 +485,21 @@ describe('AdminUsersView', () => {
     expect(wrapper.text()).toContain('alice@example.com')
     expect(wrapper.text()).toContain('ldap')
     expect(wrapper.text()).toContain('42')
-    expect(wrapper.text()).toContain('Configured')
+	    expect(wrapper.text()).toContain('Configured')
+    expect(wrapper.find('.el-tag').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('encrypted-relay-password-ciphertext')
     expect(wrapper.text()).toContain('120 total')
     expect(wrapper.text()).toContain('Page 1 / 6')
 	  })
+
+  it('renders user-list failures with Element Plus feedback', async () => {
+    const { wrapper } = await mountAdminUsersView('/admin/users', async () => {
+      throw new Error('synthetic user list failure')
+    })
+
+    expect(wrapper.text()).toContain('synthetic user list failure')
+    expect(wrapper.find('.el-alert--error').exists()).toBe(true)
+  })
 
   it('programmatically associates the visible department label with the picker value', async () => {
     const { wrapper } = await mountAdminUsersView()
@@ -542,7 +565,8 @@ describe('AdminUsersView', () => {
     )
     const replace = vi.spyOn(router, 'replace')
 
-    await wrapper.get('[data-testid="admin-users-access-status-filter"]').setValue('disabled')
+    expect(wrapper.get('[data-testid="admin-users-access-status-filter"]').classes()).toContain('el-select')
+    await selectElementOption(wrapper, 'admin-users-access-status-filter', 'admin-users-access-status-option-disabled')
     expect(listAdminUsers).toHaveBeenCalledTimes(2)
 
     newer.resolve({ items: [userRow(2, 'newer')], total: 1, page: 1, page_size: 20 })
@@ -571,7 +595,7 @@ describe('AdminUsersView', () => {
       () => requestCount++ === 0 ? older.promise : newer.promise,
     )
 
-    await wrapper.get('[data-testid="admin-users-access-status-filter"]').setValue('disabled')
+    await selectElementOption(wrapper, 'admin-users-access-status-filter', 'admin-users-access-status-option-disabled')
     older.resolve({ items: [userRow(1, 'older')], total: 1, page: 1, page_size: 20 })
     await flushPromises()
 
@@ -638,7 +662,7 @@ describe('AdminUsersView', () => {
   it('filters users by access status and keeps the filter in the URL', async () => {
     const { wrapper, router, listAdminUsers } = await mountAdminUsersView()
 
-    await wrapper.get('[data-testid="admin-users-access-status-filter"]').setValue('disabled')
+    await selectElementOption(wrapper, 'admin-users-access-status-filter', 'admin-users-access-status-option-disabled')
     await flushPromises()
 
     expect((listAdminUsers as any).mock.calls.at(-1)[0]).toEqual({
@@ -814,7 +838,7 @@ describe('AdminUsersView', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-old-team"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').text()).toBe('+')
+    expect(wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').attributes('aria-label')).toBe('Expand department')
     expect((listAdminUserDepartmentChildren as any).mock.calls.filter(
       ([params]: any[]) => params.parent_department_id === 'dept-alpha',
     )).toHaveLength(1)
@@ -884,7 +908,7 @@ describe('AdminUsersView', () => {
     await wrapper.get('[data-testid="admin-users-refresh"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').text()).toBe('+')
+    expect(wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').attributes('aria-label')).toBe('Expand department')
     expect(alphaRequests).toBe(1)
 
     pendingChild.resolve({
@@ -918,7 +942,7 @@ describe('AdminUsersView', () => {
     expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-team-one"]').exists()).toBe(false)
 
     const alphaToggle = wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]')
-    expect(alphaToggle.text()).toBe('+')
+    expect(alphaToggle.attributes('aria-label')).toBe('Expand department')
     await alphaToggle.trigger('click')
     await flushPromises()
 
@@ -939,10 +963,10 @@ describe('AdminUsersView', () => {
     expect(alpha.text()).toContain('2 total matched')
     expect(child.text()).toContain('1 total member')
     expect(child.text()).toContain('1 / 2 representatives matched')
-    expect(alphaToggle.text()).toBe('-')
+    expect(alphaToggle.attributes('aria-label')).toBe('Collapse department')
     expect(alphaToggle.classes()).toContain('h-7')
     expect(alphaToggle.classes()).toContain('w-7')
-    expect(alphaToggle.classes()).toContain('rounded-md')
+    expect(alphaToggle.classes()).toContain('is-circle')
   })
 
   it('caches collapsed child pages and hides raw source paths from labels', async () => {
@@ -967,7 +991,7 @@ describe('AdminUsersView', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-team-one"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').text()).toBe('+')
+    expect(wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').attributes('aria-label')).toBe('Expand department')
 
     await wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').trigger('click')
     await flushPromises()
@@ -1172,7 +1196,7 @@ describe('AdminUsersView', () => {
     expect(wrapper.find('[data-admin-user-list="mobile"]').exists()).toBe(false)
     expect(wrapper.findAll('[data-admin-user-row]')).toHaveLength(100)
 
-    await wrapper.get('[data-testid="select-user-1"]').setValue(true)
+    await setElementCheckbox(wrapper, 'select-user-1')
     matchMediaController.change(false)
     await wrapper.vm.$nextTick()
 
@@ -1180,12 +1204,12 @@ describe('AdminUsersView', () => {
     expect(wrapper.find('[data-admin-user-list="desktop"]').exists()).toBe(false)
     expect(wrapper.find('[data-admin-user-list="mobile"]').exists()).toBe(true)
     expect(wrapper.findAll('[data-admin-user-row]')).toHaveLength(100)
-    expect((wrapper.get('[data-testid="select-user-mobile-1"]').element as HTMLInputElement).checked).toBe(true)
+    expect((wrapper.get('[data-testid="select-user-mobile-1"]').get('input').element as HTMLInputElement).checked).toBe(true)
 
     matchMediaController.change(true)
     await wrapper.vm.$nextTick()
     const remountedDesktopSelectAll = wrapper.get('[data-testid="select-all-users"]')
-    expect((remountedDesktopSelectAll.element as HTMLInputElement).indeterminate).toBe(true)
+    expect((remountedDesktopSelectAll.get('input').element as HTMLInputElement).indeterminate).toBe(true)
     expect(remountedDesktopSelectAll.attributes('aria-checked')).toBe('mixed')
 
     await wrapper.get('[data-testid="admin-users-view-departments"]').trigger('click')
@@ -1193,7 +1217,7 @@ describe('AdminUsersView', () => {
     await wrapper.get('[data-testid="admin-users-view-users"]').trigger('click')
     await wrapper.vm.$nextTick()
     const viewRoundTripSelectAll = wrapper.get('[data-testid="select-all-users"]')
-    expect((viewRoundTripSelectAll.element as HTMLInputElement).indeterminate).toBe(true)
+    expect((viewRoundTripSelectAll.get('input').element as HTMLInputElement).indeterminate).toBe(true)
     expect(viewRoundTripSelectAll.attributes('aria-checked')).toBe('mixed')
 
     wrapper.unmount()
@@ -1216,6 +1240,8 @@ describe('AdminUsersView', () => {
   it('searches from page one when the search button is clicked', async () => {
     const { wrapper, listAdminUsers } = await mountAdminUsersView()
 
+    expect(wrapper.get('[data-testid="admin-users-search"]').classes()).toContain('el-input__inner')
+    expect(wrapper.get('[data-testid="admin-users-search-button"]').classes()).toContain('el-button')
     await wrapper.get('[data-testid="admin-users-search"]').setValue('alice@example.com')
     await wrapper.get('[data-testid="admin-users-search-button"]').trigger('click')
     await flushPromises()
@@ -1241,8 +1267,8 @@ describe('AdminUsersView', () => {
   it('updates page size and next page params', async () => {
     const { wrapper, listAdminUsers } = await mountAdminUsersView()
 
-    await wrapper.get('[data-testid="admin-users-page-size"]').setValue('50')
-    await flushPromises()
+    expect(wrapper.get('[data-testid="admin-users-page-size"]').classes()).toContain('el-select')
+    await selectElementOption(wrapper, 'admin-users-page-size', 'admin-users-page-size-option-50')
     expect((listAdminUsers as any).mock.calls.at(-1)[0]).toEqual({ q: '', page: 1, page_size: 50 })
 
     await wrapper.get('[data-testid="admin-users-next-page"]').trigger('click')
@@ -1255,8 +1281,7 @@ describe('AdminUsersView', () => {
 
     expect((listAdminUsers as any).mock.calls[0][0]).toEqual({ q: 'alice', page: 2, page_size: 50 })
 
-    await wrapper.get('[data-testid="admin-users-page-size"]').setValue('20')
-    await flushPromises()
+    await selectElementOption(wrapper, 'admin-users-page-size', 'admin-users-page-size-option-20')
 
     expect(router.currentRoute.value.query.q).toBe('alice')
     expect(router.currentRoute.value.query.page_size).toBeUndefined()
@@ -1271,7 +1296,7 @@ describe('AdminUsersView', () => {
 
     expect(revealAdminUserRelayPassword).not.toHaveBeenCalled()
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('encrypted-relay-password-ciphertext')
-    expect(wrapper.get('[data-testid="app-toast"]').text()).toContain('Copied encrypted')
+    expect(messageSuccess).toHaveBeenCalledWith('Copied encrypted')
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
   })
 
@@ -1347,6 +1372,7 @@ describe('AdminUsersView', () => {
     await wrapper.get('[data-testid="disable-access-7"]').trigger('click')
     await flushPromises()
 
+    expect(wrapper.find('.el-dialog').exists()).toBe(true)
     expect(disableAdminUserAccess).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('After disabling, this user will no longer be able to access AI services')
 
@@ -1406,9 +1432,10 @@ describe('AdminUsersView', () => {
     const { wrapper } = await mountAdminUsersView()
 
     expect(wrapper.text()).toContain('Subscription management')
-    await wrapper.get('[data-testid="select-user-7"]').setValue(true)
-    await wrapper.get('[data-testid="subscription-provider"]').setValue('3')
-    await wrapper.get('[data-testid="subscription-group"]').setValue('42')
+    await setElementCheckbox(wrapper, 'select-user-7')
+    expect(wrapper.get('[data-testid="subscription-provider"]').classes()).toContain('el-select')
+    await selectElementOption(wrapper, 'subscription-provider', 'subscription-provider-option-3')
+    await selectElementOption(wrapper, 'subscription-group', 'subscription-group-option-42')
     await wrapper.get('[data-testid="subscription-days"]').setValue('60')
     await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
     await flushPromises()
@@ -1443,9 +1470,9 @@ describe('AdminUsersView', () => {
 		    await flushPromises()
 		    await wrapper.get('[data-testid="admin-department-picker-option-dept-alpha"]').trigger('click')
 		    await flushPromises()
-	    await wrapper.get('[data-testid="subscription-scope"]').setValue('current_filter')
-	    await wrapper.get('[data-testid="subscription-provider"]').setValue('3')
-	    await wrapper.get('[data-testid="subscription-group"]').setValue('42')
+	    await selectElementOption(wrapper, 'subscription-scope', 'subscription-scope-option-current-filter')
+	    await selectElementOption(wrapper, 'subscription-provider', 'subscription-provider-option-3')
+	    await selectElementOption(wrapper, 'subscription-group', 'subscription-group-option-42')
 	    await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
 	    await flushPromises()
 
@@ -1461,19 +1488,19 @@ describe('AdminUsersView', () => {
 
   it('shows a real indeterminate select-all checkbox for partial visible selection', async () => {
     const { wrapper } = await mountAdminUsersView()
-    const selectAll = wrapper.get('[data-testid="select-all-users"]').element as HTMLInputElement
+    const selectAllControl = wrapper.get('[data-testid="select-all-users"]')
+    expect(selectAllControl.classes()).toContain('el-checkbox')
+    const selectAll = selectAllControl.get('input').element as HTMLInputElement
 
     expect(selectAll.indeterminate).toBe(false)
 
-    await wrapper.get('[data-testid="select-user-7"]').setValue(true)
-    await flushPromises()
+    await setElementCheckbox(wrapper, 'select-user-7')
 
     expect(selectAll.checked).toBe(false)
     expect(selectAll.indeterminate).toBe(true)
-    expect(selectAll.getAttribute('aria-checked')).toBe('mixed')
+    expect(selectAllControl.attributes('aria-checked')).toBe('mixed')
 
-    await wrapper.get('[data-testid="select-user-8"]').setValue(true)
-    await flushPromises()
+    await setElementCheckbox(wrapper, 'select-user-8')
 
     expect(selectAll.checked).toBe(true)
     expect(selectAll.indeterminate).toBe(false)
@@ -1487,11 +1514,11 @@ describe('AdminUsersView', () => {
 
     const { wrapper } = await mountAdminUsersView()
 
-    await wrapper.get('[data-testid="select-user-7"]').setValue(true)
-    await wrapper.get('[data-testid="select-user-8"]').setValue(true)
-    await wrapper.get('[data-testid="subscription-operation"]').setValue('extend')
-    await wrapper.get('[data-testid="subscription-provider"]').setValue('3')
-    await wrapper.get('[data-testid="subscription-group"]').setValue('42')
+    await setElementCheckbox(wrapper, 'select-user-7')
+    await setElementCheckbox(wrapper, 'select-user-8')
+    await selectElementOption(wrapper, 'subscription-operation', 'subscription-operation-option-extend')
+    await selectElementOption(wrapper, 'subscription-provider', 'subscription-provider-option-3')
+    await selectElementOption(wrapper, 'subscription-group', 'subscription-group-option-42')
     await wrapper.get('[data-testid="subscription-days"]').setValue('14')
     await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
     await flushPromises()
@@ -1547,12 +1574,12 @@ describe('AdminUsersView', () => {
 
     await wrapper.get('[data-testid="admin-users-next-page"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="select-user-9"]').setValue(true)
+    await setElementCheckbox(wrapper, 'select-user-9')
     await wrapper.get('[data-testid="admin-users-prev-page"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="select-user-7"]').setValue(true)
-    await wrapper.get('[data-testid="subscription-provider"]').setValue('3')
-    await wrapper.get('[data-testid="subscription-group"]').setValue('42')
+    await setElementCheckbox(wrapper, 'select-user-7')
+    await selectElementOption(wrapper, 'subscription-provider', 'subscription-provider-option-3')
+    await selectElementOption(wrapper, 'subscription-group', 'subscription-group-option-42')
     await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
     await flushPromises()
 
@@ -1574,13 +1601,13 @@ describe('AdminUsersView', () => {
 
     const { wrapper } = await mountAdminUsersView()
 
-    await wrapper.get('[data-testid="subscription-scope"]').setValue('all_mapped')
-    await wrapper.get('[data-testid="subscription-operation"]').setValue('remove')
-    await wrapper.get('[data-testid="subscription-provider"]').setValue('3')
-    await wrapper.get('[data-testid="subscription-group"]').setValue('42')
+    await selectElementOption(wrapper, 'subscription-scope', 'subscription-scope-option-all-mapped')
+    await selectElementOption(wrapper, 'subscription-operation', 'subscription-operation-option-remove')
+    await selectElementOption(wrapper, 'subscription-provider', 'subscription-provider-option-3')
+    await selectElementOption(wrapper, 'subscription-group', 'subscription-group-option-42')
     expect((wrapper.get('[data-testid="manage-subscriptions-submit"]').element as HTMLButtonElement).disabled).toBe(true)
 
-    await wrapper.get('[data-testid="confirm-remove-subscription"]').setValue(true)
+    await setElementCheckbox(wrapper, 'confirm-remove-subscription')
     await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
     await flushPromises()
 
@@ -1600,13 +1627,13 @@ describe('AdminUsersView', () => {
 
     const { wrapper } = await mountAdminUsersView()
 
-    await wrapper.get('[data-testid="subscription-scope"]').setValue('all_mapped')
-    await wrapper.get('[data-testid="subscription-operation"]').setValue('reset_quota')
-    await wrapper.get('[data-testid="subscription-provider"]').setValue('3')
-    await wrapper.get('[data-testid="subscription-group"]').setValue('42')
+    await selectElementOption(wrapper, 'subscription-scope', 'subscription-scope-option-all-mapped')
+    await selectElementOption(wrapper, 'subscription-operation', 'subscription-operation-option-reset-quota')
+    await selectElementOption(wrapper, 'subscription-provider', 'subscription-provider-option-3')
+    await selectElementOption(wrapper, 'subscription-group', 'subscription-group-option-42')
     expect((wrapper.get('[data-testid="manage-subscriptions-submit"]').element as HTMLButtonElement).disabled).toBe(true)
 
-    await wrapper.get('[data-testid="confirm-reset-subscription-quota"]').setValue(true)
+    await setElementCheckbox(wrapper, 'confirm-reset-subscription-quota')
     await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
     await flushPromises()
 
@@ -1626,11 +1653,11 @@ describe('AdminUsersView', () => {
 
     const { wrapper } = await mountAdminUsersView()
 
-    await wrapper.get('[data-testid="select-user-7"]').setValue(true)
-    await wrapper.get('[data-testid="subscription-operation"]').setValue('reset_quota')
-    await wrapper.get('[data-testid="subscription-provider"]').setValue('3')
-    await wrapper.get('[data-testid="subscription-group"]').setValue('42')
-    await wrapper.get('[data-testid="confirm-reset-subscription-quota"]').setValue(true)
+    await setElementCheckbox(wrapper, 'select-user-7')
+    await selectElementOption(wrapper, 'subscription-operation', 'subscription-operation-option-reset-quota')
+    await selectElementOption(wrapper, 'subscription-provider', 'subscription-provider-option-3')
+    await selectElementOption(wrapper, 'subscription-group', 'subscription-group-option-42')
+    await setElementCheckbox(wrapper, 'confirm-reset-subscription-quota')
     await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
     await flushPromises()
 
@@ -1646,17 +1673,17 @@ describe('AdminUsersView', () => {
   it('requires a fresh reset quota confirmation after the target scope changes', async () => {
     const { wrapper } = await mountAdminUsersView()
 
-    await wrapper.get('[data-testid="select-user-7"]').setValue(true)
-    await wrapper.get('[data-testid="subscription-operation"]').setValue('reset_quota')
-    await wrapper.get('[data-testid="subscription-provider"]').setValue('3')
-    await wrapper.get('[data-testid="subscription-group"]').setValue('42')
-    await wrapper.get('[data-testid="confirm-reset-subscription-quota"]').setValue(true)
+    await setElementCheckbox(wrapper, 'select-user-7')
+    await selectElementOption(wrapper, 'subscription-operation', 'subscription-operation-option-reset-quota')
+    await selectElementOption(wrapper, 'subscription-provider', 'subscription-provider-option-3')
+    await selectElementOption(wrapper, 'subscription-group', 'subscription-group-option-42')
+    await setElementCheckbox(wrapper, 'confirm-reset-subscription-quota')
     expect((wrapper.get('[data-testid="manage-subscriptions-submit"]').element as HTMLButtonElement).disabled).toBe(false)
 
-    await wrapper.get('[data-testid="subscription-scope"]').setValue('all_mapped')
+    await selectElementOption(wrapper, 'subscription-scope', 'subscription-scope-option-all-mapped')
     await flushPromises()
 
-    expect((wrapper.get('[data-testid="confirm-reset-subscription-quota"]').element as HTMLInputElement).checked).toBe(false)
+    expect((wrapper.get('[data-testid="confirm-reset-subscription-quota"]').get('input').element as HTMLInputElement).checked).toBe(false)
     expect((wrapper.get('[data-testid="manage-subscriptions-submit"]').element as HTMLButtonElement).disabled).toBe(true)
   })
 
@@ -1711,8 +1738,8 @@ describe('AdminUsersView', () => {
 
     const { wrapper } = await mountAdminUsersView()
 
-    expect((wrapper.get('[data-testid="select-user-7"]').element as HTMLInputElement).disabled).toBe(true)
-    expect((wrapper.get('[data-testid="select-all-users"]').element as HTMLInputElement).disabled).toBe(true)
+    expect((wrapper.get('[data-testid="select-user-7"]').get('input').element as HTMLInputElement).disabled).toBe(true)
+    expect((wrapper.get('[data-testid="select-all-users"]').get('input').element as HTMLInputElement).disabled).toBe(true)
 
     await vi.advanceTimersByTimeAsync(1500)
     await flushPromises()

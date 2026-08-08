@@ -21,24 +21,23 @@
         </component>
         <p class="mt-1 break-words text-sm text-gray-500">{{ dashboardSubtitle }}</p>
       </div>
-      <div class="flex shrink-0 flex-nowrap items-center gap-2">
-        <button data-test="range-today" type="button" :class="rangeButtonClass(selectedRange === 'today')" @click="selectRange('today')">
+      <div class="flex max-w-full shrink-0 flex-wrap items-center gap-2 pb-1 sm:flex-nowrap sm:overflow-x-auto">
+        <ElButton data-test="range-today" :type="selectedRange === 'today' ? 'primary' : 'default'" @click="selectRange('today')">
           {{ t('usageDashboard.today') }}
-        </button>
-        <button data-test="range-7d" type="button" :class="rangeButtonClass(selectedRange === '7d')" @click="selectRange('7d')">
+        </ElButton>
+        <ElButton data-test="range-7d" :type="selectedRange === '7d' ? 'primary' : 'default'" @click="selectRange('7d')">
           {{ t('usageDashboard.sevenDays') }}
-        </button>
-        <button data-test="range-30d" type="button" :class="rangeButtonClass(selectedRange === '30d')" @click="selectRange('30d')">
+        </ElButton>
+        <ElButton data-test="range-30d" :type="selectedRange === '30d' ? 'primary' : 'default'" @click="selectRange('30d')">
           {{ t('usageDashboard.thirtyDays') }}
-        </button>
-        <button
-          type="button"
-          class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+        </ElButton>
+        <ElButton
           :disabled="usageLoading"
+          :loading="usageLoading"
           @click="loadDashboard"
         >
           {{ t('usageDashboard.refresh') }}
-        </button>
+        </ElButton>
       </div>
     </div>
 
@@ -70,17 +69,24 @@
       >
         {{ t('usageDashboard.staleSnapshot') }}
       </div>
-      <SelectedSubjectSubscriptionRows
-        v-if="selectedMemberSubject && selectedSubjectSubscriptions.length > 0"
-        :subject-user-id="selectedMemberSubject.user_id"
-        :rows="selectedSubjectSubscriptions"
-        :update-multiplier="handleMultiplierConfirm"
-      />
+      <Suspense v-if="selectedMemberSubject && selectedSubjectSubscriptions.length > 0">
+        <SelectedSubjectSubscriptionRows
+          :subject-user-id="selectedMemberSubject.user_id"
+          :rows="selectedSubjectSubscriptions"
+          :update-multiplier="handleMultiplierConfirm"
+        />
+        <template #fallback>
+          <div class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500">
+            {{ t('usageDashboard.loading') }}
+          </div>
+        </template>
+      </Suspense>
       <UsageGroupQuotaSection
         :quotas="currentGroupQuotas"
         :loading="quotaLoading && !currentGroupQuotas"
         :range-label="selectedRangeLabel"
         :show-reset-request="canRequestQuotaReset"
+        :reset-request-loading="quotaResetOptionsLoading"
         @request-reset="openQuotaResetModal"
       />
       <UsageStatsCards
@@ -97,6 +103,7 @@
     </div>
 
     <QuotaResetRequestModal
+      v-if="quotaResetModalOpen"
       :open="quotaResetModalOpen"
       :groups="quotaResetGroups"
       :submitting="quotaResetSubmitting || quotaResetOptionsLoading"
@@ -112,7 +119,6 @@ import { useRoute } from 'vue-router'
 import { createQuotaResetRequest, getQuotaResetOptions } from '@/api/quotaReset'
 import { getUserUsageDashboard, getUserUsageGroupQuotas } from '@/api/userUsage'
 import { getTeamUsageSubjectDashboard, updateTeamUsageRateMultiplier } from '@/api/teamUsage'
-import { useToast } from '@/composables/useToast'
 import { useI18n } from '@/i18n'
 import type {
   QuotaResetOptionGroup,
@@ -125,11 +131,12 @@ import type {
 } from '@/types'
 import UsageStatsCards from '@/components/user/usage/UsageStatsCards.vue'
 import UsageGroupQuotaSection from '@/components/user/usage/UsageGroupQuotaSection.vue'
-import SelectedSubjectSubscriptionRows from '@/components/user/usage/SelectedSubjectSubscriptionRows.vue'
-import QuotaResetRequestModal from '@/components/quota-reset/QuotaResetRequestModal.vue'
 
 const UsageTrendChart = defineAsyncComponent(() => import('@/components/user/usage/UsageTrendChart.vue'))
 const UsageModelChart = defineAsyncComponent(() => import('@/components/user/usage/UsageModelChart.vue'))
+const SelectedSubjectSubscriptionRows = defineAsyncComponent(() => import('@/components/user/usage/SelectedSubjectSubscriptionRows.vue'))
+const loadQuotaResetRequestModal = () => import('@/components/quota-reset/QuotaResetRequestModal.vue')
+const QuotaResetRequestModal = defineAsyncComponent(loadQuotaResetRequestModal)
 
 type RangeOption = 'today' | '7d' | '30d'
 
@@ -160,7 +167,6 @@ const quotaResetOptionsLoading = ref(false)
 const quotaResetSubmitting = ref(false)
 const quotaResetGroups = ref<QuotaResetOptionGroup[]>([])
 const { t } = useI18n()
-const { showToast } = useToast()
 const route = useRoute()
 let requestGeneration = 0
 let usageController: AbortController | null = null
@@ -190,13 +196,6 @@ function rangeLabel(range: RangeOption) {
   if (range === 'today') return t('usageDashboard.today')
   if (range === '7d') return t('usageDashboard.sevenDays')
   return t('usageDashboard.thirtyDays')
-}
-
-function rangeButtonClass(active: boolean) {
-  return [
-    'rounded-md px-3 py-2 text-sm font-medium transition-colors',
-    active ? 'bg-blue-600 text-white' : 'border border-gray-300 text-gray-700 hover:bg-gray-50',
-  ]
 }
 
 function formatDate(date: Date): string {
@@ -330,13 +329,14 @@ async function handleMultiplierConfirm(event: { subjectUserId: number; groupID: 
 }
 
 async function openQuotaResetModal() {
+  if (quotaResetOptionsLoading.value) return
   quotaResetOptionsLoading.value = true
   try {
-    const response = await getQuotaResetOptions()
+    const [response] = await Promise.all([getQuotaResetOptions(), loadQuotaResetRequestModal()])
     quotaResetGroups.value = response.data.data?.groups ?? []
     quotaResetModalOpen.value = true
   } catch {
-    showToast({ message: t('quotaReset.optionsLoadFailed'), tone: 'error' })
+    ElMessage.error(t('quotaReset.optionsLoadFailed'))
   } finally {
     quotaResetOptionsLoading.value = false
   }
@@ -347,9 +347,9 @@ async function submitQuotaResetRequest(payload: { group_id: string; reason: stri
   try {
     await createQuotaResetRequest(payload)
     quotaResetModalOpen.value = false
-    showToast({ message: t('quotaReset.requestSubmitted'), tone: 'success' })
+    ElMessage.success(t('quotaReset.requestSubmitted'))
   } catch {
-    showToast({ message: t('quotaReset.requestSubmitFailed'), tone: 'error' })
+    ElMessage.error(t('quotaReset.requestSubmitFailed'))
   } finally {
     quotaResetSubmitting.value = false
   }

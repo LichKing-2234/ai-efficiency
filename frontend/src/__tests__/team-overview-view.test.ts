@@ -577,7 +577,7 @@ describe('TeamOverviewView', () => {
       expect(resetCall.parent_department_external_id).toBeUndefined()
       expect(resetCall.end_date).not.toBe(rootParams.end_date)
       expect(wrapper.find('[data-testid="team-overview-department-department-alpha-team-one"]').exists()).toBe(false)
-      expect(wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').text()).toBe('+')
+      expect(wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').attributes('aria-label')).toBe('Expand department')
     } finally {
       vi.useRealTimers()
     }
@@ -668,6 +668,7 @@ describe('TeamOverviewView', () => {
     })
     await flushPromises()
 
+    expect(wrapper.get('[data-testid="team-overview-members-next"]').classes()).toContain('el-button')
     await wrapper.get('[data-testid="team-overview-members-next"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-testid="team-overview-ranking-table"]').text()).toContain('Split Member 51')
@@ -754,6 +755,7 @@ describe('TeamOverviewView', () => {
     })
     await flushPromises()
 
+    expect(wrapper.get('[data-testid="team-members-stale-marker"]').find('.el-alert').exists()).toBe(true)
     expect(wrapper.get('[data-testid="team-members-stale-marker"]').text()).toContain('Showing a recent snapshot')
     expect(wrapper.find('[data-testid="team-summary-stale-marker"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="team-trend-stale-marker"]').exists()).toBe(false)
@@ -1159,6 +1161,7 @@ describe('TeamOverviewView', () => {
     expect(wrapper.find('[data-test="range-today"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="range-7d"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="range-30d"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="range-today"]').classes()).toContain('el-button')
     expect(wrapper.text()).toContain('Billed usage in range')
 
     mockGetTeamUsageOrganization.mockClear()
@@ -1194,7 +1197,7 @@ describe('TeamOverviewView', () => {
 
     await wrapper.get('[data-test="range-7d"]').trigger('click')
 
-    expect(wrapper.get('[data-test="range-7d"]').classes()).toContain('bg-blue-600')
+    expect(wrapper.get('[data-test="range-7d"]').classes()).toContain('el-button--primary')
     expect(wrapper.get('[data-testid="team-overview-refreshing"]').text()).toContain('Updating team usage...')
     expect(wrapper.get('[data-testid="team-overview-content"]').attributes('aria-busy')).toBe('true')
     expect(wrapper.text()).toContain('Alice')
@@ -1416,8 +1419,9 @@ describe('TeamOverviewView', () => {
     })
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="team-overview-ranking-view"]').classes()).toContain('bg-gray-900')
-    expect(wrapper.get('[data-testid="team-overview-organization-view"]').classes()).not.toContain('bg-gray-900')
+    expect(wrapper.get('[data-testid="team-overview-ranking-view"]').classes()).toContain('el-button')
+    expect(wrapper.get('[data-testid="team-overview-ranking-view"]').classes()).toContain('el-button--primary')
+    expect(wrapper.get('[data-testid="team-overview-organization-view"]').classes()).not.toContain('el-button--primary')
     expect(wrapper.get('[data-testid="team-overview-ranking-table"]').text()).toContain('Alice')
     expect(wrapper.find('[data-testid="team-overview-department-department-alpha"]').exists()).toBe(false)
 
@@ -1434,14 +1438,14 @@ describe('TeamOverviewView', () => {
     expect(alpha.text()).toContain('28.00 USD')
     expect(alpha.text()).toContain('12.9K tokens')
     const alphaToggle = wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]')
-    expect(alphaToggle.text()).toBe('+')
+    expect(alphaToggle.find('svg').exists()).toBe(true)
     expect(alphaToggle.classes()).toContain('h-7')
     expect(alphaToggle.classes()).toContain('w-7')
-    expect(alphaToggle.classes()).toContain('rounded-md')
+    expect(alphaToggle.classes()).toContain('is-circle')
     expect(wrapper.find('[data-testid="team-overview-member-tree-header"]').exists()).toBe(false)
     await alphaToggle.trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').text()).toBe('-')
+    expect(wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').attributes('aria-label')).toBe('Collapse department')
     const child = wrapper.get('[data-testid="team-overview-department-department-alpha-team-one"]')
     expect(child.attributes('aria-level')).toBe('2')
     expect(child.attributes('style')).toContain('padding-left: 1.25rem')
@@ -1460,7 +1464,7 @@ describe('TeamOverviewView', () => {
     await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')
     expect(wrapper.find('[data-testid="team-overview-department-department-alpha-team-one"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="team-overview-member-user-101"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').text()).toBe('+')
+    expect(wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').attributes('aria-label')).toBe('Expand department')
 
     await wrapper.get('[data-testid="team-overview-department-department-alpha"]').trigger('keydown', { key: 'Enter' })
     expect(wrapper.find('[data-testid="team-overview-department-department-alpha-team-one"]').exists()).toBe(true)
@@ -1481,17 +1485,17 @@ describe('TeamOverviewView', () => {
 
     await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
     const toggle = wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]')
-    expect(toggle.text()).toBe('+')
+    expect(toggle.attributes('aria-label')).toBe('Expand department')
     expect(wrapper.find('[data-testid="team-overview-member-user-101"]').exists()).toBe(false)
 
     await toggle.trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').text()).toBe('-')
+    expect(wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').attributes('aria-label')).toBe('Collapse department')
     expect(wrapper.find('[data-testid="team-overview-member-user-101"]').exists()).toBe(true)
 
     await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')
-    expect(wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').text()).toBe('+')
+    expect(wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').attributes('aria-label')).toBe('Expand department')
     expect(wrapper.find('[data-testid="team-overview-member-user-101"]').exists()).toBe(false)
   })
 
@@ -1550,6 +1554,7 @@ describe('TeamOverviewView', () => {
 
     const openButton = wrapper.findAll('button').find((button) => button.text() === 'View details')
     expect(openButton).toBeTruthy()
+    expect(openButton!.classes()).toContain('el-button')
     await openButton!.trigger('click')
     await flushPromises()
 

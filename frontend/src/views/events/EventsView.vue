@@ -5,7 +5,6 @@ import AppLayout from '@/components/AppLayout.vue'
 import { getEventDetail, getEventSummary, listEvents, searchEventUsers } from '@/api/events'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from '@/i18n'
-import { useModalFocus } from '@/composables/useModalFocus'
 import type {
   ToolUsageEventDetail,
   ToolUsageEventRow,
@@ -27,7 +26,6 @@ const total = ref(0)
 const detailLoading = ref(false)
 const selectedEvent = ref<ToolUsageEventDetail | null>(null)
 const selectedEventId = ref<number | null>(null)
-const eventDetailDialog = ref<HTMLElement | null>(null)
 const mobileFiltersOpen = ref(false)
 const desktopEventRows = ref(eventRowsMediaQuery.matches)
 const advancedDetailsOpen = ref(false)
@@ -66,10 +64,6 @@ const filterSummaryBadges = computed(() => {
   if (filters.q.trim()) badges.push(t('events.searchSummary', { query: filters.q.trim() }))
   if (isAdmin.value && selectedUserId.value) badges.push(t('events.userSummary', { id: selectedUserId.value }))
   return badges
-})
-
-const { handleKeydown: handleDetailKeydown } = useModalFocus(detailOpen, eventDetailDialog, {
-  onClose: closeDetail,
 })
 
 function queryString(key: string) {
@@ -305,6 +299,10 @@ function formatTokenUsage(row: ToolUsageEventRow) {
   return totalTokens > 0 ? formatCount(totalTokens) : '—'
 }
 
+function asEventRow(row: unknown) {
+  return row as ToolUsageEventRow
+}
+
 function bindingStatusLabel(value?: string | null) {
   if (value === 'bound') return t('events.bound')
   if (value === 'unbound') return t('events.unbound')
@@ -334,58 +332,53 @@ onUnmounted(() => {
           <h1 class="text-2xl font-bold text-gray-900">{{ t('events.title') }}</h1>
           <p class="mt-1 text-sm text-gray-500">{{ t('events.subtitle') }}</p>
         </div>
-        <button
-          class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-          :disabled="loading"
-          @click="loadPage"
-        >
-          {{ loading ? t('events.loading') : t('events.refresh') }}
-        </button>
+        <ElButton :loading="loading" @click="loadPage">
+          {{ t('events.refresh') }}
+        </ElButton>
       </div>
 
       <div class="grid gap-4 sm:grid-cols-4">
-        <div class="rounded-lg bg-white p-4 shadow">
+        <ElCard shadow="never">
           <div class="text-xs uppercase tracking-wide text-gray-400">{{ t('events.totalRecords') }}</div>
           <div class="mt-2 text-2xl font-semibold text-gray-900">{{ formatCount(summary?.total_events) }}</div>
-        </div>
-        <div class="rounded-lg bg-white p-4 shadow">
+        </ElCard>
+        <ElCard shadow="never">
           <div class="text-xs uppercase tracking-wide text-gray-400">{{ t('events.linkedToCommit') }}</div>
           <div class="mt-2 text-2xl font-semibold text-gray-900">{{ formatCount(summary?.bound_events) }}</div>
-        </div>
-        <div class="rounded-lg bg-white p-4 shadow">
+        </ElCard>
+        <ElCard shadow="never">
           <div class="text-xs uppercase tracking-wide text-gray-400">{{ t('events.needsLinking') }}</div>
           <div class="mt-2 text-2xl font-semibold text-gray-900">{{ formatCount(summary?.unbound_events) }}</div>
-        </div>
-        <div class="rounded-lg bg-white p-4 shadow">
+        </ElCard>
+        <ElCard shadow="never">
           <div class="text-xs uppercase tracking-wide text-gray-400">{{ t('events.tools') }}</div>
           <div class="mt-2 text-2xl font-semibold text-gray-900">{{ formatCount(summary?.tool_counts?.length ?? 0) }}</div>
-        </div>
+        </ElCard>
       </div>
 
-      <div class="rounded-lg bg-white p-4 shadow">
+      <ElCard shadow="never">
         <div class="flex items-center justify-between gap-3 md:hidden">
           <div>
             <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('events.filters') }}</h2>
             <p class="mt-1 text-xs text-gray-500">{{ t('events.filtersHelp') }}</p>
           </div>
-          <button
-            class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700"
-            type="button"
+          <ElButton
             :aria-expanded="mobileFiltersOpen"
             aria-controls="events-filter-panel"
             @click="mobileFiltersOpen = !mobileFiltersOpen"
           >
             {{ mobileFiltersOpen ? t('events.hideFilters') : t('events.showFilters') }}
-          </button>
+          </ElButton>
         </div>
         <div class="mt-3 flex flex-wrap gap-2 md:hidden" aria-label="Active filters">
-          <span
+          <ElTag
             v-for="badge in filterSummaryBadges"
             :key="badge"
-            class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700"
+            round
+            type="info"
           >
             {{ badge }}
-          </span>
+          </ElTag>
         </div>
 
         <div
@@ -396,43 +389,46 @@ onUnmounted(() => {
         <div class="grid gap-3 md:grid-cols-6">
           <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ t('events.from') }}
-            <input
+            <ElDatePicker
               v-model="filters.from"
-              type="datetime-local"
-              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
+              type="datetime"
+              value-format="YYYY-MM-DDTHH:mm"
+              class="mt-1 !w-full"
             />
           </label>
           <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ t('events.to') }}
-            <input
+            <ElDatePicker
               v-model="filters.to"
-              type="datetime-local"
-              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
+              type="datetime"
+              value-format="YYYY-MM-DDTHH:mm"
+              class="mt-1 !w-full"
             />
           </label>
           <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ t('events.tool') }}
-            <select v-model="filters.tool" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700">
-              <option value="">{{ t('events.all') }}</option>
-              <option value="claude">Claude</option>
-              <option value="codex">Codex</option>
-              <option value="kiro">Kiro</option>
-            </select>
+            <ElSelect v-model="filters.tool" class="mt-1 w-full" :teleported="false">
+              <ElOption value="" :label="t('events.all')" />
+              <ElOption value="claude" label="Claude" />
+              <ElOption value="codex" label="Codex" />
+              <ElOption value="kiro" label="Kiro" />
+            </ElSelect>
           </label>
           <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ t('events.binding') }}
-            <select v-model="filters.binding_status" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700">
-              <option value="">{{ t('events.all') }}</option>
-              <option value="bound">{{ t('events.bound') }}</option>
-              <option value="unbound">{{ t('events.unbound') }}</option>
-            </select>
+            <ElSelect v-model="filters.binding_status" class="mt-1 w-full" :teleported="false">
+              <ElOption value="" :label="t('events.all')" />
+              <ElOption value="bound" :label="t('events.bound')" />
+              <ElOption value="unbound" :label="t('events.unbound')" />
+            </ElSelect>
           </label>
           <label class="text-xs font-medium uppercase tracking-wide text-gray-500 md:col-span-2">
             {{ t('events.search') }}
-            <input
+            <ElInput
               v-model="filters.q"
-              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
+              class="mt-1"
               :placeholder="t('events.searchPlaceholder')"
+              clearable
             />
           </label>
         </div>
@@ -441,20 +437,19 @@ onUnmounted(() => {
           <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ t('events.user') }}
             <div class="mt-1 flex gap-2">
-              <input
+              <ElInput
                 v-model="userSearch"
                 data-testid="event-user-search"
-                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
                 :placeholder="t('events.userSearchPlaceholder')"
+                clearable
               />
-              <button
+              <ElButton
                 data-testid="event-user-search-button"
-                class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                :disabled="userSearchLoading"
+                :loading="userSearchLoading"
                 @click="searchUsers"
               >
-                {{ userSearchLoading ? t('events.searching') : t('events.search') }}
-              </button>
+                {{ t('events.search') }}
+              </ElButton>
             </div>
           </label>
           <div v-if="selectedUser || selectedUserId" class="mt-2 flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-700">
@@ -462,71 +457,73 @@ onUnmounted(() => {
               <template v-if="selectedUser">{{ userLabel(selectedUser) }} · {{ userMeta(selectedUser) }}</template>
               <template v-else>{{ t('events.selectedUserId') }} #{{ selectedUserId }}</template>
             </span>
-            <button class="text-xs font-medium text-gray-500 hover:text-gray-900" @click="clearSelectedUser">{{ t('events.clear') }}</button>
+            <ElButton link @click="clearSelectedUser">{{ t('events.clear') }}</ElButton>
           </div>
           <div v-if="userOptions.length > 0" class="mt-2 divide-y divide-gray-100 rounded-md border border-gray-200 bg-white">
-            <button
+            <ElButton
               v-for="option in userOptions"
               :key="option.id"
               :data-testid="`event-user-option-${option.id}`"
-              class="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+              text
+              class="!m-0 !h-auto !w-full !justify-start !rounded-none !px-3 !py-2 !text-left"
               @click="selectUser(option)"
             >
               <span class="font-medium text-gray-900">{{ userLabel(option) }}</span>
               <span class="ml-2 text-xs text-gray-500"> · {{ userMeta(option) }}</span>
-            </button>
+            </ElButton>
           </div>
         </div>
 
         <div class="mt-3 flex justify-end gap-2">
-          <button class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" @click="clearTimeRange">{{ t('events.clearTime') }}</button>
-          <button class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white" @click="applyFilters">{{ t('events.applyFilters') }}</button>
+          <ElButton @click="clearTimeRange">{{ t('events.clearTime') }}</ElButton>
+          <ElButton type="primary" @click="applyFilters">{{ t('events.applyFilters') }}</ElButton>
         </div>
         </div>
-      </div>
+      </ElCard>
 
-      <div class="rounded-lg bg-white p-5 shadow">
+      <ElCard shadow="never">
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('events.recentUsage') }}</h2>
-          <div class="flex items-center gap-2 text-xs text-gray-500">
+          <div class="flex flex-wrap items-center justify-end gap-2 text-xs text-gray-500">
             <span>{{ total }} {{ t('events.totalSuffix') }}</span>
-            <select
-              v-model.number="filters.limit"
+            <ElSelect
+              v-model="filters.limit"
               data-testid="events-page-size"
-              class="rounded-md border border-gray-300 px-2 py-1 text-xs"
+              class="w-20"
+              size="small"
+              :teleported="false"
               @change="changePageSize"
             >
-              <option :value="20">20</option>
-              <option :value="50">50</option>
-              <option :value="100">100</option>
-            </select>
-            <button
+              <ElOption :value="20" label="20" />
+              <ElOption :value="50" label="50" />
+              <ElOption :value="100" label="100" />
+            </ElSelect>
+            <ElButton
               data-testid="events-prev-page"
-              class="rounded border border-gray-200 px-2 py-1 disabled:opacity-40"
+              size="small"
               :disabled="!canGoPrev || loading"
               @click="previousPage"
             >
               {{ t('events.prev') }}
-            </button>
+            </ElButton>
             <span>{{ t('events.page') }} {{ currentPage }} / {{ totalPages }}</span>
-            <button
+            <ElButton
               data-testid="events-next-page"
-              class="rounded border border-gray-200 px-2 py-1 disabled:opacity-40"
+              size="small"
               :disabled="!canGoNext || loading"
               @click="nextPage"
             >
               {{ t('events.next') }}
-            </button>
+            </ElButton>
           </div>
         </div>
 
         <div v-if="showMobileEventRows" class="mt-3 space-y-3 md:hidden" data-event-list="mobile">
-          <button
+          <ElButton
             v-for="row in rows"
             :key="row.id"
             data-event-row="mobile"
-            class="block w-full rounded-lg border border-gray-100 bg-white p-4 text-left shadow-sm transition hover:border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            type="button"
+            class="!m-0 !h-auto !w-full !whitespace-normal !rounded-lg !border-gray-100 !bg-white !p-4 !text-left !shadow-sm"
             @click="openDetail(row)"
           >
             <div class="flex items-start justify-between gap-3">
@@ -534,12 +531,9 @@ onUnmounted(() => {
                 <div class="truncate text-sm font-semibold text-gray-900">{{ row.tool || '—' }}</div>
                 <div class="mt-1 truncate text-xs text-gray-500">{{ formatDate(row.observed_end_at) }}</div>
               </div>
-              <span
-                class="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
-                :class="row.binding_status === 'bound' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
-              >
+              <ElTag :type="row.binding_status === 'bound' ? 'success' : 'warning'" round>
                 {{ bindingStatusLabel(row.binding_status) }}
-              </span>
+              </ElTag>
             </div>
             <dl class="mt-3 grid grid-cols-2 gap-3 text-xs">
               <div class="min-w-0">
@@ -570,82 +564,64 @@ onUnmounted(() => {
             <div class="mt-3 border-t border-gray-100 pt-3 text-sm font-medium text-blue-700">
               {{ t('events.viewDetails') }}
             </div>
-          </button>
+          </ElButton>
         </div>
 
-        <div v-if="showDesktopEventRows" class="mt-3 hidden overflow-x-auto md:block" data-event-list="desktop">
-          <table class="min-w-full divide-y divide-gray-100 text-sm">
-            <thead>
-              <tr class="text-xs uppercase text-gray-400">
-                <th class="px-3 py-2 text-left font-medium">{{ t('events.observed') }}</th>
-                <th class="px-3 py-2 text-left font-medium">{{ t('events.tool') }}</th>
-                <th class="px-3 py-2 text-left font-medium">{{ t('events.repository') }}</th>
-                <th class="px-3 py-2 text-left font-medium">{{ t('events.codeLink') }}</th>
-                <th class="px-3 py-2 text-left font-medium">{{ t('events.tokenUsage') }}</th>
-                <th class="px-3 py-2 text-left font-medium">{{ t('events.credits') }}</th>
-                <th class="px-3 py-2 text-left font-medium">{{ t('events.requests') }}</th>
-                <th v-if="isAdmin" class="px-3 py-2 text-left font-medium">{{ t('events.user') }}</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-50">
-              <tr
-                v-for="row in rows"
-                :key="row.id"
-                data-event-row="desktop"
-                class="cursor-pointer hover:bg-gray-50"
-                role="button"
-                tabindex="0"
-                @click="openDetail(row)"
-                @keydown.enter.prevent="openDetail(row)"
-                @keydown.space.prevent="openDetail(row)"
-              >
-                <td class="whitespace-nowrap px-3 py-2 text-gray-600">{{ formatDate(row.observed_end_at) }}</td>
-                <td class="px-3 py-2 text-gray-900">{{ row.tool }}</td>
-                <td class="px-3 py-2 text-gray-700">{{ row.repo_name }}</td>
-                <td class="px-3 py-2 text-gray-700">
-                  <div class="font-medium" :class="row.binding_status === 'bound' ? 'text-emerald-700' : 'text-amber-700'">
-                    {{ bindingStatusLabel(row.binding_status) }}
-                  </div>
-                  <div class="mt-1 font-mono text-xs text-gray-500">{{ shortSha(row.commit_sha) }}</div>
-                </td>
-                <td class="px-3 py-2 text-gray-700">{{ formatTokenUsage(row) }}</td>
-                <td class="px-3 py-2 text-gray-700">{{ formatDecimal(row.credit_usage) }}</td>
-                <td class="px-3 py-2 text-gray-700">{{ formatCount(row.request_count) }}</td>
-                <td v-if="isAdmin" class="px-3 py-2 text-gray-700">{{ row.username || '—' }}</td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-if="showDesktopEventRows" class="mt-3 hidden md:block" data-event-list="desktop">
+          <ElTable :data="rows" stripe @row-click="openDetail">
+            <ElTableColumn :label="t('events.observed')" min-width="180">
+              <template #default="{ row }">{{ formatDate(row.observed_end_at) }}</template>
+            </ElTableColumn>
+            <ElTableColumn prop="tool" :label="t('events.tool')" min-width="90" />
+            <ElTableColumn prop="repo_name" :label="t('events.repository')" min-width="180" />
+            <ElTableColumn :label="t('events.codeLink')" min-width="120">
+              <template #default="{ row }">
+                <ElTag :type="row.binding_status === 'bound' ? 'success' : 'warning'" size="small">
+                  {{ bindingStatusLabel(row.binding_status) }}
+                </ElTag>
+                <div class="mt-1 font-mono text-xs text-gray-500">{{ shortSha(row.commit_sha) }}</div>
+              </template>
+            </ElTableColumn>
+            <ElTableColumn :label="t('events.tokenUsage')" min-width="110">
+              <template #default="{ row }">{{ formatTokenUsage(asEventRow(row)) }}</template>
+            </ElTableColumn>
+            <ElTableColumn :label="t('events.credits')" min-width="90">
+              <template #default="{ row }">{{ formatDecimal(row.credit_usage) }}</template>
+            </ElTableColumn>
+            <ElTableColumn :label="t('events.requests')" min-width="90">
+              <template #default="{ row }">{{ formatCount(row.request_count) }}</template>
+            </ElTableColumn>
+            <ElTableColumn v-if="isAdmin" prop="username" :label="t('events.user')" min-width="120" />
+            <ElTableColumn fixed="right" width="105">
+              <template #default="{ row }">
+                <ElButton link type="primary" @click.stop="openDetail(asEventRow(row))">{{ t('events.viewDetails') }}</ElButton>
+              </template>
+            </ElTableColumn>
+          </ElTable>
         </div>
-        <div v-if="rows.length === 0" class="mt-3 text-sm text-gray-400">{{ t('events.empty') }}</div>
-      </div>
+        <ElEmpty v-if="!loading && rows.length === 0" :description="t('events.empty')" />
+      </ElCard>
     </div>
 
-    <div v-if="selectedEventId != null" class="fixed inset-0 z-40">
-      <button
-        class="absolute inset-0 bg-slate-950/20"
-        type="button"
-        :aria-label="t('events.close')"
-        @click="closeDetail"
-      />
-      <aside
-        ref="eventDetailDialog"
-        class="absolute inset-y-0 right-0 w-full max-w-xl border-l border-gray-200 bg-white shadow-xl"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="event-detail-title"
-        tabindex="-1"
-        @keydown="handleDetailKeydown"
-      >
-      <div class="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+    <ElDrawer
+      :model-value="detailOpen"
+      data-testid="event-detail-drawer"
+      :teleported="false"
+      :size="'min(100vw, 36rem)'"
+      :show-close="false"
+      destroy-on-close
+      @update:model-value="(value: boolean) => { if (!value) closeDetail() }"
+    >
+      <template #header>
         <div>
           <h2 id="event-detail-title" class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('events.recordDetail') }}</h2>
           <p class="mt-1 text-xs text-gray-400">ID {{ selectedEventId }}</p>
         </div>
-        <button class="rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50" type="button" @click="closeDetail">{{ t('events.close') }}</button>
-      </div>
+        <ElButton size="small" @click="closeDetail">{{ t('events.close') }}</ElButton>
+      </template>
 
       <div v-if="detailLoading" class="p-5 text-sm text-gray-500">{{ t('events.loadingDetail') }}</div>
-      <div v-else-if="selectedEvent" class="space-y-5 overflow-y-auto p-5 text-sm text-gray-700">
+      <div v-else-if="selectedEvent" class="space-y-5 text-sm text-gray-700">
         <div>
           <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">{{ t('events.basic') }}</h3>
           <dl class="mt-2 space-y-2">
@@ -705,7 +681,6 @@ onUnmounted(() => {
           </div>
         </details>
       </div>
-      </aside>
-    </div>
+    </ElDrawer>
   </AppLayout>
 </template>

@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import AuthShell from '@/components/AuthShell.vue'
 import { approveAuthorization } from '@/api/oauth'
 import { useI18n } from '@/i18n'
+import { CircleCheck } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const authStore = useAuthStore()
@@ -59,21 +60,24 @@ async function approve(approved: boolean) {
 <template>
   <AuthShell title-key="auth.authorizeTitle" subtitle-key="auth.authorizeSubtitle" eyebrow-key="auth.authorizeEyebrow">
     <div v-if="!authStore.isAuthenticated" class="space-y-4">
-      <div class="rounded-md border border-amber-200 bg-amber-50 p-4">
-        <h2 class="text-sm font-semibold text-amber-950">{{ t('auth.signInToContinue') }}</h2>
-        <p class="mt-1 text-sm text-amber-800">{{ t('auth.signInBeforeAuthorize') }}</p>
-      </div>
-      <a :href="loginUrl" class="inline-flex w-full justify-center rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800">
+      <el-alert
+        :closable="false"
+        :description="t('auth.signInBeforeAuthorize')"
+        show-icon
+        :title="t('auth.signInToContinue')"
+        type="warning"
+      />
+      <el-button tag="a" :href="loginUrl" class="w-full" type="primary">
         {{ t('auth.goToSignIn') }}
-      </a>
+      </el-button>
     </div>
 
     <div v-else class="space-y-5">
-      <div class="rounded-lg border border-blue-200 bg-blue-50 p-4">
-        <p class="text-sm text-blue-950">
+      <el-alert :closable="false" show-icon type="info">
+        <template #title>
           <span class="font-semibold">{{ clientId }}</span> {{ t('auth.requestsAccount') }}
-        </p>
-      </div>
+        </template>
+      </el-alert>
 
       <div class="rounded-md border border-slate-200 p-4">
         <h3 class="text-sm font-semibold text-slate-900">{{ t('auth.signedInAccount') }}</h3>
@@ -84,33 +88,37 @@ async function approve(approved: boolean) {
         <h3 class="text-sm font-semibold text-slate-900">{{ t('auth.requestedAccess') }}</h3>
         <ul class="mt-2 space-y-2 text-sm text-slate-600">
           <li class="flex items-center gap-2">
-            <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+            <el-icon class="text-emerald-600"><CircleCheck /></el-icon>
             {{ t('auth.readProfile') }}
           </li>
           <li class="flex items-center gap-2">
-            <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+            <el-icon class="text-emerald-600"><CircleCheck /></el-icon>
             {{ t('auth.manageSessions') }}
           </li>
         </ul>
       </div>
 
-      <p v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</p>
+      <el-alert v-if="error" :closable="false" :title="error" show-icon type="error" />
 
-      <div class="flex space-x-3">
-        <button
-          class="flex-1 rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+      <div class="flex gap-3">
+        <el-button
+          class="flex-1"
+          data-action="deny"
           :disabled="loading"
+          plain
           @click="approve(false)"
         >
           {{ t('auth.deny') }}
-        </button>
-        <button
-          class="flex-1 rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-50"
-          :disabled="loading"
+        </el-button>
+        <el-button
+          class="flex-1"
+          data-action="approve"
+          :loading="loading"
+          type="primary"
           @click="approve(true)"
         >
           {{ loading ? t('auth.processing') : t('auth.authorize') }}
-        </button>
+        </el-button>
       </div>
     </div>
   </AuthShell>

@@ -27,8 +27,8 @@ function formatCurrency(amount: number | null | undefined, unlimited = false) {
   return `$${amount.toFixed(2)}`
 }
 
-function openModal(row: SubjectSubscriptionGroup) {
-  activeRow.value = row
+function openModal(row: unknown) {
+  activeRow.value = row as SubjectSubscriptionGroup
   errorMessage.value = ''
 }
 
@@ -51,8 +51,8 @@ function subscriptionStatusLabel(status: string) {
   }
 }
 
-function isMultiplierMetadataUnavailable(row: SubjectSubscriptionGroup) {
-  return row.multiplier_metadata_status === 'unavailable'
+function isMultiplierMetadataUnavailable(row: unknown) {
+  return (row as SubjectSubscriptionGroup).multiplier_metadata_status === 'unavailable'
 }
 
 async function confirm(payload: UpdateTeamUsageRateMultiplierRequest) {
@@ -81,24 +81,18 @@ async function confirm(payload: UpdateTeamUsageRateMultiplierRequest) {
       <h2 class="text-base font-semibold text-slate-950">{{ t('teamUsage.subscriptionGroups') }}</h2>
     </div>
     <div class="overflow-x-auto">
-      <table class="min-w-full divide-y divide-slate-200 text-sm">
-        <thead class="bg-slate-50 text-left text-xs font-medium uppercase text-slate-500">
-          <tr>
-            <th class="px-4 py-3">{{ t('teamUsage.subscriptionGroup') }}</th>
-            <th class="px-4 py-3">{{ t('teamUsage.subscriptionStatus') }}</th>
-            <th class="px-4 py-3">{{ t('teamUsage.multiplier') }}</th>
-            <th class="px-4 py-3">{{ t('teamUsage.usedOverQuota') }}</th>
-            <th class="px-4 py-3 text-right">{{ t('teamUsage.memberAction') }}</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-100">
-          <tr v-for="row in sortedRows" :key="row.group_id">
-            <td class="px-4 py-3">
+      <ElTable :data="sortedRows" row-key="group_id" class="min-w-[760px]">
+        <ElTableColumn :label="t('teamUsage.subscriptionGroup')" min-width="180">
+          <template #default="{ row }">
               <div class="font-medium text-slate-950">{{ row.group_name }}</div>
               <div class="text-xs text-slate-500">{{ row.platform }}</div>
-            </td>
-            <td class="px-4 py-3 text-slate-700">{{ subscriptionStatusLabel(row.subscription_status) }}</td>
-            <td class="px-4 py-3 text-slate-700">
+          </template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('teamUsage.subscriptionStatus')" min-width="110">
+          <template #default="{ row }">{{ subscriptionStatusLabel(row.subscription_status) }}</template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('teamUsage.multiplier')" min-width="120">
+          <template #default="{ row }">
               <span
                 v-if="isMultiplierMetadataUnavailable(row)"
                 role="status"
@@ -108,25 +102,26 @@ async function confirm(payload: UpdateTeamUsageRateMultiplierRequest) {
                 {{ t('teamUsage.multiplierUnavailable') }}
               </span>
               <template v-else>{{ row.effective_multiplier }}x</template>
-            </td>
-            <td class="px-4 py-3 font-medium text-slate-950">
+          </template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('teamUsage.usedOverQuota')" min-width="160">
+          <template #default="{ row }">
               {{ formatCurrency(row.monthly_display_used_usd) }} /
               {{ formatCurrency(row.monthly_effective_allowance_usd, row.monthly_effective_allowance_unlimited) }}
-            </td>
-            <td class="px-4 py-3 text-right">
-              <button
-                type="button"
-                class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          </template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('teamUsage.memberAction')" min-width="110" align="right">
+          <template #default="{ row }">
+              <ElButton
                 :data-testid="`edit-multiplier-${row.group_id}`"
                 :disabled="!row.editable || isMultiplierMetadataUnavailable(row)"
                 @click="openModal(row)"
               >
                 {{ t('teamUsage.editMultiplier') }}
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+              </ElButton>
+          </template>
+        </ElTableColumn>
+      </ElTable>
     </div>
 
     <TeamRateMultiplierModal

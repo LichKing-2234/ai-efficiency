@@ -68,8 +68,8 @@ describe('DevicePage', () => {
     expect(wrapper.text()).toContain('Signed-in account')
     expect(wrapper.text()).toContain('alice@example.com')
     expect(wrapper.find('[data-testid="auth-language-toggle"]').exists()).toBe(true)
-    expect(wrapper.find('label[for="user-code"]').text()).toBe('User code')
-    await wrapper.find('input#user-code').setValue('abcd-efgh')
+    expect(wrapper.find('[label-for="user-code"]').text()).toContain('User code')
+    await wrapper.get('input[data-testid="device-code"]').setValue('abcd-efgh')
     await wrapper.find('button[data-action="approve"]').trigger('click')
     await flushPromises()
 
@@ -99,10 +99,28 @@ describe('DevicePage', () => {
       global: { plugins: [pinia, router] },
     })
 
-    await wrapper.find('input#user-code').setValue('bad-code')
+    await wrapper.get('input[data-testid="device-code"]').setValue('bad-code')
     await wrapper.find('button[data-action="deny"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('Code invalid or expired')
+  })
+
+  it('presents device decisions as Element Plus actions', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const auth = useAuthStore()
+    auth.token = 'jwt-token'
+
+    const router = createTestRouter()
+    await router.push('/oauth/device')
+    await router.isReady()
+
+    const wrapper = mount(DevicePage, {
+      global: { plugins: [pinia, router] },
+    })
+
+    expect(wrapper.get('[data-action="deny"]').classes()).toContain('el-button')
+    expect(wrapper.get('[data-action="approve"]').classes()).toContain('el-button')
   })
 })

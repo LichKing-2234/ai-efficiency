@@ -34,6 +34,10 @@ for (const [index, chunk] of evidence.chunks.entries()) {
 const sources = {
   dashboard: 'src/views/DashboardView.vue',
   team: 'src/views/TeamOverviewView.vue',
+  login: 'src/views/LoginView.vue',
+  oauthAuthorize: 'src/views/oauth/AuthorizePage.vue',
+  oauthDevice: 'src/views/oauth/DevicePage.vue',
+  adminUsers: 'src/views/admin/AdminUsersView.vue',
   english: 'src/locales/en-US.ts',
   chinese: 'src/locales/zh-CN.ts',
   lineCanvas: 'src/components/charts/LineChartCanvas.vue',
@@ -46,18 +50,26 @@ const app = uniqueManifestEntry(
 )
 const dashboard = manifestEntryForSource(sources.dashboard)
 const team = manifestEntryForSource(sources.team)
+const login = manifestEntryForSource(sources.login)
+const oauthAuthorize = manifestEntryForSource(sources.oauthAuthorize)
+const oauthDevice = manifestEntryForSource(sources.oauthDevice)
+const adminUsers = manifestEntryForSource(sources.adminUsers)
 const english = manifestEntryForSource(sources.english)
 const chinese = manifestEntryForSource(sources.chinese)
 const lineCanvas = manifestEntryForSource(sources.lineCanvas)
 const doughnutCanvas = manifestEntryForSource(sources.doughnutCanvas)
 
-for (const entry of [dashboard, team, english, chinese, lineCanvas, doughnutCanvas]) {
+for (const entry of [dashboard, team, login, oauthAuthorize, oauthDevice, adminUsers, english, chinese, lineCanvas, doughnutCanvas]) {
   assert(entry.chunk.isDynamicEntry === true, `${entry.chunk.src} must be a dynamic entry`)
 }
 
 const entryClosure = staticClosure([app.key])
 const dashboardClosure = staticClosure([dashboard.key])
 const teamClosure = staticClosure([team.key])
+const loginClosure = staticClosure([login.key])
+const oauthAuthorizeClosure = staticClosure([oauthAuthorize.key])
+const oauthDeviceClosure = staticClosure([oauthDevice.key])
+const adminUsersClosure = staticClosure([app.key, adminUsers.key, english.key])
 const usageClosure = staticClosure([app.key, dashboard.key, english.key])
 const englishClosure = staticClosure([english.key])
 const chineseClosure = staticClosure([chinese.key])
@@ -68,6 +80,9 @@ const canvasClosure = new Set([...lineCanvasClosure, ...doughnutCanvasClosure])
 const entryModules = modulesForClosure(entryClosure)
 const dashboardModules = modulesForClosure(dashboardClosure)
 const teamModules = modulesForClosure(teamClosure)
+const loginModules = modulesForClosure(loginClosure)
+const oauthAuthorizeModules = modulesForClosure(oauthAuthorizeClosure)
+const oauthDeviceModules = modulesForClosure(oauthDeviceClosure)
 const usageModules = modulesForClosure(usageClosure)
 const lineCanvasModules = modulesForClosure(lineCanvasClosure)
 const doughnutCanvasModules = modulesForClosure(doughnutCanvasClosure)
@@ -95,6 +110,16 @@ assertAbsent(
 )
 assertNoChartRuntime(usageModules, 'default English /usage closure')
 
+assert(
+  [...loginModules].some(isElementPlusModule),
+  'Login static closure must contain on-demand Element Plus modules',
+)
+
+for (const [file, modules] of evidenceByFile) {
+  const fullLibraryModule = [...modules].find(isElementPlusFullLibraryModule)
+  assert(!fullLibraryModule, `chunk ${file} must not contain full Element Plus entry ${fullLibraryModule}`)
+}
+
 const canvasChunkFiles = jsFilesForClosure(canvasClosure)
 const chartRuntimeFiles = new Set()
 for (const [file, modules] of evidenceByFile) {
@@ -111,15 +136,27 @@ assert(chartRuntimeFiles.size > 0, 'at least one emitted Chart.js/vue-chartjs ru
 const indexHtml = await readEmittedFile('index.html')
 assert(!indexHtml.toString('utf8').includes('/vite.svg'), 'emitted index.html must not contain /vite.svg')
 
+const initialShellRow = await measure('Initial shell', filesForClosure(entryClosure, true))
+const defaultUsageRow = await measure('Default English `/usage`', filesForClosure(usageClosure, true))
+const adminUsersRow = await measure('Default English `/admin/users`', filesForClosure(adminUsersClosure, true))
 const rows = [
-  await measure('Initial shell', filesForClosure(entryClosure, true)),
-  await measure('Default English `/usage`', filesForClosure(usageClosure, true)),
+  initialShellRow,
+  defaultUsageRow,
+  adminUsersRow,
   await measure('`en-US`', filesForClosure(englishClosure)),
   await measure('`zh-CN`', filesForClosure(chineseClosure)),
   await measure('Line canvas', filesForClosure(lineCanvasClosure)),
   await measure('Doughnut canvas', filesForClosure(doughnutCanvasClosure)),
   await measure('Chart runtime', chartRuntimeFiles),
 ]
+
+for (const [row, maximum] of [
+  [initialShellRow, 72_641],
+  [defaultUsageRow, 158_002],
+  [adminUsersRow, 253_909],
+]) {
+  assert(row.gzip <= maximum, `${row.label} gzip ${row.gzip} exceeds budget ${maximum}`)
+}
 
 console.log('| Aggregate | Raw bytes | Gzip bytes |')
 console.log('| --- | ---: | ---: |')
@@ -247,6 +284,16 @@ function isVueChartJsModule(moduleId) {
 
 function isChartRuntimeModule(moduleId) {
   return isChartJsModule(moduleId) || isVueChartJsModule(moduleId)
+}
+
+function isElementPlusModule(moduleId) {
+  return moduleId === 'node_modules/element-plus' || moduleId.startsWith('node_modules/element-plus/')
+}
+
+function isElementPlusFullLibraryModule(moduleId) {
+  return moduleId === 'node_modules/element-plus/es/index.mjs'
+    || moduleId === 'node_modules/element-plus/lib/index.js'
+    || moduleId === 'node_modules/element-plus/dist/index.full.mjs'
 }
 
 async function measure(label, files) {

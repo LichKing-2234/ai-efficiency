@@ -2,10 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import UserView from '@/views/UserView.vue'
 import { setLocale } from '@/i18n'
-import { resetToastsForTest, useToast } from '@/composables/useToast'
+
+const messageSuccess = vi.spyOn(ElMessage, 'success').mockImplementation(() => undefined as any)
+const messageError = vi.spyOn(ElMessage, 'error').mockImplementation(() => undefined as any)
 
 vi.mock('@/api/user', () => ({
   getUserProviders: vi.fn(),
@@ -198,16 +201,32 @@ async function mountUserViewWithProviders(providers: any[]) {
   return { wrapper, router }
 }
 
+async function selectProviderModel(wrapper: any, label: string, value = label) {
+  const select = wrapper.get('[data-testid="user-provider-test-model"]')
+  if (select.element.tagName === 'INPUT') {
+    await select.setValue(value)
+    return
+  }
+  expect(select.text()).toContain(label)
+  const component = wrapper.findAllComponents({ name: 'ElSelect' })
+    .find((candidate: any) => candidate.attributes('data-testid') === 'user-provider-test-model')
+  expect(component).toBeTruthy()
+  component!.vm.$emit('update:modelValue', value)
+  component!.vm.$emit('change', value)
+  await flushPromises()
+}
+
 describe('UserView', () => {
   beforeEach(() => {
     setLocale('en-US')
-    resetToastsForTest()
     vi.clearAllMocks()
     vi.stubGlobal('confirm', vi.fn(() => true))
   })
 
   it('loads profile and provider data, selects primary provider by default, and renders group info', async () => {
     const { wrapper } = await mountUserView()
+    const refresh = wrapper.findAll('button').find((button) => button.text() === 'Refresh')
+    expect(refresh?.classes()).toContain('el-button')
     expect(wrapper.text()).toContain('AI setup and configuration')
     expect(wrapper.text()).toContain('Choose an access group, create an API key')
     expect(wrapper.text()).toContain('Finish setup in 3 steps')
@@ -272,7 +291,7 @@ describe('UserView', () => {
     expect(wrapper.get('[data-testid="configuration-methods"]').text()).toContain('Automatic configuration')
     expect(wrapper.get('[data-testid="configuration-methods"]').text()).toContain('CC Switch configuration')
 
-    await wrapper.get('[data-testid="user-provider-test-model"]').setValue('gpt-5.4')
+    await selectProviderModel(wrapper, 'GPT-5.4', 'gpt-5.4')
     await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="user-provider-test-run"]').exists()).toBe(true)
@@ -347,7 +366,7 @@ describe('UserView', () => {
     })
 
     const { wrapper } = await mountUserView()
-    await wrapper.get('[data-testid="user-provider-test-model"]').setValue('claude-sonnet-4-6')
+    await selectProviderModel(wrapper, 'Claude Sonnet 4.6', 'claude-sonnet-4-6')
     await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(true)
@@ -715,10 +734,10 @@ describe('UserView', () => {
     expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
     await wrapper.get('[data-testid="confirm-secret-action"]').trigger('click')
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('sk-existing-claude-123456')
-    expect(useToast().toast.message).toBe('Copied')
+    expect(messageSuccess).toHaveBeenCalledWith('Copied')
   })
 
-  it('shows toast feedback when copying a key fails', async () => {
+  it('shows Element Plus feedback when copying a key fails', async () => {
     ;(navigator.clipboard.writeText as any).mockRejectedValueOnce(new Error('clipboard unavailable'))
     const { wrapper } = await mountUserView()
 
@@ -726,8 +745,7 @@ describe('UserView', () => {
     await wrapper.get('[data-testid="confirm-secret-action"]').trigger('click')
     await flushPromises()
 
-    expect(useToast().toast.message).toBe('Copy failed')
-    expect(useToast().toast.tone).toBe('error')
+    expect(messageError).toHaveBeenCalledWith('Copy failed')
   })
 
   it('tests the selected provider with the current group platform', async () => {
@@ -737,7 +755,7 @@ describe('UserView', () => {
     })
 
     const { wrapper } = await mountUserView()
-    await wrapper.get('[data-testid="user-provider-test-model"]').setValue('claude-sonnet-4-6')
+    await selectProviderModel(wrapper, 'Claude Sonnet 4.6', 'claude-sonnet-4-6')
     await wrapper.get('[data-testid="user-provider-test-prompt"]').setValue('Say hello')
     await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
     await flushPromises()
@@ -757,9 +775,8 @@ describe('UserView', () => {
     const { wrapper } = await mountUserView()
 
     const modelSelect = wrapper.get('[data-testid="user-provider-test-model"]')
-    expect(modelSelect.element.tagName).toBe('SELECT')
-    expect(modelSelect.findAll('option').map((option) => option.text()).some((text) => text.includes('Claude Sonnet 4.6'))).toBe(true)
-    expect((modelSelect.element as HTMLSelectElement).value).toBe('claude-sonnet-4-6')
+    expect(modelSelect.classes()).toContain('el-select')
+    expect(modelSelect.text()).toContain('Claude Sonnet 4.6')
     expect(getUserProviderModels).toHaveBeenCalledWith(2, '43', 'anthropic')
 
     await wrapper.get('[data-testid="group-44"]').trigger('click')
@@ -767,8 +784,7 @@ describe('UserView', () => {
 
     expect(getUserProviderModels).toHaveBeenCalledWith(2, '44', 'openai')
     const refreshedSelect = wrapper.get('[data-testid="user-provider-test-model"]')
-    expect(refreshedSelect.findAll('option').map((option) => option.text()).some((text) => text.includes('GPT-5.4'))).toBe(true)
-    expect((refreshedSelect.element as HTMLSelectElement).value).toBe('gpt-5.4')
+    expect(refreshedSelect.text()).toContain('GPT-5.4')
   })
 
   it('does not show the promoted test action when the selected group has no API key', async () => {
@@ -776,7 +792,8 @@ describe('UserView', () => {
     const { wrapper } = await mountUserView()
 
     await wrapper.get('[data-testid="group-42"]').trigger('click')
-    await wrapper.get('[data-testid="user-provider-test-model"]').setValue('gpt-5.4')
+    await flushPromises()
+    await selectProviderModel(wrapper, 'GPT-5.4', 'gpt-5.4')
 
     expect(wrapper.find('[data-testid="user-provider-test-run"]').exists()).toBe(false)
     expect(testUserProvider).not.toHaveBeenCalled()

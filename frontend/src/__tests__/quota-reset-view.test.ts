@@ -167,7 +167,8 @@ describe('QuotaResetView', () => {
       '/usage/quota-reset?queue=approvals&request_id=2',
     )
 
-    expect(wrapper.get('[data-testid="quota-reset-tab-approvals"]').classes()).toContain('bg-white')
+    expect(wrapper.get('[data-testid="quota-reset-tab-approvals"]').classes()).toContain('el-button')
+    expect(wrapper.get('[data-testid="quota-reset-tab-approvals"]').classes()).toContain('el-button--primary')
     expect(wrapper.find('[data-testid="quota-reset-workflow-timeline"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Group Beta')
   })
@@ -178,7 +179,7 @@ describe('QuotaResetView', () => {
       '/usage/quota-reset?queue=unknown&request_id=invalid',
     )
 
-    expect(wrapper.get('[data-testid="quota-reset-tab-mine"]').classes()).toContain('bg-white')
+    expect(wrapper.get('[data-testid="quota-reset-tab-mine"]').classes()).toContain('el-button--primary')
     expect(wrapper.text()).toContain('Group Alpha')
   })
 

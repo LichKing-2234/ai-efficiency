@@ -76,7 +76,7 @@ async function handleCheckUpdates() {
 <template>
   <div class="space-y-4">
     <h2 class="text-xl font-bold text-gray-900">{{ t('settings.deploymentRuntime') }}</h2>
-    <div class="overflow-hidden rounded-lg bg-white shadow p-6">
+    <ElCard shadow="never">
       <div v-if="systemVersionLoading" class="text-sm text-gray-500">{{ t('settings.versionLoading') }}</div>
 
       <div v-else class="space-y-4">
@@ -85,9 +85,9 @@ async function handleCheckUpdates() {
             <div class="text-sm text-gray-500">{{ t('settings.currentVersion') }}</div>
             <div class="text-lg font-semibold text-gray-900">{{ systemVersion?.version.version || t('settings.unknown') }}</div>
           </div>
-          <span class="inline-flex rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700">
+          <ElTag type="info">
             {{ systemVersion?.check_enabled === false ? t('settings.versionCheckUnavailable') : t('settings.checkUpdates') }}
-          </span>
+          </ElTag>
         </div>
 
         <div class="grid gap-3 md:grid-cols-2">
@@ -101,28 +101,23 @@ async function handleCheckUpdates() {
           </div>
         </div>
 
-        <div v-if="systemVersion?.latest_release" class="rounded-md bg-blue-50 p-3 text-sm text-blue-800">
-          {{ t('settings.latestRelease') }}: {{ systemVersion.latest_release.version }}
-        </div>
+        <ElAlert v-if="systemVersion?.latest_release" type="info" :closable="false" :title="`${t('settings.latestRelease')}: ${systemVersion.latest_release.version}`" />
 
-        <div v-if="systemVersion?.check_enabled === false" class="rounded-md bg-yellow-50 p-3 text-sm text-yellow-800">
-          {{ t('settings.versionCheckUnavailable') }}
-        </div>
+        <ElAlert v-if="systemVersion?.check_enabled === false" type="warning" :closable="false" :title="t('settings.versionCheckUnavailable')" />
 
-        <div
+        <ElAlert
           v-if="systemVersionMessage"
-          class="rounded-md p-3 text-sm"
-          :class="systemVersionMessageKind === 'error' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'"
-        >
-          {{ systemVersionMessage }}
-        </div>
+          :type="systemVersionMessageKind === 'error' ? 'error' : 'success'"
+          :title="systemVersionMessage"
+          :closable="false"
+        />
 
         <div class="flex flex-wrap justify-end gap-3">
-          <button @click="handleCheckUpdates" :disabled="checkDisabled" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-            {{ systemVersionChecking ? t('settings.working') : t('settings.checkUpdates') }}
-          </button>
+          <ElButton :loading="systemVersionChecking" :disabled="checkDisabled" @click="handleCheckUpdates">
+            {{ t('settings.checkUpdates') }}
+          </ElButton>
         </div>
       </div>
-    </div>
+    </ElCard>
   </div>
 </template>

@@ -7,7 +7,6 @@ import { listProviders } from '@/api/scmProvider'
 import { autoBindUnboundRepos, createRepoDirect, repairFailedWebhooks } from '@/api/repo'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from '@/i18n'
-import { useModalFocus } from '@/composables/useModalFocus'
 import type { RepoConfig, RepoInventoryProviderSummary, RepoInventoryScopeSummary, RepoListParams, SCMProvider } from '@/types'
 
 type BindingFilter = 'all' | 'bound' | 'unbound'
@@ -26,8 +25,6 @@ const currentPage = ref(readPositiveInt(route.query.page, 1))
 const currentPageSize = ref(readPositiveInt(route.query.page_size, 20))
 const scopeSearch = ref('')
 
-const addDialog = ref<HTMLElement | null>(null)
-const repoUrlInput = ref<HTMLInputElement | null>(null)
 const autoBindLoading = ref(false)
 const autoBindMessage = ref('')
 const autoBindError = ref('')
@@ -93,11 +90,6 @@ onMounted(() => {
   void inventoryRequest.then(() => {
     ensureSelectionFromInventory()
   })
-})
-
-const { handleKeydown: handleAddDialogKeydown } = useModalFocus(showAddDialog, addDialog, {
-  initialFocus: repoUrlInput,
-  onClose: closeAddDialog,
 })
 
 function queryString(value: unknown) {
@@ -260,11 +252,6 @@ async function selectScope(scope: RepoInventoryScopeSummary) {
   selectedScope.value = scope.scope
   currentPage.value = 1
   await fetchSelectedRepos()
-}
-
-function onBindingFilterChange(event: Event) {
-  const value = (event.target as HTMLSelectElement).value as BindingFilter
-  void applyBindingFilter(value)
 }
 
 async function applyBindingFilter(next: BindingFilter) {
@@ -486,22 +473,19 @@ function repoPrimaryAction(repo: RepoConfig) {
           <p class="mt-1 text-sm text-gray-500">{{ t('repos.subtitle') }}</p>
         </div>
         <div class="flex flex-wrap items-center gap-3">
-          <select
-            :value="bindingFilter"
+          <el-select
+            v-model="bindingFilter"
             data-testid="repo-binding-filter"
-            class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
-            @change="onBindingFilterChange"
+            class="w-full sm:w-44"
+            @change="applyBindingFilter"
           >
-            <option value="all">{{ t('repos.allBindings') }}</option>
-            <option value="bound">{{ t('repos.bound') }}</option>
-            <option value="unbound">{{ t('repos.unbound') }}</option>
-          </select>
-          <button
-            class="rounded-md bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2"
-            @click="openAddDialog"
-          >
+            <el-option value="all" :label="t('repos.allBindings')" />
+            <el-option value="bound" :label="t('repos.bound')" />
+            <el-option value="unbound" :label="t('repos.unbound')" />
+          </el-select>
+          <el-button type="primary" @click="openAddDialog">
             {{ t('repos.addRepo') }}
-          </button>
+          </el-button>
         </div>
       </div>
 
@@ -512,27 +496,31 @@ function repoPrimaryAction(repo: RepoConfig) {
             <p class="mt-1 text-sm text-slate-600">{{ t('repos.healthHelp') }}</p>
           </div>
           <div class="flex flex-wrap gap-3">
-            <button
+            <el-button
               v-if="auth.isAdmin"
               data-testid="repo-auto-bind-button"
-              class="text-sm font-medium text-emerald-700 hover:text-emerald-900 disabled:opacity-50"
+              type="success"
+              link
+              :loading="autoBindLoading"
               :disabled="autoBindLoading"
               @click="handleAutoBindUnbound"
             >
               {{ autoBindLoading ? t('repos.autoBinding') : t('repos.autoBind') }}
-            </button>
-            <button
+            </el-button>
+            <el-button
               v-if="auth.isAdmin"
               data-testid="repo-repair-webhooks-button"
-              class="text-sm font-medium text-blue-700 hover:text-blue-900 disabled:opacity-50"
+              type="primary"
+              link
+              :loading="webhookRepairLoading"
               :disabled="webhookRepairLoading"
               @click="handleRepairFailedWebhooks"
             >
               {{ webhookRepairLoading ? t('repos.webhookRepairing') : t('repos.repairWebhooks') }}
-            </button>
-            <button class="text-sm font-medium text-teal-700 hover:text-teal-900" @click="applyBindingFilter('unbound')">
+            </el-button>
+            <el-button type="primary" link @click="applyBindingFilter('unbound')">
               {{ t('repos.reviewNeedsBinding') }}
-            </button>
+            </el-button>
           </div>
         </div>
         <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -553,18 +541,10 @@ function repoPrimaryAction(repo: RepoConfig) {
             <div class="mt-2 text-2xl font-semibold text-blue-900">{{ healthSummary.active }}</div>
           </div>
         </div>
-        <div v-if="autoBindMessage" class="mt-4 rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
-          {{ autoBindMessage }}
-        </div>
-        <div v-if="autoBindError" class="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
-          {{ autoBindError }}
-        </div>
-        <div v-if="webhookRepairMessage" class="mt-4 rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
-          {{ webhookRepairMessage }}
-        </div>
-        <div v-if="webhookRepairError" class="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
-          {{ webhookRepairError }}
-        </div>
+        <el-alert v-if="autoBindMessage" class="mt-4" type="success" :closable="false" show-icon :title="autoBindMessage" />
+        <el-alert v-if="autoBindError" class="mt-4" type="error" :closable="false" show-icon :title="autoBindError" />
+        <el-alert v-if="webhookRepairMessage" class="mt-4" type="success" :closable="false" show-icon :title="webhookRepairMessage" />
+        <el-alert v-if="webhookRepairError" class="mt-4" type="error" :closable="false" show-icon :title="webhookRepairError" />
       </section>
 
       <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -576,11 +556,11 @@ function repoPrimaryAction(repo: RepoConfig) {
             </div>
           </div>
           <div class="mt-4 flex gap-2 overflow-x-auto pb-1">
-            <button
+            <el-button
               v-for="provider in platformInventory"
               :key="provider.provider_key"
               data-testid="repo-platform-tab"
-              class="flex min-w-[180px] items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition hover:border-teal-300 hover:bg-teal-50"
+              class="!h-auto min-w-[180px] !justify-between !px-3 !py-2 text-left"
               :class="provider.provider_key === selectedProviderKey ? 'border-teal-500 bg-teal-50 text-teal-950' : 'border-slate-200 bg-white text-slate-700'"
               @click="selectProvider(provider)"
             >
@@ -589,17 +569,17 @@ function repoPrimaryAction(repo: RepoConfig) {
                 <span class="mt-0.5 block truncate text-xs text-slate-500">{{ provider.type }}</span>
               </span>
               <span class="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{{ provider.total_repos }}</span>
-            </button>
+            </el-button>
           </div>
         </div>
 
-        <div v-if="repoStore.loading && !repoStore.loaded" class="py-12 text-center text-sm text-gray-500">
-          {{ t('repos.loading') }}
-        </div>
+        <el-skeleton v-if="repoStore.loading && !repoStore.loaded" class="p-5" :rows="6" animated />
 
-        <div v-else-if="repoStore.loaded && repoStore.inventoryLoaded && repoStore.repos.length === 0 && !hasInventory" class="py-12 text-center text-sm text-gray-500">
-          {{ t('repos.empty') }}
-        </div>
+        <el-empty
+          v-else-if="repoStore.loaded && repoStore.inventoryLoaded && repoStore.repos.length === 0 && !hasInventory"
+          :description="t('repos.empty')"
+          :image-size="80"
+        />
 
         <div v-else class="grid min-h-[520px] lg:grid-cols-[280px_minmax(0,1fr)]">
           <aside class="border-b border-slate-200 bg-slate-50 p-4 lg:border-b-0 lg:border-r">
@@ -607,18 +587,19 @@ function repoPrimaryAction(repo: RepoConfig) {
               <h3 class="text-sm font-semibold uppercase tracking-wide text-slate-900">{{ t('repos.scopeSection') }}</h3>
               <span class="rounded bg-white px-2 py-1 text-xs font-medium text-slate-500">{{ selectedPlatformScopes.length }}</span>
             </div>
-            <input
+            <el-input
               v-model="scopeSearch"
               type="search"
               :placeholder="t('repos.scopeSearch')"
-              class="mt-3 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+              clearable
+              class="mt-3 w-full"
             />
             <div class="mt-3 max-h-[420px] space-y-1 overflow-y-auto pr-1">
-              <button
+              <el-button
                 v-for="scope in filteredScopes"
                 :key="scope.scope"
                 data-testid="repo-scope-option"
-                class="w-full rounded-md border px-3 py-2 text-left transition hover:border-teal-300 hover:bg-white"
+                class="!h-auto w-full !justify-start !px-3 !py-2 text-left"
                 :class="scope.scope === selectedScope ? 'border-teal-500 bg-white shadow-sm' : 'border-transparent bg-transparent'"
                 @click="selectScope(scope)"
               >
@@ -631,7 +612,7 @@ function repoPrimaryAction(repo: RepoConfig) {
                   <span v-if="scope.unbound_repos > 0" class="text-amber-700">{{ t('repos.unbound') }} {{ scope.unbound_repos }}</span>
                   <span v-if="scope.webhook_failed_repos > 0" class="text-red-700">Webhook {{ scope.webhook_failed_repos }}</span>
                 </span>
-              </button>
+              </el-button>
             </div>
           </aside>
 
@@ -646,13 +627,9 @@ function repoPrimaryAction(repo: RepoConfig) {
               </div>
             </div>
 
-            <div v-if="repoStore.loading && repoStore.repos.length === 0" class="py-12 text-center text-sm text-gray-500">
-              {{ t('repos.loading') }}
-            </div>
+            <el-skeleton v-if="repoStore.loading && repoStore.repos.length === 0" class="p-5" :rows="5" animated />
 
-            <div v-else-if="repoStore.repos.length === 0" class="py-12 text-center text-sm text-gray-500">
-              {{ t('repos.scopedEmpty') }}
-            </div>
+            <el-empty v-else-if="repoStore.repos.length === 0" :description="t('repos.scopedEmpty')" :image-size="80" />
 
             <template v-else>
               <div class="divide-y divide-slate-100">
@@ -669,22 +646,24 @@ function repoPrimaryAction(repo: RepoConfig) {
         >
                   <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0">
-            <button class="truncate text-left text-sm font-semibold text-teal-700 hover:text-teal-900" type="button" @click.stop="goToDetail(repo)">
+            <el-button class="!m-0 truncate !p-0 text-left" type="primary" link @click.stop="goToDetail(repo)">
                         {{ repo.name }}
-                      </button>
+                      </el-button>
                       <div class="mt-1 truncate text-xs text-gray-500">{{ repo.full_name }}</div>
                     </div>
-                    <span
-                      class="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
-                      :class="repo.binding_state === 'bound' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
+                    <el-tag
+                      class="shrink-0"
+                      :type="repo.binding_state === 'bound' ? 'success' : 'warning'"
+                      effect="light"
+                      size="small"
                     >
                       {{ repo.binding_state === 'bound' ? t('repos.bound') : t('repos.needsBinding') }}
-                    </span>
+                    </el-tag>
                   </div>
           <dl class="mt-3 grid grid-cols-2 gap-3 text-xs md:mt-0">
                     <div>
                       <dt class="text-gray-400">{{ t('repos.status') }}</dt>
-                      <dd class="mt-1 text-gray-800">{{ repo.status }}</dd>
+                      <dd class="mt-1"><el-tag :type="repo.status === 'active' ? 'success' : repo.status === 'webhook_failed' ? 'danger' : 'info'" size="small">{{ repo.status }}</el-tag></dd>
                     </div>
                     <div>
                       <dt class="text-gray-400">{{ t('repos.binding') }}</dt>
@@ -692,20 +671,20 @@ function repoPrimaryAction(repo: RepoConfig) {
                     </div>
                   </dl>
           <div class="mt-3 flex flex-wrap items-center gap-3 text-sm md:mt-0 md:justify-end" @click.stop>
-                    <button class="font-medium text-teal-700 hover:text-teal-900" type="button" @click="goToDetail(repo)">
+                    <el-button type="primary" link @click="goToDetail(repo)">
                       {{ repoPrimaryAction(repo) }}
-                    </button>
-                    <button
+                    </el-button>
+                    <el-button
                       v-if="showDeleteConfirm !== repo.id"
-                      class="text-red-600 hover:text-red-800"
-                      type="button"
+                      type="danger"
+                      link
                       @click="showDeleteConfirm = repo.id"
                     >
                       {{ t('repos.delete') }}
-                    </button>
+                    </el-button>
                     <template v-else>
-                      <button class="font-medium text-red-700" type="button" @click="confirmDelete(repo.id)">{{ t('repos.confirm') }}</button>
-                      <button class="text-gray-500" type="button" @click="showDeleteConfirm = null">{{ t('repos.cancel') }}</button>
+                      <el-button type="danger" link @click="confirmDelete(repo.id)">{{ t('repos.confirm') }}</el-button>
+                      <el-button link @click="showDeleteConfirm = null">{{ t('repos.cancel') }}</el-button>
                     </template>
                   </div>
                 </article>
@@ -717,22 +696,20 @@ function repoPrimaryAction(repo: RepoConfig) {
                   {{ t('repos.pageOf', { page: currentPage, pages: pageCount }) }}
                 </div>
                 <div class="flex items-center gap-2">
-                  <button
+                  <el-button
                     data-testid="repo-prev-page"
-                    class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                     :disabled="!canGoPrevious"
                     @click="goToPage(currentPage - 1)"
                   >
                     {{ t('repos.previousPage') }}
-                  </button>
-                  <button
+                  </el-button>
+                  <el-button
                     data-testid="repo-next-page"
-                    class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                     :disabled="!canGoNext"
                     @click="goToPage(currentPage + 1)"
                   >
                     {{ t('repos.nextPage') }}
-                  </button>
+                  </el-button>
                 </div>
               </div>
             </template>
@@ -741,37 +718,27 @@ function repoPrimaryAction(repo: RepoConfig) {
       </section>
     </div>
 
-    <!-- Add Repo Dialog -->
-    <div v-if="showAddDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <button class="absolute inset-0" type="button" :aria-label="t('repos.cancel')" @click="closeAddDialog" />
-      <div
-        ref="addDialog"
-        class="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6 shadow-xl"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="add-repository-title"
-        tabindex="-1"
-        @keydown="handleAddDialogKeydown"
-      >
-        <h2 id="add-repository-title" class="mb-4 text-lg font-semibold text-gray-900">{{ t('repos.addRepository') }}</h2>
-
+    <el-dialog
+      v-model="showAddDialog"
+      :teleported="false"
+      width="min(28rem, calc(100vw - 2rem))"
+      :title="t('repos.addRepository')"
+    >
         <div class="space-y-3">
           <div>
             <label class="block text-sm font-medium text-gray-700">{{ t('repos.scmProvider') }}</label>
-            <select v-model="addForm.scm_provider_id" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
-              <option v-for="p in providers" :key="p.id" :value="p.id">{{ p.name }} ({{ p.type }})</option>
-            </select>
+            <el-select v-model="addForm.scm_provider_id" data-testid="repo-provider-select" class="mt-1 w-full">
+              <el-option v-for="p in providers" :key="p.id" :value="p.id" :label="`${p.name} (${p.type})`" />
+            </el-select>
             <p v-if="providers.length === 0" class="mt-1 text-xs text-red-500">{{ t('repos.noScmProviders') }}</p>
           </div>
 
           <div>
             <label class="block text-sm font-medium text-gray-700">{{ t('repos.repoUrl') }}</label>
-            <input
-              ref="repoUrlInput"
+            <el-input
               v-model="repoUrl"
-              type="text"
               placeholder="https://github.com/org/repo or https://bitbucket.host/projects/PROJ/repos/name/browse"
-              class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              class="mt-1 w-full"
               @input="parseRepoUrl"
             />
             <p class="mt-1 text-xs text-gray-400">{{ t('repos.repoUrlHelp') }}</p>
@@ -789,54 +756,38 @@ function repoPrimaryAction(repo: RepoConfig) {
             <div>
               <div class="flex items-center justify-between">
                 <span class="text-gray-500">{{ t('repos.cloneUrl') }}</span>
-                <span class="inline-flex rounded-md shadow-sm">
-                  <button
-                    type="button"
-                    :class="cloneProtocol === 'http' ? 'bg-teal-700 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'"
-                    class="rounded-l-md border border-gray-300 px-2.5 py-0.5 text-xs font-medium"
-                    @click="cloneProtocol = 'http'; onProtocolChange()"
-                  >
-                    HTTP
-                  </button>
-                  <button
-                    type="button"
-                    :class="cloneProtocol === 'ssh' ? 'bg-teal-700 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'"
-                    class="-ml-px rounded-r-md border border-gray-300 px-2.5 py-0.5 text-xs font-medium"
-                    @click="cloneProtocol = 'ssh'; onProtocolChange()"
-                  >
-                    SSH
-                  </button>
-                </span>
+                <el-radio-group v-model="cloneProtocol" size="small" @change="onProtocolChange">
+                  <el-radio-button value="http">HTTP</el-radio-button>
+                  <el-radio-button value="ssh">SSH</el-radio-button>
+                </el-radio-group>
               </div>
               <div v-if="cloneProtocol === 'ssh' && parsedInfo?.type === 'bitbucket'" class="mt-1">
-                <input
+                <el-input
                   v-model="sshHost"
-                  type="text"
                   placeholder="SSH host, e.g. git.example.com"
-                  class="block w-full rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                  class="w-full"
                   @input="onSshHostInput"
                 />
                 <p class="mt-0.5 text-xs text-gray-400">{{ t('repos.bitbucketSshHelp') }}</p>
               </div>
-              <input v-model="addForm.clone_url" type="text" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-xs font-mono" />
+              <el-input v-model="addForm.clone_url" data-testid="repo-clone-url" class="mt-1 w-full font-mono" />
             </div>
           </div>
 
           <div>
             <label class="block text-sm font-medium text-gray-700">{{ t('repos.defaultBranch') }}</label>
-            <input v-model="addForm.default_branch" type="text" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            <el-input v-model="addForm.default_branch" class="mt-1 w-full" />
           </div>
 
-          <div v-if="addError" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ addError }}</div>
+          <el-alert v-if="addError" type="error" :closable="false" show-icon :title="addError" />
         </div>
 
-        <div class="mt-5 flex justify-end space-x-3">
-          <button class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="closeAddDialog">{{ t('repos.cancel') }}</button>
-          <button class="rounded-md bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50" :disabled="addLoading" @click="handleAddRepo">
+        <template #footer>
+          <el-button @click="closeAddDialog">{{ t('repos.cancel') }}</el-button>
+          <el-button type="primary" :loading="addLoading" :disabled="addLoading" @click="handleAddRepo">
             {{ addLoading ? t('repos.adding') : t('repos.add') }}
-          </button>
-        </div>
-      </div>
-    </div>
+          </el-button>
+        </template>
+    </el-dialog>
   </AppLayout>
 </template>

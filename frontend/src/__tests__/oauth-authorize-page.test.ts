@@ -67,4 +67,11 @@ describe('AuthorizePage', () => {
     expect(wrapper.text()).toContain('Sign in to continue')
     expect(wrapper.find('a[href^="/login?redirect="]').exists()).toBe(true)
   })
+
+  it('presents authorization decisions as Element Plus actions', async () => {
+    const wrapper = await mountAuthorize(true)
+
+    expect(wrapper.get('[data-action="deny"]').classes()).toContain('el-button')
+    expect(wrapper.get('[data-action="approve"]').classes()).toContain('el-button')
+  })
 })

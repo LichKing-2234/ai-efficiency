@@ -379,7 +379,7 @@ def test_dev_login_settings(page):
            add_platform_button.is_visible())
 
     page.locator("[data-testid='settings-tab-deployment-runtime']").click()
-    page.wait_for_timeout(300)
+    page.locator("h2:has-text('Deployment & Runtime')").wait_for(state="visible")
     report("Deployment & Runtime section visible",
            page.locator("h2:has-text('Deployment & Runtime')").is_visible())
     report("Current version visible",

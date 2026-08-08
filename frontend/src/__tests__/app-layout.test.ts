@@ -97,6 +97,18 @@ describe('AppLayout', () => {
     expect(main.classes()).toContain('md:min-h-0')
   })
 
+  it('uses an Element Plus action for the mobile navigation entry', async () => {
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(AppLayout, {
+      global: { plugins: [createPinia(), router] },
+    })
+
+    expect(wrapper.get('[aria-controls="mobile-navigation"]').classes()).toContain('el-button')
+  })
+
   it('bounds count loads across five protected route layout identities', async () => {
     vi.useFakeTimers()
     const pinia = createPinia()
@@ -156,7 +168,7 @@ describe('AppLayout', () => {
       for (let i = 0; i < 5; i += 1) {
         await menuButton.trigger('click')
         await flushPromises()
-        await wrapper.get('#mobile-navigation > button').trigger('click')
+        await wrapper.get('[data-testid="mobile-nav-close"]').trigger('click')
         await flushPromises()
       }
       expect(api.getWorkItemCounts).toHaveBeenCalledTimes(1)

@@ -1,38 +1,37 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from '@/i18n'
+import { useRouter } from 'vue-router'
 
-defineProps<{
+const props = defineProps<{
   active: 'personal' | 'team' | 'quota-reset'
   showTeam?: boolean
   showQuotaReset?: boolean
 }>()
 
 const { t } = useI18n()
+const router = useRouter()
+const options = computed(() => {
+  const items = [{ label: t('usageDashboard.personalTab'), value: 'personal' }]
+  if (props.showTeam || props.active === 'team') items.push({ label: t('usageDashboard.teamTab'), value: 'team' })
+  if (props.showQuotaReset || props.active === 'quota-reset') items.push({ label: t('quotaReset.tab'), value: 'quota-reset' })
+  return items
+})
 
-function linkClass(active: boolean) {
-  return [
-    'inline-flex rounded-md px-3 py-2 text-sm font-medium transition-colors',
-    active
-      ? 'bg-cyan-700 text-white'
-      : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50',
-  ]
+function selectTab(name: string | number) {
+  if (name === 'team') void router.push('/usage/team')
+  else if (name === 'quota-reset') void router.push('/usage/quota-reset')
+  else void router.push('/usage')
 }
 </script>
 
 <template>
-  <div class="flex flex-wrap gap-2" data-testid="usage-center-tabs">
-    <RouterLink to="/usage" :class="linkClass(active === 'personal')">
-      {{ t('usageDashboard.personalTab') }}
-    </RouterLink>
-    <RouterLink v-if="showTeam || active === 'team'" to="/usage/team" :class="linkClass(active === 'team')">
-      {{ t('usageDashboard.teamTab') }}
-    </RouterLink>
-    <RouterLink
-      v-if="showQuotaReset || active === 'quota-reset'"
-      to="/usage/quota-reset"
-      :class="linkClass(active === 'quota-reset')"
-    >
-      {{ t('quotaReset.tab') }}
-    </RouterLink>
+  <div class="max-w-full overflow-x-auto" data-testid="usage-center-tabs">
+  <ElSegmented
+    :model-value="active"
+    :options="options"
+    class="min-w-max"
+    @change="selectTab"
+  />
   </div>
 </template>

@@ -18,14 +18,12 @@ import {
   retryQuotaResetRequest,
   type QuotaResetListParams,
 } from '@/api/quotaReset'
-import { useToast } from '@/composables/useToast'
 import { useI18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useWorkItemsStore } from '@/stores/workItems'
 import type { QuotaResetRequestSummary, QuotaResetStatus } from '@/types'
 
 const { t } = useI18n()
-const { showToast } = useToast()
 const auth = useAuthStore()
 const workItems = useWorkItemsStore()
 const route = useRoute()
@@ -203,31 +201,6 @@ function countBadge(count: number) {
   return count > 99 ? '99+' : String(count)
 }
 
-function queueButtonClass(active: boolean) {
-  return [
-    'inline-flex min-h-10 items-center justify-center rounded-md px-3 py-2 text-sm font-medium transition-colors',
-    active
-      ? 'bg-white text-slate-950 shadow-sm ring-1 ring-slate-200'
-      : 'text-slate-600 hover:bg-white/70',
-  ]
-}
-
-function queueBadgeClass(active: boolean) {
-  return [
-    'ml-2 inline-flex min-w-6 justify-center rounded-full px-1.5 text-xs font-semibold',
-    active ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200',
-  ]
-}
-
-function filterButtonClass(active: boolean) {
-  return [
-    'rounded-full px-3 py-1 text-xs font-medium transition-colors',
-    active
-      ? 'bg-white text-slate-950 shadow-sm ring-1 ring-slate-200'
-      : 'text-slate-500 hover:bg-white/70',
-  ]
-}
-
 const overlappingQueues: Record<QueueMode, QueueMode[]> = {
   mine: ['admin'],
   approvals: ['admin'],
@@ -248,10 +221,10 @@ async function withAction(sourceQueue: QueueMode, action: () => Promise<unknown>
     workItems.invalidateCounts()
     void workItems.loadCounts({ force: true })
     await Promise.all(Array.from(refreshTargets, (mode) => loadQueue(mode, { force: true })))
-    showToast({ message: t('quotaReset.actionSucceeded'), tone: 'success' })
+    ElMessage.success(t('quotaReset.actionSucceeded'))
     return true
   } catch {
-    showToast({ message: t('quotaReset.actionFailed'), tone: 'error' })
+    ElMessage.error(t('quotaReset.actionFailed'))
     return false
   } finally {
     sourceState.actionBusy = false
@@ -320,75 +293,80 @@ onMounted(() => {
           data-testid="quota-reset-queue-selector"
           :class="['grid w-full gap-1 rounded-lg bg-slate-100 p-1 sm:w-auto', auth.isAdmin ? 'grid-cols-3' : 'grid-cols-2']"
         >
-          <button
-            type="button"
+          <ElButton
             data-testid="quota-reset-tab-mine"
-            :class="queueButtonClass(activeQueue === 'mine')"
+            class="!ml-0 min-h-10"
+            :type="activeQueue === 'mine' ? 'primary' : 'default'"
             @click="selectQueue('mine')"
           >
             {{ t('quotaReset.myRequests') }}
-          </button>
-          <button
-            type="button"
+          </ElButton>
+          <ElButton
             data-testid="quota-reset-tab-approvals"
-            :class="queueButtonClass(activeQueue === 'approvals')"
+            class="!ml-0 min-h-10"
+            :type="activeQueue === 'approvals' ? 'primary' : 'default'"
             @click="selectQueue('approvals')"
           >
             {{ t('quotaReset.myApprovals') }}
-            <span
+            <ElTag
               v-if="approvalTotal > 0"
               data-testid="quota-reset-tab-approvals-count"
-              :class="queueBadgeClass(activeQueue === 'approvals')"
+              class="ml-2"
+              size="small"
+              round
+              :effect="activeQueue === 'approvals' ? 'dark' : 'plain'"
             >
               {{ countBadge(approvalTotal) }}
-            </span>
-          </button>
-          <button
+            </ElTag>
+          </ElButton>
+          <ElButton
             v-if="auth.isAdmin"
-            type="button"
             data-testid="quota-reset-tab-admin"
-            :class="queueButtonClass(activeQueue === 'admin')"
+            class="!ml-0 min-h-10"
+            :type="activeQueue === 'admin' ? 'primary' : 'default'"
             @click="selectQueue('admin')"
           >
             {{ t('quotaReset.adminQueue') }}
-            <span
+            <ElTag
               v-if="adminTotal > 0"
               data-testid="quota-reset-tab-admin-count"
-              :class="queueBadgeClass(activeQueue === 'admin')"
+              class="ml-2"
+              size="small"
+              round
+              :effect="activeQueue === 'admin' ? 'dark' : 'plain'"
             >
               {{ countBadge(adminTotal) }}
-            </span>
-          </button>
+            </ElTag>
+          </ElButton>
         </div>
 
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div data-testid="quota-reset-status-filters" class="flex w-fit max-w-full flex-wrap gap-1 rounded-full bg-slate-100 p-1">
-            <button
+            <ElButton
               v-for="filter in filters"
               :key="filter"
-              type="button"
+              size="small"
+              round
               :data-testid="`quota-reset-filter-${filter}`"
-              :class="filterButtonClass(activeFilter === filter)"
+              class="!ml-0 text-xs"
+              :type="activeFilter === filter ? 'primary' : 'default'"
               @click="activeFilter = filter"
             >
               {{ filterLabel(filter) }}
-            </button>
+            </ElButton>
           </div>
-          <button
-            type="button"
+          <ElButton
             data-testid="quota-reset-refresh"
-            class="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            :loading="currentQueue.status === 'loading'"
             :disabled="currentQueue.status === 'loading' || currentQueue.actionBusy"
             @click="refreshActiveQueue"
           >
             {{ t('quotaReset.refresh') }}
-          </button>
+          </ElButton>
         </div>
       </section>
 
-      <div v-if="currentQueue.error" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        {{ currentQueue.error }}
-      </div>
+      <ElAlert v-if="currentQueue.error" type="error" :closable="false" :title="currentQueue.error" />
 
       <QuotaResetRequestList
         :items="visibleItems"

@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { Close, Menu, Switch } from '@element-plus/icons-vue'
+import en from 'element-plus/es/locale/lang/en'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import AppSidebar from './AppSidebar.vue'
 import { useI18n } from '@/i18n'
-import { useModalFocus } from '@/composables/useModalFocus'
 
 const mobileNavOpen = ref(false)
-const mobileNavDialog = ref<HTMLElement | null>(null)
-const mobileMenuButton = ref<HTMLElement | null>(null)
-const { languageToggleLabel, t, toggleLocale } = useI18n()
+const { languageToggleLabel, locale, t, toggleLocale } = useI18n()
+const elementLocale = computed(() => locale.value === 'zh-CN' ? zhCn : en)
 
 function openMobileNav() {
   mobileNavOpen.value = true
@@ -17,55 +18,52 @@ function closeMobileNav() {
   mobileNavOpen.value = false
 }
 
-const { handleKeydown: handleMobileNavKeydown } = useModalFocus(mobileNavOpen, mobileNavDialog, {
-  onClose: closeMobileNav,
-})
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-50 md:flex md:h-screen md:overflow-hidden">
-    <header class="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 md:hidden">
-      <button
-        ref="mobileMenuButton"
-        class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
-        :aria-expanded="mobileNavOpen"
-        aria-controls="mobile-navigation"
-        @click="openMobileNav"
+  <el-config-provider :locale="elementLocale">
+    <div class="min-h-screen bg-slate-50 md:flex md:h-screen md:overflow-hidden">
+      <header class="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 md:hidden">
+        <el-button
+          :icon="Menu"
+          :aria-expanded="mobileNavOpen"
+          aria-controls="mobile-navigation"
+          @click="openMobileNav"
+        >
+          {{ t('nav.menu') }}
+        </el-button>
+        <div class="text-sm font-semibold text-slate-900">{{ t('app.title') }}</div>
+        <el-button :icon="Switch" plain @click="toggleLocale">
+          {{ languageToggleLabel }}
+        </el-button>
+      </header>
+
+      <AppSidebar class="hidden h-screen md:flex" />
+
+      <main class="min-h-screen min-w-0 flex-1 overflow-auto p-4 sm:p-6 lg:p-8 md:h-screen md:min-h-0">
+        <slot />
+      </main>
+
+      <el-drawer
+        v-model="mobileNavOpen"
+        destroy-on-close
+        direction="ltr"
+        size="min(20rem, 86vw)"
       >
-        {{ t('nav.menu') }}
-      </button>
-      <div class="text-sm font-semibold text-slate-900">{{ t('app.title') }}</div>
-      <button
-        class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
-        @click="toggleLocale"
-      >
-        {{ languageToggleLabel }}
-      </button>
-    </header>
-
-    <AppSidebar class="hidden h-screen md:flex" />
-
-    <main class="min-h-screen min-w-0 flex-1 overflow-auto p-4 sm:p-6 lg:p-8 md:h-screen md:min-h-0">
-      <slot />
-    </main>
-
-    <div
-      v-if="mobileNavOpen"
-      id="mobile-navigation"
-      ref="mobileNavDialog"
-      class="fixed inset-0 z-40 md:hidden"
-      role="dialog"
-      aria-modal="true"
-      :aria-label="t('nav.menu')"
-      tabindex="-1"
-      @keydown="handleMobileNavKeydown"
-    >
-      <button
-        class="absolute inset-0 bg-slate-950/50"
-        :aria-label="t('events.close')"
-        @click="closeMobileNav"
-      />
-      <AppSidebar class="relative h-full w-80 max-w-[86vw]" @navigate="closeMobileNav" />
+        <template #header>
+          <span class="text-sm font-semibold text-slate-900">{{ t('nav.menu') }}</span>
+          <el-button
+            data-testid="mobile-nav-close"
+            :icon="Close"
+            :title="t('events.close')"
+            text
+            @click="closeMobileNav"
+          />
+        </template>
+        <div id="mobile-navigation" class="h-full">
+          <AppSidebar v-if="mobileNavOpen" class="h-full w-full" mobile @navigate="closeMobileNav" />
+        </div>
+      </el-drawer>
     </div>
-  </div>
+  </el-config-provider>
 </template>

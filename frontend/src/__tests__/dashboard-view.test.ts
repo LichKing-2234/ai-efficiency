@@ -329,7 +329,12 @@ describe('DashboardView', () => {
     expect(getUserProviders).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('My Usage')
     expect(wrapper.text()).toContain('AI Usage Center')
-    expect(wrapper.find('a[href="/usage/quota-reset"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="usage-center-tabs"] .el-segmented').exists()).toBe(true)
+    const quotaResetTab = wrapper.findAll('.el-segmented__item').find((tab) => tab.text() === 'Quota Reset')
+    expect(quotaResetTab).toBeTruthy()
+    await quotaResetTab!.get('input').setValue()
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/usage/quota-reset')
     expect(wrapper.text()).not.toContain('Platform Signals')
   })
 
@@ -794,7 +799,7 @@ describe('DashboardView', () => {
     expect(wrapper.text()).not.toContain('My Usage')
   })
 
-  it('keeps member usage range and refresh controls on one row', async () => {
+  it('wraps member usage controls on mobile and keeps them on one row from sm', async () => {
     const { getUserProviders } = await import('@/api/user')
     const { getUserUsageDashboard } = await import('@/api/userUsage')
     const { getTeamUsageSubjectDashboard } = await import('@/api/teamUsage')
@@ -824,9 +829,10 @@ describe('DashboardView', () => {
     await flushPromises()
 
     const controls = wrapper.get('[data-test="range-today"]').element.parentElement as HTMLElement
-    expect(controls.className).toContain('flex-nowrap')
+    expect(controls.className).toContain('flex-wrap')
+    expect(controls.className).toContain('sm:flex-nowrap')
+    expect(controls.className).toContain('sm:overflow-x-auto')
     expect(controls.className).toContain('shrink-0')
-    expect(controls.className).not.toContain('flex-wrap')
   })
 
   it('shows an explicit team overview return link on canonical member route', async () => {
@@ -953,6 +959,8 @@ describe('DashboardView', () => {
     await router.push('/usage/members/101')
     await router.isReady()
     const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+    await vi.dynamicImportSettled()
     await flushPromises()
 
     const subscriptionIndex = wrapper.text().indexOf('Subscription groups')
@@ -1259,6 +1267,8 @@ describe('DashboardView', () => {
     await flushPromises()
 
     await wrapper.get('[data-testid="open-quota-reset-request"]').trigger('click')
+    await flushPromises()
+    await vi.dynamicImportSettled()
     await flushPromises()
     await wrapper.get('textarea').setValue('Need reset for a build investigation')
     await wrapper.get('[data-testid="quota-reset-submit"]').trigger('click')

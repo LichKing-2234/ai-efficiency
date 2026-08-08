@@ -95,6 +95,13 @@ beforeEach(async () => {
 })
 
 describe('QuotaResetApprovalSettings', () => {
+  it('renders quota-reset policy actions with Element Plus controls', async () => {
+    const wrapper = mount(QuotaResetApprovalSettings, { props: { credentials: [] } })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="quota-reset-save-approvers"]').classes()).toContain('el-button')
+  })
+
   it('removes existing approver rows with explicit full replacement save', async () => {
     const api = await import('@/api/quotaReset') as any
     api.getQuotaResetApproverConfigs.mockResolvedValueOnce({
@@ -149,7 +156,7 @@ describe('QuotaResetApprovalSettings', () => {
     })
     await flushPromises()
 
-    await wrapper.find('input[data-testid="quota-reset-webhook-enabled"]').setValue(true)
+    await wrapper.get('[data-testid="quota-reset-webhook-enabled"]').trigger('click')
     await wrapper.find('input[data-testid="quota-reset-webhook-url"]').setValue('https://hooks.example.com/ai-efficiency')
     await wrapper.find('button[data-testid="quota-reset-save-notification"]').trigger('click')
     await flushPromises()

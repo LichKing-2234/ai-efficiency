@@ -1125,6 +1125,7 @@ const zhCN = {
   'directoryOffboarding.sourceId': '来源 ID',
   'directoryOffboarding.searchPlaceholder': '搜索用户',
   'directoryOffboarding.warning': '禁用后，该用户将无法继续使用 AI 接入。请确认用户身份后再操作。',
+  'directoryOffboarding.effectNotice': '此操作会禁用上游 AI 接入并撤销本地 AI 效能平台令牌，不会自动移除现有订阅。',
   'directoryOffboarding.relay': 'AI 接入',
   'directoryOffboarding.reason': '原因',
   'directoryOffboarding.confirmation': '确认',

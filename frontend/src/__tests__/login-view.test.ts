@@ -38,18 +38,20 @@ describe('LoginView', () => {
     })
   })
 
-  it('renders login form', () => {
+  it('renders login form', async () => {
     const router = createTestRouter()
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
 
+    await flushPromises()
+
     expect(wrapper.find('h1').text()).toBe('AI Efficiency Platform')
     expect(wrapper.text()).toContain('Recommended sign-in')
     expect(wrapper.find('[data-testid="auth-language-toggle"]').exists()).toBe(true)
-    expect(wrapper.find('input#username').exists()).toBe(true)
-    expect(wrapper.find('input#password').exists()).toBe(true)
-    expect(wrapper.find('select#source').exists()).toBe(true)
+    expect(wrapper.find('input[data-testid="username-field"]').exists()).toBe(true)
+    expect(wrapper.find('input[data-testid="password-field"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="auth-source"]').exists()).toBe(true)
   })
 
   it('renders dev login button when enabled', async () => {
@@ -71,8 +73,7 @@ describe('LoginView', () => {
     })
     await flushPromises()
 
-    const select = wrapper.find('select#source')
-    expect((select.element as HTMLSelectElement).value).toBe('LDAP')
+    expect(wrapper.get('[data-testid="auth-source"]').text()).toContain('LDAP')
   })
 
   it('shows only SSO when LDAP is not enabled', async () => {
@@ -86,10 +87,9 @@ describe('LoginView', () => {
     })
     await flushPromises()
 
-    const select = wrapper.find('select#source')
-    const options = wrapper.findAll('select#source option')
-    expect((select.element as HTMLSelectElement).value).toBe('SSO')
-    expect(options.map((option) => (option.element as HTMLOptionElement).value)).toEqual(['SSO'])
+    const source = wrapper.get('[data-testid="auth-source"]')
+    expect(source.text()).toContain('SSO')
+    expect(source.text()).not.toContain('LDAP')
   })
 
   it('hides dev login when disabled', async () => {
@@ -133,8 +133,8 @@ describe('LoginView', () => {
       global: { plugins: [createPinia(), router] },
     })
 
-    await wrapper.find('input#username').setValue('bad')
-    await wrapper.find('input#password').setValue('bad')
+    await wrapper.get('input[data-testid="username-field"]').setValue('bad')
+    await wrapper.get('input[data-testid="password-field"]').setValue('bad')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
@@ -237,8 +237,8 @@ describe('LoginView', () => {
     })
     await flushPromises()
 
-    await wrapper.find('input#username').setValue('admin')
-    await wrapper.find('input#password').setValue('pass')
+    await wrapper.get('input[data-testid="username-field"]').setValue('admin')
+    await wrapper.get('input[data-testid="password-field"]').setValue('pass')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
@@ -264,8 +264,8 @@ describe('LoginView', () => {
     })
     await flushPromises()
 
-    await wrapper.find('input#username').setValue('admin')
-    await wrapper.find('input#password').setValue('pass')
+    await wrapper.get('input[data-testid="username-field"]').setValue('admin')
+    await wrapper.get('input[data-testid="password-field"]').setValue('pass')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
@@ -290,8 +290,8 @@ describe('LoginView', () => {
     })
     await flushPromises()
 
-    await wrapper.find('input#username').setValue('admin')
-    await wrapper.find('input#password').setValue('pass')
+    await wrapper.get('input[data-testid="username-field"]').setValue('admin')
+    await wrapper.get('input[data-testid="password-field"]').setValue('pass')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
@@ -309,8 +309,8 @@ describe('LoginView', () => {
     })
     await flushPromises()
 
-    await wrapper.find('input#username').setValue('admin')
-    await wrapper.find('input#password').setValue('pass')
+    await wrapper.get('input[data-testid="username-field"]').setValue('admin')
+    await wrapper.get('input[data-testid="password-field"]').setValue('pass')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
@@ -328,8 +328,8 @@ describe('LoginView', () => {
     })
     await flushPromises()
 
-    await wrapper.find('input#username').setValue('admin')
-    await wrapper.find('input#password').setValue('pass')
+    await wrapper.get('input[data-testid="username-field"]').setValue('admin')
+    await wrapper.get('input[data-testid="password-field"]').setValue('pass')
     await wrapper.find('form').trigger('submit')
     await wrapper.vm.$nextTick()
 
@@ -426,15 +426,23 @@ describe('LoginView', () => {
     expect(localStorage.getItem('refresh_token')).toBeNull()
   })
 
-  it('can select LDAP auth source', async () => {
+  it('can select SSO auth source', async () => {
     const router = createTestRouter()
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
     await flushPromises()
 
-    const select = wrapper.find('select#source')
-    await select.setValue('LDAP')
-    expect((select.element as HTMLSelectElement).value).toBe('LDAP')
+    await wrapper.get('[data-testid="auth-source"] .el-select__wrapper').trigger('click')
+    await flushPromises()
+
+    const ssoOptions = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]'))
+      .filter((option) => option.textContent?.trim() === 'SSO')
+    const ssoOption = ssoOptions[ssoOptions.length - 1]
+    expect(ssoOption).toBeTruthy()
+    ssoOption!.click()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="auth-source"]').text()).toContain('SSO')
   })
 })

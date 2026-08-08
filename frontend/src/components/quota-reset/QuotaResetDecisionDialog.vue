@@ -14,23 +14,40 @@ const comment = ref('')
 const canSubmit = computed(() => comment.value.trim().length > 0 && !props.busy)
 </script>
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" data-testid="quota-reset-decision-dialog" @click.self="emit('cancel')">
-    <form class="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" role="dialog" aria-modal="true" :aria-label="t(action === 'approve' ? 'quotaReset.approveTitle' : 'quotaReset.rejectTitle')" @submit.prevent="canSubmit && emit('confirm', comment.trim())">
-      <h2 class="text-base font-semibold text-slate-950">
-        {{ t(action === 'approve' ? 'quotaReset.approveTitle' : 'quotaReset.rejectTitle') }}
-      </h2>
+  <ElDialog
+    :model-value="true"
+    :teleported="false"
+    width="min(28rem, calc(100vw - 2rem))"
+    :title="t(action === 'approve' ? 'quotaReset.approveTitle' : 'quotaReset.rejectTitle')"
+    data-testid="quota-reset-decision-dialog"
+    @close="emit('cancel')"
+  >
+    <form role="dialog" :aria-label="t(action === 'approve' ? 'quotaReset.approveTitle' : 'quotaReset.rejectTitle')" @submit.prevent="canSubmit && emit('confirm', comment.trim())">
       <label class="mt-4 block">
         <span class="text-sm font-medium text-slate-700">{{ t('quotaReset.decisionComment') }}</span>
-        <textarea v-model="comment" data-testid="quota-reset-decision-comment" rows="4" class="mt-1 w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-sm" :placeholder="t('quotaReset.decisionCommentPlaceholder')" />
+        <ElInput
+          v-model="comment"
+          data-testid="quota-reset-decision-comment"
+          type="textarea"
+          :rows="4"
+          class="mt-1 w-full"
+          :placeholder="t('quotaReset.decisionCommentPlaceholder')"
+        />
       </label>
       <div class="mt-4 flex justify-end gap-2">
-        <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700" :disabled="busy" @click="emit('cancel')">
+        <ElButton :disabled="busy" @click="emit('cancel')">
           {{ t('settings.cancel') }}
-        </button>
-        <button type="submit" data-testid="quota-reset-decision-confirm" :class="['rounded-md px-3 py-2 text-sm font-medium text-white disabled:opacity-50', action === 'approve' ? 'bg-cyan-700' : 'bg-red-700']" :disabled="!canSubmit">
+        </ElButton>
+        <ElButton
+          native-type="submit"
+          data-testid="quota-reset-decision-confirm"
+          :type="action === 'approve' ? 'primary' : 'danger'"
+          :loading="busy"
+          :disabled="!canSubmit"
+        >
           {{ busy ? t('settings.saving') : t(action === 'approve' ? 'quotaReset.approve' : 'quotaReset.reject') }}
-        </button>
+        </ElButton>
       </div>
     </form>
-  </div>
+  </ElDialog>
 </template>

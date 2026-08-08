@@ -31,9 +31,13 @@ const hasVisibleWork = computed(() => aiAccessSetupCount.value > 0 || quotaReset
         <p class="mt-1 text-sm text-slate-600">{{ t('workItems.subtitle') }}</p>
       </div>
 
-      <div v-if="workItems.error" class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-        {{ t('workItems.loadFailed') }}
-      </div>
+      <el-alert
+        v-if="workItems.error"
+        :closable="false"
+        :title="t('workItems.loadFailed')"
+        show-icon
+        type="warning"
+      />
 
       <div class="grid gap-3 lg:grid-cols-2">
         <RouterLink
@@ -45,9 +49,9 @@ const hasVisibleWork = computed(() => aiAccessSetupCount.value > 0 || quotaReset
             <h2 class="text-sm font-semibold text-slate-950">{{ t('workItems.aiAccessSetup') }}</h2>
             <p class="mt-1 text-sm text-slate-500">{{ t('workItems.aiAccessSetupHelp') }}</p>
           </div>
-          <span class="inline-flex min-w-8 shrink-0 justify-center rounded-full bg-cyan-700 px-2.5 py-1 text-sm font-semibold text-white">
+          <el-tag class="shrink-0" effect="dark" round>
             {{ formatWorkItemCount(aiAccessSetupCount) }}
-          </span>
+          </el-tag>
         </RouterLink>
 
         <RouterLink
@@ -59,9 +63,9 @@ const hasVisibleWork = computed(() => aiAccessSetupCount.value > 0 || quotaReset
             <h2 class="text-sm font-semibold text-slate-950">{{ t('workItems.quotaResetApprovals') }}</h2>
             <p class="mt-1 text-sm text-slate-500">{{ t('workItems.quotaResetHelp') }}</p>
           </div>
-          <span class="inline-flex min-w-8 shrink-0 justify-center rounded-full bg-cyan-700 px-2.5 py-1 text-sm font-semibold text-white">
+          <el-tag class="shrink-0" effect="dark" round>
             {{ formatWorkItemCount(quotaResetCount) }}
-          </span>
+          </el-tag>
         </RouterLink>
 
         <RouterLink
@@ -73,15 +77,13 @@ const hasVisibleWork = computed(() => aiAccessSetupCount.value > 0 || quotaReset
             <h2 class="text-sm font-semibold text-slate-950">{{ t('workItems.offboardingReview') }}</h2>
             <p class="mt-1 text-sm text-slate-500">{{ t('workItems.offboardingHelp') }}</p>
           </div>
-          <span class="inline-flex min-w-8 shrink-0 justify-center rounded-full bg-cyan-700 px-2.5 py-1 text-sm font-semibold text-white">
+          <el-tag class="shrink-0" effect="dark" round>
             {{ formatWorkItemCount(offboardingCount) }}
-          </span>
+          </el-tag>
         </RouterLink>
       </div>
 
-      <div v-if="!workItems.loading && !hasVisibleWork" class="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
-        {{ t('workItems.empty') }}
-      </div>
+      <el-empty v-if="!workItems.loading && !hasVisibleWork" :description="t('workItems.empty')" />
     </div>
   </AppLayout>
 </template>

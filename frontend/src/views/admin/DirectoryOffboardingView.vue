@@ -17,6 +17,9 @@ const pageSize = 20
 const total = ref(0)
 const confirmations = ref<Record<number, string>>({})
 const loading = ref(false)
+const disableDialogOpen = ref(false)
+const selectedCandidate = ref<DirectoryOffboardingCandidate | null>(null)
+const disablingUserID = ref<number | null>(null)
 const message = ref('')
 const error = ref('')
 
@@ -24,6 +27,9 @@ const hasCandidates = computed(() => candidates.value.length > 0)
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
 const canGoPrevious = computed(() => page.value > 1)
 const canGoNext = computed(() => page.value < totalPages.value)
+const disableConfirmationMatches = computed(() => (
+  selectedCandidate.value ? confirmed(selectedCandidate.value) : false
+))
 
 onMounted(loadCandidates)
 
@@ -70,8 +76,23 @@ function confirmed(candidate: DirectoryOffboardingCandidate) {
   return (confirmations.value[candidate.user_id] || '').trim().toLowerCase() === candidate.email.trim().toLowerCase()
 }
 
+function openDisableDialog(candidate: DirectoryOffboardingCandidate) {
+  if (disablingUserID.value !== null) return
+  message.value = ''
+  error.value = ''
+  selectedCandidate.value = candidate
+  disableDialogOpen.value = true
+}
+
+function closeDisableDialog() {
+  if (disablingUserID.value !== null) return
+  disableDialogOpen.value = false
+  selectedCandidate.value = null
+}
+
 async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
-  if (!confirmed(candidate)) return
+  if (!confirmed(candidate) || disablingUserID.value !== null) return
+  disablingUserID.value = candidate.user_id
   message.value = ''
   error.value = ''
   try {
@@ -87,8 +108,12 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
       loadCandidates(),
       workItems.loadCounts({ force: true }),
     ])
+    disableDialogOpen.value = false
+    selectedCandidate.value = null
   } catch (e: any) {
     error.value = e?.response?.data?.message || e?.message || t('directoryOffboarding.disableFailed')
+  } finally {
+    disablingUserID.value = null
   }
 }
 </script>
@@ -102,89 +127,169 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
           <p class="text-sm text-gray-500">{{ t('directoryOffboarding.subtitle') }}</p>
         </div>
         <div class="flex flex-wrap gap-2">
-          <input v-model="q" type="search" class="w-56 rounded-md border border-gray-300 px-3 py-2 text-sm" :placeholder="t('directoryOffboarding.searchPlaceholder')" />
-          <button data-testid="offboarding-search" type="button" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="searchCandidates">{{ t('adminUsers.search') }}</button>
+          <ElInput
+            v-model="q"
+            type="search"
+            class="w-56"
+            :placeholder="t('directoryOffboarding.searchPlaceholder')"
+          />
+          <ElButton data-testid="offboarding-search" @click="searchCandidates">
+            {{ t('adminUsers.search') }}
+          </ElButton>
         </div>
       </div>
 
-      <div class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-        {{ t('directoryOffboarding.warning') }}
-      </div>
-      <div v-if="message" class="rounded-md bg-green-50 p-3 text-sm text-green-700">{{ message }}</div>
-      <div v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</div>
+      <ElAlert
+        data-testid="offboarding-warning"
+        :title="t('directoryOffboarding.warning')"
+        type="warning"
+        :closable="false"
+        show-icon
+      />
+      <ElAlert
+        v-if="message"
+        data-testid="offboarding-success"
+        :title="message"
+        type="success"
+        :closable="false"
+        show-icon
+      />
+      <ElAlert
+        v-if="error"
+        data-testid="offboarding-error"
+        :title="error"
+        type="error"
+        :closable="false"
+        show-icon
+      />
 
-      <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
-        <table class="min-w-full divide-y divide-gray-200 text-sm">
-          <thead class="bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-            <tr>
-              <th class="px-4 py-3">{{ t('adminUsers.user') }}</th>
-              <th class="px-4 py-3">{{ t('directoryOffboarding.relay') }}</th>
-              <th class="px-4 py-3">{{ t('directoryOffboarding.reason') }}</th>
-              <th class="px-4 py-3">{{ t('directoryOffboarding.confirmation') }}</th>
-              <th class="px-4 py-3 text-right">{{ t('settings.actions') }}</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-100">
-            <tr v-if="loading">
-              <td colspan="5" class="px-4 py-6 text-center text-gray-500">{{ t('settings.loading') }}</td>
-            </tr>
-            <tr v-else-if="!hasCandidates">
-              <td colspan="5" class="px-4 py-6 text-center text-gray-500">{{ t('directoryOffboarding.empty') }}</td>
-            </tr>
-            <tr v-for="candidate in candidates" v-else :key="candidate.user_id">
-              <td class="px-4 py-3">
-                <div class="font-medium text-gray-900">{{ candidate.username }}</div>
-                <div class="text-gray-500">{{ candidate.email }}</div>
-                <div class="text-xs text-gray-400">{{ candidate.auth_source }}</div>
-              </td>
-              <td class="px-4 py-3 text-gray-700">{{ candidate.relay_user_id }}</td>
-              <td class="px-4 py-3 text-gray-700">{{ candidate.reason }}</td>
-              <td class="px-4 py-3">
-                <input
-                  :data-testid="`confirm-email-${candidate.user_id}`"
-                  v-model="confirmations[candidate.user_id]"
-                  type="text"
-                  class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                  :placeholder="candidate.email"
-                />
-              </td>
-              <td class="px-4 py-3 text-right">
-                <button
-                  :data-testid="`disable-relay-user-${candidate.user_id}`"
-                  type="button"
-                  class="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
-                  :disabled="!confirmed(candidate)"
-                  @click="disableCandidate(candidate)"
-                >
-                  {{ t('directoryOffboarding.disableRelayUser') }}
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div>
+        <ElSkeleton v-if="loading" :rows="3" animated class="p-4" />
+        <ElEmpty v-else-if="!hasCandidates" :description="t('directoryOffboarding.empty')" />
+        <div v-else class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <ElCard
+            v-for="candidate in candidates"
+            :key="candidate.user_id"
+            :data-testid="`offboarding-candidate-${candidate.user_id}`"
+            shadow="never"
+            class="min-w-0"
+          >
+            <template #header>
+              <div class="min-w-0">
+                <div class="truncate font-medium text-gray-900">{{ candidate.username }}</div>
+                <div class="break-all text-sm text-gray-500">{{ candidate.email }}</div>
+                <ElTag class="mt-2" effect="plain">{{ candidate.auth_source }}</ElTag>
+              </div>
+            </template>
+
+            <dl class="space-y-3 text-sm">
+              <div>
+                <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ t('directoryOffboarding.relay') }}</dt>
+                <dd class="mt-1 break-all text-gray-700">{{ candidate.relay_user_id }}</dd>
+              </div>
+              <div>
+                <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ t('directoryOffboarding.reason') }}</dt>
+                <dd class="mt-1 break-words text-gray-700">{{ candidate.reason }}</dd>
+              </div>
+              <div>
+                <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ t('directoryOffboarding.confirmation') }}</dt>
+                <dd class="mt-1 break-all text-gray-500">
+                  {{ t('adminUsers.disableUserConfirmHint', { email: candidate.email }) }}
+                </dd>
+              </div>
+            </dl>
+
+            <div class="mt-4 flex justify-end">
+              <ElButton
+                :data-testid="`disable-relay-user-${candidate.user_id}`"
+                type="danger"
+                class="w-full sm:w-auto"
+                :disabled="disablingUserID !== null"
+                @click="openDisableDialog(candidate)"
+              >
+                {{ t('directoryOffboarding.disableRelayUser') }}
+              </ElButton>
+            </div>
+          </ElCard>
+        </div>
       </div>
       <div class="flex flex-wrap items-center justify-end gap-2 text-xs text-gray-500">
         <span>{{ total }} {{ t('adminUsers.totalSuffix') }}</span>
-        <button
+        <ElButton
           data-testid="offboarding-prev-page"
-          type="button"
-          class="rounded border border-gray-200 px-2 py-1 disabled:opacity-40"
           :disabled="!canGoPrevious || loading"
           @click="previousPage"
         >
           {{ t('adminUsers.prev') }}
-        </button>
+        </ElButton>
         <span data-testid="offboarding-page-status">{{ t('adminUsers.page') }} {{ page }} / {{ totalPages }}</span>
-        <button
+        <ElButton
           data-testid="offboarding-next-page"
-          type="button"
-          class="rounded border border-gray-200 px-2 py-1 disabled:opacity-40"
           :disabled="!canGoNext || loading"
           @click="nextPage"
         >
           {{ t('adminUsers.next') }}
-        </button>
+        </ElButton>
       </div>
+
+      <ElDialog
+        v-if="selectedCandidate"
+        :model-value="disableDialogOpen"
+        :teleported="false"
+        :show-close="false"
+        align-center
+        width="min(100%, 32rem)"
+        :close-on-click-modal="disablingUserID === null"
+        :close-on-press-escape="disablingUserID === null"
+        @update:model-value="(value) => { if (!value) closeDisableDialog() }"
+      >
+        <template #header>
+          <div data-testid="offboarding-disable-dialog" class="flex items-start justify-between gap-4">
+            <div class="min-w-0">
+              <h2 class="text-base font-semibold text-gray-900">{{ t('adminUsers.disableUserConfirmTitle') }}</h2>
+              <p class="mt-1 truncate text-sm text-gray-500">{{ selectedCandidate.email }}</p>
+            </div>
+            <ElButton :disabled="disablingUserID !== null" @click="closeDisableDialog">
+              {{ t('adminUsers.closeDialog') }}
+            </ElButton>
+          </div>
+        </template>
+
+        <ElAlert
+          type="error"
+          :closable="false"
+          show-icon
+          :title="t('directoryOffboarding.effectNotice')"
+        />
+        <label class="mt-4 block text-xs font-medium uppercase tracking-wide text-gray-500">
+          {{ t('adminUsers.disableUserConfirmHint', { email: selectedCandidate.email }) }}
+          <ElInput
+            v-model="confirmations[selectedCandidate.user_id]"
+            :data-testid="`confirm-email-${selectedCandidate.user_id}`"
+            class="mt-1 block w-full"
+            autofocus
+            :placeholder="selectedCandidate.email"
+            :disabled="disablingUserID !== null"
+          />
+        </label>
+
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <ElButton :disabled="disablingUserID !== null" @click="closeDisableDialog">
+              {{ t('adminUsers.cancelDisableUser') }}
+            </ElButton>
+            <ElButton
+              :data-testid="`confirm-disable-relay-user-${selectedCandidate.user_id}`"
+              type="danger"
+              :loading="disablingUserID === selectedCandidate.user_id"
+              :disabled="!disableConfirmationMatches || disablingUserID !== null"
+              @click="disableCandidate(selectedCandidate)"
+            >
+              {{ disablingUserID === selectedCandidate.user_id ? t('adminUsers.working') : t('adminUsers.confirmDisableUser') }}
+            </ElButton>
+          </div>
+        </template>
+      </ElDialog>
     </div>
   </AppLayout>
 </template>

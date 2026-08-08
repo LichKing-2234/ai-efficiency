@@ -139,38 +139,28 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
   expandedDepartmentIds.value = next
 }
 
-function viewButtonClass(view: DetailView) {
-  return [
-    'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-    detailView.value === view
-      ? 'bg-gray-900 text-white'
-      : 'text-gray-600 hover:bg-gray-50',
-  ]
-}
 </script>
 
 <template>
   <section class="rounded-lg border border-slate-200 bg-white shadow-sm">
     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
       <h2 class="text-base font-semibold text-slate-950">{{ t('teamUsage.memberTable') }}</h2>
-      <div v-if="hasOrganization" class="inline-flex rounded-lg border border-gray-200 bg-white p-1" aria-label="Member detail view">
-        <button
+      <ElButtonGroup v-if="hasOrganization" aria-label="Member detail view">
+        <ElButton
           data-testid="team-overview-ranking-view"
-          type="button"
-          :class="viewButtonClass('ranking')"
+          :type="detailView === 'ranking' ? 'primary' : undefined"
           @click="detailView = 'ranking'"
         >
           {{ t('teamUsage.rankingView') }}
-        </button>
-        <button
+        </ElButton>
+        <ElButton
           data-testid="team-overview-organization-view"
-          type="button"
-          :class="viewButtonClass('organization')"
+          :type="detailView === 'organization' ? 'primary' : undefined"
           @click="detailView = 'organization'"
         >
           {{ t('teamUsage.organizationView') }}
-        </button>
-      </div>
+        </ElButton>
+      </ElButtonGroup>
     </div>
 
     <div v-if="detailView === 'organization' && props.organizationRoot" class="p-4" data-testid="team-overview-organization-tree">
@@ -216,16 +206,15 @@ function viewButtonClass(view: DetailView) {
             :member-aria-level="memberAriaLevel"
           />
         </div>
-        <button
+        <ElButton
           v-if="props.organizationRoot.nextDepartmentCursor"
           data-testid="team-overview-departments-more-root"
-          type="button"
-          class="mt-3 rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 disabled:opacity-50"
+          class="mt-3"
           :disabled="props.organizationRoot.departmentLoading"
           @click="emit('load-more-departments', null)"
         >
           {{ t('teamUsage.loadMoreDepartments') }}
-        </button>
+        </ElButton>
       </template>
     </div>
 
@@ -273,14 +262,12 @@ function viewButtonClass(view: DetailView) {
             <td class="whitespace-nowrap px-4 py-2 text-right tabular-nums text-slate-900">{{ formatCost(member.range_actual_cost) }}</td>
             <td class="whitespace-nowrap px-4 py-2 text-right">
               <span v-if="!isConnected(member)" class="mr-2 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">{{ t('teamUsage.notConnected') }}</span>
-              <button
-                type="button"
-                class="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              <ElButton
                 :disabled="!canOpen(member)"
                 @click="openMember(member)"
               >
                 {{ t('teamUsage.openMember') }}
-              </button>
+              </ElButton>
             </td>
           </tr>
         </tbody>
@@ -302,24 +289,20 @@ function viewButtonClass(view: DetailView) {
     >
       <span class="text-sm text-slate-500">{{ t('teamUsage.memberPageRange', { start: memberPageStart, end: memberPageEnd, total: props.memberTotalCount }) }}</span>
       <div class="flex items-center gap-2">
-        <button
+        <ElButton
           data-testid="team-overview-members-previous"
-          type="button"
-          class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           :disabled="!props.hasPreviousPage || props.memberLoading"
           @click="emit('previous-page')"
         >
           {{ t('teamUsage.memberPagePrevious') }}
-        </button>
-        <button
+        </ElButton>
+        <ElButton
           data-testid="team-overview-members-next"
-          type="button"
-          class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           :disabled="!props.hasNextPage || props.memberLoading"
           @click="emit('next-page')"
         >
           {{ t('teamUsage.memberPageNext') }}
-        </button>
+        </ElButton>
       </div>
     </div>
   </section>

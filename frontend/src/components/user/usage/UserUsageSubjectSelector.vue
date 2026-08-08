@@ -24,8 +24,7 @@ function subjectLabel(subject: TeamUsageSubject) {
   return subject.subject_type === 'self' ? t('teamUsage.myUsage') : subject.display_name
 }
 
-function onChange(event: Event) {
-  const value = (event.target as HTMLSelectElement).value
+function onChange(value: string) {
   emit('update:modelValue', value)
   const selected = props.subjects.find((subject) => subjectValue(subject) === value)
   if (selected) {
@@ -35,19 +34,18 @@ function onChange(event: Event) {
 </script>
 
 <template>
-  <select
-    class="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900"
-    :value="modelValue"
+  <ElSelect
+    class="w-full sm:w-72"
+    :model-value="modelValue"
     data-testid="usage-subject-selector"
     @change="onChange"
   >
-    <option
+    <ElOption
       v-for="subject in props.subjects"
       :key="subjectValue(subject)"
+      :label="subjectLabel(subject)"
       :value="subjectValue(subject)"
       :disabled="!subject.selectable"
-    >
-      {{ subjectLabel(subject) }}
-    </option>
-  </select>
+    />
+  </ElSelect>
 </template>
