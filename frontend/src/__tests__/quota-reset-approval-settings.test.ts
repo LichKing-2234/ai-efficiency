@@ -41,7 +41,7 @@ function installMatchMedia(initialMatches: boolean) {
   const listeners = new Set<(event: { matches: boolean; media: string }) => void>()
   const mediaQuery = {
     matches: initialMatches,
-    media: '(min-width: 768px)',
+    media: '(min-width: 1280px)',
     onchange: null,
     addEventListener: vi.fn((type: string, listener: (event: { matches: boolean; media: string }) => void) => {
       if (type === 'change') listeners.add(listener)
@@ -225,6 +225,7 @@ describe('QuotaResetApprovalSettings', () => {
     expect(wrapper.find('[data-approver-config-list="desktop"]').exists()).toBe(true)
     expect(wrapper.find('[data-approver-config-list="mobile"]').exists()).toBe(false)
     expect(wrapper.findAll('[data-approver-config-row]')).toHaveLength(1)
+    expect(matchMediaController.matchMedia).toHaveBeenCalledWith('(min-width: 1280px)')
 
     matchMediaController.change(false)
     await wrapper.vm.$nextTick()

@@ -41,7 +41,7 @@ const departmentOptions = ref<DirectoryDepartment[]>([])
 const approverCandidates = ref<QuotaResetApproverCandidate[]>([])
 const approverFilter = ref('')
 const unmatchedRepresentatives = ref<QuotaResetUnmatchedApproverRepresentative[]>([])
-const desktopApproverConfigs = useMediaQuery('(min-width: 768px)')
+const desktopApproverConfigs = useMediaQuery('(min-width: 1280px)')
 let departmentSearchRequestSeq = 0
 
 const configForm = ref({

@@ -516,7 +516,8 @@ describe('SettingsView', () => {
     await openSettingsSection(wrapper, 'ai-services')
     assertMobileOnly(wrapper.get('#settings-panel-ai-services'))
 
-    expect(media.matchMedia).toHaveBeenCalledWith('(min-width: 768px)')
+    expect(media.matchMedia).toHaveBeenCalledWith('(min-width: 1280px)')
+    expect(media.matchMedia.mock.calls.filter(([query]) => query === '(min-width: 768px)')).toHaveLength(1)
     expect(media.addEventListener).toHaveBeenCalled()
     wrapper.unmount()
     expect(media.removeEventListener).toHaveBeenCalled()

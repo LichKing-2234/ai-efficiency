@@ -8,7 +8,7 @@ import { useSettingsResourcesStore } from '@/stores/settingsResources'
 import type { SCMProvider } from '@/types'
 
 const { locale, t } = useI18n()
-const isDesktop = useMediaQuery('(min-width: 768px)')
+const isDesktop = useMediaQuery('(min-width: 1280px)')
 const settingsResources = useSettingsResourcesStore()
 const { credentials } = storeToRefs(settingsResources)
 const providers = ref<SCMProvider[]>([])
