@@ -142,6 +142,43 @@ func TestScanCompactCodexAtomsUsesConfirmedPatchTargetAsRepositoryEvidence(t *te
 	}
 }
 
+func TestScanCompactCodexAtomsUsesPatchApplyEndChangesAsRepositoryEvidence(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repoA := compactTestRepo(t, "repo-a")
+	repoB := compactTestRepo(t, "repo-b")
+	path := filepath.Join(home, ".codex", "sessions", "2026", "08", "07", "patch-apply-end.jsonl")
+	writeJSONLines(t, path, []any{
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "conversation-patch-apply-end", "cwd": repoA}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-patch-apply-end", "cwd": repoA, "model": "gpt-test"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{
+			"type": "custom_tool_call", "name": "exec", "input": `const result = await tools.apply_patch(patch);`,
+		}},
+		map[string]any{"type": "event_msg", "payload": map[string]any{
+			"type": "patch_apply_end", "success": true,
+			"changes": map[string]any{
+				filepath.Join(repoB, "feature.go"): map[string]any{"type": "update"},
+			},
+		}},
+		compactTokenRow("2026-08-07T10:00:00Z", map[string]any{"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}, nil),
+	})
+
+	fromB, err := ScanCompactCodexAtoms(context.Background(), repoB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fromB) != 1 || fromB[0].Evidence != "direct" {
+		t.Fatalf("repo B atoms = %+v, want patch_apply_end changes as direct evidence", fromB)
+	}
+	fromA, err := ScanCompactCodexAtoms(context.Background(), repoA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fromA) != 0 {
+		t.Fatalf("exec workdir overrode patch_apply_end target: %+v", fromA)
+	}
+}
+
 func TestInitializeCompactBaselineDoesNotPersistHistoricalAtoms(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -364,6 +401,57 @@ func TestCompactSyncEngineConservesReplaysLateBindsAndRewrites(t *testing.T) {
 		t.Fatalf("squash revisions = %+v", fake.revisions)
 	}
 	assertRevisionConservation(t, fake.buckets[0], fake.revisions[2])
+}
+
+func TestCompactSyncEngineLateBindsWhenDirectEvidenceFollowsWeakAtom(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repo := compactTestRepo(t, "repo")
+	writeCompactState(t, CompactState{
+		Version: 2, EnabledAt: time.Date(2026, 8, 7, 9, 0, 0, 0, time.UTC), SeenAtoms: map[string]bool{},
+	})
+	writeJSONLines(t, filepath.Join(home, ".codex", "sessions", "2026", "08", "07", "multi-token-turn.jsonl"), []any{
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "conversation-multi-token", "cwd": repo}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-multi-token", "cwd": repo, "model": "gpt-test"}},
+		compactTokenRow("2026-08-07T10:00:01Z", map[string]any{"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}, nil),
+		map[string]any{"type": "response_item", "payload": map[string]any{
+			"type": "custom_tool_call", "name": "exec", "input": `const result = await tools.apply_patch(patch);`,
+		}},
+		map[string]any{"type": "event_msg", "payload": map[string]any{
+			"type": "patch_apply_end", "success": true,
+			"changes": map[string]any{
+				filepath.Join(repo, "main.go"): map[string]any{"type": "update"},
+			},
+		}},
+		compactTokenRow("2026-08-07T10:00:02Z", map[string]any{"input_tokens": 20, "output_tokens": 4, "total_tokens": 24}, nil),
+		compactTokenRow("2026-08-07T10:00:03Z", map[string]any{"input_tokens": 30, "output_tokens": 6, "total_tokens": 36}, nil),
+	})
+
+	fake := &compactBackendFake{}
+	engine := &CompactSyncEngine{Client: fake}
+	base := CompactRunOptions{
+		InstallationID: "installation-a", RepoRoot: repo, RepoConfigID: 11,
+		RepoKey: "repo:a", WorkspaceID: "workspace-a", Cutoff: time.Date(2026, 8, 7, 10, 1, 0, 0, time.UTC),
+	}
+	if err := engine.Run(context.Background(), base); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.buckets) != 1 || fake.buckets[0].SourceEventCount != 3 || fake.buckets[0].InitialRevision.Allocations[0].Target.Status != "unbound" {
+		t.Fatalf("initial bucket = %+v, want one three-atom unbound bucket", fake.buckets)
+	}
+
+	commitRun := base
+	commitRun.TriggerKind = "post-commit"
+	commitRun.CommitSHA = "commit-after-write"
+	commitRun.Branch = "feature/a"
+	commitRun.Cutoff = time.Date(2026, 8, 7, 10, 2, 0, 0, time.UTC)
+	if err := engine.Run(context.Background(), commitRun); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.revisions) != 1 || fake.revisions[0].Allocations[0].Target.Status != "bound_auto" || fake.revisions[0].Allocations[0].Target.CommitSHA != "commit-after-write" {
+		t.Fatalf("late-bind revisions = %+v, want direct evidence to bind the whole change set", fake.revisions)
+	}
+	assertRevisionConservation(t, fake.buckets[0], fake.revisions[0])
 }
 
 func TestCompactSyncEngineRetainsCommitTriggerForLateJSONLVisibility(t *testing.T) {

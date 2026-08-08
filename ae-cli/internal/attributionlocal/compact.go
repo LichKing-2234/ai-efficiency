@@ -436,6 +436,8 @@ func buildCompactBuckets(ctx context.Context, opts CompactRunOptions, atoms []Co
 		key := strings.Join([]string{atom.ChangeSetID, atom.ConversationID, atom.Model, atom.Quality, targetKey}, "\x00")
 		if groups[key] == nil {
 			groups[key] = &group{target: target, candidate: candidate}
+		} else if groups[key].candidate.Status == "" && candidate.Status != "" {
+			groups[key].candidate = candidate
 		}
 		groups[key].atoms = append(groups[key].atoms, atom)
 	}

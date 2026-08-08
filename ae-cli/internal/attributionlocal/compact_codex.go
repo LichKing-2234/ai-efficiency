@@ -146,7 +146,11 @@ func parseCompactCodexFile(ctx context.Context, path, currentRepoRoot string) ([
 				Name      string `json:"name"`
 				Input     string `json:"input"`
 				Arguments string `json:"arguments"`
-				Info      *struct {
+				Success   bool   `json:"success"`
+				Changes   map[string]struct {
+					Type string `json:"type"`
+				} `json:"changes"`
+				Info *struct {
 					LastTokenUsage  map[string]any `json:"last_token_usage"`
 					TotalTokenUsage map[string]any `json:"total_token_usage"`
 				} `json:"info"`
@@ -179,6 +183,19 @@ func parseCompactCodexFile(ctx context.Context, path, currentRepoRoot string) ([
 				}
 			}
 		case "event_msg":
+			if strings.TrimSpace(row.Payload.Type) == "patch_apply_end" {
+				if currentRepoRoot == "" || !row.Payload.Success {
+					return nil
+				}
+				for candidate := range row.Payload.Changes {
+					root := cachedGitRoot(candidate, rootCache)
+					if root != "" {
+						evidenceRoots[root] = struct{}{}
+						allEvidenceRoots[root] = struct{}{}
+					}
+				}
+				return nil
+			}
 			if sessionID == "" || strings.TrimSpace(row.Payload.Type) != "token_count" || row.Payload.Info == nil {
 				return nil
 			}
