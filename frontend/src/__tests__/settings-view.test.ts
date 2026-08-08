@@ -442,11 +442,10 @@ describe('SettingsView', () => {
 
   it('renders settings section navigation with Element Plus tabs', async () => {
     const wrapper = await mountSettings()
-    const aiServicesLabel = wrapper.get('[data-testid="settings-tab-ai-services"]')
+    const tabs = wrapper.getComponent({ name: 'ElTabs' })
 
-    expect(wrapper.find('.el-tabs').exists()).toBe(true)
-    expect(wrapper.findAll('.el-tabs__item')).toHaveLength(5)
-    expect(aiServicesLabel.element.closest('.el-tabs__item')).not.toBeNull()
+    expect(tabs.props('stretch')).toBe(true)
+    expect(wrapper.findAllComponents({ name: 'ElTabPane' })).toHaveLength(5)
   })
 
   it('uses a mobile section selector without mounting the desktop tabs', async () => {

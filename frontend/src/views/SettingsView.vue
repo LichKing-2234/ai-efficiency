@@ -105,15 +105,3 @@ function replaceSettingsQuery() {
     </div>
   </AppLayout>
 </template>
-
-<style scoped>
-:deep(.settings-section-tabs > .el-tabs__header .el-tabs__item) {
-  flex: 1 1 0;
-  height: auto;
-  min-height: 5rem;
-  min-width: 0;
-  padding-inline: 0.5rem;
-  white-space: normal;
-  width: 0;
-}
-</style>

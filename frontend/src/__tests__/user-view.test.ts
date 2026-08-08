@@ -244,14 +244,13 @@ describe('UserView', () => {
     expect(wrapper.text()).not.toContain('default_model')
   })
 
-  it('uses Element Plus radio options for access-provider selection', async () => {
+  it('uses bordered Element Plus radio options for access-provider selection', async () => {
     const { wrapper } = await mountUserView()
 
-    const selectedProvider = wrapper.get('[data-testid="provider-2"]')
-    const alternateProvider = wrapper.get('[data-testid="provider-1"]')
-    expect(selectedProvider.element.closest('.el-radio-button')).not.toBeNull()
-    expect(selectedProvider.element.closest('.el-radio-button')?.classList).toContain('is-active')
-    expect(alternateProvider.element.closest('.el-radio-button')?.classList).not.toContain('is-active')
+    const providerOptions = wrapper.findAllComponents({ name: 'ElRadio' })
+      .filter((component) => component.attributes('data-testid')?.startsWith('provider-'))
+    expect(providerOptions).toHaveLength(2)
+    expect(providerOptions.every((component) => component.props('border') === true)).toBe(true)
   })
 
   it('uses Element Plus radio options for access-group selection', async () => {
@@ -264,13 +263,14 @@ describe('UserView', () => {
     expect(alternateGroup.element.closest('.el-radio-button')?.classList).not.toContain('is-active')
   })
 
-  it('uses Element Plus radio options for configuration-method selection', async () => {
+  it('uses bordered Element Plus radio options for configuration-method selection', async () => {
     const { wrapper } = await mountUserView()
-    const manualMethod = wrapper.get('[data-testid="config-method-manual"]')
+    const manualMethod = wrapper.findAllComponents({ name: 'ElRadio' })
+      .find((component) => component.attributes('data-testid') === 'config-method-manual')
 
-    expect(manualMethod.element.closest('.el-radio-button')).not.toBeNull()
-    await manualMethod.trigger('click')
-    expect(manualMethod.element.closest('.el-radio-button')?.classList).toContain('is-active')
+    expect(manualMethod).toBeDefined()
+    expect(manualMethod!.props('border')).toBe(true)
+    await manualMethod!.trigger('click')
     expect(wrapper.text()).toContain('Manual configuration values')
   })
 

@@ -94,7 +94,8 @@ describe('AppSidebar', () => {
 
     expect(wrapper.find('nav').exists()).toBe(true)
     expect(wrapper.get('[data-testid="language-toggle"]').classes()).toContain('el-button')
-    expect(wrapper.findComponent({ name: 'ElBadge' }).exists()).toBe(true)
+    const badge = wrapper.getComponent({ name: 'ElBadge' })
+    expect(badge.props('badgeStyle')).toEqual({ position: 'static', transform: 'none' })
   })
 
   it('places the language toggle in the sidebar header, away from the account footer', async () => {

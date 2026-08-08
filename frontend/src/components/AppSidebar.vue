@@ -104,8 +104,9 @@ function handleNavigate() {
         <el-badge
           v-if="workItems.totalCount > 0"
           data-testid="sidebar-work-items-badge"
-          class="sidebar-count-badge ml-2 shrink-0"
+          class="ml-2 shrink-0"
           :value="workItems.badgeLabel"
+          :badge-style="{ position: 'static', transform: 'none' }"
           type="primary"
         />
       </RouterLink>
@@ -194,10 +195,3 @@ function handleNavigate() {
     </div>
   </aside>
 </template>
-
-<style scoped>
-.sidebar-count-badge :deep(.el-badge__content) {
-  position: static;
-  transform: none;
-}
-</style>

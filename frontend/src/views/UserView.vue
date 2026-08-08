@@ -652,28 +652,29 @@ onMounted(loadProviders)
               :model-value="selectedProviderId ?? undefined"
               class="mt-4 flex w-full flex-col gap-3"
             >
-              <ElRadioButton
+              <ElRadio
                 v-for="provider in providers"
                 :key="provider.id"
                 :data-testid="`provider-${provider.id}`"
-                class="provider-option !ml-0 w-full"
+                border
+                class="!mx-0 !h-auto w-full !items-start !p-4"
                 :value="provider.id"
                 @click="selectProvider(provider.id)"
               >
-                <div class="flex w-full items-center justify-between gap-3 px-1 py-1">
+                <div class="flex w-full items-center justify-between gap-3 whitespace-normal">
                   <div>
                     <div class="font-medium">{{ provider.display_name }}</div>
-                    <div class="text-xs" :class="provider.id === selectedProviderId ? 'text-gray-300' : 'text-gray-500'">{{ provider.name }}</div>
+                    <div class="text-xs text-gray-500">{{ provider.name }}</div>
                   </div>
-                  <span
+                  <ElTag
                     v-if="provider.is_primary"
-                    class="rounded-full px-2 py-1 text-[11px] font-semibold"
-                    :class="provider.id === selectedProviderId ? 'bg-white/15 text-white' : 'bg-gray-100 text-gray-700'"
+                    type="info"
+                    size="small"
                   >
                     {{ t('user.primary') }}
-                  </span>
+                  </ElTag>
                 </div>
-              </ElRadioButton>
+              </ElRadio>
             </ElRadioGroup>
           </section>
         </div>
@@ -908,38 +909,47 @@ onMounted(loadProviders)
                   :model-value="selectedConfigMethod ?? undefined"
                   class="mt-4 !grid w-full gap-3 md:grid-cols-3"
                 >
-                  <ElRadioButton
+                  <ElRadio
                     data-testid="config-method-manual"
-                    class="config-method-option !ml-0 w-full"
+                    border
+                    class="!mx-0 !h-auto w-full !items-start !p-4"
                     value="manual"
                     @click="selectedConfigMethod = 'manual'"
                   >
-                    <div class="font-medium text-gray-900">{{ t('user.manualConfigMethodTitle') }}</div>
-                    <p class="mt-1 text-sm text-gray-600">{{ t('user.manualConfigMethodHelp') }}</p>
-                    <p class="mt-3 text-xs text-gray-500">{{ t('user.manualConfigMethodAudience') }}</p>
-                  </ElRadioButton>
-                  <ElRadioButton
+                    <div class="whitespace-normal">
+                      <div class="font-medium text-gray-900">{{ t('user.manualConfigMethodTitle') }}</div>
+                      <p class="mt-1 text-sm text-gray-600">{{ t('user.manualConfigMethodHelp') }}</p>
+                      <p class="mt-3 text-xs text-gray-500">{{ t('user.manualConfigMethodAudience') }}</p>
+                    </div>
+                  </ElRadio>
+                  <ElRadio
                     v-if="showAutomaticConfigMethod"
                     data-testid="config-method-automatic"
-                    class="config-method-option !ml-0 w-full"
+                    border
+                    class="!mx-0 !h-auto w-full !items-start !p-4"
                     value="automatic"
                     @click="selectedConfigMethod = 'automatic'"
                   >
-                    <div class="font-medium text-gray-900">{{ t('user.automaticConfigMethodTitle') }}</div>
-                    <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigMethodHelp') }}</p>
-                    <p class="mt-3 text-xs text-gray-500">{{ t('user.automaticConfigMethodAudience') }}</p>
-                  </ElRadioButton>
-                  <ElRadioButton
+                    <div class="whitespace-normal">
+                      <div class="font-medium text-gray-900">{{ t('user.automaticConfigMethodTitle') }}</div>
+                      <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigMethodHelp') }}</p>
+                      <p class="mt-3 text-xs text-gray-500">{{ t('user.automaticConfigMethodAudience') }}</p>
+                    </div>
+                  </ElRadio>
+                  <ElRadio
                     v-if="ccSwitchImports.length > 0"
                     data-testid="config-method-ccswitch"
-                    class="config-method-option !ml-0 w-full"
+                    border
+                    class="!mx-0 !h-auto w-full !items-start !p-4"
                     value="ccswitch"
                     @click="selectedConfigMethod = 'ccswitch'"
                   >
-                    <div class="font-medium text-gray-900">{{ ccSwitchMethodTitle }}</div>
-                    <p class="mt-1 text-sm text-gray-600">{{ ccSwitchMethodHelp }}</p>
-                    <p class="mt-3 text-xs text-gray-500">{{ ccSwitchMethodAudience }}</p>
-                  </ElRadioButton>
+                    <div class="whitespace-normal">
+                      <div class="font-medium text-gray-900">{{ ccSwitchMethodTitle }}</div>
+                      <p class="mt-1 text-sm text-gray-600">{{ ccSwitchMethodHelp }}</p>
+                      <p class="mt-3 text-xs text-gray-500">{{ ccSwitchMethodAudience }}</p>
+                    </div>
+                  </ElRadio>
                 </ElRadioGroup>
 
                 <div v-if="selectedConfigMethod === 'manual'" class="mt-4 rounded-lg border border-gray-200 p-4">
@@ -1137,28 +1147,3 @@ onMounted(loadProviders)
     </div>
   </AppLayout>
 </template>
-
-<style scoped>
-:deep(.provider-option .el-radio-button__inner) {
-  width: 100%;
-  border: 1px solid var(--el-border-color);
-  border-radius: 6px;
-  box-shadow: none;
-  text-align: left;
-}
-
-:deep(.config-method-option .el-radio-button__inner) {
-  width: 100%;
-  height: 100%;
-  border: 1px solid var(--el-border-color);
-  border-radius: 6px;
-  box-shadow: none;
-  padding: 12px 16px;
-  text-align: left;
-  white-space: normal;
-}
-
-:deep(.config-method-option.is-active .el-radio-button__inner *) {
-  color: inherit;
-}
-</style>
