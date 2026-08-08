@@ -25,6 +25,53 @@ passed = 0
 failed = 0
 errors = []
 
+VIEWPORTS = (
+    ("mobile", 390, 844),
+    ("tablet", 768, 1024),
+    ("desktop", 1440, 900),
+)
+
+USER_ROUTE_CASES = (
+    {"path": "/usage", "selector": "[data-testid='usage-center-tabs']"},
+    {"path": "/usage/team", "selector": "[data-testid='team-overview-content']"},
+    {"path": "/usage/members/7", "selector": "[data-testid='member-usage-back']"},
+    {"path": "/usage/quota-reset", "selector": "[data-testid='quota-reset-queue-selector']"},
+    {"path": "/work-items", "selector": "main h1:has-text('Work Items')"},
+    {"path": "/repos", "selector": "[data-testid='repo-binding-filter']", "exercise": "repo-dialog"},
+    {"path": "/repos/9", "selector": "[data-testid='repo-tab-activity']"},
+    {"path": "/activity", "selector": "[data-testid='activity-range-refresh']"},
+    {"path": "/activity/teams", "selector": "[data-testid='activity-team-team-alpha']"},
+    {"path": "/activity/teams/team-alpha", "selector": "[data-testid='activity-team-summary']"},
+    {"path": "/activity/members/7", "selector": "[data-testid='activity-range-refresh']"},
+    {"path": "/user", "selector": "main button:has-text('Refresh')"},
+)
+
+ADMIN_ROUTE_CASES = (
+    {"path": "/admin/users", "selector": "[data-testid='admin-users-view-users']"},
+    {
+        "path": "/admin/directory/offboarding",
+        "selector": "[data-testid='offboarding-search']",
+        "exercise": "offboarding-dialog",
+    },
+    {
+        "path": "/settings",
+        "selector": "[data-testid='settings-section-select']",
+        "desktop_selector": "[data-testid='settings-tab-ai-services']",
+        "exercise": "settings-dialog",
+    },
+)
+
+PUBLIC_ROUTE_CASES = (
+    {"path": "/login", "selector": "[data-testid='username-field']", "authenticated": False},
+    {
+        "path": "/oauth/authorize?client_id=ae-cli&redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback&state=e2e-state",
+        "expected_path": "/oauth/authorize",
+        "selector": "a[href^='/login?redirect=']",
+        "authenticated": False,
+    },
+    {"path": "/oauth/device", "selector": "[data-testid='device-code']", "authenticated": True},
+)
+
 
 def screenshot(page, name):
     page.screenshot(path=f"{SCREENSHOT_DIR}/{name}.png", full_page=True)
@@ -41,8 +88,177 @@ def report(name, ok, detail=""):
         print(f"  ❌ {name}: {detail}")
 
 
+def fulfill_json(route, data, status=200):
+    route.fulfill(
+        status=status,
+        content_type="application/json",
+        body=json.dumps({"code": 0 if status < 400 else status, "data": data} if status < 400 else {
+            "code": status,
+            "message": data.get("message", "Mock request failed"),
+        }),
+    )
+
+
+def activity_metrics():
+    return {
+        "participating_prs": {"value": 2, "lower_bound": False},
+        "merged_prs": {"value": 1, "lower_bound": False},
+        "active_repositories": 1,
+        "commit_count": 1,
+        "latest_activity": "2026-08-05T12:00:00Z",
+    }
+
+
+def activity_sync_coverage():
+    return {
+        "complete": True,
+        "affected_repositories": 0,
+        "unsynced_repositories": 0,
+        "stale_repositories": 0,
+        "partially_synced_repositories": 0,
+        "failed_repositories": 0,
+    }
+
+
+def activity_member_row():
+    return {
+        "member": {
+            "user_id": 7,
+            "display_name": "Alice",
+            "email": "alice@example.com",
+            "department_external_ids": ["team-alpha"],
+        },
+        "available": True,
+        "metrics": activity_metrics(),
+        "quality": {
+            "measured_buckets": 1,
+            "unbound_buckets": 0,
+            "multi_repo_shared_buckets": 0,
+            "invalid_token_facts": 0,
+            "historical_advisory_facts": 0,
+            "coverage_gap_count": 0,
+        },
+    }
+
+
+def mock_matrix_api(route, role):
+    path = urlparse(route.request.url).path
+    repo = {
+        "id": 9,
+        "repo_key": "github.com/example-org/repo-a",
+        "name": "repo-a",
+        "full_name": "example-org/repo-a",
+        "clone_url": "https://github.com/example-org/repo-a.git",
+        "default_branch": "main",
+        "status": "active",
+        "binding_state": "bound",
+        "group_id": 1,
+        "scm_provider_id": 3,
+        "created_at": "2026-08-01T00:00:00Z",
+        "edges": {},
+    }
+    team_identity = {
+        "external_id": "team-alpha",
+        "parent_external_id": None,
+        "name": "Team Alpha",
+        "display_path": "Team Alpha",
+        "member_count": 1,
+    }
+
+    responses = {
+        "/api/v1/user/team-usage/scope": {
+            "is_representative": True,
+            "departments": [{
+                "external_id": "team-alpha",
+                "name": "Team Alpha",
+                "display_path": "Team Alpha",
+                "subtree_member_count": 1,
+                "matched_user_count": 1,
+            }],
+        },
+        "/api/v1/user/quota-reset/requests": {"items": [], "page": 1, "page_size": 20, "total": 0},
+        "/api/v1/repos": {"items": [repo], "total": 1, "page": 1, "page_size": 20},
+        "/api/v1/repos/inventory": [{
+            "provider_key": "scm_provider:3",
+            "provider_id": 3,
+            "name": "GitHub",
+            "type": "github",
+            "total_repos": 1,
+            "bound_repos": 1,
+            "unbound_repos": 0,
+            "active_repos": 1,
+            "webhook_failed_repos": 0,
+            "scopes": [{
+                "scope": "example-org",
+                "total_repos": 1,
+                "bound_repos": 1,
+                "unbound_repos": 0,
+                "active_repos": 1,
+                "webhook_failed_repos": 0,
+            }],
+        }],
+        "/api/v1/repos/9": repo,
+        "/api/v1/activity/scope": {
+            "contract_version": "activity-v1",
+            "scope_version": "scope-e2e",
+            "can_view_teams": True,
+            "admin": role == "admin",
+            "representative": True,
+            "teams": [team_identity],
+        },
+        "/api/v1/activity/teams/team-alpha": {
+            "contract_version": "activity-v1",
+            "scope_version": "scope-e2e",
+            "window": {"from": "2026-07-09T00:00:00Z", "to": "2026-08-08T00:00:00Z"},
+            "team": team_identity,
+            "active_members": 1,
+            "metrics": activity_metrics(),
+            "sync_coverage": activity_sync_coverage(),
+            "members": {"items": [activity_member_row()]},
+        },
+        "/api/v1/activity/repos/9": {
+            "contract_version": "activity-v1",
+            "scope_version": "scope-e2e",
+            "window": {"from": "2026-07-09T00:00:00Z", "to": "2026-08-08T00:00:00Z"},
+            "repository": {"repo_config_id": 9, "name": "example-org/repo-a"},
+            "participating_members": 1,
+            "metrics": activity_metrics(),
+            "sync_coverage": activity_sync_coverage(),
+            "members": {"items": [activity_member_row()]},
+            "prs": {"items": []},
+            "commits": {"items": []},
+        },
+        "/api/v1/admin/users": {"items": [], "total": 0, "page": 1, "page_size": 20},
+        "/api/v1/admin/users/department-options": {
+            "items": [], "selected": None, "total": 0, "page": 1, "page_size": 20,
+        },
+        "/api/v1/admin/users/subscription-options": {"providers": []},
+        "/api/v1/admin/users/subscription-jobs/latest": None,
+        "/api/v1/admin/directory/offboarding-candidates": {
+            "items": [{
+                "user_id": 7,
+                "username": "bob",
+                "email": "bob@example.org",
+                "auth_source": "ldap",
+                "relay_user_id": 97,
+                "reason": "missing_from_latest_full_company_directory",
+                "directory_run_id": 3,
+            }],
+            "page": 1,
+            "page_size": 20,
+            "total": 1,
+        },
+    }
+
+    if path in responses:
+        fulfill_json(route, responses[path])
+        return
+    fulfill_json(route, {"message": f"No E2E mock for {path}"}, status=503)
+
+
 def clear_auth_routes(page):
     for pattern in [
+        "**/api/v1/**",
         "**/api/v1/auth/options",
         "**/api/v1/auth/dev-login",
         "**/api/v1/auth/refresh",
@@ -59,6 +275,8 @@ def clear_auth_routes(page):
         "**/api/v1/admin/credentials**",
         "**/api/v1/system/version**",
         "**/api/v1/admin/settings/ldap**",
+        "**/oauth/authorize/approve",
+        "**/oauth/device/verify",
     ]:
         try:
             page.unroute(pattern)
@@ -68,6 +286,13 @@ def clear_auth_routes(page):
 
 def mock_auth_endpoints(page, role="admin"):
     clear_auth_routes(page)
+
+    page.route("**/api/v1/**", lambda route: mock_matrix_api(route, role))
+    page.route("**/oauth/authorize/approve", lambda route: fulfill_json(
+        route,
+        {"redirect_uri": "http://127.0.0.1/callback?code=e2e-code"},
+    ))
+    page.route("**/oauth/device/verify", lambda route: fulfill_json(route, {"status": "approved"}))
 
     page.route("**/api/v1/auth/options", lambda route: route.fulfill(
         status=200,
@@ -323,6 +548,162 @@ def do_logout(page):
     clear_auth_routes(page)
 
 
+def overflow_state(page):
+    return page.evaluate("""() => ({
+        viewport: window.innerWidth,
+        documentWidth: document.documentElement.scrollWidth,
+        bodyWidth: document.body.scrollWidth,
+    })""")
+
+
+def expected_selector(case, width):
+    if width >= 1280 and case.get("desktop_selector"):
+        return case["desktop_selector"]
+    return case["selector"]
+
+
+def protected_shell_state(page, width):
+    menu = page.locator("header button:has-text('Menu')")
+    sidebar = page.locator("aside").first
+    if width < 768:
+        return menu.is_visible() and not sidebar.is_visible()
+    return sidebar.is_visible() and not menu.is_visible()
+
+
+def exercise_route_control(page, exercise):
+    if exercise == "repo-dialog":
+        page.locator("main button:has-text('Add Repo')").click()
+        dialog = page.locator(".el-dialog").first
+        dialog.wait_for(state="visible")
+        opened = dialog.is_visible()
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="hidden")
+        return opened, "Repository dialog did not open"
+    if exercise == "settings-dialog":
+        page.locator("main button:has-text('Add Relay Provider')").click()
+        dialog = page.locator("[data-testid='relay-provider-dialog']")
+        dialog.wait_for(state="visible")
+        opened = dialog.is_visible()
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="hidden")
+        return opened, "Relay provider dialog did not open"
+    if exercise == "offboarding-dialog":
+        page.locator("[data-testid='disable-relay-user-7']").click()
+        dialog = page.locator("[data-testid='offboarding-disable-dialog']")
+        dialog.wait_for(state="visible")
+        opened = dialog.is_visible()
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="hidden")
+        return opened, "Offboarding dialog did not open"
+    return True, ""
+
+
+def visit_matrix_case(page, role, case, viewport):
+    viewport_name, width, height = viewport
+    page.set_viewport_size({"width": width, "height": height})
+    page_errors = []
+    on_page_error = lambda error: page_errors.append(str(error))
+    page.on("pageerror", on_page_error)
+    path = case["path"]
+    label = f"{role} {path.split('?')[0]} @ {width}"
+    try:
+        page.goto(f"{BASE}{path}")
+        page.wait_for_load_state("networkidle")
+        selector = expected_selector(case, width)
+        critical = page.locator(selector).first
+        critical.wait_for(state="visible", timeout=5000)
+        exercised, exercise_detail = exercise_route_control(page, case.get("exercise"))
+        overflow = overflow_state(page)
+        expected_path = case.get("expected_path", path.split("?")[0])
+        actual_path = urlparse(page.url).path
+        checks = {
+            "path": actual_path == expected_path,
+            "critical": critical.is_visible(),
+            "shell": protected_shell_state(page, width),
+            "overflow": overflow["documentWidth"] <= overflow["viewport"],
+            "interaction": exercised,
+            "page_errors": not page_errors,
+        }
+        report(
+            label,
+            all(checks.values()),
+            json.dumps({
+                "viewport": viewport_name,
+                "checks": checks,
+                "overflow": overflow,
+                "exercise": exercise_detail,
+                "errors": page_errors,
+                "url": page.url,
+            }),
+        )
+    except Exception as error:
+        report(label, False, str(error))
+        screenshot(page, f"matrix_{role}_{viewport_name}_{path.split('?')[0].strip('/').replace('/', '_') or 'root'}")
+    finally:
+        page.remove_listener("pageerror", on_page_error)
+
+
+def test_route_role_viewport_matrix(page):
+    print("\n🧪 Active Routes — Role and Viewport Matrix")
+
+    do_dev_login(page, role="user")
+    for viewport in VIEWPORTS:
+        for case in USER_ROUTE_CASES:
+            visit_matrix_case(page, "user", case, viewport)
+
+    page.evaluate("localStorage.clear()")
+    do_dev_login(page, role="admin")
+    for viewport in VIEWPORTS:
+        for case in ADMIN_ROUTE_CASES:
+            visit_matrix_case(page, "admin", case, viewport)
+
+    mock_auth_endpoints(page, role="user")
+    for viewport_name, width, height in VIEWPORTS:
+        page.set_viewport_size({"width": width, "height": height})
+        for case in PUBLIC_ROUTE_CASES:
+            if case["authenticated"]:
+                page.evaluate("""() => {
+                    localStorage.setItem('token', 'user-token')
+                    localStorage.setItem('refresh_token', 'user-refresh')
+                }""")
+            else:
+                page.evaluate("localStorage.clear()")
+
+            page_errors = []
+            on_page_error = lambda error: page_errors.append(str(error))
+            page.on("pageerror", on_page_error)
+            path = case["path"]
+            label = f"public {path.split('?')[0]} @ {width}"
+            try:
+                page.goto(f"{BASE}{path}")
+                page.wait_for_load_state("networkidle")
+                critical = page.locator(case["selector"]).first
+                critical.wait_for(state="visible", timeout=5000)
+                overflow = overflow_state(page)
+                expected_path = case.get("expected_path", path.split("?")[0])
+                checks = {
+                    "path": urlparse(page.url).path == expected_path,
+                    "critical": critical.is_visible(),
+                    "auth_shell": page.locator("[data-testid='auth-language-toggle']").is_visible(),
+                    "overflow": overflow["documentWidth"] <= overflow["viewport"],
+                    "page_errors": not page_errors,
+                }
+                report(
+                    label,
+                    all(checks.values()),
+                    json.dumps({"viewport": viewport_name, "checks": checks, "overflow": overflow, "url": page.url}),
+                )
+            except Exception as error:
+                report(label, False, str(error))
+                screenshot(page, f"matrix_public_{viewport_name}_{path.split('?')[0].strip('/').replace('/', '_')}")
+            finally:
+                page.remove_listener("pageerror", on_page_error)
+
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.evaluate("localStorage.clear()")
+    clear_auth_routes(page)
+
+
 def test_dev_login_settings(page):
     """Test: Dev login (admin) can see SCM Providers and LLM config on Settings page."""
     print("\n🧪 Dev Login (admin) — Settings Page")
@@ -566,6 +947,7 @@ def run_all():
         page = context.new_page()
 
         tests = [
+            ("Active Route Role/Viewport Matrix", lambda: test_route_role_viewport_matrix(page)),
             ("Admin (Dev Login) Settings", lambda: test_dev_login_settings(page)),
             ("User Role Settings Blocked", lambda: test_user_role_settings_blocked(page)),
             ("User Role /admin/users Blocked", lambda: test_user_role_admin_users_blocked(page)),
