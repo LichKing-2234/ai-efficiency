@@ -22,6 +22,10 @@ theme until a product requirement justifies one.
 - Components and their CSS are imported automatically on demand through the
   Vite resolvers. Never register the complete Element Plus library or import its
   complete stylesheet.
+- Supply Element Plus locale configuration through the shared
+  `ElementPlusLocaleProvider` at the public and authenticated route-shell
+  boundaries. Keeping the provider route-local preserves the initial-shell
+  budget while giving every rendered route the same reactive locale behavior.
 - Use `El*` components directly. Do not create mirror wrappers such as
   `AppButton`, `AppInput`, or `AppDialog` that only rename or forward Element
   Plus APIs.
