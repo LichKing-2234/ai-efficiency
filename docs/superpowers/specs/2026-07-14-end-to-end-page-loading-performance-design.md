@@ -612,7 +612,7 @@ The expand-contract migration is complete:
 ### Code and data loading
 
 1. Chart.js loads when chart data exists or before viewport entry, not before page skeleton/API start.
-2. Only the active locale dictionary is in the initial entry path; another locale loads once on switch with a stable fallback while loading. Copy owned only by the retired-route `EventsView` stays in its route-local dictionary instead of inflating every active locale payload.
+2. Only the active locale dictionary is in the initial entry path; another locale loads once on switch with a stable fallback while loading.
 3. Settings loads one section component and its owned requests at a time.
 4. Shared credentials and Directory Sync sources are deduplicated in a shared API/store owner.
 5. Quota-reset mine, approvals, and admin queues have independent states and load on demand.

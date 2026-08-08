@@ -10,7 +10,6 @@ const staticRoutes = new Set([
   '/usage/team',
   '/usage/quota-reset',
   '/repos',
-  '/events',
   '/user',
   '/admin/users',
   '/admin/directory/offboarding',

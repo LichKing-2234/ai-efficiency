@@ -50,7 +50,6 @@ def clear_auth_routes(page):
         "**/api/v1/efficiency/dashboard",
         "**/api/v1/user/providers",
         "**/api/v1/work-items/counts",
-        "**/api/v1/events**",
         "**/api/v1/attribution/report**",
         "**/api/v1/activity/summary**",
         "**/api/v1/activity/members/**",
@@ -258,11 +257,6 @@ def mock_auth_endpoints(page, role="admin"):
                 },
             },
         }),
-    ))
-    page.route("**/api/v1/events**", lambda route: route.fulfill(
-        status=200,
-        content_type="application/json",
-        body=json.dumps({"code": 0, "data": {"items": [], "total": 0, "page": 0, "page_size": 3}}),
     ))
     page.route("**/api/v1/scm-providers**", lambda route: route.fulfill(
         status=200,

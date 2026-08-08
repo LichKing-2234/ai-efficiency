@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import enUS from '@/locales/en-US'
 import zhCN from '@/locales/zh-CN'
-import { eventMessages } from '@/locales/events'
 import { createI18nControllerForTest, type Locale } from '@/i18n'
 import type { Messages } from '@/locales/en-US'
 
@@ -223,14 +222,6 @@ describe('i18n locale loading', () => {
     expect(englishKeys).toContain('activity.teamsTitle')
     expect(englishKeys).toContain('activity.repositoryActivity')
     expect(englishKeys).toContain('directoryOffboarding.effectNotice')
-    expect(chineseKeys).toEqual(englishKeys)
-  })
-
-  it('keeps the route-local Events dictionaries at the same complete key contract', () => {
-    const englishKeys = Object.keys(eventMessages['en-US']).sort()
-    const chineseKeys = Object.keys(eventMessages['zh-CN']).sort()
-
-    expect(englishKeys).toHaveLength(78)
     expect(chineseKeys).toEqual(englishKeys)
   })
 
