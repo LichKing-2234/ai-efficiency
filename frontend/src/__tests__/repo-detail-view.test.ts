@@ -792,11 +792,14 @@ describe('RepoDetailView', () => {
   it('renders external PR navigation with an Element Plus link and noopener protection', async () => {
     const { wrapper } = await mountRepoDetail()
     const link = wrapper.find('a[href="https://github.com/org/repo-a/pull/88"]')
+    const linkComponent = wrapper.findAllComponents({ name: 'ElLink' })
+      .find((component) => component.attributes('href') === 'https://github.com/org/repo-a/pull/88')
 
     expect(link.exists()).toBe(true)
     expect(link.classes()).toContain('el-link')
     expect(link.attributes('target')).toBe('_blank')
     expect(link.attributes('rel')).toBe('noopener noreferrer')
+    expect(linkComponent?.props('underline')).toBe('never')
   })
 
   it('shows binding controls for admin on an unbound repo', async () => {

@@ -678,7 +678,7 @@ onUnmounted(() => {
 <div class="md:grid md:grid-cols-[minmax(0,1.3fr)_minmax(320px,1fr)_auto] md:items-center md:gap-5">
 <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
-          <ElLink v-if="pr.scm_pr_url" :href="pr.scm_pr_url" target="_blank" rel="noopener noreferrer" :underline="false" class="block truncate text-sm font-semibold text-indigo-700 hover:text-indigo-900">
+          <ElLink v-if="pr.scm_pr_url" :href="pr.scm_pr_url" target="_blank" rel="noopener noreferrer" underline="never" class="block truncate text-sm font-semibold text-indigo-700 hover:text-indigo-900">
             {{ pr.title }}
           </ElLink>
           <div v-else class="truncate text-sm font-semibold text-gray-900">{{ pr.title }}</div>
