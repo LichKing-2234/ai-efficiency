@@ -929,6 +929,8 @@ def content_fits_containers(page, selectors):
             const containerRect = container.getBoundingClientRect()
             return elementRect.left >= containerRect.left - 0.5
                 && elementRect.right <= containerRect.right + 0.5
+                && element.scrollWidth <= element.clientWidth
+                && element.scrollHeight <= element.clientHeight
         })"""):
             return False
     return True

@@ -1195,7 +1195,6 @@ describe('AdminUsersView', () => {
     expect(matchMediaController.addEventListener).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-admin-user-list="desktop"]').exists()).toBe(true)
     expect(wrapper.find('[data-admin-user-list="mobile"]').exists()).toBe(false)
-    expect(wrapper.get('[data-admin-user-list="desktop"]').classes()).toContain('xl:block')
     expect(wrapper.findAll('[data-admin-user-row]')).toHaveLength(100)
     expect(listAdminUsers).toHaveBeenCalledTimes(1)
   })
@@ -1217,7 +1216,6 @@ describe('AdminUsersView', () => {
     expect(listAdminUsers).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-admin-user-list="desktop"]').exists()).toBe(false)
     expect(wrapper.find('[data-admin-user-list="mobile"]').exists()).toBe(true)
-    expect(wrapper.get('[data-admin-user-list="mobile"]').classes()).toContain('xl:hidden')
     expect(wrapper.findAll('[data-admin-user-row]')).toHaveLength(users.length)
     expect((wrapper.get('[data-testid="select-user-mobile-1"]').get('input').element as HTMLInputElement).checked).toBe(true)
 

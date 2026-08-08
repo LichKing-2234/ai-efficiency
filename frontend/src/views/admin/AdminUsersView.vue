@@ -1313,7 +1313,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-	        <div v-if="showMobileUserRows" data-admin-user-list="mobile" class="mt-3 space-y-3 xl:hidden">
+	        <div v-if="showMobileUserRows" data-admin-user-list="mobile" class="mt-3 space-y-3">
 	          <div
 	            v-for="row in rows"
 	            :key="row.id"
@@ -1387,7 +1387,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-	        <div v-if="showDesktopUserRows" data-admin-user-list="desktop" class="mt-3 hidden overflow-x-auto xl:block">
+	        <div v-if="showDesktopUserRows" data-admin-user-list="desktop" class="mt-3 overflow-x-auto">
           <ElTable :data="rows" row-key="id" class="min-w-[1080px]">
             <ElTableColumn width="56" align="center">
               <template #header>
