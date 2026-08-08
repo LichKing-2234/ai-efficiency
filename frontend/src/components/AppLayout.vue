@@ -55,7 +55,7 @@ function closeMobileNav() {
           <el-button
             data-testid="mobile-nav-close"
             :icon="Close"
-            :title="t('events.close')"
+            :title="t('app.close')"
             text
             @click="closeMobileNav"
           />

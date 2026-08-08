@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { computed, onScopeDispose, ref } from 'vue'
 import { devLogin as apiDevLogin, getMe, login as apiLogin } from '@/api/auth'
 import { resetSessionResources } from '@/stores/sessionResources'
-import { useWorkItemsStore } from '@/stores/workItems'
 import {
   clearBrowserSession,
   expireBrowserSession,
@@ -16,7 +15,6 @@ import type { User, LoginRequest } from '@/types'
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(null)
   const tokenValue = ref<string | null>(readBrowserSession().accessToken)
-  const workItems = useWorkItemsStore()
   let currentUserRequest: CurrentUserRequest | null = null
 
   const stopSessionTransition = onBrowserSessionTransition((event) => {
@@ -24,7 +22,6 @@ export const useAuthStore = defineStore('auth', () => {
     if (event.kind !== 'rotate') {
       user.value = null
       currentUserRequest = null
-      workItems.resetCounts()
       resetSessionResources()
     }
   })

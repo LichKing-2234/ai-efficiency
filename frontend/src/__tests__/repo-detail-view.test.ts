@@ -370,8 +370,12 @@ describe('RepoDetailView', () => {
 
     expect(wrapper.get('[data-testid="repo-activity-pr-commits-101"]').text()).toContain('shared1234')
     expect(wrapper.findAll('[data-testid="repo-activity-commit-9-shared123456"]')).toHaveLength(1)
-    expect(wrapper.get('[data-testid="repo-activity-commit-9-shared123456"]').text()).toContain('PR #88')
-    expect(wrapper.get('[data-testid="repo-activity-commit-9-shared123456"]').text()).toContain('PR #89')
+    const commit = wrapper.get('[data-testid="repo-activity-commit-9-shared123456"]')
+    expect(commit.text()).toContain('PR #88')
+    expect(commit.text()).toContain('PR #89')
+    expect(commit.classes()).toContain('sm:grid-cols-[1fr_minmax(12rem,auto)]')
+    expect(commit.classes()).not.toContain('min-w-[36rem]')
+    expect(wrapper.get('[data-testid="repo-activity-commits"]').classes()).not.toContain('overflow-x-auto')
   })
 
   it('pages repository PRs without replacing the summary or commit projection', async () => {

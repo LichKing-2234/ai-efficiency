@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { getWorkItemCounts } from '@/api/workItems'
+import { registerSessionResourceReset } from '@/stores/sessionResources'
 import type { WorkItemCounts } from '@/types'
 
 const countsFreshnessMs = 20_000
@@ -175,6 +176,8 @@ export const useWorkItemsStore = defineStore('workItems', () => {
     loaded.value = false
     error.value = ''
   }
+
+  registerSessionResourceReset('workItems', resetCounts)
 
   return { counts, loading, loaded, error, totalCount, badgeLabel, loadCounts, invalidateCounts, resetCounts }
 })

@@ -41,6 +41,8 @@ const sources = {
   english: 'src/locales/en-US.ts',
   chinese: 'src/locales/zh-CN.ts',
   elementChinese: 'node_modules/element-plus/es/locale/lang/zh-cn.mjs',
+  workItemsStore: 'src/stores/workItems.ts',
+  workItemsApi: 'src/api/workItems.ts',
   lineCanvas: 'src/components/charts/LineChartCanvas.vue',
   doughnutCanvas: 'src/components/charts/DoughnutChartCanvas.vue',
 }
@@ -89,7 +91,11 @@ const lineCanvasModules = modulesForClosure(lineCanvasClosure)
 const doughnutCanvasModules = modulesForClosure(doughnutCanvasClosure)
 const canvasModules = modulesForClosure(canvasClosure)
 
-assertAbsent(entryModules, [sources.english, sources.chinese], 'initial entry static closure')
+assertAbsent(
+  entryModules,
+  [sources.english, sources.chinese, sources.workItemsStore, sources.workItemsApi],
+  'initial entry static closure',
+)
 for (const [label, modules] of [
   ['initial entry static closure', entryModules],
   ['Dashboard static closure', dashboardModules],
@@ -106,7 +112,12 @@ assert([...canvasModules].some(isVueChartJsModule), 'canvas closures must contai
 assert(usageModules.has(sources.english), 'default English /usage closure must contain en-US')
 assertAbsent(
   usageModules,
-  [sources.chinese, sources.elementChinese, sources.lineCanvas, sources.doughnutCanvas],
+  [
+    sources.chinese,
+    sources.elementChinese,
+    sources.lineCanvas,
+    sources.doughnutCanvas,
+  ],
   'default English /usage closure',
 )
 assertNoChartRuntime(usageModules, 'default English /usage closure')

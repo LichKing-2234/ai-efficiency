@@ -53,12 +53,17 @@ onMounted(() => void load())
       <ActivityDateRange :from="range.from" :to="range.to" :loading="loading" @change="selectRange" @refresh="load" />
     </div>
 
-    <div v-if="loading && !activity" role="status" class="border-y border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-500">
-      {{ t('activity.loading') }}
-    </div>
-    <div v-else-if="error && !activity" role="alert" class="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-      {{ t('activity.loadFailed') }}
-    </div>
+    <ElSkeleton v-if="loading && !activity" :rows="5" animated />
+    <ElAlert
+      v-if="error"
+      type="error"
+      :closable="false"
+    >
+      <template #title>
+        <span>{{ t('activity.loadFailed') }}</span>
+        <ElButton class="!ml-2" type="danger" link @click="load">{{ t('activity.retry') }}</ElButton>
+      </template>
+    </ElAlert>
 
     <template v-if="activity">
       <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -69,28 +74,32 @@ onMounted(() => void load())
         <div class="border border-slate-200 bg-white p-4"><p class="text-xs font-semibold uppercase text-slate-500">{{ t('activity.latestActivity') }}</p><p data-testid="repo-activity-latest" class="mt-2 text-sm font-semibold text-slate-950">{{ date(activity.metrics.latest_activity) }}</p></div>
       </div>
 
-      <div v-if="!activity.sync_coverage.complete" role="status" class="border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-        {{ t('activity.syncNeeded', { count: activity.sync_coverage.affected_repositories }) }}
-      </div>
+      <ElAlert
+        v-if="!activity.sync_coverage.complete"
+        type="warning"
+        :title="t('activity.syncNeeded', { count: activity.sync_coverage.affected_repositories })"
+        :closable="false"
+      />
 
       <section data-testid="repo-activity-prs" class="border-y border-slate-200 bg-white">
         <h3 class="border-b border-slate-200 px-5 py-4 font-semibold text-slate-950">{{ t('activity.pullRequests') }}</h3>
-        <div v-if="activity.prs.items.length === 0" class="px-5 py-8 text-sm text-slate-500">{{ t('activity.noPullRequests') }}</div>
+        <ElEmpty v-if="activity.prs.items.length === 0" :description="t('activity.noPullRequests')" :image-size="64" />
         <article v-for="pr in activity.prs.items" :key="`${pr.repo_config_id}:${pr.pr_record_id}`" class="border-b border-slate-100 px-5 py-4 last:border-0">
           <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div class="min-w-0">
               <p class="text-xs text-slate-500">PR #{{ pr.scm_pr_id }}</p>
-              <a :href="pr.url" target="_blank" rel="noopener noreferrer" class="mt-1 block font-medium text-cyan-800 hover:underline">{{ pr.title }}</a>
+              <ElLink :href="pr.url" target="_blank" rel="noopener noreferrer" type="primary" class="mt-1 max-w-full font-medium">
+                {{ pr.title }}
+              </ElLink>
             </div>
-            <button
-              type="button"
+            <ElButton
               :data-testid="`repo-activity-pr-toggle-${pr.pr_record_id}`"
-              class="min-h-10 shrink-0 border border-slate-300 px-3 text-sm text-slate-700"
+              class="min-h-10 shrink-0 !ml-0"
               :aria-expanded="expandedPRs.has(pr.pr_record_id)"
               @click="togglePR(pr.pr_record_id)"
             >
               {{ t('activity.commits') }} · {{ pr.commits.length }}
-            </button>
+            </ElButton>
           </div>
           <div v-if="expandedPRs.has(pr.pr_record_id)" :data-testid="`repo-activity-pr-commits-${pr.pr_record_id}`" class="mt-3 flex flex-wrap gap-2 bg-slate-50 p-3">
             <span v-for="commit in pr.commits" :key="`${commit.repo_config_id}:${commit.commit_sha}`" class="font-mono text-xs text-slate-500">{{ shortSHA(commit.commit_sha) }}</span>
@@ -108,16 +117,17 @@ onMounted(() => void load())
         />
       </section>
 
-      <section data-testid="repo-activity-commits" class="min-w-0 overflow-x-auto border-y border-slate-200 bg-white">
+      <section data-testid="repo-activity-commits" class="min-w-0 border-y border-slate-200 bg-white">
         <h3 class="border-b border-slate-200 px-5 py-4 font-semibold text-slate-950">{{ t('activity.commits') }}</h3>
+        <ElEmpty v-if="activity.commits.items.length === 0" :description="t('activity.noCommits')" :image-size="64" />
         <div
           v-for="commit in activity.commits.items"
           :key="`${commit.repo_config_id}:${commit.commit_sha}`"
           :data-testid="`repo-activity-commit-${commit.repo_config_id}-${commit.commit_sha}`"
-          class="grid min-w-[36rem] grid-cols-[1fr_minmax(12rem,auto)] gap-4 border-b border-slate-100 px-5 py-4 text-sm last:border-0"
+          class="grid gap-2 border-b border-slate-100 px-5 py-4 text-sm last:border-0 sm:grid-cols-[1fr_minmax(12rem,auto)] sm:gap-4"
         >
           <span class="break-all font-mono text-xs text-slate-700">{{ shortSHA(commit.commit_sha) }}</span>
-          <span class="text-right text-slate-600">{{ commit.prs.map((pr) => `PR #${pr.scm_pr_id}`).join(' · ') }}</span>
+          <span class="text-slate-600 sm:text-right">{{ commit.prs.map((pr) => `PR #${pr.scm_pr_id}`).join(' · ') }}</span>
         </div>
       </section>
     </template>

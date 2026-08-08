@@ -90,6 +90,43 @@ describe('RepositoryOperationsSection', () => {
     expect(pr.syncPRs).toHaveBeenCalledWith(9)
   })
 
+  it('keeps PR usage filters stacked until the content area is wide enough', async () => {
+    const wrapper = mount(RepositoryOperationsSection, {
+      props: {
+        repoId: 9,
+        repo: {
+          id: 9,
+          repo_key: 'github.com/org/repo-a',
+          name: 'repo-a',
+          full_name: 'org/repo-a',
+          clone_url: 'https://github.com/org/repo-a.git',
+          default_branch: 'main',
+          status: 'active',
+          binding_state: 'bound',
+          group_id: 1,
+          created_at: '2026-01-01T00:00:00Z',
+          edges: {},
+        },
+      },
+      global: { plugins: [createPinia()] },
+    })
+    await flushPromises()
+
+    const header = wrapper.get('[data-testid="repo-pr-summary-header"]')
+    expect(header.classes()).toContain('lg:flex-row')
+    expect(header.classes()).not.toContain('sm:flex-row')
+
+    const controls = wrapper.get('[data-testid="repo-pr-summary-controls"]')
+    expect(controls.classes()).toContain('lg:w-auto')
+    expect(controls.classes()).toContain('lg:shrink-0')
+    expect(controls.classes()).not.toContain('sm:w-auto')
+
+    const range = wrapper.get('[data-testid="repo-pr-range"]')
+    expect(range.classes()).toContain('sm:!w-40')
+    expect(range.classes()).toContain('sm:shrink-0')
+    expect(range.classes()).not.toContain('sm:w-40')
+  })
+
   it('preserves the existing SCM provider when saving without changing the selection', async () => {
     const repoApi = await import('@/api/repo')
     const providerApi = await import('@/api/scmProvider')
@@ -120,7 +157,9 @@ describe('RepositoryOperationsSection', () => {
     })
     await flushPromises()
 
-    expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('7')
+    const providerSelect = wrapper.get('[data-testid="repo-provider-select"]')
+    expect(providerSelect.classes()).toContain('el-select')
+    expect(providerSelect.text()).toContain('GitHub')
     await wrapper.get('[data-testid="repo-save-binding"]').trigger('click')
     await flushPromises()
 
@@ -128,5 +167,78 @@ describe('RepositoryOperationsSection', () => {
       scm_provider_id: 7,
       clear_scm_provider: false,
     })
+  })
+
+  it('renders a failed binding save as an Element Plus error alert', async () => {
+    const repoApi = await import('@/api/repo')
+    const providerApi = await import('@/api/scmProvider')
+    const repo = {
+      id: 9,
+      repo_key: 'github.com/org/repo-a',
+      name: 'repo-a',
+      full_name: 'org/repo-a',
+      clone_url: 'https://github.com/org/repo-a.git',
+      default_branch: 'main',
+      status: 'active',
+      binding_state: 'bound',
+      scm_provider_id: 7,
+      group_id: 1,
+      created_at: '2026-01-01T00:00:00Z',
+      edges: { scm_provider: { id: 7, name: 'GitHub' } },
+    }
+    vi.mocked(providerApi.listProviders).mockResolvedValue({ data: { data: [{ id: 7, name: 'GitHub' }] } } as any)
+    vi.mocked(repoApi.updateRepo).mockRejectedValue({ response: { data: { message: 'binding failed' } } })
+    const pinia = createPinia()
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' }
+
+    const wrapper = mount(RepositoryOperationsSection, {
+      props: { repoId: 9, repo: repo as any },
+      global: { plugins: [pinia] },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="repo-save-binding"]').trigger('click')
+    await flushPromises()
+
+    const alert = wrapper.get('.el-alert--error')
+    expect(alert.text()).toContain('binding failed')
+  })
+
+  it('renders a successful binding save as an Element Plus success alert', async () => {
+    const repoApi = await import('@/api/repo')
+    const providerApi = await import('@/api/scmProvider')
+    const repo = {
+      id: 9,
+      repo_key: 'github.com/org/repo-a',
+      name: 'repo-a',
+      full_name: 'org/repo-a',
+      clone_url: 'https://github.com/org/repo-a.git',
+      default_branch: 'main',
+      status: 'active',
+      binding_state: 'bound',
+      scm_provider_id: 7,
+      group_id: 1,
+      created_at: '2026-01-01T00:00:00Z',
+      edges: { scm_provider: { id: 7, name: 'GitHub' } },
+    }
+    vi.mocked(providerApi.listProviders).mockResolvedValue({ data: { data: [{ id: 7, name: 'GitHub' }] } } as any)
+    vi.mocked(repoApi.updateRepo).mockResolvedValue({ data: { data: repo } } as any)
+    vi.mocked(repoApi.getRepo).mockResolvedValue({ data: { data: repo } } as any)
+    const pinia = createPinia()
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' }
+
+    const wrapper = mount(RepositoryOperationsSection, {
+      props: { repoId: 9, repo: repo as any },
+      global: { plugins: [pinia] },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="repo-save-binding"]').trigger('click')
+    await flushPromises()
+
+    const alert = wrapper.get('.el-alert--success')
+    expect(alert.text()).toContain('Code platform binding saved')
   })
 })

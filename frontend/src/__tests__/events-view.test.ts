@@ -280,10 +280,64 @@ describe('EventsView', () => {
     expect(alert.text()).toContain('Failed to load usage records')
   })
 
+  it('removes results from the previous query when refreshing the event list fails', async () => {
+    const { wrapper, listEvents } = await mountEvents()
+    expect(wrapper.get('[data-event-list="desktop"]').findAll('.el-table__row')).toHaveLength(3)
+
+    ;(listEvents as any).mockRejectedValueOnce(new Error('request failed'))
+    const refresh = wrapper.findAll('button').find((button) => button.text() === 'Refresh')
+    await refresh?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-event-list="desktop"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain(sampleRow.repo_name)
+    expect(wrapper.findAll('.el-card')[0].text()).toBe('Total Records—')
+  })
+
+  it('updates the event list error message when the locale changes', async () => {
+    const { wrapper, listEvents } = await mountEvents()
+    ;(listEvents as any).mockRejectedValueOnce(new Error('request failed'))
+
+    const refresh = wrapper.findAll('button').find((button) => button.text() === 'Refresh')
+    await refresh?.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="events-load-error"]').text()).toContain('Failed to load usage records')
+
+    await setLocale('zh-CN')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="events-load-error"]').text()).toContain('使用记录加载失败')
+  })
+
   it('does not present a failed initial event load as an empty result', async () => {
     const { wrapper } = await mountEvents(false, '/events', new Error('request failed'))
 
     expect(wrapper.get('[data-testid="events-load-error"]').text()).toContain('Failed to load usage records')
+    expect(wrapper.text()).not.toContain('No usage records')
+  })
+
+  it('treats a null event summary payload as a load failure', async () => {
+    const { wrapper, getEventSummary } = await mountEvents()
+    ;(getEventSummary as any).mockResolvedValueOnce({ data: { data: null } })
+
+    const refresh = wrapper.findAll('button').find((button) => button.text() === 'Refresh')
+    await refresh?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="events-load-error"]').text()).toContain('Failed to load usage records')
+    expect(wrapper.find('[data-event-list="desktop"]').exists()).toBe(false)
+  })
+
+  it('treats a null event list payload as a load failure', async () => {
+    const { wrapper, listEvents } = await mountEvents()
+    ;(listEvents as any).mockResolvedValueOnce({ data: { data: null } })
+
+    const refresh = wrapper.findAll('button').find((button) => button.text() === 'Refresh')
+    await refresh?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="events-load-error"]').text()).toContain('Failed to load usage records')
+    expect(wrapper.find('[data-event-list="desktop"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('No usage records')
   })
 
@@ -377,6 +431,30 @@ describe('EventsView', () => {
     const alert = wrapper.get('[data-testid="event-detail-error"]')
     expect(alert.find('.el-alert').exists()).toBe(true)
     expect(alert.text()).toContain('Failed to load record detail')
+  })
+
+  it('treats a null event detail payload as a load failure', async () => {
+    const { wrapper, getEventDetail } = await mountEvents(false)
+    ;(getEventDetail as any).mockResolvedValueOnce({ data: { data: null } })
+
+    await wrapper.find('tbody tr').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="event-detail-error"]').text()).toContain('Failed to load record detail')
+  })
+
+  it('updates the event detail error message when the locale changes', async () => {
+    const { wrapper, getEventDetail } = await mountEvents(false)
+    ;(getEventDetail as any).mockRejectedValueOnce(new Error('request failed'))
+
+    await wrapper.find('tbody tr').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="event-detail-error"]').text()).toContain('Failed to load record detail')
+
+    await setLocale('zh-CN')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="event-detail-error"]').text()).toContain('记录详情加载失败')
   })
 
   it('closes the detail drawer with Escape', async () => {
@@ -496,6 +574,20 @@ describe('EventsView', () => {
     expect(alert.text()).toContain('Failed to search users')
   })
 
+  it('updates the user search error message when the locale changes', async () => {
+    const { wrapper, searchEventUsers } = await mountEvents(true)
+    ;(searchEventUsers as any).mockRejectedValueOnce(new Error('request failed'))
+
+    await wrapper.get('[data-testid="event-user-search-button"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="event-user-search-error"]').text()).toContain('Failed to search users')
+
+    await setLocale('zh-CN')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="event-user-search-error"]').text()).toContain('用户搜索失败')
+  })
+
   it('removes results from the previous admin user query when the next search fails', async () => {
     const { wrapper, searchEventUsers } = await mountEvents(true)
 
@@ -538,6 +630,32 @@ describe('EventsView', () => {
     const optionText = wrapper.get('[data-testid="event-user-option-3"]').text()
     expect(optionText.match(/alice@example.com/g)).toHaveLength(1)
     expect(optionText).toContain('· admin · 7 events')
+  })
+
+  it('localizes the fallback user label and event count in user options', async () => {
+    const { wrapper, searchEventUsers } = await mountEvents(true)
+    ;(searchEventUsers as any).mockResolvedValueOnce({
+      data: {
+        data: [{
+          id: 4,
+          username: '',
+          email: '',
+          role: 'admin',
+          event_count: 7,
+          latest_event_at: '2026-05-22T03:29:57Z',
+        }],
+      },
+    })
+    await setLocale('zh-CN')
+
+    await wrapper.get('[data-testid="event-user-search-button"]').trigger('click')
+    await flushPromises()
+
+    const optionText = wrapper.get('[data-testid="event-user-option-4"]').text()
+    expect(optionText).toContain('用户 #4')
+    expect(optionText).toContain('7 条使用记录')
+    expect(optionText).not.toContain('User #')
+    expect(optionText).not.toContain('events')
   })
 
   it('hides user selector from regular users', async () => {

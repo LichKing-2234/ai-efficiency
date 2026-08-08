@@ -85,7 +85,28 @@ describe('ActivityView', () => {
     expect(html.indexOf('data-testid="activity-prs"')).toBeLessThan(html.indexOf('data-testid="activity-commits"'))
     expect(wrapper.find('[data-testid="activity-buckets"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('1 repository needs PR sync')
-    expect(wrapper.get('[data-testid="activity-wide-details"]').classes()).toContain('overflow-x-auto')
+    expect(wrapper.get('[data-testid="activity-wide-details"]').classes()).not.toContain('overflow-x-auto')
+    expect(wrapper.get('[data-testid="activity-commits"]').classes()).not.toContain('min-w-[640px]')
+    const commit = wrapper.get('[data-testid="activity-commit-9-abcdef123456"]')
+    expect(commit.classes()).toContain('sm:grid-cols-[minmax(10rem,1fr)_9rem_8rem]')
+    expect(commit.classes()).not.toContain('min-w-[640px]')
+  })
+
+  it('uses Element Plus external links and disclosure actions without changing their semantics', async () => {
+    const api = await import('@/api/activity')
+    vi.mocked(api.getActivitySummary).mockResolvedValue(response('Alice', false, true) as any)
+    const { wrapper } = await mountView()
+
+    const pullRequestLink = wrapper.get('a[href="https://example.com/pr/88"]')
+    expect(pullRequestLink.classes()).toContain('el-link')
+    expect(pullRequestLink.attributes('target')).toBe('_blank')
+    expect(pullRequestLink.attributes('rel')).toContain('noopener')
+    expect(pullRequestLink.attributes('rel')).toContain('noreferrer')
+
+    const commits = wrapper.findAll('button').find((button) => button.text() === 'Commits · 1')
+    expect(commits?.classes()).toContain('el-button')
+    expect(wrapper.get('[data-testid="activity-buckets"]').classes()).not.toContain('min-w-[640px]')
+    expect(wrapper.get('[data-testid="activity-bucket-bucket-1"]').classes()).toContain('el-button')
   })
 
   it('suppresses an older range response after a newer request wins', async () => {
@@ -239,6 +260,26 @@ describe('ActivityView', () => {
     expect(detail.text()).toContain('Correlation quality')
     expect(detail.text()).toContain('request_id')
     expect(detail.text()).toContain('req_123')
+  })
+
+  it('shows a failed Bucket read with an Element Plus alert and keeps retry available', async () => {
+    const api = await import('@/api/activity')
+    vi.mocked(api.getActivitySummary).mockResolvedValue(response('Alice', false, true) as any)
+    vi.mocked(api.getActivityBucket).mockRejectedValueOnce(new Error('bucket unavailable'))
+    const { wrapper } = await mountView()
+    const bucket = wrapper.get('[data-testid="activity-bucket-bucket-1"]')
+
+    await bucket.trigger('click')
+    await flushPromises()
+
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.classes()).toContain('el-alert')
+    expect(alert.text()).toContain('Failed to load attribution detail.')
+    expect(bucket.attributes('disabled')).toBeUndefined()
+
+    await bucket.trigger('click')
+    await flushPromises()
+    expect(api.getActivityBucket).toHaveBeenCalledTimes(2)
   })
 
   it.each([

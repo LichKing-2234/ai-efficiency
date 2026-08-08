@@ -6,6 +6,7 @@ import { getEventDetail, getEventSummary, listEvents, searchEventUsers } from '@
 import { useAuthStore } from '@/stores/auth'
 import { useMediaQuery } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
+import { translateEvent, type EventMessageKey } from '@/locales/events'
 import type {
   ToolUsageEventDetail,
   ToolUsageEventRow,
@@ -14,18 +15,18 @@ import type {
 } from '@/types'
 
 const auth = useAuthStore()
-const { t } = useI18n()
+const { locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const maxEventPageSize = 100
 
 const loading = ref(true)
-const pageError = ref('')
+const pageError = ref(false)
 const summary = ref<ToolUsageEventSummary | null>(null)
 const rows = ref<ToolUsageEventRow[]>([])
 const total = ref(0)
 const detailLoading = ref(false)
-const detailError = ref('')
+const detailError = ref(false)
 const selectedEvent = ref<ToolUsageEventDetail | null>(null)
 const selectedEventId = ref<number | null>(null)
 const mobileFiltersOpen = ref(false)
@@ -36,7 +37,11 @@ const userOptions = ref<ToolUsageEventUserOption[]>([])
 const selectedUser = ref<ToolUsageEventUserOption | null>(null)
 const selectedUserId = ref<number | null>(queryNumber('user_id', 0) || null)
 const userSearchLoading = ref(false)
-const userSearchError = ref('')
+const userSearchError = ref(false)
+
+function t(key: EventMessageKey, params?: Record<string, string | number>) {
+  return translateEvent(locale.value, key, params)
+}
 
 const defaultFrom = toDateTimeLocal(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
 const defaultTo = toDateTimeLocal(new Date())
@@ -116,13 +121,13 @@ function replaceEventQuery() {
 }
 
 function userLabel(user: ToolUsageEventUserOption) {
-  return user.email || user.username || `User #${user.id}`
+  return user.email || user.username || t('events.userSummary', { id: user.id })
 }
 
 function userMeta(user: ToolUsageEventUserOption) {
   const parts = []
   if (user.username && user.username !== user.email) parts.push(user.username)
-  parts.push(user.role, `${user.event_count} events`)
+  parts.push(user.role, t('events.userEventCount', { count: user.event_count }))
   return parts.join(' · ')
 }
 
@@ -175,7 +180,7 @@ function buildQuery(includePagination = true) {
 
 async function loadPage() {
   loading.value = true
-  pageError.value = ''
+  pageError.value = false
   try {
     const summaryParams = buildQuery(false)
     const listParams = buildQuery(true)
@@ -183,12 +188,18 @@ async function loadPage() {
       getEventSummary(summaryParams),
       listEvents(listParams),
     ])
-    summary.value = summaryRes.data.data ?? null
+    const summaryData = summaryRes.data.data
+    if (!summaryData) throw new Error('Event summary payload is empty')
     const listData = listRes.data.data
-    rows.value = listData?.items ?? []
-    total.value = listData?.total ?? 0
+    if (!listData) throw new Error('Event list payload is empty')
+    summary.value = summaryData
+    rows.value = listData.items ?? []
+    total.value = listData.total ?? 0
   } catch {
-    pageError.value = t('events.loadFailed')
+    summary.value = null
+    rows.value = []
+    total.value = 0
+    pageError.value = true
   } finally {
     loading.value = false
   }
@@ -197,13 +208,13 @@ async function loadPage() {
 async function searchUsers() {
   if (!isAdmin.value) return
   userSearchLoading.value = true
-  userSearchError.value = ''
+  userSearchError.value = false
   userOptions.value = []
   try {
     const res = await searchEventUsers({ q: userSearch.value, limit: 20 })
     userOptions.value = res.data.data ?? []
   } catch {
-    userSearchError.value = t('events.userSearchFailed')
+    userSearchError.value = true
   } finally {
     userSearchLoading.value = false
   }
@@ -264,15 +275,17 @@ async function changePageSize() {
 
 async function openDetail(row: ToolUsageEventRow) {
   advancedDetailSections.value = []
-  detailError.value = ''
+  detailError.value = false
   selectedEvent.value = null
   selectedEventId.value = row.id
   detailLoading.value = true
   try {
     const res = await getEventDetail(row.id)
-    selectedEvent.value = res.data.data ?? null
+    const detail = res.data.data
+    if (!detail) throw new Error('Event detail payload is empty')
+    selectedEvent.value = detail
   } catch {
-    detailError.value = t('events.detailLoadFailed')
+    detailError.value = true
   } finally {
     detailLoading.value = false
   }
@@ -280,7 +293,7 @@ async function openDetail(row: ToolUsageEventRow) {
 
 function closeDetail() {
   advancedDetailSections.value = []
-  detailError.value = ''
+  detailError.value = false
   selectedEventId.value = null
   selectedEvent.value = null
 }
@@ -345,7 +358,7 @@ onMounted(() => {
         v-if="pageError"
         data-testid="events-load-error"
         type="error"
-        :title="pageError"
+        :title="t('events.loadFailed')"
         :closable="false"
         show-icon
       />
@@ -490,7 +503,7 @@ onMounted(() => {
             data-testid="event-user-search-error"
             class="mt-2"
             type="error"
-            :title="userSearchError"
+            :title="t('events.userSearchFailed')"
             :closable="false"
             show-icon
           />
@@ -647,7 +660,7 @@ onMounted(() => {
         v-else-if="detailError"
         data-testid="event-detail-error"
         type="error"
-        :title="detailError"
+        :title="t('events.detailLoadFailed')"
         :closable="false"
         show-icon
       />

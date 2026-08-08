@@ -103,7 +103,7 @@ describe('ActivityTeamView', () => {
 
   it('shows a 30-day team summary and member activity without ranking or Token columns', async () => {
     const api = await import('@/api/activity')
-    const { wrapper } = await mountView()
+    const { wrapper, router } = await mountView()
 
     expect(api.getActivityTeam).toHaveBeenCalledOnce()
     expect(api.getActivityTeam).toHaveBeenCalledWith('team-alpha', expect.objectContaining({ limit: 50 }))
@@ -126,6 +126,26 @@ describe('ActivityTeamView', () => {
     expect(bob.text()).toContain('No activity data')
     expect(bob.attributes('href')).toBeUndefined()
     expect(wrapper.text()).toContain('1 repository needs PR sync')
+
+    await alice.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/activity/members/7')
+  })
+
+  it('uses an Element Plus error alert and retry button without changing reload behavior', async () => {
+    const api = await import('@/api/activity')
+    vi.mocked(api.getActivityTeam).mockRejectedValueOnce(new Error('team unavailable'))
+    const { wrapper } = await mountView()
+
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.classes()).toContain('el-alert')
+    const retry = wrapper.findAll('button').find((button) => button.text() === 'Retry')
+    expect(retry?.classes()).toContain('el-button')
+
+    await retry!.trigger('click')
+    await flushPromises()
+    expect(api.getActivityTeam).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('Team Alpha')
   })
 
   it('pages members independently without replacing the team summary', async () => {
