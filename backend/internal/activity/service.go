@@ -15,6 +15,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorymember"
+	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/prsyncjob"
@@ -191,6 +192,27 @@ func (s *Service) resolveAuthorization(ctx context.Context, actorUserID int) (*a
 		if err != nil {
 			return nil, fmt.Errorf("load current Admin activity members: %w", err)
 		}
+		memberships := []*ent.DirectoryMemberDepartment{}
+		if len(members) > 0 {
+			memberIDs := make([]int, 0, len(members))
+			for _, member := range members {
+				memberIDs = append(memberIDs, member.ID)
+			}
+			memberships, err = s.client.DirectoryMemberDepartment.Query().Where(
+				directorymemberdepartment.SourceIDEQ(snapshot.SourceID),
+				directorymemberdepartment.LastSeenRunIDEQ(snapshot.RunID),
+				directorymemberdepartment.DirectoryMemberIDIn(memberIDs...),
+			).All(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("load current Admin activity member departments: %w", err)
+			}
+		}
+		memberCounts := adminActivityTeamMemberCounts(departments, members, memberships)
+		for externalID, count := range memberCounts {
+			team := authorization.Teams[externalID]
+			team.MemberCount = count
+			authorization.Teams[externalID] = team
+		}
 		userByEmail, err := s.userIDsByEmail(ctx)
 		if err != nil {
 			return nil, err
@@ -242,6 +264,77 @@ func (s *Service) userIDsByEmail(ctx context.Context) (map[string]int, error) {
 		result[strings.ToLower(strings.TrimSpace(item.Email))] = item.ID
 	}
 	return result, nil
+}
+
+func adminActivityTeamMemberCounts(departments []*ent.DirectoryDepartment, members []*ent.DirectoryMember, memberships []*ent.DirectoryMemberDepartment) map[string]int {
+	knownDepartments := map[string]struct{}{}
+	parentByDepartment := map[string]string{}
+	for _, department := range departments {
+		if department == nil {
+			continue
+		}
+		knownDepartments[department.ExternalID] = struct{}{}
+		if department.EffectiveParentExternalID != nil {
+			parentID := strings.TrimSpace(*department.EffectiveParentExternalID)
+			if parentID != "" {
+				parentByDepartment[department.ExternalID] = parentID
+			}
+		}
+	}
+	activeMembers := map[int]struct{}{}
+	departmentsByMember := map[int]map[string]struct{}{}
+	addMember := func(departmentID string, memberID int) {
+		departmentID = strings.TrimSpace(departmentID)
+		if _, ok := knownDepartments[departmentID]; !ok || memberID <= 0 {
+			return
+		}
+		if departmentsByMember[memberID] == nil {
+			departmentsByMember[memberID] = map[string]struct{}{}
+		}
+		departmentsByMember[memberID][departmentID] = struct{}{}
+	}
+	for _, member := range members {
+		if member == nil {
+			continue
+		}
+		activeMembers[member.ID] = struct{}{}
+		addMember(member.DepartmentExternalID, member.ID)
+	}
+	for _, membership := range memberships {
+		if membership == nil {
+			continue
+		}
+		if _, ok := activeMembers[membership.DirectoryMemberID]; !ok {
+			continue
+		}
+		addMember(membership.DepartmentExternalID, membership.DirectoryMemberID)
+	}
+
+	membersByDepartment := make(map[string]map[int]struct{}, len(knownDepartments))
+	for memberID, directDepartments := range departmentsByMember {
+		seenDepartments := map[string]struct{}{}
+		for departmentID := range directDepartments {
+			for current := departmentID; current != ""; current = parentByDepartment[current] {
+				if _, known := knownDepartments[current]; !known {
+					break
+				}
+				if _, seen := seenDepartments[current]; seen {
+					break
+				}
+				seenDepartments[current] = struct{}{}
+				if membersByDepartment[current] == nil {
+					membersByDepartment[current] = map[int]struct{}{}
+				}
+				membersByDepartment[current][memberID] = struct{}{}
+			}
+		}
+	}
+
+	counts := make(map[string]int, len(knownDepartments))
+	for departmentID := range knownDepartments {
+		counts[departmentID] = len(membersByDepartment[departmentID])
+	}
+	return counts
 }
 
 func normalizeWindow(window Window, now time.Time) (Window, error) {
@@ -298,6 +391,7 @@ func (s *Service) loadMemberActivity(ctx context.Context, result *MemberActivity
 		return fmt.Errorf("load activity buckets: %w", err)
 	}
 	if len(buckets) == 0 {
+		result.SyncCoverage = SyncCoverage{Complete: true}
 		return nil
 	}
 	bucketIDs := make([]int, 0, len(buckets))

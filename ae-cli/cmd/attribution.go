@@ -62,15 +62,12 @@ var attributionEnableCmd = &cobra.Command{
 		if reportingConfig.EnabledAt == nil {
 			reportingConfig.EnabledAt = &now
 		}
-		if attributionEnableOTel {
-			home, err := os.UserHomeDir()
-			if err != nil {
-				return err
-			}
-			endpoint := strings.TrimRight(reportingConfig.ServerURL, "/") + "/api/v1/attribution/otel/v1/traces"
-			if _, err := toolconfig.ConfigureCodexOTLP(home, endpoint, reportingConfig.OTLPToken); err != nil {
-				return fmt.Errorf("configure Codex OTLP: %w", err)
-			}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("resolve user home: %w", err)
+		}
+		if err := reconcileCodexOTLPConfig(home, reportingConfig, reportingConfig.OTelEnabled); err != nil {
+			return err
 		}
 		path, _ := reporting.DefaultPath()
 		if err := reporting.Save(path, reportingConfig); err != nil {
@@ -115,6 +112,27 @@ var attributionStatusCmd = &cobra.Command{
 }
 
 func boolPointer(value bool) *bool { return &value }
+
+func reconcileCodexOTLPConfig(home string, config *reporting.Config, enabled bool) error {
+	if config == nil {
+		return fmt.Errorf("reporting config is required")
+	}
+	endpoint := codexOTLPEndpoint(config.ServerURL)
+	if enabled {
+		if _, err := toolconfig.ConfigureCodexOTLP(home, endpoint, config.OTLPToken); err != nil {
+			return fmt.Errorf("configure Codex OTLP: %w", err)
+		}
+		return nil
+	}
+	if _, _, err := toolconfig.DisableCodexOTLP(home, endpoint, config.OTLPToken); err != nil {
+		return fmt.Errorf("disable Codex OTLP: %w", err)
+	}
+	return nil
+}
+
+func codexOTLPEndpoint(serverURL string) string {
+	return strings.TrimRight(strings.TrimSpace(serverURL), "/") + "/api/v1/attribution/otel/v1/traces"
+}
 
 func globalHookSummary() string {
 	status, err := hooks.StatusForRepo(hooks.StatusOptions{CWD: ".", Binding: currentHookBinding()})

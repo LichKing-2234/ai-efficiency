@@ -65,6 +65,58 @@ func ConfigureCodexOTLP(homeDir, endpoint, token string) (string, error) {
 	return path, nil
 }
 
+// DisableCodexOTLP removes the managed OTLP/HTTP exporter only when its
+// endpoint and credential still match this reporting installation. Unrelated
+// Codex configuration and other trace exporters are preserved.
+func DisableCodexOTLP(homeDir, expectedEndpoint, expectedToken string) (string, bool, error) {
+	path := filepath.Join(homeDir, ".codex", "config.toml")
+	payload, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return path, false, nil
+	}
+	if err != nil {
+		return path, false, fmt.Errorf("read Codex config: %w", err)
+	}
+	var config map[string]any
+	if err := toml.Unmarshal(payload, &config); err != nil {
+		return path, false, fmt.Errorf("parse Codex config: %w", err)
+	}
+	otel, ok := config["otel"].(map[string]any)
+	if !ok {
+		return path, false, nil
+	}
+	traceExporters, ok := otel["trace_exporter"].(map[string]any)
+	if !ok {
+		return path, false, nil
+	}
+	otlpHTTP, ok := traceExporters["otlp-http"].(map[string]any)
+	if !ok || !codexOTLPExporterMatches(otlpHTTP, expectedEndpoint, expectedToken) {
+		return path, false, nil
+	}
+	delete(traceExporters, "otlp-http")
+	if len(traceExporters) == 0 {
+		delete(otel, "trace_exporter")
+	}
+	payload, err = toml.Marshal(config)
+	if err != nil {
+		return path, false, fmt.Errorf("marshal Codex config: %w", err)
+	}
+	if err := os.WriteFile(path, payload, 0o600); err != nil {
+		return path, false, fmt.Errorf("write Codex config: %w", err)
+	}
+	return path, true, nil
+}
+
+func codexOTLPExporterMatches(exporter map[string]any, expectedEndpoint, expectedToken string) bool {
+	endpoint, _ := exporter["endpoint"].(string)
+	headers, _ := exporter["headers"].(map[string]any)
+	authorization, _ := headers["Authorization"].(string)
+	return strings.TrimSpace(expectedEndpoint) != "" &&
+		strings.TrimSpace(expectedToken) != "" &&
+		strings.TrimSpace(endpoint) == strings.TrimSpace(expectedEndpoint) &&
+		strings.TrimSpace(authorization) == "Bearer "+strings.TrimSpace(expectedToken)
+}
+
 func InspectCodexOTLP(homeDir, expectedEndpoint, expectedToken string) (CodexOTLPInspection, error) {
 	var inspection CodexOTLPInspection
 	path := filepath.Join(homeDir, ".codex", "config.toml")

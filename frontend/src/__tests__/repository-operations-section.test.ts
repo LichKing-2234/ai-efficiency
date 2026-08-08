@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import RepositoryOperationsSection from '@/components/repos/RepositoryOperationsSection.vue'
 import { setLocale } from '@/i18n'
+import { useAuthStore } from '@/stores/auth'
 
 vi.mock('@/api/repo', () => ({
   getRepo: vi.fn(),
@@ -87,5 +88,45 @@ describe('RepositoryOperationsSection', () => {
 
     expect(pr.syncPRs).toHaveBeenCalledOnce()
     expect(pr.syncPRs).toHaveBeenCalledWith(9)
+  })
+
+  it('preserves the existing SCM provider when saving without changing the selection', async () => {
+    const repoApi = await import('@/api/repo')
+    const providerApi = await import('@/api/scmProvider')
+    const repo = {
+      id: 9,
+      repo_key: 'github.com/org/repo-a',
+      name: 'repo-a',
+      full_name: 'org/repo-a',
+      clone_url: 'https://github.com/org/repo-a.git',
+      default_branch: 'main',
+      status: 'active',
+      binding_state: 'bound',
+      scm_provider_id: 7,
+      group_id: 1,
+      created_at: '2026-01-01T00:00:00Z',
+      edges: { scm_provider: { id: 7, name: 'GitHub' } },
+    }
+    vi.mocked(providerApi.listProviders).mockResolvedValue({ data: { data: [{ id: 7, name: 'GitHub' }] } } as any)
+    vi.mocked(repoApi.updateRepo).mockResolvedValue({ data: { data: repo } } as any)
+    vi.mocked(repoApi.getRepo).mockResolvedValue({ data: { data: repo } } as any)
+    const pinia = createPinia()
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' }
+
+    const wrapper = mount(RepositoryOperationsSection, {
+      props: { repoId: 9, repo: repo as any },
+      global: { plugins: [pinia] },
+    })
+    await flushPromises()
+
+    expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('7')
+    await wrapper.get('[data-testid="repo-save-binding"]').trigger('click')
+    await flushPromises()
+
+    expect(repoApi.updateRepo).toHaveBeenCalledWith(9, {
+      scm_provider_id: 7,
+      clear_scm_provider: false,
+    })
   })
 })

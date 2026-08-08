@@ -669,13 +669,66 @@ func TestCompactSyncEngineKeepsPendingBucketAcrossOfflineFailure(t *testing.T) {
 	}
 }
 
+func TestCompactSyncEngineDoesNotBlockQueuedTriggerDuringUpload(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repo := compactTestRepo(t, "repo")
+	writeCompactState(t, CompactState{Version: 2, EnabledAt: time.Date(2026, 8, 5, 9, 0, 0, 0, time.UTC), SeenAtoms: map[string]bool{}})
+	writeCompactSession(t, home, repo, "conversation-a", "turn-a", "2026-08-05T10:00:00Z", []string{filepath.Join(repo, "main.go")})
+
+	uploadStarted := make(chan struct{})
+	releaseUpload := make(chan struct{})
+	fake := &compactBackendFake{bucketsStarted: uploadStarted, blockBuckets: releaseUpload}
+	engine := &CompactSyncEngine{Client: fake}
+	runDone := make(chan error, 1)
+	go func() {
+		runDone <- engine.Run(context.Background(), CompactRunOptions{
+			InstallationID: "installation-a", RepoRoot: repo, RepoConfigID: 11,
+			RepoKey: "repo:a", WorkspaceID: "workspace-a",
+			Cutoff: time.Date(2026, 8, 5, 10, 5, 0, 0, time.UTC),
+		})
+	}()
+	<-uploadStarted
+
+	queueCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	queueErr := QueueCompactTrigger(queueCtx, CompactTrigger{
+		ID: "trigger-during-upload", Kind: "post-commit", RepoConfigID: 11,
+		RepoKey: "repo:a", WorkspaceID: "workspace-a", CommitSHA: "commit-a",
+		Branch: "main", CapturedAt: time.Date(2026, 8, 5, 10, 6, 0, 0, time.UTC),
+	})
+	cancel()
+	close(releaseUpload)
+	if err := <-runDone; err != nil {
+		t.Fatal(err)
+	}
+	if queueErr != nil {
+		t.Fatalf("queue trigger blocked behind compact scan/upload: %v", queueErr)
+	}
+	state, err := LoadCompactState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Triggers) != 1 || state.Triggers[0].ID != "trigger-during-upload" {
+		t.Fatalf("queued trigger was lost when compact run saved state: %+v", state.Triggers)
+	}
+}
+
 type compactBackendFake struct {
-	buckets     []client.AttributionBucket
-	revisions   []client.AttributionRevision
-	failBuckets bool
+	buckets        []client.AttributionBucket
+	revisions      []client.AttributionRevision
+	failBuckets    bool
+	bucketsStarted chan struct{}
+	blockBuckets   chan struct{}
 }
 
 func (f *compactBackendFake) SendAttributionBuckets(_ context.Context, buckets []client.AttributionBucket) error {
+	if f.bucketsStarted != nil {
+		close(f.bucketsStarted)
+		f.bucketsStarted = nil
+	}
+	if f.blockBuckets != nil {
+		<-f.blockBuckets
+	}
 	if f.failBuckets {
 		return os.ErrDeadlineExceeded
 	}

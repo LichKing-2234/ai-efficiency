@@ -12,6 +12,8 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/auth"
 	"github.com/ai-efficiency/ae-cli/internal/buildinfo"
 	"github.com/ai-efficiency/ae-cli/internal/client"
+	"github.com/ai-efficiency/ae-cli/internal/reporting"
+	"github.com/ai-efficiency/ae-cli/internal/toolconfig"
 	"github.com/spf13/cobra"
 )
 
@@ -73,6 +75,9 @@ var loginCmd = &cobra.Command{
 			AuthSubject:  auth.SubjectFromAccessToken(result.AccessToken),
 		}
 
+		if err := invalidateMismatchedReportingConfig(serverURL, token.AuthSubject); err != nil {
+			return fmt.Errorf("invalidate prior reporting credentials: %w", err)
+		}
 		if err := auth.WriteToken(tokenPath, token); err != nil {
 			return fmt.Errorf("save token: %w", err)
 		}
@@ -90,6 +95,32 @@ func init() {
 	rootCmd.AddCommand(loginCmd)
 	loginCmd.Flags().BoolVar(&loginForce, "force", false, "Force re-login even if already logged in")
 	loginCmd.Flags().BoolVar(&loginDevice, "device", false, "Use OAuth device authorization flow")
+}
+
+func invalidateMismatchedReportingConfig(serverURL, authSubject string) error {
+	current, err := reporting.Load("")
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return reporting.Delete("")
+	}
+	wantServer := strings.TrimRight(strings.TrimSpace(serverURL), "/")
+	wantSubject := strings.TrimSpace(authSubject)
+	currentServer := strings.TrimRight(strings.TrimSpace(current.ServerURL), "/")
+	currentSubject := strings.TrimSpace(current.AuthSubject)
+	if wantServer != "" && wantSubject != "" && currentServer == wantServer && currentSubject == wantSubject {
+		return nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolve user home: %w", err)
+	}
+	endpoint := codexOTLPEndpoint(currentServer)
+	if _, _, err := toolconfig.DisableCodexOTLP(home, endpoint, current.OTLPToken); err != nil {
+		return fmt.Errorf("remove prior Codex OTLP credentials: %w", err)
+	}
+	return reporting.Delete("")
 }
 
 func resolveLoginServerURL(cfg *config.Config, fallback string) string {

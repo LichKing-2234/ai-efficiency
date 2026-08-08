@@ -285,6 +285,7 @@ describe('RepoDetailView', () => {
     expect(pr.syncPRs).not.toHaveBeenCalled()
     expect(scm.listProviders).not.toHaveBeenCalled()
     expect(wrapper.get('[data-testid="repo-activity"]').text()).toContain('Activity PR')
+    expect(wrapper.get('[data-testid="repo-activity-latest"]').text()).toContain('2026')
     expect(wrapper.find('[data-testid="repo-pr-row"]').exists()).toBe(false)
   })
 

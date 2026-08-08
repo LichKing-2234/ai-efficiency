@@ -80,6 +80,23 @@ func TestMemberActivityUsesLatestAllocationAndDeduplicatesPRs(t *testing.T) {
 	}
 }
 
+func TestMemberActivityWithoutBucketsHasCompleteSyncCoverage(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	member := client.User.Create().SetUsername("empty-member").SetEmail("empty-member@example.com").SetAuthSource("ldap").SaveX(ctx)
+	service := NewService(client, nil, ServiceOptions{})
+	result, err := service.Member(ctx, member.ID, member.ID, Window{
+		From: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC),
+		To:   time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC),
+	}, DetailPageOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.SyncCoverage.Complete || result.SyncCoverage.AffectedRepositories != 0 {
+		t.Fatalf("empty activity sync coverage = %+v, want complete with no affected repositories", result.SyncCoverage)
+	}
+}
+
 func TestMemberActivityKeepsRepoSHAIdentityAndQualityPoolsSeparate(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()
@@ -231,6 +248,13 @@ func TestScopeUsesCurrentRoleAndAuthorizedDirectoryTeams(t *testing.T) {
 	}
 	if !adminScope.CanViewTeams || !adminScope.Admin || len(adminScope.Teams) != 3 {
 		t.Fatalf("admin scope = %+v, want all current teams", adminScope)
+	}
+	adminCounts := map[string]int{}
+	for _, team := range adminScope.Teams {
+		adminCounts[team.ExternalID] = team.MemberCount
+	}
+	if adminCounts["team-root"] != 5 || adminCounts["team-child"] != 3 || adminCounts["team-outside"] != 1 {
+		t.Fatalf("admin team member counts = %+v, want subtree counts root=5 child=3 outside=1", adminCounts)
 	}
 }
 

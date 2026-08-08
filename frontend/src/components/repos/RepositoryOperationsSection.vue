@@ -35,7 +35,7 @@ const providers = ref<SCMProvider[]>([])
 const providerOptionsLoading = ref(false)
 const providerOptionsLoaded = ref(false)
 const providerOptionsError = ref('')
-const selectedProviderId = ref<number | null>(null)
+const selectedProviderId = ref<number | null>(props.repo.edges?.scm_provider?.id ?? props.repo.scm_provider_id ?? null)
 const bindingSaving = ref(false)
 const bindingMessage = ref('')
 const webhookRepairing = ref(false)
@@ -528,6 +528,7 @@ onUnmounted(() => {
     </select>
     <div class="flex gap-2">
       <button
+        data-testid="repo-save-binding"
         class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
         :disabled="bindingSaving"
         @click="saveBinding"

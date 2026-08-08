@@ -135,55 +135,80 @@ func (e *CompactSyncEngine) Run(ctx context.Context, opts CompactRunOptions) err
 	if e == nil || e.Client == nil {
 		return fmt.Errorf("compact attribution client is required")
 	}
-	return withCompactStateLock(ctx, func() error {
-		state, err := LoadCompactState()
+	return withCompactRunLock(ctx, func() error {
+		return e.run(ctx, opts)
+	})
+}
+
+func (e *CompactSyncEngine) run(ctx context.Context, opts CompactRunOptions) error {
+	var state *CompactState
+	if err := withCompactStateLock(ctx, func() error {
+		var err error
+		state, err = LoadCompactState()
 		if err != nil {
 			return fmt.Errorf("load compact attribution state: %w", err)
 		}
 		if trigger, ok := compactTriggerFromRunOptions(opts); ok {
 			appendCompactTrigger(state, trigger)
+			return SaveJSON(CompactStatePath(), state)
 		}
-		if len(state.Pending) > 0 {
-			if err := e.uploadPending(ctx, state); err != nil {
-				return err
-			}
-			if err := SaveJSON(CompactStatePath(), state); err != nil {
-				return err
-			}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if len(state.Pending) > 0 {
+		if err := e.uploadPending(ctx, state); err != nil {
+			return err
 		}
+		if err := persistCompactState(ctx, state); err != nil {
+			return err
+		}
+	}
 
-		atoms, err := scanCompactCodexAtomsSince(ctx, opts.RepoRoot, state.EnabledAt)
+	atoms, err := scanCompactCodexAtomsSince(ctx, opts.RepoRoot, state.EnabledAt)
+	if err != nil {
+		return err
+	}
+	cutoff := opts.Cutoff.UTC()
+	if cutoff.IsZero() {
+		cutoff = time.Now().UTC()
+	}
+	if err := e.addSharedAssociations(ctx, state, opts, atoms, cutoff); err != nil {
+		return err
+	}
+
+	eligible := make([]CompactCodexAtom, 0, len(atoms))
+	for _, atom := range atoms {
+		if state.SeenAtoms[atom.ID] || atom.ObservedAt.Before(state.EnabledAt) || atom.ObservedAt.After(cutoff) {
+			continue
+		}
+		eligible = append(eligible, atom)
+	}
+	pending := buildCompactBuckets(ctx, opts, eligible, relevantCompactTriggers(state.Triggers, opts))
+	if len(pending) > 0 {
+		state.Pending = append(state.Pending, pending...)
+		if err := persistCompactState(ctx, state); err != nil {
+			return err
+		}
+		if err := e.uploadPending(ctx, state); err != nil {
+			return err
+		}
+	}
+
+	if err := e.applyTriggers(ctx, state, opts); err != nil {
+		return err
+	}
+	return persistCompactState(ctx, state)
+}
+
+func persistCompactState(ctx context.Context, state *CompactState) error {
+	return withCompactStateLock(ctx, func() error {
+		latest, err := LoadCompactState()
 		if err != nil {
 			return err
 		}
-		cutoff := opts.Cutoff.UTC()
-		if cutoff.IsZero() {
-			cutoff = time.Now().UTC()
-		}
-		if err := e.addSharedAssociations(ctx, state, opts, atoms, cutoff); err != nil {
-			return err
-		}
-
-		eligible := make([]CompactCodexAtom, 0, len(atoms))
-		for _, atom := range atoms {
-			if state.SeenAtoms[atom.ID] || atom.ObservedAt.Before(state.EnabledAt) || atom.ObservedAt.After(cutoff) {
-				continue
-			}
-			eligible = append(eligible, atom)
-		}
-		pending := buildCompactBuckets(ctx, opts, eligible, relevantCompactTriggers(state.Triggers, opts))
-		if len(pending) > 0 {
-			state.Pending = append(state.Pending, pending...)
-			if err := SaveJSON(CompactStatePath(), state); err != nil {
-				return err
-			}
-			if err := e.uploadPending(ctx, state); err != nil {
-				return err
-			}
-		}
-
-		if err := e.applyTriggers(ctx, state, opts); err != nil {
-			return err
+		for _, trigger := range latest.Triggers {
+			appendCompactTrigger(state, trigger)
 		}
 		return SaveJSON(CompactStatePath(), state)
 	})
@@ -746,7 +771,14 @@ func digestSequence(values []string) string {
 }
 
 func withCompactStateLock(ctx context.Context, fn func() error) error {
-	lockPath := CompactStatePath() + ".lock"
+	return withCompactFileLock(ctx, CompactStatePath()+".lock", "compact attribution state is busy", fn)
+}
+
+func withCompactRunLock(ctx context.Context, fn func() error) error {
+	return withCompactFileLock(ctx, CompactStatePath()+".run.lock", "compact attribution sync is busy", fn)
+}
+
+func withCompactFileLock(ctx context.Context, lockPath, busyMessage string, fn func() error) error {
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
 		return err
 	}
@@ -770,5 +802,5 @@ func withCompactStateLock(ctx context.Context, fn func() error) error {
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
-	return fmt.Errorf("compact attribution state is busy")
+	return fmt.Errorf("%s", busyMessage)
 }

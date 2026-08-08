@@ -209,3 +209,20 @@ func Save(path string, config *Config) error {
 	}
 	return nil
 }
+
+// Delete removes only the account-scoped reporting credential config. The
+// stable machine installation identity is intentionally preserved so a later
+// successful enrollment can rotate credentials for the same installation.
+func Delete(path string) error {
+	if strings.TrimSpace(path) == "" {
+		var err error
+		path, err = DefaultPath()
+		if err != nil {
+			return err
+		}
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove reporting config: %w", err)
+	}
+	return nil
+}

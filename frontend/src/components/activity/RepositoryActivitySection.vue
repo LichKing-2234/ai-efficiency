@@ -30,6 +30,10 @@ function shortSHA(value: string) {
   return value.slice(0, 10)
 }
 
+function date(value?: string) {
+  return value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—'
+}
+
 function togglePR(prRecordID: number) {
   const next = new Set(expandedPRs.value)
   next.has(prRecordID) ? next.delete(prRecordID) : next.add(prRecordID)
@@ -57,11 +61,12 @@ onMounted(() => void load())
     </div>
 
     <template v-if="activity">
-      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <div class="border border-slate-200 bg-white p-4"><p class="text-xs font-semibold uppercase text-slate-500">{{ t('activity.participatingMembers') }}</p><p class="mt-2 text-2xl font-semibold text-slate-950">{{ activity.participating_members }}</p></div>
         <div class="border border-slate-200 bg-white p-4"><p class="text-xs font-semibold uppercase text-slate-500">{{ t('activity.participatingPRs') }}</p><p class="mt-2 text-2xl font-semibold text-slate-950">{{ metric(activity.metrics.participating_prs) }}</p></div>
         <div class="border border-slate-200 bg-white p-4"><p class="text-xs font-semibold uppercase text-slate-500">{{ t('activity.mergedPRs') }}</p><p class="mt-2 text-2xl font-semibold text-emerald-700">{{ metric(activity.metrics.merged_prs) }}</p></div>
         <div class="border border-slate-200 bg-white p-4"><p class="text-xs font-semibold uppercase text-slate-500">{{ t('activity.commits') }}</p><p class="mt-2 text-2xl font-semibold text-slate-950">{{ activity.metrics.commit_count }}</p></div>
+        <div class="border border-slate-200 bg-white p-4"><p class="text-xs font-semibold uppercase text-slate-500">{{ t('activity.latestActivity') }}</p><p data-testid="repo-activity-latest" class="mt-2 text-sm font-semibold text-slate-950">{{ date(activity.metrics.latest_activity) }}</p></div>
       </div>
 
       <div v-if="!activity.sync_coverage.complete" role="status" class="border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">

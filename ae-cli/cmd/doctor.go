@@ -144,7 +144,7 @@ func printCompactReportingStatus(out io.Writer) {
 	if homeErr != nil {
 		fmt.Fprintf(out, "  Codex OTLP config: unavailable %s (%v)\n", style.badge(doctorcheck.StatusFailed), homeErr)
 	} else {
-		endpoint := strings.TrimRight(strings.TrimSpace(config.ServerURL), "/") + "/api/v1/attribution/otel/v1/traces"
+		endpoint := codexOTLPEndpoint(config.ServerURL)
 		inspection, inspectErr := toolconfig.InspectCodexOTLP(homeDir, endpoint, config.OTLPToken)
 		if inspectErr != nil {
 			fmt.Fprintf(out, "  Codex OTLP config: unavailable %s (%v)\n", style.badge(doctorcheck.StatusFailed), inspectErr)
