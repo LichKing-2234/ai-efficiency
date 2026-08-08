@@ -28,22 +28,20 @@ const {
         <ActivityDateRange :from="range.from" :to="range.to" :loading="loading" @change="selectRange" @refresh="loadActivity" />
       </header>
 
-      <div v-if="error" role="alert" aria-live="assertive" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-        {{ error }}
-      </div>
+      <ElAlert v-if="error" type="error" :closable="false" show-icon :title="error" />
       <div v-if="loading && !data" aria-live="polite" class="rounded-xl border border-slate-200 bg-white px-5 py-12 text-center text-sm text-slate-500">
         {{ t('activity.loading') }}
       </div>
 
       <template v-if="data">
         <ActivityHero :metrics="data.metrics" />
-        <div
+        <ElAlert
           v-if="!data.sync_coverage.complete"
-          class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-          role="status"
-        >
-          {{ t('activity.syncNeeded', { count: data.sync_coverage.affected_repositories }) }}
-        </div>
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="t('activity.syncNeeded', { count: data.sync_coverage.affected_repositories })"
+        />
         <ActivityDetails
           :activity="data"
           :pr-loading="loading || prLoading"
