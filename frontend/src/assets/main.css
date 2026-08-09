@@ -7,8 +7,21 @@ body {
 }
 
 @media (max-width: 767px) {
-  body :is(.el-button, .el-input, .el-select, .el-radio-button) {
+  body :is(.el-button, .el-input, .el-select) {
     min-height: 44px;
+  }
+
+  body .el-radio-button {
+    display: inline-flex;
+    min-height: 44px;
+  }
+
+  body .el-radio-button > span {
+    display: inline-flex;
+    box-sizing: border-box;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
   }
 
   body .el-select {

@@ -296,7 +296,7 @@ onMounted(() => {
         >
           <ElRadioButton
             data-testid="quota-reset-tab-mine"
-            class="min-h-10 flex-1"
+            class="min-w-0 w-full [&>span]:w-full [&>span]:!whitespace-normal [&>span]:!px-1"
             value="mine"
             @click="selectQueue('mine')"
           >
@@ -304,40 +304,34 @@ onMounted(() => {
           </ElRadioButton>
           <ElRadioButton
             data-testid="quota-reset-tab-approvals"
-            class="min-h-10 flex-1"
+            class="min-w-0 w-full [&>span]:w-full [&>span]:!whitespace-normal [&>span]:!px-1"
             value="approvals"
             @click="selectQueue('approvals')"
           >
             {{ t('quotaReset.myApprovals') }}
-            <ElTag
+            <span
               v-if="approvalTotal > 0"
               data-testid="quota-reset-tab-approvals-count"
-              class="ml-2 !hidden sm:!inline-flex"
-              size="small"
-              round
-              :effect="activeQueue === 'approvals' ? 'dark' : 'plain'"
+              class="ml-1 shrink-0 text-xs font-semibold tabular-nums opacity-75"
             >
               {{ countBadge(approvalTotal) }}
-            </ElTag>
+            </span>
           </ElRadioButton>
           <ElRadioButton
             v-if="auth.isAdmin"
             data-testid="quota-reset-tab-admin"
-            class="min-h-10 flex-1"
+            class="min-w-0 w-full [&>span]:w-full [&>span]:!whitespace-normal [&>span]:!px-1"
             value="admin"
             @click="selectQueue('admin')"
           >
             {{ t('quotaReset.adminQueue') }}
-            <ElTag
+            <span
               v-if="adminTotal > 0"
               data-testid="quota-reset-tab-admin-count"
-              class="ml-2 !hidden sm:!inline-flex"
-              size="small"
-              round
-              :effect="activeQueue === 'admin' ? 'dark' : 'plain'"
+              class="ml-1 shrink-0 text-xs font-semibold tabular-nums opacity-75"
             >
               {{ countBadge(adminTotal) }}
-            </ElTag>
+            </span>
           </ElRadioButton>
         </ElRadioGroup>
 

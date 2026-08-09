@@ -28,6 +28,7 @@ errors = []
 unmocked_matrix_requests = set()
 
 VIEWPORTS = (
+    ("narrow-mobile", 320, 800),
     ("mobile", 390, 844),
     ("tablet", 768, 1024),
     ("desktop-boundary", 1024, 900),
@@ -40,6 +41,7 @@ USER_ROUTE_CASES = (
         "path": "/usage",
         "selector": "[data-testid='usage-center-tabs']",
         "state_selectors": ("[data-testid='usage-group-quotas']", "[data-model-row]"),
+        "fit_selectors": ("[data-testid='usage-center-tabs'] .el-segmented__item-label",),
     },
     {
         "path": "/usage/team",
@@ -1054,6 +1056,27 @@ def controls_meet_touch_height(page, selectors, minimum=44):
     return True
 
 
+def radio_surfaces_match_touch_targets(page, minimum=44):
+    return page.locator("main .el-radio-button").evaluate_all("""(elements, minimum) => elements
+        .filter((element) => {
+            const style = window.getComputedStyle(element)
+            return element.getClientRects().length > 0
+                && style.display !== 'none'
+                && style.visibility !== 'hidden'
+        })
+        .every((element) => {
+            const surface = element.querySelector(':scope > span')
+            if (!surface) return false
+            const targetBox = element.getBoundingClientRect()
+            const surfaceBox = surface.getBoundingClientRect()
+            return surfaceBox.height >= minimum
+                && Math.abs(surfaceBox.top - targetBox.top) <= 0.5
+                && Math.abs(surfaceBox.right - targetBox.right) <= 0.5
+                && Math.abs(surfaceBox.bottom - targetBox.bottom) <= 0.5
+                && Math.abs(surfaceBox.left - targetBox.left) <= 0.5
+        })""", minimum)
+
+
 def protected_shell_state(page, width):
     menu = page.locator("header button:has-text('Menu')")
     sidebar = page.locator("aside").first
@@ -1073,22 +1096,31 @@ def exercise_route_control(page, exercise):
         return opened, "Team organization view did not open"
     if exercise == "quota-user":
         page.locator("[data-testid='quota-reset-row-1']").wait_for(state="visible")
+        approval_count_visible = page.locator("[data-testid='quota-reset-tab-approvals-count']").is_visible()
         page.locator("[data-testid='quota-reset-tab-approvals']").click()
         page.locator("[data-testid='quota-reset-row-2']").wait_for(state="visible")
         page.locator("[data-testid='quota-reset-approve-2']").click()
         dialog = page.locator("[data-testid='quota-reset-decision-dialog']")
         dialog.wait_for(state="visible")
-        opened = dialog.is_visible() and page.locator("[data-testid='quota-reset-tab-admin']").count() == 0
+        opened = (
+            dialog.is_visible()
+            and approval_count_visible
+            and page.locator("[data-testid='quota-reset-tab-admin']").count() == 0
+        )
         page.keyboard.press("Escape")
         dialog.wait_for(state="hidden")
         return opened, "Approver decision dialog did not open or admin queue leaked to user"
     if exercise == "quota-admin":
+        queue_counts_visible = (
+            page.locator("[data-testid='quota-reset-tab-approvals-count']").is_visible()
+            and page.locator("[data-testid='quota-reset-tab-admin-count']").is_visible()
+        )
         page.locator("[data-testid='quota-reset-tab-admin']").click()
         page.locator("[data-testid='quota-reset-row-2']").wait_for(state="visible")
         page.locator("[data-testid='quota-reset-approve-2']").click()
         dialog = page.locator("[data-testid='quota-reset-decision-dialog']")
         dialog.wait_for(state="visible")
-        opened = dialog.is_visible()
+        opened = dialog.is_visible() and queue_counts_visible
         page.keyboard.press("Escape")
         dialog.wait_for(state="hidden")
         return opened, "Administrator decision dialog did not open"
@@ -1245,6 +1277,7 @@ def visit_matrix_case(page, role, case, viewport):
                 page,
                 ("header button:has-text('Menu')", "header button"),
             ),
+            "radio_surfaces": width >= 768 or radio_surfaces_match_touch_targets(page),
             "overflow": (
                 overflow["documentWidth"] <= overflow["viewport"]
                 and overflow["bodyWidth"] <= overflow["viewport"]

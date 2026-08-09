@@ -39,7 +39,7 @@ const chartOptions = { responsive: true, maintainAspectRatio: false, plugins: { 
       {{ t('usageDashboard.noModelData') }}
     </div>
     <div v-else class="grid min-w-0 gap-4 2xl:grid-cols-[180px_minmax(0,1fr)]">
-      <div class="h-44">
+      <div data-testid="usage-model-chart-canvas" class="h-44 min-w-0 w-full max-w-full">
         <DoughnutChartCanvas :data="chartData" :options="chartOptions" />
       </div>
       <div

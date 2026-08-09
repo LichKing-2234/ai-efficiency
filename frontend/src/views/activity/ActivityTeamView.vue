@@ -71,6 +71,15 @@ function memberKey(userID: number, directoryID?: string) {
           <div class="border-b border-slate-200 px-5 py-4"><h2 class="font-semibold text-slate-950">{{ t('activity.members') }}</h2></div>
           <div v-if="team.members.items.length === 0" class="px-5 py-10 text-sm text-slate-500">{{ t('activity.noMembers') }}</div>
           <div v-else class="divide-y divide-slate-100">
+            <div
+              data-testid="activity-team-member-column-labels"
+              class="hidden grid-cols-[minmax(10rem,1fr)_7rem_7rem_7rem] gap-3 bg-slate-50 px-5 py-2 text-xs font-medium text-slate-500 lg:grid"
+            >
+              <span>{{ t('activity.members') }}</span>
+              <span>{{ t('activity.participatingPRs') }}</span>
+              <span>{{ t('activity.mergedPRs') }}</span>
+              <span>{{ t('activity.activeRepositories') }}</span>
+            </div>
             <component
               :is="row.member.user_id > 0 ? RouterLink : 'div'"
               v-for="row in team.members.items"
