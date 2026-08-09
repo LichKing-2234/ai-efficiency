@@ -75,6 +75,11 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       manifest: measuring,
+      rollupOptions: {
+        output: {
+          hashCharacters: 'base36',
+        },
+      },
     },
     server: {
       proxy: {
