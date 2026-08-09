@@ -261,16 +261,30 @@ describe('UserView', () => {
     expect(wrapper.text()).not.toContain('default_model')
   })
 
-  it('uses Element Plus controls for interactive onboarding step titles', async () => {
+  it('makes each full Element Plus step interactive and exposes the viewed step', async () => {
     const { wrapper } = await mountUserView()
 
-    const stepButtons = [0, 1, 2].map((step) => wrapper.get(`[data-testid="onboarding-step-button-${step}"]`))
-    expect(stepButtons.every((button) => button.classes().includes('el-button'))).toBe(true)
-    expect(stepButtons.map((button) => button.text())).toEqual([
+    const stepTriggers = [0, 1, 2].map((step) => wrapper.get(`[data-testid="onboarding-step-button-${step}"]`))
+    expect(stepTriggers.every((step) => step.classes().includes('el-step'))).toBe(true)
+    expect(stepTriggers.every((step) => step.attributes('role') === 'button')).toBe(true)
+    expect(stepTriggers.map((step) => step.get('.el-step__title').text())).toEqual([
       '1. Choose an access group',
       '2. Create API key',
       '3. Configure tools',
     ])
+
+    expect(stepTriggers[1].attributes('data-selected')).toBe('true')
+    expect(stepTriggers[1].attributes('aria-current')).toBe('step')
+
+    await stepTriggers[0].get('.el-step__icon').trigger('click')
+    expect(wrapper.find('[data-testid="onboarding-step-0"]').exists()).toBe(true)
+    expect(stepTriggers[0].attributes('data-selected')).toBe('true')
+    expect(stepTriggers[0].attributes('aria-current')).toBe('step')
+    expect(stepTriggers[1].attributes('data-selected')).toBe('false')
+
+    await stepTriggers[2].trigger('keydown', { key: 'Enter' })
+    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(true)
+    expect(stepTriggers[2].attributes('data-selected')).toBe('true')
   })
 
   it('uses bordered Element Plus radio options for access-provider selection', async () => {

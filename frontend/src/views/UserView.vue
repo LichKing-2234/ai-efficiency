@@ -126,9 +126,20 @@ const onboardingActiveStep = computed(() => {
 })
 const onboardingVisibleStep = ref(0)
 const onboardingReachableStep = computed(() => showConfigurationMethods.value ? 2 : onboardingActiveStep.value)
+const onboardingStepTitles = computed(() => [
+  t('user.accessTitle'),
+  t('user.apiKeyStepTitle'),
+  t('user.configurationMethodsTitle'),
+])
 
 function selectOnboardingStep(step: number) {
   if (step <= onboardingReachableStep.value) onboardingVisibleStep.value = step
+}
+
+function handleOnboardingStepKeydown(event: KeyboardEvent, step: number) {
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  event.preventDefault()
+  selectOnboardingStep(step)
 }
 
 const ccSwitchImports = computed(() => {
@@ -743,42 +754,23 @@ onBeforeUnmount(() => {
                 :direction="horizontalSteps ? 'horizontal' : 'vertical'"
                 :class="horizontalSteps ? 'w-full' : 'h-44'"
               >
-                <ElStep>
+                <ElStep
+                  v-for="(title, step) in onboardingStepTitles"
+                  :key="step"
+                  :data-testid="`onboarding-step-button-${step}`"
+                  class="onboarding-step"
+                  :data-reachable="step <= onboardingReachableStep"
+                  :data-selected="step === onboardingVisibleStep"
+                  role="button"
+                  :tabindex="step <= onboardingReachableStep ? 0 : -1"
+                  :aria-current="step === onboardingVisibleStep ? 'step' : undefined"
+                  :aria-disabled="step > onboardingReachableStep"
+                  :aria-label="title"
+                  @click="selectOnboardingStep(step)"
+                  @keydown="handleOnboardingStepKeydown($event, step)"
+                >
                   <template #title>
-                    <ElButton
-                      data-testid="onboarding-step-button-0"
-                      class="!h-auto min-h-11 !whitespace-normal !p-0 text-left"
-                      link
-                      @click="selectOnboardingStep(0)"
-                    >
-                      {{ t('user.accessTitle') }}
-                    </ElButton>
-                  </template>
-                </ElStep>
-                <ElStep>
-                  <template #title>
-                    <ElButton
-                      data-testid="onboarding-step-button-1"
-                      class="!h-auto min-h-11 !whitespace-normal !p-0 text-left"
-                      link
-                      :disabled="onboardingReachableStep < 1"
-                      @click="selectOnboardingStep(1)"
-                    >
-                      {{ t('user.apiKeyStepTitle') }}
-                    </ElButton>
-                  </template>
-                </ElStep>
-                <ElStep>
-                  <template #title>
-                    <ElButton
-                      data-testid="onboarding-step-button-2"
-                      class="!h-auto min-h-11 !whitespace-normal !p-0 text-left"
-                      link
-                      :disabled="onboardingReachableStep < 2"
-                      @click="selectOnboardingStep(2)"
-                    >
-                      {{ t('user.configurationMethodsTitle') }}
-                    </ElButton>
+                    <span class="whitespace-normal">{{ title }}</span>
                   </template>
                 </ElStep>
               </ElSteps>
@@ -1255,3 +1247,41 @@ onBeforeUnmount(() => {
     </div>
   </AppLayout>
 </template>
+
+<style scoped>
+.onboarding-step {
+  box-sizing: border-box;
+  min-height: 48px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.onboarding-step[data-reachable='true']:not([data-selected='true']):hover {
+  background-color: var(--el-color-primary-light-9);
+}
+
+.onboarding-step[data-reachable='false'] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.onboarding-step[data-selected='true'] {
+  background-color: var(--el-color-primary-light-9);
+  box-shadow:
+    inset 4px 0 0 var(--el-color-primary),
+    inset 0 0 0 2px var(--el-color-primary-light-5);
+}
+
+.onboarding-step:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
+
+.onboarding-step[data-selected='true'] :deep(.el-step__title) {
+  color: var(--el-color-primary);
+  font-weight: 700;
+}
+</style>
