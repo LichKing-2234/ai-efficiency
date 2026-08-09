@@ -19,7 +19,8 @@ from playwright.sync_api import sync_playwright
 
 BASE = os.environ.get("AE_E2E_BASE_URL", "http://localhost:5173").rstrip("/")
 API = "http://localhost:8081/api/v1"
-SCREENSHOT_DIR = "/tmp/ae-e2e-role"
+SCREENSHOT_DIR = os.environ.get("AE_E2E_SCREENSHOT_DIR", "/tmp/ae-e2e-role")
+CAPTURE_MATRIX = os.environ.get("AE_E2E_CAPTURE_MATRIX") == "1"
 
 passed = 0
 failed = 0
@@ -29,6 +30,7 @@ unmocked_matrix_requests = set()
 VIEWPORTS = (
     ("mobile", 390, 844),
     ("tablet", 768, 1024),
+    ("desktop-boundary", 1024, 900),
     ("wide-boundary", 1280, 900),
     ("desktop", 1440, 900),
 )
@@ -85,7 +87,16 @@ USER_ROUTE_CASES = (
     {"path": "/activity/teams", "selector": "[data-testid='activity-team-team-alpha']"},
     {"path": "/activity/teams/team-alpha", "selector": "[data-testid='activity-team-summary']"},
     {"path": "/activity/members/7", "selector": "[data-testid='activity-range-refresh']"},
-    {"path": "/user", "selector": "main button:has-text('Refresh')"},
+    {
+        "path": "/user",
+        "selector": "[data-testid='primary-onboarding-flow']",
+        "state_selectors": (
+            "[data-testid='provider-2']",
+            "[data-testid='group-group-alpha']",
+            "[data-testid='primary-onboarding-action']",
+        ),
+        "exercise": "user-onboarding",
+    },
 )
 
 ADMIN_ROUTE_CASES = (
@@ -97,11 +108,14 @@ ADMIN_ROUTE_CASES = (
     {
         "path": "/admin/users",
         "selector": "[data-testid='admin-users-view-users']",
+        "exercise": "admin-users-layout",
+        "desktop_min_width": 1440,
         "state_selectors": ("[data-admin-user-list='mobile']", "[data-admin-user-row]"),
         "desktop_state_selectors": ("[data-admin-user-list='desktop']", "[data-admin-user-row]"),
         "desktop_fit_selectors": (
             "[data-admin-user-list='desktop'] .el-tag",
             "[data-testid='admin-user-timestamps-7']",
+            "[data-testid='admin-user-desktop-actions-7']",
         ),
     },
     {
@@ -130,6 +144,12 @@ PUBLIC_ROUTE_CASES = (
 
 
 def screenshot(page, name):
+    if page.locator("[role='dialog']:visible").count() == 0:
+        page.wait_for_function("getComputedStyle(document.body).overflow !== 'hidden'")
+    page.evaluate("""() => new Promise((resolve) => {
+        window.scrollTo(0, 0)
+        requestAnimationFrame(() => requestAnimationFrame(resolve))
+    })""")
     page.screenshot(path=f"{SCREENSHOT_DIR}/{name}.png", full_page=True)
 
 
@@ -737,7 +757,26 @@ def mock_auth_endpoints(page, role="admin"):
     page.route("**/api/v1/user/providers", lambda route: route.fulfill(
         status=200,
         content_type="application/json",
-        body=json.dumps({"code": 0, "data": {"providers": []}}),
+        body=json.dumps({
+            "code": 0,
+            "data": {
+                "providers": [{
+                    "id": 2,
+                    "name": "example",
+                    "display_name": "Example AI",
+                    "base_url": "https://api.example.com",
+                    "default_model": "gpt-5.4",
+                    "is_primary": True,
+                    "groups": [{
+                        "group_id": "group-alpha",
+                        "group_name": "Group Alpha",
+                        "platform": "openai",
+                        "credential": {"state": "missing"},
+                    }],
+                }],
+                "message": "",
+            },
+        }),
     ))
     page.route("**/api/v1/work-items/counts", lambda route: route.fulfill(
         status=200,
@@ -955,19 +994,19 @@ def overflow_state(page):
 
 
 def expected_selector(case, width):
-    if width >= 1280 and case.get("desktop_selector"):
+    if width >= case.get("desktop_min_width", 1280) and case.get("desktop_selector"):
         return case["desktop_selector"]
     return case["selector"]
 
 
 def expected_state_selectors(case, width):
-    if width >= 1280 and case.get("desktop_state_selectors"):
+    if width >= case.get("desktop_min_width", 1280) and case.get("desktop_state_selectors"):
         return case["desktop_state_selectors"]
     return case.get("state_selectors", ())
 
 
 def expected_fit_selectors(case, width):
-    if width >= 1280 and case.get("desktop_fit_selectors"):
+    if width >= case.get("desktop_min_width", 1280) and case.get("desktop_fit_selectors"):
         return case["desktop_fit_selectors"]
     return case.get("fit_selectors", ())
 
@@ -1077,6 +1116,97 @@ def exercise_route_control(page, exercise):
         page.keyboard.press("Escape")
         dialog.wait_for(state="hidden")
         return opened, "Offboarding dialog did not open"
+    if exercise == "admin-users-layout":
+        width = page.evaluate("window.innerWidth")
+        filters = page.locator("[data-testid='admin-users-filter-grid']")
+        search_field = page.locator("[data-testid='admin-users-search-field']")
+        column_count = filters.evaluate(
+            "element => getComputedStyle(element).gridTemplateColumns.split(' ').filter(Boolean).length"
+        )
+        search_box = search_field.bounding_box()
+        usable = bool(search_box) and (
+            (column_count == 1 and search_box["width"] >= 240)
+            if width < 1280
+            else (column_count == 5 and search_box["width"] >= 200)
+        )
+        return usable, f"Unexpected Admin Users filter layout at {width}px"
+    if exercise == "user-onboarding":
+        width = page.evaluate("window.innerWidth")
+        flow = page.locator("[data-testid='primary-onboarding-flow']")
+        summary = page.locator("[data-testid='user-summary-column']")
+        onboarding = page.locator("[data-testid='user-onboarding-column']")
+        steps = flow.locator("[data-testid='onboarding-steps']")
+        header = page.locator("[data-testid='onboarding-step-header']")
+        header_copy = page.locator("[data-testid='onboarding-step-copy']")
+        action = page.locator("[data-testid='primary-onboarding-action']")
+        provider = page.locator("[data-testid='provider-2']")
+        primary_tag = page.locator("[data-testid='provider-primary-tag-2']")
+
+        flow_box = flow.bounding_box()
+        summary_box = summary.bounding_box()
+        onboarding_box = onboarding.bounding_box()
+        header_box = header.bounding_box()
+        copy_box = header_copy.bounding_box()
+        action_box = action.bounding_box()
+        provider_box = provider.bounding_box()
+        tag_box = primary_tag.bounding_box()
+        if not all((flow_box, summary_box, onboarding_box, header_box, copy_box, action_box, provider_box, tag_box)):
+            return False, "Onboarding layout element has no visible bounding box"
+
+        flow_content_width = flow.evaluate("""element => {
+            const style = getComputedStyle(element)
+            return element.clientWidth
+                - parseFloat(style.paddingLeft)
+                - parseFloat(style.paddingRight)
+        }""")
+        horizontal_steps_expected = flow_content_width >= 700
+        step_direction_fits = steps.get_attribute("data-direction") == (
+            "horizontal" if horizontal_steps_expected else "vertical"
+        )
+        step_titles_fit = (
+            flow.locator("[data-testid^='onboarding-step-button-']").evaluate_all("""elements => {
+                const container = document.querySelector('[data-testid="onboarding-steps"]')
+                if (!container) return false
+                const containerBox = container.getBoundingClientRect()
+                const boxes = elements.map((element) => element.getBoundingClientRect())
+                return boxes.every((box) => (
+                    box.left >= containerBox.left - 1 && box.right <= containerBox.right + 1
+                )) && boxes.slice(1).every((box, index) => boxes[index].right <= box.left + 1)
+            }""")
+            if horizontal_steps_expected
+            else True
+        )
+
+        stacked = (
+            abs(summary_box["x"] - onboarding_box["x"]) <= 1
+            and summary_box["y"] > onboarding_box["y"]
+            and action_box["y"] >= copy_box["y"] + copy_box["height"] - 1
+            and abs(action_box["width"] - header_box["width"]) <= 1
+        )
+        split = (
+            summary_box["x"] < onboarding_box["x"]
+            and abs(summary_box["y"] - onboarding_box["y"]) <= 1
+            and action_box["x"] > copy_box["x"]
+            and action_box["width"] < header_box["width"]
+        )
+        tag_fits = (
+            tag_box["x"] >= provider_box["x"]
+            and tag_box["x"] + tag_box["width"] <= provider_box["x"] + provider_box["width"] + 1
+        )
+        selected_group = page.locator("[data-testid='group-group-alpha'][data-selected='true']")
+        selected_indicator = page.locator("[data-testid='group-indicator-group-alpha'][data-selected='true']")
+        radio_selection = (
+            selected_group.count() == 1
+            and selected_indicator.count() == 1
+        )
+        usable = (
+            (stacked if width < 1280 else split)
+            and step_direction_fits
+            and step_titles_fit
+            and tag_fits
+            and radio_selection
+        )
+        return usable, f"Unexpected onboarding layout at {width}px"
     return True, ""
 
 
@@ -1141,6 +1271,8 @@ def visit_matrix_case(page, role, case, viewport):
         report(label, False, str(error))
         screenshot(page, f"matrix_{role}_{viewport_name}_{path.split('?')[0].strip('/').replace('/', '_') or 'root'}")
     finally:
+        if CAPTURE_MATRIX:
+            screenshot(page, f"matrix_{role}_{viewport_name}_{path.split('?')[0].strip('/').replace('/', '_') or 'root'}")
         page.remove_listener("pageerror", on_page_error)
 
 
@@ -1202,6 +1334,8 @@ def test_route_role_viewport_matrix(page):
                 report(label, False, str(error))
                 screenshot(page, f"matrix_public_{viewport_name}_{path.split('?')[0].strip('/').replace('/', '_')}")
             finally:
+                if CAPTURE_MATRIX:
+                    screenshot(page, f"matrix_public_{viewport_name}_{path.split('?')[0].strip('/').replace('/', '_')}")
                 page.remove_listener("pageerror", on_page_error)
 
     page.set_viewport_size({"width": 1440, "height": 900})

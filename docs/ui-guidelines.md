@@ -47,13 +47,15 @@ a broader custom theme until a product requirement justifies one.
   mobile. Tailwind owns grids, flex layout, breakpoints, width constraints, and
   responsive ordering around Element Plus controls.
 - When a table and stacked cards are mutually exclusive render trees, use the
-  shared media-query composables aligned with Tailwind's `md` and `xl`
-  breakpoints. Keep the table on the `xl` boundary when the desktop sidebar
-  leaves too little content width at 768 pixels.
+  shared media-query composables aligned with the verified viewport matrix.
+  Use the `xl` boundary by default when the desktop sidebar leaves too little
+  content width at 768 pixels. The nine-column Admin Users table remains on
+  cards through 1280 pixels and switches at 1440 pixels so its complete Actions
+  column stays inside the work surface.
 - Use scan-friendly tables on wide screens. When a table cannot remain usable on
   mobile, provide a card or stacked presentation rather than horizontal page
   overflow.
-- Verify every route at viewport widths of 390, 768, 1280, and 1440 pixels. Controls,
+- Verify every route at viewport widths of 390, 768, 1024, 1280, and 1440 pixels. Controls,
   labels, status text, dialogs, and pagination must not clip or overlap.
 - Keep page headings proportional to operational surfaces. Reserve large display
   type for true hero experiences, not dashboards or settings panels.

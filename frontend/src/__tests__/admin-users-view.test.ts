@@ -43,7 +43,7 @@ function installMatchMedia(initialMatches: boolean) {
   })
   const mediaQuery = {
     matches: initialMatches,
-    media: '(min-width: 1280px)',
+    media: '',
     onchange: null,
     addEventListener,
     removeEventListener,
@@ -52,7 +52,7 @@ function installMatchMedia(initialMatches: boolean) {
     dispatchEvent: vi.fn(() => true),
   }
   const matchMedia = vi.fn((query: string) => {
-    expect(query).toBe('(min-width: 1280px)')
+    mediaQuery.media = query
     return mediaQuery
   })
   Object.defineProperty(window, 'matchMedia', {
@@ -521,8 +521,12 @@ describe('AdminUsersView', () => {
     const timestamps = wrapper.get('[data-testid="admin-user-timestamps-7"]')
     expect(timestamps.text()).toContain('Created')
     expect(timestamps.text()).toContain('Updated')
-    expect(timestamps.text()).toContain('5/26/2026, 8:00:00 AM')
-    expect(timestamps.text()).toContain('5/26/2026, 9:00:00 AM')
+    expect(timestamps.text()).toContain(
+      new Date('2026-05-26T00:00:00Z').toLocaleString('en-US'),
+    )
+    expect(timestamps.text()).toContain(
+      new Date('2026-05-26T01:00:00Z').toLocaleString('en-US'),
+    )
   })
 
   it('renders user-list failures with Element Plus feedback', async () => {
@@ -1215,11 +1219,43 @@ describe('AdminUsersView', () => {
     }))
 
     expect(matchMediaController.matchMedia).toHaveBeenCalledTimes(1)
+    expect(matchMediaController.matchMedia).toHaveBeenCalledWith('(min-width: 1440px)')
     expect(matchMediaController.addEventListener).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-admin-user-list="desktop"]').exists()).toBe(true)
     expect(wrapper.find('[data-admin-user-list="mobile"]').exists()).toBe(false)
     expect(wrapper.findAll('[data-admin-user-row]')).toHaveLength(100)
     expect(listAdminUsers).toHaveBeenCalledTimes(1)
+  })
+
+  it('groups mobile user actions into two stable command columns', async () => {
+    const { wrapper } = await mountAdminUsersView()
+
+    matchMediaController.change(false)
+    await wrapper.vm.$nextTick()
+
+    const email = wrapper.get('[data-testid="admin-user-mobile-email-7"]')
+    expect(email.classes()).toContain('break-all')
+    expect(email.classes()).not.toContain('truncate')
+
+    const actions = wrapper.get('[data-testid="admin-user-mobile-actions-7"]')
+    expect(actions.classes()).toEqual(expect.arrayContaining(['grid', 'grid-cols-2']))
+    expect(wrapper.get('[data-testid="copy-encrypted-7"]').classes()).toEqual(
+      expect.arrayContaining(['!ml-0', 'w-full']),
+    )
+    expect(wrapper.get('[data-testid="copy-plaintext-7"]').classes()).toEqual(
+      expect.arrayContaining(['!ml-0', 'w-full']),
+    )
+    expect(wrapper.get('[data-testid="disable-access-7"]').classes()).toEqual(
+      expect.arrayContaining(['!ml-0', 'col-span-2', 'w-full']),
+    )
+  })
+
+  it('keeps the user filters stacked until the wide-content breakpoint', async () => {
+    const { wrapper } = await mountAdminUsersView()
+
+    const filters = wrapper.get('[data-testid="admin-users-filter-grid"]')
+    expect(filters.classes()).toContain('xl:grid-cols-[minmax(0,1fr)_220px_180px_120px_auto]')
+    expect(filters.classes()).not.toContain('lg:grid-cols-[minmax(0,1fr)_220px_180px_120px_auto]')
   })
 
   it('swaps viewports without reloading or duplicating selection and removes the exact listener', async () => {

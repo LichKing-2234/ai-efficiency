@@ -295,7 +295,7 @@ onBeforeUnmount(() => {
     <ElButton
       ref="trigger"
       data-testid="admin-department-picker-trigger"
-      class="!ml-0 !flex h-[38px] w-full !justify-between gap-2 text-left"
+      class="!ml-0 h-[38px] w-full text-left"
       :aria-expanded="open"
       :aria-labelledby="triggerLabelledBy"
       aria-haspopup="listbox"
@@ -303,8 +303,10 @@ onBeforeUnmount(() => {
       @click="toggleOpen"
       @keydown.esc.stop.prevent="close(true)"
     >
-      <span :id="valueID" class="min-w-0 truncate">{{ selectedLabel }}</span>
-      <ElIcon class="shrink-0" aria-hidden="true"><ArrowUp v-if="open" /><ArrowDown v-else /></ElIcon>
+      <span data-testid="admin-department-picker-trigger-content" class="flex w-full items-center justify-between gap-2">
+        <span :id="valueID" data-testid="admin-department-picker-trigger-label" class="min-w-0 truncate">{{ selectedLabel }}</span>
+        <ElIcon class="shrink-0" aria-hidden="true"><ArrowUp v-if="open" /><ArrowDown v-else /></ElIcon>
+      </span>
     </ElButton>
 
     <div

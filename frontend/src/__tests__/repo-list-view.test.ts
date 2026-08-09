@@ -691,12 +691,15 @@ describe('RepoListView', () => {
     expect(content.find('[data-testid="repo-scope-option-summary"]').exists()).toBe(true)
   })
 
-  it('keeps repository identity stacked until the desktop breakpoint', async () => {
+  it('keeps the repository workbench and identity stacked until the wide breakpoint', async () => {
     const { wrapper } = await mountRepoList(sampleRepos)
 
+    const workbench = wrapper.get('[data-testid="repo-workbench"]')
     const row = wrapper.get('[data-testid="repo-row"]')
-    expect(row.classes()).toContain('lg:grid')
-    expect(row.classes()).not.toContain('md:grid')
+    expect(workbench.classes()).toContain('xl:grid-cols-[280px_minmax(0,1fr)]')
+    expect(workbench.classes()).not.toContain('lg:grid-cols-[280px_minmax(0,1fr)]')
+    expect(row.classes()).toContain('xl:grid')
+    expect(row.classes()).not.toContain('lg:grid')
   })
 
   it('auto-fills from Bitbucket Server URL', async () => {

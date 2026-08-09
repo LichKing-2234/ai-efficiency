@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { createGroupCredential, getUserProviderModels, getUserProviders, regenerateGroupCredential, testUserProvider } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
-import { useDesktopLayout } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
 import { authSourceLabel, userRoleLabel } from '@/utils/displayLabels'
 import type {
@@ -35,7 +34,10 @@ import type { ManualConfigSnippet } from '@/utils/userSetupReview'
 
 const auth = useAuthStore()
 const { t } = useI18n()
-const desktopLayout = useDesktopLayout()
+const onboardingFlowElement = ref<HTMLElement | null>(null)
+const horizontalSteps = ref(false)
+const HORIZONTAL_STEPS_MIN_WIDTH = 700
+let onboardingFlowObserver: ResizeObserver | null = null
 
 const loading = ref(true)
 const error = ref('')
@@ -620,7 +622,34 @@ watch(
   }
 )
 
-onMounted(loadProviders)
+function syncOnboardingStepDirection(width?: number) {
+  if (width === undefined) {
+    const element = onboardingFlowElement.value
+    if (!element) return
+    const style = getComputedStyle(element)
+    width = element.getBoundingClientRect().width
+      - parseFloat(style.paddingLeft)
+      - parseFloat(style.paddingRight)
+      - parseFloat(style.borderLeftWidth)
+      - parseFloat(style.borderRightWidth)
+  }
+  horizontalSteps.value = width >= HORIZONTAL_STEPS_MIN_WIDTH
+}
+
+onMounted(() => {
+  void loadProviders()
+  syncOnboardingStepDirection()
+
+  if (typeof ResizeObserver === 'undefined' || !onboardingFlowElement.value) return
+  onboardingFlowObserver = new ResizeObserver(([entry]) => {
+    if (entry) syncOnboardingStepDirection(entry.contentRect.width)
+  })
+  onboardingFlowObserver.observe(onboardingFlowElement.value)
+})
+
+onBeforeUnmount(() => {
+  onboardingFlowObserver?.disconnect()
+})
 </script>
 
 <template>
@@ -639,9 +668,9 @@ onMounted(loadProviders)
         </ElButton>
       </div>
 
-      <div class="grid min-w-0 gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-        <div class="order-2 min-w-0 space-y-6 lg:order-1">
-          <section class="rounded-xl border border-gray-200 bg-white p-5">
+      <div data-testid="user-page-grid" class="grid min-w-0 gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <div data-testid="user-summary-column" class="order-2 min-w-0 space-y-6 xl:order-1">
+          <section class="rounded-lg border border-gray-200 bg-white p-5">
             <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('user.accountTitle') }}</h2>
             <dl class="mt-4 space-y-3 text-sm">
               <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4"><dt class="text-gray-500">{{ t('user.username') }}</dt><dd class="break-all font-medium text-gray-900">{{ auth.user?.username ?? '—' }}</dd></div>
@@ -651,7 +680,7 @@ onMounted(loadProviders)
             </dl>
           </section>
 
-          <section class="rounded-xl border border-gray-200 bg-white p-5">
+          <section class="rounded-lg border border-gray-200 bg-white p-5">
             <div class="flex items-center justify-between">
               <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('user.aiAccessTitle') }}</h2>
               <span v-if="loading" class="text-xs text-gray-400">{{ t('user.loading') }}</span>
@@ -677,13 +706,15 @@ onMounted(loadProviders)
                 :value="provider.id"
                 @click="selectProvider(provider.id)"
               >
-                <div class="flex w-full items-center justify-between gap-3 whitespace-normal">
-                  <div>
-                    <div class="font-medium">{{ provider.display_name }}</div>
-                    <div class="text-xs text-gray-500">{{ provider.name }}</div>
+                <div class="flex min-w-0 items-start gap-3 whitespace-normal">
+                  <div class="min-w-0 flex-1">
+                    <div class="break-words font-medium">{{ provider.display_name }}</div>
+                    <div class="break-words text-xs text-gray-500">{{ provider.name }}</div>
                   </div>
                   <ElTag
                     v-if="provider.is_primary"
+                    :data-testid="`provider-primary-tag-${provider.id}`"
+                    class="shrink-0"
                     type="info"
                     size="small"
                   >
@@ -695,8 +726,8 @@ onMounted(loadProviders)
           </section>
         </div>
 
-        <div class="order-1 min-w-0 space-y-6 lg:order-2">
-          <section data-testid="primary-onboarding-flow" class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div data-testid="user-onboarding-column" class="order-1 min-w-0 space-y-6 xl:order-2">
+          <section ref="onboardingFlowElement" data-testid="primary-onboarding-flow" class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
             <div class="border-b border-gray-100 pb-4">
               <h2 class="text-lg font-semibold text-gray-900">{{ t('user.setupFlowTitle') }}</h2>
               <p class="mt-2 text-sm text-gray-600">{{ t('user.primaryFlowHelp') }}</p>
@@ -704,17 +735,19 @@ onMounted(loadProviders)
 
             <div class="mt-4">
               <ElSteps
+                data-testid="onboarding-steps"
+                :data-direction="horizontalSteps ? 'horizontal' : 'vertical'"
                 :active="onboardingActiveStep"
                 finish-status="success"
-                :simple="desktopLayout"
-                :direction="desktopLayout ? 'horizontal' : 'vertical'"
-                :class="desktopLayout ? 'w-full' : 'h-44'"
+                :simple="horizontalSteps"
+                :direction="horizontalSteps ? 'horizontal' : 'vertical'"
+                :class="horizontalSteps ? 'w-full' : 'h-44'"
               >
                 <ElStep>
                   <template #title>
                     <ElButton
                       data-testid="onboarding-step-button-0"
-                      class="!h-auto min-h-11 !whitespace-normal !p-0 text-left lg:!whitespace-nowrap"
+                      class="!h-auto min-h-11 !whitespace-normal !p-0 text-left"
                       link
                       @click="selectOnboardingStep(0)"
                     >
@@ -726,7 +759,7 @@ onMounted(loadProviders)
                   <template #title>
                     <ElButton
                       data-testid="onboarding-step-button-1"
-                      class="!h-auto min-h-11 !whitespace-normal !p-0 text-left lg:!whitespace-nowrap"
+                      class="!h-auto min-h-11 !whitespace-normal !p-0 text-left"
                       link
                       :disabled="onboardingReachableStep < 1"
                       @click="selectOnboardingStep(1)"
@@ -739,7 +772,7 @@ onMounted(loadProviders)
                   <template #title>
                     <ElButton
                       data-testid="onboarding-step-button-2"
-                      class="!h-auto min-h-11 !whitespace-normal !p-0 text-left lg:!whitespace-nowrap"
+                      class="!h-auto min-h-11 !whitespace-normal !p-0 text-left"
                       link
                       :disabled="onboardingReachableStep < 2"
                       @click="selectOnboardingStep(2)"
@@ -753,8 +786,8 @@ onMounted(loadProviders)
 
             <div class="mt-5">
               <section v-if="onboardingVisibleStep === 0" data-testid="onboarding-step-0" class="py-1">
-                <div class="flex items-start justify-between gap-4">
-                  <div>
+                <div data-testid="onboarding-step-header" class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                  <div data-testid="onboarding-step-copy" class="min-w-0">
                     <h3 class="text-base font-semibold text-gray-900">{{ t('user.accessTitle') }}</h3>
                     <p class="mt-1 text-sm text-gray-600">{{ t('user.accessGroupHelp') }}</p>
                     <p v-if="selectedProvider" class="mt-2 text-sm text-gray-500">{{ selectedProvider.base_url }}</p>
@@ -762,6 +795,7 @@ onMounted(loadProviders)
                   <ElButton
                     v-if="onboardingState === 'group_selected_without_key'"
                     data-testid="primary-onboarding-action"
+                    class="w-full xl:w-auto xl:shrink-0"
                     type="primary"
                     :loading="credentialMutationLoading"
                     :disabled="credentialMutationLoading"
@@ -772,15 +806,31 @@ onMounted(loadProviders)
                 </div>
 
                 <div v-if="selectedProvider" class="mt-4 space-y-4">
-                  <ElRadioGroup :model-value="selectedGroupId ?? undefined" class="flex max-w-full flex-wrap">
+                  <ElRadioGroup
+                    :model-value="selectedGroupId ?? undefined"
+                    class="flex max-w-full flex-wrap gap-2"
+                    fill="var(--el-color-primary-light-9)"
+                    text-color="var(--el-color-primary)"
+                  >
                     <ElRadioButton
                       v-for="group in selectedProvider.groups"
                       :key="group.group_id"
                       :data-testid="`group-${group.group_id}`"
+                      :data-selected="selectedGroupId === group.group_id"
                       :value="group.group_id"
                       @click="selectGroup(group.group_id)"
                     >
-                      {{ group.group_name }}
+                      <span class="inline-flex items-center gap-2">
+                        <span
+                          :data-testid="`group-indicator-${group.group_id}`"
+                          :data-selected="selectedGroupId === group.group_id"
+                          class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border"
+                          aria-hidden="true"
+                        >
+                          <span v-if="selectedGroupId === group.group_id" class="h-2.5 w-2.5 rounded-full bg-gray-900" />
+                        </span>
+                        {{ group.group_name }}
+                      </span>
                     </ElRadioButton>
                   </ElRadioGroup>
 
@@ -798,14 +848,15 @@ onMounted(loadProviders)
               </section>
 
               <section v-else-if="onboardingVisibleStep === 1" data-testid="onboarding-step-1" class="py-1">
-                <div class="flex items-start justify-between gap-4">
-                  <div>
+                <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                  <div class="min-w-0">
                     <h3 class="text-base font-semibold text-gray-900">{{ t('user.apiKeyStepTitle') }}</h3>
                     <p class="mt-1 text-sm text-gray-600">{{ t('user.apiKeyStageHelp') }}</p>
                   </div>
                   <ElButton
                     v-if="selectedKeyValue"
                     data-testid="user-provider-test-run"
+                    class="w-full xl:w-auto xl:shrink-0"
                     type="primary"
                     :loading="providerTestLoading"
                     :disabled="providerTestLoading || !canTestProvider"

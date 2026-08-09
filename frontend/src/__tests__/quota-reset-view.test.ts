@@ -575,7 +575,10 @@ describe('QuotaResetView', () => {
     await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
     const row = wrapper.get('[data-testid="quota-reset-row-2"]')
     expect(row.classes()).toContain('p-3')
-    expect(row.get('[data-testid="quota-reset-reason-2"]').classes()).toContain('line-clamp-1')
+    const layout = row.get('[data-testid="quota-reset-row-layout-2"]')
+    expect(layout.classes()).toContain('xl:grid-cols-[minmax(0,1fr)_auto]')
+    expect(layout.classes()).not.toContain('md:grid-cols-[minmax(0,1fr)_auto]')
+    expect(row.get('[data-testid="quota-reset-reason-2"]').classes()).not.toContain('line-clamp-1')
 
     await row.trigger('click')
     expect(row.attributes('aria-expanded')).toBe('true')

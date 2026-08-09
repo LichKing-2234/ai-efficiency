@@ -620,8 +620,8 @@ function repoStatusType(status: string) {
           :image-size="80"
         />
 
-        <div v-else class="grid min-h-[520px] lg:grid-cols-[280px_minmax(0,1fr)]">
-          <aside class="border-b border-slate-200 bg-slate-50 p-4 lg:border-b-0 lg:border-r">
+        <div data-testid="repo-workbench" v-else class="grid min-h-[520px] xl:grid-cols-[280px_minmax(0,1fr)]">
+          <aside class="border-b border-slate-200 bg-slate-50 p-4 xl:border-b-0 xl:border-r">
             <div class="flex items-center justify-between gap-3">
               <h3 class="text-sm font-semibold uppercase tracking-wide text-slate-900">{{ t('repos.scopeSection') }}</h3>
               <span class="rounded bg-white px-2 py-1 text-xs font-medium text-slate-500">{{ selectedPlatformScopes.length }}</span>
@@ -678,7 +678,7 @@ function repoStatusType(status: string) {
           v-for="repo in repoStore.repos"
           :key="repo.id"
           data-testid="repo-row"
-          class="cursor-pointer p-4 hover:bg-slate-50 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(240px,0.8fr)_minmax(180px,auto)] lg:items-center lg:gap-5 lg:px-5"
+          class="cursor-pointer p-4 hover:bg-slate-50 xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(240px,0.8fr)_minmax(180px,auto)] xl:items-center xl:gap-5 xl:px-5"
           role="button"
           tabindex="0"
           @click="goToDetail(repo)"
@@ -701,7 +701,7 @@ function repoStatusType(status: string) {
                       {{ repo.binding_state === 'bound' ? t('repos.bound') : t('repos.needsBinding') }}
                     </el-tag>
                   </div>
-          <dl class="mt-3 grid grid-cols-2 gap-3 text-xs lg:mt-0">
+          <dl class="mt-3 grid grid-cols-2 gap-3 text-xs xl:mt-0">
                     <div>
                       <dt class="text-gray-400">{{ t('repos.status') }}</dt>
                       <dd class="mt-1"><el-tag :type="repoStatusType(repo.status)" size="small">{{ repositoryStatusLabel(repo.status, t) }}</el-tag></dd>
@@ -711,7 +711,7 @@ function repoStatusType(status: string) {
                       <dd class="mt-1 text-gray-800">{{ repo.binding_state === 'bound' ? t('repos.bound') : t('repos.needsBinding') }}</dd>
                     </div>
                   </dl>
-          <div class="mt-3 flex flex-wrap items-center gap-3 text-sm lg:mt-0 lg:justify-end" @click.stop>
+          <div class="mt-3 flex flex-wrap items-center gap-3 text-sm xl:mt-0 xl:justify-end" @click.stop>
                     <el-button type="primary" link @click="goToDetail(repo)">
                       {{ repoPrimaryAction(repo) }}
                     </el-button>

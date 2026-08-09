@@ -4,7 +4,7 @@ import type { Directive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import AdminDepartmentPicker from '@/components/admin/AdminDepartmentPicker.vue'
-import { useWideContentLayout } from '@/composables/useMediaQuery'
+import { useMediaQuery } from '@/composables/useMediaQuery'
 import DepartmentTreeToggle from '@/components/DepartmentTreeToggle.vue'
 import {
   disableAdminUserAccess,
@@ -64,7 +64,7 @@ const loading = ref(false)
 const error = ref('')
 const rows = ref<AdminUser[]>([])
 const total = ref(0)
-const desktopUserRows = useWideContentLayout()
+const desktopUserRows = useMediaQuery('(min-width: 1440px)')
 const rootDepartments = ref<LoadedDepartmentChildren | null>(null)
 const childrenByParentID = ref<Map<string, LoadedDepartmentChildren>>(new Map())
 const departmentsLoading = ref(false)
@@ -984,8 +984,8 @@ onBeforeUnmount(() => {
       </ElRadioGroup>
 
       <div v-if="filters.view === 'users'" class="order-3 rounded-lg bg-white p-4 shadow">
-        <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_180px_120px_auto]">
-          <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
+        <div data-testid="admin-users-filter-grid" class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_220px_180px_120px_auto]">
+          <label data-testid="admin-users-search-field" class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ t('adminUsers.search') }}
             <ElInput
               v-model="filters.q"
@@ -1359,7 +1359,7 @@ onBeforeUnmount(() => {
                 />
                 <span class="min-w-0">
                   <span class="block truncate font-medium text-gray-900">{{ row.username }}</span>
-                  <span class="block truncate text-xs text-gray-500">{{ row.email }}</span>
+                  <span :data-testid="`admin-user-mobile-email-${row.id}`" class="block break-all text-xs text-gray-500">{{ row.email }}</span>
                   <span class="mt-1 block font-mono text-[11px] text-gray-400">{{ t('adminUsers.localId') }} #{{ row.id }}</span>
                 </span>
               </label>
@@ -1389,14 +1389,18 @@ onBeforeUnmount(() => {
                 <dd class="mt-1 text-gray-800">{{ formatDate(row.updated_at) }}</dd>
               </div>
             </dl>
-            <div class="mt-3 flex flex-wrap gap-2">
+            <div :data-testid="`admin-user-mobile-actions-${row.id}`" class="mt-3 grid grid-cols-2 gap-2">
               <ElButton
+                :data-testid="`copy-encrypted-${row.id}`"
+                class="!ml-0 w-full"
                 :disabled="!row.relay_auth_password"
                 @click="copyEncrypted(row)"
               >
                 {{ t('adminUsers.copyEncrypted') }}
               </ElButton>
               <ElButton
+                :data-testid="`copy-plaintext-${row.id}`"
+                class="!ml-0 w-full"
                 :disabled="!row.relay_auth_password"
                 @click="requestPlaintextCopy(row)"
               >
@@ -1404,8 +1408,10 @@ onBeforeUnmount(() => {
               </ElButton>
               <ElButton
                 v-if="canDisableAccess(row)"
+                :data-testid="`disable-access-${row.id}`"
                 type="danger"
                 plain
+                class="!ml-0 col-span-2 w-full"
                 :disabled="isDisablingAccess(row)"
                 @click="requestDisableAccess(row)"
               >
@@ -1438,26 +1444,26 @@ onBeforeUnmount(() => {
                 </span>
               </template>
             </ElTableColumn>
-            <ElTableColumn :label="t('adminUsers.user')" min-width="160">
+            <ElTableColumn :label="t('adminUsers.user')" min-width="150">
               <template #default="{ row }">
                 <div class="font-medium text-gray-900">{{ row.username }}</div>
                 <div class="text-xs text-gray-500">{{ row.email }}</div>
                 <div class="mt-1 font-mono text-[11px] text-gray-400">{{ t('adminUsers.localId') }} #{{ row.id }}</div>
               </template>
             </ElTableColumn>
-            <ElTableColumn :label="t('adminUsers.role')" min-width="80">
+            <ElTableColumn :label="t('adminUsers.role')" min-width="70">
               <template #default="{ row }">{{ userRoleLabel(row.role, t) }}</template>
             </ElTableColumn>
-            <ElTableColumn :label="t('adminUsers.authSource')" min-width="130">
+            <ElTableColumn :label="t('adminUsers.authSource')" min-width="115">
               <template #default="{ row }">{{ authSourceLabel(row.auth_source, t) }}</template>
             </ElTableColumn>
-            <ElTableColumn :label="t('adminUsers.department')" min-width="140">
+            <ElTableColumn :label="t('adminUsers.department')" min-width="125">
               <template #default="{ row }">{{ departmentLabel(tableAdminUser(row)) }}</template>
             </ElTableColumn>
-            <ElTableColumn :label="t('adminUsers.relayMapping')" min-width="110">
+            <ElTableColumn :label="t('adminUsers.relayMapping')" min-width="100">
               <template #default="{ row }">{{ relayMappingLabel(tableAdminUser(row)) }}</template>
             </ElTableColumn>
-            <ElTableColumn :label="t('adminUsers.accessStatus')" min-width="125">
+            <ElTableColumn :label="t('adminUsers.accessStatus')" min-width="115">
               <template #default="{ row }">
                 <ElTag
                   class="!h-auto max-w-full !whitespace-normal py-1 text-center !leading-tight"
@@ -1484,7 +1490,7 @@ onBeforeUnmount(() => {
             </ElTableColumn>
             <ElTableColumn :label="t('adminUsers.actions')" min-width="150">
               <template #default="{ row }">
-                <div class="flex flex-col gap-1">
+                <div :data-testid="`admin-user-desktop-actions-${row.id}`" class="flex flex-col gap-1">
                   <ElButton
                     :data-testid="`copy-encrypted-${row.id}`"
                     class="!ml-0"

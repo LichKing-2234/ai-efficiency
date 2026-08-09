@@ -282,15 +282,86 @@ describe('UserView', () => {
     expect(providerOptions.every((component) => component.props('border') === true)).toBe(true)
   })
 
-  it('uses Element Plus radio options for access-group selection', async () => {
+  it('renders access groups as radio choices without primary-command styling', async () => {
     const { wrapper } = await mountUserView()
     await openOnboardingStep(wrapper, 0)
 
-    const selectedGroup = wrapper.get('[data-testid="group-43"]')
-    const alternateGroup = wrapper.get('[data-testid="group-42"]')
-    expect(selectedGroup.element.closest('.el-radio-button')).not.toBeNull()
-    expect(selectedGroup.element.closest('.el-radio-button')?.classList).toContain('is-active')
-    expect(alternateGroup.element.closest('.el-radio-button')?.classList).not.toContain('is-active')
+    const groupOptions = wrapper.findAllComponents({ name: 'ElRadioButton' })
+      .filter((component) => component.attributes('data-testid')?.startsWith('group-'))
+    expect(groupOptions).toHaveLength(7)
+
+    const accessGroup = wrapper.findAllComponents({ name: 'ElRadioGroup' })
+      .find((component) => component.props('fill') === 'var(--el-color-primary-light-9)')
+    expect(accessGroup?.props('textColor')).toBe('var(--el-color-primary)')
+
+    const selectedIndicator = wrapper.get('[data-testid="group-indicator-43"]')
+    const alternateIndicator = wrapper.get('[data-testid="group-indicator-42"]')
+    expect(selectedIndicator.attributes('data-selected')).toBe('true')
+    expect(selectedIndicator.find('.bg-gray-900').exists()).toBe(true)
+    expect(alternateIndicator.attributes('data-selected')).toBe('false')
+    expect(alternateIndicator.find('.bg-gray-900').exists()).toBe(false)
+    expect(alternateIndicator.classes()).toEqual(
+      expect.arrayContaining(['h-5', 'w-5', 'rounded-full', 'border']),
+    )
+  })
+
+  it('keeps the summary and primary action stacked until the wide-content breakpoint', async () => {
+    const { wrapper } = await mountUserView()
+    await selectAccessGroup(wrapper, '42')
+
+    const pageGrid = wrapper.get('[data-testid="user-page-grid"]')
+    const summaryColumn = wrapper.get('[data-testid="user-summary-column"]')
+    const onboardingColumn = wrapper.get('[data-testid="user-onboarding-column"]')
+    const stepHeader = wrapper.get('[data-testid="onboarding-step-header"]')
+    const primaryAction = wrapper.get('[data-testid="primary-onboarding-action"]')
+
+    expect(pageGrid.classes()).toContain('xl:grid-cols-[320px_minmax(0,1fr)]')
+    expect(pageGrid.classes()).not.toContain('lg:grid-cols-[320px_minmax(0,1fr)]')
+    expect(summaryColumn.classes()).toContain('xl:order-1')
+    expect(onboardingColumn.classes()).toContain('xl:order-2')
+    expect(stepHeader.classes()).toContain('xl:flex-row')
+    expect(primaryAction.classes()).toContain('w-full')
+    expect(primaryAction.classes()).toContain('xl:w-auto')
+  })
+
+  it('derives the initial step direction from content width without ResizeObserver', async () => {
+    const originalGetComputedStyle = window.getComputedStyle
+    const boundingBoxSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        const width = this.dataset.testid === 'primary-onboarding-flow' ? 720 : 0
+        return {
+          x: 0,
+          y: 0,
+          width,
+          height: 0,
+          top: 0,
+          right: width,
+          bottom: 0,
+          left: 0,
+          toJSON: () => ({}),
+        }
+      })
+    const computedStyleSpy = vi.spyOn(window, 'getComputedStyle')
+      .mockImplementation((element: Element, pseudoElement?: string | null) => {
+        if ((element as HTMLElement).dataset.testid === 'primary-onboarding-flow') {
+          return {
+            paddingLeft: '20px',
+            paddingRight: '20px',
+            borderLeftWidth: '1px',
+            borderRightWidth: '1px',
+          } as CSSStyleDeclaration
+        }
+        return originalGetComputedStyle(element, pseudoElement)
+      })
+
+    try {
+      const { wrapper } = await mountUserView()
+
+      expect(wrapper.get('[data-testid="onboarding-steps"]').attributes('data-direction')).toBe('vertical')
+    } finally {
+      boundingBoxSpy.mockRestore()
+      computedStyleSpy.mockRestore()
+    }
   })
 
   it('uses bordered Element Plus radio options for configuration-method selection', async () => {

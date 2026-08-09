@@ -170,8 +170,17 @@ describe('AdminDepartmentPicker', () => {
     await flushPromises()
     expect(mockGet).not.toHaveBeenCalled()
 
-    expect(wrapper.get('[data-testid="admin-department-picker-trigger"]').classes()).toContain('el-button')
-    await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
+    const trigger = wrapper.get('[data-testid="admin-department-picker-trigger"]')
+    expect(trigger.classes()).toEqual(
+      expect.arrayContaining(['el-button', 'w-full']),
+    )
+    expect(wrapper.get('[data-testid="admin-department-picker-trigger-content"]').classes()).toEqual(
+      expect.arrayContaining(['flex', 'w-full', 'items-center', 'justify-between']),
+    )
+    expect(wrapper.get('[data-testid="admin-department-picker-trigger-label"]').classes()).toEqual(
+      expect.arrayContaining(['min-w-0', 'truncate']),
+    )
+    await trigger.trigger('click')
     await flushPromises()
 
     expect(mockGet).toHaveBeenCalledTimes(1)

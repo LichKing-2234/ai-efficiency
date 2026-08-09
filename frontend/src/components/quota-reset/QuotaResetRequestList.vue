@@ -102,7 +102,7 @@ function isSelected(item: QuotaResetRequestSummary) {
         :aria-expanded="canExpand(item) ? isSelected(item) : undefined"
         @click="canExpand(item) && emit('select', item)"
       >
-        <div class="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+        <div :data-testid="`quota-reset-row-layout-${item.id}`" class="grid gap-2 xl:grid-cols-[minmax(0,1fr)_auto]">
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <h3 class="break-words text-sm font-semibold text-slate-950">{{ item.group_name || item.group_id }}</h3>
@@ -114,11 +114,11 @@ function isSelected(item: QuotaResetRequestSummary) {
               <span>{{ item.group_platform || '-' }}</span>
               <span v-if="item.requester_email"> · {{ item.requester_display_name || item.requester_email }}</span>
             </p>
-            <p :data-testid="`quota-reset-reason-${item.id}`" class="mt-2 line-clamp-1 break-words text-sm text-slate-700">{{ item.reason }}</p>
+            <p :data-testid="`quota-reset-reason-${item.id}`" class="mt-2 break-words text-sm text-slate-700">{{ item.reason }}</p>
             <p v-if="workflowProgress(item)" class="mt-2 break-words text-xs font-medium text-cyan-800">{{ workflowProgress(item) }}</p>
             <p v-if="item.reset_error" class="mt-2 break-words text-xs font-medium text-red-600">{{ item.reset_error }}</p>
           </div>
-          <div class="flex flex-wrap items-start gap-2 md:justify-end">
+          <div class="flex flex-wrap items-start gap-2 xl:justify-end">
             <ElButton
               v-if="canExpand(item)"
               type="primary"
