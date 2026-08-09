@@ -202,6 +202,15 @@ const trendFixture: TeamUsageTrendResponse = {
   },
 }
 
+function richTrendFixture() {
+  const fixture: TeamUsageTrendResponse = structuredClone(trendFixture)
+  fixture.top_member_trend.series[0].points.push({ date: '2026-06-29', actual_cost: 1.5, total_tokens: 8000 })
+  fixture.department_trend.series[0].points.push({ date: '2026-06-29', actual_cost: 5, total_tokens: 8000 })
+  fixture.department_trend.series[1].points.push({ date: '2026-06-29', actual_cost: 4, total_tokens: 1500 })
+  fixture.department_trend.series[2].points.push({ date: '2026-06-29', actual_cost: 1, total_tokens: 6500 })
+  return fixture
+}
+
 const membersFixture: TeamUsageMembersResponse = {
   as_of: '2026-07-16T08:00:00Z',
   fresh_until: '2026-07-16T08:00:54Z',
@@ -993,10 +1002,15 @@ describe('TeamOverviewView', () => {
     await flushPromises()
 
     expect(mockGetTeamUsageOrganization).toHaveBeenCalledWith(expect.objectContaining({ granularity: 'day' }))
+    expect(wrapper.get('h1').text()).toBe('Team Usage')
+    expect(wrapper.text()).toContain('Usage Trends / Member details')
     expect(wrapper.text()).toContain('Usage Trends')
     expect(wrapper.text()).not.toContain('Team and Top 12 token usage trend')
     expect(wrapper.find('header h1').exists()).toBe(false)
-    expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="team-total-trend-sparse"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="team-comparison-trend-sparse"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="top-member-trend-sparse"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Alice')
     expect(wrapper.text()).toContain('Billed usage in range')
     expect(wrapper.text()).not.toContain('Used / Quota')
@@ -1036,6 +1050,8 @@ describe('TeamOverviewView', () => {
   })
 
   it('renders team total independently and compares multiple subteam token trends apart from Top 12 members', async () => {
+    const richFixture = richTrendFixture()
+    mockGetTeamUsageTrend.mockResolvedValue({ data: { data: richFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1066,15 +1082,15 @@ describe('TeamOverviewView', () => {
     }
 
     expect(totalChartData.datasets.map((dataset) => dataset.label)).toEqual(['Team total'])
-    expect(totalChartData.datasets[0].data).toEqual([5900, 7000])
+    expect(totalChartData.datasets[0].data).toEqual([5900, 7000, 8000])
     expect(comparisonChartData.datasets.map((dataset) => dataset.label)).toEqual(['Team One', 'Team Two'])
-    expect(comparisonChartData.datasets[0].data).toEqual([900, 1200])
-    expect(comparisonChartData.datasets[1].data).toEqual([5000, 5800])
+    expect(comparisonChartData.datasets[0].data).toEqual([900, 1200, 1500])
+    expect(comparisonChartData.datasets[1].data).toEqual([5000, 5800, 6500])
     expect(memberChartData.datasets.map((dataset) => dataset.label)).toEqual(['#1 Alice'])
-    expect(memberChartData.datasets[0].data).toEqual([5000, 7000])
+    expect(memberChartData.datasets[0].data).toEqual([5000, 7000, 8000])
   })
 
-  it('keeps a single leaf team trend as an independent team total chart', async () => {
+  it('keeps a sparse single leaf team trend as compact direct values', async () => {
     const leafFixture: TeamUsageTrendResponse = structuredClone(trendFixture)
     leafFixture.department_trend = {
       unit_label: 'USD',
@@ -1112,12 +1128,12 @@ describe('TeamOverviewView', () => {
     expect(wrapper.find('[data-testid="team-total-trend-chart"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="team-comparison-trend-chart"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="top-member-trend-chart"]').exists()).toBe(false)
-    const totalChart = wrapper.get('[data-testid="team-total-trend-chart"] [data-test="line-chart"]')
-    const totalChartData = JSON.parse(totalChart.attributes('data-chart') ?? '{}') as {
-      datasets: Array<{ label: string; data: Array<number | null> }>
-    }
-    expect(totalChartData.datasets.map((dataset) => dataset.label)).toEqual(['Team total'])
-    expect(totalChartData.datasets[0].data).toEqual([5900, 7000])
+    expect(wrapper.find('[data-testid="team-total-trend-chart"] [data-test="line-chart"]').exists()).toBe(false)
+    const sparseValues = wrapper.get('[data-testid="team-total-trend-sparse"]')
+    expect(sparseValues.text()).toContain('2026-06-27')
+    expect(sparseValues.text()).toContain('5.9K tokens')
+    expect(sparseValues.text()).toContain('2026-06-28')
+    expect(sparseValues.text()).toContain('7K tokens')
   })
 
   it('renders team overview chrome in Chinese without English table labels', async () => {
@@ -1679,11 +1695,12 @@ describe('TeamOverviewMemberTrendChart', () => {
   })
 
   it('uses selected-window token totals for the Top 12 trend chart data and axis', async () => {
+    const richFixture = richTrendFixture()
     const wrapper = mount(TeamOverviewMemberTrendChart, {
       props: {
-        state: trendFixture.top_member_trend,
-        departmentTrend: trendFixture.department_trend,
-        window: trendFixture.window,
+        state: richFixture.top_member_trend,
+        departmentTrend: richFixture.department_trend,
+        window: richFixture.window,
       },
     })
     await flushPromises()
@@ -1696,13 +1713,14 @@ describe('TeamOverviewMemberTrendChart', () => {
       scales: { y: { title: { text: string } } }
     }
 
-    expect(chartData.datasets.find((dataset) => dataset.label === '#1 Alice')?.data).toEqual([5000, 7000])
+    expect(chartData.datasets.find((dataset) => dataset.label === '#1 Alice')?.data).toEqual([5000, 7000, 8000])
     expect(chartData.datasets.find((dataset) => dataset.label === 'Team total')).toBeUndefined()
     expect(chartOptions.scales.y.title.text).toBe('tokens')
   })
 
   it('keeps all trend legends at the same scrollable max height', () => {
     const state = structuredClone(trendFixture.top_member_trend)
+    const richFixture = richTrendFixture()
     state.series = Array.from({ length: 12 }, (_, index) => ({
       user_id: 100 + index,
       display_name: `Member ${index + 1}`,
@@ -1716,7 +1734,7 @@ describe('TeamOverviewMemberTrendChart', () => {
     const wrapper = mount(TeamOverviewMemberTrendChart, {
       props: {
         state,
-        departmentTrend: trendFixture.department_trend,
+        departmentTrend: richFixture.department_trend,
         window: trendFixture.window,
       },
     })

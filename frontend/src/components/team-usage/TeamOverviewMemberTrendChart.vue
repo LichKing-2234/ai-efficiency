@@ -106,6 +106,19 @@ const memberChartData = computed(() => buildTrendChartData(
   chartableMemberSeries.value.map((series, index) => memberChartSeries(series, index)),
 ))
 
+const sparseTeamTotalTrend = computed(() => shouldUseSparsePresentation(
+  teamTotalChartData.value.labels,
+  teamTotalTrendSeries.value.length,
+))
+const sparseComparisonTrend = computed(() => shouldUseSparsePresentation(
+  comparisonChartData.value.labels,
+  subteamTrendSeries.value.length,
+))
+const sparseMemberTrend = computed(() => shouldUseSparsePresentation(
+  memberChartData.value.labels,
+  props.state.series.length,
+))
+
 const chartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
@@ -167,6 +180,15 @@ function trendChartLabels(seriesItems: TrendChartSeries[]) {
     }
   }
   return [...labels].sort()
+}
+
+function shouldUseSparsePresentation(labels: string[], seriesCount: number) {
+  return labels.length > 0 && labels.length <= 2 && seriesCount <= 3
+}
+
+function sparsePointValue(point: TrendChartPoint) {
+  if (point.total_tokens == null) return '-'
+  return `${formatTokenCount(point.total_tokens)} ${tokenUnitLabel.value}`
 }
 
 function departmentChartSeries(series: TeamDepartmentTrendState['series'][number], index: number): TrendChartSeries {
@@ -268,12 +290,38 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
       <div
         v-if="teamTotalTrendSeries.length > 0"
         data-testid="team-total-trend-chart"
-        class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]"
+        :class="sparseTeamTotalTrend ? '' : 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]'"
       >
         <div class="min-w-0">
           <h3 class="text-sm font-semibold text-slate-900">{{ t('teamUsage.teamTotalTrend') }}</h3>
           <div v-if="teamTotalChartData.labels.length === 0" class="mt-2 flex h-52 items-center justify-center text-sm text-slate-500">
             -
+          </div>
+          <div
+            v-else-if="sparseTeamTotalTrend"
+            data-testid="team-total-trend-sparse"
+            class="mt-2 divide-y divide-slate-200 border-y border-slate-200"
+          >
+            <div
+              v-for="(series, index) in teamTotalTrendSeries"
+              :key="departmentSeriesKey(series, index)"
+              class="py-3 sm:flex sm:items-start sm:justify-between sm:gap-6"
+            >
+              <div>
+                <div class="text-sm font-medium text-slate-900">{{ departmentSeriesLabel(series) }}</div>
+                <div v-if="series.unavailable" class="mt-1 text-xs text-slate-500">{{ reasonLabel(series.unavailable_reason) }}</div>
+                <div v-else class="mt-1 text-xs text-slate-500">
+                  {{ formatTokenCount(seriesTotalTokens(series)) }} {{ tokenUnitLabel }} ·
+                  {{ formatCost(seriesTotalCost(series)) }} {{ props.departmentTrend?.unit_label ?? props.state.unit_label }}
+                </div>
+              </div>
+              <dl v-if="!series.unavailable" class="mt-2 grid min-w-56 gap-1 text-xs sm:mt-0">
+                <div v-for="point in series.points" :key="point.date" class="flex items-center justify-between gap-6">
+                  <dt class="text-slate-500">{{ point.date }}</dt>
+                  <dd class="font-medium tabular-nums text-slate-900">{{ sparsePointValue(point) }}</dd>
+                </div>
+              </dl>
+            </div>
           </div>
           <div v-else class="mt-2 h-52 min-w-0">
             <LineChartCanvas :data="teamTotalChartData" :options="chartOptions" />
@@ -281,6 +329,7 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
         </div>
 
         <div
+          v-if="!sparseTeamTotalTrend"
           data-testid="team-total-trend-legend"
           :class="trendLegendPanelClasses"
         >
@@ -312,12 +361,38 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
       <div
         v-if="subteamTrendSeries.length > 0"
         data-testid="team-comparison-trend-chart"
-        class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]"
+        :class="sparseComparisonTrend ? '' : 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]'"
       >
         <div class="min-w-0">
           <h3 class="text-sm font-semibold text-slate-900">{{ t('teamUsage.subteamTrends') }}</h3>
           <div v-if="comparisonChartData.labels.length === 0" class="mt-2 flex h-64 items-center justify-center text-sm text-slate-500">
             -
+          </div>
+          <div
+            v-else-if="sparseComparisonTrend"
+            data-testid="team-comparison-trend-sparse"
+            class="mt-2 divide-y divide-slate-200 border-y border-slate-200"
+          >
+            <div
+              v-for="(series, index) in subteamTrendSeries"
+              :key="departmentSeriesKey(series, index)"
+              class="py-3 sm:flex sm:items-start sm:justify-between sm:gap-6"
+            >
+              <div>
+                <div class="text-sm font-medium text-slate-900">{{ departmentSeriesLabel(series) }}</div>
+                <div v-if="series.unavailable" class="mt-1 text-xs text-slate-500">{{ reasonLabel(series.unavailable_reason) }}</div>
+                <div v-else class="mt-1 text-xs text-slate-500">
+                  {{ formatTokenCount(seriesTotalTokens(series)) }} {{ tokenUnitLabel }} ·
+                  {{ formatCost(seriesTotalCost(series)) }} {{ props.departmentTrend?.unit_label ?? props.state.unit_label }}
+                </div>
+              </div>
+              <dl v-if="!series.unavailable" class="mt-2 grid min-w-56 gap-1 text-xs sm:mt-0">
+                <div v-for="point in series.points" :key="point.date" class="flex items-center justify-between gap-6">
+                  <dt class="text-slate-500">{{ point.date }}</dt>
+                  <dd class="font-medium tabular-nums text-slate-900">{{ sparsePointValue(point) }}</dd>
+                </div>
+              </dl>
+            </div>
           </div>
           <div v-else class="mt-2 h-64 min-w-0">
             <LineChartCanvas :data="comparisonChartData" :options="chartOptions" />
@@ -325,6 +400,7 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
         </div>
 
         <div
+          v-if="!sparseComparisonTrend"
           data-testid="subteam-trend-legend"
           :class="trendLegendPanelClasses"
         >
@@ -356,12 +432,38 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
       <div
         v-if="props.state.series.length > 0"
         data-testid="top-member-trend-chart"
-        class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]"
+        :class="sparseMemberTrend ? '' : 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]'"
       >
         <div class="min-w-0">
           <h3 class="text-sm font-semibold text-slate-900">{{ t('teamUsage.topMembersLegend') }}</h3>
           <div v-if="memberChartData.labels.length === 0" class="mt-2 flex h-64 items-center justify-center text-sm text-slate-500">
             -
+          </div>
+          <div
+            v-else-if="sparseMemberTrend"
+            data-testid="top-member-trend-sparse"
+            class="mt-2 divide-y divide-slate-200 border-y border-slate-200"
+          >
+            <div
+              v-for="series in props.state.series"
+              :key="seriesKey(series)"
+              class="py-3 sm:flex sm:items-start sm:justify-between sm:gap-6"
+            >
+              <div>
+                <div class="text-sm font-medium text-slate-900">#{{ series.rank }} {{ series.display_name }}</div>
+                <div v-if="series.unavailable" class="mt-1 text-xs text-slate-500">{{ reasonLabel(series.unavailable_reason) }}</div>
+                <div v-else class="mt-1 text-xs text-slate-500">
+                  {{ formatTokenCount(seriesTotalTokens(series)) }} {{ tokenUnitLabel }} ·
+                  {{ formatCost(seriesTotalCost(series)) }} {{ props.state.unit_label }}
+                </div>
+              </div>
+              <dl v-if="!series.unavailable" class="mt-2 grid min-w-56 gap-1 text-xs sm:mt-0">
+                <div v-for="point in series.points" :key="point.date" class="flex items-center justify-between gap-6">
+                  <dt class="text-slate-500">{{ point.date }}</dt>
+                  <dd class="font-medium tabular-nums text-slate-900">{{ sparsePointValue(point) }}</dd>
+                </div>
+              </dl>
+            </div>
           </div>
           <div v-else class="mt-2 h-64 min-w-0">
             <LineChartCanvas :data="memberChartData" :options="chartOptions" />
@@ -369,6 +471,7 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
         </div>
 
         <div
+          v-if="!sparseMemberTrend"
           data-testid="top-member-trend-legend"
           :class="trendLegendPanelClasses"
         >

@@ -53,7 +53,7 @@ function memberKey(userID: number, directoryID?: string) {
       </ElAlert>
 
       <template v-if="team">
-        <section data-testid="activity-team-summary" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <section data-testid="activity-team-summary" class="grid grid-cols-2 gap-3 xl:grid-cols-4">
           <article class="border border-slate-200 bg-white p-5 shadow-sm"><p class="text-xs font-semibold uppercase text-slate-500">{{ t('activity.activeMembers') }}</p><p class="mt-2 text-3xl font-semibold text-slate-950">{{ team.active_members }}</p></article>
           <article class="border border-slate-200 bg-white p-5 shadow-sm"><p class="text-xs font-semibold uppercase text-slate-500">{{ t('activity.participatingPRs') }}</p><p class="mt-2 text-3xl font-semibold text-slate-950">{{ metric(team.metrics.participating_prs) }}</p></article>
           <article class="border border-slate-200 bg-white p-5 shadow-sm"><p class="text-xs font-semibold uppercase text-slate-500">{{ t('activity.mergedPRs') }}</p><p class="mt-2 text-3xl font-semibold text-emerald-700">{{ metric(team.metrics.merged_prs) }}</p></article>

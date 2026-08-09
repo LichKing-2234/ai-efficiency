@@ -55,7 +55,7 @@ function formatDuration(ms: number): string {
 </script>
 
 <template>
-  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2" :class="props.hideCost ? 'xl:grid-cols-3' : 'xl:grid-cols-4'">
+  <div class="grid grid-cols-2 gap-4" :class="props.hideCost ? 'xl:grid-cols-3' : 'xl:grid-cols-4'">
     <template v-if="props.loading">
       <section
         v-for="index in (props.hideCost ? 3 : 4)"

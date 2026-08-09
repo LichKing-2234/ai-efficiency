@@ -146,7 +146,7 @@ function cancelRelayDelete(event: MouseEvent, close: (event: MouseEvent) => void
         <h3 class="mt-3 text-base font-semibold text-gray-900">{{ t('settings.relayProviders') }}</h3>
         <p class="mt-1 text-sm text-gray-500">{{ t('settings.relayProvidersHelp') }}</p>
       </div>
-      <ElButton type="primary" @click="openAddRelayDialog">
+      <ElButton v-if="relayProviders.length > 0" type="primary" @click="openAddRelayDialog">
         {{ t('settings.addRelayProvider') }}
       </ElButton>
     </div>
@@ -154,7 +154,17 @@ function cancelRelayDelete(event: MouseEvent, close: (event: MouseEvent) => void
     <div v-if="relayLoading" class="text-center text-gray-500 py-12">{{ t('settings.loadingRelayProviders') }}</div>
 
     <div v-else class="rounded-lg bg-white shadow">
-      <div v-if="!isDesktop && relayProviders.length > 0" class="space-y-3 p-4">
+      <ElEmpty
+        v-if="relayProviders.length === 0"
+        data-testid="settings-empty-ai-services"
+        :description="t('settings.noRelayProviders')"
+        :image-size="64"
+      >
+        <ElButton data-testid="settings-empty-add-relay" type="primary" @click="openAddRelayDialog">
+          {{ t('settings.addRelayProvider') }}
+        </ElButton>
+      </ElEmpty>
+      <div v-else-if="!isDesktop" class="space-y-3 p-4">
         <article v-for="provider in relayProviders" :key="provider.id" class="rounded-lg border border-gray-100 p-4">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
@@ -212,11 +222,7 @@ function cancelRelayDelete(event: MouseEvent, close: (event: MouseEvent) => void
           </div>
         </article>
       </div>
-      <div v-else-if="!isDesktop" class="px-6 py-12 text-center text-sm text-gray-500">
-        {{ t('settings.noRelayProviders') }}
-      </div>
-
-      <table v-if="isDesktop" class="min-w-full divide-y divide-gray-200">
+      <table v-if="isDesktop && relayProviders.length > 0" class="min-w-full divide-y divide-gray-200">
         <thead class="bg-gray-50">
           <tr>
             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.name') }}</th>
@@ -276,11 +282,6 @@ function cancelRelayDelete(event: MouseEvent, close: (event: MouseEvent) => void
                   >{{ t('settings.cancel') }}</ElButton>
                 </template>
               </ElPopconfirm>
-            </td>
-          </tr>
-          <tr v-if="relayProviders.length === 0">
-            <td colspan="5" class="px-6 py-12 text-center text-sm text-gray-500">
-              {{ t('settings.noRelayProviders') }}
             </td>
           </tr>
         </tbody>

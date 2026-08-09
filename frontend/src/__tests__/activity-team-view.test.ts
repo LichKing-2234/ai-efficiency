@@ -111,6 +111,7 @@ describe('ActivityTeamView', () => {
     expect(new Date(params.to!).getTime() - new Date(params.from!).getTime()).toBe(30 * 24 * 60 * 60 * 1000)
 
     const summary = wrapper.get('[data-testid="activity-team-summary"]')
+    expect(summary.classes()).toContain('grid-cols-2')
     expect(summary.text()).toContain('Active members')
     expect(summary.text()).toContain('≥2')
     expect(summary.text()).toContain('≥1')

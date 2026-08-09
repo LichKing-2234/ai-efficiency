@@ -174,7 +174,7 @@ function cancelProviderDelete(event: MouseEvent, close: (event: MouseEvent) => v
         <h2 class="text-xl font-bold text-gray-900">{{ t('settings.codePlatforms') }}</h2>
         <p class="mt-1 text-sm text-gray-500">{{ t('settings.codePlatformsHelp') }}</p>
       </div>
-      <ElButton type="primary" @click="openAddDialog">
+      <ElButton v-if="providers.length > 0" type="primary" @click="openAddDialog">
         {{ t('settings.addProvider') }}
       </ElButton>
     </div>
@@ -182,7 +182,17 @@ function cancelProviderDelete(event: MouseEvent, close: (event: MouseEvent) => v
     <div v-if="loading" class="py-12 text-center text-gray-500">{{ t('settings.loading') }}</div>
 
     <div v-else class="rounded-lg bg-white shadow">
-      <div v-if="!isDesktop && providers.length > 0" class="space-y-3 p-4">
+      <ElEmpty
+        v-if="providers.length === 0"
+        data-testid="settings-empty-code-platforms"
+        :description="t('settings.noScmProviders')"
+        :image-size="64"
+      >
+        <ElButton data-testid="settings-empty-add-platform" type="primary" @click="openAddDialog">
+          {{ t('settings.addProvider') }}
+        </ElButton>
+      </ElEmpty>
+      <div v-else-if="!isDesktop" class="space-y-3 p-4">
         <article v-for="p in providers" :key="p.id" class="rounded-lg border border-gray-100 p-4">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
@@ -241,11 +251,7 @@ function cancelProviderDelete(event: MouseEvent, close: (event: MouseEvent) => v
           </div>
         </article>
       </div>
-      <div v-else-if="!isDesktop" class="px-6 py-12 text-center text-sm text-gray-500">
-        {{ t('settings.noScmProviders') }}
-      </div>
-
-      <table v-if="isDesktop" class="min-w-full divide-y divide-gray-200">
+      <table v-if="isDesktop && providers.length > 0" class="min-w-full divide-y divide-gray-200">
         <thead class="bg-gray-50">
           <tr>
             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.name') }}</th>
@@ -305,11 +311,6 @@ function cancelProviderDelete(event: MouseEvent, close: (event: MouseEvent) => v
                   >{{ t('settings.cancel') }}</ElButton>
                 </template>
               </ElPopconfirm>
-            </td>
-          </tr>
-          <tr v-if="providers.length === 0">
-            <td colspan="7" class="px-6 py-12 text-center text-sm text-gray-500">
-              {{ t('settings.noScmProviders') }}
             </td>
           </tr>
         </tbody>

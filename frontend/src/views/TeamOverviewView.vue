@@ -225,6 +225,12 @@ onMounted(loadOverview)
 <template>
   <AppLayout>
     <div class="space-y-4">
+      <div>
+        <h1 class="text-2xl font-semibold text-slate-950">{{ t('teamUsage.title') }}</h1>
+        <p class="mt-1 max-w-3xl text-sm text-slate-600">
+          {{ t('teamUsage.topMembers') }} / {{ t('teamUsage.memberTable') }}
+        </p>
+      </div>
       <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <UsageCenterTabs active="team" />
         <ElRadioGroup
@@ -292,7 +298,7 @@ onMounted(loadOverview)
             :title="t('usageDashboard.staleSnapshot')"
           />
 
-          <section class="grid gap-3 md:grid-cols-4">
+          <section data-testid="team-overview-metrics" class="grid grid-cols-2 gap-3 md:grid-cols-4">
             <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
               <div class="text-xs font-medium text-slate-500">{{ t('teamUsage.scopedMembers') }}</div>
               <div class="mt-1 text-xl font-semibold tabular-nums text-slate-950">

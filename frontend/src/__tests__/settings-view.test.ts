@@ -933,6 +933,7 @@ describe('SettingsView', () => {
     expect(wrapper.text()).toContain('Deployment & Runtime')
     expect(wrapper.text()).toContain('v0.4.0')
     expect(wrapper.text()).toContain('v0.5.0')
+    expect(wrapper.get('[data-testid="deployment-update-check-status"]').text()).toContain('Update checks enabled')
     expect(wrapper.text()).toContain('Check Updates')
     expect(wrapper.text()).not.toContain('Apply Update')
     expect(wrapper.text()).not.toContain('Rollback')
@@ -944,6 +945,28 @@ describe('SettingsView', () => {
 
     expect(checkSystemUpdate).toHaveBeenCalled()
     expect(wrapper.text()).toContain('Update available')
+  })
+
+  it('replaces empty settings tables with actionable Element Plus empty states', async () => {
+    const ai = await mountSettings({ relayProviders: [] }, '/settings?section=ai-services')
+    expect(ai.get('[data-testid="settings-empty-ai-services"]').classes()).toContain('el-empty')
+    expect(ai.find('table').exists()).toBe(false)
+    await ai.get('[data-testid="settings-empty-add-relay"]').trigger('click')
+    expect(ai.get('[data-testid="relay-provider-dialog"]').isVisible()).toBe(true)
+
+    const platforms = await mountSettings({ providers: [] }, '/settings?section=code-platforms')
+    expect(platforms.get('[data-testid="settings-empty-code-platforms"]').classes()).toContain('el-empty')
+    expect(platforms.find('table').exists()).toBe(false)
+    await platforms.get('[data-testid="settings-empty-add-platform"]').trigger('click')
+    await flushPromises()
+    expect(platforms.get('[data-testid="code-platform-dialog"]').isVisible()).toBe(true)
+
+    const credentials = await mountSettings({ credentials: [] }, '/settings?section=advanced-credentials')
+    expect(credentials.get('[data-testid="settings-empty-credentials"]').classes()).toContain('el-empty')
+    expect(credentials.find('table').exists()).toBe(false)
+    await credentials.get('[data-testid="settings-empty-add-credential"]').trigger('click')
+    await flushPromises()
+    expect(credentials.get('[data-testid="credential-dialog"]').isVisible()).toBe(true)
   })
 
   it('shows version check unavailable when latest-release checks are disabled', async () => {

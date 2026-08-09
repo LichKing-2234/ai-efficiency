@@ -124,31 +124,20 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
 <template>
   <AppLayout>
     <div class="space-y-5">
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 class="text-2xl font-bold text-gray-900">{{ t('directoryOffboarding.title') }}</h1>
-          <p class="text-sm text-gray-500">{{ t('directoryOffboarding.subtitle') }}</p>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <ElInput
-            v-model="q"
-            type="search"
-            class="w-56"
-            :placeholder="t('directoryOffboarding.searchPlaceholder')"
-          />
-          <ElButton data-testid="offboarding-search" @click="searchCandidates">
-            {{ t('adminUsers.search') }}
-          </ElButton>
-        </div>
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">{{ t('directoryOffboarding.title') }}</h1>
+        <p class="text-sm text-gray-500">{{ t('directoryOffboarding.subtitle') }}</p>
       </div>
 
-      <ElAlert
-        data-testid="offboarding-warning"
-        :title="t('directoryOffboarding.warning')"
-        type="warning"
-        :closable="false"
-        show-icon
-      />
+      <div class="max-w-5xl">
+        <ElAlert
+          data-testid="offboarding-warning"
+          :title="t('directoryOffboarding.warning')"
+          type="warning"
+          :closable="false"
+          show-icon
+        />
+      </div>
       <ElAlert
         v-if="message"
         data-testid="offboarding-success"
@@ -166,10 +155,31 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
         show-icon
       />
 
-      <div>
-        <ElSkeleton v-if="loading" :rows="3" animated class="p-4" />
-        <ElEmpty v-else-if="!error && !hasCandidates" :description="t('directoryOffboarding.empty')" />
-        <div v-else class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <section data-testid="offboarding-work-surface" class="max-w-5xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div class="flex flex-col gap-2 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div class="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
+            <ElInput
+              v-model="q"
+              type="search"
+              class="w-full sm:max-w-64"
+              :placeholder="t('directoryOffboarding.searchPlaceholder')"
+            />
+            <ElButton data-testid="offboarding-search" class="shrink-0" @click="searchCandidates">
+              {{ t('adminUsers.search') }}
+            </ElButton>
+          </div>
+          <span class="shrink-0 text-xs text-gray-500">{{ total }} {{ t('adminUsers.totalSuffix') }}</span>
+        </div>
+
+        <div class="p-4">
+          <ElSkeleton v-if="loading" :rows="3" animated />
+          <ElEmpty v-else-if="!error && !hasCandidates" :description="t('directoryOffboarding.empty')" />
+          <div
+            v-else
+            data-testid="offboarding-candidate-grid"
+            class="grid gap-4"
+            :class="candidates.length === 1 ? 'max-w-2xl grid-cols-1' : 'lg:grid-cols-2'"
+          >
           <ElCard
             v-for="candidate in candidates"
             :key="candidate.user_id"
@@ -214,10 +224,9 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
               </ElButton>
             </div>
           </ElCard>
+          </div>
         </div>
-      </div>
-      <div class="flex flex-wrap items-center justify-end gap-2 text-xs text-gray-500">
-        <span>{{ total }} {{ t('adminUsers.totalSuffix') }}</span>
+        <div class="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 px-4 py-3 text-xs text-gray-500">
         <ElButton
           data-testid="offboarding-prev-page"
           :disabled="!canGoPrevious || loading"
@@ -233,7 +242,8 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
         >
           {{ t('adminUsers.next') }}
         </ElButton>
-      </div>
+        </div>
+      </section>
 
       <ElDialog
         v-if="selectedCandidate"

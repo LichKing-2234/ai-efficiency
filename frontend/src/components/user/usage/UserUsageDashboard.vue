@@ -12,13 +12,10 @@
     </div>
 
     <div class="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-      <div class="min-w-0">
-        <component
-          :is="props.embedded ? 'h2' : 'h1'"
-          :class="props.embedded ? 'text-base font-semibold text-slate-950' : 'text-2xl font-semibold text-gray-900'"
-        >
+      <div v-if="!props.embedded || props.memberRoute" class="min-w-0">
+        <h1 class="text-2xl font-semibold text-gray-900">
           {{ dashboardTitle }}
-        </component>
+        </h1>
         <p class="mt-1 break-words text-sm text-gray-500">{{ dashboardSubtitle }}</p>
       </div>
       <div class="flex max-w-full shrink-0 flex-wrap items-center gap-2 pb-1 sm:flex-nowrap sm:overflow-x-auto">

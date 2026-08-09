@@ -66,7 +66,7 @@ onMounted(() => void load())
     </ElAlert>
 
     <template v-if="activity">
-      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div data-testid="repo-activity-metrics" class="grid grid-cols-2 gap-3 xl:grid-cols-5">
         <div class="border border-slate-200 bg-white p-4"><p class="text-xs font-semibold uppercase text-slate-500">{{ t('activity.participatingMembers') }}</p><p class="mt-2 text-2xl font-semibold text-slate-950">{{ activity.participating_members }}</p></div>
         <div class="border border-slate-200 bg-white p-4"><p class="text-xs font-semibold uppercase text-slate-500">{{ t('activity.participatingPRs') }}</p><p class="mt-2 text-2xl font-semibold text-slate-950">{{ metric(activity.metrics.participating_prs) }}</p></div>
         <div class="border border-slate-200 bg-white p-4"><p class="text-xs font-semibold uppercase text-slate-500">{{ t('activity.mergedPRs') }}</p><p class="mt-2 text-2xl font-semibold text-emerald-700">{{ metric(activity.metrics.merged_prs) }}</p></div>
@@ -81,7 +81,8 @@ onMounted(() => void load())
         :closable="false"
       />
 
-      <section data-testid="repo-activity-prs" class="border-y border-slate-200 bg-white">
+      <div data-testid="repo-activity-details" class="grid min-w-0 gap-4 xl:grid-cols-2">
+      <section data-testid="repo-activity-prs" class="min-w-0 border-y border-slate-200 bg-white">
         <h3 class="border-b border-slate-200 px-5 py-4 font-semibold text-slate-950">{{ t('activity.pullRequests') }}</h3>
         <ElEmpty v-if="activity.prs.items.length === 0" :description="t('activity.noPullRequests')" :image-size="64" />
         <article v-for="pr in activity.prs.items" :key="`${pr.repo_config_id}:${pr.pr_record_id}`" class="border-b border-slate-100 px-5 py-4 last:border-0">
@@ -130,6 +131,7 @@ onMounted(() => void load())
           <span class="text-slate-600 sm:text-right">{{ commit.prs.map((pr) => `PR #${pr.scm_pr_id}`).join(' · ') }}</span>
         </div>
       </section>
+      </div>
     </template>
   </section>
 </template>

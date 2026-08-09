@@ -203,6 +203,18 @@ describe('RepoListView', () => {
     expect(wrapper.get('[data-testid="repo-binding-filter"]').classes()).toContain('el-select')
   })
 
+  it('keeps repository health commands touchable and stacked on mobile', async () => {
+    const { wrapper } = await mountRepoList(sampleRepos, '/repos', { admin: true })
+
+    const actions = wrapper.get('[data-testid="repo-health-actions"]')
+    expect(actions.classes()).toContain('grid-cols-1')
+    for (const button of actions.findAll('button')) {
+      expect(button.classes()).toContain('min-h-11')
+      expect(button.classes()).toContain('w-full')
+      expect(button.classes()).toContain('sm:w-auto')
+    }
+  })
+
   it('starts list and inventory together and renders server-selected rows before inventory', async () => {
     const { listRepos, getRepoInventory } = await import('@/api/repo')
     const { listProviders } = await import('@/api/scmProvider')

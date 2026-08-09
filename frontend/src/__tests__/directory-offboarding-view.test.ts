@@ -119,6 +119,17 @@ describe('DirectoryOffboardingView', () => {
     expect(wrapper.get('[data-testid="offboarding-warning"]').find('.el-alert').exists()).toBe(true)
   })
 
+  it('attaches search, candidates, and pagination to one constrained work surface', async () => {
+    const { wrapper } = await mountOffboarding()
+
+    const surface = wrapper.get('[data-testid="offboarding-work-surface"]')
+    expect(surface.classes()).toContain('max-w-5xl')
+    expect(surface.find('[data-testid="offboarding-search"]').exists()).toBe(true)
+    expect(surface.find('[data-testid="offboarding-candidate-7"]').exists()).toBe(true)
+    expect(surface.find('[data-testid="offboarding-page-status"]').exists()).toBe(true)
+    expect(surface.get('[data-testid="offboarding-candidate-grid"]').classes()).toContain('max-w-2xl')
+  })
+
   it('renders candidate failures with Element Plus feedback', async () => {
     const { wrapper } = await mountOffboarding((api) => {
       api.listDirectoryOffboardingCandidates.mockRejectedValue(new Error('load failed'))

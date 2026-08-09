@@ -150,13 +150,23 @@ function cancelCredentialDelete(event: MouseEvent, close: (event: MouseEvent) =>
         <h2 class="text-xl font-bold text-gray-900">{{ t('settings.credentialStore') }}</h2>
         <p class="mt-1 text-sm text-gray-500">{{ t('settings.credentialStoreHelp') }}</p>
       </div>
-      <ElButton type="primary" @click="openAddCredentialDialog">
+      <ElButton v-if="credentials.length > 0" type="primary" @click="openAddCredentialDialog">
         {{ t('settings.addCredential') }}
       </ElButton>
     </div>
 
     <div class="rounded-lg bg-white shadow">
-      <div v-if="!isDesktop && credentials.length > 0" class="space-y-3 p-4">
+      <ElEmpty
+        v-if="credentials.length === 0"
+        data-testid="settings-empty-credentials"
+        :description="t('settings.noCredentials')"
+        :image-size="64"
+      >
+        <ElButton data-testid="settings-empty-add-credential" type="primary" @click="openAddCredentialDialog">
+          {{ t('settings.addCredential') }}
+        </ElButton>
+      </ElEmpty>
+      <div v-else-if="!isDesktop" class="space-y-3 p-4">
         <article v-for="cred in credentials" :key="cred.id" class="rounded-lg border border-gray-100 p-4">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
@@ -205,11 +215,7 @@ function cancelCredentialDelete(event: MouseEvent, close: (event: MouseEvent) =>
           </div>
         </article>
       </div>
-      <div v-else-if="!isDesktop" class="px-6 py-12 text-center text-sm text-gray-500">
-        {{ t('settings.noCredentials') }}
-      </div>
-
-      <table v-if="isDesktop" class="min-w-full divide-y divide-gray-200">
+      <table v-if="isDesktop && credentials.length > 0" class="min-w-full divide-y divide-gray-200">
         <thead class="bg-gray-50">
           <tr>
             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.name') }}</th>
@@ -259,11 +265,6 @@ function cancelCredentialDelete(event: MouseEvent, close: (event: MouseEvent) =>
                   >{{ t('settings.cancel') }}</ElButton>
                 </template>
               </ElPopconfirm>
-            </td>
-          </tr>
-          <tr v-if="credentials.length === 0">
-            <td colspan="5" class="px-6 py-12 text-center text-sm text-gray-500">
-              {{ t('settings.noCredentials') }}
             </td>
           </tr>
         </tbody>

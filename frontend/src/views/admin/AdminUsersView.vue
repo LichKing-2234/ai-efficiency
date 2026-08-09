@@ -105,6 +105,7 @@ const disableAccessDialog = reactive<{
 const selectedUserIds = ref<Set<number>>(new Set())
 const disableAccessConfirmInput = ref<{ input?: HTMLInputElement } | null>(null)
 const subscriptionJob = ref<AdminSubscriptionJob | null>(null)
+const subscriptionPanelExpanded = ref(false)
 const subscriptionForm = reactive<{
   scope: AdminSubscriptionManageScope
   operation: AdminSubscriptionManageOperation
@@ -944,8 +945,8 @@ onBeforeUnmount(() => {
 
 <template>
   <AppLayout>
-    <div class="space-y-5">
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div class="flex flex-col gap-5">
+      <div class="order-1 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 class="text-2xl font-bold text-gray-900">{{ t('nav.userManagement') }}</h1>
           <p class="mt-1 text-sm text-gray-500">{{ t('adminUsers.subtitle') }}</p>
@@ -960,7 +961,7 @@ onBeforeUnmount(() => {
         </ElButton>
       </div>
 
-      <ElRadioGroup :model-value="filters.view" @change="handleAdminUsersViewChange">
+      <ElRadioGroup class="order-2" :model-value="filters.view" @change="handleAdminUsersViewChange">
         <ElRadioButton
           data-testid="admin-users-view-users"
           value="users"
@@ -975,7 +976,7 @@ onBeforeUnmount(() => {
         </ElRadioButton>
       </ElRadioGroup>
 
-      <div v-if="filters.view === 'users'" class="rounded-lg bg-white p-4 shadow">
+      <div v-if="filters.view === 'users'" class="order-3 rounded-lg bg-white p-4 shadow">
         <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_180px_120px_auto]">
           <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ t('adminUsers.search') }}
@@ -1039,24 +1040,41 @@ onBeforeUnmount(() => {
         <ElAlert v-if="error" class="mt-3" type="error" :closable="false" show-icon :title="error" />
 	      </div>
 
-      <div v-if="filters.view === 'users'" class="rounded-lg bg-white p-4 shadow">
+      <div
+        v-if="filters.view === 'users'"
+        data-testid="admin-users-subscription-panel"
+        class="order-5 rounded-lg bg-white p-4 shadow"
+      >
         <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('adminUsers.subscriptionManagement') }}</h2>
             <p class="mt-1 text-sm text-gray-500">{{ scopeSummaryLabel() }}</p>
           </div>
           <ElButton
-            data-testid="manage-subscriptions-submit"
-            type="primary"
+            data-testid="admin-users-subscription-toggle"
             class="shrink-0"
-            :disabled="!canSubmitSubscriptionManagement"
-            @click="submitSubscriptionManagement"
+            @click="subscriptionPanelExpanded = !subscriptionPanelExpanded"
           >
-            {{ subscriptionForm.loading ? t('adminUsers.working') : t('adminUsers.applySubscriptionChange') }}
+            {{ subscriptionPanelExpanded ? t('user.hide') : t('adminUsers.subscriptionManagement') }}
           </ElButton>
         </div>
 
-        <ElAlert v-if="subscriptionOptionsError" class="mt-3" type="error" :closable="false" show-icon :title="subscriptionOptionsError" />
+        <div
+          v-show="subscriptionPanelExpanded || subscriptionForm.loading || Boolean(subscriptionJob)"
+          data-testid="admin-users-subscription-tools"
+        >
+          <div class="mt-4 flex justify-end">
+            <ElButton
+              data-testid="manage-subscriptions-submit"
+              type="primary"
+              :disabled="!canSubmitSubscriptionManagement"
+              @click="submitSubscriptionManagement"
+            >
+              {{ subscriptionForm.loading ? t('adminUsers.working') : t('adminUsers.applySubscriptionChange') }}
+            </ElButton>
+          </div>
+
+          <ElAlert v-if="subscriptionOptionsError" class="mt-3" type="error" :closable="false" show-icon :title="subscriptionOptionsError" />
 
         <div class="mt-4 grid gap-3 lg:grid-cols-[150px_150px_minmax(0,1fr)_minmax(0,1fr)_130px]">
           <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
@@ -1187,9 +1205,10 @@ onBeforeUnmount(() => {
             <div class="mt-1 text-gray-500">{{ result.status }}<span v-if="result.message"> · {{ result.message }}</span></div>
           </div>
         </div>
+        </div>
       </div>
 
-      <div v-if="filters.view === 'departments'" class="rounded-lg bg-white p-5 shadow">
+      <div v-if="filters.view === 'departments'" class="order-4 rounded-lg bg-white p-5 shadow">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('adminUsers.departments') }}</h2>
 	        <div class="flex items-center gap-2 text-xs text-gray-500">
@@ -1290,7 +1309,7 @@ onBeforeUnmount(() => {
 	        </div>
       </div>
 
-      <div v-if="filters.view === 'users'" class="rounded-lg bg-white p-5 shadow">
+      <div v-if="filters.view === 'users'" data-testid="admin-users-list-panel" class="order-4 rounded-lg bg-white p-5 shadow">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('adminUsers.localUsers') }}</h2>
           <div class="flex items-center gap-2 text-xs text-gray-500">

@@ -26,7 +26,7 @@ watch(desktopLayout, (isDesktop) => {
 
 <template>
   <ElementPlusLocaleProvider>
-    <div class="min-h-screen bg-slate-50 md:flex md:h-screen md:overflow-hidden">
+    <div class="mobile-touch-surface min-h-screen bg-slate-50 md:flex md:h-screen md:overflow-hidden">
       <header class="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 md:hidden">
         <el-button
           :icon="Menu"

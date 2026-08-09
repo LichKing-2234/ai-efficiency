@@ -342,7 +342,7 @@ describe('DashboardView', () => {
     await flushPromises()
 
     expect(getUserProviders).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('My Usage')
+    expect(wrapper.get('h1').text()).toBe('My AI Usage')
     expect(wrapper.text()).toContain('AI Usage Center')
     expect(wrapper.find('[data-testid="usage-center-tabs"] .el-segmented').exists()).toBe(true)
     const quotaResetTab = wrapper.findAll('.el-segmented__item').find((tab) => tab.text() === 'Quota Reset')
@@ -418,7 +418,7 @@ describe('DashboardView', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('My Usage')
+    expect(wrapper.text()).toContain('My AI Usage')
     expect(wrapper.text()).not.toContain('Complete AI setup first')
     expect(wrapper.text()).not.toContain('Complete AI service configuration')
     expect(wrapper.text()).not.toContain('Go to AI Setup & Configuration')
@@ -495,7 +495,7 @@ describe('DashboardView', () => {
     await flushPromises()
 
     expect(getUserProviders).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('My Usage')
+    expect(wrapper.text()).toContain('My AI Usage')
     expect(wrapper.text()).not.toContain('AI setup is ready, start your first usage')
     expect(wrapper.text()).not.toContain('AI setup')
     expect(wrapper.text()).not.toContain('Done')
@@ -807,7 +807,7 @@ describe('DashboardView', () => {
     const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
 
-    expect(wrapper.get('h2').text()).toBe('Member Usage')
+    expect(wrapper.get('h1').text()).toBe('Member Usage')
     expect(wrapper.text()).toContain('Member Usage')
     expect(wrapper.text()).toContain('alice@example.com')
     expect(wrapper.text()).toContain('Team Overview')
@@ -1038,7 +1038,7 @@ describe('DashboardView', () => {
     expect(getUserUsageDashboard).not.toHaveBeenCalled()
     expect(getTeamUsageSubjectDashboard).toHaveBeenCalledWith(225, expect.objectContaining({ granularity: 'day' }))
     expect(wrapper.find('[data-testid="usage-subject-selector"]').exists()).toBe(false)
-    expect(wrapper.get('h2').text()).toBe('Member Usage')
+    expect(wrapper.get('h1').text()).toBe('Member Usage')
     expect(wrapper.text()).toContain('pat@example.com')
   })
 
@@ -1234,7 +1234,29 @@ describe('DashboardView', () => {
     expect(wrapper.text()).toContain('Group Alpha')
     expect(wrapper.text()).toContain('$32.40 / $100.00')
     expect(wrapper.text()).toContain('$18.20 / ∞')
-    expect(wrapper.text()).toContain('My Usage')
+    expect(wrapper.text()).toContain('My AI Usage')
+  })
+
+  it('constrains a single quota card to an intentional readable width', async () => {
+    const { getUserUsageDashboard, getUserUsageGroupQuotas } = await import('@/api/userUsage')
+    const singleGroupQuotas = {
+      ...usageSnapshotWithQuotas.group_quotas,
+      groups: [usageSnapshotWithQuotas.group_quotas.groups[0]],
+    }
+    ;(getUserUsageDashboard as any).mockResolvedValue({
+      data: { data: { ...usageSnapshotWithQuotas, group_quotas: singleGroupQuotas } },
+    })
+    ;(getUserUsageGroupQuotas as any).mockResolvedValue(quotaResponse(singleGroupQuotas))
+
+    const router = createTestRouter()
+    await router.push('/usage')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    const quotaGrid = wrapper.get('.max-w-xl')
+    expect(quotaGrid.classes()).toContain('max-w-xl')
+    expect(quotaGrid.findAll('article')).toHaveLength(1)
   })
 
   it('opens quota reset request modal from group quota cards and submits a request', async () => {
@@ -1431,7 +1453,7 @@ describe('DashboardView', () => {
 
     expect(getUserProviders).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid^="home-guide-"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('My Usage')
+    expect(wrapper.text()).toContain('My AI Usage')
     expect(wrapper.text()).not.toContain('Complete AI setup first')
     expect(wrapper.text()).not.toContain('Complete AI service configuration')
     expect(wrapper.text()).not.toContain('Go to AI Setup & Configuration')
@@ -1477,7 +1499,7 @@ describe('DashboardView', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid^="home-guide-"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('My Usage')
+    expect(wrapper.text()).toContain('My AI Usage')
     expect(wrapper.text()).not.toContain('Complete AI setup first')
     expect(wrapper.text()).not.toContain('Complete AI service configuration')
     expect(wrapper.text()).not.toContain('Go to AI Setup & Configuration')
@@ -1542,7 +1564,7 @@ describe('DashboardView', () => {
 
     expect(getUserProviders).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid^="home-guide-"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('My Usage')
+    expect(wrapper.text()).toContain('My AI Usage')
     expect(wrapper.text()).not.toContain('AI setup is ready, start your first usage')
     expect(wrapper.text()).not.toContain('Go to AI Setup & Configuration')
   })
@@ -1579,7 +1601,7 @@ describe('DashboardView', () => {
     expect(wrapper.find('[data-testid^="home-guide-"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('AI setup completed')
     expect(wrapper.text()).not.toContain('View setup guidance')
-    expect(wrapper.text()).toContain('My Usage')
+    expect(wrapper.text()).toContain('My AI Usage')
     expect(wrapper.text()).not.toContain('Check recent records')
     expect(wrapper.text()).not.toContain('Connect a repository')
     expect(wrapper.text()).not.toContain('I am an engineer')

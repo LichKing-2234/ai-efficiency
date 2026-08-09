@@ -77,6 +77,7 @@ describe('ActivityView', () => {
   it('renders PR-first hero without making Token a headline metric', async () => {
     const { wrapper } = await mountView()
     const hero = wrapper.get('[data-testid="activity-hero"]')
+    expect(hero.classes()).toContain('grid-cols-2')
     expect(hero.text()).toContain('≥2')
     expect(hero.text()).toContain('≥1')
     expect(hero.text()).toContain('Active repositories')
@@ -87,6 +88,8 @@ describe('ActivityView', () => {
     expect(wrapper.text()).toContain('1 repository needs PR sync')
     expect(wrapper.get('[role="alert"]').classes()).toContain('el-alert')
     expect(wrapper.get('[data-testid="activity-wide-details"]').classes()).not.toContain('overflow-x-auto')
+    expect(wrapper.get('[data-testid="activity-primary-details"]').classes()).toContain('xl:grid-cols-2')
+    expect(wrapper.get('[data-testid="activity-diagnostics"]').classes()).toContain('grid')
     expect(wrapper.get('[data-testid="activity-commits"]').classes()).not.toContain('min-w-[640px]')
     const commit = wrapper.get('[data-testid="activity-commit-9-abcdef123456"]')
     expect(commit.classes()).toContain('sm:grid-cols-[minmax(10rem,1fr)_9rem_8rem]')

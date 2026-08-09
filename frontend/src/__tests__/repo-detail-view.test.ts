@@ -362,6 +362,7 @@ describe('RepoDetailView', () => {
 
     const { wrapper } = await mountRepoDetail(undefined, undefined, { section: 'activity' })
     const activitySection = wrapper.get('[data-testid="repo-activity"]')
+    expect(wrapper.get('[data-testid="repo-activity-details"]').classes()).toContain('xl:grid-cols-2')
     expect(activitySection.text()).not.toContain('Token')
     expect(activitySection.html().indexOf('data-testid="repo-activity-prs"')).toBeLessThan(activitySection.html().indexOf('data-testid="repo-activity-commits"'))
     expect(wrapper.find('[data-testid="repo-activity-pr-commits-101"]').exists()).toBe(false)
@@ -545,6 +546,7 @@ describe('RepoDetailView', () => {
   it('renders conclusion-first PR usage summary and readable default columns', async () => {
     const { wrapper } = await mountRepoDetail()
     expect(wrapper.text()).toContain('Repository health')
+    expect(wrapper.get('[data-testid="repo-detail-health-metrics"]').classes()).toContain('grid-cols-2')
     expect(wrapper.text()).toContain('PR Usage Summary')
     expect(wrapper.text()).toContain('checkpoint window')
     expect(wrapper.text()).toContain('live tool context counter')
@@ -817,6 +819,29 @@ describe('RepoDetailView', () => {
     const { wrapper } = await mountRepoDetail({ binding_state: 'unbound', edges: {} }, createAdminPinia())
 
     expect(wrapper.find('[data-testid="repo-binding-controls"] .el-select').exists()).toBe(true)
+  })
+
+  it('keeps the current provider label when it is absent from the loaded option set', async () => {
+    const { listProviders } = await import('@/api/scmProvider')
+    ;(listProviders as any).mockResolvedValue({
+      data: { data: [{ id: 1, name: 'Other Provider', type: 'github', base_url: 'https://api.github.com', status: 'active' }] },
+    })
+
+    const { wrapper } = await mountRepoDetail({
+      scm_provider_id: 2,
+      edges: {
+        scm_provider: {
+          id: 2,
+          name: 'GitHub Example',
+          type: 'github',
+          base_url: 'https://github.example.com/api/v3',
+          status: 'active',
+        },
+      },
+    }, createAdminPinia())
+
+    expect(wrapper.get('[data-testid="repo-provider-select"]').text()).toContain('GitHub Example')
+    expect(wrapper.get('[data-testid="repo-provider-select"]').text()).not.toBe('2')
   })
 
   it('shows repair webhook action for admin bound webhook_failed repo', async () => {

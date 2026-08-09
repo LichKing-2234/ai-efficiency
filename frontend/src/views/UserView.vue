@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { createGroupCredential, getUserProviderModels, getUserProviders, regenerateGroupCredential, testUserProvider } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
+import { useDesktopLayout } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
 import type {
   UserProviderTestResult,
@@ -33,6 +34,7 @@ import type { ManualConfigSnippet } from '@/utils/userSetupReview'
 
 const auth = useAuthStore()
 const { t } = useI18n()
+const desktopLayout = useDesktopLayout()
 
 const loading = ref(true)
 const error = ref('')
@@ -119,6 +121,13 @@ const onboardingActiveStep = computed(() => {
   if (!providerTestResult.value?.success) return 1
   return 2
 })
+const onboardingVisibleStep = ref(0)
+const onboardingReachableStep = computed(() => showConfigurationMethods.value ? 2 : onboardingActiveStep.value)
+
+function selectOnboardingStep(step: number) {
+  if (step <= onboardingReachableStep.value) onboardingVisibleStep.value = step
+}
+
 const ccSwitchImports = computed(() => {
   const provider = selectedProvider.value
   const group = selectedGroup.value
@@ -592,6 +601,12 @@ async function handleTestProvider() {
   }
 }
 
+watch(onboardingActiveStep, (step, previousStep) => {
+  if (previousStep === undefined || step < previousStep || (previousStep === 0 && step === 1)) {
+    onboardingVisibleStep.value = step
+  }
+}, { immediate: true })
+
 watch(
   () => [
     selectedProvider.value?.id,
@@ -686,16 +701,57 @@ onMounted(loadProviders)
               <p class="mt-2 text-sm text-gray-600">{{ t('user.primaryFlowHelp') }}</p>
             </div>
 
-            <div class="mt-4 overflow-x-auto">
-              <ElSteps :active="onboardingActiveStep" finish-status="success" simple class="min-w-[42rem]">
-                <ElStep :title="t('user.accessTitle')" />
-                <ElStep :title="t('user.apiKeyStepTitle')" />
-                <ElStep :title="t('user.configurationMethodsTitle')" />
+            <div class="mt-4">
+              <ElSteps
+                :active="onboardingActiveStep"
+                finish-status="success"
+                :simple="desktopLayout"
+                :direction="desktopLayout ? 'horizontal' : 'vertical'"
+                :class="desktopLayout ? 'w-full' : 'h-44'"
+              >
+                <ElStep>
+                  <template #title>
+                    <button
+                      data-testid="onboarding-step-button-0"
+                      class="min-h-11 text-left disabled:cursor-not-allowed disabled:text-gray-400"
+                      type="button"
+                      @click="selectOnboardingStep(0)"
+                    >
+                      {{ t('user.accessTitle') }}
+                    </button>
+                  </template>
+                </ElStep>
+                <ElStep>
+                  <template #title>
+                    <button
+                      data-testid="onboarding-step-button-1"
+                      class="min-h-11 text-left disabled:cursor-not-allowed disabled:text-gray-400"
+                      type="button"
+                      :disabled="onboardingReachableStep < 1"
+                      @click="selectOnboardingStep(1)"
+                    >
+                      {{ t('user.apiKeyStepTitle') }}
+                    </button>
+                  </template>
+                </ElStep>
+                <ElStep>
+                  <template #title>
+                    <button
+                      data-testid="onboarding-step-button-2"
+                      class="min-h-11 text-left disabled:cursor-not-allowed disabled:text-gray-400"
+                      type="button"
+                      :disabled="onboardingReachableStep < 2"
+                      @click="selectOnboardingStep(2)"
+                    >
+                      {{ t('user.configurationMethodsTitle') }}
+                    </button>
+                  </template>
+                </ElStep>
               </ElSteps>
             </div>
 
-            <div class="mt-5 space-y-4">
-              <section class="rounded-lg border border-gray-200 p-4">
+            <div class="mt-5">
+              <section v-if="onboardingVisibleStep === 0" data-testid="onboarding-step-0" class="py-1">
                 <div class="flex items-start justify-between gap-4">
                   <div>
                     <h3 class="text-base font-semibold text-gray-900">{{ t('user.accessTitle') }}</h3>
@@ -740,7 +796,7 @@ onMounted(loadProviders)
                 </div>
               </section>
 
-              <section class="rounded-lg border border-gray-200 p-4">
+              <section v-else-if="onboardingVisibleStep === 1" data-testid="onboarding-step-1" class="py-1">
                 <div class="flex items-start justify-between gap-4">
                   <div>
                     <h3 class="text-base font-semibold text-gray-900">{{ t('user.apiKeyStepTitle') }}</h3>
@@ -898,9 +954,9 @@ onMounted(loadProviders)
               </section>
 
               <section
-                v-if="showConfigurationMethods"
+                v-else-if="onboardingVisibleStep === 2 && showConfigurationMethods"
                 data-testid="configuration-methods"
-                class="rounded-lg border border-gray-200 p-4"
+                class="py-1"
               >
                 <h3 class="text-base font-semibold text-gray-900">{{ t('user.configurationMethodsTitle') }}</h3>
                 <p class="mt-1 text-sm text-gray-600">{{ t('user.configurationMethodsHelp') }}</p>

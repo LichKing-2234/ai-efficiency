@@ -41,6 +41,13 @@ const selectedProviderValue = computed({
     selectedProviderId.value = value === 0 ? null : value
   },
 })
+const providerOptions = computed(() => {
+  const currentProvider = repo.value.edges?.scm_provider
+  if (!currentProvider || providers.value.some((provider) => provider.id === currentProvider.id)) {
+    return providers.value
+  }
+  return [currentProvider as SCMProvider, ...providers.value]
+})
 const bindingSaving = ref(false)
 const bindingMessage = ref('')
 const bindingMessageTone = ref<'success' | 'error'>('success')
@@ -529,7 +536,7 @@ onUnmounted(() => {
       :teleported="false"
     >
       <ElOption :value="0" :label="t('repoDetail.unbound')" />
-      <ElOption v-for="provider in providers" :key="provider.id" :value="provider.id" :label="provider.name" />
+      <ElOption v-for="provider in providerOptions" :key="provider.id" :value="provider.id" :label="provider.name" />
     </ElSelect>
     <div class="flex gap-2">
       <ElButton
@@ -569,7 +576,7 @@ onUnmounted(() => {
       {{ bindingLabel() }}
     </ElTag>
   </div>
-  <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+  <div data-testid="repo-detail-health-metrics" class="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
     <div class="rounded-md bg-slate-50 p-3">
       <div class="text-xs uppercase tracking-wide text-slate-500">{{ t('repos.defaultBranch') }}</div>
       <div class="mt-1 font-medium text-slate-900">{{ repo.default_branch }}</div>
@@ -638,7 +645,7 @@ onUnmounted(() => {
     </div>
   </div>
 
-  <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+  <div data-testid="repo-detail-pr-metrics" class="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-5">
     <div class="rounded-md border border-slate-200 p-3">
       <div class="text-xs uppercase tracking-wide text-slate-500">{{ t('repoDetail.totalPrs') }}</div>
       <div class="mt-1 text-xl font-semibold text-slate-900">{{ prUsageSummary.total }}</div>

@@ -282,11 +282,11 @@ onMounted(() => {
 <template>
   <AppLayout>
     <div class="space-y-6">
-      <UsageCenterTabs active="quota-reset" show-quota-reset />
       <div>
         <h1 class="text-2xl font-semibold text-slate-950">{{ t('quotaReset.title') }}</h1>
         <p class="mt-1 text-sm text-slate-600">{{ t('quotaReset.subtitle') }}</p>
       </div>
+      <UsageCenterTabs active="quota-reset" show-quota-reset />
 
       <section class="space-y-3" aria-label="Quota reset queues and filters">
         <ElRadioGroup
@@ -342,22 +342,22 @@ onMounted(() => {
         </ElRadioGroup>
 
         <div class="flex flex-wrap items-center justify-between gap-3">
-          <ElRadioGroup
-            v-model="activeFilter"
-            data-testid="quota-reset-status-filters"
-            size="small"
-            class="max-w-full"
-          >
-            <ElRadioButton
-              v-for="filter in filters"
-              :key="filter"
-              :value="filter"
-              :data-testid="`quota-reset-filter-${filter}`"
-              @click="activeFilter = filter"
+          <label class="flex min-w-0 flex-1 items-center gap-2 text-sm text-slate-600 sm:flex-none">
+            <span class="shrink-0">{{ t('quotaReset.statusFilter') }}</span>
+            <ElSelect
+              v-model="activeFilter"
+              data-testid="quota-reset-status-filter"
+              class="flex-1 sm:w-44 sm:flex-none"
             >
-              {{ filterLabel(filter) }}
-            </ElRadioButton>
-          </ElRadioGroup>
+              <ElOption
+                v-for="filter in filters"
+                :key="filter"
+                :value="filter"
+                :label="filterLabel(filter)"
+                :data-testid="`quota-reset-filter-${filter}`"
+              />
+            </ElSelect>
+          </label>
           <ElButton
             data-testid="quota-reset-refresh"
             :loading="currentQueue.status === 'loading'"

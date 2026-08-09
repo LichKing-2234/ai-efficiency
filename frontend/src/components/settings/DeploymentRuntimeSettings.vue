@@ -85,8 +85,8 @@ async function handleCheckUpdates() {
             <div class="text-sm text-gray-500">{{ t('settings.currentVersion') }}</div>
             <div class="text-lg font-semibold text-gray-900">{{ systemVersion?.version.version || t('settings.unknown') }}</div>
           </div>
-          <ElTag type="info">
-            {{ systemVersion?.check_enabled === false ? t('settings.versionCheckUnavailable') : t('settings.checkUpdates') }}
+          <ElTag data-testid="deployment-update-check-status" type="info">
+            {{ systemVersion?.check_enabled === false ? t('settings.versionCheckUnavailable') : t('settings.updateChecksEnabled') }}
           </ElTag>
         </div>
 

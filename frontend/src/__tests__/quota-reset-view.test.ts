@@ -549,7 +549,8 @@ describe('QuotaResetView', () => {
 
     const wrapper = await mountQuotaResetView()
     await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
-    await wrapper.get('[data-testid="quota-reset-filter-processed"]').trigger('click')
+    wrapper.findComponent({ name: 'ElSelect' }).vm.$emit('update:modelValue', 'processed')
+    await flushPromises()
 
     expect(api.listQuotaResetApprovals).toHaveBeenCalledWith({ page: 2, page_size: 100 })
     expect(wrapper.text()).toContain('Archived Group')
@@ -694,9 +695,11 @@ describe('QuotaResetView', () => {
     expect(wrapper.get('[data-testid="quota-reset-tab-admin-count"]').classes()).toContain('sm:!inline-flex')
     expect((queueSelector.get('[data-testid="quota-reset-tab-mine"] input').element as HTMLInputElement).checked).toBe(true)
 
-    const statusFilters = wrapper.get('[data-testid="quota-reset-status-filters"]')
-    expect(statusFilters.classes()).toContain('el-radio-group')
-    expect((statusFilters.get('[data-testid="quota-reset-filter-all"] input').element as HTMLInputElement).checked).toBe(true)
+    const statusFilter = wrapper.get('[data-testid="quota-reset-status-filter"]')
+    expect(statusFilter.classes()).toContain('el-select')
+    expect(statusFilter.classes()).toContain('flex-1')
+    expect(statusFilter.attributes('data-testid')).toBe('quota-reset-status-filter')
+    expect(wrapper.text()).toContain('Status')
   })
 
   it('requires a decision comment and shows workflow history', async () => {

@@ -15,7 +15,7 @@ const { languageToggleLabel, t, toggleLocale } = useI18n()
 
 <template>
   <ElementPlusLocaleProvider>
-    <div class="min-h-screen bg-slate-50">
+    <div class="mobile-touch-surface min-h-screen bg-slate-50">
       <div class="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-5 sm:px-6 lg:px-8">
         <header class="flex items-center justify-between gap-4">
           <div class="min-w-0">

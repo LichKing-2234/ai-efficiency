@@ -502,12 +502,13 @@ function repoPrimaryAction(repo: RepoConfig) {
             <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-900">{{ t('repos.health') }}</h2>
             <p class="mt-1 text-sm text-slate-600">{{ t('repos.healthHelp') }}</p>
           </div>
-          <div class="flex flex-wrap gap-3">
+          <div data-testid="repo-health-actions" class="grid w-full grid-cols-1 gap-1 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
             <el-button
               v-if="auth.isAdmin"
               data-testid="repo-auto-bind-button"
               type="success"
               link
+              class="!m-0 min-h-11 w-full !justify-start sm:w-auto"
               :loading="autoBindLoading"
               :disabled="autoBindLoading"
               @click="handleAutoBindUnbound"
@@ -519,18 +520,19 @@ function repoPrimaryAction(repo: RepoConfig) {
               data-testid="repo-repair-webhooks-button"
               type="primary"
               link
+              class="!m-0 min-h-11 w-full !justify-start sm:w-auto"
               :loading="webhookRepairLoading"
               :disabled="webhookRepairLoading"
               @click="handleRepairFailedWebhooks"
             >
               {{ webhookRepairLoading ? t('repos.webhookRepairing') : t('repos.repairWebhooks') }}
             </el-button>
-            <el-button type="primary" link @click="applyBindingFilter('unbound')">
+            <el-button class="!m-0 min-h-11 w-full !justify-start sm:w-auto" type="primary" link @click="applyBindingFilter('unbound')">
               {{ t('repos.reviewNeedsBinding') }}
             </el-button>
           </div>
         </div>
-        <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div data-testid="repo-health-metrics" class="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
           <div class="rounded-md border border-slate-200 bg-slate-50 p-3">
             <div class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ t('repos.totalRepositories') }}</div>
             <div class="mt-2 text-2xl font-semibold text-slate-900">{{ healthSummary.total }}</div>

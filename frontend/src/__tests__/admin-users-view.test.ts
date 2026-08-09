@@ -502,6 +502,18 @@ describe('AdminUsersView', () => {
     expect(wrapper.text()).toContain('Page 1 / 6')
 	  })
 
+  it('puts the user list before collapsed subscription tools in the visual workflow', async () => {
+    const { wrapper } = await mountAdminUsersView()
+
+    expect(wrapper.get('[data-testid="admin-users-list-panel"]').classes()).toContain('order-4')
+    expect(wrapper.get('[data-testid="admin-users-subscription-panel"]').classes()).toContain('order-5')
+    expect(wrapper.get('[data-testid="admin-users-subscription-tools"]').attributes('style')).toContain('display: none')
+
+    await wrapper.get('[data-testid="admin-users-subscription-toggle"]').trigger('click')
+
+    expect(wrapper.get('[data-testid="admin-users-subscription-tools"]').attributes('style')).toBe('')
+  })
+
   it('renders user-list failures with Element Plus feedback', async () => {
     const { wrapper } = await mountAdminUsersView('/admin/users', async () => {
       throw new Error('synthetic user list failure')

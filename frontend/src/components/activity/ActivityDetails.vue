@@ -52,8 +52,9 @@ function requestIDState(value: ActivityBucketDetail['request_ids']['state']) {
 </script>
 
 <template>
-  <div data-testid="activity-wide-details" class="min-w-0 space-y-6">
-    <section data-testid="activity-prs" class="min-w-[320px] rounded-xl border border-slate-200 bg-white shadow-sm">
+  <div data-testid="activity-wide-details" class="min-w-0 space-y-4">
+    <div data-testid="activity-primary-details" class="grid min-w-0 gap-4 xl:grid-cols-2">
+    <section data-testid="activity-prs" class="min-w-[320px] rounded-lg border border-slate-200 bg-white shadow-sm">
       <div class="border-b border-slate-200 px-5 py-4"><h2 class="font-semibold text-slate-950">{{ t('activity.pullRequests') }}</h2></div>
       <div v-if="activity.prs.items.length === 0" class="px-5 py-10 text-center text-sm text-slate-500">{{ t('activity.noPullRequests') }}</div>
       <article v-for="pr in activity.prs.items" :key="`${pr.repo_config_id}:${pr.pr_record_id}`" class="border-b border-slate-100 px-5 py-4 last:border-0">
@@ -84,7 +85,7 @@ function requestIDState(value: ActivityBucketDetail['request_ids']['state']) {
       />
     </section>
 
-    <section data-testid="activity-commits" class="min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm">
+    <section data-testid="activity-commits" class="min-w-0 rounded-lg border border-slate-200 bg-white shadow-sm">
       <div class="border-b border-slate-200 px-5 py-4"><h2 class="font-semibold text-slate-950">{{ t('activity.commits') }}</h2></div>
       <div class="divide-y divide-slate-100">
         <div
@@ -99,8 +100,14 @@ function requestIDState(value: ActivityBucketDetail['request_ids']['state']) {
         </div>
       </div>
     </section>
+    </div>
 
-    <section class="min-w-[320px] rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div
+      data-testid="activity-diagnostics"
+      class="grid min-w-0 gap-4"
+      :class="activity.bucket_access ? 'xl:grid-cols-[minmax(18rem,0.7fr)_minmax(0,1.3fr)]' : ''"
+    >
+    <section class="min-w-[320px] rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <h2 class="font-semibold text-slate-950">{{ t('activity.dataQuality') }}</h2>
       <dl class="mt-4 grid gap-3 text-sm sm:grid-cols-3">
         <div><dt class="text-slate-500">{{ t('activity.unbound') }}</dt><dd class="mt-1 font-semibold text-slate-900">{{ activity.quality.unbound_buckets }}</dd></div>
@@ -109,7 +116,7 @@ function requestIDState(value: ActivityBucketDetail['request_ids']['state']) {
       </dl>
     </section>
 
-    <section v-if="activity.bucket_access" data-testid="activity-buckets" class="min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm">
+    <section v-if="activity.bucket_access" data-testid="activity-buckets" class="min-w-0 rounded-lg border border-slate-200 bg-white shadow-sm">
       <div class="border-b border-slate-200 px-5 py-4"><h2 class="font-semibold text-slate-950">{{ t('activity.bucketDetails') }}</h2></div>
       <article v-for="bucket in activity.buckets.items" :key="bucket.bucket_id" class="border-b border-slate-100 px-5 py-4 last:border-0">
         <ElButton
@@ -159,5 +166,6 @@ function requestIDState(value: ActivityBucketDetail['request_ids']['state']) {
         />
       </article>
     </section>
+    </div>
   </div>
 </template>

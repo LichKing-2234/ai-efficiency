@@ -936,6 +936,26 @@ def content_fits_containers(page, selectors):
     return True
 
 
+def controls_meet_touch_height(page, selectors, minimum=44):
+    for selector in selectors:
+        elements = page.locator(selector)
+        if elements.count() == 0:
+            return False
+        if not elements.evaluate_all("""(elements, minimum) => elements
+            .filter((element) => {
+                const style = window.getComputedStyle(element)
+                return element.getClientRects().length > 0
+                    && style.display !== 'none'
+                    && style.visibility !== 'hidden'
+            })
+            .every((element) => {
+                const control = element.closest('.el-button, .el-input, .el-select, .el-radio-button') ?? element
+                return control.getBoundingClientRect().height >= minimum
+            })""", minimum):
+            return False
+    return True
+
+
 def protected_shell_state(page, width):
     menu = page.locator("header button:has-text('Menu')")
     sidebar = page.locator("aside").first
@@ -1032,6 +1052,10 @@ def visit_matrix_case(page, role, case, viewport):
             "states": states_visible,
             "content_fit": content_fits,
             "shell": protected_shell_state(page, width),
+            "touch_targets": width >= 768 or controls_meet_touch_height(
+                page,
+                ("header button:has-text('Menu')", "header button"),
+            ),
             "overflow": (
                 overflow["documentWidth"] <= overflow["viewport"]
                 and overflow["bodyWidth"] <= overflow["viewport"]
@@ -1103,6 +1127,10 @@ def test_route_role_viewport_matrix(page):
                     "path": urlparse(page.url).path == expected_path,
                     "critical": critical.is_visible(),
                     "auth_shell": page.locator("[data-testid='auth-language-toggle']").is_visible(),
+                    "touch_targets": width >= 768 or controls_meet_touch_height(
+                        page,
+                        ("[data-testid='auth-language-toggle']", case["selector"]),
+                    ),
                     "overflow": overflow["documentWidth"] <= overflow["viewport"],
                     "page_errors": not page_errors,
                 }

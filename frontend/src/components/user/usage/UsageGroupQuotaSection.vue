@@ -110,7 +110,11 @@ function quotaTitle(rangeLabel?: string) {
       :title="props.quotas?.message || t('usageDashboard.groupQuotasUnavailable')"
     />
 
-    <div v-else class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+    <div
+      v-else
+      class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3"
+      :class="(props.quotas?.groups?.length ?? 0) === 1 ? 'max-w-xl lg:grid-cols-1 2xl:grid-cols-1' : ''"
+    >
       <article
         v-for="group in props.quotas?.groups ?? []"
         :key="group.group_id"
