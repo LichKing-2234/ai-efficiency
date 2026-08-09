@@ -162,11 +162,9 @@ const rows = [
   await measure('Chart runtime', chartRuntimeFiles),
 ]
 
-// Keep sub-percent headroom above the Node 20 CI baseline so zlib patch-level
-// output differences do not masquerade as application bundle regressions.
 for (const [row, maximum] of [
-  [initialShellRow, 73_000],
-  [defaultUsageRow, 159_000],
+  [initialShellRow, 72_641],
+  [defaultUsageRow, 158_002],
   [adminUsersRow, 253_909],
 ]) {
   assert(row.gzip <= maximum, `${row.label} gzip ${row.gzip} exceeds budget ${maximum}`)

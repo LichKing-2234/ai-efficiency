@@ -6,9 +6,10 @@ import { disableDirectoryRelayUser, listDirectoryOffboardingCandidates } from '@
 import { useI18n } from '@/i18n'
 import { useWorkItemsStore } from '@/stores/workItems'
 import type { DirectoryOffboardingCandidate } from '@/types'
+import { authSourceLabel, offboardingReasonLabel, offboardingStatusLabel } from '@/utils/displayLabels'
 
 const route = useRoute()
-const { t } = useI18n()
+const { locale, t } = useI18n()
 const workItems = useWorkItemsStore()
 const candidates = ref<DirectoryOffboardingCandidate[]>([])
 const q = ref(typeof route.query.q === 'string' ? route.query.q : '')
@@ -75,6 +76,23 @@ async function nextPage() {
 
 function confirmed(candidate: DirectoryOffboardingCandidate) {
   return (confirmations.value[candidate.user_id] || '').trim().toLowerCase() === candidate.email.trim().toLowerCase()
+}
+
+function formatTimestamp(value: string | null | undefined) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat(locale.value, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date)
+}
+
+function offboardingStatusType(status: string | null | undefined) {
+  if (status === 'succeeded') return 'success'
+  if (status === 'running') return 'warning'
+  if (status === 'failed' || status === 'partial_failed') return 'danger'
+  return 'info'
 }
 
 function openDisableDialog(candidate: DirectoryOffboardingCandidate) {
@@ -178,7 +196,7 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
             v-else
             data-testid="offboarding-candidate-grid"
             class="grid gap-4"
-            :class="candidates.length === 1 ? 'max-w-2xl grid-cols-1' : 'lg:grid-cols-2'"
+            :class="candidates.length === 1 ? 'grid-cols-1' : 'lg:grid-cols-2'"
           >
           <ElCard
             v-for="candidate in candidates"
@@ -191,23 +209,40 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
               <div class="min-w-0">
                 <div class="truncate font-medium text-gray-900">{{ candidate.username }}</div>
                 <div class="break-all text-sm text-gray-500">{{ candidate.email }}</div>
-                <ElTag class="mt-2" effect="plain">{{ candidate.auth_source }}</ElTag>
+                <ElTag class="mt-2" effect="plain">{{ authSourceLabel(candidate.auth_source, t) }}</ElTag>
               </div>
             </template>
 
-            <dl class="space-y-3 text-sm">
+            <dl class="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-3">
               <div>
                 <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ t('directoryOffboarding.relay') }}</dt>
                 <dd class="mt-1 break-all text-gray-700">{{ candidate.relay_user_id }}</dd>
               </div>
               <div>
                 <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ t('directoryOffboarding.reason') }}</dt>
-                <dd class="mt-1 break-words text-gray-700">{{ candidate.reason }}</dd>
+                <dd class="mt-1 break-words text-gray-700">{{ offboardingReasonLabel(candidate.reason, t) }}</dd>
               </div>
               <div>
-                <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ t('directoryOffboarding.confirmation') }}</dt>
-                <dd class="mt-1 break-all text-gray-500">
-                  {{ t('adminUsers.disableUserConfirmHint', { email: candidate.email }) }}
+                <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ t('directoryOffboarding.latestRun') }}</dt>
+                <dd class="mt-1 text-gray-700">
+                  {{ t('directoryOffboarding.runSummary', { id: candidate.directory_run_id }) }}
+                  <span v-if="formatTimestamp(candidate.directory_run_at)" class="text-gray-500"> · {{ formatTimestamp(candidate.directory_run_at) }}</span>
+                </dd>
+              </div>
+              <div>
+                <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ t('directoryOffboarding.actionStatus') }}</dt>
+                <dd class="mt-1">
+                  <ElTag :type="offboardingStatusType(candidate.offboarding_status)" size="small">
+                    {{ offboardingStatusLabel(candidate.offboarding_status, t) }}
+                  </ElTag>
+                </dd>
+              </div>
+              <div>
+                <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ t('directoryOffboarding.tokenAccess') }}</dt>
+                <dd class="mt-1 text-gray-700">
+                  {{ candidate.token_valid_after
+                    ? t('directoryOffboarding.tokenRevoked', { time: formatTimestamp(candidate.token_valid_after) })
+                    : t('directoryOffboarding.tokenNotRevoked') }}
                 </dd>
               </div>
             </dl>

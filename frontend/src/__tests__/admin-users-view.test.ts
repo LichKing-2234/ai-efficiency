@@ -492,7 +492,8 @@ describe('AdminUsersView', () => {
 	    expect(wrapper.text()).toContain('Department Alpha')
 	    expect(wrapper.text()).toContain('alice')
     expect(wrapper.text()).toContain('alice@example.com')
-    expect(wrapper.text()).toContain('ldap')
+    expect(wrapper.text()).toContain('LDAP')
+    expect(wrapper.text()).not.toContain('ldap')
     expect(wrapper.text()).toContain('42')
 	    expect(wrapper.text()).toContain('Configured')
     expect(wrapper.get('[data-admin-user-list="desktop"]').find('.el-table').exists()).toBe(true)
@@ -512,6 +513,16 @@ describe('AdminUsersView', () => {
     await wrapper.get('[data-testid="admin-users-subscription-toggle"]').trigger('click')
 
     expect(wrapper.get('[data-testid="admin-users-subscription-tools"]').attributes('style')).toBe('')
+  })
+
+  it('groups desktop user timestamps into one scannable cell', async () => {
+    const { wrapper } = await mountAdminUsersView()
+
+    const timestamps = wrapper.get('[data-testid="admin-user-timestamps-7"]')
+    expect(timestamps.text()).toContain('Created')
+    expect(timestamps.text()).toContain('Updated')
+    expect(timestamps.text()).toContain('5/26/2026, 8:00:00 AM')
+    expect(timestamps.text()).toContain('5/26/2026, 9:00:00 AM')
   })
 
   it('renders user-list failures with Element Plus feedback', async () => {
@@ -1257,7 +1268,7 @@ describe('AdminUsersView', () => {
     const { wrapper } = await mountAdminUsersView()
 
     expect(wrapper.text()).toContain('用户与接入')
-    expect(wrapper.text()).toContain('管理本地用户、relay 身份映射和凭据风险操作')
+    expect(wrapper.text()).toContain('管理平台用户、AI 服务身份映射和凭据访问风险')
     expect(wrapper.text()).toContain('搜索')
     expect(wrapper.text()).toContain('本地用户')
     expect(wrapper.text()).toContain('复制明文')
@@ -1483,6 +1494,7 @@ describe('AdminUsersView', () => {
     expect(getAdminUserSubscriptionJob).toHaveBeenCalledWith(12)
 	    expect(wrapper.text()).toContain('Completed: 1 succeeded, 0 skipped, 0 failed')
 	    expect(wrapper.text()).toContain('alice')
+	    expect(wrapper.get('[data-testid="subscription-result-7"]').text()).toContain('Succeeded')
 	  })
 
 	  it('passes department filters to current-filter subscription jobs', async () => {
@@ -1734,6 +1746,30 @@ describe('AdminUsersView', () => {
     expect(wrapper.text()).toContain('Completed: 2 succeeded, 1 skipped, 0 failed')
   })
 
+  it('keeps a polling error visible without permanently locking the subscription panel open', async () => {
+    vi.useFakeTimers()
+    const { getAdminUserSubscriptionJob, getLatestAdminUserSubscriptionJob } = await import('@/api/adminUsers')
+    ;(getLatestAdminUserSubscriptionJob as any).mockResolvedValue({
+      data: { data: subscriptionJob({ id: 47, status: 'running', phase: 'processing', total_count: 3, processed_count: 1 }) },
+    })
+    ;(getAdminUserSubscriptionJob as any).mockRejectedValue(new Error('subscription polling unavailable'))
+
+    const { wrapper } = await mountAdminUsersView()
+
+    expect(wrapper.get('[data-testid="admin-users-subscription-toggle"]').attributes('disabled')).toBeDefined()
+
+    await vi.advanceTimersByTimeAsync(1500)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('subscription polling unavailable')
+    expect(wrapper.get('[data-testid="admin-users-subscription-tools"]').attributes('style')).toBe('')
+    expect(wrapper.get('[data-testid="admin-users-subscription-toggle"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-testid="admin-users-subscription-toggle"]').text()).toBe('Hide')
+
+    await wrapper.get('[data-testid="admin-users-subscription-toggle"]').trigger('click')
+    expect(wrapper.get('[data-testid="admin-users-subscription-tools"]').attributes('style')).toContain('display: none')
+  })
+
   it('shows the latest completed subscription job on mount without polling it', async () => {
     vi.useFakeTimers()
     const { getAdminUserSubscriptionJob, getLatestAdminUserSubscriptionJob } = await import('@/api/adminUsers')
@@ -1745,6 +1781,15 @@ describe('AdminUsersView', () => {
 
     expect(wrapper.text()).toContain('Completed: 2 succeeded, 0 skipped, 0 failed')
     expect(wrapper.text()).toContain('2 / 2')
+    expect(wrapper.get('[data-testid="admin-users-subscription-tools"]').attributes('style')).toContain('display: none')
+    expect(wrapper.get('[data-testid="admin-users-subscription-toggle"]').text()).toBe('Subscription management')
+
+    await wrapper.get('[data-testid="admin-users-subscription-toggle"]').trigger('click')
+    expect(wrapper.get('[data-testid="admin-users-subscription-tools"]').attributes('style')).toBe('')
+    expect(wrapper.get('[data-testid="admin-users-subscription-toggle"]').text()).toBe('Hide')
+
+    await wrapper.get('[data-testid="admin-users-subscription-toggle"]').trigger('click')
+    expect(wrapper.get('[data-testid="admin-users-subscription-tools"]').attributes('style')).toContain('display: none')
 
     await vi.advanceTimersByTimeAsync(1500)
     await flushPromises()
@@ -1763,6 +1808,9 @@ describe('AdminUsersView', () => {
     })
 
     const { wrapper } = await mountAdminUsersView()
+
+    expect(wrapper.get('[data-testid="admin-users-subscription-tools"]').attributes('style')).toBe('')
+    expect(wrapper.get('[data-testid="admin-users-subscription-toggle"]').text()).toBe('Hide')
 
     expect((wrapper.get('[data-testid="select-user-7"]').get('input').element as HTMLInputElement).disabled).toBe(true)
     expect((wrapper.get('[data-testid="select-all-users"]').get('input').element as HTMLInputElement).disabled).toBe(true)

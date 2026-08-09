@@ -8,6 +8,7 @@ import { autoBindUnboundRepos, createRepoDirect, repairFailedWebhooks } from '@/
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from '@/i18n'
 import type { RepoConfig, RepoInventoryProviderSummary, RepoInventoryScopeSummary, RepoListParams, SCMProvider } from '@/types'
+import { repositoryStatusLabel, scmProviderTypeLabel } from '@/utils/displayLabels'
 
 type BindingFilter = 'all' | 'bound' | 'unbound'
 
@@ -468,6 +469,12 @@ async function handleRepairFailedWebhooks() {
 function repoPrimaryAction(repo: RepoConfig) {
   return repo.binding_state === 'unbound' ? t('repos.bindProvider') : t('repos.viewPRUsage')
 }
+
+function repoStatusType(status: string) {
+  if (status === 'active') return 'success'
+  if (status === 'webhook_failed') return 'danger'
+  return 'info'
+}
 </script>
 
 <template>
@@ -575,7 +582,7 @@ function repoPrimaryAction(repo: RepoConfig) {
             >
               <span class="min-w-0">
                 <span class="block truncate text-sm font-semibold">{{ provider.name }}</span>
-                <span class="mt-0.5 block truncate text-xs text-slate-500">{{ provider.type }}</span>
+                <span class="mt-0.5 block truncate text-xs text-slate-500">{{ scmProviderTypeLabel(provider.type, t) }}</span>
               </span>
               <span class="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{{ provider.total_repos }}</span>
             </el-button>
@@ -635,14 +642,16 @@ function repoPrimaryAction(repo: RepoConfig) {
                 :class="scope.scope === selectedScope ? 'border-teal-500 bg-white shadow-sm' : 'border-transparent bg-transparent'"
                 @click="selectScope(scope)"
               >
-                <span class="flex items-center justify-between gap-3">
-                  <span class="min-w-0 truncate text-sm font-semibold text-slate-900">{{ scope.scope }}</span>
-                  <span class="shrink-0 text-xs text-slate-500">{{ t('repos.scopeCount', { count: scope.total_repos }) }}</span>
-                </span>
-                <span class="mt-1 flex items-center gap-2 text-xs text-slate-500">
-                  <span>{{ t('repos.bound') }} {{ scope.bound_repos }}</span>
-                  <span v-if="scope.unbound_repos > 0" class="text-amber-700">{{ t('repos.unbound') }} {{ scope.unbound_repos }}</span>
-                  <span v-if="scope.webhook_failed_repos > 0" class="text-red-700">Webhook {{ scope.webhook_failed_repos }}</span>
+                <span data-testid="repo-scope-option-content" class="flex w-full min-w-0 flex-col items-stretch">
+                  <span data-testid="repo-scope-option-heading" class="flex w-full items-center justify-between gap-3">
+                    <span class="min-w-0 truncate text-sm font-semibold text-slate-900">{{ scope.scope }}</span>
+                    <span class="shrink-0 text-xs text-slate-500">{{ t('repos.scopeCount', { count: scope.total_repos }) }}</span>
+                  </span>
+                  <span data-testid="repo-scope-option-summary" class="mt-1 flex w-full items-center gap-2 text-xs text-slate-500">
+                    <span>{{ t('repos.bound') }} {{ scope.bound_repos }}</span>
+                    <span v-if="scope.unbound_repos > 0" class="text-amber-700">{{ t('repos.unbound') }} {{ scope.unbound_repos }}</span>
+                    <span v-if="scope.webhook_failed_repos > 0" class="text-red-700">Webhook {{ scope.webhook_failed_repos }}</span>
+                  </span>
                 </span>
               </el-button>
             </div>
@@ -669,7 +678,7 @@ function repoPrimaryAction(repo: RepoConfig) {
           v-for="repo in repoStore.repos"
           :key="repo.id"
           data-testid="repo-row"
-          class="cursor-pointer p-4 hover:bg-slate-50 md:grid md:grid-cols-[minmax(0,1fr)_minmax(240px,0.8fr)_minmax(180px,auto)] md:items-center md:gap-5 md:px-5"
+          class="cursor-pointer p-4 hover:bg-slate-50 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(240px,0.8fr)_minmax(180px,auto)] lg:items-center lg:gap-5 lg:px-5"
           role="button"
           tabindex="0"
           @click="goToDetail(repo)"
@@ -692,17 +701,17 @@ function repoPrimaryAction(repo: RepoConfig) {
                       {{ repo.binding_state === 'bound' ? t('repos.bound') : t('repos.needsBinding') }}
                     </el-tag>
                   </div>
-          <dl class="mt-3 grid grid-cols-2 gap-3 text-xs md:mt-0">
+          <dl class="mt-3 grid grid-cols-2 gap-3 text-xs lg:mt-0">
                     <div>
                       <dt class="text-gray-400">{{ t('repos.status') }}</dt>
-                      <dd class="mt-1"><el-tag :type="repo.status === 'active' ? 'success' : repo.status === 'webhook_failed' ? 'danger' : 'info'" size="small">{{ repo.status }}</el-tag></dd>
+                      <dd class="mt-1"><el-tag :type="repoStatusType(repo.status)" size="small">{{ repositoryStatusLabel(repo.status, t) }}</el-tag></dd>
                     </div>
                     <div>
                       <dt class="text-gray-400">{{ t('repos.binding') }}</dt>
                       <dd class="mt-1 text-gray-800">{{ repo.binding_state === 'bound' ? t('repos.bound') : t('repos.needsBinding') }}</dd>
                     </div>
                   </dl>
-          <div class="mt-3 flex flex-wrap items-center gap-3 text-sm md:mt-0 md:justify-end" @click.stop>
+          <div class="mt-3 flex flex-wrap items-center gap-3 text-sm lg:mt-0 lg:justify-end" @click.stop>
                     <el-button type="primary" link @click="goToDetail(repo)">
                       {{ repoPrimaryAction(repo) }}
                     </el-button>
@@ -767,7 +776,7 @@ function repoPrimaryAction(repo: RepoConfig) {
           <div>
             <label class="block text-sm font-medium text-gray-700">{{ t('repos.scmProvider') }}</label>
             <el-select v-model="addForm.scm_provider_id" data-testid="repo-provider-select" class="mt-1 w-full">
-              <el-option v-for="p in providers" :key="p.id" :value="p.id" :label="`${p.name} (${p.type})`" />
+              <el-option v-for="p in providers" :key="p.id" :value="p.id" :label="`${p.name} (${scmProviderTypeLabel(p.type, t)})`" />
             </el-select>
             <p v-if="providers.length === 0" class="mt-1 text-xs text-red-500">{{ t('repos.noScmProviders') }}</p>
           </div>

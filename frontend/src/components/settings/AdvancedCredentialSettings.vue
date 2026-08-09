@@ -6,6 +6,7 @@ import { useWideContentLayout } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
 import { useSettingsResourcesStore } from '@/stores/settingsResources'
 import type { Credential } from '@/types'
+import { credentialKindLabel, credentialSummaryLabel } from '@/utils/displayLabels'
 
 const { t } = useI18n()
 const isDesktop = useWideContentLayout()
@@ -31,6 +32,10 @@ const credentialFormLoading = ref(false)
 onMounted(() => {
   void settingsResources.loadCredentials()
 })
+
+function tableCredential(row: unknown) {
+  return row as Credential
+}
 
 function closeCredentialDialog() {
   showCredentialDialog.value = false
@@ -171,12 +176,12 @@ function cancelCredentialDelete(event: MouseEvent, close: (event: MouseEvent) =>
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
               <div class="truncate text-sm font-medium text-gray-900">{{ cred.name }}</div>
-              <div class="mt-1 truncate text-xs text-gray-500">{{ cred.kind }}</div>
+              <div class="mt-1 truncate text-xs text-gray-500">{{ credentialKindLabel(cred.kind, t) }}</div>
             </div>
             <ElTag type="info">{{ cred.usage_count }}</ElTag>
           </div>
           <div class="mt-3 break-all rounded bg-gray-50 p-2 font-mono text-xs text-gray-500">
-            {{ JSON.stringify(cred.summary || {}) }}
+            {{ credentialSummaryLabel(cred.summary, t) }}
           </div>
           <div class="mt-3 flex flex-wrap gap-3 text-sm">
             <ElButton :data-testid="`credential-edit-${cred.id}`" link type="primary" @click="openEditCredentialDialog(cred)">{{ t('settings.edit') }}</ElButton>
@@ -215,24 +220,21 @@ function cancelCredentialDelete(event: MouseEvent, close: (event: MouseEvent) =>
           </div>
         </article>
       </div>
-      <table v-if="isDesktop && credentials.length > 0" class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-          <tr>
-            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.name') }}</th>
-            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.kind') }}</th>
-            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.usage') }}</th>
-            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.summary') }}</th>
-            <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-200">
-          <tr v-for="cred in credentials" :key="cred.id">
-            <td class="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">{{ cred.name }}</td>
-            <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-600">{{ cred.kind }}</td>
-            <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-600">{{ cred.usage_count }}</td>
-            <td class="break-all px-6 py-4 font-mono text-xs text-gray-500">{{ JSON.stringify(cred.summary || {}) }}</td>
-            <td class="whitespace-nowrap px-6 py-4 text-right text-sm space-x-3">
-              <ElButton :data-testid="`credential-edit-${cred.id}`" link type="primary" @click="openEditCredentialDialog(cred)">{{ t('settings.edit') }}</ElButton>
+      <ElTable v-if="isDesktop && credentials.length > 0" :data="credentials" row-key="id" class="w-full">
+        <ElTableColumn prop="name" :label="t('settings.name')" min-width="160" />
+        <ElTableColumn :label="t('settings.kind')" min-width="170">
+          <template #default="{ row: cred }">{{ credentialKindLabel(cred.kind, t) }}</template>
+        </ElTableColumn>
+        <ElTableColumn prop="usage_count" :label="t('settings.usage')" width="90" />
+        <ElTableColumn :label="t('settings.summary')" min-width="240">
+          <template #default="{ row: cred }">
+            <span class="break-all font-mono text-xs text-gray-500">{{ credentialSummaryLabel(cred.summary, t) }}</span>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('settings.actions')" min-width="140" align="right">
+          <template #default="{ row: cred }">
+            <div class="flex justify-end gap-1">
+              <ElButton :data-testid="`credential-edit-${cred.id}`" class="!ml-0" link type="primary" @click="openEditCredentialDialog(tableCredential(cred))">{{ t('settings.edit') }}</ElButton>
               <ElPopconfirm
                 :title="`${t('settings.confirm')} ${t('settings.delete')}?`"
                 :teleported="false"
@@ -242,6 +244,7 @@ function cancelCredentialDelete(event: MouseEvent, close: (event: MouseEvent) =>
                 <template #reference>
                   <ElButton
                     :data-testid="`credential-delete-${cred.id}`"
+                    class="!ml-0"
                     :disabled="deletingCredentialId !== null"
                     link
                     type="danger"
@@ -265,10 +268,10 @@ function cancelCredentialDelete(event: MouseEvent, close: (event: MouseEvent) =>
                   >{{ t('settings.cancel') }}</ElButton>
                 </template>
               </ElPopconfirm>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            </div>
+          </template>
+        </ElTableColumn>
+      </ElTable>
     </div>
   </div>
 

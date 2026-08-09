@@ -299,6 +299,10 @@ function credentialOptionLabel(credential: Credential) {
   const preview = credentialPreview(credential)
   return preview ? `${credential.name} · ${preview}` : credential.name
 }
+
+function approverConfigRowKey(config: QuotaResetApproverConfig) {
+  return String(config.id || `${config.department_external_id}-${config.approver_user_id}`)
+}
 </script>
 
 <template>
@@ -320,57 +324,40 @@ function credentialOptionLabel(credential: Credential) {
           data-approver-config-list="desktop"
           class="mt-2 rounded-md border border-gray-200"
         >
-          <table class="min-w-full divide-y divide-gray-200 text-sm">
-            <thead class="bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
-              <tr>
-	                <th class="px-3 py-2">{{ t('quotaResetSettings.department') }}</th>
-	                <th class="px-3 py-2">{{ t('quotaResetSettings.approver') }}</th>
-	                <th class="px-3 py-2">{{ t('settings.enabled') }}</th>
-	                <th class="px-3 py-2">{{ t('settings.actions') }}</th>
-	              </tr>
-	            </thead>
-	            <tbody class="divide-y divide-gray-100 bg-white">
-	              <tr
-                  v-for="(config, index) in configs"
-                  :key="config.id || `${config.department_external_id}-${config.approver_user_id}`"
-                  data-approver-config-row
+          <ElTable :data="configs" :row-key="approverConfigRowKey" class="w-full">
+            <ElTableColumn :label="t('quotaResetSettings.department')" min-width="260">
+              <template #default="{ row: config }">
+                <div data-approver-config-row>
+                  <div class="font-medium text-slate-800">{{ config.department_display_path || config.department_external_id }}</div>
+                  <div class="mt-1 text-xs text-slate-500">{{ config.department_external_id }}</div>
+                </div>
+              </template>
+            </ElTableColumn>
+            <ElTableColumn :label="t('quotaResetSettings.approver')" min-width="220">
+              <template #default="{ row: config }">
+                <div class="font-medium text-slate-800">{{ config.approver_username || `User #${config.approver_user_id}` }}</div>
+                <div class="mt-1 text-xs text-slate-500">{{ config.approver_email || `User #${config.approver_user_id}` }}</div>
+              </template>
+            </ElTableColumn>
+            <ElTableColumn :label="t('settings.enabled')" width="100">
+              <template #default="{ row: config }"><ElSwitch v-model="config.enabled" /></template>
+            </ElTableColumn>
+            <ElTableColumn :label="t('settings.actions')" width="100" align="right">
+              <template #default="{ row: config, $index }">
+                <ElButton
+                  :data-testid="`quota-reset-config-remove-${config.id}`"
+                  link
+                  type="danger"
+                  @click="removeConfig($index)"
                 >
-	                <td class="min-w-[18rem] px-3 py-2">
-	                  <div class="font-medium text-slate-800">
-	                    {{ config.department_display_path || config.department_external_id }}
-	                  </div>
-	                  <div class="mt-1 text-xs text-slate-500">
-	                    {{ config.department_external_id }}
-	                  </div>
-	                </td>
-	                <td class="min-w-[14rem] px-3 py-2 text-gray-700">
-	                  <div class="font-medium text-slate-800">
-	                    {{ config.approver_username || `User #${config.approver_user_id}` }}
-	                  </div>
-	                  <div class="mt-1 text-xs text-slate-500">
-	                    <span v-if="config.approver_email">{{ config.approver_email }}</span>
-	                    <span v-else>User #{{ config.approver_user_id }}</span>
-	                  </div>
-	                </td>
-	                <td class="px-3 py-2 text-gray-700">
-	                  <ElSwitch v-model="config.enabled" />
-	                </td>
-	                <td class="px-3 py-2 text-right">
-	                  <ElButton
-	                    :data-testid="`quota-reset-config-remove-${config.id}`"
-	                    link
-	                    type="danger"
-	                    @click="removeConfig(index)"
-	                  >
-	                    {{ t('settings.delete') }}
-	                  </ElButton>
-	                </td>
-	              </tr>
-		              <tr v-if="!loading && !error && configs.length === 0">
-	                <td colspan="4" class="px-3 py-3 text-gray-500">{{ t('quotaResetSettings.noApprovers') }}</td>
-	              </tr>
-	            </tbody>
-	          </table>
+                  {{ t('settings.delete') }}
+                </ElButton>
+              </template>
+            </ElTableColumn>
+            <template #empty>
+              <span v-if="!loading && !error">{{ t('quotaResetSettings.noApprovers') }}</span>
+            </template>
+          </ElTable>
         </div>
         <div v-else data-approver-config-list="mobile" class="mt-2 space-y-3">
           <ElCard

@@ -5,6 +5,7 @@ import { createGroupCredential, getUserProviderModels, getUserProviders, regener
 import { useAuthStore } from '@/stores/auth'
 import { useDesktopLayout } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
+import { authSourceLabel, userRoleLabel } from '@/utils/displayLabels'
 import type {
   UserProviderTestResult,
   UserProviderModel,
@@ -645,8 +646,8 @@ onMounted(loadProviders)
             <dl class="mt-4 space-y-3 text-sm">
               <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4"><dt class="text-gray-500">{{ t('user.username') }}</dt><dd class="break-all font-medium text-gray-900">{{ auth.user?.username ?? '—' }}</dd></div>
               <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4"><dt class="text-gray-500">{{ t('user.email') }}</dt><dd class="break-all font-medium text-gray-900">{{ auth.user?.email ?? '—' }}</dd></div>
-              <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4"><dt class="text-gray-500">{{ t('user.role') }}</dt><dd class="break-all font-medium text-gray-900">{{ auth.user?.role ?? '—' }}</dd></div>
-              <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4"><dt class="text-gray-500">{{ t('user.authSource') }}</dt><dd class="break-all font-medium text-gray-900">{{ auth.user?.auth_source ?? '—' }}</dd></div>
+              <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4"><dt class="text-gray-500">{{ t('user.role') }}</dt><dd class="break-all font-medium text-gray-900">{{ userRoleLabel(auth.user?.role, t) }}</dd></div>
+              <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4"><dt class="text-gray-500">{{ t('user.authSource') }}</dt><dd class="break-all font-medium text-gray-900">{{ authSourceLabel(auth.user?.auth_source, t) }}</dd></div>
             </dl>
           </section>
 
@@ -711,40 +712,40 @@ onMounted(loadProviders)
               >
                 <ElStep>
                   <template #title>
-                    <button
+                    <ElButton
                       data-testid="onboarding-step-button-0"
-                      class="min-h-11 text-left disabled:cursor-not-allowed disabled:text-gray-400"
-                      type="button"
+                      class="!h-auto min-h-11 !whitespace-normal !p-0 text-left lg:!whitespace-nowrap"
+                      link
                       @click="selectOnboardingStep(0)"
                     >
                       {{ t('user.accessTitle') }}
-                    </button>
+                    </ElButton>
                   </template>
                 </ElStep>
                 <ElStep>
                   <template #title>
-                    <button
+                    <ElButton
                       data-testid="onboarding-step-button-1"
-                      class="min-h-11 text-left disabled:cursor-not-allowed disabled:text-gray-400"
-                      type="button"
+                      class="!h-auto min-h-11 !whitespace-normal !p-0 text-left lg:!whitespace-nowrap"
+                      link
                       :disabled="onboardingReachableStep < 1"
                       @click="selectOnboardingStep(1)"
                     >
                       {{ t('user.apiKeyStepTitle') }}
-                    </button>
+                    </ElButton>
                   </template>
                 </ElStep>
                 <ElStep>
                   <template #title>
-                    <button
+                    <ElButton
                       data-testid="onboarding-step-button-2"
-                      class="min-h-11 text-left disabled:cursor-not-allowed disabled:text-gray-400"
-                      type="button"
+                      class="!h-auto min-h-11 !whitespace-normal !p-0 text-left lg:!whitespace-nowrap"
+                      link
                       :disabled="onboardingReachableStep < 2"
                       @click="selectOnboardingStep(2)"
                     >
                       {{ t('user.configurationMethodsTitle') }}
-                    </button>
+                    </ElButton>
                   </template>
                 </ElStep>
               </ElSteps>

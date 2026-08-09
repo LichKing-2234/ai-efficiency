@@ -145,7 +145,7 @@ async function mountUserView() {
   setActivePinia(pinia)
   const auth = useAuthStore(pinia)
   auth.token = 'token'
-  auth.user = { id: 1, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'sso' }
+  auth.user = { id: 1, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'relay_sso' }
 
   const router = createTestRouter()
   await router.push('/user')
@@ -181,7 +181,7 @@ async function mountUserViewWithProviders(providers: any[]) {
   setActivePinia(pinia)
   const auth = useAuthStore(pinia)
   auth.token = 'token'
-  auth.user = { id: 1, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'sso' }
+  auth.user = { id: 1, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'relay_sso' }
 
   const router = createTestRouter()
   await router.push('/user')
@@ -261,6 +261,18 @@ describe('UserView', () => {
     expect(wrapper.text()).not.toContain('default_model')
   })
 
+  it('uses Element Plus controls for interactive onboarding step titles', async () => {
+    const { wrapper } = await mountUserView()
+
+    const stepButtons = [0, 1, 2].map((step) => wrapper.get(`[data-testid="onboarding-step-button-${step}"]`))
+    expect(stepButtons.every((button) => button.classes().includes('el-button'))).toBe(true)
+    expect(stepButtons.map((button) => button.text())).toEqual([
+      '1. Choose an access group',
+      '2. Create API key',
+      '3. Configure tools',
+    ])
+  })
+
   it('uses bordered Element Plus radio options for access-provider selection', async () => {
     const { wrapper } = await mountUserView()
 
@@ -297,16 +309,19 @@ describe('UserView', () => {
     const { wrapper } = await mountUserView()
 
     expect(wrapper.text()).toContain('Your account')
+    expect(wrapper.text()).toContain('Relay SSO')
     expect(wrapper.text()).toContain('AI access')
     expect(wrapper.text()).toContain('1. Choose an access group')
     expect(wrapper.text()).toContain('Ready to use')
-    expect(wrapper.text()).toContain('2. Create and verify an API key')
+    expect(wrapper.text()).toContain('2. Create API key')
     expect(wrapper.text()).toContain('Connection test')
-    expect(wrapper.text()).toContain('3. Choose a configuration method')
+    expect(wrapper.text()).toContain('3. Configure tools')
     expect(wrapper.text()).not.toContain('Profile Summary')
     expect(wrapper.text()).not.toContain('Provider & Group Credential')
     expect(wrapper.text()).not.toContain('Credential state')
     expect(wrapper.text()).not.toContain('Current Secret')
+    expect(wrapper.text()).not.toContain('relay_sso')
+    expect(wrapper.text()).not.toContain('relay response')
   })
 
   it('shows create my api key as the primary action when the selected group has no key', async () => {

@@ -441,6 +441,12 @@ describe('RepoListView', () => {
     expect(wrapper.text()).toContain('仓库总数')
     expect(wrapper.text()).toContain('已绑定仓库')
     expect(wrapper.text()).toContain('待绑定')
+    expect(wrapper.text()).toContain('代码平台')
+    expect(wrapper.text()).toContain('组织 / 项目')
+    expect(wrapper.text()).toContain('范围内仓库')
+    expect(wrapper.text()).not.toContain('Platform')
+    expect(wrapper.text()).not.toContain('Org / Project')
+    expect(wrapper.text()).not.toContain('scope')
 
     const addBtn = wrapper.findAll('button').find((b) => b.text().includes('新增仓库'))
     await addBtn!.trigger('click')
@@ -561,6 +567,8 @@ describe('RepoListView', () => {
     const admin = await mountRepoList(repos, '/repos', { admin: true })
     expect(admin.wrapper.find('[data-testid="repo-repair-webhooks-button"]').exists()).toBe(true)
     expect(admin.wrapper.text()).toContain('Repair failed webhooks')
+    expect(admin.wrapper.text()).toContain('Webhook issue')
+    expect(admin.wrapper.text()).not.toContain('webhook_failed')
 
     const user = await mountRepoList(repos, '/repos', { admin: false })
     expect(user.wrapper.find('[data-testid="repo-repair-webhooks-button"]').exists()).toBe(false)
@@ -673,6 +681,24 @@ describe('RepoListView', () => {
     expect(wrapper.get('input[type="search"]').classes()).toContain('el-input__inner')
   })
 
+  it('keeps each repository scope option in two full-width rows', async () => {
+    const { wrapper } = await mountRepoList(sampleRepos)
+
+    const option = wrapper.get('[data-testid="repo-scope-option"]')
+    const content = option.get('[data-testid="repo-scope-option-content"]')
+    expect(content.classes()).toEqual(expect.arrayContaining(['flex', 'w-full', 'flex-col']))
+    expect(content.find('[data-testid="repo-scope-option-heading"]').exists()).toBe(true)
+    expect(content.find('[data-testid="repo-scope-option-summary"]').exists()).toBe(true)
+  })
+
+  it('keeps repository identity stacked until the desktop breakpoint', async () => {
+    const { wrapper } = await mountRepoList(sampleRepos)
+
+    const row = wrapper.get('[data-testid="repo-row"]')
+    expect(row.classes()).toContain('lg:grid')
+    expect(row.classes()).not.toContain('md:grid')
+  })
+
   it('auto-fills from Bitbucket Server URL', async () => {
     const { wrapper } = await mountRepoList()
 
@@ -735,7 +761,8 @@ describe('RepoListView', () => {
     expect(wrapper.text()).toContain('repo-a')
     expect(wrapper.text()).toContain('repo-b')
     expect(wrapper.text()).not.toContain('repo-c')
-    expect(wrapper.text()).toContain('active')
+    expect(wrapper.text()).toContain('Active')
+    expect(wrapper.text()).not.toContain('bitbucket_server')
   })
 
   it('filters repositories by binding state from the health workbench', async () => {

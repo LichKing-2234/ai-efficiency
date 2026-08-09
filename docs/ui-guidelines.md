@@ -53,7 +53,7 @@ a broader custom theme until a product requirement justifies one.
 - Use scan-friendly tables on wide screens. When a table cannot remain usable on
   mobile, provide a card or stacked presentation rather than horizontal page
   overflow.
-- Verify every route at viewport widths of 390, 768, and 1440 pixels. Controls,
+- Verify every route at viewport widths of 390, 768, 1280, and 1440 pixels. Controls,
   labels, status text, dialogs, and pagination must not clip or overlap.
 - Keep page headings proportional to operational surfaces. Reserve large display
   type for true hero experiences, not dashboards or settings panels.
@@ -73,13 +73,16 @@ a broader custom theme until a product requirement justifies one.
 
 The pre-migration baseline at commit `2e1c2884` is:
 
-| Aggregate | Baseline gzip | Maximum migration result |
-| --- | ---: | ---: |
-| Initial shell | 67,521 bytes | 72,641 bytes |
-| Default English `/usage` | 96,562 bytes | 158,002 bytes |
-| Complex `/admin/users` route | 100,309 bytes | 253,909 bytes |
+| Aggregate | Baseline gzip | Node 20 migration measurement | Enforced maximum |
+| --- | ---: | ---: | ---: |
+| Initial shell | 67,521 bytes | 72,603 bytes | 72,641 bytes |
+| Default English `/usage` | 96,562 bytes | 157,902 bytes | 158,002 bytes |
+| Complex `/admin/users` route | 100,309 bytes | 245,974 bytes | 253,909 bytes |
 
-The maximums encode the approved increases of 5 KiB, 60 KiB, and 150 KiB.
+The enforced ceilings preserve the original migration limits of 5 KiB, 60 KiB,
+and 150 KiB above the recorded baseline. A hosted-runtime measurement that
+exceeds those ceilings is an application bundle regression to remove, not a
+reason to expand the contract.
 Measured production builds must also prove that Element Plus remains on demand,
 locale dictionaries remain route-safe, and Chart.js stays outside the initial
 dashboard closure until chart data is ready.

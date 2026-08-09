@@ -348,7 +348,9 @@ describe('SettingsView', () => {
     const wrapper = await mountSettings(undefined, '/settings?section=constructor')
 
     expect(wrapper.get('[data-testid="settings-tab-ai-services"]').element.closest('[role="tab"]')?.getAttribute('aria-selected')).toBe('true')
-    expect(wrapper.text()).toContain('Add Relay Provider')
+    expect(wrapper.text()).toContain('Add Service Endpoint')
+    expect(wrapper.text()).not.toContain('Relay Provider')
+    expect(wrapper.text()).not.toContain('DB-backed relay')
     expect(listRelayProviders).toHaveBeenCalledTimes(1)
     expect(listProviders).not.toHaveBeenCalled()
   })
@@ -433,19 +435,22 @@ describe('SettingsView', () => {
     expect(wrapper.text()).toContain('Organization & Login')
     expect(wrapper.text()).toContain('Deployment & Runtime')
     expect(wrapper.text()).toContain('Advanced Credentials')
-    expect(wrapper.text()).toContain('Add Relay Provider')
+    expect(wrapper.text()).toContain('Add Service Endpoint')
 
     await openSettingsSection(wrapper, 'advanced-credentials')
     expect(wrapper.text()).toContain('Credential store')
     expect(wrapper.text()).toContain('Add Credential')
   })
 
-  it('renders settings section navigation with Element Plus tabs', async () => {
+  it('renders compact label-only settings tabs on wide screens', async () => {
     const wrapper = await mountSettings()
     const tabs = wrapper.getComponent({ name: 'ElTabs' })
 
-    expect(tabs.props('stretch')).toBe(true)
+    expect(tabs.props('stretch')).toBe(false)
     expect(wrapper.findAllComponents({ name: 'ElTabPane' })).toHaveLength(5)
+    expect(wrapper.get('[data-testid="settings-tab-ai-services"]').text()).toBe('AI Services')
+    expect(wrapper.get('[data-testid="settings-tab-code-platforms"]').text()).toBe('Code Platforms')
+    expect(wrapper.get('[data-testid="settings-tab-advanced-credentials"]').text()).toBe('Advanced Credentials')
   })
 
   it('uses a mobile section selector without mounting the desktop tabs', async () => {
@@ -522,6 +527,108 @@ describe('SettingsView', () => {
     expect(media.removeEventListener).toHaveBeenCalled()
   })
 
+  it('renders operator-facing code platform and credential metadata', async () => {
+    const platforms = await mountSettings({
+      providers: [{
+        id: 7,
+        name: 'Bitbucket',
+        type: 'bitbucket_server',
+        base_url: 'https://bitbucket.example.com',
+        status: 'active',
+        created_at: '2026-01-01T00:00:00Z',
+      }],
+    }, '/settings?section=code-platforms')
+
+    expect(platforms.text()).toContain('Bitbucket Server')
+    expect(platforms.text()).toContain('Active')
+    expect(platforms.text()).not.toContain('bitbucket_server')
+
+    const credentials = await mountSettings({
+      credentials: [
+        {
+          id: 12,
+          name: 'GitHub PAT',
+          description: '',
+          kind: 'secret_text',
+          usage_count: 1,
+          summary: { preview: 'gh...gy' },
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+        {
+          id: 13,
+          name: 'Deploy account',
+          description: '',
+          kind: 'username_password',
+          usage_count: 1,
+          summary: { username: 'alice', password_preview: 'te****rd' },
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+        {
+          id: 14,
+          name: 'Deploy key',
+          description: '',
+          kind: 'ssh_username_with_private_key',
+          usage_count: 1,
+          summary: { username: 'git', private_key_preview: 'configured', has_passphrase: true },
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+    }, '/settings?section=advanced-credentials')
+
+    expect(credentials.text()).toContain('Secret text')
+    expect(credentials.text()).toContain('gh...gy')
+    expect(credentials.text()).toContain('Username: alice')
+    expect(credentials.text()).toContain('Password: te****rd')
+    expect(credentials.text()).toContain('Username: git')
+    expect(credentials.text()).toContain('Private key configured')
+    expect(credentials.text()).toContain('Passphrase configured')
+    expect(credentials.text()).not.toContain('secret_text')
+    expect(credentials.text()).not.toContain('{"preview"')
+  })
+
+  it('uses Element Plus tables for every populated desktop settings list', async () => {
+    const wrapper = await mountSettings({
+      relayProviders: [{
+        id: 1,
+        name: 'relay-main',
+        display_name: 'Primary service',
+        base_url: 'https://relay.example.com',
+        admin_api_key: '***',
+        is_primary: true,
+        enabled: true,
+      }],
+      providers: [{
+        id: 7,
+        name: 'Bitbucket',
+        type: 'bitbucket_server',
+        base_url: 'https://bitbucket.example.com',
+        status: 'active',
+        created_at: '2026-01-01T00:00:00Z',
+      }],
+      credentials: [{
+        id: 12,
+        name: 'GitHub PAT',
+        description: '',
+        kind: 'secret_text',
+        usage_count: 1,
+        summary: { preview: 'gh...gy' },
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      }],
+    })
+
+    expect(wrapper.get('#settings-panel-ai-services').findComponent({ name: 'ElTable' }).exists()).toBe(true)
+
+    await openSettingsSection(wrapper, 'code-platforms')
+    expect(wrapper.get('#settings-panel-code-platforms').findComponent({ name: 'ElTable' }).exists()).toBe(true)
+
+    await openSettingsSection(wrapper, 'advanced-credentials')
+    expect(wrapper.get('#settings-panel-advanced-credentials').findComponent({ name: 'ElTable' }).exists()).toBe(true)
+  })
+
   it('renders directory sync inside organization login settings', async () => {
     const wrapper = await mountSettings()
 
@@ -562,15 +669,17 @@ describe('SettingsView', () => {
     expect(wrapper.text()).toContain('组织与登录')
     expect(wrapper.text()).toContain('部署与运行')
     expect(wrapper.text()).toContain('高级凭据')
-    expect(wrapper.text()).toContain('Relay 入口')
-    expect(wrapper.text()).toContain('新增 Relay Provider')
+    expect(wrapper.text()).toContain('AI 服务入口')
+    expect(wrapper.text()).toContain('新增服务入口')
+    expect(wrapper.text()).not.toContain('DB relay')
+    expect(wrapper.text()).not.toContain('Relay Provider')
 
     await openSettingsSection(wrapper, 'deployment-runtime')
     expect(wrapper.text()).toContain('当前版本')
     expect(wrapper.text()).toContain('检查更新')
 
     await openSettingsSection(wrapper, 'ai-services')
-    const addRelayBtn = wrapper.findAll('button').find((b) => b.text() === '新增 Relay Provider')
+    const addRelayBtn = wrapper.findAll('button').find((b) => b.text() === '新增服务入口')
     await addRelayBtn!.trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('显示名称')
@@ -630,7 +739,7 @@ describe('SettingsView', () => {
     await flushPromises()
 
     await wrapper.find('input[name="provider-name"]').setValue('GitHub Extensions')
-    await selectElementPlusOption(wrapper, 'provider-api-credential', 'GitHub PAT (secret_text)')
+    await selectElementPlusOption(wrapper, 'provider-api-credential', 'GitHub PAT (Secret text)')
     await selectElementPlusOption(wrapper, 'provider-clone-protocol', 'ssh')
     await selectElementPlusOption(wrapper, 'provider-clone-credential', 'Bitbucket SSH')
 
@@ -765,13 +874,13 @@ describe('SettingsView', () => {
 
   it('shows relay provider empty state', async () => {
     const wrapper = await mountSettings({ relayProviders: [] })
-    expect(wrapper.text()).toContain('No relay providers configured')
+    expect(wrapper.text()).toContain('No AI service endpoints configured')
   })
 
   it('renders the Relay provider action with Element Plus', async () => {
     const wrapper = await mountSettings()
 
-    const addButton = wrapper.findAll('button').find((button) => button.text() === 'Add Relay Provider')
+    const addButton = wrapper.findAll('button').find((button) => button.text() === 'Add Service Endpoint')
     expect(addButton?.classes()).toContain('el-button')
   })
 
@@ -779,7 +888,7 @@ describe('SettingsView', () => {
     const { createRelayProvider } = await import('@/api/relayProvider')
     const wrapper = await mountSettings()
 
-    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add Relay Provider')
+    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add Service Endpoint')
     await addBtn!.trigger('click')
     await flushPromises()
 
@@ -793,7 +902,7 @@ describe('SettingsView', () => {
     await wrapper.find('input[name="relay-provider-base-url"]').setValue('https://relay.example.com')
     await wrapper.find('input[name="relay-provider-admin-api-key"]').setValue('admin-test-key')
 
-    const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Create Relay Provider')
+    const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Create Service Endpoint')
     await saveBtn!.trigger('click')
     await flushPromises()
 
@@ -809,7 +918,7 @@ describe('SettingsView', () => {
 
   it('closes relay provider dialog with Escape', async () => {
     const wrapper = await mountSettings()
-    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add Relay Provider')
+    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add Service Endpoint')
     await addBtn!.trigger('click')
     await flushPromises()
 
@@ -822,11 +931,11 @@ describe('SettingsView', () => {
   it('validates missing relay provider fields', async () => {
     const wrapper = await mountSettings()
 
-    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add Relay Provider')
+    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add Service Endpoint')
     await addBtn!.trigger('click')
     await flushPromises()
 
-    const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Create Relay Provider')
+    const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Create Service Endpoint')
     await saveBtn!.trigger('click')
     await flushPromises()
 
@@ -854,7 +963,7 @@ describe('SettingsView', () => {
 
     await wrapper.find('input[name="relay-provider-display-name"]').setValue('Relay Secondary')
 
-    const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Update Relay Provider')
+    const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Update Service Endpoint')
     await saveBtn!.trigger('click')
     await flushPromises()
 

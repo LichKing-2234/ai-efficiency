@@ -17,6 +17,7 @@ import {
   startAdminUserSubscriptionJob,
 } from '@/api/adminUsers'
 import { useI18n } from '@/i18n'
+import { authSourceLabel, subscriptionResultStatusLabel, userRoleLabel } from '@/utils/displayLabels'
 import type {
   AdminAssignableSubscriptionProvider,
   AdminDepartmentChildrenResponse,
@@ -129,6 +130,8 @@ const subscriptionForm = reactive<{
   message: '',
   results: [],
 })
+const subscriptionPanelForcedOpen = computed(() => subscriptionForm.loading)
+const subscriptionToolsVisible = computed(() => subscriptionPanelExpanded.value || subscriptionPanelForcedOpen.value)
 let searchTimer: number | undefined
 let subscriptionJobPollTimer: number | undefined
 let userRequestGeneration = 0
@@ -635,11 +638,14 @@ function stopSubscriptionJobPolling() {
 }
 
 function applySubscriptionJob(job: AdminSubscriptionJob) {
+  const wasActive = isActiveSubscriptionJob(subscriptionJob.value)
+  const isActive = isActiveSubscriptionJob(job)
   subscriptionJob.value = job
   subscriptionForm.results = job.results ?? []
   subscriptionForm.message = subscriptionJobMessage(job)
-  subscriptionForm.loading = isActiveSubscriptionJob(job)
-  if (!isActiveSubscriptionJob(job)) {
+  subscriptionForm.loading = isActive
+  if (wasActive && !isActive) subscriptionPanelExpanded.value = true
+  if (!isActive) {
     stopSubscriptionJobPolling()
   }
 }
@@ -654,6 +660,7 @@ async function refreshSubscriptionJob(jobId: number) {
   } catch (err: any) {
     stopSubscriptionJobPolling()
     subscriptionForm.loading = false
+    subscriptionPanelExpanded.value = true
     subscriptionForm.message = err.response?.data?.message || err.message || t('adminUsers.manageSubscriptionsFailed')
   }
 }
@@ -1053,14 +1060,15 @@ onBeforeUnmount(() => {
           <ElButton
             data-testid="admin-users-subscription-toggle"
             class="shrink-0"
+            :disabled="subscriptionPanelForcedOpen"
             @click="subscriptionPanelExpanded = !subscriptionPanelExpanded"
           >
-            {{ subscriptionPanelExpanded ? t('user.hide') : t('adminUsers.subscriptionManagement') }}
+            {{ subscriptionToolsVisible ? t('user.hide') : t('adminUsers.subscriptionManagement') }}
           </ElButton>
         </div>
 
         <div
-          v-show="subscriptionPanelExpanded || subscriptionForm.loading || Boolean(subscriptionJob)"
+          v-show="subscriptionToolsVisible"
           data-testid="admin-users-subscription-tools"
         >
           <div class="mt-4 flex justify-end">
@@ -1199,10 +1207,11 @@ onBeforeUnmount(() => {
           <div
             v-for="result in subscriptionResults.slice(0, 6)"
             :key="`${result.user_id}-${result.status}`"
+            :data-testid="`subscription-result-${result.user_id}`"
             class="rounded-md border border-gray-200 p-2 text-xs"
           >
             <div class="font-medium text-gray-900">{{ result.username || result.email || `#${result.user_id}` }}</div>
-            <div class="mt-1 text-gray-500">{{ result.status }}<span v-if="result.message"> · {{ result.message }}</span></div>
+            <div class="mt-1 text-gray-500">{{ subscriptionResultStatusLabel(result.status, t) }}<span v-if="result.message"> · {{ result.message }}</span></div>
           </div>
         </div>
         </div>
@@ -1361,11 +1370,11 @@ onBeforeUnmount(() => {
             <dl class="mt-3 grid grid-cols-2 gap-3 text-xs">
               <div>
                 <dt class="text-gray-400">{{ t('adminUsers.role') }}</dt>
-                <dd class="mt-1 text-gray-800">{{ row.role }}</dd>
+                <dd class="mt-1 text-gray-800">{{ userRoleLabel(row.role, t) }}</dd>
               </div>
               <div>
                 <dt class="text-gray-400">{{ t('adminUsers.authSource') }}</dt>
-                <dd class="mt-1 text-gray-800">{{ row.auth_source }}</dd>
+                <dd class="mt-1 text-gray-800">{{ authSourceLabel(row.auth_source, t) }}</dd>
               </div>
               <div>
                 <dt class="text-gray-400">{{ t('adminUsers.department') }}</dt>
@@ -1406,9 +1415,9 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-	        <div v-if="showDesktopUserRows" data-admin-user-list="desktop" class="mt-3 overflow-x-auto">
-          <ElTable :data="rows" row-key="id" class="min-w-[1080px]">
-            <ElTableColumn width="56" align="center">
+        <div v-if="showDesktopUserRows" data-admin-user-list="desktop" class="mt-3">
+          <ElTable :data="rows" row-key="id" class="w-full">
+            <ElTableColumn width="48" align="center">
               <template #header>
                 <ElCheckbox
                   data-testid="select-all-users"
@@ -1429,22 +1438,26 @@ onBeforeUnmount(() => {
                 </span>
               </template>
             </ElTableColumn>
-            <ElTableColumn :label="t('adminUsers.user')" min-width="180">
+            <ElTableColumn :label="t('adminUsers.user')" min-width="160">
               <template #default="{ row }">
                 <div class="font-medium text-gray-900">{{ row.username }}</div>
                 <div class="text-xs text-gray-500">{{ row.email }}</div>
                 <div class="mt-1 font-mono text-[11px] text-gray-400">{{ t('adminUsers.localId') }} #{{ row.id }}</div>
               </template>
             </ElTableColumn>
-            <ElTableColumn prop="role" :label="t('adminUsers.role')" min-width="100" />
-            <ElTableColumn prop="auth_source" :label="t('adminUsers.authSource')" min-width="120" />
-            <ElTableColumn :label="t('adminUsers.department')" min-width="180">
+            <ElTableColumn :label="t('adminUsers.role')" min-width="80">
+              <template #default="{ row }">{{ userRoleLabel(row.role, t) }}</template>
+            </ElTableColumn>
+            <ElTableColumn :label="t('adminUsers.authSource')" min-width="130">
+              <template #default="{ row }">{{ authSourceLabel(row.auth_source, t) }}</template>
+            </ElTableColumn>
+            <ElTableColumn :label="t('adminUsers.department')" min-width="140">
               <template #default="{ row }">{{ departmentLabel(tableAdminUser(row)) }}</template>
             </ElTableColumn>
-            <ElTableColumn :label="t('adminUsers.relayMapping')" min-width="140">
+            <ElTableColumn :label="t('adminUsers.relayMapping')" min-width="110">
               <template #default="{ row }">{{ relayMappingLabel(tableAdminUser(row)) }}</template>
             </ElTableColumn>
-            <ElTableColumn :label="t('adminUsers.accessStatus')" min-width="140">
+            <ElTableColumn :label="t('adminUsers.accessStatus')" min-width="125">
               <template #default="{ row }">
                 <ElTag
                   class="!h-auto max-w-full !whitespace-normal py-1 text-center !leading-tight"
@@ -1455,13 +1468,21 @@ onBeforeUnmount(() => {
                 </ElTag>
               </template>
             </ElTableColumn>
-            <ElTableColumn :label="t('adminUsers.created')" min-width="170">
-              <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
+            <ElTableColumn :label="`${t('adminUsers.created')} / ${t('adminUsers.updated')}`" min-width="180">
+              <template #default="{ row }">
+                <dl :data-testid="`admin-user-timestamps-${row.id}`" class="space-y-1 text-xs">
+                  <div>
+                    <dt class="text-gray-400">{{ t('adminUsers.created') }}</dt>
+                    <dd class="whitespace-nowrap text-gray-700">{{ formatDate(row.created_at) }}</dd>
+                  </div>
+                  <div>
+                    <dt class="text-gray-400">{{ t('adminUsers.updated') }}</dt>
+                    <dd class="whitespace-nowrap text-gray-700">{{ formatDate(row.updated_at) }}</dd>
+                  </div>
+                </dl>
+              </template>
             </ElTableColumn>
-            <ElTableColumn :label="t('adminUsers.updated')" min-width="170">
-              <template #default="{ row }">{{ formatDate(row.updated_at) }}</template>
-            </ElTableColumn>
-            <ElTableColumn :label="t('adminUsers.actions')" min-width="180">
+            <ElTableColumn :label="t('adminUsers.actions')" min-width="150">
               <template #default="{ row }">
                 <div class="flex flex-col gap-1">
                   <ElButton

@@ -6,6 +6,7 @@ import { useWideContentLayout } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
 import { useSettingsResourcesStore } from '@/stores/settingsResources'
 import type { SCMProvider } from '@/types'
+import { credentialKindLabel, scmProviderStatusLabel, scmProviderTypeLabel } from '@/utils/displayLabels'
 
 const { locale, t } = useI18n()
 const isDesktop = useWideContentLayout()
@@ -34,6 +35,16 @@ onMounted(fetchProviders)
 
 function formatDate(date: string) {
   return new Date(date).toLocaleDateString(locale.value)
+}
+
+function tableProvider(row: unknown) {
+  return row as SCMProvider
+}
+
+function providerStatusType(status: string) {
+  if (status === 'active') return 'success'
+  if (status === 'error') return 'danger'
+  return 'info'
 }
 
 async function fetchProviders() {
@@ -201,13 +212,13 @@ function cancelProviderDelete(event: MouseEvent, close: (event: MouseEvent) => v
               <div v-if="p.ssh_host" class="mt-1 break-all font-mono text-xs text-gray-500">{{ p.ssh_host }}</div>
             </div>
             <ElTag :type="p.type === 'github' ? 'info' : 'primary'">
-              {{ p.type }}
+              {{ scmProviderTypeLabel(p.type, t) }}
             </ElTag>
           </div>
           <dl class="mt-3 grid grid-cols-2 gap-3 text-xs">
             <div>
               <dt class="text-gray-400">{{ t('settings.status') }}</dt>
-              <dd class="mt-1 text-gray-800">{{ p.status }}</dd>
+              <dd class="mt-1"><ElTag :type="providerStatusType(p.status)" size="small">{{ scmProviderStatusLabel(p.status, t) }}</ElTag></dd>
             </div>
             <div>
               <dt class="text-gray-400">{{ t('settings.created') }}</dt>
@@ -251,34 +262,33 @@ function cancelProviderDelete(event: MouseEvent, close: (event: MouseEvent) => v
           </div>
         </article>
       </div>
-      <table v-if="isDesktop && providers.length > 0" class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-          <tr>
-            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.name') }}</th>
-            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.type') }}</th>
-            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.baseUrl') }}</th>
-            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.sshHost') }}</th>
-            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.status') }}</th>
-            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.created') }}</th>
-            <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-200">
-          <tr v-for="p in providers" :key="p.id">
-            <td class="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">{{ p.name }}</td>
-            <td class="whitespace-nowrap px-6 py-4">
-              <ElTag :type="p.type === 'github' ? 'info' : 'primary'">
-                {{ p.type }}
-              </ElTag>
-            </td>
-            <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500 font-mono text-xs">{{ p.base_url }}</td>
-            <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500 font-mono text-xs">{{ p.ssh_host || '—' }}</td>
-            <td class="whitespace-nowrap px-6 py-4">
-              <ElTag type="success">{{ p.status }}</ElTag>
-            </td>
-            <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{{ formatDate(p.created_at) }}</td>
-            <td class="whitespace-nowrap px-6 py-4 text-right text-sm space-x-3">
-              <ElButton :data-testid="`provider-edit-${p.id}`" link type="primary" @click="openEditDialog(p)">{{ t('settings.edit') }}</ElButton>
+      <ElTable v-if="isDesktop && providers.length > 0" :data="providers" row-key="id" class="w-full">
+        <ElTableColumn prop="name" :label="t('settings.name')" min-width="140" />
+        <ElTableColumn :label="t('settings.type')" min-width="130">
+          <template #default="{ row: p }">
+            <ElTag :type="p.type === 'github' ? 'info' : 'primary'">
+              {{ scmProviderTypeLabel(p.type, t) }}
+            </ElTag>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('settings.baseUrl')" min-width="210">
+          <template #default="{ row: p }"><span class="break-all font-mono text-xs text-gray-500">{{ p.base_url }}</span></template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('settings.sshHost')" min-width="140">
+          <template #default="{ row: p }"><span class="break-all font-mono text-xs text-gray-500">{{ p.ssh_host || '—' }}</span></template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('settings.status')" min-width="100">
+          <template #default="{ row: p }">
+            <ElTag :type="providerStatusType(p.status)">{{ scmProviderStatusLabel(p.status, t) }}</ElTag>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('settings.created')" min-width="130">
+          <template #default="{ row: p }">{{ formatDate(p.created_at) }}</template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('settings.actions')" min-width="140" align="right">
+          <template #default="{ row: p }">
+            <div class="flex justify-end gap-1">
+              <ElButton :data-testid="`provider-edit-${p.id}`" class="!ml-0" link type="primary" @click="openEditDialog(tableProvider(p))">{{ t('settings.edit') }}</ElButton>
               <ElPopconfirm
                 :title="`${t('settings.confirm')} ${t('settings.delete')}?`"
                 :teleported="false"
@@ -288,6 +298,7 @@ function cancelProviderDelete(event: MouseEvent, close: (event: MouseEvent) => v
                 <template #reference>
                   <ElButton
                     :data-testid="`provider-delete-${p.id}`"
+                    class="!ml-0"
                     :disabled="deletingProviderId !== null"
                     link
                     type="danger"
@@ -311,10 +322,10 @@ function cancelProviderDelete(event: MouseEvent, close: (event: MouseEvent) => v
                   >{{ t('settings.cancel') }}</ElButton>
                 </template>
               </ElPopconfirm>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            </div>
+          </template>
+        </ElTableColumn>
+      </ElTable>
     </div>
   </div>
 
@@ -351,7 +362,7 @@ function cancelProviderDelete(event: MouseEvent, close: (event: MouseEvent) => v
           <label class="block text-sm font-medium text-gray-700">{{ t('settings.apiCredential') }}</label>
           <ElSelect v-model="form.api_credential_id" data-testid="provider-api-credential" class="mt-1 w-full" :teleported="false">
             <ElOption :value="0" :label="t('settings.selectApiCredential')" disabled />
-            <ElOption v-for="credential in credentials.filter(item => item.kind !== 'ssh_username_with_private_key')" :key="credential.id" :value="credential.id" :label="`${credential.name} (${credential.kind})`" />
+            <ElOption v-for="credential in credentials.filter(item => item.kind !== 'ssh_username_with_private_key')" :key="credential.id" :value="credential.id" :label="`${credential.name} (${credentialKindLabel(credential.kind, t)})`" />
           </ElSelect>
         </div>
         <div>

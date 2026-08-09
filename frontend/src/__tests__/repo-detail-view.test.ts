@@ -632,6 +632,17 @@ describe('RepoDetailView', () => {
     expect(wrapper.findAll('[data-testid="repo-pr-detail"]')).toHaveLength(1)
   })
 
+  it('keeps PR identity and metrics stacked until the desktop breakpoint', async () => {
+    const { wrapper } = await mountRepoDetail()
+
+    const summary = wrapper.get('[data-testid="repo-pr-summary-grid"]')
+    const metrics = wrapper.get('[data-testid="repo-pr-summary-metrics"]')
+    expect(summary.classes()).toContain('lg:grid')
+    expect(summary.classes()).not.toContain('md:grid')
+    expect(metrics.classes()).toContain('lg:grid-cols-4')
+    expect(metrics.classes()).not.toContain('md:grid-cols-4')
+  })
+
   it('renders aggregate PR usage summary instead of current page counts', async () => {
     const pageItems = Array.from({ length: 10 }, (_, index) => ({
       id: 200 + index,
@@ -1095,6 +1106,14 @@ describe('RepoDetailView', () => {
     const { wrapper } = await mountRepoDetail()
 
     expect(wrapper.findAll('.el-tag').length).toBeGreaterThan(0)
+    expect(wrapper.get('[data-testid="repo-pr-row"] .el-tag').text()).toBe('Merged')
+  })
+
+  it('presents an inactive repository with an operator-facing status label', async () => {
+    const { wrapper } = await mountRepoDetail({ status: 'inactive' })
+
+    expect(wrapper.text()).toContain('Inactive')
+    expect(wrapper.text()).not.toContain('Unknown')
   })
 
   it('shows PR sync error message', async () => {

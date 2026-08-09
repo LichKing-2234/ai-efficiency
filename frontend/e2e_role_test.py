@@ -29,6 +29,7 @@ unmocked_matrix_requests = set()
 VIEWPORTS = (
     ("mobile", 390, 844),
     ("tablet", 768, 1024),
+    ("wide-boundary", 1280, 900),
     ("desktop", 1440, 900),
 )
 
@@ -60,8 +61,26 @@ USER_ROUTE_CASES = (
         "exercise": "quota-user",
     },
     {"path": "/work-items", "selector": "main h1:has-text('Work Items')"},
-    {"path": "/repos", "selector": "[data-testid='repo-binding-filter']", "exercise": "repo-dialog"},
+    {
+        "path": "/repos",
+        "selector": "[data-testid='repo-binding-filter']",
+        "fit_selectors": ("[data-testid='repo-row'] > div:first-child",),
+        "exercise": "repo-dialog",
+    },
     {"path": "/repos/9", "selector": "[data-testid='repo-tab-activity']"},
+    {
+        "path": "/repos/9?tab=operations",
+        "expected_path": "/repos/9",
+        "selector": "[data-testid='repo-pr-row']",
+        "state_selectors": (
+            "[data-testid='repo-pr-summary-grid'] > div:first-child",
+            "[data-testid='repo-pr-summary-metrics']",
+        ),
+        "fit_selectors": (
+            "[data-testid='repo-pr-summary-grid'] > div:first-child",
+            "[data-testid='repo-pr-summary-metrics'] dd",
+        ),
+    },
     {"path": "/activity", "selector": "[data-testid='activity-range-refresh']"},
     {"path": "/activity/teams", "selector": "[data-testid='activity-team-team-alpha']"},
     {"path": "/activity/teams/team-alpha", "selector": "[data-testid='activity-team-summary']"},
@@ -80,7 +99,10 @@ ADMIN_ROUTE_CASES = (
         "selector": "[data-testid='admin-users-view-users']",
         "state_selectors": ("[data-admin-user-list='mobile']", "[data-admin-user-row]"),
         "desktop_state_selectors": ("[data-admin-user-list='desktop']", "[data-admin-user-row]"),
-        "desktop_fit_selectors": ("[data-admin-user-list='desktop'] .el-tag",),
+        "desktop_fit_selectors": (
+            "[data-admin-user-list='desktop'] .el-tag",
+            "[data-testid='admin-user-timestamps-7']",
+        ),
     },
     {
         "path": "/admin/directory/offboarding",
@@ -354,6 +376,27 @@ def mock_matrix_api(route, role):
         "created_at": "2026-08-01T00:00:00Z",
         "edges": {},
     }
+    repo_pr = {
+        "id": 21,
+        "scm_pr_id": 88,
+        "scm_pr_url": "https://example.com/pull/88",
+        "author": "alice",
+        "title": "Improve activity presentation",
+        "source_branch": "feat/activity",
+        "target_branch": "main",
+        "status": "merged",
+        "labels": [],
+        "lines_added": 40,
+        "lines_deleted": 5,
+        "cycle_time_hours": 8,
+        "merged_at": "2026-08-08T08:00:00Z",
+        "created_at": "2026-08-07T08:00:00Z",
+        "usage_status": "fresh",
+        "usage_input_tokens": 1200,
+        "usage_output_tokens": 500,
+        "usage_credit_usage": 1.25,
+        "usage_refreshed_at": "2026-08-08T08:00:00Z",
+    }
     team_identity = {
         "external_id": "team-alpha",
         "parent_external_id": None,
@@ -526,6 +569,18 @@ def mock_matrix_api(route, role):
             }],
         }],
         "/api/v1/repos/9": repo,
+        "/api/v1/repos/9/prs": {
+            "items": [repo_pr],
+            "total": 1,
+            "summary": {
+                "total": 1,
+                "with_usage": 1,
+                "pending_upload": 0,
+                "no_checkpoint": 0,
+                "refresh_failed": 0,
+            },
+        },
+        "/api/v1/repos/9/pr-sync-job/latest": None,
         "/api/v1/activity/scope": {
             "contract_version": "activity-v1",
             "scope_version": "scope-e2e",
@@ -669,7 +724,7 @@ def mock_auth_endpoints(page, role="admin"):
                 "username": "admin" if role == "admin" else "sso_test_user",
                 "email": "admin@example.com" if role == "admin" else "alice@example.com",
                 "role": role,
-                "auth_source": "dev" if role == "admin" else "sso",
+                "auth_source": "dev" if role == "admin" else "relay_sso",
             },
         }),
     ))
@@ -924,11 +979,15 @@ def content_fits_containers(page, selectors):
             return False
         if not elements.evaluate_all("""elements => elements.every((element) => {
             const container = element.closest('.cell') ?? element.parentElement
-            if (!container) return false
+            const main = element.closest('main')
+            if (!container || !main) return false
             const elementRect = element.getBoundingClientRect()
             const containerRect = container.getBoundingClientRect()
+            const mainRect = main.getBoundingClientRect()
             return elementRect.left >= containerRect.left - 0.5
                 && elementRect.right <= containerRect.right + 0.5
+                && elementRect.left >= mainRect.left - 0.5
+                && elementRect.right <= mainRect.right + 0.5
                 && element.scrollWidth <= element.clientWidth
                 && element.scrollHeight <= element.clientHeight
         })"""):
@@ -1003,7 +1062,7 @@ def exercise_route_control(page, exercise):
         dialog.wait_for(state="hidden")
         return opened, "Repository dialog did not open"
     if exercise == "settings-dialog":
-        page.locator("main button:has-text('Add Relay Provider')").click()
+        page.locator("main button:has-text('Add Service Endpoint')").click()
         dialog = page.locator("[data-testid='relay-provider-dialog']")
         dialog.wait_for(state="visible")
         opened = dialog.is_visible()

@@ -6,6 +6,7 @@ import { listProviders } from '@/api/scmProvider'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from '@/i18n'
 import type { CommitFreshness, PRCommitUsageSnapshot, PRListSummary, PRRecord, PRSyncJob, RepoConfig, SCMProvider, UsageStatus } from '@/types'
+import { pullRequestStatusLabel, repositoryStatusLabel } from '@/utils/displayLabels'
 
 const auth = useAuthStore()
 const { locale, t } = useI18n()
@@ -585,7 +586,7 @@ onUnmounted(() => {
       <div class="text-xs uppercase tracking-wide text-slate-500">{{ t('repoDetail.repositoryStatus') }}</div>
       <div class="mt-1">
         <ElTag :type="repo.status === 'active' ? 'success' : repo.status === 'webhook_failed' ? 'danger' : 'info'" size="small">
-          {{ repo.status }}
+          {{ repositoryStatusLabel(repo.status, t) }}
         </ElTag>
       </div>
     </div>
@@ -682,53 +683,53 @@ onUnmounted(() => {
 
   <div v-if="prs.length > 0" class="mt-3 divide-y divide-gray-100 border-y border-gray-100">
     <article v-for="pr in prs" :key="pr.id" data-testid="repo-pr-row" class="py-4">
-<div class="md:grid md:grid-cols-[minmax(0,1.3fr)_minmax(320px,1fr)_auto] md:items-center md:gap-5">
-<div class="flex items-start justify-between gap-3">
-        <div class="min-w-0">
-          <ElLink v-if="pr.scm_pr_url" :href="pr.scm_pr_url" target="_blank" rel="noopener noreferrer" underline="never" class="block truncate text-sm font-semibold text-indigo-700 hover:text-indigo-900">
-            {{ pr.title }}
-          </ElLink>
-          <div v-else class="truncate text-sm font-semibold text-gray-900">{{ pr.title }}</div>
-          <div class="mt-1 truncate text-xs text-gray-500">{{ pr.author || '—' }}</div>
+      <div data-testid="repo-pr-summary-grid" class="lg:grid lg:grid-cols-[minmax(0,1.3fr)_minmax(320px,1fr)_auto] lg:items-center lg:gap-5">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <ElLink v-if="pr.scm_pr_url" :href="pr.scm_pr_url" target="_blank" rel="noopener noreferrer" underline="never" class="block truncate text-sm font-semibold text-indigo-700 hover:text-indigo-900">
+              {{ pr.title }}
+            </ElLink>
+            <div v-else class="truncate text-sm font-semibold text-gray-900">{{ pr.title }}</div>
+            <div class="mt-1 truncate text-xs text-gray-500">{{ pr.author || '—' }}</div>
+          </div>
+          <ElTag
+            class="shrink-0"
+            :type="pr.status === 'open' ? 'success' : pr.status === 'merged' ? 'primary' : 'info'"
+            size="small"
+          >
+            {{ pullRequestStatusLabel(pr.status, t) }}
+          </ElTag>
         </div>
-        <ElTag
-          class="shrink-0"
-          :type="pr.status === 'open' ? 'success' : pr.status === 'merged' ? 'primary' : 'info'"
+        <dl data-testid="repo-pr-summary-metrics" class="mt-3 grid grid-cols-2 gap-3 text-xs lg:mt-0 lg:grid-cols-4">
+          <div>
+            <dt class="text-gray-400">{{ t('repoDetail.usageStatus') }}</dt>
+            <dd class="mt-1 text-gray-800" :title="usageStatusHelp(pr.usage_status, pr.usage_status_reason)">{{ usageStatusLabel(pr.usage_status) }}</dd>
+          </div>
+          <div>
+            <dt class="text-gray-400">{{ t('repoDetail.tokenUsage') }}</dt>
+            <dd class="mt-1 text-gray-800">{{ formatPRTokenUsage(pr) }}</dd>
+          </div>
+          <div>
+            <dt class="text-gray-400">{{ t('repoDetail.refreshed') }}</dt>
+            <dd class="mt-1 text-gray-800">{{ formatDate(pr.usage_refreshed_at || null) }}</dd>
+          </div>
+          <div>
+            <dt class="text-gray-400">{{ t('repoDetail.credits') }}</dt>
+            <dd class="mt-1 text-gray-800">{{ formatDecimal(pr.usage_credit_usage) }}</dd>
+          </div>
+        </dl>
+        <ElButton
+          data-testid="repo-pr-details-button"
+          class="mt-3 lg:mt-0"
           size="small"
+          :loading="isPRDetailLoading(pr.id)"
+          :disabled="isPRDetailLoading(pr.id)"
+          @click="togglePRDetails(pr.id)"
         >
-          {{ pr.status }}
-        </ElTag>
+          {{ isPRDetailLoading(pr.id) ? t('repoDetail.loading') : expandedPRId === pr.id ? t('repoDetail.hide') : t('repoDetail.details') }}
+        </ElButton>
       </div>
-<dl class="mt-3 grid grid-cols-2 gap-3 text-xs md:mt-0 md:grid-cols-4">
-        <div>
-          <dt class="text-gray-400">{{ t('repoDetail.usageStatus') }}</dt>
-          <dd class="mt-1 text-gray-800" :title="usageStatusHelp(pr.usage_status, pr.usage_status_reason)">{{ usageStatusLabel(pr.usage_status) }}</dd>
-        </div>
-        <div>
-          <dt class="text-gray-400">{{ t('repoDetail.tokenUsage') }}</dt>
-          <dd class="mt-1 text-gray-800">{{ formatPRTokenUsage(pr) }}</dd>
-        </div>
-        <div>
-          <dt class="text-gray-400">{{ t('repoDetail.refreshed') }}</dt>
-          <dd class="mt-1 text-gray-800">{{ formatDate(pr.usage_refreshed_at || null) }}</dd>
-        </div>
-        <div>
-          <dt class="text-gray-400">{{ t('repoDetail.credits') }}</dt>
-          <dd class="mt-1 text-gray-800">{{ formatDecimal(pr.usage_credit_usage) }}</dd>
-        </div>
-      </dl>
-      <ElButton
-  data-testid="repo-pr-details-button"
-  class="mt-3 md:mt-0"
-        size="small"
-        :loading="isPRDetailLoading(pr.id)"
-        :disabled="isPRDetailLoading(pr.id)"
-        @click="togglePRDetails(pr.id)"
-      >
-        {{ isPRDetailLoading(pr.id) ? t('repoDetail.loading') : expandedPRId === pr.id ? t('repoDetail.hide') : t('repoDetail.details') }}
-      </ElButton>
-</div>
-<div v-if="expandedPRId === pr.id" data-testid="repo-pr-detail" class="mt-4 space-y-4 border-t border-gray-100 pt-4 text-xs text-gray-700">
+      <div v-if="expandedPRId === pr.id" data-testid="repo-pr-detail" class="mt-4 space-y-4 border-t border-gray-100 pt-4 text-xs text-gray-700">
         <div v-if="isPRDetailLoading(pr.id) && !prDetails[pr.id]" class="py-4 text-center text-gray-500">
           {{ t('repoDetail.loadingDetails') }}
         </div>

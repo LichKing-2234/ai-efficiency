@@ -28,12 +28,12 @@ const route = useRoute()
 const router = useRouter()
 const hasWideSettingsNavigation = useWideContentLayout()
 const activeSection = ref<SettingsSection>(initialSettingsSection())
-const settingsSections = computed<Array<{ id: SettingsSection; label: string; description: string }>>(() => [
-  { id: 'ai-services', label: t('settings.aiServices'), description: t('settings.aiServicesHelp') },
-  { id: 'code-platforms', label: t('settings.codePlatforms'), description: t('settings.codePlatformsHelp') },
-  { id: 'organization-login', label: t('settings.organizationLogin'), description: t('settings.organizationLoginHelp') },
-  { id: 'deployment-runtime', label: t('settings.deploymentRuntime'), description: t('settings.deploymentRuntimeHelp') },
-  { id: 'advanced-credentials', label: t('settings.advancedCredentials'), description: t('settings.advancedCredentialsHelp') },
+const settingsSections = computed<Array<{ id: SettingsSection; label: string }>>(() => [
+  { id: 'ai-services', label: t('settings.aiServices') },
+  { id: 'code-platforms', label: t('settings.codePlatforms') },
+  { id: 'organization-login', label: t('settings.organizationLogin') },
+  { id: 'deployment-runtime', label: t('settings.deploymentRuntime') },
+  { id: 'advanced-credentials', label: t('settings.advancedCredentials') },
 ])
 
 watch(activeSection, replaceSettingsQuery)
@@ -63,7 +63,6 @@ function replaceSettingsQuery() {
         v-if="hasWideSettingsNavigation"
         v-model="activeSection"
         class="settings-section-tabs"
-        stretch
       >
         <ElTabPane
           v-for="section in settingsSections"
@@ -74,10 +73,9 @@ function replaceSettingsQuery() {
           <template #label>
             <span
               :data-testid="`settings-tab-${section.id}`"
-              class="block min-w-0 py-2 text-left"
+              class="inline-flex whitespace-nowrap px-1 py-2 text-sm font-semibold"
             >
-              <span class="block text-sm font-semibold">{{ section.label }}</span>
-              <span class="mt-1 block truncate text-xs text-slate-500">{{ section.description }}</span>
+              {{ section.label }}
             </span>
           </template>
 

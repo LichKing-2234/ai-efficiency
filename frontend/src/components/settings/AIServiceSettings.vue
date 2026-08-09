@@ -26,6 +26,10 @@ const relayFormLoading = ref(false)
 
 onMounted(fetchRelayProviders)
 
+function tableRelayProvider(row: unknown) {
+  return row as RelayProvider
+}
+
 async function fetchRelayProviders() {
   relayLoading.value = true
   try {
@@ -222,34 +226,31 @@ function cancelRelayDelete(event: MouseEvent, close: (event: MouseEvent) => void
           </div>
         </article>
       </div>
-      <table v-if="isDesktop && relayProviders.length > 0" class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-          <tr>
-            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.name') }}</th>
-            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.primary') }}</th>
-            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.baseUrl') }}</th>
-            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.state') }}</th>
-            <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-200">
-          <tr v-for="provider in relayProviders" :key="provider.id">
-            <td class="px-6 py-4">
-              <div class="text-sm font-medium text-gray-900">{{ provider.display_name }}</div>
-              <div class="mt-1 font-mono text-xs text-gray-500">{{ provider.name }}</div>
-            </td>
-            <td class="px-6 py-4">
-              <ElTag v-if="provider.is_primary" type="success">{{ t('settings.primary') }}</ElTag>
-              <ElTag v-else type="info">{{ t('settings.secondary') }}</ElTag>
-            </td>
-            <td class="px-6 py-4 font-mono text-xs text-gray-500">
-              <div>{{ provider.base_url }}</div>
-            </td>
-            <td class="px-6 py-4">
-              <ElTag :type="provider.enabled ? 'success' : 'info'">{{ provider.enabled ? t('settings.enabled') : t('settings.disabled') }}</ElTag>
-            </td>
-            <td class="whitespace-nowrap px-6 py-4 text-right text-sm space-x-3">
-              <ElButton :data-testid="`relay-provider-edit-${provider.id}`" link type="primary" @click="openEditRelayDialog(provider)">{{ t('settings.edit') }}</ElButton>
+      <ElTable v-if="isDesktop && relayProviders.length > 0" :data="relayProviders" row-key="id" class="w-full">
+        <ElTableColumn :label="t('settings.name')" min-width="180">
+          <template #default="{ row: provider }">
+            <div class="text-sm font-medium text-gray-900">{{ provider.display_name }}</div>
+            <div class="mt-1 font-mono text-xs text-gray-500">{{ provider.name }}</div>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('settings.primary')" width="110">
+          <template #default="{ row: provider }">
+            <ElTag v-if="provider.is_primary" type="success">{{ t('settings.primary') }}</ElTag>
+            <ElTag v-else type="info">{{ t('settings.secondary') }}</ElTag>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('settings.baseUrl')" min-width="240">
+          <template #default="{ row: provider }"><span class="break-all font-mono text-xs text-gray-500">{{ provider.base_url }}</span></template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('settings.state')" width="110">
+          <template #default="{ row: provider }">
+            <ElTag :type="provider.enabled ? 'success' : 'info'">{{ provider.enabled ? t('settings.enabled') : t('settings.disabled') }}</ElTag>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('settings.actions')" min-width="140" align="right">
+          <template #default="{ row: provider }">
+            <div class="flex justify-end gap-1">
+              <ElButton :data-testid="`relay-provider-edit-${provider.id}`" class="!ml-0" link type="primary" @click="openEditRelayDialog(tableRelayProvider(provider))">{{ t('settings.edit') }}</ElButton>
               <ElPopconfirm
                 :title="`${t('settings.confirm')} ${t('settings.delete')}?`"
                 :teleported="false"
@@ -259,6 +260,7 @@ function cancelRelayDelete(event: MouseEvent, close: (event: MouseEvent) => void
                 <template #reference>
                   <ElButton
                     :data-testid="`relay-provider-delete-${provider.id}`"
+                    class="!ml-0"
                     :disabled="deletingRelayId !== null"
                     link
                     type="danger"
@@ -282,10 +284,10 @@ function cancelRelayDelete(event: MouseEvent, close: (event: MouseEvent) => void
                   >{{ t('settings.cancel') }}</ElButton>
                 </template>
               </ElPopconfirm>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            </div>
+          </template>
+        </ElTableColumn>
+      </ElTable>
     </div>
   </div>
 

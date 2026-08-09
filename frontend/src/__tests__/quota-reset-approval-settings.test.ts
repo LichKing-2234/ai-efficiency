@@ -224,6 +224,7 @@ describe('QuotaResetApprovalSettings', () => {
 
     expect(wrapper.find('[data-approver-config-list="desktop"]').exists()).toBe(true)
     expect(wrapper.find('[data-approver-config-list="mobile"]').exists()).toBe(false)
+    expect(wrapper.get('[data-approver-config-list="desktop"]').findComponent({ name: 'ElTable' }).exists()).toBe(true)
     expect(wrapper.findAll('[data-approver-config-row]')).toHaveLength(1)
     expect(matchMediaController.matchMedia).toHaveBeenCalledWith('(min-width: 1280px)')
 

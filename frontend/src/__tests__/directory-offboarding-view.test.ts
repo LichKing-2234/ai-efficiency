@@ -28,10 +28,13 @@ function candidate(userID: number, username: string, email: string) {
     user_id: userID,
     username,
     email,
-    auth_source: 'ldap',
+    auth_source: 'relay_sso',
     relay_user_id: userID + 90,
     reason: 'missing_from_latest_full_company_directory',
     directory_run_id: 3,
+    directory_run_at: '2026-08-08T09:30:00Z',
+    token_valid_after: '2026-08-08T10:00:00Z',
+    offboarding_status: 'partial_failed',
   }
 }
 
@@ -119,7 +122,7 @@ describe('DirectoryOffboardingView', () => {
     expect(wrapper.get('[data-testid="offboarding-warning"]').find('.el-alert').exists()).toBe(true)
   })
 
-  it('attaches search, candidates, and pagination to one constrained work surface', async () => {
+  it('attaches search, candidates, and pagination to one work surface', async () => {
     const { wrapper } = await mountOffboarding()
 
     const surface = wrapper.get('[data-testid="offboarding-work-surface"]')
@@ -127,7 +130,7 @@ describe('DirectoryOffboardingView', () => {
     expect(surface.find('[data-testid="offboarding-search"]').exists()).toBe(true)
     expect(surface.find('[data-testid="offboarding-candidate-7"]').exists()).toBe(true)
     expect(surface.find('[data-testid="offboarding-page-status"]').exists()).toBe(true)
-    expect(surface.get('[data-testid="offboarding-candidate-grid"]').classes()).toContain('max-w-2xl')
+    expect(surface.get('[data-testid="offboarding-candidate-grid"]').classes()).not.toContain('max-w-2xl')
   })
 
   it('renders candidate failures with Element Plus feedback', async () => {
@@ -162,10 +165,18 @@ describe('DirectoryOffboardingView', () => {
     expect(wrapper.find('.el-card').exists()).toBe(true)
   })
 
-  it('renders candidate source status with Element Plus', async () => {
+  it('renders operator-facing candidate state and keeps confirmation in the dialog', async () => {
     const { wrapper } = await mountOffboarding()
 
-    expect(wrapper.find('.el-tag').text()).toBe('ldap')
+    const card = wrapper.get('[data-testid="offboarding-candidate-7"]')
+    expect(card.text()).toContain('Relay SSO')
+    expect(card.text()).toContain('Missing from the latest company directory')
+    expect(card.text()).toContain('Run #3')
+    expect(card.text()).toContain('Needs attention')
+    expect(card.text()).toContain('Revoked')
+    expect(card.text()).not.toContain('relay_sso')
+    expect(card.text()).not.toContain('missing_from_latest_full_company_directory')
+    expect(card.text()).not.toContain('Enter bob@example.org to confirm')
   })
 
   it('requires email confirmation before disabling relay user', async () => {
