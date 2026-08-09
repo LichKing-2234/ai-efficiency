@@ -14,11 +14,10 @@ Business behavior remains defined by the relevant feature specs and current code
 | Application state and API access | Pinia stores and the existing API modules |
 
 Element Plus uses its default theme and default control size on tablet and
-desktop. On viewports below the shared `md` breakpoint, the public and
-authenticated route shells set the public `--el-component-size` token to 44px
-and enforce the same minimum on public Element Plus component root classes so
-primary controls remain reliable touch targets. Do not target private internal
-DOM classes such as `__wrapper`. Use `small` only for
+desktop. On viewports below the shared `md` breakpoint, the mobile stylesheet
+sets public Element Plus component roots to a 44px minimum so controls remain
+reliable touch targets across the public and authenticated shells. Do not
+target private internal DOM classes such as `__wrapper`. Use `small` only for
 genuinely dense, non-primary controls such as compact table actions. Do not add
 a broader custom theme until a product requirement justifies one.
 
