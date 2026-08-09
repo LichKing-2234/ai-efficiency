@@ -53,12 +53,13 @@ watch(desktopLayout, (isDesktop) => {
         destroy-on-close
         direction="ltr"
         :show-close="false"
+        header-class="!m-0"
+        body-class="!p-0"
         size="min(20rem, 86vw)"
       >
         <template #header>
           <span class="text-sm font-semibold text-slate-900">{{ t('nav.menu') }}</span>
           <el-button
-            data-testid="mobile-nav-close"
             :icon="Close"
             :title="t('app.close')"
             text
@@ -66,7 +67,7 @@ watch(desktopLayout, (isDesktop) => {
           />
         </template>
         <div id="mobile-navigation" class="h-full">
-          <AppSidebar v-if="mobileNavOpen" class="h-full w-full" mobile @navigate="closeMobileNav" />
+          <AppSidebar v-if="mobileNavOpen" mobile @navigate="closeMobileNav" />
         </div>
       </el-drawer>
     </div>

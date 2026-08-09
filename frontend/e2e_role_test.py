@@ -1581,6 +1581,79 @@ def test_activity_route_layout_and_responsive_style(page):
     clear_auth_routes(page)
 
 
+def test_mobile_navigation_drawer(page):
+    """The mobile shell uses one compact navigation surface at narrow widths."""
+    print("\n🧪 App Shell — Mobile Navigation Drawer")
+
+    do_dev_login(page, role="user")
+    for label, width, height in VIEWPORTS[:2]:
+        page.set_viewport_size({"width": width, "height": height})
+        page.goto(f"{BASE}/usage")
+        page.wait_for_load_state("networkidle")
+        page.locator("header button[aria-controls='mobile-navigation']").click()
+
+        drawer = page.locator("[role='dialog']")
+        drawer.wait_for(state="visible", timeout=5000)
+        page.wait_for_timeout(400)
+        state = page.evaluate("""() => {
+            const drawer = document.querySelector('[role="dialog"]')
+            const surface = document.querySelector('#mobile-navigation aside')
+            const navigation = surface?.querySelector('nav')
+            const footer = surface?.lastElementChild
+            const selected = surface?.querySelector('a[href="/usage"]')
+            const rows = [...(surface?.querySelectorAll('nav a') ?? [])]
+            const navBox = navigation?.getBoundingClientRect()
+            const footerBox = footer?.getBoundingClientRect()
+            const drawerBox = drawer?.getBoundingClientRect()
+            return {
+                drawerHeaders: drawer?.querySelectorAll(':scope > header').length ?? -1,
+                duplicateTitle: surface?.textContent?.includes('AI Efficiency') ?? true,
+                closeAction: drawer?.querySelector(':scope > header button') != null,
+                surfaceBackground: surface ? getComputedStyle(surface).backgroundColor : '',
+                selectedBackground: selected ? getComputedStyle(selected).backgroundColor : '',
+                selectedColor: selected ? getComputedStyle(selected).color : '',
+                rowHeights: rows.map((row) => row.getBoundingClientRect().height),
+                footerGap: navBox && footerBox ? footerBox.top - navBox.bottom : null,
+                drawerLeft: drawerBox?.left ?? null,
+                drawerWidth: drawerBox?.width ?? null,
+                viewportWidth: window.innerWidth,
+                documentWidth: document.documentElement.scrollWidth,
+                surfaceWidth: surface?.scrollWidth ?? null,
+                surfaceClientWidth: surface?.clientWidth ?? null,
+            }
+        }""")
+        checks = {
+            "single_header": state["drawerHeaders"] == 1,
+            "no_desktop_brand": not state["duplicateTitle"],
+            "close_action": state["closeAction"],
+            "light_surface": state["surfaceBackground"] == "rgb(255, 255, 255)",
+            "selected_state": (
+                state["selectedBackground"] == "rgb(239, 246, 255)"
+                and state["selectedColor"] == "rgb(29, 78, 216)"
+            ),
+            "touch_targets": state["rowHeights"] and min(state["rowHeights"]) >= 44,
+            "compact_flow": state["footerGap"] is not None and abs(state["footerGap"]) <= 1,
+            "fully_open": state["drawerLeft"] is not None and abs(state["drawerLeft"]) <= 1,
+            "no_overflow": (
+                state["documentWidth"] <= state["viewportWidth"]
+                and state["drawerWidth"] <= state["viewportWidth"]
+                and state["surfaceWidth"] <= state["surfaceClientWidth"]
+            ),
+        }
+        screenshot(page, f"mobile_navigation_drawer_{width}")
+        report(
+            f"Mobile navigation drawer @ {width}",
+            all(checks.values()),
+            json.dumps({"viewport": label, "checks": checks, "state": state}),
+        )
+        drawer.locator(":scope > header button").click()
+        drawer.wait_for(state="hidden", timeout=5000)
+
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.evaluate("localStorage.clear()")
+    clear_auth_routes(page)
+
+
 def test_activity_member_bucket_authorization(page):
     """Representative member views omit Bucket data while Admin can load it lazily."""
     print("\n🧪 Activity — Member Bucket Authorization")
@@ -1624,6 +1697,7 @@ def run_all():
             ("User Role Settings Blocked", lambda: test_user_role_settings_blocked(page)),
             ("User Role /admin/users Blocked", lambda: test_user_role_admin_users_blocked(page)),
             ("Activity Route and Layout", lambda: test_activity_route_layout_and_responsive_style(page)),
+            ("Mobile Navigation Drawer", lambda: test_mobile_navigation_drawer(page)),
             ("Activity Member Bucket Authorization", lambda: test_activity_member_bucket_authorization(page)),
         ]
 

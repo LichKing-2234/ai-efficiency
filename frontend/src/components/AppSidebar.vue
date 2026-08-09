@@ -17,7 +17,7 @@ import {
   UserFilled,
 } from '@element-plus/icons-vue'
 
-defineProps<{
+const props = defineProps<{
   mobile?: boolean
 }>()
 
@@ -30,18 +30,20 @@ const workItems = useWorkItemsStore()
 const router = useRouter()
 const { languageToggleLabel, t, toggleLocale } = useI18n()
 const displayUsername = computed(() => auth.user?.username ?? 'User')
-const displayRole = computed(() => auth.user?.role ?? '')
+const activeNavigationClass = computed(() => (
+  props.mobile ? 'bg-blue-50 text-blue-700' : 'bg-gray-800'
+))
 const usageLinkClass = computed(() => [
-  'flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800',
-  router.currentRoute.value.path.startsWith('/usage') ? 'bg-gray-800' : '',
+  'flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800',
+  router.currentRoute.value.path.startsWith('/usage') ? activeNavigationClass.value : '',
 ])
 const workItemsLinkClass = computed(() => [
-  'flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800',
-  router.currentRoute.value.path.startsWith('/work-items') ? 'bg-gray-800' : '',
+  'flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800',
+  router.currentRoute.value.path.startsWith('/work-items') ? activeNavigationClass.value : '',
 ])
 const activityLinkClass = computed(() => [
-  'flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800',
-  router.currentRoute.value.path.startsWith('/activity') ? 'bg-gray-800' : '',
+  'flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800',
+  router.currentRoute.value.path.startsWith('/activity') ? activeNavigationClass.value : '',
 ])
 
 onMounted(() => {
@@ -59,16 +61,20 @@ function handleNavigate() {
 </script>
 
 <template>
-  <aside class="flex h-full min-h-0 w-60 shrink-0 flex-col bg-gray-900 text-gray-100">
+  <aside
+    class="flex h-full min-h-0 shrink-0 flex-col"
+    :class="mobile
+      ? 'w-full overflow-y-auto bg-white text-slate-700'
+      : 'w-60 bg-gray-900 text-gray-100'"
+  >
     <div
-      data-testid="sidebar-header"
+      v-if="!mobile"
       class="flex h-14 items-center justify-between gap-3 px-4"
     >
-      <div class="min-w-0 truncate text-lg font-semibold tracking-wide">
+      <div class="min-w-0 truncate text-lg font-semibold">
         {{ t('app.title') }}
       </div>
       <el-button
-        data-testid="language-toggle"
         class="shrink-0 !text-gray-200"
         :icon="Switch"
         size="small"
@@ -79,7 +85,12 @@ function handleNavigate() {
       </el-button>
     </div>
 
-    <nav class="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 py-4">
+    <nav
+      class="space-y-1"
+      :class="mobile
+        ? 'flex-none px-3 py-3'
+        : 'min-h-0 flex-1 overflow-y-auto px-2 py-4'"
+    >
       <div class="px-3 pb-2 text-[11px] font-semibold uppercase text-gray-500">
         {{ t('nav.myWorkSection') }}
       </div>
@@ -90,8 +101,8 @@ function handleNavigate() {
 
       <RouterLink
         to="/user"
-        class="flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
-        active-class="bg-gray-800"
+        class="flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
+        :active-class="activeNavigationClass"
         @click="handleNavigate"
       >
         <el-icon class="mr-3"><User /></el-icon>
@@ -120,14 +131,17 @@ function handleNavigate() {
         {{ t('nav.activity') }}
       </RouterLink>
 
-      <div class="mt-5 border-t border-gray-800 pt-4">
+      <div
+        class="mt-3 border-t pt-3"
+        :class="mobile ? 'border-slate-200' : 'border-gray-800 md:mt-5 md:pt-4'"
+      >
         <div class="px-3 pb-2 text-[11px] font-semibold uppercase text-gray-500">
           {{ t('nav.codeSection') }}
         </div>
         <RouterLink
           to="/repos"
-          class="flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
-          active-class="bg-gray-800"
+          class="flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
+          :active-class="activeNavigationClass"
           @click="handleNavigate"
         >
           <el-icon class="mr-3"><Folder /></el-icon>
@@ -135,14 +149,18 @@ function handleNavigate() {
         </RouterLink>
       </div>
 
-      <div v-if="auth.isAdmin" class="mt-5 border-t border-gray-800 pt-4">
+      <div
+        v-if="auth.isAdmin"
+        class="mt-3 border-t pt-3"
+        :class="mobile ? 'border-slate-200' : 'border-gray-800 md:mt-5 md:pt-4'"
+      >
         <div class="px-3 pb-2 text-[11px] font-semibold uppercase text-gray-500">
           {{ t('nav.adminSection') }}
         </div>
         <RouterLink
           to="/admin/users"
-          class="flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
-          active-class="bg-gray-800"
+          class="flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
+          :active-class="activeNavigationClass"
           @click="handleNavigate"
         >
           <el-icon class="mr-3"><UserFilled /></el-icon>
@@ -151,8 +169,8 @@ function handleNavigate() {
 
         <RouterLink
           to="/admin/directory/offboarding"
-          class="mt-1 flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
-          active-class="bg-gray-800"
+          class="mt-1 flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
+          :active-class="activeNavigationClass"
           @click="handleNavigate"
         >
           <el-icon class="mr-3"><Bell /></el-icon>
@@ -161,8 +179,8 @@ function handleNavigate() {
 
         <RouterLink
           to="/settings"
-          class="mt-1 flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
-          active-class="bg-gray-800"
+          class="mt-1 flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
+          :active-class="activeNavigationClass"
           @click="handleNavigate"
         >
           <el-icon class="mr-3"><Setting /></el-icon>
@@ -171,26 +189,24 @@ function handleNavigate() {
       </div>
     </nav>
 
-    <div data-testid="sidebar-footer" class="border-t border-gray-700 p-4">
+    <div
+      class="border-t p-4"
+      :class="mobile ? 'flex-none border-slate-200' : 'border-gray-700'"
+    >
       <div class="flex items-center gap-3">
         <div
-          data-testid="sidebar-account-summary"
           class="min-w-0 flex-1 px-1 py-1 text-sm"
         >
           <p class="truncate font-medium" :title="displayUsername">{{ displayUsername }}</p>
-          <p class="truncate text-xs text-gray-400" :title="displayRole">{{ displayRole }}</p>
         </div>
-        <div class="flex shrink-0 items-center gap-1">
-          <el-button
-            circle
-            class="!text-gray-300"
-            :icon="SwitchButton"
-            :title="t('nav.logout')"
-            :aria-label="t('nav.logout')"
-            text
-            @click="handleLogout"
-          />
-        </div>
+        <el-button
+          circle
+          class="!text-gray-300"
+          :icon="SwitchButton"
+          :title="t('nav.logout')"
+          text
+          @click="handleLogout"
+        />
       </div>
     </div>
   </aside>

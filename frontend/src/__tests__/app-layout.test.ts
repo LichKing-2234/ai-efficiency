@@ -140,7 +140,7 @@ describe('AppLayout', () => {
     expect(wrapper.get('[aria-controls="mobile-navigation"]').classes()).toContain('el-button')
   })
 
-  it('shows only the custom close action in the mobile navigation drawer', async () => {
+  it('removes the default gap from the mobile navigation drawer header', async () => {
     const router = createTestRouter()
     await router.push('/')
     await router.isReady()
@@ -149,7 +149,18 @@ describe('AppLayout', () => {
       global: { plugins: [createPinia(), router] },
     })
 
-    expect(wrapper.findComponent({ name: 'ElDrawer' }).props('showClose')).toBe(false)
+    const drawer = wrapper.findComponent({ name: 'ElDrawer' })
+    expect(drawer.props('showClose')).toBe(false)
+    expect(drawer.props('headerClass')).toBe('!m-0')
+    expect(drawer.props('bodyClass')).toBe('!p-0')
+
+    await wrapper.get('[aria-controls="mobile-navigation"]').trigger('click')
+    await flushPromises()
+
+    const close = wrapper.get('button[title="Close"]')
+    const header = close.element.closest('header')
+    expect(header).not.toBeNull()
+    expect(header?.textContent).toContain('Menu')
   })
 
   it('closes an open mobile drawer when the layout crosses into desktop width', async () => {
@@ -231,7 +242,7 @@ describe('AppLayout', () => {
       for (let i = 0; i < 5; i += 1) {
         await menuButton.trigger('click')
         await flushPromises()
-        await wrapper.get('[data-testid="mobile-nav-close"]').trigger('click')
+        await wrapper.get('button[title="Close"]').trigger('click')
         await flushPromises()
       }
       expect(api.getWorkItemCounts).toHaveBeenCalledTimes(1)
