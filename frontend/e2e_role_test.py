@@ -19,14 +19,139 @@ from playwright.sync_api import sync_playwright
 
 BASE = os.environ.get("AE_E2E_BASE_URL", "http://localhost:5173").rstrip("/")
 API = "http://localhost:8081/api/v1"
-SCREENSHOT_DIR = "/tmp/ae-e2e-role"
+SCREENSHOT_DIR = os.environ.get("AE_E2E_SCREENSHOT_DIR", "/tmp/ae-e2e-role")
+CAPTURE_MATRIX = os.environ.get("AE_E2E_CAPTURE_MATRIX") == "1"
 
 passed = 0
 failed = 0
 errors = []
+unmocked_matrix_requests = set()
+
+VIEWPORTS = (
+    ("narrow-mobile", 320, 800),
+    ("mobile", 390, 844),
+    ("tablet", 768, 1024),
+    ("desktop-boundary", 1024, 900),
+    ("wide-boundary", 1280, 900),
+    ("desktop", 1440, 900),
+)
+
+USER_ROUTE_CASES = (
+    {
+        "path": "/usage",
+        "selector": "[data-testid='usage-center-tabs']",
+        "state_selectors": ("[data-testid='usage-group-quotas']", "[data-model-row]"),
+        "fit_selectors": ("[data-testid='usage-center-tabs'] .el-segmented__item-label",),
+    },
+    {
+        "path": "/usage/team",
+        "selector": "[data-testid='team-overview-content']",
+        "state_selectors": (
+            "[data-testid='team-overview-summary']",
+            "[data-testid='team-overview-trend']",
+            "[data-testid='team-overview-ranking-table']",
+        ),
+        "exercise": "team-views",
+    },
+    {
+        "path": "/usage/members/7",
+        "selector": "[data-testid='member-usage-back']",
+        "state_selectors": ("[data-subscription-row]", "[data-model-row]"),
+    },
+    {
+        "path": "/usage/quota-reset",
+        "selector": "[data-testid='quota-reset-queue-selector']",
+        "state_selectors": ("[data-testid='quota-reset-row-1']",),
+        "exercise": "quota-user",
+    },
+    {"path": "/work-items", "selector": "main h1:has-text('Work Items')"},
+    {
+        "path": "/repos",
+        "selector": "[data-testid='repo-binding-filter']",
+        "fit_selectors": ("[data-testid='repo-row'] > div:first-child",),
+        "exercise": "repo-dialog",
+    },
+    {"path": "/repos/9", "selector": "[data-testid='repo-tab-activity']"},
+    {
+        "path": "/repos/9?tab=operations",
+        "expected_path": "/repos/9",
+        "selector": "[data-testid='repo-pr-row']",
+        "state_selectors": (
+            "[data-testid='repo-pr-summary-grid'] > div:first-child",
+            "[data-testid='repo-pr-summary-metrics']",
+        ),
+        "fit_selectors": (
+            "[data-testid='repo-pr-summary-grid'] > div:first-child",
+            "[data-testid='repo-pr-summary-metrics'] dd",
+        ),
+    },
+    {"path": "/activity", "selector": "[data-testid='activity-range-refresh']"},
+    {"path": "/activity/teams", "selector": "[data-testid='activity-team-team-alpha']"},
+    {"path": "/activity/teams/team-alpha", "selector": "[data-testid='activity-team-summary']"},
+    {"path": "/activity/members/7", "selector": "[data-testid='activity-range-refresh']"},
+    {
+        "path": "/user",
+        "selector": "[data-testid='primary-onboarding-flow']",
+        "state_selectors": (
+            "[data-testid='provider-2']",
+            "[data-testid='group-group-alpha']",
+            "[data-testid='primary-onboarding-action']",
+        ),
+        "exercise": "user-onboarding",
+    },
+)
+
+ADMIN_ROUTE_CASES = (
+    {
+        "path": "/usage/quota-reset",
+        "selector": "[data-testid='quota-reset-tab-admin']",
+        "exercise": "quota-admin",
+    },
+    {
+        "path": "/admin/users",
+        "selector": "[data-testid='admin-users-view-users']",
+        "exercise": "admin-users-layout",
+        "desktop_min_width": 1440,
+        "state_selectors": ("[data-admin-user-list='mobile']", "[data-admin-user-row]"),
+        "desktop_state_selectors": ("[data-admin-user-list='desktop']", "[data-admin-user-row]"),
+        "desktop_fit_selectors": (
+            "[data-admin-user-list='desktop'] .el-tag",
+            "[data-testid='admin-user-timestamps-7']",
+            "[data-testid='admin-user-desktop-actions-7']",
+        ),
+    },
+    {
+        "path": "/admin/directory/offboarding",
+        "selector": "[data-testid='offboarding-search']",
+        "exercise": "offboarding-dialog",
+    },
+    {
+        "path": "/settings",
+        "selector": "[data-testid='settings-section-select']",
+        "desktop_selector": "[data-testid='settings-tab-ai-services']",
+        "exercise": "settings-dialog",
+    },
+)
+
+PUBLIC_ROUTE_CASES = (
+    {"path": "/login", "selector": "[data-testid='username-field']", "authenticated": False},
+    {
+        "path": "/oauth/authorize?client_id=ae-cli&redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback&state=e2e-state",
+        "expected_path": "/oauth/authorize",
+        "selector": "a[href^='/login?redirect=']",
+        "authenticated": False,
+    },
+    {"path": "/oauth/device", "selector": "[data-testid='device-code']", "authenticated": True},
+)
 
 
 def screenshot(page, name):
+    if page.locator("[role='dialog']:visible").count() == 0:
+        page.wait_for_function("getComputedStyle(document.body).overflow !== 'hidden'")
+    page.evaluate("""() => new Promise((resolve) => {
+        window.scrollTo(0, 0)
+        requestAnimationFrame(() => requestAnimationFrame(resolve))
+    })""")
     page.screenshot(path=f"{SCREENSHOT_DIR}/{name}.png", full_page=True)
 
 
@@ -41,8 +166,505 @@ def report(name, ok, detail=""):
         print(f"  ❌ {name}: {detail}")
 
 
+def fulfill_json(route, data, status=200):
+    route.fulfill(
+        status=status,
+        content_type="application/json",
+        body=json.dumps({"code": 0 if status < 400 else status, "data": data} if status < 400 else {
+            "code": status,
+            "message": data.get("message", "Mock request failed"),
+        }),
+    )
+
+
+def activity_metrics():
+    return {
+        "participating_prs": {"value": 2, "lower_bound": False},
+        "merged_prs": {"value": 1, "lower_bound": False},
+        "active_repositories": 1,
+        "commit_count": 1,
+        "latest_activity": "2026-08-05T12:00:00Z",
+    }
+
+
+def activity_sync_coverage():
+    return {
+        "complete": True,
+        "affected_repositories": 0,
+        "unsynced_repositories": 0,
+        "stale_repositories": 0,
+        "partially_synced_repositories": 0,
+        "failed_repositories": 0,
+    }
+
+
+def activity_member_row():
+    return {
+        "member": {
+            "user_id": 7,
+            "display_name": "Alice",
+            "email": "alice@example.com",
+            "department_external_ids": ["team-alpha"],
+        },
+        "available": True,
+        "metrics": activity_metrics(),
+        "quality": {
+            "measured_buckets": 1,
+            "unbound_buckets": 0,
+            "multi_repo_shared_buckets": 0,
+            "invalid_token_facts": 0,
+            "historical_advisory_facts": 0,
+            "coverage_gap_count": 0,
+        },
+    }
+
+
+def team_usage_member():
+    return {
+        "rank": 1,
+        "user_id": 7,
+        "display_name": "Alice",
+        "email": "alice@example.com",
+        "department_external_id": "team-alpha",
+        "department_external_ids": ["team-alpha"],
+        "department_display_path": "Team Alpha",
+        "relay_user_id": 107,
+        "range_actual_cost": 12.5,
+        "today_actual_cost": 1.5,
+        "total_actual_cost": 12.5,
+        "total_tokens": 4200,
+        "subscription_count": 1,
+        "selectable": True,
+    }
+
+
+def team_usage_snapshot():
+    return {
+        "as_of": "2026-08-08T08:00:00Z",
+        "fresh_until": "2026-08-08T08:01:00Z",
+        "stale_until": "2026-08-08T08:05:00Z",
+        "cache_status": "fresh",
+        "source_status": "ok",
+        "scope_version": "scope-e2e",
+        "request_id": "request-e2e",
+        "window": {
+            "start_date": "2026-07-10",
+            "end_date": "2026-08-08",
+            "granularity": "day",
+            "today": "2026-08-08",
+            "rolling_days": 30,
+            "timezone": "Asia/Shanghai",
+        },
+    }
+
+
+def quota_reset_request(request_id, requester_name, requester_email):
+    return {
+        "id": request_id,
+        "requester_user_id": 7,
+        "requester_display_name": requester_name,
+        "requester_email": requester_email,
+        "provider_id": 3,
+        "group_id": f"group-{request_id}",
+        "group_name": "Group Alpha" if request_id == 1 else "Group Beta",
+        "group_platform": "openai",
+        "reason": "Need reset for representative E2E validation",
+        "status": "pending",
+        "workflow_version": 2,
+        "current_step": 0,
+        "workflow_steps": [{
+            "step_number": 1,
+            "label": "Company / Team Alpha",
+            "admin_fallback": False,
+            "status": "active",
+        }],
+        "resolved_approver_user_ids": [999],
+        "matched_department_paths": [],
+        "created_at": "2026-08-08T07:00:00Z",
+        "updated_at": "2026-08-08T07:00:00Z",
+    }
+
+
+def user_usage_snapshot():
+    return {
+        "configured": True,
+        "range": {
+            "start_date": "2026-07-10",
+            "end_date": "2026-08-08",
+            "granularity": "day",
+            "timezone": "Asia/Shanghai",
+        },
+        "stats": {
+            "total_requests": 12,
+            "total_input_tokens": 1000,
+            "total_output_tokens": 500,
+            "total_cache_creation_tokens": 20,
+            "total_cache_read_tokens": 30,
+            "total_tokens": 1550,
+            "total_cost": 0.25,
+            "total_actual_cost": 0.2,
+            "today_requests": 2,
+            "today_input_tokens": 100,
+            "today_output_tokens": 50,
+            "today_cache_creation_tokens": 2,
+            "today_cache_read_tokens": 3,
+            "today_tokens": 155,
+            "today_cost": 0.025,
+            "today_actual_cost": 0.02,
+            "average_duration_ms": 850,
+            "rpm": 2,
+            "tpm": 3000,
+        },
+        "trend": [{
+            "date": "2026-08-08",
+            "requests": 2,
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "cache_creation_tokens": 2,
+            "cache_read_tokens": 3,
+            "total_tokens": 155,
+            "cost": 0.025,
+            "actual_cost": 0.02,
+        }],
+        "models": [{
+            "model": "example-model",
+            "requests": 12,
+            "input_tokens": 1000,
+            "output_tokens": 500,
+            "cache_creation_tokens": 20,
+            "cache_read_tokens": 30,
+            "total_tokens": 1550,
+            "cost": 0.25,
+            "actual_cost": 0.2,
+        }],
+        "group_quotas": {
+            "status": "ok",
+            "unit_label": "USD",
+            "message": "",
+            "groups": [{
+                "group_id": "group-1",
+                "group_name": "Group Alpha",
+                "platform": "openai",
+                "used_amount": 12.5,
+                "quota_amount": 100,
+                "is_unlimited": False,
+                "quota_source": "api_key",
+            }],
+        },
+        "usage_freshness": {
+            "as_of": "2026-08-08T08:00:00Z",
+            "fresh_until": "2026-08-08T08:01:00Z",
+            "stale_until": "2026-08-08T08:05:00Z",
+            "cache_status": "fresh",
+            "source_status": "ok",
+        },
+    }
+
+
+def admin_user():
+    return {
+        "id": 7,
+        "username": "alice",
+        "email": "alice@example.com",
+        "role": "user",
+        "auth_source": "ldap",
+        "relay_user_id": 107,
+        "relay_auth_password": "",
+        "department": {
+            "external_id": "team-alpha",
+            "name": "Team Alpha",
+            "path": "team-alpha",
+            "display_path": "Team Alpha",
+        },
+        "created_at": "2026-08-01T00:00:00Z",
+        "updated_at": "2026-08-08T08:00:00Z",
+    }
+
+
+def mock_matrix_api(route, role):
+    global unmocked_matrix_requests
+    path = urlparse(route.request.url).path
+    repo = {
+        "id": 9,
+        "repo_key": "github.com/example-org/repo-a",
+        "name": "repo-a",
+        "full_name": "example-org/repo-a",
+        "clone_url": "https://github.com/example-org/repo-a.git",
+        "default_branch": "main",
+        "status": "active",
+        "binding_state": "bound",
+        "group_id": 1,
+        "scm_provider_id": 3,
+        "created_at": "2026-08-01T00:00:00Z",
+        "edges": {},
+    }
+    repo_pr = {
+        "id": 21,
+        "scm_pr_id": 88,
+        "scm_pr_url": "https://example.com/pull/88",
+        "author": "alice",
+        "title": "Improve activity presentation",
+        "source_branch": "feat/activity",
+        "target_branch": "main",
+        "status": "merged",
+        "labels": [],
+        "lines_added": 40,
+        "lines_deleted": 5,
+        "cycle_time_hours": 8,
+        "merged_at": "2026-08-08T08:00:00Z",
+        "created_at": "2026-08-07T08:00:00Z",
+        "usage_status": "fresh",
+        "usage_input_tokens": 1200,
+        "usage_output_tokens": 500,
+        "usage_credit_usage": 1.25,
+        "usage_refreshed_at": "2026-08-08T08:00:00Z",
+    }
+    team_identity = {
+        "external_id": "team-alpha",
+        "parent_external_id": None,
+        "name": "Team Alpha",
+        "display_path": "Team Alpha",
+        "member_count": 1,
+    }
+
+    snapshot = team_usage_snapshot()
+    member = team_usage_member()
+    mine_request = quota_reset_request(1, "Alice", "alice@example.com")
+    approval_request = quota_reset_request(2, "Bob", "bob@example.org")
+    usage_snapshot = user_usage_snapshot()
+    responses = {
+        "/api/v1/telemetry/web-vitals": {},
+        "/api/v1/user/team-usage/scope": {
+            "is_representative": True,
+            "departments": [{
+                "external_id": "team-alpha",
+                "name": "Team Alpha",
+                "display_path": "Team Alpha",
+                "subtree_member_count": 1,
+                "matched_user_count": 1,
+            }],
+        },
+        "/api/v1/user/team-usage/summary": {
+            **snapshot,
+            "summary": {
+                "unavailable": False,
+                "unavailable_reason": None,
+                "member_count": 1,
+                "relay_member_count": 1,
+                "range_actual_cost": 12.5,
+                "range_total_tokens": 4200,
+                "today_actual_cost": 1.5,
+                "total_actual_cost": 12.5,
+                "unit_label": "USD",
+            },
+        },
+        "/api/v1/user/team-usage/trend": {
+            **snapshot,
+            "top_members": [member],
+            "top_member_trend": {
+                "unit_label": "USD",
+                "rank_basis": "range_total_tokens",
+                "unavailable": False,
+                "unavailable_reason": None,
+                "series": [{
+                    "user_id": 7,
+                    "display_name": "Alice",
+                    "rank": 1,
+                    "unavailable": False,
+                    "unavailable_reason": None,
+                    "points": [{"date": "2026-08-08", "actual_cost": 1.5, "total_tokens": 4200}],
+                }],
+            },
+            "department_trend": {
+                "unit_label": "USD",
+                "unavailable": False,
+                "unavailable_reason": None,
+                "comparison_total_count": 1,
+                "comparison_truncated": False,
+                "series": [{
+                    "series_type": "team_total",
+                    "display_name": "Team total",
+                    "rank": 0,
+                    "unavailable": False,
+                    "unavailable_reason": None,
+                    "points": [{"date": "2026-08-08", "actual_cost": 1.5, "total_tokens": 4200}],
+                }],
+            },
+        },
+        "/api/v1/user/team-usage/members": {
+            **snapshot,
+            "items": [member],
+            "total_count": 1,
+        },
+        "/api/v1/user/team-usage/organization": {
+            **snapshot,
+            "parent_department_external_id": None,
+            "departments": [{
+                "department_external_id": "team-alpha",
+                "parent_external_id": None,
+                "name": "Team Alpha",
+                "display_path": "Team Alpha",
+                "depth": 0,
+                "child_count": 0,
+                "has_children": False,
+                "direct_member_count": 1,
+                "aggregate_member_count": 1,
+                "connected_member_count": 1,
+                "range_actual_cost": 12.5,
+                "range_total_tokens": 4200,
+            }],
+            "members": [],
+        },
+        "/api/v1/user/usage/dashboard": usage_snapshot,
+        "/api/v1/user/usage/group-quotas": {
+            "group_quotas": usage_snapshot["group_quotas"],
+            "quota_freshness": {
+                "as_of": "2026-08-08T08:00:00Z",
+                "cache_status": "uncached",
+                "source_status": "ok",
+            },
+        },
+        "/api/v1/user/team-usage/subjects/7/usage/dashboard": {
+            **usage_snapshot,
+            "subject": {
+                "subject_type": "member",
+                "user_id": 7,
+                "display_name": "Alice",
+                "email": "alice@example.com",
+                "department_external_id": "team-alpha",
+                "department_external_ids": ["team-alpha"],
+                "department_display_path": "Team Alpha",
+                "relay_user_id": 107,
+                "selectable": True,
+            },
+            "subject_subscription_groups": [{
+                "group_id": "group-1",
+                "group_name": "Group Alpha",
+                "platform": "openai",
+                "subscription_status": "active",
+                "system_default_multiplier": 1,
+                "inherited_default_multiplier": 1,
+                "effective_multiplier": 1,
+                "multiplier_source": "system",
+                "daily_display_used_usd": 1,
+                "weekly_display_used_usd": 5,
+                "monthly_display_used_usd": 12.5,
+                "daily_usage_usd": 1,
+                "weekly_usage_usd": 5,
+                "monthly_usage_usd": 12.5,
+                "monthly_effective_allowance_usd": 100,
+                "usage_value_basis": "raw_actual_cost",
+                "quota_window_basis": "calendar_month",
+                "editable": True,
+            }],
+        },
+        "/api/v1/user/quota-reset/requests": {
+            "items": [mine_request], "page": 1, "page_size": 20, "total": 1,
+        },
+        "/api/v1/user/quota-reset/approvals": {
+            "items": [approval_request], "page": 1, "page_size": 20, "total": 1,
+        },
+        "/api/v1/admin/quota-reset/requests": {
+            "items": [approval_request] if role == "admin" else [],
+            "page": 1,
+            "page_size": 20,
+            "total": 1 if role == "admin" else 0,
+        },
+        "/api/v1/repos": {"items": [repo], "total": 1, "page": 1, "page_size": 20},
+        "/api/v1/repos/inventory": [{
+            "provider_key": "scm_provider:3",
+            "provider_id": 3,
+            "name": "GitHub",
+            "type": "github",
+            "total_repos": 1,
+            "bound_repos": 1,
+            "unbound_repos": 0,
+            "active_repos": 1,
+            "webhook_failed_repos": 0,
+            "scopes": [{
+                "scope": "example-org",
+                "total_repos": 1,
+                "bound_repos": 1,
+                "unbound_repos": 0,
+                "active_repos": 1,
+                "webhook_failed_repos": 0,
+            }],
+        }],
+        "/api/v1/repos/9": repo,
+        "/api/v1/repos/9/prs": {
+            "items": [repo_pr],
+            "total": 1,
+            "summary": {
+                "total": 1,
+                "with_usage": 1,
+                "pending_upload": 0,
+                "no_checkpoint": 0,
+                "refresh_failed": 0,
+            },
+        },
+        "/api/v1/repos/9/pr-sync-job/latest": None,
+        "/api/v1/activity/scope": {
+            "contract_version": "activity-v1",
+            "scope_version": "scope-e2e",
+            "can_view_teams": True,
+            "admin": role == "admin",
+            "representative": True,
+            "teams": [team_identity],
+        },
+        "/api/v1/activity/teams/team-alpha": {
+            "contract_version": "activity-v1",
+            "scope_version": "scope-e2e",
+            "window": {"from": "2026-07-09T00:00:00Z", "to": "2026-08-08T00:00:00Z"},
+            "team": team_identity,
+            "active_members": 1,
+            "metrics": activity_metrics(),
+            "sync_coverage": activity_sync_coverage(),
+            "members": {"items": [activity_member_row()]},
+        },
+        "/api/v1/activity/repos/9": {
+            "contract_version": "activity-v1",
+            "scope_version": "scope-e2e",
+            "window": {"from": "2026-07-09T00:00:00Z", "to": "2026-08-08T00:00:00Z"},
+            "repository": {"repo_config_id": 9, "name": "example-org/repo-a"},
+            "participating_members": 1,
+            "metrics": activity_metrics(),
+            "sync_coverage": activity_sync_coverage(),
+            "members": {"items": [activity_member_row()]},
+            "prs": {"items": []},
+            "commits": {"items": []},
+        },
+        "/api/v1/admin/users": {"items": [admin_user()], "total": 1, "page": 1, "page_size": 20},
+        "/api/v1/admin/users/department-options": {
+            "items": [], "selected": None, "total": 0, "page": 1, "page_size": 20,
+        },
+        "/api/v1/admin/users/subscription-options": {"providers": []},
+        "/api/v1/admin/users/subscription-jobs/latest": None,
+        "/api/v1/admin/directory/offboarding-candidates": {
+            "items": [{
+                "user_id": 7,
+                "username": "bob",
+                "email": "bob@example.org",
+                "auth_source": "ldap",
+                "relay_user_id": 97,
+                "reason": "missing_from_latest_full_company_directory",
+                "directory_run_id": 3,
+            }],
+            "page": 1,
+            "page_size": 20,
+            "total": 1,
+        },
+    }
+
+    if path in responses:
+        fulfill_json(route, responses[path])
+        return
+    unmocked_matrix_requests.add(path)
+    fulfill_json(route, {"message": f"No E2E mock for {path}"}, status=503)
+
+
 def clear_auth_routes(page):
     for pattern in [
+        "**/api/v1/**",
         "**/api/v1/auth/options",
         "**/api/v1/auth/dev-login",
         "**/api/v1/auth/refresh",
@@ -50,7 +672,6 @@ def clear_auth_routes(page):
         "**/api/v1/efficiency/dashboard",
         "**/api/v1/user/providers",
         "**/api/v1/work-items/counts",
-        "**/api/v1/events**",
         "**/api/v1/attribution/report**",
         "**/api/v1/activity/summary**",
         "**/api/v1/activity/members/**",
@@ -60,6 +681,8 @@ def clear_auth_routes(page):
         "**/api/v1/admin/credentials**",
         "**/api/v1/system/version**",
         "**/api/v1/admin/settings/ldap**",
+        "**/oauth/authorize/approve",
+        "**/oauth/device/verify",
     ]:
         try:
             page.unroute(pattern)
@@ -69,6 +692,13 @@ def clear_auth_routes(page):
 
 def mock_auth_endpoints(page, role="admin"):
     clear_auth_routes(page)
+
+    page.route("**/api/v1/**", lambda route: mock_matrix_api(route, role))
+    page.route("**/oauth/authorize/approve", lambda route: fulfill_json(
+        route,
+        {"redirect_uri": "http://127.0.0.1/callback?code=e2e-code"},
+    ))
+    page.route("**/oauth/device/verify", lambda route: fulfill_json(route, {"status": "approved"}))
 
     page.route("**/api/v1/auth/options", lambda route: route.fulfill(
         status=200,
@@ -116,7 +746,7 @@ def mock_auth_endpoints(page, role="admin"):
                 "username": "admin" if role == "admin" else "sso_test_user",
                 "email": "admin@example.com" if role == "admin" else "alice@example.com",
                 "role": role,
-                "auth_source": "dev" if role == "admin" else "sso",
+                "auth_source": "dev" if role == "admin" else "relay_sso",
             },
         }),
     ))
@@ -129,12 +759,40 @@ def mock_auth_endpoints(page, role="admin"):
     page.route("**/api/v1/user/providers", lambda route: route.fulfill(
         status=200,
         content_type="application/json",
-        body=json.dumps({"code": 0, "data": {"providers": []}}),
+        body=json.dumps({
+            "code": 0,
+            "data": {
+                "providers": [{
+                    "id": 2,
+                    "name": "example",
+                    "display_name": "Example AI",
+                    "base_url": "https://api.example.com",
+                    "default_model": "gpt-5.4",
+                    "is_primary": True,
+                    "groups": [{
+                        "group_id": "group-alpha",
+                        "group_name": "Group Alpha",
+                        "platform": "openai",
+                        "credential": {"state": "missing"},
+                    }],
+                }],
+                "message": "",
+            },
+        }),
     ))
     page.route("**/api/v1/work-items/counts", lambda route: route.fulfill(
         status=200,
         content_type="application/json",
-        body=json.dumps({"code": 0, "data": {}}),
+        body=json.dumps({
+            "code": 0,
+            "data": {
+                "quota_reset_approval_count": 1,
+                "quota_reset_admin_count": 1 if role == "admin" else 0,
+                "ai_access_setup_count": 0,
+                "offboarding_count": 0,
+                "total_count": 1,
+            },
+        }),
     ))
     activity_member = {
         "contract_version": "activity-v1",
@@ -259,11 +917,6 @@ def mock_auth_endpoints(page, role="admin"):
             },
         }),
     ))
-    page.route("**/api/v1/events**", lambda route: route.fulfill(
-        status=200,
-        content_type="application/json",
-        body=json.dumps({"code": 0, "data": {"items": [], "total": 0, "page": 0, "page_size": 3}}),
-    ))
     page.route("**/api/v1/scm-providers**", lambda route: route.fulfill(
         status=200,
         content_type="application/json",
@@ -329,6 +982,432 @@ def do_logout(page):
     clear_auth_routes(page)
 
 
+def overflow_state(page):
+    return page.evaluate("""() => {
+        const main = document.querySelector('main')
+        return {
+            viewport: window.innerWidth,
+            documentWidth: document.documentElement.scrollWidth,
+            bodyWidth: document.body.scrollWidth,
+            mainWidth: main?.clientWidth ?? 0,
+            mainContentWidth: main?.scrollWidth ?? 0,
+        }
+    }""")
+
+
+def expected_selector(case, width):
+    if width >= case.get("desktop_min_width", 1280) and case.get("desktop_selector"):
+        return case["desktop_selector"]
+    return case["selector"]
+
+
+def expected_state_selectors(case, width):
+    if width >= case.get("desktop_min_width", 1280) and case.get("desktop_state_selectors"):
+        return case["desktop_state_selectors"]
+    return case.get("state_selectors", ())
+
+
+def expected_fit_selectors(case, width):
+    if width >= case.get("desktop_min_width", 1280) and case.get("desktop_fit_selectors"):
+        return case["desktop_fit_selectors"]
+    return case.get("fit_selectors", ())
+
+
+def content_fits_containers(page, selectors):
+    for selector in selectors:
+        elements = page.locator(selector)
+        if elements.count() == 0:
+            return False
+        if not elements.evaluate_all("""elements => elements.every((element) => {
+            const container = element.closest('.cell') ?? element.parentElement
+            const main = element.closest('main')
+            if (!container || !main) return false
+            const elementRect = element.getBoundingClientRect()
+            const containerRect = container.getBoundingClientRect()
+            const mainRect = main.getBoundingClientRect()
+            return elementRect.left >= containerRect.left - 0.5
+                && elementRect.right <= containerRect.right + 0.5
+                && elementRect.left >= mainRect.left - 0.5
+                && elementRect.right <= mainRect.right + 0.5
+                && element.scrollWidth <= element.clientWidth
+                && element.scrollHeight <= element.clientHeight
+        })"""):
+            return False
+    return True
+
+
+def controls_meet_touch_height(page, selectors, minimum=44):
+    for selector in selectors:
+        elements = page.locator(selector)
+        if elements.count() == 0:
+            return False
+        if not elements.evaluate_all("""(elements, minimum) => elements
+            .filter((element) => {
+                const style = window.getComputedStyle(element)
+                return element.getClientRects().length > 0
+                    && style.display !== 'none'
+                    && style.visibility !== 'hidden'
+            })
+            .every((element) => {
+                const control = element.closest('.el-button, .el-input, .el-select, .el-radio-button') ?? element
+                return control.getBoundingClientRect().height >= minimum
+            })""", minimum):
+            return False
+    return True
+
+
+def radio_surfaces_match_touch_targets(page, minimum=44):
+    return page.locator("main .el-radio-button").evaluate_all("""(elements, minimum) => elements
+        .filter((element) => {
+            const style = window.getComputedStyle(element)
+            return element.getClientRects().length > 0
+                && style.display !== 'none'
+                && style.visibility !== 'hidden'
+        })
+        .every((element) => {
+            const surface = element.querySelector(':scope > span')
+            if (!surface) return false
+            const targetBox = element.getBoundingClientRect()
+            const surfaceBox = surface.getBoundingClientRect()
+            return surfaceBox.height >= minimum
+                && Math.abs(surfaceBox.top - targetBox.top) <= 0.5
+                && Math.abs(surfaceBox.right - targetBox.right) <= 0.5
+                && Math.abs(surfaceBox.bottom - targetBox.bottom) <= 0.5
+                && Math.abs(surfaceBox.left - targetBox.left) <= 0.5
+        })""", minimum)
+
+
+def quota_queue_options_share_one_row(page):
+    selector = page.locator("[data-testid='quota-reset-queue-selector']")
+    if selector.count() == 0:
+        return True
+    return selector.evaluate("""group => {
+        const options = [...group.querySelectorAll('.el-radio-button')]
+            .filter((element) => element.getClientRects().length > 0)
+        if (options.length < 2) return false
+        const boxes = options.map((element) => element.getBoundingClientRect())
+        const widths = boxes.map((box) => box.width)
+        const verticallyOverlap = Math.min(...boxes.map((box) => box.bottom))
+            > Math.max(...boxes.map((box) => box.top))
+        return verticallyOverlap
+            && boxes.slice(1).every((box, index) => box.left > boxes[index].left + 0.5)
+            && Math.max(...widths) - Math.min(...widths) <= 1
+    }""")
+
+
+def usage_center_navigation_is_stable(page):
+    tabs = page.locator("[data-testid='usage-center-tabs']")
+    if tabs.count() == 0:
+        return True
+    return tabs.locator(".el-segmented__item-label > span").evaluate_all("""labels => {
+        const text = labels.map((label) => label.textContent.trim()).join(',')
+        return text === 'My Usage,Team Overview,Reset Requests'
+            || text === '我的用量,团队概览,重置申请'
+    }
+    """)
+
+
+def protected_shell_state(page, width):
+    menu = page.locator("header button:has-text('Menu')")
+    sidebar = page.locator("aside").first
+    if width < 768:
+        return menu.is_visible() and not sidebar.is_visible()
+    return sidebar.is_visible() and not menu.is_visible()
+
+
+def exercise_route_control(page, exercise):
+    if exercise == "team-views":
+        page.locator("[data-testid='team-overview-organization-view']").click()
+        organization = page.locator("[data-testid='team-overview-organization-tree']")
+        organization.wait_for(state="visible")
+        opened = organization.is_visible()
+        page.locator("[data-testid='team-overview-ranking-view']").click()
+        page.locator("[data-testid='team-overview-ranking-table']").wait_for(state="visible")
+        return opened, "Team organization view did not open"
+    if exercise == "quota-user":
+        page.locator("[data-testid='quota-reset-row-1']").wait_for(state="visible")
+        approval_count_visible = page.locator("[data-testid='quota-reset-tab-approvals-count']").is_visible()
+        page.locator("[data-testid='quota-reset-tab-approvals']").click()
+        page.locator("[data-testid='quota-reset-row-2']").wait_for(state="visible")
+        page.locator("[data-testid='quota-reset-approve-2']").click()
+        dialog = page.locator("[data-testid='quota-reset-decision-dialog']")
+        dialog.wait_for(state="visible")
+        opened = (
+            dialog.is_visible()
+            and approval_count_visible
+            and page.locator("[data-testid='quota-reset-tab-admin']").count() == 0
+        )
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="hidden")
+        return opened, "Approver decision dialog did not open or admin queue leaked to user"
+    if exercise == "quota-admin":
+        queue_counts_visible = (
+            page.locator("[data-testid='quota-reset-tab-approvals-count']").is_visible()
+            and page.locator("[data-testid='quota-reset-tab-admin-count']").is_visible()
+        )
+        page.locator("[data-testid='quota-reset-tab-admin']").click()
+        page.locator("[data-testid='quota-reset-row-2']").wait_for(state="visible")
+        page.locator("[data-testid='quota-reset-approve-2']").click()
+        dialog = page.locator("[data-testid='quota-reset-decision-dialog']")
+        dialog.wait_for(state="visible")
+        opened = dialog.is_visible() and queue_counts_visible
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="hidden")
+        return opened, "Administrator decision dialog did not open"
+    if exercise == "repo-dialog":
+        page.locator("main button:has-text('Add Repo')").click()
+        dialog = page.locator(".el-dialog").first
+        dialog.wait_for(state="visible")
+        opened = dialog.is_visible()
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="hidden")
+        return opened, "Repository dialog did not open"
+    if exercise == "settings-dialog":
+        page.locator("main button:has-text('Add Service Endpoint')").click()
+        dialog = page.locator("[data-testid='relay-provider-dialog']")
+        dialog.wait_for(state="visible")
+        opened = dialog.is_visible()
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="hidden")
+        return opened, "Relay provider dialog did not open"
+    if exercise == "offboarding-dialog":
+        page.locator("[data-testid='disable-relay-user-7']").click()
+        dialog = page.locator("[data-testid='offboarding-disable-dialog']")
+        dialog.wait_for(state="visible")
+        opened = dialog.is_visible()
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="hidden")
+        return opened, "Offboarding dialog did not open"
+    if exercise == "admin-users-layout":
+        width = page.evaluate("window.innerWidth")
+        filters = page.locator("[data-testid='admin-users-filter-grid']")
+        search_field = page.locator("[data-testid='admin-users-search-field']")
+        column_count = filters.evaluate(
+            "element => getComputedStyle(element).gridTemplateColumns.split(' ').filter(Boolean).length"
+        )
+        search_box = search_field.bounding_box()
+        usable = bool(search_box) and (
+            (column_count == 1 and search_box["width"] >= 240)
+            if width < 1280
+            else (column_count == 5 and search_box["width"] >= 200)
+        )
+        return usable, f"Unexpected Admin Users filter layout at {width}px"
+    if exercise == "user-onboarding":
+        width = page.evaluate("window.innerWidth")
+        flow = page.locator("[data-testid='primary-onboarding-flow']")
+        summary = page.locator("[data-testid='user-summary-column']")
+        onboarding = page.locator("[data-testid='user-onboarding-column']")
+        steps = flow.locator("[data-testid='onboarding-steps']")
+        header = page.locator("[data-testid='onboarding-step-header']")
+        header_copy = page.locator("[data-testid='onboarding-step-copy']")
+        action = page.locator("[data-testid='primary-onboarding-action']")
+        provider = page.locator("[data-testid='provider-2']")
+        primary_tag = page.locator("[data-testid='provider-primary-tag-2']")
+
+        flow_box = flow.bounding_box()
+        summary_box = summary.bounding_box()
+        onboarding_box = onboarding.bounding_box()
+        header_box = header.bounding_box()
+        copy_box = header_copy.bounding_box()
+        action_box = action.bounding_box()
+        provider_box = provider.bounding_box()
+        tag_box = primary_tag.bounding_box()
+        if not all((flow_box, summary_box, onboarding_box, header_box, copy_box, action_box, provider_box, tag_box)):
+            return False, "Onboarding layout element has no visible bounding box"
+
+        flow_content_width = flow.evaluate("""element => {
+            const style = getComputedStyle(element)
+            return element.clientWidth
+                - parseFloat(style.paddingLeft)
+                - parseFloat(style.paddingRight)
+        }""")
+        horizontal_steps_expected = flow_content_width >= 700
+        step_direction_fits = steps.get_attribute("data-direction") == (
+            "horizontal" if horizontal_steps_expected else "vertical"
+        )
+        step_titles_fit = (
+            flow.locator("[data-testid^='onboarding-step-button-']").evaluate_all("""elements => {
+                const container = document.querySelector('[data-testid="onboarding-steps"]')
+                if (!container) return false
+                const containerBox = container.getBoundingClientRect()
+                const boxes = elements.map((element) => element.getBoundingClientRect())
+                return boxes.every((box) => (
+                    box.left >= containerBox.left - 1 && box.right <= containerBox.right + 1
+                )) && boxes.slice(1).every((box, index) => boxes[index].right <= box.left + 1)
+            }""")
+            if horizontal_steps_expected
+            else True
+        )
+
+        stacked = (
+            abs(summary_box["x"] - onboarding_box["x"]) <= 1
+            and summary_box["y"] > onboarding_box["y"]
+            and action_box["y"] >= copy_box["y"] + copy_box["height"] - 1
+            and abs(action_box["width"] - header_box["width"]) <= 1
+        )
+        split = (
+            summary_box["x"] < onboarding_box["x"]
+            and abs(summary_box["y"] - onboarding_box["y"]) <= 1
+            and action_box["x"] > copy_box["x"]
+            and action_box["width"] < header_box["width"]
+        )
+        tag_fits = (
+            tag_box["x"] >= provider_box["x"]
+            and tag_box["x"] + tag_box["width"] <= provider_box["x"] + provider_box["width"] + 1
+        )
+        selected_group = page.locator("[data-testid='group-group-alpha'][data-selected='true']")
+        selected_indicator = page.locator("[data-testid='group-indicator-group-alpha'][data-selected='true']")
+        radio_selection = (
+            selected_group.count() == 1
+            and selected_indicator.count() == 1
+        )
+        usable = (
+            (stacked if width < 1280 else split)
+            and step_direction_fits
+            and step_titles_fit
+            and tag_fits
+            and radio_selection
+        )
+        return usable, f"Unexpected onboarding layout at {width}px"
+    return True, ""
+
+
+def visit_matrix_case(page, role, case, viewport):
+    global unmocked_matrix_requests
+    viewport_name, width, height = viewport
+    page.set_viewport_size({"width": width, "height": height})
+    page_errors = []
+    on_page_error = lambda error: page_errors.append(str(error))
+    page.on("pageerror", on_page_error)
+    path = case["path"]
+    label = f"{role} {path.split('?')[0]} @ {width}"
+    try:
+        unmocked_matrix_requests.clear()
+        page.goto(f"{BASE}{path}")
+        page.wait_for_load_state("networkidle")
+        selector = expected_selector(case, width)
+        critical = page.locator(selector).first
+        critical.wait_for(state="visible", timeout=5000)
+        states = [page.locator(state_selector).first for state_selector in expected_state_selectors(case, width)]
+        for state in states:
+            state.wait_for(state="visible", timeout=5000)
+        states_visible = all(state.is_visible() for state in states)
+        content_fits = content_fits_containers(page, expected_fit_selectors(case, width))
+        exercised, exercise_detail = exercise_route_control(page, case.get("exercise"))
+        overflow = overflow_state(page)
+        expected_path = case.get("expected_path", path.split("?")[0])
+        actual_path = urlparse(page.url).path
+        checks = {
+            "path": actual_path == expected_path,
+            "critical": critical.is_visible(),
+            "states": states_visible,
+            "content_fit": content_fits,
+            "shell": protected_shell_state(page, width),
+            "touch_targets": width >= 768 or controls_meet_touch_height(
+                page,
+                ("header button:has-text('Menu')", "header button"),
+            ),
+            "radio_surfaces": width >= 768 or radio_surfaces_match_touch_targets(page),
+            "quota_queue_layout": quota_queue_options_share_one_row(page),
+            "usage_center_navigation": usage_center_navigation_is_stable(page),
+            "overflow": (
+                overflow["documentWidth"] <= overflow["viewport"]
+                and overflow["bodyWidth"] <= overflow["viewport"]
+                and overflow["mainContentWidth"] <= overflow["mainWidth"]
+            ),
+            "interaction": exercised,
+            "page_errors": not page_errors,
+            "mocked_api": not unmocked_matrix_requests,
+        }
+        report(
+            label,
+            all(checks.values()),
+            json.dumps({
+                "viewport": viewport_name,
+                "checks": checks,
+                "overflow": overflow,
+                "exercise": exercise_detail,
+                "errors": page_errors,
+                "unmocked_requests": sorted(unmocked_matrix_requests),
+                "url": page.url,
+            }),
+        )
+    except Exception as error:
+        report(label, False, str(error))
+        screenshot(page, f"matrix_{role}_{viewport_name}_{path.split('?')[0].strip('/').replace('/', '_') or 'root'}")
+    finally:
+        if CAPTURE_MATRIX:
+            screenshot(page, f"matrix_{role}_{viewport_name}_{path.split('?')[0].strip('/').replace('/', '_') or 'root'}")
+        page.remove_listener("pageerror", on_page_error)
+
+
+def test_route_role_viewport_matrix(page):
+    print("\n🧪 Active Routes — Role and Viewport Matrix")
+
+    do_dev_login(page, role="user")
+    for viewport in VIEWPORTS:
+        for case in USER_ROUTE_CASES:
+            visit_matrix_case(page, "user", case, viewport)
+
+    page.evaluate("localStorage.clear()")
+    do_dev_login(page, role="admin")
+    for viewport in VIEWPORTS:
+        for case in ADMIN_ROUTE_CASES:
+            visit_matrix_case(page, "admin", case, viewport)
+
+    mock_auth_endpoints(page, role="user")
+    for viewport_name, width, height in VIEWPORTS:
+        page.set_viewport_size({"width": width, "height": height})
+        for case in PUBLIC_ROUTE_CASES:
+            if case["authenticated"]:
+                page.evaluate("""() => {
+                    localStorage.setItem('token', 'user-token')
+                    localStorage.setItem('refresh_token', 'user-refresh')
+                }""")
+            else:
+                page.evaluate("localStorage.clear()")
+
+            page_errors = []
+            on_page_error = lambda error: page_errors.append(str(error))
+            page.on("pageerror", on_page_error)
+            path = case["path"]
+            label = f"public {path.split('?')[0]} @ {width}"
+            try:
+                page.goto(f"{BASE}{path}")
+                page.wait_for_load_state("networkidle")
+                critical = page.locator(case["selector"]).first
+                critical.wait_for(state="visible", timeout=5000)
+                overflow = overflow_state(page)
+                expected_path = case.get("expected_path", path.split("?")[0])
+                checks = {
+                    "path": urlparse(page.url).path == expected_path,
+                    "critical": critical.is_visible(),
+                    "auth_shell": page.locator("[data-testid='auth-language-toggle']").is_visible(),
+                    "touch_targets": width >= 768 or controls_meet_touch_height(
+                        page,
+                        ("[data-testid='auth-language-toggle']", case["selector"]),
+                    ),
+                    "overflow": overflow["documentWidth"] <= overflow["viewport"],
+                    "page_errors": not page_errors,
+                }
+                report(
+                    label,
+                    all(checks.values()),
+                    json.dumps({"viewport": viewport_name, "checks": checks, "overflow": overflow, "url": page.url}),
+                )
+            except Exception as error:
+                report(label, False, str(error))
+                screenshot(page, f"matrix_public_{viewport_name}_{path.split('?')[0].strip('/').replace('/', '_')}")
+            finally:
+                if CAPTURE_MATRIX:
+                    screenshot(page, f"matrix_public_{viewport_name}_{path.split('?')[0].strip('/').replace('/', '_')}")
+                page.remove_listener("pageerror", on_page_error)
+
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.evaluate("localStorage.clear()")
+    clear_auth_routes(page)
+
+
 def test_dev_login_settings(page):
     """Test: Dev login (admin) can see SCM Providers and LLM config on Settings page."""
     print("\n🧪 Dev Login (admin) — Settings Page")
@@ -379,7 +1458,7 @@ def test_dev_login_settings(page):
            add_platform_button.is_visible())
 
     page.locator("[data-testid='settings-tab-deployment-runtime']").click()
-    page.wait_for_timeout(300)
+    page.locator("h2:has-text('Deployment & Runtime')").wait_for(state="visible")
     report("Deployment & Runtime section visible",
            page.locator("h2:has-text('Deployment & Runtime')").is_visible())
     report("Current version visible",
@@ -534,6 +1613,79 @@ def test_activity_route_layout_and_responsive_style(page):
     clear_auth_routes(page)
 
 
+def test_mobile_navigation_drawer(page):
+    """The mobile shell uses one compact navigation surface at narrow widths."""
+    print("\n🧪 App Shell — Mobile Navigation Drawer")
+
+    do_dev_login(page, role="user")
+    for label, width, height in VIEWPORTS[:2]:
+        page.set_viewport_size({"width": width, "height": height})
+        page.goto(f"{BASE}/usage")
+        page.wait_for_load_state("networkidle")
+        page.locator("header button[aria-controls='mobile-navigation']").click()
+
+        drawer = page.locator("[role='dialog']")
+        drawer.wait_for(state="visible", timeout=5000)
+        page.wait_for_timeout(400)
+        state = page.evaluate("""() => {
+            const drawer = document.querySelector('[role="dialog"]')
+            const surface = document.querySelector('#mobile-navigation aside')
+            const navigation = surface?.querySelector('nav')
+            const footer = surface?.lastElementChild
+            const selected = surface?.querySelector('a[href="/usage"]')
+            const rows = [...(surface?.querySelectorAll('nav a') ?? [])]
+            const navBox = navigation?.getBoundingClientRect()
+            const footerBox = footer?.getBoundingClientRect()
+            const drawerBox = drawer?.getBoundingClientRect()
+            return {
+                drawerHeaders: drawer?.querySelectorAll(':scope > header').length ?? -1,
+                duplicateTitle: surface?.textContent?.includes('AI Efficiency') ?? true,
+                closeAction: drawer?.querySelector(':scope > header button') != null,
+                surfaceBackground: surface ? getComputedStyle(surface).backgroundColor : '',
+                selectedBackground: selected ? getComputedStyle(selected).backgroundColor : '',
+                selectedColor: selected ? getComputedStyle(selected).color : '',
+                rowHeights: rows.map((row) => row.getBoundingClientRect().height),
+                footerGap: navBox && footerBox ? footerBox.top - navBox.bottom : null,
+                drawerLeft: drawerBox?.left ?? null,
+                drawerWidth: drawerBox?.width ?? null,
+                viewportWidth: window.innerWidth,
+                documentWidth: document.documentElement.scrollWidth,
+                surfaceWidth: surface?.scrollWidth ?? null,
+                surfaceClientWidth: surface?.clientWidth ?? null,
+            }
+        }""")
+        checks = {
+            "single_header": state["drawerHeaders"] == 1,
+            "no_desktop_brand": not state["duplicateTitle"],
+            "close_action": state["closeAction"],
+            "light_surface": state["surfaceBackground"] == "rgb(255, 255, 255)",
+            "selected_state": (
+                state["selectedBackground"] == "rgb(239, 246, 255)"
+                and state["selectedColor"] == "rgb(29, 78, 216)"
+            ),
+            "touch_targets": state["rowHeights"] and min(state["rowHeights"]) >= 44,
+            "compact_flow": state["footerGap"] is not None and abs(state["footerGap"]) <= 1,
+            "fully_open": state["drawerLeft"] is not None and abs(state["drawerLeft"]) <= 1,
+            "no_overflow": (
+                state["documentWidth"] <= state["viewportWidth"]
+                and state["drawerWidth"] <= state["viewportWidth"]
+                and state["surfaceWidth"] <= state["surfaceClientWidth"]
+            ),
+        }
+        screenshot(page, f"mobile_navigation_drawer_{width}")
+        report(
+            f"Mobile navigation drawer @ {width}",
+            all(checks.values()),
+            json.dumps({"viewport": label, "checks": checks, "state": state}),
+        )
+        drawer.locator(":scope > header button").click()
+        drawer.wait_for(state="hidden", timeout=5000)
+
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.evaluate("localStorage.clear()")
+    clear_auth_routes(page)
+
+
 def test_activity_member_bucket_authorization(page):
     """Representative member views omit Bucket data while Admin can load it lazily."""
     print("\n🧪 Activity — Member Bucket Authorization")
@@ -572,10 +1724,12 @@ def run_all():
         page = context.new_page()
 
         tests = [
+            ("Active Route Role/Viewport Matrix", lambda: test_route_role_viewport_matrix(page)),
             ("Admin (Dev Login) Settings", lambda: test_dev_login_settings(page)),
             ("User Role Settings Blocked", lambda: test_user_role_settings_blocked(page)),
             ("User Role /admin/users Blocked", lambda: test_user_role_admin_users_blocked(page)),
             ("Activity Route and Layout", lambda: test_activity_route_layout_and_responsive_style(page)),
+            ("Mobile Navigation Drawer", lambda: test_mobile_navigation_drawer(page)),
             ("Activity Member Bucket Authorization", lambda: test_activity_member_bucket_authorization(page)),
         ]
 

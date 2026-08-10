@@ -203,8 +203,10 @@ describe('DashboardView chart loading', () => {
       },
     })
 
-    await vi.waitFor(() => expect(wrapper.text()).toContain('No trend data available'))
-    expect(wrapper.text()).toContain('No model data available')
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('No trend data available')
+      expect(wrapper.text()).toContain('No model data available')
+    })
     expect(canvasModules.lineLoads).toBe(0)
     expect(canvasModules.doughnutLoads).toBe(0)
 

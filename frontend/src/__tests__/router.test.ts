@@ -157,6 +157,11 @@ describe('Router Guards', () => {
     expect(memberUsageRoute?.path).toBe('/usage/members/:user_id')
     expect(teamUsageRoute?.path).toBe('/usage/team')
     expect(quotaResetRoute?.path).toBe('/usage/quota-reset')
+    expect(usageRoute?.children.map((child) => child.name)).toEqual([
+      'UsageTeam',
+      'UsageQuotaReset',
+    ])
+    expect(usageRoute?.children.some((child) => child.name === 'UsageMember')).toBe(false)
   })
 
   it('includes Work Items route for authenticated users', () => {

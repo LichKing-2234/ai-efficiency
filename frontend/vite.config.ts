@@ -1,5 +1,8 @@
 import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
+import AutoImport from 'unplugin-auto-import/vite'
+import Components from 'unplugin-vue-components/vite'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { fileURLToPath, URL } from 'node:url'
 import type { Plugin } from 'vite'
 
@@ -53,7 +56,18 @@ export default defineConfig(({ mode }) => {
   const measuring = mode === 'measure'
 
   return {
-    plugins: [vue(), ...(measuring ? [moduleEvidencePlugin()] : [])],
+    plugins: [
+      vue(),
+      AutoImport({
+        dts: 'src/auto-imports.d.ts',
+        resolvers: [ElementPlusResolver()],
+      }),
+      Components({
+        dts: 'src/components.d.ts',
+        resolvers: [ElementPlusResolver({ importStyle: 'css' })],
+      }),
+      ...(measuring ? [moduleEvidencePlugin()] : []),
+    ],
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -61,6 +75,11 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       manifest: measuring,
+      rollupOptions: {
+        output: {
+          hashCharacters: 'base36',
+        },
+      },
     },
     server: {
       proxy: {
@@ -82,6 +101,11 @@ export default defineConfig(({ mode }) => {
       environment: 'jsdom',
       globals: true,
       setupFiles: ['./vitest.setup.ts'],
+      server: {
+        deps: {
+          inline: ['element-plus'],
+        },
+      },
     },
   }
 })

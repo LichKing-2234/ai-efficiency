@@ -33,9 +33,9 @@ function toggle() {
         @toggle="toggle"
       />
       <span v-else class="h-7 w-7 shrink-0" aria-hidden="true" />
-      <a
+      <RouterLink
         :data-testid="`activity-team-${team.external_id}`"
-        :href="`/activity/teams/${encodeURIComponent(team.external_id)}`"
+        :to="`/activity/teams/${encodeURIComponent(team.external_id)}`"
         class="group flex min-w-0 flex-1 items-center justify-between gap-4 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-600 focus-visible:ring-offset-2"
       >
         <span class="min-w-0">
@@ -43,7 +43,7 @@ function toggle() {
           <span class="mt-0.5 block truncate text-sm text-slate-500">{{ team.display_path }}</span>
         </span>
         <span class="shrink-0 text-sm font-medium text-slate-600">{{ t('activity.memberCount', { count: team.member_count }) }}</span>
-      </a>
+      </RouterLink>
     </div>
     <ul v-if="expanded && children.length" class="ml-5 border-l border-slate-200 pl-3">
       <ActivityTeamTreeNode

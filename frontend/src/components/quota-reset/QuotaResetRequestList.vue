@@ -45,12 +45,12 @@ function statusLabel(status: QuotaResetStatus) {
   }
 }
 
-function statusClass(status: QuotaResetStatus) {
-  if (status === 'approved_reset_succeeded') return 'bg-emerald-50 text-emerald-700'
-  if (status === 'approved_reset_failed') return 'bg-red-50 text-red-700'
-  if (status === 'rejected' || status === 'cancelled') return 'bg-slate-100 text-slate-600'
-  if (status === 'approved_resetting') return 'bg-blue-50 text-blue-700'
-  return 'bg-amber-50 text-amber-700'
+function statusType(status: QuotaResetStatus) {
+  if (status === 'approved_reset_succeeded') return 'success'
+  if (status === 'approved_reset_failed') return 'danger'
+  if (status === 'rejected' || status === 'cancelled') return 'info'
+  if (status === 'approved_resetting') return 'primary'
+  return 'warning'
 }
 
 function canCancel(item: QuotaResetRequestSummary) {
@@ -87,7 +87,7 @@ function isSelected(item: QuotaResetRequestSummary) {
 <template>
   <div class="rounded-lg border border-slate-200 bg-white shadow-sm">
     <div v-if="props.loading" class="p-4 text-sm text-slate-500">{{ t('settings.loading') }}</div>
-    <div v-else-if="props.items.length === 0" class="p-4 text-sm text-slate-500">{{ emptyText }}</div>
+    <ElEmpty v-else-if="props.items.length === 0" :description="emptyText" :image-size="72" />
     <div v-else class="divide-y divide-slate-200">
       <article
         v-for="item in props.items"
@@ -102,69 +102,66 @@ function isSelected(item: QuotaResetRequestSummary) {
         :aria-expanded="canExpand(item) ? isSelected(item) : undefined"
         @click="canExpand(item) && emit('select', item)"
       >
-        <div class="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+        <div :data-testid="`quota-reset-row-layout-${item.id}`" class="grid gap-2 xl:grid-cols-[minmax(0,1fr)_auto]">
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <h3 class="break-words text-sm font-semibold text-slate-950">{{ item.group_name || item.group_id }}</h3>
-              <span class="rounded-full px-2 py-0.5 text-xs font-medium" :class="statusClass(item.status)">
+              <ElTag size="small" round :type="statusType(item.status)">
                 {{ statusLabel(item.status) }}
-              </span>
+              </ElTag>
             </div>
             <p class="mt-1 text-xs text-slate-500">
               <span>{{ item.group_platform || '-' }}</span>
               <span v-if="item.requester_email"> · {{ item.requester_display_name || item.requester_email }}</span>
             </p>
-            <p :data-testid="`quota-reset-reason-${item.id}`" class="mt-2 line-clamp-1 break-words text-sm text-slate-700">{{ item.reason }}</p>
+            <p :data-testid="`quota-reset-reason-${item.id}`" class="mt-2 break-words text-sm text-slate-700">{{ item.reason }}</p>
             <p v-if="workflowProgress(item)" class="mt-2 break-words text-xs font-medium text-cyan-800">{{ workflowProgress(item) }}</p>
             <p v-if="item.reset_error" class="mt-2 break-words text-xs font-medium text-red-600">{{ item.reset_error }}</p>
           </div>
-          <div class="flex flex-wrap items-start gap-2 md:justify-end">
-            <button
+          <div class="flex flex-wrap items-start gap-2 xl:justify-end">
+            <ElButton
               v-if="canExpand(item)"
-              type="button"
-              class="rounded-md border border-cyan-300 px-2.5 py-1.5 text-sm font-medium text-cyan-800 hover:bg-cyan-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-700"
+              type="primary"
+              plain
               :data-testid="`quota-reset-workflow-toggle-${item.id}`"
               :aria-expanded="isSelected(item)"
               @click.stop="emit('select', item)"
             >
               {{ t('quotaReset.workflow') }}
-            </button>
-            <button
+            </ElButton>
+            <ElButton
               v-if="canCancel(item)"
-              type="button"
-              class="rounded-md border border-slate-300 px-2.5 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
               :data-testid="`quota-reset-cancel-${item.id}`"
               @click.stop="emit('cancel', item)"
             >
               {{ t('quotaReset.cancelRequest') }}
-            </button>
-            <button
+            </ElButton>
+            <ElButton
               v-if="canDecide(item)"
-              type="button"
-              class="rounded-md bg-cyan-700 px-2.5 py-1.5 text-sm font-medium text-white hover:bg-cyan-800"
+              type="primary"
               :data-testid="`quota-reset-approve-${item.id}`"
               @click.stop="emit('approve', item)"
             >
               {{ t('quotaReset.approve') }}
-            </button>
-            <button
+            </ElButton>
+            <ElButton
               v-if="canDecide(item)"
-              type="button"
-              class="rounded-md border border-red-300 px-2.5 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
+              type="danger"
+              plain
               :data-testid="`quota-reset-reject-${item.id}`"
               @click.stop="emit('reject', item)"
             >
               {{ t('quotaReset.reject') }}
-            </button>
-            <button
+            </ElButton>
+            <ElButton
               v-if="canRetry(item)"
-              type="button"
-              class="rounded-md border border-blue-300 px-2.5 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50"
+              type="primary"
+              plain
               :data-testid="`quota-reset-retry-${item.id}`"
               @click.stop="emit('retry', item)"
             >
               {{ t('quotaReset.retryReset') }}
-            </button>
+            </ElButton>
           </div>
         </div>
         <div

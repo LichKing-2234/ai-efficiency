@@ -36,10 +36,11 @@ function mountToggle(expanded = true) {
 }
 
 describe('DepartmentTreeToggle', () => {
-  it('renders plus and minus labels for collapsed and expanded states', () => {
-    expect(mountToggle(true).button.text()).toBe('-')
+  it('renders Element Plus icon controls for collapsed and expanded states', () => {
+    expect(mountToggle(true).button.classes()).toContain('el-button')
+    expect(mountToggle(true).button.find('svg').exists()).toBe(true)
     expect(mountToggle(true).button.attributes('aria-label')).toBe('Collapse department')
-    expect(mountToggle(false).button.text()).toBe('+')
+    expect(mountToggle(false).button.find('svg').exists()).toBe(true)
     expect(mountToggle(false).button.attributes('aria-label')).toBe('Expand department')
   })
 

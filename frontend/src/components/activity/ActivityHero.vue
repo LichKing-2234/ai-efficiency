@@ -8,7 +8,7 @@ function date(value?: string) { return value ? new Intl.DateTimeFormat(undefined
 </script>
 
 <template>
-  <section data-testid="activity-hero" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+  <section data-testid="activity-hero" class="grid grid-cols-2 gap-3 xl:grid-cols-4">
     <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('activity.participatingPRs') }}</p><p class="mt-2 text-3xl font-semibold text-slate-950">{{ count(metrics.participating_prs) }}</p></article>
     <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('activity.mergedPRs') }}</p><p class="mt-2 text-3xl font-semibold text-emerald-700">{{ count(metrics.merged_prs) }}</p></article>
     <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('activity.activeRepositories') }}</p><p class="mt-2 text-3xl font-semibold text-slate-950">{{ metrics.active_repositories }}</p></article>

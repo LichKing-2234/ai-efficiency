@@ -120,14 +120,12 @@ function toggleNode() {
         <div class="flex shrink-0 flex-wrap items-center gap-2 text-xs text-gray-600">
           <span class="tabular-nums text-gray-900">{{ props.formatCost(member.range_actual_cost) }}</span>
           <span class="tabular-nums">{{ props.formatTokens(member.total_tokens) }} {{ t('teamUsage.tokens') }}</span>
-          <button
-            type="button"
-            class="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          <ElButton
             :disabled="!props.canOpen(member)"
             @click.stop="props.openMember(member)"
           >
             {{ t('teamUsage.openMember') }}
-          </button>
+          </ElButton>
         </div>
       </div>
 
@@ -161,26 +159,22 @@ function toggleNode() {
         class="flex flex-wrap gap-2 border-b border-gray-100 px-4 py-3"
         :style="props.memberIndentStyle(props.node)"
       >
-        <button
+        <ElButton
           v-if="branch.nextDepartmentCursor"
           :data-testid="`team-overview-departments-more-${props.node.department_external_id}`"
-          type="button"
-          class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 disabled:opacity-50"
           :disabled="branch.departmentLoading || branch.memberLoading"
           @click.stop="props.loadMoreDepartments(props.node.department_external_id)"
         >
           {{ t('teamUsage.loadMoreDepartments') }}
-        </button>
-        <button
+        </ElButton>
+        <ElButton
           v-if="branch.nextMemberCursor"
           :data-testid="`team-overview-members-more-${props.node.department_external_id}`"
-          type="button"
-          class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 disabled:opacity-50"
           :disabled="branch.departmentLoading || branch.memberLoading"
           @click.stop="props.loadMoreMembers(props.node.department_external_id)"
         >
           {{ t('teamUsage.loadMoreMembers') }}
-        </button>
+        </ElButton>
         <span v-if="branch.error" :data-testid="`team-overview-organization-error-${props.node.department_external_id}`" class="text-sm text-slate-600">
           {{ t('teamUsage.unavailable') }}
         </span>

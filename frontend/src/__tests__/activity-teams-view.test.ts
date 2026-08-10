@@ -36,6 +36,35 @@ describe('ActivityTeamsView', () => {
     vi.clearAllMocks()
   })
 
+  it('uses an Element Plus error alert and retry button without changing reload behavior', async () => {
+    const api = await import('@/api/activity')
+    vi.mocked(api.getActivityScope)
+      .mockRejectedValueOnce(new Error('teams unavailable'))
+      .mockResolvedValueOnce({
+        data: {
+          data: {
+            contract_version: 'activity-v1',
+            scope_version: 'scope-1',
+            can_view_teams: true,
+            admin: false,
+            representative: true,
+            teams: [{ external_id: 'team-alpha', name: 'Team Alpha', display_path: 'Engineering / Team Alpha', member_count: 8 }],
+          },
+        },
+      } as any)
+    const { wrapper } = await mountView()
+
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.classes()).toContain('el-alert')
+    const retry = wrapper.findAll('button').find((button) => button.text() === 'Retry')
+    expect(retry?.classes()).toContain('el-button')
+
+    await retry!.trigger('click')
+    await flushPromises()
+    expect(api.getActivityScope).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('Team Alpha')
+  })
+
   it('renders only teams returned by the authorized scope without loading members', async () => {
     const api = await import('@/api/activity')
     vi.mocked(api.getActivityScope).mockResolvedValue({
@@ -54,7 +83,7 @@ describe('ActivityTeamsView', () => {
       },
     } as any)
 
-    const { wrapper } = await mountView()
+    const { wrapper, router } = await mountView()
 
     expect(api.getActivityScope).toHaveBeenCalledOnce()
     expect(api.listActivityMembers).not.toHaveBeenCalled()
@@ -64,6 +93,10 @@ describe('ActivityTeamsView', () => {
     expect(wrapper.text()).not.toContain('Token')
     expect(wrapper.text()).not.toContain('Rank')
     expect(wrapper.text()).not.toContain('Score')
+
+    await wrapper.get('[data-testid="activity-team-team-beta"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/activity/teams/team-beta')
   })
 
   it('keeps child teams collapsed until the shared department toggle expands their parent', async () => {

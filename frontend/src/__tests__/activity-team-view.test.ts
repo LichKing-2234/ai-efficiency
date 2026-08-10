@@ -103,7 +103,7 @@ describe('ActivityTeamView', () => {
 
   it('shows a 30-day team summary and member activity without ranking or Token columns', async () => {
     const api = await import('@/api/activity')
-    const { wrapper } = await mountView()
+    const { wrapper, router } = await mountView()
 
     expect(api.getActivityTeam).toHaveBeenCalledOnce()
     expect(api.getActivityTeam).toHaveBeenCalledWith('team-alpha', expect.objectContaining({ limit: 50 }))
@@ -111,6 +111,7 @@ describe('ActivityTeamView', () => {
     expect(new Date(params.to!).getTime() - new Date(params.from!).getTime()).toBe(30 * 24 * 60 * 60 * 1000)
 
     const summary = wrapper.get('[data-testid="activity-team-summary"]')
+    expect(summary.classes()).toContain('grid-cols-2')
     expect(summary.text()).toContain('Active members')
     expect(summary.text()).toContain('≥2')
     expect(summary.text()).toContain('≥1')
@@ -121,11 +122,40 @@ describe('ActivityTeamView', () => {
     const alice = wrapper.get('[data-testid="activity-member-7"]')
     expect(alice.text()).toContain('Alice')
     expect(alice.attributes('href')).toBe('/activity/members/7')
+    expect(alice.classes()).toContain('lg:grid-cols-[minmax(10rem,1fr)_7rem_7rem_7rem]')
+    expect(alice.classes()).not.toContain('sm:grid-cols-[minmax(10rem,1fr)_7rem_7rem_7rem]')
+    const columnLabels = wrapper.get('[data-testid="activity-team-member-column-labels"]')
+    expect(columnLabels.classes()).toContain('hidden')
+    expect(columnLabels.classes()).toContain('lg:grid')
+    expect(columnLabels.text()).toContain('Participating PRs')
+    expect(columnLabels.text()).toContain('Merged PRs')
+    expect(columnLabels.text()).toContain('Active repositories')
+    expect(alice.findAll('span').filter((label) => label.classes().includes('lg:hidden'))).toHaveLength(3)
     const bob = wrapper.get('[data-testid="activity-member-directory-bob"]')
     expect(bob.text()).toContain('Bob')
     expect(bob.text()).toContain('No activity data')
     expect(bob.attributes('href')).toBeUndefined()
     expect(wrapper.text()).toContain('1 repository needs PR sync')
+
+    await alice.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/activity/members/7')
+  })
+
+  it('uses an Element Plus error alert and retry button without changing reload behavior', async () => {
+    const api = await import('@/api/activity')
+    vi.mocked(api.getActivityTeam).mockRejectedValueOnce(new Error('team unavailable'))
+    const { wrapper } = await mountView()
+
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.classes()).toContain('el-alert')
+    const retry = wrapper.findAll('button').find((button) => button.text() === 'Retry')
+    expect(retry?.classes()).toContain('el-button')
+
+    await retry!.trigger('click')
+    await flushPromises()
+    expect(api.getActivityTeam).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('Team Alpha')
   })
 
   it('pages members independently without replacing the team summary', async () => {

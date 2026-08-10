@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { RouterLink } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import ActivityDateRange from '@/components/activity/ActivityDateRange.vue'
 import CursorPager from '@/components/activity/CursorPager.vue'
@@ -44,39 +45,53 @@ function memberKey(userID: number, directoryID?: string) {
       <div v-if="loading && !team" role="status" class="border-y border-slate-200 bg-white px-5 py-12 text-center text-sm text-slate-500">
         {{ t('activity.loadingTeam') }}
       </div>
-      <div v-else-if="error" role="alert" class="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-        {{ t('activity.teamLoadFailed') }}
-        <button type="button" class="ml-2 font-semibold underline" @click="load">{{ t('activity.retry') }}</button>
-      </div>
+      <ElAlert v-else-if="error" type="error" :closable="false">
+        <template #title>
+          <span>{{ t('activity.teamLoadFailed') }}</span>
+          <ElButton class="!ml-2" type="primary" link @click="load">{{ t('activity.retry') }}</ElButton>
+        </template>
+      </ElAlert>
 
       <template v-if="team">
-        <section data-testid="activity-team-summary" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <section data-testid="activity-team-summary" class="grid grid-cols-2 gap-3 xl:grid-cols-4">
           <article class="border border-slate-200 bg-white p-5 shadow-sm"><p class="text-xs font-semibold uppercase text-slate-500">{{ t('activity.activeMembers') }}</p><p class="mt-2 text-3xl font-semibold text-slate-950">{{ team.active_members }}</p></article>
           <article class="border border-slate-200 bg-white p-5 shadow-sm"><p class="text-xs font-semibold uppercase text-slate-500">{{ t('activity.participatingPRs') }}</p><p class="mt-2 text-3xl font-semibold text-slate-950">{{ metric(team.metrics.participating_prs) }}</p></article>
           <article class="border border-slate-200 bg-white p-5 shadow-sm"><p class="text-xs font-semibold uppercase text-slate-500">{{ t('activity.mergedPRs') }}</p><p class="mt-2 text-3xl font-semibold text-emerald-700">{{ metric(team.metrics.merged_prs) }}</p></article>
           <article class="border border-slate-200 bg-white p-5 shadow-sm"><p class="text-xs font-semibold uppercase text-slate-500">{{ t('activity.activeRepositories') }}</p><p class="mt-2 text-3xl font-semibold text-slate-950">{{ team.metrics.active_repositories }}</p></article>
         </section>
 
-        <div v-if="!team.sync_coverage.complete" role="status" class="border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {{ t('activity.syncNeeded', { count: team.sync_coverage.affected_repositories }) }}
-        </div>
+        <ElAlert
+          v-if="!team.sync_coverage.complete"
+          type="warning"
+          :title="t('activity.syncNeeded', { count: team.sync_coverage.affected_repositories })"
+          :closable="false"
+        />
 
         <section class="min-w-0 border-y border-slate-200 bg-white" :aria-label="t('activity.members')">
           <div class="border-b border-slate-200 px-5 py-4"><h2 class="font-semibold text-slate-950">{{ t('activity.members') }}</h2></div>
           <div v-if="team.members.items.length === 0" class="px-5 py-10 text-sm text-slate-500">{{ t('activity.noMembers') }}</div>
           <div v-else class="divide-y divide-slate-100">
+            <div
+              data-testid="activity-team-member-column-labels"
+              class="hidden grid-cols-[minmax(10rem,1fr)_7rem_7rem_7rem] gap-3 bg-slate-50 px-5 py-2 text-xs font-medium text-slate-500 lg:grid"
+            >
+              <span>{{ t('activity.members') }}</span>
+              <span>{{ t('activity.participatingPRs') }}</span>
+              <span>{{ t('activity.mergedPRs') }}</span>
+              <span>{{ t('activity.activeRepositories') }}</span>
+            </div>
             <component
-              :is="row.member.user_id > 0 ? 'a' : 'div'"
+              :is="row.member.user_id > 0 ? RouterLink : 'div'"
               v-for="row in team.members.items"
               :key="memberKey(row.member.user_id, row.member.directory_member_external_id)"
               :data-testid="`activity-member-${memberKey(row.member.user_id, row.member.directory_member_external_id)}`"
-              :href="row.member.user_id > 0 ? `/activity/members/${row.member.user_id}` : undefined"
-              class="grid min-w-0 gap-3 px-5 py-4 sm:grid-cols-[minmax(10rem,1fr)_7rem_7rem_7rem] sm:items-center"
+              :to="row.member.user_id > 0 ? `/activity/members/${row.member.user_id}` : undefined"
+              class="grid min-w-0 gap-3 px-5 py-4 lg:grid-cols-[minmax(10rem,1fr)_7rem_7rem_7rem] lg:items-center"
             >
               <div class="min-w-0"><p class="truncate font-medium text-slate-950">{{ row.member.display_name }}</p><p class="truncate text-sm text-slate-500">{{ row.member.email }}</p><p v-if="!row.available" class="mt-1 text-xs font-medium text-amber-700">{{ t('activity.noActivityData') }}</p></div>
-              <div class="text-sm text-slate-600"><span class="sm:hidden">{{ t('activity.participatingPRs') }}: </span>{{ metric(row.metrics.participating_prs) }}</div>
-              <div class="text-sm text-slate-600"><span class="sm:hidden">{{ t('activity.mergedPRs') }}: </span>{{ metric(row.metrics.merged_prs) }}</div>
-              <div class="text-sm text-slate-600"><span class="sm:hidden">{{ t('activity.activeRepositories') }}: </span>{{ row.metrics.active_repositories }}</div>
+              <div class="text-sm text-slate-600"><span class="lg:hidden">{{ t('activity.participatingPRs') }}: </span>{{ metric(row.metrics.participating_prs) }}</div>
+              <div class="text-sm text-slate-600"><span class="lg:hidden">{{ t('activity.mergedPRs') }}: </span>{{ metric(row.metrics.merged_prs) }}</div>
+              <div class="text-sm text-slate-600"><span class="lg:hidden">{{ t('activity.activeRepositories') }}: </span>{{ row.metrics.active_repositories }}</div>
             </component>
           </div>
           <CursorPager

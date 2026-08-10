@@ -2,10 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import UserView from '@/views/UserView.vue'
 import { setLocale } from '@/i18n'
-import { resetToastsForTest, useToast } from '@/composables/useToast'
+
+const messageSuccess = vi.spyOn(ElMessage, 'success').mockImplementation(() => undefined as any)
+const messageError = vi.spyOn(ElMessage, 'error').mockImplementation(() => undefined as any)
 
 vi.mock('@/api/user', () => ({
   getUserProviders: vi.fn(),
@@ -142,7 +145,7 @@ async function mountUserView() {
   setActivePinia(pinia)
   const auth = useAuthStore(pinia)
   auth.token = 'token'
-  auth.user = { id: 1, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'sso' }
+  auth.user = { id: 1, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'relay_sso' }
 
   const router = createTestRouter()
   await router.push('/user')
@@ -178,7 +181,7 @@ async function mountUserViewWithProviders(providers: any[]) {
   setActivePinia(pinia)
   const auth = useAuthStore(pinia)
   auth.token = 'token'
-  auth.user = { id: 1, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'sso' }
+  auth.user = { id: 1, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'relay_sso' }
 
   const router = createTestRouter()
   await router.push('/user')
@@ -198,16 +201,48 @@ async function mountUserViewWithProviders(providers: any[]) {
   return { wrapper, router }
 }
 
+async function selectProviderModel(wrapper: any, label: string, value = label) {
+  const select = wrapper.get('[data-testid="user-provider-test-model"]')
+  if (select.element.tagName === 'INPUT') {
+    await select.setValue(value)
+    return
+  }
+  expect(select.text()).toContain(label)
+  const component = wrapper.findAllComponents({ name: 'ElSelect' })
+    .find((candidate: any) => candidate.attributes('data-testid') === 'user-provider-test-model')
+  expect(component).toBeTruthy()
+  component!.vm.$emit('update:modelValue', value)
+  component!.vm.$emit('change', value)
+  await flushPromises()
+}
+
+async function openOnboardingStep(wrapper: any, step: 0 | 1 | 2) {
+  await wrapper.get(`[data-testid="onboarding-step-button-${step}"]`).trigger('click')
+  await flushPromises()
+}
+
+async function selectAccessGroup(wrapper: any, groupID: string) {
+  await openOnboardingStep(wrapper, 0)
+  await wrapper.get(`[data-testid="group-${groupID}"]`).trigger('click')
+  await flushPromises()
+}
+
+async function openConfigurationMethods(wrapper: any) {
+  await openOnboardingStep(wrapper, 2)
+  return wrapper.get('[data-testid="configuration-methods"]')
+}
+
 describe('UserView', () => {
   beforeEach(() => {
     setLocale('en-US')
-    resetToastsForTest()
     vi.clearAllMocks()
     vi.stubGlobal('confirm', vi.fn(() => true))
   })
 
   it('loads profile and provider data, selects primary provider by default, and renders group info', async () => {
     const { wrapper } = await mountUserView()
+    const refresh = wrapper.findAll('button').find((button) => button.text() === 'Refresh')
+    expect(refresh?.classes()).toContain('el-button')
     expect(wrapper.text()).toContain('AI setup and configuration')
     expect(wrapper.text()).toContain('Choose an access group, create an API key')
     expect(wrapper.text()).toContain('Finish setup in 3 steps')
@@ -220,32 +255,156 @@ describe('UserView', () => {
     expect(wrapper.text()).not.toContain('Create or manage my API key')
     expect(wrapper.text()).not.toContain("I'm a developer")
     expect(wrapper.text()).not.toContain("I'm not a developer")
+    await openOnboardingStep(wrapper, 0)
     expect(wrapper.text()).toContain('Group Beta')
     expect(wrapper.text()).toContain('Platform: anthropic')
     expect(wrapper.text()).not.toContain('default_model')
+  })
+
+  it('keeps Element Plus step titles and lets the step icon switch the viewed step', async () => {
+    const { wrapper } = await mountUserView()
+
+    const stepButtons = [0, 1, 2].map((step) => wrapper.get(`[data-testid="onboarding-step-button-${step}"]`))
+    expect(stepButtons.every((button) => button.classes().includes('el-button'))).toBe(true)
+    expect(stepButtons.map((button) => button.text())).toEqual([
+      '1. Choose an access group',
+      '2. Create API key',
+      '3. Configure tools',
+    ])
+
+    await wrapper.get('[data-testid="onboarding-step-trigger-0"] .el-step__icon').trigger('click')
+    expect(wrapper.find('[data-testid="onboarding-step-0"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="onboarding-step-trigger-2"] .el-step__icon').trigger('click')
+    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(true)
+  })
+
+  it('uses bordered Element Plus radio options for access-provider selection', async () => {
+    const { wrapper } = await mountUserView()
+
+    const providerOptions = wrapper.findAllComponents({ name: 'ElRadio' })
+      .filter((component) => component.attributes('data-testid')?.startsWith('provider-'))
+    expect(providerOptions).toHaveLength(2)
+    expect(providerOptions.every((component) => component.props('border') === true)).toBe(true)
+  })
+
+  it('renders access groups as radio choices without primary-command styling', async () => {
+    const { wrapper } = await mountUserView()
+    await openOnboardingStep(wrapper, 0)
+
+    const groupOptions = wrapper.findAllComponents({ name: 'ElRadioButton' })
+      .filter((component) => component.attributes('data-testid')?.startsWith('group-'))
+    expect(groupOptions).toHaveLength(7)
+
+    const accessGroup = wrapper.findAllComponents({ name: 'ElRadioGroup' })
+      .find((component) => component.props('fill') === 'var(--el-color-primary-light-9)')
+    expect(accessGroup?.props('textColor')).toBe('var(--el-color-primary)')
+
+    const selectedIndicator = wrapper.get('[data-testid="group-indicator-43"]')
+    const alternateIndicator = wrapper.get('[data-testid="group-indicator-42"]')
+    expect(selectedIndicator.attributes('data-selected')).toBe('true')
+    expect(selectedIndicator.find('.bg-gray-900').exists()).toBe(true)
+    expect(alternateIndicator.attributes('data-selected')).toBe('false')
+    expect(alternateIndicator.find('.bg-gray-900').exists()).toBe(false)
+    expect(alternateIndicator.classes()).toEqual(
+      expect.arrayContaining(['h-5', 'w-5', 'rounded-full', 'border']),
+    )
+  })
+
+  it('keeps the summary and primary action stacked until the wide-content breakpoint', async () => {
+    const { wrapper } = await mountUserView()
+    await selectAccessGroup(wrapper, '42')
+
+    const pageGrid = wrapper.get('[data-testid="user-page-grid"]')
+    const summaryColumn = wrapper.get('[data-testid="user-summary-column"]')
+    const onboardingColumn = wrapper.get('[data-testid="user-onboarding-column"]')
+    const stepHeader = wrapper.get('[data-testid="onboarding-step-header"]')
+    const primaryAction = wrapper.get('[data-testid="primary-onboarding-action"]')
+
+    expect(pageGrid.classes()).toContain('xl:grid-cols-[320px_minmax(0,1fr)]')
+    expect(pageGrid.classes()).not.toContain('lg:grid-cols-[320px_minmax(0,1fr)]')
+    expect(summaryColumn.classes()).toContain('xl:order-1')
+    expect(onboardingColumn.classes()).toContain('xl:order-2')
+    expect(stepHeader.classes()).toContain('xl:flex-row')
+    expect(primaryAction.classes()).toContain('w-full')
+    expect(primaryAction.classes()).toContain('xl:w-auto')
+  })
+
+  it('derives the initial step direction from content width without ResizeObserver', async () => {
+    const originalGetComputedStyle = window.getComputedStyle
+    const boundingBoxSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        const width = this.dataset.testid === 'primary-onboarding-flow' ? 720 : 0
+        return {
+          x: 0,
+          y: 0,
+          width,
+          height: 0,
+          top: 0,
+          right: width,
+          bottom: 0,
+          left: 0,
+          toJSON: () => ({}),
+        }
+      })
+    const computedStyleSpy = vi.spyOn(window, 'getComputedStyle')
+      .mockImplementation((element: Element, pseudoElement?: string | null) => {
+        if ((element as HTMLElement).dataset.testid === 'primary-onboarding-flow') {
+          return {
+            paddingLeft: '20px',
+            paddingRight: '20px',
+            borderLeftWidth: '1px',
+            borderRightWidth: '1px',
+          } as CSSStyleDeclaration
+        }
+        return originalGetComputedStyle(element, pseudoElement)
+      })
+
+    try {
+      const { wrapper } = await mountUserView()
+
+      expect(wrapper.get('[data-testid="onboarding-steps"]').attributes('data-direction')).toBe('vertical')
+    } finally {
+      boundingBoxSpy.mockRestore()
+      computedStyleSpy.mockRestore()
+    }
+  })
+
+  it('uses bordered Element Plus radio options for configuration-method selection', async () => {
+    const { wrapper } = await mountUserView()
+    await openConfigurationMethods(wrapper)
+    const manualMethod = wrapper.findAllComponents({ name: 'ElRadio' })
+      .find((component) => component.attributes('data-testid') === 'config-method-manual')
+
+    expect(manualMethod).toBeDefined()
+    expect(manualMethod!.props('border')).toBe(true)
+    await manualMethod!.trigger('click')
+    expect(wrapper.text()).toContain('Manual configuration values')
   })
 
   it('uses user-facing setup labels instead of raw credential labels', async () => {
     const { wrapper } = await mountUserView()
 
     expect(wrapper.text()).toContain('Your account')
+    expect(wrapper.text()).toContain('Relay SSO')
     expect(wrapper.text()).toContain('AI access')
     expect(wrapper.text()).toContain('1. Choose an access group')
     expect(wrapper.text()).toContain('Ready to use')
-    expect(wrapper.text()).toContain('2. Create and verify an API key')
+    expect(wrapper.text()).toContain('2. Create API key')
     expect(wrapper.text()).toContain('Connection test')
-    expect(wrapper.text()).toContain('3. Choose a configuration method')
+    expect(wrapper.text()).toContain('3. Configure tools')
     expect(wrapper.text()).not.toContain('Profile Summary')
     expect(wrapper.text()).not.toContain('Provider & Group Credential')
     expect(wrapper.text()).not.toContain('Credential state')
     expect(wrapper.text()).not.toContain('Current Secret')
+    expect(wrapper.text()).not.toContain('relay_sso')
+    expect(wrapper.text()).not.toContain('relay response')
   })
 
   it('shows create my api key as the primary action when the selected group has no key', async () => {
     const { wrapper } = await mountUserView()
 
-    await wrapper.get('[data-testid="group-42"]').trigger('click')
-    await flushPromises()
+    await selectAccessGroup(wrapper, '42')
 
     expect(wrapper.get('[data-testid="primary-onboarding-action"]').text()).toBe('Create my API key')
     expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(false)
@@ -263,23 +422,27 @@ describe('UserView', () => {
     })
 
     const { wrapper } = await mountUserView()
-    await wrapper.get('[data-testid="group-42"]').trigger('click')
-    await wrapper.get('[data-testid="create-key"]').trigger('click')
+    await selectAccessGroup(wrapper, '42')
+    await wrapper.get('[data-testid="primary-onboarding-action"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.get('[data-testid="user-provider-test-run"]').text()).toBe('Run connection test')
-    expect(wrapper.get('[data-testid="configuration-methods"]').text()).toContain('Manual configuration')
-    expect(wrapper.get('[data-testid="configuration-methods"]').text()).toContain('Automatic configuration')
-    expect(wrapper.get('[data-testid="configuration-methods"]').text()).toContain('CC Switch configuration')
+    const methods = await openConfigurationMethods(wrapper)
+    expect(methods.text()).toContain('Manual configuration')
+    expect(methods.text()).toContain('Automatic configuration')
+    expect(methods.text()).toContain('CC Switch configuration')
 
-    await wrapper.get('[data-testid="user-provider-test-model"]').setValue('gpt-5.4')
+    await openOnboardingStep(wrapper, 1)
+    await selectProviderModel(wrapper, 'GPT-5.4', 'gpt-5.4')
     await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="user-provider-test-run"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="user-provider-test-run"]').text()).toBe('Run connection test')
+    expect(wrapper.find('[data-testid="onboarding-step-1"]').exists()).toBe(true)
     expect((testUserProvider as any).mock.calls).toHaveLength(1)
     expect(wrapper.text()).toContain('Connection successful')
 
+    await openConfigurationMethods(wrapper)
+    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(true)
+    await openOnboardingStep(wrapper, 1)
     await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
     await flushPromises()
     expect((testUserProvider as any).mock.calls).toHaveLength(2)
@@ -333,6 +496,7 @@ describe('UserView', () => {
       },
     ])
 
+    await openOnboardingStep(wrapper, 0)
     expect(wrapper.text()).toContain('Usable Group')
     expect(wrapper.text()).not.toContain('This access source has no groups available')
   })
@@ -347,29 +511,29 @@ describe('UserView', () => {
     })
 
     const { wrapper } = await mountUserView()
-    await wrapper.get('[data-testid="user-provider-test-model"]').setValue('claude-sonnet-4-6')
+    await selectProviderModel(wrapper, 'Claude Sonnet 4.6', 'claude-sonnet-4-6')
     await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="onboarding-step-1"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Connection successful')
 
-    await wrapper.get('[data-testid="group-44"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(true)
+    await selectAccessGroup(wrapper, '44')
+    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Connection successful')
 
-    await wrapper.get('[data-testid="group-43"]').trigger('click')
+    await selectAccessGroup(wrapper, '43')
+    await openOnboardingStep(wrapper, 1)
     await wrapper.get('[data-testid="regenerate-key"]').trigger('click')
     await wrapper.get('[data-testid="confirm-secret-action"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="onboarding-step-1"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('Connection successful')
   })
 
   it('shows only the matching CC Switch import target for the selected group platform', async () => {
     const { wrapper } = await mountUserView()
 
-    const methods = wrapper.get('[data-testid="configuration-methods"]').text()
+    const methods = (await openConfigurationMethods(wrapper)).text()
     expect(methods).toContain('CC Switch configuration')
     expect(methods).not.toContain('Import to Claude')
     expect(methods).not.toContain('Import to Codex')
@@ -386,6 +550,7 @@ describe('UserView', () => {
   it('does not map the selected connection-test model in the Claude CC Switch import link', async () => {
     const { wrapper } = await mountUserView()
 
+    await openConfigurationMethods(wrapper)
     await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
     const claudeImport = wrapper.get('[data-testid="ccswitch-import-claude"]')
     const href = claudeImport.attributes('href') ?? ''
@@ -410,10 +575,11 @@ describe('UserView', () => {
     })
 
     const { wrapper } = await mountUserView()
-    await wrapper.get('[data-testid="group-42"]').trigger('click')
-    await wrapper.get('[data-testid="create-key"]').trigger('click')
+    await selectAccessGroup(wrapper, '42')
+    await wrapper.get('[data-testid="primary-onboarding-action"]').trigger('click')
     await flushPromises()
 
+    await openConfigurationMethods(wrapper)
     await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
     const codexImport = wrapper.get('[data-testid="ccswitch-import-codex"]')
     const href = codexImport.attributes('href') ?? ''
@@ -448,9 +614,9 @@ describe('UserView', () => {
   it('passes the selected Gemini model in the CC Switch import link', async () => {
     const { wrapper } = await mountUserView()
 
-    await wrapper.get('[data-testid="group-45"]').trigger('click')
-    await flushPromises()
+    await selectAccessGroup(wrapper, '45')
 
+    await openConfigurationMethods(wrapper)
     await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
     const geminiImport = wrapper.get('[data-testid="ccswitch-import-gemini"]')
     const href = geminiImport.attributes('href') ?? ''
@@ -468,10 +634,9 @@ describe('UserView', () => {
   it('shows Agent-only configuration methods and manual snippets for Agent groups', async () => {
     const { wrapper } = await mountUserView()
 
-    await wrapper.get('[data-testid="group-46"]').trigger('click')
-    await flushPromises()
+    await selectAccessGroup(wrapper, '46')
 
-    const methods = wrapper.get('[data-testid="configuration-methods"]').text()
+    const methods = (await openConfigurationMethods(wrapper)).text()
     expect(methods).toContain('Manual configuration')
     expect(methods).toContain('App import')
     expect(methods).not.toContain('Automatic configuration')
@@ -492,8 +657,8 @@ describe('UserView', () => {
   it('shows only Hermes and OpenClaw imports for Agent groups', async () => {
     const { wrapper } = await mountUserView()
 
-    await wrapper.get('[data-testid="group-46"]').trigger('click')
-    await flushPromises()
+    await selectAccessGroup(wrapper, '46')
+    await openConfigurationMethods(wrapper)
     await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
 
     const panelText = wrapper.text()
@@ -518,15 +683,15 @@ describe('UserView', () => {
   it('explains Agent imports use OpenAI-compatible v1 endpoints', async () => {
     const { wrapper } = await mountUserView()
 
-    await wrapper.get('[data-testid="group-47"]').trigger('click')
-    await flushPromises()
+    await selectAccessGroup(wrapper, '47')
+    await openConfigurationMethods(wrapper)
     await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
     expect(wrapper.text()).toContain('Agent imports use the OpenAI-compatible /v1 endpoint')
     expect(wrapper.text()).toContain('Hermes Agent and OpenClaw use Chat Completions providers')
     expect(wrapper.find('[data-testid="agent-import-v1-notice"]').exists()).toBe(true)
 
-    await wrapper.get('[data-testid="group-48"]').trigger('click')
-    await flushPromises()
+    await selectAccessGroup(wrapper, '48')
+    await openConfigurationMethods(wrapper)
     await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
     expect(wrapper.text()).toContain('Agent imports use the OpenAI-compatible /v1 endpoint')
     expect(wrapper.find('[data-testid="agent-import-v1-notice"]').exists()).toBe(true)
@@ -536,6 +701,7 @@ describe('UserView', () => {
     const { wrapper } = await mountUserView()
 
     expect(wrapper.text()).not.toContain('Advanced command reference')
+    await openConfigurationMethods(wrapper)
     await wrapper.get('[data-testid="config-method-automatic"]').trigger('click')
     expect(wrapper.text()).toContain('One-time machine setup')
     expect(wrapper.text()).toContain('Per-repo setup')
@@ -557,16 +723,24 @@ describe('UserView', () => {
     const loginFallback = wrapper.get('[data-testid="auto-login-fallback"]')
     const advancedDetails = wrapper.get('[data-testid="auto-advanced"]')
 
-    expect(installFallback.attributes('open')).toBeUndefined()
-    expect(loginFallback.attributes('open')).toBeUndefined()
-    expect(advancedDetails.attributes('open')).toBeUndefined()
+    expect(installFallback.classes()).toContain('el-collapse')
+    expect(loginFallback.classes()).toContain('el-collapse')
+    expect(advancedDetails.classes()).toContain('el-collapse')
 
     expect(wrapper.text()).toContain('Alternate OS installer')
     expect(wrapper.text()).toContain('Device login fallback')
 
-    await installFallback.find('summary').trigger('click')
-    await loginFallback.find('summary').trigger('click')
-    await advancedDetails.find('summary').trigger('click')
+    expect(installFallback.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('false')
+    expect(loginFallback.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('false')
+    expect(advancedDetails.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('false')
+
+    await installFallback.get('.el-collapse-item__header').trigger('click')
+    await loginFallback.get('.el-collapse-item__header').trigger('click')
+    await advancedDetails.get('.el-collapse-item__header').trigger('click')
+
+    expect(installFallback.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('true')
+    expect(loginFallback.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('true')
+    expect(advancedDetails.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('true')
 
     expect(wrapper.text()).toContain('ae-cli doctor')
     const advancedText = wrapper.text().slice(wrapper.text().indexOf('Advanced command reference'))
@@ -581,6 +755,7 @@ describe('UserView', () => {
 
     expect(wrapper.find('[data-testid="auto-discover-fallback"]').exists()).toBe(false)
 
+    await openConfigurationMethods(wrapper)
     await wrapper.get('[data-testid="config-method-automatic"]').trigger('click')
 
     let fallback = wrapper.get('[data-testid="auto-discover-fallback"]')
@@ -596,13 +771,15 @@ describe('UserView', () => {
     await wrapper.get('[data-testid="config-method-manual"]').trigger('click')
     expect(wrapper.find('[data-testid="auto-discover-fallback"]').exists()).toBe(false)
 
-    await wrapper.get('[data-testid="group-44"]').trigger('click')
+    await selectAccessGroup(wrapper, '44')
+    await openConfigurationMethods(wrapper)
     await wrapper.get('[data-testid="config-method-automatic"]').trigger('click')
     fallback = wrapper.get('[data-testid="auto-discover-fallback"]')
     expect(fallback.element.previousElementSibling?.textContent).toBe('ae-cli discover --provider prod')
     expect(fallback.text()).toContain('ae-cli discover --provider prod --tool codex')
 
-    await wrapper.get('[data-testid="group-45"]').trigger('click')
+    await selectAccessGroup(wrapper, '45')
+    await openConfigurationMethods(wrapper)
     await wrapper.get('[data-testid="config-method-automatic"]').trigger('click')
     fallback = wrapper.get('[data-testid="auto-discover-fallback"]')
     expect(fallback.element.previousElementSibling?.textContent).toBe('ae-cli discover --provider prod')
@@ -612,7 +789,7 @@ describe('UserView', () => {
   it('shows audience guidance on each configuration method card', async () => {
     const { wrapper } = await mountUserView()
 
-    const methods = wrapper.get('[data-testid="configuration-methods"]').text()
+    const methods = (await openConfigurationMethods(wrapper)).text()
     expect(methods).toContain('Best for non-developers, independent agents')
     expect(methods).toContain('Best for engineering teams')
     expect(methods).toContain('Best for non-developers who prefer a desktop app to manage tool configuration')
@@ -633,8 +810,8 @@ describe('UserView', () => {
     })
 
     const { wrapper } = await mountUserView()
-    await wrapper.get('[data-testid="group-42"]').trigger('click')
-    await wrapper.get('[data-testid="create-key"]').trigger('click')
+    await selectAccessGroup(wrapper, '42')
+    await wrapper.get('[data-testid="primary-onboarding-action"]').trigger('click')
     await flushPromises()
 
     expect(createGroupCredential).toHaveBeenCalledWith(2, '42')
@@ -649,16 +826,16 @@ describe('UserView', () => {
     }))
 
     const { wrapper } = await mountUserView()
-    await wrapper.get('[data-testid="group-42"]').trigger('click')
+    await selectAccessGroup(wrapper, '42')
 
-    const button = wrapper.get('[data-testid="create-key"]')
+    const button = wrapper.get('[data-testid="primary-onboarding-action"]')
     await button.trigger('click')
     await flushPromises()
 
     expect(createGroupCredential).toHaveBeenCalledTimes(1)
-    expect(wrapper.get('[data-testid="create-key"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="primary-onboarding-action"]').attributes('disabled')).toBeDefined()
 
-    await wrapper.get('[data-testid="create-key"]').trigger('click')
+    await wrapper.get('[data-testid="primary-onboarding-action"]').trigger('click')
     expect(createGroupCredential).toHaveBeenCalledTimes(1)
 
     resolveCreate({
@@ -666,7 +843,7 @@ describe('UserView', () => {
     })
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="create-key"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="primary-onboarding-action"]').exists()).toBe(false)
   })
 
   it('retains separate in-memory secrets per provider and group', async () => {
@@ -680,8 +857,8 @@ describe('UserView', () => {
 
     const { wrapper } = await mountUserView()
 
-    await wrapper.get('[data-testid="group-42"]').trigger('click')
-    await wrapper.get('[data-testid="create-key"]').trigger('click')
+    await selectAccessGroup(wrapper, '42')
+    await wrapper.get('[data-testid="primary-onboarding-action"]').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="reveal-key"]').trigger('click')
     expect(wrapper.text()).toContain('Confirm reveal API key')
@@ -689,7 +866,8 @@ describe('UserView', () => {
     await wrapper.get('[data-testid="confirm-secret-action"]').trigger('click')
     expect(wrapper.text()).toContain('sk-openai')
 
-    await wrapper.get('[data-testid="group-43"]').trigger('click')
+    await selectAccessGroup(wrapper, '43')
+    await openOnboardingStep(wrapper, 1)
     await wrapper.get('[data-testid="regenerate-key"]').trigger('click')
     expect(wrapper.text()).toContain('Confirm regenerate API key')
     expect(regenerateGroupCredential).not.toHaveBeenCalled()
@@ -699,7 +877,8 @@ describe('UserView', () => {
     expect(wrapper.text()).toContain('sk-c***')
     expect(wrapper.get('[data-testid="reveal-key"]').text()).toContain('Reveal')
 
-    await wrapper.get('[data-testid="group-42"]').trigger('click')
+    await selectAccessGroup(wrapper, '42')
+    await openOnboardingStep(wrapper, 1)
     expect(wrapper.text()).toContain('sk-openai')
     expect(wrapper.text()).not.toContain('sk-claude')
   })
@@ -715,10 +894,10 @@ describe('UserView', () => {
     expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
     await wrapper.get('[data-testid="confirm-secret-action"]').trigger('click')
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('sk-existing-claude-123456')
-    expect(useToast().toast.message).toBe('Copied')
+    expect(messageSuccess).toHaveBeenCalledWith('Copied')
   })
 
-  it('shows toast feedback when copying a key fails', async () => {
+  it('shows Element Plus feedback when copying a key fails', async () => {
     ;(navigator.clipboard.writeText as any).mockRejectedValueOnce(new Error('clipboard unavailable'))
     const { wrapper } = await mountUserView()
 
@@ -726,8 +905,7 @@ describe('UserView', () => {
     await wrapper.get('[data-testid="confirm-secret-action"]').trigger('click')
     await flushPromises()
 
-    expect(useToast().toast.message).toBe('Copy failed')
-    expect(useToast().toast.tone).toBe('error')
+    expect(messageError).toHaveBeenCalledWith('Copy failed')
   })
 
   it('tests the selected provider with the current group platform', async () => {
@@ -737,7 +915,7 @@ describe('UserView', () => {
     })
 
     const { wrapper } = await mountUserView()
-    await wrapper.get('[data-testid="user-provider-test-model"]').setValue('claude-sonnet-4-6')
+    await selectProviderModel(wrapper, 'Claude Sonnet 4.6', 'claude-sonnet-4-6')
     await wrapper.get('[data-testid="user-provider-test-prompt"]').setValue('Say hello')
     await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
     await flushPromises()
@@ -757,26 +935,23 @@ describe('UserView', () => {
     const { wrapper } = await mountUserView()
 
     const modelSelect = wrapper.get('[data-testid="user-provider-test-model"]')
-    expect(modelSelect.element.tagName).toBe('SELECT')
-    expect(modelSelect.findAll('option').map((option) => option.text()).some((text) => text.includes('Claude Sonnet 4.6'))).toBe(true)
-    expect((modelSelect.element as HTMLSelectElement).value).toBe('claude-sonnet-4-6')
+    expect(modelSelect.classes()).toContain('el-select')
+    expect(modelSelect.text()).toContain('Claude Sonnet 4.6')
     expect(getUserProviderModels).toHaveBeenCalledWith(2, '43', 'anthropic')
 
-    await wrapper.get('[data-testid="group-44"]').trigger('click')
-    await flushPromises()
+    await selectAccessGroup(wrapper, '44')
+    await openOnboardingStep(wrapper, 1)
 
     expect(getUserProviderModels).toHaveBeenCalledWith(2, '44', 'openai')
     const refreshedSelect = wrapper.get('[data-testid="user-provider-test-model"]')
-    expect(refreshedSelect.findAll('option').map((option) => option.text()).some((text) => text.includes('GPT-5.4'))).toBe(true)
-    expect((refreshedSelect.element as HTMLSelectElement).value).toBe('gpt-5.4')
+    expect(refreshedSelect.text()).toContain('GPT-5.4')
   })
 
   it('does not show the promoted test action when the selected group has no API key', async () => {
     const { testUserProvider } = await import('@/api/user')
     const { wrapper } = await mountUserView()
 
-    await wrapper.get('[data-testid="group-42"]').trigger('click')
-    await wrapper.get('[data-testid="user-provider-test-model"]').setValue('gpt-5.4')
+    await selectAccessGroup(wrapper, '42')
 
     expect(wrapper.find('[data-testid="user-provider-test-run"]').exists()).toBe(false)
     expect(testUserProvider).not.toHaveBeenCalled()

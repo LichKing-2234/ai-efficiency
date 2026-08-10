@@ -170,7 +170,17 @@ describe('AdminDepartmentPicker', () => {
     await flushPromises()
     expect(mockGet).not.toHaveBeenCalled()
 
-    await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
+    const trigger = wrapper.get('[data-testid="admin-department-picker-trigger"]')
+    expect(trigger.classes()).toEqual(
+      expect.arrayContaining(['el-button', 'w-full']),
+    )
+    expect(wrapper.get('[data-testid="admin-department-picker-trigger-content"]').classes()).toEqual(
+      expect.arrayContaining(['flex', 'w-full', 'items-center', 'justify-between']),
+    )
+    expect(wrapper.get('[data-testid="admin-department-picker-trigger-label"]').classes()).toEqual(
+      expect.arrayContaining(['min-w-0', 'truncate']),
+    )
+    await trigger.trigger('click')
     await flushPromises()
 
     expect(mockGet).toHaveBeenCalledTimes(1)
@@ -302,6 +312,7 @@ describe('AdminDepartmentPicker', () => {
     await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
     await flushPromises()
 
+    expect(wrapper.get('[data-testid="admin-department-picker-search"]').classes()).toContain('el-input__inner')
     await wrapper.get('[data-testid="admin-department-picker-search"]').setValue('  old  ')
     await vi.advanceTimersByTimeAsync(300)
     expect(mockGet).toHaveBeenLastCalledWith('/admin/users/department-options', {
@@ -335,6 +346,7 @@ describe('AdminDepartmentPicker', () => {
     await flushPromises()
     await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
 
+    expect(wrapper.get('[data-testid="admin-department-picker-all"]').classes()).toContain('el-button')
     await wrapper.get('[data-testid="admin-department-picker-next"]').trigger('click')
     await flushPromises()
     expect(mockGet).toHaveBeenLastCalledWith('/admin/users/department-options', {
@@ -386,6 +398,7 @@ describe('AdminDepartmentPicker', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="admin-department-picker-error"]').text()).toContain('search failed')
+    expect(wrapper.get('[data-testid="admin-department-picker-error"]').find('.el-alert').exists()).toBe(true)
     expect(wrapper.find('[data-testid="admin-department-picker-option-dept-alpha"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="admin-department-picker-option-dept-beta"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="admin-department-picker-page"]').text()).toContain('1 / 1')

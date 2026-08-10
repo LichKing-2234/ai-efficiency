@@ -6,6 +6,7 @@ import { listProviders } from '@/api/scmProvider'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from '@/i18n'
 import type { CommitFreshness, PRCommitUsageSnapshot, PRListSummary, PRRecord, PRSyncJob, RepoConfig, SCMProvider, UsageStatus } from '@/types'
+import { pullRequestStatusLabel, repositoryStatusLabel } from '@/utils/displayLabels'
 
 const auth = useAuthStore()
 const { locale, t } = useI18n()
@@ -21,7 +22,6 @@ const prsPageSize = 10
 const prsMonths = ref(3)
 const prsLoading = ref(false)
 const prsLoadError = ref('')
-const loading = ref(true)
 const syncing = ref(false)
 const syncJob = ref<PRSyncJob | null>(null)
 const syncPollTimer = ref<number | null>(null)
@@ -36,8 +36,22 @@ const providerOptionsLoading = ref(false)
 const providerOptionsLoaded = ref(false)
 const providerOptionsError = ref('')
 const selectedProviderId = ref<number | null>(props.repo.edges?.scm_provider?.id ?? props.repo.scm_provider_id ?? null)
+const selectedProviderValue = computed({
+  get: () => selectedProviderId.value ?? 0,
+  set: (value: number) => {
+    selectedProviderId.value = value === 0 ? null : value
+  },
+})
+const providerOptions = computed(() => {
+  const currentProvider = repo.value.edges?.scm_provider
+  if (!currentProvider || providers.value.some((provider) => provider.id === currentProvider.id)) {
+    return providers.value
+  }
+  return [currentProvider as SCMProvider, ...providers.value]
+})
 const bindingSaving = ref(false)
 const bindingMessage = ref('')
+const bindingMessageTone = ref<'success' | 'error'>('success')
 const webhookRepairing = ref(false)
 const webhookRepairForce = ref(false)
 const webhookRepairMessage = ref('')
@@ -214,8 +228,10 @@ async function saveBinding() {
   try {
     await updateRepo(repoId, { scm_provider_id: selectedProviderId.value ?? undefined, clear_scm_provider: selectedProviderId.value == null } as any)
     await refreshRepo()
+    bindingMessageTone.value = 'success'
     bindingMessage.value = t('repoDetail.bindingSaved')
   } catch (error: any) {
+    bindingMessageTone.value = 'error'
     bindingMessage.value = error?.response?.data?.message || t('repoDetail.bindingSaveFailed')
   } finally {
     bindingSaving.value = false
@@ -254,10 +270,10 @@ async function handleRepairWebhook() {
   }
 }
 
-function handleMonthsChange(e: Event) {
-  prsMonths.value = Number((e.target as HTMLSelectElement).value)
+function handleMonthsChange(value: string | number) {
+  prsMonths.value = Number(value)
   prsPage.value = 0
-  loadPRs()
+  void loadPRs()
 }
 
 function prsPrevPage() {
@@ -471,23 +487,23 @@ onUnmounted(() => {
 <template>
   <section class="space-y-5" data-testid="repo-operations">
     <div class="flex flex-col items-start gap-1 sm:items-end">
-      <button
+      <ElButton
         data-testid="repo-sync-prs"
-        class="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        :loading="syncing"
         :disabled="syncing || isRepoUnbound"
         :title="syncDisabledReason"
         @click="handleSyncPRs"
-      >{{ syncing ? t('repoDetail.syncing') : t('repoDetail.syncPrs') }}</button>
+      >{{ syncing ? t('repoDetail.syncing') : t('repoDetail.syncPrs') }}</ElButton>
       <p v-if="syncDisabledReason" class="max-w-xs text-xs text-amber-700">{{ syncDisabledReason }}</p>
     </div>
 
-<div
+<ElAlert
   v-if="syncMessage"
-  class="rounded-md p-3 text-sm"
-  :class="syncMessageTone === 'success' ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'"
->
-  {{ syncMessage }}
-</div>
+  :type="syncMessageTone"
+  :closable="false"
+  show-icon
+  :title="syncMessage"
+/>
 
 <div v-if="syncJob" class="rounded-md bg-blue-50 p-3 text-sm text-blue-900">
   <div class="font-medium">{{ phaseLabel(syncJob.phase) }}</div>
@@ -501,14 +517,11 @@ onUnmounted(() => {
 </div>
 
 <div v-if="auth.isAdmin" class="rounded-lg bg-white p-5 shadow">
-  <div class="flex items-center justify-between">
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
     <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('repoDetail.scmBinding') }}</h2>
-    <span
-      class="rounded px-2 py-0.5 text-xs font-medium"
-      :class="isRepoUnbound ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'"
-    >
+    <ElTag :type="isRepoUnbound ? 'warning' : 'success'" effect="light" size="small">
       {{ isRepoUnbound ? t('repoDetail.unbound') : t('repoDetail.bound') }}
-    </span>
+    </ElTag>
   </div>
   <p class="mt-3 text-sm text-gray-500">
     {{ isRepoUnbound ? t('repoDetail.bindingUnboundHelp') : t('repoDetail.bindingBoundHelp') }}
@@ -517,40 +530,39 @@ onUnmounted(() => {
 {{ t('repoDetail.loading') }}
     </div>
     <div v-else-if="providerOptionsLoaded" data-testid="repo-binding-controls" class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-    <select
-      v-model="selectedProviderId"
-      class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 sm:max-w-sm"
+    <ElSelect
+      v-model="selectedProviderValue"
+      data-testid="repo-provider-select"
+      class="w-full sm:max-w-sm"
+      :teleported="false"
     >
-      <option :value="null">{{ t('repoDetail.unbound') }}</option>
-      <option v-for="provider in providers" :key="provider.id" :value="provider.id">
-        {{ provider.name }}
-      </option>
-    </select>
+      <ElOption :value="0" :label="t('repoDetail.unbound')" />
+      <ElOption v-for="provider in providerOptions" :key="provider.id" :value="provider.id" :label="provider.name" />
+    </ElSelect>
     <div class="flex gap-2">
-      <button
+      <ElButton
         data-testid="repo-save-binding"
-        class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+        type="primary"
+        :loading="bindingSaving"
         :disabled="bindingSaving"
         @click="saveBinding"
       >
         {{ bindingSaving ? t('repoDetail.saving') : t('repoDetail.saveBinding') }}
-      </button>
-      <button
-        class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 disabled:opacity-50"
+      </ElButton>
+      <ElButton
         :disabled="bindingSaving || selectedProviderId == null"
         @click="clearBinding"
       >
         {{ t('repoDetail.clearBinding') }}
-      </button>
+      </ElButton>
     </div>
   </div>
-    <div v-else-if="providerOptionsError" class="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
-<div>{{ providerOptionsError }}</div>
-<button class="mt-2 rounded-md border border-red-200 px-2 py-1 text-xs font-medium hover:bg-red-100" type="button" @click="loadProviderOptions">
+    <ElAlert v-else-if="providerOptionsError" class="mt-4" type="error" :closable="false" show-icon :title="providerOptionsError">
+<ElButton class="mt-2" type="danger" link size="small" @click="loadProviderOptions">
   {{ t('repoDetail.retry') }}
-</button>
-    </div>
-  <div v-if="bindingMessage" class="mt-3 rounded-md bg-gray-50 p-3 text-sm text-gray-700">{{ bindingMessage }}</div>
+</ElButton>
+    </ElAlert>
+  <ElAlert v-if="bindingMessage" class="mt-3" :type="bindingMessageTone" :closable="false" show-icon :title="bindingMessage" />
 </div>
 
 <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -561,21 +573,22 @@ onUnmounted(() => {
         {{ t('repoDetail.healthHelp') }}
       </p>
     </div>
-    <span
-      class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold"
-      :class="isRepoUnbound ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'"
-    >
+    <ElTag :type="isRepoUnbound ? 'warning' : 'success'" effect="light">
       {{ bindingLabel() }}
-    </span>
+    </ElTag>
   </div>
-  <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+  <div data-testid="repo-detail-health-metrics" class="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
     <div class="rounded-md bg-slate-50 p-3">
       <div class="text-xs uppercase tracking-wide text-slate-500">{{ t('repos.defaultBranch') }}</div>
       <div class="mt-1 font-medium text-slate-900">{{ repo.default_branch }}</div>
     </div>
     <div class="rounded-md bg-slate-50 p-3">
       <div class="text-xs uppercase tracking-wide text-slate-500">{{ t('repoDetail.repositoryStatus') }}</div>
-      <div class="mt-1 font-medium text-slate-900">{{ repo.status }}</div>
+      <div class="mt-1">
+        <ElTag :type="repo.status === 'active' ? 'success' : repo.status === 'webhook_failed' ? 'danger' : 'info'" size="small">
+          {{ repositoryStatusLabel(repo.status, t) }}
+        </ElTag>
+      </div>
     </div>
     <div class="rounded-md bg-slate-50 p-3">
       <div class="text-xs uppercase tracking-wide text-slate-500">{{ t('repoDetail.created') }}</div>
@@ -592,47 +605,48 @@ onUnmounted(() => {
   >
     <div class="text-sm text-amber-900">
       <div class="font-medium">{{ t('repoDetail.webhookRepairNeeded') }}</div>
-      <label v-if="repo.webhook_id" class="mt-2 inline-flex items-center gap-2 text-xs">
-        <input v-model="webhookRepairForce" type="checkbox" class="rounded border-amber-300" />
-        <span>{{ t('repoDetail.forceReplaceWebhook') }}</span>
-      </label>
+      <ElCheckbox v-if="repo.webhook_id" v-model="webhookRepairForce" class="mt-2">
+        {{ t('repoDetail.forceReplaceWebhook') }}
+      </ElCheckbox>
     </div>
-    <button
+    <ElButton
       data-testid="repo-repair-webhook-button"
-      class="rounded-md bg-amber-700 px-3 py-2 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-50"
+      type="warning"
+      :loading="webhookRepairing"
       :disabled="webhookRepairing"
       @click="handleRepairWebhook"
     >
       {{ webhookRepairing ? t('repoDetail.webhookRepairing') : t('repoDetail.repairWebhook') }}
-    </button>
+    </ElButton>
   </div>
-  <div v-if="webhookRepairMessage" class="mt-3 rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
-    {{ webhookRepairMessage }}
-  </div>
-  <div v-if="webhookRepairError" class="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">
-    {{ webhookRepairError }}
-  </div>
+  <ElAlert v-if="webhookRepairMessage" class="mt-3" type="success" :closable="false" show-icon :title="webhookRepairMessage" />
+  <ElAlert v-if="webhookRepairError" class="mt-3" type="error" :closable="false" show-icon :title="webhookRepairError" />
 </div>
 
 <div class="rounded-lg bg-white p-5 shadow">
-  <div class="flex items-center justify-between">
+  <div data-testid="repo-pr-summary-header" class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
     <div>
       <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('repoDetail.prUsageSummary') }}</h2>
       <p class="mt-1 text-sm text-gray-500">{{ t('repoDetail.prUsageHelp') }}</p>
     </div>
-    <div class="flex items-center space-x-3">
-      <select :value="prsMonths" @change="handleMonthsChange" class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600">
-        <option :value="1">{{ t('repoDetail.month1') }}</option>
-        <option :value="3">{{ t('repoDetail.month3') }}</option>
-        <option :value="6">{{ t('repoDetail.month6') }}</option>
-        <option :value="12">{{ t('repoDetail.month12') }}</option>
-        <option :value="0">{{ t('repoDetail.allTime') }}</option>
-      </select>
+    <div data-testid="repo-pr-summary-controls" class="flex w-full flex-wrap items-center gap-3 lg:w-auto lg:shrink-0 lg:flex-nowrap">
+      <ElSelect
+        data-testid="repo-pr-range"
+        :model-value="prsMonths"
+        class="w-full min-w-0 sm:!w-40 sm:shrink-0"
+        @change="handleMonthsChange"
+      >
+        <ElOption :value="1" :label="t('repoDetail.month1')" />
+        <ElOption :value="3" :label="t('repoDetail.month3')" />
+        <ElOption :value="6" :label="t('repoDetail.month6')" />
+        <ElOption :value="12" :label="t('repoDetail.month12')" />
+        <ElOption :value="0" :label="t('repoDetail.allTime')" />
+      </ElSelect>
       <span v-if="prsTotal > 0" class="text-xs text-gray-400">{{ prsTotal }} {{ t('repoDetail.totalSuffix') }}</span>
     </div>
   </div>
 
-  <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+  <div data-testid="repo-detail-pr-metrics" class="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-5">
     <div class="rounded-md border border-slate-200 p-3">
       <div class="text-xs uppercase tracking-wide text-slate-500">{{ t('repoDetail.totalPrs') }}</div>
       <div class="mt-1 text-xl font-semibold text-slate-900">{{ prUsageSummary.total }}</div>
@@ -655,64 +669,67 @@ onUnmounted(() => {
     </div>
   </div>
 
-  <div v-if="prsLoadError" class="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
-    <div>{{ t('repoDetail.prListLoadFailed') }}</div>
-    <button
-      class="mt-2 rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
-      type="button"
+  <ElAlert v-if="prsLoadError" class="mt-4" type="error" :closable="false" show-icon :title="t('repoDetail.prListLoadFailed')">
+    <ElButton
+      class="mt-2"
+      type="danger"
+      link
+      size="small"
       @click="loadPRs"
     >
       {{ t('repoDetail.retry') }}
-    </button>
-  </div>
+    </ElButton>
+  </ElAlert>
 
   <div v-if="prs.length > 0" class="mt-3 divide-y divide-gray-100 border-y border-gray-100">
     <article v-for="pr in prs" :key="pr.id" data-testid="repo-pr-row" class="py-4">
-<div class="md:grid md:grid-cols-[minmax(0,1.3fr)_minmax(320px,1fr)_auto] md:items-center md:gap-5">
-<div class="flex items-start justify-between gap-3">
-        <div class="min-w-0">
-          <a v-if="pr.scm_pr_url" :href="pr.scm_pr_url" target="_blank" rel="noopener noreferrer" class="block truncate text-sm font-semibold text-indigo-700 hover:text-indigo-900">
-            {{ pr.title }}
-          </a>
-          <div v-else class="truncate text-sm font-semibold text-gray-900">{{ pr.title }}</div>
-          <div class="mt-1 truncate text-xs text-gray-500">{{ pr.author || '—' }}</div>
+      <div data-testid="repo-pr-summary-grid" class="lg:grid lg:grid-cols-[minmax(0,1.3fr)_minmax(320px,1fr)_auto] lg:items-center lg:gap-5">
+        <div data-testid="repo-pr-identity" class="flex min-w-0 items-start justify-between gap-3 overflow-hidden">
+          <div class="min-w-0 flex-1 overflow-hidden">
+            <ElLink v-if="pr.scm_pr_url" data-testid="repo-pr-title" :href="pr.scm_pr_url" target="_blank" rel="noopener noreferrer" underline="never" class="repo-pr-title min-w-0 max-w-full text-sm font-semibold text-indigo-700 hover:text-indigo-900" :title="pr.title">
+              <span class="block min-w-0 truncate">{{ pr.title }}</span>
+            </ElLink>
+            <div v-else data-testid="repo-pr-title" class="min-w-0 max-w-full truncate text-sm font-semibold text-gray-900" :title="pr.title"><span class="truncate">{{ pr.title }}</span></div>
+            <div class="mt-1 truncate text-xs text-gray-500">{{ pr.author || '—' }}</div>
+          </div>
+          <ElTag
+            class="shrink-0"
+            :type="pr.status === 'open' ? 'success' : pr.status === 'merged' ? 'primary' : 'info'"
+            size="small"
+          >
+            {{ pullRequestStatusLabel(pr.status, t) }}
+          </ElTag>
         </div>
-        <span
-          class="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
-          :class="pr.status === 'merged' ? 'bg-purple-50 text-purple-700' : pr.status === 'open' ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'"
+        <dl data-testid="repo-pr-summary-metrics" class="mt-3 grid grid-cols-2 gap-3 text-xs lg:mt-0 lg:grid-cols-4">
+          <div>
+            <dt class="text-gray-400">{{ t('repoDetail.usageStatus') }}</dt>
+            <dd class="mt-1 text-gray-800" :title="usageStatusHelp(pr.usage_status, pr.usage_status_reason)">{{ usageStatusLabel(pr.usage_status) }}</dd>
+          </div>
+          <div>
+            <dt class="text-gray-400">{{ t('repoDetail.tokenUsage') }}</dt>
+            <dd class="mt-1 text-gray-800">{{ formatPRTokenUsage(pr) }}</dd>
+          </div>
+          <div>
+            <dt class="text-gray-400">{{ t('repoDetail.refreshed') }}</dt>
+            <dd class="mt-1 text-gray-800">{{ formatDate(pr.usage_refreshed_at || null) }}</dd>
+          </div>
+          <div>
+            <dt class="text-gray-400">{{ t('repoDetail.credits') }}</dt>
+            <dd class="mt-1 text-gray-800">{{ formatDecimal(pr.usage_credit_usage) }}</dd>
+          </div>
+        </dl>
+        <ElButton
+          data-testid="repo-pr-details-button"
+          class="mt-3 lg:mt-0"
+          size="small"
+          :loading="isPRDetailLoading(pr.id)"
+          :disabled="isPRDetailLoading(pr.id)"
+          @click="togglePRDetails(pr.id)"
         >
-          {{ pr.status }}
-        </span>
+          {{ isPRDetailLoading(pr.id) ? t('repoDetail.loading') : expandedPRId === pr.id ? t('repoDetail.hide') : t('repoDetail.details') }}
+        </ElButton>
       </div>
-<dl class="mt-3 grid grid-cols-2 gap-3 text-xs md:mt-0 md:grid-cols-4">
-        <div>
-          <dt class="text-gray-400">{{ t('repoDetail.usageStatus') }}</dt>
-          <dd class="mt-1 text-gray-800" :title="usageStatusHelp(pr.usage_status, pr.usage_status_reason)">{{ usageStatusLabel(pr.usage_status) }}</dd>
-        </div>
-        <div>
-          <dt class="text-gray-400">{{ t('repoDetail.tokenUsage') }}</dt>
-          <dd class="mt-1 text-gray-800">{{ formatPRTokenUsage(pr) }}</dd>
-        </div>
-        <div>
-          <dt class="text-gray-400">{{ t('repoDetail.refreshed') }}</dt>
-          <dd class="mt-1 text-gray-800">{{ formatDate(pr.usage_refreshed_at || null) }}</dd>
-        </div>
-        <div>
-          <dt class="text-gray-400">{{ t('repoDetail.credits') }}</dt>
-          <dd class="mt-1 text-gray-800">{{ formatDecimal(pr.usage_credit_usage) }}</dd>
-        </div>
-      </dl>
-      <button
-  data-testid="repo-pr-details-button"
-  class="mt-3 rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-40 md:mt-0"
-        :disabled="isPRDetailLoading(pr.id)"
-        type="button"
-        @click="togglePRDetails(pr.id)"
-      >
-        {{ isPRDetailLoading(pr.id) ? t('repoDetail.loading') : expandedPRId === pr.id ? t('repoDetail.hide') : t('repoDetail.details') }}
-      </button>
-</div>
-<div v-if="expandedPRId === pr.id" data-testid="repo-pr-detail" class="mt-4 space-y-4 border-t border-gray-100 pt-4 text-xs text-gray-700">
+      <div v-if="expandedPRId === pr.id" data-testid="repo-pr-detail" class="mt-4 space-y-4 border-t border-gray-100 pt-4 text-xs text-gray-700">
         <div v-if="isPRDetailLoading(pr.id) && !prDetails[pr.id]" class="py-4 text-center text-gray-500">
           {{ t('repoDetail.loadingDetails') }}
         </div>
@@ -763,15 +780,22 @@ onUnmounted(() => {
         {{ prsPage * prsPageSize + 1 }}-{{ Math.min((prsPage + 1) * prsPageSize, prsTotal) }} {{ t('repoDetail.of') }} {{ prsTotal }}
       </span>
       <div class="flex space-x-2">
-        <button class="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40" :disabled="prsPage === 0" @click="prsPrevPage">{{ t('events.prev') }}</button>
-        <button class="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40" :disabled="(prsPage + 1) * prsPageSize >= prsTotal" @click="prsNextPage">{{ t('events.next') }}</button>
+        <ElButton size="small" :disabled="prsPage === 0" @click="prsPrevPage">{{ t('repos.previousPage') }}</ElButton>
+        <ElButton size="small" :disabled="(prsPage + 1) * prsPageSize >= prsTotal" @click="prsNextPage">{{ t('repos.nextPage') }}</ElButton>
       </div>
     </div>
   </div>
 
-  <p v-else-if="prsLoading" class="mt-3 text-sm text-gray-400">{{ t('repoDetail.loading') }}</p>
-  <p v-else-if="!prsLoadError" class="mt-3 text-sm text-gray-400">{{ t('repoDetail.noPullRequests') }}</p>
+  <ElSkeleton v-else-if="prsLoading" class="mt-3" :rows="3" animated />
+  <ElEmpty v-else-if="!prsLoadError" class="mt-3" :description="t('repoDetail.noPullRequests')" />
 </div>
 
   </section>
 </template>
+
+<style>
+.repo-pr-title .el-link__inner {
+  min-width: 0;
+  max-width: 100%;
+}
+</style>

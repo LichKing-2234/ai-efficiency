@@ -77,6 +77,7 @@ describe('ActivityView', () => {
   it('renders PR-first hero without making Token a headline metric', async () => {
     const { wrapper } = await mountView()
     const hero = wrapper.get('[data-testid="activity-hero"]')
+    expect(hero.classes()).toContain('grid-cols-2')
     expect(hero.text()).toContain('≥2')
     expect(hero.text()).toContain('≥1')
     expect(hero.text()).toContain('Active repositories')
@@ -85,7 +86,52 @@ describe('ActivityView', () => {
     expect(html.indexOf('data-testid="activity-prs"')).toBeLessThan(html.indexOf('data-testid="activity-commits"'))
     expect(wrapper.find('[data-testid="activity-buckets"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('1 repository needs PR sync')
-    expect(wrapper.get('[data-testid="activity-wide-details"]').classes()).toContain('overflow-x-auto')
+    expect(wrapper.get('[role="alert"]').classes()).toContain('el-alert')
+    expect(wrapper.get('[data-testid="activity-wide-details"]').classes()).not.toContain('overflow-x-auto')
+    expect(wrapper.get('[data-testid="activity-primary-details"]').classes()).toContain('xl:grid-cols-2')
+    expect(wrapper.get('[data-testid="activity-diagnostics"]').classes()).toContain('grid')
+    expect(wrapper.get('[data-testid="activity-prs"]').classes()).toContain('min-w-0')
+    expect(wrapper.get('[data-testid="activity-prs"]').classes()).not.toContain('min-w-[320px]')
+    expect(wrapper.get('[data-testid="activity-data-quality"]').classes()).toContain('min-w-0')
+    expect(wrapper.get('[data-testid="activity-data-quality"]').classes()).not.toContain('min-w-[320px]')
+    expect(wrapper.get('[data-testid="activity-commits"]').classes()).not.toContain('min-w-[640px]')
+    const commit = wrapper.get('[data-testid="activity-commit-9-abcdef123456"]')
+    expect(commit.classes()).toContain('sm:grid-cols-[minmax(10rem,1fr)_9rem_8rem]')
+    expect(commit.classes()).not.toContain('min-w-[640px]')
+    const columnLabels = wrapper.get('[data-testid="activity-commit-column-labels"]')
+    expect(columnLabels.classes()).toContain('hidden')
+    expect(columnLabels.classes()).toContain('sm:grid')
+    expect(columnLabels.text()).toContain('Pull requests')
+    expect(columnLabels.text()).toContain('Processed Token')
+    expect(commit.get('span').classes()).toContain('sm:hidden')
+  })
+
+  it('renders a page load failure with an Element Plus alert', async () => {
+    const api = await import('@/api/activity')
+    vi.mocked(api.getActivitySummary).mockRejectedValue(new Error('activity unavailable'))
+
+    const { wrapper } = await mountView()
+
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.classes()).toContain('el-alert')
+    expect(alert.text()).toContain('Coding activity is temporarily unavailable.')
+  })
+
+  it('uses Element Plus external links and disclosure actions without changing their semantics', async () => {
+    const api = await import('@/api/activity')
+    vi.mocked(api.getActivitySummary).mockResolvedValue(response('Alice', false, true) as any)
+    const { wrapper } = await mountView()
+
+    const pullRequestLink = wrapper.get('a[href="https://example.com/pr/88"]')
+    expect(pullRequestLink.classes()).toContain('el-link')
+    expect(pullRequestLink.attributes('target')).toBe('_blank')
+    expect(pullRequestLink.attributes('rel')).toContain('noopener')
+    expect(pullRequestLink.attributes('rel')).toContain('noreferrer')
+
+    const commits = wrapper.findAll('button').find((button) => button.text() === 'Commits · 1')
+    expect(commits?.classes()).toContain('el-button')
+    expect(wrapper.get('[data-testid="activity-buckets"]').classes()).not.toContain('min-w-[640px]')
+    expect(wrapper.get('[data-testid="activity-bucket-bucket-1"]').classes()).toContain('el-button')
   })
 
   it('suppresses an older range response after a newer request wins', async () => {
@@ -239,6 +285,26 @@ describe('ActivityView', () => {
     expect(detail.text()).toContain('Correlation quality')
     expect(detail.text()).toContain('request_id')
     expect(detail.text()).toContain('req_123')
+  })
+
+  it('shows a failed Bucket read with an Element Plus alert and keeps retry available', async () => {
+    const api = await import('@/api/activity')
+    vi.mocked(api.getActivitySummary).mockResolvedValue(response('Alice', false, true) as any)
+    vi.mocked(api.getActivityBucket).mockRejectedValueOnce(new Error('bucket unavailable'))
+    const { wrapper } = await mountView()
+    const bucket = wrapper.get('[data-testid="activity-bucket-bucket-1"]')
+
+    await bucket.trigger('click')
+    await flushPromises()
+
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.classes()).toContain('el-alert')
+    expect(alert.text()).toContain('Failed to load attribution detail.')
+    expect(bucket.attributes('disabled')).toBeUndefined()
+
+    await bucket.trigger('click')
+    await flushPromises()
+    expect(api.getActivityBucket).toHaveBeenCalledTimes(2)
   })
 
   it.each([

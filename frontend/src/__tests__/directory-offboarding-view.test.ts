@@ -28,10 +28,13 @@ function candidate(userID: number, username: string, email: string) {
     user_id: userID,
     username,
     email,
-    auth_source: 'ldap',
+    auth_source: 'relay_sso',
     relay_user_id: userID + 90,
     reason: 'missing_from_latest_full_company_directory',
     directory_run_id: 3,
+    directory_run_at: '2026-08-08T09:30:00Z',
+    token_valid_after: '2026-08-08T10:00:00Z',
+    offboarding_status: 'partial_failed',
   }
 }
 
@@ -101,6 +104,81 @@ describe('DirectoryOffboardingView', () => {
     setLocale('en-US')
   })
 
+  it('renders the candidate search with Element Plus', async () => {
+    const { wrapper } = await mountOffboarding()
+
+    expect(wrapper.find('.el-input').exists()).toBe(true)
+  })
+
+  it('renders the search action with Element Plus', async () => {
+    const { wrapper } = await mountOffboarding()
+
+    expect(wrapper.get('[data-testid="offboarding-search"]').classes()).toContain('el-button')
+  })
+
+  it('renders the offboarding warning with Element Plus feedback', async () => {
+    const { wrapper } = await mountOffboarding()
+
+    expect(wrapper.get('[data-testid="offboarding-warning"]').find('.el-alert').exists()).toBe(true)
+  })
+
+  it('attaches search, candidates, and pagination to one work surface', async () => {
+    const { wrapper } = await mountOffboarding()
+
+    const surface = wrapper.get('[data-testid="offboarding-work-surface"]')
+    expect(surface.classes()).toContain('max-w-5xl')
+    expect(surface.find('[data-testid="offboarding-search"]').exists()).toBe(true)
+    expect(surface.find('[data-testid="offboarding-candidate-7"]').exists()).toBe(true)
+    expect(surface.find('[data-testid="offboarding-page-status"]').exists()).toBe(true)
+    expect(surface.get('[data-testid="offboarding-candidate-grid"]').classes()).not.toContain('max-w-2xl')
+  })
+
+  it('renders candidate failures with Element Plus feedback', async () => {
+    const { wrapper } = await mountOffboarding((api) => {
+      api.listDirectoryOffboardingCandidates.mockRejectedValue(new Error('load failed'))
+    })
+
+    expect(wrapper.get('[data-testid="offboarding-error"]').find('.el-alert').exists()).toBe(true)
+    expect(wrapper.find('.el-empty').exists()).toBe(false)
+  })
+
+  it('renders an empty candidate result with Element Plus', async () => {
+    const { wrapper } = await mountOffboarding((api) => {
+      api.listDirectoryOffboardingCandidates.mockResolvedValue(candidatePage([]))
+    })
+
+    expect(wrapper.find('.el-empty').exists()).toBe(true)
+  })
+
+  it('renders candidate loading with Element Plus', async () => {
+    const pending = deferred<any>()
+    const { wrapper } = await mountOffboarding((api) => {
+      api.listDirectoryOffboardingCandidates.mockReturnValue(pending.promise)
+    })
+
+    expect(wrapper.find('.el-skeleton').exists()).toBe(true)
+  })
+
+  it('renders candidates as responsive Element Plus cards', async () => {
+    const { wrapper } = await mountOffboarding()
+
+    expect(wrapper.find('.el-card').exists()).toBe(true)
+  })
+
+  it('renders operator-facing candidate state and keeps confirmation in the dialog', async () => {
+    const { wrapper } = await mountOffboarding()
+
+    const card = wrapper.get('[data-testid="offboarding-candidate-7"]')
+    expect(card.text()).toContain('Relay SSO')
+    expect(card.text()).toContain('Missing from the latest company directory')
+    expect(card.text()).toContain('Run #3')
+    expect(card.text()).toContain('Needs attention')
+    expect(card.text()).toContain('Revoked')
+    expect(card.text()).not.toContain('relay_sso')
+    expect(card.text()).not.toContain('missing_from_latest_full_company_directory')
+    expect(card.text()).not.toContain('Enter bob@example.org to confirm')
+  })
+
   it('requires email confirmation before disabling relay user', async () => {
     const { wrapper, api } = await mountOffboarding()
 
@@ -109,16 +187,26 @@ describe('DirectoryOffboardingView', () => {
     expect(wrapper.text()).toContain('bob@example.org')
     expect(wrapper.text()).toContain('After disabling, this user will no longer be able to access AI services')
     expect(wrapper.find('input[type="number"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="disable-relay-user-7"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="disable-relay-user-7"]').classes()).toContain('el-button')
+    expect(api.disableDirectoryRelayUser).not.toHaveBeenCalled()
+
+    await wrapper.get('[data-testid="disable-relay-user-7"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.el-dialog').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Existing subscriptions are not removed automatically')
+    expect(wrapper.get('[data-testid="confirm-email-7"]').element.closest('.el-input')).not.toBeNull()
+    expect(wrapper.get('[data-testid="confirm-disable-relay-user-7"]').attributes('disabled')).toBeDefined()
 
     await wrapper.get('[data-testid="confirm-email-7"]').setValue('bob@example.org')
-    await wrapper.get('[data-testid="disable-relay-user-7"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-disable-relay-user-7"]').trigger('click')
     await flushPromises()
 
     expect(api.disableDirectoryRelayUser).toHaveBeenCalledWith(7, {
       confirm_email: 'bob@example.org',
       reason: 'missing_from_latest_full_company_directory',
     })
+    expect(wrapper.get('[data-testid="offboarding-success"]').find('.el-alert').exists()).toBe(true)
   })
 
   it('uses total-aware pagination and resets to page one on search', async () => {
@@ -133,6 +221,10 @@ describe('DirectoryOffboardingView', () => {
       })
     })
 
+    expect([
+      wrapper.get('[data-testid="offboarding-prev-page"]'),
+      wrapper.get('[data-testid="offboarding-next-page"]'),
+    ].every((button) => button.classes().includes('el-button'))).toBe(true)
     expect(wrapper.get('[data-testid="offboarding-prev-page"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-testid="offboarding-next-page"]').attributes('disabled')).toBeUndefined()
     expect(wrapper.get('[data-testid="offboarding-page-status"]').text()).toContain('Page 1 / 2')
@@ -176,8 +268,10 @@ describe('DirectoryOffboardingView', () => {
     const previousLoad = workItems.loadCounts({ force: true })
     await wrapper.get('[data-testid="offboarding-next-page"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="confirm-email-8"]').setValue('  CAROL@example.com ')
     await wrapper.get('[data-testid="disable-relay-user-8"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="confirm-email-8"]').setValue('  CAROL@example.com ')
+    await wrapper.get('[data-testid="confirm-disable-relay-user-8"]').trigger('click')
     await flushPromises()
 
     expect(api.disableDirectoryRelayUser).toHaveBeenCalledWith(8, {
@@ -205,6 +299,37 @@ describe('DirectoryOffboardingView', () => {
     expect(workItems.loading).toBe(false)
   })
 
+  it('prevents duplicate offboarding actions while disable is in flight', async () => {
+    const pending = deferred<any>()
+    const { wrapper, api } = await mountOffboarding((api) => {
+      api.disableDirectoryRelayUser.mockReturnValue(pending.promise)
+    })
+
+    await wrapper.get('[data-testid="disable-relay-user-7"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-email-7"]').setValue('bob@example.org')
+    const confirm = wrapper.get('[data-testid="confirm-disable-relay-user-7"]')
+    await confirm.trigger('click')
+    await confirm.trigger('click')
+
+    expect(api.disableDirectoryRelayUser).toHaveBeenCalledTimes(1)
+    expect(confirm.classes()).toContain('is-loading')
+  })
+
+  it('keeps a failed disable result visible inside the active dialog', async () => {
+    const { wrapper } = await mountOffboarding((api) => {
+      api.disableDirectoryRelayUser.mockRejectedValue(new Error('synthetic disable failure'))
+    })
+
+    await wrapper.get('[data-testid="disable-relay-user-7"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-email-7"]').setValue('bob@example.org')
+    await wrapper.get('[data-testid="confirm-disable-relay-user-7"]').trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.get('[data-testid="offboarding-disable-dialog"]').element.closest('.el-dialog')
+    expect(dialog?.textContent).toContain('synthetic disable failure')
+    expect(dialog?.querySelector('[data-testid="offboarding-disable-error"] .el-alert--error')).not.toBeNull()
+  })
+
   it('switches offboarding copy to Chinese', async () => {
     setLocale('zh-CN')
     const { wrapper } = await mountOffboarding()
@@ -212,5 +337,8 @@ describe('DirectoryOffboardingView', () => {
     expect(wrapper.text()).toContain('组织架构离职处理')
     expect(wrapper.text()).toContain('禁用后，该用户将无法继续使用 AI 接入')
     expect(wrapper.text()).toContain('禁用 AI 接入')
+
+    await wrapper.get('[data-testid="disable-relay-user-7"]').trigger('click')
+    expect(wrapper.text()).toContain('不会自动移除现有订阅')
   })
 })

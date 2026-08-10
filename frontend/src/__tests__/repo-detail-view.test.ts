@@ -362,6 +362,7 @@ describe('RepoDetailView', () => {
 
     const { wrapper } = await mountRepoDetail(undefined, undefined, { section: 'activity' })
     const activitySection = wrapper.get('[data-testid="repo-activity"]')
+    expect(wrapper.get('[data-testid="repo-activity-details"]').classes()).toContain('xl:grid-cols-2')
     expect(activitySection.text()).not.toContain('Token')
     expect(activitySection.html().indexOf('data-testid="repo-activity-prs"')).toBeLessThan(activitySection.html().indexOf('data-testid="repo-activity-commits"'))
     expect(wrapper.find('[data-testid="repo-activity-pr-commits-101"]').exists()).toBe(false)
@@ -370,8 +371,12 @@ describe('RepoDetailView', () => {
 
     expect(wrapper.get('[data-testid="repo-activity-pr-commits-101"]').text()).toContain('shared1234')
     expect(wrapper.findAll('[data-testid="repo-activity-commit-9-shared123456"]')).toHaveLength(1)
-    expect(wrapper.get('[data-testid="repo-activity-commit-9-shared123456"]').text()).toContain('PR #88')
-    expect(wrapper.get('[data-testid="repo-activity-commit-9-shared123456"]').text()).toContain('PR #89')
+    const commit = wrapper.get('[data-testid="repo-activity-commit-9-shared123456"]')
+    expect(commit.text()).toContain('PR #88')
+    expect(commit.text()).toContain('PR #89')
+    expect(commit.classes()).toContain('sm:grid-cols-[1fr_minmax(12rem,auto)]')
+    expect(commit.classes()).not.toContain('min-w-[36rem]')
+    expect(wrapper.get('[data-testid="repo-activity-commits"]').classes()).not.toContain('overflow-x-auto')
   })
 
   it('pages repository PRs without replacing the summary or commit projection', async () => {
@@ -541,6 +546,7 @@ describe('RepoDetailView', () => {
   it('renders conclusion-first PR usage summary and readable default columns', async () => {
     const { wrapper } = await mountRepoDetail()
     expect(wrapper.text()).toContain('Repository health')
+    expect(wrapper.get('[data-testid="repo-detail-health-metrics"]').classes()).toContain('grid-cols-2')
     expect(wrapper.text()).toContain('PR Usage Summary')
     expect(wrapper.text()).toContain('checkpoint window')
     expect(wrapper.text()).toContain('live tool context counter')
@@ -557,6 +563,26 @@ describe('RepoDetailView', () => {
     expect(wrapper.text()).not.toContain('Settle')
     expect(wrapper.text()).toContain('1,700')
     expect(wrapper.text()).not.toContain('2,000')
+  })
+
+  it('uses an Element Plus loading state while repository data is pending', async () => {
+    const { wrapper } = await mountRepoDetail(undefined, undefined, {
+      listPRsImpl: () => new Promise(() => {}),
+    })
+
+    expect(wrapper.find('.el-skeleton').exists()).toBe(true)
+  })
+
+  it('uses an Element Plus PR range selector', async () => {
+    const { wrapper } = await mountRepoDetail()
+
+    expect(wrapper.find('.el-select').exists()).toBe(true)
+  })
+
+  it('uses Element Plus for repository detail command buttons', async () => {
+    const { wrapper } = await mountRepoDetail(undefined, createAdminPinia())
+
+    expect(wrapper.findAll('button').every((button) => button.classes().some((name) => name.startsWith('el-')))).toBe(true)
   })
 
   it('renders repository and PR core content while admin provider options are still pending', async () => {
@@ -604,6 +630,45 @@ describe('RepoDetailView', () => {
     await wrapper.findAll('[data-testid="repo-pr-details-button"]')[0].trigger('click')
     await flushPromises()
     expect(wrapper.findAll('[data-testid="repo-pr-detail"]')).toHaveLength(1)
+  })
+
+  it('keeps PR identity and metrics stacked until the desktop breakpoint', async () => {
+    const { wrapper } = await mountRepoDetail()
+
+    const summary = wrapper.get('[data-testid="repo-pr-summary-grid"]')
+    const metrics = wrapper.get('[data-testid="repo-pr-summary-metrics"]')
+    expect(summary.classes()).toContain('lg:grid')
+    expect(summary.classes()).not.toContain('md:grid')
+    expect(metrics.classes()).toContain('lg:grid-cols-4')
+    expect(metrics.classes()).not.toContain('md:grid-cols-4')
+  })
+
+  it('constrains long PR titles inside the identity column', async () => {
+    const { wrapper } = await mountRepoDetail(undefined, undefined, {
+      prs: [{
+        id: 101,
+        scm_pr_id: 88,
+        scm_pr_url: 'https://github.com/org/repo-a/pull/88',
+        author: 'dependabot[bot]',
+        title: 'chore(deps): bump undici, release-it/bumper, release-it/conventional-changelog and release-it',
+        source_branch: 'dependabot/npm_and_yarn/dependencies',
+        target_branch: 'main',
+        status: 'open',
+        labels: [],
+        lines_added: 10,
+        lines_deleted: 2,
+        cycle_time_hours: 5,
+        created_at: '2026-03-29T00:00:00Z',
+        usage_status: 'pending_upload',
+      }],
+    })
+
+    const identity = wrapper.get('[data-testid="repo-pr-identity"]')
+    const title = wrapper.get('[data-testid="repo-pr-title"]')
+    expect(identity.classes()).toContain('min-w-0')
+    expect(title.classes()).toContain('min-w-0')
+    expect(title.classes()).toContain('max-w-full')
+    expect(title.get('span.truncate').classes()).toContain('truncate')
   })
 
   it('renders aggregate PR usage summary instead of current page counts', async () => {
@@ -765,13 +830,17 @@ describe('RepoDetailView', () => {
     expect(wrapper.text()).toContain('0')
   })
 
-  it('adds noopener protection to external PR links', async () => {
+  it('renders external PR navigation with an Element Plus link and noopener protection', async () => {
     const { wrapper } = await mountRepoDetail()
     const link = wrapper.find('a[href="https://github.com/org/repo-a/pull/88"]')
+    const linkComponent = wrapper.findAllComponents({ name: 'ElLink' })
+      .find((component) => component.attributes('href') === 'https://github.com/org/repo-a/pull/88')
 
     expect(link.exists()).toBe(true)
+    expect(link.classes()).toContain('el-link')
     expect(link.attributes('target')).toBe('_blank')
     expect(link.attributes('rel')).toBe('noopener noreferrer')
+    expect(linkComponent?.props('underline')).toBe('never')
   })
 
   it('shows binding controls for admin on an unbound repo', async () => {
@@ -783,6 +852,35 @@ describe('RepoDetailView', () => {
     }, pinia)
     expect(wrapper.text()).toContain('Code Platform Binding')
     expect(wrapper.text()).toContain('auto-discovered by ae-cli')
+  })
+
+  it('uses an Element Plus repository binding selector', async () => {
+    const { wrapper } = await mountRepoDetail({ binding_state: 'unbound', edges: {} }, createAdminPinia())
+
+    expect(wrapper.find('[data-testid="repo-binding-controls"] .el-select').exists()).toBe(true)
+  })
+
+  it('keeps the current provider label when it is absent from the loaded option set', async () => {
+    const { listProviders } = await import('@/api/scmProvider')
+    ;(listProviders as any).mockResolvedValue({
+      data: { data: [{ id: 1, name: 'Other Provider', type: 'github', base_url: 'https://api.github.com', status: 'active' }] },
+    })
+
+    const { wrapper } = await mountRepoDetail({
+      scm_provider_id: 2,
+      edges: {
+        scm_provider: {
+          id: 2,
+          name: 'GitHub Example',
+          type: 'github',
+          base_url: 'https://github.example.com/api/v3',
+          status: 'active',
+        },
+      },
+    }, createAdminPinia())
+
+    expect(wrapper.get('[data-testid="repo-provider-select"]').text()).toContain('GitHub Example')
+    expect(wrapper.get('[data-testid="repo-provider-select"]').text()).not.toBe('2')
   })
 
   it('shows repair webhook action for admin bound webhook_failed repo', async () => {
@@ -798,6 +896,17 @@ describe('RepoDetailView', () => {
     expect(wrapper.text()).toContain('Repair webhook')
     expect(wrapper.text()).toContain('Force replace')
     expect(wrapper.find('[data-testid="repo-repair-webhook-button"]').exists()).toBe(true)
+  })
+
+  it('uses an Element Plus force-repair checkbox', async () => {
+    const { wrapper } = await mountRepoDetail({
+      status: 'webhook_failed',
+      binding_state: 'bound',
+      webhook_id: 'old-hook',
+      edges: { scm_provider: { id: 2, name: 'Bitbucket', type: 'bitbucket_server', base_url: 'https://bitbucket.example.com', status: 'active' } },
+    }, createAdminPinia())
+
+    expect(wrapper.find('.el-checkbox').exists()).toBe(true)
   })
 
   it('shows repair webhook action for admin bound repo with missing webhook id', async () => {
@@ -919,6 +1028,12 @@ describe('RepoDetailView', () => {
     expect(wrapper.text()).not.toContain('No pull requests recorded yet.')
   })
 
+  it('uses an Element Plus empty state when no pull requests exist', async () => {
+    const { wrapper } = await mountRepoDetail(undefined, undefined, { prs: [], total: 0 })
+
+    expect(wrapper.find('.el-empty').exists()).toBe(true)
+  })
+
   it('preserves loaded PR rows when a later PR list refresh fails', async () => {
     const listPRsImpl = vi.fn()
       .mockResolvedValueOnce({
@@ -957,8 +1072,11 @@ describe('RepoDetailView', () => {
     const { wrapper } = await mountRepoDetail(undefined, undefined, { listPRsImpl })
     expect(wrapper.text()).toContain('Keep visible PR')
 
-    const range = wrapper.find('select')
-    await range.setValue('6')
+    await wrapper.get('[data-testid="repo-pr-range"] .el-select__wrapper').trigger('click')
+    await flushPromises()
+    const rangeOptions = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]'))
+      .filter((option) => option.textContent?.trim() === 'Last 6 months')
+    rangeOptions[rangeOptions.length - 1]!.click()
     await flushPromises()
 
     expect(wrapper.text()).toContain('Failed to load pull requests')
@@ -1012,6 +1130,20 @@ describe('RepoDetailView', () => {
     expect(wrapper.text()).toContain('No checkpoint for this commit')
   })
 
+  it('presents repository and PR status with Element Plus tags', async () => {
+    const { wrapper } = await mountRepoDetail()
+
+    expect(wrapper.findAll('.el-tag').length).toBeGreaterThan(0)
+    expect(wrapper.get('[data-testid="repo-pr-row"] .el-tag').text()).toBe('Merged')
+  })
+
+  it('presents an inactive repository with an operator-facing status label', async () => {
+    const { wrapper } = await mountRepoDetail({ status: 'inactive' })
+
+    expect(wrapper.text()).toContain('Inactive')
+    expect(wrapper.text()).not.toContain('Unknown')
+  })
+
   it('shows PR sync error message', async () => {
     const { syncPRs } = await import('@/api/pr')
     ;(syncPRs as any).mockRejectedValue({ response: { data: { message: 'sync failed: upstream timeout' } } })
@@ -1024,5 +1156,17 @@ describe('RepoDetailView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('sync failed: upstream timeout')
+  })
+
+  it('presents repository errors with Element Plus alerts', async () => {
+    const { syncPRs } = await import('@/api/pr')
+    ;(syncPRs as any).mockRejectedValue({ response: { data: { message: 'sync failed: upstream timeout' } } })
+    const { wrapper } = await mountRepoDetail()
+
+    const syncButton = wrapper.findAll('button').find((button) => button.text() === 'Sync PRs')
+    await syncButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.el-alert--error').exists()).toBe(true)
   })
 })

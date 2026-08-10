@@ -52,14 +52,22 @@ function requestIDState(value: ActivityBucketDetail['request_ids']['state']) {
 </script>
 
 <template>
-  <div data-testid="activity-wide-details" class="min-w-0 space-y-6 overflow-x-auto">
-    <section data-testid="activity-prs" class="min-w-[320px] rounded-xl border border-slate-200 bg-white shadow-sm">
+  <div data-testid="activity-wide-details" class="min-w-0 space-y-4">
+    <div data-testid="activity-primary-details" class="grid min-w-0 gap-4 xl:grid-cols-2">
+    <section data-testid="activity-prs" class="min-w-0 rounded-lg border border-slate-200 bg-white shadow-sm">
       <div class="border-b border-slate-200 px-5 py-4"><h2 class="font-semibold text-slate-950">{{ t('activity.pullRequests') }}</h2></div>
       <div v-if="activity.prs.items.length === 0" class="px-5 py-10 text-center text-sm text-slate-500">{{ t('activity.noPullRequests') }}</div>
       <article v-for="pr in activity.prs.items" :key="`${pr.repo_config_id}:${pr.pr_record_id}`" class="border-b border-slate-100 px-5 py-4 last:border-0">
         <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div class="min-w-0"><p class="text-xs text-slate-500">{{ pr.repo_name }} · PR #{{ pr.scm_pr_id }}</p><a :href="pr.url" target="_blank" rel="noopener noreferrer" class="mt-1 block font-medium text-cyan-800 hover:underline">{{ pr.title }}</a></div>
-          <button type="button" class="min-h-10 shrink-0 rounded-lg border border-slate-300 px-3 text-sm text-slate-700" :aria-expanded="expandedPRs.has(pr.pr_record_id)" @click="togglePR(pr.pr_record_id)">{{ t('activity.commits') }} · {{ pr.commits.length }}</button>
+          <div class="min-w-0">
+            <p class="text-xs text-slate-500">{{ pr.repo_name }} · PR #{{ pr.scm_pr_id }}</p>
+            <ElLink :href="pr.url" target="_blank" rel="noopener noreferrer" type="primary" class="mt-1 max-w-full font-medium">
+              {{ pr.title }}
+            </ElLink>
+          </div>
+          <ElButton class="min-h-10 shrink-0 !ml-0" :aria-expanded="expandedPRs.has(pr.pr_record_id)" @click="togglePR(pr.pr_record_id)">
+            {{ t('activity.commits') }} · {{ pr.commits.length }}
+          </ElButton>
         </div>
         <div v-if="expandedPRs.has(pr.pr_record_id)" class="mt-3 space-y-2 rounded-lg bg-slate-50 p-3">
           <div v-for="commit in pr.commits" :key="`${commit.repo_config_id}:${commit.commit_sha}`" class="break-all font-mono text-xs text-slate-700">{{ shortSHA(commit.commit_sha) }}</div>
@@ -77,18 +85,38 @@ function requestIDState(value: ActivityBucketDetail['request_ids']['state']) {
       />
     </section>
 
-    <section data-testid="activity-commits" class="min-w-[640px] rounded-xl border border-slate-200 bg-white shadow-sm">
+    <section data-testid="activity-commits" class="min-w-0 rounded-lg border border-slate-200 bg-white shadow-sm">
       <div class="border-b border-slate-200 px-5 py-4"><h2 class="font-semibold text-slate-950">{{ t('activity.commits') }}</h2></div>
+      <div
+        v-if="activity.commits.items.length > 0"
+        data-testid="activity-commit-column-labels"
+        class="hidden grid-cols-[minmax(10rem,1fr)_9rem_8rem] gap-4 border-b border-slate-100 bg-slate-50 px-5 py-2 text-xs font-medium text-slate-500 sm:grid"
+      >
+        <span>{{ t('activity.commits') }}</span>
+        <span>{{ t('activity.pullRequests') }}</span>
+        <span class="text-right">{{ t('activity.processedTokens') }}</span>
+      </div>
       <div class="divide-y divide-slate-100">
-        <div v-for="commit in activity.commits.items" :key="`${commit.repo_config_id}:${commit.commit_sha}`" class="grid grid-cols-[minmax(10rem,1fr)_9rem_8rem] gap-4 px-5 py-4 text-sm">
+        <div
+          v-for="commit in activity.commits.items"
+          :key="`${commit.repo_config_id}:${commit.commit_sha}`"
+          :data-testid="`activity-commit-${commit.repo_config_id}-${commit.commit_sha}`"
+          class="grid gap-3 px-5 py-4 text-sm sm:grid-cols-[minmax(10rem,1fr)_9rem_8rem] sm:gap-4"
+        >
           <div class="min-w-0"><p class="truncate font-medium text-slate-900">{{ commit.repo_name }}</p><p class="mt-1 break-all font-mono text-xs text-slate-500">{{ shortSHA(commit.commit_sha) }}</p></div>
           <div class="text-slate-600">{{ commit.prs.length }} PR</div>
-          <div class="text-right text-slate-600" :title="t('activity.tokenDetail')">{{ count(commit.processed_tokens) }}</div>
+          <div class="text-slate-600 sm:text-right" :title="t('activity.tokenDetail')"><span class="sm:hidden">{{ t('activity.processedTokens') }}: </span>{{ count(commit.processed_tokens) }}</div>
         </div>
       </div>
     </section>
+    </div>
 
-    <section class="min-w-[320px] rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div
+      data-testid="activity-diagnostics"
+      class="grid min-w-0 gap-4"
+      :class="activity.bucket_access ? 'xl:grid-cols-[minmax(18rem,0.7fr)_minmax(0,1.3fr)]' : ''"
+    >
+    <section data-testid="activity-data-quality" class="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <h2 class="font-semibold text-slate-950">{{ t('activity.dataQuality') }}</h2>
       <dl class="mt-4 grid gap-3 text-sm sm:grid-cols-3">
         <div><dt class="text-slate-500">{{ t('activity.unbound') }}</dt><dd class="mt-1 font-semibold text-slate-900">{{ activity.quality.unbound_buckets }}</dd></div>
@@ -97,19 +125,20 @@ function requestIDState(value: ActivityBucketDetail['request_ids']['state']) {
       </dl>
     </section>
 
-    <section v-if="activity.bucket_access" data-testid="activity-buckets" class="min-w-[640px] rounded-xl border border-slate-200 bg-white shadow-sm">
+    <section v-if="activity.bucket_access" data-testid="activity-buckets" class="min-w-0 rounded-lg border border-slate-200 bg-white shadow-sm">
       <div class="border-b border-slate-200 px-5 py-4"><h2 class="font-semibold text-slate-950">{{ t('activity.bucketDetails') }}</h2></div>
       <article v-for="bucket in activity.buckets.items" :key="bucket.bucket_id" class="border-b border-slate-100 px-5 py-4 last:border-0">
-        <button
-          type="button"
+        <ElButton
           :data-testid="`activity-bucket-${bucket.bucket_id}`"
-          class="break-all text-left font-mono text-xs text-cyan-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-600 focus-visible:ring-offset-2"
+          class="!ml-0 h-auto max-w-full break-all p-0 text-left font-mono text-xs"
+          type="primary"
+          link
           :aria-expanded="Boolean(bucketDetails[bucket.bucket_id])"
           :disabled="bucketLoading[bucket.bucket_id]"
           @click="openBucket(bucket.bucket_id)"
         >
           {{ bucket.bucket_id }}
-        </button>
+        </ElButton>
         <p v-if="bucketLoading[bucket.bucket_id]" class="mt-2 text-xs text-slate-500" role="status">{{ t('activity.loadingBucket') }}</p>
         <div
           v-if="bucketDetails[bucket.bucket_id]"
@@ -137,8 +166,15 @@ function requestIDState(value: ActivityBucketDetail['request_ids']['state']) {
             </ul>
           </div>
         </div>
-        <p v-if="bucketErrors[bucket.bucket_id]" role="alert" class="mt-2 text-xs text-red-700">{{ t('activity.bucketLoadFailed') }}</p>
+        <ElAlert
+          v-if="bucketErrors[bucket.bucket_id]"
+          class="mt-2"
+          type="error"
+          :title="t('activity.bucketLoadFailed')"
+          :closable="false"
+        />
       </article>
     </section>
+    </div>
   </div>
 </template>

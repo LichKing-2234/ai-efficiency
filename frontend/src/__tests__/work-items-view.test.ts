@@ -61,6 +61,16 @@ beforeEach(async () => {
 })
 
 describe('WorkItemsView', () => {
+  it('shows an Element Plus loading state while uncached work items are pending', async () => {
+    const api = await import('@/api/workItems') as any
+    api.getWorkItemCounts.mockReturnValue(new Promise(() => {}))
+
+    const wrapper = await mountWorkItemsView('user')
+
+    expect(wrapper.find('.el-skeleton').exists()).toBe(true)
+    expect(wrapper.find('.el-empty').exists()).toBe(false)
+  })
+
   it('shows regular approvers their pending quota approvals', async () => {
     const wrapper = await mountWorkItemsView('user')
 

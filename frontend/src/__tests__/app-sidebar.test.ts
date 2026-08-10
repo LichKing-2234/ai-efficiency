@@ -70,6 +70,34 @@ describe('AppSidebar', () => {
     expect(wrapper.text()).toContain('AI Efficiency')
   })
 
+  it('uses semantic route navigation with Element Plus actions and badges', async () => {
+    const api = await import('@/api/workItems') as any
+    api.getWorkItemCounts.mockResolvedValueOnce({
+      data: {
+        data: {
+          quota_reset_approval_count: 2,
+          quota_reset_admin_count: 0,
+          ai_access_setup_count: 0,
+          offboarding_count: 0,
+          total_count: 2,
+        },
+      },
+    })
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(AppSidebar, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('nav').exists()).toBe(true)
+    expect(wrapper.get('.h-14 button').classes()).toContain('el-button')
+    const badge = wrapper.getComponent({ name: 'ElBadge' })
+    expect(badge.props('badgeStyle')).toEqual({ position: 'static', transform: 'none' })
+  })
+
   it('places the language toggle in the sidebar header, away from the account footer', async () => {
     const router = createTestRouter()
     await router.push('/')
@@ -79,12 +107,55 @@ describe('AppSidebar', () => {
       global: { plugins: [createPinia(), router] },
     })
 
-    const header = wrapper.get('[data-testid="sidebar-header"]')
-    const footer = wrapper.get('[data-testid="sidebar-footer"]')
+    const header = wrapper.get('.h-14')
+    const footer = wrapper.get('div.border-t.p-4')
 
-    expect(header.find('[data-testid="language-toggle"]').exists()).toBe(true)
-    expect(footer.find('[data-testid="language-toggle"]').exists()).toBe(false)
-    expect(footer.find('[data-testid="sidebar-account-summary"]').exists()).toBe(true)
+    expect(header.find('button').exists()).toBe(true)
+    expect(footer.find('button[title="Logout"]').exists()).toBe(true)
+    expect(footer.find(':scope > div > div').exists()).toBe(true)
+  })
+
+  it('omits the desktop brand controls from the mobile navigation surface', async () => {
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(AppSidebar, {
+      props: { mobile: true },
+      global: { plugins: [createPinia(), router] },
+    })
+
+    expect(wrapper.find('.h-14').exists()).toBe(false)
+    expect(wrapper.findAll('button')).toHaveLength(1)
+    expect(wrapper.text()).not.toContain('AI Efficiency')
+  })
+
+  it('renders mobile navigation as a compact light surface', async () => {
+    const router = createTestRouter()
+    await router.push('/usage')
+    await router.isReady()
+
+    const wrapper = mount(AppSidebar, {
+      props: { mobile: true },
+      global: { plugins: [createPinia(), router] },
+    })
+
+    const sidebar = wrapper.get('aside')
+    expect(sidebar.classes()).toContain('w-full')
+    expect(sidebar.classes()).toContain('bg-white')
+    expect(sidebar.classes()).toContain('text-slate-700')
+    expect(sidebar.classes()).not.toContain('bg-gray-900')
+
+    const navigation = wrapper.get('nav')
+    expect(navigation.classes()).toContain('flex-none')
+    expect(navigation.classes()).not.toContain('flex-1')
+
+    const activeLink = wrapper.get('a[href="/usage"]')
+    expect(activeLink.classes()).toContain('min-h-11')
+    expect(activeLink.classes()).toContain('bg-blue-50')
+    expect(activeLink.classes()).toContain('text-blue-700')
+
+    expect(wrapper.get('div.border-t.p-4').classes()).toContain('border-slate-200')
   })
 
   it('renders friendly navigation links for regular users', async () => {
@@ -317,7 +388,7 @@ describe('AppSidebar', () => {
     expect(logoutBtn.exists()).toBe(true)
   })
 
-  it('displays username from auth store', async () => {
+  it('displays only the username in the compact account summary', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
@@ -333,8 +404,7 @@ describe('AppSidebar', () => {
       global: { plugins: [pinia, router] },
     })
 
-    expect(wrapper.text()).toContain('testuser')
-    expect(wrapper.text()).toContain('admin')
+    expect(wrapper.get('.min-w-0.flex-1.px-1.py-1.text-sm').text()).toBe('testuser')
   })
 
   it('truncates long account identity text in the footer', async () => {
@@ -359,11 +429,10 @@ describe('AppSidebar', () => {
       global: { plugins: [pinia, router] },
     })
 
-    const accountLines = wrapper.get('[data-testid="sidebar-account-summary"]').findAll('p')
+    const accountLines = wrapper.get('.min-w-0.flex-1.px-1.py-1.text-sm').findAll('p')
+    expect(accountLines).toHaveLength(1)
     expect(accountLines[0].classes()).toContain('truncate')
     expect(accountLines[0].attributes('title')).toBe('very-long-admin-account@example.com')
-    expect(accountLines[1].classes()).toContain('truncate')
-    expect(accountLines[1].attributes('title')).toBe('admin')
   })
 
   it('keeps the footer account identity separate from setup navigation', async () => {
@@ -387,11 +456,10 @@ describe('AppSidebar', () => {
     expect(setupLinks[0].attributes('href')).toBe('/user')
 
     expect(wrapper.find('[data-testid="sidebar-account-link"]').exists()).toBe(false)
-    const accountSummary = wrapper.get('[data-testid="sidebar-account-summary"]')
+    const accountSummary = wrapper.get('.min-w-0.flex-1.px-1.py-1.text-sm')
     expect(accountSummary.element.tagName).toBe('DIV')
     expect(accountSummary.attributes('href')).toBeUndefined()
-    expect(accountSummary.text()).toContain('testuser')
-    expect(accountSummary.text()).toContain('user')
+    expect(accountSummary.text()).toBe('testuser')
 
     await accountSummary.trigger('click')
     await flushPromises()
@@ -468,7 +536,7 @@ describe('AppSidebar', () => {
       global: { plugins: [createPinia(), router] },
     })
 
-    await wrapper.get('[data-testid="language-toggle"]').trigger('click')
+    await wrapper.get('.h-14 button').trigger('click')
 
     const linkTexts = wrapper.findAll('a').map((l) => l.text())
     expect(wrapper.text()).toContain('我的工作')

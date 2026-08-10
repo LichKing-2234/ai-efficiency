@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { createGroupCredential, getUserProviderModels, getUserProviders, regenerateGroupCredential, testUserProvider } from '@/api/user'
-import { useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from '@/i18n'
+import { authSourceLabel, userRoleLabel } from '@/utils/displayLabels'
 import type {
   UserProviderTestResult,
   UserProviderModel,
@@ -34,7 +34,10 @@ import type { ManualConfigSnippet } from '@/utils/userSetupReview'
 
 const auth = useAuthStore()
 const { t } = useI18n()
-const { showToast } = useToast()
+const onboardingFlowElement = ref<HTMLElement | null>(null)
+const horizontalSteps = ref(false)
+const HORIZONTAL_STEPS_MIN_WIDTH = 700
+let onboardingFlowObserver: ResizeObserver | null = null
 
 const loading = ref(true)
 const error = ref('')
@@ -116,6 +119,18 @@ const primaryOnboardingActionLabel = computed(() => {
   return ''
 })
 const showConfigurationMethods = computed(() => !!selectedKeyValue.value)
+const onboardingActiveStep = computed(() => {
+  if (!selectedKeyValue.value) return 0
+  if (!providerTestResult.value?.success) return 1
+  return 2
+})
+const onboardingVisibleStep = ref(0)
+const onboardingReachableStep = computed(() => showConfigurationMethods.value ? 2 : onboardingActiveStep.value)
+
+function selectOnboardingStep(step: number) {
+  if (step <= onboardingReachableStep.value) onboardingVisibleStep.value = step
+}
+
 const ccSwitchImports = computed(() => {
   const provider = selectedProvider.value
   const group = selectedGroup.value
@@ -512,9 +527,9 @@ async function copySelectedKey() {
   if (!selectedKeyValue.value) return
   try {
     await navigator.clipboard.writeText(selectedKeyValue.value)
-    showToast({ message: t('user.copied'), tone: 'success' })
+    ElMessage.success(t('user.copied'))
   } catch {
-    showToast({ message: t('user.copyFailed'), tone: 'error' })
+    ElMessage.error(t('user.copyFailed'))
   }
 }
 
@@ -522,13 +537,13 @@ async function copyCommand(key: string, command: string) {
   if (!command || command === t('user.selectProviderCommand')) return
   try {
     await navigator.clipboard.writeText(command)
-    showToast({ message: t('user.copied'), tone: 'success' })
+    ElMessage.success(t('user.copied'))
     copiedCommandKey.value = key
     window.setTimeout(() => {
       if (copiedCommandKey.value === key) copiedCommandKey.value = ''
     }, 1800)
   } catch {
-    showToast({ message: t('user.copyFailed'), tone: 'error' })
+    ElMessage.error(t('user.copyFailed'))
   }
 }
 
@@ -589,6 +604,12 @@ async function handleTestProvider() {
   }
 }
 
+watch(onboardingActiveStep, (step, previousStep) => {
+  if (previousStep === undefined || step < previousStep || (previousStep === 0 && step === 1)) {
+    onboardingVisibleStep.value = step
+  }
+}, { immediate: true })
+
 watch(
   () => [
     selectedProvider.value?.id,
@@ -601,7 +622,34 @@ watch(
   }
 )
 
-onMounted(loadProviders)
+function syncOnboardingStepDirection(width?: number) {
+  if (width === undefined) {
+    const element = onboardingFlowElement.value
+    if (!element) return
+    const style = getComputedStyle(element)
+    width = element.getBoundingClientRect().width
+      - parseFloat(style.paddingLeft)
+      - parseFloat(style.paddingRight)
+      - parseFloat(style.borderLeftWidth)
+      - parseFloat(style.borderRightWidth)
+  }
+  horizontalSteps.value = width >= HORIZONTAL_STEPS_MIN_WIDTH
+}
+
+onMounted(() => {
+  void loadProviders()
+  syncOnboardingStepDirection()
+
+  if (typeof ResizeObserver === 'undefined' || !onboardingFlowElement.value) return
+  onboardingFlowObserver = new ResizeObserver(([entry]) => {
+    if (entry) syncOnboardingStepDirection(entry.contentRect.width)
+  })
+  onboardingFlowObserver.observe(onboardingFlowElement.value)
+})
+
+onBeforeUnmount(() => {
+  onboardingFlowObserver?.disconnect()
+})
 </script>
 
 <template>
@@ -612,27 +660,27 @@ onMounted(loadProviders)
           <h1 class="text-3xl font-semibold tracking-tight text-gray-900">{{ t('user.title') }}</h1>
           <p class="mt-2 max-w-3xl text-sm text-gray-500">{{ t('user.subtitle') }}</p>
         </div>
-        <button
-          class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+        <ElButton
+          :loading="loading"
           @click="loadProviders"
         >
           {{ t('user.refresh') }}
-        </button>
+        </ElButton>
       </div>
 
-      <div class="grid min-w-0 gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-        <div class="order-2 min-w-0 space-y-6 lg:order-1">
-          <section class="rounded-xl border border-gray-200 bg-white p-5">
+      <div data-testid="user-page-grid" class="grid min-w-0 gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <div data-testid="user-summary-column" class="order-2 min-w-0 space-y-6 xl:order-1">
+          <section class="rounded-lg border border-gray-200 bg-white p-5">
             <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('user.accountTitle') }}</h2>
             <dl class="mt-4 space-y-3 text-sm">
               <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4"><dt class="text-gray-500">{{ t('user.username') }}</dt><dd class="break-all font-medium text-gray-900">{{ auth.user?.username ?? '—' }}</dd></div>
               <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4"><dt class="text-gray-500">{{ t('user.email') }}</dt><dd class="break-all font-medium text-gray-900">{{ auth.user?.email ?? '—' }}</dd></div>
-              <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4"><dt class="text-gray-500">{{ t('user.role') }}</dt><dd class="break-all font-medium text-gray-900">{{ auth.user?.role ?? '—' }}</dd></div>
-              <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4"><dt class="text-gray-500">{{ t('user.authSource') }}</dt><dd class="break-all font-medium text-gray-900">{{ auth.user?.auth_source ?? '—' }}</dd></div>
+              <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4"><dt class="text-gray-500">{{ t('user.role') }}</dt><dd class="break-all font-medium text-gray-900">{{ userRoleLabel(auth.user?.role, t) }}</dd></div>
+              <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4"><dt class="text-gray-500">{{ t('user.authSource') }}</dt><dd class="break-all font-medium text-gray-900">{{ authSourceLabel(auth.user?.auth_source, t) }}</dd></div>
             </dl>
           </section>
 
-          <section class="rounded-xl border border-gray-200 bg-white p-5">
+          <section class="rounded-lg border border-gray-200 bg-white p-5">
             <div class="flex items-center justify-between">
               <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('user.aiAccessTitle') }}</h2>
               <span v-if="loading" class="text-xs text-gray-400">{{ t('user.loading') }}</span>
@@ -643,74 +691,153 @@ onMounted(loadProviders)
               <span>{{ totalAccessGroupCount }}</span>
               {{ t('user.readyToUse') }}
             </div>
-            <p v-if="selectedMessage" class="mt-3 rounded-md bg-gray-50 p-3 text-sm text-gray-600">{{ selectedMessage }}</p>
-            <p v-if="error" class="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</p>
-            <div class="mt-4 space-y-3">
-              <button
+            <ElAlert v-if="selectedMessage" class="mt-3" type="info" :closable="false" :title="selectedMessage" />
+            <ElAlert v-if="error" class="mt-3" type="error" :closable="false" :title="error" />
+            <ElRadioGroup
+              :model-value="selectedProviderId ?? undefined"
+              class="mt-4 flex w-full flex-col gap-3"
+            >
+              <ElRadio
                 v-for="provider in providers"
                 :key="provider.id"
                 :data-testid="`provider-${provider.id}`"
-                class="w-full rounded-lg border px-4 py-3 text-left transition"
-                :class="provider.id === selectedProviderId ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 bg-white text-gray-900 hover:border-gray-400'"
+                border
+                class="!mx-0 !h-auto w-full !items-start !p-4"
+                :value="provider.id"
                 @click="selectProvider(provider.id)"
               >
-                <div class="flex items-center justify-between gap-3">
-                  <div>
-                    <div class="font-medium">{{ provider.display_name }}</div>
-                    <div class="text-xs" :class="provider.id === selectedProviderId ? 'text-gray-300' : 'text-gray-500'">{{ provider.name }}</div>
+                <div class="flex min-w-0 items-start gap-3 whitespace-normal">
+                  <div class="min-w-0 flex-1">
+                    <div class="break-words font-medium">{{ provider.display_name }}</div>
+                    <div class="break-words text-xs text-gray-500">{{ provider.name }}</div>
                   </div>
-                  <span
+                  <ElTag
                     v-if="provider.is_primary"
-                    class="rounded-full px-2 py-1 text-[11px] font-semibold"
-                    :class="provider.id === selectedProviderId ? 'bg-white/15 text-white' : 'bg-gray-100 text-gray-700'"
+                    :data-testid="`provider-primary-tag-${provider.id}`"
+                    class="shrink-0"
+                    type="info"
+                    size="small"
                   >
                     {{ t('user.primary') }}
-                  </span>
+                  </ElTag>
                 </div>
-              </button>
-            </div>
+              </ElRadio>
+            </ElRadioGroup>
           </section>
         </div>
 
-        <div class="order-1 min-w-0 space-y-6 lg:order-2">
-          <section data-testid="primary-onboarding-flow" class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div data-testid="user-onboarding-column" class="order-1 min-w-0 space-y-6 xl:order-2">
+          <section ref="onboardingFlowElement" data-testid="primary-onboarding-flow" class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
             <div class="border-b border-gray-100 pb-4">
               <h2 class="text-lg font-semibold text-gray-900">{{ t('user.setupFlowTitle') }}</h2>
               <p class="mt-2 text-sm text-gray-600">{{ t('user.primaryFlowHelp') }}</p>
             </div>
 
-            <div class="mt-5 space-y-4">
-              <section class="rounded-lg border border-gray-200 p-4">
-                <div class="flex items-start justify-between gap-4">
-                  <div>
+            <div class="mt-4">
+              <ElSteps
+                data-testid="onboarding-steps"
+                :data-direction="horizontalSteps ? 'horizontal' : 'vertical'"
+                :active="onboardingActiveStep"
+                finish-status="success"
+                :simple="horizontalSteps"
+                :direction="horizontalSteps ? 'horizontal' : 'vertical'"
+                :class="horizontalSteps ? 'w-full' : 'h-44'"
+              >
+                <ElStep data-testid="onboarding-step-trigger-0" class="cursor-pointer" @click="selectOnboardingStep(0)">
+                  <template #title>
+                    <ElButton
+                      data-testid="onboarding-step-button-0"
+                      class="!h-auto min-h-11 !whitespace-normal !p-0 text-left"
+                      link
+                    >
+                      {{ t('user.accessTitle') }}
+                    </ElButton>
+                  </template>
+                </ElStep>
+                <ElStep
+                  data-testid="onboarding-step-trigger-1"
+                  :class="onboardingReachableStep >= 1 ? 'cursor-pointer' : 'cursor-not-allowed'"
+                  @click="selectOnboardingStep(1)"
+                >
+                  <template #title>
+                    <ElButton
+                      data-testid="onboarding-step-button-1"
+                      class="!h-auto min-h-11 !whitespace-normal !p-0 text-left"
+                      link
+                      :disabled="onboardingReachableStep < 1"
+                    >
+                      {{ t('user.apiKeyStepTitle') }}
+                    </ElButton>
+                  </template>
+                </ElStep>
+                <ElStep
+                  data-testid="onboarding-step-trigger-2"
+                  :class="onboardingReachableStep >= 2 ? 'cursor-pointer' : 'cursor-not-allowed'"
+                  @click="selectOnboardingStep(2)"
+                >
+                  <template #title>
+                    <ElButton
+                      data-testid="onboarding-step-button-2"
+                      class="!h-auto min-h-11 !whitespace-normal !p-0 text-left"
+                      link
+                      :disabled="onboardingReachableStep < 2"
+                    >
+                      {{ t('user.configurationMethodsTitle') }}
+                    </ElButton>
+                  </template>
+                </ElStep>
+              </ElSteps>
+            </div>
+
+            <div class="mt-5">
+              <section v-if="onboardingVisibleStep === 0" data-testid="onboarding-step-0" class="py-1">
+                <div data-testid="onboarding-step-header" class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                  <div data-testid="onboarding-step-copy" class="min-w-0">
                     <h3 class="text-base font-semibold text-gray-900">{{ t('user.accessTitle') }}</h3>
                     <p class="mt-1 text-sm text-gray-600">{{ t('user.accessGroupHelp') }}</p>
                     <p v-if="selectedProvider" class="mt-2 text-sm text-gray-500">{{ selectedProvider.base_url }}</p>
                   </div>
-                  <button
+                  <ElButton
                     v-if="onboardingState === 'group_selected_without_key'"
                     data-testid="primary-onboarding-action"
-                    class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
+                    class="w-full xl:w-auto xl:shrink-0"
+                    type="primary"
+                    :loading="credentialMutationLoading"
                     :disabled="credentialMutationLoading"
                     @click="handleCreateKey"
                   >
                     {{ credentialMutationLoading ? t('user.creatingKey') : primaryOnboardingActionLabel }}
-                  </button>
+                  </ElButton>
                 </div>
 
                 <div v-if="selectedProvider" class="mt-4 space-y-4">
-                  <div class="flex flex-wrap gap-2">
-                    <button
+                  <ElRadioGroup
+                    :model-value="selectedGroupId ?? undefined"
+                    class="flex max-w-full flex-wrap gap-2"
+                    fill="var(--el-color-primary-light-9)"
+                    text-color="var(--el-color-primary)"
+                  >
+                    <ElRadioButton
                       v-for="group in selectedProvider.groups"
                       :key="group.group_id"
                       :data-testid="`group-${group.group_id}`"
-                      class="rounded-full border px-3 py-2 text-sm transition"
-                      :class="group.group_id === selectedGroupId ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 bg-white text-gray-800 hover:border-gray-500'"
+                      :data-selected="selectedGroupId === group.group_id"
+                      :value="group.group_id"
                       @click="selectGroup(group.group_id)"
                     >
-                      {{ group.group_name }}
-                    </button>
-                  </div>
+                      <span class="inline-flex items-center gap-2">
+                        <span
+                          :data-testid="`group-indicator-${group.group_id}`"
+                          :data-selected="selectedGroupId === group.group_id"
+                          class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border"
+                          aria-hidden="true"
+                        >
+                          <span v-if="selectedGroupId === group.group_id" class="h-2.5 w-2.5 rounded-full bg-gray-900" />
+                        </span>
+                        {{ group.group_name }}
+                      </span>
+                    </ElRadioButton>
+                  </ElRadioGroup>
 
                   <div v-if="selectedGroup" class="rounded-md bg-gray-50 p-4 text-sm text-gray-700">
                     <div class="font-medium text-gray-900">{{ credentialStatusLabel(selectedGroup.credential.state) }}</div>
@@ -725,21 +852,23 @@ onMounted(loadProviders)
                 </div>
               </section>
 
-              <section class="rounded-lg border border-gray-200 p-4">
-                <div class="flex items-start justify-between gap-4">
-                  <div>
+              <section v-else-if="onboardingVisibleStep === 1" data-testid="onboarding-step-1" class="py-1">
+                <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                  <div class="min-w-0">
                     <h3 class="text-base font-semibold text-gray-900">{{ t('user.apiKeyStepTitle') }}</h3>
                     <p class="mt-1 text-sm text-gray-600">{{ t('user.apiKeyStageHelp') }}</p>
                   </div>
-                  <button
+                  <ElButton
                     v-if="selectedKeyValue"
                     data-testid="user-provider-test-run"
-                    class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
+                    class="w-full xl:w-auto xl:shrink-0"
+                    type="primary"
+                    :loading="providerTestLoading"
                     :disabled="providerTestLoading || !canTestProvider"
                     @click="handleTestProvider"
                   >
                     {{ providerTestLoading ? t('user.testing') : primaryOnboardingActionLabel }}
-                  </button>
+                  </ElButton>
                 </div>
 
                 <div v-if="selectedGroup" class="mt-4 space-y-4">
@@ -749,59 +878,64 @@ onMounted(loadProviders)
                       {{ displayedSecret || '••••••••••••••••' }}
                     </div>
                     <div class="mt-3 flex flex-wrap gap-2">
-                      <button
+                      <ElButton
                         v-if="selectedGroup.credential.state === 'missing'"
                         data-testid="create-key"
-                        class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
+                        type="primary"
+                        :loading="credentialMutationLoading"
                         :disabled="credentialMutationLoading"
                         @click="handleCreateKey"
                       >
                         {{ credentialMutationLoading ? t('user.creatingKey') : t('user.createKey') }}
-                      </button>
-                      <button
+                      </ElButton>
+                      <ElButton
                         v-if="selectedGroup.credential.state === 'existing_hidden'"
                         data-testid="regenerate-key"
-                        class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                        type="warning"
+                        plain
+                        :loading="credentialMutationLoading"
                         :disabled="credentialMutationLoading"
                         @click="requestSecretAction('regenerate')"
                       >
                         {{ credentialMutationLoading ? t('user.regenerating') : t('user.regenerate') }}
-                      </button>
-                      <button
+                      </ElButton>
+                      <ElButton
                         v-if="canReveal"
                         data-testid="reveal-key"
-                        class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
                         @click="isSecretRevealed ? hideSelectedKey() : requestSecretAction('reveal')"
                       >
                         {{ isSecretRevealed ? t('user.hide') : t('user.reveal') }}
-                      </button>
-                      <button
+                      </ElButton>
+                      <ElButton
                         v-if="canReveal"
                         data-testid="copy-key"
-                        class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
                         @click="requestSecretAction('copy')"
                       >
                         {{ t('user.copy') }}
-                      </button>
+                      </ElButton>
                     </div>
-                    <div v-if="secretConfirmAction" class="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                      <div class="font-medium">{{ secretConfirmTitle(secretConfirmAction) }}</div>
-                      <p class="mt-1 text-xs">{{ t('user.secretRiskText') }}</p>
+                    <div v-if="secretConfirmAction" class="mt-3">
+                      <ElAlert
+                        type="warning"
+                        :closable="false"
+                        show-icon
+                        :title="secretConfirmTitle(secretConfirmAction)"
+                        :description="t('user.secretRiskText')"
+                      />
                       <div class="mt-3 flex flex-wrap gap-2">
-                        <button
+                        <ElButton
                           data-testid="confirm-secret-action"
-                          class="rounded-md bg-amber-700 px-3 py-2 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-50"
+                          type="warning"
                           :disabled="credentialMutationLoading"
                           @click="confirmSecretAction"
                         >
                           {{ t('user.confirmAction') }}
-                        </button>
-                        <button
-                          class="rounded-md border border-amber-300 bg-white px-3 py-2 text-xs font-medium text-amber-900 hover:bg-amber-100"
+                        </ElButton>
+                        <ElButton
                           @click="secretConfirmAction = null"
                         >
                           {{ t('user.cancel') }}
-                        </button>
+                        </ElButton>
                       </div>
                     </div>
                   </div>
@@ -814,35 +948,35 @@ onMounted(loadProviders)
                     <div class="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                       <div>
                         <label class="block text-xs font-medium uppercase tracking-wide text-gray-500">{{ t('user.platform') }}</label>
-                        <input
+                        <ElInput
                           :value="selectedGroup.platform"
                           disabled
-                          class="mt-1 w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500"
+                          class="mt-1 w-full"
                         />
                       </div>
                       <div>
                         <label class="block text-xs font-medium uppercase tracking-wide text-gray-500">{{ t('user.model') }}</label>
-                        <select
+                        <ElSelect
                           v-if="providerModelOptions.length > 0"
                           v-model="providerTestModel"
                           data-testid="user-provider-test-model"
-                          class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                          :teleported="false"
+                          class="mt-1 w-full"
                         >
-                          <option
+                          <ElOption
                             v-for="model in providerModelOptions"
                             :key="model.id"
+                            :label="providerModelLabel(model)"
                             :value="model.id"
-                          >
-                            {{ providerModelLabel(model) }}
-                          </option>
-                        </select>
-                        <input
+                          />
+                        </ElSelect>
+                        <ElInput
                           v-else
                           v-model="providerTestModel"
                           data-testid="user-provider-test-model"
                           type="text"
                           :placeholder="providerModelsLoading ? t('user.loadingModels') : 'gpt-5.4'"
-                          class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                          class="mt-1 w-full"
                         />
                         <p v-if="providerModelsLoading" class="mt-1 text-xs text-gray-500">{{ t('user.loadingModels') }}</p>
                         <p v-else-if="providerModelsMessage" class="mt-1 text-xs text-gray-500">{{ providerModelsMessage }}</p>
@@ -850,18 +984,21 @@ onMounted(loadProviders)
                     </div>
                     <div class="mt-3">
                       <label class="block text-xs font-medium uppercase tracking-wide text-gray-500">{{ t('user.prompt') }}</label>
-                      <input
+                      <ElInput
                         v-model="providerTestPrompt"
                         data-testid="user-provider-test-prompt"
                         type="text"
                         placeholder="Hi"
-                        class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                        class="mt-1 w-full"
                       />
                     </div>
                     <div class="mt-3 flex flex-wrap items-center gap-3">
-                      <span v-if="providerTestResult" class="text-sm" :class="providerTestResult.success ? 'text-green-700' : 'text-red-700'">
-                        {{ providerTestResult.message }}
-                      </span>
+                      <ElAlert
+                        v-if="providerTestResult"
+                        :type="providerTestResult.success ? 'success' : 'error'"
+                        :closable="false"
+                        :title="providerTestResult.message"
+                      />
                     </div>
                     <div v-if="providerTestResult?.response" class="mt-3 rounded-md bg-gray-50 p-3 text-sm text-gray-700">
                       {{ providerTestResult.response }}
@@ -874,47 +1011,59 @@ onMounted(loadProviders)
               </section>
 
               <section
-                v-if="showConfigurationMethods"
+                v-else-if="onboardingVisibleStep === 2 && showConfigurationMethods"
                 data-testid="configuration-methods"
-                class="rounded-lg border border-gray-200 p-4"
+                class="py-1"
               >
                 <h3 class="text-base font-semibold text-gray-900">{{ t('user.configurationMethodsTitle') }}</h3>
                 <p class="mt-1 text-sm text-gray-600">{{ t('user.configurationMethodsHelp') }}</p>
 
-                <div class="mt-4 grid gap-3 md:grid-cols-3">
-                  <button
+                <ElRadioGroup
+                  :model-value="selectedConfigMethod ?? undefined"
+                  class="mt-4 !grid w-full gap-3 md:grid-cols-3"
+                >
+                  <ElRadio
                     data-testid="config-method-manual"
-                    class="rounded-lg border px-4 py-3 text-left transition"
-                    :class="selectedConfigMethod === 'manual' ? 'border-gray-900 bg-gray-50' : 'border-gray-200 hover:border-gray-400'"
+                    border
+                    class="!mx-0 !h-auto w-full !items-start !p-4"
+                    value="manual"
                     @click="selectedConfigMethod = 'manual'"
                   >
-                    <div class="font-medium text-gray-900">{{ t('user.manualConfigMethodTitle') }}</div>
-                    <p class="mt-1 text-sm text-gray-600">{{ t('user.manualConfigMethodHelp') }}</p>
-                    <p class="mt-3 text-xs text-gray-500">{{ t('user.manualConfigMethodAudience') }}</p>
-                  </button>
-                  <button
+                    <div class="whitespace-normal">
+                      <div class="font-medium text-gray-900">{{ t('user.manualConfigMethodTitle') }}</div>
+                      <p class="mt-1 text-sm text-gray-600">{{ t('user.manualConfigMethodHelp') }}</p>
+                      <p class="mt-3 text-xs text-gray-500">{{ t('user.manualConfigMethodAudience') }}</p>
+                    </div>
+                  </ElRadio>
+                  <ElRadio
                     v-if="showAutomaticConfigMethod"
                     data-testid="config-method-automatic"
-                    class="rounded-lg border px-4 py-3 text-left transition"
-                    :class="selectedConfigMethod === 'automatic' ? 'border-gray-900 bg-gray-50' : 'border-gray-200 hover:border-gray-400'"
+                    border
+                    class="!mx-0 !h-auto w-full !items-start !p-4"
+                    value="automatic"
                     @click="selectedConfigMethod = 'automatic'"
                   >
-                    <div class="font-medium text-gray-900">{{ t('user.automaticConfigMethodTitle') }}</div>
-                    <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigMethodHelp') }}</p>
-                    <p class="mt-3 text-xs text-gray-500">{{ t('user.automaticConfigMethodAudience') }}</p>
-                  </button>
-                  <button
+                    <div class="whitespace-normal">
+                      <div class="font-medium text-gray-900">{{ t('user.automaticConfigMethodTitle') }}</div>
+                      <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigMethodHelp') }}</p>
+                      <p class="mt-3 text-xs text-gray-500">{{ t('user.automaticConfigMethodAudience') }}</p>
+                    </div>
+                  </ElRadio>
+                  <ElRadio
                     v-if="ccSwitchImports.length > 0"
                     data-testid="config-method-ccswitch"
-                    class="rounded-lg border px-4 py-3 text-left transition"
-                    :class="selectedConfigMethod === 'ccswitch' ? 'border-gray-900 bg-gray-50' : 'border-gray-200 hover:border-gray-400'"
+                    border
+                    class="!mx-0 !h-auto w-full !items-start !p-4"
+                    value="ccswitch"
                     @click="selectedConfigMethod = 'ccswitch'"
                   >
-                    <div class="font-medium text-gray-900">{{ ccSwitchMethodTitle }}</div>
-                    <p class="mt-1 text-sm text-gray-600">{{ ccSwitchMethodHelp }}</p>
-                    <p class="mt-3 text-xs text-gray-500">{{ ccSwitchMethodAudience }}</p>
-                  </button>
-                </div>
+                    <div class="whitespace-normal">
+                      <div class="font-medium text-gray-900">{{ ccSwitchMethodTitle }}</div>
+                      <p class="mt-1 text-sm text-gray-600">{{ ccSwitchMethodHelp }}</p>
+                      <p class="mt-3 text-xs text-gray-500">{{ ccSwitchMethodAudience }}</p>
+                    </div>
+                  </ElRadio>
+                </ElRadioGroup>
 
                 <div v-if="selectedConfigMethod === 'manual'" class="mt-4 rounded-lg border border-gray-200 p-4">
                   <div class="font-medium text-gray-900">{{ t('user.manualConfigDetailsTitle') }}</div>
@@ -939,34 +1088,39 @@ onMounted(loadProviders)
                           <div class="font-medium text-slate-900">{{ manualConfigSnippetTitle(snippet) }}</div>
                           <div class="mt-1 break-all font-mono text-xs text-slate-500">{{ snippet.path }}</div>
                         </div>
-                        <button
-                          class="shrink-0 text-xs font-medium text-indigo-700 hover:text-indigo-900"
-                          type="button"
+                        <ElButton
+                          class="shrink-0"
+                          link
+                          type="primary"
                           :data-testid="`manual-config-copy-${snippet.key}`"
                           @click="copyManualConfigSnippet(snippet)"
                         >
                           {{ manualConfigCopyLabel(snippet) }}
-                        </button>
+                        </ElButton>
                       </div>
                       <pre class="mt-3 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ snippet.body }}</pre>
                     </div>
-                    <div v-if="pendingManualConfigSnippet" class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                      <div class="font-medium">{{ t('user.confirmCopyConfigSnippet') }}</div>
-                      <p class="mt-1 text-xs">{{ t('user.secretRiskText') }}</p>
+                    <div v-if="pendingManualConfigSnippet">
+                      <ElAlert
+                        type="warning"
+                        :closable="false"
+                        show-icon
+                        :title="t('user.confirmCopyConfigSnippet')"
+                        :description="t('user.secretRiskText')"
+                      />
                       <div class="mt-3 flex flex-wrap gap-2">
-                        <button
+                        <ElButton
                           data-testid="confirm-manual-config-copy"
-                          class="rounded-md bg-amber-700 px-3 py-2 text-xs font-medium text-white hover:bg-amber-800"
+                          type="warning"
                           @click="confirmManualConfigCopy"
                         >
                           {{ t('user.confirmAction') }}
-                        </button>
-                        <button
-                          class="rounded-md border border-amber-300 bg-white px-3 py-2 text-xs font-medium text-amber-900 hover:bg-amber-100"
+                        </ElButton>
+                        <ElButton
                           @click="manualConfigConfirmKey = ''"
                         >
                           {{ t('user.cancel') }}
-                        </button>
+                        </ElButton>
                       </div>
                     </div>
                   </div>
@@ -986,28 +1140,30 @@ onMounted(loadProviders)
                       <div v-for="command in automaticMachineCommands" :key="command.key" class="rounded-md border border-gray-200 p-3 shadow-sm">
                         <div class="flex items-center justify-between gap-3">
                           <div class="text-[11px] font-semibold text-gray-500">{{ command.label }}</div>
-                          <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.key, command.value)">
+                          <ElButton link type="primary" @click="copyCommand(command.key, command.value)">
                             {{ copyCommandLabel(command.key) }}
-                          </button>
+                          </ElButton>
                         </div>
                         <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.value }}</pre>
-                        <details
+                        <ElCollapse
                           v-if="command.fallback"
                           :data-testid="command.fallback.detailsTestId"
-                          class="mt-3 rounded-md border border-gray-200 bg-gray-50 p-3"
+                          class="mt-3 rounded-md border border-gray-200 bg-gray-50 px-3"
                         >
-                          <summary class="cursor-pointer text-sm font-medium leading-6 text-gray-700">
-                            {{ command.fallback.title }}
-                          </summary>
-                          <p class="mt-1.5 text-xs leading-5 text-gray-500">{{ command.fallback.help }}</p>
-                          <div class="mt-2 flex items-center justify-between gap-3">
-                            <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{{ command.fallback.label }}</div>
-                            <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.fallback.copyKey, command.fallback.value)">
-                              {{ copyCommandLabel(command.fallback.copyKey) }}
-                            </button>
-                          </div>
-                          <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.fallback.value }}</pre>
-                        </details>
+                          <ElCollapseItem name="fallback">
+                            <template #title>
+                              <span class="text-sm font-medium leading-6 text-gray-700">{{ command.fallback.title }}</span>
+                            </template>
+                            <p class="text-xs leading-5 text-gray-500">{{ command.fallback.help }}</p>
+                            <div class="mt-2 flex items-center justify-between gap-3">
+                              <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{{ command.fallback.label }}</div>
+                              <ElButton link type="primary" @click="copyCommand(command.fallback.copyKey, command.fallback.value)">
+                                {{ copyCommandLabel(command.fallback.copyKey) }}
+                              </ElButton>
+                            </div>
+                            <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.fallback.value }}</pre>
+                          </ElCollapseItem>
+                        </ElCollapse>
                       </div>
                     </div>
                   </section>
@@ -1019,64 +1175,66 @@ onMounted(loadProviders)
                       <div v-for="command in automaticRepoCommands" :key="command.key" class="rounded-md border border-gray-200 p-3 shadow-sm">
                         <div class="flex items-center justify-between gap-3">
                           <div class="text-[11px] font-semibold text-gray-500">{{ command.label }}</div>
-                          <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.key, command.value)">
+                          <ElButton link type="primary" @click="copyCommand(command.key, command.value)">
                             {{ copyCommandLabel(command.key) }}
-                          </button>
+                          </ElButton>
                         </div>
                         <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.value }}</pre>
                       </div>
                     </div>
                   </section>
 
-                  <details data-testid="auto-advanced" class="mt-6 rounded-lg border border-gray-200 p-4">
-                    <summary class="cursor-pointer text-base font-semibold leading-6 text-gray-900">
-                      {{ t('user.commandReference') }}
-                    </summary>
-                    <p class="mt-2 text-sm leading-5 text-gray-600">{{ t('user.commandReferenceHelp') }}</p>
+                  <ElCollapse data-testid="auto-advanced" class="mt-6 rounded-lg border border-gray-200 px-4">
+                    <ElCollapseItem name="advanced">
+                      <template #title>
+                        <span class="text-base font-semibold leading-6 text-gray-900">{{ t('user.commandReference') }}</span>
+                      </template>
+                      <p class="text-sm leading-5 text-gray-600">{{ t('user.commandReferenceHelp') }}</p>
 
-                    <div class="mt-4 space-y-3 text-sm">
-                      <div
-                        v-for="command in automaticAdvancedCommands"
-                        :key="command.key"
-                        class="rounded-md border border-gray-200 p-3 shadow-sm"
-                      >
-                        <div class="font-medium leading-6 text-gray-900">{{ command.title }}</div>
-                        <p class="mt-1 text-sm leading-5 text-gray-600">{{ command.help }}</p>
-                        <div class="mt-3 flex items-center justify-between gap-3">
-                          <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{{ command.label }}</div>
-                          <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.key, command.value)">
-                            {{ copyCommandLabel(command.key) }}
-                          </button>
+                      <div class="mt-4 space-y-3 text-sm">
+                        <div
+                          v-for="command in automaticAdvancedCommands"
+                          :key="command.key"
+                          class="rounded-md border border-gray-200 p-3 shadow-sm"
+                        >
+                          <div class="font-medium leading-6 text-gray-900">{{ command.title }}</div>
+                          <p class="mt-1 text-sm leading-5 text-gray-600">{{ command.help }}</p>
+                          <div class="mt-3 flex items-center justify-between gap-3">
+                            <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{{ command.label }}</div>
+                            <ElButton link type="primary" @click="copyCommand(command.key, command.value)">
+                              {{ copyCommandLabel(command.key) }}
+                            </ElButton>
+                          </div>
+                          <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.value }}</pre>
                         </div>
-                        <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.value }}</pre>
                       </div>
-                    </div>
-                  </details>
+                    </ElCollapseItem>
+                  </ElCollapse>
                 </div>
 
                 <div v-if="selectedConfigMethod === 'ccswitch'" class="mt-4 rounded-lg border border-gray-200 p-4">
                   <div class="font-medium text-gray-900">{{ ccSwitchMethodTitle }}</div>
                   <p class="mt-1 text-sm text-gray-600">{{ ccSwitchMethodHelp }}</p>
                   <div class="mt-3">
-                    <a
+                    <ElLink
                       :href="t('user.ccSwitchDownloadUrl')"
                       target="_blank"
-                      rel="noreferrer"
-                      class="text-sm font-medium text-indigo-700 hover:text-indigo-900"
+                      type="primary"
                     >
                       {{ t('user.ccSwitchDownload') }}
-                    </a>
+                    </ElLink>
                   </div>
                   <div class="mt-4 flex flex-wrap gap-2">
-                    <a
+                    <ElButton
                       v-for="item in ccSwitchImports"
                       :key="item.key"
                       :data-testid="`ccswitch-import-${item.key}`"
+                      tag="a"
                       :href="item.href"
-                      class="inline-flex rounded-md bg-blue-700 px-3 py-2 text-sm font-medium text-white hover:bg-blue-800"
+                      type="primary"
                     >
                       {{ item.label }}
-                    </a>
+                    </ElButton>
                   </div>
                   <p
                     v-if="selectedIsAgentGroup"

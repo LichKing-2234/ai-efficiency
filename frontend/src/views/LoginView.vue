@@ -6,6 +6,7 @@ import { getAuthOptions } from '@/api/auth'
 import AuthShell from '@/components/AuthShell.vue'
 import { useI18n } from '@/i18n'
 import { resolveSafeRedirect } from '@/router/authGuard'
+import { Lock, User } from '@element-plus/icons-vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -70,78 +71,74 @@ async function handleDevLogin() {
 <template>
   <AuthShell title-key="app.fullTitle" subtitle-key="auth.signInSubtitle">
     <div class="space-y-6">
-      <p v-if="router.currentRoute.value.query.redirect" class="rounded-md bg-blue-50 p-3 text-sm text-blue-800">
-        {{ t('auth.redirectHelp') }}
-      </p>
+      <el-alert
+        v-if="router.currentRoute.value.query.redirect"
+        :closable="false"
+        :title="t('auth.redirectHelp')"
+        show-icon
+        type="info"
+      />
 
-      <form class="space-y-4" @submit.prevent="handleLogin">
-        <div>
-          <label for="username" class="block text-sm font-medium text-gray-700">{{ t('auth.email') }}</label>
-          <input
+      <el-form class="space-y-4" label-position="top" @submit.prevent="handleLogin">
+        <el-form-item :label="t('auth.email')" label-for="username">
+          <el-input
             id="username"
             v-model="username"
-            type="text"
-            required
-            placeholder="you@example.com"
             autocomplete="username"
-            class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            data-testid="username-field"
+            placeholder="you@example.com"
+            required
+            :prefix-icon="User"
           />
-        </div>
+        </el-form-item>
 
-        <div>
-          <label for="password" class="block text-sm font-medium text-gray-700">{{ t('auth.password') }}</label>
-          <input
+        <el-form-item :label="t('auth.password')" label-for="password">
+          <el-input
             id="password"
             v-model="password"
-            type="password"
-            required
             autocomplete="current-password"
-            class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            data-testid="password-field"
+            required
+            type="password"
+            :prefix-icon="Lock"
           />
-        </div>
+        </el-form-item>
 
-        <div>
-          <label for="source" class="block text-sm font-medium text-gray-700">{{ t('auth.source') }}</label>
-          <select
+        <el-form-item :label="t('auth.source')" label-for="source">
+          <el-select
             id="source"
             v-model="source"
-            class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            data-testid="auth-source"
+            class="w-full"
           >
-            <option v-if="authOptions.ldap_enabled" value="LDAP">LDAP</option>
-            <option value="SSO">SSO</option>
-          </select>
-        </div>
+            <el-option v-if="authOptions.ldap_enabled" label="LDAP" value="LDAP" />
+            <el-option label="SSO" value="SSO" />
+          </el-select>
+        </el-form-item>
 
-        <div v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">
-          {{ error }}
-        </div>
+        <el-alert v-if="error" :closable="false" :title="error" show-icon type="error" />
 
-        <button
-          type="submit"
-          :disabled="loading"
-          class="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
+        <el-button
+          class="w-full"
+          :loading="loading"
+          native-type="submit"
+          type="primary"
         >
           {{ loading ? t('auth.signingIn') : t('auth.signIn') }}
-        </button>
-      </form>
+        </el-button>
+      </el-form>
 
       <template v-if="authOptions.dev_login_enabled">
-        <div class="relative">
-          <div class="absolute inset-0 flex items-center">
-            <div class="w-full border-t border-gray-200"></div>
-          </div>
-          <div class="relative flex justify-center text-xs">
-            <span class="bg-white px-2 text-gray-400">{{ t('auth.devMode') }}</span>
-          </div>
-        </div>
+        <el-divider>{{ t('auth.devMode') }}</el-divider>
 
-        <button
-          :disabled="loading"
-          class="w-full rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
+        <el-button
+          class="w-full"
+          :loading="loading"
+          plain
           @click="handleDevLogin"
         >
           {{ t('auth.devLogin') }}
-        </button>
+        </el-button>
       </template>
     </div>
   </AuthShell>

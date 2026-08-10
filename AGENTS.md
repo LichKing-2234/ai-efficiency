@@ -5,7 +5,7 @@
 AI Efficiency Platform（AI 效能平台）是一个独立于 `sub2api` 的系统，用于衡量和优化 AI 辅助开发效能。
 
 - Backend: Go (`Gin` + `Ent`)
-- Frontend: Vue 3 (`Vite` + `TailwindCSS` + `Pinia`)
+- Frontend: Vue 3 (`Vite` + `Element Plus` + `TailwindCSS` + `Pinia`)
 - CLI: Go + `cobra`
 
 ## Source of Truth
@@ -108,7 +108,10 @@ ai-efficiency/
 - 组件使用 `<script setup lang="ts">` + Composition API
 - 状态管理使用 Pinia stores
 - API 调用封装在 `src/api/`
-- 样式使用 TailwindCSS utility classes
+- 通用交互组件直接使用 Element Plus，并通过 Vite resolver 按需自动导入；禁止全量注册和只做转发的镜像 wrapper
+- 通用操作图标使用 `@element-plus/icons-vue`，不要重复手写已有图标
+- 响应式布局和页面组合继续使用 TailwindCSS utility classes；图表继续使用现有 Chart.js 组件
+- 具体选型、尺寸、响应式和体积预算遵循 `docs/ui-guidelines.md`
 - 尽量把数据访问和状态转换放在 store / API 层，不要让 view 组件承担过多业务逻辑
 
 ### ae-cli
@@ -210,6 +213,7 @@ chore(deploy): update Docker Compose configuration
 
 - `docs/architecture.md` — 项目级架构总览与图示
 - `docs/superpowers/specs/2026-08-05-codex-token-attribution-ledger-poc-design.md` — 当前 Codex compact Token 归属、reporting installation、OTLP Request ID 关联与 `/attribution` POC 主设计
+- `docs/ui-guidelines.md` — 当前前端组件库、响应式布局、图表和体积预算合同
 - `docs/superpowers/specs/2026-07-25-stateless-team-usage-prewarm-worker-design.md` — 当前 Team Usage prewarm worker、Redis generation/manifest 与 backend 只读 fallback 主设计
 - `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md` — 当前全站加载性能、Redis read model、Team Overview 拆分和 serving/observability 主设计
 - `docs/superpowers/specs/2026-06-22-configurable-directory-sync-design.md` — 当前可配置组织架构同步、部门视图、离职禁用与 token 失效主设计

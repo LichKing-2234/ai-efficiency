@@ -8,6 +8,7 @@ const props = defineProps<{
   loading?: boolean
   rangeLabel?: string
   showResetRequest?: boolean
+  resetRequestLoading?: boolean
 }>()
 
 defineEmits<{
@@ -74,15 +75,18 @@ function quotaTitle(rangeLabel?: string) {
         <h2 class="text-base font-semibold text-gray-900">{{ quotaTitle(props.rangeLabel) }}</h2>
         <p class="mt-1 text-sm text-gray-500">{{ t('usageDashboard.groupQuotasHelp') }}</p>
       </div>
-      <button
+      <ElButton
         v-if="props.showResetRequest"
-        type="button"
-        class="inline-flex shrink-0 rounded-md border border-cyan-700 px-3 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-50"
+        type="primary"
+        plain
+        class="shrink-0"
         data-testid="open-quota-reset-request"
+        :loading="props.resetRequestLoading"
+        :disabled="props.resetRequestLoading"
         @click="$emit('requestReset')"
       >
         {{ t('quotaReset.requestReset') }}
-      </button>
+      </ElButton>
     </div>
 
     <div v-if="props.loading" class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3" data-testid="usage-group-quotas-loading">
@@ -98,11 +102,19 @@ function quotaTitle(rangeLabel?: string) {
       </article>
     </div>
 
-    <div v-else-if="props.quotas?.status === 'unavailable'" class="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-      {{ props.quotas?.message || t('usageDashboard.groupQuotasUnavailable') }}
-    </div>
+    <ElAlert
+      v-else-if="props.quotas?.status === 'unavailable'"
+      class="mt-4"
+      type="warning"
+      :closable="false"
+      :title="props.quotas?.message || t('usageDashboard.groupQuotasUnavailable')"
+    />
 
-    <div v-else class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+    <div
+      v-else
+      class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3"
+      :class="(props.quotas?.groups?.length ?? 0) === 1 ? 'max-w-xl lg:grid-cols-1 2xl:grid-cols-1' : ''"
+    >
       <article
         v-for="group in props.quotas?.groups ?? []"
         :key="group.group_id"

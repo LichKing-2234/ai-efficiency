@@ -9,6 +9,7 @@ import {
   updateQuotaResetNotificationSettings,
 } from '@/api/quotaReset'
 import { listDirectoryDepartments } from '@/api/directory'
+import { useWideContentLayout } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
 import type {
   Credential,
@@ -36,11 +37,11 @@ const message = ref('')
 const error = ref('')
 const selectedDirectorySourceID = ref<number | null>(null)
 const departmentSearch = ref('')
-const departmentDropdownOpen = ref(false)
 const departmentOptions = ref<DirectoryDepartment[]>([])
 const approverCandidates = ref<QuotaResetApproverCandidate[]>([])
-const approverFilter = ref<string | null>(null)
+const approverFilter = ref('')
 const unmatchedRepresentatives = ref<QuotaResetUnmatchedApproverRepresentative[]>([])
+const desktopApproverConfigs = useWideContentLayout()
 let departmentSearchRequestSeq = 0
 
 const configForm = ref({
@@ -59,10 +60,9 @@ const notification = ref<QuotaResetNotificationSettings>({
 })
 
 const bearerCredentials = computed(() => props.credentials.filter((credential) => credential.kind === 'secret_text'))
-const selectedDepartmentLabel = computed(() => configForm.value.department_display_path || configForm.value.department_external_id)
 const selectedApprover = computed(() => approverCandidates.value.find((candidate) => candidate.user_id === configForm.value.approver_user_id))
 const filteredApproverCandidates = computed(() => {
-  const query = approverFilter.value?.trim().toLowerCase()
+  const query = approverFilter.value.trim().toLowerCase()
   return query ? approverCandidates.value.filter((candidate) => approverOptionLabel(candidate).toLowerCase().includes(query)) : approverCandidates.value
 })
 
@@ -112,7 +112,7 @@ function unmatchedRepresentativeLabel(representative: QuotaResetUnmatchedApprove
   return representative.email ? `${name} · ${representative.email}` : name
 }
 
-async function searchDepartments() {
+async function searchDepartments(query = departmentSearch.value) {
   const requestSeq = ++departmentSearchRequestSeq
   const sourceID = selectedDirectorySourceID.value
   if (!sourceID) {
@@ -122,12 +122,13 @@ async function searchDepartments() {
     }
     return
   }
-  const query = departmentSearch.value.trim()
+  departmentSearch.value = query
+  const normalizedQuery = query.trim()
   searchingDepartments.value = true
   try {
     const res = await listDirectoryDepartments({
       source_id: sourceID,
-      q: query,
+      q: normalizedQuery,
     })
     if (requestSeq !== departmentSearchRequestSeq) return
     departmentOptions.value = res.data.data?.items ?? []
@@ -146,14 +147,17 @@ function invalidateDepartmentSearch() {
   searchingDepartments.value = false
 }
 
-function toggleDepartmentDropdown() {
-  if (!selectedDirectorySourceID.value) return
-  departmentDropdownOpen.value = !departmentDropdownOpen.value
-  if (departmentDropdownOpen.value) {
-    void searchDepartments()
-  } else {
-    invalidateDepartmentSearch()
-  }
+function handleDepartmentChange(departmentID: string) {
+  const department = departmentOptions.value.find((option) => option.external_id === departmentID)
+  if (department) selectDepartment(department)
+}
+
+function filterApprovers(query: string) {
+  approverFilter.value = query
+}
+
+function handleApproverVisibility(open: boolean) {
+  if (!open) approverFilter.value = ''
 }
 
 function selectDepartment(department: DirectoryDepartment) {
@@ -162,8 +166,6 @@ function selectDepartment(department: DirectoryDepartment) {
   configForm.value.department_display_path = departmentDisplayPath(department)
   configForm.value.approver_user_id = null
   departmentSearch.value = ''
-  departmentDropdownOpen.value = false
-  departmentOptions.value = []
   unmatchedRepresentatives.value = []
   void loadApproverCandidates()
 }
@@ -172,7 +174,7 @@ async function loadApproverCandidates() {
   const sourceID = selectedDirectorySourceID.value
   const departmentID = configForm.value.department_external_id.trim()
   configForm.value.approver_user_id = null
-  approverFilter.value = null
+  approverFilter.value = ''
   if (!sourceID || !departmentID) {
     approverCandidates.value = []
     unmatchedRepresentatives.value = []
@@ -192,11 +194,6 @@ async function loadApproverCandidates() {
   } finally {
     loadingApproverCandidates.value = false
   }
-}
-
-function selectApprover(candidate: QuotaResetApproverCandidate) {
-  configForm.value.approver_user_id = candidate.user_id
-  approverFilter.value = null
 }
 
 function configRowsForSave(): QuotaResetApproverConfigInput[] {
@@ -232,10 +229,9 @@ async function saveConfigs() {
     configForm.value = { department_external_id: '', department_display_path: '', approver_user_id: null, enabled: true }
     invalidateDepartmentSearch()
     departmentSearch.value = ''
-    departmentDropdownOpen.value = false
     departmentOptions.value = []
     approverCandidates.value = []
-    approverFilter.value = null
+    approverFilter.value = ''
     unmatchedRepresentatives.value = []
     message.value = t('quotaResetSettings.configSaved')
   } catch {
@@ -303,6 +299,10 @@ function credentialOptionLabel(credential: Credential) {
   const preview = credentialPreview(credential)
   return preview ? `${credential.name} · ${preview}` : credential.name
 }
+
+function approverConfigRowKey(config: QuotaResetApproverConfig) {
+  return String(config.id || `${config.department_external_id}-${config.approver_user_id}`)
+}
 </script>
 
 <template>
@@ -313,173 +313,155 @@ function credentialOptionLabel(credential: Credential) {
     </div>
 
     <div v-if="loading" class="mt-4 text-sm text-gray-500">{{ t('settings.loading') }}</div>
-    <div v-if="error" class="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</div>
-    <div v-if="message" class="mt-4 rounded-md bg-emerald-50 p-3 text-sm text-emerald-700">{{ message }}</div>
+    <ElAlert v-if="error" class="mt-4" type="error" :title="error" :closable="false" />
+    <ElAlert v-if="message" class="mt-4" type="success" :title="message" :closable="false" />
 
     <div class="mt-5 space-y-4">
       <div>
         <h4 class="text-sm font-semibold text-gray-900">{{ t('quotaResetSettings.approvers') }}</h4>
-        <div class="mt-2 overflow-x-auto rounded-md border border-gray-200">
-          <table class="min-w-full divide-y divide-gray-200 text-sm">
-            <thead class="bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
-              <tr>
-	                <th class="px-3 py-2">{{ t('quotaResetSettings.department') }}</th>
-	                <th class="px-3 py-2">{{ t('quotaResetSettings.approver') }}</th>
-	                <th class="px-3 py-2">{{ t('settings.enabled') }}</th>
-	                <th class="px-3 py-2">{{ t('settings.actions') }}</th>
-	              </tr>
-	            </thead>
-	            <tbody class="divide-y divide-gray-100 bg-white">
-	              <tr v-for="(config, index) in configs" :key="config.id || `${config.department_external_id}-${config.approver_user_id}`">
-	                <td class="min-w-[18rem] px-3 py-2">
-	                  <div class="font-medium text-slate-800">
-	                    {{ config.department_display_path || config.department_external_id }}
-	                  </div>
-	                  <div class="mt-1 text-xs text-slate-500">
-	                    {{ config.department_external_id }}
-	                  </div>
-	                </td>
-	                <td class="min-w-[14rem] px-3 py-2 text-gray-700">
-	                  <div class="font-medium text-slate-800">
-	                    {{ config.approver_username || `User #${config.approver_user_id}` }}
-	                  </div>
-	                  <div class="mt-1 text-xs text-slate-500">
-	                    <span v-if="config.approver_email">{{ config.approver_email }}</span>
-	                    <span v-else>User #{{ config.approver_user_id }}</span>
-	                  </div>
-	                </td>
-	                <td class="px-3 py-2 text-gray-700">
-	                  <input v-model="config.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600" />
-	                </td>
-	                <td class="px-3 py-2 text-right">
-	                  <button
-	                    type="button"
-	                    :data-testid="`quota-reset-config-remove-${config.id}`"
-	                    class="text-sm font-medium text-red-600 hover:text-red-700"
-	                    @click="removeConfig(index)"
-	                  >
-	                    {{ t('settings.delete') }}
-	                  </button>
-	                </td>
-	              </tr>
-	              <tr v-if="configs.length === 0">
-	                <td colspan="4" class="px-3 py-3 text-gray-500">{{ t('quotaResetSettings.noApprovers') }}</td>
-	              </tr>
-	            </tbody>
-	          </table>
+        <div
+          v-if="desktopApproverConfigs"
+          data-approver-config-list="desktop"
+          class="mt-2 rounded-md border border-gray-200"
+        >
+          <ElTable :data="configs" :row-key="approverConfigRowKey" class="w-full">
+            <ElTableColumn :label="t('quotaResetSettings.department')" min-width="260">
+              <template #default="{ row: config }">
+                <div data-approver-config-row>
+                  <div class="font-medium text-slate-800">{{ config.department_display_path || config.department_external_id }}</div>
+                  <div class="mt-1 text-xs text-slate-500">{{ config.department_external_id }}</div>
+                </div>
+              </template>
+            </ElTableColumn>
+            <ElTableColumn :label="t('quotaResetSettings.approver')" min-width="220">
+              <template #default="{ row: config }">
+                <div class="font-medium text-slate-800">{{ config.approver_username || `User #${config.approver_user_id}` }}</div>
+                <div class="mt-1 text-xs text-slate-500">{{ config.approver_email || `User #${config.approver_user_id}` }}</div>
+              </template>
+            </ElTableColumn>
+            <ElTableColumn :label="t('settings.enabled')" width="100">
+              <template #default="{ row: config }"><ElSwitch v-model="config.enabled" /></template>
+            </ElTableColumn>
+            <ElTableColumn :label="t('settings.actions')" width="100" align="right">
+              <template #default="{ row: config, $index }">
+                <ElButton
+                  :data-testid="`quota-reset-config-remove-${config.id}`"
+                  link
+                  type="danger"
+                  @click="removeConfig($index)"
+                >
+                  {{ t('settings.delete') }}
+                </ElButton>
+              </template>
+            </ElTableColumn>
+            <template #empty>
+              <span v-if="!loading && !error">{{ t('quotaResetSettings.noApprovers') }}</span>
+            </template>
+          </ElTable>
+        </div>
+        <div v-else data-approver-config-list="mobile" class="mt-2 space-y-3">
+          <ElCard
+            v-for="(config, index) in configs"
+            :key="config.id || `${config.department_external_id}-${config.approver_user_id}`"
+            data-approver-config-row
+            shadow="never"
+          >
+            <dl class="space-y-3 text-sm">
+              <div>
+                <dt class="text-xs font-medium uppercase text-slate-500">{{ t('quotaResetSettings.department') }}</dt>
+                <dd class="mt-1 font-medium text-slate-800">{{ config.department_display_path || config.department_external_id }}</dd>
+                <dd class="mt-1 text-xs text-slate-500">{{ config.department_external_id }}</dd>
+              </div>
+              <div>
+                <dt class="text-xs font-medium uppercase text-slate-500">{{ t('quotaResetSettings.approver') }}</dt>
+                <dd class="mt-1 font-medium text-slate-800">{{ config.approver_username || `User #${config.approver_user_id}` }}</dd>
+                <dd class="mt-1 text-xs text-slate-500">{{ config.approver_email || `User #${config.approver_user_id}` }}</dd>
+              </div>
+            </dl>
+            <div class="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+              <label class="flex items-center gap-2 text-sm text-slate-700">
+                <ElSwitch v-model="config.enabled" />
+                {{ t('settings.enabled') }}
+              </label>
+              <ElButton
+                :data-testid="`quota-reset-config-remove-${config.id}`"
+                link
+                type="danger"
+                @click="removeConfig(index)"
+              >
+                {{ t('settings.delete') }}
+              </ElButton>
+            </div>
+          </ElCard>
+          <div v-if="!loading && !error && configs.length === 0" class="rounded-md border border-gray-200 px-3 py-3 text-sm text-gray-500">
+            {{ t('quotaResetSettings.noApprovers') }}
+          </div>
         </div>
       </div>
 
       <div class="grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_auto] md:items-start">
-        <div class="block">
-          <div class="relative">
-            <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.departmentSearch') }}</span>
-            <button
-              type="button"
-              data-testid="quota-reset-department-select"
-              class="mt-1 flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50 disabled:opacity-60"
-              aria-haspopup="listbox"
-              :aria-expanded="departmentDropdownOpen ? 'true' : 'false'"
-              :disabled="!selectedDirectorySourceID"
-              @click="toggleDepartmentDropdown"
+        <label class="block">
+          <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.departmentSearch') }}</span>
+          <ElSelect
+            v-model="configForm.department_external_id"
+            data-testid="quota-reset-department-select"
+            class="mt-1 w-full"
+            filterable
+            remote
+            :remote-method="searchDepartments"
+            :loading="searchingDepartments"
+            :disabled="!selectedDirectorySourceID"
+            :placeholder="t('quotaResetSettings.departmentSelectPlaceholder')"
+            :teleported="false"
+            @change="handleDepartmentChange"
+          >
+            <ElOption
+              v-for="department in departmentOptions"
+              :key="department.id"
+              :value="department.external_id"
+              :label="departmentDisplayPath(department)"
+              :data-testid="`quota-reset-department-option-${department.external_id}`"
             >
-              <span class="truncate">
-                {{ selectedDepartmentLabel || t('quotaResetSettings.departmentSelectPlaceholder') }}
-              </span>
-              <span aria-hidden="true" class="text-xs text-gray-400">v</span>
-            </button>
-            <div
-              v-if="departmentDropdownOpen"
-              class="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white p-2 shadow-lg"
-            >
-              <input
-                v-model="departmentSearch"
-                data-testid="quota-reset-department-filter"
-                type="text"
-                :placeholder="t('quotaResetSettings.departmentSearchPlaceholder')"
-                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                @input="searchDepartments"
-                @keyup.enter="searchDepartments"
-              />
-              <div v-if="searchingDepartments" class="px-3 py-3 text-sm text-gray-500">
-                {{ t('settings.loading') }}
-              </div>
-              <div
-                v-else-if="departmentOptions.length > 0"
-                class="mt-2 max-h-44 overflow-y-auto"
-                role="listbox"
-              >
-                <button
-                  v-for="department in departmentOptions"
-                  :key="department.id"
-                  type="button"
-                  :data-testid="`quota-reset-department-option-${department.external_id}`"
-                  class="block w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-50"
-                  role="option"
-                  @click="selectDepartment(department)"
-                >
-                  <span class="block truncate font-medium text-slate-800">{{ departmentDisplayPath(department) }}</span>
-                  <span class="block truncate text-xs text-slate-500">{{ department.external_id }}</span>
-                </button>
-              </div>
-              <div v-else-if="departmentSearch" class="px-3 py-3 text-sm text-gray-500">
-                {{ t('quotaResetSettings.noDepartmentMatches') }}
-              </div>
-            </div>
-          </div>
-        </div>
+              <span class="block truncate font-medium text-slate-800">{{ departmentDisplayPath(department) }}</span>
+              <span class="block truncate text-xs text-slate-500">{{ department.external_id }}</span>
+            </ElOption>
+          </ElSelect>
+        </label>
         <div class="block">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.approverSelect') }}</span>
-          <div class="relative">
-            <button
-              type="button"
-              data-testid="quota-reset-approver-select"
-              class="mt-1 flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50 disabled:opacity-60"
-              :disabled="loadingApproverCandidates || !configForm.department_external_id || approverCandidates.length === 0"
-              aria-haspopup="listbox"
-              :aria-expanded="approverFilter !== null ? 'true' : 'false'"
-              @click="approverFilter = approverFilter === null ? '' : null"
+          <ElSelect
+            v-model="configForm.approver_user_id"
+            data-testid="quota-reset-approver-select"
+            class="mt-1 w-full"
+            filterable
+            :filter-method="filterApprovers"
+            :loading="loadingApproverCandidates"
+            :disabled="loadingApproverCandidates || !configForm.department_external_id || approverCandidates.length === 0"
+            :placeholder="t('quotaResetSettings.selectApproverPlaceholder')"
+            :teleported="false"
+            @visible-change="handleApproverVisibility"
+          >
+            <template v-if="selectedApprover" #prefix>
+              <span class="truncate text-xs text-slate-600">{{ approverOptionLabel(selectedApprover) }}</span>
+            </template>
+            <ElOption
+              v-for="candidate in filteredApproverCandidates"
+              :key="candidate.user_id"
+              :value="candidate.user_id"
+              :label="approverOptionLabel(candidate)"
+              :data-testid="`quota-reset-approver-option-${candidate.user_id}`"
             >
-              <span class="truncate">
-                {{ selectedApprover
-                  ? approverOptionLabel(selectedApprover)
-                  : (loadingApproverCandidates ? t('settings.loading') : t('quotaResetSettings.selectApproverPlaceholder')) }}
-              </span>
-              <span aria-hidden="true" class="text-xs text-gray-400">v</span>
-            </button>
-            <div
-              v-if="approverFilter !== null"
-              class="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white p-2 shadow-lg"
-            >
-              <input
-                v-model="approverFilter"
-                data-testid="quota-reset-approver-filter"
-                type="search"
-                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                :placeholder="t('quotaResetSettings.selectApproverPlaceholder')"
-              />
-              <div class="mt-1 max-h-44 overflow-y-auto" role="listbox">
-                <button
-                  v-for="candidate in filteredApproverCandidates"
-                  :key="candidate.user_id"
-                  type="button"
-                  :data-testid="`quota-reset-approver-option-${candidate.user_id}`"
-                  class="block w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-50"
-                  role="option"
-                  :aria-selected="candidate.user_id === configForm.approver_user_id ? 'true' : 'false'"
-                  @click="selectApprover(candidate)"
-                >
-                  {{ approverOptionLabel(candidate) }}
-                </button>
-              </div>
-            </div>
-          </div>
+              {{ approverOptionLabel(candidate) }}
+            </ElOption>
+          </ElSelect>
           <div v-if="configForm.department_external_id && !loadingApproverCandidates && approverCandidates.length === 0 && unmatchedRepresentatives.length === 0" class="mt-2 text-xs text-gray-500">
             {{ t('quotaResetSettings.noApproverCandidates') }}
           </div>
-          <div
+          <ElAlert
             v-else-if="configForm.department_external_id && !loadingApproverCandidates && approverCandidates.length === 0 && unmatchedRepresentatives.length > 0"
-            class="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800"
+            class="mt-2"
+            type="warning"
+            :closable="false"
             data-testid="quota-reset-unmatched-representatives"
           >
             <div>
@@ -490,17 +472,17 @@ function credentialOptionLabel(credential: Credential) {
                 {{ unmatchedRepresentativeLabel(representative) }}
               </div>
             </div>
-          </div>
+          </ElAlert>
         </div>
-        <button
-          type="button"
+        <ElButton
           data-testid="quota-reset-save-approvers"
-          class="self-start rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-60 md:mt-6"
-          :disabled="savingConfigs"
+          type="primary"
+          class="self-start md:mt-6"
+          :loading="savingConfigs"
           @click="saveConfigs"
         >
-          {{ savingConfigs ? t('settings.saving') : t('quotaResetSettings.saveApprovers') }}
-        </button>
+          {{ t('quotaResetSettings.saveApprovers') }}
+        </ElButton>
       </div>
     </div>
 
@@ -508,70 +490,62 @@ function credentialOptionLabel(credential: Credential) {
       <h4 class="text-sm font-semibold text-gray-900">{{ t('quotaResetSettings.webhook') }}</h4>
       <div class="mt-3 grid gap-3 md:grid-cols-2">
         <label class="flex items-center gap-2 text-sm text-gray-700">
-          <input
+          <ElSwitch
             v-model="notification.enabled"
             data-testid="quota-reset-webhook-enabled"
-            type="checkbox"
-            class="h-4 w-4 rounded border-gray-300 text-indigo-600"
           />
           {{ t('settings.enabled') }}
         </label>
         <label class="block">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.channel') }}</span>
-          <select
+          <ElSelect
             v-model="notification.channel"
             data-testid="quota-reset-webhook-channel"
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            class="mt-1 w-full"
+            :teleported="false"
           >
-            <option value="generic_webhook">{{ t('quotaResetSettings.channelGeneric') }}</option>
-            <option value="wecom_group_robot">{{ t('quotaResetSettings.channelWeCom') }}</option>
-          </select>
+            <ElOption value="generic_webhook" :label="t('quotaResetSettings.channelGeneric')" />
+            <ElOption value="wecom_group_robot" :label="t('quotaResetSettings.channelWeCom')" />
+          </ElSelect>
         </label>
         <label class="block md:col-span-2">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.webhookURL') }}</span>
-          <input
+          <ElInput
             v-model="notification.url"
             data-testid="quota-reset-webhook-url"
-            type="url"
             placeholder="https://hooks.example.com/ai-efficiency"
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            class="mt-1 w-full"
           />
         </label>
         <label class="block">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.authType') }}</span>
-          <select v-model="notification.auth_type" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
-            <option value="none">{{ t('quotaResetSettings.authNone') }}</option>
-            <option value="bearer_token">{{ t('quotaResetSettings.authBearer') }}</option>
-          </select>
+          <ElSelect v-model="notification.auth_type" class="mt-1 w-full" :teleported="false">
+            <ElOption value="none" :label="t('quotaResetSettings.authNone')" />
+            <ElOption value="bearer_token" :label="t('quotaResetSettings.authBearer')" />
+          </ElSelect>
         </label>
         <label class="block">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.credential') }}</span>
-          <select v-model.number="notification.credential_id" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" :disabled="notification.auth_type !== 'bearer_token'">
-            <option :value="null">{{ t('settings.selectApiCredential') }}</option>
-            <option v-for="credential in bearerCredentials" :key="credential.id" :value="credential.id">
-              {{ credentialOptionLabel(credential) }}
-            </option>
-          </select>
+          <ElSelect v-model="notification.credential_id" class="mt-1 w-full" :placeholder="t('settings.selectApiCredential')" :disabled="notification.auth_type !== 'bearer_token'" :teleported="false" clearable>
+            <ElOption v-for="credential in bearerCredentials" :key="credential.id" :value="credential.id" :label="credentialOptionLabel(credential)" />
+          </ElSelect>
         </label>
       </div>
       <div class="mt-4 flex flex-wrap justify-end gap-2">
-        <button
-          type="button"
-          class="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-          :disabled="testingNotification"
+        <ElButton
+          :loading="testingNotification"
           @click="testNotification"
         >
-          {{ testingNotification ? t('settings.testing') : t('quotaResetSettings.testWebhook') }}
-        </button>
-        <button
-          type="button"
+          {{ t('quotaResetSettings.testWebhook') }}
+        </ElButton>
+        <ElButton
           data-testid="quota-reset-save-notification"
-          class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
-          :disabled="savingNotification"
+          type="primary"
+          :loading="savingNotification"
           @click="saveNotification"
         >
-          {{ savingNotification ? t('settings.saving') : t('quotaResetSettings.saveWebhook') }}
-        </button>
+          {{ t('quotaResetSettings.saveWebhook') }}
+        </ElButton>
       </div>
     </div>
   </section>

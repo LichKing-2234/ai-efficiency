@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import QuotaResetRequestModal from '@/components/quota-reset/QuotaResetRequestModal.vue'
 import { setLocale } from '@/i18n'
 
@@ -22,6 +22,7 @@ describe('QuotaResetRequestModal', () => {
         submitting: false,
       },
     })
+    await flushPromises()
     await wrapper.find('button[data-testid="quota-reset-submit"]').trigger('click')
     expect(wrapper.text()).toContain('Reason is required')
     await wrapper.find('textarea').setValue('Need reset for a build investigation')

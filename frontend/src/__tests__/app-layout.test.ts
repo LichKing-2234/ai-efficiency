@@ -6,6 +6,36 @@ import { createRouter, createMemoryHistory, RouterView } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { setLocale } from '@/i18n'
 
+function installMatchMedia(initial = false) {
+  let matches = initial
+  const listeners = new Set<(event: MediaQueryListEvent) => void>()
+  const mediaQuery = {
+    get matches() {
+      return matches
+    },
+    media: '(min-width: 768px)',
+    onchange: null,
+    addEventListener: vi.fn((_type: string, listener: (event: MediaQueryListEvent) => void) => listeners.add(listener)),
+    removeEventListener: vi.fn((_type: string, listener: (event: MediaQueryListEvent) => void) => listeners.delete(listener)),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  } as unknown as MediaQueryList
+
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: vi.fn(() => mediaQuery),
+  })
+
+  return {
+    change(next: boolean) {
+      matches = next
+      const event = { matches: next, media: mediaQuery.media } as MediaQueryListEvent
+      for (const listener of listeners) listener(event)
+    },
+  }
+}
+
 vi.mock('@/api/auth', () => ({
   login: vi.fn(),
   getMe: vi.fn(),
@@ -65,6 +95,7 @@ function createLayoutRouter() {
 
 describe('AppLayout', () => {
   beforeEach(() => {
+    installMatchMedia(false)
     setActivePinia(createPinia())
     setLocale('en-US')
     vi.clearAllMocks()
@@ -95,6 +126,61 @@ describe('AppLayout', () => {
     expect(main.classes()).toContain('overflow-auto')
     expect(main.classes()).toContain('md:h-screen')
     expect(main.classes()).toContain('md:min-h-0')
+  })
+
+  it('uses an Element Plus action for the mobile navigation entry', async () => {
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(AppLayout, {
+      global: { plugins: [createPinia(), router] },
+    })
+
+    expect(wrapper.get('[aria-controls="mobile-navigation"]').classes()).toContain('el-button')
+  })
+
+  it('removes the default gap from the mobile navigation drawer header', async () => {
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(AppLayout, {
+      global: { plugins: [createPinia(), router] },
+    })
+
+    const drawer = wrapper.findComponent({ name: 'ElDrawer' })
+    expect(drawer.props('showClose')).toBe(false)
+    expect(drawer.props('headerClass')).toBe('!m-0')
+    expect(drawer.props('bodyClass')).toBe('!p-0')
+
+    await wrapper.get('[aria-controls="mobile-navigation"]').trigger('click')
+    await flushPromises()
+
+    const close = wrapper.get('button[title="Close"]')
+    const header = close.element.closest('header')
+    expect(header).not.toBeNull()
+    expect(header?.textContent).toContain('Menu')
+  })
+
+  it('closes an open mobile drawer when the layout crosses into desktop width', async () => {
+    const media = installMatchMedia(false)
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(AppLayout, {
+      global: { plugins: [createPinia(), router] },
+    })
+
+    await wrapper.get('[aria-controls="mobile-navigation"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'ElDrawer' }).props('modelValue')).toBe(true)
+
+    media.change(true)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findComponent({ name: 'ElDrawer' }).props('modelValue')).toBe(false)
   })
 
   it('bounds count loads across five protected route layout identities', async () => {
@@ -156,7 +242,7 @@ describe('AppLayout', () => {
       for (let i = 0; i < 5; i += 1) {
         await menuButton.trigger('click')
         await flushPromises()
-        await wrapper.get('#mobile-navigation > button').trigger('click')
+        await wrapper.get('button[title="Close"]').trigger('click')
         await flushPromises()
       }
       expect(api.getWorkItemCounts).toHaveBeenCalledTimes(1)

@@ -41,6 +41,10 @@ vi.mock('@/api/workItems', () => ({
   getWorkItemCounts: vi.fn(),
 }))
 
+vi.mock('@/api/teamUsage', () => ({
+  getTeamUsageScope: vi.fn(),
+}))
+
 const mineRequest = {
   id: 1,
   requester_user_id: 10,
@@ -147,6 +151,7 @@ beforeEach(async () => {
   vi.clearAllMocks()
   const api = await import('@/api/quotaReset') as any
   const workItemsApi = await import('@/api/workItems') as any
+  const teamUsageApi = await import('@/api/teamUsage') as any
   api.listMyQuotaResetRequests.mockResolvedValue({ data: { data: { items: [mineRequest], page: 1, page_size: 20, total: 1 } } })
   api.listQuotaResetApprovals.mockResolvedValue({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 7 } } })
   api.listAdminQuotaResetRequests.mockResolvedValue({ data: { data: { items: [], page: 1, page_size: 20, total: 0 } } })
@@ -167,7 +172,9 @@ describe('QuotaResetView', () => {
       '/usage/quota-reset?queue=approvals&request_id=2',
     )
 
-    expect(wrapper.get('[data-testid="quota-reset-tab-approvals"]').classes()).toContain('bg-white')
+    const approvals = wrapper.get('[data-testid="quota-reset-tab-approvals"]')
+    expect(approvals.classes()).toContain('el-radio-button')
+    expect((approvals.get('input[type="radio"]').element as HTMLInputElement).checked).toBe(true)
     expect(wrapper.find('[data-testid="quota-reset-workflow-timeline"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Group Beta')
   })
@@ -178,11 +185,11 @@ describe('QuotaResetView', () => {
       '/usage/quota-reset?queue=unknown&request_id=invalid',
     )
 
-    expect(wrapper.get('[data-testid="quota-reset-tab-mine"]').classes()).toContain('bg-white')
+    expect((wrapper.get('[data-testid="quota-reset-tab-mine"] input[type="radio"]').element as HTMLInputElement).checked).toBe(true)
     expect(wrapper.text()).toContain('Group Alpha')
   })
 
-  it('loads only the active mine queue and work-item counts on mount', async () => {
+  it('loads the active mine queue and work-item counts on mount', async () => {
     const api = await import('@/api/quotaReset') as any
     const workItemsApi = await import('@/api/workItems') as any
     const wrapper = await mountQuotaResetView()
@@ -195,6 +202,7 @@ describe('QuotaResetView', () => {
     expect(wrapper.text()).toContain('Group Alpha')
     expect(wrapper.text()).toContain('Need reset for a build investigation')
   })
+
 
   it('loads approvals on first selection and reuses them on repeated visits', async () => {
     const api = await import('@/api/quotaReset') as any
@@ -291,6 +299,21 @@ describe('QuotaResetView', () => {
 
     expect(wrapper.text()).toContain('Failed to load quota reset requests')
     expect(wrapper.text()).not.toContain('Group Alpha')
+  })
+
+  it('shows a queue load failure without a contradictory empty state and retries in place', async () => {
+    const api = await import('@/api/quotaReset') as any
+    api.listMyQuotaResetRequests.mockRejectedValueOnce(new Error('mine unavailable'))
+    const wrapper = await mountQuotaResetView()
+
+    expect(wrapper.text()).toContain('Failed to load quota reset requests')
+    expect(wrapper.text()).not.toContain('No quota reset requests yet.')
+
+    await wrapper.get('[data-testid="quota-reset-refresh"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Group Alpha')
+    expect(wrapper.text()).not.toContain('Failed to load quota reset requests')
   })
 
   it('refreshes invalidated counts without blocking refreshed queue history', async () => {
@@ -532,7 +555,8 @@ describe('QuotaResetView', () => {
 
     const wrapper = await mountQuotaResetView()
     await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
-    await wrapper.get('[data-testid="quota-reset-filter-processed"]').trigger('click')
+    wrapper.findComponent({ name: 'ElSelect' }).vm.$emit('update:modelValue', 'processed')
+    await flushPromises()
 
     expect(api.listQuotaResetApprovals).toHaveBeenCalledWith({ page: 2, page_size: 100 })
     expect(wrapper.text()).toContain('Archived Group')
@@ -557,7 +581,10 @@ describe('QuotaResetView', () => {
     await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
     const row = wrapper.get('[data-testid="quota-reset-row-2"]')
     expect(row.classes()).toContain('p-3')
-    expect(row.get('[data-testid="quota-reset-reason-2"]').classes()).toContain('line-clamp-1')
+    const layout = row.get('[data-testid="quota-reset-row-layout-2"]')
+    expect(layout.classes()).toContain('xl:grid-cols-[minmax(0,1fr)_auto]')
+    expect(layout.classes()).not.toContain('md:grid-cols-[minmax(0,1fr)_auto]')
+    expect(row.get('[data-testid="quota-reset-reason-2"]').classes()).not.toContain('line-clamp-1')
 
     await row.trigger('click')
     expect(row.attributes('aria-expanded')).toBe('true')
@@ -670,13 +697,29 @@ describe('QuotaResetView', () => {
   it('separates queue switching from lighter status filters', async () => {
     const wrapper = await mountQuotaResetView('admin')
 
-    const queueSelector = wrapper.get('[data-testid="quota-reset-queue-selector"]')
-    expect(queueSelector.classes()).toContain('rounded-lg')
-    expect(queueSelector.classes()).toContain('bg-slate-100')
+    expect(wrapper.find('[data-testid="usage-center-tabs"]').exists()).toBe(false)
 
-    const statusFilters = wrapper.get('[data-testid="quota-reset-status-filters"]')
-    expect(statusFilters.classes()).toContain('rounded-full')
-    expect(statusFilters.find('[data-testid="quota-reset-filter-all"]').classes()).toContain('text-xs')
+    const queueSelector = wrapper.get('[data-testid="quota-reset-queue-selector"]')
+    expect(queueSelector.classes()).toContain('min-w-0')
+    expect(queueSelector.classes()).toContain('el-radio-group')
+    expect(queueSelector.classes()).toContain('sm:!inline-grid')
+    expect(queueSelector.classes()).not.toContain('sm:!inline-flex')
+    expect(queueSelector.classes()).toContain('sm:w-80')
+    expect(queueSelector.classes()).toContain('grid-cols-3')
+    expect(wrapper.get('[data-testid="quota-reset-tab-approvals-count"]').classes()).not.toContain('!hidden')
+    expect(wrapper.get('[data-testid="quota-reset-tab-admin-count"]').classes()).not.toContain('!hidden')
+    for (const queue of ['mine', 'approvals', 'admin']) {
+      const option = wrapper.get(`[data-testid="quota-reset-tab-${queue}"]`)
+      expect(option.classes()).toContain('w-full')
+      expect(option.classes()).toContain('quota-reset-queue-option')
+    }
+    expect((queueSelector.get('[data-testid="quota-reset-tab-mine"] input').element as HTMLInputElement).checked).toBe(true)
+
+    const statusFilter = wrapper.get('[data-testid="quota-reset-status-filter"]')
+    expect(statusFilter.classes()).toContain('el-select')
+    expect(statusFilter.classes()).toContain('flex-1')
+    expect(statusFilter.attributes('data-testid')).toBe('quota-reset-status-filter')
+    expect(wrapper.text()).toContain('Status')
   })
 
   it('requires a decision comment and shows workflow history', async () => {

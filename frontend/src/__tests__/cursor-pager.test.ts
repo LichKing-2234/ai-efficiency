@@ -15,6 +15,9 @@ describe('CursorPager', () => {
       },
     })
 
+    expect(wrapper.get('[data-testid="activity-test-previous"]').classes()).toContain('el-button')
+    expect(wrapper.get('[data-testid="activity-test-next"]').classes()).toContain('el-button')
+
     await wrapper.get('[data-testid="activity-test-previous"]').trigger('click')
     await wrapper.get('[data-testid="activity-test-next"]').trigger('click')
     expect(wrapper.emitted('previous')).toHaveLength(1)
