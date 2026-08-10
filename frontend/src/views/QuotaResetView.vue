@@ -283,7 +283,7 @@ onMounted(() => {
         <ElRadioGroup
           data-testid="quota-reset-queue-selector"
           :model-value="activeQueue"
-          :class="['!grid min-w-0 w-full gap-1 sm:!inline-grid sm:w-auto', auth.isAdmin ? 'grid-cols-3' : 'grid-cols-2']"
+          :class="['!grid min-w-0 w-full gap-1 sm:!inline-grid', auth.isAdmin ? 'grid-cols-3 sm:w-80' : 'grid-cols-2 sm:w-56']"
         >
           <ElRadioButton
             data-testid="quota-reset-tab-mine"

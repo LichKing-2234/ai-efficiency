@@ -704,6 +704,8 @@ describe('QuotaResetView', () => {
     expect(queueSelector.classes()).toContain('el-radio-group')
     expect(queueSelector.classes()).toContain('sm:!inline-grid')
     expect(queueSelector.classes()).not.toContain('sm:!inline-flex')
+    expect(queueSelector.classes()).toContain('sm:w-80')
+    expect(queueSelector.classes()).toContain('grid-cols-3')
     expect(wrapper.get('[data-testid="quota-reset-tab-approvals-count"]').classes()).not.toContain('!hidden')
     expect(wrapper.get('[data-testid="quota-reset-tab-admin-count"]').classes()).not.toContain('!hidden')
     for (const queue of ['mine', 'approvals', 'admin']) {
