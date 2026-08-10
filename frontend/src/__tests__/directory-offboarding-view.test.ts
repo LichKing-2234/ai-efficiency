@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
+import { ElDialog } from 'element-plus'
 import DirectoryOffboardingView from '@/views/admin/DirectoryOffboardingView.vue'
 import { setLocale } from '@/i18n'
 import { useWorkItemsStore } from '@/stores/workItems'
@@ -91,7 +92,10 @@ async function mountOffboarding(configureMocks?: (api: any) => void) {
   const wrapper = mount(DirectoryOffboardingView, {
     global: {
       plugins: [pinia, router],
-      stubs: { AppLayout: { template: '<div><slot /></div>' } },
+      stubs: {
+        teleport: true,
+        AppLayout: { template: '<div><slot /></div>' },
+      },
     },
   })
   await flushPromises()
@@ -194,6 +198,7 @@ describe('DirectoryOffboardingView', () => {
     await flushPromises()
 
     expect(wrapper.find('.el-dialog').exists()).toBe(true)
+    expect(wrapper.findComponent(ElDialog).props('appendToBody')).toBe(true)
     expect(wrapper.text()).toContain('Existing subscriptions are not removed automatically')
     expect(wrapper.get('[data-testid="confirm-email-7"]').element.closest('.el-input')).not.toBeNull()
     expect(wrapper.get('[data-testid="confirm-disable-relay-user-7"]').attributes('disabled')).toBeDefined()
@@ -312,7 +317,7 @@ describe('DirectoryOffboardingView', () => {
     await confirm.trigger('click')
 
     expect(api.disableDirectoryRelayUser).toHaveBeenCalledTimes(1)
-    expect(confirm.classes()).toContain('is-loading')
+    expect(wrapper.get('[data-testid="confirm-disable-relay-user-7"]').classes()).toContain('is-loading')
   })
 
   it('keeps a failed disable result visible inside the active dialog', async () => {

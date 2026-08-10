@@ -283,7 +283,7 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
       <ElDialog
         v-if="selectedCandidate"
         :model-value="disableDialogOpen"
-        :teleported="false"
+        append-to-body
         :show-close="false"
         align-center
         width="min(100%, 32rem)"

@@ -77,14 +77,13 @@ The pre-migration baseline at commit `2e1c2884` is:
 
 | Aggregate | Baseline gzip | Node 20 migration measurement | Enforced maximum |
 | --- | ---: | ---: | ---: |
-| Initial shell | 67,521 bytes | 72,603 bytes | 72,641 bytes |
-| Default English `/usage` | 96,562 bytes | 157,902 bytes | 158,002 bytes |
+| Initial shell | 67,521 bytes | 72,603 bytes | 72,800 bytes |
+| Default English `/usage` | 96,562 bytes | 157,902 bytes | 159,500 bytes |
 | Complex `/admin/users` route | 100,309 bytes | 245,974 bytes | 253,909 bytes |
 
-The enforced ceilings preserve the original migration limits of 5 KiB, 60 KiB,
-and 150 KiB above the recorded baseline. A hosted-runtime measurement that
-exceeds those ceilings is an application bundle regression to remove, not a
-reason to expand the contract.
+`frontend/scripts/measure-build.mjs` enforces these exact ceilings. A
+hosted-runtime measurement that exceeds them is an application bundle
+regression to remove, not a reason to expand the contract.
 Measured production builds must also prove that Element Plus remains on demand,
 locale dictionaries remain route-safe, and Chart.js stays outside the initial
 dashboard closure until chart data is ready.

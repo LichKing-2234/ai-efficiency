@@ -30,6 +30,8 @@ describe('Activity controls', () => {
     expect(wrapper.get('[data-testid="activity-range-refresh"]').classes()).toContain('el-button')
 
     await wrapper.get('[data-testid="activity-range-custom"]').trigger('click')
+    const range = wrapper.get('[data-testid="activity-date-range"]')
+    expect(range.get('[data-testid="activity-custom-panel"]')).toBeTruthy()
     const from = wrapper.get('input[data-testid="activity-custom-from"]')
     const to = wrapper.get('input[data-testid="activity-custom-to"]')
     expect(from.classes()).toContain('el-input__inner')
