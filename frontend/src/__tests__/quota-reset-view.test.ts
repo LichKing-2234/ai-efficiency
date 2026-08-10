@@ -41,6 +41,10 @@ vi.mock('@/api/workItems', () => ({
   getWorkItemCounts: vi.fn(),
 }))
 
+vi.mock('@/api/teamUsage', () => ({
+  getTeamUsageScope: vi.fn(),
+}))
+
 const mineRequest = {
   id: 1,
   requester_user_id: 10,
@@ -147,6 +151,7 @@ beforeEach(async () => {
   vi.clearAllMocks()
   const api = await import('@/api/quotaReset') as any
   const workItemsApi = await import('@/api/workItems') as any
+  const teamUsageApi = await import('@/api/teamUsage') as any
   api.listMyQuotaResetRequests.mockResolvedValue({ data: { data: { items: [mineRequest], page: 1, page_size: 20, total: 1 } } })
   api.listQuotaResetApprovals.mockResolvedValue({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 7 } } })
   api.listAdminQuotaResetRequests.mockResolvedValue({ data: { data: { items: [], page: 1, page_size: 20, total: 0 } } })
@@ -158,6 +163,7 @@ beforeEach(async () => {
   api.adminRejectQuotaResetRequest.mockResolvedValue({ data: { data: { ...approvalRequest, status: 'rejected' } } })
   api.adminRetryQuotaResetRequest.mockResolvedValue({ data: { data: { ...failedApprovalRequest, status: 'approved_reset_succeeded' } } })
   workItemsApi.getWorkItemCounts.mockResolvedValue(countsResponse(2, 3))
+  teamUsageApi.getTeamUsageScope.mockResolvedValue({ data: { data: { is_representative: true } } })
 })
 
 describe('QuotaResetView', () => {
@@ -184,18 +190,32 @@ describe('QuotaResetView', () => {
     expect(wrapper.text()).toContain('Group Alpha')
   })
 
-  it('loads only the active mine queue and work-item counts on mount', async () => {
+  it('loads the active mine queue, work-item counts, and team scope on mount', async () => {
     const api = await import('@/api/quotaReset') as any
     const workItemsApi = await import('@/api/workItems') as any
+    const teamUsageApi = await import('@/api/teamUsage') as any
     const wrapper = await mountQuotaResetView()
 
     expect(api.listMyQuotaResetRequests).toHaveBeenCalledTimes(1)
     expect(api.listQuotaResetApprovals).not.toHaveBeenCalled()
     expect(api.listAdminQuotaResetRequests).not.toHaveBeenCalled()
     expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(1)
+    expect(teamUsageApi.getTeamUsageScope).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-testid="quota-reset-tab-admin"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Group Alpha')
     expect(wrapper.text()).toContain('Need reset for a build investigation')
+  })
+
+  it('keeps Team Overview hidden without representative scope', async () => {
+    const teamUsageApi = await import('@/api/teamUsage') as any
+    teamUsageApi.getTeamUsageScope.mockResolvedValue({ data: { data: { is_representative: false } } })
+
+    const wrapper = await mountQuotaResetView()
+    const tabs = wrapper.get('[data-testid="usage-center-tabs"]')
+
+    expect(tabs.text()).toContain('My Usage')
+    expect(tabs.text()).toContain('Reset Requests')
+    expect(tabs.text()).not.toContain('Team Overview')
   })
 
   it('loads approvals on first selection and reuses them on repeated visits', async () => {
@@ -690,6 +710,10 @@ describe('QuotaResetView', () => {
 
   it('separates queue switching from lighter status filters', async () => {
     const wrapper = await mountQuotaResetView('admin')
+
+    expect(wrapper.get('[data-testid="usage-center-tabs"]').text()).toContain('My Usage')
+    expect(wrapper.get('[data-testid="usage-center-tabs"]').text()).toContain('Team Overview')
+    expect(wrapper.get('[data-testid="usage-center-tabs"]').text()).toContain('Reset Requests')
 
     const queueSelector = wrapper.get('[data-testid="quota-reset-queue-selector"]')
     expect(queueSelector.classes()).toContain('min-w-0')

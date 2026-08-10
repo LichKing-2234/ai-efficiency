@@ -232,7 +232,7 @@ onMounted(loadOverview)
         </p>
       </div>
       <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <UsageCenterTabs active="team" />
+        <UsageCenterTabs active="team" show-quota-reset />
         <ElRadioGroup
           :model-value="selectedRange"
           :disabled="loading"

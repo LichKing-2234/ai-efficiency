@@ -1095,6 +1095,18 @@ def quota_queue_options_share_one_row(page):
     }""")
 
 
+def usage_center_navigation_is_stable(page):
+    tabs = page.locator("[data-testid='usage-center-tabs']")
+    if tabs.count() == 0:
+        return True
+    return tabs.locator(".el-segmented__item-label > span").evaluate_all("""labels => {
+        const text = labels.map((label) => label.textContent.trim()).join(',')
+        return text === 'My Usage,Team Overview,Reset Requests'
+            || text === '我的用量,团队概览,重置申请'
+    }
+    """)
+
+
 def protected_shell_state(page, width):
     menu = page.locator("header button:has-text('Menu')")
     sidebar = page.locator("aside").first
@@ -1297,6 +1309,7 @@ def visit_matrix_case(page, role, case, viewport):
             ),
             "radio_surfaces": width >= 768 or radio_surfaces_match_touch_targets(page),
             "quota_queue_layout": quota_queue_options_share_one_row(page),
+            "usage_center_navigation": usage_center_navigation_is_stable(page),
             "overflow": (
                 overflow["documentWidth"] <= overflow["viewport"]
                 and overflow["bodyWidth"] <= overflow["viewport"]

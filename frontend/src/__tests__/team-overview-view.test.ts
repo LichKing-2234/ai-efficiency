@@ -346,6 +346,20 @@ describe('TeamOverviewView', () => {
     mockGetTeamUsageOrganization.mockImplementation(async (params?: TeamUsageOrganizationParams) => ({ data: { data: defaultOrganizationResponse(params) } } as any))
   })
 
+  it('keeps all authorized usage-center destinations visible', async () => {
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    const tabs = wrapper.get('[data-testid="usage-center-tabs"]')
+    expect(tabs.text()).toContain('My Usage')
+    expect(tabs.text()).toContain('Team Overview')
+    expect(tabs.text()).toContain('Reset Requests')
+  })
+
   it('loads a shallow organization root from the split organization endpoint', async () => {
     const roots = Array.from({ length: 25 }, (_, index) => organizationDepartment(`department-root-${index + 1}`, `Root ${index + 1}`))
     const moreRoots = Array.from({ length: 10 }, (_, index) => organizationDepartment(`department-root-${index + 26}`, `Root ${index + 26}`))

@@ -18,6 +18,7 @@ import {
   retryQuotaResetRequest,
   type QuotaResetListParams,
 } from '@/api/quotaReset'
+import { getTeamUsageScope } from '@/api/teamUsage'
 import { useI18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useWorkItemsStore } from '@/stores/workItems'
@@ -27,6 +28,7 @@ const { t } = useI18n()
 const auth = useAuthStore()
 const workItems = useWorkItemsStore()
 const route = useRoute()
+const hasTeamUsageScope = ref(false)
 
 type QueueMode = 'mine' | 'approvals' | 'admin'
 type QueueStatus = 'idle' | 'loading' | 'loaded' | 'error'
@@ -274,6 +276,13 @@ function closeDecisionDialog() {
 }
 
 onMounted(() => {
+  void getTeamUsageScope()
+    .then((response) => {
+      hasTeamUsageScope.value = response.data.data?.is_representative === true
+    })
+    .catch(() => {
+      hasTeamUsageScope.value = false
+    })
   void workItems.loadCounts()
   void loadQueue(activeQueue.value)
 })
@@ -286,7 +295,7 @@ onMounted(() => {
         <h1 class="text-2xl font-semibold text-slate-950">{{ t('quotaReset.title') }}</h1>
         <p class="mt-1 text-sm text-slate-600">{{ t('quotaReset.subtitle') }}</p>
       </div>
-      <UsageCenterTabs active="quota-reset" show-quota-reset />
+      <UsageCenterTabs active="quota-reset" :show-team="hasTeamUsageScope" show-quota-reset />
 
       <section class="space-y-3" aria-label="Quota reset queues and filters">
         <ElRadioGroup

@@ -355,7 +355,7 @@ describe('DashboardView', () => {
     expect(segmented.findAll('.el-segmented__item-label > span')).toHaveLength(3)
     expect(segmented.findAll('.el-segmented__item-label > span').every((label) => label.classes().includes('whitespace-normal'))).toBe(true)
     expect(segmented.findAll('.el-segmented__item-label > span').every((label) => label.classes().includes('sm:whitespace-nowrap'))).toBe(true)
-    const quotaResetTab = wrapper.findAll('.el-segmented__item').find((tab) => tab.text() === 'Quota Reset')
+    const quotaResetTab = wrapper.findAll('.el-segmented__item').find((tab) => tab.text() === 'Reset Requests')
     expect(quotaResetTab).toBeTruthy()
     await quotaResetTab!.get('input').setValue()
     await flushPromises()
