@@ -1077,6 +1077,24 @@ def radio_surfaces_match_touch_targets(page, minimum=44):
         })""", minimum)
 
 
+def quota_queue_options_share_one_row(page):
+    selector = page.locator("[data-testid='quota-reset-queue-selector']")
+    if selector.count() == 0:
+        return True
+    return selector.evaluate("""group => {
+        const options = [...group.querySelectorAll('.el-radio-button')]
+            .filter((element) => element.getClientRects().length > 0)
+        if (options.length < 2) return false
+        const boxes = options.map((element) => element.getBoundingClientRect())
+        const widths = boxes.map((box) => box.width)
+        const verticallyOverlap = Math.min(...boxes.map((box) => box.bottom))
+            > Math.max(...boxes.map((box) => box.top))
+        return verticallyOverlap
+            && boxes.slice(1).every((box, index) => box.left > boxes[index].left + 0.5)
+            && Math.max(...widths) - Math.min(...widths) <= 1
+    }""")
+
+
 def protected_shell_state(page, width):
     menu = page.locator("header button:has-text('Menu')")
     sidebar = page.locator("aside").first
@@ -1278,6 +1296,7 @@ def visit_matrix_case(page, role, case, viewport):
                 ("header button:has-text('Menu')", "header button"),
             ),
             "radio_surfaces": width >= 768 or radio_surfaces_match_touch_targets(page),
+            "quota_queue_layout": quota_queue_options_share_one_row(page),
             "overflow": (
                 overflow["documentWidth"] <= overflow["viewport"]
                 and overflow["bodyWidth"] <= overflow["viewport"]

@@ -694,6 +694,8 @@ describe('QuotaResetView', () => {
     const queueSelector = wrapper.get('[data-testid="quota-reset-queue-selector"]')
     expect(queueSelector.classes()).toContain('min-w-0')
     expect(queueSelector.classes()).toContain('el-radio-group')
+    expect(queueSelector.classes()).toContain('sm:!inline-grid')
+    expect(queueSelector.classes()).not.toContain('sm:!inline-flex')
     expect(wrapper.get('[data-testid="quota-reset-tab-approvals-count"]').classes()).not.toContain('!hidden')
     expect(wrapper.get('[data-testid="quota-reset-tab-admin-count"]').classes()).not.toContain('!hidden')
     for (const queue of ['mine', 'approvals', 'admin']) {
