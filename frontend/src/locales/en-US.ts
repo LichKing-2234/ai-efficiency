@@ -532,6 +532,7 @@ const enUS = {
   'user.testHelp': 'Sends a real chat completion through this access group.',
   'user.configurationMethodsTitle': '3. Configure tools',
   'user.configurationMethodsHelp': 'These options appear after an API key is available. Choose the path that fits this machine or client.',
+  'user.recommended': 'Recommended',
   'user.manualConfigMethodTitle': 'Manual configuration',
   'user.manualConfigMethodHelp': 'Copy the exact config snippets for the current access group.',
   'user.manualConfigMethodAudience': 'Best for non-developers, independent agents, or cases where you need to hand the config to another client directly.',

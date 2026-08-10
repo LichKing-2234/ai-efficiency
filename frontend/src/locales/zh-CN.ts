@@ -534,6 +534,7 @@ const zhCN = {
   'user.testHelp': '通过当前接入组发起一次真实 chat completion。',
   'user.configurationMethodsTitle': '3. 配置工具',
   'user.configurationMethodsHelp': '有了 API Key 后就会显示这些方式。按当前机器或客户端选择合适的配置路径。',
+  'user.recommended': '推荐',
   'user.manualConfigMethodTitle': '手动配置',
   'user.manualConfigMethodHelp': '复制当前接入组的精确配置片段。',
   'user.manualConfigMethodAudience': '适合非研发，或需要把配置直接交给独立 agent / 第三方客户端的场景。',

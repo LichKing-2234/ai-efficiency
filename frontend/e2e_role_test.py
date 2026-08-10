@@ -384,6 +384,17 @@ def admin_user():
 def mock_matrix_api(route, role):
     global unmocked_matrix_requests
     path = urlparse(route.request.url).path
+    if path == "/api/v1/user/providers/2/groups/group-alpha/credential" and route.request.method == "POST":
+        fulfill_json(route, {
+            "api_key_id": 17,
+            "name": "alice",
+            "status": "active",
+            "secret": "sk-example-openai-123456",
+        })
+        return
+    if path == "/api/v1/user/providers/2/groups/group-alpha/models":
+        fulfill_json(route, {"models": []})
+        return
     repo = {
         "id": 9,
         "repo_key": "github.com/example-org/repo-a",
@@ -1095,6 +1106,55 @@ def quota_queue_options_share_one_row(page):
     }""")
 
 
+def equal_track_card_row_issues(page):
+    return page.evaluate("""() => {
+        const visible = (element) => {
+            const style = getComputedStyle(element)
+            return element.getClientRects().length > 0
+                && style.display !== 'none'
+                && style.visibility !== 'hidden'
+        }
+        const bordered = (element) => {
+            const style = getComputedStyle(element)
+            return ['Top', 'Right', 'Bottom', 'Left']
+                .some((side) => parseFloat(style[`border${side}Width`]) > 0)
+        }
+        const issues = []
+        for (const group of document.querySelectorAll('main *')) {
+            const groupStyle = getComputedStyle(group)
+            if (groupStyle.display !== 'grid' || !visible(group)) continue
+            const children = [...group.children].filter(visible)
+            if (children.length < 2 || !children.every(bordered)) continue
+            const trackWidths = groupStyle.gridTemplateColumns
+                .split(' ')
+                .map((value) => parseFloat(value))
+                .filter(Number.isFinite)
+            if (trackWidths.length < 2 || Math.max(...trackWidths) - Math.min(...trackWidths) > 1.5) continue
+
+            const rows = new Map()
+            for (const child of children) {
+                const box = child.getBoundingClientRect()
+                const rowKey = Math.round(box.top)
+                rows.set(rowKey, [...(rows.get(rowKey) ?? []), box])
+            }
+            for (const boxes of rows.values()) {
+                if (boxes.length < 2) continue
+                const widths = boxes.map((box) => box.width)
+                const heights = boxes.map((box) => box.height)
+                if (Math.max(...widths) - Math.min(...widths) > 1.5
+                    || Math.max(...heights) - Math.min(...heights) > 1.5) {
+                    issues.push({
+                        group: group.getAttribute('data-testid') || group.className,
+                        widths,
+                        heights,
+                    })
+                }
+            }
+        }
+        return issues
+    }""")
+
+
 def usage_center_navigation_is_stable(page):
     tabs = page.locator("[data-testid='usage-center-tabs']")
     if tabs.count() == 0:
@@ -1201,6 +1261,8 @@ def exercise_route_control(page, exercise):
         header = page.locator("[data-testid='onboarding-step-header']")
         header_copy = page.locator("[data-testid='onboarding-step-copy']")
         action = page.locator("[data-testid='primary-onboarding-action']")
+        page.locator("[data-testid='onboarding-step-button-0']").click()
+        page.locator("[data-testid='group-group-alpha']").wait_for(state="visible")
         provider = page.locator("[data-testid='provider-2']")
         primary_tag = page.locator("[data-testid='provider-primary-tag-2']")
 
@@ -1261,12 +1323,46 @@ def exercise_route_control(page, exercise):
             selected_group.count() == 1
             and selected_indicator.count() == 1
         )
+        action.click()
+        page.locator("[data-testid='onboarding-step-button-2']:not([disabled])").wait_for(state="visible")
+        page.locator("[data-testid='onboarding-step-button-2']").click()
+        methods = page.locator("[data-testid='configuration-methods']")
+        methods.wait_for(state="visible")
+        page.wait_for_timeout(250)
+        method_options = methods.locator(".el-radio[data-testid^='config-method-']")
+        method_boxes = [method_options.nth(index).bounding_box() for index in range(method_options.count())]
+        if len(method_boxes) != 3 or not all(method_boxes):
+            return False, "Configuration method cards are not all visible"
+        widths = [box["width"] for box in method_boxes]
+        heights = [box["height"] for box in method_boxes]
+        tops = [box["y"] for box in method_boxes]
+        method_sizes_match = max(widths) - min(widths) <= 1
+        if width >= 1024:
+            method_sizes_match = (
+                method_sizes_match
+                and max(heights) - min(heights) <= 1
+                and max(tops) - min(tops) <= 1
+            )
+        cc_switch_method = methods.locator("[data-testid='config-method-ccswitch']")
+        recommended = methods.locator("[data-testid='config-method-recommended']")
+        cc_switch_box = cc_switch_method.bounding_box()
+        recommended_box = recommended.bounding_box()
+        cc_switch_recommended = (
+            "is-checked" in (cc_switch_method.get_attribute("class") or "")
+            and recommended.is_visible()
+            and cc_switch_box is not None
+            and recommended_box is not None
+            and recommended_box["x"] >= cc_switch_box["x"]
+            and recommended_box["x"] + recommended_box["width"] <= cc_switch_box["x"] + cc_switch_box["width"] + 1
+        )
         usable = (
             (stacked if width < 1280 else split)
             and step_direction_fits
             and step_titles_fit
             and tag_fits
             and radio_selection
+            and method_sizes_match
+            and cc_switch_recommended
         )
         return usable, f"Unexpected onboarding layout at {width}px"
     return True, ""
@@ -1294,6 +1390,7 @@ def visit_matrix_case(page, role, case, viewport):
         states_visible = all(state.is_visible() for state in states)
         content_fits = content_fits_containers(page, expected_fit_selectors(case, width))
         exercised, exercise_detail = exercise_route_control(page, case.get("exercise"))
+        card_row_issues = equal_track_card_row_issues(page)
         overflow = overflow_state(page)
         expected_path = case.get("expected_path", path.split("?")[0])
         actual_path = urlparse(page.url).path
@@ -1310,6 +1407,7 @@ def visit_matrix_case(page, role, case, viewport):
             "radio_surfaces": width >= 768 or radio_surfaces_match_touch_targets(page),
             "quota_queue_layout": quota_queue_options_share_one_row(page),
             "usage_center_navigation": usage_center_navigation_is_stable(page),
+            "equal_card_rows": not card_row_issues,
             "overflow": (
                 overflow["documentWidth"] <= overflow["viewport"]
                 and overflow["bodyWidth"] <= overflow["viewport"]
@@ -1327,6 +1425,7 @@ def visit_matrix_case(page, role, case, viewport):
                 "checks": checks,
                 "overflow": overflow,
                 "exercise": exercise_detail,
+                "card_row_issues": card_row_issues,
                 "errors": page_errors,
                 "unmocked_requests": sorted(unmocked_matrix_requests),
                 "url": page.url,

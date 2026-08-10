@@ -382,6 +382,23 @@ describe('UserView', () => {
     expect(wrapper.text()).toContain('Manual configuration values')
   })
 
+  it('keeps configuration methods equal-height and recommends CC Switch by default', async () => {
+    const { wrapper } = await mountUserView()
+    await openConfigurationMethods(wrapper)
+
+    const methodGroup = wrapper.findAllComponents({ name: 'ElRadioGroup' })
+      .find((component) => component.classes().includes('lg:grid-cols-3'))
+    const methodOptions = wrapper.findAllComponents({ name: 'ElRadio' })
+      .filter((component) => component.attributes('data-testid')?.startsWith('config-method-'))
+
+    expect(methodGroup).toBeDefined()
+    expect(methodGroup!.classes()).toContain('!items-stretch')
+    expect(methodGroup!.props('modelValue')).toBe('ccswitch')
+    expect(methodOptions).toHaveLength(3)
+    expect(methodOptions.every((component) => component.classes().includes('!h-full'))).toBe(true)
+    expect(wrapper.get('[data-testid="config-method-recommended"]').text()).toBe('Recommended')
+  })
+
   it('uses user-facing setup labels instead of raw credential labels', async () => {
     const { wrapper } = await mountUserView()
 
@@ -535,16 +552,10 @@ describe('UserView', () => {
 
     const methods = (await openConfigurationMethods(wrapper)).text()
     expect(methods).toContain('CC Switch configuration')
-    expect(methods).not.toContain('Import to Claude')
+    expect(methods).toContain('Import to Claude')
     expect(methods).not.toContain('Import to Codex')
     expect(methods).not.toContain('Import to Gemini')
-
-    await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
-    const ccswitchPanel = wrapper.text()
-    expect(ccswitchPanel).toContain('Import to Claude')
-    expect(ccswitchPanel).not.toContain('Import to Codex')
-    expect(ccswitchPanel).not.toContain('Import to Gemini')
-    expect(ccswitchPanel).toContain('Download CC Switch')
+    expect(methods).toContain('Download CC Switch')
   })
 
   it('does not map the selected connection-test model in the Claude CC Switch import link', async () => {

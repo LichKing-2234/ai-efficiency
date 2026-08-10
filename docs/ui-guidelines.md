@@ -55,6 +55,10 @@ a broader custom theme until a product requirement justifies one.
 - Use scan-friendly tables on wide screens. When a table cannot remain usable on
   mobile, provide a card or stacked presentation rather than horizontal page
   overflow.
+- Keep same-row selectable cards and same-purpose summary cards equal in width
+  and height. Let the grid stretch its children and let each card fill its grid
+  cell; do not hide content differences behind fixed pixel heights. Badges such
+  as `Recommended` must not change the outer dimensions of the option card.
 - Verify every route at viewport widths of 390, 768, 1024, 1280, and 1440 pixels. Controls,
   labels, status text, dialogs, and pagination must not clip or overlap.
 - Keep page headings proportional to operational surfaces. Reserve large display
