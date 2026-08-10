@@ -342,24 +342,8 @@ describe('DashboardView', () => {
     await flushPromises()
 
     expect(getUserProviders).not.toHaveBeenCalled()
-    expect(wrapper.get('h1').text()).toBe('My AI Usage')
-    expect(wrapper.text()).toContain('AI Usage Center')
-    const usageTabs = wrapper.get('[data-testid="usage-center-tabs"]')
-    expect(usageTabs.classes()).toContain('w-full')
-    expect(usageTabs.classes()).toContain('sm:w-auto')
-    expect(usageTabs.classes()).toContain('el-segmented')
-    const segmented = usageTabs
-    expect(segmented.classes()).not.toContain('is-block')
-    expect(segmented.classes()).toContain('!min-h-11')
-    expect(segmented.classes()).toContain('sm:min-w-max')
-    expect(segmented.findAll('.el-segmented__item-label > span')).toHaveLength(3)
-    expect(segmented.findAll('.el-segmented__item-label > span').every((label) => label.classes().includes('whitespace-normal'))).toBe(true)
-    expect(segmented.findAll('.el-segmented__item-label > span').every((label) => label.classes().includes('sm:whitespace-nowrap'))).toBe(true)
-    const quotaResetTab = wrapper.findAll('.el-segmented__item').find((tab) => tab.text() === 'Reset Requests')
-    expect(quotaResetTab).toBeTruthy()
-    await quotaResetTab!.get('input').setValue()
-    await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/usage/quota-reset')
+    expect(wrapper.find('h1').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="usage-center-tabs"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Platform Signals')
   })
 
@@ -428,7 +412,6 @@ describe('DashboardView', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('My AI Usage')
     expect(wrapper.text()).not.toContain('Complete AI setup first')
     expect(wrapper.text()).not.toContain('Complete AI service configuration')
     expect(wrapper.text()).not.toContain('Go to AI Setup & Configuration')
@@ -505,7 +488,6 @@ describe('DashboardView', () => {
     await flushPromises()
 
     expect(getUserProviders).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('My AI Usage')
     expect(wrapper.text()).not.toContain('AI setup is ready, start your first usage')
     expect(wrapper.text()).not.toContain('AI setup')
     expect(wrapper.text()).not.toContain('Done')
@@ -1244,7 +1226,6 @@ describe('DashboardView', () => {
     expect(wrapper.text()).toContain('Group Alpha')
     expect(wrapper.text()).toContain('$32.40 / $100.00')
     expect(wrapper.text()).toContain('$18.20 / ∞')
-    expect(wrapper.text()).toContain('My AI Usage')
   })
 
   it('constrains a single quota card to an intentional readable width', async () => {
@@ -1463,7 +1444,6 @@ describe('DashboardView', () => {
 
     expect(getUserProviders).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid^="home-guide-"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('My AI Usage')
     expect(wrapper.text()).not.toContain('Complete AI setup first')
     expect(wrapper.text()).not.toContain('Complete AI service configuration')
     expect(wrapper.text()).not.toContain('Go to AI Setup & Configuration')
@@ -1509,7 +1489,6 @@ describe('DashboardView', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid^="home-guide-"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('My AI Usage')
     expect(wrapper.text()).not.toContain('Complete AI setup first')
     expect(wrapper.text()).not.toContain('Complete AI service configuration')
     expect(wrapper.text()).not.toContain('Go to AI Setup & Configuration')
@@ -1574,7 +1553,6 @@ describe('DashboardView', () => {
 
     expect(getUserProviders).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid^="home-guide-"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('My AI Usage')
     expect(wrapper.text()).not.toContain('AI setup is ready, start your first usage')
     expect(wrapper.text()).not.toContain('Go to AI Setup & Configuration')
   })
@@ -1611,7 +1589,6 @@ describe('DashboardView', () => {
     expect(wrapper.find('[data-testid^="home-guide-"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('AI setup completed')
     expect(wrapper.text()).not.toContain('View setup guidance')
-    expect(wrapper.text()).toContain('My AI Usage')
     expect(wrapper.text()).not.toContain('Check recent records')
     expect(wrapper.text()).not.toContain('Connect a repository')
     expect(wrapper.text()).not.toContain('I am an engineer')

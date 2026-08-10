@@ -149,6 +149,7 @@ describe('Router Guards', () => {
   })
 
   it('includes canonical AI Usage Center routes in the router', () => {
+    const usageCenterRoute = router.getRoutes().find((route) => route.path === '/usage' && route.children.length > 0)
     const usageRoute = router.getRoutes().find((route) => route.name === 'Usage')
     const memberUsageRoute = router.getRoutes().find((route) => route.name === 'UsageMember')
     const teamUsageRoute = router.getRoutes().find((route) => route.name === 'UsageTeam')
@@ -157,6 +158,12 @@ describe('Router Guards', () => {
     expect(memberUsageRoute?.path).toBe('/usage/members/:user_id')
     expect(teamUsageRoute?.path).toBe('/usage/team')
     expect(quotaResetRoute?.path).toBe('/usage/quota-reset')
+    expect(usageCenterRoute?.children.map((child) => child.name)).toEqual([
+      'Usage',
+      'UsageTeam',
+      'UsageQuotaReset',
+    ])
+    expect(usageCenterRoute?.children.some((child) => child.name === 'UsageMember')).toBe(false)
   })
 
   it('includes Work Items route for authenticated users', () => {

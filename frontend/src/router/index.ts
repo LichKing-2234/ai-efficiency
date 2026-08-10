@@ -38,8 +38,12 @@ const router = createRouter({
     },
     {
       path: '/usage',
-      name: 'Usage',
-      component: () => import('@/views/DashboardView.vue'),
+      component: () => import('@/views/UsageCenterLayout.vue'),
+      children: [
+        { path: '', name: 'Usage', component: () => import('@/views/DashboardView.vue') },
+        { path: 'team', name: 'UsageTeam', component: () => import('@/views/TeamOverviewView.vue') },
+        { path: 'quota-reset', name: 'UsageQuotaReset', component: () => import('@/views/QuotaResetView.vue') },
+      ],
     },
     {
       path: '/work-items',
@@ -50,16 +54,6 @@ const router = createRouter({
       path: '/usage/members/:user_id',
       name: 'UsageMember',
       component: () => import('@/views/DashboardView.vue'),
-    },
-    {
-      path: '/usage/team',
-      name: 'UsageTeam',
-      component: () => import('@/views/TeamOverviewView.vue'),
-    },
-    {
-      path: '/usage/quota-reset',
-      name: 'UsageQuotaReset',
-      component: () => import('@/views/QuotaResetView.vue'),
     },
     {
       path: '/repos',

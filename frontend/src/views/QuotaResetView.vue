@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import AppLayout from '@/components/AppLayout.vue'
 import QuotaResetRequestList from '@/components/quota-reset/QuotaResetRequestList.vue'
 import QuotaResetDecisionDialog from '@/components/quota-reset/QuotaResetDecisionDialog.vue'
-import UsageCenterTabs from '@/components/user/usage/UsageCenterTabs.vue'
 import {
   adminApproveQuotaResetRequest,
   adminRejectQuotaResetRequest,
@@ -18,7 +16,6 @@ import {
   retryQuotaResetRequest,
   type QuotaResetListParams,
 } from '@/api/quotaReset'
-import { getTeamUsageScope } from '@/api/teamUsage'
 import { useI18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useWorkItemsStore } from '@/stores/workItems'
@@ -28,7 +25,6 @@ const { t } = useI18n()
 const auth = useAuthStore()
 const workItems = useWorkItemsStore()
 const route = useRoute()
-const hasTeamUsageScope = ref(false)
 
 type QueueMode = 'mine' | 'approvals' | 'admin'
 type QueueStatus = 'idle' | 'loading' | 'loaded' | 'error'
@@ -276,27 +272,13 @@ function closeDecisionDialog() {
 }
 
 onMounted(() => {
-  void getTeamUsageScope()
-    .then((response) => {
-      hasTeamUsageScope.value = response.data.data?.is_representative === true
-    })
-    .catch(() => {
-      hasTeamUsageScope.value = false
-    })
   void workItems.loadCounts()
   void loadQueue(activeQueue.value)
 })
 </script>
 
 <template>
-  <AppLayout>
-    <div class="space-y-6">
-      <div>
-        <h1 class="text-2xl font-semibold text-slate-950">{{ t('quotaReset.title') }}</h1>
-        <p class="mt-1 text-sm text-slate-600">{{ t('quotaReset.subtitle') }}</p>
-      </div>
-      <UsageCenterTabs active="quota-reset" :show-team="hasTeamUsageScope" show-quota-reset />
-
+  <div class="space-y-6">
       <section class="space-y-3" aria-label="Quota reset queues and filters">
         <ElRadioGroup
           data-testid="quota-reset-queue-selector"
@@ -387,13 +369,13 @@ onMounted(() => {
         @retry="handleRetry"
         @select="handleSelect"
       />
-    </div>
+  </div>
+  <template v-if="decisionRequest">
     <QuotaResetDecisionDialog
-      v-if="decisionRequest"
       :action="decisionAction"
       :busy="decisionQueue ? queues[decisionQueue].actionBusy : false"
       @confirm="confirmDecision"
       @cancel="closeDecisionDialog"
     />
-  </AppLayout>
+  </template>
 </template>

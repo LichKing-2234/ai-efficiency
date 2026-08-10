@@ -354,10 +354,7 @@ describe('TeamOverviewView', () => {
     const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
 
-    const tabs = wrapper.get('[data-testid="usage-center-tabs"]')
-    expect(tabs.text()).toContain('My Usage')
-    expect(tabs.text()).toContain('Team Overview')
-    expect(tabs.text()).toContain('Reset Requests')
+    expect(wrapper.find('[data-testid="usage-center-tabs"]').exists()).toBe(false)
   })
 
   it('loads a shallow organization root from the split organization endpoint', async () => {
@@ -1016,8 +1013,6 @@ describe('TeamOverviewView', () => {
     await flushPromises()
 
     expect(mockGetTeamUsageOrganization).toHaveBeenCalledWith(expect.objectContaining({ granularity: 'day' }))
-    expect(wrapper.get('h1').text()).toBe('Team Usage')
-    expect(wrapper.text()).toContain('Usage Trends / Member details')
     expect(wrapper.text()).toContain('Usage Trends')
     expect(wrapper.text()).not.toContain('Team and Top 12 token usage trend')
     expect(wrapper.find('header h1').exists()).toBe(false)
@@ -1161,7 +1156,6 @@ describe('TeamOverviewView', () => {
     })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('团队概览')
     expect(wrapper.text()).toContain('用量趋势')
     expect(wrapper.text()).not.toContain('团队与 Top 12 Token 用量趋势')
     expect(wrapper.find('header h1').exists()).toBe(false)

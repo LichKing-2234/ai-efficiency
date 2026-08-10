@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import AppLayout from '@/components/AppLayout.vue'
 import TeamOverviewMemberTable from '@/components/team-usage/TeamOverviewMemberTable.vue'
-import UsageCenterTabs from '@/components/user/usage/UsageCenterTabs.vue'
 import { getTeamUsageMembers, getTeamUsageSummary, getTeamUsageTrend } from '@/api/teamUsage'
 import { useTeamUsageOrganization } from '@/composables/useTeamUsageOrganization'
 import { useI18n } from '@/i18n'
@@ -223,16 +221,8 @@ onMounted(loadOverview)
 </script>
 
 <template>
-  <AppLayout>
-    <div class="space-y-4">
-      <div>
-        <h1 class="text-2xl font-semibold text-slate-950">{{ t('teamUsage.title') }}</h1>
-        <p class="mt-1 max-w-3xl text-sm text-slate-600">
-          {{ t('teamUsage.topMembers') }} / {{ t('teamUsage.memberTable') }}
-        </p>
-      </div>
+  <div class="space-y-4">
       <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <UsageCenterTabs active="team" show-quota-reset />
         <ElRadioGroup
           :model-value="selectedRange"
           :disabled="loading"
@@ -401,6 +391,5 @@ onMounted(loadOverview)
           @load-more-members="loadMoreOrganizationMembers"
         />
       </div>
-    </div>
-  </AppLayout>
+  </div>
 </template>
