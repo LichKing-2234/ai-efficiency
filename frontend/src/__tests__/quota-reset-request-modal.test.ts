@@ -27,6 +27,7 @@ describe('QuotaResetRequestModal', () => {
     await flushPromises()
     const dialog = wrapper.findComponent(ElDialog)
     expect(dialog.props('appendToBody')).toBe(true)
+    expect(dialog.props('alignCenter')).toBe(true)
     await wrapper.get('button[data-testid="quota-reset-submit"]').trigger('click')
     expect(wrapper.text()).toContain('Reason is required')
     await wrapper.get('textarea').setValue('Need reset for a build investigation')

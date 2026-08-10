@@ -59,6 +59,7 @@ function confirm() {
     v-if="props.row"
     :model-value="props.open"
     append-to-body
+    align-center
     width="min(28rem, calc(100vw - 2rem))"
     :title="t('teamUsage.rateMultiplier')"
     @close="emit('close')"

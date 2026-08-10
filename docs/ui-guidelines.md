@@ -39,6 +39,10 @@ a broader custom theme until a product requirement justifies one.
 - Append page-level dialogs and drawers to `body` so their scrims always cover
   the complete viewport. Do not disable teleport on full-viewport overlays;
   local poppers inside a dialog may remain non-teleported when needed.
+- Vertically and horizontally center every dialog with Element Plus
+  `align-center`. Let the overlay scroll when dialog content is taller than the
+  viewport; do not add page-specific top margins or vertical offsets. Drawers
+  remain edge-aligned.
 - Use official Element Plus icons for generic actions. Do not add handwritten
   SVG markup for actions already covered by the icon package.
 - Keep feature-specific components when they own real behavior or domain

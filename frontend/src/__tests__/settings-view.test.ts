@@ -1067,6 +1067,7 @@ describe('SettingsView', () => {
     const aiDialog = ai.findComponent(ElDialog)
     expect(ai.get('[data-testid="relay-provider-dialog"]').isVisible()).toBe(true)
     expect(aiDialog.props('appendToBody')).toBe(true)
+    expect(aiDialog.props('alignCenter')).toBe(true)
 
     const platforms = await mountSettings({ providers: [] }, '/settings?section=code-platforms')
     expect(platforms.get('[data-testid="settings-empty-code-platforms"]').classes()).toContain('el-empty')
@@ -1076,6 +1077,7 @@ describe('SettingsView', () => {
     const platformDialog = platforms.findComponent(ElDialog)
     expect(platforms.get('[data-testid="code-platform-dialog"]').isVisible()).toBe(true)
     expect(platformDialog.props('appendToBody')).toBe(true)
+    expect(platformDialog.props('alignCenter')).toBe(true)
 
     const credentials = await mountSettings({ credentials: [] }, '/settings?section=advanced-credentials')
     expect(credentials.get('[data-testid="settings-empty-credentials"]').classes()).toContain('el-empty')
@@ -1085,6 +1087,7 @@ describe('SettingsView', () => {
     const credentialDialog = credentials.findComponent(ElDialog)
     expect(credentials.get('[data-testid="credential-dialog"]').isVisible()).toBe(true)
     expect(credentialDialog.props('appendToBody')).toBe(true)
+    expect(credentialDialog.props('alignCenter')).toBe(true)
   })
 
   it('shows version check unavailable when latest-release checks are disabled', async () => {

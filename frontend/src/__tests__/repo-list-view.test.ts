@@ -637,6 +637,7 @@ describe('RepoListView', () => {
     const dialog = wrapper.findComponent(ElDialog)
     expect(wrapper.find('.el-dialog').exists()).toBe(true)
     expect(dialog.props('appendToBody')).toBe(true)
+    expect(dialog.props('alignCenter')).toBe(true)
   })
 
   it('closes add repository dialog with Escape', async () => {

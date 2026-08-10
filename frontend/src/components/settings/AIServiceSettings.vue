@@ -297,6 +297,7 @@ function cancelRelayDelete(event: MouseEvent, close: (event: MouseEvent) => void
     :title="editingRelayId ? t('settings.editRelayProvider') : t('settings.addRelayProvider')"
     width="min(90vw, 42rem)"
     append-to-body
+    align-center
     destroy-on-close
   >
       <div class="grid gap-4 md:grid-cols-2">

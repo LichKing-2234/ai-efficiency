@@ -440,6 +440,7 @@ describe('QuotaResetView', () => {
       const dialog = wrapper.findComponent(ElDialog)
       expect(wrapper.find('[data-testid="quota-reset-decision-dialog"]').exists()).toBe(true)
       expect(dialog.props('appendToBody')).toBe(true)
+      expect(dialog.props('alignCenter')).toBe(true)
       await wrapper.get('[data-testid="quota-reset-decision-comment"]').setValue('Synthetic decision')
       await wrapper.get('form[role="dialog"]').trigger('submit')
     }

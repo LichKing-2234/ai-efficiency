@@ -281,6 +281,7 @@ function cancelCredentialDelete(event: MouseEvent, close: (event: MouseEvent) =>
     :title="editingCredentialId ? t('settings.editCredential') : t('settings.addCredential')"
     width="min(90vw, 42rem)"
     append-to-body
+    align-center
     destroy-on-close
   >
       <div class="space-y-3">

@@ -771,6 +771,7 @@ function repoStatusType(status: string) {
     <el-dialog
       v-model="showAddDialog"
       append-to-body
+      align-center
       width="min(28rem, calc(100vw - 2rem))"
       :title="t('repos.addRepository')"
     >

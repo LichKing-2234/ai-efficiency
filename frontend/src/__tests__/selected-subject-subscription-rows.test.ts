@@ -128,6 +128,7 @@ describe('SelectedSubjectSubscriptionRows', () => {
     await wrapper.get('[data-testid="edit-multiplier-42"]').trigger('click')
     const dialog = wrapper.findComponent(ElDialog)
     expect(dialog.props('appendToBody')).toBe(true)
+    expect(dialog.props('alignCenter')).toBe(true)
     await wrapper.get('[data-testid="multiplier-input"]').setValue('2')
 
     expect(wrapper.text()).toContain('$80.00 / $500.00')
