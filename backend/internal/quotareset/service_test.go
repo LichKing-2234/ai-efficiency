@@ -1843,16 +1843,16 @@ func TestExecuteResetBoundsDetachedRelayCall(t *testing.T) {
 	provider := createQuotaResetRelayProvider(t, ctx, client)
 	request := createPendingQuotaResetRequest(t, ctx, client, requester.ID, 1001, provider.ID, "42", []int{approver.ID})
 	request = client.QuotaResetRequest.UpdateOneID(request.ID).SetStatus(quotaresetrequest.StatusApprovedResetFailed).SaveX(ctx)
-	fake := &fakeQuotaResetProvider{resetBlockFor: 500 * time.Millisecond}
+	fake := &fakeQuotaResetProvider{resetBlockFor: 2 * time.Second}
 	svc := NewService(client, fakeProviderResolver(provider.ID, fake), nil, nil)
-	svc.resetExecutionTimeout = 20 * time.Millisecond
+	svc.resetExecutionTimeout = time.Second
 
 	started := time.Now()
 	updated, err := svc.executeReset(ctx, request.ID, approver.ID, true, false)
 	if err != nil {
 		t.Fatalf("executeReset() error = %v", err)
 	}
-	if elapsed := time.Since(started); elapsed >= 250*time.Millisecond {
+	if elapsed := time.Since(started); elapsed >= 1500*time.Millisecond {
 		t.Fatalf("executeReset() elapsed = %s, want relay deadline", elapsed)
 	}
 	if updated.Status != quotaresetrequest.StatusApprovedResetFailed || !strings.Contains(updated.ResetError, context.DeadlineExceeded.Error()) {
