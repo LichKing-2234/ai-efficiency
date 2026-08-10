@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { ElDialog } from 'element-plus'
 import QuotaResetRequestModal from '@/components/quota-reset/QuotaResetRequestModal.vue'
 import { setLocale } from '@/i18n'
+import { withTeleportedContent } from './helpers/teleport'
 
 describe('QuotaResetRequestModal', () => {
   it('requires a subscription group and reason before submit', async () => {
     setLocale('en-US')
-    const wrapper = mount(QuotaResetRequestModal, {
+    const wrapper = withTeleportedContent(mount(QuotaResetRequestModal, {
       props: {
         open: true,
         groups: [
@@ -21,12 +23,14 @@ describe('QuotaResetRequestModal', () => {
         ],
         submitting: false,
       },
-    })
+    }))
     await flushPromises()
-    await wrapper.find('button[data-testid="quota-reset-submit"]').trigger('click')
+    const dialog = wrapper.findComponent(ElDialog)
+    expect(dialog.props('appendToBody')).toBe(true)
+    await wrapper.get('button[data-testid="quota-reset-submit"]').trigger('click')
     expect(wrapper.text()).toContain('Reason is required')
-    await wrapper.find('textarea').setValue('Need reset for a build investigation')
-    await wrapper.find('button[data-testid="quota-reset-submit"]').trigger('click')
+    await wrapper.get('textarea').setValue('Need reset for a build investigation')
+    await wrapper.get('button[data-testid="quota-reset-submit"]').trigger('click')
     expect(wrapper.emitted('submit')?.[0]).toEqual([{ group_id: '42', reason: 'Need reset for a build investigation' }])
   })
 })

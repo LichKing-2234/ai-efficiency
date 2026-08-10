@@ -1530,7 +1530,7 @@ onBeforeUnmount(() => {
     <ElDialog
       v-if="plaintextDialog.user"
       :model-value="plaintextDialog.open"
-      :teleported="false"
+      append-to-body
       :show-close="false"
       align-center
       width="min(100%, 28rem)"
@@ -1591,7 +1591,7 @@ onBeforeUnmount(() => {
     <ElDialog
       v-if="disableAccessDialog.user"
       :model-value="disableAccessDialog.open"
-      :teleported="false"
+      append-to-body
       :show-close="false"
       align-center
       width="min(100%, 32rem)"

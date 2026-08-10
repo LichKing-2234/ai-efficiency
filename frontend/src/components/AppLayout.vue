@@ -50,6 +50,7 @@ watch(desktopLayout, (isDesktop) => {
 
       <el-drawer
         v-model="mobileNavOpen"
+        append-to-body
         destroy-on-close
         direction="ltr"
         :show-close="false"

@@ -280,7 +280,7 @@ function cancelCredentialDelete(event: MouseEvent, close: (event: MouseEvent) =>
     data-testid="credential-dialog"
     :title="editingCredentialId ? t('settings.editCredential') : t('settings.addCredential')"
     width="min(90vw, 42rem)"
-    :teleported="false"
+    append-to-body
     destroy-on-close
   >
       <div class="space-y-3">

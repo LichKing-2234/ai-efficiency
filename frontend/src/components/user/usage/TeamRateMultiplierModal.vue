@@ -58,7 +58,7 @@ function confirm() {
   <ElDialog
     v-if="props.row"
     :model-value="props.open"
-    :teleported="false"
+    append-to-body
     width="min(28rem, calc(100vw - 2rem))"
     :title="t('teamUsage.rateMultiplier')"
     @close="emit('close')"

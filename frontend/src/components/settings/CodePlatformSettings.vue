@@ -334,7 +334,7 @@ function cancelProviderDelete(event: MouseEvent, close: (event: MouseEvent) => v
     data-testid="code-platform-dialog"
     :title="editingId ? t('settings.editProvider') : t('settings.addScmProvider')"
     width="min(90vw, 32rem)"
-    :teleported="false"
+    append-to-body
     destroy-on-close
   >
       <div class="space-y-3">

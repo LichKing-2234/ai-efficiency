@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
+import { ElDialog } from 'element-plus'
 import SettingsView from '@/views/SettingsView.vue'
 import { setLocale } from '@/i18n'
+import { cleanupTeleportedContent, withTeleportedContent } from './helpers/teleport'
 
 const createDefaultProvidersResponse = () => ({
   data: {
@@ -268,9 +270,9 @@ async function mountSettings(overrides?: { providers?: any[]; relayProviders?: a
   await router.push(path)
   await router.isReady()
 
-  const wrapper = mount(SettingsView, {
+  const wrapper = withTeleportedContent(mount(SettingsView, {
     global: { plugins: [createPinia(), router] },
-  })
+  }))
 
   await vi.dynamicImportSettled()
   await flushPromises()
@@ -315,6 +317,7 @@ async function selectElementPlusOption(wrapper: any, testId: string, label: stri
 
 describe('SettingsView', () => {
   beforeEach(async () => {
+    cleanupTeleportedContent()
     installMatchMedia(true)
     setActivePinia(createPinia())
     setLocale('en-US')
@@ -1061,21 +1064,27 @@ describe('SettingsView', () => {
     expect(ai.get('[data-testid="settings-empty-ai-services"]').classes()).toContain('el-empty')
     expect(ai.find('table').exists()).toBe(false)
     await ai.get('[data-testid="settings-empty-add-relay"]').trigger('click')
+    const aiDialog = ai.findComponent(ElDialog)
     expect(ai.get('[data-testid="relay-provider-dialog"]').isVisible()).toBe(true)
+    expect(aiDialog.props('appendToBody')).toBe(true)
 
     const platforms = await mountSettings({ providers: [] }, '/settings?section=code-platforms')
     expect(platforms.get('[data-testid="settings-empty-code-platforms"]').classes()).toContain('el-empty')
     expect(platforms.find('table').exists()).toBe(false)
     await platforms.get('[data-testid="settings-empty-add-platform"]').trigger('click')
     await flushPromises()
+    const platformDialog = platforms.findComponent(ElDialog)
     expect(platforms.get('[data-testid="code-platform-dialog"]').isVisible()).toBe(true)
+    expect(platformDialog.props('appendToBody')).toBe(true)
 
     const credentials = await mountSettings({ credentials: [] }, '/settings?section=advanced-credentials')
     expect(credentials.get('[data-testid="settings-empty-credentials"]').classes()).toContain('el-empty')
     expect(credentials.find('table').exists()).toBe(false)
     await credentials.get('[data-testid="settings-empty-add-credential"]').trigger('click')
     await flushPromises()
+    const credentialDialog = credentials.findComponent(ElDialog)
     expect(credentials.get('[data-testid="credential-dialog"]').isVisible()).toBe(true)
+    expect(credentialDialog.props('appendToBody')).toBe(true)
   })
 
   it('shows version check unavailable when latest-release checks are disabled', async () => {

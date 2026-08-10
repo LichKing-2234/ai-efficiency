@@ -6,6 +6,7 @@ import DashboardView from '@/views/DashboardView.vue'
 import { setLocale } from '@/i18n'
 import { getUserUsageDashboard, getUserUsageGroupQuotas } from '@/api/userUsage'
 import { getTeamUsageScope } from '@/api/teamUsage'
+import { withTeleportedContent } from './helpers/teleport'
 
 vi.mock('@/api/user', () => ({
   getUserProviders: vi.fn(),
@@ -1295,7 +1296,7 @@ describe('DashboardView', () => {
     const router = createTestRouter()
     await router.push('/')
     await router.isReady()
-    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    const wrapper = withTeleportedContent(mount(DashboardView, { global: { plugins: [createPinia(), router] } }))
     await flushPromises()
 
     await wrapper.get('[data-testid="open-quota-reset-request"]').trigger('click')

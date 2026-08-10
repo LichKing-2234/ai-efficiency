@@ -2,10 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElDialog, ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import AdminUsersView from '@/views/admin/AdminUsersView.vue'
 import { setLocale } from '@/i18n'
+import { withTeleportedContent } from './helpers/teleport'
 
 const messageSuccess = vi.spyOn(ElMessage, 'success').mockImplementation(() => undefined as any)
 const messageError = vi.spyOn(ElMessage, 'error').mockImplementation(() => undefined as any)
@@ -405,7 +406,7 @@ async function mountAdminUsersView(
   await router.push(path)
   await router.isReady()
 
-  const wrapper = mount(AdminUsersView, {
+  const wrapper = withTeleportedContent(mount(AdminUsersView, {
     attachTo: attachToDocument ? document.body : undefined,
     global: {
       plugins: [pinia, router],
@@ -415,7 +416,7 @@ async function mountAdminUsersView(
         },
       },
     },
-  })
+  }))
   mountedWrappers.add(wrapper)
   await flushPromises()
   return {
@@ -1385,6 +1386,7 @@ describe('AdminUsersView', () => {
 
     expect(revealAdminUserRelayPassword).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('Plaintext relay passwords are sensitive')
+    expect(wrapper.findComponent(ElDialog).props('appendToBody')).toBe(true)
 
     await wrapper.get('[data-testid="confirm-copy-plaintext-7"]').trigger('click')
     await flushPromises()
@@ -1446,6 +1448,7 @@ describe('AdminUsersView', () => {
     await flushPromises()
 
     expect(wrapper.find('.el-dialog').exists()).toBe(true)
+    expect(wrapper.findComponent(ElDialog).props('appendToBody')).toBe(true)
     expect(disableAdminUserAccess).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('After disabling, this user will no longer be able to access AI services')
 

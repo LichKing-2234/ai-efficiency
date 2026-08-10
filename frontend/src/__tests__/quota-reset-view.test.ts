@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
+import { ElDialog } from 'element-plus'
 import QuotaResetView from '@/views/QuotaResetView.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useWorkItemsStore } from '@/stores/workItems'
 import { setLocale } from '@/i18n'
 import type { QuotaResetWorkflowDecision, QuotaResetWorkflowStep } from '@/types'
+import { cleanupTeleportedContent, withTeleportedContent } from './helpers/teleport'
 
 type ExactKeys<T, Keys extends PropertyKey> = Exclude<keyof T, Keys> extends never
   ? Exclude<Keys, keyof T> extends never ? true : false
@@ -139,14 +141,15 @@ async function mountQuotaResetView(
   const router = createTestRouter()
   await router.push(initialPath)
   await router.isReady()
-  const wrapper = mount(QuotaResetView, {
+  const wrapper = withTeleportedContent(mount(QuotaResetView, {
     global: { plugins: [pinia, router] },
-  })
+  }))
   await flushPromises()
   return wrapper
 }
 
 beforeEach(async () => {
+  cleanupTeleportedContent()
   setLocale('en-US')
   vi.clearAllMocks()
   const api = await import('@/api/quotaReset') as any
@@ -434,7 +437,9 @@ describe('QuotaResetView', () => {
     await flushPromises()
     await wrapper.get(selector).trigger('click')
     if (name.includes('approve') || name.includes('reject')) {
+      const dialog = wrapper.findComponent(ElDialog)
       expect(wrapper.find('[data-testid="quota-reset-decision-dialog"]').exists()).toBe(true)
+      expect(dialog.props('appendToBody')).toBe(true)
       await wrapper.get('[data-testid="quota-reset-decision-comment"]').setValue('Synthetic decision')
       await wrapper.get('form[role="dialog"]').trigger('submit')
     }

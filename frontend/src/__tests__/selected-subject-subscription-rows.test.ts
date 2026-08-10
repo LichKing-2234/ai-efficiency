@@ -1,7 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ElDialog } from 'element-plus'
 import SelectedSubjectSubscriptionRows from '@/components/user/usage/SelectedSubjectSubscriptionRows.vue'
 import { setLocale } from '@/i18n'
+import { cleanupTeleportedContent, withTeleportedContent } from './helpers/teleport'
 
 const editableRow = {
   group_id: '42',
@@ -51,7 +53,7 @@ const unavailableMultiplierRow = {
 }
 
 async function mountRows(options: Parameters<typeof mount>[1]) {
-  const wrapper = mount(SelectedSubjectSubscriptionRows, options)
+  const wrapper = withTeleportedContent(mount(SelectedSubjectSubscriptionRows, options))
   await flushPromises()
   return wrapper
 }
@@ -88,6 +90,7 @@ let matchMediaController: ReturnType<typeof installMatchMedia>
 
 describe('SelectedSubjectSubscriptionRows', () => {
   beforeEach(() => {
+    cleanupTeleportedContent()
     setLocale('en-US')
     matchMediaController = installMatchMedia(true)
   })
@@ -123,6 +126,8 @@ describe('SelectedSubjectSubscriptionRows', () => {
 
     expect(wrapper.get('[data-testid="edit-multiplier-42"]').classes()).toContain('el-button')
     await wrapper.get('[data-testid="edit-multiplier-42"]').trigger('click')
+    const dialog = wrapper.findComponent(ElDialog)
+    expect(dialog.props('appendToBody')).toBe(true)
     await wrapper.get('[data-testid="multiplier-input"]').setValue('2')
 
     expect(wrapper.text()).toContain('$80.00 / $500.00')

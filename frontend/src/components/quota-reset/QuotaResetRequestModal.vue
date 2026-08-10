@@ -50,7 +50,7 @@ function submit() {
 <template>
   <ElDialog
     :model-value="props.open"
-    :teleported="false"
+    append-to-body
     width="min(36rem, calc(100vw - 2rem))"
     :title="t('quotaReset.requestReset')"
     @close="emit('close')"

@@ -5,6 +5,7 @@ import { defineComponent } from 'vue'
 import { createRouter, createMemoryHistory, RouterView } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { setLocale } from '@/i18n'
+import { cleanupTeleportedContent, withTeleportedContent } from './helpers/teleport'
 
 function installMatchMedia(initial = false) {
   let matches = initial
@@ -95,6 +96,7 @@ function createLayoutRouter() {
 
 describe('AppLayout', () => {
   beforeEach(() => {
+    cleanupTeleportedContent()
     installMatchMedia(false)
     setActivePinia(createPinia())
     setLocale('en-US')
@@ -106,12 +108,12 @@ describe('AppLayout', () => {
     await router.push('/')
     await router.isReady()
 
-    const wrapper = mount(AppLayout, {
+    const wrapper = withTeleportedContent(mount(AppLayout, {
       slots: {
         default: '<div class="w-[2000px]">Wide content</div>',
       },
       global: { plugins: [createPinia(), router] },
-    })
+    }))
 
     const shell = wrapper.get('div')
     expect(shell.classes()).toContain('md:h-screen')
@@ -133,9 +135,9 @@ describe('AppLayout', () => {
     await router.push('/')
     await router.isReady()
 
-    const wrapper = mount(AppLayout, {
+    const wrapper = withTeleportedContent(mount(AppLayout, {
       global: { plugins: [createPinia(), router] },
-    })
+    }))
 
     expect(wrapper.get('[aria-controls="mobile-navigation"]').classes()).toContain('el-button')
   })
@@ -145,11 +147,12 @@ describe('AppLayout', () => {
     await router.push('/')
     await router.isReady()
 
-    const wrapper = mount(AppLayout, {
+    const wrapper = withTeleportedContent(mount(AppLayout, {
       global: { plugins: [createPinia(), router] },
-    })
+    }))
 
     const drawer = wrapper.findComponent({ name: 'ElDrawer' })
+    expect(drawer.props('appendToBody')).toBe(true)
     expect(drawer.props('showClose')).toBe(false)
     expect(drawer.props('headerClass')).toBe('!m-0')
     expect(drawer.props('bodyClass')).toBe('!p-0')
@@ -169,9 +172,9 @@ describe('AppLayout', () => {
     await router.push('/')
     await router.isReady()
 
-    const wrapper = mount(AppLayout, {
+    const wrapper = withTeleportedContent(mount(AppLayout, {
       global: { plugins: [createPinia(), router] },
-    })
+    }))
 
     await wrapper.get('[aria-controls="mobile-navigation"]').trigger('click')
     await flushPromises()
@@ -232,9 +235,9 @@ describe('AppLayout', () => {
 
     await router.push('/')
     await router.isReady()
-    const wrapper = mount(AppLayout, {
+    const wrapper = withTeleportedContent(mount(AppLayout, {
       global: { plugins: [pinia, router] },
-    })
+    }))
 
     try {
       await flushPromises()

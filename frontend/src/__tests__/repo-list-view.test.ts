@@ -2,10 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElDialog, ElMessage } from 'element-plus'
 import RepoListView from '@/views/repos/RepoListView.vue'
 import { setLocale } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
+import { cleanupTeleportedContent, withTeleportedContent } from './helpers/teleport'
 
 const messageError = vi.spyOn(ElMessage, 'error').mockImplementation(() => undefined as any)
 
@@ -172,9 +173,9 @@ async function mountRepoList(repos?: any[], path = '/repos', options?: { admin?:
     auth_source: 'sso',
   }
 
-  const wrapper = mount(RepoListView, {
+  const wrapper = withTeleportedContent(mount(RepoListView, {
     global: { plugins: [pinia, router] },
-  })
+  }))
 
   await flushPromises()
   await wrapper.vm.$nextTick()
@@ -184,6 +185,7 @@ async function mountRepoList(repos?: any[], path = '/repos', options?: { admin?:
 
 describe('RepoListView', () => {
   beforeEach(() => {
+    cleanupTeleportedContent()
     setActivePinia(createPinia())
     setLocale('en-US')
     vi.clearAllMocks()
@@ -632,7 +634,9 @@ describe('RepoListView', () => {
     await addBtn!.trigger('click')
     await flushPromises()
 
+    const dialog = wrapper.findComponent(ElDialog)
     expect(wrapper.find('.el-dialog').exists()).toBe(true)
+    expect(dialog.props('appendToBody')).toBe(true)
   })
 
   it('closes add repository dialog with Escape', async () => {

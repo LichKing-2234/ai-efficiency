@@ -16,7 +16,7 @@ const canSubmit = computed(() => comment.value.trim().length > 0 && !props.busy)
 <template>
   <ElDialog
     :model-value="true"
-    :teleported="false"
+    append-to-body
     width="min(28rem, calc(100vw - 2rem))"
     :title="t(action === 'approve' ? 'quotaReset.approveTitle' : 'quotaReset.rejectTitle')"
     data-testid="quota-reset-decision-dialog"

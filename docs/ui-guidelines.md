@@ -36,6 +36,9 @@ a broader custom theme until a product requirement justifies one.
 - Use the library component that matches the interaction: buttons for commands,
   selects or menus for option sets, segmented or radio controls for modes,
   switches and checkboxes for binary settings, and dialogs for focused decisions.
+- Append page-level dialogs and drawers to `body` so their scrims always cover
+  the complete viewport. Do not disable teleport on full-viewport overlays;
+  local poppers inside a dialog may remain non-teleported when needed.
 - Use official Element Plus icons for generic actions. Do not add handwritten
   SVG markup for actions already covered by the icon package.
 - Keep feature-specific components when they own real behavior or domain
