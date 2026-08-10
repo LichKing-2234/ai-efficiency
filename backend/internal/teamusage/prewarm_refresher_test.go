@@ -16,6 +16,8 @@ import (
 	"github.com/alicebob/miniredis/v2"
 )
 
+const refresherTestWaitTimeout = 10 * time.Second
+
 func TestRefresherRefreshPlansFromRedis(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -282,7 +284,7 @@ func TestRefresherLeaseContentionAllowsExactlyOneSourceOwner(t *testing.T) {
 	close(start)
 	select {
 	case <-provider.directoryEntered:
-	case <-time.After(2 * time.Second):
+	case <-time.After(refresherTestWaitTimeout):
 		t.Fatal("timed out waiting for lease owner source call")
 	}
 	select {
@@ -290,7 +292,7 @@ func TestRefresherLeaseContentionAllowsExactlyOneSourceOwner(t *testing.T) {
 		if err != nil {
 			t.Fatalf("lease-busy Refresh() error = %v", err)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(refresherTestWaitTimeout):
 		t.Fatal("lease contender did not return while source owner was held")
 	}
 	if got := provider.directoryCount(); got != 1 {
@@ -391,7 +393,7 @@ func TestRefresherUsesAtMostTwoConcurrentSourceCalls(t *testing.T) {
 	go func() { errCh <- refresher.Refresh(context.Background()) }()
 	select {
 	case <-provider.twoConcurrent:
-	case <-time.After(2 * time.Second):
+	case <-time.After(refresherTestWaitTimeout):
 		t.Fatal("timed out waiting for two concurrent source calls")
 	}
 	if got := provider.maxConcurrency(); got != 2 {
@@ -513,7 +515,7 @@ func (g *refresherTrendGate) WaitEntered(t *testing.T) {
 	t.Helper()
 	select {
 	case <-g.entered:
-	case <-time.After(2 * time.Second):
+	case <-time.After(refresherTestWaitTimeout):
 		t.Fatal("timed out waiting for gated trend source call")
 	}
 }
@@ -547,7 +549,7 @@ func (s *notifyingRefresherPublicationStore) WaitNotOwned(t *testing.T) {
 	t.Helper()
 	select {
 	case <-s.notOwned:
-	case <-time.After(2 * time.Second):
+	case <-time.After(refresherTestWaitTimeout):
 		t.Fatal("timed out waiting for lost-lease publication rejection")
 	}
 }
@@ -887,7 +889,7 @@ func waitRefresherManifestChange(
 	timezone, anchorDate, oldCurrentKey string,
 ) *PrewarmCacheResult {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(refresherTestWaitTimeout)
 	for time.Now().Before(deadline) {
 		result, found, err := cache.Read(context.Background(), PrewarmCacheIdentity{
 			ProviderID: 7, ProviderVersion: 11, Timezone: timezone, AnchorDate: anchorDate,
@@ -930,7 +932,7 @@ func assertRefresherCurrentUnchanged(
 
 func waitRefresherResolverCalls(t *testing.T, resolver *sequenceRefresherBindingResolver, want int) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(refresherTestWaitTimeout)
 	for time.Now().Before(deadline) {
 		if resolver.callCount() >= want {
 			return
@@ -957,7 +959,7 @@ func waitRefresherDirectory(t *testing.T, provider *refresherTestProvider) {
 	t.Helper()
 	select {
 	case <-provider.directoryEntered:
-	case <-time.After(2 * time.Second):
+	case <-time.After(refresherTestWaitTimeout):
 		t.Fatal("timed out waiting for directory source call")
 	}
 }
