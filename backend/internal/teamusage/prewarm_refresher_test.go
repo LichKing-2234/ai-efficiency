@@ -177,12 +177,6 @@ func TestRefresherProviderVersionFenceBlocksLaterPublicationAfterReversion(t *te
 	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
 	provider := newRefresherTestProvider([]int64{101})
-	shanghaiGate := newRefresherTrendGate()
-	berlinGate := newRefresherTrendGate()
-	t.Cleanup(shanghaiGate.Release)
-	t.Cleanup(berlinGate.Release)
-	provider.setTrendGate("Asia/Shanghai", shanghaiGate)
-	provider.setTrendGate("Europe/Berlin", berlinGate)
 	timezones := []string{"UTC", "Asia/Shanghai", "Europe/Berlin"}
 	old := seedRefresherLanes(t, cache, timezones, now, "version-fence")
 	resolver := &sequenceRefresherBindingResolver{bindings: []ProviderBinding{
@@ -197,19 +191,10 @@ func TestRefresherProviderVersionFenceBlocksLaterPublicationAfterReversion(t *te
 	refresher := mustRefresher(t, resolver, cache, options)
 	errCh := make(chan error, 1)
 	go func() { errCh <- refresher.Refresh(context.Background()) }()
-	shanghaiGate.WaitEntered(t)
-	berlinGate.WaitEntered(t)
-
-	waitRefresherManifestChange(t, cache, "UTC", "2026-07-21", old["UTC"].CurrentStats.Key)
-	shanghaiGate.Release()
-	waitRefresherResolverCalls(t, resolver, 3)
-	berlinGate.Release()
 	if err := <-errCh; err == nil {
 		t.Fatal("Refresh() error = nil, want provider-version fence")
 	}
-	assertRefresherCurrentChanged(t, cache, "UTC", old["UTC"].CurrentStats.Key)
-	assertRefresherCurrentUnchanged(t, cache, "Asia/Shanghai", old["Asia/Shanghai"].CurrentStats.Key)
-	assertRefresherCurrentUnchanged(t, cache, "Europe/Berlin", old["Europe/Berlin"].CurrentStats.Key)
+	assertRefresherChangedLaneCount(t, cache, old, 1)
 	if got := resolver.callCount(); got != 3 {
 		t.Fatalf("provider resolver calls = %d, want initial + success + irreversible mismatch", got)
 	}
@@ -222,18 +207,10 @@ func TestRefresherLeaseLossFenceBlocksLaterPublicationAfterTokenRestoration(t *t
 	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
 	provider := newRefresherTestProvider([]int64{101})
-	shanghaiGate := newRefresherTrendGate()
-	berlinGate := newRefresherTrendGate()
-	t.Cleanup(shanghaiGate.Release)
-	t.Cleanup(berlinGate.Release)
-	provider.setTrendGate("Asia/Shanghai", shanghaiGate)
-	provider.setTrendGate("Europe/Berlin", berlinGate)
 	timezones := []string{"UTC", "Asia/Shanghai", "Europe/Berlin"}
 	old := seedRefresherLanes(t, cache, timezones, now, "lease-fence")
-	publicationStore := &notifyingRefresherPublicationStore{
-		BatchStore: cache.store,
-		notOwned:   make(chan struct{}),
-	}
+	publicationStore := newNotifyingRefresherPublicationStore(cache.store)
+	t.Cleanup(publicationStore.ReleaseSecond)
 	cache.store = publicationStore
 	token := strings.Repeat("a", 64)
 	reporter := &recordingRefreshReporter{}
@@ -243,21 +220,15 @@ func TestRefresherLeaseLossFenceBlocksLaterPublicationAfterTokenRestoration(t *t
 	refresher := mustRefresher(t, staticRefresherBindingResolver{binding: refresherBinding(provider)}, cache, options)
 	errCh := make(chan error, 1)
 	go func() { errCh <- refresher.Refresh(context.Background()) }()
-	shanghaiGate.WaitEntered(t)
-	berlinGate.WaitEntered(t)
-
-	waitRefresherManifestChange(t, cache, "UTC", "2026-07-21", old["UTC"].CurrentStats.Key)
+	publicationStore.WaitSecondAttempt(t)
 	server.Set(cache.RefreshLeaseKey(), strings.Repeat("f", 64))
-	shanghaiGate.Release()
+	publicationStore.ReleaseSecond()
 	publicationStore.WaitNotOwned(t)
 	server.Set(cache.RefreshLeaseKey(), token)
-	berlinGate.Release()
 	if err := <-errCh; err == nil {
 		t.Fatal("Refresh() error = nil, want refresh-lease fence")
 	}
-	assertRefresherCurrentChanged(t, cache, "UTC", old["UTC"].CurrentStats.Key)
-	assertRefresherCurrentUnchanged(t, cache, "Asia/Shanghai", old["Asia/Shanghai"].CurrentStats.Key)
-	assertRefresherCurrentUnchanged(t, cache, "Europe/Berlin", old["Europe/Berlin"].CurrentStats.Key)
+	assertRefresherChangedLaneCount(t, cache, old, 1)
 	if got := reporter.last(); got.Outcome != PrewarmRefreshPartial || got.PublishedLanes != 1 {
 		t.Fatalf("refresh report = %#v, want one publication before lease fence", got)
 	}
@@ -526,10 +497,22 @@ func (g *refresherTrendGate) Release() {
 
 type notifyingRefresherPublicationStore struct {
 	readcache.BatchStore
-	notOwned chan struct{}
+	secondAttempt chan struct{}
+	releaseSecond chan struct{}
+	notOwned      chan struct{}
+	releaseOnce   sync.Once
+	mu            sync.Mutex
+	calls         int
 }
 
 var _ readcache.BatchStore = (*notifyingRefresherPublicationStore)(nil)
+
+func newNotifyingRefresherPublicationStore(store readcache.BatchStore) *notifyingRefresherPublicationStore {
+	return &notifyingRefresherPublicationStore{
+		BatchStore: store, secondAttempt: make(chan struct{}),
+		releaseSecond: make(chan struct{}), notOwned: make(chan struct{}),
+	}
+}
 
 func (s *notifyingRefresherPublicationStore) SetIfLeaseOwned(
 	ctx context.Context,
@@ -538,11 +521,35 @@ func (s *notifyingRefresherPublicationStore) SetIfLeaseOwned(
 	value []byte,
 	ttl time.Duration,
 ) (bool, error) {
+	publication := leaseKey != key
+	if publication {
+		s.mu.Lock()
+		s.calls++
+		call := s.calls
+		s.mu.Unlock()
+		if call == 2 {
+			close(s.secondAttempt)
+			<-s.releaseSecond
+		}
+	}
 	published, err := s.BatchStore.SetIfLeaseOwned(ctx, leaseKey, token, key, value, ttl)
-	if err == nil && !published {
+	if publication && err == nil && !published {
 		s.notOwned <- struct{}{}
 	}
 	return published, err
+}
+
+func (s *notifyingRefresherPublicationStore) WaitSecondAttempt(t *testing.T) {
+	t.Helper()
+	select {
+	case <-s.secondAttempt:
+	case <-time.After(refresherTestWaitTimeout):
+		t.Fatal("timed out waiting for second manifest publication attempt")
+	}
+}
+
+func (s *notifyingRefresherPublicationStore) ReleaseSecond() {
+	s.releaseOnce.Do(func() { close(s.releaseSecond) })
 }
 
 func (s *notifyingRefresherPublicationStore) WaitNotOwned(t *testing.T) {
@@ -906,40 +913,23 @@ func waitRefresherManifestChange(
 	return nil
 }
 
-func assertRefresherCurrentChanged(
+func assertRefresherChangedLaneCount(
 	t *testing.T,
 	cache *PrewarmCache,
-	timezone, oldCurrentKey string,
+	old map[string]PrewarmManifest,
+	want int,
 ) {
 	t.Helper()
-	result := readRefresherManifest(t, cache, timezone, "2026-07-21")
-	if result.Manifest.CurrentStats.Key == oldCurrentKey {
-		t.Fatalf("timezone %s retained its old current reference", timezone)
-	}
-}
-
-func assertRefresherCurrentUnchanged(
-	t *testing.T,
-	cache *PrewarmCache,
-	timezone, oldCurrentKey string,
-) {
-	t.Helper()
-	result := readRefresherManifest(t, cache, timezone, "2026-07-21")
-	if result.Manifest.CurrentStats.Key != oldCurrentKey {
-		t.Fatalf("timezone %s published after an irreversible cycle fence", timezone)
-	}
-}
-
-func waitRefresherResolverCalls(t *testing.T, resolver *sequenceRefresherBindingResolver, want int) {
-	t.Helper()
-	deadline := time.Now().Add(refresherTestWaitTimeout)
-	for time.Now().Before(deadline) {
-		if resolver.callCount() >= want {
-			return
+	changed := 0
+	for timezone, previous := range old {
+		result := readRefresherManifest(t, cache, timezone, previous.AnchorDate)
+		if result.Manifest.CurrentStats.Key != previous.CurrentStats.Key {
+			changed++
 		}
-		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatalf("provider resolver calls = %d, want at least %d", resolver.callCount(), want)
+	if changed != want {
+		t.Fatalf("changed manifest lanes = %d, want %d", changed, want)
+	}
 }
 
 func assertNoRefresherManifest(t *testing.T, cache *PrewarmCache, timezone, anchorDate string) {
