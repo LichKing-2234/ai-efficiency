@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
-import UsageCenterLayout from '@/views/UsageCenterLayout.vue'
+import DashboardView from '@/views/DashboardView.vue'
 import { getTeamUsageScope } from '@/api/teamUsage'
 import { setLocale } from '@/i18n'
 
@@ -16,10 +16,9 @@ function createHarness(initialPath = '/usage') {
     routes: [
       {
         path: '/usage',
-        name: 'UsageCenter',
-        component: UsageCenterLayout,
+        name: 'Usage',
+        component: DashboardView,
         children: [
-          { path: '', name: 'Usage', component: { template: '<div data-testid="personal-content">Personal</div>' } },
           { path: 'team', name: 'UsageTeam', component: { template: '<div data-testid="team-content">Team</div>' } },
           { path: 'quota-reset', name: 'UsageQuotaReset', component: { template: '<div data-testid="reset-content">Reset</div>' } },
         ],
