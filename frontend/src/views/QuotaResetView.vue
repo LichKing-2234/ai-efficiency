@@ -287,7 +287,7 @@ onMounted(() => {
         >
           <ElRadioButton
             data-testid="quota-reset-tab-mine"
-            class="min-w-0 w-full [&>span]:w-full [&>span]:!whitespace-normal [&>span]:!px-1"
+            class="min-w-0 w-full [&>span]:!flex [&>span]:!h-8 [&>span]:w-full [&>span]:!items-center [&>span]:!justify-center [&>span]:!whitespace-nowrap [&>span]:!px-1"
             value="mine"
             @click="selectQueue('mine')"
           >
@@ -295,7 +295,7 @@ onMounted(() => {
           </ElRadioButton>
           <ElRadioButton
             data-testid="quota-reset-tab-approvals"
-            class="min-w-0 w-full [&>span]:w-full [&>span]:!whitespace-normal [&>span]:!px-1"
+            class="min-w-0 w-full [&>span]:!flex [&>span]:!h-8 [&>span]:w-full [&>span]:!items-center [&>span]:!justify-center [&>span]:!whitespace-nowrap [&>span]:!px-1"
             value="approvals"
             @click="selectQueue('approvals')"
           >
@@ -311,7 +311,7 @@ onMounted(() => {
           <ElRadioButton
             v-if="auth.isAdmin"
             data-testid="quota-reset-tab-admin"
-            class="min-w-0 w-full [&>span]:w-full [&>span]:!whitespace-normal [&>span]:!px-1"
+            class="min-w-0 w-full [&>span]:!flex [&>span]:!h-8 [&>span]:w-full [&>span]:!items-center [&>span]:!justify-center [&>span]:!whitespace-nowrap [&>span]:!px-1"
             value="admin"
             @click="selectQueue('admin')"
           >

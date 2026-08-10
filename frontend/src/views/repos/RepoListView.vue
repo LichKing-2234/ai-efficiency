@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
+import AppPageHeader from '@/components/AppPageHeader.vue'
 import { useRepoStore } from '@/stores/repo'
 import { listProviders } from '@/api/scmProvider'
 import { autoBindUnboundRepos, createRepoDirect, repairFailedWebhooks } from '@/api/repo'
@@ -480,17 +481,17 @@ function repoStatusType(status: string) {
 <template>
   <AppLayout>
     <div class="space-y-6">
-      <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">{{ t('nav.codeSection') }}</p>
-          <h1 class="mt-1 text-2xl font-bold text-gray-900">{{ t('repos.title') }}</h1>
-          <p class="mt-1 text-sm text-gray-500">{{ t('repos.subtitle') }}</p>
-        </div>
-        <div class="flex flex-wrap items-center gap-3">
+      <AppPageHeader
+        :eyebrow="t('nav.codeSection')"
+        :title="t('repos.title')"
+        :description="t('repos.subtitle')"
+      >
+        <template #actions>
+          <div data-testid="repo-page-actions" class="grid w-full grid-cols-1 gap-3 sm:w-auto sm:grid-cols-[11rem_auto] sm:items-center">
           <el-select
             v-model="bindingFilter"
             data-testid="repo-binding-filter"
-            class="w-full sm:w-44"
+            class="w-full"
             @change="applyBindingFilter"
           >
             <el-option value="all" :label="t('repos.allBindings')" />
@@ -500,8 +501,9 @@ function repoStatusType(status: string) {
           <el-button type="primary" @click="openAddDialog">
             {{ t('repos.addRepo') }}
           </el-button>
-        </div>
-      </div>
+          </div>
+        </template>
+      </AppPageHeader>
 
       <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -687,8 +689,8 @@ function repoStatusType(status: string) {
         >
                   <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0">
-            <el-button class="!m-0 truncate !p-0 text-left" type="primary" link @click.stop="goToDetail(repo)">
-                        {{ repo.name }}
+            <el-button class="!m-0 min-w-0 max-w-full !p-0 text-left [&>span]:min-w-0 [&>span]:max-w-full" type="primary" link :title="repo.name" @click.stop="goToDetail(repo)">
+                        <span class="block min-w-0 truncate">{{ repo.name }}</span>
                       </el-button>
                       <div class="mt-1 truncate text-xs text-gray-500">{{ repo.full_name }}</div>
                     </div>

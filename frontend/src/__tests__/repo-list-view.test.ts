@@ -430,6 +430,26 @@ describe('RepoListView', () => {
     expect(wrapper.findAll('[data-testid="repo-row"]')).toHaveLength(2)
   })
 
+  it('constrains long repository names inside the list identity column', async () => {
+    const { wrapper } = await mountRepoList([{
+      ...sampleRepos[0],
+      name: 'repository-with-a-name-that-is-longer-than-the-available-identity-column',
+    }])
+
+    const nameButton = wrapper.get('[data-testid="repo-row"] .el-button')
+    expect(nameButton.classes()).toContain('min-w-0')
+    expect(nameButton.classes()).toContain('max-w-full')
+    expect(nameButton.get('span.truncate').classes()).toContain('truncate')
+  })
+
+  it('keeps the repository filter and primary action on one desktop row', async () => {
+    const { wrapper } = await mountRepoList(sampleRepos)
+
+    const actions = wrapper.get('[data-testid="repo-page-actions"]')
+    expect(actions.classes()).toContain('sm:grid-cols-[11rem_auto]')
+    expect(actions.classes()).toContain('sm:w-auto')
+  })
+
   it('switches repository workbench labels to Chinese', async () => {
     setLocale('zh-CN')
     const { wrapper } = await mountRepoList(sampleRepos)

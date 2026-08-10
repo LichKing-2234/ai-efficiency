@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import AppLayout from '@/components/AppLayout.vue'
+import AppPageHeader from '@/components/AppPageHeader.vue'
 import RepositoryActivitySection from '@/components/activity/RepositoryActivitySection.vue'
 import RepositoryOperationsSection from '@/components/repos/RepositoryOperationsSection.vue'
 import { getRepo } from '@/api/repo'
@@ -67,17 +68,16 @@ function updateRepo(refreshed: RepoConfig) {
     <ElSkeleton v-if="loading" :rows="8" animated />
 
     <div v-else-if="repo" class="space-y-5">
-      <header>
-        <ElButton type="primary" link :icon="ArrowLeft" @click="router.push('/repos')">
-          {{ t('repoDetail.backToRepos') }}
-        </ElButton>
-        <div class="mt-2 min-w-0">
-          <p class="text-xs font-semibold uppercase tracking-wide text-blue-700">{{ t('nav.codeSection') }}</p>
-          <h1 class="break-words text-2xl font-bold text-gray-900">{{ repo.name }}</h1>
-          <p class="break-words text-sm text-gray-500">{{ repo.full_name }}</p>
-          <p v-if="repo.clone_url" class="mt-0.5 break-all font-mono text-xs text-gray-400">{{ repo.clone_url }}</p>
-        </div>
-      </header>
+      <AppPageHeader :eyebrow="t('nav.codeSection')" :title="repo.name" :description="repo.full_name">
+        <template #before>
+          <ElButton class="!mb-2 !ml-0 !p-0" type="primary" link :icon="ArrowLeft" @click="router.push('/repos')">
+            {{ t('repoDetail.backToRepos') }}
+          </ElButton>
+        </template>
+        <template v-if="repo.clone_url" #after>
+          <p class="mt-0.5 break-all font-mono text-xs leading-5 text-slate-500">{{ repo.clone_url }}</p>
+        </template>
+      </AppPageHeader>
 
       <ElTabs
         :model-value="activeSection"

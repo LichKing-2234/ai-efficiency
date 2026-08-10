@@ -684,12 +684,12 @@ onUnmounted(() => {
   <div v-if="prs.length > 0" class="mt-3 divide-y divide-gray-100 border-y border-gray-100">
     <article v-for="pr in prs" :key="pr.id" data-testid="repo-pr-row" class="py-4">
       <div data-testid="repo-pr-summary-grid" class="lg:grid lg:grid-cols-[minmax(0,1.3fr)_minmax(320px,1fr)_auto] lg:items-center lg:gap-5">
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <ElLink v-if="pr.scm_pr_url" :href="pr.scm_pr_url" target="_blank" rel="noopener noreferrer" underline="never" class="block truncate text-sm font-semibold text-indigo-700 hover:text-indigo-900">
-              {{ pr.title }}
+        <div data-testid="repo-pr-identity" class="flex min-w-0 items-start justify-between gap-3 overflow-hidden">
+          <div class="min-w-0 flex-1 overflow-hidden">
+            <ElLink v-if="pr.scm_pr_url" data-testid="repo-pr-title" :href="pr.scm_pr_url" target="_blank" rel="noopener noreferrer" underline="never" class="!flex min-w-0 max-w-full text-sm font-semibold text-indigo-700 hover:text-indigo-900 [&_.el-link__inner]:min-w-0 [&_.el-link__inner]:max-w-full" :title="pr.title">
+              <span class="block min-w-0 truncate">{{ pr.title }}</span>
             </ElLink>
-            <div v-else class="truncate text-sm font-semibold text-gray-900">{{ pr.title }}</div>
+            <div v-else data-testid="repo-pr-title" class="min-w-0 max-w-full truncate text-sm font-semibold text-gray-900" :title="pr.title"><span class="truncate">{{ pr.title }}</span></div>
             <div class="mt-1 truncate text-xs text-gray-500">{{ pr.author || '—' }}</div>
           </div>
           <ElTag

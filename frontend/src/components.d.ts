@@ -19,6 +19,7 @@ declare module 'vue' {
     AdvancedCredentialSettings: typeof import('./components/settings/AdvancedCredentialSettings.vue')['default']
     AIServiceSettings: typeof import('./components/settings/AIServiceSettings.vue')['default']
     AppLayout: typeof import('./components/AppLayout.vue')['default']
+    AppPageHeader: typeof import('./components/AppPageHeader.vue')['default']
     AppSidebar: typeof import('./components/AppSidebar.vue')['default']
     AuthShell: typeof import('./components/AuthShell.vue')['default']
     CodePlatformSettings: typeof import('./components/settings/CodePlatformSettings.vue')['default']

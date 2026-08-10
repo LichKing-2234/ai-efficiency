@@ -643,6 +643,34 @@ describe('RepoDetailView', () => {
     expect(metrics.classes()).not.toContain('md:grid-cols-4')
   })
 
+  it('constrains long PR titles inside the identity column', async () => {
+    const { wrapper } = await mountRepoDetail(undefined, undefined, {
+      prs: [{
+        id: 101,
+        scm_pr_id: 88,
+        scm_pr_url: 'https://github.com/org/repo-a/pull/88',
+        author: 'dependabot[bot]',
+        title: 'chore(deps): bump undici, release-it/bumper, release-it/conventional-changelog and release-it',
+        source_branch: 'dependabot/npm_and_yarn/dependencies',
+        target_branch: 'main',
+        status: 'open',
+        labels: [],
+        lines_added: 10,
+        lines_deleted: 2,
+        cycle_time_hours: 5,
+        created_at: '2026-03-29T00:00:00Z',
+        usage_status: 'pending_upload',
+      }],
+    })
+
+    const identity = wrapper.get('[data-testid="repo-pr-identity"]')
+    const title = wrapper.get('[data-testid="repo-pr-title"]')
+    expect(identity.classes()).toContain('min-w-0')
+    expect(title.classes()).toContain('min-w-0')
+    expect(title.classes()).toContain('max-w-full')
+    expect(title.get('span.truncate').classes()).toContain('truncate')
+  })
+
   it('renders aggregate PR usage summary instead of current page counts', async () => {
     const pageItems = Array.from({ length: 10 }, (_, index) => ({
       id: 200 + index,
