@@ -16,6 +16,10 @@ vi.mock('@/api/activity', () => ({
   }),
 }))
 
+vi.mock('@/api/attribution', () => ({
+  getReportingReadiness: vi.fn(),
+}))
+
 function response(name = 'Alice', lowerBound = true, bucketAccess = false) {
   return {
     data: {
@@ -72,6 +76,54 @@ describe('ActivityView', () => {
     vi.mocked(api.getActivityBucket).mockReset()
     vi.mocked(api.getActivitySummary).mockResolvedValue(response() as any)
     vi.mocked(api.getActivityMember).mockResolvedValue(response() as any)
+    const attributionApi = await import('@/api/attribution')
+    vi.mocked(attributionApi.getReportingReadiness).mockReset()
+    vi.mocked(attributionApi.getReportingReadiness).mockResolvedValue({
+      data: {
+        data: {
+          state: 'waiting_for_data',
+          installation_count: 1,
+          enabled_installation_count: 1,
+        },
+      },
+    } as any)
+  })
+
+  it('shows contextual reporting guidance only on personal Activity', async () => {
+    const attributionApi = await import('@/api/attribution')
+    const { wrapper } = await mountView()
+
+    const guide = wrapper.get('[data-testid="reporting-readiness-guide"]')
+    expect(guide.text()).toContain('Waiting for your first Codex activity')
+    expect(guide.text()).toContain('Run Codex in a repository, then create a commit')
+    expect(guide.text()).not.toContain('ae-cli attribution enable')
+    expect(guide.get('a').attributes('href')).toBe('/user')
+    expect(attributionApi.getReportingReadiness).toHaveBeenCalledOnce()
+
+    wrapper.unmount()
+    const member = await mountView('/activity/members/7')
+    expect(member.wrapper.find('[data-testid="reporting-readiness-guide"]').exists()).toBe(false)
+    expect(attributionApi.getReportingReadiness).toHaveBeenCalledOnce()
+  })
+
+  it('keeps active reporting help collapsed', async () => {
+    const attributionApi = await import('@/api/attribution')
+    vi.mocked(attributionApi.getReportingReadiness).mockResolvedValue({
+      data: {
+        data: {
+          state: 'active',
+          installation_count: 1,
+          enabled_installation_count: 1,
+          latest_bucket_at: '2026-08-10T09:30:00Z',
+        },
+      },
+    } as any)
+
+    const { wrapper } = await mountView()
+    const disclosure = wrapper.get('[data-testid="reporting-readiness-active"]')
+    expect(disclosure.classes()).toContain('el-collapse')
+    expect(disclosure.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.text()).toContain('Codex activity reporting is active')
   })
 
   it('renders PR-first hero without making Token a headline metric', async () => {
@@ -112,7 +164,7 @@ describe('ActivityView', () => {
 
     const { wrapper } = await mountView()
 
-    const alert = wrapper.get('[role="alert"]')
+    const alert = wrapper.findAll('[role="alert"]').find((candidate) => candidate.text().includes('Coding activity is temporarily unavailable.'))!
     expect(alert.classes()).toContain('el-alert')
     expect(alert.text()).toContain('Coding activity is temporarily unavailable.')
   })
@@ -297,7 +349,7 @@ describe('ActivityView', () => {
     await bucket.trigger('click')
     await flushPromises()
 
-    const alert = wrapper.get('[role="alert"]')
+    const alert = wrapper.findAll('[role="alert"]').find((candidate) => candidate.text().includes('Failed to load attribution detail.'))!
     expect(alert.classes()).toContain('el-alert')
     expect(alert.text()).toContain('Failed to load attribution detail.')
     expect(bucket.attributes('disabled')).toBeUndefined()

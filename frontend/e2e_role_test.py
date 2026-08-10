@@ -622,6 +622,12 @@ def mock_matrix_api(route, role):
             "representative": True,
             "teams": [team_identity],
         },
+        "/api/v1/attribution/status": {
+            "state": "active",
+            "installation_count": 1,
+            "enabled_installation_count": 1,
+            "latest_bucket_at": "2026-08-05T12:00:00Z",
+        },
         "/api/v1/activity/teams/team-alpha": {
             "contract_version": "activity-v1",
             "scope_version": "scope-e2e",
@@ -1673,6 +1679,11 @@ def test_activity_route_layout_and_responsive_style(page):
     report("Activity renders PR-first lower-bound metrics",
            "≥2" in page.locator("[data-testid='activity-hero']").inner_text()
            and page.locator("[data-testid='activity-prs']").count() == 1)
+    reporting_guide = page.locator("[data-testid='reporting-readiness-guide']")
+    report("Personal Activity renders collapsed reporting readiness",
+           reporting_guide.count() == 1
+           and "Codex activity reporting is active" in reporting_guide.inner_text()
+           and page.locator("[data-testid='reporting-readiness-active'] .el-collapse-item__header").get_attribute("aria-expanded") == "false")
     report("Activity data does not crash the page",
            not page_errors,
            repr(page_errors))
@@ -1796,6 +1807,8 @@ def test_activity_member_bucket_authorization(page):
            page.locator("h1:has-text('Alice')").count() == 1)
     report("Representative member view does not render Bucket rows",
            page.locator("[data-testid='activity-buckets']").count() == 0)
+    report("Member Activity does not render personal reporting guidance",
+           page.locator("[data-testid='reporting-readiness-guide']").count() == 0)
     do_logout(page)
 
     do_dev_login(page, role="admin")
@@ -1809,6 +1822,56 @@ def test_activity_member_bucket_authorization(page):
     detail = page.locator("[data-testid='activity-bucket-detail-bucket-e2e']")
     report("Admin loads retained Request ID evidence only after expansion",
            detail.count() == 1 and "req_e2e" in detail.inner_text())
+    do_logout(page)
+
+
+def test_reporting_onboarding_surfaces(page):
+    """Ordinary users see split tool configuration and personal-only reporting guidance."""
+    print("\n🧪 Reporting Onboarding — Split Flows and Responsive Layout")
+
+    do_dev_login(page, role="user")
+    for width, height, suffix in [(1440, 900, "desktop"), (390, 844, "mobile")]:
+        page.set_viewport_size({"width": width, "height": height})
+        page.goto(f"{BASE}/user")
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(300)
+        guide = page.locator("[data-testid='reporting-readiness-guide']")
+        setup = guide.locator("[data-testid='reporting-setup-commands']")
+        body = page.locator("body").inner_text()
+        report(f"User setup separates reporting at {width}px",
+               page.locator("h1:has-text('AI tool configuration')").count() == 1
+               and guide.count() == 1
+               and "AI Coding Activity reporting" in guide.inner_text())
+        report(f"Reporting setup is independently actionable at {width}px",
+               setup.count() == 1
+               and all(command in setup.inner_text() for command in [
+                   "Install CLI",
+                   "ae-cli login",
+                   "ae-cli discover",
+               ]))
+        report(f"User setup omits obsolete reporting commands at {width}px",
+               all(command not in body for command in [
+                   "ae-cli attribution enable",
+                   "ae-cli hooks enable --global",
+                   "ae-cli init",
+                   "ae-cli sync",
+                   "ae-cli hooks status --uploads",
+               ]))
+        report(f"User setup has no horizontal overflow at {width}px",
+               page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"))
+        screenshot(page, f"reporting_setup_{suffix}")
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"{BASE}/activity")
+    page.wait_for_load_state("networkidle")
+    report("Personal Activity renders reporting guidance",
+           page.locator("[data-testid='reporting-readiness-guide']").count() == 1)
+    page.goto(f"{BASE}/activity/members/7")
+    page.wait_for_load_state("networkidle")
+    report("Member Activity omits reporting guidance",
+           page.locator("[data-testid='reporting-readiness-guide']").count() == 0)
+
+    page.set_viewport_size({"width": 1440, "height": 900})
     do_logout(page)
 
 
@@ -1830,6 +1893,7 @@ def run_all():
             ("Activity Route and Layout", lambda: test_activity_route_layout_and_responsive_style(page)),
             ("Mobile Navigation Drawer", lambda: test_mobile_navigation_drawer(page)),
             ("Activity Member Bucket Authorization", lambda: test_activity_member_bucket_authorization(page)),
+            ("Reporting Onboarding Surfaces", lambda: test_reporting_onboarding_surfaces(page)),
         ]
 
         for name, fn in tests:

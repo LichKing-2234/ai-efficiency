@@ -23,7 +23,7 @@ var (
 	loginFlow          = auth.Login
 	loginDeviceFlow    = auth.LoginDevice
 	headlessBrowserEnv = auth.IsHeadlessLinux
-	enrollAfterLogin   = ensureReportingEnrollment
+	activateAfterLogin = activateCompactAttribution
 )
 
 var loginCmd = &cobra.Command{
@@ -42,6 +42,8 @@ var loginCmd = &cobra.Command{
 		}
 		if !loginForce {
 			if token, err := auth.ReadToken(tokenPath); err == nil && token.IsValid() {
+				tokenServerURL := firstNonEmpty(token.ServerURL, serverURL)
+				runAutomaticAttributionActivation(context.Background(), activateAfterLogin, client.New(tokenServerURL, token.AccessToken), tokenServerURL, token.StableAuthSubject(), cmd.ErrOrStderr())
 				cmd.Println("Already logged in. Use --force to re-login.")
 				return nil
 			}
@@ -81,9 +83,7 @@ var loginCmd = &cobra.Command{
 		if err := auth.WriteToken(tokenPath, token); err != nil {
 			return fmt.Errorf("save token: %w", err)
 		}
-		if _, enrollErr := enrollAfterLogin(context.Background(), client.New(serverURL, result.AccessToken), serverURL, token.AuthSubject); enrollErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: login succeeded, but reporting installation enrollment is degraded: %v\n", enrollErr)
-		}
+		runAutomaticAttributionActivation(context.Background(), activateAfterLogin, client.New(serverURL, result.AccessToken), serverURL, token.AuthSubject, cmd.ErrOrStderr())
 
 		fmt.Fprintf(cmd.OutOrStdout(), "Login successful! Token saved to %s\n", tokenPath)
 		fmt.Fprintln(cmd.OutOrStdout(), "Run 'ae-cli discover' to configure supported local AI tools.")

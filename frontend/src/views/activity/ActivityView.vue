@@ -4,6 +4,7 @@ import AppLayout from '@/components/AppLayout.vue'
 import ActivityDateRange from '@/components/activity/ActivityDateRange.vue'
 import ActivityHero from '@/components/activity/ActivityHero.vue'
 import ActivityDetails from '@/components/activity/ActivityDetails.vue'
+import ReportingReadinessGuide from '@/components/activity/ReportingReadinessGuide.vue'
 import { useMemberActivity } from '@/composables/useMemberActivity'
 import { useI18n } from '@/i18n'
 
@@ -27,6 +28,8 @@ const {
         </div>
         <ActivityDateRange :from="range.from" :to="range.to" :loading="loading" @change="selectRange" @refresh="loadActivity" />
       </header>
+
+      <ReportingReadinessGuide v-if="!route.params.user_id" />
 
       <ElAlert v-if="error" type="error" :closable="false" show-icon :title="error" />
       <div v-if="loading && !data" aria-live="polite" class="rounded-xl border border-slate-200 bg-white px-5 py-12 text-center text-sm text-slate-500">

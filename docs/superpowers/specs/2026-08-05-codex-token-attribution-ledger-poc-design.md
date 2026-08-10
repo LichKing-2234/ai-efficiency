@@ -175,12 +175,21 @@ losing an intermediate commit/rewrite boundary.
 
 ## Local Scheduling And Git Setup
 
-`ae-cli attribution enable` performs four actions:
+The shared compact-attribution activation path performs four actions:
 
 1. ensures a reporting installation exists;
 2. records the Codex baseline;
 3. enables compact reporting and optional Codex OTLP correlation;
 4. enables the existing machine-level managed Git hooks.
+
+Successful `ae-cli login` runs this path automatically after authentication,
+and a successful non-dry-run `ae-cli discover` runs it again idempotently so
+older installations migrate during ordinary configuration. Activation is not
+conditional on detecting Codex: an empty baseline is valid and leaves the
+machine ready for future Codex use. A degraded activation prints a warning but
+does not roll back an otherwise successful login or discover. The explicit
+`ae-cli attribution enable` command remains an advanced repair entry point,
+not a normal onboarding step.
 
 A separate `ae-cli init` is not required for every backend-known,
 reporting-enabled repository. Global hooks use read-only remote resolution and
@@ -200,9 +209,11 @@ uploads buckets/revisions outside the commit latency budget.
 
 ## Installation Identity And Credentials
 
-Successful `ae-cli login` best-effort enrolls one stable machine installation.
-Enrollment failure prints a warning but does not roll back a successful login.
-Actual Token reporting remains disabled until `ae-cli attribution enable`.
+Successful `ae-cli login` best-effort enrolls and activates one stable machine
+installation. Enrollment or activation failure prints a warning but does not
+roll back a successful login. A later non-dry-run `ae-cli discover` retries the
+same idempotent activation path. The first successful local activation fixes
+the no-backfill baseline; retries preserve it.
 
 Each installation has two scoped credentials:
 
@@ -214,7 +225,10 @@ returned on creation/rotation and stored locally in
 `~/.ae-cli/reporting.json` with mode `0600`. If the local copy is missing while
 the installation still exists, authenticated enrollment rotates both
 credentials and replaces the local copy. Rotation immediately invalidates the
-old reporter and OTLP credentials.
+old reporter and OTLP credentials. If the authenticated owner enrolls the same
+revoked installation ID, the backend reactivates it with new credentials and
+disabled reporting/OTLP flags; the normal activation path then enables both
+flags. A different user still cannot claim that installation ID.
 
 ## Backend Storage
 
@@ -271,11 +285,30 @@ bounded time-window overlap.
 OAuth-user endpoints:
 
 ```text
+GET  /api/v1/attribution/status
 POST /api/v1/attribution/installations
 PUT  /api/v1/attribution/installations/:installation_id
 POST /api/v1/attribution/installations/:installation_id/credentials/rotate
 GET  /api/v1/attribution/report
 ```
+
+`GET /api/v1/attribution/status` returns only the authenticated user's
+aggregate reporting readiness. It never returns installation rows or
+`last_seen_at`. The effective state precedence is:
+
+1. no installation: `not_enrolled`;
+2. installations exist but none is active: `revoked`;
+3. an active installation exists but none has reporting enabled: `disabled`;
+4. reporting is enabled but the user has no accepted bucket:
+   `waiting_for_data`;
+5. reporting is enabled and any accepted user bucket exists: `active`.
+
+The response includes aggregate installation counts and may include the latest
+accepted bucket time, derived from the bucket's server-side `created_at` rather
+than its client-observed window. It has no device-management representation and
+no time-based `stale` state. A first accepted bucket establishes `active` even
+if its current allocation is unbound or shared; allocation quality remains a
+separate Activity fact.
 
 The attribution report remains a compatibility read. The current product read
 surface is the protected Activity namespace:
@@ -327,6 +360,12 @@ composite performance metric. PRs appear before commits and incomplete PR sync
 is shown explicitly as `≥N`. Quality counts keep unbound/shared and invalid
 facts separate from repository output.
 
+Only the personal `/activity` route reads aggregate reporting readiness. It
+shows short state-specific guidance, points incomplete setup back to the normal
+user setup flow, describes Codex plus commit while waiting for the first
+bucket, and keeps active help collapsed. Member and team routes do not request
+installation state or show setup commands.
+
 `/activity/members/:user_id` is the authorized member drill-down.
 `/activity/teams` and `/activity/teams/:team_id` expose the current authorized
 directory subtree to representatives and all current active teams/members to
@@ -341,6 +380,18 @@ retained Request IDs. Representatives can inspect member/repository/PR/commit
 and quality summaries but do not receive Bucket rows or raw Request IDs. The UI
 never exposes prompts, responses, code, commands, local paths, raw spans, or
 conversation identifiers.
+
+The `/user` page is the full setup source but presents two separate workflows.
+AI tool configuration retains access-group/API-key creation, connection tests,
+manual snippets, application import, and provider-specific discover. AI Coding
+Activity reporting independently presents the platform-specific CLI install,
+login, and generic discover sequence, reuses the same readiness guide as
+personal Activity, and explains that login or discover activates Codex compact
+reporting automatically. Normal guidance does not show explicit
+`attribution enable`, global-hook management, per-repository init, manual sync,
+or upload-status commands. `ae-cli attribution status` and `ae-cli doctor`
+remain collapsed advanced diagnostics. This compact bucket path is Codex-only;
+the UI does not claim the same behavior for Claude, Gemini, or Kiro.
 
 ## POC Acceptance Criteria
 

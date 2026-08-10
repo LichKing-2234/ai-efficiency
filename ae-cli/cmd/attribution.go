@@ -9,8 +9,6 @@ import (
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/auth"
-	"github.com/ai-efficiency/ae-cli/internal/buildinfo"
-	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
 	"github.com/ai-efficiency/ae-cli/internal/reporting"
 	"github.com/ai-efficiency/ae-cli/internal/toolconfig"
@@ -36,49 +34,18 @@ var attributionEnableCmd = &cobra.Command{
 		if token == nil {
 			return fmt.Errorf("OAuth login state is required")
 		}
-		reportingConfig, err := ensureReportingEnrollment(context.Background(), apiClient, token.ServerURL, token.StableAuthSubject())
+		result, err := activateCompactAttribution(context.Background(), apiClient, token.ServerURL, token.StableAuthSubject(), attributionEnableOTel)
 		if err != nil {
-			return fmt.Errorf("enroll reporting installation: %w", err)
-		}
-		now := time.Now().UTC()
-		if _, err := attributionlocal.LoadCompactState(); os.IsNotExist(err) {
-			if err = attributionlocal.InitializeCompactBaseline(context.Background(), now); err != nil {
-				return fmt.Errorf("initialize Codex attribution baseline: %w", err)
-			}
-		} else if err != nil {
-			return fmt.Errorf("load Codex attribution baseline: %w", err)
-		}
-
-		enabled := true
-		response, err := apiClient.SetAttributionInstallationEnabled(context.Background(), reportingConfig.InstallationID, client.SetInstallationEnabledRequest{
-			ReportingEnabled: &enabled,
-			OTelEnabled:      boolPointer(attributionEnableOTel),
-		})
-		if err != nil {
-			return fmt.Errorf("enable reporting installation: %w", err)
-		}
-		reportingConfig.ReportingEnabled = response.ReportingEnabled
-		reportingConfig.OTelEnabled = response.OTelEnabled
-		if reportingConfig.EnabledAt == nil {
-			reportingConfig.EnabledAt = &now
-		}
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("resolve user home: %w", err)
-		}
-		if err := reconcileCodexOTLPConfig(home, reportingConfig, reportingConfig.OTelEnabled); err != nil {
 			return err
 		}
-		path, _ := reporting.DefaultPath()
-		if err := reporting.Save(path, reportingConfig); err != nil {
-			return err
-		}
-		if err := hooks.EnableGlobal(hooks.InstallOptions{NonInteractive: true, GeneratorVersion: buildinfo.Version}); err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: compact reporting is enabled, but global hooks could not be enabled: %v\n", err)
-			fmt.Fprintln(cmd.ErrOrStderr(), "Use 'ae-cli init --hooks repo' in repositories that need the fallback.")
-		}
+		reportingConfig := result.Config
+		printCompactHookWarning(cmd.ErrOrStderr(), result.HookWarning)
 		fmt.Fprintf(cmd.OutOrStdout(), "Compact Codex attribution enabled for installation %s.\n", reportingConfig.InstallationID)
-		fmt.Fprintln(cmd.OutOrStdout(), "Baseline recorded; existing Token atoms will not be backfilled.")
+		if result.BaselineCreated {
+			fmt.Fprintln(cmd.OutOrStdout(), "Baseline recorded; existing Token atoms will not be backfilled.")
+		} else {
+			fmt.Fprintln(cmd.OutOrStdout(), "Existing attribution baseline preserved.")
+		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Global Git hooks: %s\n", globalHookSummary())
 		fmt.Fprintf(cmd.OutOrStdout(), "Codex Request ID correlation: %t\n", reportingConfig.OTelEnabled)
 		return nil
@@ -110,8 +77,6 @@ var attributionStatusCmd = &cobra.Command{
 		return nil
 	},
 }
-
-func boolPointer(value bool) *bool { return &value }
 
 func reconcileCodexOTLPConfig(home string, config *reporting.Config, enabled bool) error {
 	if config == nil {

@@ -70,6 +70,7 @@ declare module 'vue' {
     QuotaResetRequestList: typeof import('./components/quota-reset/QuotaResetRequestList.vue')['default']
     QuotaResetRequestModal: typeof import('./components/quota-reset/QuotaResetRequestModal.vue')['default']
     QuotaResetWorkflowTimeline: typeof import('./components/quota-reset/QuotaResetWorkflowTimeline.vue')['default']
+    ReportingReadinessGuide: typeof import('./components/activity/ReportingReadinessGuide.vue')['default']
     RepositoryActivitySection: typeof import('./components/activity/RepositoryActivitySection.vue')['default']
     RepositoryOperationsSection: typeof import('./components/repos/RepositoryOperationsSection.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']

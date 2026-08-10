@@ -18,6 +18,10 @@ vi.mock('@/api/user', () => ({
   testUserProvider: vi.fn(),
 }))
 
+vi.mock('@/api/attribution', () => ({
+  getReportingReadiness: vi.fn(),
+}))
+
 Object.assign(navigator, {
   clipboard: {
     writeText: vi.fn(),
@@ -239,11 +243,46 @@ describe('UserView', () => {
     vi.stubGlobal('confirm', vi.fn(() => true))
   })
 
+  it('separates AI tool configuration from Codex Activity reporting', async () => {
+    const attributionApi = await import('@/api/attribution')
+    vi.mocked(attributionApi.getReportingReadiness).mockResolvedValue({
+      data: {
+        data: {
+          state: 'not_enrolled',
+          installation_count: 0,
+          enabled_installation_count: 0,
+        },
+      },
+    } as any)
+
+    const { wrapper } = await mountUserView()
+    expect(wrapper.text()).toContain('AI tool configuration')
+    expect(wrapper.text()).toContain('AI Coding Activity reporting')
+    const reporting = wrapper.get('[data-testid="reporting-readiness-guide"]')
+    expect(reporting.text()).toContain('Reporting is activated automatically when you sign in or run discover')
+    expect(reporting.text()).toContain('Install CLI')
+    expect(reporting.text()).toContain('ae-cli login')
+    expect(reporting.text()).toContain('ae-cli discover')
+
+    await openConfigurationMethods(wrapper)
+    await wrapper.get('[data-testid="config-method-automatic"]').trigger('click')
+    expect(wrapper.text()).toContain('ae-cli discover --provider prod')
+    expect(wrapper.text()).not.toContain('ae-cli attribution enable')
+    expect(wrapper.text()).not.toContain('ae-cli hooks enable --global')
+    expect(wrapper.text()).not.toContain('ae-cli init')
+    expect(wrapper.text()).not.toContain('ae-cli sync')
+    expect(wrapper.text()).not.toContain('ae-cli hooks status --uploads')
+
+    const diagnostics = reporting.get('[data-testid="reporting-diagnostics"]')
+    expect(diagnostics.text()).toContain('ae-cli attribution status')
+    expect(diagnostics.text()).toContain('ae-cli doctor')
+  })
+
   it('loads profile and provider data, selects primary provider by default, and renders group info', async () => {
     const { wrapper } = await mountUserView()
     const refresh = wrapper.findAll('button').find((button) => button.text() === 'Refresh')
     expect(refresh?.classes()).toContain('el-button')
-    expect(wrapper.text()).toContain('AI setup and configuration')
+    expect(wrapper.text()).toContain('AI tool configuration')
     expect(wrapper.text()).toContain('Choose an access group, create an API key')
     expect(wrapper.text()).toContain('Finish setup in 3 steps')
     expect(wrapper.text()).toContain('alice@example.com')
@@ -708,57 +747,23 @@ describe('UserView', () => {
     expect(wrapper.find('[data-testid="agent-import-v1-notice"]').exists()).toBe(true)
   })
 
-  it('shows advanced command reference only inside automatic configuration', async () => {
+  it('keeps reporting commands out of automatic tool configuration', async () => {
     const { wrapper } = await mountUserView()
 
     expect(wrapper.text()).not.toContain('Advanced command reference')
     await openConfigurationMethods(wrapper)
     await wrapper.get('[data-testid="config-method-automatic"]').trigger('click')
-    expect(wrapper.text()).toContain('One-time machine setup')
-    expect(wrapper.text()).toContain('Per-repo setup')
-    expect(wrapper.text()).toContain('cd /path/to/repo')
-    expect(wrapper.text()).toContain('Device login fallback')
-    expect(wrapper.text()).toContain('Alternate OS installer')
-    expect(wrapper.text()).toContain('Advanced command reference')
+    expect(wrapper.text()).toContain('Configure the selected provider')
     expect(wrapper.text()).toContain('ae-cli discover --provider prod')
-    expect(wrapper.text()).toContain('ae-cli hooks enable --global')
-    expect(wrapper.text()).toContain('ae-cli init')
+    expect(wrapper.text()).not.toContain('ae-cli hooks enable --global')
+    expect(wrapper.text()).not.toContain('ae-cli init')
+    expect(wrapper.text()).not.toContain('ae-cli sync')
+    expect(wrapper.text()).not.toContain('ae-cli hooks status --uploads')
     expect(wrapper.text()).not.toContain('Check GitHub connectivity')
 
-    const repoSectionStart = wrapper.text().indexOf('Per-repo setup')
-    const advancedSectionStart = wrapper.text().indexOf('Advanced command reference')
-    const repoSectionText = wrapper.text().slice(repoSectionStart, advancedSectionStart)
-    expect(repoSectionText).not.toContain('ae-cli doctor')
-
-    const installFallback = wrapper.get('[data-testid="auto-install-fallback"]')
-    const loginFallback = wrapper.get('[data-testid="auto-login-fallback"]')
-    const advancedDetails = wrapper.get('[data-testid="auto-advanced"]')
-
-    expect(installFallback.classes()).toContain('el-collapse')
-    expect(loginFallback.classes()).toContain('el-collapse')
-    expect(advancedDetails.classes()).toContain('el-collapse')
-
-    expect(wrapper.text()).toContain('Alternate OS installer')
-    expect(wrapper.text()).toContain('Device login fallback')
-
-    expect(installFallback.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('false')
-    expect(loginFallback.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('false')
-    expect(advancedDetails.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('false')
-
-    await installFallback.get('.el-collapse-item__header').trigger('click')
-    await loginFallback.get('.el-collapse-item__header').trigger('click')
-    await advancedDetails.get('.el-collapse-item__header').trigger('click')
-
-    expect(installFallback.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('true')
-    expect(loginFallback.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('true')
-    expect(advancedDetails.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('true')
-
-    expect(wrapper.text()).toContain('ae-cli doctor')
-    const advancedText = wrapper.text().slice(wrapper.text().indexOf('Advanced command reference'))
-    expect(advancedText).not.toContain('Alternate OS installer')
-    expect(advancedText).not.toContain('Device login fallback')
-    expect(wrapper.text()).toContain('Windows PowerShell')
-    expect(wrapper.text()).toContain('ae-cli login --device')
+    expect(wrapper.find('[data-testid="auto-install-fallback"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="auto-login-fallback"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="reporting-diagnostics"]').text()).toContain('ae-cli doctor')
   })
 
   it('shows a collapsed platform-specific discover fallback only inside automatic configuration', async () => {

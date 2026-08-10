@@ -55,11 +55,13 @@ func TestLoginCommandSkipsOAuthWhenValidTokenExists(t *testing.T) {
 	oldCfg := cfg
 	oldForce := loginForce
 	oldLogin := loginFlow
+	oldActivate := activateAfterLogin
 	defer func() {
 		_ = os.Setenv("HOME", oldHome)
 		cfg = oldCfg
 		loginForce = oldForce
 		loginFlow = oldLogin
+		activateAfterLogin = oldActivate
 	}()
 
 	if err := os.Setenv("HOME", tmpHome); err != nil {
@@ -86,6 +88,11 @@ func TestLoginCommandSkipsOAuthWhenValidTokenExists(t *testing.T) {
 		called = true
 		return nil, nil
 	}
+	activated := false
+	activateAfterLogin = func(context.Context, *client.Client, string, string, bool) (compactActivationResult, error) {
+		activated = true
+		return compactActivationResult{}, nil
+	}
 
 	buf := new(bytes.Buffer)
 	loginCmd.SetOut(buf)
@@ -95,6 +102,9 @@ func TestLoginCommandSkipsOAuthWhenValidTokenExists(t *testing.T) {
 	}
 	if called {
 		t.Fatal("expected OAuth login flow to be skipped when a valid token already exists")
+	}
+	if !activated {
+		t.Fatal("expected existing login to activate compact attribution")
 	}
 	if got := buf.String(); !strings.Contains(got, "Already logged in. Use --force to re-login.") {
 		t.Fatalf("output = %q, want already logged in message", got)
@@ -108,14 +118,14 @@ func TestLoginCommandForceBypassesExistingToken(t *testing.T) {
 	oldForce := loginForce
 	oldLogin := loginFlow
 	oldHeadless := headlessBrowserEnv
-	oldEnroll := enrollAfterLogin
+	oldActivate := activateAfterLogin
 	defer func() {
 		_ = os.Setenv("HOME", oldHome)
 		cfg = oldCfg
 		loginForce = oldForce
 		loginFlow = oldLogin
 		headlessBrowserEnv = oldHeadless
-		enrollAfterLogin = oldEnroll
+		activateAfterLogin = oldActivate
 	}()
 
 	if err := os.Setenv("HOME", tmpHome); err != nil {
@@ -147,8 +157,8 @@ func TestLoginCommandForceBypassesExistingToken(t *testing.T) {
 			ExpiresIn:    3600,
 		}, nil
 	}
-	enrollAfterLogin = func(context.Context, *client.Client, string, string) (*reporting.Config, error) {
-		return &reporting.Config{}, nil
+	activateAfterLogin = func(context.Context, *client.Client, string, string, bool) (compactActivationResult, error) {
+		return compactActivationResult{}, nil
 	}
 
 	buf := new(bytes.Buffer)
@@ -178,14 +188,14 @@ func TestLoginCommandKeepsSuccessfulLoginWhenEnrollmentDegrades(t *testing.T) {
 	oldDevice := loginDevice
 	oldLogin := loginFlow
 	oldHeadless := headlessBrowserEnv
-	oldEnroll := enrollAfterLogin
+	oldActivate := activateAfterLogin
 	t.Cleanup(func() {
 		cfg = oldCfg
 		loginForce = oldForce
 		loginDevice = oldDevice
 		loginFlow = oldLogin
 		headlessBrowserEnv = oldHeadless
-		enrollAfterLogin = oldEnroll
+		activateAfterLogin = oldActivate
 	})
 	cfg = &config.Config{Server: config.ServerConfig{URL: "http://localhost:18081"}}
 	loginForce = true
@@ -194,8 +204,8 @@ func TestLoginCommandKeepsSuccessfulLoginWhenEnrollmentDegrades(t *testing.T) {
 	loginFlow = func(context.Context, auth.OAuthConfig) (*auth.OAuthResult, error) {
 		return &auth.OAuthResult{AccessToken: "new-access-token", RefreshToken: "new-refresh-token", ExpiresIn: 3600}, nil
 	}
-	enrollAfterLogin = func(context.Context, *client.Client, string, string) (*reporting.Config, error) {
-		return nil, context.DeadlineExceeded
+	activateAfterLogin = func(context.Context, *client.Client, string, string, bool) (compactActivationResult, error) {
+		return compactActivationResult{}, context.DeadlineExceeded
 	}
 
 	stdout := new(bytes.Buffer)
@@ -205,7 +215,7 @@ func TestLoginCommandKeepsSuccessfulLoginWhenEnrollmentDegrades(t *testing.T) {
 	if err := loginCmd.RunE(loginCmd, nil); err != nil {
 		t.Fatalf("login should succeed despite degraded enrollment: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "Login successful!") || !strings.Contains(stderr.String(), "login succeeded, but reporting installation enrollment is degraded") {
+	if !strings.Contains(stdout.String(), "Login successful!") || !strings.Contains(stderr.String(), "automatic attribution setup is degraded") {
 		t.Fatalf("stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
 	tokenPath, _ := auth.DefaultTokenPath()
@@ -223,14 +233,14 @@ func TestLoginCommandClearsPriorAccountReportingCredentialsBeforeDegradedEnrollm
 	oldDevice := loginDevice
 	oldLogin := loginFlow
 	oldHeadless := headlessBrowserEnv
-	oldEnroll := enrollAfterLogin
+	oldActivate := activateAfterLogin
 	t.Cleanup(func() {
 		cfg = oldCfg
 		loginForce = oldForce
 		loginDevice = oldDevice
 		loginFlow = oldLogin
 		headlessBrowserEnv = oldHeadless
-		enrollAfterLogin = oldEnroll
+		activateAfterLogin = oldActivate
 	})
 
 	serverURL := "http://localhost:18081"
@@ -257,8 +267,8 @@ func TestLoginCommandClearsPriorAccountReportingCredentialsBeforeDegradedEnrollm
 	loginFlow = func(context.Context, auth.OAuthConfig) (*auth.OAuthResult, error) {
 		return &auth.OAuthResult{AccessToken: "header." + payload + ".signature", RefreshToken: "new-refresh-token", ExpiresIn: 3600}, nil
 	}
-	enrollAfterLogin = func(context.Context, *client.Client, string, string) (*reporting.Config, error) {
-		return nil, context.DeadlineExceeded
+	activateAfterLogin = func(context.Context, *client.Client, string, string, bool) (compactActivationResult, error) {
+		return compactActivationResult{}, context.DeadlineExceeded
 	}
 
 	loginCmd.SetOut(new(bytes.Buffer))
@@ -287,7 +297,7 @@ func TestLoginCommandUsesDeviceFlowWhenFlagSet(t *testing.T) {
 	oldBrowser := loginFlow
 	oldDeviceFlow := loginDeviceFlow
 	oldHeadless := headlessBrowserEnv
-	oldEnroll := enrollAfterLogin
+	oldActivate := activateAfterLogin
 	defer func() {
 		_ = os.Setenv("HOME", oldHome)
 		cfg = oldCfg
@@ -296,7 +306,7 @@ func TestLoginCommandUsesDeviceFlowWhenFlagSet(t *testing.T) {
 		loginFlow = oldBrowser
 		loginDeviceFlow = oldDeviceFlow
 		headlessBrowserEnv = oldHeadless
-		enrollAfterLogin = oldEnroll
+		activateAfterLogin = oldActivate
 	}()
 
 	if err := os.Setenv("HOME", tmpHome); err != nil {
@@ -321,8 +331,8 @@ func TestLoginCommandUsesDeviceFlowWhenFlagSet(t *testing.T) {
 			ExpiresIn:    3600,
 		}, nil
 	}
-	enrollAfterLogin = func(context.Context, *client.Client, string, string) (*reporting.Config, error) {
-		return &reporting.Config{}, nil
+	activateAfterLogin = func(context.Context, *client.Client, string, string, bool) (compactActivationResult, error) {
+		return compactActivationResult{}, nil
 	}
 
 	if err := loginCmd.RunE(loginCmd, nil); err != nil {

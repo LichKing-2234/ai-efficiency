@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
 	"github.com/ai-efficiency/backend/ent/reportinginstallation"
 	"github.com/google/uuid"
 )
@@ -28,6 +29,71 @@ type InstallationService struct {
 
 func NewInstallationService(client *ent.Client) *InstallationService {
 	return &InstallationService{client: client}
+}
+
+func (s *InstallationService) Readiness(ctx context.Context, userID int) (ReportingReadiness, error) {
+	var result ReportingReadiness
+	if s == nil || s.client == nil || userID <= 0 {
+		return result, fmt.Errorf("read reporting readiness: client and user are required")
+	}
+
+	total, err := s.client.ReportingInstallation.Query().
+		Where(reportinginstallation.UserIDEQ(userID)).
+		Count(ctx)
+	if err != nil {
+		return result, fmt.Errorf("read reporting readiness: count installations: %w", err)
+	}
+	result.InstallationCount = total
+	if total == 0 {
+		result.State = ReportingReadinessNotEnrolled
+		return result, nil
+	}
+
+	active, err := s.client.ReportingInstallation.Query().
+		Where(
+			reportinginstallation.UserIDEQ(userID),
+			reportinginstallation.StatusEQ(reportinginstallation.StatusActive),
+		).
+		Count(ctx)
+	if err != nil {
+		return result, fmt.Errorf("read reporting readiness: count active installations: %w", err)
+	}
+	if active == 0 {
+		result.State = ReportingReadinessRevoked
+		return result, nil
+	}
+
+	enabled, err := s.client.ReportingInstallation.Query().
+		Where(
+			reportinginstallation.UserIDEQ(userID),
+			reportinginstallation.StatusEQ(reportinginstallation.StatusActive),
+			reportinginstallation.ReportingEnabledEQ(true),
+		).
+		Count(ctx)
+	if err != nil {
+		return result, fmt.Errorf("read reporting readiness: count enabled installations: %w", err)
+	}
+	result.EnabledInstallationCount = enabled
+	if enabled == 0 {
+		result.State = ReportingReadinessDisabled
+		return result, nil
+	}
+
+	latest, err := s.client.AttributionUsageBucket.Query().
+		Where(attributionusagebucket.UserIDEQ(userID)).
+		Order(ent.Desc(attributionusagebucket.FieldCreatedAt)).
+		First(ctx)
+	if ent.IsNotFound(err) {
+		result.State = ReportingReadinessWaitingForData
+		return result, nil
+	}
+	if err != nil {
+		return result, fmt.Errorf("read reporting readiness: query latest bucket: %w", err)
+	}
+	latestAt := latest.CreatedAt
+	result.State = ReportingReadinessActive
+	result.LatestBucketAt = &latestAt
+	return result, nil
 }
 
 func (s *InstallationService) Ensure(ctx context.Context, userID int, installationID, label, clientVersion string) (InstallationCredentials, error) {
@@ -47,7 +113,31 @@ func (s *InstallationService) Ensure(ctx context.Context, userID int, installati
 			return result, fmt.Errorf("ensure reporting installation: %w", ErrInstallationForbidden)
 		}
 		if existing.Status != reportinginstallation.StatusActive {
-			return result, fmt.Errorf("ensure reporting installation: installation is revoked")
+			reporterToken, err := newScopedToken("aer_")
+			if err != nil {
+				return result, fmt.Errorf("ensure reporting installation: create reporter credential: %w", err)
+			}
+			otlpToken, err := newScopedToken("aeo_")
+			if err != nil {
+				return result, fmt.Errorf("ensure reporting installation: create OTLP credential: %w", err)
+			}
+			if err := existing.Update().
+				SetLabel(strings.TrimSpace(label)).
+				SetClientVersion(strings.TrimSpace(clientVersion)).
+				SetReporterTokenHash(hashToken(reporterToken)).
+				SetOtlpTokenHash(hashToken(otlpToken)).
+				SetReportingEnabled(false).
+				SetOtelEnabled(false).
+				SetStatus(reportinginstallation.StatusActive).
+				SetLastSeenAt(time.Now().UTC()).
+				Exec(ctx); err != nil {
+				return result, fmt.Errorf("ensure reporting installation: reactivate installation: %w", err)
+			}
+			return InstallationCredentials{
+				InstallationID: installationID,
+				ReporterToken:  reporterToken,
+				OTLPToken:      otlpToken,
+			}, nil
 		}
 		if err := existing.Update().
 			SetLabel(strings.TrimSpace(label)).

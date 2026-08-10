@@ -46,6 +46,20 @@ type setInstallationEnabledRequest struct {
 	OTelEnabled      *bool `json:"otel_enabled,omitempty"`
 }
 
+func (h *AttributionHandler) ReportingReadiness(c *gin.Context) {
+	uc := auth.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	result, err := h.installations.Readiness(c.Request.Context(), uc.UserID)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	pkg.Success(c, result)
+}
+
 func (h *AttributionHandler) EnsureInstallation(c *gin.Context) {
 	uc := auth.GetUserContext(c)
 	if uc == nil {

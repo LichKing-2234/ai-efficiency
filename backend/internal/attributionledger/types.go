@@ -151,6 +151,23 @@ type InstallationPrincipal struct {
 	UserID         int
 }
 
+type ReportingReadinessState string
+
+const (
+	ReportingReadinessNotEnrolled    ReportingReadinessState = "not_enrolled"
+	ReportingReadinessDisabled       ReportingReadinessState = "disabled"
+	ReportingReadinessWaitingForData ReportingReadinessState = "waiting_for_data"
+	ReportingReadinessActive         ReportingReadinessState = "active"
+	ReportingReadinessRevoked        ReportingReadinessState = "revoked"
+)
+
+type ReportingReadiness struct {
+	State                    ReportingReadinessState `json:"state"`
+	InstallationCount        int                     `json:"installation_count"`
+	EnabledInstallationCount int                     `json:"enabled_installation_count"`
+	LatestBucketAt           *time.Time              `json:"latest_bucket_at,omitempty"`
+}
+
 type Report struct {
 	From               time.Time      `json:"from"`
 	To                 time.Time      `json:"to"`

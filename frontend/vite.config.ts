@@ -77,6 +77,7 @@ export default defineConfig(({ mode }) => {
       manifest: measuring,
       rollupOptions: {
         output: {
+          chunkFileNames: 'assets/[hash].js',
           hashCharacters: 'base36',
         },
       },

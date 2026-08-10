@@ -2,16 +2,181 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/reportinginstallation"
 	"github.com/ai-efficiency/backend/internal/attributionledger"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
+
+func TestAttributionReadinessHTTPStates(t *testing.T) {
+	tests := []struct {
+		name                  string
+		installations         []struct{ enabled, revoked bool }
+		bucket                bool
+		wantState             string
+		wantInstallations     int
+		wantEnabled           int
+		wantLatestBucketField bool
+	}{
+		{name: "not enrolled", wantState: "not_enrolled"},
+		{name: "disabled", installations: []struct{ enabled, revoked bool }{{}}, wantState: "disabled", wantInstallations: 1},
+		{name: "waiting for first bucket", installations: []struct{ enabled, revoked bool }{{enabled: true}}, wantState: "waiting_for_data", wantInstallations: 1, wantEnabled: 1},
+		{name: "first bucket is active regardless of allocation", installations: []struct{ enabled, revoked bool }{{enabled: true}}, bucket: true, wantState: "active", wantInstallations: 1, wantEnabled: 1, wantLatestBucketField: true},
+		{name: "only revoked", installations: []struct{ enabled, revoked bool }{{enabled: true, revoked: true}}, wantState: "revoked", wantInstallations: 1},
+		{name: "active disabled wins over revoked", installations: []struct{ enabled, revoked bool }{{enabled: true, revoked: true}, {}}, wantState: "disabled", wantInstallations: 2},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			env := setupFullTestEnv(t)
+			var bucketInstallation *ent.ReportingInstallation
+			for index, input := range test.installations {
+				create := env.client.ReportingInstallation.Create().
+					SetInstallationID(uuid.NewString()).
+					SetUserID(1).
+					SetReporterTokenHash(uuid.NewString()).
+					SetOtlpTokenHash(uuid.NewString()).
+					SetReportingEnabled(input.enabled)
+				if input.revoked {
+					create.SetStatus(reportinginstallation.StatusRevoked)
+				}
+				row := create.SaveX(context.Background())
+				if index == len(test.installations)-1 {
+					bucketInstallation = row
+				}
+			}
+			if test.bucket {
+				observed := time.Date(2026, 8, 10, 9, 30, 0, 0, time.UTC)
+				accepted := time.Date(2026, 8, 10, 10, 45, 0, 0, time.UTC)
+				env.client.AttributionUsageBucket.Create().
+					SetBucketID(uuid.NewString()).
+					SetReportingInstallationID(bucketInstallation.ID).
+					SetUserID(1).
+					SetTool("codex").
+					SetSessionSlices([]map[string]any{}).
+					SetObservedStartAt(observed.Add(-time.Minute)).
+					SetObservedEndAt(observed).
+					SetSourceDigest("source-digest").
+					SetImmutableDigest("immutable-digest").
+					SetExtractorVersion("test").
+					SetTokenQuality("measured").
+					SetCreatedAt(accepted).
+					SaveX(context.Background())
+			}
+
+			response := doFullRequest(env, http.MethodGet, "/api/v1/attribution/status", nil)
+			if response.Code != http.StatusOK {
+				t.Fatalf("status = %d, body=%s", response.Code, response.Body.String())
+			}
+			data := parseFullResponse(t, response)["data"].(map[string]any)
+			if data["state"] != test.wantState {
+				t.Fatalf("state = %v, want %s", data["state"], test.wantState)
+			}
+			if int(data["installation_count"].(float64)) != test.wantInstallations {
+				t.Fatalf("installation_count = %v, want %d", data["installation_count"], test.wantInstallations)
+			}
+			if int(data["enabled_installation_count"].(float64)) != test.wantEnabled {
+				t.Fatalf("enabled_installation_count = %v, want %d", data["enabled_installation_count"], test.wantEnabled)
+			}
+			_, hasLatestBucket := data["latest_bucket_at"]
+			if hasLatestBucket != test.wantLatestBucketField {
+				t.Fatalf("latest_bucket_at present = %t, want %t", hasLatestBucket, test.wantLatestBucketField)
+			}
+			if test.wantLatestBucketField && data["latest_bucket_at"] != "2026-08-10T10:45:00Z" {
+				t.Fatalf("latest_bucket_at = %v, want server acceptance time", data["latest_bucket_at"])
+			}
+			if _, exposed := data["installations"]; exposed {
+				t.Fatal("response exposed installation rows")
+			}
+			if _, exposed := data["last_seen_at"]; exposed {
+				t.Fatal("response exposed last_seen_at")
+			}
+		})
+	}
+}
+
+func TestAttributionEnrollmentReactivatesRevokedInstallationWithNewCredentials(t *testing.T) {
+	env := setupFullTestEnv(t)
+	installationID := uuid.NewString()
+	revoked := env.client.ReportingInstallation.Create().
+		SetInstallationID(installationID).
+		SetUserID(1).
+		SetReporterTokenHash("old-reporter-hash").
+		SetOtlpTokenHash("old-otlp-hash").
+		SetReportingEnabled(true).
+		SetOtelEnabled(true).
+		SetStatus(reportinginstallation.StatusRevoked).
+		SaveX(context.Background())
+	other := env.client.User.Create().
+		SetUsername("bob").
+		SetEmail("bob@example.org").
+		SetAuthSource("ldap").
+		SaveX(context.Background())
+	if _, err := attributionledger.NewInstallationService(env.client).Ensure(context.Background(), other.ID, installationID, "other machine", "test"); !errors.Is(err, attributionledger.ErrInstallationForbidden) {
+		t.Fatalf("other user re-enrollment error = %v, want forbidden", err)
+	}
+
+	response := doFullRequest(env, http.MethodPost, "/api/v1/attribution/installations", map[string]any{
+		"installation_id": installationID,
+		"label":           "re-enrolled machine",
+		"client_version":  "test",
+	})
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", response.Code, response.Body.String())
+	}
+	data := parseFullResponse(t, response)["data"].(map[string]any)
+	if data["reporter_token"] == "" || data["otlp_token"] == "" {
+		t.Fatalf("reactivation did not return replacement credentials: %+v", data)
+	}
+	reactivated := env.client.ReportingInstallation.GetX(context.Background(), revoked.ID)
+	if reactivated.Status != reportinginstallation.StatusActive || reactivated.ReportingEnabled || reactivated.OtelEnabled {
+		t.Fatalf("reactivated installation = %+v", reactivated)
+	}
+	if reactivated.ReporterTokenHash == "old-reporter-hash" || reactivated.OtlpTokenHash == "old-otlp-hash" {
+		t.Fatal("reactivation retained revoked credential hashes")
+	}
+}
+
+func TestAttributionReadinessRequiresAuthentication(t *testing.T) {
+	env := setupFullTestEnv(t)
+	response := doFullRequestWithToken(env, http.MethodGet, "/api/v1/attribution/status", nil, "")
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestAttributionReadinessIsScopedToCurrentUser(t *testing.T) {
+	env := setupFullTestEnv(t)
+	other := env.client.User.Create().
+		SetUsername("bob").
+		SetEmail("bob@example.org").
+		SetAuthSource("ldap").
+		SaveX(context.Background())
+	env.client.ReportingInstallation.Create().
+		SetInstallationID(uuid.NewString()).
+		SetUserID(other.ID).
+		SetReporterTokenHash(uuid.NewString()).
+		SetOtlpTokenHash(uuid.NewString()).
+		SetReportingEnabled(true).
+		SaveX(context.Background())
+
+	response := doFullRequest(env, http.MethodGet, "/api/v1/attribution/status", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", response.Code, response.Body.String())
+	}
+	data := parseFullResponse(t, response)["data"].(map[string]any)
+	if data["state"] != "not_enrolled" || data["installation_count"] != float64(0) {
+		t.Fatalf("readiness leaked another user's installation: %+v", data)
+	}
+}
 
 func TestAttributionInstallationTokensHaveDisjointScopes(t *testing.T) {
 	gin.SetMode(gin.TestMode)

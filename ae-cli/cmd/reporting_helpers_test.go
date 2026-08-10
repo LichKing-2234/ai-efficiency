@@ -9,9 +9,78 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/client"
+	"github.com/ai-efficiency/ae-cli/internal/reporting"
 )
+
+func TestActivateCompactAttributionIsIdempotentAndPreservesItsBaseline(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(home, "gitconfig"))
+	var installationID string
+	var ensureCalls, enableCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/attribution/installations":
+			ensureCalls++
+			var body client.EnsureInstallationRequest
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode ensure request: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			installationID = body.InstallationID
+			if ensureCalls == 1 {
+				_, _ = fmt.Fprintf(w, `{"code":0,"data":{"installation_id":%q,"reporter_token":"test-reporter-token","otlp_token":"test-otlp-token"}}`, installationID)
+				return
+			}
+			_, _ = fmt.Fprintf(w, `{"code":0,"data":{"installation_id":%q,"reporting_enabled":true,"otel_enabled":true}}`, installationID)
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/attribution/installations/"+installationID:
+			enableCalls++
+			_, _ = fmt.Fprintf(w, `{"code":0,"data":{"installation_id":%q,"reporting_enabled":true,"otel_enabled":true}}`, installationID)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	userClient := client.New(server.URL, "test-user-token")
+	first, err := activateCompactAttribution(context.Background(), userClient, server.URL, "user:123", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := attributionlocal.LoadCompactState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline := state.EnabledAt
+	if !first.BaselineCreated || len(state.SeenAtoms) != 0 || baseline.After(time.Now().UTC()) {
+		t.Fatalf("first activation result=%+v state=%+v", first, state)
+	}
+
+	second, err := activateCompactAttribution(context.Background(), userClient, server.URL, "user:123", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err = attributionlocal.LoadCompactState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := reporting.Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.BaselineCreated || !state.EnabledAt.Equal(baseline) || len(state.SeenAtoms) != 0 {
+		t.Fatalf("second activation result=%+v state=%+v", second, state)
+	}
+	if ensureCalls != 2 || enableCalls != 2 || !config.ReportingEnabled || !config.OTelEnabled {
+		t.Fatalf("ensure=%d enable=%d config=%+v", ensureCalls, enableCalls, config)
+	}
+}
 
 func TestEnsureReportingEnrollmentRotatesWhenLocalCredentialsAreMissing(t *testing.T) {
 	home := t.TempDir()

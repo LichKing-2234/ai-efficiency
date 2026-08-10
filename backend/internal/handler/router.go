@@ -368,6 +368,7 @@ func setupRouter(
 
 	attributionReadGroup := protected.Group("/attribution")
 	{
+		attributionReadGroup.GET("/status", attributionHandler.ReportingReadiness)
 		attributionReadGroup.POST("/installations", attributionHandler.EnsureInstallation)
 		attributionReadGroup.PUT("/installations/:installation_id", attributionHandler.SetInstallationEnabled)
 		attributionReadGroup.POST("/installations/:installation_id/credentials/rotate", attributionHandler.RotateInstallationCredentials)

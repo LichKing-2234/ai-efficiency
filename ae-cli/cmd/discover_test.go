@@ -17,6 +17,7 @@ func TestDiscoverCommandRequiresLogin(t *testing.T) {
 	oldCfg := cfg
 	oldClient := apiClient
 	oldToolNames := discoverToolNames
+	oldActivate := activateAfterDiscover
 	cfg = nil
 	apiClient = nil
 	discoverToolNames = nil
@@ -24,6 +25,7 @@ func TestDiscoverCommandRequiresLogin(t *testing.T) {
 		cfg = oldCfg
 		apiClient = oldClient
 		discoverToolNames = oldToolNames
+		activateAfterDiscover = oldActivate
 	})
 
 	if err := runDiscover(discoverCmd, nil); err == nil {
@@ -79,6 +81,11 @@ func TestDiscoverCommandConfiguresDetectedTools(t *testing.T) {
 		}}, nil
 	}
 	t.Cleanup(func() { listProvidersForDiscover = defaultListProvidersForDiscover })
+	activated := false
+	activateAfterDiscover = func(context.Context, *client.Client, string, string, bool) (compactActivationResult, error) {
+		activated = true
+		return compactActivationResult{}, nil
+	}
 
 	buf := new(bytes.Buffer)
 	discoverCmd.SetOut(buf)
@@ -89,6 +96,9 @@ func TestDiscoverCommandConfiguresDetectedTools(t *testing.T) {
 	}
 	if !called {
 		t.Fatal("expected providers to be requested")
+	}
+	if !activated {
+		t.Fatal("expected discover to activate compact attribution")
 	}
 	if got := buf.String(); got == "" {
 		t.Fatal("expected command output")
@@ -104,6 +114,7 @@ func TestDiscoverCommandPrintsGeminiModelGuidance(t *testing.T) {
 	oldDryRun := discoverDryRun
 	oldToolNames := discoverToolNames
 	oldProviderLister := listProvidersForDiscover
+	oldActivate := activateAfterDiscover
 	t.Cleanup(func() {
 		cfg = oldCfg
 		apiClient = oldClient
@@ -113,6 +124,7 @@ func TestDiscoverCommandPrintsGeminiModelGuidance(t *testing.T) {
 		discoverDryRun = oldDryRun
 		discoverToolNames = oldToolNames
 		listProvidersForDiscover = oldProviderLister
+		activateAfterDiscover = oldActivate
 	})
 
 	cfg = &config.Config{Server: config.ServerConfig{Token: "tok"}}
@@ -139,6 +151,9 @@ func TestDiscoverCommandPrintsGeminiModelGuidance(t *testing.T) {
 			},
 		}}, nil
 	}
+	activateAfterDiscover = func(context.Context, *client.Client, string, string, bool) (compactActivationResult, error) {
+		return compactActivationResult{}, nil
+	}
 
 	buf := new(bytes.Buffer)
 	discoverCmd.SetOut(buf)
@@ -158,6 +173,42 @@ func TestDiscoverCommandPrintsGeminiModelGuidance(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("discover output missing %q\n%s", want, out)
 		}
+	}
+}
+
+func TestDiscoverCommandKeepsSuccessfulConfigurationWhenAutomaticAttributionDegrades(t *testing.T) {
+	oldCfg := cfg
+	oldClient := apiClient
+	oldLister := discoverInstalledTools
+	oldProviderLister := listProvidersForDiscover
+	oldActivate := activateAfterDiscover
+	t.Cleanup(func() {
+		cfg = oldCfg
+		apiClient = oldClient
+		discoverInstalledTools = oldLister
+		listProvidersForDiscover = oldProviderLister
+		activateAfterDiscover = oldActivate
+	})
+
+	cfg = &config.Config{Server: config.ServerConfig{URL: "https://ae.example.com", Token: "test-token"}}
+	apiClient = &client.Client{}
+	discoverInstalledTools = func([]string) ([]toolconfig.InstalledTool, error) { return nil, nil }
+	listProvidersForDiscover = func(context.Context) ([]client.ProviderInfo, error) {
+		return []client.ProviderInfo{{Name: "primary", IsPrimary: true}}, nil
+	}
+	activateAfterDiscover = func(context.Context, *client.Client, string, string, bool) (compactActivationResult, error) {
+		return compactActivationResult{}, context.DeadlineExceeded
+	}
+
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	discoverCmd.SetOut(stdout)
+	discoverCmd.SetErr(stderr)
+	if err := runDiscover(discoverCmd, nil); err != nil {
+		t.Fatalf("discover should succeed despite degraded attribution activation: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "No supported local tools detected") || !strings.Contains(stderr.String(), "automatic attribution setup is degraded") {
+		t.Fatalf("stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
 }
 
@@ -279,6 +330,7 @@ func executeDiscoverWithToolArgs(t *testing.T, args []string) ([]toolconfig.Inst
 	oldDryRun := discoverDryRun
 	oldToolNames := discoverToolNames
 	oldProviderLister := listProvidersForDiscover
+	oldActivate := activateAfterDiscover
 	productionToolFlag := discoverCmd.Flags().Lookup("tool")
 	testCommand := &cobra.Command{
 		Use:          "discover",
@@ -307,6 +359,7 @@ func executeDiscoverWithToolArgs(t *testing.T, args []string) ([]toolconfig.Inst
 		discoverDryRun = oldDryRun
 		discoverToolNames = oldToolNames
 		listProvidersForDiscover = oldProviderLister
+		activateAfterDiscover = oldActivate
 	})
 
 	cfg = &config.Config{Server: config.ServerConfig{Token: "tok"}}
@@ -322,6 +375,9 @@ func executeDiscoverWithToolArgs(t *testing.T, args []string) ([]toolconfig.Inst
 				{Platform: "gemini", APIKey: "sk-gemini"},
 			},
 		}}, nil
+	}
+	activateAfterDiscover = func(context.Context, *client.Client, string, string, bool) (compactActivationResult, error) {
+		return compactActivationResult{}, nil
 	}
 
 	detectionCalled := false

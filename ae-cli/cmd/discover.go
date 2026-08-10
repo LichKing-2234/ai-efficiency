@@ -20,6 +20,7 @@ var (
 	discoverInstalledTools   = toolconfig.DetectInstalledTools
 	configureDiscoveredTools = toolconfig.ConfigureTools
 	listProvidersForDiscover = defaultListProvidersForDiscover
+	activateAfterDiscover    = activateCompactAttribution
 	defaultDiscoverToolNames = []string{"codex", "claude", "gemini"}
 )
 
@@ -36,13 +37,29 @@ func init() {
 	discoverCmd.Flags().StringArrayVar(&discoverToolNames, "tool", nil, "tool to configure even when not detected (codex, claude, gemini); may be repeated or comma-separated")
 }
 
-func runDiscover(cmd *cobra.Command, args []string) error {
+func runDiscover(cmd *cobra.Command, args []string) (returnErr error) {
 	configToken := ""
 	if cfg != nil {
 		configToken = cfg.Server.Token
 	}
 	if resolveToken(configToken, "") == "" {
 		return fmt.Errorf("not logged in — run 'ae-cli login'")
+	}
+	if !discoverDryRun {
+		serverURL := ""
+		if cfg != nil {
+			serverURL = strings.TrimSpace(cfg.Server.URL)
+		}
+		authSubject := ""
+		if token := readTokenFile(""); token != nil {
+			serverURL = firstNonEmpty(token.ServerURL, serverURL)
+			authSubject = token.StableAuthSubject()
+		}
+		defer func() {
+			if returnErr == nil {
+				runAutomaticAttributionActivation(context.Background(), activateAfterDiscover, apiClient, serverURL, authSubject, cmd.ErrOrStderr())
+			}
+		}()
 	}
 
 	providers, err := listProvidersForDiscover(context.Background())
