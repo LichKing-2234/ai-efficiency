@@ -287,7 +287,7 @@ onMounted(() => {
         >
           <ElRadioButton
             data-testid="quota-reset-tab-mine"
-            class="min-w-0 w-full [&>span]:!flex [&>span]:!h-8 [&>span]:w-full [&>span]:!items-center [&>span]:!justify-center [&>span]:!whitespace-nowrap [&>span]:!px-1"
+            class="quota-reset-queue-option min-w-0 w-full"
             value="mine"
             @click="selectQueue('mine')"
           >
@@ -295,7 +295,7 @@ onMounted(() => {
           </ElRadioButton>
           <ElRadioButton
             data-testid="quota-reset-tab-approvals"
-            class="min-w-0 w-full [&>span]:!flex [&>span]:!h-8 [&>span]:w-full [&>span]:!items-center [&>span]:!justify-center [&>span]:!whitespace-nowrap [&>span]:!px-1"
+            class="quota-reset-queue-option min-w-0 w-full"
             value="approvals"
             @click="selectQueue('approvals')"
           >
@@ -311,7 +311,7 @@ onMounted(() => {
           <ElRadioButton
             v-if="auth.isAdmin"
             data-testid="quota-reset-tab-admin"
-            class="min-w-0 w-full [&>span]:!flex [&>span]:!h-8 [&>span]:w-full [&>span]:!items-center [&>span]:!justify-center [&>span]:!whitespace-nowrap [&>span]:!px-1"
+            class="quota-reset-queue-option min-w-0 w-full"
             value="admin"
             @click="selectQueue('admin')"
           >
@@ -379,3 +379,15 @@ onMounted(() => {
     />
   </template>
 </template>
+
+<style>
+.quota-reset-queue-option .el-radio-button__inner {
+  display: flex;
+  width: 100%;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 0.25rem;
+  white-space: nowrap;
+}
+</style>

@@ -70,7 +70,7 @@ function updateRepo(refreshed: RepoConfig) {
     <div v-else-if="repo" class="space-y-5">
       <AppPageHeader :eyebrow="t('nav.codeSection')" :title="repo.name" :description="repo.full_name">
         <template #before>
-          <ElButton class="!mb-2 !ml-0 !p-0" type="primary" link :icon="ArrowLeft" @click="router.push('/repos')">
+          <ElButton class="mb-2 !ml-0 !p-0" type="primary" link :icon="ArrowLeft" @click="router.push('/repos')">
             {{ t('repoDetail.backToRepos') }}
           </ElButton>
         </template>

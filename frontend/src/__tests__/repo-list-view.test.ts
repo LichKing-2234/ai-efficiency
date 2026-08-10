@@ -446,7 +446,7 @@ describe('RepoListView', () => {
     const { wrapper } = await mountRepoList(sampleRepos)
 
     const actions = wrapper.get('[data-testid="repo-page-actions"]')
-    expect(actions.classes()).toContain('sm:grid-cols-[11rem_auto]')
+    expect(actions.classes()).toContain('repo-page-actions')
     expect(actions.classes()).toContain('sm:w-auto')
   })
 

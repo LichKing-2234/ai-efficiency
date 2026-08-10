@@ -711,11 +711,7 @@ describe('QuotaResetView', () => {
     for (const queue of ['mine', 'approvals', 'admin']) {
       const option = wrapper.get(`[data-testid="quota-reset-tab-${queue}"]`)
       expect(option.classes()).toContain('w-full')
-      expect(option.classes()).toContain('[&>span]:w-full')
-      expect(option.classes()).toContain('[&>span]:!h-8')
-      expect(option.classes()).toContain('[&>span]:!flex')
-      expect(option.classes()).toContain('[&>span]:!items-center')
-      expect(option.classes()).toContain('[&>span]:!whitespace-nowrap')
+      expect(option.classes()).toContain('quota-reset-queue-option')
     }
     expect((queueSelector.get('[data-testid="quota-reset-tab-mine"] input').element as HTMLInputElement).checked).toBe(true)
 

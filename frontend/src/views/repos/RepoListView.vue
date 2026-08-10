@@ -487,7 +487,7 @@ function repoStatusType(status: string) {
         :description="t('repos.subtitle')"
       >
         <template #actions>
-          <div data-testid="repo-page-actions" class="grid w-full grid-cols-1 gap-3 sm:w-auto sm:grid-cols-[11rem_auto] sm:items-center">
+          <div data-testid="repo-page-actions" class="repo-page-actions grid w-full grid-cols-1 gap-3 sm:w-auto sm:items-center">
           <el-select
             v-model="bindingFilter"
             data-testid="repo-binding-filter"
@@ -689,7 +689,7 @@ function repoStatusType(status: string) {
         >
                   <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0">
-            <el-button class="!m-0 min-w-0 max-w-full !p-0 text-left [&>span]:min-w-0 [&>span]:max-w-full" type="primary" link :title="repo.name" @click.stop="goToDetail(repo)">
+            <el-button class="repo-name-button !m-0 min-w-0 max-w-full !p-0 text-left" type="primary" link :title="repo.name" @click.stop="goToDetail(repo)">
                         <span class="block min-w-0 truncate">{{ repo.name }}</span>
                       </el-button>
                       <div class="mt-1 truncate text-xs text-gray-500">{{ repo.full_name }}</div>
@@ -841,3 +841,16 @@ function repoStatusType(status: string) {
     </el-dialog>
   </AppLayout>
 </template>
+
+<style>
+@media (min-width: 640px) {
+  .repo-page-actions {
+    grid-template-columns: 11rem auto;
+  }
+}
+
+.repo-name-button > span {
+  min-width: 0;
+  max-width: 100%;
+}
+</style>
