@@ -287,9 +287,13 @@ function selectDefaultProvider(rows: UserProviderSummary[]) {
   selectDefaultGroup(provider)
 }
 
+function preferredConfigMethod(): 'manual' | 'ccswitch' {
+  return ccSwitchImports.value.length > 0 ? 'ccswitch' : 'manual'
+}
+
 function resetPostKeyFlow() {
   providerTestResult.value = null
-  selectedConfigMethod.value = null
+  selectedConfigMethod.value = preferredConfigMethod()
 }
 
 function selectProvider(providerId: number) {
@@ -367,6 +371,7 @@ async function loadProviders() {
     providers.value = data?.providers ?? []
     selectedMessage.value = data?.message ?? ''
     selectDefaultProvider(providers.value)
+    resetPostKeyFlow()
   } catch (err: any) {
     error.value = err.response?.data?.message || t('user.loadFailed')
     providers.value = []
@@ -1020,12 +1025,12 @@ onBeforeUnmount(() => {
 
                 <ElRadioGroup
                   :model-value="selectedConfigMethod ?? undefined"
-                  class="mt-4 !grid w-full gap-3 md:grid-cols-3"
+                  class="mt-4 !grid w-full !items-stretch gap-3 lg:grid-cols-3"
                 >
                   <ElRadio
                     data-testid="config-method-manual"
                     border
-                    class="!mx-0 !h-auto w-full !items-start !p-4"
+                    class="!mx-0 !h-full w-full !items-start !p-4"
                     value="manual"
                     @click="selectedConfigMethod = 'manual'"
                   >
@@ -1039,7 +1044,7 @@ onBeforeUnmount(() => {
                     v-if="showAutomaticConfigMethod"
                     data-testid="config-method-automatic"
                     border
-                    class="!mx-0 !h-auto w-full !items-start !p-4"
+                    class="!mx-0 !h-full w-full !items-start !p-4"
                     value="automatic"
                     @click="selectedConfigMethod = 'automatic'"
                   >
@@ -1053,12 +1058,23 @@ onBeforeUnmount(() => {
                     v-if="ccSwitchImports.length > 0"
                     data-testid="config-method-ccswitch"
                     border
-                    class="!mx-0 !h-auto w-full !items-start !p-4"
+                    class="!mx-0 !h-full w-full !items-start !p-4"
                     value="ccswitch"
                     @click="selectedConfigMethod = 'ccswitch'"
                   >
                     <div class="whitespace-normal">
-                      <div class="font-medium text-gray-900">{{ ccSwitchMethodTitle }}</div>
+                      <div class="flex flex-wrap items-center gap-2">
+                        <div class="font-medium text-gray-900">{{ ccSwitchMethodTitle }}</div>
+                        <ElTag
+                          data-testid="config-method-recommended"
+                          class="shrink-0"
+                          type="success"
+                          effect="light"
+                          size="small"
+                        >
+                          {{ t('user.recommended') }}
+                        </ElTag>
+                      </div>
                       <p class="mt-1 text-sm text-gray-600">{{ ccSwitchMethodHelp }}</p>
                       <p class="mt-3 text-xs text-gray-500">{{ ccSwitchMethodAudience }}</p>
                     </div>
