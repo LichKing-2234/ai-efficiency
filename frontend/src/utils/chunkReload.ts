@@ -11,9 +11,7 @@ export function isChunkLoadError(error: unknown): boolean {
   const err = error as { message?: string; name?: string }
   const message = typeof err?.message === 'string' ? err.message : String(error ?? '')
   return (
-    message.includes('Failed to fetch dynamically imported module') ||
-    message.includes('Loading chunk') ||
-    message.includes('Loading CSS chunk') ||
+    /Failed to fetch dynamically imported module|Loading(?: CSS)? chunk/.test(message) ||
     err?.name === 'ChunkLoadError'
   )
 }
@@ -24,14 +22,12 @@ export function reloadOnceForChunkError(error: unknown, options: ChunkReloadOpti
   }
 
   const storage = options.storage ?? sessionStorage
-  const now = options.now ?? (() => Date.now())
+  const now = options.now ?? Date.now
   const reload = options.reload ?? (() => window.location.reload())
-  const lastReload = storage.getItem(CHUNK_RELOAD_KEY)
-  const parsedLastReload = lastReload ? Number.parseInt(lastReload, 10) : Number.NaN
-  const hasValidLastReload = Number.isFinite(parsedLastReload)
+  const lastReload = Number.parseInt(storage.getItem(CHUNK_RELOAD_KEY) ?? '', 10)
   const currentTime = now()
 
-  if (!hasValidLastReload || currentTime - parsedLastReload > CHUNK_RELOAD_WINDOW_MS) {
+  if (!Number.isFinite(lastReload) || currentTime - lastReload > CHUNK_RELOAD_WINDOW_MS) {
     storage.setItem(CHUNK_RELOAD_KEY, String(currentTime))
     reload()
     return true
