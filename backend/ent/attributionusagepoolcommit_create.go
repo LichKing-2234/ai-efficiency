@@ -44,6 +44,20 @@ func (aupcc *AttributionUsagePoolCommitCreate) SetRelationKind(ak attributionusa
 	return aupcc
 }
 
+// SetOrphaned sets the "orphaned" field.
+func (aupcc *AttributionUsagePoolCommitCreate) SetOrphaned(b bool) *AttributionUsagePoolCommitCreate {
+	aupcc.mutation.SetOrphaned(b)
+	return aupcc
+}
+
+// SetNillableOrphaned sets the "orphaned" field if the given value is not nil.
+func (aupcc *AttributionUsagePoolCommitCreate) SetNillableOrphaned(b *bool) *AttributionUsagePoolCommitCreate {
+	if b != nil {
+		aupcc.SetOrphaned(*b)
+	}
+	return aupcc
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (aupcc *AttributionUsagePoolCommitCreate) SetCreatedAt(t time.Time) *AttributionUsagePoolCommitCreate {
 	aupcc.mutation.SetCreatedAt(t)
@@ -107,6 +121,10 @@ func (aupcc *AttributionUsagePoolCommitCreate) ExecX(ctx context.Context) {
 
 // defaults sets the default values of the builder before save.
 func (aupcc *AttributionUsagePoolCommitCreate) defaults() {
+	if _, ok := aupcc.mutation.Orphaned(); !ok {
+		v := attributionusagepoolcommit.DefaultOrphaned
+		aupcc.mutation.SetOrphaned(v)
+	}
 	if _, ok := aupcc.mutation.CreatedAt(); !ok {
 		v := attributionusagepoolcommit.DefaultCreatedAt()
 		aupcc.mutation.SetCreatedAt(v)
@@ -140,6 +158,9 @@ func (aupcc *AttributionUsagePoolCommitCreate) check() error {
 		if err := attributionusagepoolcommit.RelationKindValidator(v); err != nil {
 			return &ValidationError{Name: "relation_kind", err: fmt.Errorf(`ent: validator failed for field "AttributionUsagePoolCommit.relation_kind": %w`, err)}
 		}
+	}
+	if _, ok := aupcc.mutation.Orphaned(); !ok {
+		return &ValidationError{Name: "orphaned", err: errors.New(`ent: missing required field "AttributionUsagePoolCommit.orphaned"`)}
 	}
 	if _, ok := aupcc.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "AttributionUsagePoolCommit.created_at"`)}
@@ -188,6 +209,10 @@ func (aupcc *AttributionUsagePoolCommitCreate) createSpec() (*AttributionUsagePo
 	if value, ok := aupcc.mutation.RelationKind(); ok {
 		_spec.SetField(attributionusagepoolcommit.FieldRelationKind, field.TypeEnum, value)
 		_node.RelationKind = value
+	}
+	if value, ok := aupcc.mutation.Orphaned(); ok {
+		_spec.SetField(attributionusagepoolcommit.FieldOrphaned, field.TypeBool, value)
+		_node.Orphaned = value
 	}
 	if value, ok := aupcc.mutation.CreatedAt(); ok {
 		_spec.SetField(attributionusagepoolcommit.FieldCreatedAt, field.TypeTime, value)

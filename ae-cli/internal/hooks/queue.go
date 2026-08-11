@@ -31,11 +31,15 @@ type HookEvent struct {
 	AgentSnapshot map[string]any `json:"agent_snapshot,omitempty"`
 
 	// Git context (minimal slice for Task 5).
-	CommitSHA      string   `json:"commit_sha,omitempty"`
-	ParentSHAs     []string `json:"parent_shas,omitempty"`
-	BranchSnapshot string   `json:"branch_snapshot,omitempty"`
-	HeadSnapshot   string   `json:"head_snapshot,omitempty"`
-	CapturedAt     string   `json:"captured_at,omitempty"`
+	CommitSHA       string   `json:"commit_sha,omitempty"`
+	ParentSHAs      []string `json:"parent_shas,omitempty"`
+	BranchSnapshot  string   `json:"branch_snapshot,omitempty"`
+	HeadSnapshot    string   `json:"head_snapshot,omitempty"`
+	LineageKind     string   `json:"lineage_kind,omitempty"`
+	SourceCommitSHA string   `json:"source_commit_sha,omitempty"`
+	CommitPatchID   string   `json:"commit_patch_id,omitempty"`
+	SourcePatchID   string   `json:"source_patch_id,omitempty"`
+	CapturedAt      string   `json:"captured_at,omitempty"`
 
 	// post-rewrite specific fields.
 	RewriteType  string `json:"rewrite_type,omitempty"`

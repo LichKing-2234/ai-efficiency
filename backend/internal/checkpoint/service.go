@@ -2,15 +2,18 @@ package checkpoint
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
+	"github.com/ai-efficiency/backend/internal/attributionpool"
 	reposvc "github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/toolusage"
 )
@@ -18,18 +21,22 @@ import (
 var errRepoNotFound = errors.New("repo not found")
 
 type CommitCheckpointRequest struct {
-	EventID        string         `json:"event_id" binding:"required"`
-	RepoConfigID   int            `json:"repo_config_id,omitempty"`
-	RepoFullName   string         `json:"repo_full_name"`
-	CloneURL       string         `json:"clone_url"`
-	WorkspaceID    string         `json:"workspace_id" binding:"required"`
-	CommitSHA      string         `json:"commit_sha" binding:"required"`
-	ParentSHAs     []string       `json:"parent_shas"`
-	BranchSnapshot string         `json:"branch_snapshot"`
-	HeadSnapshot   string         `json:"head_snapshot"`
-	BindingSource  string         `json:"binding_source" binding:"required"`
-	AgentSnapshot  map[string]any `json:"agent_snapshot"`
-	CapturedAt     *time.Time     `json:"captured_at"`
+	EventID         string         `json:"event_id" binding:"required"`
+	RepoConfigID    int            `json:"repo_config_id,omitempty"`
+	RepoFullName    string         `json:"repo_full_name"`
+	CloneURL        string         `json:"clone_url"`
+	WorkspaceID     string         `json:"workspace_id" binding:"required"`
+	CommitSHA       string         `json:"commit_sha" binding:"required"`
+	ParentSHAs      []string       `json:"parent_shas"`
+	BranchSnapshot  string         `json:"branch_snapshot"`
+	HeadSnapshot    string         `json:"head_snapshot"`
+	LineageKind     string         `json:"lineage_kind,omitempty"`
+	SourceCommitSHA string         `json:"source_commit_sha,omitempty"`
+	CommitPatchID   string         `json:"commit_patch_id,omitempty"`
+	SourcePatchID   string         `json:"source_patch_id,omitempty"`
+	BindingSource   string         `json:"binding_source" binding:"required"`
+	AgentSnapshot   map[string]any `json:"agent_snapshot"`
+	CapturedAt      *time.Time     `json:"captured_at"`
 }
 
 type CommitRewriteRequest struct {
@@ -46,13 +53,15 @@ type CommitRewriteRequest struct {
 }
 
 type Service struct {
-	entClient   *ent.Client
-	repoService *reposvc.Service
+	entClient     *ent.Client
+	repoService   *reposvc.Service
+	rewriteLockDB *sql.DB
 }
 
 type ServiceOptions struct {
 	InventoryRevisionStore reposvc.InventoryRevisionInvalidator
 	RepoService            *reposvc.Service
+	RewriteLockDB          *sql.DB
 }
 
 func NewService(entClient *ent.Client, options ...ServiceOptions) *Service {
@@ -66,8 +75,10 @@ func NewService(entClient *ent.Client, options ...ServiceOptions) *Service {
 			InventoryRevisionStore: opt.InventoryRevisionStore,
 		})
 	}
-	return &Service{entClient: entClient, repoService: repoService}
+	return &Service{entClient: entClient, repoService: repoService, rewriteLockDB: opt.RewriteLockDB}
 }
+
+var localRewriteMu sync.Mutex
 
 func (s *Service) RecordCheckpoint(ctx context.Context, req CommitCheckpointRequest) error {
 	return s.recordCheckpoint(ctx, 0, req)
@@ -98,6 +109,10 @@ func (s *Service) recordCheckpoint(ctx context.Context, userID int, req CommitCh
 	if bindingSource == "" {
 		return fmt.Errorf("record checkpoint: binding_source is required")
 	}
+	lineageKind, sourceCommitSHA, commitPatchID, sourcePatchID, err := normalizeCherryPickEvidence(req)
+	if err != nil {
+		return fmt.Errorf("record checkpoint: %w", err)
+	}
 
 	tx, err := s.entClient.Tx(ctx)
 	if err != nil {
@@ -127,6 +142,11 @@ func (s *Service) recordCheckpoint(ctx context.Context, userID int, req CommitCh
 	if existing != nil {
 		replayRepo, replayErr := txSvc.resolveReplayRepoConfig(ctx, req.RepoConfigID, req.RepoFullName, req.CloneURL)
 		if replayErr == nil && checkpointReplayMatches(existing, replayRepo.ID, userID, req) {
+			_ = tx.Rollback()
+			txDone = true
+			if lineageKind != "" && userID > 0 {
+				return s.applyCherryPick(ctx, userID, replayRepo.ID, sourceCommitSHA, commitSHA, sourcePatchID, commitPatchID)
+			}
 			return nil
 		}
 		return fmt.Errorf("record checkpoint: event_id conflict")
@@ -154,6 +174,10 @@ func (s *Service) recordCheckpoint(ctx context.Context, userID int, req CommitCh
 	if v := strings.TrimSpace(req.HeadSnapshot); v != "" {
 		create.SetHeadSnapshot(v)
 	}
+	if lineageKind != "" {
+		create.SetLineageKind(commitcheckpoint.LineageKindCherryPick).SetSourceCommitSha(sourceCommitSHA).
+			SetCommitPatchID(commitPatchID).SetSourcePatchID(sourcePatchID)
+	}
 	if len(req.AgentSnapshot) > 0 {
 		create.SetAgentSnapshot(req.AgentSnapshot)
 	}
@@ -170,6 +194,9 @@ func (s *Service) recordCheckpoint(ctx context.Context, userID int, req CommitCh
 			if qerr == nil {
 				replayRepo, replayErr := s.resolveReplayRepoConfig(ctx, req.RepoConfigID, req.RepoFullName, req.CloneURL)
 				if replayErr == nil && checkpointReplayMatches(existing, replayRepo.ID, userID, req) {
+					if lineageKind != "" && userID > 0 {
+						return s.applyCherryPick(ctx, userID, replayRepo.ID, sourceCommitSHA, commitSHA, sourcePatchID, commitPatchID)
+					}
 					return nil
 				}
 				return fmt.Errorf("record checkpoint: event_id conflict")
@@ -204,7 +231,6 @@ func (s *Service) recordCheckpoint(ctx context.Context, userID int, req CommitCh
 		return fmt.Errorf("record checkpoint: bind tool usage events: %w", err)
 	}
 	_ = boundCount
-
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("record checkpoint: commit tx: %w", err)
 	}
@@ -212,7 +238,27 @@ func (s *Service) recordCheckpoint(ctx context.Context, userID int, req CommitCh
 	for _, repoID := range pendingAutoBind {
 		_, _ = s.repoService.AutoBindRepo(ctx, repoID)
 	}
+	if lineageKind != "" && userID > 0 {
+		return s.applyCherryPick(ctx, userID, rc.ID, sourceCommitSHA, commitSHA, sourcePatchID, commitPatchID)
+	}
 	return nil
+}
+
+func (s *Service) applyCherryPick(ctx context.Context, userID, repoConfigID int, sourceCommitSHA, targetCommitSHA, sourcePatchID, targetPatchID string) error {
+	return s.withRewriteLock(ctx, userID, repoConfigID, func() error {
+		tx, err := s.entClient.Tx(ctx)
+		if err != nil {
+			return fmt.Errorf("record checkpoint: begin cherry-pick projection: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		if err := attributionpool.ApplyCherryPick(ctx, tx.Client(), userID, repoConfigID, sourceCommitSHA, targetCommitSHA, sourcePatchID, targetPatchID); err != nil {
+			return fmt.Errorf("record checkpoint: apply cherry-pick lineage: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("record checkpoint: commit cherry-pick projection: %w", err)
+		}
+		return nil
+	})
 }
 
 func (s *Service) RecordRewrite(ctx context.Context, req CommitRewriteRequest) error {
@@ -253,29 +299,36 @@ func (s *Service) recordRewrite(ctx context.Context, userID int, req CommitRewri
 		return fmt.Errorf("record rewrite: binding_source is required")
 	}
 
-	existing, err := s.entClient.CommitRewrite.Query().Where(commitrewrite.EventIDEQ(eventID)).Only(ctx)
-	if err != nil {
-		if !ent.IsNotFound(err) {
-			return fmt.Errorf("record rewrite: query event_id: %w", err)
-		}
-	}
-	if existing != nil {
-		replayRepo, replayErr := s.resolveReplayRepoConfig(ctx, req.RepoConfigID, req.RepoFullName, req.CloneURL)
-		if replayErr == nil && rewriteReplayMatches(existing, replayRepo.ID, userID, req) {
-			return nil
-		}
-		return fmt.Errorf("record rewrite: event_id conflict")
-	}
-
 	rc, err := s.resolveRepoConfigForIngest(ctx, req.RepoConfigID, req.RepoFullName, req.CloneURL, "")
 	if err != nil {
 		return fmt.Errorf("record rewrite: %w", err)
+	}
+	return s.withRewriteLock(ctx, userID, rc.ID, func() error {
+		return s.recordRewriteLocked(ctx, userID, rc.ID, eventID, workspaceID, oldCommitSHA, newCommitSHA, rewriteType, bindingSource, req)
+	})
+}
+
+func (s *Service) recordRewriteLocked(ctx context.Context, userID, repoConfigID int, eventID, workspaceID, oldCommitSHA, newCommitSHA, rewriteType, bindingSource string, req CommitRewriteRequest) error {
+	existing, err := s.entClient.CommitRewrite.Query().Where(commitrewrite.EventIDEQ(eventID)).Only(ctx)
+	if err != nil && !ent.IsNotFound(err) {
+		return fmt.Errorf("record rewrite: query event_id: %w", err)
+	}
+	if existing != nil {
+		if rewriteReplayMatches(existing, repoConfigID, userID, req) {
+			return s.applyRewrite(ctx, userID, repoConfigID, oldCommitSHA, newCommitSHA)
+		}
+		return fmt.Errorf("record rewrite: event_id conflict")
+	}
+	if userID > 0 {
+		if err := attributionpool.ValidateRewrite(ctx, s.entClient, userID, repoConfigID, oldCommitSHA, newCommitSHA); err != nil {
+			return fmt.Errorf("record rewrite: %w", err)
+		}
 	}
 
 	create := s.entClient.CommitRewrite.Create().
 		SetEventID(eventID).
 		SetWorkspaceID(workspaceID).
-		SetRepoConfigID(rc.ID).
+		SetRepoConfigID(repoConfigID).
 		SetRewriteType(commitrewrite.RewriteType(rewriteType)).
 		SetOldCommitSha(oldCommitSHA).
 		SetNewCommitSha(newCommitSHA).
@@ -292,8 +345,7 @@ func (s *Service) recordRewrite(ctx context.Context, userID int, req CommitRewri
 		if ent.IsConstraintError(err) {
 			existing, qerr := s.entClient.CommitRewrite.Query().Where(commitrewrite.EventIDEQ(eventID)).Only(ctx)
 			if qerr == nil {
-				replayRepo, replayErr := s.resolveReplayRepoConfig(ctx, req.RepoConfigID, req.RepoFullName, req.CloneURL)
-				if replayErr == nil && rewriteReplayMatches(existing, replayRepo.ID, userID, req) {
+				if rewriteReplayMatches(existing, repoConfigID, userID, req) {
 					return nil
 				}
 				return fmt.Errorf("record rewrite: event_id conflict")
@@ -302,6 +354,48 @@ func (s *Service) recordRewrite(ctx context.Context, userID int, req CommitRewri
 		return fmt.Errorf("record rewrite: create rewrite: %w", err)
 	}
 
+	return s.applyRewrite(ctx, userID, repoConfigID, oldCommitSHA, newCommitSHA)
+}
+
+func (s *Service) withRewriteLock(ctx context.Context, userID, repoConfigID int, fn func() error) error {
+	localRewriteMu.Lock()
+	defer localRewriteMu.Unlock()
+	if s.rewriteLockDB == nil || userID <= 0 {
+		return fn()
+	}
+	tx, err := s.rewriteLockDB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("record rewrite: begin lineage lock: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	lockKey := fmt.Sprintf("attribution-rewrite:%d:%d", userID, repoConfigID)
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, lockKey); err != nil {
+		return fmt.Errorf("record rewrite: acquire lineage lock: %w", err)
+	}
+	if err := fn(); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("record rewrite: release lineage lock: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) applyRewrite(ctx context.Context, userID, repoConfigID int, oldCommitSHA, newCommitSHA string) error {
+	if userID <= 0 {
+		return nil
+	}
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("record rewrite: begin attribution migration: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := attributionpool.ApplyRewrite(ctx, tx.Client(), userID, repoConfigID, oldCommitSHA, newCommitSHA, time.Now().UTC()); err != nil {
+		return fmt.Errorf("record rewrite: migrate attribution lineage: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("record rewrite: commit attribution migration: %w", err)
+	}
 	return nil
 }
 
@@ -315,7 +409,28 @@ func checkpointReplayMatches(existing *ent.CommitCheckpoint, repoConfigID, userI
 	if !equalStrings(existing.ParentShas, req.ParentSHAs) || optionalString(existing.BranchSnapshot) != strings.TrimSpace(req.BranchSnapshot) || optionalString(existing.HeadSnapshot) != strings.TrimSpace(req.HeadSnapshot) {
 		return false
 	}
+	lineageKind, sourceCommitSHA, commitPatchID, sourcePatchID, err := normalizeCherryPickEvidence(req)
+	if err != nil || existing.LineageKind.String() != lineageKind || existing.SourceCommitSha != sourceCommitSHA || existing.CommitPatchID != commitPatchID || existing.SourcePatchID != sourcePatchID {
+		return false
+	}
 	return true
+}
+
+func normalizeCherryPickEvidence(req CommitCheckpointRequest) (string, string, string, string, error) {
+	lineageKind := strings.TrimSpace(req.LineageKind)
+	sourceCommitSHA := strings.TrimSpace(req.SourceCommitSHA)
+	commitPatchID := strings.TrimSpace(req.CommitPatchID)
+	sourcePatchID := strings.TrimSpace(req.SourcePatchID)
+	if lineageKind == "" && sourceCommitSHA == "" && commitPatchID == "" && sourcePatchID == "" {
+		return "", "", "", "", nil
+	}
+	if lineageKind != "cherry_pick" || sourceCommitSHA == "" || sourceCommitSHA == strings.TrimSpace(req.CommitSHA) || commitPatchID == "" || sourcePatchID == "" || commitPatchID != sourcePatchID {
+		return "", "", "", "", fmt.Errorf("cherry-pick requires explicit distinct source and matching stable patch evidence")
+	}
+	if len(sourceCommitSHA) > 256 || len(commitPatchID) > 256 || len(sourcePatchID) > 256 {
+		return "", "", "", "", fmt.Errorf("cherry-pick evidence fields must be at most 256 bytes")
+	}
+	return lineageKind, sourceCommitSHA, commitPatchID, sourcePatchID, nil
 }
 
 func rewriteReplayMatches(existing *ent.CommitRewrite, repoConfigID, userID int, req CommitRewriteRequest) bool {

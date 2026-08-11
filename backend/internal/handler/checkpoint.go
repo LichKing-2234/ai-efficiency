@@ -61,16 +61,20 @@ func (h *CheckpointHandler) Rewrite(c *gin.Context) {
 }
 
 type compactCommitCheckpointRequest struct {
-	EventID        string     `json:"event_id"`
-	RepoConfigID   int        `json:"repo_config_id"`
-	RepoFullName   string     `json:"repo_full_name,omitempty"`
-	WorkspaceID    string     `json:"workspace_id"`
-	CommitSHA      string     `json:"commit_sha"`
-	ParentSHAs     []string   `json:"parent_shas,omitempty"`
-	BranchSnapshot string     `json:"branch_snapshot,omitempty"`
-	HeadSnapshot   string     `json:"head_snapshot,omitempty"`
-	BindingSource  string     `json:"binding_source"`
-	CapturedAt     *time.Time `json:"captured_at,omitempty"`
+	EventID         string     `json:"event_id"`
+	RepoConfigID    int        `json:"repo_config_id"`
+	RepoFullName    string     `json:"repo_full_name,omitempty"`
+	WorkspaceID     string     `json:"workspace_id"`
+	CommitSHA       string     `json:"commit_sha"`
+	ParentSHAs      []string   `json:"parent_shas,omitempty"`
+	BranchSnapshot  string     `json:"branch_snapshot,omitempty"`
+	HeadSnapshot    string     `json:"head_snapshot,omitempty"`
+	LineageKind     string     `json:"lineage_kind,omitempty"`
+	SourceCommitSHA string     `json:"source_commit_sha,omitempty"`
+	CommitPatchID   string     `json:"commit_patch_id,omitempty"`
+	SourcePatchID   string     `json:"source_patch_id,omitempty"`
+	BindingSource   string     `json:"binding_source"`
+	CapturedAt      *time.Time `json:"captured_at,omitempty"`
 }
 
 type compactCommitRewriteRequest struct {
@@ -103,6 +107,8 @@ func (h *CheckpointHandler) CompactCommit(c *gin.Context) {
 		EventID: req.EventID, RepoConfigID: req.RepoConfigID, RepoFullName: req.RepoFullName,
 		WorkspaceID: req.WorkspaceID, CommitSHA: req.CommitSHA, ParentSHAs: req.ParentSHAs,
 		BranchSnapshot: req.BranchSnapshot, HeadSnapshot: req.HeadSnapshot,
+		LineageKind: req.LineageKind, SourceCommitSHA: req.SourceCommitSHA,
+		CommitPatchID: req.CommitPatchID, SourcePatchID: req.SourcePatchID,
 		BindingSource: req.BindingSource, CapturedAt: req.CapturedAt,
 	}
 	if err := h.service.RecordCheckpointForUser(c.Request.Context(), uc.UserID, request); err != nil {

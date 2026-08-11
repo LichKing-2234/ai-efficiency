@@ -36,6 +36,14 @@ type CommitCheckpoint struct {
 	BranchSnapshot *string `json:"branch_snapshot,omitempty"`
 	// HeadSnapshot holds the value of the "head_snapshot" field.
 	HeadSnapshot *string `json:"head_snapshot,omitempty"`
+	// LineageKind holds the value of the "lineage_kind" field.
+	LineageKind commitcheckpoint.LineageKind `json:"lineage_kind,omitempty"`
+	// SourceCommitSha holds the value of the "source_commit_sha" field.
+	SourceCommitSha string `json:"source_commit_sha,omitempty"`
+	// CommitPatchID holds the value of the "commit_patch_id" field.
+	CommitPatchID string `json:"commit_patch_id,omitempty"`
+	// SourcePatchID holds the value of the "source_patch_id" field.
+	SourcePatchID string `json:"source_patch_id,omitempty"`
 	// BindingSource holds the value of the "binding_source" field.
 	BindingSource commitcheckpoint.BindingSource `json:"binding_source,omitempty"`
 	// AgentSnapshot holds the value of the "agent_snapshot" field.
@@ -112,7 +120,7 @@ func (*CommitCheckpoint) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case commitcheckpoint.FieldID, commitcheckpoint.FieldUserID, commitcheckpoint.FieldRepoConfigID:
 			values[i] = new(sql.NullInt64)
-		case commitcheckpoint.FieldEventID, commitcheckpoint.FieldWorkspaceID, commitcheckpoint.FieldCommitSha, commitcheckpoint.FieldBranchSnapshot, commitcheckpoint.FieldHeadSnapshot, commitcheckpoint.FieldBindingSource:
+		case commitcheckpoint.FieldEventID, commitcheckpoint.FieldWorkspaceID, commitcheckpoint.FieldCommitSha, commitcheckpoint.FieldBranchSnapshot, commitcheckpoint.FieldHeadSnapshot, commitcheckpoint.FieldLineageKind, commitcheckpoint.FieldSourceCommitSha, commitcheckpoint.FieldCommitPatchID, commitcheckpoint.FieldSourcePatchID, commitcheckpoint.FieldBindingSource:
 			values[i] = new(sql.NullString)
 		case commitcheckpoint.FieldCapturedAt:
 			values[i] = new(sql.NullTime)
@@ -189,6 +197,30 @@ func (cc *CommitCheckpoint) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				cc.HeadSnapshot = new(string)
 				*cc.HeadSnapshot = value.String
+			}
+		case commitcheckpoint.FieldLineageKind:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field lineage_kind", values[i])
+			} else if value.Valid {
+				cc.LineageKind = commitcheckpoint.LineageKind(value.String)
+			}
+		case commitcheckpoint.FieldSourceCommitSha:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field source_commit_sha", values[i])
+			} else if value.Valid {
+				cc.SourceCommitSha = value.String
+			}
+		case commitcheckpoint.FieldCommitPatchID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field commit_patch_id", values[i])
+			} else if value.Valid {
+				cc.CommitPatchID = value.String
+			}
+		case commitcheckpoint.FieldSourcePatchID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field source_patch_id", values[i])
+			} else if value.Valid {
+				cc.SourcePatchID = value.String
 			}
 		case commitcheckpoint.FieldBindingSource:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -295,6 +327,18 @@ func (cc *CommitCheckpoint) String() string {
 		builder.WriteString("head_snapshot=")
 		builder.WriteString(*v)
 	}
+	builder.WriteString(", ")
+	builder.WriteString("lineage_kind=")
+	builder.WriteString(fmt.Sprintf("%v", cc.LineageKind))
+	builder.WriteString(", ")
+	builder.WriteString("source_commit_sha=")
+	builder.WriteString(cc.SourceCommitSha)
+	builder.WriteString(", ")
+	builder.WriteString("commit_patch_id=")
+	builder.WriteString(cc.CommitPatchID)
+	builder.WriteString(", ")
+	builder.WriteString("source_patch_id=")
+	builder.WriteString(cc.SourcePatchID)
 	builder.WriteString(", ")
 	builder.WriteString("binding_source=")
 	builder.WriteString(fmt.Sprintf("%v", cc.BindingSource))

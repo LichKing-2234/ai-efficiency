@@ -130,6 +130,16 @@ func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionConte
 		CapturedAt:     time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	lineageKind, sourceCommitSHA := commitLineageEvidence(repoRoot, head)
+	if lineageKind == "cherry-pick" {
+		ev.LineageKind = "cherry_pick"
+		ev.SourceCommitSHA = sourceCommitSHA
+		ev.CommitPatchID = attributionlocal.StableCommitPatchID(ctx, repoRoot, head)
+		ev.SourcePatchID = attributionlocal.StableCommitPatchID(ctx, repoRoot, sourceCommitSHA)
+		if ev.CommitPatchID == "" || ev.CommitPatchID != ev.SourcePatchID {
+			ev.LineageKind, ev.SourceCommitSHA, ev.CommitPatchID, ev.SourcePatchID = "", "", "", ""
+			lineageKind, sourceCommitSHA = "", ""
+		}
+	}
 	h.queueCompactTrigger(ctx, attributionlocal.CompactTrigger{
 		ID:              ev.EventID,
 		Kind:            ev.Kind,

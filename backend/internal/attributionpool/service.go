@@ -12,9 +12,12 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/attributionclaimgroup"
 	"github.com/ai-efficiency/backend/ent/attributionrequestclaim"
 	"github.com/ai-efficiency/backend/ent/attributionusagepool"
 	"github.com/ai-efficiency/backend/ent/attributionusagepoolcommit"
+	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/commitrewrite"
 )
 
 const LedgerEpoch = "shadow_v2"
@@ -37,6 +40,103 @@ type contribution struct {
 	cacheCreate int64
 	cacheRead   int64
 	total       int64
+}
+
+// ValidateRewrite rejects ambiguous lineage before the event is persisted.
+// Rewrite identity is user/repository scoped because a durable pool no longer
+// retains workspace identity.
+func ValidateRewrite(ctx context.Context, client *ent.Client, userID, repoConfigID int, oldCommitSHA, newCommitSHA string) error {
+	_, err := canonicalRewriteTarget(ctx, client, userID, repoConfigID, oldCommitSHA, newCommitSHA)
+	return err
+}
+
+func canonicalRewriteTarget(ctx context.Context, client *ent.Client, userID, repoConfigID int, oldCommitSHA, newCommitSHA string) (string, error) {
+	oldCommitSHA = strings.TrimSpace(oldCommitSHA)
+	newCommitSHA = strings.TrimSpace(newCommitSHA)
+	if client == nil || userID <= 0 || repoConfigID <= 0 || oldCommitSHA == "" || newCommitSHA == "" || oldCommitSHA == newCommitSHA {
+		return "", fmt.Errorf("validate attribution rewrite: distinct commits, user, and repository are required")
+	}
+	rows, err := client.CommitRewrite.Query().Where(
+		commitrewrite.UserIDEQ(userID), commitrewrite.RepoConfigIDEQ(repoConfigID),
+	).All(ctx)
+	if err != nil {
+		return "", fmt.Errorf("query attribution rewrite lineage: %w", err)
+	}
+	next := make(map[string]string, len(rows)+1)
+	for _, row := range rows {
+		if existing, ok := next[row.OldCommitSha]; ok && existing != row.NewCommitSha {
+			return "", fmt.Errorf("attribution rewrite lineage is already conflicting")
+		}
+		next[row.OldCommitSha] = row.NewCommitSha
+	}
+	if existing, ok := next[oldCommitSHA]; ok && existing != newCommitSHA {
+		return "", fmt.Errorf("attribution rewrite conflicts with existing mapping")
+	}
+	next[oldCommitSHA] = newCommitSHA
+	seen := map[string]struct{}{oldCommitSHA: {}}
+	terminal := newCommitSHA
+	for commit := newCommitSHA; commit != ""; commit = next[commit] {
+		if _, ok := seen[commit]; ok {
+			return "", fmt.Errorf("attribution rewrite would create a cycle")
+		}
+		seen[commit] = struct{}{}
+		terminal = commit
+	}
+	return terminal, nil
+}
+
+// ApplyRewrite migrates hot allocations and durable pools in the caller's
+// transaction. Replays are safe: after the first pass no old relation remains.
+func ApplyRewrite(ctx context.Context, client *ent.Client, userID, repoConfigID int, oldCommitSHA, newCommitSHA string, now time.Time) error {
+	terminal, err := canonicalRewriteTarget(ctx, client, userID, repoConfigID, oldCommitSHA, newCommitSHA)
+	if err != nil {
+		return err
+	}
+	newCommitSHA = terminal
+	groups, err := client.AttributionClaimGroup.Query().Where(
+		attributionclaimgroup.UserIDEQ(userID), attributionclaimgroup.FinalizedAtIsNil(),
+	).Order(ent.Asc(attributionclaimgroup.FieldID)).All(ctx)
+	if err != nil {
+		return fmt.Errorf("query hot attribution groups for rewrite: %w", err)
+	}
+	for _, group := range groups {
+		allocations, changed := rewriteAllocations(group.CommitAllocations, repoConfigID, oldCommitSHA, newCommitSHA)
+		if !changed {
+			continue
+		}
+		updated, err := client.AttributionClaimGroup.Update().Where(
+			attributionclaimgroup.IDEQ(group.ID), attributionclaimgroup.UpdatedAtEQ(group.UpdatedAt),
+		).SetCommitAllocations(allocations).Save(ctx)
+		if err != nil {
+			return fmt.Errorf("rewrite hot attribution group: %w", err)
+		}
+		if updated != 1 {
+			return fmt.Errorf("rewrite hot attribution group raced: updated=%d", updated)
+		}
+		if err := MaterializeGroup(ctx, client, group.ID, now); err != nil {
+			return fmt.Errorf("rematerialize rewritten attribution group: %w", err)
+		}
+	}
+	return migrateDurablePools(ctx, client, userID, repoConfigID, oldCommitSHA, newCommitSHA)
+}
+
+func rewriteAllocations(allocations []map[string]any, repoConfigID int, oldCommitSHA, newCommitSHA string) ([]map[string]any, bool) {
+	result := make([]map[string]any, len(allocations))
+	changed := false
+	for index, allocation := range allocations {
+		copy := make(map[string]any, len(allocation))
+		for key, value := range allocation {
+			copy[key] = value
+		}
+		repoID, ok := integerValue(copy["repo_config_id"])
+		commitSHA, _ := copy["commit_sha"].(string)
+		if ok && repoID == repoConfigID && strings.TrimSpace(commitSHA) == oldCommitSHA {
+			copy["commit_sha"] = newCommitSHA
+			changed = true
+		}
+		result[index] = copy
+	}
+	return result, changed
 }
 
 // MaterializeGroup moves every reconciled Request in a hot group to the pool
@@ -88,7 +188,7 @@ func MaterializeRequestClaim(ctx context.Context, client *ent.Client, claimID in
 		return err
 	}
 	if claim.MaterializedPoolID != nil && *claim.MaterializedPoolID == pool.ID {
-		return ensureCommitRelations(ctx, client, pool.ID, desired.commits)
+		return ensureAllCommitRelations(ctx, client, pool.ID, desired.userID, desired.commits)
 	}
 
 	oldPoolID := 0
@@ -112,7 +212,7 @@ func MaterializeRequestClaim(ctx context.Context, client *ent.Client, claimID in
 	if updated != 1 {
 		return fmt.Errorf("request claim materialization raced: updated=%d", updated)
 	}
-	if err := ensureCommitRelations(ctx, client, pool.ID, desired.commits); err != nil {
+	if err := ensureAllCommitRelations(ctx, client, pool.ID, desired.userID, desired.commits); err != nil {
 		return err
 	}
 	if oldPoolID > 0 {
@@ -159,7 +259,7 @@ func MaterializeCoverageGaps(ctx context.Context, client *ent.Client, groupID, c
 	if updated != 1 {
 		return fmt.Errorf("add attribution pool coverage gaps: updated=%d", updated)
 	}
-	return ensureCommitRelations(ctx, client, pool.ID, commits)
+	return ensureAllCommitRelations(ctx, client, pool.ID, group.UserID, commits)
 }
 
 func canonicalContribution(userID int, allocations []map[string]any, claim *ent.AttributionRequestClaim) (contribution, error) {
@@ -178,13 +278,8 @@ func canonicalContribution(userID int, allocations []map[string]any, claim *ent.
 	}
 	bucket := claim.UsageAt.UTC().Truncate(15 * time.Minute)
 	model := strings.TrimSpace(claim.RequestedModel)
-	parts := []string{strconv.Itoa(userID), model, bucket.Format(time.RFC3339)}
-	for _, commit := range commits {
-		parts = append(parts, fmt.Sprintf("%d:%s", commit.repoConfigID, commit.commitSHA))
-	}
-	sum := sha256.Sum256([]byte(strings.Join(parts, "\x1f")))
 	return contribution{
-		key: hex.EncodeToString(sum[:]), userID: userID, model: model, bucketStart: bucket, commits: commits,
+		key: canonicalPoolKey(userID, model, bucket, commits), userID: userID, model: model, bucketStart: bucket, commits: commits,
 		input: claim.InputTokens, output: claim.OutputTokens, cacheCreate: claim.CacheCreationTokens,
 		cacheRead: claim.CacheReadTokens, total: claim.TotalTokens,
 	}, nil
@@ -314,6 +409,168 @@ func ensureCommitRelations(ctx context.Context, client *ent.Client, poolID int, 
 	return nil
 }
 
+func ensureAllCommitRelations(ctx context.Context, client *ent.Client, poolID, userID int, commits []commitRef) error {
+	if err := ensureCommitRelations(ctx, client, poolID, commits); err != nil {
+		return err
+	}
+	return ensureInheritedRelations(ctx, client, poolID, userID, commits)
+}
+
+// ApplyCherryPick projects an explicitly patch-matched target without moving
+// or recounting the source pool.
+func ApplyCherryPick(ctx context.Context, client *ent.Client, userID, repoConfigID int, sourceCommitSHA, targetCommitSHA, sourcePatchID, targetPatchID string) error {
+	if client == nil || userID <= 0 || repoConfigID <= 0 || strings.TrimSpace(sourceCommitSHA) == "" || strings.TrimSpace(targetCommitSHA) == "" ||
+		strings.TrimSpace(sourcePatchID) == "" || sourcePatchID != targetPatchID || sourceCommitSHA == targetCommitSHA {
+		return fmt.Errorf("apply inherited attribution lineage: explicit distinct commits and matching stable patch evidence are required")
+	}
+	lineage, err := loadRewriteMap(ctx, client, userID, repoConfigID)
+	if err != nil {
+		return err
+	}
+	sourceCommitSHA, err = resolveRewrite(lineage, sourceCommitSHA)
+	if err != nil {
+		return err
+	}
+	targetCommitSHA, err = resolveRewrite(lineage, targetCommitSHA)
+	if err != nil {
+		return err
+	}
+	relations, err := client.AttributionUsagePoolCommit.Query().Where(
+		attributionusagepoolcommit.RepoConfigIDEQ(repoConfigID),
+		attributionusagepoolcommit.CommitShaEQ(sourceCommitSHA),
+		attributionusagepoolcommit.RelationKindNEQ(attributionusagepoolcommit.RelationKindInheritedNonCounting),
+	).All(ctx)
+	if err != nil {
+		return fmt.Errorf("query inherited attribution source pools: %w", err)
+	}
+	for _, relation := range relations {
+		pool, err := client.AttributionUsagePool.Get(ctx, relation.PoolID)
+		if err != nil {
+			return fmt.Errorf("load inherited attribution source pool: %w", err)
+		}
+		if pool.UserID != userID {
+			continue
+		}
+		if err := ensureInheritedRelation(ctx, client, pool.ID, repoConfigID, targetCommitSHA); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// MarkCommitOrphaned is intentionally an internal boundary: only a caller
+// holding authoritative SCM reachability evidence may invoke it. Git reset,
+// branch deletion, force-push, patch similarity, and time are not inputs.
+func MarkCommitOrphaned(ctx context.Context, client *ent.Client, userID, repoConfigID int, commitSHA, evidenceSource string) error {
+	if client == nil || userID <= 0 || repoConfigID <= 0 || strings.TrimSpace(commitSHA) == "" || evidenceSource != "authoritative_scm" {
+		return fmt.Errorf("mark attribution commit orphaned: authoritative SCM evidence is required")
+	}
+	pools, err := client.AttributionUsagePool.Query().Where(attributionusagepool.UserIDEQ(userID)).IDs(ctx)
+	if err != nil {
+		return fmt.Errorf("query attribution pools for orphan marking: %w", err)
+	}
+	if len(pools) == 0 {
+		return nil
+	}
+	if _, err := client.AttributionUsagePoolCommit.Update().Where(
+		attributionusagepoolcommit.PoolIDIn(pools...), attributionusagepoolcommit.RepoConfigIDEQ(repoConfigID),
+		attributionusagepoolcommit.CommitShaEQ(strings.TrimSpace(commitSHA)),
+	).SetOrphaned(true).Save(ctx); err != nil {
+		return fmt.Errorf("mark attribution commit orphaned: %w", err)
+	}
+	return nil
+}
+
+func ensureInheritedRelations(ctx context.Context, client *ent.Client, poolID, userID int, commits []commitRef) error {
+	for _, source := range commits {
+		lineage, err := loadRewriteMap(ctx, client, userID, source.repoConfigID)
+		if err != nil {
+			return err
+		}
+		checkpoints, err := client.CommitCheckpoint.Query().Where(
+			commitcheckpoint.UserIDEQ(userID), commitcheckpoint.RepoConfigIDEQ(source.repoConfigID),
+			commitcheckpoint.LineageKindEQ(commitcheckpoint.LineageKindCherryPick),
+		).All(ctx)
+		if err != nil {
+			return fmt.Errorf("query inherited attribution checkpoints: %w", err)
+		}
+		for _, checkpoint := range checkpoints {
+			if checkpoint.CommitPatchID == "" || checkpoint.CommitPatchID != checkpoint.SourcePatchID {
+				continue
+			}
+			resolvedSource, err := resolveRewrite(lineage, checkpoint.SourceCommitSha)
+			if err != nil {
+				return err
+			}
+			if resolvedSource != source.commitSHA {
+				continue
+			}
+			resolvedTarget, err := resolveRewrite(lineage, checkpoint.CommitSha)
+			if err != nil {
+				return err
+			}
+			if err := ensureInheritedRelation(ctx, client, poolID, source.repoConfigID, resolvedTarget); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func loadRewriteMap(ctx context.Context, client *ent.Client, userID, repoConfigID int) (map[string]string, error) {
+	rows, err := client.CommitRewrite.Query().Where(
+		commitrewrite.UserIDEQ(userID), commitrewrite.RepoConfigIDEQ(repoConfigID),
+	).All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query attribution rewrite map: %w", err)
+	}
+	result := make(map[string]string, len(rows))
+	for _, row := range rows {
+		if existing, ok := result[row.OldCommitSha]; ok && existing != row.NewCommitSha {
+			return nil, fmt.Errorf("attribution rewrite map is conflicting")
+		}
+		result[row.OldCommitSha] = row.NewCommitSha
+	}
+	return result, nil
+}
+
+func resolveRewrite(lineage map[string]string, commitSHA string) (string, error) {
+	commitSHA = strings.TrimSpace(commitSHA)
+	seen := make(map[string]struct{}, len(lineage)+1)
+	for {
+		if commitSHA == "" {
+			return "", fmt.Errorf("attribution rewrite commit is required")
+		}
+		if _, ok := seen[commitSHA]; ok {
+			return "", fmt.Errorf("attribution rewrite map contains a cycle")
+		}
+		seen[commitSHA] = struct{}{}
+		next := lineage[commitSHA]
+		if next == "" {
+			return commitSHA, nil
+		}
+		commitSHA = next
+	}
+}
+
+func ensureInheritedRelation(ctx context.Context, client *ent.Client, poolID, repoConfigID int, commitSHA string) error {
+	_, err := client.AttributionUsagePoolCommit.Query().Where(
+		attributionusagepoolcommit.PoolIDEQ(poolID), attributionusagepoolcommit.RepoConfigIDEQ(repoConfigID),
+		attributionusagepoolcommit.CommitShaEQ(commitSHA),
+	).Only(ctx)
+	if err == nil {
+		return nil
+	}
+	if !ent.IsNotFound(err) {
+		return fmt.Errorf("query inherited attribution relation: %w", err)
+	}
+	if _, err := client.AttributionUsagePoolCommit.Create().SetPoolID(poolID).SetRepoConfigID(repoConfigID).
+		SetCommitSha(commitSHA).SetRelationKind(attributionusagepoolcommit.RelationKindInheritedNonCounting).Save(ctx); err != nil {
+		return fmt.Errorf("create inherited attribution relation: %w", err)
+	}
+	return nil
+}
+
 func deleteEmptyPool(ctx context.Context, client *ent.Client, poolID int) error {
 	pool, err := client.AttributionUsagePool.Get(ctx, poolID)
 	if ent.IsNotFound(err) {
@@ -322,7 +579,7 @@ func deleteEmptyPool(ctx context.Context, client *ent.Client, poolID int) error 
 	if err != nil {
 		return fmt.Errorf("load prior attribution pool: %w", err)
 	}
-	if pool.RequestCount != 0 {
+	if pool.RequestCount != 0 || pool.CoverageGapCount != 0 {
 		return nil
 	}
 	if pool.InputTokens != 0 || pool.OutputTokens != 0 || pool.CacheCreationTokens != 0 || pool.CacheReadTokens != 0 || pool.TotalTokens != 0 {
@@ -333,6 +590,170 @@ func deleteEmptyPool(ctx context.Context, client *ent.Client, poolID int) error 
 	}
 	if err := client.AttributionUsagePool.DeleteOneID(poolID).Exec(ctx); err != nil {
 		return fmt.Errorf("delete prior attribution pool: %w", err)
+	}
+	return nil
+}
+
+func migrateDurablePools(ctx context.Context, client *ent.Client, userID, repoConfigID int, oldCommitSHA, newCommitSHA string) error {
+	relations, err := client.AttributionUsagePoolCommit.Query().Where(
+		attributionusagepoolcommit.RepoConfigIDEQ(repoConfigID),
+		attributionusagepoolcommit.CommitShaEQ(oldCommitSHA),
+	).Order(ent.Asc(attributionusagepoolcommit.FieldPoolID)).All(ctx)
+	if err != nil {
+		return fmt.Errorf("query durable attribution rewrite relations: %w", err)
+	}
+	for _, relation := range relations {
+		pool, err := client.AttributionUsagePool.Get(ctx, relation.PoolID)
+		if ent.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("load durable attribution rewrite pool: %w", err)
+		}
+		if pool.UserID != userID {
+			continue
+		}
+		allRelations, err := client.AttributionUsagePoolCommit.Query().Where(
+			attributionusagepoolcommit.PoolIDEQ(pool.ID),
+		).Order(ent.Asc(attributionusagepoolcommit.FieldID)).All(ctx)
+		if err != nil {
+			return fmt.Errorf("load durable attribution rewrite pool relations: %w", err)
+		}
+		counting := make([]commitRef, 0, len(allRelations))
+		inherited := make([]*ent.AttributionUsagePoolCommit, 0, len(allRelations))
+		for _, item := range allRelations {
+			sha := item.CommitSha
+			if item.RepoConfigID == repoConfigID && sha == oldCommitSHA {
+				sha = newCommitSHA
+			}
+			if item.RelationKind == attributionusagepoolcommit.RelationKindInheritedNonCounting {
+				copy := *item
+				copy.CommitSha = sha
+				inherited = append(inherited, &copy)
+				continue
+			}
+			counting = append(counting, commitRef{repoConfigID: item.RepoConfigID, commitSHA: sha})
+		}
+		counting = uniqueCommitRefs(counting)
+		desired := contribution{
+			key:    canonicalPoolKey(pool.UserID, pool.RequestedModel, pool.BucketStartUtc, counting),
+			userID: pool.UserID, model: pool.RequestedModel, bucketStart: pool.BucketStartUtc, commits: counting,
+			input: pool.InputTokens, output: pool.OutputTokens, cacheCreate: pool.CacheCreationTokens,
+			cacheRead: pool.CacheReadTokens, total: pool.TotalTokens,
+		}
+		target, err := ensurePool(ctx, client, desired)
+		if err != nil {
+			return err
+		}
+		if target.ID == pool.ID {
+			if relation.RelationKind == attributionusagepoolcommit.RelationKindInheritedNonCounting {
+				if err := ensureInheritedRelation(ctx, client, pool.ID, repoConfigID, newCommitSHA); err != nil {
+					return err
+				}
+				if err := client.AttributionUsagePoolCommit.DeleteOneID(relation.ID).Exec(ctx); err != nil {
+					return fmt.Errorf("delete prior inherited attribution rewrite relation: %w", err)
+				}
+			}
+			continue
+		}
+		if err := mergePoolTotals(ctx, client, target.ID, pool); err != nil {
+			return err
+		}
+		if err := ensureCommitRelations(ctx, client, target.ID, counting); err != nil {
+			return err
+		}
+		for _, item := range inherited {
+			if containsCommit(counting, item.RepoConfigID, item.CommitSha) {
+				continue
+			}
+			existing, err := client.AttributionUsagePoolCommit.Query().Where(
+				attributionusagepoolcommit.PoolIDEQ(target.ID), attributionusagepoolcommit.RepoConfigIDEQ(item.RepoConfigID),
+				attributionusagepoolcommit.CommitShaEQ(item.CommitSha),
+			).Only(ctx)
+			if err == nil {
+				if existing.RelationKind != attributionusagepoolcommit.RelationKindInheritedNonCounting {
+					return fmt.Errorf("inherited attribution rewrite relation conflicts with counting relation")
+				}
+				continue
+			}
+			if !ent.IsNotFound(err) {
+				return fmt.Errorf("query inherited attribution rewrite relation: %w", err)
+			}
+			if _, err := client.AttributionUsagePoolCommit.Create().SetPoolID(target.ID).SetRepoConfigID(item.RepoConfigID).
+				SetCommitSha(item.CommitSha).SetRelationKind(attributionusagepoolcommit.RelationKindInheritedNonCounting).
+				SetOrphaned(item.Orphaned).Save(ctx); err != nil {
+				return fmt.Errorf("copy inherited attribution rewrite relation: %w", err)
+			}
+		}
+		if _, err := client.AttributionRequestClaim.Update().Where(
+			attributionrequestclaim.MaterializedPoolIDEQ(pool.ID),
+		).SetMaterializedPoolID(target.ID).Save(ctx); err != nil {
+			return fmt.Errorf("move attribution request pointers after rewrite: %w", err)
+		}
+		if _, err := client.AttributionUsagePoolCommit.Delete().Where(attributionusagepoolcommit.PoolIDEQ(pool.ID)).Exec(ctx); err != nil {
+			return fmt.Errorf("delete rewritten attribution pool relations: %w", err)
+		}
+		if err := client.AttributionUsagePool.DeleteOneID(pool.ID).Exec(ctx); err != nil {
+			return fmt.Errorf("delete rewritten attribution pool: %w", err)
+		}
+	}
+	return nil
+}
+
+func canonicalPoolKey(userID int, model string, bucket time.Time, commits []commitRef) string {
+	parts := []string{strconv.Itoa(userID), strings.TrimSpace(model), bucket.UTC().Format(time.RFC3339)}
+	for _, commit := range commits {
+		parts = append(parts, fmt.Sprintf("%d:%s", commit.repoConfigID, commit.commitSHA))
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x1f")))
+	return hex.EncodeToString(sum[:])
+}
+
+func uniqueCommitRefs(commits []commitRef) []commitRef {
+	unique := make(map[string]commitRef, len(commits))
+	for _, commit := range commits {
+		unique[fmt.Sprintf("%d:%s", commit.repoConfigID, commit.commitSHA)] = commit
+	}
+	keys := make([]string, 0, len(unique))
+	for key := range unique {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	result := make([]commitRef, 0, len(keys))
+	for _, key := range keys {
+		result = append(result, unique[key])
+	}
+	return result
+}
+
+func containsCommit(commits []commitRef, repoConfigID int, commitSHA string) bool {
+	for _, commit := range commits {
+		if commit.repoConfigID == repoConfigID && commit.commitSHA == commitSHA {
+			return true
+		}
+	}
+	return false
+}
+
+func mergePoolTotals(ctx context.Context, client *ent.Client, targetID int, source *ent.AttributionUsagePool) error {
+	updated, err := client.AttributionUsagePool.Update().Where(
+		attributionusagepool.IDEQ(targetID),
+		attributionusagepool.InputTokensLTE(math.MaxInt64-source.InputTokens),
+		attributionusagepool.OutputTokensLTE(math.MaxInt64-source.OutputTokens),
+		attributionusagepool.CacheCreationTokensLTE(math.MaxInt64-source.CacheCreationTokens),
+		attributionusagepool.CacheReadTokensLTE(math.MaxInt64-source.CacheReadTokens),
+		attributionusagepool.TotalTokensLTE(math.MaxInt64-source.TotalTokens),
+		attributionusagepool.RequestCountLTE(math.MaxInt-source.RequestCount),
+		attributionusagepool.CoverageGapCountLTE(math.MaxInt-source.CoverageGapCount),
+	).AddInputTokens(source.InputTokens).AddOutputTokens(source.OutputTokens).
+		AddCacheCreationTokens(source.CacheCreationTokens).AddCacheReadTokens(source.CacheReadTokens).
+		AddTotalTokens(source.TotalTokens).AddRequestCount(source.RequestCount).
+		AddCoverageGapCount(source.CoverageGapCount).Save(ctx)
+	if err != nil {
+		return fmt.Errorf("merge rewritten attribution pool: %w", err)
+	}
+	if updated != 1 {
+		return fmt.Errorf("merge rewritten attribution pool: updated=%d", updated)
 	}
 	return nil
 }

@@ -161,6 +161,86 @@ func (ccu *CommitCheckpointUpdate) ClearHeadSnapshot() *CommitCheckpointUpdate {
 	return ccu
 }
 
+// SetLineageKind sets the "lineage_kind" field.
+func (ccu *CommitCheckpointUpdate) SetLineageKind(ck commitcheckpoint.LineageKind) *CommitCheckpointUpdate {
+	ccu.mutation.SetLineageKind(ck)
+	return ccu
+}
+
+// SetNillableLineageKind sets the "lineage_kind" field if the given value is not nil.
+func (ccu *CommitCheckpointUpdate) SetNillableLineageKind(ck *commitcheckpoint.LineageKind) *CommitCheckpointUpdate {
+	if ck != nil {
+		ccu.SetLineageKind(*ck)
+	}
+	return ccu
+}
+
+// ClearLineageKind clears the value of the "lineage_kind" field.
+func (ccu *CommitCheckpointUpdate) ClearLineageKind() *CommitCheckpointUpdate {
+	ccu.mutation.ClearLineageKind()
+	return ccu
+}
+
+// SetSourceCommitSha sets the "source_commit_sha" field.
+func (ccu *CommitCheckpointUpdate) SetSourceCommitSha(s string) *CommitCheckpointUpdate {
+	ccu.mutation.SetSourceCommitSha(s)
+	return ccu
+}
+
+// SetNillableSourceCommitSha sets the "source_commit_sha" field if the given value is not nil.
+func (ccu *CommitCheckpointUpdate) SetNillableSourceCommitSha(s *string) *CommitCheckpointUpdate {
+	if s != nil {
+		ccu.SetSourceCommitSha(*s)
+	}
+	return ccu
+}
+
+// ClearSourceCommitSha clears the value of the "source_commit_sha" field.
+func (ccu *CommitCheckpointUpdate) ClearSourceCommitSha() *CommitCheckpointUpdate {
+	ccu.mutation.ClearSourceCommitSha()
+	return ccu
+}
+
+// SetCommitPatchID sets the "commit_patch_id" field.
+func (ccu *CommitCheckpointUpdate) SetCommitPatchID(s string) *CommitCheckpointUpdate {
+	ccu.mutation.SetCommitPatchID(s)
+	return ccu
+}
+
+// SetNillableCommitPatchID sets the "commit_patch_id" field if the given value is not nil.
+func (ccu *CommitCheckpointUpdate) SetNillableCommitPatchID(s *string) *CommitCheckpointUpdate {
+	if s != nil {
+		ccu.SetCommitPatchID(*s)
+	}
+	return ccu
+}
+
+// ClearCommitPatchID clears the value of the "commit_patch_id" field.
+func (ccu *CommitCheckpointUpdate) ClearCommitPatchID() *CommitCheckpointUpdate {
+	ccu.mutation.ClearCommitPatchID()
+	return ccu
+}
+
+// SetSourcePatchID sets the "source_patch_id" field.
+func (ccu *CommitCheckpointUpdate) SetSourcePatchID(s string) *CommitCheckpointUpdate {
+	ccu.mutation.SetSourcePatchID(s)
+	return ccu
+}
+
+// SetNillableSourcePatchID sets the "source_patch_id" field if the given value is not nil.
+func (ccu *CommitCheckpointUpdate) SetNillableSourcePatchID(s *string) *CommitCheckpointUpdate {
+	if s != nil {
+		ccu.SetSourcePatchID(*s)
+	}
+	return ccu
+}
+
+// ClearSourcePatchID clears the value of the "source_patch_id" field.
+func (ccu *CommitCheckpointUpdate) ClearSourcePatchID() *CommitCheckpointUpdate {
+	ccu.mutation.ClearSourcePatchID()
+	return ccu
+}
+
 // SetBindingSource sets the "binding_source" field.
 func (ccu *CommitCheckpointUpdate) SetBindingSource(cs commitcheckpoint.BindingSource) *CommitCheckpointUpdate {
 	ccu.mutation.SetBindingSource(cs)
@@ -339,6 +419,11 @@ func (ccu *CommitCheckpointUpdate) check() error {
 			return &ValidationError{Name: "commit_sha", err: fmt.Errorf(`ent: validator failed for field "CommitCheckpoint.commit_sha": %w`, err)}
 		}
 	}
+	if v, ok := ccu.mutation.LineageKind(); ok {
+		if err := commitcheckpoint.LineageKindValidator(v); err != nil {
+			return &ValidationError{Name: "lineage_kind", err: fmt.Errorf(`ent: validator failed for field "CommitCheckpoint.lineage_kind": %w`, err)}
+		}
+	}
 	if v, ok := ccu.mutation.BindingSource(); ok {
 		if err := commitcheckpoint.BindingSourceValidator(v); err != nil {
 			return &ValidationError{Name: "binding_source", err: fmt.Errorf(`ent: validator failed for field "CommitCheckpoint.binding_source": %w`, err)}
@@ -390,6 +475,30 @@ func (ccu *CommitCheckpointUpdate) sqlSave(ctx context.Context) (n int, err erro
 	}
 	if ccu.mutation.HeadSnapshotCleared() {
 		_spec.ClearField(commitcheckpoint.FieldHeadSnapshot, field.TypeString)
+	}
+	if value, ok := ccu.mutation.LineageKind(); ok {
+		_spec.SetField(commitcheckpoint.FieldLineageKind, field.TypeEnum, value)
+	}
+	if ccu.mutation.LineageKindCleared() {
+		_spec.ClearField(commitcheckpoint.FieldLineageKind, field.TypeEnum)
+	}
+	if value, ok := ccu.mutation.SourceCommitSha(); ok {
+		_spec.SetField(commitcheckpoint.FieldSourceCommitSha, field.TypeString, value)
+	}
+	if ccu.mutation.SourceCommitShaCleared() {
+		_spec.ClearField(commitcheckpoint.FieldSourceCommitSha, field.TypeString)
+	}
+	if value, ok := ccu.mutation.CommitPatchID(); ok {
+		_spec.SetField(commitcheckpoint.FieldCommitPatchID, field.TypeString, value)
+	}
+	if ccu.mutation.CommitPatchIDCleared() {
+		_spec.ClearField(commitcheckpoint.FieldCommitPatchID, field.TypeString)
+	}
+	if value, ok := ccu.mutation.SourcePatchID(); ok {
+		_spec.SetField(commitcheckpoint.FieldSourcePatchID, field.TypeString, value)
+	}
+	if ccu.mutation.SourcePatchIDCleared() {
+		_spec.ClearField(commitcheckpoint.FieldSourcePatchID, field.TypeString)
 	}
 	if value, ok := ccu.mutation.BindingSource(); ok {
 		_spec.SetField(commitcheckpoint.FieldBindingSource, field.TypeEnum, value)
@@ -699,6 +808,86 @@ func (ccuo *CommitCheckpointUpdateOne) ClearHeadSnapshot() *CommitCheckpointUpda
 	return ccuo
 }
 
+// SetLineageKind sets the "lineage_kind" field.
+func (ccuo *CommitCheckpointUpdateOne) SetLineageKind(ck commitcheckpoint.LineageKind) *CommitCheckpointUpdateOne {
+	ccuo.mutation.SetLineageKind(ck)
+	return ccuo
+}
+
+// SetNillableLineageKind sets the "lineage_kind" field if the given value is not nil.
+func (ccuo *CommitCheckpointUpdateOne) SetNillableLineageKind(ck *commitcheckpoint.LineageKind) *CommitCheckpointUpdateOne {
+	if ck != nil {
+		ccuo.SetLineageKind(*ck)
+	}
+	return ccuo
+}
+
+// ClearLineageKind clears the value of the "lineage_kind" field.
+func (ccuo *CommitCheckpointUpdateOne) ClearLineageKind() *CommitCheckpointUpdateOne {
+	ccuo.mutation.ClearLineageKind()
+	return ccuo
+}
+
+// SetSourceCommitSha sets the "source_commit_sha" field.
+func (ccuo *CommitCheckpointUpdateOne) SetSourceCommitSha(s string) *CommitCheckpointUpdateOne {
+	ccuo.mutation.SetSourceCommitSha(s)
+	return ccuo
+}
+
+// SetNillableSourceCommitSha sets the "source_commit_sha" field if the given value is not nil.
+func (ccuo *CommitCheckpointUpdateOne) SetNillableSourceCommitSha(s *string) *CommitCheckpointUpdateOne {
+	if s != nil {
+		ccuo.SetSourceCommitSha(*s)
+	}
+	return ccuo
+}
+
+// ClearSourceCommitSha clears the value of the "source_commit_sha" field.
+func (ccuo *CommitCheckpointUpdateOne) ClearSourceCommitSha() *CommitCheckpointUpdateOne {
+	ccuo.mutation.ClearSourceCommitSha()
+	return ccuo
+}
+
+// SetCommitPatchID sets the "commit_patch_id" field.
+func (ccuo *CommitCheckpointUpdateOne) SetCommitPatchID(s string) *CommitCheckpointUpdateOne {
+	ccuo.mutation.SetCommitPatchID(s)
+	return ccuo
+}
+
+// SetNillableCommitPatchID sets the "commit_patch_id" field if the given value is not nil.
+func (ccuo *CommitCheckpointUpdateOne) SetNillableCommitPatchID(s *string) *CommitCheckpointUpdateOne {
+	if s != nil {
+		ccuo.SetCommitPatchID(*s)
+	}
+	return ccuo
+}
+
+// ClearCommitPatchID clears the value of the "commit_patch_id" field.
+func (ccuo *CommitCheckpointUpdateOne) ClearCommitPatchID() *CommitCheckpointUpdateOne {
+	ccuo.mutation.ClearCommitPatchID()
+	return ccuo
+}
+
+// SetSourcePatchID sets the "source_patch_id" field.
+func (ccuo *CommitCheckpointUpdateOne) SetSourcePatchID(s string) *CommitCheckpointUpdateOne {
+	ccuo.mutation.SetSourcePatchID(s)
+	return ccuo
+}
+
+// SetNillableSourcePatchID sets the "source_patch_id" field if the given value is not nil.
+func (ccuo *CommitCheckpointUpdateOne) SetNillableSourcePatchID(s *string) *CommitCheckpointUpdateOne {
+	if s != nil {
+		ccuo.SetSourcePatchID(*s)
+	}
+	return ccuo
+}
+
+// ClearSourcePatchID clears the value of the "source_patch_id" field.
+func (ccuo *CommitCheckpointUpdateOne) ClearSourcePatchID() *CommitCheckpointUpdateOne {
+	ccuo.mutation.ClearSourcePatchID()
+	return ccuo
+}
+
 // SetBindingSource sets the "binding_source" field.
 func (ccuo *CommitCheckpointUpdateOne) SetBindingSource(cs commitcheckpoint.BindingSource) *CommitCheckpointUpdateOne {
 	ccuo.mutation.SetBindingSource(cs)
@@ -890,6 +1079,11 @@ func (ccuo *CommitCheckpointUpdateOne) check() error {
 			return &ValidationError{Name: "commit_sha", err: fmt.Errorf(`ent: validator failed for field "CommitCheckpoint.commit_sha": %w`, err)}
 		}
 	}
+	if v, ok := ccuo.mutation.LineageKind(); ok {
+		if err := commitcheckpoint.LineageKindValidator(v); err != nil {
+			return &ValidationError{Name: "lineage_kind", err: fmt.Errorf(`ent: validator failed for field "CommitCheckpoint.lineage_kind": %w`, err)}
+		}
+	}
 	if v, ok := ccuo.mutation.BindingSource(); ok {
 		if err := commitcheckpoint.BindingSourceValidator(v); err != nil {
 			return &ValidationError{Name: "binding_source", err: fmt.Errorf(`ent: validator failed for field "CommitCheckpoint.binding_source": %w`, err)}
@@ -958,6 +1152,30 @@ func (ccuo *CommitCheckpointUpdateOne) sqlSave(ctx context.Context) (_node *Comm
 	}
 	if ccuo.mutation.HeadSnapshotCleared() {
 		_spec.ClearField(commitcheckpoint.FieldHeadSnapshot, field.TypeString)
+	}
+	if value, ok := ccuo.mutation.LineageKind(); ok {
+		_spec.SetField(commitcheckpoint.FieldLineageKind, field.TypeEnum, value)
+	}
+	if ccuo.mutation.LineageKindCleared() {
+		_spec.ClearField(commitcheckpoint.FieldLineageKind, field.TypeEnum)
+	}
+	if value, ok := ccuo.mutation.SourceCommitSha(); ok {
+		_spec.SetField(commitcheckpoint.FieldSourceCommitSha, field.TypeString, value)
+	}
+	if ccuo.mutation.SourceCommitShaCleared() {
+		_spec.ClearField(commitcheckpoint.FieldSourceCommitSha, field.TypeString)
+	}
+	if value, ok := ccuo.mutation.CommitPatchID(); ok {
+		_spec.SetField(commitcheckpoint.FieldCommitPatchID, field.TypeString, value)
+	}
+	if ccuo.mutation.CommitPatchIDCleared() {
+		_spec.ClearField(commitcheckpoint.FieldCommitPatchID, field.TypeString)
+	}
+	if value, ok := ccuo.mutation.SourcePatchID(); ok {
+		_spec.SetField(commitcheckpoint.FieldSourcePatchID, field.TypeString, value)
+	}
+	if ccuo.mutation.SourcePatchIDCleared() {
+		_spec.ClearField(commitcheckpoint.FieldSourcePatchID, field.TypeString)
 	}
 	if value, ok := ccuo.mutation.BindingSource(); ok {
 		_spec.SetField(commitcheckpoint.FieldBindingSource, field.TypeEnum, value)

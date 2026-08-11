@@ -230,6 +230,9 @@ func main() {
 	if err := dropLegacyRelayProviderAdminURL(context.Background(), db); err != nil {
 		logger.Fatal("drop legacy relay provider admin_url", zap.Error(err))
 	}
+	if err := dropLegacyAttributionIdentityIndexes(context.Background(), db); err != nil {
+		logger.Fatal("drop legacy attribution identity indexes", zap.Error(err))
+	}
 	logger.Info("database schema migrated")
 	workItemsRevisionStore := workitems.NewRevisionStore(entClient)
 	if err := workItemsRevisionStore.Ensure(context.Background()); err != nil {
@@ -471,6 +474,7 @@ func main() {
 	checkpointService := checkpoint.NewService(entClient, checkpoint.ServiceOptions{
 		InventoryRevisionStore: repoInventoryRevisions,
 		RepoService:            repoService,
+		RewriteLockDB:          sqlDB,
 	})
 	checkpointHandler := handler.NewCheckpointHandler(checkpointService)
 	attributionService := attribution.NewService(entClient, relayProvider)

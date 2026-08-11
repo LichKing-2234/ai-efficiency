@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/attributionusagepoolcommit"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
@@ -164,6 +166,179 @@ func TestRecordRewriteRejectsSameEventIDDifferentCanonicalPayload(t *testing.T) 
 	changedRepo.RepoConfigID = otherRepo.ID
 	if err := svc.RecordRewriteForUser(ctx, userID, changedRepo); err == nil || !strings.Contains(err.Error(), "event_id conflict") {
 		t.Fatalf("repository conflict error = %v", err)
+	}
+}
+
+func TestRecordRewriteAcceptsDuplicateAcrossWorktreesAndUsers(t *testing.T) {
+	client, ctx, userID, _, cloneURL := createCheckpointTestRepo(t)
+	defer client.Close()
+	svc := NewService(client)
+	first := CommitRewriteRequest{EventID: "rewrite-ws-1", CloneURL: cloneURL, WorkspaceID: "ws-1", RewriteType: "rebase", OldCommitSHA: "old", NewCommitSHA: "new", BindingSource: "unbound"}
+	if err := svc.RecordRewriteForUser(ctx, userID, first); err != nil {
+		t.Fatal(err)
+	}
+	second := first
+	second.EventID = "rewrite-ws-2"
+	second.WorkspaceID = "ws-2"
+	if err := svc.RecordRewriteForUser(ctx, userID, second); err != nil {
+		t.Fatalf("same user rewrite observed from another worktree: %v", err)
+	}
+	other := client.User.Create().SetUsername("bob").SetEmail("bob@example.org").SetAuthSource("ldap").SaveX(ctx)
+	second.EventID = "rewrite-user-2"
+	if err := svc.RecordRewriteForUser(ctx, other.ID, second); err != nil {
+		t.Fatalf("same rewrite observed by another user: %v", err)
+	}
+	if count := client.CommitRewrite.Query().CountX(ctx); count != 3 {
+		t.Fatalf("stored rewrite observations = %d, want one per user/worktree event", count)
+	}
+}
+
+func TestRecordRewriteRejectsConflictsAndCycles(t *testing.T) {
+	client, ctx, userID, _, cloneURL := createCheckpointTestRepo(t)
+	defer client.Close()
+	svc := NewService(client)
+	record := func(eventID, oldCommitSHA, newCommitSHA string) error {
+		return svc.RecordRewriteForUser(ctx, userID, CommitRewriteRequest{
+			EventID: eventID, CloneURL: cloneURL, WorkspaceID: "ws-1", RewriteType: "rebase",
+			OldCommitSHA: oldCommitSHA, NewCommitSHA: newCommitSHA, BindingSource: "unbound",
+		})
+	}
+	if err := record("rewrite-a-b", "a", "b"); err != nil {
+		t.Fatal(err)
+	}
+	if err := record("rewrite-a-c", "a", "c"); err == nil || !strings.Contains(err.Error(), "conflicts") {
+		t.Fatalf("mapping conflict error = %v", err)
+	}
+	if err := record("rewrite-b-c", "b", "c"); err != nil {
+		t.Fatal(err)
+	}
+	if err := record("rewrite-c-a", "c", "a"); err == nil || !strings.Contains(err.Error(), "cycle") {
+		t.Fatalf("mapping cycle error = %v", err)
+	}
+	if count := client.CommitRewrite.Query().CountX(ctx); count != 2 {
+		t.Fatalf("stored rewrite mappings after rejected events = %d, want 2", count)
+	}
+}
+
+func TestRecordRewriteSerializesConcurrentCycle(t *testing.T) {
+	client, ctx, userID, _, cloneURL := createCheckpointTestRepo(t)
+	defer client.Close()
+	svc := NewService(client)
+	requests := []CommitRewriteRequest{
+		{EventID: "rewrite-concurrent-a-b", CloneURL: cloneURL, WorkspaceID: "ws-1", RewriteType: "rebase", OldCommitSHA: "a", NewCommitSHA: "b", BindingSource: "unbound"},
+		{EventID: "rewrite-concurrent-b-a", CloneURL: cloneURL, WorkspaceID: "ws-2", RewriteType: "rebase", OldCommitSHA: "b", NewCommitSHA: "a", BindingSource: "unbound"},
+	}
+	start := make(chan struct{})
+	errs := make(chan error, len(requests))
+	var wg sync.WaitGroup
+	for _, req := range requests {
+		wg.Add(1)
+		go func(req CommitRewriteRequest) {
+			defer wg.Done()
+			<-start
+			errs <- svc.RecordRewriteForUser(ctx, userID, req)
+		}(req)
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	var successes, failures int
+	for err := range errs {
+		if err == nil {
+			successes++
+		} else if strings.Contains(err.Error(), "cycle") {
+			failures++
+		} else {
+			t.Fatalf("unexpected concurrent rewrite error: %v", err)
+		}
+	}
+	if successes != 1 || failures != 1 || client.CommitRewrite.Query().CountX(ctx) != 1 {
+		t.Fatalf("concurrent cycle successes=%d failures=%d rows=%d, want 1/1/1", successes, failures, client.CommitRewrite.Query().CountX(ctx))
+	}
+}
+
+func TestRecordCheckpointRequiresCompleteStableCherryPickEvidence(t *testing.T) {
+	client, ctx, userID, _, cloneURL := createCheckpointTestRepo(t)
+	defer client.Close()
+	svc := NewService(client)
+	req := CommitCheckpointRequest{
+		EventID: "checkpoint-cherry", CloneURL: cloneURL, WorkspaceID: "ws-1", CommitSHA: "target",
+		LineageKind: "cherry_pick", SourceCommitSHA: "source", CommitPatchID: "patch", SourcePatchID: "patch",
+		BindingSource: "unbound",
+	}
+	if err := svc.RecordCheckpointForUser(ctx, userID, req); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := client.CommitCheckpoint.Query().Where(commitcheckpoint.EventIDEQ(req.EventID)).OnlyX(ctx)
+	if checkpoint.LineageKind != commitcheckpoint.LineageKindCherryPick || checkpoint.SourceCommitSha != "source" || checkpoint.CommitPatchID != "patch" || checkpoint.SourcePatchID != "patch" {
+		t.Fatalf("stored cherry-pick evidence = %+v", checkpoint)
+	}
+	invalid := req
+	invalid.EventID = "checkpoint-invalid-cherry"
+	invalid.CommitSHA = "other-target"
+	invalid.SourcePatchID = "different"
+	if err := svc.RecordCheckpointForUser(ctx, userID, invalid); err == nil || !strings.Contains(err.Error(), "matching stable patch evidence") {
+		t.Fatalf("mismatched patch error = %v", err)
+	}
+	if client.CommitCheckpoint.Query().Where(commitcheckpoint.EventIDEQ(invalid.EventID)).ExistX(ctx) {
+		t.Fatal("invalid cherry-pick checkpoint was persisted")
+	}
+}
+
+func TestRecordCheckpointReplayRepairsCherryPickProjection(t *testing.T) {
+	client, ctx, userID, _, cloneURL := createCheckpointTestRepo(t)
+	defer client.Close()
+	repo := client.RepoConfig.Query().OnlyX(ctx)
+	pool := client.AttributionUsagePool.Create().SetCanonicalPoolKey("checkpoint-replay-pool").SetUserID(userID).
+		SetRequestedModel("gpt-test").SetBucketStartUtc(time.Date(2026, 8, 12, 0, 0, 0, 0, time.UTC)).
+		SetInputTokens(10).SetTotalTokens(10).SetRequestCount(1).SaveX(ctx)
+	client.AttributionUsagePoolCommit.Create().SetPoolID(pool.ID).SetRepoConfigID(repo.ID).SetCommitSha("source").
+		SetRelationKind(attributionusagepoolcommit.RelationKindDirect).SaveX(ctx)
+	svc := NewService(client)
+	req := CommitCheckpointRequest{
+		EventID: "checkpoint-cherry-replay", CloneURL: cloneURL, WorkspaceID: "ws-1", CommitSHA: "target",
+		LineageKind: "cherry_pick", SourceCommitSHA: "source", CommitPatchID: "patch", SourcePatchID: "patch",
+		BindingSource: "unbound",
+	}
+	if err := svc.RecordCheckpointForUser(ctx, userID, req); err != nil {
+		t.Fatal(err)
+	}
+	client.AttributionUsagePoolCommit.Delete().Where(
+		attributionusagepoolcommit.PoolIDEQ(pool.ID),
+		attributionusagepoolcommit.RelationKindEQ(attributionusagepoolcommit.RelationKindInheritedNonCounting),
+	).ExecX(ctx)
+	if err := svc.RecordCheckpointForUser(ctx, userID, req); err != nil {
+		t.Fatalf("replay cherry-pick projection: %v", err)
+	}
+	relation := client.AttributionUsagePoolCommit.Query().Where(
+		attributionusagepoolcommit.PoolIDEQ(pool.ID), attributionusagepoolcommit.CommitShaEQ("target"),
+	).OnlyX(ctx)
+	if relation.RelationKind != attributionusagepoolcommit.RelationKindInheritedNonCounting || pool.TotalTokens != 10 {
+		t.Fatalf("repaired cherry-pick relation = %+v", relation)
+	}
+}
+
+func TestRecordCheckpointAllowsSameCommitAcrossWorktreesAndUsers(t *testing.T) {
+	client, ctx, userID, _, cloneURL := createCheckpointTestRepo(t)
+	defer client.Close()
+	svc := NewService(client)
+	first := CommitCheckpointRequest{EventID: "checkpoint-ws-1", CloneURL: cloneURL, WorkspaceID: "ws-1", CommitSHA: "shared-commit", BindingSource: "unbound"}
+	if err := svc.RecordCheckpointForUser(ctx, userID, first); err != nil {
+		t.Fatal(err)
+	}
+	second := first
+	second.EventID = "checkpoint-ws-2"
+	second.WorkspaceID = "ws-2"
+	if err := svc.RecordCheckpointForUser(ctx, userID, second); err != nil {
+		t.Fatalf("same commit in another worktree: %v", err)
+	}
+	other := client.User.Create().SetUsername("carol").SetEmail("carol@example.net").SetAuthSource("ldap").SaveX(ctx)
+	second.EventID = "checkpoint-user-2"
+	if err := svc.RecordCheckpointForUser(ctx, other.ID, second); err != nil {
+		t.Fatalf("same commit for another user: %v", err)
+	}
+	if count := client.CommitCheckpoint.Query().Where(commitcheckpoint.CommitShaEQ("shared-commit")).CountX(ctx); count != 3 {
+		t.Fatalf("same-commit checkpoints = %d, want 3", count)
 	}
 }
 

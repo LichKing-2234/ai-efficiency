@@ -10893,6 +10893,7 @@ type AttributionUsagePoolCommitMutation struct {
 	addrepo_config_id *int
 	commit_sha        *string
 	relation_kind     *attributionusagepoolcommit.RelationKind
+	orphaned          *bool
 	created_at        *time.Time
 	updated_at        *time.Time
 	clearedFields     map[string]struct{}
@@ -11183,6 +11184,42 @@ func (m *AttributionUsagePoolCommitMutation) ResetRelationKind() {
 	m.relation_kind = nil
 }
 
+// SetOrphaned sets the "orphaned" field.
+func (m *AttributionUsagePoolCommitMutation) SetOrphaned(b bool) {
+	m.orphaned = &b
+}
+
+// Orphaned returns the value of the "orphaned" field in the mutation.
+func (m *AttributionUsagePoolCommitMutation) Orphaned() (r bool, exists bool) {
+	v := m.orphaned
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOrphaned returns the old "orphaned" field's value of the AttributionUsagePoolCommit entity.
+// If the AttributionUsagePoolCommit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolCommitMutation) OldOrphaned(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOrphaned is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOrphaned requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOrphaned: %w", err)
+	}
+	return oldValue.Orphaned, nil
+}
+
+// ResetOrphaned resets all changes to the "orphaned" field.
+func (m *AttributionUsagePoolCommitMutation) ResetOrphaned() {
+	m.orphaned = nil
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (m *AttributionUsagePoolCommitMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
@@ -11289,7 +11326,7 @@ func (m *AttributionUsagePoolCommitMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AttributionUsagePoolCommitMutation) Fields() []string {
-	fields := make([]string, 0, 6)
+	fields := make([]string, 0, 7)
 	if m.pool_id != nil {
 		fields = append(fields, attributionusagepoolcommit.FieldPoolID)
 	}
@@ -11301,6 +11338,9 @@ func (m *AttributionUsagePoolCommitMutation) Fields() []string {
 	}
 	if m.relation_kind != nil {
 		fields = append(fields, attributionusagepoolcommit.FieldRelationKind)
+	}
+	if m.orphaned != nil {
+		fields = append(fields, attributionusagepoolcommit.FieldOrphaned)
 	}
 	if m.created_at != nil {
 		fields = append(fields, attributionusagepoolcommit.FieldCreatedAt)
@@ -11324,6 +11364,8 @@ func (m *AttributionUsagePoolCommitMutation) Field(name string) (ent.Value, bool
 		return m.CommitSha()
 	case attributionusagepoolcommit.FieldRelationKind:
 		return m.RelationKind()
+	case attributionusagepoolcommit.FieldOrphaned:
+		return m.Orphaned()
 	case attributionusagepoolcommit.FieldCreatedAt:
 		return m.CreatedAt()
 	case attributionusagepoolcommit.FieldUpdatedAt:
@@ -11345,6 +11387,8 @@ func (m *AttributionUsagePoolCommitMutation) OldField(ctx context.Context, name 
 		return m.OldCommitSha(ctx)
 	case attributionusagepoolcommit.FieldRelationKind:
 		return m.OldRelationKind(ctx)
+	case attributionusagepoolcommit.FieldOrphaned:
+		return m.OldOrphaned(ctx)
 	case attributionusagepoolcommit.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	case attributionusagepoolcommit.FieldUpdatedAt:
@@ -11385,6 +11429,13 @@ func (m *AttributionUsagePoolCommitMutation) SetField(name string, value ent.Val
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRelationKind(v)
+		return nil
+	case attributionusagepoolcommit.FieldOrphaned:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOrphaned(v)
 		return nil
 	case attributionusagepoolcommit.FieldCreatedAt:
 		v, ok := value.(time.Time)
@@ -11488,6 +11539,9 @@ func (m *AttributionUsagePoolCommitMutation) ResetField(name string) error {
 	case attributionusagepoolcommit.FieldRelationKind:
 		m.ResetRelationKind()
 		return nil
+	case attributionusagepoolcommit.FieldOrphaned:
+		m.ResetOrphaned()
+		return nil
 	case attributionusagepoolcommit.FieldCreatedAt:
 		m.ResetCreatedAt()
 		return nil
@@ -11559,6 +11613,10 @@ type CommitCheckpointMutation struct {
 	appendparent_shas                []string
 	branch_snapshot                  *string
 	head_snapshot                    *string
+	lineage_kind                     *commitcheckpoint.LineageKind
+	source_commit_sha                *string
+	commit_patch_id                  *string
+	source_patch_id                  *string
 	binding_source                   *commitcheckpoint.BindingSource
 	agent_snapshot                   *map[string]interface{}
 	captured_at                      *time.Time
@@ -12018,6 +12076,202 @@ func (m *CommitCheckpointMutation) ResetHeadSnapshot() {
 	delete(m.clearedFields, commitcheckpoint.FieldHeadSnapshot)
 }
 
+// SetLineageKind sets the "lineage_kind" field.
+func (m *CommitCheckpointMutation) SetLineageKind(ck commitcheckpoint.LineageKind) {
+	m.lineage_kind = &ck
+}
+
+// LineageKind returns the value of the "lineage_kind" field in the mutation.
+func (m *CommitCheckpointMutation) LineageKind() (r commitcheckpoint.LineageKind, exists bool) {
+	v := m.lineage_kind
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLineageKind returns the old "lineage_kind" field's value of the CommitCheckpoint entity.
+// If the CommitCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CommitCheckpointMutation) OldLineageKind(ctx context.Context) (v commitcheckpoint.LineageKind, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLineageKind is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLineageKind requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLineageKind: %w", err)
+	}
+	return oldValue.LineageKind, nil
+}
+
+// ClearLineageKind clears the value of the "lineage_kind" field.
+func (m *CommitCheckpointMutation) ClearLineageKind() {
+	m.lineage_kind = nil
+	m.clearedFields[commitcheckpoint.FieldLineageKind] = struct{}{}
+}
+
+// LineageKindCleared returns if the "lineage_kind" field was cleared in this mutation.
+func (m *CommitCheckpointMutation) LineageKindCleared() bool {
+	_, ok := m.clearedFields[commitcheckpoint.FieldLineageKind]
+	return ok
+}
+
+// ResetLineageKind resets all changes to the "lineage_kind" field.
+func (m *CommitCheckpointMutation) ResetLineageKind() {
+	m.lineage_kind = nil
+	delete(m.clearedFields, commitcheckpoint.FieldLineageKind)
+}
+
+// SetSourceCommitSha sets the "source_commit_sha" field.
+func (m *CommitCheckpointMutation) SetSourceCommitSha(s string) {
+	m.source_commit_sha = &s
+}
+
+// SourceCommitSha returns the value of the "source_commit_sha" field in the mutation.
+func (m *CommitCheckpointMutation) SourceCommitSha() (r string, exists bool) {
+	v := m.source_commit_sha
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourceCommitSha returns the old "source_commit_sha" field's value of the CommitCheckpoint entity.
+// If the CommitCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CommitCheckpointMutation) OldSourceCommitSha(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourceCommitSha is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourceCommitSha requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourceCommitSha: %w", err)
+	}
+	return oldValue.SourceCommitSha, nil
+}
+
+// ClearSourceCommitSha clears the value of the "source_commit_sha" field.
+func (m *CommitCheckpointMutation) ClearSourceCommitSha() {
+	m.source_commit_sha = nil
+	m.clearedFields[commitcheckpoint.FieldSourceCommitSha] = struct{}{}
+}
+
+// SourceCommitShaCleared returns if the "source_commit_sha" field was cleared in this mutation.
+func (m *CommitCheckpointMutation) SourceCommitShaCleared() bool {
+	_, ok := m.clearedFields[commitcheckpoint.FieldSourceCommitSha]
+	return ok
+}
+
+// ResetSourceCommitSha resets all changes to the "source_commit_sha" field.
+func (m *CommitCheckpointMutation) ResetSourceCommitSha() {
+	m.source_commit_sha = nil
+	delete(m.clearedFields, commitcheckpoint.FieldSourceCommitSha)
+}
+
+// SetCommitPatchID sets the "commit_patch_id" field.
+func (m *CommitCheckpointMutation) SetCommitPatchID(s string) {
+	m.commit_patch_id = &s
+}
+
+// CommitPatchID returns the value of the "commit_patch_id" field in the mutation.
+func (m *CommitCheckpointMutation) CommitPatchID() (r string, exists bool) {
+	v := m.commit_patch_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCommitPatchID returns the old "commit_patch_id" field's value of the CommitCheckpoint entity.
+// If the CommitCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CommitCheckpointMutation) OldCommitPatchID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCommitPatchID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCommitPatchID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCommitPatchID: %w", err)
+	}
+	return oldValue.CommitPatchID, nil
+}
+
+// ClearCommitPatchID clears the value of the "commit_patch_id" field.
+func (m *CommitCheckpointMutation) ClearCommitPatchID() {
+	m.commit_patch_id = nil
+	m.clearedFields[commitcheckpoint.FieldCommitPatchID] = struct{}{}
+}
+
+// CommitPatchIDCleared returns if the "commit_patch_id" field was cleared in this mutation.
+func (m *CommitCheckpointMutation) CommitPatchIDCleared() bool {
+	_, ok := m.clearedFields[commitcheckpoint.FieldCommitPatchID]
+	return ok
+}
+
+// ResetCommitPatchID resets all changes to the "commit_patch_id" field.
+func (m *CommitCheckpointMutation) ResetCommitPatchID() {
+	m.commit_patch_id = nil
+	delete(m.clearedFields, commitcheckpoint.FieldCommitPatchID)
+}
+
+// SetSourcePatchID sets the "source_patch_id" field.
+func (m *CommitCheckpointMutation) SetSourcePatchID(s string) {
+	m.source_patch_id = &s
+}
+
+// SourcePatchID returns the value of the "source_patch_id" field in the mutation.
+func (m *CommitCheckpointMutation) SourcePatchID() (r string, exists bool) {
+	v := m.source_patch_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourcePatchID returns the old "source_patch_id" field's value of the CommitCheckpoint entity.
+// If the CommitCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CommitCheckpointMutation) OldSourcePatchID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourcePatchID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourcePatchID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourcePatchID: %w", err)
+	}
+	return oldValue.SourcePatchID, nil
+}
+
+// ClearSourcePatchID clears the value of the "source_patch_id" field.
+func (m *CommitCheckpointMutation) ClearSourcePatchID() {
+	m.source_patch_id = nil
+	m.clearedFields[commitcheckpoint.FieldSourcePatchID] = struct{}{}
+}
+
+// SourcePatchIDCleared returns if the "source_patch_id" field was cleared in this mutation.
+func (m *CommitCheckpointMutation) SourcePatchIDCleared() bool {
+	_, ok := m.clearedFields[commitcheckpoint.FieldSourcePatchID]
+	return ok
+}
+
+// ResetSourcePatchID resets all changes to the "source_patch_id" field.
+func (m *CommitCheckpointMutation) ResetSourcePatchID() {
+	m.source_patch_id = nil
+	delete(m.clearedFields, commitcheckpoint.FieldSourcePatchID)
+}
+
 // SetBindingSource sets the "binding_source" field.
 func (m *CommitCheckpointMutation) SetBindingSource(cs commitcheckpoint.BindingSource) {
 	m.binding_source = &cs
@@ -12335,7 +12589,7 @@ func (m *CommitCheckpointMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CommitCheckpointMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 15)
 	if m.event_id != nil {
 		fields = append(fields, commitcheckpoint.FieldEventID)
 	}
@@ -12359,6 +12613,18 @@ func (m *CommitCheckpointMutation) Fields() []string {
 	}
 	if m.head_snapshot != nil {
 		fields = append(fields, commitcheckpoint.FieldHeadSnapshot)
+	}
+	if m.lineage_kind != nil {
+		fields = append(fields, commitcheckpoint.FieldLineageKind)
+	}
+	if m.source_commit_sha != nil {
+		fields = append(fields, commitcheckpoint.FieldSourceCommitSha)
+	}
+	if m.commit_patch_id != nil {
+		fields = append(fields, commitcheckpoint.FieldCommitPatchID)
+	}
+	if m.source_patch_id != nil {
+		fields = append(fields, commitcheckpoint.FieldSourcePatchID)
 	}
 	if m.binding_source != nil {
 		fields = append(fields, commitcheckpoint.FieldBindingSource)
@@ -12393,6 +12659,14 @@ func (m *CommitCheckpointMutation) Field(name string) (ent.Value, bool) {
 		return m.BranchSnapshot()
 	case commitcheckpoint.FieldHeadSnapshot:
 		return m.HeadSnapshot()
+	case commitcheckpoint.FieldLineageKind:
+		return m.LineageKind()
+	case commitcheckpoint.FieldSourceCommitSha:
+		return m.SourceCommitSha()
+	case commitcheckpoint.FieldCommitPatchID:
+		return m.CommitPatchID()
+	case commitcheckpoint.FieldSourcePatchID:
+		return m.SourcePatchID()
 	case commitcheckpoint.FieldBindingSource:
 		return m.BindingSource()
 	case commitcheckpoint.FieldAgentSnapshot:
@@ -12424,6 +12698,14 @@ func (m *CommitCheckpointMutation) OldField(ctx context.Context, name string) (e
 		return m.OldBranchSnapshot(ctx)
 	case commitcheckpoint.FieldHeadSnapshot:
 		return m.OldHeadSnapshot(ctx)
+	case commitcheckpoint.FieldLineageKind:
+		return m.OldLineageKind(ctx)
+	case commitcheckpoint.FieldSourceCommitSha:
+		return m.OldSourceCommitSha(ctx)
+	case commitcheckpoint.FieldCommitPatchID:
+		return m.OldCommitPatchID(ctx)
+	case commitcheckpoint.FieldSourcePatchID:
+		return m.OldSourcePatchID(ctx)
 	case commitcheckpoint.FieldBindingSource:
 		return m.OldBindingSource(ctx)
 	case commitcheckpoint.FieldAgentSnapshot:
@@ -12495,6 +12777,34 @@ func (m *CommitCheckpointMutation) SetField(name string, value ent.Value) error 
 		}
 		m.SetHeadSnapshot(v)
 		return nil
+	case commitcheckpoint.FieldLineageKind:
+		v, ok := value.(commitcheckpoint.LineageKind)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLineageKind(v)
+		return nil
+	case commitcheckpoint.FieldSourceCommitSha:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourceCommitSha(v)
+		return nil
+	case commitcheckpoint.FieldCommitPatchID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCommitPatchID(v)
+		return nil
+	case commitcheckpoint.FieldSourcePatchID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourcePatchID(v)
+		return nil
 	case commitcheckpoint.FieldBindingSource:
 		v, ok := value.(commitcheckpoint.BindingSource)
 		if !ok {
@@ -12558,6 +12868,18 @@ func (m *CommitCheckpointMutation) ClearedFields() []string {
 	if m.FieldCleared(commitcheckpoint.FieldHeadSnapshot) {
 		fields = append(fields, commitcheckpoint.FieldHeadSnapshot)
 	}
+	if m.FieldCleared(commitcheckpoint.FieldLineageKind) {
+		fields = append(fields, commitcheckpoint.FieldLineageKind)
+	}
+	if m.FieldCleared(commitcheckpoint.FieldSourceCommitSha) {
+		fields = append(fields, commitcheckpoint.FieldSourceCommitSha)
+	}
+	if m.FieldCleared(commitcheckpoint.FieldCommitPatchID) {
+		fields = append(fields, commitcheckpoint.FieldCommitPatchID)
+	}
+	if m.FieldCleared(commitcheckpoint.FieldSourcePatchID) {
+		fields = append(fields, commitcheckpoint.FieldSourcePatchID)
+	}
 	if m.FieldCleared(commitcheckpoint.FieldAgentSnapshot) {
 		fields = append(fields, commitcheckpoint.FieldAgentSnapshot)
 	}
@@ -12583,6 +12905,18 @@ func (m *CommitCheckpointMutation) ClearField(name string) error {
 		return nil
 	case commitcheckpoint.FieldHeadSnapshot:
 		m.ClearHeadSnapshot()
+		return nil
+	case commitcheckpoint.FieldLineageKind:
+		m.ClearLineageKind()
+		return nil
+	case commitcheckpoint.FieldSourceCommitSha:
+		m.ClearSourceCommitSha()
+		return nil
+	case commitcheckpoint.FieldCommitPatchID:
+		m.ClearCommitPatchID()
+		return nil
+	case commitcheckpoint.FieldSourcePatchID:
+		m.ClearSourcePatchID()
 		return nil
 	case commitcheckpoint.FieldAgentSnapshot:
 		m.ClearAgentSnapshot()
@@ -12618,6 +12952,18 @@ func (m *CommitCheckpointMutation) ResetField(name string) error {
 		return nil
 	case commitcheckpoint.FieldHeadSnapshot:
 		m.ResetHeadSnapshot()
+		return nil
+	case commitcheckpoint.FieldLineageKind:
+		m.ResetLineageKind()
+		return nil
+	case commitcheckpoint.FieldSourceCommitSha:
+		m.ResetSourceCommitSha()
+		return nil
+	case commitcheckpoint.FieldCommitPatchID:
+		m.ResetCommitPatchID()
+		return nil
+	case commitcheckpoint.FieldSourcePatchID:
+		m.ResetSourcePatchID()
 		return nil
 	case commitcheckpoint.FieldBindingSource:
 		m.ResetBindingSource()

@@ -25,6 +25,8 @@ type AttributionUsagePoolCommit struct {
 	CommitSha string `json:"commit_sha,omitempty"`
 	// RelationKind holds the value of the "relation_kind" field.
 	RelationKind attributionusagepoolcommit.RelationKind `json:"relation_kind,omitempty"`
+	// Orphaned holds the value of the "orphaned" field.
+	Orphaned bool `json:"orphaned,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -37,6 +39,8 @@ func (*AttributionUsagePoolCommit) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case attributionusagepoolcommit.FieldOrphaned:
+			values[i] = new(sql.NullBool)
 		case attributionusagepoolcommit.FieldID, attributionusagepoolcommit.FieldPoolID, attributionusagepoolcommit.FieldRepoConfigID:
 			values[i] = new(sql.NullInt64)
 		case attributionusagepoolcommit.FieldCommitSha, attributionusagepoolcommit.FieldRelationKind:
@@ -87,6 +91,12 @@ func (aupc *AttributionUsagePoolCommit) assignValues(columns []string, values []
 				return fmt.Errorf("unexpected type %T for field relation_kind", values[i])
 			} else if value.Valid {
 				aupc.RelationKind = attributionusagepoolcommit.RelationKind(value.String)
+			}
+		case attributionusagepoolcommit.FieldOrphaned:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field orphaned", values[i])
+			} else if value.Valid {
+				aupc.Orphaned = value.Bool
 			}
 		case attributionusagepoolcommit.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -147,6 +157,9 @@ func (aupc *AttributionUsagePoolCommit) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("relation_kind=")
 	builder.WriteString(fmt.Sprintf("%v", aupc.RelationKind))
+	builder.WriteString(", ")
+	builder.WriteString("orphaned=")
+	builder.WriteString(fmt.Sprintf("%v", aupc.Orphaned))
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(aupc.CreatedAt.Format(time.ANSIC))

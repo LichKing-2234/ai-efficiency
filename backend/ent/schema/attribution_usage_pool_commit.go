@@ -16,6 +16,7 @@ func (AttributionUsagePoolCommit) Fields() []ent.Field {
 		field.Int("repo_config_id"),
 		field.String("commit_sha").NotEmpty(),
 		field.Enum("relation_kind").Values("direct", "shared", "inherited_non_counting"),
+		field.Bool("orphaned").Default(false),
 		field.Time("created_at").Immutable().Default(timeNow),
 		field.Time("updated_at").Default(timeNow).UpdateDefault(timeNow),
 	}

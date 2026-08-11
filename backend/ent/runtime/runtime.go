@@ -331,12 +331,16 @@ func init() {
 	attributionusagepoolcommitDescCommitSha := attributionusagepoolcommitFields[2].Descriptor()
 	// attributionusagepoolcommit.CommitShaValidator is a validator for the "commit_sha" field. It is called by the builders before save.
 	attributionusagepoolcommit.CommitShaValidator = attributionusagepoolcommitDescCommitSha.Validators[0].(func(string) error)
+	// attributionusagepoolcommitDescOrphaned is the schema descriptor for orphaned field.
+	attributionusagepoolcommitDescOrphaned := attributionusagepoolcommitFields[4].Descriptor()
+	// attributionusagepoolcommit.DefaultOrphaned holds the default value on creation for the orphaned field.
+	attributionusagepoolcommit.DefaultOrphaned = attributionusagepoolcommitDescOrphaned.Default.(bool)
 	// attributionusagepoolcommitDescCreatedAt is the schema descriptor for created_at field.
-	attributionusagepoolcommitDescCreatedAt := attributionusagepoolcommitFields[4].Descriptor()
+	attributionusagepoolcommitDescCreatedAt := attributionusagepoolcommitFields[5].Descriptor()
 	// attributionusagepoolcommit.DefaultCreatedAt holds the default value on creation for the created_at field.
 	attributionusagepoolcommit.DefaultCreatedAt = attributionusagepoolcommitDescCreatedAt.Default.(func() time.Time)
 	// attributionusagepoolcommitDescUpdatedAt is the schema descriptor for updated_at field.
-	attributionusagepoolcommitDescUpdatedAt := attributionusagepoolcommitFields[5].Descriptor()
+	attributionusagepoolcommitDescUpdatedAt := attributionusagepoolcommitFields[6].Descriptor()
 	// attributionusagepoolcommit.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	attributionusagepoolcommit.DefaultUpdatedAt = attributionusagepoolcommitDescUpdatedAt.Default.(func() time.Time)
 	// attributionusagepoolcommit.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
@@ -352,7 +356,7 @@ func init() {
 	// commitcheckpoint.CommitShaValidator is a validator for the "commit_sha" field. It is called by the builders before save.
 	commitcheckpoint.CommitShaValidator = commitcheckpointDescCommitSha.Validators[0].(func(string) error)
 	// commitcheckpointDescCapturedAt is the schema descriptor for captured_at field.
-	commitcheckpointDescCapturedAt := commitcheckpointFields[10].Descriptor()
+	commitcheckpointDescCapturedAt := commitcheckpointFields[14].Descriptor()
 	// commitcheckpoint.DefaultCapturedAt holds the default value on creation for the captured_at field.
 	commitcheckpoint.DefaultCapturedAt = commitcheckpointDescCapturedAt.Default.(func() time.Time)
 	commitrewriteFields := schema.CommitRewrite{}.Fields()

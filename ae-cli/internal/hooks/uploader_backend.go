@@ -46,18 +46,22 @@ func (u BackendUploader) UploadHookEvent(ctx context.Context, ev HookEvent) erro
 	switch ev.Kind {
 	case "post-commit":
 		return u.client.SendCommitCheckpoint(ctx, client.CommitCheckpointRequest{
-			EventID:        ev.EventID,
-			SessionID:      ev.SessionID,
-			RepoConfigID:   ev.RepoConfigID,
-			RepoFullName:   ev.RepoFullName,
-			WorkspaceID:    ev.WorkspaceID,
-			CommitSHA:      ev.CommitSHA,
-			ParentSHAs:     ev.ParentSHAs,
-			BranchSnapshot: ev.BranchSnapshot,
-			HeadSnapshot:   ev.HeadSnapshot,
-			BindingSource:  ev.BindingSource,
-			AgentSnapshot:  ev.AgentSnapshot,
-			CapturedAt:     capturedAt,
+			EventID:         ev.EventID,
+			SessionID:       ev.SessionID,
+			RepoConfigID:    ev.RepoConfigID,
+			RepoFullName:    ev.RepoFullName,
+			WorkspaceID:     ev.WorkspaceID,
+			CommitSHA:       ev.CommitSHA,
+			ParentSHAs:      ev.ParentSHAs,
+			BranchSnapshot:  ev.BranchSnapshot,
+			HeadSnapshot:    ev.HeadSnapshot,
+			LineageKind:     ev.LineageKind,
+			SourceCommitSHA: ev.SourceCommitSHA,
+			CommitPatchID:   ev.CommitPatchID,
+			SourcePatchID:   ev.SourcePatchID,
+			BindingSource:   ev.BindingSource,
+			AgentSnapshot:   ev.AgentSnapshot,
+			CapturedAt:      capturedAt,
 		})
 	case "post-rewrite":
 		return u.client.SendCommitRewrite(ctx, client.CommitRewriteRequest{
