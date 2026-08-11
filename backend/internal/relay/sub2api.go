@@ -2905,6 +2905,7 @@ func (s *sub2apiRelay) ReadRequestUsage(ctx context.Context, requestID string, l
 			OutputTokens        int64     `json:"output_tokens"`
 			CacheCreationTokens int64     `json:"cache_creation_tokens"`
 			CacheReadTokens     int64     `json:"cache_read_tokens"`
+			TotalTokens         *int64    `json:"total_tokens"`
 			CreatedAt           time.Time `json:"created_at"`
 		} `json:"items"`
 		Total int64 `json:"total"`
@@ -2912,7 +2913,11 @@ func (s *sub2apiRelay) ReadRequestUsage(ctx context.Context, requestID string, l
 	if err := s.getAdminEnvelopeJSON(ctx, "/api/v1/admin/usage", query, &page); err != nil {
 		return nil, fmt.Errorf("relay: request usage: %w", err)
 	}
-	if page.Total < 0 || page.Total > int64(limit) || int64(len(page.Items)) != page.Total {
+	expectedRows := page.Total
+	if expectedRows > int64(limit) {
+		expectedRows = int64(limit)
+	}
+	if page.Total < 0 || int64(len(page.Items)) != expectedRows {
 		return nil, fmt.Errorf("relay: request usage: inconsistent exact pagination")
 	}
 	result := make([]RequestUsage, 0, len(page.Items))
@@ -2921,6 +2926,7 @@ func (s *sub2apiRelay) ReadRequestUsage(ctx context.Context, requestID string, l
 			RequestID: strings.TrimSpace(item.RequestID), UserID: item.UserID, RequestedModel: strings.TrimSpace(item.Model), UsageAt: item.CreatedAt,
 			InputTokens: item.InputTokens, OutputTokens: item.OutputTokens,
 			CacheCreationTokens: item.CacheCreationTokens, CacheReadTokens: item.CacheReadTokens,
+			TotalTokens: item.TotalTokens,
 		})
 	}
 	return result, nil

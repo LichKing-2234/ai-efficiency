@@ -31,6 +31,7 @@ type RequestUsage struct {
 	OutputTokens        int64
 	CacheCreationTokens int64
 	CacheReadTokens     int64
+	TotalTokens         *int64
 }
 
 type CreateUserRequest struct {

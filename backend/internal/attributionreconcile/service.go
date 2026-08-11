@@ -170,6 +170,9 @@ func (s *Service) reconcileOne(ctx context.Context, candidate *ent.AttributionRe
 	if err != nil {
 		return s.finish(ctx, candidate.ID, token, attributionrequestclaim.StatusInvalidUsage, "missing_claim_group")
 	}
+	if group.RelayProviderID != candidate.RelayProviderID {
+		return s.finish(ctx, candidate.ID, token, attributionrequestclaim.StatusInvalidUsage, "provider_mismatch")
+	}
 	owner, err := s.client.User.Get(ctx, group.UserID)
 	if err != nil || owner.RelayUserID == nil || int64(*owner.RelayUserID) != usage.UserID {
 		return s.finish(ctx, candidate.ID, token, attributionrequestclaim.StatusOwnerMismatch, "owner_mismatch")
@@ -203,6 +206,9 @@ func normalizeUsage(requestID string, usage relay.RequestUsage) (int64, bool) {
 			return 0, false
 		}
 		total += value
+	}
+	if usage.TotalTokens != nil && *usage.TotalTokens != total {
+		return 0, false
 	}
 	return total, true
 }

@@ -126,6 +126,12 @@ func TestRunOnceFailClosedOutcomes(t *testing.T) {
 			row.OutputTokens = 1
 			return []relay.RequestUsage{row}
 		}, want: attributionrequestclaim.StatusInvalidUsage},
+		{name: "inconsistent total", rows: func(f reconcileFixture) []relay.RequestUsage {
+			row := validUsage(f)
+			total := int64(999)
+			row.TotalTokens = &total
+			return []relay.RequestUsage{row}
+		}, want: attributionrequestclaim.StatusInvalidUsage},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -142,6 +148,24 @@ func TestRunOnceFailClosedOutcomes(t *testing.T) {
 				t.Fatalf("next attempt = %v", claim.NextAttemptAt)
 			}
 		})
+	}
+}
+
+func TestRunOnceRejectsClaimGroupProviderMismatch(t *testing.T) {
+	fixture := newReconcileFixture(t)
+	ctx := context.Background()
+	other := fixture.client.RelayProvider.Create().SetName("relay-beta").SetDisplayName("Relay Beta").SetBaseURL("https://relay-beta.example.com").SetAdminAPIKey("test-key").SaveX(ctx)
+	claim := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+	fixture.client.AttributionClaimGroup.UpdateOneID(claim.ClaimGroupID).SetRelayProviderID(other.ID).ExecX(ctx)
+	reader := &requestReaderProvider{read: func(context.Context, string, int) ([]relay.RequestUsage, error) {
+		return []relay.RequestUsage{validUsage(fixture)}, nil
+	}}
+	if _, err := newTestService(t, fixture, reader).RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	claim = fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+	if claim.Status != attributionrequestclaim.StatusInvalidUsage || claim.LastErrorCode != "provider_mismatch" {
+		t.Fatalf("claim = %+v", claim)
 	}
 }
 
