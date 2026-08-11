@@ -157,7 +157,9 @@ func TestRunOnceRejectsClaimGroupProviderMismatch(t *testing.T) {
 	other := fixture.client.RelayProvider.Create().SetName("relay-beta").SetDisplayName("Relay Beta").SetBaseURL("https://relay-beta.example.com").SetAdminAPIKey("test-key").SaveX(ctx)
 	claim := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
 	fixture.client.AttributionClaimGroup.UpdateOneID(claim.ClaimGroupID).SetRelayProviderID(other.ID).ExecX(ctx)
+	var calls atomic.Int32
 	reader := &requestReaderProvider{read: func(context.Context, string, int) ([]relay.RequestUsage, error) {
+		calls.Add(1)
 		return []relay.RequestUsage{validUsage(fixture)}, nil
 	}}
 	if _, err := newTestService(t, fixture, reader).RunOnce(ctx); err != nil {
@@ -166,6 +168,9 @@ func TestRunOnceRejectsClaimGroupProviderMismatch(t *testing.T) {
 	claim = fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
 	if claim.Status != attributionrequestclaim.StatusInvalidUsage || claim.LastErrorCode != "provider_mismatch" {
 		t.Fatalf("claim = %+v", claim)
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("upstream calls = %d, want provider mismatch rejected before lookup", calls.Load())
 	}
 }
 
@@ -238,6 +243,53 @@ func TestRunOnceRecoversExpiredLease(t *testing.T) {
 	}
 	if got := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID).Status; got != attributionrequestclaim.StatusReconciled {
 		t.Fatalf("status = %s", got)
+	}
+}
+
+func TestQueuedCandidateGetsFreshLeaseTime(t *testing.T) {
+	fixture := newReconcileFixture(t)
+	ctx := context.Background()
+	first := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+	second := fixture.client.AttributionRequestClaim.Create().SetClaimGroupID(first.ClaimGroupID).SetRelayProviderID(fixture.providerID).SetRequestID("req-2").
+		SetCanonicalDigest("digest-2").SetNextAttemptAt(fixture.now).SetExpiresAt(fixture.now.Add(90 * 24 * time.Hour)).SaveX(ctx)
+	var clock atomic.Int64
+	clock.Store(fixture.now.UnixNano())
+	var calls atomic.Int32
+	secondStarted := make(chan string)
+	releaseSecond := make(chan struct{})
+	reader := &requestReaderProvider{read: func(_ context.Context, requestID string, _ int) ([]relay.RequestUsage, error) {
+		if calls.Add(1) == 1 {
+			clock.Add(int64(time.Second))
+		} else {
+			secondStarted <- requestID
+			<-releaseSecond
+		}
+		usage := validUsage(fixture)
+		usage.RequestID = requestID
+		return []relay.RequestUsage{usage}, nil
+	}}
+	service, err := NewService(fixture.client, resolverFunc(func(context.Context, int) (relay.Provider, error) { return reader, nil }), zap.NewNop(), Options{
+		BatchSize: 2, Concurrency: 1, LeaseTTL: 100 * time.Millisecond,
+		Now: func() time.Time { return time.Unix(0, clock.Load()).UTC() }, RandFloat64: func() float64 { return 0 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, err := service.RunOnce(ctx); done <- err }()
+	blockedRequestID := <-secondStarted
+	blockedID := second.ID
+	if blockedRequestID == first.RequestID {
+		blockedID = first.ID
+	}
+	leased := fixture.client.AttributionRequestClaim.GetX(ctx, blockedID)
+	wantExpiry := fixture.now.Add(time.Second + 100*time.Millisecond)
+	if leased.LeaseExpiresAt == nil || !leased.LeaseExpiresAt.Equal(wantExpiry) {
+		t.Fatalf("queued lease expiry = %v, want %v", leased.LeaseExpiresAt, wantExpiry)
+	}
+	close(releaseSecond)
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 

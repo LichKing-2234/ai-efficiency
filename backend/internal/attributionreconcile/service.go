@@ -109,7 +109,7 @@ func (s *Service) RunOnce(ctx context.Context) (int, error) {
 			case <-ctx.Done():
 				return
 			}
-			claimed, err := s.reconcileCandidate(ctx, candidate, now)
+			claimed, err := s.reconcileCandidate(ctx, candidate)
 			mu.Lock()
 			defer mu.Unlock()
 			if claimed {
@@ -124,7 +124,8 @@ func (s *Service) RunOnce(ctx context.Context) (int, error) {
 	return processed, firstErr
 }
 
-func (s *Service) reconcileCandidate(ctx context.Context, candidate *ent.AttributionRequestClaim, now time.Time) (bool, error) {
+func (s *Service) reconcileCandidate(ctx context.Context, candidate *ent.AttributionRequestClaim) (bool, error) {
+	now := s.now().UTC()
 	token := uuid.NewString()
 	updated, err := s.client.AttributionRequestClaim.Update().Where(
 		attributionrequestclaim.IDEQ(candidate.ID),
@@ -139,6 +140,18 @@ func (s *Service) reconcileCandidate(ctx context.Context, candidate *ent.Attribu
 		return false, nil
 	}
 	attempt := candidate.AttemptCount + 1
+	group, err := s.client.AttributionClaimGroup.Get(ctx, candidate.ClaimGroupID)
+	if err != nil {
+		return true, s.finish(ctx, candidate.ID, token, attributionrequestclaim.StatusInvalidUsage, "missing_claim_group")
+	}
+	if group.RelayProviderID != candidate.RelayProviderID {
+		return true, s.finish(ctx, candidate.ID, token, attributionrequestclaim.StatusInvalidUsage, "provider_mismatch")
+	}
+	owner, err := s.client.User.Get(ctx, group.UserID)
+	if err != nil || owner.RelayUserID == nil {
+		return true, s.finish(ctx, candidate.ID, token, attributionrequestclaim.StatusOwnerMismatch, "owner_mismatch")
+	}
+	expectedRelayUserID := int64(*owner.RelayUserID)
 	providerRow, err := s.client.RelayProvider.Get(ctx, candidate.RelayProviderID)
 	if err != nil || !providerRow.Enabled {
 		return true, s.retry(ctx, candidate.ID, token, attempt, now, "provider_unavailable", err)
@@ -159,22 +172,14 @@ func (s *Service) reconcileCandidate(ctx context.Context, candidate *ent.Attribu
 	case 0:
 		return true, s.retryPending(ctx, candidate.ID, token, attempt, now)
 	case 1:
-		return true, s.reconcileOne(ctx, candidate, token, now, rows[0])
+		return true, s.reconcileOne(ctx, candidate, token, now, expectedRelayUserID, rows[0])
 	default:
 		return true, s.finish(ctx, candidate.ID, token, attributionrequestclaim.StatusAmbiguous, "ambiguous_request")
 	}
 }
 
-func (s *Service) reconcileOne(ctx context.Context, candidate *ent.AttributionRequestClaim, token string, now time.Time, usage relay.RequestUsage) error {
-	group, err := s.client.AttributionClaimGroup.Get(ctx, candidate.ClaimGroupID)
-	if err != nil {
-		return s.finish(ctx, candidate.ID, token, attributionrequestclaim.StatusInvalidUsage, "missing_claim_group")
-	}
-	if group.RelayProviderID != candidate.RelayProviderID {
-		return s.finish(ctx, candidate.ID, token, attributionrequestclaim.StatusInvalidUsage, "provider_mismatch")
-	}
-	owner, err := s.client.User.Get(ctx, group.UserID)
-	if err != nil || owner.RelayUserID == nil || int64(*owner.RelayUserID) != usage.UserID {
+func (s *Service) reconcileOne(ctx context.Context, candidate *ent.AttributionRequestClaim, token string, now time.Time, expectedRelayUserID int64, usage relay.RequestUsage) error {
+	if expectedRelayUserID != usage.UserID {
 		return s.finish(ctx, candidate.ID, token, attributionrequestclaim.StatusOwnerMismatch, "owner_mismatch")
 	}
 	total, valid := normalizeUsage(candidate.RequestID, usage)
