@@ -42,8 +42,11 @@ T01 contract publication (#253)
 
 - [x] Preserve backend provider ID through discover, tool config, reporting
   state, and immutable claim-group identity.
-- [x] Correlate `x-client-request-id`, thread, turn, structured mutation, and
-  deterministic Git content without cwd/time/path heuristics.
+- [ ] Correlate the exact `sub2api` logical Request identity, thread, turn,
+  structured mutation, and deterministic Git content without cwd/time/path
+  heuristics. HTTP completed-response evidence is implemented, but Codex
+  0.147.0 Responses WebSocket does not persist its matching logical response
+  ID in a trusted normal-operation local source; #241 is reopened.
 - [x] Support multi-Request turns, late Requests, active/archived source
   recovery, explicit gaps, and a single calibration envelope.
 - [x] Verify privacy and deterministic evidence fixtures.
