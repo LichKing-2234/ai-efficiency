@@ -78,6 +78,21 @@ func TestOrganizationProjectsRootAndIndependentlyPagedBranchCollections(t *testi
 	}
 }
 
+func TestDepartmentSummaryReturnsExactUnpaginatedSubtreeTokens(t *testing.T) {
+	svc, _, _ := newOrganizationTestService(t, 30, 120, nil, nil)
+	root, err := svc.Organization(context.Background(), 1, testOrganizationParams(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary, err := svc.DepartmentSummary(context.Background(), 1, "department-root", testMembersParams().OverviewParams)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.DepartmentExternalID != "department-root" || summary.RangeTotalTokens == nil || root.Departments[0].RangeTotalTokens == nil || *summary.RangeTotalTokens != *root.Departments[0].RangeTotalTokens {
+		t.Fatalf("department summary=%+v root=%+v", summary, root.Departments[0])
+	}
+}
+
 func TestOrganizationRejectsLimitsAndUnauthorizedParent(t *testing.T) {
 	svc, _, _ := newOrganizationTestService(t, 2, 3, nil, nil)
 	tests := []OrganizationParams{

@@ -51,6 +51,7 @@ type RouterOptions struct {
 	WebVitalsHandler         *WebVitalsHandler
 	AttributionCorrelation   *attributionledger.CorrelationStore
 	ActivityCache            *activity.Cache
+	ActivityV2LedgerEpoch    string
 	Release                  string
 	RequestTimeout           time.Duration
 }
@@ -224,10 +225,21 @@ func setupRouter(
 	eventsHandler := NewEventsHandler(toolusage.NewQueryService(entClient))
 	installationService := attributionledger.NewInstallationService(entClient)
 	attributionHandler := NewAttributionHandler(installationService, attributionledger.NewService(entClient, options.AttributionCorrelation), options.AttributionCorrelation, attributionclaim.NewService(entClient))
+	teamUsageService, err := newTeamUsageService(entClient, sqlDB, providerHandler, options.RepresentativeScopeCache, options.TeamUsageSnapshotCache, options.TeamUsageOriginCache, options.TeamUsagePrewarmReader, options.TeamUsageCursorSecret)
+	if err != nil {
+		return nil, fmt.Errorf("initialize team usage service: %w", err)
+	}
+	var personalUsageService *personalusage.Service
+	if providerHandler != nil {
+		personalUsageService = personalusage.NewService(entClient, providerHandler, encryptionKey, options.PersonalUsageCache)
+	}
 	activityHandler := NewActivityHandler(activity.NewService(entClient, options.AttributionCorrelation, activity.ServiceOptions{
 		ScopeResolver: representativescope.NewWithCache(entClient, options.RepresentativeScopeCache),
 		CursorSecret:  options.TeamUsageCursorSecret,
 		Cache:         options.ActivityCache,
+		V2LedgerEpoch: options.ActivityV2LedgerEpoch,
+		V2Denominator: &activityDenominatorResolver{personal: personalUsageService, team: teamUsageService, client: entClient, cache: options.ActivityCache},
+		V2DB:          sqlDB,
 	}))
 	userSetupService := usersetup.NewService(entClient, providerHandler, encryptionKey)
 	userSetupHandler := NewUserSetupHandler(userSetupService)
@@ -315,25 +327,30 @@ func setupRouter(
 		scmGroup.DELETE("/:id", scmProviderHandler.Delete)
 	}
 
-	// Repos
+	// CLI repository discovery keeps normal authenticated access.
 	repoGroup := protected.Group("/repos")
 	{
-		repoGroup.GET("", repoHandler.List)
-		repoGroup.POST("", repoHandler.Create)
-		repoGroup.GET("/inventory", repoHandler.Inventory)
-		repoGroup.POST("/direct", repoHandler.CreateDirect)
 		repoGroup.POST("/ensure-remote", repoHandler.EnsureRemote)
 		repoGroup.POST("/resolve-remote", repoHandler.ResolveRemote)
 		repoGroup.POST("/hook-eligible", repoHandler.HookEligible)
-		repoGroup.POST("/auto-bind-unbound", auth.RequireAdmin(), repoHandler.AutoBindUnbound)
-		repoGroup.POST("/repair-webhooks", auth.RequireAdmin(), repoHandler.RepairFailedWebhooks)
-		repoGroup.POST("/:id/repair-webhook", auth.RequireAdmin(), repoHandler.RepairWebhook)
-		repoGroup.GET("/:id", repoHandler.Get)
-		repoGroup.PUT("/:id", repoHandler.Update)
-		repoGroup.DELETE("/:id", repoHandler.Delete)
-		repoGroup.GET("/:id/prs", prHandler.ListByRepo)
-		repoGroup.POST("/:id/sync-prs", prHandler.SyncPRs)
-		repoGroup.GET("/:id/pr-sync-job/latest", prHandler.GetLatestSyncJobForRepo)
+	}
+	// Browser repository integration management is administrator-only.
+	adminRepoGroup := protected.Group("/repos")
+	adminRepoGroup.Use(auth.RequireAdmin())
+	{
+		adminRepoGroup.GET("", repoHandler.List)
+		adminRepoGroup.POST("", repoHandler.Create)
+		adminRepoGroup.GET("/inventory", repoHandler.Inventory)
+		adminRepoGroup.POST("/direct", repoHandler.CreateDirect)
+		adminRepoGroup.POST("/auto-bind-unbound", repoHandler.AutoBindUnbound)
+		adminRepoGroup.POST("/repair-webhooks", repoHandler.RepairFailedWebhooks)
+		adminRepoGroup.POST("/:id/repair-webhook", repoHandler.RepairWebhook)
+		adminRepoGroup.GET("/:id", repoHandler.Get)
+		adminRepoGroup.PUT("/:id", repoHandler.Update)
+		adminRepoGroup.DELETE("/:id", repoHandler.Delete)
+		adminRepoGroup.GET("/:id/prs", prHandler.ListByRepo)
+		adminRepoGroup.POST("/:id/sync-prs", prHandler.SyncPRs)
+		adminRepoGroup.GET("/:id/pr-sync-job/latest", prHandler.GetLatestSyncJobForRepo)
 	}
 
 	// PRs
@@ -399,10 +416,6 @@ func setupRouter(
 	RegisterWorkItemsRoutes(protected, workItemsHandler)
 	RegisterWebVitalsRoutes(protected, options.WebVitalsHandler)
 
-	teamUsageService, err := newTeamUsageService(entClient, sqlDB, providerHandler, options.RepresentativeScopeCache, options.TeamUsageSnapshotCache, options.TeamUsageOriginCache, options.TeamUsagePrewarmReader, options.TeamUsageCursorSecret)
-	if err != nil {
-		return nil, fmt.Errorf("initialize team usage service: %w", err)
-	}
 	teamUsageHandler := NewTeamUsageHandler(teamUsageService)
 
 	userGroup := protected.Group("/user")
@@ -432,8 +445,7 @@ func setupRouter(
 			userGroup.POST("/providers/:id/test", providerHandler.Test)
 
 			// User usage dashboard
-			userUsageService := personalusage.NewService(entClient, providerHandler, encryptionKey, options.PersonalUsageCache)
-			userUsageHandler := NewUserUsageHandler(userUsageService)
+			userUsageHandler := NewUserUsageHandler(personalUsageService)
 			userGroup.GET("/usage/dashboard", userUsageHandler.Dashboard)
 			userGroup.GET("/usage/group-quotas", userUsageHandler.GroupQuotas)
 		}

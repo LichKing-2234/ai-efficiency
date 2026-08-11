@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** Implementation in progress; T02-T07 are merged with hosted CI green, T10 is locally complete and awaiting hosted delivery, and the T04 real read-only canary still requires separate authorization
+**Status:** Implementation in progress; T02-T07 and T10 are merged with hosted CI green, T08 is under local implementation and verification, and the T04 real read-only canary still requires separate authorization
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules

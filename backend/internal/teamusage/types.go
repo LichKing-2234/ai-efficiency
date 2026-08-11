@@ -124,6 +124,14 @@ type SummaryResponse struct {
 	Summary      SummaryAggregate `json:"summary"`
 }
 
+type DepartmentSummaryResponse struct {
+	SnapshotFreshness
+	ScopeVersion         string         `json:"scope_version"`
+	Window               OverviewWindow `json:"window"`
+	DepartmentExternalID string         `json:"department_external_id"`
+	RangeTotalTokens     *int64         `json:"range_total_tokens,omitempty"`
+}
+
 type TrendResponse struct {
 	SnapshotFreshness
 	ScopeVersion    string               `json:"scope_version"`

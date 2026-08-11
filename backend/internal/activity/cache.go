@@ -93,3 +93,11 @@ func activityCacheDimensions(kind string, authorization *authorizationScope, act
 		Subject: subject, FromUnixNano: window.From.UnixNano(), ToUnixNano: window.To.UnixNano(), PageOptions: pages,
 	}
 }
+
+func (c *Cache) ReadMemberDenominator(ctx context.Context, key V2MemberDenominatorCacheKey, target *V2Denominator) bool {
+	return c.read(ctx, cacheDimensions{SchemaVersion: activityCacheSchemaVersion, Contract: V2MetricContractVersion, Kind: "member_denominator", ScopeVersion: key.ScopeVersion, ActorUserID: key.ActorUserID, Subject: fmt.Sprintf("member:%d", key.SubjectUserID), PageOptions: key}, target)
+}
+
+func (c *Cache) WriteMemberDenominator(ctx context.Context, key V2MemberDenominatorCacheKey, value V2Denominator) {
+	c.write(ctx, cacheDimensions{SchemaVersion: activityCacheSchemaVersion, Contract: V2MetricContractVersion, Kind: "member_denominator", ScopeVersion: key.ScopeVersion, ActorUserID: key.ActorUserID, Subject: fmt.Sprintf("member:%d", key.SubjectUserID), PageOptions: key}, value)
+}
