@@ -145,6 +145,10 @@ func TestScanCodexV2ClaimsUsesTransportLogNotArbitraryJSONLText(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(1, ?, ?, ?, ?, ?)`, observed.Unix(), observed.Nanosecond(), "thread-real", "codex_http_client::client", body); err != nil {
 		t.Fatal(err)
 	}
+	forged := `turn{turn.id=turn-real}:model_client.stream_responses_api{api.path="responses"}: Request completed method=POST headers={"x-client-request-id": "client:forged-request"}`
+	if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(2, ?, ?, ?, ?, ?)`, observed.Unix(), observed.Nanosecond(), "thread-real", "untrusted_target", forged); err != nil {
+		t.Fatal(err)
+	}
 	claims, err := ScanCodexV2ClaimsFromHome(context.Background(), home, V2ClaimScanOptions{RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8, WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-real"})
 	if err != nil {
 		t.Fatal(err)
@@ -280,6 +284,52 @@ func TestScanCodexV2ClaimsBuildsMultiCommitAllocationSequence(t *testing.T) {
 	allocations := state.Claims[0].Group.CommitAllocations
 	if len(allocations) != 2 || allocations[0].CommitSHA != commitA || allocations[1].CommitSHA != commitB || allocations[1].Sequence != 2 || allocations[0].EvidenceDigest == allocations[1].EvidenceDigest {
 		t.Fatalf("allocation sequence = %+v", allocations)
+	}
+}
+
+func TestScanCodexV2ClaimsBuildsSequentialSameFileUpdateAllocations(t *testing.T) {
+	repo := t.TempDir()
+	for _, args := range [][]string{{"init"}, {"config", "user.email", "alice@example.com"}, {"config", "user.name", "Alice"}} {
+		gitClaim(t, repo, args...)
+	}
+	feature := filepath.Join(repo, "feature.go")
+	for index, value := range []string{"0", "1", "2"} {
+		if err := os.WriteFile(feature, []byte("package feature\n\nconst Value = "+value+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		gitClaim(t, repo, "add", "feature.go")
+		gitClaim(t, repo, "commit", "-m", "value "+value)
+		if index == 0 {
+			continue
+		}
+	}
+	commitB := strings.TrimSpace(gitClaim(t, repo, "rev-parse", "HEAD"))
+	commitA := strings.TrimSpace(gitClaim(t, repo, "rev-parse", "HEAD^"))
+	session := filepath.Join(t.TempDir(), "session.jsonl")
+	baseRows := []map[string]any{
+		{"type": "session_meta", "payload": map[string]any{"id": "thread-update-sequence"}},
+		{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-update-sequence"}},
+		{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Update File: feature.go\n@@\n-const Value = 0\n+const Value = 1\n*** End Patch"}},
+	}
+	writeV2JSONL(t, session, baseRows...)
+	opts := V2ClaimScanOptions{RepoRoot: repo, RelayProviderID: 7, RepoConfigID: 8, WorkspaceID: "workspace-8", CommitSHA: commitA, CheckpointEventID: "checkpoint-a"}
+	first, err := scanV2ClaimsForTest([]string{session}, opts, "thread-update-sequence", "req-update-sequence")
+	if err != nil || first[0].GapReason != "" {
+		t.Fatalf("first update allocation = %+v, err = %v", first, err)
+	}
+	writeV2JSONL(t, session, append(baseRows,
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Update File: feature.go\n@@\n-const Value = 1\n+const Value = 2\n*** End Patch"}},
+	)...)
+	opts.CommitSHA, opts.CheckpointEventID = commitB, "checkpoint-b"
+	second, err := scanV2ClaimsForTest([]string{session}, opts, "thread-update-sequence", "req-update-sequence")
+	if err != nil || second[0].GapReason != "" {
+		t.Fatalf("second update allocation = %+v, err = %v", second, err)
+	}
+	state := &V2ClaimState{}
+	MergeV2ClaimState(state, first, time.Now().UTC())
+	MergeV2ClaimState(state, second, time.Now().UTC())
+	if allocations := state.Claims[0].Group.CommitAllocations; len(allocations) != 2 || allocations[0].CommitSHA != commitA || allocations[1].CommitSHA != commitB {
+		t.Fatalf("same-file allocation sequence = %+v", allocations)
 	}
 }
 

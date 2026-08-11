@@ -19,6 +19,7 @@ import (
 )
 
 const v2ClaimSchemaVersion = 2
+const codexHTTPClientRequestTarget = "codex_http_client::client"
 
 type V2ClaimScanOptions struct {
 	RepoRoot          string
@@ -369,12 +370,31 @@ func v2PatchMutations(ctx context.Context, patch, repoRoot, commitSHA string) []
 			expected, ok := applyV2PatchBlock(string(parent), block)
 			if ok {
 				mutations = append(mutations, v2Mutation{path: path, hash: claimDigest(expected), kind: kind})
+			} else if _, ok := applyV2PatchBlock(string(parent), reverseV2PatchBlock(block)); ok {
+				// The patch was introduced by an earlier commit and the current
+				// parent already contains its result.
+				mutations = append(mutations, v2Mutation{path: path, hash: claimDigest(string(parent)), kind: kind})
 			} else {
 				mutations = append(mutations, v2Mutation{path: path, kind: kind})
 			}
 		}
 	}
 	return mutations
+}
+
+func reverseV2PatchBlock(block []string) []string {
+	reversed := make([]string, len(block))
+	for index, line := range block {
+		switch {
+		case strings.HasPrefix(line, "+"):
+			reversed[index] = "-" + line[1:]
+		case strings.HasPrefix(line, "-"):
+			reversed[index] = "+" + line[1:]
+		default:
+			reversed[index] = line
+		}
+	}
+	return reversed
 }
 
 func verifyV2Mutations(ctx context.Context, repoRoot, commitSHA string, mutations []v2Mutation) bool {
@@ -532,11 +552,12 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string) ([]v2Reques
 	rows, err := db.QueryContext(ctx, `
 		SELECT thread_id, feedback_log_body
 		FROM logs
-		WHERE feedback_log_body LIKE '%Request completed method=POST%'
+		WHERE target IN (?, ?)
+		  AND feedback_log_body LIKE '%Request completed method=POST%'
 		  AND feedback_log_body LIKE '%api.path="responses"%'
 		  AND feedback_log_body LIKE '%"x-client-request-id"%'
 		  AND (feedback_log_body LIKE '%turn.id=%' OR feedback_log_body LIKE '%turn_id=%')
-		ORDER BY ts, ts_nanos, id`)
+		ORDER BY ts, ts_nanos, id`, codexFailedRequestTarget, codexHTTPClientRequestTarget)
 	if err != nil {
 		return nil, fmt.Errorf("query Codex request log: %w", err)
 	}
