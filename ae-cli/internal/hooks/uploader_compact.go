@@ -56,6 +56,8 @@ func (u CompactBackendUploader) UploadHookEvent(ctx context.Context, ev HookEven
 			EventID: ev.EventID, RepoConfigID: ev.RepoConfigID, RepoFullName: ev.RepoFullName,
 			WorkspaceID: ev.WorkspaceID, CommitSHA: ev.CommitSHA, ParentSHAs: ev.ParentSHAs,
 			BranchSnapshot: ev.BranchSnapshot, HeadSnapshot: ev.HeadSnapshot,
+			LineageKind: ev.LineageKind, SourceCommitSHA: ev.SourceCommitSHA,
+			CommitPatchID: ev.CommitPatchID, SourcePatchID: ev.SourcePatchID,
 			BindingSource: ev.BindingSource, CapturedAt: capturedAt,
 		})
 	case "post-rewrite":

@@ -98,18 +98,22 @@ type userProviderGroup struct {
 }
 
 type CommitCheckpointRequest struct {
-	EventID        string         `json:"event_id"`
-	SessionID      string         `json:"session_id,omitempty"`
-	RepoConfigID   int            `json:"repo_config_id,omitempty"`
-	RepoFullName   string         `json:"repo_full_name"`
-	WorkspaceID    string         `json:"workspace_id"`
-	CommitSHA      string         `json:"commit_sha"`
-	ParentSHAs     []string       `json:"parent_shas,omitempty"`
-	BranchSnapshot string         `json:"branch_snapshot,omitempty"`
-	HeadSnapshot   string         `json:"head_snapshot,omitempty"`
-	BindingSource  string         `json:"binding_source"`
-	AgentSnapshot  map[string]any `json:"agent_snapshot,omitempty"`
-	CapturedAt     *time.Time     `json:"captured_at,omitempty"`
+	EventID         string         `json:"event_id"`
+	SessionID       string         `json:"session_id,omitempty"`
+	RepoConfigID    int            `json:"repo_config_id,omitempty"`
+	RepoFullName    string         `json:"repo_full_name"`
+	WorkspaceID     string         `json:"workspace_id"`
+	CommitSHA       string         `json:"commit_sha"`
+	ParentSHAs      []string       `json:"parent_shas,omitempty"`
+	BranchSnapshot  string         `json:"branch_snapshot,omitempty"`
+	HeadSnapshot    string         `json:"head_snapshot,omitempty"`
+	LineageKind     string         `json:"lineage_kind,omitempty"`
+	SourceCommitSHA string         `json:"source_commit_sha,omitempty"`
+	CommitPatchID   string         `json:"commit_patch_id,omitempty"`
+	SourcePatchID   string         `json:"source_patch_id,omitempty"`
+	BindingSource   string         `json:"binding_source"`
+	AgentSnapshot   map[string]any `json:"agent_snapshot,omitempty"`
+	CapturedAt      *time.Time     `json:"captured_at,omitempty"`
 }
 
 type CommitRewriteRequest struct {

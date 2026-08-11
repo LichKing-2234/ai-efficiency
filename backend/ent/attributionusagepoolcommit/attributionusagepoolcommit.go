@@ -22,6 +22,8 @@ const (
 	FieldCommitSha = "commit_sha"
 	// FieldRelationKind holds the string denoting the relation_kind field in the database.
 	FieldRelationKind = "relation_kind"
+	// FieldOrphaned holds the string denoting the orphaned field in the database.
+	FieldOrphaned = "orphaned"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
@@ -37,6 +39,7 @@ var Columns = []string{
 	FieldRepoConfigID,
 	FieldCommitSha,
 	FieldRelationKind,
+	FieldOrphaned,
 	FieldCreatedAt,
 	FieldUpdatedAt,
 }
@@ -54,6 +57,8 @@ func ValidColumn(column string) bool {
 var (
 	// CommitShaValidator is a validator for the "commit_sha" field. It is called by the builders before save.
 	CommitShaValidator func(string) error
+	// DefaultOrphaned holds the default value on creation for the "orphaned" field.
+	DefaultOrphaned bool
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -112,6 +117,11 @@ func ByCommitSha(opts ...sql.OrderTermOption) OrderOption {
 // ByRelationKind orders the results by the relation_kind field.
 func ByRelationKind(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRelationKind, opts...).ToFunc()
+}
+
+// ByOrphaned orders the results by the orphaned field.
+func ByOrphaned(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOrphaned, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

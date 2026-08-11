@@ -29,19 +29,23 @@ func TestBackendUploaderMapsCheckpointEvent(t *testing.T) {
 	uploader := NewBackendUploader(sender)
 
 	err := uploader.UploadHookEvent(context.Background(), HookEvent{
-		Kind:           "post-commit",
-		EventID:        "cp-1",
-		SessionID:      "sess-1",
-		RepoConfigID:   123,
-		RepoFullName:   "org/repo",
-		WorkspaceID:    "ws-1",
-		BindingSource:  "marker",
-		CommitSHA:      "abc123",
-		ParentSHAs:     []string{"000000"},
-		BranchSnapshot: "main",
-		HeadSnapshot:   "abc123",
-		AgentSnapshot:  map[string]any{"codex": map[string]any{"total_tokens": 10}},
-		CapturedAt:     now.Format(time.RFC3339Nano),
+		Kind:            "post-commit",
+		EventID:         "cp-1",
+		SessionID:       "sess-1",
+		RepoConfigID:    123,
+		RepoFullName:    "org/repo",
+		WorkspaceID:     "ws-1",
+		BindingSource:   "marker",
+		CommitSHA:       "abc123",
+		ParentSHAs:      []string{"000000"},
+		BranchSnapshot:  "main",
+		HeadSnapshot:    "abc123",
+		LineageKind:     "cherry_pick",
+		SourceCommitSHA: "source123",
+		CommitPatchID:   "patch123",
+		SourcePatchID:   "patch123",
+		AgentSnapshot:   map[string]any{"codex": map[string]any{"total_tokens": 10}},
+		CapturedAt:      now.Format(time.RFC3339Nano),
 	})
 	if err != nil {
 		t.Fatalf("UploadHookEvent: %v", err)
@@ -54,6 +58,9 @@ func TestBackendUploaderMapsCheckpointEvent(t *testing.T) {
 	}
 	if sender.checkpoints[0].RepoConfigID != 123 {
 		t.Fatalf("repo_config_id = %d, want 123", sender.checkpoints[0].RepoConfigID)
+	}
+	if sender.checkpoints[0].LineageKind != "cherry_pick" || sender.checkpoints[0].SourceCommitSHA != "source123" || sender.checkpoints[0].CommitPatchID != "patch123" || sender.checkpoints[0].SourcePatchID != "patch123" {
+		t.Fatalf("lineage evidence = %+v", sender.checkpoints[0])
 	}
 	if sender.checkpoints[0].CapturedAt == nil || !sender.checkpoints[0].CapturedAt.Equal(now) {
 		t.Fatalf("captured_at = %v, want %v", sender.checkpoints[0].CapturedAt, now)

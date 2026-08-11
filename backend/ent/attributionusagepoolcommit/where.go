@@ -69,6 +69,11 @@ func CommitSha(v string) predicate.AttributionUsagePoolCommit {
 	return predicate.AttributionUsagePoolCommit(sql.FieldEQ(FieldCommitSha, v))
 }
 
+// Orphaned applies equality check predicate on the "orphaned" field. It's identical to OrphanedEQ.
+func Orphaned(v bool) predicate.AttributionUsagePoolCommit {
+	return predicate.AttributionUsagePoolCommit(sql.FieldEQ(FieldOrphaned, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.AttributionUsagePoolCommit {
 	return predicate.AttributionUsagePoolCommit(sql.FieldEQ(FieldCreatedAt, v))
@@ -242,6 +247,16 @@ func RelationKindIn(vs ...RelationKind) predicate.AttributionUsagePoolCommit {
 // RelationKindNotIn applies the NotIn predicate on the "relation_kind" field.
 func RelationKindNotIn(vs ...RelationKind) predicate.AttributionUsagePoolCommit {
 	return predicate.AttributionUsagePoolCommit(sql.FieldNotIn(FieldRelationKind, vs...))
+}
+
+// OrphanedEQ applies the EQ predicate on the "orphaned" field.
+func OrphanedEQ(v bool) predicate.AttributionUsagePoolCommit {
+	return predicate.AttributionUsagePoolCommit(sql.FieldEQ(FieldOrphaned, v))
+}
+
+// OrphanedNEQ applies the NEQ predicate on the "orphaned" field.
+func OrphanedNEQ(v bool) predicate.AttributionUsagePoolCommit {
+	return predicate.AttributionUsagePoolCommit(sql.FieldNEQ(FieldOrphaned, v))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.

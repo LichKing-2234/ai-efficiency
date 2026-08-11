@@ -90,6 +90,21 @@ func HeadSnapshot(v string) predicate.CommitCheckpoint {
 	return predicate.CommitCheckpoint(sql.FieldEQ(FieldHeadSnapshot, v))
 }
 
+// SourceCommitSha applies equality check predicate on the "source_commit_sha" field. It's identical to SourceCommitShaEQ.
+func SourceCommitSha(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldEQ(FieldSourceCommitSha, v))
+}
+
+// CommitPatchID applies equality check predicate on the "commit_patch_id" field. It's identical to CommitPatchIDEQ.
+func CommitPatchID(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldEQ(FieldCommitPatchID, v))
+}
+
+// SourcePatchID applies equality check predicate on the "source_patch_id" field. It's identical to SourcePatchIDEQ.
+func SourcePatchID(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldEQ(FieldSourcePatchID, v))
+}
+
 // CapturedAt applies equality check predicate on the "captured_at" field. It's identical to CapturedAtEQ.
 func CapturedAt(v time.Time) predicate.CommitCheckpoint {
 	return predicate.CommitCheckpoint(sql.FieldEQ(FieldCapturedAt, v))
@@ -488,6 +503,261 @@ func HeadSnapshotEqualFold(v string) predicate.CommitCheckpoint {
 // HeadSnapshotContainsFold applies the ContainsFold predicate on the "head_snapshot" field.
 func HeadSnapshotContainsFold(v string) predicate.CommitCheckpoint {
 	return predicate.CommitCheckpoint(sql.FieldContainsFold(FieldHeadSnapshot, v))
+}
+
+// LineageKindEQ applies the EQ predicate on the "lineage_kind" field.
+func LineageKindEQ(v LineageKind) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldEQ(FieldLineageKind, v))
+}
+
+// LineageKindNEQ applies the NEQ predicate on the "lineage_kind" field.
+func LineageKindNEQ(v LineageKind) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldNEQ(FieldLineageKind, v))
+}
+
+// LineageKindIn applies the In predicate on the "lineage_kind" field.
+func LineageKindIn(vs ...LineageKind) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldIn(FieldLineageKind, vs...))
+}
+
+// LineageKindNotIn applies the NotIn predicate on the "lineage_kind" field.
+func LineageKindNotIn(vs ...LineageKind) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldNotIn(FieldLineageKind, vs...))
+}
+
+// LineageKindIsNil applies the IsNil predicate on the "lineage_kind" field.
+func LineageKindIsNil() predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldIsNull(FieldLineageKind))
+}
+
+// LineageKindNotNil applies the NotNil predicate on the "lineage_kind" field.
+func LineageKindNotNil() predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldNotNull(FieldLineageKind))
+}
+
+// SourceCommitShaEQ applies the EQ predicate on the "source_commit_sha" field.
+func SourceCommitShaEQ(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldEQ(FieldSourceCommitSha, v))
+}
+
+// SourceCommitShaNEQ applies the NEQ predicate on the "source_commit_sha" field.
+func SourceCommitShaNEQ(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldNEQ(FieldSourceCommitSha, v))
+}
+
+// SourceCommitShaIn applies the In predicate on the "source_commit_sha" field.
+func SourceCommitShaIn(vs ...string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldIn(FieldSourceCommitSha, vs...))
+}
+
+// SourceCommitShaNotIn applies the NotIn predicate on the "source_commit_sha" field.
+func SourceCommitShaNotIn(vs ...string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldNotIn(FieldSourceCommitSha, vs...))
+}
+
+// SourceCommitShaGT applies the GT predicate on the "source_commit_sha" field.
+func SourceCommitShaGT(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldGT(FieldSourceCommitSha, v))
+}
+
+// SourceCommitShaGTE applies the GTE predicate on the "source_commit_sha" field.
+func SourceCommitShaGTE(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldGTE(FieldSourceCommitSha, v))
+}
+
+// SourceCommitShaLT applies the LT predicate on the "source_commit_sha" field.
+func SourceCommitShaLT(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldLT(FieldSourceCommitSha, v))
+}
+
+// SourceCommitShaLTE applies the LTE predicate on the "source_commit_sha" field.
+func SourceCommitShaLTE(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldLTE(FieldSourceCommitSha, v))
+}
+
+// SourceCommitShaContains applies the Contains predicate on the "source_commit_sha" field.
+func SourceCommitShaContains(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldContains(FieldSourceCommitSha, v))
+}
+
+// SourceCommitShaHasPrefix applies the HasPrefix predicate on the "source_commit_sha" field.
+func SourceCommitShaHasPrefix(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldHasPrefix(FieldSourceCommitSha, v))
+}
+
+// SourceCommitShaHasSuffix applies the HasSuffix predicate on the "source_commit_sha" field.
+func SourceCommitShaHasSuffix(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldHasSuffix(FieldSourceCommitSha, v))
+}
+
+// SourceCommitShaIsNil applies the IsNil predicate on the "source_commit_sha" field.
+func SourceCommitShaIsNil() predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldIsNull(FieldSourceCommitSha))
+}
+
+// SourceCommitShaNotNil applies the NotNil predicate on the "source_commit_sha" field.
+func SourceCommitShaNotNil() predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldNotNull(FieldSourceCommitSha))
+}
+
+// SourceCommitShaEqualFold applies the EqualFold predicate on the "source_commit_sha" field.
+func SourceCommitShaEqualFold(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldEqualFold(FieldSourceCommitSha, v))
+}
+
+// SourceCommitShaContainsFold applies the ContainsFold predicate on the "source_commit_sha" field.
+func SourceCommitShaContainsFold(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldContainsFold(FieldSourceCommitSha, v))
+}
+
+// CommitPatchIDEQ applies the EQ predicate on the "commit_patch_id" field.
+func CommitPatchIDEQ(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldEQ(FieldCommitPatchID, v))
+}
+
+// CommitPatchIDNEQ applies the NEQ predicate on the "commit_patch_id" field.
+func CommitPatchIDNEQ(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldNEQ(FieldCommitPatchID, v))
+}
+
+// CommitPatchIDIn applies the In predicate on the "commit_patch_id" field.
+func CommitPatchIDIn(vs ...string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldIn(FieldCommitPatchID, vs...))
+}
+
+// CommitPatchIDNotIn applies the NotIn predicate on the "commit_patch_id" field.
+func CommitPatchIDNotIn(vs ...string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldNotIn(FieldCommitPatchID, vs...))
+}
+
+// CommitPatchIDGT applies the GT predicate on the "commit_patch_id" field.
+func CommitPatchIDGT(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldGT(FieldCommitPatchID, v))
+}
+
+// CommitPatchIDGTE applies the GTE predicate on the "commit_patch_id" field.
+func CommitPatchIDGTE(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldGTE(FieldCommitPatchID, v))
+}
+
+// CommitPatchIDLT applies the LT predicate on the "commit_patch_id" field.
+func CommitPatchIDLT(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldLT(FieldCommitPatchID, v))
+}
+
+// CommitPatchIDLTE applies the LTE predicate on the "commit_patch_id" field.
+func CommitPatchIDLTE(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldLTE(FieldCommitPatchID, v))
+}
+
+// CommitPatchIDContains applies the Contains predicate on the "commit_patch_id" field.
+func CommitPatchIDContains(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldContains(FieldCommitPatchID, v))
+}
+
+// CommitPatchIDHasPrefix applies the HasPrefix predicate on the "commit_patch_id" field.
+func CommitPatchIDHasPrefix(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldHasPrefix(FieldCommitPatchID, v))
+}
+
+// CommitPatchIDHasSuffix applies the HasSuffix predicate on the "commit_patch_id" field.
+func CommitPatchIDHasSuffix(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldHasSuffix(FieldCommitPatchID, v))
+}
+
+// CommitPatchIDIsNil applies the IsNil predicate on the "commit_patch_id" field.
+func CommitPatchIDIsNil() predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldIsNull(FieldCommitPatchID))
+}
+
+// CommitPatchIDNotNil applies the NotNil predicate on the "commit_patch_id" field.
+func CommitPatchIDNotNil() predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldNotNull(FieldCommitPatchID))
+}
+
+// CommitPatchIDEqualFold applies the EqualFold predicate on the "commit_patch_id" field.
+func CommitPatchIDEqualFold(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldEqualFold(FieldCommitPatchID, v))
+}
+
+// CommitPatchIDContainsFold applies the ContainsFold predicate on the "commit_patch_id" field.
+func CommitPatchIDContainsFold(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldContainsFold(FieldCommitPatchID, v))
+}
+
+// SourcePatchIDEQ applies the EQ predicate on the "source_patch_id" field.
+func SourcePatchIDEQ(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldEQ(FieldSourcePatchID, v))
+}
+
+// SourcePatchIDNEQ applies the NEQ predicate on the "source_patch_id" field.
+func SourcePatchIDNEQ(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldNEQ(FieldSourcePatchID, v))
+}
+
+// SourcePatchIDIn applies the In predicate on the "source_patch_id" field.
+func SourcePatchIDIn(vs ...string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldIn(FieldSourcePatchID, vs...))
+}
+
+// SourcePatchIDNotIn applies the NotIn predicate on the "source_patch_id" field.
+func SourcePatchIDNotIn(vs ...string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldNotIn(FieldSourcePatchID, vs...))
+}
+
+// SourcePatchIDGT applies the GT predicate on the "source_patch_id" field.
+func SourcePatchIDGT(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldGT(FieldSourcePatchID, v))
+}
+
+// SourcePatchIDGTE applies the GTE predicate on the "source_patch_id" field.
+func SourcePatchIDGTE(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldGTE(FieldSourcePatchID, v))
+}
+
+// SourcePatchIDLT applies the LT predicate on the "source_patch_id" field.
+func SourcePatchIDLT(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldLT(FieldSourcePatchID, v))
+}
+
+// SourcePatchIDLTE applies the LTE predicate on the "source_patch_id" field.
+func SourcePatchIDLTE(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldLTE(FieldSourcePatchID, v))
+}
+
+// SourcePatchIDContains applies the Contains predicate on the "source_patch_id" field.
+func SourcePatchIDContains(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldContains(FieldSourcePatchID, v))
+}
+
+// SourcePatchIDHasPrefix applies the HasPrefix predicate on the "source_patch_id" field.
+func SourcePatchIDHasPrefix(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldHasPrefix(FieldSourcePatchID, v))
+}
+
+// SourcePatchIDHasSuffix applies the HasSuffix predicate on the "source_patch_id" field.
+func SourcePatchIDHasSuffix(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldHasSuffix(FieldSourcePatchID, v))
+}
+
+// SourcePatchIDIsNil applies the IsNil predicate on the "source_patch_id" field.
+func SourcePatchIDIsNil() predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldIsNull(FieldSourcePatchID))
+}
+
+// SourcePatchIDNotNil applies the NotNil predicate on the "source_patch_id" field.
+func SourcePatchIDNotNil() predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldNotNull(FieldSourcePatchID))
+}
+
+// SourcePatchIDEqualFold applies the EqualFold predicate on the "source_patch_id" field.
+func SourcePatchIDEqualFold(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldEqualFold(FieldSourcePatchID, v))
+}
+
+// SourcePatchIDContainsFold applies the ContainsFold predicate on the "source_patch_id" field.
+func SourcePatchIDContainsFold(v string) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldContainsFold(FieldSourcePatchID, v))
 }
 
 // BindingSourceEQ applies the EQ predicate on the "binding_source" field.

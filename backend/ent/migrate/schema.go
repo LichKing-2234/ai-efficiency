@@ -309,6 +309,7 @@ var (
 		{Name: "repo_config_id", Type: field.TypeInt},
 		{Name: "commit_sha", Type: field.TypeString},
 		{Name: "relation_kind", Type: field.TypeEnum, Enums: []string{"direct", "shared", "inherited_non_counting"}},
+		{Name: "orphaned", Type: field.TypeBool, Default: false},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 	}
@@ -339,6 +340,10 @@ var (
 		{Name: "parent_shas", Type: field.TypeJSON},
 		{Name: "branch_snapshot", Type: field.TypeString, Nullable: true},
 		{Name: "head_snapshot", Type: field.TypeString, Nullable: true},
+		{Name: "lineage_kind", Type: field.TypeEnum, Nullable: true, Enums: []string{"cherry_pick"}},
+		{Name: "source_commit_sha", Type: field.TypeString, Nullable: true},
+		{Name: "commit_patch_id", Type: field.TypeString, Nullable: true},
+		{Name: "source_patch_id", Type: field.TypeString, Nullable: true},
 		{Name: "binding_source", Type: field.TypeEnum, Enums: []string{"marker", "env_bootstrap", "manual", "unbound"}},
 		{Name: "agent_snapshot", Type: field.TypeJSON, Nullable: true},
 		{Name: "captured_at", Type: field.TypeTime},
@@ -353,22 +358,32 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "commit_checkpoints_repo_configs_commit_checkpoints",
-				Columns:    []*schema.Column{CommitCheckpointsColumns[10]},
+				Columns:    []*schema.Column{CommitCheckpointsColumns[14]},
 				RefColumns: []*schema.Column{RepoConfigsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "commit_checkpoints_users_commit_checkpoints",
-				Columns:    []*schema.Column{CommitCheckpointsColumns[11]},
+				Columns:    []*schema.Column{CommitCheckpointsColumns[15]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "commitcheckpoint_repo_config_id_commit_sha",
+				Name:    "commitcheckpoint_user_id_workspace_id_repo_config_id_commit_sha",
 				Unique:  true,
-				Columns: []*schema.Column{CommitCheckpointsColumns[10], CommitCheckpointsColumns[3]},
+				Columns: []*schema.Column{CommitCheckpointsColumns[15], CommitCheckpointsColumns[2], CommitCheckpointsColumns[14], CommitCheckpointsColumns[3]},
+			},
+			{
+				Name:    "commitcheckpoint_repo_commit_lookup_v2",
+				Unique:  false,
+				Columns: []*schema.Column{CommitCheckpointsColumns[14], CommitCheckpointsColumns[3]},
+			},
+			{
+				Name:    "commitcheckpoint_user_id_repo_config_id_lineage_kind",
+				Unique:  false,
+				Columns: []*schema.Column{CommitCheckpointsColumns[15], CommitCheckpointsColumns[14], CommitCheckpointsColumns[7]},
 			},
 		},
 	}
@@ -406,9 +421,14 @@ var (
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "commitrewrite_repo_config_id_old_commit_sha_new_commit_sha_rewrite_type",
-				Unique:  true,
-				Columns: []*schema.Column{CommitRewritesColumns[8], CommitRewritesColumns[4], CommitRewritesColumns[5], CommitRewritesColumns[3]},
+				Name:    "commitrewrite_user_id_repo_config_id_old_commit_sha",
+				Unique:  false,
+				Columns: []*schema.Column{CommitRewritesColumns[9], CommitRewritesColumns[8], CommitRewritesColumns[4]},
+			},
+			{
+				Name:    "commitrewrite_user_id_repo_config_id_new_commit_sha",
+				Unique:  false,
+				Columns: []*schema.Column{CommitRewritesColumns[9], CommitRewritesColumns[8], CommitRewritesColumns[5]},
 			},
 		},
 	}

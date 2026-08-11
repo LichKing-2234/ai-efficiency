@@ -31,6 +31,14 @@ const (
 	FieldBranchSnapshot = "branch_snapshot"
 	// FieldHeadSnapshot holds the string denoting the head_snapshot field in the database.
 	FieldHeadSnapshot = "head_snapshot"
+	// FieldLineageKind holds the string denoting the lineage_kind field in the database.
+	FieldLineageKind = "lineage_kind"
+	// FieldSourceCommitSha holds the string denoting the source_commit_sha field in the database.
+	FieldSourceCommitSha = "source_commit_sha"
+	// FieldCommitPatchID holds the string denoting the commit_patch_id field in the database.
+	FieldCommitPatchID = "commit_patch_id"
+	// FieldSourcePatchID holds the string denoting the source_patch_id field in the database.
+	FieldSourcePatchID = "source_patch_id"
 	// FieldBindingSource holds the string denoting the binding_source field in the database.
 	FieldBindingSource = "binding_source"
 	// FieldAgentSnapshot holds the string denoting the agent_snapshot field in the database.
@@ -88,6 +96,10 @@ var Columns = []string{
 	FieldParentShas,
 	FieldBranchSnapshot,
 	FieldHeadSnapshot,
+	FieldLineageKind,
+	FieldSourceCommitSha,
+	FieldCommitPatchID,
+	FieldSourcePatchID,
 	FieldBindingSource,
 	FieldAgentSnapshot,
 	FieldCapturedAt,
@@ -111,6 +123,28 @@ var (
 	// DefaultCapturedAt holds the default value on creation for the "captured_at" field.
 	DefaultCapturedAt func() time.Time
 )
+
+// LineageKind defines the type for the "lineage_kind" enum field.
+type LineageKind string
+
+// LineageKind values.
+const (
+	LineageKindCherryPick LineageKind = "cherry_pick"
+)
+
+func (lk LineageKind) String() string {
+	return string(lk)
+}
+
+// LineageKindValidator is a validator for the "lineage_kind" field enum values. It is called by the builders before save.
+func LineageKindValidator(lk LineageKind) error {
+	switch lk {
+	case LineageKindCherryPick:
+		return nil
+	default:
+		return fmt.Errorf("commitcheckpoint: invalid enum value for lineage_kind field: %q", lk)
+	}
+}
 
 // BindingSource defines the type for the "binding_source" enum field.
 type BindingSource string
@@ -178,6 +212,26 @@ func ByBranchSnapshot(opts ...sql.OrderTermOption) OrderOption {
 // ByHeadSnapshot orders the results by the head_snapshot field.
 func ByHeadSnapshot(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldHeadSnapshot, opts...).ToFunc()
+}
+
+// ByLineageKind orders the results by the lineage_kind field.
+func ByLineageKind(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLineageKind, opts...).ToFunc()
+}
+
+// BySourceCommitSha orders the results by the source_commit_sha field.
+func BySourceCommitSha(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSourceCommitSha, opts...).ToFunc()
+}
+
+// ByCommitPatchID orders the results by the commit_patch_id field.
+func ByCommitPatchID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCommitPatchID, opts...).ToFunc()
+}
+
+// BySourcePatchID orders the results by the source_patch_id field.
+func BySourcePatchID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSourcePatchID, opts...).ToFunc()
 }
 
 // ByBindingSource orders the results by the binding_source field.

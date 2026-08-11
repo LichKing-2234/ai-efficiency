@@ -96,6 +96,62 @@ func (ccc *CommitCheckpointCreate) SetNillableHeadSnapshot(s *string) *CommitChe
 	return ccc
 }
 
+// SetLineageKind sets the "lineage_kind" field.
+func (ccc *CommitCheckpointCreate) SetLineageKind(ck commitcheckpoint.LineageKind) *CommitCheckpointCreate {
+	ccc.mutation.SetLineageKind(ck)
+	return ccc
+}
+
+// SetNillableLineageKind sets the "lineage_kind" field if the given value is not nil.
+func (ccc *CommitCheckpointCreate) SetNillableLineageKind(ck *commitcheckpoint.LineageKind) *CommitCheckpointCreate {
+	if ck != nil {
+		ccc.SetLineageKind(*ck)
+	}
+	return ccc
+}
+
+// SetSourceCommitSha sets the "source_commit_sha" field.
+func (ccc *CommitCheckpointCreate) SetSourceCommitSha(s string) *CommitCheckpointCreate {
+	ccc.mutation.SetSourceCommitSha(s)
+	return ccc
+}
+
+// SetNillableSourceCommitSha sets the "source_commit_sha" field if the given value is not nil.
+func (ccc *CommitCheckpointCreate) SetNillableSourceCommitSha(s *string) *CommitCheckpointCreate {
+	if s != nil {
+		ccc.SetSourceCommitSha(*s)
+	}
+	return ccc
+}
+
+// SetCommitPatchID sets the "commit_patch_id" field.
+func (ccc *CommitCheckpointCreate) SetCommitPatchID(s string) *CommitCheckpointCreate {
+	ccc.mutation.SetCommitPatchID(s)
+	return ccc
+}
+
+// SetNillableCommitPatchID sets the "commit_patch_id" field if the given value is not nil.
+func (ccc *CommitCheckpointCreate) SetNillableCommitPatchID(s *string) *CommitCheckpointCreate {
+	if s != nil {
+		ccc.SetCommitPatchID(*s)
+	}
+	return ccc
+}
+
+// SetSourcePatchID sets the "source_patch_id" field.
+func (ccc *CommitCheckpointCreate) SetSourcePatchID(s string) *CommitCheckpointCreate {
+	ccc.mutation.SetSourcePatchID(s)
+	return ccc
+}
+
+// SetNillableSourcePatchID sets the "source_patch_id" field if the given value is not nil.
+func (ccc *CommitCheckpointCreate) SetNillableSourcePatchID(s *string) *CommitCheckpointCreate {
+	if s != nil {
+		ccc.SetSourcePatchID(*s)
+	}
+	return ccc
+}
+
 // SetBindingSource sets the "binding_source" field.
 func (ccc *CommitCheckpointCreate) SetBindingSource(cs commitcheckpoint.BindingSource) *CommitCheckpointCreate {
 	ccc.mutation.SetBindingSource(cs)
@@ -230,6 +286,11 @@ func (ccc *CommitCheckpointCreate) check() error {
 	if _, ok := ccc.mutation.ParentShas(); !ok {
 		return &ValidationError{Name: "parent_shas", err: errors.New(`ent: missing required field "CommitCheckpoint.parent_shas"`)}
 	}
+	if v, ok := ccc.mutation.LineageKind(); ok {
+		if err := commitcheckpoint.LineageKindValidator(v); err != nil {
+			return &ValidationError{Name: "lineage_kind", err: fmt.Errorf(`ent: validator failed for field "CommitCheckpoint.lineage_kind": %w`, err)}
+		}
+	}
 	if _, ok := ccc.mutation.BindingSource(); !ok {
 		return &ValidationError{Name: "binding_source", err: errors.New(`ent: missing required field "CommitCheckpoint.binding_source"`)}
 	}
@@ -293,6 +354,22 @@ func (ccc *CommitCheckpointCreate) createSpec() (*CommitCheckpoint, *sqlgraph.Cr
 	if value, ok := ccc.mutation.HeadSnapshot(); ok {
 		_spec.SetField(commitcheckpoint.FieldHeadSnapshot, field.TypeString, value)
 		_node.HeadSnapshot = &value
+	}
+	if value, ok := ccc.mutation.LineageKind(); ok {
+		_spec.SetField(commitcheckpoint.FieldLineageKind, field.TypeEnum, value)
+		_node.LineageKind = value
+	}
+	if value, ok := ccc.mutation.SourceCommitSha(); ok {
+		_spec.SetField(commitcheckpoint.FieldSourceCommitSha, field.TypeString, value)
+		_node.SourceCommitSha = value
+	}
+	if value, ok := ccc.mutation.CommitPatchID(); ok {
+		_spec.SetField(commitcheckpoint.FieldCommitPatchID, field.TypeString, value)
+		_node.CommitPatchID = value
+	}
+	if value, ok := ccc.mutation.SourcePatchID(); ok {
+		_spec.SetField(commitcheckpoint.FieldSourcePatchID, field.TypeString, value)
+		_node.SourcePatchID = value
 	}
 	if value, ok := ccc.mutation.BindingSource(); ok {
 		_spec.SetField(commitcheckpoint.FieldBindingSource, field.TypeEnum, value)

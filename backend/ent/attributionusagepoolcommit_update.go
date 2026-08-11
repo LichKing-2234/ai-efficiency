@@ -98,6 +98,20 @@ func (aupcu *AttributionUsagePoolCommitUpdate) SetNillableRelationKind(ak *attri
 	return aupcu
 }
 
+// SetOrphaned sets the "orphaned" field.
+func (aupcu *AttributionUsagePoolCommitUpdate) SetOrphaned(b bool) *AttributionUsagePoolCommitUpdate {
+	aupcu.mutation.SetOrphaned(b)
+	return aupcu
+}
+
+// SetNillableOrphaned sets the "orphaned" field if the given value is not nil.
+func (aupcu *AttributionUsagePoolCommitUpdate) SetNillableOrphaned(b *bool) *AttributionUsagePoolCommitUpdate {
+	if b != nil {
+		aupcu.SetOrphaned(*b)
+	}
+	return aupcu
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (aupcu *AttributionUsagePoolCommitUpdate) SetUpdatedAt(t time.Time) *AttributionUsagePoolCommitUpdate {
 	aupcu.mutation.SetUpdatedAt(t)
@@ -190,6 +204,9 @@ func (aupcu *AttributionUsagePoolCommitUpdate) sqlSave(ctx context.Context) (n i
 	if value, ok := aupcu.mutation.RelationKind(); ok {
 		_spec.SetField(attributionusagepoolcommit.FieldRelationKind, field.TypeEnum, value)
 	}
+	if value, ok := aupcu.mutation.Orphaned(); ok {
+		_spec.SetField(attributionusagepoolcommit.FieldOrphaned, field.TypeBool, value)
+	}
 	if value, ok := aupcu.mutation.UpdatedAt(); ok {
 		_spec.SetField(attributionusagepoolcommit.FieldUpdatedAt, field.TypeTime, value)
 	}
@@ -279,6 +296,20 @@ func (aupcuo *AttributionUsagePoolCommitUpdateOne) SetRelationKind(ak attributio
 func (aupcuo *AttributionUsagePoolCommitUpdateOne) SetNillableRelationKind(ak *attributionusagepoolcommit.RelationKind) *AttributionUsagePoolCommitUpdateOne {
 	if ak != nil {
 		aupcuo.SetRelationKind(*ak)
+	}
+	return aupcuo
+}
+
+// SetOrphaned sets the "orphaned" field.
+func (aupcuo *AttributionUsagePoolCommitUpdateOne) SetOrphaned(b bool) *AttributionUsagePoolCommitUpdateOne {
+	aupcuo.mutation.SetOrphaned(b)
+	return aupcuo
+}
+
+// SetNillableOrphaned sets the "orphaned" field if the given value is not nil.
+func (aupcuo *AttributionUsagePoolCommitUpdateOne) SetNillableOrphaned(b *bool) *AttributionUsagePoolCommitUpdateOne {
+	if b != nil {
+		aupcuo.SetOrphaned(*b)
 	}
 	return aupcuo
 }
@@ -404,6 +435,9 @@ func (aupcuo *AttributionUsagePoolCommitUpdateOne) sqlSave(ctx context.Context) 
 	}
 	if value, ok := aupcuo.mutation.RelationKind(); ok {
 		_spec.SetField(attributionusagepoolcommit.FieldRelationKind, field.TypeEnum, value)
+	}
+	if value, ok := aupcuo.mutation.Orphaned(); ok {
+		_spec.SetField(attributionusagepoolcommit.FieldOrphaned, field.TypeBool, value)
 	}
 	if value, ok := aupcuo.mutation.UpdatedAt(); ok {
 		_spec.SetField(attributionusagepoolcommit.FieldUpdatedAt, field.TypeTime, value)

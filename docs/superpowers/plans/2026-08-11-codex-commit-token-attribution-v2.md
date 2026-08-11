@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** Implementation in progress; T02-T05 and T07 are merged with hosted CI green, T06 passes full backend, race, repeated tests, and clean Standards/Spec review and is awaiting PR/hosted CI, and the T04 real read-only canary still requires separate authorization
+**Status:** Implementation in progress; T02-T07 are merged with hosted CI green, T10 is locally complete and awaiting hosted delivery, and the T04 real read-only canary still requires separate authorization
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -128,10 +128,10 @@ T01 contract publication (#253)
 
 ### T10 — Rewrite, orphan, and cherry-pick lineage ([#247](https://github.com/LichKing-2234/ai-efficiency/issues/247))
 
-- [ ] Migrate pools through explicit hot and post-retention rewrite mappings.
-- [ ] Reject mapping conflicts/cycles and keep unmapped history as orphaned.
-- [ ] Preserve strict inherited-non-counting cherry-pick behavior.
-- [ ] Verify stacked/backport PR projections do not change global Token.
+- [x] Migrate pools through explicit hot and post-retention rewrite mappings.
+- [x] Reject mapping conflicts/cycles and keep unmapped history as orphaned.
+- [x] Preserve strict inherited-non-counting cherry-pick behavior.
+- [x] Verify stacked/backport PR projections do not change global Token.
 
 ### T11 — Shadow qualification and real E2E gate ([#250](https://github.com/LichKing-2234/ai-efficiency/issues/250))
 

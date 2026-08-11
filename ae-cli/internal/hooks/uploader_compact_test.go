@@ -36,11 +36,15 @@ func TestCompactBackendUploaderPreservesSubsecondCaptureTime(t *testing.T) {
 
 	if err := uploader.UploadHookEvent(context.Background(), HookEvent{
 		Kind: "post-commit", EventID: "event-a", RepoConfigID: 11, RepoFullName: "acme/repo",
-		WorkspaceID: "workspace-a", CommitSHA: "abc123", CapturedAt: now.Format(time.RFC3339Nano),
+		WorkspaceID: "workspace-a", CommitSHA: "abc123", LineageKind: "cherry_pick", SourceCommitSHA: "source123",
+		CommitPatchID: "patch123", SourcePatchID: "patch123", CapturedAt: now.Format(time.RFC3339Nano),
 	}); err != nil {
 		t.Fatalf("UploadHookEvent: %v", err)
 	}
 	if len(sender.checkpoints) != 1 || sender.checkpoints[0].CapturedAt == nil || !sender.checkpoints[0].CapturedAt.Equal(now) {
 		t.Fatalf("checkpoints = %+v, want subsecond captured_at %v", sender.checkpoints, now)
+	}
+	if sender.checkpoints[0].LineageKind != "cherry_pick" || sender.checkpoints[0].SourceCommitSHA != "source123" || sender.checkpoints[0].CommitPatchID != "patch123" || sender.checkpoints[0].SourcePatchID != "patch123" {
+		t.Fatalf("compact checkpoint lineage = %+v", sender.checkpoints[0])
 	}
 }

@@ -53,8 +53,8 @@ func TestAttributionSchemasCreateAndQuery(t *testing.T) {
 		SetCapturedAt(time.Now()).
 		SaveX(ctx)
 
-	// Uniqueness/FK semantics: settlement lookup relies on (repo_config_id, commit_sha) being unique.
-	// Expect duplicate inserts to fail.
+	// One user/worktree stores one checkpoint per repository commit. Lookup can
+	// still use the non-unique repository/commit index across observers.
 	if _, err := client.CommitCheckpoint.Create().
 		SetEventID("cp-dup").
 		SetUserID(userID).
@@ -65,7 +65,7 @@ func TestAttributionSchemasCreateAndQuery(t *testing.T) {
 		SetParentShas([]string{"000000"}).
 		SetCapturedAt(time.Now()).
 		Save(ctx); err == nil {
-		t.Fatalf("expected duplicate (repo_config_id, commit_sha) to fail")
+		t.Fatalf("expected duplicate user/worktree/repository/commit to fail")
 	}
 
 	// Integrity: repo_config_id should be a real FK.
@@ -93,7 +93,8 @@ func TestAttributionSchemasCreateAndQuery(t *testing.T) {
 		SetCapturedAt(time.Now()).
 		SaveX(ctx)
 
-	// Uniqueness semantics for rewrites: (repo_config_id, old_commit_sha, new_commit_sha, rewrite_type) must be unique.
+	// The schema stores duplicate observations; the serialized checkpoint
+	// service enforces one successor per user/repository/old commit.
 	if _, err := client.CommitRewrite.Create().
 		SetEventID("rw-dup").
 		SetUserID(userID).
@@ -104,8 +105,8 @@ func TestAttributionSchemasCreateAndQuery(t *testing.T) {
 		SetNewCommitSha("def456").
 		SetBindingSource("marker").
 		SetCapturedAt(time.Now()).
-		Save(ctx); err == nil {
-		t.Fatalf("expected duplicate commit_rewrite composite key to fail")
+		Save(ctx); err != nil {
+		t.Fatalf("same rewrite observation from another event should be allowed: %v", err)
 	}
 
 	pr := client.PrRecord.Create().

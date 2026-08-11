@@ -425,6 +425,12 @@ func compactCommitReferenceKey(reference client.AttributionCommitReference) stri
 }
 
 func compactCommitPatchID(ctx context.Context, repoRoot, commitSHA string) string {
+	return StableCommitPatchID(ctx, repoRoot, commitSHA)
+}
+
+// StableCommitPatchID returns Git's stable patch identity without retaining
+// source or diff content.
+func StableCommitPatchID(ctx context.Context, repoRoot, commitSHA string) string {
 	repoRoot = strings.TrimSpace(repoRoot)
 	commitSHA = strings.TrimSpace(commitSHA)
 	if repoRoot == "" || commitSHA == "" {

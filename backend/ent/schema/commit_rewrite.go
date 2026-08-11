@@ -51,7 +51,7 @@ func (CommitRewrite) Edges() []ent.Edge {
 
 func (CommitRewrite) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("repo_config_id", "old_commit_sha", "new_commit_sha", "rewrite_type").
-			Unique(),
+		index.Fields("user_id", "repo_config_id", "old_commit_sha"),
+		index.Fields("user_id", "repo_config_id", "new_commit_sha"),
 	}
 }
