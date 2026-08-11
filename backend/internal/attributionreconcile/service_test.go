@@ -174,6 +174,72 @@ func TestRunOnceRejectsClaimGroupProviderMismatch(t *testing.T) {
 	}
 }
 
+func TestRunOnceRevalidatesOwnerAfterLookup(t *testing.T) {
+	fixture := newReconcileFixture(t)
+	ctx := context.Background()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	reader := &requestReaderProvider{read: func(context.Context, string, int) ([]relay.RequestUsage, error) {
+		close(started)
+		<-release
+		return []relay.RequestUsage{validUsage(fixture)}, nil
+	}}
+	done := make(chan error, 1)
+	go func() { _, err := newTestService(t, fixture, reader).RunOnce(ctx); done <- err }()
+	<-started
+	claim := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+	group := fixture.client.AttributionClaimGroup.GetX(ctx, claim.ClaimGroupID)
+	fixture.client.User.UpdateOneID(group.UserID).SetRelayUserID(99).ExecX(ctx)
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	claim = fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+	if claim.Status != attributionrequestclaim.StatusOwnerMismatch || claim.LastErrorCode != "owner_mismatch" {
+		t.Fatalf("claim = %+v", claim)
+	}
+}
+
+func TestRunOnceRejectsMissingGroupAndProviderBeforeLookup(t *testing.T) {
+	tests := []struct {
+		name   string
+		setup  func(context.Context, reconcileFixture)
+		status attributionrequestclaim.Status
+		code   string
+	}{
+		{name: "missing group", setup: func(ctx context.Context, f reconcileFixture) {
+			f.client.AttributionRequestClaim.UpdateOneID(f.claimID).SetClaimGroupID(999999).ExecX(ctx)
+		}, status: attributionrequestclaim.StatusInvalidUsage, code: "missing_claim_group"},
+		{name: "missing provider", setup: func(ctx context.Context, f reconcileFixture) {
+			claim := f.client.AttributionRequestClaim.GetX(ctx, f.claimID)
+			f.client.AttributionClaimGroup.UpdateOneID(claim.ClaimGroupID).SetRelayProviderID(999999).ExecX(ctx)
+			f.client.AttributionRequestClaim.UpdateOneID(f.claimID).SetRelayProviderID(999999).ExecX(ctx)
+		}, status: attributionrequestclaim.StatusProviderUnavailable, code: "provider_unavailable"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newReconcileFixture(t)
+			ctx := context.Background()
+			test.setup(ctx, fixture)
+			reader := &requestReaderProvider{read: func(context.Context, string, int) ([]relay.RequestUsage, error) {
+				t.Fatal("unexpected upstream lookup")
+				return nil, nil
+			}}
+			service, err := NewService(fixture.client, resolverFunc(func(context.Context, int) (relay.Provider, error) { return reader, nil }), zap.NewNop(), Options{Now: func() time.Time { return fixture.now }, RandFloat64: func() float64 { return 0 }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := service.RunOnce(ctx); err != nil {
+				t.Fatal(err)
+			}
+			claim := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+			if claim.Status != test.status || claim.LastErrorCode != test.code {
+				t.Fatalf("claim = %+v", claim)
+			}
+		})
+	}
+}
+
 func TestRunOnceRequiresEnabledCapableProviderAndRelayOwner(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -364,6 +430,20 @@ func TestRunOnceRetriesProviderFailureWithBackoff(t *testing.T) {
 	claim := fixture.client.AttributionRequestClaim.GetX(context.Background(), fixture.claimID)
 	if claim.Status != attributionrequestclaim.StatusProviderUnavailable || claim.LastErrorCode != "provider_unavailable" || !claim.NextAttemptAt.After(fixture.now.Add(time.Minute)) {
 		t.Fatalf("retry claim = %+v", claim)
+	}
+}
+
+func TestRunOnceRetriesReaderFailureWithBackoff(t *testing.T) {
+	fixture := newReconcileFixture(t)
+	reader := &requestReaderProvider{read: func(context.Context, string, int) ([]relay.RequestUsage, error) {
+		return nil, errors.New("upstream unavailable")
+	}}
+	if _, err := newTestService(t, fixture, reader).RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	claim := fixture.client.AttributionRequestClaim.GetX(context.Background(), fixture.claimID)
+	if claim.Status != attributionrequestclaim.StatusProviderUnavailable || claim.LastErrorCode != "read_error" || !claim.NextAttemptAt.After(fixture.now) || claim.LeaseToken != "" || claim.LeaseExpiresAt != nil {
+		t.Fatalf("claim = %+v", claim)
 	}
 }
 
