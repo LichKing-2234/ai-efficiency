@@ -238,7 +238,7 @@ func scanCodexV2ClaimsWithEvidence(ctx context.Context, paths []string, opts V2C
 func UploadableV2ClaimGroups(candidates []V2ClaimCandidate) []client.AttributionV2ClaimGroup {
 	groups := make([]client.AttributionV2ClaimGroup, 0, len(candidates))
 	for _, candidate := range candidates {
-		if candidate.GapReason == "" && (len(candidate.Group.RequestIDs) > 0 || candidate.Group.Calibration != nil || !candidate.GroupAcknowledged) {
+		if v2ClaimUploadable(candidate) {
 			groups = append(groups, candidate.Group)
 		}
 	}

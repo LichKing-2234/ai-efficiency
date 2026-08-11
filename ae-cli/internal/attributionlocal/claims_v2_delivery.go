@@ -47,12 +47,16 @@ func SummarizeV2ClaimDelivery(state *V2ClaimState) V2DeliverySummary {
 		case V2DeliveryUpgradeRequired:
 			summary.UpgradeRequired++
 		default:
-			if claim.GapReason == "" {
+			if v2ClaimUploadable(claim) {
 				summary.Pending++
 			}
 		}
 	}
 	return summary
+}
+
+func v2ClaimUploadable(claim V2ClaimCandidate) bool {
+	return claim.GapReason == "" && (len(claim.Group.RequestIDs) > 0 || claim.Group.Calibration != nil || !claim.GroupAcknowledged)
 }
 
 // ApplyV2ClaimAcknowledgements removes only independently acknowledged local

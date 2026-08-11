@@ -141,3 +141,13 @@ func TestApplyV2ClaimAcknowledgementsDoesNotAcknowledgeNewerAllocation(t *testin
 		t.Fatalf("newer allocation was not retained for upload: %+v", groups)
 	}
 }
+
+func TestSummarizeV2ClaimDeliveryExcludesCompletedAudit(t *testing.T) {
+	state := &V2ClaimState{Claims: []V2ClaimCandidate{
+		{Group: client.AttributionV2ClaimGroup{GroupID: "completed"}, GroupAcknowledged: true},
+		{Group: client.AttributionV2ClaimGroup{GroupID: "pending", RequestIDs: []string{"req-1"}}},
+	}}
+	if summary := SummarizeV2ClaimDelivery(state); summary.Pending != 1 || summary.Conflict != 0 || summary.UpgradeRequired != 0 {
+		t.Fatalf("delivery summary = %+v", summary)
+	}
+}
