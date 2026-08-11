@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** Implementation in progress; T02-T10 are merged with hosted CI green. T11 local non-canary qualification is complete; hosted CI, final review, and the separately authorized real canary remain. The T04 real read-only canary also still requires separate authorization.
+**Status:** Implementation in progress; T02-T10 are merged with hosted CI green. T11 non-canary qualification, hosted CI, and final review are complete; the separately authorized real canary remains. The T04 real read-only canary also still requires separate authorization.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -144,7 +144,7 @@ T01 contract publication (#253)
   nominal upstream cleanup, including exact-boundary and late-ingest cases.
 - [ ] Complete one controlled real Request-to-commit-to-Activity canary without
   contaminating the formal epoch.
-- [ ] Produce cutover checklist, dashboards, exact reset query, evidence export,
+- [x] Produce cutover checklist, dashboards, exact reset query, evidence export,
   and rollback runbook; close every P0/P1 finding.
 
 ### T12 — Explicit v2 cutover and v1 POC reset ([#251](https://github.com/LichKing-2234/ai-efficiency/issues/251))

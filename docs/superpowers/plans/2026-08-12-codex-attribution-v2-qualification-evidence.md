@@ -1,7 +1,7 @@
 # Codex Attribution v2 Qualification Evidence
 
 **Date:** 2026-08-12  
-**Status:** Local non-canary qualification complete; hosted CI, final review, and separately authorized real canary remain  
+**Status:** Non-canary qualification complete; separately authorized real canary remains
 **Ticket:** [#250](https://github.com/LichKing-2234/ai-efficiency/issues/250)
 
 This record maps the #250 acceptance criteria to executable evidence. Synthetic
@@ -67,8 +67,9 @@ contains:
 
 ## Remaining Gates
 
-- [ ] Hosted CI is green at the final PR head.
-- [ ] Standards and spec reviews have no P0/P1 findings.
+- [x] Hosted CI is green at candidate `77279437` (run `31534537173`).
+- [x] Standards and spec reviews have no P0/P1 findings at candidate
+  `77279437`.
 - [ ] A separately authorized real Request-to-commit-to-Activity canary passes
   without entering the formal epoch.
 
