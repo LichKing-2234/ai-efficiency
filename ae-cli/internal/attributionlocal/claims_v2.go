@@ -305,6 +305,7 @@ func v2PatchMutations(ctx context.Context, patch, repoRoot, commitSHA string) []
 		}
 		i--
 		if path == "" {
+			mutations = append(mutations, v2Mutation{kind: kind})
 			continue
 		}
 		switch kind {
@@ -323,11 +324,14 @@ func v2PatchMutations(ctx context.Context, patch, repoRoot, commitSHA string) []
 		case "update":
 			parent, err := gitShowClaimFile(ctx, repoRoot, strings.TrimSpace(commitSHA)+"^", path)
 			if err != nil {
+				mutations = append(mutations, v2Mutation{path: path, kind: kind})
 				continue
 			}
 			expected, ok := applyV2PatchBlock(string(parent), block)
 			if ok {
 				mutations = append(mutations, v2Mutation{path: path, hash: claimDigest(expected), kind: kind})
+			} else {
+				mutations = append(mutations, v2Mutation{path: path, kind: kind})
 			}
 		}
 	}
@@ -347,6 +351,11 @@ func verifyV2Mutations(ctx context.Context, repoRoot, commitSHA string, mutation
 				return false
 			}
 			continue
+		}
+		if mutation.kind == "add" {
+			if _, err := gitShowClaimFile(ctx, repoRoot, strings.TrimSpace(commitSHA)+"^", mutation.path); err == nil {
+				return false
+			}
 		}
 		content, err := gitShowClaimFile(ctx, repoRoot, strings.TrimSpace(commitSHA), mutation.path)
 		if err != nil || claimDigest(string(content)) != strings.ToLower(mutation.hash) {

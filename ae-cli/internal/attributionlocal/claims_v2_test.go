@@ -141,6 +141,30 @@ func TestScanCodexV2ClaimsReplaysUpdatePatchAgainstCommitParent(t *testing.T) {
 	}
 }
 
+func TestScanCodexV2ClaimsDoesNotBindAddPatchToLaterCommit(t *testing.T) {
+	repo, _ := v2ClaimRepo(t, "feature.go", "package feature\n")
+	if err := os.WriteFile(filepath.Join(repo, "other.go"), []byte("package feature\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitClaim(t, repo, "add", "other.go")
+	gitClaim(t, repo, "commit", "-m", "later")
+	commit := strings.TrimSpace(gitClaim(t, repo, "rev-parse", "HEAD"))
+	session := filepath.Join(t.TempDir(), "session.jsonl")
+	writeV2JSONL(t, session,
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "thread-add"}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-add"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: feature.go\n+package feature\n*** End Patch"}},
+		map[string]any{"type": "event_msg", "payload": map[string]any{"type": "transport", "message": `x-client-request-id: req-add`}},
+	)
+	claims, err := ScanCodexV2Claims(context.Background(), []string{session}, V2ClaimScanOptions{RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8, CheckpointEventID: "checkpoint-later"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 1 || claims[0].GapReason != "commit_content_mismatch" {
+		t.Fatalf("later commit claims = %+v", claims)
+	}
+}
+
 func v2ClaimRepo(t *testing.T, path, content string) (string, string) {
 	t.Helper()
 	repo := t.TempDir()
