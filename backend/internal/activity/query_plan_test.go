@@ -3,8 +3,10 @@ package activity
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +17,87 @@ import (
 	"github.com/ai-efficiency/backend/internal/testdb"
 	_ "github.com/lib/pq"
 )
+
+type recordedV2Query struct {
+	SQL  string
+	Args []any
+}
+
+type recordingV2DB struct {
+	*sql.DB
+	mu      sync.Mutex
+	queries []recordedV2Query
+}
+
+func (db *recordingV2DB) QueryContext(ctx context.Context, statement string, args ...any) (*sql.Rows, error) {
+	db.record(statement, args)
+	return db.DB.QueryContext(ctx, statement, args...)
+}
+
+func (db *recordingV2DB) QueryRowContext(ctx context.Context, statement string, args ...any) *sql.Row {
+	db.record(statement, args)
+	return db.DB.QueryRowContext(ctx, statement, args...)
+}
+
+func (db *recordingV2DB) record(statement string, args []any) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	db.queries = append(db.queries, recordedV2Query{SQL: statement, Args: append([]any(nil), args...)})
+}
+
+func (db *recordingV2DB) reset() {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	db.queries = nil
+}
+
+func (db *recordingV2DB) snapshot() []recordedV2Query {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	result := make([]recordedV2Query, len(db.queries))
+	copy(result, db.queries)
+	return result
+}
+
+type v2ExplainNode struct {
+	NodeType            string          `json:"Node Type"`
+	ActualRows          float64         `json:"Actual Rows"`
+	ActualLoops         float64         `json:"Actual Loops"`
+	RowsRemovedByFilter float64         `json:"Rows Removed by Filter"`
+	Plans               []v2ExplainNode `json:"Plans"`
+}
+
+type v2ExplainDocument struct {
+	Plan v2ExplainNode `json:"Plan"`
+}
+
+func explainV2Query(t *testing.T, db *sql.DB, query recordedV2Query) v2ExplainNode {
+	t.Helper()
+	var raw []byte
+	if err := db.QueryRowContext(context.Background(), "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+query.SQL, query.Args...).Scan(&raw); err != nil {
+		t.Fatalf("explain v2 query: %v\nSQL: %s\nargs: %v", err, query.SQL, query.Args)
+	}
+	var documents []v2ExplainDocument
+	if err := json.Unmarshal(raw, &documents); err != nil || len(documents) != 1 {
+		t.Fatalf("decode v2 explain: %v documents=%d\n%s", err, len(documents), raw)
+	}
+	return documents[0].Plan
+}
+
+func v2ScannedRows(node v2ExplainNode) int64 {
+	if len(node.Plans) == 0 {
+		loops := node.ActualLoops
+		if loops < 1 {
+			loops = 1
+		}
+		return int64((node.ActualRows + node.RowsRemovedByFilter) * loops)
+	}
+	var total int64
+	for _, child := range node.Plans {
+		total += v2ScannedRows(child)
+	}
+	return total
+}
 
 func TestCommitSHAProjectionUsesDedicatedLookupIndex(t *testing.T) {
 	client, dsn := testdb.OpenWithDSN(t)
@@ -115,6 +198,7 @@ func TestV2ReadPathsStayWithinScaleLatencyBudget(t *testing.T) {
 		poolCount       = 2500
 		repositoryCount = 25
 		maxReadLatency  = 2 * time.Second
+		maxScannedRows  = 30000
 	)
 	client, dsn := testdb.OpenWithDSN(t)
 	ctx := context.Background()
@@ -155,22 +239,40 @@ func TestV2ReadPathsStayWithinScaleLatencyBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
+	recordedDB := &recordingV2DB{DB: db}
 	if _, err := db.ExecContext(ctx, "ANALYZE attribution_usage_pools; ANALYZE attribution_usage_pool_commits; ANALYZE pr_commit_usage_snapshots; ANALYZE pr_records"); err != nil {
 		t.Fatal(err)
 	}
 	service := NewService(client, nil, ServiceOptions{
-		CursorSecret: "scale-secret", V2LedgerEpoch: "formal_v2", V2DB: db,
+		CursorSecret: "scale-secret", V2LedgerEpoch: "formal_v2", V2DB: recordedDB,
 		V2Denominator: fixedV2Denominator{V2Denominator{TotalTokens: poolCount * 2, AsOf: time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC), Fresh: true, Complete: true}},
 	})
 	query := V2Query{Scope: V2ScopePersonal, FromDate: "2026-08-01", ToDate: "2026-08-01", Timezone: "UTC"}
-	withinBudget := func(name string, call func() error) {
+	withinBudget := func(name string, call func() error, requiredSQL ...string) {
 		t.Helper()
+		recordedDB.reset()
 		started := time.Now()
 		if err := call(); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 		if elapsed := time.Since(started); elapsed > maxReadLatency {
 			t.Fatalf("%s latency %s exceeds %s budget at %d pools", name, elapsed, maxReadLatency, poolCount)
+		}
+		queries := recordedDB.snapshot()
+		for _, required := range requiredSQL {
+			found := false
+			for _, query := range queries {
+				if !strings.Contains(query.SQL, required) {
+					continue
+				}
+				found = true
+				if scanned := v2ScannedRows(explainV2Query(t, db, query)); scanned > maxScannedRows {
+					t.Fatalf("%s scanned %d rows, exceeds %d-row budget for %q", name, scanned, maxScannedRows, required)
+				}
+			}
+			if !found {
+				t.Fatalf("%s did not execute production SQL containing %q", name, required)
+			}
 		}
 	}
 	withinBudget("summary and daily trend", func() error {
@@ -179,35 +281,35 @@ func TestV2ReadPathsStayWithinScaleLatencyBudget(t *testing.T) {
 			return fmt.Errorf("committed tokens = %d, want %d", result.CommittedTokens, poolCount)
 		}
 		return err
-	})
+	}, "WITH scoped AS", "WITH selected AS")
 	var repositoryPage *V2Page[V2RepositoryRow]
 	withinBudget("repository ranking", func() error {
 		var err error
 		repositoryPage, err = service.V2Repositories(ctx, user.ID, V2PageQuery{V2Query: query})
 		return err
-	})
+	}, "WITH pool_repo AS")
 	withinBudget("repository search and name sort", func() error {
 		_, err := service.V2Repositories(ctx, user.ID, V2PageQuery{V2Query: query, Search: "repo-1", Sort: "name"})
 		return err
-	})
+	}, "WITH pool_repo AS")
 	withinBudget("repository cursor page", func() error {
 		_, err := service.V2Repositories(ctx, user.ID, V2PageQuery{V2Query: query, Cursor: repositoryPage.NextCursor})
 		return err
-	})
+	}, "WITH pool_repo AS")
 	var pullRequestPage *V2Page[V2PullRequestRow]
 	withinBudget("pull-request ranking", func() error {
 		var err error
 		pullRequestPage, err = service.V2PullRequests(ctx, user.ID, V2PageQuery{V2Query: query})
 		return err
-	})
+	}, "WITH pool_pr AS")
 	withinBudget("pull-request search and name sort", func() error {
 		_, err := service.V2PullRequests(ctx, user.ID, V2PageQuery{V2Query: query, Search: "Scale PR 1", Sort: "name"})
 		return err
-	})
+	}, "WITH pool_pr AS")
 	withinBudget("pull-request cursor page", func() error {
 		_, err := service.V2PullRequests(ctx, user.ID, V2PageQuery{V2Query: query, Cursor: pullRequestPage.NextCursor})
 		return err
-	})
+	}, "WITH pool_pr AS")
 }
 
 func TestTeamProjectionQueryCountDoesNotGrowWithMemberCount(t *testing.T) {

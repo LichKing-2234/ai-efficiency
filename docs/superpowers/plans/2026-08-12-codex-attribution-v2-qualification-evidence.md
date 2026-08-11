@@ -22,11 +22,11 @@ endpoint, release, deployment, cutover, or data reset was used.
 | Direct-to-shared conservation | `TestMaterializeGroupMigratesDirectToSharedWithoutRecounting`, `TestPRProjectionsKeepOneDistinctPoolScopeTotal`, `TestV2RepositoryAndPRPagesKeepSharedValuesNonAdditive` |
 | Rewrite, orphan, and cherry-pick conservation | `TestApplyRewriteMigratesPostRetentionPoolWithoutRequestRows`, `TestApplyRewriteResolvesOutOfOrderChainToTerminalCommit`, `TestMarkCommitOrphanedPreservesTokenAndRequiresAuthority`, `TestApplyCherryPickAddsInheritedRelationWithoutRecounting` |
 | UTC, Shanghai, DST, and quarter-hour local days | `TestV2OverviewCountsPoolsOnceAndClampsRatioToUsageAsOf`, `TestPreviousV2WindowUsesLocalCalendarDays`, `TestV2RepositoryAndPRPagesKeepSharedValuesNonAdditive` (Asia/Kathmandu) |
-| Scale and query plans | `TestV2RepositoryPageUsesPoolRangeAndCommitLookupIndexes` forbids sequential pool/commit scans at 2,000 rows; `TestV2ReadPathsStayWithinScaleLatencyBudget` gates summary/trend, Repository/PR ranking, search/name-sort, and cursor pages at 2,500 pools with a 2-second per-read ceiling |
-| Denominator exactness and provider-set completeness | `TestActivityDenominatorUsesExactFreshPersonalUsage`, `TestActivityDenominatorRejectsStaleOrScopeMismatchedUsage`, `TestActivityDenominatorFailsClosedForUncoveredProviderSet`, `TestV2MemberDenominatorCacheIsAuthorizationAndProviderIsolated` |
+| Scale and query plans | `TestV2RepositoryPageUsesPoolRangeAndCommitLookupIndexes` forbids sequential pool/commit scans at 2,000 rows; `TestV2ReadPathsStayWithinScaleLatencyBudget` captures and `EXPLAIN ANALYZE`s the production summary, trend, Repository/PR ranking, search/name-sort, and cursor-page SQL at 2,500 pools, enforcing at most 30,000 scanned rows and 2 seconds per read |
+| Denominator exactness and provider-set completeness | `TestActivityDenominatorUsesExactFreshPersonalUsage`, `TestActivityDenominatorRejectsStaleOrScopeMismatchedUsage`, `TestActivityDenominatorFailsClosedForUncoveredProviderSet`, `TestV2MemberDenominatorCacheIsAuthorizationAndProviderIsolated`; `TestActivityDenominatorResolverStaysWithinScaleBudgets` exercises the real resolver, provider/binding queries, Usage reader boundary, and member cache twice against 2,501 providers with ceilings of 2 seconds, 4 SQL queries, and 2,501 scanned rows |
 | Exact/lower-bound/unavailable/no-Usage/zero and comparison omission | `TestV2RatioStates`, `TestV2OverviewKeepsActivityWhenDenominatorErrors`, `TestV2OverviewReturnsExactAdjacentPercentagePointChange`, Activity view ratio-state table tests |
 | Personal/member/team/admin/denied authorization | `TestV2ScopeAuthorizationIsRevalidatedForMemberAndTeam`, rendered Activity team/member tests, and the 126-case role E2E matrix |
-| 7/30/90/custom, URL recovery, races, local lane failures | Activity control preset/custom tests and Activity view tests for member URL state, Repo/PR filters, PR commit expansion, superseded responses, independent ratio/trend lanes, refresh failure, search/sort/cursor, and tab restoration |
+| 7/30/90/custom, URL recovery, races, local lane failures | Rendered Activity page preset tests verify URL and API orchestration; custom validation plus Activity view tests cover member URL state, Repo/PR filters, PR commit expansion, superseded responses, independent ratio/trend lanes, refresh failure, search/sort/cursor, and tab restoration |
 | Desktop/mobile/accessibility and no overflow | role E2E at 390/768/1024/1280/1440, native button/ARIA state tests, table/card boundary tests, and no-horizontal-overflow assertions |
 | No Request/claim/calibration/operational detail in product reads | `TestV2ProductDTOContainsNoRequestDetail`, Activity rendered text assertions, and role E2E Activity omission check |
 
@@ -46,10 +46,11 @@ frontend: Node 20 build measurement          initial shell 72,695 / 72,800 bytes
 frontend: npm run test:e2e:role              126/126
 ```
 
-The scale gate completed locally with 2,500 pools in under its explicit
-2-second budget for every read path; the whole test completed in under one
-second on the qualification machine. The committed budget remains 2 seconds
-to tolerate shared CI variance without masking a query-plan regression.
+The production-query scale gate completed locally with 2,500 pools under its
+30,000-row scan and 2-second latency budgets for every named read path. The
+real denominator resolver completed two member resolutions against 2,501
+providers under its 2,501-row, 4-query, and 2-second budgets, and the second
+resolution reused the authorization/provider-isolated cache.
 
 ## Cutover Artifacts
 

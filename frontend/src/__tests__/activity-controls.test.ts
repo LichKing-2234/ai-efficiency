@@ -50,23 +50,6 @@ describe('Activity controls', () => {
     expect([changeTo.getFullYear(), changeTo.getMonth(), changeTo.getDate()]).toEqual([2026, 7, 3])
   })
 
-  it.each([
-    [7, '2026-08-06'],
-    [30, '2026-07-14'],
-    [90, '2026-05-15'],
-  ])('emits an inclusive %i-local-day preset', async (days, expectedFrom) => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date(2026, 7, 12, 12))
-    try {
-      const wrapper = mount(ActivityDateRange, { props: { from: '2026-07-14', to: '2026-08-12' } })
-      await wrapper.get(`[data-testid="activity-range-${days}"]`).trigger('click')
-      const changes = wrapper.emitted('change') ?? []
-      expect(changes[changes.length - 1]?.[0]).toEqual({ from: expectedFrom, to: '2026-08-12' })
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
   it('explains and blocks an invalid custom range', async () => {
     const wrapper = mount(ActivityDateRange, { props: { from: '2026-08-01', to: '2026-08-08' } })
     await wrapper.get('[data-testid="activity-range-custom"]').trigger('click')

@@ -2,24 +2,117 @@ package handler
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
+	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/activity"
 	"github.com/ai-efficiency/backend/internal/personalusage"
+	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/teamusage"
 	"github.com/ai-efficiency/backend/internal/testdb"
+	_ "github.com/lib/pq"
 )
 
 type fakePersonalMetrics struct {
 	snapshot *personalusage.Snapshot
 	request  personalusage.Request
+	calls    int
 }
 
 func (f *fakePersonalMetrics) Dashboard(_ context.Context, request personalusage.Request) (*personalusage.Snapshot, error) {
 	f.request = request
+	f.calls++
 	return f.snapshot, nil
+}
+
+type denominatorRecordedQuery struct {
+	SQL  string
+	Args []any
+}
+
+type denominatorRecordingDriver struct {
+	dialect.Driver
+	mu      sync.Mutex
+	queries []denominatorRecordedQuery
+}
+
+func (d *denominatorRecordingDriver) Query(ctx context.Context, statement string, args, target any) error {
+	recorded := denominatorRecordedQuery{SQL: statement}
+	if values, ok := args.([]any); ok {
+		recorded.Args = append([]any(nil), values...)
+	}
+	d.mu.Lock()
+	d.queries = append(d.queries, recorded)
+	d.mu.Unlock()
+	return d.Driver.Query(ctx, statement, args, target)
+}
+
+func (d *denominatorRecordingDriver) snapshot() []denominatorRecordedQuery {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	result := make([]denominatorRecordedQuery, len(d.queries))
+	copy(result, d.queries)
+	return result
+}
+
+type denominatorMemoryStore struct {
+	mu     sync.Mutex
+	values map[string][]byte
+}
+
+func (s *denominatorMemoryStore) Get(_ context.Context, key string) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	value, ok := s.values[key]
+	if !ok {
+		return nil, readcache.ErrMiss
+	}
+	return append([]byte(nil), value...), nil
+}
+func (s *denominatorMemoryStore) Set(_ context.Context, key string, value []byte, _ time.Duration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.values[key] = append([]byte(nil), value...)
+	return nil
+}
+func (*denominatorMemoryStore) TryAcquireLease(context.Context, string, string, time.Duration) (bool, error) {
+	return true, nil
+}
+func (*denominatorMemoryStore) LeaseTTL(context.Context, string) (time.Duration, error) {
+	return 0, nil
+}
+func (*denominatorMemoryStore) ReleaseLease(context.Context, string, string) (bool, error) {
+	return true, nil
+}
+
+type denominatorExplainNode struct {
+	ActualRows          float64                  `json:"Actual Rows"`
+	ActualLoops         float64                  `json:"Actual Loops"`
+	RowsRemovedByFilter float64                  `json:"Rows Removed by Filter"`
+	Plans               []denominatorExplainNode `json:"Plans"`
+}
+
+func denominatorScannedRows(node denominatorExplainNode) int64 {
+	if len(node.Plans) == 0 {
+		loops := node.ActualLoops
+		if loops < 1 {
+			loops = 1
+		}
+		return int64((node.ActualRows + node.RowsRemovedByFilter) * loops)
+	}
+	var total int64
+	for _, child := range node.Plans {
+		total += denominatorScannedRows(child)
+	}
+	return total
 }
 
 type fakeTeamMetrics struct {
@@ -79,5 +172,87 @@ func TestActivityDenominatorFailsClosedForUncoveredProviderSet(t *testing.T) {
 	}
 	if result.Complete || result.Fresh || result.TotalTokens != 0 {
 		t.Fatalf("multi-provider denominator=%+v", result)
+	}
+}
+
+func TestActivityDenominatorResolverStaysWithinScaleBudgets(t *testing.T) {
+	const (
+		disabledProviderCount = 2500
+		maxLatency            = 2 * time.Second
+		maxQueries            = 4
+		maxScannedRows        = disabledProviderCount + 1
+	)
+	seed, dsn := testdb.OpenWithDSN(t)
+	ctx := context.Background()
+	actor := seed.User.Create().SetUsername("denominator-actor").SetEmail("denominator-actor@example.com").SetAuthSource("ldap").SaveX(ctx)
+	subject := seed.User.Create().SetUsername("denominator-subject").SetEmail("denominator-subject@example.com").SetAuthSource("ldap").SaveX(ctx)
+	provider := seed.RelayProvider.Create().SetName("denominator-enabled").SetDisplayName("Enabled Provider").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-key").SetEnabled(true).SaveX(ctx)
+	builders := make([]*ent.RelayProviderCreate, 0, disabledProviderCount)
+	for index := 0; index < disabledProviderCount; index++ {
+		builders = append(builders, seed.RelayProvider.Create().SetName(fmt.Sprintf("denominator-disabled-%04d", index)).SetDisplayName("Disabled Provider").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-key").SetEnabled(false))
+	}
+	if _, err := seed.RelayProvider.CreateBulk(builders...).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.ExecContext(ctx, "ANALYZE relay_providers; ANALYZE users"); err != nil {
+		t.Fatal(err)
+	}
+	driver := &denominatorRecordingDriver{Driver: entsql.OpenDB(dialect.Postgres, db)}
+	client := ent.NewClient(ent.Driver(driver))
+	t.Cleanup(func() { _ = client.Close() })
+	cache, err := activity.NewCache(&denominatorMemoryStore{values: map[string][]byte{}}, activity.CacheOptions{Namespace: "denominator-scale"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 12, 1, 0, 0, 0, time.UTC)
+	usage := &fakePersonalMetrics{snapshot: &personalusage.Snapshot{
+		Configured: true,
+		Range:      relay.UserUsageDashboardRange{StartDate: "2026-08-01", EndDate: "2026-08-07", Granularity: "day", Timezone: "UTC"},
+		Stats:      &relay.UserUsageDashboardStats{TotalTokens: 900},
+		UsageFreshness: &personalusage.UsageFreshness{
+			AsOf: now.Add(-time.Second), FreshUntil: now.Add(time.Minute), SourceStatus: "ok",
+		},
+	}}
+	resolver := &activityDenominatorResolver{client: client, personal: usage, cache: cache, now: func() time.Time { return now }}
+	request := activity.V2DenominatorRequest{ActorUserID: actor.ID, Scope: activity.V2ScopeMember, SubjectUserID: subject.ID, ScopeVersion: "scope-v1", ProviderSet: fmt.Sprintf("%d:%d", provider.ID, provider.ConfigurationVersion), FromDate: "2026-08-01", ToDate: "2026-08-07", Timezone: "UTC"}
+	started := time.Now()
+	for attempt := 0; attempt < 2; attempt++ {
+		result, err := resolver.ResolveDenominator(ctx, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.TotalTokens != 900 || !result.Fresh || !result.Complete {
+			t.Fatalf("denominator = %+v", result)
+		}
+	}
+	if elapsed := time.Since(started); elapsed > maxLatency {
+		t.Fatalf("two denominator resolutions took %s, exceeds %s budget", elapsed, maxLatency)
+	}
+	if usage.calls != 1 {
+		t.Fatalf("personal Usage reads = %d, want 1 after member cache hit", usage.calls)
+	}
+	queries := driver.snapshot()
+	if len(queries) > maxQueries {
+		t.Fatalf("denominator queries = %d, exceeds %d-query budget", len(queries), maxQueries)
+	}
+	for _, query := range queries {
+		var raw []byte
+		if err := db.QueryRowContext(ctx, "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+query.SQL, query.Args...).Scan(&raw); err != nil {
+			t.Fatalf("explain denominator query: %v\nSQL: %s", err, query.SQL)
+		}
+		var documents []struct {
+			Plan denominatorExplainNode `json:"Plan"`
+		}
+		if err := json.Unmarshal(raw, &documents); err != nil || len(documents) != 1 {
+			t.Fatalf("decode denominator explain: %v documents=%d", err, len(documents))
+		}
+		if scanned := denominatorScannedRows(documents[0].Plan); scanned > maxScannedRows {
+			t.Fatalf("denominator query scanned %d rows, exceeds %d-row budget\nSQL: %s", scanned, maxScannedRows, query.SQL)
+		}
 	}
 }
