@@ -286,7 +286,7 @@ func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOpt
 	for _, turn := range orderedTurns {
 		for _, evidence := range requestEvidence {
 			if evidence.threadID == turn.threadID && evidence.turnID == turn.turnID {
-				turn.requests[normalizeV2RequestID(evidence.requestID)] = struct{}{}
+				turn.requests[strings.TrimSpace(evidence.requestID)] = struct{}{}
 			}
 		}
 	}

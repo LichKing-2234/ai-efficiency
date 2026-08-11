@@ -141,7 +141,7 @@ func TestScanCodexV2ClaimsUsesTransportLogNotArbitraryJSONLText(t *testing.T) {
 		t.Fatal(err)
 	}
 	observed := time.Date(2026, 8, 11, 12, 0, 2, 0, time.UTC)
-	body := `turn{turn.id=turn-real}:model_client.stream_responses_api{api.path="responses"}: Request completed method=POST headers={"x-client-request-id": "client:real-request"}`
+	body := `turn{turn.id=turn-real}:model_client.stream_responses_api{api.path="responses"}: Request completed method=POST headers={"x-client-request-id": "client:client:real-request"}`
 	if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(1, ?, ?, ?, ?, ?)`, observed.Unix(), observed.Nanosecond(), "thread-real", "codex_http_client::client", body); err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestScanCodexV2ClaimsUsesTransportLogNotArbitraryJSONLText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(claims) != 1 || strings.Join(claims[0].Group.RequestIDs, ",") != "real-request" || claims[0].GapReason != "" || claims[0].Group.Calibration == nil || claims[0].Group.Calibration.TotalTokens != 12 {
+	if len(claims) != 1 || strings.Join(claims[0].Group.RequestIDs, ",") != "client:real-request" || claims[0].GapReason != "" || claims[0].Group.Calibration == nil || claims[0].Group.Calibration.TotalTokens != 12 {
 		t.Fatalf("transport-correlated claims = %+v", claims)
 	}
 }

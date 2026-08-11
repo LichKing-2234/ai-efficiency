@@ -51,7 +51,7 @@ func (f fixture) claim(group string, requests ...string) Request {
 func TestIngestReplayAndLateRequest(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	first, err := f.service.Ingest(ctx, f.principal, BatchRequest{Groups: []Request{f.claim("group-1", "client:req-1", "req-2")}})
+	first, err := f.service.Ingest(ctx, f.principal, BatchRequest{Groups: []Request{f.claim("group-1", "req-1", "req-2")}})
 	if err != nil {
 		t.Fatal(err)
 	}

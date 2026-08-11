@@ -282,7 +282,7 @@ func normalize(claim Request) Request {
 	seen := map[string]struct{}{}
 	requestIDs := make([]string, 0, len(claim.RequestIDs))
 	for _, requestID := range claim.RequestIDs {
-		requestID = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(requestID), "client:"))
+		requestID = strings.TrimSpace(requestID)
 		if _, ok := seen[requestID]; requestID == "" || ok {
 			continue
 		}

@@ -31,7 +31,7 @@ func TestV2ClaimHTTPReplayAuthorizationAndEpochIsolation(t *testing.T) {
 		"thread_id": "thread-v2", "turn_id": "turn-v2", "evidence_digest": "evidence-v2",
 		"calibration":        map[string]any{"digest": "calibration-v2", "input_tokens": 10, "output_tokens": 2, "total_tokens": 12},
 		"commit_allocations": []map[string]any{{"sequence": 1, "repo_config_id": repoID, "workspace_id": "workspace-v2", "checkpoint_event_id": "checkpoint-v2-http", "commit_sha": "commit-v2", "evidence_digest": "evidence-v2"}},
-		"request_ids":        []string{"client:req-v2"},
+		"request_ids":        []string{"req-v2"},
 	}}}
 	unauthorized := doFullRequestWithToken(env, http.MethodPost, "/api/v1/attribution/v2/claim-groups/batch", claim, "")
 	if unauthorized.Code != http.StatusUnauthorized {
