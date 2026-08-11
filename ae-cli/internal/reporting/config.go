@@ -16,6 +16,7 @@ type Config struct {
 	InstallationID   string     `json:"installation_id"`
 	ServerURL        string     `json:"server_url,omitempty"`
 	AuthSubject      string     `json:"auth_subject,omitempty"`
+	RelayProviderID  int        `json:"relay_provider_id,omitempty"`
 	ReporterToken    string     `json:"reporter_token,omitempty"`
 	OTLPToken        string     `json:"otlp_token,omitempty"`
 	ReportingEnabled bool       `json:"reporting_enabled"`

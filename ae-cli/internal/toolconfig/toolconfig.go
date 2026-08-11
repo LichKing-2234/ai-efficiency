@@ -20,6 +20,7 @@ const (
 )
 
 type Provider struct {
+	ID           int
 	Name         string
 	DisplayName  string
 	BaseURL      string

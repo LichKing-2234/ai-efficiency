@@ -757,6 +757,8 @@ flowchart LR
   evaluate compact-trigger retention/claim deadlines from POC distributions, migrate Claude/Kiro to the generic bucket contract, and decide whether delivery-effectiveness correlation is useful. Cost allocation, individual ranking, and production rollout are not implied.
 - Approved but not-yet-active Codex v2 target:
   [`2026-08-11-codex-commit-token-attribution-v2-design.md`](./superpowers/specs/2026-08-11-codex-commit-token-attribution-v2-design.md) replaces the target design with provider-aware Request claims, `sub2api` as the formal Token source, deterministic commit proof, 90-day hot reconciliation, long-lived globally deduplicated usage pools, Usage-backed Activity ratio reads, in-page Repository/PR analysis filters, and administrator-only Repository operations. Until its explicit cutover, the runtime diagram and the two current-surface bullets above remain authoritative descriptions of implemented code; shadow v2 data must not change formal Activity/readiness.
+- Implemented v2 shadow foundation:
+  `ae-cli discover` now preserves the selected Relay provider ID, and the compact runner can freeze provider-aware Codex Request/turn claim groups in a 90-day local state only after structured Add/Update/Delete patch evidence reproduces the committed Git tree exactly. The reporter-only `/api/v1/attribution/v2/claim-groups/batch` route persists digest-only hot groups and provider-scoped Request claims in the isolated `shadow_v2` epoch with per-group transactions and item-level replay/conflict ACKs. These rows do not feed current Activity, readiness, or v1 bucket totals.
 
 ## Module Responsibilities
 

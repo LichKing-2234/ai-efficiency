@@ -10,6 +10,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/activity"
+	"github.com/ai-efficiency/backend/internal/attributionclaim"
 	"github.com/ai-efficiency/backend/internal/attributionledger"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/middleware"
@@ -222,7 +223,7 @@ func setupRouter(
 	toolUsageHandler := NewToolUsageHandler(toolusage.NewService(entClient))
 	eventsHandler := NewEventsHandler(toolusage.NewQueryService(entClient))
 	installationService := attributionledger.NewInstallationService(entClient)
-	attributionHandler := NewAttributionHandler(installationService, attributionledger.NewService(entClient, options.AttributionCorrelation), options.AttributionCorrelation)
+	attributionHandler := NewAttributionHandler(installationService, attributionledger.NewService(entClient, options.AttributionCorrelation), options.AttributionCorrelation, attributionclaim.NewService(entClient))
 	activityHandler := NewActivityHandler(activity.NewService(entClient, options.AttributionCorrelation, activity.ServiceOptions{
 		ScopeResolver: representativescope.NewWithCache(entClient, options.RepresentativeScopeCache),
 		CursorSecret:  options.TeamUsageCursorSecret,
@@ -377,6 +378,7 @@ func setupRouter(
 	attributionReporterGroup := api.Group("/attribution")
 	attributionReporterGroup.Use(requireInstallationToken(installationService, false))
 	{
+		attributionReporterGroup.POST("/v2/claim-groups/batch", attributionHandler.CreateV2Claims)
 		attributionReporterGroup.POST("/repos/resolve-remote", repoHandler.ResolveRemote)
 		attributionReporterGroup.POST("/usage-buckets/batch", attributionHandler.CreateBuckets)
 		attributionReporterGroup.POST("/usage-buckets/:bucket_id/revisions", attributionHandler.CreateRevision)

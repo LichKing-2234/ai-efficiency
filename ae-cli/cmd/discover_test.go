@@ -9,9 +9,28 @@ import (
 
 	"github.com/ai-efficiency/ae-cli/config"
 	"github.com/ai-efficiency/ae-cli/internal/client"
+	"github.com/ai-efficiency/ae-cli/internal/reporting"
 	"github.com/ai-efficiency/ae-cli/internal/toolconfig"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
+
+func TestPreserveDiscoveredRelayProvider(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if err := reporting.Save("", &reporting.Config{Version: 1, InstallationID: uuid.NewString()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := preserveDiscoveredRelayProvider(17); err != nil {
+		t.Fatal(err)
+	}
+	config, err := reporting.Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.RelayProviderID != 17 {
+		t.Fatalf("relay_provider_id = %d, want 17", config.RelayProviderID)
+	}
+}
 
 func TestDiscoverCommandRequiresLogin(t *testing.T) {
 	oldCfg := cfg

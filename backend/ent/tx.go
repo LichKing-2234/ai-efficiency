@@ -16,6 +16,10 @@ type Tx struct {
 	AdminSubscriptionJob *AdminSubscriptionJobClient
 	// AttributionAllocationRevision is the client for interacting with the AttributionAllocationRevision builders.
 	AttributionAllocationRevision *AttributionAllocationRevisionClient
+	// AttributionClaimGroup is the client for interacting with the AttributionClaimGroup builders.
+	AttributionClaimGroup *AttributionClaimGroupClient
+	// AttributionRequestClaim is the client for interacting with the AttributionRequestClaim builders.
+	AttributionRequestClaim *AttributionRequestClaimClient
 	// AttributionUsageBucket is the client for interacting with the AttributionUsageBucket builders.
 	AttributionUsageBucket *AttributionUsageBucketClient
 	// CommitCheckpoint is the client for interacting with the CommitCheckpoint builders.
@@ -203,6 +207,8 @@ func (tx *Tx) Client() *Client {
 func (tx *Tx) init() {
 	tx.AdminSubscriptionJob = NewAdminSubscriptionJobClient(tx.config)
 	tx.AttributionAllocationRevision = NewAttributionAllocationRevisionClient(tx.config)
+	tx.AttributionClaimGroup = NewAttributionClaimGroupClient(tx.config)
+	tx.AttributionRequestClaim = NewAttributionRequestClaimClient(tx.config)
 	tx.AttributionUsageBucket = NewAttributionUsageBucketClient(tx.config)
 	tx.CommitCheckpoint = NewCommitCheckpointClient(tx.config)
 	tx.CommitRewrite = NewCommitRewriteClient(tx.config)

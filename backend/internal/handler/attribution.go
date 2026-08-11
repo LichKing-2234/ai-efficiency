@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ai-efficiency/backend/internal/attributionclaim"
 	"github.com/ai-efficiency/backend/internal/attributionledger"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
@@ -25,14 +26,19 @@ type AttributionHandler struct {
 	installations *attributionledger.InstallationService
 	ledger        *attributionledger.Service
 	correlation   *attributionledger.CorrelationStore
+	claims        *attributionclaim.Service
 }
 
-func NewAttributionHandler(installations *attributionledger.InstallationService, ledger *attributionledger.Service, correlation *attributionledger.CorrelationStore) *AttributionHandler {
-	return &AttributionHandler{
+func NewAttributionHandler(installations *attributionledger.InstallationService, ledger *attributionledger.Service, correlation *attributionledger.CorrelationStore, claims ...*attributionclaim.Service) *AttributionHandler {
+	handler := &AttributionHandler{
 		installations: installations,
 		ledger:        ledger,
 		correlation:   correlation,
 	}
+	if len(claims) > 0 {
+		handler.claims = claims[0]
+	}
+	return handler
 }
 
 type ensureInstallationRequest struct {
@@ -128,6 +134,29 @@ func (h *AttributionHandler) CreateBuckets(c *gin.Context) {
 	result, err := h.ledger.CreateBuckets(c.Request.Context(), *principal, req)
 	if err != nil {
 		writeAttributionMutationError(c, err)
+		return
+	}
+	pkg.Created(c, result)
+}
+
+func (h *AttributionHandler) CreateV2Claims(c *gin.Context) {
+	principal := getInstallationPrincipal(c)
+	if principal == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if h.claims == nil {
+		pkg.Error(c, http.StatusServiceUnavailable, "v2 claim ingest unavailable")
+		return
+	}
+	var req attributionclaim.BatchRequest
+	if err := decodeStrictJSON(c, &req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	result, err := h.claims.Ingest(c.Request.Context(), *principal, req)
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 	pkg.Created(c, result)

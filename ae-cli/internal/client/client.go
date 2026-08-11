@@ -65,6 +65,7 @@ var toolUsageAttemptTimeout = 15 * time.Second
 const toolUsageErrorBodyLimit = 4096
 
 type ProviderInfo struct {
+	ID           int                      `json:"id"`
 	Name         string                   `json:"name"`
 	DisplayName  string                   `json:"display_name"`
 	BaseURL      string                   `json:"base_url"`
@@ -499,6 +500,7 @@ func (c *Client) listUserProviders(ctx context.Context) ([]ProviderInfo, error) 
 	var envelope struct {
 		Data struct {
 			Providers []struct {
+				ID           int                 `json:"id"`
 				Name         string              `json:"name"`
 				DisplayName  string              `json:"display_name"`
 				BaseURL      string              `json:"base_url"`
@@ -517,6 +519,7 @@ func (c *Client) listUserProviders(ctx context.Context) ([]ProviderInfo, error) 
 		credentials := selectUserProviderCredentials(provider.Groups)
 		apiKey, apiKeyID := firstUserProviderCredential(credentials)
 		out = append(out, ProviderInfo{
+			ID:           provider.ID,
 			Name:         provider.Name,
 			DisplayName:  provider.DisplayName,
 			BaseURL:      provider.BaseURL,

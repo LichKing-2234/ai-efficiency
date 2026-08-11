@@ -552,6 +552,7 @@ func TestListProviders(t *testing.T) {
 			"data": map[string]any{
 				"providers": []map[string]any{
 					{
+						"id":            17,
 						"name":          "primary",
 						"display_name":  "Primary",
 						"base_url":      "https://relay.example.com/v1",
@@ -604,7 +605,7 @@ func TestListProviders(t *testing.T) {
 	if len(providers) != 1 {
 		t.Fatalf("providers len = %d, want 1", len(providers))
 	}
-	if providers[0].Name != "primary" || providers[0].APIKey != "sk-test" || !providers[0].IsPrimary {
+	if providers[0].ID != 17 || providers[0].Name != "primary" || providers[0].APIKey != "sk-test" || !providers[0].IsPrimary {
 		t.Fatalf("unexpected provider payload: %+v", providers[0])
 	}
 	if len(providers[0].Credentials) != 2 {

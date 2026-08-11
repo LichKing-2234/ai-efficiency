@@ -75,6 +75,7 @@ func (h *ProviderHandler) ListAllowedGroupsForUser(ctx context.Context, provider
 }
 
 type providerResponse struct {
+	ID           int    `json:"id"`
 	Name         string `json:"name"`
 	DisplayName  string `json:"display_name"`
 	BaseURL      string `json:"base_url"`
@@ -154,6 +155,7 @@ func (h *ProviderHandler) ListForUser(c *gin.Context) {
 		}
 
 		result = append(result, providerResponse{
+			ID:           p.ID,
 			Name:         p.Name,
 			DisplayName:  p.DisplayName,
 			BaseURL:      p.BaseURL,
