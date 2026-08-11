@@ -2979,6 +2979,11 @@ type AttributionClaimGroupMutation struct {
 	appendcommit_allocations             []map[string]interface{}
 	request_count                        *int
 	addrequest_count                     *int
+	finalized_at                         *time.Time
+	finalization_attempt_count           *int
+	addfinalization_attempt_count        *int
+	finalization_next_attempt_at         *time.Time
+	finalization_last_error_code         *string
 	expires_at                           *time.Time
 	created_at                           *time.Time
 	updated_at                           *time.Time
@@ -3413,9 +3418,22 @@ func (m *AttributionClaimGroupMutation) OldThreadID(ctx context.Context) (v stri
 	return oldValue.ThreadID, nil
 }
 
+// ClearThreadID clears the value of the "thread_id" field.
+func (m *AttributionClaimGroupMutation) ClearThreadID() {
+	m.thread_id = nil
+	m.clearedFields[attributionclaimgroup.FieldThreadID] = struct{}{}
+}
+
+// ThreadIDCleared returns if the "thread_id" field was cleared in this mutation.
+func (m *AttributionClaimGroupMutation) ThreadIDCleared() bool {
+	_, ok := m.clearedFields[attributionclaimgroup.FieldThreadID]
+	return ok
+}
+
 // ResetThreadID resets all changes to the "thread_id" field.
 func (m *AttributionClaimGroupMutation) ResetThreadID() {
 	m.thread_id = nil
+	delete(m.clearedFields, attributionclaimgroup.FieldThreadID)
 }
 
 // SetTurnID sets the "turn_id" field.
@@ -3449,9 +3467,22 @@ func (m *AttributionClaimGroupMutation) OldTurnID(ctx context.Context) (v string
 	return oldValue.TurnID, nil
 }
 
+// ClearTurnID clears the value of the "turn_id" field.
+func (m *AttributionClaimGroupMutation) ClearTurnID() {
+	m.turn_id = nil
+	m.clearedFields[attributionclaimgroup.FieldTurnID] = struct{}{}
+}
+
+// TurnIDCleared returns if the "turn_id" field was cleared in this mutation.
+func (m *AttributionClaimGroupMutation) TurnIDCleared() bool {
+	_, ok := m.clearedFields[attributionclaimgroup.FieldTurnID]
+	return ok
+}
+
 // ResetTurnID resets all changes to the "turn_id" field.
 func (m *AttributionClaimGroupMutation) ResetTurnID() {
 	m.turn_id = nil
+	delete(m.clearedFields, attributionclaimgroup.FieldTurnID)
 }
 
 // SetEvidenceDigest sets the "evidence_digest" field.
@@ -3485,9 +3516,22 @@ func (m *AttributionClaimGroupMutation) OldEvidenceDigest(ctx context.Context) (
 	return oldValue.EvidenceDigest, nil
 }
 
+// ClearEvidenceDigest clears the value of the "evidence_digest" field.
+func (m *AttributionClaimGroupMutation) ClearEvidenceDigest() {
+	m.evidence_digest = nil
+	m.clearedFields[attributionclaimgroup.FieldEvidenceDigest] = struct{}{}
+}
+
+// EvidenceDigestCleared returns if the "evidence_digest" field was cleared in this mutation.
+func (m *AttributionClaimGroupMutation) EvidenceDigestCleared() bool {
+	_, ok := m.clearedFields[attributionclaimgroup.FieldEvidenceDigest]
+	return ok
+}
+
 // ResetEvidenceDigest resets all changes to the "evidence_digest" field.
 func (m *AttributionClaimGroupMutation) ResetEvidenceDigest() {
 	m.evidence_digest = nil
+	delete(m.clearedFields, attributionclaimgroup.FieldEvidenceDigest)
 }
 
 // SetCalibrationDigest sets the "calibration_digest" field.
@@ -3926,6 +3970,196 @@ func (m *AttributionClaimGroupMutation) ResetRequestCount() {
 	m.addrequest_count = nil
 }
 
+// SetFinalizedAt sets the "finalized_at" field.
+func (m *AttributionClaimGroupMutation) SetFinalizedAt(t time.Time) {
+	m.finalized_at = &t
+}
+
+// FinalizedAt returns the value of the "finalized_at" field in the mutation.
+func (m *AttributionClaimGroupMutation) FinalizedAt() (r time.Time, exists bool) {
+	v := m.finalized_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFinalizedAt returns the old "finalized_at" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldFinalizedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFinalizedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFinalizedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFinalizedAt: %w", err)
+	}
+	return oldValue.FinalizedAt, nil
+}
+
+// ClearFinalizedAt clears the value of the "finalized_at" field.
+func (m *AttributionClaimGroupMutation) ClearFinalizedAt() {
+	m.finalized_at = nil
+	m.clearedFields[attributionclaimgroup.FieldFinalizedAt] = struct{}{}
+}
+
+// FinalizedAtCleared returns if the "finalized_at" field was cleared in this mutation.
+func (m *AttributionClaimGroupMutation) FinalizedAtCleared() bool {
+	_, ok := m.clearedFields[attributionclaimgroup.FieldFinalizedAt]
+	return ok
+}
+
+// ResetFinalizedAt resets all changes to the "finalized_at" field.
+func (m *AttributionClaimGroupMutation) ResetFinalizedAt() {
+	m.finalized_at = nil
+	delete(m.clearedFields, attributionclaimgroup.FieldFinalizedAt)
+}
+
+// SetFinalizationAttemptCount sets the "finalization_attempt_count" field.
+func (m *AttributionClaimGroupMutation) SetFinalizationAttemptCount(i int) {
+	m.finalization_attempt_count = &i
+	m.addfinalization_attempt_count = nil
+}
+
+// FinalizationAttemptCount returns the value of the "finalization_attempt_count" field in the mutation.
+func (m *AttributionClaimGroupMutation) FinalizationAttemptCount() (r int, exists bool) {
+	v := m.finalization_attempt_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFinalizationAttemptCount returns the old "finalization_attempt_count" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldFinalizationAttemptCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFinalizationAttemptCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFinalizationAttemptCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFinalizationAttemptCount: %w", err)
+	}
+	return oldValue.FinalizationAttemptCount, nil
+}
+
+// AddFinalizationAttemptCount adds i to the "finalization_attempt_count" field.
+func (m *AttributionClaimGroupMutation) AddFinalizationAttemptCount(i int) {
+	if m.addfinalization_attempt_count != nil {
+		*m.addfinalization_attempt_count += i
+	} else {
+		m.addfinalization_attempt_count = &i
+	}
+}
+
+// AddedFinalizationAttemptCount returns the value that was added to the "finalization_attempt_count" field in this mutation.
+func (m *AttributionClaimGroupMutation) AddedFinalizationAttemptCount() (r int, exists bool) {
+	v := m.addfinalization_attempt_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetFinalizationAttemptCount resets all changes to the "finalization_attempt_count" field.
+func (m *AttributionClaimGroupMutation) ResetFinalizationAttemptCount() {
+	m.finalization_attempt_count = nil
+	m.addfinalization_attempt_count = nil
+}
+
+// SetFinalizationNextAttemptAt sets the "finalization_next_attempt_at" field.
+func (m *AttributionClaimGroupMutation) SetFinalizationNextAttemptAt(t time.Time) {
+	m.finalization_next_attempt_at = &t
+}
+
+// FinalizationNextAttemptAt returns the value of the "finalization_next_attempt_at" field in the mutation.
+func (m *AttributionClaimGroupMutation) FinalizationNextAttemptAt() (r time.Time, exists bool) {
+	v := m.finalization_next_attempt_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFinalizationNextAttemptAt returns the old "finalization_next_attempt_at" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldFinalizationNextAttemptAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFinalizationNextAttemptAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFinalizationNextAttemptAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFinalizationNextAttemptAt: %w", err)
+	}
+	return oldValue.FinalizationNextAttemptAt, nil
+}
+
+// ResetFinalizationNextAttemptAt resets all changes to the "finalization_next_attempt_at" field.
+func (m *AttributionClaimGroupMutation) ResetFinalizationNextAttemptAt() {
+	m.finalization_next_attempt_at = nil
+}
+
+// SetFinalizationLastErrorCode sets the "finalization_last_error_code" field.
+func (m *AttributionClaimGroupMutation) SetFinalizationLastErrorCode(s string) {
+	m.finalization_last_error_code = &s
+}
+
+// FinalizationLastErrorCode returns the value of the "finalization_last_error_code" field in the mutation.
+func (m *AttributionClaimGroupMutation) FinalizationLastErrorCode() (r string, exists bool) {
+	v := m.finalization_last_error_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFinalizationLastErrorCode returns the old "finalization_last_error_code" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldFinalizationLastErrorCode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFinalizationLastErrorCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFinalizationLastErrorCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFinalizationLastErrorCode: %w", err)
+	}
+	return oldValue.FinalizationLastErrorCode, nil
+}
+
+// ClearFinalizationLastErrorCode clears the value of the "finalization_last_error_code" field.
+func (m *AttributionClaimGroupMutation) ClearFinalizationLastErrorCode() {
+	m.finalization_last_error_code = nil
+	m.clearedFields[attributionclaimgroup.FieldFinalizationLastErrorCode] = struct{}{}
+}
+
+// FinalizationLastErrorCodeCleared returns if the "finalization_last_error_code" field was cleared in this mutation.
+func (m *AttributionClaimGroupMutation) FinalizationLastErrorCodeCleared() bool {
+	_, ok := m.clearedFields[attributionclaimgroup.FieldFinalizationLastErrorCode]
+	return ok
+}
+
+// ResetFinalizationLastErrorCode resets all changes to the "finalization_last_error_code" field.
+func (m *AttributionClaimGroupMutation) ResetFinalizationLastErrorCode() {
+	m.finalization_last_error_code = nil
+	delete(m.clearedFields, attributionclaimgroup.FieldFinalizationLastErrorCode)
+}
+
 // SetExpiresAt sets the "expires_at" field.
 func (m *AttributionClaimGroupMutation) SetExpiresAt(t time.Time) {
 	m.expires_at = &t
@@ -4068,7 +4302,7 @@ func (m *AttributionClaimGroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AttributionClaimGroupMutation) Fields() []string {
-	fields := make([]string, 0, 20)
+	fields := make([]string, 0, 24)
 	if m.group_id != nil {
 		fields = append(fields, attributionclaimgroup.FieldGroupID)
 	}
@@ -4119,6 +4353,18 @@ func (m *AttributionClaimGroupMutation) Fields() []string {
 	}
 	if m.request_count != nil {
 		fields = append(fields, attributionclaimgroup.FieldRequestCount)
+	}
+	if m.finalized_at != nil {
+		fields = append(fields, attributionclaimgroup.FieldFinalizedAt)
+	}
+	if m.finalization_attempt_count != nil {
+		fields = append(fields, attributionclaimgroup.FieldFinalizationAttemptCount)
+	}
+	if m.finalization_next_attempt_at != nil {
+		fields = append(fields, attributionclaimgroup.FieldFinalizationNextAttemptAt)
+	}
+	if m.finalization_last_error_code != nil {
+		fields = append(fields, attributionclaimgroup.FieldFinalizationLastErrorCode)
 	}
 	if m.expires_at != nil {
 		fields = append(fields, attributionclaimgroup.FieldExpiresAt)
@@ -4171,6 +4417,14 @@ func (m *AttributionClaimGroupMutation) Field(name string) (ent.Value, bool) {
 		return m.CommitAllocations()
 	case attributionclaimgroup.FieldRequestCount:
 		return m.RequestCount()
+	case attributionclaimgroup.FieldFinalizedAt:
+		return m.FinalizedAt()
+	case attributionclaimgroup.FieldFinalizationAttemptCount:
+		return m.FinalizationAttemptCount()
+	case attributionclaimgroup.FieldFinalizationNextAttemptAt:
+		return m.FinalizationNextAttemptAt()
+	case attributionclaimgroup.FieldFinalizationLastErrorCode:
+		return m.FinalizationLastErrorCode()
 	case attributionclaimgroup.FieldExpiresAt:
 		return m.ExpiresAt()
 	case attributionclaimgroup.FieldCreatedAt:
@@ -4220,6 +4474,14 @@ func (m *AttributionClaimGroupMutation) OldField(ctx context.Context, name strin
 		return m.OldCommitAllocations(ctx)
 	case attributionclaimgroup.FieldRequestCount:
 		return m.OldRequestCount(ctx)
+	case attributionclaimgroup.FieldFinalizedAt:
+		return m.OldFinalizedAt(ctx)
+	case attributionclaimgroup.FieldFinalizationAttemptCount:
+		return m.OldFinalizationAttemptCount(ctx)
+	case attributionclaimgroup.FieldFinalizationNextAttemptAt:
+		return m.OldFinalizationNextAttemptAt(ctx)
+	case attributionclaimgroup.FieldFinalizationLastErrorCode:
+		return m.OldFinalizationLastErrorCode(ctx)
 	case attributionclaimgroup.FieldExpiresAt:
 		return m.OldExpiresAt(ctx)
 	case attributionclaimgroup.FieldCreatedAt:
@@ -4354,6 +4616,34 @@ func (m *AttributionClaimGroupMutation) SetField(name string, value ent.Value) e
 		}
 		m.SetRequestCount(v)
 		return nil
+	case attributionclaimgroup.FieldFinalizedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFinalizedAt(v)
+		return nil
+	case attributionclaimgroup.FieldFinalizationAttemptCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFinalizationAttemptCount(v)
+		return nil
+	case attributionclaimgroup.FieldFinalizationNextAttemptAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFinalizationNextAttemptAt(v)
+		return nil
+	case attributionclaimgroup.FieldFinalizationLastErrorCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFinalizationLastErrorCode(v)
+		return nil
 	case attributionclaimgroup.FieldExpiresAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -4413,6 +4703,9 @@ func (m *AttributionClaimGroupMutation) AddedFields() []string {
 	if m.addrequest_count != nil {
 		fields = append(fields, attributionclaimgroup.FieldRequestCount)
 	}
+	if m.addfinalization_attempt_count != nil {
+		fields = append(fields, attributionclaimgroup.FieldFinalizationAttemptCount)
+	}
 	return fields
 }
 
@@ -4441,6 +4734,8 @@ func (m *AttributionClaimGroupMutation) AddedField(name string) (ent.Value, bool
 		return m.AddedCalibrationTotalTokens()
 	case attributionclaimgroup.FieldRequestCount:
 		return m.AddedRequestCount()
+	case attributionclaimgroup.FieldFinalizationAttemptCount:
+		return m.AddedFinalizationAttemptCount()
 	}
 	return nil, false
 }
@@ -4520,6 +4815,13 @@ func (m *AttributionClaimGroupMutation) AddField(name string, value ent.Value) e
 		}
 		m.AddRequestCount(v)
 		return nil
+	case attributionclaimgroup.FieldFinalizationAttemptCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddFinalizationAttemptCount(v)
+		return nil
 	}
 	return fmt.Errorf("unknown AttributionClaimGroup numeric field %s", name)
 }
@@ -4528,8 +4830,23 @@ func (m *AttributionClaimGroupMutation) AddField(name string, value ent.Value) e
 // mutation.
 func (m *AttributionClaimGroupMutation) ClearedFields() []string {
 	var fields []string
+	if m.FieldCleared(attributionclaimgroup.FieldThreadID) {
+		fields = append(fields, attributionclaimgroup.FieldThreadID)
+	}
+	if m.FieldCleared(attributionclaimgroup.FieldTurnID) {
+		fields = append(fields, attributionclaimgroup.FieldTurnID)
+	}
+	if m.FieldCleared(attributionclaimgroup.FieldEvidenceDigest) {
+		fields = append(fields, attributionclaimgroup.FieldEvidenceDigest)
+	}
 	if m.FieldCleared(attributionclaimgroup.FieldCalibrationDigest) {
 		fields = append(fields, attributionclaimgroup.FieldCalibrationDigest)
+	}
+	if m.FieldCleared(attributionclaimgroup.FieldFinalizedAt) {
+		fields = append(fields, attributionclaimgroup.FieldFinalizedAt)
+	}
+	if m.FieldCleared(attributionclaimgroup.FieldFinalizationLastErrorCode) {
+		fields = append(fields, attributionclaimgroup.FieldFinalizationLastErrorCode)
 	}
 	return fields
 }
@@ -4545,8 +4862,23 @@ func (m *AttributionClaimGroupMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *AttributionClaimGroupMutation) ClearField(name string) error {
 	switch name {
+	case attributionclaimgroup.FieldThreadID:
+		m.ClearThreadID()
+		return nil
+	case attributionclaimgroup.FieldTurnID:
+		m.ClearTurnID()
+		return nil
+	case attributionclaimgroup.FieldEvidenceDigest:
+		m.ClearEvidenceDigest()
+		return nil
 	case attributionclaimgroup.FieldCalibrationDigest:
 		m.ClearCalibrationDigest()
+		return nil
+	case attributionclaimgroup.FieldFinalizedAt:
+		m.ClearFinalizedAt()
+		return nil
+	case attributionclaimgroup.FieldFinalizationLastErrorCode:
+		m.ClearFinalizationLastErrorCode()
 		return nil
 	}
 	return fmt.Errorf("unknown AttributionClaimGroup nullable field %s", name)
@@ -4606,6 +4938,18 @@ func (m *AttributionClaimGroupMutation) ResetField(name string) error {
 		return nil
 	case attributionclaimgroup.FieldRequestCount:
 		m.ResetRequestCount()
+		return nil
+	case attributionclaimgroup.FieldFinalizedAt:
+		m.ResetFinalizedAt()
+		return nil
+	case attributionclaimgroup.FieldFinalizationAttemptCount:
+		m.ResetFinalizationAttemptCount()
+		return nil
+	case attributionclaimgroup.FieldFinalizationNextAttemptAt:
+		m.ResetFinalizationNextAttemptAt()
+		return nil
+	case attributionclaimgroup.FieldFinalizationLastErrorCode:
+		m.ResetFinalizationLastErrorCode()
 		return nil
 	case attributionclaimgroup.FieldExpiresAt:
 		m.ResetExpiresAt()

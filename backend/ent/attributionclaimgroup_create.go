@@ -70,15 +70,39 @@ func (acgc *AttributionClaimGroupCreate) SetThreadID(s string) *AttributionClaim
 	return acgc
 }
 
+// SetNillableThreadID sets the "thread_id" field if the given value is not nil.
+func (acgc *AttributionClaimGroupCreate) SetNillableThreadID(s *string) *AttributionClaimGroupCreate {
+	if s != nil {
+		acgc.SetThreadID(*s)
+	}
+	return acgc
+}
+
 // SetTurnID sets the "turn_id" field.
 func (acgc *AttributionClaimGroupCreate) SetTurnID(s string) *AttributionClaimGroupCreate {
 	acgc.mutation.SetTurnID(s)
 	return acgc
 }
 
+// SetNillableTurnID sets the "turn_id" field if the given value is not nil.
+func (acgc *AttributionClaimGroupCreate) SetNillableTurnID(s *string) *AttributionClaimGroupCreate {
+	if s != nil {
+		acgc.SetTurnID(*s)
+	}
+	return acgc
+}
+
 // SetEvidenceDigest sets the "evidence_digest" field.
 func (acgc *AttributionClaimGroupCreate) SetEvidenceDigest(s string) *AttributionClaimGroupCreate {
 	acgc.mutation.SetEvidenceDigest(s)
+	return acgc
+}
+
+// SetNillableEvidenceDigest sets the "evidence_digest" field if the given value is not nil.
+func (acgc *AttributionClaimGroupCreate) SetNillableEvidenceDigest(s *string) *AttributionClaimGroupCreate {
+	if s != nil {
+		acgc.SetEvidenceDigest(*s)
+	}
 	return acgc
 }
 
@@ -178,6 +202,62 @@ func (acgc *AttributionClaimGroupCreate) SetRequestCount(i int) *AttributionClai
 	return acgc
 }
 
+// SetFinalizedAt sets the "finalized_at" field.
+func (acgc *AttributionClaimGroupCreate) SetFinalizedAt(t time.Time) *AttributionClaimGroupCreate {
+	acgc.mutation.SetFinalizedAt(t)
+	return acgc
+}
+
+// SetNillableFinalizedAt sets the "finalized_at" field if the given value is not nil.
+func (acgc *AttributionClaimGroupCreate) SetNillableFinalizedAt(t *time.Time) *AttributionClaimGroupCreate {
+	if t != nil {
+		acgc.SetFinalizedAt(*t)
+	}
+	return acgc
+}
+
+// SetFinalizationAttemptCount sets the "finalization_attempt_count" field.
+func (acgc *AttributionClaimGroupCreate) SetFinalizationAttemptCount(i int) *AttributionClaimGroupCreate {
+	acgc.mutation.SetFinalizationAttemptCount(i)
+	return acgc
+}
+
+// SetNillableFinalizationAttemptCount sets the "finalization_attempt_count" field if the given value is not nil.
+func (acgc *AttributionClaimGroupCreate) SetNillableFinalizationAttemptCount(i *int) *AttributionClaimGroupCreate {
+	if i != nil {
+		acgc.SetFinalizationAttemptCount(*i)
+	}
+	return acgc
+}
+
+// SetFinalizationNextAttemptAt sets the "finalization_next_attempt_at" field.
+func (acgc *AttributionClaimGroupCreate) SetFinalizationNextAttemptAt(t time.Time) *AttributionClaimGroupCreate {
+	acgc.mutation.SetFinalizationNextAttemptAt(t)
+	return acgc
+}
+
+// SetNillableFinalizationNextAttemptAt sets the "finalization_next_attempt_at" field if the given value is not nil.
+func (acgc *AttributionClaimGroupCreate) SetNillableFinalizationNextAttemptAt(t *time.Time) *AttributionClaimGroupCreate {
+	if t != nil {
+		acgc.SetFinalizationNextAttemptAt(*t)
+	}
+	return acgc
+}
+
+// SetFinalizationLastErrorCode sets the "finalization_last_error_code" field.
+func (acgc *AttributionClaimGroupCreate) SetFinalizationLastErrorCode(s string) *AttributionClaimGroupCreate {
+	acgc.mutation.SetFinalizationLastErrorCode(s)
+	return acgc
+}
+
+// SetNillableFinalizationLastErrorCode sets the "finalization_last_error_code" field if the given value is not nil.
+func (acgc *AttributionClaimGroupCreate) SetNillableFinalizationLastErrorCode(s *string) *AttributionClaimGroupCreate {
+	if s != nil {
+		acgc.SetFinalizationLastErrorCode(*s)
+	}
+	return acgc
+}
+
 // SetExpiresAt sets the "expires_at" field.
 func (acgc *AttributionClaimGroupCreate) SetExpiresAt(t time.Time) *AttributionClaimGroupCreate {
 	acgc.mutation.SetExpiresAt(t)
@@ -271,6 +351,14 @@ func (acgc *AttributionClaimGroupCreate) defaults() {
 		v := attributionclaimgroup.DefaultCalibrationTotalTokens
 		acgc.mutation.SetCalibrationTotalTokens(v)
 	}
+	if _, ok := acgc.mutation.FinalizationAttemptCount(); !ok {
+		v := attributionclaimgroup.DefaultFinalizationAttemptCount
+		acgc.mutation.SetFinalizationAttemptCount(v)
+	}
+	if _, ok := acgc.mutation.FinalizationNextAttemptAt(); !ok {
+		v := attributionclaimgroup.DefaultFinalizationNextAttemptAt()
+		acgc.mutation.SetFinalizationNextAttemptAt(v)
+	}
 	if _, ok := acgc.mutation.CreatedAt(); !ok {
 		v := attributionclaimgroup.DefaultCreatedAt()
 		acgc.mutation.SetCreatedAt(v)
@@ -306,30 +394,6 @@ func (acgc *AttributionClaimGroupCreate) check() error {
 	if _, ok := acgc.mutation.LedgerEpoch(); !ok {
 		return &ValidationError{Name: "ledger_epoch", err: errors.New(`ent: missing required field "AttributionClaimGroup.ledger_epoch"`)}
 	}
-	if _, ok := acgc.mutation.ThreadID(); !ok {
-		return &ValidationError{Name: "thread_id", err: errors.New(`ent: missing required field "AttributionClaimGroup.thread_id"`)}
-	}
-	if v, ok := acgc.mutation.ThreadID(); ok {
-		if err := attributionclaimgroup.ThreadIDValidator(v); err != nil {
-			return &ValidationError{Name: "thread_id", err: fmt.Errorf(`ent: validator failed for field "AttributionClaimGroup.thread_id": %w`, err)}
-		}
-	}
-	if _, ok := acgc.mutation.TurnID(); !ok {
-		return &ValidationError{Name: "turn_id", err: errors.New(`ent: missing required field "AttributionClaimGroup.turn_id"`)}
-	}
-	if v, ok := acgc.mutation.TurnID(); ok {
-		if err := attributionclaimgroup.TurnIDValidator(v); err != nil {
-			return &ValidationError{Name: "turn_id", err: fmt.Errorf(`ent: validator failed for field "AttributionClaimGroup.turn_id": %w`, err)}
-		}
-	}
-	if _, ok := acgc.mutation.EvidenceDigest(); !ok {
-		return &ValidationError{Name: "evidence_digest", err: errors.New(`ent: missing required field "AttributionClaimGroup.evidence_digest"`)}
-	}
-	if v, ok := acgc.mutation.EvidenceDigest(); ok {
-		if err := attributionclaimgroup.EvidenceDigestValidator(v); err != nil {
-			return &ValidationError{Name: "evidence_digest", err: fmt.Errorf(`ent: validator failed for field "AttributionClaimGroup.evidence_digest": %w`, err)}
-		}
-	}
 	if _, ok := acgc.mutation.CalibrationInputTokens(); !ok {
 		return &ValidationError{Name: "calibration_input_tokens", err: errors.New(`ent: missing required field "AttributionClaimGroup.calibration_input_tokens"`)}
 	}
@@ -350,6 +414,12 @@ func (acgc *AttributionClaimGroupCreate) check() error {
 	}
 	if _, ok := acgc.mutation.RequestCount(); !ok {
 		return &ValidationError{Name: "request_count", err: errors.New(`ent: missing required field "AttributionClaimGroup.request_count"`)}
+	}
+	if _, ok := acgc.mutation.FinalizationAttemptCount(); !ok {
+		return &ValidationError{Name: "finalization_attempt_count", err: errors.New(`ent: missing required field "AttributionClaimGroup.finalization_attempt_count"`)}
+	}
+	if _, ok := acgc.mutation.FinalizationNextAttemptAt(); !ok {
+		return &ValidationError{Name: "finalization_next_attempt_at", err: errors.New(`ent: missing required field "AttributionClaimGroup.finalization_next_attempt_at"`)}
 	}
 	if _, ok := acgc.mutation.ExpiresAt(); !ok {
 		return &ValidationError{Name: "expires_at", err: errors.New(`ent: missing required field "AttributionClaimGroup.expires_at"`)}
@@ -453,6 +523,22 @@ func (acgc *AttributionClaimGroupCreate) createSpec() (*AttributionClaimGroup, *
 	if value, ok := acgc.mutation.RequestCount(); ok {
 		_spec.SetField(attributionclaimgroup.FieldRequestCount, field.TypeInt, value)
 		_node.RequestCount = value
+	}
+	if value, ok := acgc.mutation.FinalizedAt(); ok {
+		_spec.SetField(attributionclaimgroup.FieldFinalizedAt, field.TypeTime, value)
+		_node.FinalizedAt = &value
+	}
+	if value, ok := acgc.mutation.FinalizationAttemptCount(); ok {
+		_spec.SetField(attributionclaimgroup.FieldFinalizationAttemptCount, field.TypeInt, value)
+		_node.FinalizationAttemptCount = value
+	}
+	if value, ok := acgc.mutation.FinalizationNextAttemptAt(); ok {
+		_spec.SetField(attributionclaimgroup.FieldFinalizationNextAttemptAt, field.TypeTime, value)
+		_node.FinalizationNextAttemptAt = value
+	}
+	if value, ok := acgc.mutation.FinalizationLastErrorCode(); ok {
+		_spec.SetField(attributionclaimgroup.FieldFinalizationLastErrorCode, field.TypeString, value)
+		_node.FinalizationLastErrorCode = value
 	}
 	if value, ok := acgc.mutation.ExpiresAt(); ok {
 		_spec.SetField(attributionclaimgroup.FieldExpiresAt, field.TypeTime, value)

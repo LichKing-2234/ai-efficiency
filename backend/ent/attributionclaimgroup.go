@@ -52,6 +52,14 @@ type AttributionClaimGroup struct {
 	CommitAllocations []map[string]interface{} `json:"commit_allocations,omitempty"`
 	// RequestCount holds the value of the "request_count" field.
 	RequestCount int `json:"request_count,omitempty"`
+	// FinalizedAt holds the value of the "finalized_at" field.
+	FinalizedAt *time.Time `json:"finalized_at,omitempty"`
+	// FinalizationAttemptCount holds the value of the "finalization_attempt_count" field.
+	FinalizationAttemptCount int `json:"finalization_attempt_count,omitempty"`
+	// FinalizationNextAttemptAt holds the value of the "finalization_next_attempt_at" field.
+	FinalizationNextAttemptAt time.Time `json:"finalization_next_attempt_at,omitempty"`
+	// FinalizationLastErrorCode holds the value of the "finalization_last_error_code" field.
+	FinalizationLastErrorCode string `json:"finalization_last_error_code,omitempty"`
 	// ExpiresAt holds the value of the "expires_at" field.
 	ExpiresAt time.Time `json:"expires_at,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
@@ -68,11 +76,11 @@ func (*AttributionClaimGroup) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case attributionclaimgroup.FieldCommitAllocations:
 			values[i] = new([]byte)
-		case attributionclaimgroup.FieldID, attributionclaimgroup.FieldInstallationID, attributionclaimgroup.FieldUserID, attributionclaimgroup.FieldRelayProviderID, attributionclaimgroup.FieldSchemaVersion, attributionclaimgroup.FieldCalibrationInputTokens, attributionclaimgroup.FieldCalibrationOutputTokens, attributionclaimgroup.FieldCalibrationCacheCreationTokens, attributionclaimgroup.FieldCalibrationCacheReadTokens, attributionclaimgroup.FieldCalibrationTotalTokens, attributionclaimgroup.FieldRequestCount:
+		case attributionclaimgroup.FieldID, attributionclaimgroup.FieldInstallationID, attributionclaimgroup.FieldUserID, attributionclaimgroup.FieldRelayProviderID, attributionclaimgroup.FieldSchemaVersion, attributionclaimgroup.FieldCalibrationInputTokens, attributionclaimgroup.FieldCalibrationOutputTokens, attributionclaimgroup.FieldCalibrationCacheCreationTokens, attributionclaimgroup.FieldCalibrationCacheReadTokens, attributionclaimgroup.FieldCalibrationTotalTokens, attributionclaimgroup.FieldRequestCount, attributionclaimgroup.FieldFinalizationAttemptCount:
 			values[i] = new(sql.NullInt64)
-		case attributionclaimgroup.FieldGroupID, attributionclaimgroup.FieldLedgerEpoch, attributionclaimgroup.FieldThreadID, attributionclaimgroup.FieldTurnID, attributionclaimgroup.FieldEvidenceDigest, attributionclaimgroup.FieldCalibrationDigest:
+		case attributionclaimgroup.FieldGroupID, attributionclaimgroup.FieldLedgerEpoch, attributionclaimgroup.FieldThreadID, attributionclaimgroup.FieldTurnID, attributionclaimgroup.FieldEvidenceDigest, attributionclaimgroup.FieldCalibrationDigest, attributionclaimgroup.FieldFinalizationLastErrorCode:
 			values[i] = new(sql.NullString)
-		case attributionclaimgroup.FieldExpiresAt, attributionclaimgroup.FieldCreatedAt, attributionclaimgroup.FieldUpdatedAt:
+		case attributionclaimgroup.FieldFinalizedAt, attributionclaimgroup.FieldFinalizationNextAttemptAt, attributionclaimgroup.FieldExpiresAt, attributionclaimgroup.FieldCreatedAt, attributionclaimgroup.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -199,6 +207,31 @@ func (acg *AttributionClaimGroup) assignValues(columns []string, values []any) e
 			} else if value.Valid {
 				acg.RequestCount = int(value.Int64)
 			}
+		case attributionclaimgroup.FieldFinalizedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field finalized_at", values[i])
+			} else if value.Valid {
+				acg.FinalizedAt = new(time.Time)
+				*acg.FinalizedAt = value.Time
+			}
+		case attributionclaimgroup.FieldFinalizationAttemptCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field finalization_attempt_count", values[i])
+			} else if value.Valid {
+				acg.FinalizationAttemptCount = int(value.Int64)
+			}
+		case attributionclaimgroup.FieldFinalizationNextAttemptAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field finalization_next_attempt_at", values[i])
+			} else if value.Valid {
+				acg.FinalizationNextAttemptAt = value.Time
+			}
+		case attributionclaimgroup.FieldFinalizationLastErrorCode:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field finalization_last_error_code", values[i])
+			} else if value.Valid {
+				acg.FinalizationLastErrorCode = value.String
+			}
 		case attributionclaimgroup.FieldExpiresAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field expires_at", values[i])
@@ -303,6 +336,20 @@ func (acg *AttributionClaimGroup) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("request_count=")
 	builder.WriteString(fmt.Sprintf("%v", acg.RequestCount))
+	builder.WriteString(", ")
+	if v := acg.FinalizedAt; v != nil {
+		builder.WriteString("finalized_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("finalization_attempt_count=")
+	builder.WriteString(fmt.Sprintf("%v", acg.FinalizationAttemptCount))
+	builder.WriteString(", ")
+	builder.WriteString("finalization_next_attempt_at=")
+	builder.WriteString(acg.FinalizationNextAttemptAt.Format(time.ANSIC))
+	builder.WriteString(", ")
+	builder.WriteString("finalization_last_error_code=")
+	builder.WriteString(acg.FinalizationLastErrorCode)
 	builder.WriteString(", ")
 	builder.WriteString("expires_at=")
 	builder.WriteString(acg.ExpiresAt.Format(time.ANSIC))

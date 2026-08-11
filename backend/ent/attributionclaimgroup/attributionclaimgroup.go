@@ -47,6 +47,14 @@ const (
 	FieldCommitAllocations = "commit_allocations"
 	// FieldRequestCount holds the string denoting the request_count field in the database.
 	FieldRequestCount = "request_count"
+	// FieldFinalizedAt holds the string denoting the finalized_at field in the database.
+	FieldFinalizedAt = "finalized_at"
+	// FieldFinalizationAttemptCount holds the string denoting the finalization_attempt_count field in the database.
+	FieldFinalizationAttemptCount = "finalization_attempt_count"
+	// FieldFinalizationNextAttemptAt holds the string denoting the finalization_next_attempt_at field in the database.
+	FieldFinalizationNextAttemptAt = "finalization_next_attempt_at"
+	// FieldFinalizationLastErrorCode holds the string denoting the finalization_last_error_code field in the database.
+	FieldFinalizationLastErrorCode = "finalization_last_error_code"
 	// FieldExpiresAt holds the string denoting the expires_at field in the database.
 	FieldExpiresAt = "expires_at"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
@@ -77,6 +85,10 @@ var Columns = []string{
 	FieldCalibrationTotalTokens,
 	FieldCommitAllocations,
 	FieldRequestCount,
+	FieldFinalizedAt,
+	FieldFinalizationAttemptCount,
+	FieldFinalizationNextAttemptAt,
+	FieldFinalizationLastErrorCode,
 	FieldExpiresAt,
 	FieldCreatedAt,
 	FieldUpdatedAt,
@@ -97,12 +109,6 @@ var (
 	GroupIDValidator func(string) error
 	// DefaultLedgerEpoch holds the default value on creation for the "ledger_epoch" field.
 	DefaultLedgerEpoch string
-	// ThreadIDValidator is a validator for the "thread_id" field. It is called by the builders before save.
-	ThreadIDValidator func(string) error
-	// TurnIDValidator is a validator for the "turn_id" field. It is called by the builders before save.
-	TurnIDValidator func(string) error
-	// EvidenceDigestValidator is a validator for the "evidence_digest" field. It is called by the builders before save.
-	EvidenceDigestValidator func(string) error
 	// DefaultCalibrationInputTokens holds the default value on creation for the "calibration_input_tokens" field.
 	DefaultCalibrationInputTokens int64
 	// DefaultCalibrationOutputTokens holds the default value on creation for the "calibration_output_tokens" field.
@@ -113,6 +119,10 @@ var (
 	DefaultCalibrationCacheReadTokens int64
 	// DefaultCalibrationTotalTokens holds the default value on creation for the "calibration_total_tokens" field.
 	DefaultCalibrationTotalTokens int64
+	// DefaultFinalizationAttemptCount holds the default value on creation for the "finalization_attempt_count" field.
+	DefaultFinalizationAttemptCount int
+	// DefaultFinalizationNextAttemptAt holds the default value on creation for the "finalization_next_attempt_at" field.
+	DefaultFinalizationNextAttemptAt func() time.Time
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -207,6 +217,26 @@ func ByCalibrationTotalTokens(opts ...sql.OrderTermOption) OrderOption {
 // ByRequestCount orders the results by the request_count field.
 func ByRequestCount(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRequestCount, opts...).ToFunc()
+}
+
+// ByFinalizedAt orders the results by the finalized_at field.
+func ByFinalizedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFinalizedAt, opts...).ToFunc()
+}
+
+// ByFinalizationAttemptCount orders the results by the finalization_attempt_count field.
+func ByFinalizationAttemptCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFinalizationAttemptCount, opts...).ToFunc()
+}
+
+// ByFinalizationNextAttemptAt orders the results by the finalization_next_attempt_at field.
+func ByFinalizationNextAttemptAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFinalizationNextAttemptAt, opts...).ToFunc()
+}
+
+// ByFinalizationLastErrorCode orders the results by the finalization_last_error_code field.
+func ByFinalizationLastErrorCode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFinalizationLastErrorCode, opts...).ToFunc()
 }
 
 // ByExpiresAt orders the results by the expires_at field.

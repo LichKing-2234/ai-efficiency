@@ -232,6 +232,10 @@ rows.
 - adding a second commit atomically migrates/merges the contribution instead
   of duplicating it;
 - unresolved finalization adds only a zero-Token gap;
+- because an unresolved Request has no authoritative upstream model or usage
+  time, its gap is stored in a deterministic coverage-only pool using the
+  reserved model `unresolved` and the claim group's first server-received
+  15-minute UTC bucket; this pool never contributes Token or Request count;
 - Request claims may be deleted without affecting Activity reads.
 
 ## 9. Rewrite, Reachability, And PR Projection

@@ -155,6 +155,12 @@ func (acgu *AttributionClaimGroupUpdate) SetNillableThreadID(s *string) *Attribu
 	return acgu
 }
 
+// ClearThreadID clears the value of the "thread_id" field.
+func (acgu *AttributionClaimGroupUpdate) ClearThreadID() *AttributionClaimGroupUpdate {
+	acgu.mutation.ClearThreadID()
+	return acgu
+}
+
 // SetTurnID sets the "turn_id" field.
 func (acgu *AttributionClaimGroupUpdate) SetTurnID(s string) *AttributionClaimGroupUpdate {
 	acgu.mutation.SetTurnID(s)
@@ -169,6 +175,12 @@ func (acgu *AttributionClaimGroupUpdate) SetNillableTurnID(s *string) *Attributi
 	return acgu
 }
 
+// ClearTurnID clears the value of the "turn_id" field.
+func (acgu *AttributionClaimGroupUpdate) ClearTurnID() *AttributionClaimGroupUpdate {
+	acgu.mutation.ClearTurnID()
+	return acgu
+}
+
 // SetEvidenceDigest sets the "evidence_digest" field.
 func (acgu *AttributionClaimGroupUpdate) SetEvidenceDigest(s string) *AttributionClaimGroupUpdate {
 	acgu.mutation.SetEvidenceDigest(s)
@@ -180,6 +192,12 @@ func (acgu *AttributionClaimGroupUpdate) SetNillableEvidenceDigest(s *string) *A
 	if s != nil {
 		acgu.SetEvidenceDigest(*s)
 	}
+	return acgu
+}
+
+// ClearEvidenceDigest clears the value of the "evidence_digest" field.
+func (acgu *AttributionClaimGroupUpdate) ClearEvidenceDigest() *AttributionClaimGroupUpdate {
+	acgu.mutation.ClearEvidenceDigest()
 	return acgu
 }
 
@@ -341,6 +359,81 @@ func (acgu *AttributionClaimGroupUpdate) AddRequestCount(i int) *AttributionClai
 	return acgu
 }
 
+// SetFinalizedAt sets the "finalized_at" field.
+func (acgu *AttributionClaimGroupUpdate) SetFinalizedAt(t time.Time) *AttributionClaimGroupUpdate {
+	acgu.mutation.SetFinalizedAt(t)
+	return acgu
+}
+
+// SetNillableFinalizedAt sets the "finalized_at" field if the given value is not nil.
+func (acgu *AttributionClaimGroupUpdate) SetNillableFinalizedAt(t *time.Time) *AttributionClaimGroupUpdate {
+	if t != nil {
+		acgu.SetFinalizedAt(*t)
+	}
+	return acgu
+}
+
+// ClearFinalizedAt clears the value of the "finalized_at" field.
+func (acgu *AttributionClaimGroupUpdate) ClearFinalizedAt() *AttributionClaimGroupUpdate {
+	acgu.mutation.ClearFinalizedAt()
+	return acgu
+}
+
+// SetFinalizationAttemptCount sets the "finalization_attempt_count" field.
+func (acgu *AttributionClaimGroupUpdate) SetFinalizationAttemptCount(i int) *AttributionClaimGroupUpdate {
+	acgu.mutation.ResetFinalizationAttemptCount()
+	acgu.mutation.SetFinalizationAttemptCount(i)
+	return acgu
+}
+
+// SetNillableFinalizationAttemptCount sets the "finalization_attempt_count" field if the given value is not nil.
+func (acgu *AttributionClaimGroupUpdate) SetNillableFinalizationAttemptCount(i *int) *AttributionClaimGroupUpdate {
+	if i != nil {
+		acgu.SetFinalizationAttemptCount(*i)
+	}
+	return acgu
+}
+
+// AddFinalizationAttemptCount adds i to the "finalization_attempt_count" field.
+func (acgu *AttributionClaimGroupUpdate) AddFinalizationAttemptCount(i int) *AttributionClaimGroupUpdate {
+	acgu.mutation.AddFinalizationAttemptCount(i)
+	return acgu
+}
+
+// SetFinalizationNextAttemptAt sets the "finalization_next_attempt_at" field.
+func (acgu *AttributionClaimGroupUpdate) SetFinalizationNextAttemptAt(t time.Time) *AttributionClaimGroupUpdate {
+	acgu.mutation.SetFinalizationNextAttemptAt(t)
+	return acgu
+}
+
+// SetNillableFinalizationNextAttemptAt sets the "finalization_next_attempt_at" field if the given value is not nil.
+func (acgu *AttributionClaimGroupUpdate) SetNillableFinalizationNextAttemptAt(t *time.Time) *AttributionClaimGroupUpdate {
+	if t != nil {
+		acgu.SetFinalizationNextAttemptAt(*t)
+	}
+	return acgu
+}
+
+// SetFinalizationLastErrorCode sets the "finalization_last_error_code" field.
+func (acgu *AttributionClaimGroupUpdate) SetFinalizationLastErrorCode(s string) *AttributionClaimGroupUpdate {
+	acgu.mutation.SetFinalizationLastErrorCode(s)
+	return acgu
+}
+
+// SetNillableFinalizationLastErrorCode sets the "finalization_last_error_code" field if the given value is not nil.
+func (acgu *AttributionClaimGroupUpdate) SetNillableFinalizationLastErrorCode(s *string) *AttributionClaimGroupUpdate {
+	if s != nil {
+		acgu.SetFinalizationLastErrorCode(*s)
+	}
+	return acgu
+}
+
+// ClearFinalizationLastErrorCode clears the value of the "finalization_last_error_code" field.
+func (acgu *AttributionClaimGroupUpdate) ClearFinalizationLastErrorCode() *AttributionClaimGroupUpdate {
+	acgu.mutation.ClearFinalizationLastErrorCode()
+	return acgu
+}
+
 // SetExpiresAt sets the "expires_at" field.
 func (acgu *AttributionClaimGroupUpdate) SetExpiresAt(t time.Time) *AttributionClaimGroupUpdate {
 	acgu.mutation.SetExpiresAt(t)
@@ -409,21 +502,6 @@ func (acgu *AttributionClaimGroupUpdate) check() error {
 			return &ValidationError{Name: "group_id", err: fmt.Errorf(`ent: validator failed for field "AttributionClaimGroup.group_id": %w`, err)}
 		}
 	}
-	if v, ok := acgu.mutation.ThreadID(); ok {
-		if err := attributionclaimgroup.ThreadIDValidator(v); err != nil {
-			return &ValidationError{Name: "thread_id", err: fmt.Errorf(`ent: validator failed for field "AttributionClaimGroup.thread_id": %w`, err)}
-		}
-	}
-	if v, ok := acgu.mutation.TurnID(); ok {
-		if err := attributionclaimgroup.TurnIDValidator(v); err != nil {
-			return &ValidationError{Name: "turn_id", err: fmt.Errorf(`ent: validator failed for field "AttributionClaimGroup.turn_id": %w`, err)}
-		}
-	}
-	if v, ok := acgu.mutation.EvidenceDigest(); ok {
-		if err := attributionclaimgroup.EvidenceDigestValidator(v); err != nil {
-			return &ValidationError{Name: "evidence_digest", err: fmt.Errorf(`ent: validator failed for field "AttributionClaimGroup.evidence_digest": %w`, err)}
-		}
-	}
 	return nil
 }
 
@@ -472,11 +550,20 @@ func (acgu *AttributionClaimGroupUpdate) sqlSave(ctx context.Context) (n int, er
 	if value, ok := acgu.mutation.ThreadID(); ok {
 		_spec.SetField(attributionclaimgroup.FieldThreadID, field.TypeString, value)
 	}
+	if acgu.mutation.ThreadIDCleared() {
+		_spec.ClearField(attributionclaimgroup.FieldThreadID, field.TypeString)
+	}
 	if value, ok := acgu.mutation.TurnID(); ok {
 		_spec.SetField(attributionclaimgroup.FieldTurnID, field.TypeString, value)
 	}
+	if acgu.mutation.TurnIDCleared() {
+		_spec.ClearField(attributionclaimgroup.FieldTurnID, field.TypeString)
+	}
 	if value, ok := acgu.mutation.EvidenceDigest(); ok {
 		_spec.SetField(attributionclaimgroup.FieldEvidenceDigest, field.TypeString, value)
+	}
+	if acgu.mutation.EvidenceDigestCleared() {
+		_spec.ClearField(attributionclaimgroup.FieldEvidenceDigest, field.TypeString)
 	}
 	if value, ok := acgu.mutation.CalibrationDigest(); ok {
 		_spec.SetField(attributionclaimgroup.FieldCalibrationDigest, field.TypeString, value)
@@ -527,6 +614,27 @@ func (acgu *AttributionClaimGroupUpdate) sqlSave(ctx context.Context) (n int, er
 	}
 	if value, ok := acgu.mutation.AddedRequestCount(); ok {
 		_spec.AddField(attributionclaimgroup.FieldRequestCount, field.TypeInt, value)
+	}
+	if value, ok := acgu.mutation.FinalizedAt(); ok {
+		_spec.SetField(attributionclaimgroup.FieldFinalizedAt, field.TypeTime, value)
+	}
+	if acgu.mutation.FinalizedAtCleared() {
+		_spec.ClearField(attributionclaimgroup.FieldFinalizedAt, field.TypeTime)
+	}
+	if value, ok := acgu.mutation.FinalizationAttemptCount(); ok {
+		_spec.SetField(attributionclaimgroup.FieldFinalizationAttemptCount, field.TypeInt, value)
+	}
+	if value, ok := acgu.mutation.AddedFinalizationAttemptCount(); ok {
+		_spec.AddField(attributionclaimgroup.FieldFinalizationAttemptCount, field.TypeInt, value)
+	}
+	if value, ok := acgu.mutation.FinalizationNextAttemptAt(); ok {
+		_spec.SetField(attributionclaimgroup.FieldFinalizationNextAttemptAt, field.TypeTime, value)
+	}
+	if value, ok := acgu.mutation.FinalizationLastErrorCode(); ok {
+		_spec.SetField(attributionclaimgroup.FieldFinalizationLastErrorCode, field.TypeString, value)
+	}
+	if acgu.mutation.FinalizationLastErrorCodeCleared() {
+		_spec.ClearField(attributionclaimgroup.FieldFinalizationLastErrorCode, field.TypeString)
 	}
 	if value, ok := acgu.mutation.ExpiresAt(); ok {
 		_spec.SetField(attributionclaimgroup.FieldExpiresAt, field.TypeTime, value)
@@ -680,6 +788,12 @@ func (acguo *AttributionClaimGroupUpdateOne) SetNillableThreadID(s *string) *Att
 	return acguo
 }
 
+// ClearThreadID clears the value of the "thread_id" field.
+func (acguo *AttributionClaimGroupUpdateOne) ClearThreadID() *AttributionClaimGroupUpdateOne {
+	acguo.mutation.ClearThreadID()
+	return acguo
+}
+
 // SetTurnID sets the "turn_id" field.
 func (acguo *AttributionClaimGroupUpdateOne) SetTurnID(s string) *AttributionClaimGroupUpdateOne {
 	acguo.mutation.SetTurnID(s)
@@ -694,6 +808,12 @@ func (acguo *AttributionClaimGroupUpdateOne) SetNillableTurnID(s *string) *Attri
 	return acguo
 }
 
+// ClearTurnID clears the value of the "turn_id" field.
+func (acguo *AttributionClaimGroupUpdateOne) ClearTurnID() *AttributionClaimGroupUpdateOne {
+	acguo.mutation.ClearTurnID()
+	return acguo
+}
+
 // SetEvidenceDigest sets the "evidence_digest" field.
 func (acguo *AttributionClaimGroupUpdateOne) SetEvidenceDigest(s string) *AttributionClaimGroupUpdateOne {
 	acguo.mutation.SetEvidenceDigest(s)
@@ -705,6 +825,12 @@ func (acguo *AttributionClaimGroupUpdateOne) SetNillableEvidenceDigest(s *string
 	if s != nil {
 		acguo.SetEvidenceDigest(*s)
 	}
+	return acguo
+}
+
+// ClearEvidenceDigest clears the value of the "evidence_digest" field.
+func (acguo *AttributionClaimGroupUpdateOne) ClearEvidenceDigest() *AttributionClaimGroupUpdateOne {
+	acguo.mutation.ClearEvidenceDigest()
 	return acguo
 }
 
@@ -866,6 +992,81 @@ func (acguo *AttributionClaimGroupUpdateOne) AddRequestCount(i int) *Attribution
 	return acguo
 }
 
+// SetFinalizedAt sets the "finalized_at" field.
+func (acguo *AttributionClaimGroupUpdateOne) SetFinalizedAt(t time.Time) *AttributionClaimGroupUpdateOne {
+	acguo.mutation.SetFinalizedAt(t)
+	return acguo
+}
+
+// SetNillableFinalizedAt sets the "finalized_at" field if the given value is not nil.
+func (acguo *AttributionClaimGroupUpdateOne) SetNillableFinalizedAt(t *time.Time) *AttributionClaimGroupUpdateOne {
+	if t != nil {
+		acguo.SetFinalizedAt(*t)
+	}
+	return acguo
+}
+
+// ClearFinalizedAt clears the value of the "finalized_at" field.
+func (acguo *AttributionClaimGroupUpdateOne) ClearFinalizedAt() *AttributionClaimGroupUpdateOne {
+	acguo.mutation.ClearFinalizedAt()
+	return acguo
+}
+
+// SetFinalizationAttemptCount sets the "finalization_attempt_count" field.
+func (acguo *AttributionClaimGroupUpdateOne) SetFinalizationAttemptCount(i int) *AttributionClaimGroupUpdateOne {
+	acguo.mutation.ResetFinalizationAttemptCount()
+	acguo.mutation.SetFinalizationAttemptCount(i)
+	return acguo
+}
+
+// SetNillableFinalizationAttemptCount sets the "finalization_attempt_count" field if the given value is not nil.
+func (acguo *AttributionClaimGroupUpdateOne) SetNillableFinalizationAttemptCount(i *int) *AttributionClaimGroupUpdateOne {
+	if i != nil {
+		acguo.SetFinalizationAttemptCount(*i)
+	}
+	return acguo
+}
+
+// AddFinalizationAttemptCount adds i to the "finalization_attempt_count" field.
+func (acguo *AttributionClaimGroupUpdateOne) AddFinalizationAttemptCount(i int) *AttributionClaimGroupUpdateOne {
+	acguo.mutation.AddFinalizationAttemptCount(i)
+	return acguo
+}
+
+// SetFinalizationNextAttemptAt sets the "finalization_next_attempt_at" field.
+func (acguo *AttributionClaimGroupUpdateOne) SetFinalizationNextAttemptAt(t time.Time) *AttributionClaimGroupUpdateOne {
+	acguo.mutation.SetFinalizationNextAttemptAt(t)
+	return acguo
+}
+
+// SetNillableFinalizationNextAttemptAt sets the "finalization_next_attempt_at" field if the given value is not nil.
+func (acguo *AttributionClaimGroupUpdateOne) SetNillableFinalizationNextAttemptAt(t *time.Time) *AttributionClaimGroupUpdateOne {
+	if t != nil {
+		acguo.SetFinalizationNextAttemptAt(*t)
+	}
+	return acguo
+}
+
+// SetFinalizationLastErrorCode sets the "finalization_last_error_code" field.
+func (acguo *AttributionClaimGroupUpdateOne) SetFinalizationLastErrorCode(s string) *AttributionClaimGroupUpdateOne {
+	acguo.mutation.SetFinalizationLastErrorCode(s)
+	return acguo
+}
+
+// SetNillableFinalizationLastErrorCode sets the "finalization_last_error_code" field if the given value is not nil.
+func (acguo *AttributionClaimGroupUpdateOne) SetNillableFinalizationLastErrorCode(s *string) *AttributionClaimGroupUpdateOne {
+	if s != nil {
+		acguo.SetFinalizationLastErrorCode(*s)
+	}
+	return acguo
+}
+
+// ClearFinalizationLastErrorCode clears the value of the "finalization_last_error_code" field.
+func (acguo *AttributionClaimGroupUpdateOne) ClearFinalizationLastErrorCode() *AttributionClaimGroupUpdateOne {
+	acguo.mutation.ClearFinalizationLastErrorCode()
+	return acguo
+}
+
 // SetExpiresAt sets the "expires_at" field.
 func (acguo *AttributionClaimGroupUpdateOne) SetExpiresAt(t time.Time) *AttributionClaimGroupUpdateOne {
 	acguo.mutation.SetExpiresAt(t)
@@ -947,21 +1148,6 @@ func (acguo *AttributionClaimGroupUpdateOne) check() error {
 			return &ValidationError{Name: "group_id", err: fmt.Errorf(`ent: validator failed for field "AttributionClaimGroup.group_id": %w`, err)}
 		}
 	}
-	if v, ok := acguo.mutation.ThreadID(); ok {
-		if err := attributionclaimgroup.ThreadIDValidator(v); err != nil {
-			return &ValidationError{Name: "thread_id", err: fmt.Errorf(`ent: validator failed for field "AttributionClaimGroup.thread_id": %w`, err)}
-		}
-	}
-	if v, ok := acguo.mutation.TurnID(); ok {
-		if err := attributionclaimgroup.TurnIDValidator(v); err != nil {
-			return &ValidationError{Name: "turn_id", err: fmt.Errorf(`ent: validator failed for field "AttributionClaimGroup.turn_id": %w`, err)}
-		}
-	}
-	if v, ok := acguo.mutation.EvidenceDigest(); ok {
-		if err := attributionclaimgroup.EvidenceDigestValidator(v); err != nil {
-			return &ValidationError{Name: "evidence_digest", err: fmt.Errorf(`ent: validator failed for field "AttributionClaimGroup.evidence_digest": %w`, err)}
-		}
-	}
 	return nil
 }
 
@@ -1027,11 +1213,20 @@ func (acguo *AttributionClaimGroupUpdateOne) sqlSave(ctx context.Context) (_node
 	if value, ok := acguo.mutation.ThreadID(); ok {
 		_spec.SetField(attributionclaimgroup.FieldThreadID, field.TypeString, value)
 	}
+	if acguo.mutation.ThreadIDCleared() {
+		_spec.ClearField(attributionclaimgroup.FieldThreadID, field.TypeString)
+	}
 	if value, ok := acguo.mutation.TurnID(); ok {
 		_spec.SetField(attributionclaimgroup.FieldTurnID, field.TypeString, value)
 	}
+	if acguo.mutation.TurnIDCleared() {
+		_spec.ClearField(attributionclaimgroup.FieldTurnID, field.TypeString)
+	}
 	if value, ok := acguo.mutation.EvidenceDigest(); ok {
 		_spec.SetField(attributionclaimgroup.FieldEvidenceDigest, field.TypeString, value)
+	}
+	if acguo.mutation.EvidenceDigestCleared() {
+		_spec.ClearField(attributionclaimgroup.FieldEvidenceDigest, field.TypeString)
 	}
 	if value, ok := acguo.mutation.CalibrationDigest(); ok {
 		_spec.SetField(attributionclaimgroup.FieldCalibrationDigest, field.TypeString, value)
@@ -1082,6 +1277,27 @@ func (acguo *AttributionClaimGroupUpdateOne) sqlSave(ctx context.Context) (_node
 	}
 	if value, ok := acguo.mutation.AddedRequestCount(); ok {
 		_spec.AddField(attributionclaimgroup.FieldRequestCount, field.TypeInt, value)
+	}
+	if value, ok := acguo.mutation.FinalizedAt(); ok {
+		_spec.SetField(attributionclaimgroup.FieldFinalizedAt, field.TypeTime, value)
+	}
+	if acguo.mutation.FinalizedAtCleared() {
+		_spec.ClearField(attributionclaimgroup.FieldFinalizedAt, field.TypeTime)
+	}
+	if value, ok := acguo.mutation.FinalizationAttemptCount(); ok {
+		_spec.SetField(attributionclaimgroup.FieldFinalizationAttemptCount, field.TypeInt, value)
+	}
+	if value, ok := acguo.mutation.AddedFinalizationAttemptCount(); ok {
+		_spec.AddField(attributionclaimgroup.FieldFinalizationAttemptCount, field.TypeInt, value)
+	}
+	if value, ok := acguo.mutation.FinalizationNextAttemptAt(); ok {
+		_spec.SetField(attributionclaimgroup.FieldFinalizationNextAttemptAt, field.TypeTime, value)
+	}
+	if value, ok := acguo.mutation.FinalizationLastErrorCode(); ok {
+		_spec.SetField(attributionclaimgroup.FieldFinalizationLastErrorCode, field.TypeString, value)
+	}
+	if acguo.mutation.FinalizationLastErrorCodeCleared() {
+		_spec.ClearField(attributionclaimgroup.FieldFinalizationLastErrorCode, field.TypeString)
 	}
 	if value, ok := acguo.mutation.ExpiresAt(); ok {
 		_spec.SetField(attributionclaimgroup.FieldExpiresAt, field.TypeTime, value)

@@ -43,15 +43,21 @@ type Metrics struct {
 	release  string
 	registry *prometheus.Registry
 
-	httpRequests        *prometheus.CounterVec
-	httpRequestDuration *prometheus.HistogramVec
-	httpResponseBytes   *prometheus.HistogramVec
-	httpRequestsActive  *prometheus.GaugeVec
-	dependencyRequests  *prometheus.CounterVec
-	dependencyDuration  *prometheus.HistogramVec
-	cacheEvents         *prometheus.CounterVec
-	browserVitalSeconds *prometheus.HistogramVec
-	browserVitalRatio   *prometheus.HistogramVec
+	httpRequests                 *prometheus.CounterVec
+	httpRequestDuration          *prometheus.HistogramVec
+	httpResponseBytes            *prometheus.HistogramVec
+	httpRequestsActive           *prometheus.GaugeVec
+	dependencyRequests           *prometheus.CounterVec
+	dependencyDuration           *prometheus.HistogramVec
+	cacheEvents                  *prometheus.CounterVec
+	browserVitalSeconds          *prometheus.HistogramVec
+	browserVitalRatio            *prometheus.HistogramVec
+	attributionPending           prometheus.Gauge
+	attributionOldest            prometheus.Gauge
+	attributionNearExpiry        prometheus.Gauge
+	attributionReconciliations   *prometheus.CounterVec
+	attributionReconciliationAge *prometheus.HistogramVec
+	attributionLifecycle         *prometheus.CounterVec
 }
 
 func NewMetrics(release string) *Metrics {
@@ -112,6 +118,12 @@ func NewMetrics(release string) *Metrics {
 			Help:      "Sampled browser CLS values.",
 			Buckets:   []float64{0.01, 0.025, 0.05, 0.075, 0.1, 0.15, 0.25, 0.4, 0.6, 1, 2, 5, 10},
 		}, []string{"metric", "route", "navigation_type", "release"}),
+		attributionPending:           prometheus.NewGauge(prometheus.GaugeOpts{Namespace: metricsNamespace, Name: "attribution_requests_pending", Help: "Pending v2 attribution Request claims."}),
+		attributionOldest:            prometheus.NewGauge(prometheus.GaugeOpts{Namespace: metricsNamespace, Name: "attribution_oldest_pending_age_seconds", Help: "Age of the oldest pending v2 attribution Request claim."}),
+		attributionNearExpiry:        prometheus.NewGauge(prometheus.GaugeOpts{Namespace: metricsNamespace, Name: "attribution_groups_near_expiry", Help: "V2 attribution claim groups at or beyond the final-attempt boundary."}),
+		attributionReconciliations:   prometheus.NewCounterVec(prometheus.CounterOpts{Namespace: metricsNamespace, Name: "attribution_reconciliations_total", Help: "V2 attribution reconciliation outcomes."}, []string{"outcome", "release"}),
+		attributionReconciliationAge: prometheus.NewHistogramVec(prometheus.HistogramOpts{Namespace: metricsNamespace, Name: "attribution_reconciliation_age_seconds", Help: "Age of v2 Request claims when a reconciliation attempt completes.", Buckets: prometheus.ExponentialBuckets(60, 2, 18)}, []string{"outcome", "release"}),
+		attributionLifecycle:         prometheus.NewCounterVec(prometheus.CounterOpts{Namespace: metricsNamespace, Name: "attribution_lifecycle_total", Help: "V2 attribution finalization and cleanup outcomes."}, []string{"operation", "outcome", "release"}),
 	}
 	m.registry.MustRegister(
 		m.httpRequests,
@@ -123,8 +135,66 @@ func NewMetrics(release string) *Metrics {
 		m.cacheEvents,
 		m.browserVitalSeconds,
 		m.browserVitalRatio,
+		m.attributionPending,
+		m.attributionOldest,
+		m.attributionNearExpiry,
+		m.attributionReconciliations,
+		m.attributionReconciliationAge,
+		m.attributionLifecycle,
 	)
 	return m
+}
+
+type AttributionRecorder struct{ metrics *Metrics }
+
+func (m *Metrics) AttributionRecorder() AttributionRecorder { return AttributionRecorder{metrics: m} }
+
+func (r AttributionRecorder) SetAttributionHealth(pending int, oldestPendingAge time.Duration, nearExpiry int) {
+	if pending < 0 {
+		pending = 0
+	}
+	if nearExpiry < 0 {
+		nearExpiry = 0
+	}
+	if oldestPendingAge < 0 {
+		oldestPendingAge = 0
+	}
+	r.metrics.attributionPending.Set(float64(pending))
+	r.metrics.attributionOldest.Set(oldestPendingAge.Seconds())
+	r.metrics.attributionNearExpiry.Set(float64(nearExpiry))
+}
+
+func (r AttributionRecorder) ObserveAttributionReconciliation(outcome string, age time.Duration) {
+	if !attributionOutcomeAllowed(outcome) {
+		outcome = "unknown"
+	}
+	if age < 0 {
+		age = 0
+	}
+	r.metrics.attributionReconciliations.WithLabelValues(outcome, r.metrics.release).Inc()
+	r.metrics.attributionReconciliationAge.WithLabelValues(outcome, r.metrics.release).Observe(age.Seconds())
+}
+
+func (r AttributionRecorder) AddAttributionLifecycle(operation, outcome string, count int) {
+	if count <= 0 {
+		return
+	}
+	if operation != "finalization" && operation != "cleanup" {
+		operation = "unknown"
+	}
+	if outcome != "succeeded" && outcome != "deferred" && outcome != "hard_expired" && outcome != "error" {
+		outcome = "unknown"
+	}
+	r.metrics.attributionLifecycle.WithLabelValues(operation, outcome, r.metrics.release).Add(float64(count))
+}
+
+func attributionOutcomeAllowed(outcome string) bool {
+	switch outcome {
+	case "pending", "reconciled", "owner_mismatch", "ambiguous", "provider_unavailable", "invalid_usage", "source_expired":
+		return true
+	default:
+		return false
+	}
 }
 
 func (m *Metrics) Handler() http.Handler {

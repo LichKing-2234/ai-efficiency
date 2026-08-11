@@ -87,6 +87,326 @@ func TestRunOnceReconcilesExactOwnedUsage(t *testing.T) {
 	}
 }
 
+func TestRunOnceFinalizesPartialGroupAtExactSafetyBoundary(t *testing.T) {
+	fixture := newReconcileFixture(t)
+	ctx := context.Background()
+	first := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+	deadline := fixture.now.Add(FinalAttemptLead)
+	fixture.client.AttributionClaimGroup.UpdateOneID(first.ClaimGroupID).SetRequestCount(2).SetCalibrationDigest("local-only").SetCalibrationTotalTokens(99).SetExpiresAt(deadline).ExecX(ctx)
+	fixture.client.AttributionRequestClaim.UpdateOneID(first.ID).SetExpiresAt(deadline).ExecX(ctx)
+	fixture.client.AttributionRequestClaim.Create().SetClaimGroupID(first.ClaimGroupID).SetRelayProviderID(fixture.providerID).
+		SetRequestID("req-missing").SetCanonicalDigest("digest-missing").SetNextAttemptAt(fixture.now).SetExpiresAt(deadline).SaveX(ctx)
+	reader := &requestReaderProvider{read: func(_ context.Context, requestID string, _ int) ([]relay.RequestUsage, error) {
+		if requestID == "req-missing" {
+			return nil, nil
+		}
+		return []relay.RequestUsage{validUsage(fixture)}, nil
+	}}
+	if _, err := newTestService(t, fixture, reader).RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if count := fixture.client.AttributionRequestClaim.Query().CountX(ctx); count != 0 {
+		t.Fatalf("hot request claims after finalization = %d", count)
+	}
+	group := fixture.client.AttributionClaimGroup.GetX(ctx, first.ClaimGroupID)
+	if group.FinalizedAt == nil || !group.FinalizedAt.Equal(fixture.now) || group.RequestCount != 0 || group.CalibrationDigest != "" || group.CalibrationTotalTokens != 0 || group.ThreadID != "" || group.TurnID != "" || group.EvidenceDigest != "" || len(group.CommitAllocations) != 0 {
+		t.Fatalf("finalized group = %+v", group)
+	}
+	pools := fixture.client.AttributionUsagePool.Query().AllX(ctx)
+	var requests, gaps int
+	var tokens int64
+	for _, pool := range pools {
+		requests += pool.RequestCount
+		gaps += pool.CoverageGapCount
+		tokens += pool.TotalTokens
+	}
+	if len(pools) != 2 || requests != 1 || gaps != 1 || tokens != 12 {
+		t.Fatalf("finalized pools = %+v", pools)
+	}
+	if _, err := newTestService(t, fixture, reader).RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	pools = fixture.client.AttributionUsagePool.Query().AllX(ctx)
+	for _, pool := range pools {
+		if pool.CoverageGapCount > 1 || pool.RequestCount > 1 {
+			t.Fatalf("repeated finalization recounted pool = %+v", pool)
+		}
+	}
+}
+
+func TestFinalizationWaitsUntilSafetyBoundaryAndForActiveLease(t *testing.T) {
+	fixture := newReconcileFixture(t)
+	ctx := context.Background()
+	claim := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+	expiresAt := fixture.now.Add(FinalAttemptLead + time.Millisecond)
+	fixture.client.AttributionClaimGroup.UpdateOneID(claim.ClaimGroupID).SetExpiresAt(expiresAt).ExecX(ctx)
+	fixture.client.AttributionRequestClaim.UpdateOneID(claim.ID).SetExpiresAt(expiresAt).SetNextAttemptAt(fixture.now.Add(time.Hour)).ExecX(ctx)
+	service := newTestService(t, fixture, &requestReaderProvider{read: func(context.Context, string, int) ([]relay.RequestUsage, error) { return nil, nil }})
+	if _, err := service.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.client.AttributionClaimGroup.GetX(ctx, claim.ClaimGroupID).FinalizedAt != nil {
+		t.Fatal("group finalized before exact safety boundary")
+	}
+	fixture.client.AttributionClaimGroup.UpdateOneID(claim.ClaimGroupID).SetExpiresAt(fixture.now.Add(FinalAttemptLead)).ExecX(ctx)
+	fixture.client.AttributionRequestClaim.UpdateOneID(claim.ID).SetExpiresAt(fixture.now.Add(FinalAttemptLead)).SetLeaseToken("active").SetLeaseExpiresAt(fixture.now.Add(time.Minute)).ExecX(ctx)
+	if _, err := service.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.client.AttributionClaimGroup.GetX(ctx, claim.ClaimGroupID).FinalizedAt != nil {
+		t.Fatal("group finalized while a final lookup lease was active")
+	}
+}
+
+func TestRetryIsCappedAtFinalAttemptDeadline(t *testing.T) {
+	now := time.Date(2026, 8, 12, 0, 0, 0, 0, time.UTC)
+	expiresAt := now.Add(FinalAttemptLead + time.Second)
+	if got, want := nextAttempt(now, time.Hour, expiresAt), now.Add(time.Second); !got.Equal(want) {
+		t.Fatalf("capped next attempt = %v, want %v", got, want)
+	}
+	if got, want := nextAttempt(now, time.Second, now.Add(FinalAttemptLead)), now; !got.Equal(want) {
+		t.Fatalf("exact-boundary next attempt = %v, want %v", got, want)
+	}
+}
+
+func TestFinalizationWaitsForEveryBatchedFinalAttempt(t *testing.T) {
+	fixture := newReconcileFixture(t)
+	ctx := context.Background()
+	first := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+	expiresAt := fixture.now.Add(FinalAttemptLead)
+	fixture.client.AttributionClaimGroup.UpdateOneID(first.ClaimGroupID).SetRequestCount(2).SetExpiresAt(expiresAt).ExecX(ctx)
+	fixture.client.AttributionRequestClaim.UpdateOneID(first.ID).SetExpiresAt(expiresAt).SetNextAttemptAt(fixture.now.Add(time.Hour)).ExecX(ctx)
+	fixture.client.AttributionRequestClaim.Create().SetClaimGroupID(first.ClaimGroupID).SetRelayProviderID(fixture.providerID).
+		SetRequestID("req-2").SetCanonicalDigest("digest-2").SetNextAttemptAt(fixture.now.Add(time.Hour)).SetExpiresAt(expiresAt).SaveX(ctx)
+	reader := &requestReaderProvider{read: func(context.Context, string, int) ([]relay.RequestUsage, error) { return nil, nil }}
+	service, err := NewService(fixture.client, resolverFunc(func(context.Context, int) (relay.Provider, error) { return reader, nil }), zap.NewNop(), Options{
+		BatchSize: 1, Now: func() time.Time { return fixture.now }, RandFloat64: func() float64 { return 0 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if processed, err := service.RunOnce(ctx); err != nil || processed != 1 {
+		t.Fatalf("first final batch = %d, %v", processed, err)
+	}
+	if fixture.client.AttributionClaimGroup.GetX(ctx, first.ClaimGroupID).FinalizedAt != nil {
+		t.Fatal("group finalized before every Request received a final attempt")
+	}
+	if processed, err := service.RunOnce(ctx); err != nil || processed != 1 {
+		t.Fatalf("second final batch = %d, %v", processed, err)
+	}
+	if fixture.client.AttributionClaimGroup.GetX(ctx, first.ClaimGroupID).FinalizedAt == nil {
+		t.Fatal("group was not finalized after every Request received a final attempt")
+	}
+	pools := fixture.client.AttributionUsagePool.Query().AllX(ctx)
+	if len(pools) != 1 || pools[0].CoverageGapCount != 2 || pools[0].TotalTokens != 0 {
+		t.Fatalf("batched final gap pool = %+v", pools)
+	}
+}
+
+func TestFinalBoundaryClaimsTakePriorityOverOrdinaryBacklog(t *testing.T) {
+	fixture := newReconcileFixture(t)
+	ctx := context.Background()
+	finalClaim := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+	finalGroup := fixture.client.AttributionClaimGroup.GetX(ctx, finalClaim.ClaimGroupID)
+	finalExpiry := fixture.now.Add(FinalAttemptLead)
+	fixture.client.AttributionClaimGroup.UpdateOneID(finalGroup.ID).SetExpiresAt(finalExpiry).ExecX(ctx)
+	fixture.client.AttributionRequestClaim.UpdateOneID(finalClaim.ID).SetExpiresAt(finalExpiry).SetNextAttemptAt(fixture.now.Add(time.Hour)).ExecX(ctx)
+	ordinaryGroup := fixture.client.AttributionClaimGroup.Create().SetGroupID("ordinary-backlog").SetInstallationID(finalGroup.InstallationID).
+		SetUserID(finalGroup.UserID).SetRelayProviderID(finalGroup.RelayProviderID).SetSchemaVersion(2).SetThreadID("thread-old").SetTurnID("turn-old").
+		SetEvidenceDigest("ordinary-evidence").SetCommitAllocations(finalGroup.CommitAllocations).SetRequestCount(1).SetExpiresAt(fixture.now.Add(30 * 24 * time.Hour)).SaveX(ctx)
+	fixture.client.AttributionRequestClaim.Create().SetClaimGroupID(ordinaryGroup.ID).SetRelayProviderID(fixture.providerID).SetRequestID("req-ordinary").
+		SetCanonicalDigest("digest-ordinary").SetNextAttemptAt(fixture.now.Add(-time.Hour)).SetExpiresAt(ordinaryGroup.ExpiresAt).SaveX(ctx)
+	called := make(chan string, 1)
+	reader := &requestReaderProvider{read: func(_ context.Context, requestID string, _ int) ([]relay.RequestUsage, error) {
+		called <- requestID
+		return nil, nil
+	}}
+	service, err := NewService(fixture.client, resolverFunc(func(context.Context, int) (relay.Provider, error) { return reader, nil }), zap.NewNop(), Options{
+		BatchSize: 1, Now: func() time.Time { return fixture.now }, RandFloat64: func() float64 { return 0 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if requestID := <-called; requestID != finalClaim.RequestID {
+		t.Fatalf("first reconciled Request = %q, want final-boundary %q", requestID, finalClaim.RequestID)
+	}
+}
+
+func TestLateRequestInNearExpiryGroupGetsImmediateFinalAttempt(t *testing.T) {
+	fixture := newReconcileFixture(t)
+	ctx := context.Background()
+	first := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+	expiresAt := fixture.now.Add(FinalAttemptLead)
+	fixture.client.AttributionClaimGroup.UpdateOneID(first.ClaimGroupID).SetRequestCount(2).SetExpiresAt(expiresAt).ExecX(ctx)
+	fixture.client.AttributionRequestClaim.UpdateOneID(first.ID).SetStatus(attributionrequestclaim.StatusAmbiguous).SetExpiresAt(expiresAt).ExecX(ctx)
+	fixture.client.AttributionRequestClaim.Create().SetClaimGroupID(first.ClaimGroupID).SetRelayProviderID(fixture.providerID).SetRequestID("req-late").
+		SetCanonicalDigest("digest-late").SetNextAttemptAt(fixture.now.Add(time.Hour)).SetExpiresAt(expiresAt).SaveX(ctx)
+	called := false
+	reader := &requestReaderProvider{read: func(_ context.Context, requestID string, _ int) ([]relay.RequestUsage, error) {
+		if requestID != "req-late" {
+			t.Fatalf("unexpected late lookup %q", requestID)
+		}
+		called = true
+		return nil, nil
+	}}
+	if _, err := newTestService(t, fixture, reader).RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("late near-expiry Request did not receive an immediate final attempt")
+	}
+	if fixture.client.AttributionClaimGroup.GetX(ctx, first.ClaimGroupID).FinalizedAt == nil {
+		t.Fatal("near-expiry group was not finalized after the late Request attempt")
+	}
+	pools := fixture.client.AttributionUsagePool.Query().AllX(ctx)
+	if len(pools) != 1 || pools[0].CoverageGapCount != 2 {
+		t.Fatalf("late-ingest coverage pool = %+v", pools)
+	}
+}
+
+func TestProviderOutageAtFinalBoundaryBecomesCoverageGap(t *testing.T) {
+	fixture := newReconcileFixture(t)
+	ctx := context.Background()
+	claim := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+	expiresAt := fixture.now.Add(FinalAttemptLead)
+	fixture.client.AttributionClaimGroup.UpdateOneID(claim.ClaimGroupID).SetExpiresAt(expiresAt).ExecX(ctx)
+	fixture.client.AttributionRequestClaim.UpdateOneID(claim.ID).SetExpiresAt(expiresAt).SetNextAttemptAt(fixture.now.Add(time.Hour)).ExecX(ctx)
+	reader := &requestReaderProvider{read: func(context.Context, string, int) ([]relay.RequestUsage, error) {
+		return nil, errors.New("temporary upstream outage")
+	}}
+	if _, err := newTestService(t, fixture, reader).RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	group := fixture.client.AttributionClaimGroup.GetX(ctx, claim.ClaimGroupID)
+	if group.FinalizedAt == nil {
+		t.Fatal("provider-outage group was not finalized after its final attempt")
+	}
+	pools := fixture.client.AttributionUsagePool.Query().AllX(ctx)
+	if len(pools) != 1 || pools[0].CoverageGapCount != 1 || pools[0].TotalTokens != 0 {
+		t.Fatalf("provider-outage coverage pool = %+v", pools)
+	}
+}
+
+func TestFinalizationRollsBackOnInvalidAllocation(t *testing.T) {
+	fixture := newReconcileFixture(t)
+	ctx := context.Background()
+	claim := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+	fixture.client.AttributionClaimGroup.UpdateOneID(claim.ClaimGroupID).SetExpiresAt(fixture.now.Add(FinalAttemptLead)).SetCommitAllocations([]map[string]any{{"invalid": true}}).ExecX(ctx)
+	fixture.client.AttributionRequestClaim.UpdateOneID(claim.ID).SetExpiresAt(fixture.now.Add(FinalAttemptLead)).SetNextAttemptAt(fixture.now.Add(time.Hour)).ExecX(ctx)
+	service := newTestService(t, fixture, &requestReaderProvider{read: func(context.Context, string, int) ([]relay.RequestUsage, error) { return nil, nil }})
+	if _, err := service.RunOnce(ctx); err == nil {
+		t.Fatal("invalid allocation finalization unexpectedly succeeded")
+	}
+	if fixture.client.AttributionClaimGroup.GetX(ctx, claim.ClaimGroupID).FinalizedAt != nil {
+		t.Fatal("failed finalization marked group finalized")
+	}
+	if fixture.client.AttributionRequestClaim.Query().CountX(ctx) != 1 {
+		t.Fatal("failed finalization deleted request detail")
+	}
+}
+
+func TestInvalidEarliestGroupDoesNotStarveLaterFinalization(t *testing.T) {
+	fixture := newReconcileFixture(t)
+	ctx := context.Background()
+	poisonClaim := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+	poisonGroup := fixture.client.AttributionClaimGroup.GetX(ctx, poisonClaim.ClaimGroupID)
+	expiresAt := fixture.now.Add(FinalAttemptLead)
+	fixture.client.AttributionClaimGroup.UpdateOneID(poisonGroup.ID).SetExpiresAt(expiresAt).SetCommitAllocations([]map[string]any{{"invalid": true}}).ExecX(ctx)
+	fixture.client.AttributionRequestClaim.UpdateOneID(poisonClaim.ID).SetExpiresAt(expiresAt).SetNextAttemptAt(fixture.now.Add(time.Hour)).ExecX(ctx)
+	validGroup := fixture.client.AttributionClaimGroup.Create().SetGroupID("valid-after-poison").SetInstallationID(poisonGroup.InstallationID).
+		SetUserID(poisonGroup.UserID).SetRelayProviderID(poisonGroup.RelayProviderID).SetSchemaVersion(2).SetThreadID("thread-valid").SetTurnID("turn-valid").
+		SetEvidenceDigest("evidence-valid").SetCommitAllocations([]map[string]any{{"repo_config_id": poisonGroup.CommitAllocations[0]["repo_config_id"], "commit_sha": "commit-1"}}).
+		SetRequestCount(1).SetExpiresAt(expiresAt).SaveX(ctx)
+	fixture.client.AttributionRequestClaim.Create().SetClaimGroupID(validGroup.ID).SetRelayProviderID(fixture.providerID).SetRequestID("req-valid").
+		SetCanonicalDigest("digest-valid").SetNextAttemptAt(fixture.now.Add(time.Hour)).SetExpiresAt(expiresAt).SaveX(ctx)
+	reader := &requestReaderProvider{read: func(context.Context, string, int) ([]relay.RequestUsage, error) { return nil, nil }}
+	service, err := NewService(fixture.client, resolverFunc(func(context.Context, int) (relay.Provider, error) { return reader, nil }), zap.NewNop(), Options{
+		BatchSize: 1, Now: func() time.Time { return fixture.now }, RandFloat64: func() float64 { return 0 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.RunOnce(ctx); err == nil {
+		t.Fatal("poison group finalization unexpectedly succeeded")
+	}
+	poisonGroup = fixture.client.AttributionClaimGroup.GetX(ctx, poisonGroup.ID)
+	if poisonGroup.FinalizationAttemptCount != 1 || !poisonGroup.FinalizationNextAttemptAt.After(fixture.now) {
+		t.Fatalf("poison group retry state = %+v", poisonGroup)
+	}
+	if _, err := service.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.client.AttributionClaimGroup.GetX(ctx, validGroup.ID).FinalizedAt == nil {
+		t.Fatal("valid group remained starved behind poison group")
+	}
+}
+
+func TestHardExpiryPurgesPoisonGroupWithoutFabricatingUsage(t *testing.T) {
+	fixture := newReconcileFixture(t)
+	ctx := context.Background()
+	claim := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+	fixture.client.AttributionClaimGroup.UpdateOneID(claim.ClaimGroupID).SetExpiresAt(fixture.now).SetCalibrationDigest("must-purge").SetCommitAllocations([]map[string]any{{"invalid": true}}).ExecX(ctx)
+	fixture.client.AttributionRequestClaim.UpdateOneID(claim.ID).SetExpiresAt(fixture.now).SetNextAttemptAt(fixture.now.Add(time.Hour)).ExecX(ctx)
+	reader := &requestReaderProvider{read: func(context.Context, string, int) ([]relay.RequestUsage, error) { return nil, nil }}
+	if _, err := newTestService(t, fixture, reader).RunOnce(ctx); err == nil {
+		t.Fatal("poison finalization error was not reported")
+	}
+	if fixture.client.AttributionClaimGroup.Query().ExistX(ctx) || fixture.client.AttributionRequestClaim.Query().ExistX(ctx) {
+		t.Fatal("hard-expired poison group retained hot detail")
+	}
+	if fixture.client.AttributionUsagePool.Query().ExistX(ctx) {
+		t.Fatal("hard-expired invalid allocation fabricated usage or coverage")
+	}
+}
+
+func TestExpiredFinalizedGroupCleanupIsRepeatable(t *testing.T) {
+	fixture := newReconcileFixture(t)
+	ctx := context.Background()
+	claim := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+	fixture.client.AttributionClaimGroup.UpdateOneID(claim.ClaimGroupID).SetExpiresAt(fixture.now).ExecX(ctx)
+	fixture.client.AttributionRequestClaim.UpdateOneID(claim.ID).SetExpiresAt(fixture.now).SetNextAttemptAt(fixture.now.Add(time.Hour)).ExecX(ctx)
+	service := newTestService(t, fixture, &requestReaderProvider{read: func(context.Context, string, int) ([]relay.RequestUsage, error) { return nil, nil }})
+	if _, err := service.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.client.AttributionClaimGroup.Query().ExistX(ctx) || fixture.client.AttributionRequestClaim.Query().ExistX(ctx) {
+		t.Fatal("expired finalized hot detail was retained")
+	}
+	pools := fixture.client.AttributionUsagePool.Query().AllX(ctx)
+	if len(pools) != 1 || pools[0].CoverageGapCount != 1 || pools[0].TotalTokens != 0 {
+		t.Fatalf("durable coverage after hot cleanup = %+v", pools)
+	}
+	if _, err := service.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStartStopsDuringBlockedFinalLookup(t *testing.T) {
+	fixture := newReconcileFixture(t)
+	started := make(chan struct{})
+	reader := &requestReaderProvider{read: func(ctx context.Context, _ string, _ int) ([]relay.RequestUsage, error) {
+		close(started)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		newTestService(t, fixture, reader).Start(ctx)
+		close(done)
+	}()
+	<-started
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("reconciler did not stop after cancellation")
+	}
+}
+
 func TestReconciliationSerializesWithAllocationRematerialization(t *testing.T) {
 	fixture := newReconcileFixture(t)
 	ctx := context.Background()

@@ -306,7 +306,7 @@ func main() {
 	providerRuntimeCtx, stopProviderRuntime := context.WithCancel(context.Background())
 	defer stopProviderRuntime()
 	providerRuntime.Start(providerRuntimeCtx)
-	attributionReconciler, err := attributionreconcile.NewService(entClient, providerRuntime, logger, attributionreconcile.Options{})
+	attributionReconciler, err := attributionreconcile.NewService(entClient, providerRuntime, logger, attributionreconcile.Options{Metrics: metrics.AttributionRecorder()})
 	if err != nil {
 		logger.Fatal("initialize v2 attribution reconciler", zap.Error(err))
 	}

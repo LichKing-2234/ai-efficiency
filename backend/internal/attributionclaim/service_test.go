@@ -83,6 +83,27 @@ func TestIngestReplayAndLateRequest(t *testing.T) {
 	}
 }
 
+func TestIngestRejectsFinalizedGroup(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if _, err := f.service.Ingest(ctx, f.principal, BatchRequest{Groups: []Request{f.claim("group-final", "req-1")}}); err != nil {
+		t.Fatal(err)
+	}
+	group := f.client.AttributionClaimGroup.Query().OnlyX(ctx)
+	f.client.AttributionClaimGroup.UpdateOneID(group.ID).SetFinalizedAt(time.Now().UTC()).ExecX(ctx)
+	replay := f.claim("group-final", "req-1", "req-late")
+	result, err := f.service.Ingest(ctx, f.principal, BatchRequest{Groups: []Request{replay}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Results[0].Group.Status != "rejected" {
+		t.Fatalf("finalized replay result = %+v", result.Results[0])
+	}
+	if f.client.AttributionRequestClaim.Query().Where(attributionrequestclaim.RequestIDEQ("req-late")).ExistX(ctx) {
+		t.Fatal("late Request was added to a finalized group")
+	}
+}
+
 func TestIngestConflictRollsBackIndependentGroup(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()

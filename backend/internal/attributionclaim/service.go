@@ -186,6 +186,19 @@ func upsertGroup(ctx context.Context, tx *ent.Tx, principal attributionledger.In
 	incomingAllocations := allocationMaps(claim.CommitAllocations)
 	group, err := tx.AttributionClaimGroup.Query().Where(attributionclaimgroup.GroupIDEQ(claim.GroupID)).Only(ctx)
 	if err == nil {
+		locked, lockErr := tx.AttributionClaimGroup.Update().Where(
+			attributionclaimgroup.IDEQ(group.ID), attributionclaimgroup.FinalizedAtIsNil(),
+		).AddRequestCount(0).Save(ctx)
+		if lockErr != nil {
+			return nil, false, false, "not_present", fmt.Errorf("lock claim group: %w", lockErr)
+		}
+		if locked != 1 {
+			return nil, false, false, "not_present", fmt.Errorf("claim group is finalized")
+		}
+		group, err = tx.AttributionClaimGroup.Get(ctx, group.ID)
+		if err != nil {
+			return nil, false, false, "not_present", fmt.Errorf("reload claim group: %w", err)
+		}
 		if group.InstallationID != principal.DatabaseID || group.UserID != principal.UserID || group.RelayProviderID != claim.RelayProviderID ||
 			group.ThreadID != claim.ThreadID || group.TurnID != claim.TurnID ||
 			group.SchemaVersion != SchemaVersion || group.LedgerEpoch != LedgerEpoch {
