@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** Implementation in progress; T02-T04 are merged, T05 implementation passes full CLI/backend, race, and repeated tests and is awaiting review/PR, and the T04 real read-only canary still requires separate authorization
+**Status:** Implementation in progress; T02-T04 are merged, T05 passes full CLI/backend, race, repeated tests, and clean Standards/Spec review and is awaiting PR/hosted CI, and the T04 real read-only canary still requires separate authorization
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
