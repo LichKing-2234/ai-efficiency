@@ -145,34 +145,34 @@ func (s *Service) reconcileCandidate(ctx context.Context, candidate *ent.Attribu
 	}
 	providerRow, err := s.client.RelayProvider.Get(ctx, candidate.RelayProviderID)
 	if err != nil || !providerRow.Enabled {
-		return true, s.retry(ctx, candidate.ID, token, attempt, now, "provider_unavailable", err)
+		return true, s.retry(ctx, candidate.ID, token, attempt, "provider_unavailable", err)
 	}
 	provider, err := s.resolver.Resolve(ctx, candidate.RelayProviderID)
 	if err != nil {
-		return true, s.retry(ctx, candidate.ID, token, attempt, now, "provider_unavailable", err)
+		return true, s.retry(ctx, candidate.ID, token, attempt, "provider_unavailable", err)
 	}
 	reader, ok := provider.(relay.RequestUsageReader)
 	if !ok {
-		return true, s.retry(ctx, candidate.ID, token, attempt, now, "provider_unsupported", nil)
+		return true, s.retry(ctx, candidate.ID, token, attempt, "provider_unsupported", nil)
 	}
 	rows, err := reader.ReadRequestUsage(ctx, candidate.RequestID, 2)
 	if err != nil {
-		return true, s.retry(ctx, candidate.ID, token, attempt, now, "read_error", err)
+		return true, s.retry(ctx, candidate.ID, token, attempt, "read_error", err)
 	}
 	switch len(rows) {
 	case 0:
-		return true, s.retryPending(ctx, candidate.ID, token, attempt, now)
+		return true, s.retryPending(ctx, candidate.ID, token, attempt)
 	case 1:
-		return true, s.reconcileOne(ctx, candidate, token, attempt, now, rows[0])
+		return true, s.reconcileOne(ctx, candidate, token, attempt, rows[0])
 	default:
 		return true, s.finish(ctx, candidate.ID, token, attributionrequestclaim.StatusAmbiguous, "ambiguous_request")
 	}
 }
 
-func (s *Service) reconcileOne(ctx context.Context, candidate *ent.AttributionRequestClaim, token string, attempt int, now time.Time, usage relay.RequestUsage) error {
+func (s *Service) reconcileOne(ctx context.Context, candidate *ent.AttributionRequestClaim, token string, attempt int, usage relay.RequestUsage) error {
 	providerRow, err := s.client.RelayProvider.Get(ctx, candidate.RelayProviderID)
 	if err != nil || !providerRow.Enabled {
-		return s.retry(ctx, candidate.ID, token, attempt, now, "provider_unavailable", err)
+		return s.retry(ctx, candidate.ID, token, attempt, "provider_unavailable", err)
 	}
 	currentRelayUserID, status, code := s.currentOwnerIdentity(ctx, candidate)
 	if code != "" {
@@ -189,7 +189,7 @@ func (s *Service) reconcileOne(ctx context.Context, candidate *ent.AttributionRe
 		attributionrequestclaim.IDEQ(candidate.ID), attributionrequestclaim.LeaseTokenEQ(token),
 	).SetStatus(attributionrequestclaim.StatusReconciled).SetRequestedModel(strings.TrimSpace(usage.RequestedModel)).SetUsageAt(usage.UsageAt.UTC()).
 		SetInputTokens(usage.InputTokens).SetOutputTokens(usage.OutputTokens).SetCacheCreationTokens(usage.CacheCreationTokens).SetCacheReadTokens(usage.CacheReadTokens).
-		SetTotalTokens(total).SetReconciledAt(now).SetLastErrorCode("").ClearLeaseToken().ClearLeaseExpiresAt().Save(ctx)
+		SetTotalTokens(total).SetReconciledAt(s.now().UTC()).SetLastErrorCode("").ClearLeaseToken().ClearLeaseExpiresAt().Save(ctx)
 	if err != nil {
 		return fmt.Errorf("persist reconciled request claim: %w", err)
 	}
@@ -232,14 +232,16 @@ func normalizeUsage(requestID string, usage relay.RequestUsage) (int64, bool) {
 	return total, true
 }
 
-func (s *Service) retryPending(ctx context.Context, id int, token string, attempt int, now time.Time) error {
+func (s *Service) retryPending(ctx context.Context, id int, token string, attempt int) error {
 	delay := s.retryDelay(attempt)
+	now := s.now().UTC()
 	updated, err := s.client.AttributionRequestClaim.Update().Where(attributionrequestclaim.IDEQ(id), attributionrequestclaim.LeaseTokenEQ(token)).
 		SetStatus(attributionrequestclaim.StatusPending).SetNextAttemptAt(now.Add(delay)).SetLastErrorCode("not_found").ClearLeaseToken().ClearLeaseExpiresAt().Save(ctx)
 	return requireSingleUpdate("schedule pending request claim", updated, err)
 }
 
-func (s *Service) retry(ctx context.Context, id int, token string, attempt int, now time.Time, code string, cause error) error {
+func (s *Service) retry(ctx context.Context, id int, token string, attempt int, code string, cause error) error {
+	now := s.now().UTC()
 	updated, err := s.client.AttributionRequestClaim.Update().Where(attributionrequestclaim.IDEQ(id), attributionrequestclaim.LeaseTokenEQ(token)).
 		SetStatus(attributionrequestclaim.StatusProviderUnavailable).SetNextAttemptAt(now.Add(s.retryDelay(attempt))).SetLastErrorCode(code).ClearLeaseToken().ClearLeaseExpiresAt().Save(ctx)
 	if err := requireSingleUpdate("schedule request claim retry", updated, err); err != nil {

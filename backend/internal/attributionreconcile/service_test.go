@@ -471,6 +471,52 @@ func TestRunOnceRetriesReaderFailureWithBackoff(t *testing.T) {
 	}
 }
 
+func TestPostLookupTransitionsUseCompletionTime(t *testing.T) {
+	t.Run("retry", func(t *testing.T) {
+		fixture := newReconcileFixture(t)
+		var clock atomic.Int64
+		clock.Store(fixture.now.UnixNano())
+		reader := &requestReaderProvider{read: func(context.Context, string, int) ([]relay.RequestUsage, error) {
+			clock.Add(int64(2 * time.Minute))
+			return nil, errors.New("slow failure")
+		}}
+		service, err := NewService(fixture.client, resolverFunc(func(context.Context, int) (relay.Provider, error) { return reader, nil }), zap.NewNop(), Options{Now: func() time.Time { return time.Unix(0, clock.Load()).UTC() }, RandFloat64: func() float64 { return 0 }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := service.RunOnce(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		claim := fixture.client.AttributionRequestClaim.GetX(context.Background(), fixture.claimID)
+		completion := fixture.now.Add(2 * time.Minute)
+		if !claim.NextAttemptAt.Equal(completion.Add(time.Minute)) {
+			t.Fatalf("next attempt = %v, want completion-based %v", claim.NextAttemptAt, completion.Add(time.Minute))
+		}
+	})
+
+	t.Run("reconciled", func(t *testing.T) {
+		fixture := newReconcileFixture(t)
+		var clock atomic.Int64
+		clock.Store(fixture.now.UnixNano())
+		reader := &requestReaderProvider{read: func(context.Context, string, int) ([]relay.RequestUsage, error) {
+			clock.Add(int64(2 * time.Minute))
+			return []relay.RequestUsage{validUsage(fixture)}, nil
+		}}
+		service, err := NewService(fixture.client, resolverFunc(func(context.Context, int) (relay.Provider, error) { return reader, nil }), zap.NewNop(), Options{Now: func() time.Time { return time.Unix(0, clock.Load()).UTC() }, RandFloat64: func() float64 { return 0 }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := service.RunOnce(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		claim := fixture.client.AttributionRequestClaim.GetX(context.Background(), fixture.claimID)
+		want := fixture.now.Add(2 * time.Minute)
+		if claim.ReconciledAt == nil || !claim.ReconciledAt.Equal(want) {
+			t.Fatalf("reconciled at = %v, want %v", claim.ReconciledAt, want)
+		}
+	})
+}
+
 func validUsage(fixture reconcileFixture) relay.RequestUsage {
 	return relay.RequestUsage{RequestID: "req-1", UserID: 42, RequestedModel: "gpt-test", UsageAt: fixture.now.Add(-time.Minute), InputTokens: 10, OutputTokens: 2}
 }
