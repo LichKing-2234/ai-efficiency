@@ -112,6 +112,266 @@ func (arcu *AttributionRequestClaimUpdate) SetNillableStatus(a *attributionreque
 	return arcu
 }
 
+// SetAttemptCount sets the "attempt_count" field.
+func (arcu *AttributionRequestClaimUpdate) SetAttemptCount(i int) *AttributionRequestClaimUpdate {
+	arcu.mutation.ResetAttemptCount()
+	arcu.mutation.SetAttemptCount(i)
+	return arcu
+}
+
+// SetNillableAttemptCount sets the "attempt_count" field if the given value is not nil.
+func (arcu *AttributionRequestClaimUpdate) SetNillableAttemptCount(i *int) *AttributionRequestClaimUpdate {
+	if i != nil {
+		arcu.SetAttemptCount(*i)
+	}
+	return arcu
+}
+
+// AddAttemptCount adds i to the "attempt_count" field.
+func (arcu *AttributionRequestClaimUpdate) AddAttemptCount(i int) *AttributionRequestClaimUpdate {
+	arcu.mutation.AddAttemptCount(i)
+	return arcu
+}
+
+// SetNextAttemptAt sets the "next_attempt_at" field.
+func (arcu *AttributionRequestClaimUpdate) SetNextAttemptAt(t time.Time) *AttributionRequestClaimUpdate {
+	arcu.mutation.SetNextAttemptAt(t)
+	return arcu
+}
+
+// SetNillableNextAttemptAt sets the "next_attempt_at" field if the given value is not nil.
+func (arcu *AttributionRequestClaimUpdate) SetNillableNextAttemptAt(t *time.Time) *AttributionRequestClaimUpdate {
+	if t != nil {
+		arcu.SetNextAttemptAt(*t)
+	}
+	return arcu
+}
+
+// SetLeaseToken sets the "lease_token" field.
+func (arcu *AttributionRequestClaimUpdate) SetLeaseToken(s string) *AttributionRequestClaimUpdate {
+	arcu.mutation.SetLeaseToken(s)
+	return arcu
+}
+
+// SetNillableLeaseToken sets the "lease_token" field if the given value is not nil.
+func (arcu *AttributionRequestClaimUpdate) SetNillableLeaseToken(s *string) *AttributionRequestClaimUpdate {
+	if s != nil {
+		arcu.SetLeaseToken(*s)
+	}
+	return arcu
+}
+
+// ClearLeaseToken clears the value of the "lease_token" field.
+func (arcu *AttributionRequestClaimUpdate) ClearLeaseToken() *AttributionRequestClaimUpdate {
+	arcu.mutation.ClearLeaseToken()
+	return arcu
+}
+
+// SetLeaseExpiresAt sets the "lease_expires_at" field.
+func (arcu *AttributionRequestClaimUpdate) SetLeaseExpiresAt(t time.Time) *AttributionRequestClaimUpdate {
+	arcu.mutation.SetLeaseExpiresAt(t)
+	return arcu
+}
+
+// SetNillableLeaseExpiresAt sets the "lease_expires_at" field if the given value is not nil.
+func (arcu *AttributionRequestClaimUpdate) SetNillableLeaseExpiresAt(t *time.Time) *AttributionRequestClaimUpdate {
+	if t != nil {
+		arcu.SetLeaseExpiresAt(*t)
+	}
+	return arcu
+}
+
+// ClearLeaseExpiresAt clears the value of the "lease_expires_at" field.
+func (arcu *AttributionRequestClaimUpdate) ClearLeaseExpiresAt() *AttributionRequestClaimUpdate {
+	arcu.mutation.ClearLeaseExpiresAt()
+	return arcu
+}
+
+// SetLastErrorCode sets the "last_error_code" field.
+func (arcu *AttributionRequestClaimUpdate) SetLastErrorCode(s string) *AttributionRequestClaimUpdate {
+	arcu.mutation.SetLastErrorCode(s)
+	return arcu
+}
+
+// SetNillableLastErrorCode sets the "last_error_code" field if the given value is not nil.
+func (arcu *AttributionRequestClaimUpdate) SetNillableLastErrorCode(s *string) *AttributionRequestClaimUpdate {
+	if s != nil {
+		arcu.SetLastErrorCode(*s)
+	}
+	return arcu
+}
+
+// ClearLastErrorCode clears the value of the "last_error_code" field.
+func (arcu *AttributionRequestClaimUpdate) ClearLastErrorCode() *AttributionRequestClaimUpdate {
+	arcu.mutation.ClearLastErrorCode()
+	return arcu
+}
+
+// SetRequestedModel sets the "requested_model" field.
+func (arcu *AttributionRequestClaimUpdate) SetRequestedModel(s string) *AttributionRequestClaimUpdate {
+	arcu.mutation.SetRequestedModel(s)
+	return arcu
+}
+
+// SetNillableRequestedModel sets the "requested_model" field if the given value is not nil.
+func (arcu *AttributionRequestClaimUpdate) SetNillableRequestedModel(s *string) *AttributionRequestClaimUpdate {
+	if s != nil {
+		arcu.SetRequestedModel(*s)
+	}
+	return arcu
+}
+
+// ClearRequestedModel clears the value of the "requested_model" field.
+func (arcu *AttributionRequestClaimUpdate) ClearRequestedModel() *AttributionRequestClaimUpdate {
+	arcu.mutation.ClearRequestedModel()
+	return arcu
+}
+
+// SetUsageAt sets the "usage_at" field.
+func (arcu *AttributionRequestClaimUpdate) SetUsageAt(t time.Time) *AttributionRequestClaimUpdate {
+	arcu.mutation.SetUsageAt(t)
+	return arcu
+}
+
+// SetNillableUsageAt sets the "usage_at" field if the given value is not nil.
+func (arcu *AttributionRequestClaimUpdate) SetNillableUsageAt(t *time.Time) *AttributionRequestClaimUpdate {
+	if t != nil {
+		arcu.SetUsageAt(*t)
+	}
+	return arcu
+}
+
+// ClearUsageAt clears the value of the "usage_at" field.
+func (arcu *AttributionRequestClaimUpdate) ClearUsageAt() *AttributionRequestClaimUpdate {
+	arcu.mutation.ClearUsageAt()
+	return arcu
+}
+
+// SetInputTokens sets the "input_tokens" field.
+func (arcu *AttributionRequestClaimUpdate) SetInputTokens(i int64) *AttributionRequestClaimUpdate {
+	arcu.mutation.ResetInputTokens()
+	arcu.mutation.SetInputTokens(i)
+	return arcu
+}
+
+// SetNillableInputTokens sets the "input_tokens" field if the given value is not nil.
+func (arcu *AttributionRequestClaimUpdate) SetNillableInputTokens(i *int64) *AttributionRequestClaimUpdate {
+	if i != nil {
+		arcu.SetInputTokens(*i)
+	}
+	return arcu
+}
+
+// AddInputTokens adds i to the "input_tokens" field.
+func (arcu *AttributionRequestClaimUpdate) AddInputTokens(i int64) *AttributionRequestClaimUpdate {
+	arcu.mutation.AddInputTokens(i)
+	return arcu
+}
+
+// SetOutputTokens sets the "output_tokens" field.
+func (arcu *AttributionRequestClaimUpdate) SetOutputTokens(i int64) *AttributionRequestClaimUpdate {
+	arcu.mutation.ResetOutputTokens()
+	arcu.mutation.SetOutputTokens(i)
+	return arcu
+}
+
+// SetNillableOutputTokens sets the "output_tokens" field if the given value is not nil.
+func (arcu *AttributionRequestClaimUpdate) SetNillableOutputTokens(i *int64) *AttributionRequestClaimUpdate {
+	if i != nil {
+		arcu.SetOutputTokens(*i)
+	}
+	return arcu
+}
+
+// AddOutputTokens adds i to the "output_tokens" field.
+func (arcu *AttributionRequestClaimUpdate) AddOutputTokens(i int64) *AttributionRequestClaimUpdate {
+	arcu.mutation.AddOutputTokens(i)
+	return arcu
+}
+
+// SetCacheCreationTokens sets the "cache_creation_tokens" field.
+func (arcu *AttributionRequestClaimUpdate) SetCacheCreationTokens(i int64) *AttributionRequestClaimUpdate {
+	arcu.mutation.ResetCacheCreationTokens()
+	arcu.mutation.SetCacheCreationTokens(i)
+	return arcu
+}
+
+// SetNillableCacheCreationTokens sets the "cache_creation_tokens" field if the given value is not nil.
+func (arcu *AttributionRequestClaimUpdate) SetNillableCacheCreationTokens(i *int64) *AttributionRequestClaimUpdate {
+	if i != nil {
+		arcu.SetCacheCreationTokens(*i)
+	}
+	return arcu
+}
+
+// AddCacheCreationTokens adds i to the "cache_creation_tokens" field.
+func (arcu *AttributionRequestClaimUpdate) AddCacheCreationTokens(i int64) *AttributionRequestClaimUpdate {
+	arcu.mutation.AddCacheCreationTokens(i)
+	return arcu
+}
+
+// SetCacheReadTokens sets the "cache_read_tokens" field.
+func (arcu *AttributionRequestClaimUpdate) SetCacheReadTokens(i int64) *AttributionRequestClaimUpdate {
+	arcu.mutation.ResetCacheReadTokens()
+	arcu.mutation.SetCacheReadTokens(i)
+	return arcu
+}
+
+// SetNillableCacheReadTokens sets the "cache_read_tokens" field if the given value is not nil.
+func (arcu *AttributionRequestClaimUpdate) SetNillableCacheReadTokens(i *int64) *AttributionRequestClaimUpdate {
+	if i != nil {
+		arcu.SetCacheReadTokens(*i)
+	}
+	return arcu
+}
+
+// AddCacheReadTokens adds i to the "cache_read_tokens" field.
+func (arcu *AttributionRequestClaimUpdate) AddCacheReadTokens(i int64) *AttributionRequestClaimUpdate {
+	arcu.mutation.AddCacheReadTokens(i)
+	return arcu
+}
+
+// SetTotalTokens sets the "total_tokens" field.
+func (arcu *AttributionRequestClaimUpdate) SetTotalTokens(i int64) *AttributionRequestClaimUpdate {
+	arcu.mutation.ResetTotalTokens()
+	arcu.mutation.SetTotalTokens(i)
+	return arcu
+}
+
+// SetNillableTotalTokens sets the "total_tokens" field if the given value is not nil.
+func (arcu *AttributionRequestClaimUpdate) SetNillableTotalTokens(i *int64) *AttributionRequestClaimUpdate {
+	if i != nil {
+		arcu.SetTotalTokens(*i)
+	}
+	return arcu
+}
+
+// AddTotalTokens adds i to the "total_tokens" field.
+func (arcu *AttributionRequestClaimUpdate) AddTotalTokens(i int64) *AttributionRequestClaimUpdate {
+	arcu.mutation.AddTotalTokens(i)
+	return arcu
+}
+
+// SetReconciledAt sets the "reconciled_at" field.
+func (arcu *AttributionRequestClaimUpdate) SetReconciledAt(t time.Time) *AttributionRequestClaimUpdate {
+	arcu.mutation.SetReconciledAt(t)
+	return arcu
+}
+
+// SetNillableReconciledAt sets the "reconciled_at" field if the given value is not nil.
+func (arcu *AttributionRequestClaimUpdate) SetNillableReconciledAt(t *time.Time) *AttributionRequestClaimUpdate {
+	if t != nil {
+		arcu.SetReconciledAt(*t)
+	}
+	return arcu
+}
+
+// ClearReconciledAt clears the value of the "reconciled_at" field.
+func (arcu *AttributionRequestClaimUpdate) ClearReconciledAt() *AttributionRequestClaimUpdate {
+	arcu.mutation.ClearReconciledAt()
+	return arcu
+}
+
 // SetExpiresAt sets the "expires_at" field.
 func (arcu *AttributionRequestClaimUpdate) SetExpiresAt(t time.Time) *AttributionRequestClaimUpdate {
 	arcu.mutation.SetExpiresAt(t)
@@ -226,6 +486,81 @@ func (arcu *AttributionRequestClaimUpdate) sqlSave(ctx context.Context) (n int, 
 	if value, ok := arcu.mutation.Status(); ok {
 		_spec.SetField(attributionrequestclaim.FieldStatus, field.TypeEnum, value)
 	}
+	if value, ok := arcu.mutation.AttemptCount(); ok {
+		_spec.SetField(attributionrequestclaim.FieldAttemptCount, field.TypeInt, value)
+	}
+	if value, ok := arcu.mutation.AddedAttemptCount(); ok {
+		_spec.AddField(attributionrequestclaim.FieldAttemptCount, field.TypeInt, value)
+	}
+	if value, ok := arcu.mutation.NextAttemptAt(); ok {
+		_spec.SetField(attributionrequestclaim.FieldNextAttemptAt, field.TypeTime, value)
+	}
+	if value, ok := arcu.mutation.LeaseToken(); ok {
+		_spec.SetField(attributionrequestclaim.FieldLeaseToken, field.TypeString, value)
+	}
+	if arcu.mutation.LeaseTokenCleared() {
+		_spec.ClearField(attributionrequestclaim.FieldLeaseToken, field.TypeString)
+	}
+	if value, ok := arcu.mutation.LeaseExpiresAt(); ok {
+		_spec.SetField(attributionrequestclaim.FieldLeaseExpiresAt, field.TypeTime, value)
+	}
+	if arcu.mutation.LeaseExpiresAtCleared() {
+		_spec.ClearField(attributionrequestclaim.FieldLeaseExpiresAt, field.TypeTime)
+	}
+	if value, ok := arcu.mutation.LastErrorCode(); ok {
+		_spec.SetField(attributionrequestclaim.FieldLastErrorCode, field.TypeString, value)
+	}
+	if arcu.mutation.LastErrorCodeCleared() {
+		_spec.ClearField(attributionrequestclaim.FieldLastErrorCode, field.TypeString)
+	}
+	if value, ok := arcu.mutation.RequestedModel(); ok {
+		_spec.SetField(attributionrequestclaim.FieldRequestedModel, field.TypeString, value)
+	}
+	if arcu.mutation.RequestedModelCleared() {
+		_spec.ClearField(attributionrequestclaim.FieldRequestedModel, field.TypeString)
+	}
+	if value, ok := arcu.mutation.UsageAt(); ok {
+		_spec.SetField(attributionrequestclaim.FieldUsageAt, field.TypeTime, value)
+	}
+	if arcu.mutation.UsageAtCleared() {
+		_spec.ClearField(attributionrequestclaim.FieldUsageAt, field.TypeTime)
+	}
+	if value, ok := arcu.mutation.InputTokens(); ok {
+		_spec.SetField(attributionrequestclaim.FieldInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcu.mutation.AddedInputTokens(); ok {
+		_spec.AddField(attributionrequestclaim.FieldInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcu.mutation.OutputTokens(); ok {
+		_spec.SetField(attributionrequestclaim.FieldOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcu.mutation.AddedOutputTokens(); ok {
+		_spec.AddField(attributionrequestclaim.FieldOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcu.mutation.CacheCreationTokens(); ok {
+		_spec.SetField(attributionrequestclaim.FieldCacheCreationTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcu.mutation.AddedCacheCreationTokens(); ok {
+		_spec.AddField(attributionrequestclaim.FieldCacheCreationTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcu.mutation.CacheReadTokens(); ok {
+		_spec.SetField(attributionrequestclaim.FieldCacheReadTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcu.mutation.AddedCacheReadTokens(); ok {
+		_spec.AddField(attributionrequestclaim.FieldCacheReadTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcu.mutation.TotalTokens(); ok {
+		_spec.SetField(attributionrequestclaim.FieldTotalTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcu.mutation.AddedTotalTokens(); ok {
+		_spec.AddField(attributionrequestclaim.FieldTotalTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcu.mutation.ReconciledAt(); ok {
+		_spec.SetField(attributionrequestclaim.FieldReconciledAt, field.TypeTime, value)
+	}
+	if arcu.mutation.ReconciledAtCleared() {
+		_spec.ClearField(attributionrequestclaim.FieldReconciledAt, field.TypeTime)
+	}
 	if value, ok := arcu.mutation.ExpiresAt(); ok {
 		_spec.SetField(attributionrequestclaim.FieldExpiresAt, field.TypeTime, value)
 	}
@@ -333,6 +668,266 @@ func (arcuo *AttributionRequestClaimUpdateOne) SetNillableStatus(a *attributionr
 	if a != nil {
 		arcuo.SetStatus(*a)
 	}
+	return arcuo
+}
+
+// SetAttemptCount sets the "attempt_count" field.
+func (arcuo *AttributionRequestClaimUpdateOne) SetAttemptCount(i int) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.ResetAttemptCount()
+	arcuo.mutation.SetAttemptCount(i)
+	return arcuo
+}
+
+// SetNillableAttemptCount sets the "attempt_count" field if the given value is not nil.
+func (arcuo *AttributionRequestClaimUpdateOne) SetNillableAttemptCount(i *int) *AttributionRequestClaimUpdateOne {
+	if i != nil {
+		arcuo.SetAttemptCount(*i)
+	}
+	return arcuo
+}
+
+// AddAttemptCount adds i to the "attempt_count" field.
+func (arcuo *AttributionRequestClaimUpdateOne) AddAttemptCount(i int) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.AddAttemptCount(i)
+	return arcuo
+}
+
+// SetNextAttemptAt sets the "next_attempt_at" field.
+func (arcuo *AttributionRequestClaimUpdateOne) SetNextAttemptAt(t time.Time) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.SetNextAttemptAt(t)
+	return arcuo
+}
+
+// SetNillableNextAttemptAt sets the "next_attempt_at" field if the given value is not nil.
+func (arcuo *AttributionRequestClaimUpdateOne) SetNillableNextAttemptAt(t *time.Time) *AttributionRequestClaimUpdateOne {
+	if t != nil {
+		arcuo.SetNextAttemptAt(*t)
+	}
+	return arcuo
+}
+
+// SetLeaseToken sets the "lease_token" field.
+func (arcuo *AttributionRequestClaimUpdateOne) SetLeaseToken(s string) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.SetLeaseToken(s)
+	return arcuo
+}
+
+// SetNillableLeaseToken sets the "lease_token" field if the given value is not nil.
+func (arcuo *AttributionRequestClaimUpdateOne) SetNillableLeaseToken(s *string) *AttributionRequestClaimUpdateOne {
+	if s != nil {
+		arcuo.SetLeaseToken(*s)
+	}
+	return arcuo
+}
+
+// ClearLeaseToken clears the value of the "lease_token" field.
+func (arcuo *AttributionRequestClaimUpdateOne) ClearLeaseToken() *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.ClearLeaseToken()
+	return arcuo
+}
+
+// SetLeaseExpiresAt sets the "lease_expires_at" field.
+func (arcuo *AttributionRequestClaimUpdateOne) SetLeaseExpiresAt(t time.Time) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.SetLeaseExpiresAt(t)
+	return arcuo
+}
+
+// SetNillableLeaseExpiresAt sets the "lease_expires_at" field if the given value is not nil.
+func (arcuo *AttributionRequestClaimUpdateOne) SetNillableLeaseExpiresAt(t *time.Time) *AttributionRequestClaimUpdateOne {
+	if t != nil {
+		arcuo.SetLeaseExpiresAt(*t)
+	}
+	return arcuo
+}
+
+// ClearLeaseExpiresAt clears the value of the "lease_expires_at" field.
+func (arcuo *AttributionRequestClaimUpdateOne) ClearLeaseExpiresAt() *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.ClearLeaseExpiresAt()
+	return arcuo
+}
+
+// SetLastErrorCode sets the "last_error_code" field.
+func (arcuo *AttributionRequestClaimUpdateOne) SetLastErrorCode(s string) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.SetLastErrorCode(s)
+	return arcuo
+}
+
+// SetNillableLastErrorCode sets the "last_error_code" field if the given value is not nil.
+func (arcuo *AttributionRequestClaimUpdateOne) SetNillableLastErrorCode(s *string) *AttributionRequestClaimUpdateOne {
+	if s != nil {
+		arcuo.SetLastErrorCode(*s)
+	}
+	return arcuo
+}
+
+// ClearLastErrorCode clears the value of the "last_error_code" field.
+func (arcuo *AttributionRequestClaimUpdateOne) ClearLastErrorCode() *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.ClearLastErrorCode()
+	return arcuo
+}
+
+// SetRequestedModel sets the "requested_model" field.
+func (arcuo *AttributionRequestClaimUpdateOne) SetRequestedModel(s string) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.SetRequestedModel(s)
+	return arcuo
+}
+
+// SetNillableRequestedModel sets the "requested_model" field if the given value is not nil.
+func (arcuo *AttributionRequestClaimUpdateOne) SetNillableRequestedModel(s *string) *AttributionRequestClaimUpdateOne {
+	if s != nil {
+		arcuo.SetRequestedModel(*s)
+	}
+	return arcuo
+}
+
+// ClearRequestedModel clears the value of the "requested_model" field.
+func (arcuo *AttributionRequestClaimUpdateOne) ClearRequestedModel() *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.ClearRequestedModel()
+	return arcuo
+}
+
+// SetUsageAt sets the "usage_at" field.
+func (arcuo *AttributionRequestClaimUpdateOne) SetUsageAt(t time.Time) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.SetUsageAt(t)
+	return arcuo
+}
+
+// SetNillableUsageAt sets the "usage_at" field if the given value is not nil.
+func (arcuo *AttributionRequestClaimUpdateOne) SetNillableUsageAt(t *time.Time) *AttributionRequestClaimUpdateOne {
+	if t != nil {
+		arcuo.SetUsageAt(*t)
+	}
+	return arcuo
+}
+
+// ClearUsageAt clears the value of the "usage_at" field.
+func (arcuo *AttributionRequestClaimUpdateOne) ClearUsageAt() *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.ClearUsageAt()
+	return arcuo
+}
+
+// SetInputTokens sets the "input_tokens" field.
+func (arcuo *AttributionRequestClaimUpdateOne) SetInputTokens(i int64) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.ResetInputTokens()
+	arcuo.mutation.SetInputTokens(i)
+	return arcuo
+}
+
+// SetNillableInputTokens sets the "input_tokens" field if the given value is not nil.
+func (arcuo *AttributionRequestClaimUpdateOne) SetNillableInputTokens(i *int64) *AttributionRequestClaimUpdateOne {
+	if i != nil {
+		arcuo.SetInputTokens(*i)
+	}
+	return arcuo
+}
+
+// AddInputTokens adds i to the "input_tokens" field.
+func (arcuo *AttributionRequestClaimUpdateOne) AddInputTokens(i int64) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.AddInputTokens(i)
+	return arcuo
+}
+
+// SetOutputTokens sets the "output_tokens" field.
+func (arcuo *AttributionRequestClaimUpdateOne) SetOutputTokens(i int64) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.ResetOutputTokens()
+	arcuo.mutation.SetOutputTokens(i)
+	return arcuo
+}
+
+// SetNillableOutputTokens sets the "output_tokens" field if the given value is not nil.
+func (arcuo *AttributionRequestClaimUpdateOne) SetNillableOutputTokens(i *int64) *AttributionRequestClaimUpdateOne {
+	if i != nil {
+		arcuo.SetOutputTokens(*i)
+	}
+	return arcuo
+}
+
+// AddOutputTokens adds i to the "output_tokens" field.
+func (arcuo *AttributionRequestClaimUpdateOne) AddOutputTokens(i int64) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.AddOutputTokens(i)
+	return arcuo
+}
+
+// SetCacheCreationTokens sets the "cache_creation_tokens" field.
+func (arcuo *AttributionRequestClaimUpdateOne) SetCacheCreationTokens(i int64) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.ResetCacheCreationTokens()
+	arcuo.mutation.SetCacheCreationTokens(i)
+	return arcuo
+}
+
+// SetNillableCacheCreationTokens sets the "cache_creation_tokens" field if the given value is not nil.
+func (arcuo *AttributionRequestClaimUpdateOne) SetNillableCacheCreationTokens(i *int64) *AttributionRequestClaimUpdateOne {
+	if i != nil {
+		arcuo.SetCacheCreationTokens(*i)
+	}
+	return arcuo
+}
+
+// AddCacheCreationTokens adds i to the "cache_creation_tokens" field.
+func (arcuo *AttributionRequestClaimUpdateOne) AddCacheCreationTokens(i int64) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.AddCacheCreationTokens(i)
+	return arcuo
+}
+
+// SetCacheReadTokens sets the "cache_read_tokens" field.
+func (arcuo *AttributionRequestClaimUpdateOne) SetCacheReadTokens(i int64) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.ResetCacheReadTokens()
+	arcuo.mutation.SetCacheReadTokens(i)
+	return arcuo
+}
+
+// SetNillableCacheReadTokens sets the "cache_read_tokens" field if the given value is not nil.
+func (arcuo *AttributionRequestClaimUpdateOne) SetNillableCacheReadTokens(i *int64) *AttributionRequestClaimUpdateOne {
+	if i != nil {
+		arcuo.SetCacheReadTokens(*i)
+	}
+	return arcuo
+}
+
+// AddCacheReadTokens adds i to the "cache_read_tokens" field.
+func (arcuo *AttributionRequestClaimUpdateOne) AddCacheReadTokens(i int64) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.AddCacheReadTokens(i)
+	return arcuo
+}
+
+// SetTotalTokens sets the "total_tokens" field.
+func (arcuo *AttributionRequestClaimUpdateOne) SetTotalTokens(i int64) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.ResetTotalTokens()
+	arcuo.mutation.SetTotalTokens(i)
+	return arcuo
+}
+
+// SetNillableTotalTokens sets the "total_tokens" field if the given value is not nil.
+func (arcuo *AttributionRequestClaimUpdateOne) SetNillableTotalTokens(i *int64) *AttributionRequestClaimUpdateOne {
+	if i != nil {
+		arcuo.SetTotalTokens(*i)
+	}
+	return arcuo
+}
+
+// AddTotalTokens adds i to the "total_tokens" field.
+func (arcuo *AttributionRequestClaimUpdateOne) AddTotalTokens(i int64) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.AddTotalTokens(i)
+	return arcuo
+}
+
+// SetReconciledAt sets the "reconciled_at" field.
+func (arcuo *AttributionRequestClaimUpdateOne) SetReconciledAt(t time.Time) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.SetReconciledAt(t)
+	return arcuo
+}
+
+// SetNillableReconciledAt sets the "reconciled_at" field if the given value is not nil.
+func (arcuo *AttributionRequestClaimUpdateOne) SetNillableReconciledAt(t *time.Time) *AttributionRequestClaimUpdateOne {
+	if t != nil {
+		arcuo.SetReconciledAt(*t)
+	}
+	return arcuo
+}
+
+// ClearReconciledAt clears the value of the "reconciled_at" field.
+func (arcuo *AttributionRequestClaimUpdateOne) ClearReconciledAt() *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.ClearReconciledAt()
 	return arcuo
 }
 
@@ -479,6 +1074,81 @@ func (arcuo *AttributionRequestClaimUpdateOne) sqlSave(ctx context.Context) (_no
 	}
 	if value, ok := arcuo.mutation.Status(); ok {
 		_spec.SetField(attributionrequestclaim.FieldStatus, field.TypeEnum, value)
+	}
+	if value, ok := arcuo.mutation.AttemptCount(); ok {
+		_spec.SetField(attributionrequestclaim.FieldAttemptCount, field.TypeInt, value)
+	}
+	if value, ok := arcuo.mutation.AddedAttemptCount(); ok {
+		_spec.AddField(attributionrequestclaim.FieldAttemptCount, field.TypeInt, value)
+	}
+	if value, ok := arcuo.mutation.NextAttemptAt(); ok {
+		_spec.SetField(attributionrequestclaim.FieldNextAttemptAt, field.TypeTime, value)
+	}
+	if value, ok := arcuo.mutation.LeaseToken(); ok {
+		_spec.SetField(attributionrequestclaim.FieldLeaseToken, field.TypeString, value)
+	}
+	if arcuo.mutation.LeaseTokenCleared() {
+		_spec.ClearField(attributionrequestclaim.FieldLeaseToken, field.TypeString)
+	}
+	if value, ok := arcuo.mutation.LeaseExpiresAt(); ok {
+		_spec.SetField(attributionrequestclaim.FieldLeaseExpiresAt, field.TypeTime, value)
+	}
+	if arcuo.mutation.LeaseExpiresAtCleared() {
+		_spec.ClearField(attributionrequestclaim.FieldLeaseExpiresAt, field.TypeTime)
+	}
+	if value, ok := arcuo.mutation.LastErrorCode(); ok {
+		_spec.SetField(attributionrequestclaim.FieldLastErrorCode, field.TypeString, value)
+	}
+	if arcuo.mutation.LastErrorCodeCleared() {
+		_spec.ClearField(attributionrequestclaim.FieldLastErrorCode, field.TypeString)
+	}
+	if value, ok := arcuo.mutation.RequestedModel(); ok {
+		_spec.SetField(attributionrequestclaim.FieldRequestedModel, field.TypeString, value)
+	}
+	if arcuo.mutation.RequestedModelCleared() {
+		_spec.ClearField(attributionrequestclaim.FieldRequestedModel, field.TypeString)
+	}
+	if value, ok := arcuo.mutation.UsageAt(); ok {
+		_spec.SetField(attributionrequestclaim.FieldUsageAt, field.TypeTime, value)
+	}
+	if arcuo.mutation.UsageAtCleared() {
+		_spec.ClearField(attributionrequestclaim.FieldUsageAt, field.TypeTime)
+	}
+	if value, ok := arcuo.mutation.InputTokens(); ok {
+		_spec.SetField(attributionrequestclaim.FieldInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcuo.mutation.AddedInputTokens(); ok {
+		_spec.AddField(attributionrequestclaim.FieldInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcuo.mutation.OutputTokens(); ok {
+		_spec.SetField(attributionrequestclaim.FieldOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcuo.mutation.AddedOutputTokens(); ok {
+		_spec.AddField(attributionrequestclaim.FieldOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcuo.mutation.CacheCreationTokens(); ok {
+		_spec.SetField(attributionrequestclaim.FieldCacheCreationTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcuo.mutation.AddedCacheCreationTokens(); ok {
+		_spec.AddField(attributionrequestclaim.FieldCacheCreationTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcuo.mutation.CacheReadTokens(); ok {
+		_spec.SetField(attributionrequestclaim.FieldCacheReadTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcuo.mutation.AddedCacheReadTokens(); ok {
+		_spec.AddField(attributionrequestclaim.FieldCacheReadTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcuo.mutation.TotalTokens(); ok {
+		_spec.SetField(attributionrequestclaim.FieldTotalTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcuo.mutation.AddedTotalTokens(); ok {
+		_spec.AddField(attributionrequestclaim.FieldTotalTokens, field.TypeInt64, value)
+	}
+	if value, ok := arcuo.mutation.ReconciledAt(); ok {
+		_spec.SetField(attributionrequestclaim.FieldReconciledAt, field.TypeTime, value)
+	}
+	if arcuo.mutation.ReconciledAtCleared() {
+		_spec.ClearField(attributionrequestclaim.FieldReconciledAt, field.TypeTime)
 	}
 	if value, ok := arcuo.mutation.ExpiresAt(); ok {
 		_spec.SetField(attributionrequestclaim.FieldExpiresAt, field.TypeTime, value)

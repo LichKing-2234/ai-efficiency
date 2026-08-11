@@ -19,6 +19,20 @@ type User struct {
 	AllowedGroupIDs []int64 `json:"-"`
 }
 
+// RequestUsage is the narrow, privacy-safe subset needed by commit Token
+// reconciliation. API key, account, group, cost, and upstream model are
+// intentionally excluded.
+type RequestUsage struct {
+	RequestID           string
+	UserID              int64
+	RequestedModel      string
+	UsageAt             time.Time
+	InputTokens         int64
+	OutputTokens        int64
+	CacheCreationTokens int64
+	CacheReadTokens     int64
+}
+
 type CreateUserRequest struct {
 	Username      string  `json:"username"`
 	Email         string  `json:"email"`

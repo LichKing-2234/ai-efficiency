@@ -17,6 +17,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/activity"
 	"github.com/ai-efficiency/backend/internal/attribution"
 	"github.com/ai-efficiency/backend/internal/attributionledger"
+	"github.com/ai-efficiency/backend/internal/attributionreconcile"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/buildinfo"
 	"github.com/ai-efficiency/backend/internal/checkpoint"
@@ -305,6 +306,13 @@ func main() {
 	providerRuntimeCtx, stopProviderRuntime := context.WithCancel(context.Background())
 	defer stopProviderRuntime()
 	providerRuntime.Start(providerRuntimeCtx)
+	attributionReconciler, err := attributionreconcile.NewService(entClient, providerRuntime, logger, attributionreconcile.Options{})
+	if err != nil {
+		logger.Fatal("initialize v2 attribution reconciler", zap.Error(err))
+	}
+	attributionReconcilerCtx, stopAttributionReconciler := context.WithCancel(context.Background())
+	defer stopAttributionReconciler()
+	go attributionReconciler.Start(attributionReconcilerCtx)
 	workItemsCache, err := workitems.NewCountsCache(
 		redisStore,
 		workItemsRevisionStore,
@@ -561,6 +569,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	logger.Info("shutting down server...")
+	stopAttributionReconciler()
 	stopDirectoryScheduler()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

@@ -58,6 +58,188 @@ func (arcc *AttributionRequestClaimCreate) SetNillableStatus(a *attributionreque
 	return arcc
 }
 
+// SetAttemptCount sets the "attempt_count" field.
+func (arcc *AttributionRequestClaimCreate) SetAttemptCount(i int) *AttributionRequestClaimCreate {
+	arcc.mutation.SetAttemptCount(i)
+	return arcc
+}
+
+// SetNillableAttemptCount sets the "attempt_count" field if the given value is not nil.
+func (arcc *AttributionRequestClaimCreate) SetNillableAttemptCount(i *int) *AttributionRequestClaimCreate {
+	if i != nil {
+		arcc.SetAttemptCount(*i)
+	}
+	return arcc
+}
+
+// SetNextAttemptAt sets the "next_attempt_at" field.
+func (arcc *AttributionRequestClaimCreate) SetNextAttemptAt(t time.Time) *AttributionRequestClaimCreate {
+	arcc.mutation.SetNextAttemptAt(t)
+	return arcc
+}
+
+// SetNillableNextAttemptAt sets the "next_attempt_at" field if the given value is not nil.
+func (arcc *AttributionRequestClaimCreate) SetNillableNextAttemptAt(t *time.Time) *AttributionRequestClaimCreate {
+	if t != nil {
+		arcc.SetNextAttemptAt(*t)
+	}
+	return arcc
+}
+
+// SetLeaseToken sets the "lease_token" field.
+func (arcc *AttributionRequestClaimCreate) SetLeaseToken(s string) *AttributionRequestClaimCreate {
+	arcc.mutation.SetLeaseToken(s)
+	return arcc
+}
+
+// SetNillableLeaseToken sets the "lease_token" field if the given value is not nil.
+func (arcc *AttributionRequestClaimCreate) SetNillableLeaseToken(s *string) *AttributionRequestClaimCreate {
+	if s != nil {
+		arcc.SetLeaseToken(*s)
+	}
+	return arcc
+}
+
+// SetLeaseExpiresAt sets the "lease_expires_at" field.
+func (arcc *AttributionRequestClaimCreate) SetLeaseExpiresAt(t time.Time) *AttributionRequestClaimCreate {
+	arcc.mutation.SetLeaseExpiresAt(t)
+	return arcc
+}
+
+// SetNillableLeaseExpiresAt sets the "lease_expires_at" field if the given value is not nil.
+func (arcc *AttributionRequestClaimCreate) SetNillableLeaseExpiresAt(t *time.Time) *AttributionRequestClaimCreate {
+	if t != nil {
+		arcc.SetLeaseExpiresAt(*t)
+	}
+	return arcc
+}
+
+// SetLastErrorCode sets the "last_error_code" field.
+func (arcc *AttributionRequestClaimCreate) SetLastErrorCode(s string) *AttributionRequestClaimCreate {
+	arcc.mutation.SetLastErrorCode(s)
+	return arcc
+}
+
+// SetNillableLastErrorCode sets the "last_error_code" field if the given value is not nil.
+func (arcc *AttributionRequestClaimCreate) SetNillableLastErrorCode(s *string) *AttributionRequestClaimCreate {
+	if s != nil {
+		arcc.SetLastErrorCode(*s)
+	}
+	return arcc
+}
+
+// SetRequestedModel sets the "requested_model" field.
+func (arcc *AttributionRequestClaimCreate) SetRequestedModel(s string) *AttributionRequestClaimCreate {
+	arcc.mutation.SetRequestedModel(s)
+	return arcc
+}
+
+// SetNillableRequestedModel sets the "requested_model" field if the given value is not nil.
+func (arcc *AttributionRequestClaimCreate) SetNillableRequestedModel(s *string) *AttributionRequestClaimCreate {
+	if s != nil {
+		arcc.SetRequestedModel(*s)
+	}
+	return arcc
+}
+
+// SetUsageAt sets the "usage_at" field.
+func (arcc *AttributionRequestClaimCreate) SetUsageAt(t time.Time) *AttributionRequestClaimCreate {
+	arcc.mutation.SetUsageAt(t)
+	return arcc
+}
+
+// SetNillableUsageAt sets the "usage_at" field if the given value is not nil.
+func (arcc *AttributionRequestClaimCreate) SetNillableUsageAt(t *time.Time) *AttributionRequestClaimCreate {
+	if t != nil {
+		arcc.SetUsageAt(*t)
+	}
+	return arcc
+}
+
+// SetInputTokens sets the "input_tokens" field.
+func (arcc *AttributionRequestClaimCreate) SetInputTokens(i int64) *AttributionRequestClaimCreate {
+	arcc.mutation.SetInputTokens(i)
+	return arcc
+}
+
+// SetNillableInputTokens sets the "input_tokens" field if the given value is not nil.
+func (arcc *AttributionRequestClaimCreate) SetNillableInputTokens(i *int64) *AttributionRequestClaimCreate {
+	if i != nil {
+		arcc.SetInputTokens(*i)
+	}
+	return arcc
+}
+
+// SetOutputTokens sets the "output_tokens" field.
+func (arcc *AttributionRequestClaimCreate) SetOutputTokens(i int64) *AttributionRequestClaimCreate {
+	arcc.mutation.SetOutputTokens(i)
+	return arcc
+}
+
+// SetNillableOutputTokens sets the "output_tokens" field if the given value is not nil.
+func (arcc *AttributionRequestClaimCreate) SetNillableOutputTokens(i *int64) *AttributionRequestClaimCreate {
+	if i != nil {
+		arcc.SetOutputTokens(*i)
+	}
+	return arcc
+}
+
+// SetCacheCreationTokens sets the "cache_creation_tokens" field.
+func (arcc *AttributionRequestClaimCreate) SetCacheCreationTokens(i int64) *AttributionRequestClaimCreate {
+	arcc.mutation.SetCacheCreationTokens(i)
+	return arcc
+}
+
+// SetNillableCacheCreationTokens sets the "cache_creation_tokens" field if the given value is not nil.
+func (arcc *AttributionRequestClaimCreate) SetNillableCacheCreationTokens(i *int64) *AttributionRequestClaimCreate {
+	if i != nil {
+		arcc.SetCacheCreationTokens(*i)
+	}
+	return arcc
+}
+
+// SetCacheReadTokens sets the "cache_read_tokens" field.
+func (arcc *AttributionRequestClaimCreate) SetCacheReadTokens(i int64) *AttributionRequestClaimCreate {
+	arcc.mutation.SetCacheReadTokens(i)
+	return arcc
+}
+
+// SetNillableCacheReadTokens sets the "cache_read_tokens" field if the given value is not nil.
+func (arcc *AttributionRequestClaimCreate) SetNillableCacheReadTokens(i *int64) *AttributionRequestClaimCreate {
+	if i != nil {
+		arcc.SetCacheReadTokens(*i)
+	}
+	return arcc
+}
+
+// SetTotalTokens sets the "total_tokens" field.
+func (arcc *AttributionRequestClaimCreate) SetTotalTokens(i int64) *AttributionRequestClaimCreate {
+	arcc.mutation.SetTotalTokens(i)
+	return arcc
+}
+
+// SetNillableTotalTokens sets the "total_tokens" field if the given value is not nil.
+func (arcc *AttributionRequestClaimCreate) SetNillableTotalTokens(i *int64) *AttributionRequestClaimCreate {
+	if i != nil {
+		arcc.SetTotalTokens(*i)
+	}
+	return arcc
+}
+
+// SetReconciledAt sets the "reconciled_at" field.
+func (arcc *AttributionRequestClaimCreate) SetReconciledAt(t time.Time) *AttributionRequestClaimCreate {
+	arcc.mutation.SetReconciledAt(t)
+	return arcc
+}
+
+// SetNillableReconciledAt sets the "reconciled_at" field if the given value is not nil.
+func (arcc *AttributionRequestClaimCreate) SetNillableReconciledAt(t *time.Time) *AttributionRequestClaimCreate {
+	if t != nil {
+		arcc.SetReconciledAt(*t)
+	}
+	return arcc
+}
+
 // SetExpiresAt sets the "expires_at" field.
 func (arcc *AttributionRequestClaimCreate) SetExpiresAt(t time.Time) *AttributionRequestClaimCreate {
 	arcc.mutation.SetExpiresAt(t)
@@ -131,6 +313,34 @@ func (arcc *AttributionRequestClaimCreate) defaults() {
 		v := attributionrequestclaim.DefaultStatus
 		arcc.mutation.SetStatus(v)
 	}
+	if _, ok := arcc.mutation.AttemptCount(); !ok {
+		v := attributionrequestclaim.DefaultAttemptCount
+		arcc.mutation.SetAttemptCount(v)
+	}
+	if _, ok := arcc.mutation.NextAttemptAt(); !ok {
+		v := attributionrequestclaim.DefaultNextAttemptAt()
+		arcc.mutation.SetNextAttemptAt(v)
+	}
+	if _, ok := arcc.mutation.InputTokens(); !ok {
+		v := attributionrequestclaim.DefaultInputTokens
+		arcc.mutation.SetInputTokens(v)
+	}
+	if _, ok := arcc.mutation.OutputTokens(); !ok {
+		v := attributionrequestclaim.DefaultOutputTokens
+		arcc.mutation.SetOutputTokens(v)
+	}
+	if _, ok := arcc.mutation.CacheCreationTokens(); !ok {
+		v := attributionrequestclaim.DefaultCacheCreationTokens
+		arcc.mutation.SetCacheCreationTokens(v)
+	}
+	if _, ok := arcc.mutation.CacheReadTokens(); !ok {
+		v := attributionrequestclaim.DefaultCacheReadTokens
+		arcc.mutation.SetCacheReadTokens(v)
+	}
+	if _, ok := arcc.mutation.TotalTokens(); !ok {
+		v := attributionrequestclaim.DefaultTotalTokens
+		arcc.mutation.SetTotalTokens(v)
+	}
 	if _, ok := arcc.mutation.CreatedAt(); !ok {
 		v := attributionrequestclaim.DefaultCreatedAt()
 		arcc.mutation.SetCreatedAt(v)
@@ -172,6 +382,27 @@ func (arcc *AttributionRequestClaimCreate) check() error {
 		if err := attributionrequestclaim.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "AttributionRequestClaim.status": %w`, err)}
 		}
+	}
+	if _, ok := arcc.mutation.AttemptCount(); !ok {
+		return &ValidationError{Name: "attempt_count", err: errors.New(`ent: missing required field "AttributionRequestClaim.attempt_count"`)}
+	}
+	if _, ok := arcc.mutation.NextAttemptAt(); !ok {
+		return &ValidationError{Name: "next_attempt_at", err: errors.New(`ent: missing required field "AttributionRequestClaim.next_attempt_at"`)}
+	}
+	if _, ok := arcc.mutation.InputTokens(); !ok {
+		return &ValidationError{Name: "input_tokens", err: errors.New(`ent: missing required field "AttributionRequestClaim.input_tokens"`)}
+	}
+	if _, ok := arcc.mutation.OutputTokens(); !ok {
+		return &ValidationError{Name: "output_tokens", err: errors.New(`ent: missing required field "AttributionRequestClaim.output_tokens"`)}
+	}
+	if _, ok := arcc.mutation.CacheCreationTokens(); !ok {
+		return &ValidationError{Name: "cache_creation_tokens", err: errors.New(`ent: missing required field "AttributionRequestClaim.cache_creation_tokens"`)}
+	}
+	if _, ok := arcc.mutation.CacheReadTokens(); !ok {
+		return &ValidationError{Name: "cache_read_tokens", err: errors.New(`ent: missing required field "AttributionRequestClaim.cache_read_tokens"`)}
+	}
+	if _, ok := arcc.mutation.TotalTokens(); !ok {
+		return &ValidationError{Name: "total_tokens", err: errors.New(`ent: missing required field "AttributionRequestClaim.total_tokens"`)}
 	}
 	if _, ok := arcc.mutation.ExpiresAt(); !ok {
 		return &ValidationError{Name: "expires_at", err: errors.New(`ent: missing required field "AttributionRequestClaim.expires_at"`)}
@@ -227,6 +458,58 @@ func (arcc *AttributionRequestClaimCreate) createSpec() (*AttributionRequestClai
 	if value, ok := arcc.mutation.Status(); ok {
 		_spec.SetField(attributionrequestclaim.FieldStatus, field.TypeEnum, value)
 		_node.Status = value
+	}
+	if value, ok := arcc.mutation.AttemptCount(); ok {
+		_spec.SetField(attributionrequestclaim.FieldAttemptCount, field.TypeInt, value)
+		_node.AttemptCount = value
+	}
+	if value, ok := arcc.mutation.NextAttemptAt(); ok {
+		_spec.SetField(attributionrequestclaim.FieldNextAttemptAt, field.TypeTime, value)
+		_node.NextAttemptAt = value
+	}
+	if value, ok := arcc.mutation.LeaseToken(); ok {
+		_spec.SetField(attributionrequestclaim.FieldLeaseToken, field.TypeString, value)
+		_node.LeaseToken = value
+	}
+	if value, ok := arcc.mutation.LeaseExpiresAt(); ok {
+		_spec.SetField(attributionrequestclaim.FieldLeaseExpiresAt, field.TypeTime, value)
+		_node.LeaseExpiresAt = &value
+	}
+	if value, ok := arcc.mutation.LastErrorCode(); ok {
+		_spec.SetField(attributionrequestclaim.FieldLastErrorCode, field.TypeString, value)
+		_node.LastErrorCode = value
+	}
+	if value, ok := arcc.mutation.RequestedModel(); ok {
+		_spec.SetField(attributionrequestclaim.FieldRequestedModel, field.TypeString, value)
+		_node.RequestedModel = value
+	}
+	if value, ok := arcc.mutation.UsageAt(); ok {
+		_spec.SetField(attributionrequestclaim.FieldUsageAt, field.TypeTime, value)
+		_node.UsageAt = &value
+	}
+	if value, ok := arcc.mutation.InputTokens(); ok {
+		_spec.SetField(attributionrequestclaim.FieldInputTokens, field.TypeInt64, value)
+		_node.InputTokens = value
+	}
+	if value, ok := arcc.mutation.OutputTokens(); ok {
+		_spec.SetField(attributionrequestclaim.FieldOutputTokens, field.TypeInt64, value)
+		_node.OutputTokens = value
+	}
+	if value, ok := arcc.mutation.CacheCreationTokens(); ok {
+		_spec.SetField(attributionrequestclaim.FieldCacheCreationTokens, field.TypeInt64, value)
+		_node.CacheCreationTokens = value
+	}
+	if value, ok := arcc.mutation.CacheReadTokens(); ok {
+		_spec.SetField(attributionrequestclaim.FieldCacheReadTokens, field.TypeInt64, value)
+		_node.CacheReadTokens = value
+	}
+	if value, ok := arcc.mutation.TotalTokens(); ok {
+		_spec.SetField(attributionrequestclaim.FieldTotalTokens, field.TypeInt64, value)
+		_node.TotalTokens = value
+	}
+	if value, ok := arcc.mutation.ReconciledAt(); ok {
+		_spec.SetField(attributionrequestclaim.FieldReconciledAt, field.TypeTime, value)
+		_node.ReconciledAt = &value
 	}
 	if value, ok := arcc.mutation.ExpiresAt(); ok {
 		_spec.SetField(attributionrequestclaim.FieldExpiresAt, field.TypeTime, value)

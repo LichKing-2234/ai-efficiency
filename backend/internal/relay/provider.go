@@ -98,6 +98,13 @@ type UserUsageOriginReader interface {
 	ReadUserUsageOrigin(ctx context.Context, request UserUsageOriginRequest) (*UserUsageOriginResult, error)
 }
 
+// RequestUsageReader reads exact provider-scoped usage rows for one Request ID.
+// Callers deliberately request at most two rows so duplicates are detected,
+// never summed.
+type RequestUsageReader interface {
+	ReadRequestUsage(ctx context.Context, requestID string, limit int) ([]RequestUsage, error)
+}
+
 type TeamUsageSummaryProvider interface {
 	GetBatchUserUsageStats(ctx context.Context, userIDs []int64, params TeamUsageSummaryParams) (map[int64]TeamUserUsageStats, error)
 }

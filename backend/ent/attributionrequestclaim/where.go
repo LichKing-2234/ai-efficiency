@@ -74,6 +74,71 @@ func CanonicalDigest(v string) predicate.AttributionRequestClaim {
 	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldCanonicalDigest, v))
 }
 
+// AttemptCount applies equality check predicate on the "attempt_count" field. It's identical to AttemptCountEQ.
+func AttemptCount(v int) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldAttemptCount, v))
+}
+
+// NextAttemptAt applies equality check predicate on the "next_attempt_at" field. It's identical to NextAttemptAtEQ.
+func NextAttemptAt(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldNextAttemptAt, v))
+}
+
+// LeaseToken applies equality check predicate on the "lease_token" field. It's identical to LeaseTokenEQ.
+func LeaseToken(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldLeaseToken, v))
+}
+
+// LeaseExpiresAt applies equality check predicate on the "lease_expires_at" field. It's identical to LeaseExpiresAtEQ.
+func LeaseExpiresAt(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldLeaseExpiresAt, v))
+}
+
+// LastErrorCode applies equality check predicate on the "last_error_code" field. It's identical to LastErrorCodeEQ.
+func LastErrorCode(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldLastErrorCode, v))
+}
+
+// RequestedModel applies equality check predicate on the "requested_model" field. It's identical to RequestedModelEQ.
+func RequestedModel(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldRequestedModel, v))
+}
+
+// UsageAt applies equality check predicate on the "usage_at" field. It's identical to UsageAtEQ.
+func UsageAt(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldUsageAt, v))
+}
+
+// InputTokens applies equality check predicate on the "input_tokens" field. It's identical to InputTokensEQ.
+func InputTokens(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldInputTokens, v))
+}
+
+// OutputTokens applies equality check predicate on the "output_tokens" field. It's identical to OutputTokensEQ.
+func OutputTokens(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldOutputTokens, v))
+}
+
+// CacheCreationTokens applies equality check predicate on the "cache_creation_tokens" field. It's identical to CacheCreationTokensEQ.
+func CacheCreationTokens(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldCacheCreationTokens, v))
+}
+
+// CacheReadTokens applies equality check predicate on the "cache_read_tokens" field. It's identical to CacheReadTokensEQ.
+func CacheReadTokens(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldCacheReadTokens, v))
+}
+
+// TotalTokens applies equality check predicate on the "total_tokens" field. It's identical to TotalTokensEQ.
+func TotalTokens(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldTotalTokens, v))
+}
+
+// ReconciledAt applies equality check predicate on the "reconciled_at" field. It's identical to ReconciledAtEQ.
+func ReconciledAt(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldReconciledAt, v))
+}
+
 // ExpiresAt applies equality check predicate on the "expires_at" field. It's identical to ExpiresAtEQ.
 func ExpiresAt(v time.Time) predicate.AttributionRequestClaim {
 	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldExpiresAt, v))
@@ -317,6 +382,661 @@ func StatusIn(vs ...Status) predicate.AttributionRequestClaim {
 // StatusNotIn applies the NotIn predicate on the "status" field.
 func StatusNotIn(vs ...Status) predicate.AttributionRequestClaim {
 	return predicate.AttributionRequestClaim(sql.FieldNotIn(FieldStatus, vs...))
+}
+
+// AttemptCountEQ applies the EQ predicate on the "attempt_count" field.
+func AttemptCountEQ(v int) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldAttemptCount, v))
+}
+
+// AttemptCountNEQ applies the NEQ predicate on the "attempt_count" field.
+func AttemptCountNEQ(v int) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNEQ(FieldAttemptCount, v))
+}
+
+// AttemptCountIn applies the In predicate on the "attempt_count" field.
+func AttemptCountIn(vs ...int) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIn(FieldAttemptCount, vs...))
+}
+
+// AttemptCountNotIn applies the NotIn predicate on the "attempt_count" field.
+func AttemptCountNotIn(vs ...int) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotIn(FieldAttemptCount, vs...))
+}
+
+// AttemptCountGT applies the GT predicate on the "attempt_count" field.
+func AttemptCountGT(v int) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGT(FieldAttemptCount, v))
+}
+
+// AttemptCountGTE applies the GTE predicate on the "attempt_count" field.
+func AttemptCountGTE(v int) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGTE(FieldAttemptCount, v))
+}
+
+// AttemptCountLT applies the LT predicate on the "attempt_count" field.
+func AttemptCountLT(v int) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLT(FieldAttemptCount, v))
+}
+
+// AttemptCountLTE applies the LTE predicate on the "attempt_count" field.
+func AttemptCountLTE(v int) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLTE(FieldAttemptCount, v))
+}
+
+// NextAttemptAtEQ applies the EQ predicate on the "next_attempt_at" field.
+func NextAttemptAtEQ(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldNextAttemptAt, v))
+}
+
+// NextAttemptAtNEQ applies the NEQ predicate on the "next_attempt_at" field.
+func NextAttemptAtNEQ(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNEQ(FieldNextAttemptAt, v))
+}
+
+// NextAttemptAtIn applies the In predicate on the "next_attempt_at" field.
+func NextAttemptAtIn(vs ...time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIn(FieldNextAttemptAt, vs...))
+}
+
+// NextAttemptAtNotIn applies the NotIn predicate on the "next_attempt_at" field.
+func NextAttemptAtNotIn(vs ...time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotIn(FieldNextAttemptAt, vs...))
+}
+
+// NextAttemptAtGT applies the GT predicate on the "next_attempt_at" field.
+func NextAttemptAtGT(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGT(FieldNextAttemptAt, v))
+}
+
+// NextAttemptAtGTE applies the GTE predicate on the "next_attempt_at" field.
+func NextAttemptAtGTE(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGTE(FieldNextAttemptAt, v))
+}
+
+// NextAttemptAtLT applies the LT predicate on the "next_attempt_at" field.
+func NextAttemptAtLT(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLT(FieldNextAttemptAt, v))
+}
+
+// NextAttemptAtLTE applies the LTE predicate on the "next_attempt_at" field.
+func NextAttemptAtLTE(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLTE(FieldNextAttemptAt, v))
+}
+
+// LeaseTokenEQ applies the EQ predicate on the "lease_token" field.
+func LeaseTokenEQ(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldLeaseToken, v))
+}
+
+// LeaseTokenNEQ applies the NEQ predicate on the "lease_token" field.
+func LeaseTokenNEQ(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNEQ(FieldLeaseToken, v))
+}
+
+// LeaseTokenIn applies the In predicate on the "lease_token" field.
+func LeaseTokenIn(vs ...string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIn(FieldLeaseToken, vs...))
+}
+
+// LeaseTokenNotIn applies the NotIn predicate on the "lease_token" field.
+func LeaseTokenNotIn(vs ...string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotIn(FieldLeaseToken, vs...))
+}
+
+// LeaseTokenGT applies the GT predicate on the "lease_token" field.
+func LeaseTokenGT(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGT(FieldLeaseToken, v))
+}
+
+// LeaseTokenGTE applies the GTE predicate on the "lease_token" field.
+func LeaseTokenGTE(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGTE(FieldLeaseToken, v))
+}
+
+// LeaseTokenLT applies the LT predicate on the "lease_token" field.
+func LeaseTokenLT(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLT(FieldLeaseToken, v))
+}
+
+// LeaseTokenLTE applies the LTE predicate on the "lease_token" field.
+func LeaseTokenLTE(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLTE(FieldLeaseToken, v))
+}
+
+// LeaseTokenContains applies the Contains predicate on the "lease_token" field.
+func LeaseTokenContains(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldContains(FieldLeaseToken, v))
+}
+
+// LeaseTokenHasPrefix applies the HasPrefix predicate on the "lease_token" field.
+func LeaseTokenHasPrefix(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldHasPrefix(FieldLeaseToken, v))
+}
+
+// LeaseTokenHasSuffix applies the HasSuffix predicate on the "lease_token" field.
+func LeaseTokenHasSuffix(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldHasSuffix(FieldLeaseToken, v))
+}
+
+// LeaseTokenIsNil applies the IsNil predicate on the "lease_token" field.
+func LeaseTokenIsNil() predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIsNull(FieldLeaseToken))
+}
+
+// LeaseTokenNotNil applies the NotNil predicate on the "lease_token" field.
+func LeaseTokenNotNil() predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotNull(FieldLeaseToken))
+}
+
+// LeaseTokenEqualFold applies the EqualFold predicate on the "lease_token" field.
+func LeaseTokenEqualFold(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEqualFold(FieldLeaseToken, v))
+}
+
+// LeaseTokenContainsFold applies the ContainsFold predicate on the "lease_token" field.
+func LeaseTokenContainsFold(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldContainsFold(FieldLeaseToken, v))
+}
+
+// LeaseExpiresAtEQ applies the EQ predicate on the "lease_expires_at" field.
+func LeaseExpiresAtEQ(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldLeaseExpiresAt, v))
+}
+
+// LeaseExpiresAtNEQ applies the NEQ predicate on the "lease_expires_at" field.
+func LeaseExpiresAtNEQ(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNEQ(FieldLeaseExpiresAt, v))
+}
+
+// LeaseExpiresAtIn applies the In predicate on the "lease_expires_at" field.
+func LeaseExpiresAtIn(vs ...time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIn(FieldLeaseExpiresAt, vs...))
+}
+
+// LeaseExpiresAtNotIn applies the NotIn predicate on the "lease_expires_at" field.
+func LeaseExpiresAtNotIn(vs ...time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotIn(FieldLeaseExpiresAt, vs...))
+}
+
+// LeaseExpiresAtGT applies the GT predicate on the "lease_expires_at" field.
+func LeaseExpiresAtGT(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGT(FieldLeaseExpiresAt, v))
+}
+
+// LeaseExpiresAtGTE applies the GTE predicate on the "lease_expires_at" field.
+func LeaseExpiresAtGTE(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGTE(FieldLeaseExpiresAt, v))
+}
+
+// LeaseExpiresAtLT applies the LT predicate on the "lease_expires_at" field.
+func LeaseExpiresAtLT(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLT(FieldLeaseExpiresAt, v))
+}
+
+// LeaseExpiresAtLTE applies the LTE predicate on the "lease_expires_at" field.
+func LeaseExpiresAtLTE(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLTE(FieldLeaseExpiresAt, v))
+}
+
+// LeaseExpiresAtIsNil applies the IsNil predicate on the "lease_expires_at" field.
+func LeaseExpiresAtIsNil() predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIsNull(FieldLeaseExpiresAt))
+}
+
+// LeaseExpiresAtNotNil applies the NotNil predicate on the "lease_expires_at" field.
+func LeaseExpiresAtNotNil() predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotNull(FieldLeaseExpiresAt))
+}
+
+// LastErrorCodeEQ applies the EQ predicate on the "last_error_code" field.
+func LastErrorCodeEQ(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldLastErrorCode, v))
+}
+
+// LastErrorCodeNEQ applies the NEQ predicate on the "last_error_code" field.
+func LastErrorCodeNEQ(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNEQ(FieldLastErrorCode, v))
+}
+
+// LastErrorCodeIn applies the In predicate on the "last_error_code" field.
+func LastErrorCodeIn(vs ...string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIn(FieldLastErrorCode, vs...))
+}
+
+// LastErrorCodeNotIn applies the NotIn predicate on the "last_error_code" field.
+func LastErrorCodeNotIn(vs ...string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotIn(FieldLastErrorCode, vs...))
+}
+
+// LastErrorCodeGT applies the GT predicate on the "last_error_code" field.
+func LastErrorCodeGT(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGT(FieldLastErrorCode, v))
+}
+
+// LastErrorCodeGTE applies the GTE predicate on the "last_error_code" field.
+func LastErrorCodeGTE(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGTE(FieldLastErrorCode, v))
+}
+
+// LastErrorCodeLT applies the LT predicate on the "last_error_code" field.
+func LastErrorCodeLT(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLT(FieldLastErrorCode, v))
+}
+
+// LastErrorCodeLTE applies the LTE predicate on the "last_error_code" field.
+func LastErrorCodeLTE(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLTE(FieldLastErrorCode, v))
+}
+
+// LastErrorCodeContains applies the Contains predicate on the "last_error_code" field.
+func LastErrorCodeContains(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldContains(FieldLastErrorCode, v))
+}
+
+// LastErrorCodeHasPrefix applies the HasPrefix predicate on the "last_error_code" field.
+func LastErrorCodeHasPrefix(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldHasPrefix(FieldLastErrorCode, v))
+}
+
+// LastErrorCodeHasSuffix applies the HasSuffix predicate on the "last_error_code" field.
+func LastErrorCodeHasSuffix(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldHasSuffix(FieldLastErrorCode, v))
+}
+
+// LastErrorCodeIsNil applies the IsNil predicate on the "last_error_code" field.
+func LastErrorCodeIsNil() predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIsNull(FieldLastErrorCode))
+}
+
+// LastErrorCodeNotNil applies the NotNil predicate on the "last_error_code" field.
+func LastErrorCodeNotNil() predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotNull(FieldLastErrorCode))
+}
+
+// LastErrorCodeEqualFold applies the EqualFold predicate on the "last_error_code" field.
+func LastErrorCodeEqualFold(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEqualFold(FieldLastErrorCode, v))
+}
+
+// LastErrorCodeContainsFold applies the ContainsFold predicate on the "last_error_code" field.
+func LastErrorCodeContainsFold(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldContainsFold(FieldLastErrorCode, v))
+}
+
+// RequestedModelEQ applies the EQ predicate on the "requested_model" field.
+func RequestedModelEQ(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldRequestedModel, v))
+}
+
+// RequestedModelNEQ applies the NEQ predicate on the "requested_model" field.
+func RequestedModelNEQ(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNEQ(FieldRequestedModel, v))
+}
+
+// RequestedModelIn applies the In predicate on the "requested_model" field.
+func RequestedModelIn(vs ...string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIn(FieldRequestedModel, vs...))
+}
+
+// RequestedModelNotIn applies the NotIn predicate on the "requested_model" field.
+func RequestedModelNotIn(vs ...string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotIn(FieldRequestedModel, vs...))
+}
+
+// RequestedModelGT applies the GT predicate on the "requested_model" field.
+func RequestedModelGT(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGT(FieldRequestedModel, v))
+}
+
+// RequestedModelGTE applies the GTE predicate on the "requested_model" field.
+func RequestedModelGTE(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGTE(FieldRequestedModel, v))
+}
+
+// RequestedModelLT applies the LT predicate on the "requested_model" field.
+func RequestedModelLT(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLT(FieldRequestedModel, v))
+}
+
+// RequestedModelLTE applies the LTE predicate on the "requested_model" field.
+func RequestedModelLTE(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLTE(FieldRequestedModel, v))
+}
+
+// RequestedModelContains applies the Contains predicate on the "requested_model" field.
+func RequestedModelContains(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldContains(FieldRequestedModel, v))
+}
+
+// RequestedModelHasPrefix applies the HasPrefix predicate on the "requested_model" field.
+func RequestedModelHasPrefix(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldHasPrefix(FieldRequestedModel, v))
+}
+
+// RequestedModelHasSuffix applies the HasSuffix predicate on the "requested_model" field.
+func RequestedModelHasSuffix(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldHasSuffix(FieldRequestedModel, v))
+}
+
+// RequestedModelIsNil applies the IsNil predicate on the "requested_model" field.
+func RequestedModelIsNil() predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIsNull(FieldRequestedModel))
+}
+
+// RequestedModelNotNil applies the NotNil predicate on the "requested_model" field.
+func RequestedModelNotNil() predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotNull(FieldRequestedModel))
+}
+
+// RequestedModelEqualFold applies the EqualFold predicate on the "requested_model" field.
+func RequestedModelEqualFold(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEqualFold(FieldRequestedModel, v))
+}
+
+// RequestedModelContainsFold applies the ContainsFold predicate on the "requested_model" field.
+func RequestedModelContainsFold(v string) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldContainsFold(FieldRequestedModel, v))
+}
+
+// UsageAtEQ applies the EQ predicate on the "usage_at" field.
+func UsageAtEQ(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldUsageAt, v))
+}
+
+// UsageAtNEQ applies the NEQ predicate on the "usage_at" field.
+func UsageAtNEQ(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNEQ(FieldUsageAt, v))
+}
+
+// UsageAtIn applies the In predicate on the "usage_at" field.
+func UsageAtIn(vs ...time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIn(FieldUsageAt, vs...))
+}
+
+// UsageAtNotIn applies the NotIn predicate on the "usage_at" field.
+func UsageAtNotIn(vs ...time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotIn(FieldUsageAt, vs...))
+}
+
+// UsageAtGT applies the GT predicate on the "usage_at" field.
+func UsageAtGT(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGT(FieldUsageAt, v))
+}
+
+// UsageAtGTE applies the GTE predicate on the "usage_at" field.
+func UsageAtGTE(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGTE(FieldUsageAt, v))
+}
+
+// UsageAtLT applies the LT predicate on the "usage_at" field.
+func UsageAtLT(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLT(FieldUsageAt, v))
+}
+
+// UsageAtLTE applies the LTE predicate on the "usage_at" field.
+func UsageAtLTE(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLTE(FieldUsageAt, v))
+}
+
+// UsageAtIsNil applies the IsNil predicate on the "usage_at" field.
+func UsageAtIsNil() predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIsNull(FieldUsageAt))
+}
+
+// UsageAtNotNil applies the NotNil predicate on the "usage_at" field.
+func UsageAtNotNil() predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotNull(FieldUsageAt))
+}
+
+// InputTokensEQ applies the EQ predicate on the "input_tokens" field.
+func InputTokensEQ(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldInputTokens, v))
+}
+
+// InputTokensNEQ applies the NEQ predicate on the "input_tokens" field.
+func InputTokensNEQ(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNEQ(FieldInputTokens, v))
+}
+
+// InputTokensIn applies the In predicate on the "input_tokens" field.
+func InputTokensIn(vs ...int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIn(FieldInputTokens, vs...))
+}
+
+// InputTokensNotIn applies the NotIn predicate on the "input_tokens" field.
+func InputTokensNotIn(vs ...int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotIn(FieldInputTokens, vs...))
+}
+
+// InputTokensGT applies the GT predicate on the "input_tokens" field.
+func InputTokensGT(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGT(FieldInputTokens, v))
+}
+
+// InputTokensGTE applies the GTE predicate on the "input_tokens" field.
+func InputTokensGTE(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGTE(FieldInputTokens, v))
+}
+
+// InputTokensLT applies the LT predicate on the "input_tokens" field.
+func InputTokensLT(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLT(FieldInputTokens, v))
+}
+
+// InputTokensLTE applies the LTE predicate on the "input_tokens" field.
+func InputTokensLTE(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLTE(FieldInputTokens, v))
+}
+
+// OutputTokensEQ applies the EQ predicate on the "output_tokens" field.
+func OutputTokensEQ(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldOutputTokens, v))
+}
+
+// OutputTokensNEQ applies the NEQ predicate on the "output_tokens" field.
+func OutputTokensNEQ(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNEQ(FieldOutputTokens, v))
+}
+
+// OutputTokensIn applies the In predicate on the "output_tokens" field.
+func OutputTokensIn(vs ...int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIn(FieldOutputTokens, vs...))
+}
+
+// OutputTokensNotIn applies the NotIn predicate on the "output_tokens" field.
+func OutputTokensNotIn(vs ...int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotIn(FieldOutputTokens, vs...))
+}
+
+// OutputTokensGT applies the GT predicate on the "output_tokens" field.
+func OutputTokensGT(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGT(FieldOutputTokens, v))
+}
+
+// OutputTokensGTE applies the GTE predicate on the "output_tokens" field.
+func OutputTokensGTE(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGTE(FieldOutputTokens, v))
+}
+
+// OutputTokensLT applies the LT predicate on the "output_tokens" field.
+func OutputTokensLT(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLT(FieldOutputTokens, v))
+}
+
+// OutputTokensLTE applies the LTE predicate on the "output_tokens" field.
+func OutputTokensLTE(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLTE(FieldOutputTokens, v))
+}
+
+// CacheCreationTokensEQ applies the EQ predicate on the "cache_creation_tokens" field.
+func CacheCreationTokensEQ(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldCacheCreationTokens, v))
+}
+
+// CacheCreationTokensNEQ applies the NEQ predicate on the "cache_creation_tokens" field.
+func CacheCreationTokensNEQ(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNEQ(FieldCacheCreationTokens, v))
+}
+
+// CacheCreationTokensIn applies the In predicate on the "cache_creation_tokens" field.
+func CacheCreationTokensIn(vs ...int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIn(FieldCacheCreationTokens, vs...))
+}
+
+// CacheCreationTokensNotIn applies the NotIn predicate on the "cache_creation_tokens" field.
+func CacheCreationTokensNotIn(vs ...int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotIn(FieldCacheCreationTokens, vs...))
+}
+
+// CacheCreationTokensGT applies the GT predicate on the "cache_creation_tokens" field.
+func CacheCreationTokensGT(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGT(FieldCacheCreationTokens, v))
+}
+
+// CacheCreationTokensGTE applies the GTE predicate on the "cache_creation_tokens" field.
+func CacheCreationTokensGTE(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGTE(FieldCacheCreationTokens, v))
+}
+
+// CacheCreationTokensLT applies the LT predicate on the "cache_creation_tokens" field.
+func CacheCreationTokensLT(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLT(FieldCacheCreationTokens, v))
+}
+
+// CacheCreationTokensLTE applies the LTE predicate on the "cache_creation_tokens" field.
+func CacheCreationTokensLTE(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLTE(FieldCacheCreationTokens, v))
+}
+
+// CacheReadTokensEQ applies the EQ predicate on the "cache_read_tokens" field.
+func CacheReadTokensEQ(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldCacheReadTokens, v))
+}
+
+// CacheReadTokensNEQ applies the NEQ predicate on the "cache_read_tokens" field.
+func CacheReadTokensNEQ(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNEQ(FieldCacheReadTokens, v))
+}
+
+// CacheReadTokensIn applies the In predicate on the "cache_read_tokens" field.
+func CacheReadTokensIn(vs ...int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIn(FieldCacheReadTokens, vs...))
+}
+
+// CacheReadTokensNotIn applies the NotIn predicate on the "cache_read_tokens" field.
+func CacheReadTokensNotIn(vs ...int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotIn(FieldCacheReadTokens, vs...))
+}
+
+// CacheReadTokensGT applies the GT predicate on the "cache_read_tokens" field.
+func CacheReadTokensGT(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGT(FieldCacheReadTokens, v))
+}
+
+// CacheReadTokensGTE applies the GTE predicate on the "cache_read_tokens" field.
+func CacheReadTokensGTE(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGTE(FieldCacheReadTokens, v))
+}
+
+// CacheReadTokensLT applies the LT predicate on the "cache_read_tokens" field.
+func CacheReadTokensLT(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLT(FieldCacheReadTokens, v))
+}
+
+// CacheReadTokensLTE applies the LTE predicate on the "cache_read_tokens" field.
+func CacheReadTokensLTE(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLTE(FieldCacheReadTokens, v))
+}
+
+// TotalTokensEQ applies the EQ predicate on the "total_tokens" field.
+func TotalTokensEQ(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldTotalTokens, v))
+}
+
+// TotalTokensNEQ applies the NEQ predicate on the "total_tokens" field.
+func TotalTokensNEQ(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNEQ(FieldTotalTokens, v))
+}
+
+// TotalTokensIn applies the In predicate on the "total_tokens" field.
+func TotalTokensIn(vs ...int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIn(FieldTotalTokens, vs...))
+}
+
+// TotalTokensNotIn applies the NotIn predicate on the "total_tokens" field.
+func TotalTokensNotIn(vs ...int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotIn(FieldTotalTokens, vs...))
+}
+
+// TotalTokensGT applies the GT predicate on the "total_tokens" field.
+func TotalTokensGT(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGT(FieldTotalTokens, v))
+}
+
+// TotalTokensGTE applies the GTE predicate on the "total_tokens" field.
+func TotalTokensGTE(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGTE(FieldTotalTokens, v))
+}
+
+// TotalTokensLT applies the LT predicate on the "total_tokens" field.
+func TotalTokensLT(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLT(FieldTotalTokens, v))
+}
+
+// TotalTokensLTE applies the LTE predicate on the "total_tokens" field.
+func TotalTokensLTE(v int64) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLTE(FieldTotalTokens, v))
+}
+
+// ReconciledAtEQ applies the EQ predicate on the "reconciled_at" field.
+func ReconciledAtEQ(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldReconciledAt, v))
+}
+
+// ReconciledAtNEQ applies the NEQ predicate on the "reconciled_at" field.
+func ReconciledAtNEQ(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNEQ(FieldReconciledAt, v))
+}
+
+// ReconciledAtIn applies the In predicate on the "reconciled_at" field.
+func ReconciledAtIn(vs ...time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIn(FieldReconciledAt, vs...))
+}
+
+// ReconciledAtNotIn applies the NotIn predicate on the "reconciled_at" field.
+func ReconciledAtNotIn(vs ...time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotIn(FieldReconciledAt, vs...))
+}
+
+// ReconciledAtGT applies the GT predicate on the "reconciled_at" field.
+func ReconciledAtGT(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGT(FieldReconciledAt, v))
+}
+
+// ReconciledAtGTE applies the GTE predicate on the "reconciled_at" field.
+func ReconciledAtGTE(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGTE(FieldReconciledAt, v))
+}
+
+// ReconciledAtLT applies the LT predicate on the "reconciled_at" field.
+func ReconciledAtLT(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLT(FieldReconciledAt, v))
+}
+
+// ReconciledAtLTE applies the LTE predicate on the "reconciled_at" field.
+func ReconciledAtLTE(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLTE(FieldReconciledAt, v))
+}
+
+// ReconciledAtIsNil applies the IsNil predicate on the "reconciled_at" field.
+func ReconciledAtIsNil() predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIsNull(FieldReconciledAt))
+}
+
+// ReconciledAtNotNil applies the NotNil predicate on the "reconciled_at" field.
+func ReconciledAtNotNil() predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotNull(FieldReconciledAt))
 }
 
 // ExpiresAtEQ applies the EQ predicate on the "expires_at" field.

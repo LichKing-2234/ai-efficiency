@@ -4667,23 +4667,42 @@ func (m *AttributionClaimGroupMutation) ResetEdge(name string) error {
 // AttributionRequestClaimMutation represents an operation that mutates the AttributionRequestClaim nodes in the graph.
 type AttributionRequestClaimMutation struct {
 	config
-	op                   Op
-	typ                  string
-	id                   *int
-	claim_group_id       *int
-	addclaim_group_id    *int
-	relay_provider_id    *int
-	addrelay_provider_id *int
-	request_id           *string
-	canonical_digest     *string
-	status               *attributionrequestclaim.Status
-	expires_at           *time.Time
-	created_at           *time.Time
-	updated_at           *time.Time
-	clearedFields        map[string]struct{}
-	done                 bool
-	oldValue             func(context.Context) (*AttributionRequestClaim, error)
-	predicates           []predicate.AttributionRequestClaim
+	op                       Op
+	typ                      string
+	id                       *int
+	claim_group_id           *int
+	addclaim_group_id        *int
+	relay_provider_id        *int
+	addrelay_provider_id     *int
+	request_id               *string
+	canonical_digest         *string
+	status                   *attributionrequestclaim.Status
+	attempt_count            *int
+	addattempt_count         *int
+	next_attempt_at          *time.Time
+	lease_token              *string
+	lease_expires_at         *time.Time
+	last_error_code          *string
+	requested_model          *string
+	usage_at                 *time.Time
+	input_tokens             *int64
+	addinput_tokens          *int64
+	output_tokens            *int64
+	addoutput_tokens         *int64
+	cache_creation_tokens    *int64
+	addcache_creation_tokens *int64
+	cache_read_tokens        *int64
+	addcache_read_tokens     *int64
+	total_tokens             *int64
+	addtotal_tokens          *int64
+	reconciled_at            *time.Time
+	expires_at               *time.Time
+	created_at               *time.Time
+	updated_at               *time.Time
+	clearedFields            map[string]struct{}
+	done                     bool
+	oldValue                 func(context.Context) (*AttributionRequestClaim, error)
+	predicates               []predicate.AttributionRequestClaim
 }
 
 var _ ent.Mutation = (*AttributionRequestClaimMutation)(nil)
@@ -5004,6 +5023,672 @@ func (m *AttributionRequestClaimMutation) ResetStatus() {
 	m.status = nil
 }
 
+// SetAttemptCount sets the "attempt_count" field.
+func (m *AttributionRequestClaimMutation) SetAttemptCount(i int) {
+	m.attempt_count = &i
+	m.addattempt_count = nil
+}
+
+// AttemptCount returns the value of the "attempt_count" field in the mutation.
+func (m *AttributionRequestClaimMutation) AttemptCount() (r int, exists bool) {
+	v := m.attempt_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAttemptCount returns the old "attempt_count" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldAttemptCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAttemptCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAttemptCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAttemptCount: %w", err)
+	}
+	return oldValue.AttemptCount, nil
+}
+
+// AddAttemptCount adds i to the "attempt_count" field.
+func (m *AttributionRequestClaimMutation) AddAttemptCount(i int) {
+	if m.addattempt_count != nil {
+		*m.addattempt_count += i
+	} else {
+		m.addattempt_count = &i
+	}
+}
+
+// AddedAttemptCount returns the value that was added to the "attempt_count" field in this mutation.
+func (m *AttributionRequestClaimMutation) AddedAttemptCount() (r int, exists bool) {
+	v := m.addattempt_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAttemptCount resets all changes to the "attempt_count" field.
+func (m *AttributionRequestClaimMutation) ResetAttemptCount() {
+	m.attempt_count = nil
+	m.addattempt_count = nil
+}
+
+// SetNextAttemptAt sets the "next_attempt_at" field.
+func (m *AttributionRequestClaimMutation) SetNextAttemptAt(t time.Time) {
+	m.next_attempt_at = &t
+}
+
+// NextAttemptAt returns the value of the "next_attempt_at" field in the mutation.
+func (m *AttributionRequestClaimMutation) NextAttemptAt() (r time.Time, exists bool) {
+	v := m.next_attempt_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNextAttemptAt returns the old "next_attempt_at" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldNextAttemptAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNextAttemptAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNextAttemptAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNextAttemptAt: %w", err)
+	}
+	return oldValue.NextAttemptAt, nil
+}
+
+// ResetNextAttemptAt resets all changes to the "next_attempt_at" field.
+func (m *AttributionRequestClaimMutation) ResetNextAttemptAt() {
+	m.next_attempt_at = nil
+}
+
+// SetLeaseToken sets the "lease_token" field.
+func (m *AttributionRequestClaimMutation) SetLeaseToken(s string) {
+	m.lease_token = &s
+}
+
+// LeaseToken returns the value of the "lease_token" field in the mutation.
+func (m *AttributionRequestClaimMutation) LeaseToken() (r string, exists bool) {
+	v := m.lease_token
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLeaseToken returns the old "lease_token" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldLeaseToken(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLeaseToken is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLeaseToken requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLeaseToken: %w", err)
+	}
+	return oldValue.LeaseToken, nil
+}
+
+// ClearLeaseToken clears the value of the "lease_token" field.
+func (m *AttributionRequestClaimMutation) ClearLeaseToken() {
+	m.lease_token = nil
+	m.clearedFields[attributionrequestclaim.FieldLeaseToken] = struct{}{}
+}
+
+// LeaseTokenCleared returns if the "lease_token" field was cleared in this mutation.
+func (m *AttributionRequestClaimMutation) LeaseTokenCleared() bool {
+	_, ok := m.clearedFields[attributionrequestclaim.FieldLeaseToken]
+	return ok
+}
+
+// ResetLeaseToken resets all changes to the "lease_token" field.
+func (m *AttributionRequestClaimMutation) ResetLeaseToken() {
+	m.lease_token = nil
+	delete(m.clearedFields, attributionrequestclaim.FieldLeaseToken)
+}
+
+// SetLeaseExpiresAt sets the "lease_expires_at" field.
+func (m *AttributionRequestClaimMutation) SetLeaseExpiresAt(t time.Time) {
+	m.lease_expires_at = &t
+}
+
+// LeaseExpiresAt returns the value of the "lease_expires_at" field in the mutation.
+func (m *AttributionRequestClaimMutation) LeaseExpiresAt() (r time.Time, exists bool) {
+	v := m.lease_expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLeaseExpiresAt returns the old "lease_expires_at" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldLeaseExpiresAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLeaseExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLeaseExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLeaseExpiresAt: %w", err)
+	}
+	return oldValue.LeaseExpiresAt, nil
+}
+
+// ClearLeaseExpiresAt clears the value of the "lease_expires_at" field.
+func (m *AttributionRequestClaimMutation) ClearLeaseExpiresAt() {
+	m.lease_expires_at = nil
+	m.clearedFields[attributionrequestclaim.FieldLeaseExpiresAt] = struct{}{}
+}
+
+// LeaseExpiresAtCleared returns if the "lease_expires_at" field was cleared in this mutation.
+func (m *AttributionRequestClaimMutation) LeaseExpiresAtCleared() bool {
+	_, ok := m.clearedFields[attributionrequestclaim.FieldLeaseExpiresAt]
+	return ok
+}
+
+// ResetLeaseExpiresAt resets all changes to the "lease_expires_at" field.
+func (m *AttributionRequestClaimMutation) ResetLeaseExpiresAt() {
+	m.lease_expires_at = nil
+	delete(m.clearedFields, attributionrequestclaim.FieldLeaseExpiresAt)
+}
+
+// SetLastErrorCode sets the "last_error_code" field.
+func (m *AttributionRequestClaimMutation) SetLastErrorCode(s string) {
+	m.last_error_code = &s
+}
+
+// LastErrorCode returns the value of the "last_error_code" field in the mutation.
+func (m *AttributionRequestClaimMutation) LastErrorCode() (r string, exists bool) {
+	v := m.last_error_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastErrorCode returns the old "last_error_code" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldLastErrorCode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastErrorCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastErrorCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastErrorCode: %w", err)
+	}
+	return oldValue.LastErrorCode, nil
+}
+
+// ClearLastErrorCode clears the value of the "last_error_code" field.
+func (m *AttributionRequestClaimMutation) ClearLastErrorCode() {
+	m.last_error_code = nil
+	m.clearedFields[attributionrequestclaim.FieldLastErrorCode] = struct{}{}
+}
+
+// LastErrorCodeCleared returns if the "last_error_code" field was cleared in this mutation.
+func (m *AttributionRequestClaimMutation) LastErrorCodeCleared() bool {
+	_, ok := m.clearedFields[attributionrequestclaim.FieldLastErrorCode]
+	return ok
+}
+
+// ResetLastErrorCode resets all changes to the "last_error_code" field.
+func (m *AttributionRequestClaimMutation) ResetLastErrorCode() {
+	m.last_error_code = nil
+	delete(m.clearedFields, attributionrequestclaim.FieldLastErrorCode)
+}
+
+// SetRequestedModel sets the "requested_model" field.
+func (m *AttributionRequestClaimMutation) SetRequestedModel(s string) {
+	m.requested_model = &s
+}
+
+// RequestedModel returns the value of the "requested_model" field in the mutation.
+func (m *AttributionRequestClaimMutation) RequestedModel() (r string, exists bool) {
+	v := m.requested_model
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestedModel returns the old "requested_model" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldRequestedModel(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestedModel is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestedModel requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestedModel: %w", err)
+	}
+	return oldValue.RequestedModel, nil
+}
+
+// ClearRequestedModel clears the value of the "requested_model" field.
+func (m *AttributionRequestClaimMutation) ClearRequestedModel() {
+	m.requested_model = nil
+	m.clearedFields[attributionrequestclaim.FieldRequestedModel] = struct{}{}
+}
+
+// RequestedModelCleared returns if the "requested_model" field was cleared in this mutation.
+func (m *AttributionRequestClaimMutation) RequestedModelCleared() bool {
+	_, ok := m.clearedFields[attributionrequestclaim.FieldRequestedModel]
+	return ok
+}
+
+// ResetRequestedModel resets all changes to the "requested_model" field.
+func (m *AttributionRequestClaimMutation) ResetRequestedModel() {
+	m.requested_model = nil
+	delete(m.clearedFields, attributionrequestclaim.FieldRequestedModel)
+}
+
+// SetUsageAt sets the "usage_at" field.
+func (m *AttributionRequestClaimMutation) SetUsageAt(t time.Time) {
+	m.usage_at = &t
+}
+
+// UsageAt returns the value of the "usage_at" field in the mutation.
+func (m *AttributionRequestClaimMutation) UsageAt() (r time.Time, exists bool) {
+	v := m.usage_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageAt returns the old "usage_at" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldUsageAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageAt: %w", err)
+	}
+	return oldValue.UsageAt, nil
+}
+
+// ClearUsageAt clears the value of the "usage_at" field.
+func (m *AttributionRequestClaimMutation) ClearUsageAt() {
+	m.usage_at = nil
+	m.clearedFields[attributionrequestclaim.FieldUsageAt] = struct{}{}
+}
+
+// UsageAtCleared returns if the "usage_at" field was cleared in this mutation.
+func (m *AttributionRequestClaimMutation) UsageAtCleared() bool {
+	_, ok := m.clearedFields[attributionrequestclaim.FieldUsageAt]
+	return ok
+}
+
+// ResetUsageAt resets all changes to the "usage_at" field.
+func (m *AttributionRequestClaimMutation) ResetUsageAt() {
+	m.usage_at = nil
+	delete(m.clearedFields, attributionrequestclaim.FieldUsageAt)
+}
+
+// SetInputTokens sets the "input_tokens" field.
+func (m *AttributionRequestClaimMutation) SetInputTokens(i int64) {
+	m.input_tokens = &i
+	m.addinput_tokens = nil
+}
+
+// InputTokens returns the value of the "input_tokens" field in the mutation.
+func (m *AttributionRequestClaimMutation) InputTokens() (r int64, exists bool) {
+	v := m.input_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInputTokens returns the old "input_tokens" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldInputTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInputTokens: %w", err)
+	}
+	return oldValue.InputTokens, nil
+}
+
+// AddInputTokens adds i to the "input_tokens" field.
+func (m *AttributionRequestClaimMutation) AddInputTokens(i int64) {
+	if m.addinput_tokens != nil {
+		*m.addinput_tokens += i
+	} else {
+		m.addinput_tokens = &i
+	}
+}
+
+// AddedInputTokens returns the value that was added to the "input_tokens" field in this mutation.
+func (m *AttributionRequestClaimMutation) AddedInputTokens() (r int64, exists bool) {
+	v := m.addinput_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetInputTokens resets all changes to the "input_tokens" field.
+func (m *AttributionRequestClaimMutation) ResetInputTokens() {
+	m.input_tokens = nil
+	m.addinput_tokens = nil
+}
+
+// SetOutputTokens sets the "output_tokens" field.
+func (m *AttributionRequestClaimMutation) SetOutputTokens(i int64) {
+	m.output_tokens = &i
+	m.addoutput_tokens = nil
+}
+
+// OutputTokens returns the value of the "output_tokens" field in the mutation.
+func (m *AttributionRequestClaimMutation) OutputTokens() (r int64, exists bool) {
+	v := m.output_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOutputTokens returns the old "output_tokens" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldOutputTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOutputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOutputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOutputTokens: %w", err)
+	}
+	return oldValue.OutputTokens, nil
+}
+
+// AddOutputTokens adds i to the "output_tokens" field.
+func (m *AttributionRequestClaimMutation) AddOutputTokens(i int64) {
+	if m.addoutput_tokens != nil {
+		*m.addoutput_tokens += i
+	} else {
+		m.addoutput_tokens = &i
+	}
+}
+
+// AddedOutputTokens returns the value that was added to the "output_tokens" field in this mutation.
+func (m *AttributionRequestClaimMutation) AddedOutputTokens() (r int64, exists bool) {
+	v := m.addoutput_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetOutputTokens resets all changes to the "output_tokens" field.
+func (m *AttributionRequestClaimMutation) ResetOutputTokens() {
+	m.output_tokens = nil
+	m.addoutput_tokens = nil
+}
+
+// SetCacheCreationTokens sets the "cache_creation_tokens" field.
+func (m *AttributionRequestClaimMutation) SetCacheCreationTokens(i int64) {
+	m.cache_creation_tokens = &i
+	m.addcache_creation_tokens = nil
+}
+
+// CacheCreationTokens returns the value of the "cache_creation_tokens" field in the mutation.
+func (m *AttributionRequestClaimMutation) CacheCreationTokens() (r int64, exists bool) {
+	v := m.cache_creation_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCacheCreationTokens returns the old "cache_creation_tokens" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldCacheCreationTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCacheCreationTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCacheCreationTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCacheCreationTokens: %w", err)
+	}
+	return oldValue.CacheCreationTokens, nil
+}
+
+// AddCacheCreationTokens adds i to the "cache_creation_tokens" field.
+func (m *AttributionRequestClaimMutation) AddCacheCreationTokens(i int64) {
+	if m.addcache_creation_tokens != nil {
+		*m.addcache_creation_tokens += i
+	} else {
+		m.addcache_creation_tokens = &i
+	}
+}
+
+// AddedCacheCreationTokens returns the value that was added to the "cache_creation_tokens" field in this mutation.
+func (m *AttributionRequestClaimMutation) AddedCacheCreationTokens() (r int64, exists bool) {
+	v := m.addcache_creation_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCacheCreationTokens resets all changes to the "cache_creation_tokens" field.
+func (m *AttributionRequestClaimMutation) ResetCacheCreationTokens() {
+	m.cache_creation_tokens = nil
+	m.addcache_creation_tokens = nil
+}
+
+// SetCacheReadTokens sets the "cache_read_tokens" field.
+func (m *AttributionRequestClaimMutation) SetCacheReadTokens(i int64) {
+	m.cache_read_tokens = &i
+	m.addcache_read_tokens = nil
+}
+
+// CacheReadTokens returns the value of the "cache_read_tokens" field in the mutation.
+func (m *AttributionRequestClaimMutation) CacheReadTokens() (r int64, exists bool) {
+	v := m.cache_read_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCacheReadTokens returns the old "cache_read_tokens" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldCacheReadTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCacheReadTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCacheReadTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCacheReadTokens: %w", err)
+	}
+	return oldValue.CacheReadTokens, nil
+}
+
+// AddCacheReadTokens adds i to the "cache_read_tokens" field.
+func (m *AttributionRequestClaimMutation) AddCacheReadTokens(i int64) {
+	if m.addcache_read_tokens != nil {
+		*m.addcache_read_tokens += i
+	} else {
+		m.addcache_read_tokens = &i
+	}
+}
+
+// AddedCacheReadTokens returns the value that was added to the "cache_read_tokens" field in this mutation.
+func (m *AttributionRequestClaimMutation) AddedCacheReadTokens() (r int64, exists bool) {
+	v := m.addcache_read_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCacheReadTokens resets all changes to the "cache_read_tokens" field.
+func (m *AttributionRequestClaimMutation) ResetCacheReadTokens() {
+	m.cache_read_tokens = nil
+	m.addcache_read_tokens = nil
+}
+
+// SetTotalTokens sets the "total_tokens" field.
+func (m *AttributionRequestClaimMutation) SetTotalTokens(i int64) {
+	m.total_tokens = &i
+	m.addtotal_tokens = nil
+}
+
+// TotalTokens returns the value of the "total_tokens" field in the mutation.
+func (m *AttributionRequestClaimMutation) TotalTokens() (r int64, exists bool) {
+	v := m.total_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTotalTokens returns the old "total_tokens" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldTotalTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTotalTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTotalTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTotalTokens: %w", err)
+	}
+	return oldValue.TotalTokens, nil
+}
+
+// AddTotalTokens adds i to the "total_tokens" field.
+func (m *AttributionRequestClaimMutation) AddTotalTokens(i int64) {
+	if m.addtotal_tokens != nil {
+		*m.addtotal_tokens += i
+	} else {
+		m.addtotal_tokens = &i
+	}
+}
+
+// AddedTotalTokens returns the value that was added to the "total_tokens" field in this mutation.
+func (m *AttributionRequestClaimMutation) AddedTotalTokens() (r int64, exists bool) {
+	v := m.addtotal_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTotalTokens resets all changes to the "total_tokens" field.
+func (m *AttributionRequestClaimMutation) ResetTotalTokens() {
+	m.total_tokens = nil
+	m.addtotal_tokens = nil
+}
+
+// SetReconciledAt sets the "reconciled_at" field.
+func (m *AttributionRequestClaimMutation) SetReconciledAt(t time.Time) {
+	m.reconciled_at = &t
+}
+
+// ReconciledAt returns the value of the "reconciled_at" field in the mutation.
+func (m *AttributionRequestClaimMutation) ReconciledAt() (r time.Time, exists bool) {
+	v := m.reconciled_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReconciledAt returns the old "reconciled_at" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldReconciledAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReconciledAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReconciledAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReconciledAt: %w", err)
+	}
+	return oldValue.ReconciledAt, nil
+}
+
+// ClearReconciledAt clears the value of the "reconciled_at" field.
+func (m *AttributionRequestClaimMutation) ClearReconciledAt() {
+	m.reconciled_at = nil
+	m.clearedFields[attributionrequestclaim.FieldReconciledAt] = struct{}{}
+}
+
+// ReconciledAtCleared returns if the "reconciled_at" field was cleared in this mutation.
+func (m *AttributionRequestClaimMutation) ReconciledAtCleared() bool {
+	_, ok := m.clearedFields[attributionrequestclaim.FieldReconciledAt]
+	return ok
+}
+
+// ResetReconciledAt resets all changes to the "reconciled_at" field.
+func (m *AttributionRequestClaimMutation) ResetReconciledAt() {
+	m.reconciled_at = nil
+	delete(m.clearedFields, attributionrequestclaim.FieldReconciledAt)
+}
+
 // SetExpiresAt sets the "expires_at" field.
 func (m *AttributionRequestClaimMutation) SetExpiresAt(t time.Time) {
 	m.expires_at = &t
@@ -5146,7 +5831,7 @@ func (m *AttributionRequestClaimMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AttributionRequestClaimMutation) Fields() []string {
-	fields := make([]string, 0, 8)
+	fields := make([]string, 0, 21)
 	if m.claim_group_id != nil {
 		fields = append(fields, attributionrequestclaim.FieldClaimGroupID)
 	}
@@ -5161,6 +5846,45 @@ func (m *AttributionRequestClaimMutation) Fields() []string {
 	}
 	if m.status != nil {
 		fields = append(fields, attributionrequestclaim.FieldStatus)
+	}
+	if m.attempt_count != nil {
+		fields = append(fields, attributionrequestclaim.FieldAttemptCount)
+	}
+	if m.next_attempt_at != nil {
+		fields = append(fields, attributionrequestclaim.FieldNextAttemptAt)
+	}
+	if m.lease_token != nil {
+		fields = append(fields, attributionrequestclaim.FieldLeaseToken)
+	}
+	if m.lease_expires_at != nil {
+		fields = append(fields, attributionrequestclaim.FieldLeaseExpiresAt)
+	}
+	if m.last_error_code != nil {
+		fields = append(fields, attributionrequestclaim.FieldLastErrorCode)
+	}
+	if m.requested_model != nil {
+		fields = append(fields, attributionrequestclaim.FieldRequestedModel)
+	}
+	if m.usage_at != nil {
+		fields = append(fields, attributionrequestclaim.FieldUsageAt)
+	}
+	if m.input_tokens != nil {
+		fields = append(fields, attributionrequestclaim.FieldInputTokens)
+	}
+	if m.output_tokens != nil {
+		fields = append(fields, attributionrequestclaim.FieldOutputTokens)
+	}
+	if m.cache_creation_tokens != nil {
+		fields = append(fields, attributionrequestclaim.FieldCacheCreationTokens)
+	}
+	if m.cache_read_tokens != nil {
+		fields = append(fields, attributionrequestclaim.FieldCacheReadTokens)
+	}
+	if m.total_tokens != nil {
+		fields = append(fields, attributionrequestclaim.FieldTotalTokens)
+	}
+	if m.reconciled_at != nil {
+		fields = append(fields, attributionrequestclaim.FieldReconciledAt)
 	}
 	if m.expires_at != nil {
 		fields = append(fields, attributionrequestclaim.FieldExpiresAt)
@@ -5189,6 +5913,32 @@ func (m *AttributionRequestClaimMutation) Field(name string) (ent.Value, bool) {
 		return m.CanonicalDigest()
 	case attributionrequestclaim.FieldStatus:
 		return m.Status()
+	case attributionrequestclaim.FieldAttemptCount:
+		return m.AttemptCount()
+	case attributionrequestclaim.FieldNextAttemptAt:
+		return m.NextAttemptAt()
+	case attributionrequestclaim.FieldLeaseToken:
+		return m.LeaseToken()
+	case attributionrequestclaim.FieldLeaseExpiresAt:
+		return m.LeaseExpiresAt()
+	case attributionrequestclaim.FieldLastErrorCode:
+		return m.LastErrorCode()
+	case attributionrequestclaim.FieldRequestedModel:
+		return m.RequestedModel()
+	case attributionrequestclaim.FieldUsageAt:
+		return m.UsageAt()
+	case attributionrequestclaim.FieldInputTokens:
+		return m.InputTokens()
+	case attributionrequestclaim.FieldOutputTokens:
+		return m.OutputTokens()
+	case attributionrequestclaim.FieldCacheCreationTokens:
+		return m.CacheCreationTokens()
+	case attributionrequestclaim.FieldCacheReadTokens:
+		return m.CacheReadTokens()
+	case attributionrequestclaim.FieldTotalTokens:
+		return m.TotalTokens()
+	case attributionrequestclaim.FieldReconciledAt:
+		return m.ReconciledAt()
 	case attributionrequestclaim.FieldExpiresAt:
 		return m.ExpiresAt()
 	case attributionrequestclaim.FieldCreatedAt:
@@ -5214,6 +5964,32 @@ func (m *AttributionRequestClaimMutation) OldField(ctx context.Context, name str
 		return m.OldCanonicalDigest(ctx)
 	case attributionrequestclaim.FieldStatus:
 		return m.OldStatus(ctx)
+	case attributionrequestclaim.FieldAttemptCount:
+		return m.OldAttemptCount(ctx)
+	case attributionrequestclaim.FieldNextAttemptAt:
+		return m.OldNextAttemptAt(ctx)
+	case attributionrequestclaim.FieldLeaseToken:
+		return m.OldLeaseToken(ctx)
+	case attributionrequestclaim.FieldLeaseExpiresAt:
+		return m.OldLeaseExpiresAt(ctx)
+	case attributionrequestclaim.FieldLastErrorCode:
+		return m.OldLastErrorCode(ctx)
+	case attributionrequestclaim.FieldRequestedModel:
+		return m.OldRequestedModel(ctx)
+	case attributionrequestclaim.FieldUsageAt:
+		return m.OldUsageAt(ctx)
+	case attributionrequestclaim.FieldInputTokens:
+		return m.OldInputTokens(ctx)
+	case attributionrequestclaim.FieldOutputTokens:
+		return m.OldOutputTokens(ctx)
+	case attributionrequestclaim.FieldCacheCreationTokens:
+		return m.OldCacheCreationTokens(ctx)
+	case attributionrequestclaim.FieldCacheReadTokens:
+		return m.OldCacheReadTokens(ctx)
+	case attributionrequestclaim.FieldTotalTokens:
+		return m.OldTotalTokens(ctx)
+	case attributionrequestclaim.FieldReconciledAt:
+		return m.OldReconciledAt(ctx)
 	case attributionrequestclaim.FieldExpiresAt:
 		return m.OldExpiresAt(ctx)
 	case attributionrequestclaim.FieldCreatedAt:
@@ -5264,6 +6040,97 @@ func (m *AttributionRequestClaimMutation) SetField(name string, value ent.Value)
 		}
 		m.SetStatus(v)
 		return nil
+	case attributionrequestclaim.FieldAttemptCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAttemptCount(v)
+		return nil
+	case attributionrequestclaim.FieldNextAttemptAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNextAttemptAt(v)
+		return nil
+	case attributionrequestclaim.FieldLeaseToken:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLeaseToken(v)
+		return nil
+	case attributionrequestclaim.FieldLeaseExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLeaseExpiresAt(v)
+		return nil
+	case attributionrequestclaim.FieldLastErrorCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastErrorCode(v)
+		return nil
+	case attributionrequestclaim.FieldRequestedModel:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestedModel(v)
+		return nil
+	case attributionrequestclaim.FieldUsageAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageAt(v)
+		return nil
+	case attributionrequestclaim.FieldInputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInputTokens(v)
+		return nil
+	case attributionrequestclaim.FieldOutputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOutputTokens(v)
+		return nil
+	case attributionrequestclaim.FieldCacheCreationTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCacheCreationTokens(v)
+		return nil
+	case attributionrequestclaim.FieldCacheReadTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCacheReadTokens(v)
+		return nil
+	case attributionrequestclaim.FieldTotalTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTotalTokens(v)
+		return nil
+	case attributionrequestclaim.FieldReconciledAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReconciledAt(v)
+		return nil
 	case attributionrequestclaim.FieldExpiresAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -5299,6 +6166,24 @@ func (m *AttributionRequestClaimMutation) AddedFields() []string {
 	if m.addrelay_provider_id != nil {
 		fields = append(fields, attributionrequestclaim.FieldRelayProviderID)
 	}
+	if m.addattempt_count != nil {
+		fields = append(fields, attributionrequestclaim.FieldAttemptCount)
+	}
+	if m.addinput_tokens != nil {
+		fields = append(fields, attributionrequestclaim.FieldInputTokens)
+	}
+	if m.addoutput_tokens != nil {
+		fields = append(fields, attributionrequestclaim.FieldOutputTokens)
+	}
+	if m.addcache_creation_tokens != nil {
+		fields = append(fields, attributionrequestclaim.FieldCacheCreationTokens)
+	}
+	if m.addcache_read_tokens != nil {
+		fields = append(fields, attributionrequestclaim.FieldCacheReadTokens)
+	}
+	if m.addtotal_tokens != nil {
+		fields = append(fields, attributionrequestclaim.FieldTotalTokens)
+	}
 	return fields
 }
 
@@ -5311,6 +6196,18 @@ func (m *AttributionRequestClaimMutation) AddedField(name string) (ent.Value, bo
 		return m.AddedClaimGroupID()
 	case attributionrequestclaim.FieldRelayProviderID:
 		return m.AddedRelayProviderID()
+	case attributionrequestclaim.FieldAttemptCount:
+		return m.AddedAttemptCount()
+	case attributionrequestclaim.FieldInputTokens:
+		return m.AddedInputTokens()
+	case attributionrequestclaim.FieldOutputTokens:
+		return m.AddedOutputTokens()
+	case attributionrequestclaim.FieldCacheCreationTokens:
+		return m.AddedCacheCreationTokens()
+	case attributionrequestclaim.FieldCacheReadTokens:
+		return m.AddedCacheReadTokens()
+	case attributionrequestclaim.FieldTotalTokens:
+		return m.AddedTotalTokens()
 	}
 	return nil, false
 }
@@ -5334,6 +6231,48 @@ func (m *AttributionRequestClaimMutation) AddField(name string, value ent.Value)
 		}
 		m.AddRelayProviderID(v)
 		return nil
+	case attributionrequestclaim.FieldAttemptCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAttemptCount(v)
+		return nil
+	case attributionrequestclaim.FieldInputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddInputTokens(v)
+		return nil
+	case attributionrequestclaim.FieldOutputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddOutputTokens(v)
+		return nil
+	case attributionrequestclaim.FieldCacheCreationTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCacheCreationTokens(v)
+		return nil
+	case attributionrequestclaim.FieldCacheReadTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCacheReadTokens(v)
+		return nil
+	case attributionrequestclaim.FieldTotalTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTotalTokens(v)
+		return nil
 	}
 	return fmt.Errorf("unknown AttributionRequestClaim numeric field %s", name)
 }
@@ -5341,7 +6280,26 @@ func (m *AttributionRequestClaimMutation) AddField(name string, value ent.Value)
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
 func (m *AttributionRequestClaimMutation) ClearedFields() []string {
-	return nil
+	var fields []string
+	if m.FieldCleared(attributionrequestclaim.FieldLeaseToken) {
+		fields = append(fields, attributionrequestclaim.FieldLeaseToken)
+	}
+	if m.FieldCleared(attributionrequestclaim.FieldLeaseExpiresAt) {
+		fields = append(fields, attributionrequestclaim.FieldLeaseExpiresAt)
+	}
+	if m.FieldCleared(attributionrequestclaim.FieldLastErrorCode) {
+		fields = append(fields, attributionrequestclaim.FieldLastErrorCode)
+	}
+	if m.FieldCleared(attributionrequestclaim.FieldRequestedModel) {
+		fields = append(fields, attributionrequestclaim.FieldRequestedModel)
+	}
+	if m.FieldCleared(attributionrequestclaim.FieldUsageAt) {
+		fields = append(fields, attributionrequestclaim.FieldUsageAt)
+	}
+	if m.FieldCleared(attributionrequestclaim.FieldReconciledAt) {
+		fields = append(fields, attributionrequestclaim.FieldReconciledAt)
+	}
+	return fields
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
@@ -5354,6 +6312,26 @@ func (m *AttributionRequestClaimMutation) FieldCleared(name string) bool {
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
 func (m *AttributionRequestClaimMutation) ClearField(name string) error {
+	switch name {
+	case attributionrequestclaim.FieldLeaseToken:
+		m.ClearLeaseToken()
+		return nil
+	case attributionrequestclaim.FieldLeaseExpiresAt:
+		m.ClearLeaseExpiresAt()
+		return nil
+	case attributionrequestclaim.FieldLastErrorCode:
+		m.ClearLastErrorCode()
+		return nil
+	case attributionrequestclaim.FieldRequestedModel:
+		m.ClearRequestedModel()
+		return nil
+	case attributionrequestclaim.FieldUsageAt:
+		m.ClearUsageAt()
+		return nil
+	case attributionrequestclaim.FieldReconciledAt:
+		m.ClearReconciledAt()
+		return nil
+	}
 	return fmt.Errorf("unknown AttributionRequestClaim nullable field %s", name)
 }
 
@@ -5375,6 +6353,45 @@ func (m *AttributionRequestClaimMutation) ResetField(name string) error {
 		return nil
 	case attributionrequestclaim.FieldStatus:
 		m.ResetStatus()
+		return nil
+	case attributionrequestclaim.FieldAttemptCount:
+		m.ResetAttemptCount()
+		return nil
+	case attributionrequestclaim.FieldNextAttemptAt:
+		m.ResetNextAttemptAt()
+		return nil
+	case attributionrequestclaim.FieldLeaseToken:
+		m.ResetLeaseToken()
+		return nil
+	case attributionrequestclaim.FieldLeaseExpiresAt:
+		m.ResetLeaseExpiresAt()
+		return nil
+	case attributionrequestclaim.FieldLastErrorCode:
+		m.ResetLastErrorCode()
+		return nil
+	case attributionrequestclaim.FieldRequestedModel:
+		m.ResetRequestedModel()
+		return nil
+	case attributionrequestclaim.FieldUsageAt:
+		m.ResetUsageAt()
+		return nil
+	case attributionrequestclaim.FieldInputTokens:
+		m.ResetInputTokens()
+		return nil
+	case attributionrequestclaim.FieldOutputTokens:
+		m.ResetOutputTokens()
+		return nil
+	case attributionrequestclaim.FieldCacheCreationTokens:
+		m.ResetCacheCreationTokens()
+		return nil
+	case attributionrequestclaim.FieldCacheReadTokens:
+		m.ResetCacheReadTokens()
+		return nil
+	case attributionrequestclaim.FieldTotalTokens:
+		m.ResetTotalTokens()
+		return nil
+	case attributionrequestclaim.FieldReconciledAt:
+		m.ResetReconciledAt()
 		return nil
 	case attributionrequestclaim.FieldExpiresAt:
 		m.ResetExpiresAt()

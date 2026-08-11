@@ -2883,6 +2883,49 @@ func (s *sub2apiRelay) getAdminUsageStatsForUser(ctx context.Context, relayUserI
 	return &stats, nil
 }
 
+func (s *sub2apiRelay) ReadRequestUsage(ctx context.Context, requestID string, limit int) ([]RequestUsage, error) {
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
+		return nil, fmt.Errorf("relay: request usage: request ID is required")
+	}
+	if limit != 2 {
+		return nil, fmt.Errorf("relay: request usage: limit must be 2")
+	}
+	query := url.Values{}
+	query.Set("request_id", requestID)
+	query.Set("page", "1")
+	query.Set("page_size", strconv.Itoa(limit))
+	query.Set("exact_total", "true")
+	var page struct {
+		Items []struct {
+			RequestID           string    `json:"request_id"`
+			UserID              int64     `json:"user_id"`
+			Model               string    `json:"model"`
+			InputTokens         int64     `json:"input_tokens"`
+			OutputTokens        int64     `json:"output_tokens"`
+			CacheCreationTokens int64     `json:"cache_creation_tokens"`
+			CacheReadTokens     int64     `json:"cache_read_tokens"`
+			CreatedAt           time.Time `json:"created_at"`
+		} `json:"items"`
+		Total int64 `json:"total"`
+	}
+	if err := s.getAdminEnvelopeJSON(ctx, "/api/v1/admin/usage", query, &page); err != nil {
+		return nil, fmt.Errorf("relay: request usage: %w", err)
+	}
+	if page.Total < 0 || page.Total > int64(limit) || int64(len(page.Items)) != page.Total {
+		return nil, fmt.Errorf("relay: request usage: inconsistent exact pagination")
+	}
+	result := make([]RequestUsage, 0, len(page.Items))
+	for _, item := range page.Items {
+		result = append(result, RequestUsage{
+			RequestID: strings.TrimSpace(item.RequestID), UserID: item.UserID, RequestedModel: strings.TrimSpace(item.Model), UsageAt: item.CreatedAt,
+			InputTokens: item.InputTokens, OutputTokens: item.OutputTokens,
+			CacheCreationTokens: item.CacheCreationTokens, CacheReadTokens: item.CacheReadTokens,
+		})
+	}
+	return result, nil
+}
+
 func (s *sub2apiRelay) getAdminUsageTrendForUser(ctx context.Context, relayUserID int64, params UserUsageDashboardParams) (*userUsageTrendEnvelope, error) {
 	query := url.Values{}
 	addUserUsageDashboardQuery(query, params, true)
