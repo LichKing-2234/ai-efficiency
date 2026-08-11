@@ -42,7 +42,7 @@ func ensureReportingEnrollment(ctx context.Context, userClient *client.Client, s
 	if credentials.OTLPToken != "" {
 		config.OTLPToken = credentials.OTLPToken
 	}
-	if config.ReporterToken == "" || config.OTLPToken == "" {
+	if config.ReporterToken == "" {
 		credentials, err = userClient.RotateAttributionInstallationCredentials(ctx, config.InstallationID)
 		if err != nil {
 			return nil, fmt.Errorf("recover unavailable installation credentials: %w", err)
@@ -51,7 +51,7 @@ func ensureReportingEnrollment(ctx context.Context, userClient *client.Client, s
 		config.OTLPToken = credentials.OTLPToken
 		config.ReportingEnabled = credentials.ReportingEnabled
 		config.OTelEnabled = credentials.OTelEnabled
-		if config.ReporterToken == "" || config.OTLPToken == "" {
+		if config.ReporterToken == "" {
 			return nil, fmt.Errorf("rotated installation credentials are unavailable")
 		}
 	}

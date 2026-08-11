@@ -3,6 +3,7 @@ package hooks
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -108,8 +109,15 @@ func TestRenderPostRewriteManagedScriptPreservesStdin(t *testing.T) {
 	}
 }
 
+func TestRenderPrePushManagedScriptIsFailOpen(t *testing.T) {
+	script := RenderManagedHookScript("pre-push", "0.1.0")
+	if !strings.Contains(script, "hook pre-push") || !strings.Contains(script, "|| true") {
+		t.Fatalf("pre-push script is not fail-open:\n%s", script)
+	}
+}
+
 func TestParseTemplateVersion(t *testing.T) {
-	data := []byte("#!/bin/sh\n# ae-cli-managed-hook: template_version=2 generator_version=test\n")
+	data := []byte(fmt.Sprintf("#!/bin/sh\n# ae-cli-managed-hook: template_version=%d generator_version=test\n", hookstate.CurrentHookTemplateVersion))
 	version, ok := ParseTemplateVersion(data)
 	if !ok || version != hookstate.CurrentHookTemplateVersion {
 		t.Fatalf("ParseTemplateVersion = %d, %v", version, ok)
@@ -376,7 +384,7 @@ func TestRefreshManagedInstallationsRewritesActiveGlobalFromGitConfig(t *testing
 	if err != nil {
 		t.Fatalf("read hook: %v", err)
 	}
-	if !strings.Contains(string(data), "template_version=2") {
+	if !strings.Contains(string(data), fmt.Sprintf("template_version=%d", hookstate.CurrentHookTemplateVersion)) {
 		t.Fatalf("stale script: %s", data)
 	}
 }

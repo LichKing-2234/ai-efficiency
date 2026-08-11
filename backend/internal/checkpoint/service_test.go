@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -84,6 +85,34 @@ func TestRecordCheckpointDedupesByEventIDAndStoresUserID(t *testing.T) {
 	}
 }
 
+func TestRecordCheckpointRejectsSameEventIDDifferentCanonicalPayload(t *testing.T) {
+	client, ctx, userID, fullName, _ := createCheckpointTestRepo(t)
+	defer client.Close()
+	svc := NewService(client)
+	req := CommitCheckpointRequest{EventID: "evt-conflict", RepoFullName: fullName, WorkspaceID: "ws-1", CommitSHA: "abc123", ParentSHAs: []string{"p1"}, BindingSource: "unbound"}
+	if err := svc.RecordCheckpointForUser(ctx, userID, req); err != nil {
+		t.Fatal(err)
+	}
+	changed := req
+	changed.CommitSHA = "different"
+	if err := svc.RecordCheckpointForUser(ctx, userID, changed); err == nil || !strings.Contains(err.Error(), "event_id conflict") {
+		t.Fatalf("canonical conflict error = %v", err)
+	}
+	other := client.User.Create().SetUsername("bob").SetEmail("bob@example.org").SetAuthSource("ldap").SaveX(ctx)
+	if err := svc.RecordCheckpointForUser(ctx, other.ID, req); err == nil || !strings.Contains(err.Error(), "event_id conflict") {
+		t.Fatalf("owner conflict error = %v", err)
+	}
+	if err := svc.RecordCheckpoint(ctx, req); err == nil || !strings.Contains(err.Error(), "event_id conflict") {
+		t.Fatalf("ownerless replay conflict error = %v", err)
+	}
+	otherRepo := client.RepoConfig.Create().SetName("other").SetFullName("acme/other").SetCloneURL("https://github.com/acme/other.git").SaveX(ctx)
+	changedRepo := req
+	changedRepo.RepoConfigID = otherRepo.ID
+	if err := svc.RecordCheckpointForUser(ctx, userID, changedRepo); err == nil || !strings.Contains(err.Error(), "event_id conflict") {
+		t.Fatalf("repository conflict error = %v", err)
+	}
+}
+
 func TestRecordRewriteAcceptsUnboundEventsAndStoresUserID(t *testing.T) {
 	t.Parallel()
 
@@ -111,6 +140,30 @@ func TestRecordRewriteAcceptsUnboundEventsAndStoresUserID(t *testing.T) {
 	row := client.CommitRewrite.Query().Where(commitrewrite.EventIDEQ(req.EventID)).OnlyX(ctx)
 	if row.UserID == nil || *row.UserID != userID {
 		t.Fatalf("user_id = %v, want %d", row.UserID, userID)
+	}
+}
+
+func TestRecordRewriteRejectsSameEventIDDifferentCanonicalPayload(t *testing.T) {
+	client, ctx, userID, _, cloneURL := createCheckpointTestRepo(t)
+	defer client.Close()
+	svc := NewService(client)
+	req := CommitRewriteRequest{EventID: "rewrite-conflict", CloneURL: cloneURL, WorkspaceID: "ws-1", RewriteType: "amend", OldCommitSHA: "old", NewCommitSHA: "new", BindingSource: "unbound"}
+	if err := svc.RecordRewriteForUser(ctx, userID, req); err != nil {
+		t.Fatal(err)
+	}
+	changed := req
+	changed.NewCommitSHA = "different"
+	if err := svc.RecordRewriteForUser(ctx, userID, changed); err == nil || !strings.Contains(err.Error(), "event_id conflict") {
+		t.Fatalf("canonical conflict error = %v", err)
+	}
+	if err := svc.RecordRewrite(ctx, req); err == nil || !strings.Contains(err.Error(), "event_id conflict") {
+		t.Fatalf("ownerless replay conflict error = %v", err)
+	}
+	otherRepo := client.RepoConfig.Create().SetName("other").SetFullName("acme/other").SetCloneURL("https://github.com/acme/other.git").SaveX(ctx)
+	changedRepo := req
+	changedRepo.RepoConfigID = otherRepo.ID
+	if err := svc.RecordRewriteForUser(ctx, userID, changedRepo); err == nil || !strings.Contains(err.Error(), "event_id conflict") {
+		t.Fatalf("repository conflict error = %v", err)
 	}
 }
 

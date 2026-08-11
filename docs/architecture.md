@@ -650,14 +650,13 @@ sequenceDiagram
     CLI->>Tool: configure Codex / Claude / Gemini locally
     Dev->>CLI: ae-cli attribution enable
     CLI->>WS: baseline existing Codex atoms + install global hooks
-    CLI->>Tool: optionally configure trace-safe Codex OTLP
+    CLI->>Tool: remove only a matching legacy AE-managed OTLP exporter
     Dev->>Tool: run Codex
     Tool->>WS: write local Codex JSONL
     WS->>BE: resolve reporting-enabled repo by local git remote
     WS->>BE: minimized checkpoint/rewrite evidence
     WS->>WS: detached runner compacts Token atoms
     WS->>BE: immutable usage buckets + allocation revisions
-    Tool->>BE: optional OTLP Request ID correlation only
     BE->>BE: project current allocation to repo -> commit -> PR
 ```
 
@@ -706,12 +705,12 @@ flowchart LR
     end
 
     subgraph Backend["ai-efficiency backend"]
-        Install["reporting_installations<br/>reporter + OTLP token hashes"]
+        Install["reporting_installations<br/>reporter + legacy OTLP token hashes"]
         Resolve["read-only repo resolve"]
         Checkpoint["minimized commit checkpoints / rewrites"]
         Buckets["immutable attribution_usage_buckets"]
         Revisions["append-only allocation revisions"]
-        Correlation["bounded Request ID evidence<br/>shared read-cache only"]
+        Correlation["legacy bounded Request ID evidence<br/>shared read-cache only"]
         Activity["scoped Activity read models<br/>member / team / repo / Bucket"]
     end
 
@@ -721,7 +720,6 @@ flowchart LR
     CLI --> Hooks
     CLI --> State
     Codex --> JSONL
-    Codex -->|"optional trace-safe OTLP JSON"| Correlation
     Hooks --> Resolve
     Hooks --> Checkpoint
     Hooks -->|"durable trigger + detached task"| State
@@ -740,7 +738,7 @@ flowchart LR
 ### Status
 
 - Current compact Codex path:
-  `ae-cli login` best-effort enrolls a stable machine installation without rolling back a successful login when enrollment is temporarily unavailable. `ae-cli attribution enable` records the no-backfill Codex baseline, enables reporter/OTLP flags, configures optional trace-safe Codex OTLP, and installs the existing machine-level managed hooks. Backend-known reporting-enabled repositories do not need a separate `ae-cli init`; global hooks use read-only `resolve-remote` and never create repositories. `ae-cli init` remains the explicit registration/cache bootstrap and repo-hook fallback. Codex JSONL `token_count` is the primary Token source and `logs_2.sqlite` is selected only when the same conversation has no measured JSONL facts. The normalized primary metric is `fresh_input + cache_read + cache_write + output`; reasoning remains an output subset. Tool metadata is reduced locally to repo/worktree evidence, and only compact buckets plus allocation revisions are uploaded. Claude/Kiro and older CLIs retain the existing `tool_usage_events` compatibility path.
+  `ae-cli login` best-effort enrolls a stable machine installation without rolling back a successful login when enrollment is temporarily unavailable. `ae-cli attribution enable` records the no-backfill Codex baseline, enables reporting while disabling the legacy AE OTel flag, removes only an exporter whose endpoint and credential still exactly match this installation, and installs the machine-level managed hooks. User-managed OTel is preserved. Backend-known reporting-enabled repositories do not need a separate `ae-cli init`; global hooks use read-only `resolve-remote` and never create repositories. `ae-cli init` remains the explicit registration/cache bootstrap and repo-hook fallback. Codex JSONL `token_count` is the primary Token source and `logs_2.sqlite` is selected only when the same conversation has no measured JSONL facts. The normalized primary metric is `fresh_input + cache_read + cache_write + output`; reasoning remains an output subset. Tool metadata is reduced locally to repo/worktree evidence, and only compact buckets plus allocation revisions are uploaded. Claude/Kiro and older CLIs retain the existing `tool_usage_events` compatibility path.
 - Compact trigger boundary:
   In compact mode, hook-time snapshot collection is skipped and the reporter checkpoint API accepts a strict minimized DTO that excludes `agent_snapshot`, `session_id`, and raw payload fields. `post-commit` and `post-rewrite` first persist small Git triggers, then coalesce a workspace task and opportunistically start the detached runner. Retained triggers prevent late Codex JSONL writes from missing their first qualifying commit and allow amend/rebase/squash rewrites to restate the current allocation. Explicit cherry-pick reflog evidence plus stable patch ID creates a non-counting inherited commit reference. The runner scans/compacts outside the hook timeout, retries immutable buckets idempotently, and sends append-only complete allocation revisions. Legacy mode keeps the existing collector, spool, and `tool_usage_events` behavior.
 - Reporting durability:
@@ -748,7 +746,7 @@ flowchart LR
 - Local state and hook ownership:
   Active user-level CLI state lives under `~/.ae-cli/`: OAuth auth in `token.json`, the installation ID and scoped reporter/OTLP credentials in mode-`0600` `reporting.json`, global managed hooks in `git-hooks`, hook eligibility under `state/hooks`, compact state in `state/attribution/compact/state.json`, and compatibility state under the existing attribution workspace directories. Compact state stores atom digests, pending/closed buckets, and minimized Git triggers; it does not cache raw JSONL, paths, prompts, tool output, or spans. Repo-local managed hooks live under the canonical Git common directory at `<git common dir>/ae-hooks`. Git exposes one effective `core.hooksPath` per resolution scope; AE-managed installation owns the layer it writes and does not chain an unrelated previous path unless that behavior is added explicitly. `--force` authorizes overwriting the relevant managed path.
 - Installation and correlation boundary:
-  `reporting_installations` stores owner/status/enable flags and only hashes of the independently scoped `aer_*` reporter and `aeo_*` OTLP credentials. Authenticated rotation replaces both credentials and invalidates their prior values. The only Codex OTLP route is `/api/v1/attribution/otel/v1/traces`; prompt logging is disabled and no logs ingest route exists. The bounded JSON payload is reduced in memory to conversation/Request ID/time/status/error evidence. Raw spans are discarded. Success evidence has a per-item 24-hour shared-cache retention, failure evidence has a separate per-item 30-day retention, later writes do not extend older evidence, and durable buckets retain only correlation quality, count, and digest.
+  `reporting_installations` still stores owner/status/enable flags and hashes of independently scoped `aer_*` reporter and legacy `aeo_*` OTLP credentials for staged compatibility. Normal activation and credential recovery require only the reporter credential and do not configure Codex OTel. The legacy `/api/v1/attribution/otel/v1/traces` route remains until the explicit cleanup ticket; prompt logging is disabled and no logs ingest route exists. Raw spans are discarded.
 - Current Activity surface:
   `/activity` is the canonical personal AI Coding Activity surface, with authorized member drill-down at `/activity/members/:user_id` and representative/Admin organization views at `/activity/teams` and `/activity/teams/:team_id`. It defaults to 30 days, presents PRs before commits, renders incomplete PR-sync totals as lower bounds, keeps Token out of headline/team metrics, and loads restricted Bucket/Request ID evidence only for the owner or Admin. `/events` and `/attribution` redirect to `/activity` while preserving safe range query state.
 - Repository surface:
@@ -761,6 +759,8 @@ flowchart LR
   `ae-cli discover` now preserves the selected Relay provider ID, and the compact runner can freeze provider-aware Codex Request/turn claim groups in a 90-day local state only after structured Add/Update/Delete patch evidence reproduces the committed Git tree exactly. The reporter-only `/api/v1/attribution/v2/claim-groups/batch` route persists digest-only hot groups and provider-scoped Request claims in the isolated `shadow_v2` epoch with per-group transactions and item-level replay/conflict ACKs. These rows do not feed current Activity, readiness, or v1 bucket totals.
 - Implemented v2 shadow reconciliation:
   A backend worker leases pending provider-scoped Request claims and reads the exact current `sub2api` admin usage HTTP contract through `relay.RequestUsageReader`. It bounds each lookup to two rows, rejects ambiguity and owner/usage inconsistencies, persists only normalized requested-model/time/Token components in the 90-day hot claim, retries unavailable providers with capped jittered backoff, and allows expired leases to be recovered across replicas. The worker is cancelled during server shutdown and remains isolated from formal Activity, readiness, and v1 totals.
+- Implemented v2 shadow delivery:
+  Managed `post-commit`, `post-rewrite`, and fail-open `pre-push` hooks persist or wake one durable per-workspace task without a daemon or periodic synchronizer. The detached runner drains every coalesced commit trigger, consumes work that arrives during a pass, and requeues resolved offline checkpoints. Claim delivery deletes only independently ACKed Request/calibration values, retains digest-only replay protection and recovery states, and leaves response loss, conflicts, and unknown ACKs durable. Event identity is scoped by reporting owner and worktree, while same-ID canonical payload conflicts fail closed.
 
 ## Module Responsibilities
 

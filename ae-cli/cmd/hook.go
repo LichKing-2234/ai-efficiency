@@ -85,6 +85,26 @@ var hookPostRewriteCmd = &cobra.Command{
 	},
 }
 
+var hookPrePushCmd = &cobra.Command{
+	Use:    "pre-push",
+	Short:  "Wake pending attribution delivery before push (hidden)",
+	Hidden: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cwd, _ := os.Getwd()
+		ctx, cancel := newHookCommandContext()
+		defer cancel()
+		gitCtx, err := hooks.DetectGitContext(cwd)
+		if err != nil {
+			return nil
+		}
+		execCtx, ok := resolveHookExecutionContext(ctx, gitCtx)
+		if !ok {
+			return nil
+		}
+		return hooks.NewHandler(newHookUploader()).PrePushResolved(execCtx)
+	},
+}
+
 var hookAttributionSyncCmd = &cobra.Command{
 	Use:    "attribution-sync",
 	Short:  "Run local attribution sync (hidden)",
@@ -392,6 +412,7 @@ func observeHookRepo(gitCtx *hooks.GitContext, binding hookstate.Context) {
 func init() {
 	hookCmd.AddCommand(hookPostCommitCmd)
 	hookCmd.AddCommand(hookPostRewriteCmd)
+	hookCmd.AddCommand(hookPrePushCmd)
 	hookCmd.AddCommand(hookAttributionSyncCmd)
 	hookCmd.AddCommand(hookBackgroundSyncCmd)
 	rootCmd.AddCommand(hookCmd)

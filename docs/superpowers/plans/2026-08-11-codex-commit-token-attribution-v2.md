@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** Implementation in progress; T02 and T03 are merged, and T04 passes full backend tests plus clean Standards/Spec review; its real read-only canary still requires separate authorization
+**Status:** Implementation in progress; T02-T04 are merged, T05 passes full CLI/backend, race, repeated tests, and clean Standards/Spec review and is awaiting PR/hosted CI, and the T04 real read-only canary still requires separate authorization
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -69,11 +69,11 @@ T01 contract publication (#253)
 
 ### T05 — Git hooks, outbox, runner, and OTel exit ([#244](https://github.com/LichKing-2234/ai-efficiency/issues/244))
 
-- [ ] Make post-commit/post-rewrite/fail-open pre-push persist and wake v2 work.
-- [ ] Drain work arriving during a runner and recover offline unresolved
+- [x] Make post-commit/post-rewrite/fail-open pre-push persist and wake v2 work.
+- [x] Drain work arriving during a runner and recover offline unresolved
   checkpoints without another Git event.
-- [ ] Consume item-level ACKs without deleting unknown/conflicting data.
-- [ ] Stop configuring AE Codex OTel and preserve user-managed OTel.
+- [x] Consume item-level ACKs without deleting unknown/conflicting data.
+- [x] Stop configuring AE Codex OTel and preserve user-managed OTel.
 
 ### T06 — Claim lifecycle, finalization, and health ([#246](https://github.com/LichKing-2234/ai-efficiency/issues/246))
 

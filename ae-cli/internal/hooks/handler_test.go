@@ -174,6 +174,23 @@ func resolvedContextForRepo(t *testing.T, repo string) ExecutionContext {
 	}
 }
 
+func TestCheckpointEventIDScopeSeparatesAccountsAndWorktrees(t *testing.T) {
+	base := ExecutionContext{RepoConfigID: 7, AuthSubject: "user:alice", WorkspaceID: "workspace-a"}
+	first, err := CheckpointEventID(eventIDRepoHint(base), "commit-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherAccount := base
+	otherAccount.AuthSubject = "user:bob"
+	second, _ := CheckpointEventID(eventIDRepoHint(otherAccount), "commit-1")
+	otherWorktree := base
+	otherWorktree.WorkspaceID = "workspace-b"
+	third, _ := CheckpointEventID(eventIDRepoHint(otherWorktree), "commit-1")
+	if first == second || first == third || second == third {
+		t.Fatalf("event IDs collided across observers: %q %q %q", first, second, third)
+	}
+}
+
 func TestPostCommitWrapperUsesGitContextAndDoesNotCreateMarker(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()
@@ -486,6 +503,26 @@ func TestPostCommitResolvedReportsQueueFailure(t *testing.T) {
 	}
 }
 
+func TestPrePushResolvedOnlyPersistsWakeRequest(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	t.Setenv("HOME", t.TempDir())
+	execCtx := resolvedContextForRepo(t, repo)
+	uploader := &fakeUploader{}
+	if err := NewHandler(uploader).PrePushResolved(execCtx); err != nil {
+		t.Fatal(err)
+	}
+	if len(uploader.events) != 0 {
+		t.Fatalf("pre-push uploaded hook events: %+v", uploader.events)
+	}
+	task, err := LoadSyncTask(execCtx.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task == nil || task.TriggerKind != "" || len(task.V2Triggers) != 0 {
+		t.Fatalf("pre-push wake task = %+v", task)
+	}
+}
+
 func TestFlushUnresolvedResolvedUploadsMatchingEventAndRemovesIt(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()
@@ -520,6 +557,40 @@ func TestFlushUnresolvedResolvedUploadsMatchingEventAndRemovesIt(t *testing.T) {
 	}
 	if len(items) != 0 {
 		t.Fatalf("remaining unresolved items = %+v, want none", items)
+	}
+}
+
+func TestFlushUnresolvedResolvedQueuesEveryIntermediateV2Commit(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	t.Setenv("HOME", t.TempDir())
+	execCtx := resolvedContextForRepo(t, repo)
+	if err := UpsertPendingSyncTask(SyncTask{WorkspaceID: execCtx.WorkspaceID, RepoRoot: repo, ServerURL: execCtx.ServerURL, AuthSubject: execCtx.AuthSubject, RepoConfigID: execCtx.RepoConfigID, RepoKey: execCtx.RepoKey, Status: SyncTaskStatusPending, LastRequestedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	for index, commit := range []string{"offline-commit-1", "offline-commit-2"} {
+		if err := EnqueueUnresolvedHookEvent(UnresolvedHookEvent{
+			Kind: "post-commit", RemoteURL: "https://github.com/acme/repo.git", RepoKey: execCtx.RepoKey,
+			WorkspaceID: execCtx.WorkspaceID, ServerURL: execCtx.ServerURL, AuthSubject: execCtx.AuthSubject,
+			CommitSHA: commit, BranchSnapshot: "main", HeadSnapshot: commit,
+			CapturedAt: time.Date(2026, 6, 2, 9, index, 0, 0, time.UTC).Format(time.RFC3339),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	uploader := compactSyncCapableFakeUploader{fakeUploader: &fakeUploader{}}
+	if err := NewHandler(uploader).FlushUnresolvedResolved(context.Background(), execCtx); err != nil {
+		t.Fatal(err)
+	}
+	task, err := LoadSyncTask(execCtx.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task == nil || len(task.V2Triggers) != 2 || task.V2Triggers[0].CommitSHA != "offline-commit-1" || task.V2Triggers[1].CommitSHA != "offline-commit-2" {
+		t.Fatalf("v2 triggers = %+v", task)
+	}
+	items, err := ListUnresolvedHookEvents()
+	if err != nil || len(items) != 0 {
+		t.Fatalf("unresolved items = %+v, %v", items, err)
 	}
 }
 
@@ -590,7 +661,7 @@ func TestFlushUnresolvedResolvedUploadsMatchingRewriteEventAndRemovesIt(t *testi
 	if ev.Kind != "post-rewrite" || ev.RewriteType != "amend" || ev.OldCommitSHA != "oldsha1" || ev.NewCommitSHA != "newsha1" || ev.RepoConfigID != execCtx.RepoConfigID {
 		t.Fatalf("uploaded rewrite event = %+v, want resolved rewrite context", ev)
 	}
-	wantID, err := RewriteEventID("repo_config_id:123", "oldsha1", "newsha1", "amend")
+	wantID, err := RewriteEventID(eventIDRepoHint(execCtx), "oldsha1", "newsha1", "amend")
 	if err != nil {
 		t.Fatalf("RewriteEventID: %v", err)
 	}
@@ -865,7 +936,7 @@ func TestPostRewriteResolvedQueuesEventsWhenUploadFails(t *testing.T) {
 		b, _ := json.Marshal(ev)
 		t.Fatalf("queued rewrite fields mismatch: %s", string(b))
 	}
-	wantID, err := RewriteEventID("repo_config_id:123", "oldsha1", "newsha1", "amend")
+	wantID, err := RewriteEventID(eventIDRepoHint(execCtx), "oldsha1", "newsha1", "amend")
 	if err != nil {
 		t.Fatalf("RewriteEventID: %v", err)
 	}
@@ -946,7 +1017,7 @@ func TestPostCommitSetsRepoConfigScopedEventID(t *testing.T) {
 		t.Fatalf("uploaded events = %d, want 1", len(u.events))
 	}
 	head := git2(t, repo, "rev-parse", "HEAD")
-	wantID, err := CheckpointEventID("repo_config_id:123", head)
+	wantID, err := CheckpointEventID(eventIDRepoHint(execCtx), head)
 	if err != nil {
 		t.Fatalf("CheckpointEventID: %v", err)
 	}
@@ -967,8 +1038,12 @@ func TestPostCommitWithBackendUploaderCreatesPendingTaskAfterCheckpointUpload(t 
 
 	clientStub := &recordingBackendHookClient{}
 	h := NewHandler(NewBackendUploader(clientStub))
+	started := time.Now()
 	if err := h.PostCommitResolved(context.Background(), execCtx); err != nil {
 		t.Fatalf("PostCommitResolved: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed >= 3*time.Second {
+		t.Fatalf("post-commit fast path elapsed = %s, want <3s", elapsed)
 	}
 
 	if len(clientStub.checkpoints) != 1 {

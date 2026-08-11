@@ -176,6 +176,7 @@ func (h *Handler) schedulePendingSync(execCtx ExecutionContext, trigger *HookEve
 		if capturedAt, err := time.Parse(time.RFC3339, trigger.CapturedAt); err == nil {
 			task.LastRequestedAt = capturedAt.UTC()
 		}
+		task.V2Triggers = []V2SyncTrigger{v2SyncTriggerFromHookEvent(*trigger)}
 	}
 	currentTask := &task
 	canRunSync := h.attributionSyncClient() != nil || h.compactAttributionSyncClient() != nil
@@ -258,6 +259,13 @@ func (h *Handler) PostRewriteResolved(ctx context.Context, execCtx ExecutionCont
 			queueForReplayOrWarn(execCtx, ev)
 		}
 	}
+	h.schedulePendingSync(execCtx, nil)
+	return nil
+}
+
+// PrePushResolved only wakes durable delivery and always leaves Git push
+// semantics to the caller's fail-open hook script.
+func (h *Handler) PrePushResolved(execCtx ExecutionContext) error {
 	h.schedulePendingSync(execCtx, nil)
 	return nil
 }
@@ -388,6 +396,13 @@ func (h *Handler) FlushUnresolvedResolved(ctx context.Context, execCtx Execution
 		if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
 			continue
 		}
+		compactTrigger := compactTriggerFromHookEvent(ev)
+		h.queueCompactTrigger(ctx, compactTrigger)
+		if h.compactAttributionSyncClient() != nil {
+			if err := AppendV2SyncTrigger(execCtx.WorkspaceID, v2SyncTriggerFromHookEvent(ev)); err != nil {
+				continue
+			}
+		}
 		uploaded[eventID] = true
 	}
 	if len(uploaded) == 0 {
@@ -406,6 +421,23 @@ func (h *Handler) FlushUnresolvedResolved(ctx context.Context, execCtx Execution
 		}
 		return saveUnresolvedHookEventsUnlocked(keep)
 	})
+}
+
+func v2SyncTriggerFromHookEvent(ev HookEvent) V2SyncTrigger {
+	return V2SyncTrigger{
+		Kind: strings.TrimSpace(ev.Kind), EventID: strings.TrimSpace(ev.EventID), CommitSHA: strings.TrimSpace(ev.CommitSHA),
+		Branch: strings.TrimSpace(ev.BranchSnapshot), RewriteType: strings.TrimSpace(ev.RewriteType),
+		OldCommitSHA: strings.TrimSpace(ev.OldCommitSHA), NewCommitSHA: strings.TrimSpace(ev.NewCommitSHA),
+		CapturedAt: parseCompactTriggerTime(ev.CapturedAt),
+	}
+}
+
+func compactTriggerFromHookEvent(ev HookEvent) attributionlocal.CompactTrigger {
+	return attributionlocal.CompactTrigger{
+		ID: ev.EventID, Kind: ev.Kind, RepoConfigID: ev.RepoConfigID, RepoKey: ev.RepoKey, WorkspaceID: ev.WorkspaceID,
+		CommitSHA: ev.CommitSHA, Branch: ev.BranchSnapshot, RewriteType: ev.RewriteType,
+		OldCommitSHA: ev.OldCommitSHA, NewCommitSHA: ev.NewCommitSHA, CapturedAt: parseCompactTriggerTime(ev.CapturedAt),
+	}
 }
 
 func unresolvedHookEventMatchesContext(item UnresolvedHookEvent, execCtx ExecutionContext) bool {
@@ -720,10 +752,11 @@ func normalizeHookServerURL(raw string) string {
 }
 
 func eventIDRepoHint(execCtx ExecutionContext) string {
+	scope := strings.TrimSpace(execCtx.AuthSubject) + "\x1f" + strings.TrimSpace(execCtx.WorkspaceID)
 	if execCtx.RepoConfigID > 0 {
-		return fmt.Sprintf("repo_config_id:%d", execCtx.RepoConfigID)
+		return fmt.Sprintf("repo_config_id:%d\x1f%s", execCtx.RepoConfigID, scope)
 	}
-	return firstNonEmptyValue(execCtx.RepoKey, execCtx.RepoFullName)
+	return firstNonEmptyValue(execCtx.RepoKey, execCtx.RepoFullName) + "\x1f" + scope
 }
 
 func executionContextFromGit(gitCtx *GitContext) ExecutionContext {

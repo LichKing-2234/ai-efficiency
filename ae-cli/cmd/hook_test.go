@@ -50,7 +50,7 @@ func (r *recordingHookUploader) UploadHookEvent(ctx context.Context, ev hooks.Ho
 	return nil
 }
 
-func TestHookPostCommitCommandUsesBoundedContext(t *testing.T) {
+func TestHookPostCommitCommandUsesBoundedContextAndPersistsV2Trigger(t *testing.T) {
 	repo := initRepoWithCommitForCmdTests(t)
 
 	home := t.TempDir()
@@ -82,6 +82,17 @@ func TestHookPostCommitCommandUsesBoundedContext(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {
 		t.Fatalf("hook post-commit elapsed = %s, want bounded return", elapsed)
+	}
+	gitCtx, err := hooks.DetectGitContext(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := hooks.LoadSyncTask(gitCtx.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task == nil || len(task.V2Triggers) != 1 || task.V2Triggers[0].Kind != "post-commit" {
+		t.Fatalf("bounded hook v2 task = %+v", task)
 	}
 }
 

@@ -116,9 +116,10 @@ func TestDoctorPrintsCompactReportingStatusWithoutCredentials(t *testing.T) {
 	var output bytes.Buffer
 	printCompactReportingStatus(&output)
 	for _, want := range []string{
-		"Compact reporting", "Installation: installation-test", "Reporter credential: available [ok]", "OTLP credential:     available [ok]",
-		"Buckets:      enabled [ok]", "Codex OTLP:   enabled [ok]", "Pending:      buckets=1 triggers=1",
-		"Codex OTLP config: healthy [ok]", "endpoint=match", "credential=match", "prompt_logging=disabled", "trace_only=true",
+		"Compact reporting", "Installation: installation-test", "Reporter credential: available [ok]", "Legacy OTLP credential: available [warn]",
+		"Buckets:      enabled [ok]", "Codex OTLP:   legacy enabled [warn]", "Pending:      buckets=1 triggers=1",
+		"Codex OTLP config: legacy AE-managed [warn]", "endpoint=match", "credential=match", "prompt_logging=disabled", "trace_only=true",
+		"run 'ae-cli attribution enable'",
 	} {
 		if !strings.Contains(output.String(), want) {
 			t.Fatalf("compact doctor output missing %q:\n%s", want, output.String())
@@ -126,6 +127,28 @@ func TestDoctorPrintsCompactReportingStatusWithoutCredentials(t *testing.T) {
 	}
 	if strings.Contains(output.String(), "reporter-secret") || strings.Contains(output.String(), "otlp-secret") {
 		t.Fatalf("compact doctor leaked credentials: %s", output.String())
+	}
+}
+
+func TestDoctorPreservesAndDoesNotWarnForUserManagedOTLP(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := reporting.Save("", &reporting.Config{
+		Version: 1, InstallationID: "installation-test", ServerURL: "https://ae.example.com",
+		ReporterToken: "reporter-secret", OTLPToken: "old-ae-token", ReportingEnabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := toolconfig.ConfigureCodexOTLP(home, "https://telemetry.example.org/v1/traces", "user-token"); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	printCompactReportingStatus(&output)
+	if !strings.Contains(output.String(), "Codex OTLP config: user-managed (preserved) [ok]") {
+		t.Fatalf("doctor did not recognize user-managed exporter:\n%s", output.String())
+	}
+	if strings.Contains(output.String(), "run 'ae-cli attribution enable'") {
+		t.Fatalf("doctor offered AE cleanup for user-managed exporter:\n%s", output.String())
 	}
 }
 
@@ -148,7 +171,7 @@ func TestDoctorShowsStableInstallationWhenCredentialConfigIsMissing(t *testing.T
 	printCompactReportingStatus(&output)
 	for _, want := range []string{
 		"Compact reporting", "Installation: " + config.InstallationID,
-		"Reporter credential: missing [failed]", "OTLP credential:     missing [failed]",
+		"Reporter credential: missing [failed]", "Legacy OTLP credential: unknown [warn]",
 		"login again to recover credentials for this installation",
 	} {
 		if !strings.Contains(output.String(), want) {
