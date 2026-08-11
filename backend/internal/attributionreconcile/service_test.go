@@ -10,6 +10,8 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/attributionrequestclaim"
+	"github.com/ai-efficiency/backend/ent/attributionusagepoolcommit"
+	"github.com/ai-efficiency/backend/internal/attributionpool"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"go.uber.org/zap"
@@ -82,6 +84,68 @@ func TestRunOnceReconcilesExactOwnedUsage(t *testing.T) {
 	claim := fixture.client.AttributionRequestClaim.GetX(context.Background(), fixture.claimID)
 	if claim.Status != attributionrequestclaim.StatusReconciled || claim.TotalTokens != 19 || claim.RequestedModel != "gpt-test" || claim.ReconciledAt == nil || claim.MaterializedPoolID == nil || claim.LeaseExpiresAt != nil || claim.LeaseToken != "" {
 		t.Fatalf("claim = %+v", claim)
+	}
+}
+
+func TestReconciliationSerializesWithAllocationRematerialization(t *testing.T) {
+	fixture := newReconcileFixture(t)
+	ctx := context.Background()
+	claim := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+	group := fixture.client.AttributionClaimGroup.GetX(ctx, claim.ClaimGroupID)
+	repo2 := fixture.client.RepoConfig.Create().SetName("repo-two").SetFullName("acme/repo-two").SetCloneURL("https://github.com/acme/repo-two.git").SaveX(ctx)
+	reconcileTx, err := fixture.client.Tx(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reconcileTx.Rollback() }()
+	if err := lockClaimGroup(ctx, reconcileTx.Client(), group.ID); err != nil {
+		t.Fatal(err)
+	}
+	usage := validUsage(fixture)
+	if err := reconcileTx.Client().AttributionRequestClaim.UpdateOneID(claim.ID).SetStatus(attributionrequestclaim.StatusReconciled).
+		SetRequestedModel(usage.RequestedModel).SetUsageAt(usage.UsageAt).SetInputTokens(usage.InputTokens).SetOutputTokens(usage.OutputTokens).
+		SetCacheCreationTokens(usage.CacheCreationTokens).SetCacheReadTokens(usage.CacheReadTokens).SetTotalTokens(12).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := attributionpool.MaterializeRequestClaim(ctx, reconcileTx.Client(), claim.ID, fixture.now); err != nil {
+		t.Fatal(err)
+	}
+	blockedCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	err = fixture.client.AttributionClaimGroup.UpdateOneID(group.ID).SetEvidenceDigest("must-block").Exec(blockedCtx)
+	blockedErr := blockedCtx.Err()
+	cancel()
+	if err == nil || !errors.Is(blockedErr, context.DeadlineExceeded) {
+		t.Fatalf("allocation update while reconciliation lock held = %v, context = %v", err, blockedErr)
+	}
+	if err := reconcileTx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	allocationTx, err := fixture.client.Tx(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = allocationTx.Rollback() }()
+	if err := allocationTx.Client().AttributionClaimGroup.UpdateOneID(group.ID).SetEvidenceDigest("evidence-shared").SetCommitAllocations([]map[string]any{
+		{"repo_config_id": group.CommitAllocations[0]["repo_config_id"], "commit_sha": "commit-1"},
+		{"repo_config_id": repo2.ID, "commit_sha": "commit-2"},
+	}).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := attributionpool.MaterializeGroup(ctx, allocationTx.Client(), group.ID, fixture.now); err != nil {
+		t.Fatal(err)
+	}
+	if err := allocationTx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	pools := fixture.client.AttributionUsagePool.Query().AllX(ctx)
+	if len(pools) != 1 || pools[0].RequestCount != 1 || pools[0].TotalTokens != 12 {
+		t.Fatalf("pool conservation after allocation race = %+v", pools)
+	}
+	relations := fixture.client.AttributionUsagePoolCommit.Query().AllX(ctx)
+	if len(relations) != 2 || relations[0].RelationKind != attributionusagepoolcommit.RelationKindShared || relations[1].RelationKind != attributionusagepoolcommit.RelationKindShared {
+		t.Fatalf("shared relations after allocation race = %+v", relations)
 	}
 }
 
