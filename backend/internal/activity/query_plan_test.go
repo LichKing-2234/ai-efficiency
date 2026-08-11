@@ -3,7 +3,6 @@ package activity
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -59,44 +58,17 @@ func (db *recordingV2DB) snapshot() []recordedV2Query {
 	return result
 }
 
-type v2ExplainNode struct {
-	NodeType            string          `json:"Node Type"`
-	ActualRows          float64         `json:"Actual Rows"`
-	ActualLoops         float64         `json:"Actual Loops"`
-	RowsRemovedByFilter float64         `json:"Rows Removed by Filter"`
-	Plans               []v2ExplainNode `json:"Plans"`
-}
-
-type v2ExplainDocument struct {
-	Plan v2ExplainNode `json:"Plan"`
-}
-
-func explainV2Query(t *testing.T, db *sql.DB, query recordedV2Query) v2ExplainNode {
+func explainV2Query(t *testing.T, db *sql.DB, query recordedV2Query) int64 {
 	t.Helper()
 	var raw []byte
 	if err := db.QueryRowContext(context.Background(), "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+query.SQL, query.Args...).Scan(&raw); err != nil {
 		t.Fatalf("explain v2 query: %v\nSQL: %s\nargs: %v", err, query.SQL, query.Args)
 	}
-	var documents []v2ExplainDocument
-	if err := json.Unmarshal(raw, &documents); err != nil || len(documents) != 1 {
-		t.Fatalf("decode v2 explain: %v documents=%d\n%s", err, len(documents), raw)
+	rows, err := testdb.ExplainScannedRows(raw)
+	if err != nil {
+		t.Fatalf("decode v2 explain: %v\n%s", err, raw)
 	}
-	return documents[0].Plan
-}
-
-func v2ScannedRows(node v2ExplainNode) int64 {
-	if len(node.Plans) == 0 {
-		loops := node.ActualLoops
-		if loops < 1 {
-			loops = 1
-		}
-		return int64((node.ActualRows + node.RowsRemovedByFilter) * loops)
-	}
-	var total int64
-	for _, child := range node.Plans {
-		total += v2ScannedRows(child)
-	}
-	return total
+	return rows
 }
 
 func TestCommitSHAProjectionUsesDedicatedLookupIndex(t *testing.T) {
@@ -266,7 +238,7 @@ func TestV2ReadPathsStayWithinScaleLatencyBudget(t *testing.T) {
 					continue
 				}
 				found = true
-				if scanned := v2ScannedRows(explainV2Query(t, db, query)); scanned > maxScannedRows {
+				if scanned := explainV2Query(t, db, query); scanned > maxScannedRows {
 					t.Fatalf("%s scanned %d rows, exceeds %d-row budget for %q", name, scanned, maxScannedRows, required)
 				}
 			}

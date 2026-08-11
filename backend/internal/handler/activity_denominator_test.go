@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"testing"
@@ -91,28 +90,6 @@ func (*denominatorMemoryStore) LeaseTTL(context.Context, string) (time.Duration,
 }
 func (*denominatorMemoryStore) ReleaseLease(context.Context, string, string) (bool, error) {
 	return true, nil
-}
-
-type denominatorExplainNode struct {
-	ActualRows          float64                  `json:"Actual Rows"`
-	ActualLoops         float64                  `json:"Actual Loops"`
-	RowsRemovedByFilter float64                  `json:"Rows Removed by Filter"`
-	Plans               []denominatorExplainNode `json:"Plans"`
-}
-
-func denominatorScannedRows(node denominatorExplainNode) int64 {
-	if len(node.Plans) == 0 {
-		loops := node.ActualLoops
-		if loops < 1 {
-			loops = 1
-		}
-		return int64((node.ActualRows + node.RowsRemovedByFilter) * loops)
-	}
-	var total int64
-	for _, child := range node.Plans {
-		total += denominatorScannedRows(child)
-	}
-	return total
 }
 
 type fakeTeamMetrics struct {
@@ -245,13 +222,11 @@ func TestActivityDenominatorResolverStaysWithinScaleBudgets(t *testing.T) {
 		if err := db.QueryRowContext(ctx, "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+query.SQL, query.Args...).Scan(&raw); err != nil {
 			t.Fatalf("explain denominator query: %v\nSQL: %s", err, query.SQL)
 		}
-		var documents []struct {
-			Plan denominatorExplainNode `json:"Plan"`
+		scanned, err := testdb.ExplainScannedRows(raw)
+		if err != nil {
+			t.Fatalf("decode denominator explain: %v", err)
 		}
-		if err := json.Unmarshal(raw, &documents); err != nil || len(documents) != 1 {
-			t.Fatalf("decode denominator explain: %v documents=%d", err, len(documents))
-		}
-		if scanned := denominatorScannedRows(documents[0].Plan); scanned > maxScannedRows {
+		if scanned > maxScannedRows {
 			t.Fatalf("denominator query scanned %d rows, exceeds %d-row budget\nSQL: %s", scanned, maxScannedRows, query.SQL)
 		}
 	}
