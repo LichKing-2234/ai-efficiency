@@ -127,7 +127,7 @@ describe('ActivityView v2', () => {
     await flushPromises()
     const selected = wrapper.findAll('button').find((button) => button.text().includes('Improve Activity'))!
     expect(selected.attributes('aria-pressed')).toBe('true')
-    expect(selected.classes()).toContain('ring-cyan-600')
+    expect(selected.classes()).toContain('bg-cyan-50')
     expect(wrapper.text()).toContain('Repository Top 5')
   })
 

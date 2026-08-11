@@ -50,7 +50,7 @@ watch(repoId, () => void loadRepository(), { immediate: true })
   <AppLayout>
     <ElSkeleton v-if="loading" :rows="8" animated />
     <div v-else-if="repo" class="space-y-5">
-      <AppPageHeader :eyebrow="t('nav.adminSection')" :title="repo.name" :description="t('repoDetail.operationsDescription')">
+      <AppPageHeader :eyebrow="t('nav.adminSection')" :title="repo.name" :description="t('repoDetail.healthHelp')">
         <template #before><ElButton class="mb-2 !ml-0 !p-0" type="primary" link :icon="ArrowLeft" @click="router.push('/repos')">{{ t('repoDetail.backToRepos') }}</ElButton></template>
         <template v-if="repo.clone_url" #after><p class="mt-0.5 break-all font-mono text-xs leading-5 text-slate-500">{{ repo.clone_url }}</p></template>
       </AppPageHeader>

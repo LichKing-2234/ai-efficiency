@@ -99,16 +99,16 @@ function barWidth(value: number, max: number) { return `${Math.max(3, value / ma
         </div>
         <ElAlert v-if="errors.ratio && ratioOverview" class="mt-4" type="error" :closable="false" :title="errors.ratio" show-icon />
         <ElAlert v-if="errors.ratio && !ratioOverview" class="mt-4" type="error" :closable="false" :title="errors.ratio" show-icon />
-        <div v-else-if="loading.ratio && !ratioOverview" role="status" class="h-56 animate-pulse rounded-lg bg-slate-100" />
+        <div v-else-if="loading.ratio && !ratioOverview" role="status" class="h-44 animate-pulse rounded-lg bg-slate-100" />
         <div v-else-if="ratioOverview" class="mt-4 grid items-center gap-4 sm:grid-cols-[11rem_minmax(0,1fr)]">
           <div class="relative h-44" :data-testid="ratioChartable ? 'activity-ratio-chart' : undefined">
             <DoughnutChartCanvas v-if="ratioChartable" :data="ratioData" :options="ratioOptions" />
-            <div v-else class="flex h-full items-center justify-center rounded-full border-[18px] border-slate-100 text-center text-sm text-slate-500">{{ t('activity.ratioUnavailableShort') }}</div>
+            <div v-else class="flex h-full items-center justify-center rounded-full border-slate-100 text-center text-sm text-slate-500" style="border-width: 18px">{{ t('activity.ratioUnavailableShort') }}</div>
           </div>
           <div>
             <p v-if="ratioOverview.ratio.state === 'complete_zero_usage'" class="text-lg font-semibold text-slate-950">{{ t('activity.noAIUsage') }}</p>
             <template v-else-if="ratioOverview.ratio.percent != null">
-              <p class="text-4xl font-semibold tracking-tight text-slate-950">{{ ratioOverview.ratio.state === 'lower_bound' ? '≥' : '' }}{{ percent(ratioOverview.ratio.percent) }}</p>
+              <p class="text-3xl font-semibold tracking-tight text-slate-950">{{ ratioOverview.ratio.state === 'lower_bound' ? '≥' : '' }}{{ percent(ratioOverview.ratio.percent) }}</p>
               <p v-if="ratioOverview.ratio.percentage_point_change != null" class="mt-1 text-sm text-slate-600">{{ t('activity.percentagePointChange', { value: ratioOverview.ratio.percentage_point_change > 0 ? `+${ratioOverview.ratio.percentage_point_change.toFixed(1)}` : ratioOverview.ratio.percentage_point_change.toFixed(1) }) }}</p>
             </template>
             <p v-else class="text-sm font-medium text-amber-700">{{ t('activity.ratioUnavailable') }}</p>
@@ -125,9 +125,9 @@ function barWidth(value: number, max: number) { return `${Math.max(3, value / ma
         <div class="flex items-start justify-between gap-3"><div><h2 id="activity-trend-heading" class="font-semibold text-slate-950">{{ t('activity.committedTrend') }}</h2><p class="mt-1 text-sm text-slate-500">{{ t('activity.localDays', { timezone: overallQuery.timezone }) }}</p></div><ElButton :icon="Refresh" circle text :loading="loading.trend" :aria-label="t('activity.retryTrend')" @click="loadTrend(false)" /></div>
         <ElAlert v-if="errors.trend && trendOverview" class="mt-4" type="error" :closable="false" :title="errors.trend" show-icon />
         <ElAlert v-if="errors.trend && !trendOverview" class="mt-4" type="error" :closable="false" :title="errors.trend" show-icon />
-        <div v-else-if="loading.trend && !trendOverview" role="status" class="mt-4 h-56 animate-pulse rounded-lg bg-slate-100" />
-        <div v-else-if="trendChartable" class="mt-4 h-56" data-testid="activity-trend-chart"><LineChartCanvas :data="trendData" :options="trendOptions" /></div>
-        <div v-else class="mt-4 flex h-56 items-center justify-center text-sm text-slate-500">{{ selectedRepoID || selectedPRID ? t('activity.noFilteredData') : t('activity.noCommittedData') }}</div>
+        <div v-else-if="loading.trend && !trendOverview" role="status" class="mt-4 h-44 animate-pulse rounded-lg bg-slate-100" />
+        <div v-else-if="trendChartable" class="mt-4 h-44" data-testid="activity-trend-chart"><LineChartCanvas :data="trendData" :options="trendOptions" /></div>
+        <div v-else class="mt-4 flex h-44 items-center justify-center text-sm text-slate-500">{{ selectedRepoID || selectedPRID ? t('activity.noFilteredData') : t('activity.noCommittedData') }}</div>
       </section>
     </div>
 
@@ -136,13 +136,13 @@ function barWidth(value: number, max: number) { return `${Math.max(3, value / ma
         <div class="flex items-center justify-between gap-3"><h2 id="activity-repo-top-heading" class="font-semibold text-slate-950">{{ t('activity.repositoryTop5') }}</h2><ElButton :icon="Refresh" circle text :loading="loading.repoTop" :aria-label="t('activity.retryRepositories')" @click="loadRepoTop(false)" /></div>
         <ElAlert v-if="errors.repoTop && repoTop.length" class="mt-4" type="error" :closable="false" :title="errors.repoTop" />
         <ElAlert v-if="errors.repoTop && !repoTop.length" class="mt-4" type="error" :closable="false" :title="errors.repoTop" />
-        <div v-else-if="loading.repoTop && !repoTop.length" role="status" class="mt-4 h-48 animate-pulse rounded-lg bg-slate-100" />
-        <div v-else-if="!topRepositories.length" class="flex h-48 items-center justify-center text-sm text-slate-500">{{ t('activity.noRepositories') }}</div>
+        <div v-else-if="loading.repoTop && !repoTop.length" role="status" class="mt-4 h-44 animate-pulse rounded-lg bg-slate-100" />
+        <div v-else-if="!topRepositories.length" class="flex h-44 items-center justify-center text-sm text-slate-500">{{ t('activity.noRepositories') }}</div>
         <ol v-else class="mt-4 space-y-4">
           <li v-for="row in topRepositories" :key="row.repo_config_id">
-            <button class="w-full rounded-md text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600" :aria-pressed="selectedRepoID === row.repo_config_id" @click="selectRepository(row)">
+            <button class="w-full rounded-md text-left" :class="selectedRepoID === row.repo_config_id ? 'bg-blue-50' : ''" :aria-pressed="selectedRepoID === row.repo_config_id" @click="selectRepository(row)">
               <div class="flex items-center justify-between gap-3 text-sm"><span class="truncate font-medium text-slate-900" :title="row.name">{{ row.name }}</span><span class="shrink-0 font-semibold text-slate-700">{{ token(row.direct_tokens) }}</span></div>
-              <div class="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100"><div class="h-full rounded-full transition-[width] duration-200" :class="selectedRepoID === row.repo_config_id ? 'bg-blue-700' : 'bg-blue-500'" :style="{ width: barWidth(row.direct_tokens, maxRepoTokens) }" /></div>
+              <div class="mt-1.5 overflow-hidden rounded-full bg-slate-100" style="height: .5rem"><div class="h-full rounded-full" :style="{ background: '#3b82f6', width: barWidth(row.direct_tokens, maxRepoTokens) }" /></div>
               <div class="mt-1 flex flex-wrap gap-x-3 text-xs text-slate-500"><span>{{ percent(row.direct_share) }} {{ t('activity.directShare') }}</span><span v-if="row.token_change != null">{{ tokenChange(row.token_change) }} {{ t('activity.previousPeriod') }}</span><span v-if="row.shared_tokens">{{ token(row.shared_tokens) }} {{ t('activity.sharedParticipation') }}</span></div>
             </button>
           </li>
@@ -153,13 +153,13 @@ function barWidth(value: number, max: number) { return `${Math.max(3, value / ma
         <div class="flex items-center justify-between gap-3"><h2 id="activity-pr-top-heading" class="font-semibold text-slate-950">{{ t('activity.pullRequestTop5') }}</h2><ElButton :icon="Refresh" circle text :loading="loading.prTop" :aria-label="t('activity.retryPullRequests')" @click="loadPRTop(false)" /></div>
         <ElAlert v-if="errors.prTop && prTop.length" class="mt-4" type="error" :closable="false" :title="errors.prTop" />
         <ElAlert v-if="errors.prTop && !prTop.length" class="mt-4" type="error" :closable="false" :title="errors.prTop" />
-        <div v-else-if="loading.prTop && !prTop.length" role="status" class="mt-4 h-48 animate-pulse rounded-lg bg-slate-100" />
-        <div v-else-if="!topPullRequests.length" class="flex h-48 items-center justify-center text-sm text-slate-500">{{ t('activity.noPullRequests') }}</div>
+        <div v-else-if="loading.prTop && !prTop.length" role="status" class="mt-4 h-44 animate-pulse rounded-lg bg-slate-100" />
+        <div v-else-if="!topPullRequests.length" class="flex h-44 items-center justify-center text-sm text-slate-500">{{ t('activity.noPullRequests') }}</div>
         <ol v-else class="mt-4 space-y-4">
           <li v-for="row in topPullRequests" :key="row.pr_record_id">
-            <button class="w-full rounded-md p-1 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600" :class="selectedPRID === row.pr_record_id ? 'bg-cyan-50 ring-2 ring-cyan-600' : ''" :aria-pressed="selectedPRID === row.pr_record_id" @click="selectPullRequest(row)">
+            <button class="w-full rounded-md text-left" :class="selectedPRID === row.pr_record_id ? 'bg-cyan-50' : ''" :aria-pressed="selectedPRID === row.pr_record_id" @click="selectPullRequest(row)">
               <div class="flex items-center justify-between gap-3 text-sm"><span class="min-w-0 truncate font-medium text-slate-900" :title="row.title">{{ row.repository_name }} #{{ row.scm_pr_id }} · {{ row.title }}</span><span class="shrink-0 font-semibold text-slate-700">{{ token(row.involved_tokens) }}</span></div>
-              <div class="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100"><div class="h-full rounded-full bg-cyan-600 transition-[width] duration-200" :style="{ width: barWidth(row.involved_tokens, maxPRTokens) }" /></div>
+              <div class="mt-1.5 overflow-hidden rounded-full bg-slate-100" style="height: .5rem"><div class="h-full rounded-full" :style="{ background: '#0891b2', width: barWidth(row.involved_tokens, maxPRTokens) }" /></div>
               <p class="mt-1 flex flex-wrap gap-x-3 text-xs text-slate-500"><span>{{ row.overlap_state === 'shared' ? t('activity.sharedOverlap') : t('activity.directInvolvement') }}</span><span v-if="row.token_change != null">{{ tokenChange(row.token_change) }} {{ t('activity.previousPeriod') }}</span></p>
             </button>
           </li>
@@ -168,14 +168,14 @@ function barWidth(value: number, max: number) { return `${Math.max(3, value / ma
     </div>
 
     <section class="min-w-0 rounded-xl border border-slate-200 bg-white" aria-labelledby="activity-full-list-heading">
-      <div class="border-b border-slate-200 px-4 pt-4 sm:px-5">
+      <div class="border-b border-slate-200 px-4 pt-4">
         <h2 id="activity-full-list-heading" class="sr-only">{{ t('activity.fullLists') }}</h2>
         <ElTabs v-model="activeList">
           <ElTabPane :label="t('activity.repositories')" name="repositories" />
           <ElTabPane :label="t('activity.pullRequests')" name="pullRequests" />
         </ElTabs>
       </div>
-      <div class="grid gap-3 border-b border-slate-100 p-4 sm:grid-cols-[minmax(0,1fr)_10rem_auto] sm:p-5">
+      <div class="grid gap-3 border-b border-slate-100 p-4 sm:grid-cols-[minmax(0,1fr)_10rem_auto]">
         <ElInput v-model="search" :prefix-icon="Search" clearable :placeholder="t('activity.searchCurrentList')" data-testid="activity-list-search" @keyup.enter="applyListControls" />
         <ElSelect v-model="sort" :aria-label="t('activity.sort')" data-testid="activity-list-sort">
           <ElOption :label="t('activity.sortToken')" value="tokens" />
@@ -185,9 +185,9 @@ function barWidth(value: number, max: number) { return `${Math.max(3, value / ma
       </div>
 
       <template v-if="activeList === 'repositories'">
-        <ElAlert v-if="errors.repositories && repositories" class="m-4 sm:m-5" type="error" :closable="false"><template #title>{{ errors.repositories }} <ElButton type="primary" link @click="loadRepositories(false)">{{ t('activity.retry') }}</ElButton></template></ElAlert>
-        <ElAlert v-if="errors.repositories && !repositories" class="m-4 sm:m-5" type="error" :closable="false"><template #title>{{ errors.repositories }} <ElButton type="primary" link @click="loadRepositories(false)">{{ t('activity.retry') }}</ElButton></template></ElAlert>
-        <div v-else-if="loading.repositories && !repositories" role="status" class="m-5 h-48 animate-pulse rounded-lg bg-slate-100" />
+        <ElAlert v-if="errors.repositories && repositories" class="m-4" type="error" :closable="false"><template #title>{{ errors.repositories }} <ElButton type="primary" link @click="loadRepositories(false)">{{ t('activity.retry') }}</ElButton></template></ElAlert>
+        <ElAlert v-if="errors.repositories && !repositories" class="m-4" type="error" :closable="false"><template #title>{{ errors.repositories }} <ElButton type="primary" link @click="loadRepositories(false)">{{ t('activity.retry') }}</ElButton></template></ElAlert>
+        <div v-else-if="loading.repositories && !repositories" role="status" class="m-5 h-44 animate-pulse rounded-lg bg-slate-100" />
         <div v-else-if="!repositories?.items.length" class="px-5 py-12 text-center text-sm text-slate-500">{{ t('activity.noRepositories') }}</div>
         <ElTable v-else-if="wide" :data="repositories.items" row-key="repo_config_id" class="w-full" data-testid="activity-repository-table" highlight-current-row :current-row-key="selectedRepoID" @row-click="selectRepository">
           <ElTableColumn prop="name" :label="t('activity.repository')" min-width="260" show-overflow-tooltip />
@@ -197,15 +197,15 @@ function barWidth(value: number, max: number) { return `${Math.max(3, value / ma
           <ElTableColumn :label="t('activity.sharedParticipation')" width="170"><template #default="{ row }">{{ token(row.shared_tokens) }}</template></ElTableColumn>
         </ElTable>
         <ul v-else class="divide-y divide-slate-100" data-testid="activity-repository-cards">
-          <li v-for="row in repositories.items" :key="row.repo_config_id"><button class="min-h-11 w-full px-4 py-4 text-left sm:px-5" :class="selectedRepoID === row.repo_config_id ? 'bg-blue-50 ring-2 ring-inset ring-blue-600' : ''" :aria-pressed="selectedRepoID === row.repo_config_id" @click="selectRepository(row)"><p class="break-words font-medium text-slate-900">{{ row.name }}</p><dl class="mt-3 grid grid-cols-2 gap-3 text-sm"><div><dt class="text-slate-500">{{ t('activity.committedToken') }}</dt><dd class="font-semibold">{{ token(row.direct_tokens) }}</dd></div><div><dt class="text-slate-500">{{ t('activity.directShare') }}</dt><dd>{{ percent(row.direct_share) }}</dd></div><div><dt class="text-slate-500">{{ t('activity.periodChange') }}</dt><dd>{{ tokenChange(row.token_change) || '—' }}</dd></div><div><dt class="text-slate-500">{{ t('activity.sharedParticipation') }}</dt><dd>{{ token(row.shared_tokens) }}</dd></div></dl></button></li>
+          <li v-for="row in repositories.items" :key="row.repo_config_id"><button class="min-h-11 w-full px-4 py-4 text-left" :class="selectedRepoID === row.repo_config_id ? 'bg-blue-50' : ''" :aria-pressed="selectedRepoID === row.repo_config_id" @click="selectRepository(row)"><p class="break-words font-medium text-slate-900">{{ row.name }}</p><dl class="mt-3 grid grid-cols-2 gap-3 text-sm"><div><dt class="text-slate-500">{{ t('activity.committedToken') }}</dt><dd class="font-semibold">{{ token(row.direct_tokens) }}</dd></div><div><dt class="text-slate-500">{{ t('activity.directShare') }}</dt><dd>{{ percent(row.direct_share) }}</dd></div><div><dt class="text-slate-500">{{ t('activity.periodChange') }}</dt><dd>{{ tokenChange(row.token_change) || '—' }}</dd></div><div><dt class="text-slate-500">{{ t('activity.sharedParticipation') }}</dt><dd>{{ token(row.shared_tokens) }}</dd></div></dl></button></li>
         </ul>
         <CursorPager :has-previous="repoPage > 0" :has-next="Boolean(repositories?.next_cursor)" :loading="loading.repositories" :previous-label="t('activity.previousPage')" :next-label="t('activity.nextPage')" test-i-d-prefix="activity-repositories" @previous="previousPage('repositories')" @next="nextPage('repositories')" />
       </template>
 
       <template v-else>
-        <ElAlert v-if="errors.pullRequests && pullRequests" class="m-4 sm:m-5" type="error" :closable="false"><template #title>{{ errors.pullRequests }} <ElButton type="primary" link @click="loadPullRequests(false)">{{ t('activity.retry') }}</ElButton></template></ElAlert>
-        <ElAlert v-if="errors.pullRequests && !pullRequests" class="m-4 sm:m-5" type="error" :closable="false"><template #title>{{ errors.pullRequests }} <ElButton type="primary" link @click="loadPullRequests(false)">{{ t('activity.retry') }}</ElButton></template></ElAlert>
-        <div v-else-if="loading.pullRequests && !pullRequests" role="status" class="m-5 h-48 animate-pulse rounded-lg bg-slate-100" />
+        <ElAlert v-if="errors.pullRequests && pullRequests" class="m-4" type="error" :closable="false"><template #title>{{ errors.pullRequests }} <ElButton type="primary" link @click="loadPullRequests(false)">{{ t('activity.retry') }}</ElButton></template></ElAlert>
+        <ElAlert v-if="errors.pullRequests && !pullRequests" class="m-4" type="error" :closable="false"><template #title>{{ errors.pullRequests }} <ElButton type="primary" link @click="loadPullRequests(false)">{{ t('activity.retry') }}</ElButton></template></ElAlert>
+        <div v-else-if="loading.pullRequests && !pullRequests" role="status" class="m-5 h-44 animate-pulse rounded-lg bg-slate-100" />
         <div v-else-if="!pullRequests?.items.length" class="px-5 py-12 text-center text-sm text-slate-500">{{ selectedRepoID || selectedPRID ? t('activity.noFilteredData') : t('activity.noPullRequests') }}</div>
         <ElTable v-else-if="wide" :data="pullRequests.items" row-key="pr_record_id" class="w-full" data-testid="activity-pull-request-table" highlight-current-row :current-row-key="selectedPRID" @row-click="selectPullRequest">
           <ElTableColumn :label="t('activity.pullRequest')" min-width="320"><template #default="{ row }"><p class="font-medium text-slate-900">{{ row.repository_name }} #{{ row.scm_pr_id }}</p><p class="truncate text-sm text-slate-500">{{ row.title }}</p></template></ElTableColumn>
@@ -215,7 +215,7 @@ function barWidth(value: number, max: number) { return `${Math.max(3, value / ma
           <ElTableColumn :label="t('activity.status')" width="120" prop="status" />
         </ElTable>
         <ul v-else class="divide-y divide-slate-100" data-testid="activity-pull-request-cards">
-          <li v-for="row in pullRequests.items" :key="row.pr_record_id"><button class="min-h-11 w-full px-4 py-4 text-left sm:px-5" :class="selectedPRID === row.pr_record_id ? 'bg-cyan-50 ring-2 ring-inset ring-cyan-600' : ''" :aria-pressed="selectedPRID === row.pr_record_id" @click="selectPullRequest(row)"><p class="font-medium text-slate-900">{{ row.repository_name }} #{{ row.scm_pr_id }}</p><p class="mt-1 break-words text-sm text-slate-600">{{ row.title }}</p><div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-500"><span>{{ token(row.involved_tokens) }} {{ t('activity.involvedToken') }}</span><span v-if="row.token_change != null">{{ tokenChange(row.token_change) }} {{ t('activity.previousPeriod') }}</span><span>{{ row.overlap_state === 'shared' ? t('activity.sharedOverlap') : t('activity.directInvolvement') }}</span><span>{{ row.status }}</span></div></button><div v-if="expandedPR === row.pr_record_id && row.commits?.length" class="bg-slate-50 px-4 py-3 text-xs text-slate-600 sm:px-5"><p class="mb-2 font-medium">{{ t('activity.relatedCommits') }}</p><ul class="space-y-1 font-mono"><li v-for="commit in row.commits" :key="`${commit.repo_config_id}:${commit.commit_sha}`">{{ commit.commit_sha.slice(0, 12) }}</li></ul></div></li>
+          <li v-for="row in pullRequests.items" :key="row.pr_record_id"><button class="min-h-11 w-full px-4 py-4 text-left" :class="selectedPRID === row.pr_record_id ? 'bg-cyan-50' : ''" :aria-pressed="selectedPRID === row.pr_record_id" @click="selectPullRequest(row)"><p class="font-medium text-slate-900">{{ row.repository_name }} #{{ row.scm_pr_id }}</p><p class="mt-1 break-words text-sm text-slate-600">{{ row.title }}</p><div class="mt-3 flex flex-wrap gap-4 text-sm text-slate-500"><span>{{ token(row.involved_tokens) }} {{ t('activity.involvedToken') }}</span><span v-if="row.token_change != null">{{ tokenChange(row.token_change) }} {{ t('activity.previousPeriod') }}</span><span>{{ row.overlap_state === 'shared' ? t('activity.sharedOverlap') : t('activity.directInvolvement') }}</span><span>{{ row.status }}</span></div></button><div v-if="expandedPR === row.pr_record_id && row.commits?.length" class="bg-slate-50 px-4 py-3 text-xs text-slate-600"><p class="mb-2 font-medium">{{ t('activity.relatedCommits') }}</p><ul class="space-y-1 font-mono"><li v-for="commit in row.commits" :key="`${commit.repo_config_id}:${commit.commit_sha}`">{{ commit.commit_sha.slice(0, 12) }}</li></ul></div></li>
         </ul>
         <div v-if="wide && expandedPR && selectedPRRow?.commits?.length" class="border-t border-slate-100 bg-slate-50 px-5 py-4 text-xs text-slate-600"><p class="mb-2 font-medium">{{ t('activity.relatedCommits') }}</p><ul class="space-y-1 font-mono"><li v-for="commit in selectedPRRow.commits" :key="`${commit.repo_config_id}:${commit.commit_sha}`">{{ commit.commit_sha.slice(0, 12) }}</li></ul></div>
         <CursorPager :has-previous="prPage > 0" :has-next="Boolean(pullRequests?.next_cursor)" :loading="loading.pullRequests" :previous-label="t('activity.previousPage')" :next-label="t('activity.nextPage')" test-i-d-prefix="activity-pull-requests" @previous="previousPage('pullRequests')" @next="nextPage('pullRequests')" />

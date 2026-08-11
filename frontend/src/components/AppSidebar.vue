@@ -8,7 +8,6 @@ import {
   Bell,
   DataLine,
   Document,
-  Folder,
   House,
   Setting,
   Switch,
@@ -165,7 +164,7 @@ function handleNavigate() {
           :active-class="activeNavigationClass"
           @click="handleNavigate"
         >
-          <el-icon class="mr-3"><Folder /></el-icon>
+          <el-icon class="mr-3"><Document /></el-icon>
           {{ t('nav.codeRepositories') }}
         </RouterLink>
 

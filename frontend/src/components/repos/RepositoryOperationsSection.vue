@@ -155,7 +155,7 @@ function formatDate(value?: string | null) {
 <template>
   <section class="space-y-5" data-testid="repo-operations">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div><h2 class="text-lg font-semibold text-slate-950">{{ t('activity.operationsTab') }}</h2><p class="mt-1 text-sm text-slate-600">{{ t('repoDetail.operationsDescription') }}</p></div>
+      <div><h2 class="text-lg font-semibold text-slate-950">{{ t('activity.operationsTab') }}</h2><p class="mt-1 text-sm text-slate-600">{{ t('repoDetail.healthHelp') }}</p></div>
       <ElButton data-testid="repo-sync-prs" :loading="syncing" :disabled="isUnbound" @click="startSync">{{ t('repoDetail.syncPrs') }}</ElButton>
     </div>
 
