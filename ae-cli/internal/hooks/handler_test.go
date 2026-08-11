@@ -1038,8 +1038,12 @@ func TestPostCommitWithBackendUploaderCreatesPendingTaskAfterCheckpointUpload(t 
 
 	clientStub := &recordingBackendHookClient{}
 	h := NewHandler(NewBackendUploader(clientStub))
+	started := time.Now()
 	if err := h.PostCommitResolved(context.Background(), execCtx); err != nil {
 		t.Fatalf("PostCommitResolved: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed >= 3*time.Second {
+		t.Fatalf("post-commit fast path elapsed = %s, want <3s", elapsed)
 	}
 
 	if len(clientStub.checkpoints) != 1 {

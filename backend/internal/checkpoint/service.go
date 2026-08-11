@@ -125,7 +125,8 @@ func (s *Service) recordCheckpoint(ctx context.Context, userID int, req CommitCh
 		}
 	}
 	if existing != nil {
-		if checkpointReplayMatches(existing, userID, req) {
+		replayRepo, replayErr := txSvc.resolveReplayRepoConfig(ctx, req.RepoConfigID, req.RepoFullName, req.CloneURL)
+		if replayErr == nil && checkpointReplayMatches(existing, replayRepo.ID, userID, req) {
 			return nil
 		}
 		return fmt.Errorf("record checkpoint: event_id conflict")
@@ -167,7 +168,8 @@ func (s *Service) recordCheckpoint(ctx context.Context, userID int, req CommitCh
 			txDone = true
 			existing, qerr := s.entClient.CommitCheckpoint.Query().Where(commitcheckpoint.EventIDEQ(eventID)).Only(ctx)
 			if qerr == nil {
-				if checkpointReplayMatches(existing, userID, req) {
+				replayRepo, replayErr := s.resolveReplayRepoConfig(ctx, req.RepoConfigID, req.RepoFullName, req.CloneURL)
+				if replayErr == nil && checkpointReplayMatches(existing, replayRepo.ID, userID, req) {
 					return nil
 				}
 				return fmt.Errorf("record checkpoint: event_id conflict")
@@ -258,7 +260,8 @@ func (s *Service) recordRewrite(ctx context.Context, userID int, req CommitRewri
 		}
 	}
 	if existing != nil {
-		if rewriteReplayMatches(existing, userID, req) {
+		replayRepo, replayErr := s.resolveReplayRepoConfig(ctx, req.RepoConfigID, req.RepoFullName, req.CloneURL)
+		if replayErr == nil && rewriteReplayMatches(existing, replayRepo.ID, userID, req) {
 			return nil
 		}
 		return fmt.Errorf("record rewrite: event_id conflict")
@@ -289,7 +292,8 @@ func (s *Service) recordRewrite(ctx context.Context, userID int, req CommitRewri
 		if ent.IsConstraintError(err) {
 			existing, qerr := s.entClient.CommitRewrite.Query().Where(commitrewrite.EventIDEQ(eventID)).Only(ctx)
 			if qerr == nil {
-				if rewriteReplayMatches(existing, userID, req) {
+				replayRepo, replayErr := s.resolveReplayRepoConfig(ctx, req.RepoConfigID, req.RepoFullName, req.CloneURL)
+				if replayErr == nil && rewriteReplayMatches(existing, replayRepo.ID, userID, req) {
 					return nil
 				}
 				return fmt.Errorf("record rewrite: event_id conflict")
@@ -301,14 +305,11 @@ func (s *Service) recordRewrite(ctx context.Context, userID int, req CommitRewri
 	return nil
 }
 
-func checkpointReplayMatches(existing *ent.CommitCheckpoint, userID int, req CommitCheckpointRequest) bool {
-	if existing == nil || existing.WorkspaceID != strings.TrimSpace(req.WorkspaceID) || existing.CommitSha != strings.TrimSpace(req.CommitSHA) || existing.BindingSource.String() != strings.TrimSpace(req.BindingSource) {
+func checkpointReplayMatches(existing *ent.CommitCheckpoint, repoConfigID, userID int, req CommitCheckpointRequest) bool {
+	if existing == nil || existing.RepoConfigID != repoConfigID || existing.WorkspaceID != strings.TrimSpace(req.WorkspaceID) || existing.CommitSha != strings.TrimSpace(req.CommitSHA) || existing.BindingSource.String() != strings.TrimSpace(req.BindingSource) {
 		return false
 	}
-	if userID > 0 && (existing.UserID == nil || *existing.UserID != userID) {
-		return false
-	}
-	if req.RepoConfigID > 0 && existing.RepoConfigID != req.RepoConfigID {
+	if (userID == 0) != (existing.UserID == nil) || userID > 0 && *existing.UserID != userID {
 		return false
 	}
 	if !equalStrings(existing.ParentShas, req.ParentSHAs) || optionalString(existing.BranchSnapshot) != strings.TrimSpace(req.BranchSnapshot) || optionalString(existing.HeadSnapshot) != strings.TrimSpace(req.HeadSnapshot) {
@@ -317,17 +318,21 @@ func checkpointReplayMatches(existing *ent.CommitCheckpoint, userID int, req Com
 	return true
 }
 
-func rewriteReplayMatches(existing *ent.CommitRewrite, userID int, req CommitRewriteRequest) bool {
-	if existing == nil || existing.WorkspaceID != strings.TrimSpace(req.WorkspaceID) || existing.RewriteType.String() != strings.TrimSpace(req.RewriteType) || existing.OldCommitSha != strings.TrimSpace(req.OldCommitSHA) || existing.NewCommitSha != strings.TrimSpace(req.NewCommitSHA) || existing.BindingSource.String() != strings.TrimSpace(req.BindingSource) {
+func rewriteReplayMatches(existing *ent.CommitRewrite, repoConfigID, userID int, req CommitRewriteRequest) bool {
+	if existing == nil || existing.RepoConfigID != repoConfigID || existing.WorkspaceID != strings.TrimSpace(req.WorkspaceID) || existing.RewriteType.String() != strings.TrimSpace(req.RewriteType) || existing.OldCommitSha != strings.TrimSpace(req.OldCommitSHA) || existing.NewCommitSha != strings.TrimSpace(req.NewCommitSHA) || existing.BindingSource.String() != strings.TrimSpace(req.BindingSource) {
 		return false
 	}
-	if userID > 0 && (existing.UserID == nil || *existing.UserID != userID) {
-		return false
-	}
-	if req.RepoConfigID > 0 && existing.RepoConfigID != req.RepoConfigID {
+	if (userID == 0) != (existing.UserID == nil) || userID > 0 && *existing.UserID != userID {
 		return false
 	}
 	return true
+}
+
+func (s *Service) resolveReplayRepoConfig(ctx context.Context, repoConfigID int, repoFullName, cloneURL string) (*ent.RepoConfig, error) {
+	if repoConfigID > 0 {
+		return s.entClient.RepoConfig.Get(ctx, repoConfigID)
+	}
+	return s.resolveRepoConfig(ctx, repoFullName, cloneURL)
 }
 
 func equalStrings(left, right []string) bool {
