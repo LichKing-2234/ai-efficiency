@@ -10,6 +10,8 @@ import (
 	"github.com/ai-efficiency/backend/ent/attributionclaimgroup"
 	"github.com/ai-efficiency/backend/ent/attributionrequestclaim"
 	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
+	"github.com/ai-efficiency/backend/ent/attributionusagepool"
+	"github.com/ai-efficiency/backend/ent/attributionusagepoolcommit"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
@@ -188,11 +190,11 @@ func init() {
 	// attributionrequestclaim.DefaultTotalTokens holds the default value on creation for the total_tokens field.
 	attributionrequestclaim.DefaultTotalTokens = attributionrequestclaimDescTotalTokens.Default.(int64)
 	// attributionrequestclaimDescCreatedAt is the schema descriptor for created_at field.
-	attributionrequestclaimDescCreatedAt := attributionrequestclaimFields[19].Descriptor()
+	attributionrequestclaimDescCreatedAt := attributionrequestclaimFields[21].Descriptor()
 	// attributionrequestclaim.DefaultCreatedAt holds the default value on creation for the created_at field.
 	attributionrequestclaim.DefaultCreatedAt = attributionrequestclaimDescCreatedAt.Default.(func() time.Time)
 	// attributionrequestclaimDescUpdatedAt is the schema descriptor for updated_at field.
-	attributionrequestclaimDescUpdatedAt := attributionrequestclaimFields[20].Descriptor()
+	attributionrequestclaimDescUpdatedAt := attributionrequestclaimFields[22].Descriptor()
 	// attributionrequestclaim.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	attributionrequestclaim.DefaultUpdatedAt = attributionrequestclaimDescUpdatedAt.Default.(func() time.Time)
 	// attributionrequestclaim.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
@@ -275,6 +277,74 @@ func init() {
 	attributionusagebucketDescCreatedAt := attributionusagebucketFields[28].Descriptor()
 	// attributionusagebucket.DefaultCreatedAt holds the default value on creation for the created_at field.
 	attributionusagebucket.DefaultCreatedAt = attributionusagebucketDescCreatedAt.Default.(func() time.Time)
+	attributionusagepoolFields := schema.AttributionUsagePool{}.Fields()
+	_ = attributionusagepoolFields
+	// attributionusagepoolDescCanonicalPoolKey is the schema descriptor for canonical_pool_key field.
+	attributionusagepoolDescCanonicalPoolKey := attributionusagepoolFields[0].Descriptor()
+	// attributionusagepool.CanonicalPoolKeyValidator is a validator for the "canonical_pool_key" field. It is called by the builders before save.
+	attributionusagepool.CanonicalPoolKeyValidator = attributionusagepoolDescCanonicalPoolKey.Validators[0].(func(string) error)
+	// attributionusagepoolDescLedgerEpoch is the schema descriptor for ledger_epoch field.
+	attributionusagepoolDescLedgerEpoch := attributionusagepoolFields[1].Descriptor()
+	// attributionusagepool.DefaultLedgerEpoch holds the default value on creation for the ledger_epoch field.
+	attributionusagepool.DefaultLedgerEpoch = attributionusagepoolDescLedgerEpoch.Default.(string)
+	// attributionusagepoolDescRequestedModel is the schema descriptor for requested_model field.
+	attributionusagepoolDescRequestedModel := attributionusagepoolFields[3].Descriptor()
+	// attributionusagepool.RequestedModelValidator is a validator for the "requested_model" field. It is called by the builders before save.
+	attributionusagepool.RequestedModelValidator = attributionusagepoolDescRequestedModel.Validators[0].(func(string) error)
+	// attributionusagepoolDescInputTokens is the schema descriptor for input_tokens field.
+	attributionusagepoolDescInputTokens := attributionusagepoolFields[5].Descriptor()
+	// attributionusagepool.DefaultInputTokens holds the default value on creation for the input_tokens field.
+	attributionusagepool.DefaultInputTokens = attributionusagepoolDescInputTokens.Default.(int64)
+	// attributionusagepoolDescOutputTokens is the schema descriptor for output_tokens field.
+	attributionusagepoolDescOutputTokens := attributionusagepoolFields[6].Descriptor()
+	// attributionusagepool.DefaultOutputTokens holds the default value on creation for the output_tokens field.
+	attributionusagepool.DefaultOutputTokens = attributionusagepoolDescOutputTokens.Default.(int64)
+	// attributionusagepoolDescCacheCreationTokens is the schema descriptor for cache_creation_tokens field.
+	attributionusagepoolDescCacheCreationTokens := attributionusagepoolFields[7].Descriptor()
+	// attributionusagepool.DefaultCacheCreationTokens holds the default value on creation for the cache_creation_tokens field.
+	attributionusagepool.DefaultCacheCreationTokens = attributionusagepoolDescCacheCreationTokens.Default.(int64)
+	// attributionusagepoolDescCacheReadTokens is the schema descriptor for cache_read_tokens field.
+	attributionusagepoolDescCacheReadTokens := attributionusagepoolFields[8].Descriptor()
+	// attributionusagepool.DefaultCacheReadTokens holds the default value on creation for the cache_read_tokens field.
+	attributionusagepool.DefaultCacheReadTokens = attributionusagepoolDescCacheReadTokens.Default.(int64)
+	// attributionusagepoolDescTotalTokens is the schema descriptor for total_tokens field.
+	attributionusagepoolDescTotalTokens := attributionusagepoolFields[9].Descriptor()
+	// attributionusagepool.DefaultTotalTokens holds the default value on creation for the total_tokens field.
+	attributionusagepool.DefaultTotalTokens = attributionusagepoolDescTotalTokens.Default.(int64)
+	// attributionusagepoolDescRequestCount is the schema descriptor for request_count field.
+	attributionusagepoolDescRequestCount := attributionusagepoolFields[10].Descriptor()
+	// attributionusagepool.DefaultRequestCount holds the default value on creation for the request_count field.
+	attributionusagepool.DefaultRequestCount = attributionusagepoolDescRequestCount.Default.(int)
+	// attributionusagepoolDescCoverageGapCount is the schema descriptor for coverage_gap_count field.
+	attributionusagepoolDescCoverageGapCount := attributionusagepoolFields[11].Descriptor()
+	// attributionusagepool.DefaultCoverageGapCount holds the default value on creation for the coverage_gap_count field.
+	attributionusagepool.DefaultCoverageGapCount = attributionusagepoolDescCoverageGapCount.Default.(int)
+	// attributionusagepoolDescCreatedAt is the schema descriptor for created_at field.
+	attributionusagepoolDescCreatedAt := attributionusagepoolFields[12].Descriptor()
+	// attributionusagepool.DefaultCreatedAt holds the default value on creation for the created_at field.
+	attributionusagepool.DefaultCreatedAt = attributionusagepoolDescCreatedAt.Default.(func() time.Time)
+	// attributionusagepoolDescUpdatedAt is the schema descriptor for updated_at field.
+	attributionusagepoolDescUpdatedAt := attributionusagepoolFields[13].Descriptor()
+	// attributionusagepool.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	attributionusagepool.DefaultUpdatedAt = attributionusagepoolDescUpdatedAt.Default.(func() time.Time)
+	// attributionusagepool.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	attributionusagepool.UpdateDefaultUpdatedAt = attributionusagepoolDescUpdatedAt.UpdateDefault.(func() time.Time)
+	attributionusagepoolcommitFields := schema.AttributionUsagePoolCommit{}.Fields()
+	_ = attributionusagepoolcommitFields
+	// attributionusagepoolcommitDescCommitSha is the schema descriptor for commit_sha field.
+	attributionusagepoolcommitDescCommitSha := attributionusagepoolcommitFields[2].Descriptor()
+	// attributionusagepoolcommit.CommitShaValidator is a validator for the "commit_sha" field. It is called by the builders before save.
+	attributionusagepoolcommit.CommitShaValidator = attributionusagepoolcommitDescCommitSha.Validators[0].(func(string) error)
+	// attributionusagepoolcommitDescCreatedAt is the schema descriptor for created_at field.
+	attributionusagepoolcommitDescCreatedAt := attributionusagepoolcommitFields[4].Descriptor()
+	// attributionusagepoolcommit.DefaultCreatedAt holds the default value on creation for the created_at field.
+	attributionusagepoolcommit.DefaultCreatedAt = attributionusagepoolcommitDescCreatedAt.Default.(func() time.Time)
+	// attributionusagepoolcommitDescUpdatedAt is the schema descriptor for updated_at field.
+	attributionusagepoolcommitDescUpdatedAt := attributionusagepoolcommitFields[5].Descriptor()
+	// attributionusagepoolcommit.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	attributionusagepoolcommit.DefaultUpdatedAt = attributionusagepoolcommitDescUpdatedAt.Default.(func() time.Time)
+	// attributionusagepoolcommit.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	attributionusagepoolcommit.UpdateDefaultUpdatedAt = attributionusagepoolcommitDescUpdatedAt.UpdateDefault.(func() time.Time)
 	commitcheckpointFields := schema.CommitCheckpoint{}.Fields()
 	_ = commitcheckpointFields
 	// commitcheckpointDescWorkspaceID is the schema descriptor for workspace_id field.

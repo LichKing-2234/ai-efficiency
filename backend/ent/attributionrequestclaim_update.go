@@ -372,6 +372,53 @@ func (arcu *AttributionRequestClaimUpdate) ClearReconciledAt() *AttributionReque
 	return arcu
 }
 
+// SetMaterializedPoolID sets the "materialized_pool_id" field.
+func (arcu *AttributionRequestClaimUpdate) SetMaterializedPoolID(i int) *AttributionRequestClaimUpdate {
+	arcu.mutation.ResetMaterializedPoolID()
+	arcu.mutation.SetMaterializedPoolID(i)
+	return arcu
+}
+
+// SetNillableMaterializedPoolID sets the "materialized_pool_id" field if the given value is not nil.
+func (arcu *AttributionRequestClaimUpdate) SetNillableMaterializedPoolID(i *int) *AttributionRequestClaimUpdate {
+	if i != nil {
+		arcu.SetMaterializedPoolID(*i)
+	}
+	return arcu
+}
+
+// AddMaterializedPoolID adds i to the "materialized_pool_id" field.
+func (arcu *AttributionRequestClaimUpdate) AddMaterializedPoolID(i int) *AttributionRequestClaimUpdate {
+	arcu.mutation.AddMaterializedPoolID(i)
+	return arcu
+}
+
+// ClearMaterializedPoolID clears the value of the "materialized_pool_id" field.
+func (arcu *AttributionRequestClaimUpdate) ClearMaterializedPoolID() *AttributionRequestClaimUpdate {
+	arcu.mutation.ClearMaterializedPoolID()
+	return arcu
+}
+
+// SetMaterializedAt sets the "materialized_at" field.
+func (arcu *AttributionRequestClaimUpdate) SetMaterializedAt(t time.Time) *AttributionRequestClaimUpdate {
+	arcu.mutation.SetMaterializedAt(t)
+	return arcu
+}
+
+// SetNillableMaterializedAt sets the "materialized_at" field if the given value is not nil.
+func (arcu *AttributionRequestClaimUpdate) SetNillableMaterializedAt(t *time.Time) *AttributionRequestClaimUpdate {
+	if t != nil {
+		arcu.SetMaterializedAt(*t)
+	}
+	return arcu
+}
+
+// ClearMaterializedAt clears the value of the "materialized_at" field.
+func (arcu *AttributionRequestClaimUpdate) ClearMaterializedAt() *AttributionRequestClaimUpdate {
+	arcu.mutation.ClearMaterializedAt()
+	return arcu
+}
+
 // SetExpiresAt sets the "expires_at" field.
 func (arcu *AttributionRequestClaimUpdate) SetExpiresAt(t time.Time) *AttributionRequestClaimUpdate {
 	arcu.mutation.SetExpiresAt(t)
@@ -560,6 +607,21 @@ func (arcu *AttributionRequestClaimUpdate) sqlSave(ctx context.Context) (n int, 
 	}
 	if arcu.mutation.ReconciledAtCleared() {
 		_spec.ClearField(attributionrequestclaim.FieldReconciledAt, field.TypeTime)
+	}
+	if value, ok := arcu.mutation.MaterializedPoolID(); ok {
+		_spec.SetField(attributionrequestclaim.FieldMaterializedPoolID, field.TypeInt, value)
+	}
+	if value, ok := arcu.mutation.AddedMaterializedPoolID(); ok {
+		_spec.AddField(attributionrequestclaim.FieldMaterializedPoolID, field.TypeInt, value)
+	}
+	if arcu.mutation.MaterializedPoolIDCleared() {
+		_spec.ClearField(attributionrequestclaim.FieldMaterializedPoolID, field.TypeInt)
+	}
+	if value, ok := arcu.mutation.MaterializedAt(); ok {
+		_spec.SetField(attributionrequestclaim.FieldMaterializedAt, field.TypeTime, value)
+	}
+	if arcu.mutation.MaterializedAtCleared() {
+		_spec.ClearField(attributionrequestclaim.FieldMaterializedAt, field.TypeTime)
 	}
 	if value, ok := arcu.mutation.ExpiresAt(); ok {
 		_spec.SetField(attributionrequestclaim.FieldExpiresAt, field.TypeTime, value)
@@ -931,6 +993,53 @@ func (arcuo *AttributionRequestClaimUpdateOne) ClearReconciledAt() *AttributionR
 	return arcuo
 }
 
+// SetMaterializedPoolID sets the "materialized_pool_id" field.
+func (arcuo *AttributionRequestClaimUpdateOne) SetMaterializedPoolID(i int) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.ResetMaterializedPoolID()
+	arcuo.mutation.SetMaterializedPoolID(i)
+	return arcuo
+}
+
+// SetNillableMaterializedPoolID sets the "materialized_pool_id" field if the given value is not nil.
+func (arcuo *AttributionRequestClaimUpdateOne) SetNillableMaterializedPoolID(i *int) *AttributionRequestClaimUpdateOne {
+	if i != nil {
+		arcuo.SetMaterializedPoolID(*i)
+	}
+	return arcuo
+}
+
+// AddMaterializedPoolID adds i to the "materialized_pool_id" field.
+func (arcuo *AttributionRequestClaimUpdateOne) AddMaterializedPoolID(i int) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.AddMaterializedPoolID(i)
+	return arcuo
+}
+
+// ClearMaterializedPoolID clears the value of the "materialized_pool_id" field.
+func (arcuo *AttributionRequestClaimUpdateOne) ClearMaterializedPoolID() *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.ClearMaterializedPoolID()
+	return arcuo
+}
+
+// SetMaterializedAt sets the "materialized_at" field.
+func (arcuo *AttributionRequestClaimUpdateOne) SetMaterializedAt(t time.Time) *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.SetMaterializedAt(t)
+	return arcuo
+}
+
+// SetNillableMaterializedAt sets the "materialized_at" field if the given value is not nil.
+func (arcuo *AttributionRequestClaimUpdateOne) SetNillableMaterializedAt(t *time.Time) *AttributionRequestClaimUpdateOne {
+	if t != nil {
+		arcuo.SetMaterializedAt(*t)
+	}
+	return arcuo
+}
+
+// ClearMaterializedAt clears the value of the "materialized_at" field.
+func (arcuo *AttributionRequestClaimUpdateOne) ClearMaterializedAt() *AttributionRequestClaimUpdateOne {
+	arcuo.mutation.ClearMaterializedAt()
+	return arcuo
+}
+
 // SetExpiresAt sets the "expires_at" field.
 func (arcuo *AttributionRequestClaimUpdateOne) SetExpiresAt(t time.Time) *AttributionRequestClaimUpdateOne {
 	arcuo.mutation.SetExpiresAt(t)
@@ -1149,6 +1258,21 @@ func (arcuo *AttributionRequestClaimUpdateOne) sqlSave(ctx context.Context) (_no
 	}
 	if arcuo.mutation.ReconciledAtCleared() {
 		_spec.ClearField(attributionrequestclaim.FieldReconciledAt, field.TypeTime)
+	}
+	if value, ok := arcuo.mutation.MaterializedPoolID(); ok {
+		_spec.SetField(attributionrequestclaim.FieldMaterializedPoolID, field.TypeInt, value)
+	}
+	if value, ok := arcuo.mutation.AddedMaterializedPoolID(); ok {
+		_spec.AddField(attributionrequestclaim.FieldMaterializedPoolID, field.TypeInt, value)
+	}
+	if arcuo.mutation.MaterializedPoolIDCleared() {
+		_spec.ClearField(attributionrequestclaim.FieldMaterializedPoolID, field.TypeInt)
+	}
+	if value, ok := arcuo.mutation.MaterializedAt(); ok {
+		_spec.SetField(attributionrequestclaim.FieldMaterializedAt, field.TypeTime, value)
+	}
+	if arcuo.mutation.MaterializedAtCleared() {
+		_spec.ClearField(attributionrequestclaim.FieldMaterializedAt, field.TypeTime)
 	}
 	if value, ok := arcuo.mutation.ExpiresAt(); ok {
 		_spec.SetField(attributionrequestclaim.FieldExpiresAt, field.TypeTime, value)

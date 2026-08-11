@@ -69,6 +69,30 @@ func (f AttributionUsageBucketFunc) Mutate(ctx context.Context, m ent.Mutation) 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AttributionUsageBucketMutation", m)
 }
 
+// The AttributionUsagePoolFunc type is an adapter to allow the use of ordinary
+// function as AttributionUsagePool mutator.
+type AttributionUsagePoolFunc func(context.Context, *ent.AttributionUsagePoolMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AttributionUsagePoolFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AttributionUsagePoolMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AttributionUsagePoolMutation", m)
+}
+
+// The AttributionUsagePoolCommitFunc type is an adapter to allow the use of ordinary
+// function as AttributionUsagePoolCommit mutator.
+type AttributionUsagePoolCommitFunc func(context.Context, *ent.AttributionUsagePoolCommitMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AttributionUsagePoolCommitFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AttributionUsagePoolCommitMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AttributionUsagePoolCommitMutation", m)
+}
+
 // The CommitCheckpointFunc type is an adapter to allow the use of ordinary
 // function as CommitCheckpoint mutator.
 type CommitCheckpointFunc func(context.Context, *ent.CommitCheckpointMutation) (ent.Value, error)

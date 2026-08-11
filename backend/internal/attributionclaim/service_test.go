@@ -7,8 +7,10 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/attributionrequestclaim"
+	"github.com/ai-efficiency/backend/ent/attributionusagepoolcommit"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/internal/attributionledger"
+	"github.com/ai-efficiency/backend/internal/attributionpool"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/google/uuid"
 )
@@ -169,6 +171,21 @@ func TestIngestAllowsAcknowledgedClientToAppendAllocationWithoutRequestIDs(t *te
 	if _, err := f.service.Ingest(ctx, f.principal, BatchRequest{Groups: []Request{base}}); err != nil {
 		t.Fatal(err)
 	}
+	hotClaim := f.client.AttributionRequestClaim.Query().OnlyX(ctx)
+	usageAt := time.Date(2026, 8, 11, 12, 17, 0, 0, time.UTC)
+	f.client.AttributionRequestClaim.UpdateOneID(hotClaim.ID).SetStatus(attributionrequestclaim.StatusReconciled).SetRequestedModel("gpt-test").SetUsageAt(usageAt).
+		SetInputTokens(10).SetOutputTokens(2).SetTotalTokens(12).ExecX(ctx)
+	tx, err := f.client.Tx(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := attributionpool.MaterializeRequestClaim(ctx, tx.Client(), hotClaim.ID, usageAt); err != nil {
+		_ = tx.Rollback()
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
 	second := f.client.CommitCheckpoint.Create().SetEventID("checkpoint-2").SetUserID(f.principal.UserID).SetWorkspaceID("workspace-1").
 		SetRepoConfigID(f.repoID).SetCommitSha("commit-2").SetParentShas([]string{"commit-1"}).SetBindingSource(commitcheckpoint.BindingSourceManual).SaveX(ctx)
 	appended := base
@@ -185,6 +202,14 @@ func TestIngestAllowsAcknowledgedClientToAppendAllocationWithoutRequestIDs(t *te
 	group := f.client.AttributionClaimGroup.Query().OnlyX(ctx)
 	if len(group.CommitAllocations) != 2 || group.RequestCount != 1 {
 		t.Fatalf("group = %+v", group)
+	}
+	pools := f.client.AttributionUsagePool.Query().AllX(ctx)
+	if len(pools) != 1 || pools[0].RequestCount != 1 || pools[0].TotalTokens != 12 {
+		t.Fatalf("rematerialized pools = %+v", pools)
+	}
+	relations := f.client.AttributionUsagePoolCommit.Query().AllX(ctx)
+	if len(relations) != 2 || relations[0].RelationKind != attributionusagepoolcommit.RelationKindShared || relations[1].RelationKind != attributionusagepoolcommit.RelationKindShared {
+		t.Fatalf("rematerialized relations = %+v", relations)
 	}
 }
 

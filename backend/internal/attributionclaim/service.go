@@ -15,6 +15,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/internal/attributionledger"
+	"github.com/ai-efficiency/backend/internal/attributionpool"
 )
 
 const (
@@ -166,6 +167,12 @@ func (s *Service) ingestOne(ctx context.Context, principal attributionledger.Ins
 		if err := group.Update().SetRequestCount(group.RequestCount + created).Exec(ctx); err != nil {
 			invalidatePersistedACKs(&result, "rolled_back")
 			return result, fmt.Errorf("update claim group request count: %w", err)
+		}
+	}
+	if groupChanged {
+		if err := attributionpool.MaterializeGroup(ctx, tx.Client(), group.ID, s.now().UTC()); err != nil {
+			invalidatePersistedACKs(&result, "rolled_back")
+			return result, fmt.Errorf("rematerialize claim group: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {

@@ -22,6 +22,10 @@ type Tx struct {
 	AttributionRequestClaim *AttributionRequestClaimClient
 	// AttributionUsageBucket is the client for interacting with the AttributionUsageBucket builders.
 	AttributionUsageBucket *AttributionUsageBucketClient
+	// AttributionUsagePool is the client for interacting with the AttributionUsagePool builders.
+	AttributionUsagePool *AttributionUsagePoolClient
+	// AttributionUsagePoolCommit is the client for interacting with the AttributionUsagePoolCommit builders.
+	AttributionUsagePoolCommit *AttributionUsagePoolCommitClient
 	// CommitCheckpoint is the client for interacting with the CommitCheckpoint builders.
 	CommitCheckpoint *CommitCheckpointClient
 	// CommitRewrite is the client for interacting with the CommitRewrite builders.
@@ -210,6 +214,8 @@ func (tx *Tx) init() {
 	tx.AttributionClaimGroup = NewAttributionClaimGroupClient(tx.config)
 	tx.AttributionRequestClaim = NewAttributionRequestClaimClient(tx.config)
 	tx.AttributionUsageBucket = NewAttributionUsageBucketClient(tx.config)
+	tx.AttributionUsagePool = NewAttributionUsagePoolClient(tx.config)
+	tx.AttributionUsagePoolCommit = NewAttributionUsagePoolCommitClient(tx.config)
 	tx.CommitCheckpoint = NewCommitCheckpointClient(tx.config)
 	tx.CommitRewrite = NewCommitRewriteClient(tx.config)
 	tx.Credential = NewCredentialClient(tx.config)

@@ -16,6 +16,8 @@ import (
 	"github.com/ai-efficiency/backend/ent/attributionclaimgroup"
 	"github.com/ai-efficiency/backend/ent/attributionrequestclaim"
 	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
+	"github.com/ai-efficiency/backend/ent/attributionusagepool"
+	"github.com/ai-efficiency/backend/ent/attributionusagepoolcommit"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
@@ -59,6 +61,8 @@ const (
 	TypeAttributionClaimGroup         = "AttributionClaimGroup"
 	TypeAttributionRequestClaim       = "AttributionRequestClaim"
 	TypeAttributionUsageBucket        = "AttributionUsageBucket"
+	TypeAttributionUsagePool          = "AttributionUsagePool"
+	TypeAttributionUsagePoolCommit    = "AttributionUsagePoolCommit"
 	TypeCommitCheckpoint              = "CommitCheckpoint"
 	TypeCommitRewrite                 = "CommitRewrite"
 	TypeCredential                    = "Credential"
@@ -4696,6 +4700,9 @@ type AttributionRequestClaimMutation struct {
 	total_tokens             *int64
 	addtotal_tokens          *int64
 	reconciled_at            *time.Time
+	materialized_pool_id     *int
+	addmaterialized_pool_id  *int
+	materialized_at          *time.Time
 	expires_at               *time.Time
 	created_at               *time.Time
 	updated_at               *time.Time
@@ -5689,6 +5696,125 @@ func (m *AttributionRequestClaimMutation) ResetReconciledAt() {
 	delete(m.clearedFields, attributionrequestclaim.FieldReconciledAt)
 }
 
+// SetMaterializedPoolID sets the "materialized_pool_id" field.
+func (m *AttributionRequestClaimMutation) SetMaterializedPoolID(i int) {
+	m.materialized_pool_id = &i
+	m.addmaterialized_pool_id = nil
+}
+
+// MaterializedPoolID returns the value of the "materialized_pool_id" field in the mutation.
+func (m *AttributionRequestClaimMutation) MaterializedPoolID() (r int, exists bool) {
+	v := m.materialized_pool_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMaterializedPoolID returns the old "materialized_pool_id" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldMaterializedPoolID(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMaterializedPoolID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMaterializedPoolID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMaterializedPoolID: %w", err)
+	}
+	return oldValue.MaterializedPoolID, nil
+}
+
+// AddMaterializedPoolID adds i to the "materialized_pool_id" field.
+func (m *AttributionRequestClaimMutation) AddMaterializedPoolID(i int) {
+	if m.addmaterialized_pool_id != nil {
+		*m.addmaterialized_pool_id += i
+	} else {
+		m.addmaterialized_pool_id = &i
+	}
+}
+
+// AddedMaterializedPoolID returns the value that was added to the "materialized_pool_id" field in this mutation.
+func (m *AttributionRequestClaimMutation) AddedMaterializedPoolID() (r int, exists bool) {
+	v := m.addmaterialized_pool_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearMaterializedPoolID clears the value of the "materialized_pool_id" field.
+func (m *AttributionRequestClaimMutation) ClearMaterializedPoolID() {
+	m.materialized_pool_id = nil
+	m.addmaterialized_pool_id = nil
+	m.clearedFields[attributionrequestclaim.FieldMaterializedPoolID] = struct{}{}
+}
+
+// MaterializedPoolIDCleared returns if the "materialized_pool_id" field was cleared in this mutation.
+func (m *AttributionRequestClaimMutation) MaterializedPoolIDCleared() bool {
+	_, ok := m.clearedFields[attributionrequestclaim.FieldMaterializedPoolID]
+	return ok
+}
+
+// ResetMaterializedPoolID resets all changes to the "materialized_pool_id" field.
+func (m *AttributionRequestClaimMutation) ResetMaterializedPoolID() {
+	m.materialized_pool_id = nil
+	m.addmaterialized_pool_id = nil
+	delete(m.clearedFields, attributionrequestclaim.FieldMaterializedPoolID)
+}
+
+// SetMaterializedAt sets the "materialized_at" field.
+func (m *AttributionRequestClaimMutation) SetMaterializedAt(t time.Time) {
+	m.materialized_at = &t
+}
+
+// MaterializedAt returns the value of the "materialized_at" field in the mutation.
+func (m *AttributionRequestClaimMutation) MaterializedAt() (r time.Time, exists bool) {
+	v := m.materialized_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMaterializedAt returns the old "materialized_at" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldMaterializedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMaterializedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMaterializedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMaterializedAt: %w", err)
+	}
+	return oldValue.MaterializedAt, nil
+}
+
+// ClearMaterializedAt clears the value of the "materialized_at" field.
+func (m *AttributionRequestClaimMutation) ClearMaterializedAt() {
+	m.materialized_at = nil
+	m.clearedFields[attributionrequestclaim.FieldMaterializedAt] = struct{}{}
+}
+
+// MaterializedAtCleared returns if the "materialized_at" field was cleared in this mutation.
+func (m *AttributionRequestClaimMutation) MaterializedAtCleared() bool {
+	_, ok := m.clearedFields[attributionrequestclaim.FieldMaterializedAt]
+	return ok
+}
+
+// ResetMaterializedAt resets all changes to the "materialized_at" field.
+func (m *AttributionRequestClaimMutation) ResetMaterializedAt() {
+	m.materialized_at = nil
+	delete(m.clearedFields, attributionrequestclaim.FieldMaterializedAt)
+}
+
 // SetExpiresAt sets the "expires_at" field.
 func (m *AttributionRequestClaimMutation) SetExpiresAt(t time.Time) {
 	m.expires_at = &t
@@ -5831,7 +5957,7 @@ func (m *AttributionRequestClaimMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AttributionRequestClaimMutation) Fields() []string {
-	fields := make([]string, 0, 21)
+	fields := make([]string, 0, 23)
 	if m.claim_group_id != nil {
 		fields = append(fields, attributionrequestclaim.FieldClaimGroupID)
 	}
@@ -5886,6 +6012,12 @@ func (m *AttributionRequestClaimMutation) Fields() []string {
 	if m.reconciled_at != nil {
 		fields = append(fields, attributionrequestclaim.FieldReconciledAt)
 	}
+	if m.materialized_pool_id != nil {
+		fields = append(fields, attributionrequestclaim.FieldMaterializedPoolID)
+	}
+	if m.materialized_at != nil {
+		fields = append(fields, attributionrequestclaim.FieldMaterializedAt)
+	}
 	if m.expires_at != nil {
 		fields = append(fields, attributionrequestclaim.FieldExpiresAt)
 	}
@@ -5939,6 +6071,10 @@ func (m *AttributionRequestClaimMutation) Field(name string) (ent.Value, bool) {
 		return m.TotalTokens()
 	case attributionrequestclaim.FieldReconciledAt:
 		return m.ReconciledAt()
+	case attributionrequestclaim.FieldMaterializedPoolID:
+		return m.MaterializedPoolID()
+	case attributionrequestclaim.FieldMaterializedAt:
+		return m.MaterializedAt()
 	case attributionrequestclaim.FieldExpiresAt:
 		return m.ExpiresAt()
 	case attributionrequestclaim.FieldCreatedAt:
@@ -5990,6 +6126,10 @@ func (m *AttributionRequestClaimMutation) OldField(ctx context.Context, name str
 		return m.OldTotalTokens(ctx)
 	case attributionrequestclaim.FieldReconciledAt:
 		return m.OldReconciledAt(ctx)
+	case attributionrequestclaim.FieldMaterializedPoolID:
+		return m.OldMaterializedPoolID(ctx)
+	case attributionrequestclaim.FieldMaterializedAt:
+		return m.OldMaterializedAt(ctx)
 	case attributionrequestclaim.FieldExpiresAt:
 		return m.OldExpiresAt(ctx)
 	case attributionrequestclaim.FieldCreatedAt:
@@ -6131,6 +6271,20 @@ func (m *AttributionRequestClaimMutation) SetField(name string, value ent.Value)
 		}
 		m.SetReconciledAt(v)
 		return nil
+	case attributionrequestclaim.FieldMaterializedPoolID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMaterializedPoolID(v)
+		return nil
+	case attributionrequestclaim.FieldMaterializedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMaterializedAt(v)
+		return nil
 	case attributionrequestclaim.FieldExpiresAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -6184,6 +6338,9 @@ func (m *AttributionRequestClaimMutation) AddedFields() []string {
 	if m.addtotal_tokens != nil {
 		fields = append(fields, attributionrequestclaim.FieldTotalTokens)
 	}
+	if m.addmaterialized_pool_id != nil {
+		fields = append(fields, attributionrequestclaim.FieldMaterializedPoolID)
+	}
 	return fields
 }
 
@@ -6208,6 +6365,8 @@ func (m *AttributionRequestClaimMutation) AddedField(name string) (ent.Value, bo
 		return m.AddedCacheReadTokens()
 	case attributionrequestclaim.FieldTotalTokens:
 		return m.AddedTotalTokens()
+	case attributionrequestclaim.FieldMaterializedPoolID:
+		return m.AddedMaterializedPoolID()
 	}
 	return nil, false
 }
@@ -6273,6 +6432,13 @@ func (m *AttributionRequestClaimMutation) AddField(name string, value ent.Value)
 		}
 		m.AddTotalTokens(v)
 		return nil
+	case attributionrequestclaim.FieldMaterializedPoolID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMaterializedPoolID(v)
+		return nil
 	}
 	return fmt.Errorf("unknown AttributionRequestClaim numeric field %s", name)
 }
@@ -6298,6 +6464,12 @@ func (m *AttributionRequestClaimMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(attributionrequestclaim.FieldReconciledAt) {
 		fields = append(fields, attributionrequestclaim.FieldReconciledAt)
+	}
+	if m.FieldCleared(attributionrequestclaim.FieldMaterializedPoolID) {
+		fields = append(fields, attributionrequestclaim.FieldMaterializedPoolID)
+	}
+	if m.FieldCleared(attributionrequestclaim.FieldMaterializedAt) {
+		fields = append(fields, attributionrequestclaim.FieldMaterializedAt)
 	}
 	return fields
 }
@@ -6330,6 +6502,12 @@ func (m *AttributionRequestClaimMutation) ClearField(name string) error {
 		return nil
 	case attributionrequestclaim.FieldReconciledAt:
 		m.ClearReconciledAt()
+		return nil
+	case attributionrequestclaim.FieldMaterializedPoolID:
+		m.ClearMaterializedPoolID()
+		return nil
+	case attributionrequestclaim.FieldMaterializedAt:
+		m.ClearMaterializedAt()
 		return nil
 	}
 	return fmt.Errorf("unknown AttributionRequestClaim nullable field %s", name)
@@ -6392,6 +6570,12 @@ func (m *AttributionRequestClaimMutation) ResetField(name string) error {
 		return nil
 	case attributionrequestclaim.FieldReconciledAt:
 		m.ResetReconciledAt()
+		return nil
+	case attributionrequestclaim.FieldMaterializedPoolID:
+		m.ResetMaterializedPoolID()
+		return nil
+	case attributionrequestclaim.FieldMaterializedAt:
+		m.ResetMaterializedAt()
 		return nil
 	case attributionrequestclaim.FieldExpiresAt:
 		m.ResetExpiresAt()
@@ -9056,6 +9240,1966 @@ func (m *AttributionUsageBucketMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown AttributionUsageBucket edge %s", name)
+}
+
+// AttributionUsagePoolMutation represents an operation that mutates the AttributionUsagePool nodes in the graph.
+type AttributionUsagePoolMutation struct {
+	config
+	op                       Op
+	typ                      string
+	id                       *int
+	canonical_pool_key       *string
+	ledger_epoch             *string
+	user_id                  *int
+	adduser_id               *int
+	requested_model          *string
+	bucket_start_utc         *time.Time
+	input_tokens             *int64
+	addinput_tokens          *int64
+	output_tokens            *int64
+	addoutput_tokens         *int64
+	cache_creation_tokens    *int64
+	addcache_creation_tokens *int64
+	cache_read_tokens        *int64
+	addcache_read_tokens     *int64
+	total_tokens             *int64
+	addtotal_tokens          *int64
+	request_count            *int
+	addrequest_count         *int
+	coverage_gap_count       *int
+	addcoverage_gap_count    *int
+	created_at               *time.Time
+	updated_at               *time.Time
+	clearedFields            map[string]struct{}
+	done                     bool
+	oldValue                 func(context.Context) (*AttributionUsagePool, error)
+	predicates               []predicate.AttributionUsagePool
+}
+
+var _ ent.Mutation = (*AttributionUsagePoolMutation)(nil)
+
+// attributionusagepoolOption allows management of the mutation configuration using functional options.
+type attributionusagepoolOption func(*AttributionUsagePoolMutation)
+
+// newAttributionUsagePoolMutation creates new mutation for the AttributionUsagePool entity.
+func newAttributionUsagePoolMutation(c config, op Op, opts ...attributionusagepoolOption) *AttributionUsagePoolMutation {
+	m := &AttributionUsagePoolMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAttributionUsagePool,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAttributionUsagePoolID sets the ID field of the mutation.
+func withAttributionUsagePoolID(id int) attributionusagepoolOption {
+	return func(m *AttributionUsagePoolMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AttributionUsagePool
+		)
+		m.oldValue = func(ctx context.Context) (*AttributionUsagePool, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AttributionUsagePool.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAttributionUsagePool sets the old AttributionUsagePool of the mutation.
+func withAttributionUsagePool(node *AttributionUsagePool) attributionusagepoolOption {
+	return func(m *AttributionUsagePoolMutation) {
+		m.oldValue = func(context.Context) (*AttributionUsagePool, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AttributionUsagePoolMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AttributionUsagePoolMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AttributionUsagePoolMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AttributionUsagePoolMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AttributionUsagePool.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCanonicalPoolKey sets the "canonical_pool_key" field.
+func (m *AttributionUsagePoolMutation) SetCanonicalPoolKey(s string) {
+	m.canonical_pool_key = &s
+}
+
+// CanonicalPoolKey returns the value of the "canonical_pool_key" field in the mutation.
+func (m *AttributionUsagePoolMutation) CanonicalPoolKey() (r string, exists bool) {
+	v := m.canonical_pool_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCanonicalPoolKey returns the old "canonical_pool_key" field's value of the AttributionUsagePool entity.
+// If the AttributionUsagePool object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolMutation) OldCanonicalPoolKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCanonicalPoolKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCanonicalPoolKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCanonicalPoolKey: %w", err)
+	}
+	return oldValue.CanonicalPoolKey, nil
+}
+
+// ResetCanonicalPoolKey resets all changes to the "canonical_pool_key" field.
+func (m *AttributionUsagePoolMutation) ResetCanonicalPoolKey() {
+	m.canonical_pool_key = nil
+}
+
+// SetLedgerEpoch sets the "ledger_epoch" field.
+func (m *AttributionUsagePoolMutation) SetLedgerEpoch(s string) {
+	m.ledger_epoch = &s
+}
+
+// LedgerEpoch returns the value of the "ledger_epoch" field in the mutation.
+func (m *AttributionUsagePoolMutation) LedgerEpoch() (r string, exists bool) {
+	v := m.ledger_epoch
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLedgerEpoch returns the old "ledger_epoch" field's value of the AttributionUsagePool entity.
+// If the AttributionUsagePool object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolMutation) OldLedgerEpoch(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLedgerEpoch is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLedgerEpoch requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLedgerEpoch: %w", err)
+	}
+	return oldValue.LedgerEpoch, nil
+}
+
+// ResetLedgerEpoch resets all changes to the "ledger_epoch" field.
+func (m *AttributionUsagePoolMutation) ResetLedgerEpoch() {
+	m.ledger_epoch = nil
+}
+
+// SetUserID sets the "user_id" field.
+func (m *AttributionUsagePoolMutation) SetUserID(i int) {
+	m.user_id = &i
+	m.adduser_id = nil
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *AttributionUsagePoolMutation) UserID() (r int, exists bool) {
+	v := m.user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the AttributionUsagePool entity.
+// If the AttributionUsagePool object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolMutation) OldUserID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// AddUserID adds i to the "user_id" field.
+func (m *AttributionUsagePoolMutation) AddUserID(i int) {
+	if m.adduser_id != nil {
+		*m.adduser_id += i
+	} else {
+		m.adduser_id = &i
+	}
+}
+
+// AddedUserID returns the value that was added to the "user_id" field in this mutation.
+func (m *AttributionUsagePoolMutation) AddedUserID() (r int, exists bool) {
+	v := m.adduser_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *AttributionUsagePoolMutation) ResetUserID() {
+	m.user_id = nil
+	m.adduser_id = nil
+}
+
+// SetRequestedModel sets the "requested_model" field.
+func (m *AttributionUsagePoolMutation) SetRequestedModel(s string) {
+	m.requested_model = &s
+}
+
+// RequestedModel returns the value of the "requested_model" field in the mutation.
+func (m *AttributionUsagePoolMutation) RequestedModel() (r string, exists bool) {
+	v := m.requested_model
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestedModel returns the old "requested_model" field's value of the AttributionUsagePool entity.
+// If the AttributionUsagePool object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolMutation) OldRequestedModel(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestedModel is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestedModel requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestedModel: %w", err)
+	}
+	return oldValue.RequestedModel, nil
+}
+
+// ResetRequestedModel resets all changes to the "requested_model" field.
+func (m *AttributionUsagePoolMutation) ResetRequestedModel() {
+	m.requested_model = nil
+}
+
+// SetBucketStartUtc sets the "bucket_start_utc" field.
+func (m *AttributionUsagePoolMutation) SetBucketStartUtc(t time.Time) {
+	m.bucket_start_utc = &t
+}
+
+// BucketStartUtc returns the value of the "bucket_start_utc" field in the mutation.
+func (m *AttributionUsagePoolMutation) BucketStartUtc() (r time.Time, exists bool) {
+	v := m.bucket_start_utc
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBucketStartUtc returns the old "bucket_start_utc" field's value of the AttributionUsagePool entity.
+// If the AttributionUsagePool object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolMutation) OldBucketStartUtc(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBucketStartUtc is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBucketStartUtc requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBucketStartUtc: %w", err)
+	}
+	return oldValue.BucketStartUtc, nil
+}
+
+// ResetBucketStartUtc resets all changes to the "bucket_start_utc" field.
+func (m *AttributionUsagePoolMutation) ResetBucketStartUtc() {
+	m.bucket_start_utc = nil
+}
+
+// SetInputTokens sets the "input_tokens" field.
+func (m *AttributionUsagePoolMutation) SetInputTokens(i int64) {
+	m.input_tokens = &i
+	m.addinput_tokens = nil
+}
+
+// InputTokens returns the value of the "input_tokens" field in the mutation.
+func (m *AttributionUsagePoolMutation) InputTokens() (r int64, exists bool) {
+	v := m.input_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInputTokens returns the old "input_tokens" field's value of the AttributionUsagePool entity.
+// If the AttributionUsagePool object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolMutation) OldInputTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInputTokens: %w", err)
+	}
+	return oldValue.InputTokens, nil
+}
+
+// AddInputTokens adds i to the "input_tokens" field.
+func (m *AttributionUsagePoolMutation) AddInputTokens(i int64) {
+	if m.addinput_tokens != nil {
+		*m.addinput_tokens += i
+	} else {
+		m.addinput_tokens = &i
+	}
+}
+
+// AddedInputTokens returns the value that was added to the "input_tokens" field in this mutation.
+func (m *AttributionUsagePoolMutation) AddedInputTokens() (r int64, exists bool) {
+	v := m.addinput_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetInputTokens resets all changes to the "input_tokens" field.
+func (m *AttributionUsagePoolMutation) ResetInputTokens() {
+	m.input_tokens = nil
+	m.addinput_tokens = nil
+}
+
+// SetOutputTokens sets the "output_tokens" field.
+func (m *AttributionUsagePoolMutation) SetOutputTokens(i int64) {
+	m.output_tokens = &i
+	m.addoutput_tokens = nil
+}
+
+// OutputTokens returns the value of the "output_tokens" field in the mutation.
+func (m *AttributionUsagePoolMutation) OutputTokens() (r int64, exists bool) {
+	v := m.output_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOutputTokens returns the old "output_tokens" field's value of the AttributionUsagePool entity.
+// If the AttributionUsagePool object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolMutation) OldOutputTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOutputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOutputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOutputTokens: %w", err)
+	}
+	return oldValue.OutputTokens, nil
+}
+
+// AddOutputTokens adds i to the "output_tokens" field.
+func (m *AttributionUsagePoolMutation) AddOutputTokens(i int64) {
+	if m.addoutput_tokens != nil {
+		*m.addoutput_tokens += i
+	} else {
+		m.addoutput_tokens = &i
+	}
+}
+
+// AddedOutputTokens returns the value that was added to the "output_tokens" field in this mutation.
+func (m *AttributionUsagePoolMutation) AddedOutputTokens() (r int64, exists bool) {
+	v := m.addoutput_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetOutputTokens resets all changes to the "output_tokens" field.
+func (m *AttributionUsagePoolMutation) ResetOutputTokens() {
+	m.output_tokens = nil
+	m.addoutput_tokens = nil
+}
+
+// SetCacheCreationTokens sets the "cache_creation_tokens" field.
+func (m *AttributionUsagePoolMutation) SetCacheCreationTokens(i int64) {
+	m.cache_creation_tokens = &i
+	m.addcache_creation_tokens = nil
+}
+
+// CacheCreationTokens returns the value of the "cache_creation_tokens" field in the mutation.
+func (m *AttributionUsagePoolMutation) CacheCreationTokens() (r int64, exists bool) {
+	v := m.cache_creation_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCacheCreationTokens returns the old "cache_creation_tokens" field's value of the AttributionUsagePool entity.
+// If the AttributionUsagePool object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolMutation) OldCacheCreationTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCacheCreationTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCacheCreationTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCacheCreationTokens: %w", err)
+	}
+	return oldValue.CacheCreationTokens, nil
+}
+
+// AddCacheCreationTokens adds i to the "cache_creation_tokens" field.
+func (m *AttributionUsagePoolMutation) AddCacheCreationTokens(i int64) {
+	if m.addcache_creation_tokens != nil {
+		*m.addcache_creation_tokens += i
+	} else {
+		m.addcache_creation_tokens = &i
+	}
+}
+
+// AddedCacheCreationTokens returns the value that was added to the "cache_creation_tokens" field in this mutation.
+func (m *AttributionUsagePoolMutation) AddedCacheCreationTokens() (r int64, exists bool) {
+	v := m.addcache_creation_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCacheCreationTokens resets all changes to the "cache_creation_tokens" field.
+func (m *AttributionUsagePoolMutation) ResetCacheCreationTokens() {
+	m.cache_creation_tokens = nil
+	m.addcache_creation_tokens = nil
+}
+
+// SetCacheReadTokens sets the "cache_read_tokens" field.
+func (m *AttributionUsagePoolMutation) SetCacheReadTokens(i int64) {
+	m.cache_read_tokens = &i
+	m.addcache_read_tokens = nil
+}
+
+// CacheReadTokens returns the value of the "cache_read_tokens" field in the mutation.
+func (m *AttributionUsagePoolMutation) CacheReadTokens() (r int64, exists bool) {
+	v := m.cache_read_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCacheReadTokens returns the old "cache_read_tokens" field's value of the AttributionUsagePool entity.
+// If the AttributionUsagePool object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolMutation) OldCacheReadTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCacheReadTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCacheReadTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCacheReadTokens: %w", err)
+	}
+	return oldValue.CacheReadTokens, nil
+}
+
+// AddCacheReadTokens adds i to the "cache_read_tokens" field.
+func (m *AttributionUsagePoolMutation) AddCacheReadTokens(i int64) {
+	if m.addcache_read_tokens != nil {
+		*m.addcache_read_tokens += i
+	} else {
+		m.addcache_read_tokens = &i
+	}
+}
+
+// AddedCacheReadTokens returns the value that was added to the "cache_read_tokens" field in this mutation.
+func (m *AttributionUsagePoolMutation) AddedCacheReadTokens() (r int64, exists bool) {
+	v := m.addcache_read_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCacheReadTokens resets all changes to the "cache_read_tokens" field.
+func (m *AttributionUsagePoolMutation) ResetCacheReadTokens() {
+	m.cache_read_tokens = nil
+	m.addcache_read_tokens = nil
+}
+
+// SetTotalTokens sets the "total_tokens" field.
+func (m *AttributionUsagePoolMutation) SetTotalTokens(i int64) {
+	m.total_tokens = &i
+	m.addtotal_tokens = nil
+}
+
+// TotalTokens returns the value of the "total_tokens" field in the mutation.
+func (m *AttributionUsagePoolMutation) TotalTokens() (r int64, exists bool) {
+	v := m.total_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTotalTokens returns the old "total_tokens" field's value of the AttributionUsagePool entity.
+// If the AttributionUsagePool object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolMutation) OldTotalTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTotalTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTotalTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTotalTokens: %w", err)
+	}
+	return oldValue.TotalTokens, nil
+}
+
+// AddTotalTokens adds i to the "total_tokens" field.
+func (m *AttributionUsagePoolMutation) AddTotalTokens(i int64) {
+	if m.addtotal_tokens != nil {
+		*m.addtotal_tokens += i
+	} else {
+		m.addtotal_tokens = &i
+	}
+}
+
+// AddedTotalTokens returns the value that was added to the "total_tokens" field in this mutation.
+func (m *AttributionUsagePoolMutation) AddedTotalTokens() (r int64, exists bool) {
+	v := m.addtotal_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTotalTokens resets all changes to the "total_tokens" field.
+func (m *AttributionUsagePoolMutation) ResetTotalTokens() {
+	m.total_tokens = nil
+	m.addtotal_tokens = nil
+}
+
+// SetRequestCount sets the "request_count" field.
+func (m *AttributionUsagePoolMutation) SetRequestCount(i int) {
+	m.request_count = &i
+	m.addrequest_count = nil
+}
+
+// RequestCount returns the value of the "request_count" field in the mutation.
+func (m *AttributionUsagePoolMutation) RequestCount() (r int, exists bool) {
+	v := m.request_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestCount returns the old "request_count" field's value of the AttributionUsagePool entity.
+// If the AttributionUsagePool object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolMutation) OldRequestCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestCount: %w", err)
+	}
+	return oldValue.RequestCount, nil
+}
+
+// AddRequestCount adds i to the "request_count" field.
+func (m *AttributionUsagePoolMutation) AddRequestCount(i int) {
+	if m.addrequest_count != nil {
+		*m.addrequest_count += i
+	} else {
+		m.addrequest_count = &i
+	}
+}
+
+// AddedRequestCount returns the value that was added to the "request_count" field in this mutation.
+func (m *AttributionUsagePoolMutation) AddedRequestCount() (r int, exists bool) {
+	v := m.addrequest_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRequestCount resets all changes to the "request_count" field.
+func (m *AttributionUsagePoolMutation) ResetRequestCount() {
+	m.request_count = nil
+	m.addrequest_count = nil
+}
+
+// SetCoverageGapCount sets the "coverage_gap_count" field.
+func (m *AttributionUsagePoolMutation) SetCoverageGapCount(i int) {
+	m.coverage_gap_count = &i
+	m.addcoverage_gap_count = nil
+}
+
+// CoverageGapCount returns the value of the "coverage_gap_count" field in the mutation.
+func (m *AttributionUsagePoolMutation) CoverageGapCount() (r int, exists bool) {
+	v := m.coverage_gap_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCoverageGapCount returns the old "coverage_gap_count" field's value of the AttributionUsagePool entity.
+// If the AttributionUsagePool object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolMutation) OldCoverageGapCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCoverageGapCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCoverageGapCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCoverageGapCount: %w", err)
+	}
+	return oldValue.CoverageGapCount, nil
+}
+
+// AddCoverageGapCount adds i to the "coverage_gap_count" field.
+func (m *AttributionUsagePoolMutation) AddCoverageGapCount(i int) {
+	if m.addcoverage_gap_count != nil {
+		*m.addcoverage_gap_count += i
+	} else {
+		m.addcoverage_gap_count = &i
+	}
+}
+
+// AddedCoverageGapCount returns the value that was added to the "coverage_gap_count" field in this mutation.
+func (m *AttributionUsagePoolMutation) AddedCoverageGapCount() (r int, exists bool) {
+	v := m.addcoverage_gap_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCoverageGapCount resets all changes to the "coverage_gap_count" field.
+func (m *AttributionUsagePoolMutation) ResetCoverageGapCount() {
+	m.coverage_gap_count = nil
+	m.addcoverage_gap_count = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AttributionUsagePoolMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AttributionUsagePoolMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AttributionUsagePool entity.
+// If the AttributionUsagePool object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AttributionUsagePoolMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *AttributionUsagePoolMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *AttributionUsagePoolMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the AttributionUsagePool entity.
+// If the AttributionUsagePool object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *AttributionUsagePoolMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the AttributionUsagePoolMutation builder.
+func (m *AttributionUsagePoolMutation) Where(ps ...predicate.AttributionUsagePool) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AttributionUsagePoolMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AttributionUsagePoolMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AttributionUsagePool, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AttributionUsagePoolMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AttributionUsagePoolMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AttributionUsagePool).
+func (m *AttributionUsagePoolMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AttributionUsagePoolMutation) Fields() []string {
+	fields := make([]string, 0, 14)
+	if m.canonical_pool_key != nil {
+		fields = append(fields, attributionusagepool.FieldCanonicalPoolKey)
+	}
+	if m.ledger_epoch != nil {
+		fields = append(fields, attributionusagepool.FieldLedgerEpoch)
+	}
+	if m.user_id != nil {
+		fields = append(fields, attributionusagepool.FieldUserID)
+	}
+	if m.requested_model != nil {
+		fields = append(fields, attributionusagepool.FieldRequestedModel)
+	}
+	if m.bucket_start_utc != nil {
+		fields = append(fields, attributionusagepool.FieldBucketStartUtc)
+	}
+	if m.input_tokens != nil {
+		fields = append(fields, attributionusagepool.FieldInputTokens)
+	}
+	if m.output_tokens != nil {
+		fields = append(fields, attributionusagepool.FieldOutputTokens)
+	}
+	if m.cache_creation_tokens != nil {
+		fields = append(fields, attributionusagepool.FieldCacheCreationTokens)
+	}
+	if m.cache_read_tokens != nil {
+		fields = append(fields, attributionusagepool.FieldCacheReadTokens)
+	}
+	if m.total_tokens != nil {
+		fields = append(fields, attributionusagepool.FieldTotalTokens)
+	}
+	if m.request_count != nil {
+		fields = append(fields, attributionusagepool.FieldRequestCount)
+	}
+	if m.coverage_gap_count != nil {
+		fields = append(fields, attributionusagepool.FieldCoverageGapCount)
+	}
+	if m.created_at != nil {
+		fields = append(fields, attributionusagepool.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, attributionusagepool.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AttributionUsagePoolMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case attributionusagepool.FieldCanonicalPoolKey:
+		return m.CanonicalPoolKey()
+	case attributionusagepool.FieldLedgerEpoch:
+		return m.LedgerEpoch()
+	case attributionusagepool.FieldUserID:
+		return m.UserID()
+	case attributionusagepool.FieldRequestedModel:
+		return m.RequestedModel()
+	case attributionusagepool.FieldBucketStartUtc:
+		return m.BucketStartUtc()
+	case attributionusagepool.FieldInputTokens:
+		return m.InputTokens()
+	case attributionusagepool.FieldOutputTokens:
+		return m.OutputTokens()
+	case attributionusagepool.FieldCacheCreationTokens:
+		return m.CacheCreationTokens()
+	case attributionusagepool.FieldCacheReadTokens:
+		return m.CacheReadTokens()
+	case attributionusagepool.FieldTotalTokens:
+		return m.TotalTokens()
+	case attributionusagepool.FieldRequestCount:
+		return m.RequestCount()
+	case attributionusagepool.FieldCoverageGapCount:
+		return m.CoverageGapCount()
+	case attributionusagepool.FieldCreatedAt:
+		return m.CreatedAt()
+	case attributionusagepool.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AttributionUsagePoolMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case attributionusagepool.FieldCanonicalPoolKey:
+		return m.OldCanonicalPoolKey(ctx)
+	case attributionusagepool.FieldLedgerEpoch:
+		return m.OldLedgerEpoch(ctx)
+	case attributionusagepool.FieldUserID:
+		return m.OldUserID(ctx)
+	case attributionusagepool.FieldRequestedModel:
+		return m.OldRequestedModel(ctx)
+	case attributionusagepool.FieldBucketStartUtc:
+		return m.OldBucketStartUtc(ctx)
+	case attributionusagepool.FieldInputTokens:
+		return m.OldInputTokens(ctx)
+	case attributionusagepool.FieldOutputTokens:
+		return m.OldOutputTokens(ctx)
+	case attributionusagepool.FieldCacheCreationTokens:
+		return m.OldCacheCreationTokens(ctx)
+	case attributionusagepool.FieldCacheReadTokens:
+		return m.OldCacheReadTokens(ctx)
+	case attributionusagepool.FieldTotalTokens:
+		return m.OldTotalTokens(ctx)
+	case attributionusagepool.FieldRequestCount:
+		return m.OldRequestCount(ctx)
+	case attributionusagepool.FieldCoverageGapCount:
+		return m.OldCoverageGapCount(ctx)
+	case attributionusagepool.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case attributionusagepool.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown AttributionUsagePool field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AttributionUsagePoolMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case attributionusagepool.FieldCanonicalPoolKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCanonicalPoolKey(v)
+		return nil
+	case attributionusagepool.FieldLedgerEpoch:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLedgerEpoch(v)
+		return nil
+	case attributionusagepool.FieldUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case attributionusagepool.FieldRequestedModel:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestedModel(v)
+		return nil
+	case attributionusagepool.FieldBucketStartUtc:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBucketStartUtc(v)
+		return nil
+	case attributionusagepool.FieldInputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInputTokens(v)
+		return nil
+	case attributionusagepool.FieldOutputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOutputTokens(v)
+		return nil
+	case attributionusagepool.FieldCacheCreationTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCacheCreationTokens(v)
+		return nil
+	case attributionusagepool.FieldCacheReadTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCacheReadTokens(v)
+		return nil
+	case attributionusagepool.FieldTotalTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTotalTokens(v)
+		return nil
+	case attributionusagepool.FieldRequestCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestCount(v)
+		return nil
+	case attributionusagepool.FieldCoverageGapCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCoverageGapCount(v)
+		return nil
+	case attributionusagepool.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case attributionusagepool.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AttributionUsagePool field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AttributionUsagePoolMutation) AddedFields() []string {
+	var fields []string
+	if m.adduser_id != nil {
+		fields = append(fields, attributionusagepool.FieldUserID)
+	}
+	if m.addinput_tokens != nil {
+		fields = append(fields, attributionusagepool.FieldInputTokens)
+	}
+	if m.addoutput_tokens != nil {
+		fields = append(fields, attributionusagepool.FieldOutputTokens)
+	}
+	if m.addcache_creation_tokens != nil {
+		fields = append(fields, attributionusagepool.FieldCacheCreationTokens)
+	}
+	if m.addcache_read_tokens != nil {
+		fields = append(fields, attributionusagepool.FieldCacheReadTokens)
+	}
+	if m.addtotal_tokens != nil {
+		fields = append(fields, attributionusagepool.FieldTotalTokens)
+	}
+	if m.addrequest_count != nil {
+		fields = append(fields, attributionusagepool.FieldRequestCount)
+	}
+	if m.addcoverage_gap_count != nil {
+		fields = append(fields, attributionusagepool.FieldCoverageGapCount)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AttributionUsagePoolMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case attributionusagepool.FieldUserID:
+		return m.AddedUserID()
+	case attributionusagepool.FieldInputTokens:
+		return m.AddedInputTokens()
+	case attributionusagepool.FieldOutputTokens:
+		return m.AddedOutputTokens()
+	case attributionusagepool.FieldCacheCreationTokens:
+		return m.AddedCacheCreationTokens()
+	case attributionusagepool.FieldCacheReadTokens:
+		return m.AddedCacheReadTokens()
+	case attributionusagepool.FieldTotalTokens:
+		return m.AddedTotalTokens()
+	case attributionusagepool.FieldRequestCount:
+		return m.AddedRequestCount()
+	case attributionusagepool.FieldCoverageGapCount:
+		return m.AddedCoverageGapCount()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AttributionUsagePoolMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case attributionusagepool.FieldUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUserID(v)
+		return nil
+	case attributionusagepool.FieldInputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddInputTokens(v)
+		return nil
+	case attributionusagepool.FieldOutputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddOutputTokens(v)
+		return nil
+	case attributionusagepool.FieldCacheCreationTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCacheCreationTokens(v)
+		return nil
+	case attributionusagepool.FieldCacheReadTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCacheReadTokens(v)
+		return nil
+	case attributionusagepool.FieldTotalTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTotalTokens(v)
+		return nil
+	case attributionusagepool.FieldRequestCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRequestCount(v)
+		return nil
+	case attributionusagepool.FieldCoverageGapCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCoverageGapCount(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AttributionUsagePool numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AttributionUsagePoolMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AttributionUsagePoolMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AttributionUsagePoolMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown AttributionUsagePool nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AttributionUsagePoolMutation) ResetField(name string) error {
+	switch name {
+	case attributionusagepool.FieldCanonicalPoolKey:
+		m.ResetCanonicalPoolKey()
+		return nil
+	case attributionusagepool.FieldLedgerEpoch:
+		m.ResetLedgerEpoch()
+		return nil
+	case attributionusagepool.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case attributionusagepool.FieldRequestedModel:
+		m.ResetRequestedModel()
+		return nil
+	case attributionusagepool.FieldBucketStartUtc:
+		m.ResetBucketStartUtc()
+		return nil
+	case attributionusagepool.FieldInputTokens:
+		m.ResetInputTokens()
+		return nil
+	case attributionusagepool.FieldOutputTokens:
+		m.ResetOutputTokens()
+		return nil
+	case attributionusagepool.FieldCacheCreationTokens:
+		m.ResetCacheCreationTokens()
+		return nil
+	case attributionusagepool.FieldCacheReadTokens:
+		m.ResetCacheReadTokens()
+		return nil
+	case attributionusagepool.FieldTotalTokens:
+		m.ResetTotalTokens()
+		return nil
+	case attributionusagepool.FieldRequestCount:
+		m.ResetRequestCount()
+		return nil
+	case attributionusagepool.FieldCoverageGapCount:
+		m.ResetCoverageGapCount()
+		return nil
+	case attributionusagepool.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case attributionusagepool.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown AttributionUsagePool field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AttributionUsagePoolMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AttributionUsagePoolMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AttributionUsagePoolMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AttributionUsagePoolMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AttributionUsagePoolMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AttributionUsagePoolMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AttributionUsagePoolMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown AttributionUsagePool unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AttributionUsagePoolMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown AttributionUsagePool edge %s", name)
+}
+
+// AttributionUsagePoolCommitMutation represents an operation that mutates the AttributionUsagePoolCommit nodes in the graph.
+type AttributionUsagePoolCommitMutation struct {
+	config
+	op                Op
+	typ               string
+	id                *int
+	pool_id           *int
+	addpool_id        *int
+	repo_config_id    *int
+	addrepo_config_id *int
+	commit_sha        *string
+	relation_kind     *attributionusagepoolcommit.RelationKind
+	created_at        *time.Time
+	updated_at        *time.Time
+	clearedFields     map[string]struct{}
+	done              bool
+	oldValue          func(context.Context) (*AttributionUsagePoolCommit, error)
+	predicates        []predicate.AttributionUsagePoolCommit
+}
+
+var _ ent.Mutation = (*AttributionUsagePoolCommitMutation)(nil)
+
+// attributionusagepoolcommitOption allows management of the mutation configuration using functional options.
+type attributionusagepoolcommitOption func(*AttributionUsagePoolCommitMutation)
+
+// newAttributionUsagePoolCommitMutation creates new mutation for the AttributionUsagePoolCommit entity.
+func newAttributionUsagePoolCommitMutation(c config, op Op, opts ...attributionusagepoolcommitOption) *AttributionUsagePoolCommitMutation {
+	m := &AttributionUsagePoolCommitMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAttributionUsagePoolCommit,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAttributionUsagePoolCommitID sets the ID field of the mutation.
+func withAttributionUsagePoolCommitID(id int) attributionusagepoolcommitOption {
+	return func(m *AttributionUsagePoolCommitMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AttributionUsagePoolCommit
+		)
+		m.oldValue = func(ctx context.Context) (*AttributionUsagePoolCommit, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AttributionUsagePoolCommit.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAttributionUsagePoolCommit sets the old AttributionUsagePoolCommit of the mutation.
+func withAttributionUsagePoolCommit(node *AttributionUsagePoolCommit) attributionusagepoolcommitOption {
+	return func(m *AttributionUsagePoolCommitMutation) {
+		m.oldValue = func(context.Context) (*AttributionUsagePoolCommit, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AttributionUsagePoolCommitMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AttributionUsagePoolCommitMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AttributionUsagePoolCommitMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AttributionUsagePoolCommitMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AttributionUsagePoolCommit.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetPoolID sets the "pool_id" field.
+func (m *AttributionUsagePoolCommitMutation) SetPoolID(i int) {
+	m.pool_id = &i
+	m.addpool_id = nil
+}
+
+// PoolID returns the value of the "pool_id" field in the mutation.
+func (m *AttributionUsagePoolCommitMutation) PoolID() (r int, exists bool) {
+	v := m.pool_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPoolID returns the old "pool_id" field's value of the AttributionUsagePoolCommit entity.
+// If the AttributionUsagePoolCommit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolCommitMutation) OldPoolID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPoolID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPoolID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPoolID: %w", err)
+	}
+	return oldValue.PoolID, nil
+}
+
+// AddPoolID adds i to the "pool_id" field.
+func (m *AttributionUsagePoolCommitMutation) AddPoolID(i int) {
+	if m.addpool_id != nil {
+		*m.addpool_id += i
+	} else {
+		m.addpool_id = &i
+	}
+}
+
+// AddedPoolID returns the value that was added to the "pool_id" field in this mutation.
+func (m *AttributionUsagePoolCommitMutation) AddedPoolID() (r int, exists bool) {
+	v := m.addpool_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPoolID resets all changes to the "pool_id" field.
+func (m *AttributionUsagePoolCommitMutation) ResetPoolID() {
+	m.pool_id = nil
+	m.addpool_id = nil
+}
+
+// SetRepoConfigID sets the "repo_config_id" field.
+func (m *AttributionUsagePoolCommitMutation) SetRepoConfigID(i int) {
+	m.repo_config_id = &i
+	m.addrepo_config_id = nil
+}
+
+// RepoConfigID returns the value of the "repo_config_id" field in the mutation.
+func (m *AttributionUsagePoolCommitMutation) RepoConfigID() (r int, exists bool) {
+	v := m.repo_config_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRepoConfigID returns the old "repo_config_id" field's value of the AttributionUsagePoolCommit entity.
+// If the AttributionUsagePoolCommit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolCommitMutation) OldRepoConfigID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRepoConfigID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRepoConfigID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRepoConfigID: %w", err)
+	}
+	return oldValue.RepoConfigID, nil
+}
+
+// AddRepoConfigID adds i to the "repo_config_id" field.
+func (m *AttributionUsagePoolCommitMutation) AddRepoConfigID(i int) {
+	if m.addrepo_config_id != nil {
+		*m.addrepo_config_id += i
+	} else {
+		m.addrepo_config_id = &i
+	}
+}
+
+// AddedRepoConfigID returns the value that was added to the "repo_config_id" field in this mutation.
+func (m *AttributionUsagePoolCommitMutation) AddedRepoConfigID() (r int, exists bool) {
+	v := m.addrepo_config_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRepoConfigID resets all changes to the "repo_config_id" field.
+func (m *AttributionUsagePoolCommitMutation) ResetRepoConfigID() {
+	m.repo_config_id = nil
+	m.addrepo_config_id = nil
+}
+
+// SetCommitSha sets the "commit_sha" field.
+func (m *AttributionUsagePoolCommitMutation) SetCommitSha(s string) {
+	m.commit_sha = &s
+}
+
+// CommitSha returns the value of the "commit_sha" field in the mutation.
+func (m *AttributionUsagePoolCommitMutation) CommitSha() (r string, exists bool) {
+	v := m.commit_sha
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCommitSha returns the old "commit_sha" field's value of the AttributionUsagePoolCommit entity.
+// If the AttributionUsagePoolCommit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolCommitMutation) OldCommitSha(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCommitSha is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCommitSha requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCommitSha: %w", err)
+	}
+	return oldValue.CommitSha, nil
+}
+
+// ResetCommitSha resets all changes to the "commit_sha" field.
+func (m *AttributionUsagePoolCommitMutation) ResetCommitSha() {
+	m.commit_sha = nil
+}
+
+// SetRelationKind sets the "relation_kind" field.
+func (m *AttributionUsagePoolCommitMutation) SetRelationKind(ak attributionusagepoolcommit.RelationKind) {
+	m.relation_kind = &ak
+}
+
+// RelationKind returns the value of the "relation_kind" field in the mutation.
+func (m *AttributionUsagePoolCommitMutation) RelationKind() (r attributionusagepoolcommit.RelationKind, exists bool) {
+	v := m.relation_kind
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRelationKind returns the old "relation_kind" field's value of the AttributionUsagePoolCommit entity.
+// If the AttributionUsagePoolCommit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolCommitMutation) OldRelationKind(ctx context.Context) (v attributionusagepoolcommit.RelationKind, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRelationKind is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRelationKind requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRelationKind: %w", err)
+	}
+	return oldValue.RelationKind, nil
+}
+
+// ResetRelationKind resets all changes to the "relation_kind" field.
+func (m *AttributionUsagePoolCommitMutation) ResetRelationKind() {
+	m.relation_kind = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AttributionUsagePoolCommitMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AttributionUsagePoolCommitMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AttributionUsagePoolCommit entity.
+// If the AttributionUsagePoolCommit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolCommitMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AttributionUsagePoolCommitMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *AttributionUsagePoolCommitMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *AttributionUsagePoolCommitMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the AttributionUsagePoolCommit entity.
+// If the AttributionUsagePoolCommit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolCommitMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *AttributionUsagePoolCommitMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the AttributionUsagePoolCommitMutation builder.
+func (m *AttributionUsagePoolCommitMutation) Where(ps ...predicate.AttributionUsagePoolCommit) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AttributionUsagePoolCommitMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AttributionUsagePoolCommitMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AttributionUsagePoolCommit, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AttributionUsagePoolCommitMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AttributionUsagePoolCommitMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AttributionUsagePoolCommit).
+func (m *AttributionUsagePoolCommitMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AttributionUsagePoolCommitMutation) Fields() []string {
+	fields := make([]string, 0, 6)
+	if m.pool_id != nil {
+		fields = append(fields, attributionusagepoolcommit.FieldPoolID)
+	}
+	if m.repo_config_id != nil {
+		fields = append(fields, attributionusagepoolcommit.FieldRepoConfigID)
+	}
+	if m.commit_sha != nil {
+		fields = append(fields, attributionusagepoolcommit.FieldCommitSha)
+	}
+	if m.relation_kind != nil {
+		fields = append(fields, attributionusagepoolcommit.FieldRelationKind)
+	}
+	if m.created_at != nil {
+		fields = append(fields, attributionusagepoolcommit.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, attributionusagepoolcommit.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AttributionUsagePoolCommitMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case attributionusagepoolcommit.FieldPoolID:
+		return m.PoolID()
+	case attributionusagepoolcommit.FieldRepoConfigID:
+		return m.RepoConfigID()
+	case attributionusagepoolcommit.FieldCommitSha:
+		return m.CommitSha()
+	case attributionusagepoolcommit.FieldRelationKind:
+		return m.RelationKind()
+	case attributionusagepoolcommit.FieldCreatedAt:
+		return m.CreatedAt()
+	case attributionusagepoolcommit.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AttributionUsagePoolCommitMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case attributionusagepoolcommit.FieldPoolID:
+		return m.OldPoolID(ctx)
+	case attributionusagepoolcommit.FieldRepoConfigID:
+		return m.OldRepoConfigID(ctx)
+	case attributionusagepoolcommit.FieldCommitSha:
+		return m.OldCommitSha(ctx)
+	case attributionusagepoolcommit.FieldRelationKind:
+		return m.OldRelationKind(ctx)
+	case attributionusagepoolcommit.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case attributionusagepoolcommit.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown AttributionUsagePoolCommit field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AttributionUsagePoolCommitMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case attributionusagepoolcommit.FieldPoolID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPoolID(v)
+		return nil
+	case attributionusagepoolcommit.FieldRepoConfigID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRepoConfigID(v)
+		return nil
+	case attributionusagepoolcommit.FieldCommitSha:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCommitSha(v)
+		return nil
+	case attributionusagepoolcommit.FieldRelationKind:
+		v, ok := value.(attributionusagepoolcommit.RelationKind)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRelationKind(v)
+		return nil
+	case attributionusagepoolcommit.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case attributionusagepoolcommit.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AttributionUsagePoolCommit field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AttributionUsagePoolCommitMutation) AddedFields() []string {
+	var fields []string
+	if m.addpool_id != nil {
+		fields = append(fields, attributionusagepoolcommit.FieldPoolID)
+	}
+	if m.addrepo_config_id != nil {
+		fields = append(fields, attributionusagepoolcommit.FieldRepoConfigID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AttributionUsagePoolCommitMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case attributionusagepoolcommit.FieldPoolID:
+		return m.AddedPoolID()
+	case attributionusagepoolcommit.FieldRepoConfigID:
+		return m.AddedRepoConfigID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AttributionUsagePoolCommitMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case attributionusagepoolcommit.FieldPoolID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPoolID(v)
+		return nil
+	case attributionusagepoolcommit.FieldRepoConfigID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRepoConfigID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AttributionUsagePoolCommit numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AttributionUsagePoolCommitMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AttributionUsagePoolCommitMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AttributionUsagePoolCommitMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown AttributionUsagePoolCommit nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AttributionUsagePoolCommitMutation) ResetField(name string) error {
+	switch name {
+	case attributionusagepoolcommit.FieldPoolID:
+		m.ResetPoolID()
+		return nil
+	case attributionusagepoolcommit.FieldRepoConfigID:
+		m.ResetRepoConfigID()
+		return nil
+	case attributionusagepoolcommit.FieldCommitSha:
+		m.ResetCommitSha()
+		return nil
+	case attributionusagepoolcommit.FieldRelationKind:
+		m.ResetRelationKind()
+		return nil
+	case attributionusagepoolcommit.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case attributionusagepoolcommit.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown AttributionUsagePoolCommit field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AttributionUsagePoolCommitMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AttributionUsagePoolCommitMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AttributionUsagePoolCommitMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AttributionUsagePoolCommitMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AttributionUsagePoolCommitMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AttributionUsagePoolCommitMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AttributionUsagePoolCommitMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown AttributionUsagePoolCommit unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AttributionUsagePoolCommitMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown AttributionUsagePoolCommit edge %s", name)
 }
 
 // CommitCheckpointMutation represents an operation that mutates the CommitCheckpoint nodes in the graph.

@@ -44,8 +44,9 @@ func newReconcileFixture(t *testing.T) reconcileFixture {
 	now := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
 	user := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource("ldap").SetRelayUserID(42).SaveX(ctx)
 	provider := client.RelayProvider.Create().SetName("relay-alpha").SetDisplayName("Relay Alpha").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-key").SaveX(ctx)
+	repo := client.RepoConfig.Create().SetName("repo").SetFullName("acme/repo").SetCloneURL("https://github.com/acme/repo.git").SaveX(ctx)
 	group := client.AttributionClaimGroup.Create().SetGroupID("group-1").SetInstallationID(1).SetUserID(user.ID).SetRelayProviderID(provider.ID).
-		SetSchemaVersion(2).SetThreadID("thread-1").SetTurnID("turn-1").SetEvidenceDigest("evidence").SetCommitAllocations([]map[string]any{}).
+		SetSchemaVersion(2).SetThreadID("thread-1").SetTurnID("turn-1").SetEvidenceDigest("evidence").SetCommitAllocations([]map[string]any{{"repo_config_id": repo.ID, "commit_sha": "commit-1"}}).
 		SetRequestCount(1).SetExpiresAt(now.Add(90 * 24 * time.Hour)).SaveX(ctx)
 	claim := client.AttributionRequestClaim.Create().SetClaimGroupID(group.ID).SetRelayProviderID(provider.ID).SetRequestID("req-1").
 		SetCanonicalDigest("digest").SetNextAttemptAt(now).SetExpiresAt(now.Add(90 * 24 * time.Hour)).SaveX(ctx)
@@ -79,7 +80,7 @@ func TestRunOnceReconcilesExactOwnedUsage(t *testing.T) {
 		t.Fatalf("RunOnce = %d, %v", processed, err)
 	}
 	claim := fixture.client.AttributionRequestClaim.GetX(context.Background(), fixture.claimID)
-	if claim.Status != attributionrequestclaim.StatusReconciled || claim.TotalTokens != 19 || claim.RequestedModel != "gpt-test" || claim.ReconciledAt == nil || claim.LeaseExpiresAt != nil || claim.LeaseToken != "" {
+	if claim.Status != attributionrequestclaim.StatusReconciled || claim.TotalTokens != 19 || claim.RequestedModel != "gpt-test" || claim.ReconciledAt == nil || claim.MaterializedPoolID == nil || claim.LeaseExpiresAt != nil || claim.LeaseToken != "" {
 		t.Fatalf("claim = %+v", claim)
 	}
 }

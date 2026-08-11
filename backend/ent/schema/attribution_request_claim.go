@@ -30,6 +30,8 @@ func (AttributionRequestClaim) Fields() []ent.Field {
 		field.Int64("cache_read_tokens").Default(0),
 		field.Int64("total_tokens").Default(0),
 		field.Time("reconciled_at").Optional().Nillable(),
+		field.Int("materialized_pool_id").Optional().Nillable(),
+		field.Time("materialized_at").Optional().Nillable(),
 		field.Time("expires_at"),
 		field.Time("created_at").Immutable().Default(timeNow),
 		field.Time("updated_at").Default(timeNow).UpdateDefault(timeNow),
@@ -42,5 +44,6 @@ func (AttributionRequestClaim) Indexes() []ent.Index {
 		index.Fields("claim_group_id", "created_at"),
 		index.Fields("status", "next_attempt_at", "lease_expires_at"),
 		index.Fields("status", "expires_at"),
+		index.Fields("materialized_pool_id"),
 	}
 }

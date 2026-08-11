@@ -240,6 +240,34 @@ func (arcc *AttributionRequestClaimCreate) SetNillableReconciledAt(t *time.Time)
 	return arcc
 }
 
+// SetMaterializedPoolID sets the "materialized_pool_id" field.
+func (arcc *AttributionRequestClaimCreate) SetMaterializedPoolID(i int) *AttributionRequestClaimCreate {
+	arcc.mutation.SetMaterializedPoolID(i)
+	return arcc
+}
+
+// SetNillableMaterializedPoolID sets the "materialized_pool_id" field if the given value is not nil.
+func (arcc *AttributionRequestClaimCreate) SetNillableMaterializedPoolID(i *int) *AttributionRequestClaimCreate {
+	if i != nil {
+		arcc.SetMaterializedPoolID(*i)
+	}
+	return arcc
+}
+
+// SetMaterializedAt sets the "materialized_at" field.
+func (arcc *AttributionRequestClaimCreate) SetMaterializedAt(t time.Time) *AttributionRequestClaimCreate {
+	arcc.mutation.SetMaterializedAt(t)
+	return arcc
+}
+
+// SetNillableMaterializedAt sets the "materialized_at" field if the given value is not nil.
+func (arcc *AttributionRequestClaimCreate) SetNillableMaterializedAt(t *time.Time) *AttributionRequestClaimCreate {
+	if t != nil {
+		arcc.SetMaterializedAt(*t)
+	}
+	return arcc
+}
+
 // SetExpiresAt sets the "expires_at" field.
 func (arcc *AttributionRequestClaimCreate) SetExpiresAt(t time.Time) *AttributionRequestClaimCreate {
 	arcc.mutation.SetExpiresAt(t)
@@ -510,6 +538,14 @@ func (arcc *AttributionRequestClaimCreate) createSpec() (*AttributionRequestClai
 	if value, ok := arcc.mutation.ReconciledAt(); ok {
 		_spec.SetField(attributionrequestclaim.FieldReconciledAt, field.TypeTime, value)
 		_node.ReconciledAt = &value
+	}
+	if value, ok := arcc.mutation.MaterializedPoolID(); ok {
+		_spec.SetField(attributionrequestclaim.FieldMaterializedPoolID, field.TypeInt, value)
+		_node.MaterializedPoolID = &value
+	}
+	if value, ok := arcc.mutation.MaterializedAt(); ok {
+		_spec.SetField(attributionrequestclaim.FieldMaterializedAt, field.TypeTime, value)
+		_node.MaterializedAt = &value
 	}
 	if value, ok := arcc.mutation.ExpiresAt(); ok {
 		_spec.SetField(attributionrequestclaim.FieldExpiresAt, field.TypeTime, value)

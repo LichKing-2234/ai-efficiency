@@ -53,6 +53,10 @@ type AttributionRequestClaim struct {
 	TotalTokens int64 `json:"total_tokens,omitempty"`
 	// ReconciledAt holds the value of the "reconciled_at" field.
 	ReconciledAt *time.Time `json:"reconciled_at,omitempty"`
+	// MaterializedPoolID holds the value of the "materialized_pool_id" field.
+	MaterializedPoolID *int `json:"materialized_pool_id,omitempty"`
+	// MaterializedAt holds the value of the "materialized_at" field.
+	MaterializedAt *time.Time `json:"materialized_at,omitempty"`
 	// ExpiresAt holds the value of the "expires_at" field.
 	ExpiresAt time.Time `json:"expires_at,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
@@ -67,11 +71,11 @@ func (*AttributionRequestClaim) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case attributionrequestclaim.FieldID, attributionrequestclaim.FieldClaimGroupID, attributionrequestclaim.FieldRelayProviderID, attributionrequestclaim.FieldAttemptCount, attributionrequestclaim.FieldInputTokens, attributionrequestclaim.FieldOutputTokens, attributionrequestclaim.FieldCacheCreationTokens, attributionrequestclaim.FieldCacheReadTokens, attributionrequestclaim.FieldTotalTokens:
+		case attributionrequestclaim.FieldID, attributionrequestclaim.FieldClaimGroupID, attributionrequestclaim.FieldRelayProviderID, attributionrequestclaim.FieldAttemptCount, attributionrequestclaim.FieldInputTokens, attributionrequestclaim.FieldOutputTokens, attributionrequestclaim.FieldCacheCreationTokens, attributionrequestclaim.FieldCacheReadTokens, attributionrequestclaim.FieldTotalTokens, attributionrequestclaim.FieldMaterializedPoolID:
 			values[i] = new(sql.NullInt64)
 		case attributionrequestclaim.FieldRequestID, attributionrequestclaim.FieldCanonicalDigest, attributionrequestclaim.FieldStatus, attributionrequestclaim.FieldLeaseToken, attributionrequestclaim.FieldLastErrorCode, attributionrequestclaim.FieldRequestedModel:
 			values[i] = new(sql.NullString)
-		case attributionrequestclaim.FieldNextAttemptAt, attributionrequestclaim.FieldLeaseExpiresAt, attributionrequestclaim.FieldUsageAt, attributionrequestclaim.FieldReconciledAt, attributionrequestclaim.FieldExpiresAt, attributionrequestclaim.FieldCreatedAt, attributionrequestclaim.FieldUpdatedAt:
+		case attributionrequestclaim.FieldNextAttemptAt, attributionrequestclaim.FieldLeaseExpiresAt, attributionrequestclaim.FieldUsageAt, attributionrequestclaim.FieldReconciledAt, attributionrequestclaim.FieldMaterializedAt, attributionrequestclaim.FieldExpiresAt, attributionrequestclaim.FieldCreatedAt, attributionrequestclaim.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -205,6 +209,20 @@ func (arc *AttributionRequestClaim) assignValues(columns []string, values []any)
 				arc.ReconciledAt = new(time.Time)
 				*arc.ReconciledAt = value.Time
 			}
+		case attributionrequestclaim.FieldMaterializedPoolID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field materialized_pool_id", values[i])
+			} else if value.Valid {
+				arc.MaterializedPoolID = new(int)
+				*arc.MaterializedPoolID = int(value.Int64)
+			}
+		case attributionrequestclaim.FieldMaterializedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field materialized_at", values[i])
+			} else if value.Valid {
+				arc.MaterializedAt = new(time.Time)
+				*arc.MaterializedAt = value.Time
+			}
 		case attributionrequestclaim.FieldExpiresAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field expires_at", values[i])
@@ -316,6 +334,16 @@ func (arc *AttributionRequestClaim) String() string {
 	builder.WriteString(", ")
 	if v := arc.ReconciledAt; v != nil {
 		builder.WriteString("reconciled_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := arc.MaterializedPoolID; v != nil {
+		builder.WriteString("materialized_pool_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := arc.MaterializedAt; v != nil {
+		builder.WriteString("materialized_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")
