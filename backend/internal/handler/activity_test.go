@@ -18,6 +18,22 @@ type fakeActivityService struct {
 	memberErr    error
 }
 
+type fakeActivityV2Service struct {
+	*fakeActivityService
+	query activity.V2Query
+}
+
+func (f *fakeActivityV2Service) V2Overview(_ context.Context, _ int, query activity.V2Query) (*activity.V2Overview, error) {
+	f.query = query
+	return &activity.V2Overview{ContractVersion: activity.V2MetricContractVersion, Trend: []activity.V2TrendPoint{}}, nil
+}
+func (f *fakeActivityV2Service) V2Repositories(context.Context, int, activity.V2PageQuery) (*activity.V2Page[activity.V2RepositoryRow], error) {
+	return &activity.V2Page[activity.V2RepositoryRow]{Items: []activity.V2RepositoryRow{}}, nil
+}
+func (f *fakeActivityV2Service) V2PullRequests(context.Context, int, activity.V2PageQuery) (*activity.V2Page[activity.V2PullRequestRow], error) {
+	return &activity.V2Page[activity.V2PullRequestRow]{Items: []activity.V2PullRequestRow{}}, nil
+}
+
 func (f *fakeActivityService) Scope(context.Context, int) (*activity.ScopeResponse, error) {
 	return &activity.ScopeResponse{Teams: []activity.Team{}}, nil
 }
@@ -105,5 +121,26 @@ func TestActivityHandlerReturnsSnapshotExpiredConflict(t *testing.T) {
 	_ = json.Unmarshal(recorder.Body.Bytes(), &response)
 	if response.Message != "snapshot_expired" {
 		t.Fatalf("message = %q", response.Message)
+	}
+}
+
+func TestActivityV2HandlerRequiresExactLocalDateQuery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &fakeActivityV2Service{fakeActivityService: &fakeActivityService{}}
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set(auth.ContextKeyUser, &auth.UserContext{UserID: 42}) })
+	RegisterActivityRoutes(router.Group("/api/v1/activity"), NewActivityHandler(service))
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/activity/v2/overview?scope=member&subject_user_id=7&from=2026-08-01&to=2026-08-07&timezone=Asia%2FShanghai", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if service.query.Scope != activity.V2ScopeMember || service.query.SubjectID != 7 || service.query.Timezone != "Asia/Shanghai" {
+		t.Fatalf("query=%+v", service.query)
+	}
+	invalid := httptest.NewRecorder()
+	router.ServeHTTP(invalid, httptest.NewRequest(http.MethodGet, "/api/v1/activity/v2/overview?scope=personal", nil))
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid status=%d body=%s", invalid.Code, invalid.Body.String())
 	}
 }

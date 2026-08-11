@@ -21,6 +21,8 @@ type AttributionUsagePool struct {
 	CanonicalPoolKey string `json:"canonical_pool_key,omitempty"`
 	// LedgerEpoch holds the value of the "ledger_epoch" field.
 	LedgerEpoch string `json:"ledger_epoch,omitempty"`
+	// RelayProviderID holds the value of the "relay_provider_id" field.
+	RelayProviderID int `json:"relay_provider_id,omitempty"`
 	// UserID holds the value of the "user_id" field.
 	UserID int `json:"user_id,omitempty"`
 	// RequestedModel holds the value of the "requested_model" field.
@@ -53,7 +55,7 @@ func (*AttributionUsagePool) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case attributionusagepool.FieldID, attributionusagepool.FieldUserID, attributionusagepool.FieldInputTokens, attributionusagepool.FieldOutputTokens, attributionusagepool.FieldCacheCreationTokens, attributionusagepool.FieldCacheReadTokens, attributionusagepool.FieldTotalTokens, attributionusagepool.FieldRequestCount, attributionusagepool.FieldCoverageGapCount:
+		case attributionusagepool.FieldID, attributionusagepool.FieldRelayProviderID, attributionusagepool.FieldUserID, attributionusagepool.FieldInputTokens, attributionusagepool.FieldOutputTokens, attributionusagepool.FieldCacheCreationTokens, attributionusagepool.FieldCacheReadTokens, attributionusagepool.FieldTotalTokens, attributionusagepool.FieldRequestCount, attributionusagepool.FieldCoverageGapCount:
 			values[i] = new(sql.NullInt64)
 		case attributionusagepool.FieldCanonicalPoolKey, attributionusagepool.FieldLedgerEpoch, attributionusagepool.FieldRequestedModel:
 			values[i] = new(sql.NullString)
@@ -91,6 +93,12 @@ func (aup *AttributionUsagePool) assignValues(columns []string, values []any) er
 				return fmt.Errorf("unexpected type %T for field ledger_epoch", values[i])
 			} else if value.Valid {
 				aup.LedgerEpoch = value.String
+			}
+		case attributionusagepool.FieldRelayProviderID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field relay_provider_id", values[i])
+			} else if value.Valid {
+				aup.RelayProviderID = int(value.Int64)
 			}
 		case attributionusagepool.FieldUserID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -205,6 +213,9 @@ func (aup *AttributionUsagePool) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("ledger_epoch=")
 	builder.WriteString(aup.LedgerEpoch)
+	builder.WriteString(", ")
+	builder.WriteString("relay_provider_id=")
+	builder.WriteString(fmt.Sprintf("%v", aup.RelayProviderID))
 	builder.WriteString(", ")
 	builder.WriteString("user_id=")
 	builder.WriteString(fmt.Sprintf("%v", aup.UserID))

@@ -14,6 +14,8 @@ func (AttributionUsagePool) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("canonical_pool_key").NotEmpty().Unique(),
 		field.String("ledger_epoch").Default("shadow_v2"),
+		// Zero is reserved for pre-migration shadow rows. Formal reads reject it.
+		field.Int("relay_provider_id").Default(0),
 		field.Int("user_id"),
 		field.String("requested_model").NotEmpty(),
 		field.Time("bucket_start_utc"),
@@ -31,6 +33,7 @@ func (AttributionUsagePool) Fields() []ent.Field {
 
 func (AttributionUsagePool) Indexes() []ent.Index {
 	return []ent.Index{
+		index.Fields("ledger_epoch", "relay_provider_id", "user_id", "bucket_start_utc"),
 		index.Fields("ledger_epoch", "user_id", "bucket_start_utc"),
 		index.Fields("ledger_epoch", "bucket_start_utc"),
 	}

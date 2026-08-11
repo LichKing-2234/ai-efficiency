@@ -2,6 +2,7 @@ package activity
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +30,7 @@ var (
 	ErrForbidden       = errors.New("activity subject is outside the current authorized scope")
 	ErrInvalidCursor   = errors.New("invalid activity cursor")
 	ErrSnapshotExpired = errors.New("activity snapshot expired")
+	ErrInvalidQuery    = errors.New("invalid activity query")
 )
 
 const defaultPRSyncStaleAfter = 24 * time.Hour
@@ -41,15 +43,21 @@ type ServiceOptions struct {
 	ScopeResolver ScopeResolver
 	CursorSecret  string
 	Cache         *Cache
+	V2LedgerEpoch string
+	V2Denominator V2DenominatorReader
+	V2DB          *sql.DB
 }
 
 type Service struct {
-	client       *ent.Client
-	correlation  *attributionledger.CorrelationStore
-	scope        ScopeResolver
-	cursorSecret []byte
-	cache        *Cache
-	now          func() time.Time
+	client        *ent.Client
+	correlation   *attributionledger.CorrelationStore
+	scope         ScopeResolver
+	cursorSecret  []byte
+	cache         *Cache
+	v2LedgerEpoch string
+	v2Denominator V2DenominatorReader
+	v2DB          *sql.DB
+	now           func() time.Time
 }
 
 func NewService(client *ent.Client, correlation *attributionledger.CorrelationStore, options ServiceOptions) *Service {
@@ -57,7 +65,7 @@ func NewService(client *ent.Client, correlation *attributionledger.CorrelationSt
 	if scopeResolver == nil && client != nil {
 		scopeResolver = representativescope.New(client)
 	}
-	return &Service{client: client, correlation: correlation, scope: scopeResolver, cursorSecret: []byte(options.CursorSecret), cache: options.Cache, now: time.Now}
+	return &Service{client: client, correlation: correlation, scope: scopeResolver, cursorSecret: []byte(options.CursorSecret), cache: options.Cache, v2LedgerEpoch: strings.TrimSpace(options.V2LedgerEpoch), v2Denominator: options.V2Denominator, v2DB: options.V2DB, now: time.Now}
 }
 
 func (s *Service) Scope(ctx context.Context, actorUserID int) (*ScopeResponse, error) {

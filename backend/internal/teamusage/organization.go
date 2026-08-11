@@ -98,6 +98,44 @@ func (s *Service) Organization(ctx context.Context, actorUserID int, params Orga
 	return response, nil
 }
 
+// DepartmentSummary reuses the authorization-isolated Team Usage organization
+// snapshot while returning only the exact subtree denominator Activity needs.
+func (s *Service) DepartmentSummary(ctx context.Context, actorUserID int, departmentID string, params OverviewParams) (*DepartmentSummaryResponse, error) {
+	normalized, err := normalizeOverviewParams(params)
+	if err != nil {
+		return nil, err
+	}
+	scope, err := s.requireRepresentativeScope(ctx, actorUserID)
+	if err != nil {
+		return nil, err
+	}
+	departmentID = strings.TrimSpace(departmentID)
+	parentID, found := "", false
+	for _, department := range scope.MemberTreeDepartments {
+		if department.ExternalID != departmentID {
+			continue
+		}
+		found = true
+		if department.ParentExternalID != nil {
+			parentID = strings.TrimSpace(*department.ParentExternalID)
+		}
+		break
+	}
+	if !found {
+		return nil, ErrOutOfScope
+	}
+	result, scopeVersion, err := s.readOrganizationSnapshot(ctx, actorUserID, normalized, parentID)
+	if err != nil {
+		return nil, err
+	}
+	for _, department := range result.Snapshot.Departments {
+		if department.DepartmentExternalID == departmentID {
+			return &DepartmentSummaryResponse{SnapshotFreshness: result.Freshness, ScopeVersion: scopeVersion, Window: result.Snapshot.Window, DepartmentExternalID: departmentID, RangeTotalTokens: cloneInt64Pointer(department.RangeTotalTokens)}, nil
+		}
+	}
+	return nil, ErrOutOfScope
+}
+
 func (s *Service) readOrganizationSnapshot(ctx context.Context, actorUserID int, params OverviewParams, parentID string) (*OrganizationCacheResult, string, error) {
 	result, scopeVersion, err := s.readOrganizationSnapshotAttempt(ctx, actorUserID, params, parentID, false)
 	if errors.Is(err, errPrewarmAuthorizationChanged) {

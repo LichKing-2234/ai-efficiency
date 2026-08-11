@@ -17,6 +17,8 @@ const (
 	FieldCanonicalPoolKey = "canonical_pool_key"
 	// FieldLedgerEpoch holds the string denoting the ledger_epoch field in the database.
 	FieldLedgerEpoch = "ledger_epoch"
+	// FieldRelayProviderID holds the string denoting the relay_provider_id field in the database.
+	FieldRelayProviderID = "relay_provider_id"
 	// FieldUserID holds the string denoting the user_id field in the database.
 	FieldUserID = "user_id"
 	// FieldRequestedModel holds the string denoting the requested_model field in the database.
@@ -50,6 +52,7 @@ var Columns = []string{
 	FieldID,
 	FieldCanonicalPoolKey,
 	FieldLedgerEpoch,
+	FieldRelayProviderID,
 	FieldUserID,
 	FieldRequestedModel,
 	FieldBucketStartUtc,
@@ -79,6 +82,8 @@ var (
 	CanonicalPoolKeyValidator func(string) error
 	// DefaultLedgerEpoch holds the default value on creation for the "ledger_epoch" field.
 	DefaultLedgerEpoch string
+	// DefaultRelayProviderID holds the default value on creation for the "relay_provider_id" field.
+	DefaultRelayProviderID int
 	// RequestedModelValidator is a validator for the "requested_model" field. It is called by the builders before save.
 	RequestedModelValidator func(string) error
 	// DefaultInputTokens holds the default value on creation for the "input_tokens" field.
@@ -119,6 +124,11 @@ func ByCanonicalPoolKey(opts ...sql.OrderTermOption) OrderOption {
 // ByLedgerEpoch orders the results by the ledger_epoch field.
 func ByLedgerEpoch(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldLedgerEpoch, opts...).ToFunc()
+}
+
+// ByRelayProviderID orders the results by the relay_provider_id field.
+func ByRelayProviderID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRelayProviderID, opts...).ToFunc()
 }
 
 // ByUserID orders the results by the user_id field.

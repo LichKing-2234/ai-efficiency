@@ -73,7 +73,7 @@ func TestMaterializeRequestClaimStoresOfficialTokenOnce(t *testing.T) {
 		t.Fatalf("pools = %d, want 1", len(pools))
 	}
 	pool := pools[0]
-	if pool.InputTokens != 10 || pool.OutputTokens != 2 || pool.CacheCreationTokens != 3 || pool.CacheReadTokens != 4 || pool.TotalTokens != 19 || pool.RequestCount != 1 || !pool.BucketStartUtc.Equal(time.Date(2026, 8, 11, 12, 15, 0, 0, time.UTC)) {
+	if pool.RelayProviderID <= 0 || pool.InputTokens != 10 || pool.OutputTokens != 2 || pool.CacheCreationTokens != 3 || pool.CacheReadTokens != 4 || pool.TotalTokens != 19 || pool.RequestCount != 1 || !pool.BucketStartUtc.Equal(time.Date(2026, 8, 11, 12, 15, 0, 0, time.UTC)) {
 		t.Fatalf("pool = %+v", pool)
 	}
 	relations := fixture.client.AttributionUsagePoolCommit.Query().AllX(ctx)
@@ -85,14 +85,14 @@ func TestMaterializeRequestClaimStoresOfficialTokenOnce(t *testing.T) {
 func TestCanonicalContributionIgnoresAllocationOrderAndDuplicates(t *testing.T) {
 	usageAt := time.Date(2026, 8, 11, 12, 17, 0, 0, time.UTC)
 	claim := &ent.AttributionRequestClaim{RequestedModel: "gpt-test", UsageAt: &usageAt, InputTokens: 1, TotalTokens: 1}
-	first, err := canonicalContribution(7, []map[string]any{
+	first, err := canonicalContribution(3, 7, []map[string]any{
 		{"repo_config_id": float64(2), "commit_sha": "bbb"},
 		{"repo_config_id": float64(1), "commit_sha": "aaa"},
 	}, claim)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := canonicalContribution(7, []map[string]any{
+	second, err := canonicalContribution(3, 7, []map[string]any{
 		{"repo_config_id": 1, "commit_sha": "aaa"},
 		{"repo_config_id": 2, "commit_sha": "bbb"},
 		{"repo_config_id": 1, "commit_sha": "aaa"},
@@ -102,6 +102,10 @@ func TestCanonicalContributionIgnoresAllocationOrderAndDuplicates(t *testing.T) 
 	}
 	if first.key != second.key || len(first.commits) != 2 || len(second.commits) != 2 {
 		t.Fatalf("canonical contributions differ: %+v %+v", first, second)
+	}
+	otherProvider, err := canonicalContribution(4, 7, []map[string]any{{"repo_config_id": 1, "commit_sha": "aaa"}, {"repo_config_id": 2, "commit_sha": "bbb"}}, claim)
+	if err != nil || otherProvider.key == first.key {
+		t.Fatalf("provider identity not isolated: first=%+v other=%+v err=%v", first, otherProvider, err)
 	}
 }
 

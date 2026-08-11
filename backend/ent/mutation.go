@@ -9594,6 +9594,8 @@ type AttributionUsagePoolMutation struct {
 	id                       *int
 	canonical_pool_key       *string
 	ledger_epoch             *string
+	relay_provider_id        *int
+	addrelay_provider_id     *int
 	user_id                  *int
 	adduser_id               *int
 	requested_model          *string
@@ -9788,6 +9790,62 @@ func (m *AttributionUsagePoolMutation) OldLedgerEpoch(ctx context.Context) (v st
 // ResetLedgerEpoch resets all changes to the "ledger_epoch" field.
 func (m *AttributionUsagePoolMutation) ResetLedgerEpoch() {
 	m.ledger_epoch = nil
+}
+
+// SetRelayProviderID sets the "relay_provider_id" field.
+func (m *AttributionUsagePoolMutation) SetRelayProviderID(i int) {
+	m.relay_provider_id = &i
+	m.addrelay_provider_id = nil
+}
+
+// RelayProviderID returns the value of the "relay_provider_id" field in the mutation.
+func (m *AttributionUsagePoolMutation) RelayProviderID() (r int, exists bool) {
+	v := m.relay_provider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRelayProviderID returns the old "relay_provider_id" field's value of the AttributionUsagePool entity.
+// If the AttributionUsagePool object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolMutation) OldRelayProviderID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRelayProviderID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRelayProviderID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRelayProviderID: %w", err)
+	}
+	return oldValue.RelayProviderID, nil
+}
+
+// AddRelayProviderID adds i to the "relay_provider_id" field.
+func (m *AttributionUsagePoolMutation) AddRelayProviderID(i int) {
+	if m.addrelay_provider_id != nil {
+		*m.addrelay_provider_id += i
+	} else {
+		m.addrelay_provider_id = &i
+	}
+}
+
+// AddedRelayProviderID returns the value that was added to the "relay_provider_id" field in this mutation.
+func (m *AttributionUsagePoolMutation) AddedRelayProviderID() (r int, exists bool) {
+	v := m.addrelay_provider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRelayProviderID resets all changes to the "relay_provider_id" field.
+func (m *AttributionUsagePoolMutation) ResetRelayProviderID() {
+	m.relay_provider_id = nil
+	m.addrelay_provider_id = nil
 }
 
 // SetUserID sets the "user_id" field.
@@ -10416,12 +10474,15 @@ func (m *AttributionUsagePoolMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AttributionUsagePoolMutation) Fields() []string {
-	fields := make([]string, 0, 14)
+	fields := make([]string, 0, 15)
 	if m.canonical_pool_key != nil {
 		fields = append(fields, attributionusagepool.FieldCanonicalPoolKey)
 	}
 	if m.ledger_epoch != nil {
 		fields = append(fields, attributionusagepool.FieldLedgerEpoch)
+	}
+	if m.relay_provider_id != nil {
+		fields = append(fields, attributionusagepool.FieldRelayProviderID)
 	}
 	if m.user_id != nil {
 		fields = append(fields, attributionusagepool.FieldUserID)
@@ -10471,6 +10532,8 @@ func (m *AttributionUsagePoolMutation) Field(name string) (ent.Value, bool) {
 		return m.CanonicalPoolKey()
 	case attributionusagepool.FieldLedgerEpoch:
 		return m.LedgerEpoch()
+	case attributionusagepool.FieldRelayProviderID:
+		return m.RelayProviderID()
 	case attributionusagepool.FieldUserID:
 		return m.UserID()
 	case attributionusagepool.FieldRequestedModel:
@@ -10508,6 +10571,8 @@ func (m *AttributionUsagePoolMutation) OldField(ctx context.Context, name string
 		return m.OldCanonicalPoolKey(ctx)
 	case attributionusagepool.FieldLedgerEpoch:
 		return m.OldLedgerEpoch(ctx)
+	case attributionusagepool.FieldRelayProviderID:
+		return m.OldRelayProviderID(ctx)
 	case attributionusagepool.FieldUserID:
 		return m.OldUserID(ctx)
 	case attributionusagepool.FieldRequestedModel:
@@ -10554,6 +10619,13 @@ func (m *AttributionUsagePoolMutation) SetField(name string, value ent.Value) er
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetLedgerEpoch(v)
+		return nil
+	case attributionusagepool.FieldRelayProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRelayProviderID(v)
 		return nil
 	case attributionusagepool.FieldUserID:
 		v, ok := value.(int)
@@ -10647,6 +10719,9 @@ func (m *AttributionUsagePoolMutation) SetField(name string, value ent.Value) er
 // this mutation.
 func (m *AttributionUsagePoolMutation) AddedFields() []string {
 	var fields []string
+	if m.addrelay_provider_id != nil {
+		fields = append(fields, attributionusagepool.FieldRelayProviderID)
+	}
 	if m.adduser_id != nil {
 		fields = append(fields, attributionusagepool.FieldUserID)
 	}
@@ -10679,6 +10754,8 @@ func (m *AttributionUsagePoolMutation) AddedFields() []string {
 // was not set, or was not defined in the schema.
 func (m *AttributionUsagePoolMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
+	case attributionusagepool.FieldRelayProviderID:
+		return m.AddedRelayProviderID()
 	case attributionusagepool.FieldUserID:
 		return m.AddedUserID()
 	case attributionusagepool.FieldInputTokens:
@@ -10704,6 +10781,13 @@ func (m *AttributionUsagePoolMutation) AddedField(name string) (ent.Value, bool)
 // type.
 func (m *AttributionUsagePoolMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case attributionusagepool.FieldRelayProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRelayProviderID(v)
+		return nil
 	case attributionusagepool.FieldUserID:
 		v, ok := value.(int)
 		if !ok {
@@ -10792,6 +10876,9 @@ func (m *AttributionUsagePoolMutation) ResetField(name string) error {
 		return nil
 	case attributionusagepool.FieldLedgerEpoch:
 		m.ResetLedgerEpoch()
+		return nil
+	case attributionusagepool.FieldRelayProviderID:
+		m.ResetRelayProviderID()
 		return nil
 	case attributionusagepool.FieldUserID:
 		m.ResetUserID()

@@ -21,6 +21,8 @@ type activityCursor struct {
 	FromUnixNano int64  `json:"from_unix_nano"`
 	ToUnixNano   int64  `json:"to_unix_nano"`
 	Offset       int    `json:"offset"`
+	LastID       int    `json:"last_id,omitempty"`
+	LastValue    string `json:"last_value,omitempty"`
 }
 
 func (s *Service) paginateMemberActivity(result *MemberActivity, authorization *authorizationScope, actorUserID, targetUserID int, options DetailPageOptions) error {

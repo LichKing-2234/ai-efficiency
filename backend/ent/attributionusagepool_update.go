@@ -56,6 +56,27 @@ func (aupu *AttributionUsagePoolUpdate) SetNillableLedgerEpoch(s *string) *Attri
 	return aupu
 }
 
+// SetRelayProviderID sets the "relay_provider_id" field.
+func (aupu *AttributionUsagePoolUpdate) SetRelayProviderID(i int) *AttributionUsagePoolUpdate {
+	aupu.mutation.ResetRelayProviderID()
+	aupu.mutation.SetRelayProviderID(i)
+	return aupu
+}
+
+// SetNillableRelayProviderID sets the "relay_provider_id" field if the given value is not nil.
+func (aupu *AttributionUsagePoolUpdate) SetNillableRelayProviderID(i *int) *AttributionUsagePoolUpdate {
+	if i != nil {
+		aupu.SetRelayProviderID(*i)
+	}
+	return aupu
+}
+
+// AddRelayProviderID adds i to the "relay_provider_id" field.
+func (aupu *AttributionUsagePoolUpdate) AddRelayProviderID(i int) *AttributionUsagePoolUpdate {
+	aupu.mutation.AddRelayProviderID(i)
+	return aupu
+}
+
 // SetUserID sets the "user_id" field.
 func (aupu *AttributionUsagePoolUpdate) SetUserID(i int) *AttributionUsagePoolUpdate {
 	aupu.mutation.ResetUserID()
@@ -332,6 +353,12 @@ func (aupu *AttributionUsagePoolUpdate) sqlSave(ctx context.Context) (n int, err
 	if value, ok := aupu.mutation.LedgerEpoch(); ok {
 		_spec.SetField(attributionusagepool.FieldLedgerEpoch, field.TypeString, value)
 	}
+	if value, ok := aupu.mutation.RelayProviderID(); ok {
+		_spec.SetField(attributionusagepool.FieldRelayProviderID, field.TypeInt, value)
+	}
+	if value, ok := aupu.mutation.AddedRelayProviderID(); ok {
+		_spec.AddField(attributionusagepool.FieldRelayProviderID, field.TypeInt, value)
+	}
 	if value, ok := aupu.mutation.UserID(); ok {
 		_spec.SetField(attributionusagepool.FieldUserID, field.TypeInt, value)
 	}
@@ -434,6 +461,27 @@ func (aupuo *AttributionUsagePoolUpdateOne) SetNillableLedgerEpoch(s *string) *A
 	if s != nil {
 		aupuo.SetLedgerEpoch(*s)
 	}
+	return aupuo
+}
+
+// SetRelayProviderID sets the "relay_provider_id" field.
+func (aupuo *AttributionUsagePoolUpdateOne) SetRelayProviderID(i int) *AttributionUsagePoolUpdateOne {
+	aupuo.mutation.ResetRelayProviderID()
+	aupuo.mutation.SetRelayProviderID(i)
+	return aupuo
+}
+
+// SetNillableRelayProviderID sets the "relay_provider_id" field if the given value is not nil.
+func (aupuo *AttributionUsagePoolUpdateOne) SetNillableRelayProviderID(i *int) *AttributionUsagePoolUpdateOne {
+	if i != nil {
+		aupuo.SetRelayProviderID(*i)
+	}
+	return aupuo
+}
+
+// AddRelayProviderID adds i to the "relay_provider_id" field.
+func (aupuo *AttributionUsagePoolUpdateOne) AddRelayProviderID(i int) *AttributionUsagePoolUpdateOne {
+	aupuo.mutation.AddRelayProviderID(i)
 	return aupuo
 }
 
@@ -742,6 +790,12 @@ func (aupuo *AttributionUsagePoolUpdateOne) sqlSave(ctx context.Context) (_node 
 	}
 	if value, ok := aupuo.mutation.LedgerEpoch(); ok {
 		_spec.SetField(attributionusagepool.FieldLedgerEpoch, field.TypeString, value)
+	}
+	if value, ok := aupuo.mutation.RelayProviderID(); ok {
+		_spec.SetField(attributionusagepool.FieldRelayProviderID, field.TypeInt, value)
+	}
+	if value, ok := aupuo.mutation.AddedRelayProviderID(); ok {
+		_spec.AddField(attributionusagepool.FieldRelayProviderID, field.TypeInt, value)
 	}
 	if value, ok := aupuo.mutation.UserID(); ok {
 		_spec.SetField(attributionusagepool.FieldUserID, field.TypeInt, value)
