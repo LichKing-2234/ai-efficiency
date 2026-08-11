@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** Implementation in progress; T02-T08 and T10 are implemented with local verification, and T02-T07/T10 are merged with hosted CI green. T08 has clean final Spec/Standards reviews and full/race/repeat/vet verification; push, PR, and hosted CI remain. The T04 real read-only canary still requires separate authorization.
+**Status:** Implementation in progress; T02-T08 and T10 are merged with hosted CI green. T09 implementation and local qualification are complete and await PR/hosted CI. The T04 real read-only canary still requires separate authorization.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -110,20 +110,20 @@ T01 contract publication (#253)
 
 ### T09 — Activity v2 frontend and repository administration IA ([#249](https://github.com/LichKing-2234/ai-efficiency/issues/249))
 
-- [ ] Build the ratio, committed daily trend, Repository Top 5, PR Top 5, and
+- [x] Build the ratio, committed daily trend, Repository Top 5, PR Top 5, and
   full Repository/PR tabs from backend contracts only.
-- [ ] Label the donut “Used for committed code / Other Token”; show adjacent
+- [x] Label the donut “Used for committed code / Other Token”; show adjacent
   period percentage-point change only when both periods are complete and fully
   inside the comparable formal epoch.
-- [ ] Implement 7/30/90/custom local-day range, URL state, overall ranking
+- [x] Implement 7/30/90/custom local-day range, URL state, overall ranking
   context, and `repo_id`/`pr_record_id` in-page filtering.
-- [ ] Reuse Usage organization/member navigation without personal metrics or
+- [x] Reuse Usage organization/member navigation without personal metrics or
   ranking.
-- [ ] Implement independent section loading/error/refresh, exact empty/zero
+- [x] Implement independent section loading/error/refresh, exact empty/zero
   states, desktop table, and mobile card rendering.
-- [ ] Move `/repos` into administrator navigation and remove Activity/PR/Token
+- [x] Move `/repos` into administrator navigation and remove Activity/PR/Token
   analysis from repository pages.
-- [ ] Verify i18n, accessibility, role E2E, build measurement, responsive
+- [x] Verify i18n, accessibility, role E2E, build measurement, responsive
   viewports, and absence of Request/pending/gap details.
 
 ### T10 — Rewrite, orphan, and cherry-pick lineage ([#247](https://github.com/LichKing-2234/ai-efficiency/issues/247))

@@ -651,6 +651,7 @@ const enUS = {
   'repos.invalidUrl': 'Please enter a valid repo URL',
   'repos.addFailed': 'Failed to add repo',
   'repoDetail.backToRepos': 'Back to Repos',
+  'repoDetail.operationsDescription': 'Maintain SCM binding, webhooks, credentials, and synchronization for this repository.',
   'repoDetail.syncPrs': 'Sync PRs',
   'repoDetail.syncing': 'Syncing...',
   'repoDetail.syncDisabledUnbound': 'Bind this repository to a code platform before syncing PRs.',

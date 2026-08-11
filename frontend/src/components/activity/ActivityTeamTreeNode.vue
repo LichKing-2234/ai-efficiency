@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import DepartmentTreeToggle from '@/components/DepartmentTreeToggle.vue'
 import { useI18n } from '@/i18n'
+import { useRoute } from 'vue-router'
 import type { ActivityTeamIdentity } from '@/types/activity'
 
 const props = defineProps<{
@@ -12,6 +13,7 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
+const route = useRoute()
 const expanded = ref(false)
 const children = computed(() => props.branchFor(props.team.external_id)?.departments ?? [])
 
@@ -35,7 +37,7 @@ function toggle() {
       <span v-else class="h-7 w-7 shrink-0" aria-hidden="true" />
       <RouterLink
         :data-testid="`activity-team-${team.external_id}`"
-        :to="`/activity/teams/${encodeURIComponent(team.external_id)}`"
+        :to="{ path: `/activity/teams/${encodeURIComponent(team.external_id)}`, query: route.query }"
         class="group flex min-w-0 flex-1 items-center justify-between gap-4 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-600 focus-visible:ring-offset-2"
       >
         <span class="min-w-0">

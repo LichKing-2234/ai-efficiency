@@ -653,6 +653,7 @@ const zhCN = {
   'repos.invalidUrl': '请输入有效的仓库 URL',
   'repos.addFailed': '添加仓库失败',
   'repoDetail.backToRepos': '返回仓库列表',
+  'repoDetail.operationsDescription': '维护此代码仓库的 SCM 绑定、Webhook、凭据与同步状态。',
   'repoDetail.syncPrs': '同步 PR',
   'repoDetail.syncing': '同步中...',
   'repoDetail.syncDisabledUnbound': '请先把仓库绑定到代码平台入口，再同步 PR。',

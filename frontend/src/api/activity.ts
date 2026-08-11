@@ -11,6 +11,12 @@ import type {
   ActivityScopeResponse,
   ActivityTeamResponse,
   ActivityWindowParams,
+  ActivityV2Overview,
+  ActivityV2Page,
+  ActivityV2PageQuery,
+  ActivityV2PullRequestRow,
+  ActivityV2Query,
+  ActivityV2RepositoryRow,
 } from '@/types/activity'
 
 export function getActivityScope() {
@@ -39,6 +45,18 @@ export function getActivityRepository(repoID: number, params?: ActivityRepositor
 
 export function getActivityBucket(bucketID: string) {
   return client.get<ApiResponse<ActivityBucketDetail>>(`/activity/buckets/${encodeURIComponent(bucketID)}`)
+}
+
+export function getActivityV2Overview(params: ActivityV2Query) {
+  return client.get<ApiResponse<ActivityV2Overview>>('/activity/v2/overview', { params })
+}
+
+export function listActivityV2Repositories(params: ActivityV2PageQuery) {
+  return client.get<ApiResponse<ActivityV2Page<ActivityV2RepositoryRow>>>('/activity/v2/repositories', { params })
+}
+
+export function listActivityV2PullRequests(params: ActivityV2PageQuery) {
+  return client.get<ApiResponse<ActivityV2Page<ActivityV2PullRequestRow>>>('/activity/v2/pull-requests', { params })
 }
 
 function page<T>(value: { items?: T[] | null; next_cursor?: string } | null | undefined) {

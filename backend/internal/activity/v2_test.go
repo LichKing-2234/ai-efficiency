@@ -242,6 +242,59 @@ func TestV2RatioStates(t *testing.T) {
 	}
 }
 
+func TestPreviousV2WindowUsesLocalCalendarDays(t *testing.T) {
+	tests := []struct {
+		name, timezone, from, to, wantFromDate, wantToDate string
+		wantFromUTC, wantToUTC                             time.Time
+	}{
+		{"UTC", "UTC", "2026-08-01", "2026-08-07", "2026-07-25", "2026-07-31", time.Date(2026, 7, 25, 0, 0, 0, 0, time.UTC), time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)},
+		{"Shanghai", "Asia/Shanghai", "2026-08-01", "2026-08-07", "2026-07-25", "2026-07-31", time.Date(2026, 7, 24, 16, 0, 0, 0, time.UTC), time.Date(2026, 7, 31, 16, 0, 0, 0, time.UTC)},
+		{"DST", "America/New_York", "2026-03-08", "2026-03-14", "2026-03-01", "2026-03-07", time.Date(2026, 3, 1, 5, 0, 0, 0, time.UTC), time.Date(2026, 3, 8, 5, 0, 0, 0, time.UTC)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			location, err := time.LoadLocation(tt.timezone)
+			if err != nil {
+				t.Fatal(err)
+			}
+			previous, from, to := previousV2Window(V2Query{FromDate: tt.from, ToDate: tt.to, Timezone: tt.timezone}, location)
+			if previous.FromDate != tt.wantFromDate || previous.ToDate != tt.wantToDate || !from.Equal(tt.wantFromUTC) || !to.Equal(tt.wantToUTC) {
+				t.Fatalf("previous=%+v bounds=[%s,%s), want dates %s..%s bounds [%s,%s)", previous, from, to, tt.wantFromDate, tt.wantToDate, tt.wantFromUTC, tt.wantToUTC)
+			}
+		})
+	}
+}
+
+func TestV2OverviewReturnsExactAdjacentPercentagePointChange(t *testing.T) {
+	client, dsn := testdb.OpenWithDSN(t)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	actor := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource("ldap").SaveX(ctx)
+	repo := client.RepoConfig.Create().SetName("repo").SetFullName("example/repo").SetCloneURL("https://example.com/example/repo.git").SaveX(ctx)
+	seed := createV2Pool(t, client, actor.ID, "formal_v2", "2026-08-06T00:00:00Z", 1, 0)
+	previous := createV2Pool(t, client, actor.ID, "formal_v2", "2026-08-07T00:00:00Z", 50, 0)
+	current := createV2Pool(t, client, actor.ID, "formal_v2", "2026-08-08T00:00:00Z", 100, 0)
+	for index, pool := range []*ent.AttributionUsagePool{seed, previous, current} {
+		client.AttributionUsagePoolCommit.Create().SetPoolID(pool.ID).SetRepoConfigID(repo.ID).SetCommitSha(fmt.Sprintf("sha-%d", index)).SetRelationKind(attributionusagepoolcommit.RelationKindDirect).SaveX(ctx)
+	}
+	service := NewService(client, nil, ServiceOptions{
+		V2LedgerEpoch: "formal_v2",
+		V2DB:          db,
+		V2Denominator: fixedV2Denominator{V2Denominator{TotalTokens: 200, AsOf: time.Date(2026, 8, 9, 0, 0, 0, 0, time.UTC), Fresh: true, Complete: true}},
+	})
+	result, err := service.V2Overview(ctx, actor.ID, V2Query{Scope: V2ScopePersonal, FromDate: "2026-08-08", ToDate: "2026-08-08", Timezone: "UTC"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Ratio.PercentagePointChange == nil || *result.Ratio.PercentagePointChange != 25 {
+		t.Fatalf("ratio=%+v, want +25 percentage points", result.Ratio)
+	}
+}
+
 func TestV2ScopeAuthorizationIsRevalidatedForMemberAndTeam(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()

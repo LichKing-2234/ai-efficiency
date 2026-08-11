@@ -39,12 +39,13 @@ type V2Coverage struct {
 }
 
 type V2Ratio struct {
-	State           string     `json:"state"`
-	Retryable       bool       `json:"retryable,omitempty"`
-	CommittedTokens int64      `json:"committed_tokens"`
-	TotalTokens     *int64     `json:"total_tokens,omitempty"`
-	Percent         *float64   `json:"percent,omitempty"`
-	AsOf            *time.Time `json:"as_of,omitempty"`
+	State                 string     `json:"state"`
+	Retryable             bool       `json:"retryable,omitempty"`
+	CommittedTokens       int64      `json:"committed_tokens"`
+	TotalTokens           *int64     `json:"total_tokens,omitempty"`
+	Percent               *float64   `json:"percent,omitempty"`
+	AsOf                  *time.Time `json:"as_of,omitempty"`
+	PercentagePointChange *float64   `json:"percentage_point_change,omitempty"`
 }
 
 type V2TrendPoint struct {
@@ -79,18 +80,26 @@ type V2RepositoryRow struct {
 	DirectTokens int64    `json:"direct_tokens"`
 	DirectShare  *float64 `json:"direct_share,omitempty"`
 	SharedTokens int64    `json:"shared_tokens"`
+	TokenChange  *int64   `json:"token_change,omitempty"`
+}
+
+type V2CommitReference struct {
+	RepoConfigID int    `json:"repo_config_id"`
+	CommitSHA    string `json:"commit_sha"`
 }
 
 type V2PullRequestRow struct {
-	PRRecordID     int    `json:"pr_record_id"`
-	RepoConfigID   int    `json:"repo_config_id"`
-	RepositoryName string `json:"repository_name"`
-	SCMPRID        int    `json:"scm_pr_id"`
-	Title          string `json:"title"`
-	URL            string `json:"url"`
-	Status         string `json:"status"`
-	InvolvedTokens int64  `json:"involved_tokens"`
-	OverlapState   string `json:"overlap_state"`
+	PRRecordID     int                 `json:"pr_record_id"`
+	RepoConfigID   int                 `json:"repo_config_id"`
+	RepositoryName string              `json:"repository_name"`
+	SCMPRID        int                 `json:"scm_pr_id"`
+	Title          string              `json:"title"`
+	URL            string              `json:"url"`
+	Status         string              `json:"status"`
+	InvolvedTokens int64               `json:"involved_tokens"`
+	OverlapState   string              `json:"overlap_state"`
+	TokenChange    *int64              `json:"token_change,omitempty"`
+	Commits        []V2CommitReference `json:"commits"`
 }
 
 type V2Page[T any] struct {

@@ -1,0 +1,21 @@
+import type { Locale } from '@/i18n'
+
+const messages = {
+  'en-US': {
+    v2Subtitle: 'See AI Token become committed code across repositories and PRs.', memberTitle: 'Member coding activity', v2LoadFailed: 'Activity is temporarily unavailable.',
+    codeTokenRatio: 'Token used for actual code', codeTokenRatioHelp: 'Share of this period’s AI Token linked to committed code.', usedForCommittedCode: 'Used for committed code', otherToken: 'Other Token', otherTokenHelp: 'Other Token is remaining AI usage, not necessarily non-development work.', ratioUnavailable: 'Complete Usage data is required for this percentage.', ratioUnavailableShort: 'Percentage unavailable', noAIUsage: 'No AI Token this period', percentagePointChange: '{value} percentage points vs previous period', committedTrend: 'Committed Token trend', localDays: 'Natural days in {timezone}', committedToken: 'Committed Token', involvedToken: 'Involved Token', sharedParticipation: 'Shared participation', repositoryTop5: 'Repository Top 5', pullRequestTop5: 'PR Top 5', directShare: 'of committed Token', sharedOverlap: 'Shared / overlapping', directInvolvement: 'Direct involvement', filteredRepository: 'Repository filter active', filteredPullRequest: 'PR filter active', noCommittedData: 'No committed Token this period.', noFilteredData: 'No Activity matches this filter.', noRepositories: 'No repositories with committed Token.', fullLists: 'Repository and pull request lists', repositories: 'Repositories', repository: 'Repository', pullRequest: 'Pull request', searchCurrentList: 'Search list', sort: 'Sort', sortToken: 'Token descending', sortName: 'Name', overlap: 'Relationship', status: 'Status', relatedCommits: 'Related commits', retryRatio: 'Retry ratio', retryTrend: 'Retry trend', retryRepositories: 'Retry repositories', retryPullRequests: 'Retry PRs', department: 'Department', availability: 'Activity data', activityAvailable: 'Available', previousPeriod: 'vs previous period', periodChange: 'Period change', customRangeRequired: 'Choose both dates.', customRangeOrder: 'Start date must not be after end date.', customRangeMaximum: 'Choose no more than 90 days.',
+  },
+  'zh-CN': {
+    v2Subtitle: '查看有多少 AI Token 最终形成了提交代码，以及这些代码落在哪些项目和 PR。', memberTitle: '成员代码活动', v2LoadFailed: '代码活动数据暂时不可用。',
+    codeTokenRatio: '用于实际代码的 Token', codeTokenRatioHelp: '本周期全部 AI Token 中，已关联到提交代码的比例。', usedForCommittedCode: '用于提交代码', otherToken: '其他 Token', otherTokenHelp: '其他 Token 是本周期剩余的 AI 使用量，并不代表这些 Token 没有用于开发。', ratioUnavailable: 'Usage 数据完整后才能计算该比例。', ratioUnavailableShort: '比例暂不可用', noAIUsage: '本周期没有 AI Token 使用', percentagePointChange: '较上一周期 {value} 个百分点', committedTrend: '提交代码 Token 趋势', localDays: '按 {timezone} 自然日统计', committedToken: '提交代码 Token', involvedToken: '涉及 Token', sharedParticipation: '共享参与 Token', repositoryTop5: 'Repository Top 5', pullRequestTop5: 'PR Top 5', directShare: '提交代码 Token 占比', sharedOverlap: '共享 / 重叠', directInvolvement: '直接关联', filteredRepository: '已筛选 Repository', filteredPullRequest: '已筛选 PR', noCommittedData: '本周期没有关联到提交代码的 Token。', noFilteredData: '当前筛选条件下没有代码活动数据。', noRepositories: '本周期没有产生提交代码 Token 的 Repository。', fullLists: 'Repository 和 PR 完整列表', repositories: 'Repository', repository: 'Repository', pullRequest: 'PR', searchCurrentList: '搜索当前列表', sort: '排序', sortToken: 'Token 从高到低', sortName: '名称', overlap: '关联方式', status: '状态', relatedCommits: '关联提交', retryRatio: '重试比例', retryTrend: '重试趋势', retryRepositories: '重试 Repository', retryPullRequests: '重试 PR', department: '部门', availability: '代码活动数据', activityAvailable: '可查看', previousPeriod: '较上一周期', periodChange: '周期变化', customRangeRequired: '请选择开始和结束日期。', customRangeOrder: '开始日期不能晚于结束日期。', customRangeMaximum: '日期范围不能超过 90 天。',
+  },
+} as const
+
+export type ActivityV2TextKey = keyof typeof messages['en-US']
+export const activityV2TextKeys = new Set<ActivityV2TextKey>(Object.keys(messages['en-US']) as ActivityV2TextKey[])
+
+export function activityV2Text(locale: Locale, key: ActivityV2TextKey, params?: Record<string, string | number>) {
+  let value: string = messages[locale][key]
+  for (const [name, replacement] of Object.entries(params ?? {})) value = value.split(`{${name}}`).join(String(replacement))
+  return value
+}

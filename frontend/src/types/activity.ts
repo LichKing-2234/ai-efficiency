@@ -219,3 +219,92 @@ export interface ActivityRepositoryParams extends ActivityWindowParams {
   commit_limit?: number
   commit_cursor?: string
 }
+
+export type ActivityV2Scope = 'personal' | 'member' | 'team'
+
+export interface ActivityV2Query {
+  scope: ActivityV2Scope
+  subject_user_id?: number
+  team_id?: string
+  from: string
+  to: string
+  timezone: string
+  repo_id?: number
+  pr_record_id?: number
+}
+
+export interface ActivityV2Coverage {
+  complete: boolean
+  lower_bound: boolean
+}
+
+export interface ActivityV2Ratio {
+  state: 'exact' | 'lower_bound' | 'complete_zero_usage' | 'true_zero_committed' | 'denominator_unavailable'
+  retryable?: boolean
+  committed_tokens: number
+  total_tokens?: number
+  percent?: number
+  as_of?: string
+  percentage_point_change?: number
+}
+
+export interface ActivityV2TrendPoint {
+  date: string
+  direct_tokens: number
+  shared_tokens: number
+  involved_tokens: number
+}
+
+export interface ActivityV2Overview {
+  contract_version: 'activity-v2'
+  scope_version: string
+  from: string
+  to: string
+  timezone: string
+  committed_tokens: number
+  claim_coverage: ActivityV2Coverage
+  scm_coverage: ActivitySyncCoverage
+  ratio: ActivityV2Ratio
+  trend: ActivityV2TrendPoint[]
+  readiness: { state: 'waiting_for_data' | 'active'; first_accepted_at?: string }
+}
+
+export interface ActivityV2RepositoryRow {
+  repo_config_id: number
+  name: string
+  direct_tokens: number
+  direct_share?: number
+  shared_tokens: number
+  token_change?: number
+}
+
+export interface ActivityV2CommitReference {
+  repo_config_id: number
+  commit_sha: string
+}
+
+export interface ActivityV2PullRequestRow {
+  pr_record_id: number
+  repo_config_id: number
+  repository_name: string
+  scm_pr_id: number
+  title: string
+  url: string
+  status: string
+  involved_tokens: number
+  overlap_state: 'direct' | 'shared' | 'inherited'
+  token_change?: number
+  commits?: ActivityV2CommitReference[]
+}
+
+export interface ActivityV2Page<T> {
+  items: T[]
+  next_cursor?: string
+  scm_coverage?: ActivitySyncCoverage
+}
+
+export interface ActivityV2PageQuery extends ActivityV2Query {
+  search?: string
+  sort?: 'tokens' | 'name'
+  cursor?: string
+}

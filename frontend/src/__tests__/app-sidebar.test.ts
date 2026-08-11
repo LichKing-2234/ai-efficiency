@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
 import { setLocale } from '@/i18n'
+import { useAuthStore } from '@/stores/auth'
 
 vi.mock('@/api/auth', () => ({
   login: vi.fn(),
@@ -174,7 +175,7 @@ describe('AppSidebar', () => {
     expect(linkTexts).toContain('Work Items')
     expect(linkTexts).toContain('AI Coding Activity')
     expect(linkTexts).not.toContain('Usage Records')
-    expect(linkTexts).toContain('Code Repositories')
+    expect(linkTexts).not.toContain('Code Repositories')
     expect(linkTexts).toContain('AI Setup & Configuration')
     expect(linkTexts).not.toContain('Team Usage')
     expect(linkTexts).not.toContain('My Usage')
@@ -190,7 +191,7 @@ describe('AppSidebar', () => {
     expect(setupIndex).toBeGreaterThanOrEqual(0)
     expect(workItemsIndex).toBeGreaterThan(setupIndex)
     expect(wrapper.text()).toContain('My Work')
-    expect(wrapper.text()).toContain('Code & PR')
+    expect(wrapper.text()).not.toContain('Code & PR')
     expect(wrapper.text()).not.toContain('Administration')
     expect(linkTexts).not.toContain('Sessions')
     expect(linkTexts).not.toContain('Admin Console')
@@ -338,8 +339,11 @@ describe('AppSidebar', () => {
     await router.push('/repos')
     await router.isReady()
 
+    const pinia = createPinia()
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' }
     const wrapper = mount(AppSidebar, {
-      global: { plugins: [createPinia(), router] },
+      global: { plugins: [pinia, router] },
     })
 
     const reposLink = wrapper.findAll('a').find((a) => a.text() === 'Code Repositories')
@@ -540,13 +544,13 @@ describe('AppSidebar', () => {
 
     const linkTexts = wrapper.findAll('a').map((l) => l.text())
     expect(wrapper.text()).toContain('我的工作')
-    expect(wrapper.text()).toContain('代码与 PR')
+    expect(wrapper.text()).not.toContain('代码与 PR')
     expect(linkTexts).toContain('AI 使用中心')
     expect(linkTexts).toContain('AI 接入与配置')
     expect(linkTexts).not.toContain('我的用量')
     expect(linkTexts).toContain('AI 开发动态')
     expect(linkTexts).not.toContain('使用记录')
     expect(linkTexts).not.toContain('团队用量')
-    expect(linkTexts).toContain('代码仓库')
+    expect(linkTexts).not.toContain('代码仓库')
   })
 })
