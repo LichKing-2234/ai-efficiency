@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/attributionclaimgroup"
 	"github.com/ai-efficiency/backend/ent/attributionrequestclaim"
+	"github.com/ai-efficiency/backend/internal/attributionpool"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -185,7 +187,18 @@ func (s *Service) reconcileOne(ctx context.Context, candidate *ent.AttributionRe
 	if !valid {
 		return s.finish(ctx, candidate.ID, token, attributionrequestclaim.StatusInvalidUsage, "invalid_usage")
 	}
-	updated, err := s.client.AttributionRequestClaim.Update().Where(
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin reconciliation materialization: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	// Allocation ingest updates this row before rematerializing the group. A
+	// no-op update takes the same row lock, so reconciliation cannot snapshot an
+	// older allocation while a newer revision is being committed.
+	if err := lockClaimGroup(ctx, tx.Client(), candidate.ClaimGroupID); err != nil {
+		return err
+	}
+	updated, err := tx.Client().AttributionRequestClaim.Update().Where(
 		attributionrequestclaim.IDEQ(candidate.ID), attributionrequestclaim.LeaseTokenEQ(token),
 	).SetStatus(attributionrequestclaim.StatusReconciled).SetRequestedModel(strings.TrimSpace(usage.RequestedModel)).SetUsageAt(usage.UsageAt.UTC()).
 		SetInputTokens(usage.InputTokens).SetOutputTokens(usage.OutputTokens).SetCacheCreationTokens(usage.CacheCreationTokens).SetCacheReadTokens(usage.CacheReadTokens).
@@ -195,6 +208,25 @@ func (s *Service) reconcileOne(ctx context.Context, candidate *ent.AttributionRe
 	}
 	if updated != 1 {
 		return fmt.Errorf("request claim lease was lost before reconciliation")
+	}
+	if err := attributionpool.MaterializeRequestClaim(ctx, tx.Client(), candidate.ID, s.now().UTC()); err != nil {
+		return fmt.Errorf("materialize reconciled request claim: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit reconciled request claim: %w", err)
+	}
+	return nil
+}
+
+func lockClaimGroup(ctx context.Context, client *ent.Client, groupID int) error {
+	locked, err := client.AttributionClaimGroup.Update().Where(
+		attributionclaimgroup.IDEQ(groupID),
+	).AddRequestCount(0).Save(ctx)
+	if err != nil {
+		return fmt.Errorf("lock claim group for reconciliation: %w", err)
+	}
+	if locked != 1 {
+		return fmt.Errorf("claim group disappeared before reconciliation")
 	}
 	return nil
 }

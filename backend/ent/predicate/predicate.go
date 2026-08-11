@@ -21,6 +21,12 @@ type AttributionRequestClaim func(*sql.Selector)
 // AttributionUsageBucket is the predicate function for attributionusagebucket builders.
 type AttributionUsageBucket func(*sql.Selector)
 
+// AttributionUsagePool is the predicate function for attributionusagepool builders.
+type AttributionUsagePool func(*sql.Selector)
+
+// AttributionUsagePoolCommit is the predicate function for attributionusagepoolcommit builders.
+type AttributionUsagePoolCommit func(*sql.Selector)
+
 // CommitCheckpoint is the predicate function for commitcheckpoint builders.
 type CommitCheckpoint func(*sql.Selector)
 

@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** Implementation in progress; T02-T04 are merged, T05 passes full CLI/backend, race, repeated tests, and clean Standards/Spec review and is awaiting PR/hosted CI, and the T04 real read-only canary still requires separate authorization
+**Status:** Implementation in progress; T02-T05 are merged, T07 passes full backend, race, repeated tests, and clean Standards/Spec review and is awaiting PR/hosted CI, and the T04 real read-only canary still requires separate authorization
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -88,11 +88,11 @@ T01 contract publication (#253)
 
 ### T07 — Durable usage pools and global shared conservation ([#245](https://github.com/LichKing-2234/ai-efficiency/issues/245))
 
-- [ ] Add the unified usage-pool and pool-commit model keyed by user, canonical
+- [x] Add the unified usage-pool and pool-commit model keyed by user, canonical
   counting commits, requested model, and 15-minute UTC bucket.
-- [ ] Materialize official components and Request count exactly once.
-- [ ] Atomically migrate direct to shared when a later commit is proven.
-- [ ] Verify concurrency, conservation, 90-day cleanup, and privacy.
+- [x] Materialize official components and Request count exactly once.
+- [x] Atomically migrate direct to shared when a later commit is proven.
+- [x] Verify concurrency, conservation, 90-day cleanup, and privacy.
 
 ### T08 — Activity v2 reads and Usage denominator resolver ([#248](https://github.com/LichKing-2234/ai-efficiency/issues/248))
 

@@ -17,6 +17,8 @@ import (
 	"github.com/ai-efficiency/backend/ent/attributionclaimgroup"
 	"github.com/ai-efficiency/backend/ent/attributionrequestclaim"
 	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
+	"github.com/ai-efficiency/backend/ent/attributionusagepool"
+	"github.com/ai-efficiency/backend/ent/attributionusagepoolcommit"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
@@ -108,6 +110,8 @@ func checkColumn(table, column string) error {
 			attributionclaimgroup.Table:         attributionclaimgroup.ValidColumn,
 			attributionrequestclaim.Table:       attributionrequestclaim.ValidColumn,
 			attributionusagebucket.Table:        attributionusagebucket.ValidColumn,
+			attributionusagepool.Table:          attributionusagepool.ValidColumn,
+			attributionusagepoolcommit.Table:    attributionusagepoolcommit.ValidColumn,
 			commitcheckpoint.Table:              commitcheckpoint.ValidColumn,
 			commitrewrite.Table:                 commitrewrite.ValidColumn,
 			credential.Table:                    credential.ValidColumn,

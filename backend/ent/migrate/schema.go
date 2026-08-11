@@ -150,6 +150,8 @@ var (
 		{Name: "cache_read_tokens", Type: field.TypeInt64, Default: 0},
 		{Name: "total_tokens", Type: field.TypeInt64, Default: 0},
 		{Name: "reconciled_at", Type: field.TypeTime, Nullable: true},
+		{Name: "materialized_pool_id", Type: field.TypeInt, Nullable: true},
+		{Name: "materialized_at", Type: field.TypeTime, Nullable: true},
 		{Name: "expires_at", Type: field.TypeTime},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
@@ -168,7 +170,7 @@ var (
 			{
 				Name:    "attributionrequestclaim_claim_group_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{AttributionRequestClaimsColumns[1], AttributionRequestClaimsColumns[20]},
+				Columns: []*schema.Column{AttributionRequestClaimsColumns[1], AttributionRequestClaimsColumns[22]},
 			},
 			{
 				Name:    "attributionrequestclaim_status_next_attempt_at_lease_expires_at",
@@ -178,7 +180,12 @@ var (
 			{
 				Name:    "attributionrequestclaim_status_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{AttributionRequestClaimsColumns[5], AttributionRequestClaimsColumns[19]},
+				Columns: []*schema.Column{AttributionRequestClaimsColumns[5], AttributionRequestClaimsColumns[21]},
+			},
+			{
+				Name:    "attributionrequestclaim_materialized_pool_id",
+				Unique:  false,
+				Columns: []*schema.Column{AttributionRequestClaimsColumns[19]},
 			},
 		},
 	}
@@ -252,6 +259,70 @@ var (
 				Name:    "attributionusagebucket_reporting_installation_id_observed_end_at",
 				Unique:  false,
 				Columns: []*schema.Column{AttributionUsageBucketsColumns[29], AttributionUsageBucketsColumns[8]},
+			},
+		},
+	}
+	// AttributionUsagePoolsColumns holds the columns for the "attribution_usage_pools" table.
+	AttributionUsagePoolsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "canonical_pool_key", Type: field.TypeString, Unique: true},
+		{Name: "ledger_epoch", Type: field.TypeString, Default: "shadow_v2"},
+		{Name: "user_id", Type: field.TypeInt},
+		{Name: "requested_model", Type: field.TypeString},
+		{Name: "bucket_start_utc", Type: field.TypeTime},
+		{Name: "input_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "output_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "cache_creation_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "cache_read_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "total_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "request_count", Type: field.TypeInt, Default: 0},
+		{Name: "coverage_gap_count", Type: field.TypeInt, Default: 0},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// AttributionUsagePoolsTable holds the schema information for the "attribution_usage_pools" table.
+	AttributionUsagePoolsTable = &schema.Table{
+		Name:       "attribution_usage_pools",
+		Columns:    AttributionUsagePoolsColumns,
+		PrimaryKey: []*schema.Column{AttributionUsagePoolsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "attributionusagepool_ledger_epoch_user_id_bucket_start_utc",
+				Unique:  false,
+				Columns: []*schema.Column{AttributionUsagePoolsColumns[2], AttributionUsagePoolsColumns[3], AttributionUsagePoolsColumns[5]},
+			},
+			{
+				Name:    "attributionusagepool_ledger_epoch_bucket_start_utc",
+				Unique:  false,
+				Columns: []*schema.Column{AttributionUsagePoolsColumns[2], AttributionUsagePoolsColumns[5]},
+			},
+		},
+	}
+	// AttributionUsagePoolCommitsColumns holds the columns for the "attribution_usage_pool_commits" table.
+	AttributionUsagePoolCommitsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "pool_id", Type: field.TypeInt},
+		{Name: "repo_config_id", Type: field.TypeInt},
+		{Name: "commit_sha", Type: field.TypeString},
+		{Name: "relation_kind", Type: field.TypeEnum, Enums: []string{"direct", "shared", "inherited_non_counting"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// AttributionUsagePoolCommitsTable holds the schema information for the "attribution_usage_pool_commits" table.
+	AttributionUsagePoolCommitsTable = &schema.Table{
+		Name:       "attribution_usage_pool_commits",
+		Columns:    AttributionUsagePoolCommitsColumns,
+		PrimaryKey: []*schema.Column{AttributionUsagePoolCommitsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "attributionusagepoolcommit_pool_id_repo_config_id_commit_sha",
+				Unique:  true,
+				Columns: []*schema.Column{AttributionUsagePoolCommitsColumns[1], AttributionUsagePoolCommitsColumns[2], AttributionUsagePoolCommitsColumns[3]},
+			},
+			{
+				Name:    "attributionusagepoolcommit_repo_config_id_commit_sha_pool_id",
+				Unique:  false,
+				Columns: []*schema.Column{AttributionUsagePoolCommitsColumns[2], AttributionUsagePoolCommitsColumns[3], AttributionUsagePoolCommitsColumns[1]},
 			},
 		},
 	}
@@ -1416,6 +1487,8 @@ var (
 		AttributionClaimGroupsTable,
 		AttributionRequestClaimsTable,
 		AttributionUsageBucketsTable,
+		AttributionUsagePoolsTable,
+		AttributionUsagePoolCommitsTable,
 		CommitCheckpointsTable,
 		CommitRewritesTable,
 		CredentialsTable,

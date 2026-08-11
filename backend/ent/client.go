@@ -20,6 +20,8 @@ import (
 	"github.com/ai-efficiency/backend/ent/attributionclaimgroup"
 	"github.com/ai-efficiency/backend/ent/attributionrequestclaim"
 	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
+	"github.com/ai-efficiency/backend/ent/attributionusagepool"
+	"github.com/ai-efficiency/backend/ent/attributionusagepoolcommit"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
@@ -63,6 +65,10 @@ type Client struct {
 	AttributionRequestClaim *AttributionRequestClaimClient
 	// AttributionUsageBucket is the client for interacting with the AttributionUsageBucket builders.
 	AttributionUsageBucket *AttributionUsageBucketClient
+	// AttributionUsagePool is the client for interacting with the AttributionUsagePool builders.
+	AttributionUsagePool *AttributionUsagePoolClient
+	// AttributionUsagePoolCommit is the client for interacting with the AttributionUsagePoolCommit builders.
+	AttributionUsagePoolCommit *AttributionUsagePoolCommitClient
 	// CommitCheckpoint is the client for interacting with the CommitCheckpoint builders.
 	CommitCheckpoint *CommitCheckpointClient
 	// CommitRewrite is the client for interacting with the CommitRewrite builders.
@@ -131,6 +137,8 @@ func (c *Client) init() {
 	c.AttributionClaimGroup = NewAttributionClaimGroupClient(c.config)
 	c.AttributionRequestClaim = NewAttributionRequestClaimClient(c.config)
 	c.AttributionUsageBucket = NewAttributionUsageBucketClient(c.config)
+	c.AttributionUsagePool = NewAttributionUsagePoolClient(c.config)
+	c.AttributionUsagePoolCommit = NewAttributionUsagePoolCommitClient(c.config)
 	c.CommitCheckpoint = NewCommitCheckpointClient(c.config)
 	c.CommitRewrite = NewCommitRewriteClient(c.config)
 	c.Credential = NewCredentialClient(c.config)
@@ -254,6 +262,8 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		AttributionClaimGroup:         NewAttributionClaimGroupClient(cfg),
 		AttributionRequestClaim:       NewAttributionRequestClaimClient(cfg),
 		AttributionUsageBucket:        NewAttributionUsageBucketClient(cfg),
+		AttributionUsagePool:          NewAttributionUsagePoolClient(cfg),
+		AttributionUsagePoolCommit:    NewAttributionUsagePoolCommitClient(cfg),
 		CommitCheckpoint:              NewCommitCheckpointClient(cfg),
 		CommitRewrite:                 NewCommitRewriteClient(cfg),
 		Credential:                    NewCredentialClient(cfg),
@@ -304,6 +314,8 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		AttributionClaimGroup:         NewAttributionClaimGroupClient(cfg),
 		AttributionRequestClaim:       NewAttributionRequestClaimClient(cfg),
 		AttributionUsageBucket:        NewAttributionUsageBucketClient(cfg),
+		AttributionUsagePool:          NewAttributionUsagePoolClient(cfg),
+		AttributionUsagePoolCommit:    NewAttributionUsagePoolCommitClient(cfg),
 		CommitCheckpoint:              NewCommitCheckpointClient(cfg),
 		CommitRewrite:                 NewCommitRewriteClient(cfg),
 		Credential:                    NewCredentialClient(cfg),
@@ -361,14 +373,14 @@ func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.AdminSubscriptionJob, c.AttributionAllocationRevision,
 		c.AttributionClaimGroup, c.AttributionRequestClaim, c.AttributionUsageBucket,
-		c.CommitCheckpoint, c.CommitRewrite, c.Credential, c.DirectoryDepartment,
-		c.DirectoryMember, c.DirectoryMemberDepartment, c.DirectoryOffboardingAction,
-		c.DirectorySource, c.DirectorySyncRun, c.PRCommitUsageSnapshot, c.PRSyncJob,
-		c.PrAttributionRun, c.PrRecord, c.QuotaResetApproverConfig,
-		c.QuotaResetNotificationSetting, c.QuotaResetRequest, c.QuotaResetRequestEvent,
-		c.RelayProvider, c.RepoConfig, c.ReportingInstallation, c.ScmProvider,
-		c.SystemSetting, c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User,
-		c.WebhookDeadLetter,
+		c.AttributionUsagePool, c.AttributionUsagePoolCommit, c.CommitCheckpoint,
+		c.CommitRewrite, c.Credential, c.DirectoryDepartment, c.DirectoryMember,
+		c.DirectoryMemberDepartment, c.DirectoryOffboardingAction, c.DirectorySource,
+		c.DirectorySyncRun, c.PRCommitUsageSnapshot, c.PRSyncJob, c.PrAttributionRun,
+		c.PrRecord, c.QuotaResetApproverConfig, c.QuotaResetNotificationSetting,
+		c.QuotaResetRequest, c.QuotaResetRequestEvent, c.RelayProvider, c.RepoConfig,
+		c.ReportingInstallation, c.ScmProvider, c.SystemSetting,
+		c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Use(hooks...)
 	}
@@ -380,14 +392,14 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.AdminSubscriptionJob, c.AttributionAllocationRevision,
 		c.AttributionClaimGroup, c.AttributionRequestClaim, c.AttributionUsageBucket,
-		c.CommitCheckpoint, c.CommitRewrite, c.Credential, c.DirectoryDepartment,
-		c.DirectoryMember, c.DirectoryMemberDepartment, c.DirectoryOffboardingAction,
-		c.DirectorySource, c.DirectorySyncRun, c.PRCommitUsageSnapshot, c.PRSyncJob,
-		c.PrAttributionRun, c.PrRecord, c.QuotaResetApproverConfig,
-		c.QuotaResetNotificationSetting, c.QuotaResetRequest, c.QuotaResetRequestEvent,
-		c.RelayProvider, c.RepoConfig, c.ReportingInstallation, c.ScmProvider,
-		c.SystemSetting, c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User,
-		c.WebhookDeadLetter,
+		c.AttributionUsagePool, c.AttributionUsagePoolCommit, c.CommitCheckpoint,
+		c.CommitRewrite, c.Credential, c.DirectoryDepartment, c.DirectoryMember,
+		c.DirectoryMemberDepartment, c.DirectoryOffboardingAction, c.DirectorySource,
+		c.DirectorySyncRun, c.PRCommitUsageSnapshot, c.PRSyncJob, c.PrAttributionRun,
+		c.PrRecord, c.QuotaResetApproverConfig, c.QuotaResetNotificationSetting,
+		c.QuotaResetRequest, c.QuotaResetRequestEvent, c.RelayProvider, c.RepoConfig,
+		c.ReportingInstallation, c.ScmProvider, c.SystemSetting,
+		c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -406,6 +418,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.AttributionRequestClaim.mutate(ctx, m)
 	case *AttributionUsageBucketMutation:
 		return c.AttributionUsageBucket.mutate(ctx, m)
+	case *AttributionUsagePoolMutation:
+		return c.AttributionUsagePool.mutate(ctx, m)
+	case *AttributionUsagePoolCommitMutation:
+		return c.AttributionUsagePoolCommit.mutate(ctx, m)
 	case *CommitCheckpointMutation:
 		return c.CommitCheckpoint.mutate(ctx, m)
 	case *CommitRewriteMutation:
@@ -1189,6 +1205,272 @@ func (c *AttributionUsageBucketClient) mutate(ctx context.Context, m *Attributio
 		return (&AttributionUsageBucketDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AttributionUsageBucket mutation op: %q", m.Op())
+	}
+}
+
+// AttributionUsagePoolClient is a client for the AttributionUsagePool schema.
+type AttributionUsagePoolClient struct {
+	config
+}
+
+// NewAttributionUsagePoolClient returns a client for the AttributionUsagePool from the given config.
+func NewAttributionUsagePoolClient(c config) *AttributionUsagePoolClient {
+	return &AttributionUsagePoolClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `attributionusagepool.Hooks(f(g(h())))`.
+func (c *AttributionUsagePoolClient) Use(hooks ...Hook) {
+	c.hooks.AttributionUsagePool = append(c.hooks.AttributionUsagePool, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `attributionusagepool.Intercept(f(g(h())))`.
+func (c *AttributionUsagePoolClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AttributionUsagePool = append(c.inters.AttributionUsagePool, interceptors...)
+}
+
+// Create returns a builder for creating a AttributionUsagePool entity.
+func (c *AttributionUsagePoolClient) Create() *AttributionUsagePoolCreate {
+	mutation := newAttributionUsagePoolMutation(c.config, OpCreate)
+	return &AttributionUsagePoolCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AttributionUsagePool entities.
+func (c *AttributionUsagePoolClient) CreateBulk(builders ...*AttributionUsagePoolCreate) *AttributionUsagePoolCreateBulk {
+	return &AttributionUsagePoolCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AttributionUsagePoolClient) MapCreateBulk(slice any, setFunc func(*AttributionUsagePoolCreate, int)) *AttributionUsagePoolCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AttributionUsagePoolCreateBulk{err: fmt.Errorf("calling to AttributionUsagePoolClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AttributionUsagePoolCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AttributionUsagePoolCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AttributionUsagePool.
+func (c *AttributionUsagePoolClient) Update() *AttributionUsagePoolUpdate {
+	mutation := newAttributionUsagePoolMutation(c.config, OpUpdate)
+	return &AttributionUsagePoolUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AttributionUsagePoolClient) UpdateOne(aup *AttributionUsagePool) *AttributionUsagePoolUpdateOne {
+	mutation := newAttributionUsagePoolMutation(c.config, OpUpdateOne, withAttributionUsagePool(aup))
+	return &AttributionUsagePoolUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AttributionUsagePoolClient) UpdateOneID(id int) *AttributionUsagePoolUpdateOne {
+	mutation := newAttributionUsagePoolMutation(c.config, OpUpdateOne, withAttributionUsagePoolID(id))
+	return &AttributionUsagePoolUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AttributionUsagePool.
+func (c *AttributionUsagePoolClient) Delete() *AttributionUsagePoolDelete {
+	mutation := newAttributionUsagePoolMutation(c.config, OpDelete)
+	return &AttributionUsagePoolDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AttributionUsagePoolClient) DeleteOne(aup *AttributionUsagePool) *AttributionUsagePoolDeleteOne {
+	return c.DeleteOneID(aup.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AttributionUsagePoolClient) DeleteOneID(id int) *AttributionUsagePoolDeleteOne {
+	builder := c.Delete().Where(attributionusagepool.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AttributionUsagePoolDeleteOne{builder}
+}
+
+// Query returns a query builder for AttributionUsagePool.
+func (c *AttributionUsagePoolClient) Query() *AttributionUsagePoolQuery {
+	return &AttributionUsagePoolQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAttributionUsagePool},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AttributionUsagePool entity by its id.
+func (c *AttributionUsagePoolClient) Get(ctx context.Context, id int) (*AttributionUsagePool, error) {
+	return c.Query().Where(attributionusagepool.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AttributionUsagePoolClient) GetX(ctx context.Context, id int) *AttributionUsagePool {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AttributionUsagePoolClient) Hooks() []Hook {
+	return c.hooks.AttributionUsagePool
+}
+
+// Interceptors returns the client interceptors.
+func (c *AttributionUsagePoolClient) Interceptors() []Interceptor {
+	return c.inters.AttributionUsagePool
+}
+
+func (c *AttributionUsagePoolClient) mutate(ctx context.Context, m *AttributionUsagePoolMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AttributionUsagePoolCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AttributionUsagePoolUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AttributionUsagePoolUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AttributionUsagePoolDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AttributionUsagePool mutation op: %q", m.Op())
+	}
+}
+
+// AttributionUsagePoolCommitClient is a client for the AttributionUsagePoolCommit schema.
+type AttributionUsagePoolCommitClient struct {
+	config
+}
+
+// NewAttributionUsagePoolCommitClient returns a client for the AttributionUsagePoolCommit from the given config.
+func NewAttributionUsagePoolCommitClient(c config) *AttributionUsagePoolCommitClient {
+	return &AttributionUsagePoolCommitClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `attributionusagepoolcommit.Hooks(f(g(h())))`.
+func (c *AttributionUsagePoolCommitClient) Use(hooks ...Hook) {
+	c.hooks.AttributionUsagePoolCommit = append(c.hooks.AttributionUsagePoolCommit, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `attributionusagepoolcommit.Intercept(f(g(h())))`.
+func (c *AttributionUsagePoolCommitClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AttributionUsagePoolCommit = append(c.inters.AttributionUsagePoolCommit, interceptors...)
+}
+
+// Create returns a builder for creating a AttributionUsagePoolCommit entity.
+func (c *AttributionUsagePoolCommitClient) Create() *AttributionUsagePoolCommitCreate {
+	mutation := newAttributionUsagePoolCommitMutation(c.config, OpCreate)
+	return &AttributionUsagePoolCommitCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AttributionUsagePoolCommit entities.
+func (c *AttributionUsagePoolCommitClient) CreateBulk(builders ...*AttributionUsagePoolCommitCreate) *AttributionUsagePoolCommitCreateBulk {
+	return &AttributionUsagePoolCommitCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AttributionUsagePoolCommitClient) MapCreateBulk(slice any, setFunc func(*AttributionUsagePoolCommitCreate, int)) *AttributionUsagePoolCommitCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AttributionUsagePoolCommitCreateBulk{err: fmt.Errorf("calling to AttributionUsagePoolCommitClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AttributionUsagePoolCommitCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AttributionUsagePoolCommitCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AttributionUsagePoolCommit.
+func (c *AttributionUsagePoolCommitClient) Update() *AttributionUsagePoolCommitUpdate {
+	mutation := newAttributionUsagePoolCommitMutation(c.config, OpUpdate)
+	return &AttributionUsagePoolCommitUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AttributionUsagePoolCommitClient) UpdateOne(aupc *AttributionUsagePoolCommit) *AttributionUsagePoolCommitUpdateOne {
+	mutation := newAttributionUsagePoolCommitMutation(c.config, OpUpdateOne, withAttributionUsagePoolCommit(aupc))
+	return &AttributionUsagePoolCommitUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AttributionUsagePoolCommitClient) UpdateOneID(id int) *AttributionUsagePoolCommitUpdateOne {
+	mutation := newAttributionUsagePoolCommitMutation(c.config, OpUpdateOne, withAttributionUsagePoolCommitID(id))
+	return &AttributionUsagePoolCommitUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AttributionUsagePoolCommit.
+func (c *AttributionUsagePoolCommitClient) Delete() *AttributionUsagePoolCommitDelete {
+	mutation := newAttributionUsagePoolCommitMutation(c.config, OpDelete)
+	return &AttributionUsagePoolCommitDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AttributionUsagePoolCommitClient) DeleteOne(aupc *AttributionUsagePoolCommit) *AttributionUsagePoolCommitDeleteOne {
+	return c.DeleteOneID(aupc.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AttributionUsagePoolCommitClient) DeleteOneID(id int) *AttributionUsagePoolCommitDeleteOne {
+	builder := c.Delete().Where(attributionusagepoolcommit.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AttributionUsagePoolCommitDeleteOne{builder}
+}
+
+// Query returns a query builder for AttributionUsagePoolCommit.
+func (c *AttributionUsagePoolCommitClient) Query() *AttributionUsagePoolCommitQuery {
+	return &AttributionUsagePoolCommitQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAttributionUsagePoolCommit},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AttributionUsagePoolCommit entity by its id.
+func (c *AttributionUsagePoolCommitClient) Get(ctx context.Context, id int) (*AttributionUsagePoolCommit, error) {
+	return c.Query().Where(attributionusagepoolcommit.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AttributionUsagePoolCommitClient) GetX(ctx context.Context, id int) *AttributionUsagePoolCommit {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AttributionUsagePoolCommitClient) Hooks() []Hook {
+	return c.hooks.AttributionUsagePoolCommit
+}
+
+// Interceptors returns the client interceptors.
+func (c *AttributionUsagePoolCommitClient) Interceptors() []Interceptor {
+	return c.inters.AttributionUsagePoolCommit
+}
+
+func (c *AttributionUsagePoolCommitClient) mutate(ctx context.Context, m *AttributionUsagePoolCommitMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AttributionUsagePoolCommitCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AttributionUsagePoolCommitUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AttributionUsagePoolCommitUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AttributionUsagePoolCommitDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AttributionUsagePoolCommit mutation op: %q", m.Op())
 	}
 }
 
@@ -5249,10 +5531,11 @@ func (c *WebhookDeadLetterClient) mutate(ctx context.Context, m *WebhookDeadLett
 type (
 	hooks struct {
 		AdminSubscriptionJob, AttributionAllocationRevision, AttributionClaimGroup,
-		AttributionRequestClaim, AttributionUsageBucket, CommitCheckpoint,
-		CommitRewrite, Credential, DirectoryDepartment, DirectoryMember,
-		DirectoryMemberDepartment, DirectoryOffboardingAction, DirectorySource,
-		DirectorySyncRun, PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord,
+		AttributionRequestClaim, AttributionUsageBucket, AttributionUsagePool,
+		AttributionUsagePoolCommit, CommitCheckpoint, CommitRewrite, Credential,
+		DirectoryDepartment, DirectoryMember, DirectoryMemberDepartment,
+		DirectoryOffboardingAction, DirectorySource, DirectorySyncRun,
+		PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord,
 		QuotaResetApproverConfig, QuotaResetNotificationSetting, QuotaResetRequest,
 		QuotaResetRequestEvent, RelayProvider, RepoConfig, ReportingInstallation,
 		ScmProvider, SystemSetting, TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
@@ -5260,10 +5543,11 @@ type (
 	}
 	inters struct {
 		AdminSubscriptionJob, AttributionAllocationRevision, AttributionClaimGroup,
-		AttributionRequestClaim, AttributionUsageBucket, CommitCheckpoint,
-		CommitRewrite, Credential, DirectoryDepartment, DirectoryMember,
-		DirectoryMemberDepartment, DirectoryOffboardingAction, DirectorySource,
-		DirectorySyncRun, PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord,
+		AttributionRequestClaim, AttributionUsageBucket, AttributionUsagePool,
+		AttributionUsagePoolCommit, CommitCheckpoint, CommitRewrite, Credential,
+		DirectoryDepartment, DirectoryMember, DirectoryMemberDepartment,
+		DirectoryOffboardingAction, DirectorySource, DirectorySyncRun,
+		PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord,
 		QuotaResetApproverConfig, QuotaResetNotificationSetting, QuotaResetRequest,
 		QuotaResetRequestEvent, RelayProvider, RepoConfig, ReportingInstallation,
 		ScmProvider, SystemSetting, TeamUsageRateMultiplierAudit, ToolUsageEvent, User,

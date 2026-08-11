@@ -50,6 +50,10 @@ const (
 	FieldTotalTokens = "total_tokens"
 	// FieldReconciledAt holds the string denoting the reconciled_at field in the database.
 	FieldReconciledAt = "reconciled_at"
+	// FieldMaterializedPoolID holds the string denoting the materialized_pool_id field in the database.
+	FieldMaterializedPoolID = "materialized_pool_id"
+	// FieldMaterializedAt holds the string denoting the materialized_at field in the database.
+	FieldMaterializedAt = "materialized_at"
 	// FieldExpiresAt holds the string denoting the expires_at field in the database.
 	FieldExpiresAt = "expires_at"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
@@ -81,6 +85,8 @@ var Columns = []string{
 	FieldCacheReadTokens,
 	FieldTotalTokens,
 	FieldReconciledAt,
+	FieldMaterializedPoolID,
+	FieldMaterializedAt,
 	FieldExpiresAt,
 	FieldCreatedAt,
 	FieldUpdatedAt,
@@ -250,6 +256,16 @@ func ByTotalTokens(opts ...sql.OrderTermOption) OrderOption {
 // ByReconciledAt orders the results by the reconciled_at field.
 func ByReconciledAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldReconciledAt, opts...).ToFunc()
+}
+
+// ByMaterializedPoolID orders the results by the materialized_pool_id field.
+func ByMaterializedPoolID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMaterializedPoolID, opts...).ToFunc()
+}
+
+// ByMaterializedAt orders the results by the materialized_at field.
+func ByMaterializedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMaterializedAt, opts...).ToFunc()
 }
 
 // ByExpiresAt orders the results by the expires_at field.

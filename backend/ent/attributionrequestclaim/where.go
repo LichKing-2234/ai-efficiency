@@ -139,6 +139,16 @@ func ReconciledAt(v time.Time) predicate.AttributionRequestClaim {
 	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldReconciledAt, v))
 }
 
+// MaterializedPoolID applies equality check predicate on the "materialized_pool_id" field. It's identical to MaterializedPoolIDEQ.
+func MaterializedPoolID(v int) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldMaterializedPoolID, v))
+}
+
+// MaterializedAt applies equality check predicate on the "materialized_at" field. It's identical to MaterializedAtEQ.
+func MaterializedAt(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldMaterializedAt, v))
+}
+
 // ExpiresAt applies equality check predicate on the "expires_at" field. It's identical to ExpiresAtEQ.
 func ExpiresAt(v time.Time) predicate.AttributionRequestClaim {
 	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldExpiresAt, v))
@@ -1037,6 +1047,106 @@ func ReconciledAtIsNil() predicate.AttributionRequestClaim {
 // ReconciledAtNotNil applies the NotNil predicate on the "reconciled_at" field.
 func ReconciledAtNotNil() predicate.AttributionRequestClaim {
 	return predicate.AttributionRequestClaim(sql.FieldNotNull(FieldReconciledAt))
+}
+
+// MaterializedPoolIDEQ applies the EQ predicate on the "materialized_pool_id" field.
+func MaterializedPoolIDEQ(v int) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldMaterializedPoolID, v))
+}
+
+// MaterializedPoolIDNEQ applies the NEQ predicate on the "materialized_pool_id" field.
+func MaterializedPoolIDNEQ(v int) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNEQ(FieldMaterializedPoolID, v))
+}
+
+// MaterializedPoolIDIn applies the In predicate on the "materialized_pool_id" field.
+func MaterializedPoolIDIn(vs ...int) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIn(FieldMaterializedPoolID, vs...))
+}
+
+// MaterializedPoolIDNotIn applies the NotIn predicate on the "materialized_pool_id" field.
+func MaterializedPoolIDNotIn(vs ...int) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotIn(FieldMaterializedPoolID, vs...))
+}
+
+// MaterializedPoolIDGT applies the GT predicate on the "materialized_pool_id" field.
+func MaterializedPoolIDGT(v int) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGT(FieldMaterializedPoolID, v))
+}
+
+// MaterializedPoolIDGTE applies the GTE predicate on the "materialized_pool_id" field.
+func MaterializedPoolIDGTE(v int) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGTE(FieldMaterializedPoolID, v))
+}
+
+// MaterializedPoolIDLT applies the LT predicate on the "materialized_pool_id" field.
+func MaterializedPoolIDLT(v int) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLT(FieldMaterializedPoolID, v))
+}
+
+// MaterializedPoolIDLTE applies the LTE predicate on the "materialized_pool_id" field.
+func MaterializedPoolIDLTE(v int) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLTE(FieldMaterializedPoolID, v))
+}
+
+// MaterializedPoolIDIsNil applies the IsNil predicate on the "materialized_pool_id" field.
+func MaterializedPoolIDIsNil() predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIsNull(FieldMaterializedPoolID))
+}
+
+// MaterializedPoolIDNotNil applies the NotNil predicate on the "materialized_pool_id" field.
+func MaterializedPoolIDNotNil() predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotNull(FieldMaterializedPoolID))
+}
+
+// MaterializedAtEQ applies the EQ predicate on the "materialized_at" field.
+func MaterializedAtEQ(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldEQ(FieldMaterializedAt, v))
+}
+
+// MaterializedAtNEQ applies the NEQ predicate on the "materialized_at" field.
+func MaterializedAtNEQ(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNEQ(FieldMaterializedAt, v))
+}
+
+// MaterializedAtIn applies the In predicate on the "materialized_at" field.
+func MaterializedAtIn(vs ...time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIn(FieldMaterializedAt, vs...))
+}
+
+// MaterializedAtNotIn applies the NotIn predicate on the "materialized_at" field.
+func MaterializedAtNotIn(vs ...time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotIn(FieldMaterializedAt, vs...))
+}
+
+// MaterializedAtGT applies the GT predicate on the "materialized_at" field.
+func MaterializedAtGT(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGT(FieldMaterializedAt, v))
+}
+
+// MaterializedAtGTE applies the GTE predicate on the "materialized_at" field.
+func MaterializedAtGTE(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldGTE(FieldMaterializedAt, v))
+}
+
+// MaterializedAtLT applies the LT predicate on the "materialized_at" field.
+func MaterializedAtLT(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLT(FieldMaterializedAt, v))
+}
+
+// MaterializedAtLTE applies the LTE predicate on the "materialized_at" field.
+func MaterializedAtLTE(v time.Time) predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldLTE(FieldMaterializedAt, v))
+}
+
+// MaterializedAtIsNil applies the IsNil predicate on the "materialized_at" field.
+func MaterializedAtIsNil() predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldIsNull(FieldMaterializedAt))
+}
+
+// MaterializedAtNotNil applies the NotNil predicate on the "materialized_at" field.
+func MaterializedAtNotNil() predicate.AttributionRequestClaim {
+	return predicate.AttributionRequestClaim(sql.FieldNotNull(FieldMaterializedAt))
 }
 
 // ExpiresAtEQ applies the EQ predicate on the "expires_at" field.
