@@ -64,6 +64,11 @@ func LedgerEpoch(v string) predicate.AttributionUsagePool {
 	return predicate.AttributionUsagePool(sql.FieldEQ(FieldLedgerEpoch, v))
 }
 
+// RelayProviderID applies equality check predicate on the "relay_provider_id" field. It's identical to RelayProviderIDEQ.
+func RelayProviderID(v int) predicate.AttributionUsagePool {
+	return predicate.AttributionUsagePool(sql.FieldEQ(FieldRelayProviderID, v))
+}
+
 // UserID applies equality check predicate on the "user_id" field. It's identical to UserIDEQ.
 func UserID(v int) predicate.AttributionUsagePool {
 	return predicate.AttributionUsagePool(sql.FieldEQ(FieldUserID, v))
@@ -252,6 +257,46 @@ func LedgerEpochEqualFold(v string) predicate.AttributionUsagePool {
 // LedgerEpochContainsFold applies the ContainsFold predicate on the "ledger_epoch" field.
 func LedgerEpochContainsFold(v string) predicate.AttributionUsagePool {
 	return predicate.AttributionUsagePool(sql.FieldContainsFold(FieldLedgerEpoch, v))
+}
+
+// RelayProviderIDEQ applies the EQ predicate on the "relay_provider_id" field.
+func RelayProviderIDEQ(v int) predicate.AttributionUsagePool {
+	return predicate.AttributionUsagePool(sql.FieldEQ(FieldRelayProviderID, v))
+}
+
+// RelayProviderIDNEQ applies the NEQ predicate on the "relay_provider_id" field.
+func RelayProviderIDNEQ(v int) predicate.AttributionUsagePool {
+	return predicate.AttributionUsagePool(sql.FieldNEQ(FieldRelayProviderID, v))
+}
+
+// RelayProviderIDIn applies the In predicate on the "relay_provider_id" field.
+func RelayProviderIDIn(vs ...int) predicate.AttributionUsagePool {
+	return predicate.AttributionUsagePool(sql.FieldIn(FieldRelayProviderID, vs...))
+}
+
+// RelayProviderIDNotIn applies the NotIn predicate on the "relay_provider_id" field.
+func RelayProviderIDNotIn(vs ...int) predicate.AttributionUsagePool {
+	return predicate.AttributionUsagePool(sql.FieldNotIn(FieldRelayProviderID, vs...))
+}
+
+// RelayProviderIDGT applies the GT predicate on the "relay_provider_id" field.
+func RelayProviderIDGT(v int) predicate.AttributionUsagePool {
+	return predicate.AttributionUsagePool(sql.FieldGT(FieldRelayProviderID, v))
+}
+
+// RelayProviderIDGTE applies the GTE predicate on the "relay_provider_id" field.
+func RelayProviderIDGTE(v int) predicate.AttributionUsagePool {
+	return predicate.AttributionUsagePool(sql.FieldGTE(FieldRelayProviderID, v))
+}
+
+// RelayProviderIDLT applies the LT predicate on the "relay_provider_id" field.
+func RelayProviderIDLT(v int) predicate.AttributionUsagePool {
+	return predicate.AttributionUsagePool(sql.FieldLT(FieldRelayProviderID, v))
+}
+
+// RelayProviderIDLTE applies the LTE predicate on the "relay_provider_id" field.
+func RelayProviderIDLTE(v int) predicate.AttributionUsagePool {
+	return predicate.AttributionUsagePool(sql.FieldLTE(FieldRelayProviderID, v))
 }
 
 // UserIDEQ applies the EQ predicate on the "user_id" field.

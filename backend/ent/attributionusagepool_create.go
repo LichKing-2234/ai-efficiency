@@ -40,6 +40,20 @@ func (aupc *AttributionUsagePoolCreate) SetNillableLedgerEpoch(s *string) *Attri
 	return aupc
 }
 
+// SetRelayProviderID sets the "relay_provider_id" field.
+func (aupc *AttributionUsagePoolCreate) SetRelayProviderID(i int) *AttributionUsagePoolCreate {
+	aupc.mutation.SetRelayProviderID(i)
+	return aupc
+}
+
+// SetNillableRelayProviderID sets the "relay_provider_id" field if the given value is not nil.
+func (aupc *AttributionUsagePoolCreate) SetNillableRelayProviderID(i *int) *AttributionUsagePoolCreate {
+	if i != nil {
+		aupc.SetRelayProviderID(*i)
+	}
+	return aupc
+}
+
 // SetUserID sets the "user_id" field.
 func (aupc *AttributionUsagePoolCreate) SetUserID(i int) *AttributionUsagePoolCreate {
 	aupc.mutation.SetUserID(i)
@@ -223,6 +237,10 @@ func (aupc *AttributionUsagePoolCreate) defaults() {
 		v := attributionusagepool.DefaultLedgerEpoch
 		aupc.mutation.SetLedgerEpoch(v)
 	}
+	if _, ok := aupc.mutation.RelayProviderID(); !ok {
+		v := attributionusagepool.DefaultRelayProviderID
+		aupc.mutation.SetRelayProviderID(v)
+	}
 	if _, ok := aupc.mutation.InputTokens(); !ok {
 		v := attributionusagepool.DefaultInputTokens
 		aupc.mutation.SetInputTokens(v)
@@ -273,6 +291,9 @@ func (aupc *AttributionUsagePoolCreate) check() error {
 	}
 	if _, ok := aupc.mutation.LedgerEpoch(); !ok {
 		return &ValidationError{Name: "ledger_epoch", err: errors.New(`ent: missing required field "AttributionUsagePool.ledger_epoch"`)}
+	}
+	if _, ok := aupc.mutation.RelayProviderID(); !ok {
+		return &ValidationError{Name: "relay_provider_id", err: errors.New(`ent: missing required field "AttributionUsagePool.relay_provider_id"`)}
 	}
 	if _, ok := aupc.mutation.UserID(); !ok {
 		return &ValidationError{Name: "user_id", err: errors.New(`ent: missing required field "AttributionUsagePool.user_id"`)}
@@ -348,6 +369,10 @@ func (aupc *AttributionUsagePoolCreate) createSpec() (*AttributionUsagePool, *sq
 	if value, ok := aupc.mutation.LedgerEpoch(); ok {
 		_spec.SetField(attributionusagepool.FieldLedgerEpoch, field.TypeString, value)
 		_node.LedgerEpoch = value
+	}
+	if value, ok := aupc.mutation.RelayProviderID(); ok {
+		_spec.SetField(attributionusagepool.FieldRelayProviderID, field.TypeInt, value)
+		_node.RelayProviderID = value
 	}
 	if value, ok := aupc.mutation.UserID(); ok {
 		_spec.SetField(attributionusagepool.FieldUserID, field.TypeInt, value)

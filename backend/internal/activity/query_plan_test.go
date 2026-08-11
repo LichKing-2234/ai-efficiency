@@ -59,6 +59,7 @@ func TestV2RepositoryPageUsesPoolRangeAndCommitLookupIndexes(t *testing.T) {
 	client, dsn := testdb.OpenWithDSN(t)
 	ctx := context.Background()
 	user := client.User.Create().SetUsername("plan-user").SetEmail("plan-user@example.com").SetAuthSource("ldap").SaveX(ctx)
+	provider := client.RelayProvider.Create().SetName("plan-provider").SetDisplayName("Plan Provider").SetBaseURL("https://relay.example.com").SetAdminAPIKey("encrypted-test-key").SetDefaultModel("example-model").SetIsPrimary(true).SetEnabled(true).SaveX(ctx)
 	repo := client.RepoConfig.Create().SetName("plan").SetFullName("example/plan").SetCloneURL("https://example.com/example/plan.git").SaveX(ctx)
 	poolBuilders := make([]*ent.AttributionUsagePoolCreate, 0, 2000)
 	for index := 0; index < 2000; index++ {
@@ -66,7 +67,7 @@ func TestV2RepositoryPageUsesPoolRangeAndCommitLookupIndexes(t *testing.T) {
 		if index == 1999 {
 			epoch = "formal_v2"
 		}
-		poolBuilders = append(poolBuilders, client.AttributionUsagePool.Create().SetCanonicalPoolKey(fmt.Sprintf("plan-%04d", index)).SetLedgerEpoch(epoch).SetUserID(user.ID).SetRequestedModel("model-test").SetBucketStartUtc(time.Date(2026, 8, 1, 0, 0, index, 0, time.UTC)).SetTotalTokens(10))
+		poolBuilders = append(poolBuilders, client.AttributionUsagePool.Create().SetCanonicalPoolKey(fmt.Sprintf("plan-%04d", index)).SetLedgerEpoch(epoch).SetRelayProviderID(provider.ID).SetUserID(user.ID).SetRequestedModel("model-test").SetBucketStartUtc(time.Date(2026, 8, 1, 0, 0, index, 0, time.UTC)).SetTotalTokens(10))
 	}
 	pools, err := client.AttributionUsagePool.CreateBulk(poolBuilders...).Save(ctx)
 	if err != nil {
@@ -87,7 +88,7 @@ func TestV2RepositoryPageUsesPoolRangeAndCommitLookupIndexes(t *testing.T) {
 	if _, err := db.ExecContext(ctx, "ANALYZE attribution_usage_pools; ANALYZE attribution_usage_pool_commits"); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := db.QueryContext(ctx, `EXPLAIN (COSTS OFF) SELECT c.repo_config_id,p.id FROM attribution_usage_pools p JOIN attribution_usage_pool_commits c ON c.pool_id=p.id WHERE p.ledger_epoch='formal_v2' AND p.user_id=$1 AND p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3 AND c.orphaned=false`, user.ID, time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC))
+	rows, err := db.QueryContext(ctx, `EXPLAIN (COSTS OFF) SELECT c.repo_config_id,p.id FROM attribution_usage_pools p JOIN attribution_usage_pool_commits c ON c.pool_id=p.id WHERE p.ledger_epoch='formal_v2' AND p.relay_provider_id>0 AND p.user_id=$1 AND p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3`, user.ID, time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)
 	}

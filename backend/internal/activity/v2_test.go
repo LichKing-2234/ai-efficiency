@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/attributionusagepoolcommit"
+	"github.com/ai-efficiency/backend/ent/relayprovider"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	_ "github.com/lib/pq"
@@ -18,8 +20,15 @@ import (
 
 type fixedV2Denominator struct{ value V2Denominator }
 
-func (f fixedV2Denominator) ResolveDenominator(context.Context, V2DenominatorRequest) (V2Denominator, error) {
+func (f fixedV2Denominator) ResolveDenominator(_ context.Context, request V2DenominatorRequest) (V2Denominator, error) {
+	f.value.ProviderSet = request.ProviderSet
 	return f.value, nil
+}
+
+type errorV2Denominator struct{ err error }
+
+func (f errorV2Denominator) ResolveDenominator(context.Context, V2DenominatorRequest) (V2Denominator, error) {
+	return V2Denominator{}, f.err
 }
 
 func TestV2OverviewCountsPoolsOnceAndClampsRatioToUsageAsOf(t *testing.T) {
@@ -54,6 +63,29 @@ func TestV2OverviewCountsPoolsOnceAndClampsRatioToUsageAsOf(t *testing.T) {
 	}
 	if result.Readiness.State != "active" {
 		t.Fatalf("readiness = %+v", result.Readiness)
+	}
+	oldProvider := client.RelayProvider.Create().SetName("old-provider").SetDisplayName("Old Provider").SetBaseURL("https://old-relay.example.com").SetAdminAPIKey("encrypted-test-key").SetDefaultModel("example-model").SetEnabled(false).SaveX(ctx)
+	oldPool := client.AttributionUsagePool.Create().SetCanonicalPoolKey("old-provider-pool").SetLedgerEpoch("formal_v2").SetRelayProviderID(oldProvider.ID).SetUserID(actor.ID).SetRequestedModel("model-test").SetBucketStartUtc(time.Date(2026, 3, 8, 6, 45, 0, 0, time.UTC)).SetTotalTokens(777).SaveX(ctx)
+	client.AttributionUsagePoolCommit.Create().SetPoolID(oldPool.ID).SetRepoConfigID(repoA.ID).SetCommitSha("old-provider").SetRelationKind(attributionusagepoolcommit.RelationKindDirect).SaveX(ctx)
+	mismatched, err := service.V2Overview(ctx, actor.ID, V2Query{Scope: V2ScopePersonal, FromDate: "2026-03-08", ToDate: "2026-03-08", Timezone: "America/New_York"})
+	if err != nil || mismatched.CommittedTokens != 877 || mismatched.Trend[0].DirectTokens != 877 || mismatched.Ratio.State != "denominator_unavailable" {
+		t.Fatalf("provider-mismatched overview=%+v err=%v", mismatched, err)
+	}
+	client.AttributionUsagePoolCommit.Update().SetOrphaned(true).ExecX(ctx)
+	orphaned, err := service.V2Overview(ctx, actor.ID, V2Query{Scope: V2ScopePersonal, FromDate: "2026-03-08", ToDate: "2026-03-08", Timezone: "America/New_York"})
+	if err != nil || orphaned.Readiness.State != "active" || orphaned.CommittedTokens != 877 || orphaned.Trend[0].DirectTokens != 877 {
+		t.Fatalf("orphaned readiness=%+v err=%v", orphaned, err)
+	}
+	currentProvider := client.RelayProvider.Query().Where(relayprovider.EnabledEQ(true)).OnlyX(ctx)
+	client.RelayProvider.UpdateOne(currentProvider).SetEnabled(false).ExecX(ctx)
+	withoutProvider, err := service.V2Overview(ctx, actor.ID, V2Query{Scope: V2ScopePersonal, FromDate: "2026-03-08", ToDate: "2026-03-08", Timezone: "America/New_York"})
+	if err != nil || withoutProvider.CommittedTokens != 877 || withoutProvider.Readiness.State != "active" || withoutProvider.Ratio.State != "denominator_unavailable" {
+		t.Fatalf("providerless overview=%+v err=%v", withoutProvider, err)
+	}
+	client.RelayProvider.Create().SetName("replacement-provider").SetDisplayName("Replacement Provider").SetBaseURL("https://replacement-relay.example.com").SetAdminAPIKey("encrypted-test-key").SetDefaultModel("example-model").SetEnabled(true).SaveX(ctx)
+	switched, err := service.V2Overview(ctx, actor.ID, V2Query{Scope: V2ScopePersonal, FromDate: "2026-03-08", ToDate: "2026-03-08", Timezone: "America/New_York"})
+	if err != nil || switched.Readiness.State != "active" {
+		t.Fatalf("provider-switched readiness=%+v err=%v", switched, err)
 	}
 }
 
@@ -103,9 +135,15 @@ func TestV2RepositoryAndPRPagesKeepSharedValuesNonAdditive(t *testing.T) {
 	}
 	mismatched := query
 	mismatched.Search = "repo"
-	if _, err := service.V2Repositories(ctx, actor.ID, mismatched); err != ErrInvalidCursor {
+	if _, err := service.V2Repositories(ctx, actor.ID, mismatched); !errors.Is(err, ErrInvalidCursor) {
 		t.Fatalf("cursor query isolation error=%v", err)
 	}
+	provider := client.RelayProvider.Query().OnlyX(ctx)
+	client.RelayProvider.UpdateOne(provider).AddConfigurationVersion(1).ExecX(ctx)
+	if _, err := service.V2Repositories(ctx, actor.ID, query); !errors.Is(err, ErrSnapshotExpired) {
+		t.Fatalf("provider-version cursor error=%v", err)
+	}
+	query.Cursor = ""
 	prs, err := service.V2PullRequests(ctx, actor.ID, V2PageQuery{V2Query: query.V2Query})
 	if err != nil {
 		t.Fatal(err)
@@ -122,12 +160,46 @@ func TestV2RepositoryAndPRPagesKeepSharedValuesNonAdditive(t *testing.T) {
 		t.Fatalf("literal wildcard page=%+v err=%v", literalWildcard, err)
 	}
 	repoOverview, err := service.V2Overview(ctx, actor.ID, V2Query{Scope: V2ScopePersonal, FromDate: "2026-08-01", ToDate: "2026-08-01", Timezone: "Asia/Kathmandu", RepoID: firstRepo.ID})
-	if err != nil || repoOverview.Trend[0].DirectTokens != 100 || repoOverview.Trend[0].SharedTokens != 50 {
+	if err != nil || repoOverview.CommittedTokens != 2940 || repoOverview.Trend[0].DirectTokens != 100 || repoOverview.Trend[0].SharedTokens != 50 || repoOverview.SCMCoverage.Complete || repoOverview.SCMCoverage.UnsyncedRepositories != 1 {
 		t.Fatalf("repository trend=%+v err=%v", repoOverview, err)
 	}
 	prOverview, err := service.V2Overview(ctx, actor.ID, V2Query{Scope: V2ScopePersonal, FromDate: "2026-08-01", ToDate: "2026-08-01", Timezone: "Asia/Kathmandu", PRRecordID: pr.ID})
-	if err != nil || prOverview.Trend[0].InvolvedTokens != 50 {
+	if err != nil || prOverview.CommittedTokens != 2940 || prOverview.Trend[0].InvolvedTokens != 50 {
 		t.Fatalf("PR trend=%+v err=%v", prOverview, err)
+	}
+	emptyRepo := client.RepoConfig.Create().SetName("empty").SetFullName("example/empty").SetCloneURL("https://example.com/empty.git").SaveX(ctx)
+	historical := createV2Pool(t, client, actor.ID, "formal_v2", "2026-07-01T00:00:00Z", 1, 0)
+	client.AttributionUsagePoolCommit.Create().SetPoolID(historical.ID).SetRepoConfigID(emptyRepo.ID).SetCommitSha("historical").SetRelationKind(attributionusagepoolcommit.RelationKindDirect).SaveX(ctx)
+	emptyOverview, err := service.V2Overview(ctx, actor.ID, V2Query{Scope: V2ScopePersonal, FromDate: "2026-08-01", ToDate: "2026-08-01", Timezone: "Asia/Kathmandu", RepoID: emptyRepo.ID})
+	if err != nil || emptyOverview.SCMCoverage.Complete || emptyOverview.SCMCoverage.UnsyncedRepositories != 1 {
+		t.Fatalf("empty repository coverage=%+v err=%v", emptyOverview.SCMCoverage, err)
+	}
+	foreignRepo := client.RepoConfig.Create().SetName("foreign").SetFullName("example/foreign").SetCloneURL("https://example.com/foreign.git").SaveX(ctx)
+	client.AttributionUsagePoolCommit.Create().SetPoolID(shared.ID).SetRepoConfigID(foreignRepo.ID).SetCommitSha("inherited-only").SetRelationKind(attributionusagepoolcommit.RelationKindInheritedNonCounting).SaveX(ctx)
+	foreignOverview, err := service.V2Overview(ctx, actor.ID, V2Query{Scope: V2ScopePersonal, FromDate: "2026-08-01", ToDate: "2026-08-01", Timezone: "Asia/Kathmandu", RepoID: foreignRepo.ID})
+	if err != nil || !foreignOverview.SCMCoverage.Complete || foreignOverview.SCMCoverage.UnsyncedRepositories != 0 {
+		t.Fatalf("foreign repository leaked coverage=%+v err=%v", foreignOverview.SCMCoverage, err)
+	}
+	missingPR, err := service.V2Overview(ctx, actor.ID, V2Query{Scope: V2ScopePersonal, FromDate: "2026-08-01", ToDate: "2026-08-01", Timezone: "Asia/Kathmandu", PRRecordID: 999999})
+	if err != nil || !missingPR.SCMCoverage.Complete || missingPR.SCMCoverage.UnsyncedRepositories != 0 {
+		t.Fatalf("missing PR leaked coverage=%+v err=%v", missingPR.SCMCoverage, err)
+	}
+}
+
+func TestV2OverviewKeepsActivityWhenDenominatorErrors(t *testing.T) {
+	client, dsn := testdb.OpenWithDSN(t)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	actor := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource("ldap").SaveX(ctx)
+	client.RelayProvider.Create().SetName("activity-test").SetDisplayName("Activity Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("encrypted-test-key").SetDefaultModel("example-model").SetIsPrimary(true).SetEnabled(true).SaveX(ctx)
+	service := NewService(client, nil, ServiceOptions{V2LedgerEpoch: "formal_v2", V2DB: db, V2Denominator: errorV2Denominator{err: fmt.Errorf("Usage failed")}})
+	result, err := service.V2Overview(ctx, actor.ID, V2Query{Scope: V2ScopePersonal, FromDate: "2026-08-01", ToDate: "2026-08-01", Timezone: "UTC"})
+	if err != nil || result.Ratio.State != "denominator_unavailable" || !result.Ratio.Retryable || len(result.Trend) != 1 {
+		t.Fatalf("overview=%+v error=%v", result, err)
 	}
 }
 
@@ -157,6 +229,8 @@ func TestV2RatioStates(t *testing.T) {
 		{"true zero", 0, V2Coverage{Complete: true}, V2Denominator{TotalTokens: 100, Fresh: true, Complete: true, AsOf: now}, "true_zero_committed", &hundred},
 		{"lower bound", 20, V2Coverage{LowerBound: true}, V2Denominator{TotalTokens: 100, Fresh: true, Complete: true, AsOf: now}, "lower_bound", &hundred},
 		{"exact", 20, V2Coverage{Complete: true}, V2Denominator{TotalTokens: 100, Fresh: true, Complete: true, AsOf: now}, "exact", &hundred},
+		{"contradictory", 101, V2Coverage{Complete: true}, V2Denominator{TotalTokens: 100, Fresh: true, Complete: true, AsOf: now}, "denominator_unavailable", nil},
+		{"incomplete zero", 0, V2Coverage{LowerBound: true}, V2Denominator{TotalTokens: 100, Fresh: true, Complete: true, AsOf: now}, "lower_bound", &hundred},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -177,7 +251,7 @@ func TestV2ScopeAuthorizationIsRevalidatedForMemberAndTeam(t *testing.T) {
 	representative, member, ordinary, outside, admin := makeUser("representative"), makeUser("member"), makeUser("ordinary"), makeUser("outside"), makeUser("admin")
 	client.User.UpdateOne(admin).SetRole(entuser.RoleAdmin).ExecX(ctx)
 	createActivityDirectoryScope(t, client, representative, member, ordinary, outside, admin)
-	service := NewService(client, nil, ServiceOptions{CursorSecret: "secret", V2LedgerEpoch: "formal_v2"})
+	service := NewService(client, nil, ServiceOptions{CursorSecret: "secret"})
 	base := V2Query{FromDate: "2026-08-01", ToDate: "2026-08-07", Timezone: "Asia/Shanghai"}
 	allowed := base
 	allowed.Scope = V2ScopeMember
@@ -224,9 +298,13 @@ func TestV2MemberDenominatorCacheIsAuthorizationAndProviderIsolated(t *testing.T
 
 func createV2Pool(t *testing.T, client *ent.Client, userID int, epoch, at string, tokens int64, gaps int) *ent.AttributionUsagePool {
 	t.Helper()
+	providers := client.RelayProvider.Query().AllX(context.Background())
+	if len(providers) == 0 {
+		providers = append(providers, client.RelayProvider.Create().SetName("activity-test").SetDisplayName("Activity Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("encrypted-test-key").SetDefaultModel("example-model").SetIsPrimary(true).SetEnabled(true).SaveX(context.Background()))
+	}
 	when, err := time.Parse(time.RFC3339, at)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return client.AttributionUsagePool.Create().SetCanonicalPoolKey(fmt.Sprintf("%s:%s:%d:%d", epoch, at, userID, tokens)).SetLedgerEpoch(epoch).SetUserID(userID).SetRequestedModel("model-test").SetBucketStartUtc(when).SetTotalTokens(tokens).SetCoverageGapCount(gaps).SaveX(context.Background())
+	return client.AttributionUsagePool.Create().SetCanonicalPoolKey(fmt.Sprintf("%s:%s:%d:%d", epoch, at, userID, tokens)).SetLedgerEpoch(epoch).SetRelayProviderID(providers[0].ID).SetUserID(userID).SetRequestedModel("model-test").SetBucketStartUtc(when).SetTotalTokens(tokens).SetCoverageGapCount(gaps).SaveX(context.Background())
 }

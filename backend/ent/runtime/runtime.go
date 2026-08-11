@@ -283,44 +283,48 @@ func init() {
 	attributionusagepoolDescLedgerEpoch := attributionusagepoolFields[1].Descriptor()
 	// attributionusagepool.DefaultLedgerEpoch holds the default value on creation for the ledger_epoch field.
 	attributionusagepool.DefaultLedgerEpoch = attributionusagepoolDescLedgerEpoch.Default.(string)
+	// attributionusagepoolDescRelayProviderID is the schema descriptor for relay_provider_id field.
+	attributionusagepoolDescRelayProviderID := attributionusagepoolFields[2].Descriptor()
+	// attributionusagepool.DefaultRelayProviderID holds the default value on creation for the relay_provider_id field.
+	attributionusagepool.DefaultRelayProviderID = attributionusagepoolDescRelayProviderID.Default.(int)
 	// attributionusagepoolDescRequestedModel is the schema descriptor for requested_model field.
-	attributionusagepoolDescRequestedModel := attributionusagepoolFields[3].Descriptor()
+	attributionusagepoolDescRequestedModel := attributionusagepoolFields[4].Descriptor()
 	// attributionusagepool.RequestedModelValidator is a validator for the "requested_model" field. It is called by the builders before save.
 	attributionusagepool.RequestedModelValidator = attributionusagepoolDescRequestedModel.Validators[0].(func(string) error)
 	// attributionusagepoolDescInputTokens is the schema descriptor for input_tokens field.
-	attributionusagepoolDescInputTokens := attributionusagepoolFields[5].Descriptor()
+	attributionusagepoolDescInputTokens := attributionusagepoolFields[6].Descriptor()
 	// attributionusagepool.DefaultInputTokens holds the default value on creation for the input_tokens field.
 	attributionusagepool.DefaultInputTokens = attributionusagepoolDescInputTokens.Default.(int64)
 	// attributionusagepoolDescOutputTokens is the schema descriptor for output_tokens field.
-	attributionusagepoolDescOutputTokens := attributionusagepoolFields[6].Descriptor()
+	attributionusagepoolDescOutputTokens := attributionusagepoolFields[7].Descriptor()
 	// attributionusagepool.DefaultOutputTokens holds the default value on creation for the output_tokens field.
 	attributionusagepool.DefaultOutputTokens = attributionusagepoolDescOutputTokens.Default.(int64)
 	// attributionusagepoolDescCacheCreationTokens is the schema descriptor for cache_creation_tokens field.
-	attributionusagepoolDescCacheCreationTokens := attributionusagepoolFields[7].Descriptor()
+	attributionusagepoolDescCacheCreationTokens := attributionusagepoolFields[8].Descriptor()
 	// attributionusagepool.DefaultCacheCreationTokens holds the default value on creation for the cache_creation_tokens field.
 	attributionusagepool.DefaultCacheCreationTokens = attributionusagepoolDescCacheCreationTokens.Default.(int64)
 	// attributionusagepoolDescCacheReadTokens is the schema descriptor for cache_read_tokens field.
-	attributionusagepoolDescCacheReadTokens := attributionusagepoolFields[8].Descriptor()
+	attributionusagepoolDescCacheReadTokens := attributionusagepoolFields[9].Descriptor()
 	// attributionusagepool.DefaultCacheReadTokens holds the default value on creation for the cache_read_tokens field.
 	attributionusagepool.DefaultCacheReadTokens = attributionusagepoolDescCacheReadTokens.Default.(int64)
 	// attributionusagepoolDescTotalTokens is the schema descriptor for total_tokens field.
-	attributionusagepoolDescTotalTokens := attributionusagepoolFields[9].Descriptor()
+	attributionusagepoolDescTotalTokens := attributionusagepoolFields[10].Descriptor()
 	// attributionusagepool.DefaultTotalTokens holds the default value on creation for the total_tokens field.
 	attributionusagepool.DefaultTotalTokens = attributionusagepoolDescTotalTokens.Default.(int64)
 	// attributionusagepoolDescRequestCount is the schema descriptor for request_count field.
-	attributionusagepoolDescRequestCount := attributionusagepoolFields[10].Descriptor()
+	attributionusagepoolDescRequestCount := attributionusagepoolFields[11].Descriptor()
 	// attributionusagepool.DefaultRequestCount holds the default value on creation for the request_count field.
 	attributionusagepool.DefaultRequestCount = attributionusagepoolDescRequestCount.Default.(int)
 	// attributionusagepoolDescCoverageGapCount is the schema descriptor for coverage_gap_count field.
-	attributionusagepoolDescCoverageGapCount := attributionusagepoolFields[11].Descriptor()
+	attributionusagepoolDescCoverageGapCount := attributionusagepoolFields[12].Descriptor()
 	// attributionusagepool.DefaultCoverageGapCount holds the default value on creation for the coverage_gap_count field.
 	attributionusagepool.DefaultCoverageGapCount = attributionusagepoolDescCoverageGapCount.Default.(int)
 	// attributionusagepoolDescCreatedAt is the schema descriptor for created_at field.
-	attributionusagepoolDescCreatedAt := attributionusagepoolFields[12].Descriptor()
+	attributionusagepoolDescCreatedAt := attributionusagepoolFields[13].Descriptor()
 	// attributionusagepool.DefaultCreatedAt holds the default value on creation for the created_at field.
 	attributionusagepool.DefaultCreatedAt = attributionusagepoolDescCreatedAt.Default.(func() time.Time)
 	// attributionusagepoolDescUpdatedAt is the schema descriptor for updated_at field.
-	attributionusagepoolDescUpdatedAt := attributionusagepoolFields[13].Descriptor()
+	attributionusagepoolDescUpdatedAt := attributionusagepoolFields[14].Descriptor()
 	// attributionusagepool.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	attributionusagepool.DefaultUpdatedAt = attributionusagepoolDescUpdatedAt.Default.(func() time.Time)
 	// attributionusagepool.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

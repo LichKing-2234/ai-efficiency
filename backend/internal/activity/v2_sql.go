@@ -10,23 +10,29 @@ import (
 )
 
 func (s *Service) queryV2OverviewSQL(ctx context.Context, actorUserID int, scope *v2Scope, query V2Query, from, to time.Time, denominator V2Denominator, result *V2Overview) (*V2Overview, error) {
+	committed, ratioCommitted, hasGap, ratioGap, providerMismatch, err := s.queryV2ScopeTotalsSQL(ctx, scope, from, to, denominator)
+	if err != nil {
+		return nil, fmt.Errorf("load v2 overview totals: %w", err)
+	}
+	result.CommittedTokens = committed
+	result.Coverage = V2Coverage{Complete: !hasGap, LowerBound: hasGap}
+	ratioCoverage := V2Coverage{Complete: !ratioGap, LowerBound: ratioGap}
+	if providerMismatch {
+		denominator = V2Denominator{Retryable: denominator.Retryable}
+	}
 	args := []any{s.v2LedgerEpoch, from, to}
 	users := appendSQLInts(&args, sortedIntKeys(scope.userIDs))
-	asOf := from
-	if denominator.Complete && denominator.Fresh {
-		asOf = denominator.AsOf
-	}
-	args = append(args, asOf, query.Timezone)
-	asOfPH, tzPH := fmt.Sprintf("$%d", len(args)-1), fmt.Sprintf("$%d", len(args))
+	args = append(args, query.Timezone)
+	tzPH := fmt.Sprintf("$%d", len(args))
 	joins, filter, group := "", "", ""
 	if query.PRRecordID > 0 {
 		args = append(args, query.PRRecordID)
-		filter = " AND c.orphaned=false AND pr.id=" + fmt.Sprintf("$%d", len(args))
+		filter = " AND pr.id=" + fmt.Sprintf("$%d", len(args))
 		joins = " JOIN attribution_usage_pool_commits c ON c.pool_id=p.id JOIN pr_commit_usage_snapshots pcs ON pcs.commit_sha=c.commit_sha JOIN pr_records pr ON pr.id=pcs.pr_record_id AND pr.repo_config_pr_records=c.repo_config_id"
 		group = " GROUP BY p.id,p.total_tokens,p.bucket_start_utc,p.coverage_gap_count"
 	} else if query.RepoID > 0 {
 		args = append(args, query.RepoID)
-		filter = " AND c.orphaned=false AND c.repo_config_id=" + fmt.Sprintf("$%d", len(args))
+		filter = " AND c.repo_config_id=" + fmt.Sprintf("$%d", len(args))
 		joins = " JOIN attribution_usage_pool_commits c ON c.pool_id=p.id"
 		group = " GROUP BY p.id,p.total_tokens,p.bucket_start_utc,p.coverage_gap_count"
 	}
@@ -37,20 +43,17 @@ func (s *Service) queryV2OverviewSQL(ctx context.Context, actorUserID int, scope
 	statement := fmt.Sprintf(`WITH selected AS (
  SELECT p.id,p.total_tokens,p.bucket_start_utc,p.coverage_gap_count,%s
  FROM attribution_usage_pools p %s
- WHERE p.ledger_epoch=$1 AND p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3 AND p.user_id IN (%s)
-   AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits counted WHERE counted.pool_id=p.id AND counted.orphaned=false AND counted.relation_kind IN ('direct','shared'))
+	 WHERE p.ledger_epoch=$1 AND p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3 AND p.user_id IN (%s) AND p.relay_provider_id > 0
+	   AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits counted WHERE counted.pool_id=p.id AND counted.relation_kind IN ('direct','shared'))
    %s %s
 ), daily AS (
  SELECT to_char(bucket_start_utc AT TIME ZONE %s,'YYYY-MM-DD') local_day,
         SUM(total_tokens)::bigint total_tokens,
         SUM(CASE WHEN has_direct THEN total_tokens ELSE 0 END)::bigint direct_tokens,
-        SUM(CASE WHEN has_shared THEN total_tokens ELSE 0 END)::bigint shared_tokens,
-        bool_or(coverage_gap_count>0) has_gap,
-        SUM(CASE WHEN bucket_start_utc + interval '15 minutes' <= %s THEN total_tokens ELSE 0 END)::bigint ratio_tokens,
-        bool_or(coverage_gap_count>0 AND bucket_start_utc + interval '15 minutes' <= %s) ratio_gap
+        SUM(CASE WHEN has_shared THEN total_tokens ELSE 0 END)::bigint shared_tokens
  FROM selected GROUP BY local_day
 )
-SELECT local_day,total_tokens,direct_tokens,shared_tokens,has_gap,ratio_tokens,ratio_gap FROM daily ORDER BY local_day`, relationColumns, joins, users, filter, group, tzPH, asOfPH, asOfPH)
+SELECT local_day,total_tokens,direct_tokens,shared_tokens FROM daily ORDER BY local_day`, relationColumns, joins, users, filter, group, tzPH)
 	rows, err := s.v2DB.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query v2 overview: %w", err)
@@ -60,23 +63,11 @@ SELECT local_day,total_tokens,direct_tokens,shared_tokens,has_gap,ratio_tokens,r
 	for index := range result.Trend {
 		trend[result.Trend[index].Date] = &result.Trend[index]
 	}
-	var ratioCommitted int64
-	ratioCoverage := V2Coverage{Complete: true}
 	for rows.Next() {
 		var day string
-		var total, direct, shared, ratio int64
-		var gap, ratioGap bool
-		if err := rows.Scan(&day, &total, &direct, &shared, &gap, &ratio, &ratioGap); err != nil {
-			return nil, err
-		}
-		result.CommittedTokens += total
-		ratioCommitted += ratio
-		if gap {
-			result.Coverage.LowerBound = true
-		}
-		if ratioGap {
-			ratioCoverage.LowerBound = true
-			ratioCoverage.Complete = false
+		var total, direct, shared int64
+		if err := rows.Scan(&day, &total, &direct, &shared); err != nil {
+			return nil, fmt.Errorf("scan v2 overview: %w", err)
 		}
 		if point := trend[day]; point != nil {
 			if query.PRRecordID > 0 {
@@ -90,23 +81,44 @@ SELECT local_day,total_tokens,direct_tokens,shared_tokens,has_gap,ratio_tokens,r
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("iterate v2 overview: %w", err)
 	}
-	result.Coverage.Complete = !result.Coverage.LowerBound
 	repoIDs, err := s.queryV2RepoIDsSQL(ctx, scope, from, to, query.RepoID, query.PRRecordID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load v2 overview repository coverage: %w", err)
 	}
 	result.SCMCoverage, err = s.v2SyncCoverage(ctx, repoIDs)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve v2 overview SCM coverage: %w", err)
 	}
-	result.Readiness, err = s.v2Readiness(ctx, scope.userIDs)
+	result.Readiness, err = s.v2ReadinessSQL(ctx, scope)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load v2 overview readiness: %w", err)
 	}
 	result.Ratio = v2Ratio(ratioCommitted, ratioCoverage, denominator)
 	return result, nil
+}
+
+func (s *Service) queryV2ScopeTotalsSQL(ctx context.Context, scope *v2Scope, from, to time.Time, denominator V2Denominator) (int64, int64, bool, bool, bool, error) {
+	args := []any{s.v2LedgerEpoch, from, to}
+	users := appendSQLInts(&args, sortedIntKeys(scope.userIDs))
+	providers := appendSQLInts(&args, sortedIntKeys(scope.providerIDs))
+	asOf := from
+	if denominator.Complete && denominator.Fresh {
+		asOf = denominator.AsOf
+	}
+	args = append(args, asOf)
+	mismatch := fmt.Sprintf("relay_provider_id NOT IN (%s)", providers)
+	if len(scope.providerIDs) == 0 {
+		mismatch = "true"
+	}
+	statement := fmt.Sprintf(`WITH scoped AS (SELECT p.* FROM attribution_usage_pools p WHERE p.ledger_epoch=$1 AND p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3 AND p.user_id IN (%s) AND p.relay_provider_id > 0 AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits c WHERE c.pool_id=p.id AND c.relation_kind IN ('direct','shared'))) SELECT COALESCE(SUM(total_tokens),0)::bigint,COALESCE(SUM(total_tokens) FILTER (WHERE relay_provider_id IN (%s) AND bucket_start_utc + interval '15 minutes' <= $%d),0)::bigint,COALESCE(bool_or(coverage_gap_count>0),false),COALESCE(bool_or(coverage_gap_count>0 AND bucket_start_utc + interval '15 minutes' <= $%d) FILTER (WHERE relay_provider_id IN (%s)),false),COALESCE(bool_or(%s),false) FROM scoped`, users, providers, len(args), len(args), providers, mismatch)
+	var committed, ratio int64
+	var gap, ratioGap, providerMismatch bool
+	if err := s.v2DB.QueryRowContext(ctx, statement, args...).Scan(&committed, &ratio, &gap, &ratioGap, &providerMismatch); err != nil {
+		return 0, 0, false, false, false, fmt.Errorf("query v2 scope totals: %w", err)
+	}
+	return committed, ratio, gap, ratioGap, providerMismatch, nil
 }
 
 func (s *Service) queryV2RepositoriesSQL(ctx context.Context, actorUserID int, scope *v2Scope, from, to time.Time, query V2PageQuery) (*V2Page[V2RepositoryRow], error) {
@@ -118,7 +130,7 @@ func (s *Service) queryV2RepositoriesSQL(ctx context.Context, actorUserID int, s
 	binding := v2CursorBinding(scope, query)
 	lastValue, lastID, err := s.decodeV2PageCursor(query.Cursor, "repositories", scope, actorUserID, binding)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decode v2 repository cursor: %w", err)
 	}
 	search := strings.TrimSpace(query.Search)
 	args = append(args, "%"+escapeV2Like(search)+"%")
@@ -142,7 +154,7 @@ func (s *Service) queryV2RepositoriesSQL(ctx context.Context, actorUserID int, s
         bool_or(c.relation_kind = 'shared') has_shared
  FROM attribution_usage_pools p JOIN attribution_usage_pool_commits c ON c.pool_id=p.id
  WHERE p.ledger_epoch=$1 AND p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3
-   AND p.user_id IN (%s) AND c.orphaned=false
+	   AND p.user_id IN (%s) AND p.relay_provider_id > 0
  GROUP BY c.repo_config_id,p.id,p.total_tokens
  HAVING bool_or(c.relation_kind IN ('direct','shared'))
 ), repo_totals AS (
@@ -152,8 +164,8 @@ func (s *Service) queryV2RepositoriesSQL(ctx context.Context, actorUserID int, s
  FROM pool_repo pr JOIN repo_configs r ON r.id=pr.repo_config_id GROUP BY pr.repo_config_id,r.full_name
 ), scope_total AS (
  SELECT COALESCE(SUM(total_tokens),0)::bigint total_tokens FROM attribution_usage_pools
- WHERE ledger_epoch=$1 AND bucket_start_utc >= $2 AND bucket_start_utc < $3 AND user_id IN (%s)
-   AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits counted WHERE counted.pool_id=attribution_usage_pools.id AND counted.orphaned=false AND counted.relation_kind IN ('direct','shared'))
+	 WHERE ledger_epoch=$1 AND bucket_start_utc >= $2 AND bucket_start_utc < $3 AND user_id IN (%s) AND relay_provider_id > 0
+	   AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits counted WHERE counted.pool_id=attribution_usage_pools.id AND counted.relation_kind IN ('direct','shared'))
 )
 SELECT repo_config_id,repo_name,direct_tokens,shared_tokens,scope_total.total_tokens
 FROM repo_totals CROSS JOIN scope_total WHERE repo_name ILIKE %s ESCAPE '\' %s
@@ -168,7 +180,7 @@ ORDER BY %s LIMIT %d`, users, users, searchPlaceholder, cursorWhere, order, v2Pa
 		var row V2RepositoryRow
 		var total int64
 		if err := rows.Scan(&row.RepoConfigID, &row.Name, &row.DirectTokens, &row.SharedTokens, &total); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scan v2 repositories: %w", err)
 		}
 		if total > 0 {
 			share := float64(row.DirectTokens) * 100 / float64(total)
@@ -177,7 +189,7 @@ ORDER BY %s LIMIT %d`, users, users, searchPlaceholder, cursorWhere, order, v2Pa
 		items = append(items, row)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("iterate v2 repositories: %w", err)
 	}
 	page := &V2Page[V2RepositoryRow]{Items: items}
 	if len(items) > v2PageSize {
@@ -201,7 +213,7 @@ func (s *Service) queryV2PullRequestsSQL(ctx context.Context, actorUserID int, s
 	binding := v2CursorBinding(scope, query)
 	lastValue, lastID, err := s.decodeV2PageCursor(query.Cursor, "pull_requests", scope, actorUserID, binding)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decode v2 pull-request cursor: %w", err)
 	}
 	search := strings.TrimSpace(query.Search)
 	args = append(args, "%"+escapeV2Like(search)+"%")
@@ -236,8 +248,8 @@ func (s *Service) queryV2PullRequestsSQL(ctx context.Context, actorUserID int, s
  JOIN pr_records pr ON pr.id=pcs.pr_record_id AND pr.repo_config_pr_records=c.repo_config_id
  JOIN repo_configs r ON r.id=pr.repo_config_pr_records
  WHERE p.ledger_epoch=$1 AND p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3
-   AND p.user_id IN (%s) AND c.orphaned=false
-   AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits counted WHERE counted.pool_id=p.id AND counted.orphaned=false AND counted.relation_kind IN ('direct','shared')) %s
+	   AND p.user_id IN (%s) AND p.relay_provider_id > 0
+	   AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits counted WHERE counted.pool_id=p.id AND counted.relation_kind IN ('direct','shared')) %s
  GROUP BY pr.id,pr.repo_config_pr_records,r.full_name,pr.scm_pr_id,pr.title,pr.scm_pr_url,pr.status,p.id,p.total_tokens
 ), pr_totals AS (
  SELECT pr_record_id,repo_config_id,repo_name,scm_pr_id,title,scm_pr_url,status,SUM(total_tokens)::bigint involved_tokens,
@@ -255,12 +267,12 @@ FROM pr_totals WHERE (repo_name||' #'||scm_pr_id::text||' '||title) ILIKE %s ESC
 	for rows.Next() {
 		var row V2PullRequestRow
 		if err := rows.Scan(&row.PRRecordID, &row.RepoConfigID, &row.RepositoryName, &row.SCMPRID, &row.Title, &row.URL, &row.Status, &row.InvolvedTokens, &row.OverlapState); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scan v2 pull requests: %w", err)
 		}
 		items = append(items, row)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("iterate v2 pull requests: %w", err)
 	}
 	page := &V2Page[V2PullRequestRow]{Items: items}
 	if len(items) > v2PageSize {
@@ -273,15 +285,15 @@ FROM pr_totals WHERE (repo_name||' #'||scm_pr_id::text||' '||title) ILIKE %s ESC
 		page.NextCursor, err = s.encodeV2PageCursor("pull_requests", scope, actorUserID, binding, last.PRRecordID, value)
 	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("encode v2 pull-request cursor: %w", err)
 	}
 	repoIDs, loadErr := s.queryV2RepoIDsSQL(ctx, scope, from, to, query.RepoID, query.PRRecordID)
 	if loadErr != nil {
-		return nil, loadErr
+		return nil, fmt.Errorf("load v2 pull-request repository coverage: %w", loadErr)
 	}
 	coverage, loadErr := s.v2SyncCoverage(ctx, repoIDs)
 	if loadErr != nil {
-		return nil, loadErr
+		return nil, fmt.Errorf("resolve v2 pull-request SCM coverage: %w", loadErr)
 	}
 	page.SCMCoverage = &coverage
 	return page, nil
@@ -300,7 +312,7 @@ func (s *Service) queryV2RepoIDsSQL(ctx context.Context, scope *v2Scope, from, t
 		joins = " JOIN pr_commit_usage_snapshots pcs ON pcs.commit_sha=c.commit_sha JOIN pr_records pr ON pr.id=pcs.pr_record_id AND pr.repo_config_pr_records=c.repo_config_id"
 		filter += " AND pr.id=" + fmt.Sprintf("$%d", len(args))
 	}
-	statement := fmt.Sprintf(`SELECT DISTINCT c.repo_config_id FROM attribution_usage_pools p JOIN attribution_usage_pool_commits c ON c.pool_id=p.id %s WHERE p.ledger_epoch=$1 AND p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3 AND p.user_id IN (%s) AND c.orphaned=false %s`, joins, users, filter)
+	statement := fmt.Sprintf(`SELECT DISTINCT c.repo_config_id FROM attribution_usage_pools p JOIN attribution_usage_pool_commits c ON c.pool_id=p.id %s WHERE p.ledger_epoch=$1 AND p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3 AND p.user_id IN (%s) AND p.relay_provider_id > 0 AND c.relation_kind IN ('direct','shared') %s`, joins, users, filter)
 	rows, err := s.v2DB.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query v2 repository coverage: %w", err)
@@ -310,17 +322,60 @@ func (s *Service) queryV2RepoIDsSQL(ctx context.Context, scope *v2Scope, from, t
 	for rows.Next() {
 		var id int
 		if err := rows.Scan(&id); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scan v2 repository coverage: %w", err)
 		}
 		result[id] = struct{}{}
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate v2 repository coverage: %w", err)
+	}
+	if repoID == 0 && prID == 0 {
+		return result, nil
+	}
+	if repoID > 0 {
+		authorized, err := s.v2RepoAuthorizedSQL(ctx, scope, repoID)
+		if err != nil {
+			return nil, err
+		}
+		if authorized {
+			result[repoID] = struct{}{}
+		}
+	}
+	if prID > 0 {
+		var resolvedRepoID int
+		if err := s.v2DB.QueryRowContext(ctx, `SELECT repo_config_pr_records FROM pr_records WHERE id=$1`, prID).Scan(&resolvedRepoID); err != nil && err != sql.ErrNoRows {
+			return nil, fmt.Errorf("resolve v2 PR repository coverage: %w", err)
+		}
+		authorized, err := s.v2RepoAuthorizedSQL(ctx, scope, resolvedRepoID)
+		if err != nil {
+			return nil, err
+		}
+		if authorized {
+			result[resolvedRepoID] = struct{}{}
+		}
+	}
+	return result, nil
 }
 
-func (s *Service) v2ReadinessSQL(ctx context.Context, userIDs map[int]struct{}) (V2Readiness, error) {
+func (s *Service) v2RepoAuthorizedSQL(ctx context.Context, scope *v2Scope, repoID int) (bool, error) {
+	if repoID <= 0 {
+		return false, nil
+	}
 	args := []any{s.v2LedgerEpoch}
-	users := appendSQLInts(&args, sortedIntKeys(userIDs))
-	statement := fmt.Sprintf(`SELECT MIN(p.created_at) FROM attribution_usage_pools p WHERE p.ledger_epoch=$1 AND p.user_id IN (%s) AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits c WHERE c.pool_id=p.id AND c.orphaned=false AND c.relation_kind IN ('direct','shared'))`, users)
+	users := appendSQLInts(&args, sortedIntKeys(scope.userIDs))
+	args = append(args, repoID)
+	statement := fmt.Sprintf(`SELECT EXISTS(SELECT 1 FROM attribution_usage_pools p JOIN attribution_usage_pool_commits c ON c.pool_id=p.id WHERE p.ledger_epoch=$1 AND p.user_id IN (%s) AND p.relay_provider_id > 0 AND c.repo_config_id=$%d AND c.relation_kind IN ('direct','shared'))`, users, len(args))
+	var authorized bool
+	if err := s.v2DB.QueryRowContext(ctx, statement, args...).Scan(&authorized); err != nil {
+		return false, fmt.Errorf("authorize v2 repository coverage: %w", err)
+	}
+	return authorized, nil
+}
+
+func (s *Service) v2ReadinessSQL(ctx context.Context, scope *v2Scope) (V2Readiness, error) {
+	args := []any{s.v2LedgerEpoch}
+	users := appendSQLInts(&args, sortedIntKeys(scope.userIDs))
+	statement := fmt.Sprintf(`SELECT MIN(p.created_at) FROM attribution_usage_pools p WHERE p.ledger_epoch=$1 AND p.user_id IN (%s) AND p.relay_provider_id > 0 AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits c WHERE c.pool_id=p.id AND c.relation_kind IN ('direct','shared'))`, users)
 	var at sql.NullTime
 	if err := s.v2DB.QueryRowContext(ctx, statement, args...).Scan(&at); err != nil {
 		return V2Readiness{}, fmt.Errorf("query v2 readiness: %w", err)
@@ -333,6 +388,9 @@ func (s *Service) v2ReadinessSQL(ctx context.Context, userIDs map[int]struct{}) 
 }
 
 func appendSQLInts(args *[]any, values []int) string {
+	if len(values) == 0 {
+		return "NULL"
+	}
 	placeholders := make([]string, len(values))
 	for i, value := range values {
 		*args = append(*args, value)
@@ -344,7 +402,7 @@ func escapeV2Like(value string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(value)
 }
 func v2CursorBinding(scope *v2Scope, query V2PageQuery) string {
-	return strings.Join([]string{scope.subject, query.FromDate, query.ToDate, query.Timezone, strings.TrimSpace(query.Search), strings.TrimSpace(query.Sort), fmt.Sprint(query.RepoID), fmt.Sprint(query.PRRecordID)}, "|")
+	return strings.Join([]string{scope.subject, scope.providerSet, query.FromDate, query.ToDate, query.Timezone, strings.TrimSpace(query.Search), strings.TrimSpace(query.Sort), fmt.Sprint(query.RepoID), fmt.Sprint(query.PRRecordID)}, "|")
 }
 func (s *Service) decodeV2PageCursor(encoded, collection string, scope *v2Scope, actor int, binding string) (string, int, error) {
 	if strings.TrimSpace(encoded) == "" {
@@ -354,7 +412,7 @@ func (s *Service) decodeV2PageCursor(encoded, collection string, scope *v2Scope,
 	if err != nil {
 		return "", 0, err
 	}
-	if cursor.ScopeVersion != scope.authorization.Version {
+	if cursor.ScopeVersion != v2SnapshotVersion(scope) {
 		return "", 0, ErrSnapshotExpired
 	}
 	if cursor.Version != activityCursorVersion || cursor.Collection != "v2_"+collection || cursor.ActorUserID != actor || cursor.Subject != binding || cursor.LastID <= 0 || cursor.LastValue == "" {
@@ -363,5 +421,9 @@ func (s *Service) decodeV2PageCursor(encoded, collection string, scope *v2Scope,
 	return cursor.LastValue, cursor.LastID, nil
 }
 func (s *Service) encodeV2PageCursor(collection string, scope *v2Scope, actor int, binding string, lastID int, lastValue string) (string, error) {
-	return s.encodeCursor(activityCursor{Version: activityCursorVersion, Collection: "v2_" + collection, ScopeVersion: scope.authorization.Version, ActorUserID: actor, Subject: binding, LastID: lastID, LastValue: lastValue})
+	return s.encodeCursor(activityCursor{Version: activityCursorVersion, Collection: "v2_" + collection, ScopeVersion: v2SnapshotVersion(scope), ActorUserID: actor, Subject: binding, LastID: lastID, LastValue: lastValue})
+}
+
+func v2SnapshotVersion(scope *v2Scope) string {
+	return scope.authorization.Version + "|providers:" + scope.providerSet
 }

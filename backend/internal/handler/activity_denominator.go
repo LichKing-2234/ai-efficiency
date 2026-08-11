@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -34,12 +35,18 @@ func (r *activityDenominatorResolver) ResolveDenominator(ctx context.Context, re
 	// configured provider set expands beyond that contract.
 	var providerID int
 	var providerVersion int64
+	providerSet := ""
 	if r.client != nil {
-		providers, err := r.client.RelayProvider.Query().Where(relayprovider.EnabledEQ(true)).All(ctx)
+		providers, err := r.client.RelayProvider.Query().Where(relayprovider.EnabledEQ(true)).Order(ent.Asc(relayprovider.FieldID)).All(ctx)
 		if err != nil {
 			return activity.V2Denominator{}, fmt.Errorf("resolve Usage provider set: %w", err)
 		}
-		if len(providers) != 1 {
+		parts := make([]string, 0, len(providers))
+		for _, provider := range providers {
+			parts = append(parts, fmt.Sprintf("%d:%d", provider.ID, provider.ConfigurationVersion))
+		}
+		providerSet = strings.Join(parts, ",")
+		if providerSet != request.ProviderSet || len(providers) != 1 {
 			return activity.V2Denominator{}, nil
 		}
 		providerID, providerVersion = providers[0].ID, providers[0].ConfigurationVersion
@@ -56,7 +63,7 @@ func (r *activityDenominatorResolver) ResolveDenominator(ctx context.Context, re
 		if result.ScopeVersion != request.ScopeVersion || result.RangeTotalTokens == nil || *result.RangeTotalTokens < 0 || result.SourceStatus != "ok" || result.AsOf.IsZero() || result.Window.StartDate != request.FromDate || result.Window.EndDate != request.ToDate || result.Window.Timezone != request.Timezone || result.Window.Granularity != "day" {
 			return activity.V2Denominator{}, nil
 		}
-		return activity.V2Denominator{TotalTokens: *result.RangeTotalTokens, AsOf: result.AsOf, FreshUntil: result.FreshUntil, Fresh: r.currentTime().Before(result.FreshUntil), Complete: true}, nil
+		return activity.V2Denominator{TotalTokens: *result.RangeTotalTokens, AsOf: result.AsOf, FreshUntil: result.FreshUntil, Fresh: r.currentTime().Before(result.FreshUntil), Complete: true, ProviderSet: providerSet}, nil
 	}
 	if r.personal == nil {
 		return activity.V2Denominator{}, fmt.Errorf("personal Usage service unavailable")
@@ -85,7 +92,7 @@ func (r *activityDenominatorResolver) ResolveDenominator(ctx context.Context, re
 	if !result.Configured || result.Stats == nil || result.Stats.TotalTokens < 0 || result.UsageFreshness == nil || result.UsageFreshness.AsOf.IsZero() || result.UsageFreshness.SourceStatus != "ok" || result.Range.StartDate != request.FromDate || result.Range.EndDate != request.ToDate || result.Range.Timezone != request.Timezone || result.Range.Granularity != "day" {
 		return activity.V2Denominator{}, nil
 	}
-	denominator := activity.V2Denominator{TotalTokens: result.Stats.TotalTokens, AsOf: result.UsageFreshness.AsOf, FreshUntil: result.UsageFreshness.FreshUntil, Fresh: r.currentTime().Before(result.UsageFreshness.FreshUntil), Complete: true}
+	denominator := activity.V2Denominator{TotalTokens: result.Stats.TotalTokens, AsOf: result.UsageFreshness.AsOf, FreshUntil: result.UsageFreshness.FreshUntil, Fresh: r.currentTime().Before(result.UsageFreshness.FreshUntil), Complete: true, ProviderSet: providerSet}
 	if request.Scope == activity.V2ScopeMember && r.cache != nil && memberKey.SubjectUserID > 0 {
 		r.cache.WriteMemberDenominator(ctx, memberKey, denominator)
 	}

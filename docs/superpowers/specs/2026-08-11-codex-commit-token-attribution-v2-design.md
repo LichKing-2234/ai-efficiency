@@ -202,6 +202,7 @@ Official Token is stored once in a unified long-lived pool:
 ```text
 attribution_usage_pools
 - canonical_pool_key
+- relay_provider_id
 - user_id
 - requested_model
 - bucket_start_utc
@@ -220,8 +221,8 @@ attribution_usage_pool_commits
 - relation_kind: direct | shared | inherited_non_counting
 ```
 
-The canonical pool key covers the user, sorted counting commit set, requested
-model, and a non-empty 15-minute UTC bucket based on the upstream usage time.
+The canonical pool key covers the Relay provider, user, sorted counting commit
+set, requested model, and a non-empty 15-minute UTC bucket based on the upstream usage time.
 Fifteen-minute buckets support local natural-day aggregation for IANA zones
 with whole-hour, half-hour, and quarter-hour offsets without preallocating empty
 rows.
@@ -322,12 +323,22 @@ The ratio is calculated only when the denominator is fresh, complete, and
 matches the exact requested coverage. The committed numerator is cut off at
 the same `as_of`.
 
+Provider switching never removes already formal committed Token from Activity
+scope totals, trends, Repository rows, or PR rows. If the requested window
+contains formal pools outside the exact provider set covered by Usage, the
+ratio is unavailable; the backend does not hide those historical pools to make
+the numerator appear comparable.
+
 - complete denominator plus incomplete committed attribution may display
   `at least X%`;
 - incomplete/missing denominator displays no percentage;
 - complete zero denominator displays `No AI Token use in this period`;
 - a true complete zero numerator with non-zero denominator displays `0%`;
 - stale/error Usage never produces an estimate.
+
+A transient Usage resolver error is represented as a retryable local ratio
+error with `denominator_unavailable`; it does not suppress committed totals,
+trend, readiness, Repository, or PR data from the same Activity context.
 
 The donut labels are `Used for committed code` and `Other Token`. `Other Token`
 does not mean non-development work. When the adjacent equal period is fully
@@ -396,6 +407,12 @@ highlighted. Repository selection changes the daily trend and filters the PR
 page. PR selection changes the trend and expands related commits. A visible
 filter chip clears the selection while preserving scope/range.
 
+The backend accepts a Repository or PR filter for SCM coverage only when its
+Repository is already present in the actor's authorization-revalidated formal
+Activity projection. An arbitrary numeric filter behaves like no matching
+Activity data and does not reveal global Repository/PR existence or integration
+health.
+
 There is no independent commit ranking tab and no low-value Repository detail
 dashboard for model or Token composition. General model/composition analysis
 remains `/usage`.
@@ -435,7 +452,8 @@ search, sort, and pagination.
 User-level readiness remains aggregate and has no device list or time-based
 stale state. `active` requires the first accepted committed direct/shared v2
 group in the formal epoch. An uncommitted, unbound, shadow, or old v1 bucket
-cannot activate readiness.
+cannot activate readiness. Once active, later orphan marking or Relay-provider
+switching cannot return that user to `waiting_for_data`.
 
 Normal setup remains install, login, and discover. Explicit enable, hook
 management, repo init, sync, and diagnostics are advanced/recovery paths. v2

@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** Implementation in progress; T02-T07 and T10 are merged with hosted CI green, T08 is under local implementation and verification, and the T04 real read-only canary still requires separate authorization
+**Status:** Implementation in progress; T02-T08 and T10 are implemented with local verification, and T02-T07/T10 are merged with hosted CI green. T08 has clean final Spec/Standards reviews and full/race/repeat/vet verification; push, PR, and hosted CI remain. The T04 real read-only canary still requires separate authorization.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -96,16 +96,16 @@ T01 contract publication (#253)
 
 ### T08 — Activity v2 reads and Usage denominator resolver ([#248](https://github.com/LichKing-2234/ai-efficiency/issues/248))
 
-- [ ] Return backend-owned scope totals, Repository direct/shared, PR involved,
+- [x] Return backend-owned scope totals, Repository direct/shared, PR involved,
   daily trend, coverage, and formal readiness without row-derived totals.
-- [ ] Reuse personal/team Usage services and add an authorization-isolated
+- [x] Reuse personal/team Usage services and add an authorization-isolated
   member metrics cache behind one denominator resolver.
-- [ ] Require exact range/timezone, fresh/complete denominator, and shared
+- [x] Require exact range/timezone, fresh/complete denominator, and shared
   `as_of`; require complete coverage of every scoped provider/subject and
   return explicit exact/lower-bound/unavailable/zero states.
-- [ ] Add server search/sort/cursor pages of 20, IANA local-day aggregation,
+- [x] Add server search/sort/cursor pages of 20, IANA local-day aggregation,
   scope authorization, cache/cursor versioning, and query-plan tests.
-- [ ] Make repository management reads/mutations administrator-only without
+- [x] Make repository management reads/mutations administrator-only without
   blocking CLI/reporting repository resolution routes.
 
 ### T09 — Activity v2 frontend and repository administration IA ([#249](https://github.com/LichKing-2234/ai-efficiency/issues/249))

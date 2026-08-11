@@ -40,6 +40,7 @@ type V2Coverage struct {
 
 type V2Ratio struct {
 	State           string     `json:"state"`
+	Retryable       bool       `json:"retryable,omitempty"`
 	CommittedTokens int64      `json:"committed_tokens"`
 	TotalTokens     *int64     `json:"total_tokens,omitempty"`
 	Percent         *float64   `json:"percent,omitempty"`
@@ -107,6 +108,7 @@ type V2DenominatorRequest struct {
 	ToDate        string
 	Timezone      string
 	ScopeVersion  string
+	ProviderSet   string
 }
 
 type V2Denominator struct {
@@ -115,6 +117,8 @@ type V2Denominator struct {
 	FreshUntil  time.Time
 	Fresh       bool
 	Complete    bool
+	ProviderSet string
+	Retryable   bool
 }
 
 type V2MemberDenominatorCacheKey struct {

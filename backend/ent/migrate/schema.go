@@ -271,6 +271,7 @@ var (
 		{Name: "id", Type: field.TypeInt, Increment: true},
 		{Name: "canonical_pool_key", Type: field.TypeString, Unique: true},
 		{Name: "ledger_epoch", Type: field.TypeString, Default: "shadow_v2"},
+		{Name: "relay_provider_id", Type: field.TypeInt, Default: 0},
 		{Name: "user_id", Type: field.TypeInt},
 		{Name: "requested_model", Type: field.TypeString},
 		{Name: "bucket_start_utc", Type: field.TypeTime},
@@ -291,14 +292,19 @@ var (
 		PrimaryKey: []*schema.Column{AttributionUsagePoolsColumns[0]},
 		Indexes: []*schema.Index{
 			{
+				Name:    "attributionusagepool_ledger_epoch_relay_provider_id_user_id_bucket_start_utc",
+				Unique:  false,
+				Columns: []*schema.Column{AttributionUsagePoolsColumns[2], AttributionUsagePoolsColumns[3], AttributionUsagePoolsColumns[4], AttributionUsagePoolsColumns[6]},
+			},
+			{
 				Name:    "attributionusagepool_ledger_epoch_user_id_bucket_start_utc",
 				Unique:  false,
-				Columns: []*schema.Column{AttributionUsagePoolsColumns[2], AttributionUsagePoolsColumns[3], AttributionUsagePoolsColumns[5]},
+				Columns: []*schema.Column{AttributionUsagePoolsColumns[2], AttributionUsagePoolsColumns[4], AttributionUsagePoolsColumns[6]},
 			},
 			{
 				Name:    "attributionusagepool_ledger_epoch_bucket_start_utc",
 				Unique:  false,
-				Columns: []*schema.Column{AttributionUsagePoolsColumns[2], AttributionUsagePoolsColumns[5]},
+				Columns: []*schema.Column{AttributionUsagePoolsColumns[2], AttributionUsagePoolsColumns[6]},
 			},
 		},
 	}
