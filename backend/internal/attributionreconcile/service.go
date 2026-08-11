@@ -163,13 +163,17 @@ func (s *Service) reconcileCandidate(ctx context.Context, candidate *ent.Attribu
 	case 0:
 		return true, s.retryPending(ctx, candidate.ID, token, attempt, now)
 	case 1:
-		return true, s.reconcileOne(ctx, candidate, token, now, rows[0])
+		return true, s.reconcileOne(ctx, candidate, token, attempt, now, rows[0])
 	default:
 		return true, s.finish(ctx, candidate.ID, token, attributionrequestclaim.StatusAmbiguous, "ambiguous_request")
 	}
 }
 
-func (s *Service) reconcileOne(ctx context.Context, candidate *ent.AttributionRequestClaim, token string, now time.Time, usage relay.RequestUsage) error {
+func (s *Service) reconcileOne(ctx context.Context, candidate *ent.AttributionRequestClaim, token string, attempt int, now time.Time, usage relay.RequestUsage) error {
+	providerRow, err := s.client.RelayProvider.Get(ctx, candidate.RelayProviderID)
+	if err != nil || !providerRow.Enabled {
+		return s.retry(ctx, candidate.ID, token, attempt, now, "provider_unavailable", err)
+	}
 	currentRelayUserID, status, code := s.currentOwnerIdentity(ctx, candidate)
 	if code != "" {
 		return s.finish(ctx, candidate.ID, token, status, code)

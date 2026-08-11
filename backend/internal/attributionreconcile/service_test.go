@@ -200,6 +200,30 @@ func TestRunOnceRevalidatesOwnerAfterLookup(t *testing.T) {
 	}
 }
 
+func TestRunOnceRevalidatesProviderAfterLookup(t *testing.T) {
+	fixture := newReconcileFixture(t)
+	ctx := context.Background()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	reader := &requestReaderProvider{read: func(context.Context, string, int) ([]relay.RequestUsage, error) {
+		close(started)
+		<-release
+		return []relay.RequestUsage{validUsage(fixture)}, nil
+	}}
+	done := make(chan error, 1)
+	go func() { _, err := newTestService(t, fixture, reader).RunOnce(ctx); done <- err }()
+	<-started
+	fixture.client.RelayProvider.UpdateOneID(fixture.providerID).SetEnabled(false).ExecX(ctx)
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	claim := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+	if claim.Status != attributionrequestclaim.StatusProviderUnavailable || claim.LastErrorCode != "provider_unavailable" || !claim.NextAttemptAt.After(fixture.now) {
+		t.Fatalf("claim = %+v", claim)
+	}
+}
+
 func TestRunOnceRejectsMissingGroupAndProviderBeforeLookup(t *testing.T) {
 	tests := []struct {
 		name   string
