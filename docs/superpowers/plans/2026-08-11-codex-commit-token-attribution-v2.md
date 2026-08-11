@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** Implementation in progress; T02-T10 are merged with hosted CI green. T11 non-canary qualification, hosted CI, and final review are complete; the separately authorized real canary remains. The T04 real read-only canary also still requires separate authorization.
+**Status:** Implementation blocked by a P1 Codex 0.147.0 Responses WebSocket compatibility gap found by the authorized real canary. T02-T10 and T11 non-canary qualification are merged with hosted CI green, but the current client does not persist the logical response ID required for exact `sub2api` reconciliation. T04/T11 real canary gates remain incomplete; #251 is blocked.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -66,6 +66,10 @@ T01 contract publication (#253)
   multi-replica collapse.
 - [x] Verify success and all fail-closed/retry branches with fake providers.
 - [ ] Run a separately authorized read-only canary against the real endpoint.
+  The 2026-08-12 authorized probe proved that a WebSocket handshake client ID
+  returns zero rows while the logical response ID returns exactly one official
+  usage row. The read contract is therefore correct, but this gate remains
+  unchecked until the end-to-end client can supply that identity normally.
 
 ### T05 — Git hooks, outbox, runner, and OTel exit ([#244](https://github.com/LichKing-2234/ai-efficiency/issues/244))
 
@@ -144,8 +148,13 @@ T01 contract publication (#253)
   nominal upstream cleanup, including exact-boundary and late-ingest cases.
 - [ ] Complete one controlled real Request-to-commit-to-Activity canary without
   contaminating the formal epoch.
+  The 2026-08-12 attempt stopped fail-closed before claim ingest: Codex 0.147.0
+  persists neither the WebSocket logical response ID nor an equivalent Request
+  ID in SQLite/rollout data. Its opt-in timing trace exposes the correct value
+  only on process stderr, which is not a continuous collection seam.
 - [x] Produce cutover checklist, dashboards, exact reset query, evidence export,
-  and rollback runbook; close every P0/P1 finding.
+  and rollback runbook.
+- [ ] Close every P0/P1 finding before #251 may start.
 
 ### T12 — Explicit v2 cutover and v1 POC reset ([#251](https://github.com/LichKing-2234/ai-efficiency/issues/251))
 

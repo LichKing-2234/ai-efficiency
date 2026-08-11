@@ -1,7 +1,7 @@
 # Codex Attribution v2 Qualification Evidence
 
 **Date:** 2026-08-12  
-**Status:** Non-canary qualification complete; separately authorized real canary remains
+**Status:** Non-canary qualification complete; authorized real canary failed on a P1 Codex Responses WebSocket identity gap
 **Ticket:** [#250](https://github.com/LichKing-2234/ai-efficiency/issues/250)
 
 This record maps the #250 acceptance criteria to executable evidence. Synthetic
@@ -72,6 +72,38 @@ contains:
   `77279437`.
 - [ ] A separately authorized real Request-to-commit-to-Activity canary passes
   without entering the formal epoch.
+
+## Authorized Real Canary Attempt
+
+The authorized 2026-08-12 canary used a separate temporary Git repository with
+hooks disabled and a shadow-only local backend/database path. A real Codex
+request produced structured mutation evidence, a deterministic commit, and
+local Token calibration. It stopped fail-closed before claim ingest because
+the client could not supply a trusted official Request identity.
+
+Sanitized findings:
+
+- Codex 0.147.0 used Responses WebSocket; the current scanner's trusted HTTP
+  `Request completed` query returned no evidence for the turn.
+- the WebSocket handshake client ID returned zero real `sub2api` usage rows and
+  is not a reconciliation identity;
+- the existing AE OTLP correlation cache contained 128 recent WebSocket
+  evidence records for the thread and none contained a Request ID, so restoring
+  AE-managed OTel would not close the gap;
+- an opt-in WebSocket timing trace exposed a logical response ID whose exact
+  real-endpoint lookup returned one official usage row with Token components
+  and owner metadata;
+- that timing trace is emitted only to opt-in process stderr, not Codex SQLite
+  or rollout JSONL, so ae-cli cannot collect it continuously during normal
+  operation;
+- upstream Codex source populates HTTP `ResponseStream.upstream_request_id` but
+  returns `None` for the WebSocket path.
+
+This is a P1 compatibility blocker, not a successful canary. Handshake IDs,
+time adjacency, and Token similarity remain forbidden substitutes. Before a
+fresh canary, the implementation needs a trusted persistent WebSocket logical
+response-ID seam, a scanner regression test, and normal-operation validation
+without AE OTel.
 
 Until all three are complete, #251 remains blocked and this document is not
 cutover authorization.

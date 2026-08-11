@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Design
 
 **Date:** 2026-08-11
-**Status:** Approved target contract; not active before the v2 cutover
+**Status:** Approved target contract; cutover blocked by the Codex Responses WebSocket identity gap documented on 2026-08-12
 **Scope:** `ae-cli`, backend attribution/reconciliation/read models, frontend Activity, repository administration
 **Supersedes for target behavior:** [Codex Token Attribution Ledger POC](./2026-08-05-codex-token-attribution-ledger-poc-design.md)
 **Related:**
@@ -94,8 +94,14 @@ Rules:
 - `relay_provider_id` is the backend provider selected by discover and is
   frozen when the group is created;
 - provider switching never rewrites an older pending group;
-- `x-client-request-id + thread_id + turn_id` is the Request correlation seam;
-- the `client:` prefix is normalized exactly once;
+- the local correlation seam must bind the exact `sub2api` usage `request_id`
+  to `thread_id + turn_id`; transport connection or handshake IDs are not
+  Request identities;
+- for Codex HTTP, the trusted completed-response `x-request-id` may provide
+  that identity; for Responses WebSocket, the logical response ID is the
+  matching identity, but v2 cannot support that transport until Codex persists
+  it in a trusted local source available during normal operation;
+- any accepted legacy `client:` prefix is normalized exactly once;
 - one turn may contain multiple Requests and all Requests share the turn's
   mutation set;
 - local Token exists once at group level for calibration and is never treated
