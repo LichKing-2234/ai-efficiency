@@ -3,6 +3,7 @@
 package ent
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -25,10 +26,6 @@ type AttributionClaimGroup struct {
 	UserID int `json:"user_id,omitempty"`
 	// RelayProviderID holds the value of the "relay_provider_id" field.
 	RelayProviderID int `json:"relay_provider_id,omitempty"`
-	// RepoConfigID holds the value of the "repo_config_id" field.
-	RepoConfigID int `json:"repo_config_id,omitempty"`
-	// CheckpointID holds the value of the "checkpoint_id" field.
-	CheckpointID int `json:"checkpoint_id,omitempty"`
 	// SchemaVersion holds the value of the "schema_version" field.
 	SchemaVersion int `json:"schema_version,omitempty"`
 	// LedgerEpoch holds the value of the "ledger_epoch" field.
@@ -41,6 +38,18 @@ type AttributionClaimGroup struct {
 	EvidenceDigest string `json:"evidence_digest,omitempty"`
 	// CalibrationDigest holds the value of the "calibration_digest" field.
 	CalibrationDigest string `json:"calibration_digest,omitempty"`
+	// CalibrationInputTokens holds the value of the "calibration_input_tokens" field.
+	CalibrationInputTokens int64 `json:"calibration_input_tokens,omitempty"`
+	// CalibrationOutputTokens holds the value of the "calibration_output_tokens" field.
+	CalibrationOutputTokens int64 `json:"calibration_output_tokens,omitempty"`
+	// CalibrationCacheCreationTokens holds the value of the "calibration_cache_creation_tokens" field.
+	CalibrationCacheCreationTokens int64 `json:"calibration_cache_creation_tokens,omitempty"`
+	// CalibrationCacheReadTokens holds the value of the "calibration_cache_read_tokens" field.
+	CalibrationCacheReadTokens int64 `json:"calibration_cache_read_tokens,omitempty"`
+	// CalibrationTotalTokens holds the value of the "calibration_total_tokens" field.
+	CalibrationTotalTokens int64 `json:"calibration_total_tokens,omitempty"`
+	// CommitAllocations holds the value of the "commit_allocations" field.
+	CommitAllocations []map[string]interface{} `json:"commit_allocations,omitempty"`
 	// RequestCount holds the value of the "request_count" field.
 	RequestCount int `json:"request_count,omitempty"`
 	// ExpiresAt holds the value of the "expires_at" field.
@@ -57,7 +66,9 @@ func (*AttributionClaimGroup) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case attributionclaimgroup.FieldID, attributionclaimgroup.FieldInstallationID, attributionclaimgroup.FieldUserID, attributionclaimgroup.FieldRelayProviderID, attributionclaimgroup.FieldRepoConfigID, attributionclaimgroup.FieldCheckpointID, attributionclaimgroup.FieldSchemaVersion, attributionclaimgroup.FieldRequestCount:
+		case attributionclaimgroup.FieldCommitAllocations:
+			values[i] = new([]byte)
+		case attributionclaimgroup.FieldID, attributionclaimgroup.FieldInstallationID, attributionclaimgroup.FieldUserID, attributionclaimgroup.FieldRelayProviderID, attributionclaimgroup.FieldSchemaVersion, attributionclaimgroup.FieldCalibrationInputTokens, attributionclaimgroup.FieldCalibrationOutputTokens, attributionclaimgroup.FieldCalibrationCacheCreationTokens, attributionclaimgroup.FieldCalibrationCacheReadTokens, attributionclaimgroup.FieldCalibrationTotalTokens, attributionclaimgroup.FieldRequestCount:
 			values[i] = new(sql.NullInt64)
 		case attributionclaimgroup.FieldGroupID, attributionclaimgroup.FieldLedgerEpoch, attributionclaimgroup.FieldThreadID, attributionclaimgroup.FieldTurnID, attributionclaimgroup.FieldEvidenceDigest, attributionclaimgroup.FieldCalibrationDigest:
 			values[i] = new(sql.NullString)
@@ -108,18 +119,6 @@ func (acg *AttributionClaimGroup) assignValues(columns []string, values []any) e
 			} else if value.Valid {
 				acg.RelayProviderID = int(value.Int64)
 			}
-		case attributionclaimgroup.FieldRepoConfigID:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field repo_config_id", values[i])
-			} else if value.Valid {
-				acg.RepoConfigID = int(value.Int64)
-			}
-		case attributionclaimgroup.FieldCheckpointID:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field checkpoint_id", values[i])
-			} else if value.Valid {
-				acg.CheckpointID = int(value.Int64)
-			}
 		case attributionclaimgroup.FieldSchemaVersion:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field schema_version", values[i])
@@ -155,6 +154,44 @@ func (acg *AttributionClaimGroup) assignValues(columns []string, values []any) e
 				return fmt.Errorf("unexpected type %T for field calibration_digest", values[i])
 			} else if value.Valid {
 				acg.CalibrationDigest = value.String
+			}
+		case attributionclaimgroup.FieldCalibrationInputTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field calibration_input_tokens", values[i])
+			} else if value.Valid {
+				acg.CalibrationInputTokens = value.Int64
+			}
+		case attributionclaimgroup.FieldCalibrationOutputTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field calibration_output_tokens", values[i])
+			} else if value.Valid {
+				acg.CalibrationOutputTokens = value.Int64
+			}
+		case attributionclaimgroup.FieldCalibrationCacheCreationTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field calibration_cache_creation_tokens", values[i])
+			} else if value.Valid {
+				acg.CalibrationCacheCreationTokens = value.Int64
+			}
+		case attributionclaimgroup.FieldCalibrationCacheReadTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field calibration_cache_read_tokens", values[i])
+			} else if value.Valid {
+				acg.CalibrationCacheReadTokens = value.Int64
+			}
+		case attributionclaimgroup.FieldCalibrationTotalTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field calibration_total_tokens", values[i])
+			} else if value.Valid {
+				acg.CalibrationTotalTokens = value.Int64
+			}
+		case attributionclaimgroup.FieldCommitAllocations:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field commit_allocations", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &acg.CommitAllocations); err != nil {
+					return fmt.Errorf("unmarshal field commit_allocations: %w", err)
+				}
 			}
 		case attributionclaimgroup.FieldRequestCount:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -228,12 +265,6 @@ func (acg *AttributionClaimGroup) String() string {
 	builder.WriteString("relay_provider_id=")
 	builder.WriteString(fmt.Sprintf("%v", acg.RelayProviderID))
 	builder.WriteString(", ")
-	builder.WriteString("repo_config_id=")
-	builder.WriteString(fmt.Sprintf("%v", acg.RepoConfigID))
-	builder.WriteString(", ")
-	builder.WriteString("checkpoint_id=")
-	builder.WriteString(fmt.Sprintf("%v", acg.CheckpointID))
-	builder.WriteString(", ")
 	builder.WriteString("schema_version=")
 	builder.WriteString(fmt.Sprintf("%v", acg.SchemaVersion))
 	builder.WriteString(", ")
@@ -251,6 +282,24 @@ func (acg *AttributionClaimGroup) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("calibration_digest=")
 	builder.WriteString(acg.CalibrationDigest)
+	builder.WriteString(", ")
+	builder.WriteString("calibration_input_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", acg.CalibrationInputTokens))
+	builder.WriteString(", ")
+	builder.WriteString("calibration_output_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", acg.CalibrationOutputTokens))
+	builder.WriteString(", ")
+	builder.WriteString("calibration_cache_creation_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", acg.CalibrationCacheCreationTokens))
+	builder.WriteString(", ")
+	builder.WriteString("calibration_cache_read_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", acg.CalibrationCacheReadTokens))
+	builder.WriteString(", ")
+	builder.WriteString("calibration_total_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", acg.CalibrationTotalTokens))
+	builder.WriteString(", ")
+	builder.WriteString("commit_allocations=")
+	builder.WriteString(fmt.Sprintf("%v", acg.CommitAllocations))
 	builder.WriteString(", ")
 	builder.WriteString("request_count=")
 	builder.WriteString(fmt.Sprintf("%v", acg.RequestCount))

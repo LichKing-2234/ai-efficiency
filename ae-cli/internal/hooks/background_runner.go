@@ -137,7 +137,8 @@ func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionCon
 	}
 	candidates, err := attributionlocal.ScanCodexV2ClaimsFromHome(ctx, "", attributionlocal.V2ClaimScanOptions{
 		RepoRoot: execCtx.RepoRoot, CommitSHA: task.TriggerCommitSHA, RelayProviderID: v2.RelayProviderID(),
-		RepoConfigID: execCtx.RepoConfigID, CheckpointEventID: task.TriggerEventID,
+		RepoConfigID: execCtx.RepoConfigID, RepoKey: execCtx.RepoKey, WorkspaceID: execCtx.WorkspaceID,
+		CheckpointEventID: task.TriggerEventID,
 	})
 	if err != nil {
 		return err

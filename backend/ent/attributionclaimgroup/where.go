@@ -74,16 +74,6 @@ func RelayProviderID(v int) predicate.AttributionClaimGroup {
 	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldRelayProviderID, v))
 }
 
-// RepoConfigID applies equality check predicate on the "repo_config_id" field. It's identical to RepoConfigIDEQ.
-func RepoConfigID(v int) predicate.AttributionClaimGroup {
-	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldRepoConfigID, v))
-}
-
-// CheckpointID applies equality check predicate on the "checkpoint_id" field. It's identical to CheckpointIDEQ.
-func CheckpointID(v int) predicate.AttributionClaimGroup {
-	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldCheckpointID, v))
-}
-
 // SchemaVersion applies equality check predicate on the "schema_version" field. It's identical to SchemaVersionEQ.
 func SchemaVersion(v int) predicate.AttributionClaimGroup {
 	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldSchemaVersion, v))
@@ -112,6 +102,31 @@ func EvidenceDigest(v string) predicate.AttributionClaimGroup {
 // CalibrationDigest applies equality check predicate on the "calibration_digest" field. It's identical to CalibrationDigestEQ.
 func CalibrationDigest(v string) predicate.AttributionClaimGroup {
 	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldCalibrationDigest, v))
+}
+
+// CalibrationInputTokens applies equality check predicate on the "calibration_input_tokens" field. It's identical to CalibrationInputTokensEQ.
+func CalibrationInputTokens(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldCalibrationInputTokens, v))
+}
+
+// CalibrationOutputTokens applies equality check predicate on the "calibration_output_tokens" field. It's identical to CalibrationOutputTokensEQ.
+func CalibrationOutputTokens(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldCalibrationOutputTokens, v))
+}
+
+// CalibrationCacheCreationTokens applies equality check predicate on the "calibration_cache_creation_tokens" field. It's identical to CalibrationCacheCreationTokensEQ.
+func CalibrationCacheCreationTokens(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldCalibrationCacheCreationTokens, v))
+}
+
+// CalibrationCacheReadTokens applies equality check predicate on the "calibration_cache_read_tokens" field. It's identical to CalibrationCacheReadTokensEQ.
+func CalibrationCacheReadTokens(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldCalibrationCacheReadTokens, v))
+}
+
+// CalibrationTotalTokens applies equality check predicate on the "calibration_total_tokens" field. It's identical to CalibrationTotalTokensEQ.
+func CalibrationTotalTokens(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldCalibrationTotalTokens, v))
 }
 
 // RequestCount applies equality check predicate on the "request_count" field. It's identical to RequestCountEQ.
@@ -317,86 +332,6 @@ func RelayProviderIDLT(v int) predicate.AttributionClaimGroup {
 // RelayProviderIDLTE applies the LTE predicate on the "relay_provider_id" field.
 func RelayProviderIDLTE(v int) predicate.AttributionClaimGroup {
 	return predicate.AttributionClaimGroup(sql.FieldLTE(FieldRelayProviderID, v))
-}
-
-// RepoConfigIDEQ applies the EQ predicate on the "repo_config_id" field.
-func RepoConfigIDEQ(v int) predicate.AttributionClaimGroup {
-	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldRepoConfigID, v))
-}
-
-// RepoConfigIDNEQ applies the NEQ predicate on the "repo_config_id" field.
-func RepoConfigIDNEQ(v int) predicate.AttributionClaimGroup {
-	return predicate.AttributionClaimGroup(sql.FieldNEQ(FieldRepoConfigID, v))
-}
-
-// RepoConfigIDIn applies the In predicate on the "repo_config_id" field.
-func RepoConfigIDIn(vs ...int) predicate.AttributionClaimGroup {
-	return predicate.AttributionClaimGroup(sql.FieldIn(FieldRepoConfigID, vs...))
-}
-
-// RepoConfigIDNotIn applies the NotIn predicate on the "repo_config_id" field.
-func RepoConfigIDNotIn(vs ...int) predicate.AttributionClaimGroup {
-	return predicate.AttributionClaimGroup(sql.FieldNotIn(FieldRepoConfigID, vs...))
-}
-
-// RepoConfigIDGT applies the GT predicate on the "repo_config_id" field.
-func RepoConfigIDGT(v int) predicate.AttributionClaimGroup {
-	return predicate.AttributionClaimGroup(sql.FieldGT(FieldRepoConfigID, v))
-}
-
-// RepoConfigIDGTE applies the GTE predicate on the "repo_config_id" field.
-func RepoConfigIDGTE(v int) predicate.AttributionClaimGroup {
-	return predicate.AttributionClaimGroup(sql.FieldGTE(FieldRepoConfigID, v))
-}
-
-// RepoConfigIDLT applies the LT predicate on the "repo_config_id" field.
-func RepoConfigIDLT(v int) predicate.AttributionClaimGroup {
-	return predicate.AttributionClaimGroup(sql.FieldLT(FieldRepoConfigID, v))
-}
-
-// RepoConfigIDLTE applies the LTE predicate on the "repo_config_id" field.
-func RepoConfigIDLTE(v int) predicate.AttributionClaimGroup {
-	return predicate.AttributionClaimGroup(sql.FieldLTE(FieldRepoConfigID, v))
-}
-
-// CheckpointIDEQ applies the EQ predicate on the "checkpoint_id" field.
-func CheckpointIDEQ(v int) predicate.AttributionClaimGroup {
-	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldCheckpointID, v))
-}
-
-// CheckpointIDNEQ applies the NEQ predicate on the "checkpoint_id" field.
-func CheckpointIDNEQ(v int) predicate.AttributionClaimGroup {
-	return predicate.AttributionClaimGroup(sql.FieldNEQ(FieldCheckpointID, v))
-}
-
-// CheckpointIDIn applies the In predicate on the "checkpoint_id" field.
-func CheckpointIDIn(vs ...int) predicate.AttributionClaimGroup {
-	return predicate.AttributionClaimGroup(sql.FieldIn(FieldCheckpointID, vs...))
-}
-
-// CheckpointIDNotIn applies the NotIn predicate on the "checkpoint_id" field.
-func CheckpointIDNotIn(vs ...int) predicate.AttributionClaimGroup {
-	return predicate.AttributionClaimGroup(sql.FieldNotIn(FieldCheckpointID, vs...))
-}
-
-// CheckpointIDGT applies the GT predicate on the "checkpoint_id" field.
-func CheckpointIDGT(v int) predicate.AttributionClaimGroup {
-	return predicate.AttributionClaimGroup(sql.FieldGT(FieldCheckpointID, v))
-}
-
-// CheckpointIDGTE applies the GTE predicate on the "checkpoint_id" field.
-func CheckpointIDGTE(v int) predicate.AttributionClaimGroup {
-	return predicate.AttributionClaimGroup(sql.FieldGTE(FieldCheckpointID, v))
-}
-
-// CheckpointIDLT applies the LT predicate on the "checkpoint_id" field.
-func CheckpointIDLT(v int) predicate.AttributionClaimGroup {
-	return predicate.AttributionClaimGroup(sql.FieldLT(FieldCheckpointID, v))
-}
-
-// CheckpointIDLTE applies the LTE predicate on the "checkpoint_id" field.
-func CheckpointIDLTE(v int) predicate.AttributionClaimGroup {
-	return predicate.AttributionClaimGroup(sql.FieldLTE(FieldCheckpointID, v))
 }
 
 // SchemaVersionEQ applies the EQ predicate on the "schema_version" field.
@@ -772,6 +707,206 @@ func CalibrationDigestEqualFold(v string) predicate.AttributionClaimGroup {
 // CalibrationDigestContainsFold applies the ContainsFold predicate on the "calibration_digest" field.
 func CalibrationDigestContainsFold(v string) predicate.AttributionClaimGroup {
 	return predicate.AttributionClaimGroup(sql.FieldContainsFold(FieldCalibrationDigest, v))
+}
+
+// CalibrationInputTokensEQ applies the EQ predicate on the "calibration_input_tokens" field.
+func CalibrationInputTokensEQ(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldCalibrationInputTokens, v))
+}
+
+// CalibrationInputTokensNEQ applies the NEQ predicate on the "calibration_input_tokens" field.
+func CalibrationInputTokensNEQ(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNEQ(FieldCalibrationInputTokens, v))
+}
+
+// CalibrationInputTokensIn applies the In predicate on the "calibration_input_tokens" field.
+func CalibrationInputTokensIn(vs ...int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldIn(FieldCalibrationInputTokens, vs...))
+}
+
+// CalibrationInputTokensNotIn applies the NotIn predicate on the "calibration_input_tokens" field.
+func CalibrationInputTokensNotIn(vs ...int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNotIn(FieldCalibrationInputTokens, vs...))
+}
+
+// CalibrationInputTokensGT applies the GT predicate on the "calibration_input_tokens" field.
+func CalibrationInputTokensGT(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldGT(FieldCalibrationInputTokens, v))
+}
+
+// CalibrationInputTokensGTE applies the GTE predicate on the "calibration_input_tokens" field.
+func CalibrationInputTokensGTE(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldGTE(FieldCalibrationInputTokens, v))
+}
+
+// CalibrationInputTokensLT applies the LT predicate on the "calibration_input_tokens" field.
+func CalibrationInputTokensLT(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldLT(FieldCalibrationInputTokens, v))
+}
+
+// CalibrationInputTokensLTE applies the LTE predicate on the "calibration_input_tokens" field.
+func CalibrationInputTokensLTE(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldLTE(FieldCalibrationInputTokens, v))
+}
+
+// CalibrationOutputTokensEQ applies the EQ predicate on the "calibration_output_tokens" field.
+func CalibrationOutputTokensEQ(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldCalibrationOutputTokens, v))
+}
+
+// CalibrationOutputTokensNEQ applies the NEQ predicate on the "calibration_output_tokens" field.
+func CalibrationOutputTokensNEQ(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNEQ(FieldCalibrationOutputTokens, v))
+}
+
+// CalibrationOutputTokensIn applies the In predicate on the "calibration_output_tokens" field.
+func CalibrationOutputTokensIn(vs ...int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldIn(FieldCalibrationOutputTokens, vs...))
+}
+
+// CalibrationOutputTokensNotIn applies the NotIn predicate on the "calibration_output_tokens" field.
+func CalibrationOutputTokensNotIn(vs ...int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNotIn(FieldCalibrationOutputTokens, vs...))
+}
+
+// CalibrationOutputTokensGT applies the GT predicate on the "calibration_output_tokens" field.
+func CalibrationOutputTokensGT(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldGT(FieldCalibrationOutputTokens, v))
+}
+
+// CalibrationOutputTokensGTE applies the GTE predicate on the "calibration_output_tokens" field.
+func CalibrationOutputTokensGTE(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldGTE(FieldCalibrationOutputTokens, v))
+}
+
+// CalibrationOutputTokensLT applies the LT predicate on the "calibration_output_tokens" field.
+func CalibrationOutputTokensLT(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldLT(FieldCalibrationOutputTokens, v))
+}
+
+// CalibrationOutputTokensLTE applies the LTE predicate on the "calibration_output_tokens" field.
+func CalibrationOutputTokensLTE(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldLTE(FieldCalibrationOutputTokens, v))
+}
+
+// CalibrationCacheCreationTokensEQ applies the EQ predicate on the "calibration_cache_creation_tokens" field.
+func CalibrationCacheCreationTokensEQ(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldCalibrationCacheCreationTokens, v))
+}
+
+// CalibrationCacheCreationTokensNEQ applies the NEQ predicate on the "calibration_cache_creation_tokens" field.
+func CalibrationCacheCreationTokensNEQ(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNEQ(FieldCalibrationCacheCreationTokens, v))
+}
+
+// CalibrationCacheCreationTokensIn applies the In predicate on the "calibration_cache_creation_tokens" field.
+func CalibrationCacheCreationTokensIn(vs ...int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldIn(FieldCalibrationCacheCreationTokens, vs...))
+}
+
+// CalibrationCacheCreationTokensNotIn applies the NotIn predicate on the "calibration_cache_creation_tokens" field.
+func CalibrationCacheCreationTokensNotIn(vs ...int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNotIn(FieldCalibrationCacheCreationTokens, vs...))
+}
+
+// CalibrationCacheCreationTokensGT applies the GT predicate on the "calibration_cache_creation_tokens" field.
+func CalibrationCacheCreationTokensGT(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldGT(FieldCalibrationCacheCreationTokens, v))
+}
+
+// CalibrationCacheCreationTokensGTE applies the GTE predicate on the "calibration_cache_creation_tokens" field.
+func CalibrationCacheCreationTokensGTE(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldGTE(FieldCalibrationCacheCreationTokens, v))
+}
+
+// CalibrationCacheCreationTokensLT applies the LT predicate on the "calibration_cache_creation_tokens" field.
+func CalibrationCacheCreationTokensLT(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldLT(FieldCalibrationCacheCreationTokens, v))
+}
+
+// CalibrationCacheCreationTokensLTE applies the LTE predicate on the "calibration_cache_creation_tokens" field.
+func CalibrationCacheCreationTokensLTE(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldLTE(FieldCalibrationCacheCreationTokens, v))
+}
+
+// CalibrationCacheReadTokensEQ applies the EQ predicate on the "calibration_cache_read_tokens" field.
+func CalibrationCacheReadTokensEQ(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldCalibrationCacheReadTokens, v))
+}
+
+// CalibrationCacheReadTokensNEQ applies the NEQ predicate on the "calibration_cache_read_tokens" field.
+func CalibrationCacheReadTokensNEQ(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNEQ(FieldCalibrationCacheReadTokens, v))
+}
+
+// CalibrationCacheReadTokensIn applies the In predicate on the "calibration_cache_read_tokens" field.
+func CalibrationCacheReadTokensIn(vs ...int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldIn(FieldCalibrationCacheReadTokens, vs...))
+}
+
+// CalibrationCacheReadTokensNotIn applies the NotIn predicate on the "calibration_cache_read_tokens" field.
+func CalibrationCacheReadTokensNotIn(vs ...int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNotIn(FieldCalibrationCacheReadTokens, vs...))
+}
+
+// CalibrationCacheReadTokensGT applies the GT predicate on the "calibration_cache_read_tokens" field.
+func CalibrationCacheReadTokensGT(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldGT(FieldCalibrationCacheReadTokens, v))
+}
+
+// CalibrationCacheReadTokensGTE applies the GTE predicate on the "calibration_cache_read_tokens" field.
+func CalibrationCacheReadTokensGTE(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldGTE(FieldCalibrationCacheReadTokens, v))
+}
+
+// CalibrationCacheReadTokensLT applies the LT predicate on the "calibration_cache_read_tokens" field.
+func CalibrationCacheReadTokensLT(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldLT(FieldCalibrationCacheReadTokens, v))
+}
+
+// CalibrationCacheReadTokensLTE applies the LTE predicate on the "calibration_cache_read_tokens" field.
+func CalibrationCacheReadTokensLTE(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldLTE(FieldCalibrationCacheReadTokens, v))
+}
+
+// CalibrationTotalTokensEQ applies the EQ predicate on the "calibration_total_tokens" field.
+func CalibrationTotalTokensEQ(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldCalibrationTotalTokens, v))
+}
+
+// CalibrationTotalTokensNEQ applies the NEQ predicate on the "calibration_total_tokens" field.
+func CalibrationTotalTokensNEQ(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNEQ(FieldCalibrationTotalTokens, v))
+}
+
+// CalibrationTotalTokensIn applies the In predicate on the "calibration_total_tokens" field.
+func CalibrationTotalTokensIn(vs ...int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldIn(FieldCalibrationTotalTokens, vs...))
+}
+
+// CalibrationTotalTokensNotIn applies the NotIn predicate on the "calibration_total_tokens" field.
+func CalibrationTotalTokensNotIn(vs ...int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNotIn(FieldCalibrationTotalTokens, vs...))
+}
+
+// CalibrationTotalTokensGT applies the GT predicate on the "calibration_total_tokens" field.
+func CalibrationTotalTokensGT(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldGT(FieldCalibrationTotalTokens, v))
+}
+
+// CalibrationTotalTokensGTE applies the GTE predicate on the "calibration_total_tokens" field.
+func CalibrationTotalTokensGTE(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldGTE(FieldCalibrationTotalTokens, v))
+}
+
+// CalibrationTotalTokensLT applies the LT predicate on the "calibration_total_tokens" field.
+func CalibrationTotalTokensLT(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldLT(FieldCalibrationTotalTokens, v))
+}
+
+// CalibrationTotalTokensLTE applies the LTE predicate on the "calibration_total_tokens" field.
+func CalibrationTotalTokensLTE(v int64) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldLTE(FieldCalibrationTotalTokens, v))
 }
 
 // RequestCountEQ applies the EQ predicate on the "request_count" field.

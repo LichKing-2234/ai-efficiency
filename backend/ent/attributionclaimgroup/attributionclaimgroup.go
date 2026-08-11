@@ -21,10 +21,6 @@ const (
 	FieldUserID = "user_id"
 	// FieldRelayProviderID holds the string denoting the relay_provider_id field in the database.
 	FieldRelayProviderID = "relay_provider_id"
-	// FieldRepoConfigID holds the string denoting the repo_config_id field in the database.
-	FieldRepoConfigID = "repo_config_id"
-	// FieldCheckpointID holds the string denoting the checkpoint_id field in the database.
-	FieldCheckpointID = "checkpoint_id"
 	// FieldSchemaVersion holds the string denoting the schema_version field in the database.
 	FieldSchemaVersion = "schema_version"
 	// FieldLedgerEpoch holds the string denoting the ledger_epoch field in the database.
@@ -37,6 +33,18 @@ const (
 	FieldEvidenceDigest = "evidence_digest"
 	// FieldCalibrationDigest holds the string denoting the calibration_digest field in the database.
 	FieldCalibrationDigest = "calibration_digest"
+	// FieldCalibrationInputTokens holds the string denoting the calibration_input_tokens field in the database.
+	FieldCalibrationInputTokens = "calibration_input_tokens"
+	// FieldCalibrationOutputTokens holds the string denoting the calibration_output_tokens field in the database.
+	FieldCalibrationOutputTokens = "calibration_output_tokens"
+	// FieldCalibrationCacheCreationTokens holds the string denoting the calibration_cache_creation_tokens field in the database.
+	FieldCalibrationCacheCreationTokens = "calibration_cache_creation_tokens"
+	// FieldCalibrationCacheReadTokens holds the string denoting the calibration_cache_read_tokens field in the database.
+	FieldCalibrationCacheReadTokens = "calibration_cache_read_tokens"
+	// FieldCalibrationTotalTokens holds the string denoting the calibration_total_tokens field in the database.
+	FieldCalibrationTotalTokens = "calibration_total_tokens"
+	// FieldCommitAllocations holds the string denoting the commit_allocations field in the database.
+	FieldCommitAllocations = "commit_allocations"
 	// FieldRequestCount holds the string denoting the request_count field in the database.
 	FieldRequestCount = "request_count"
 	// FieldExpiresAt holds the string denoting the expires_at field in the database.
@@ -56,14 +64,18 @@ var Columns = []string{
 	FieldInstallationID,
 	FieldUserID,
 	FieldRelayProviderID,
-	FieldRepoConfigID,
-	FieldCheckpointID,
 	FieldSchemaVersion,
 	FieldLedgerEpoch,
 	FieldThreadID,
 	FieldTurnID,
 	FieldEvidenceDigest,
 	FieldCalibrationDigest,
+	FieldCalibrationInputTokens,
+	FieldCalibrationOutputTokens,
+	FieldCalibrationCacheCreationTokens,
+	FieldCalibrationCacheReadTokens,
+	FieldCalibrationTotalTokens,
+	FieldCommitAllocations,
 	FieldRequestCount,
 	FieldExpiresAt,
 	FieldCreatedAt,
@@ -91,6 +103,16 @@ var (
 	TurnIDValidator func(string) error
 	// EvidenceDigestValidator is a validator for the "evidence_digest" field. It is called by the builders before save.
 	EvidenceDigestValidator func(string) error
+	// DefaultCalibrationInputTokens holds the default value on creation for the "calibration_input_tokens" field.
+	DefaultCalibrationInputTokens int64
+	// DefaultCalibrationOutputTokens holds the default value on creation for the "calibration_output_tokens" field.
+	DefaultCalibrationOutputTokens int64
+	// DefaultCalibrationCacheCreationTokens holds the default value on creation for the "calibration_cache_creation_tokens" field.
+	DefaultCalibrationCacheCreationTokens int64
+	// DefaultCalibrationCacheReadTokens holds the default value on creation for the "calibration_cache_read_tokens" field.
+	DefaultCalibrationCacheReadTokens int64
+	// DefaultCalibrationTotalTokens holds the default value on creation for the "calibration_total_tokens" field.
+	DefaultCalibrationTotalTokens int64
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -127,16 +149,6 @@ func ByRelayProviderID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRelayProviderID, opts...).ToFunc()
 }
 
-// ByRepoConfigID orders the results by the repo_config_id field.
-func ByRepoConfigID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldRepoConfigID, opts...).ToFunc()
-}
-
-// ByCheckpointID orders the results by the checkpoint_id field.
-func ByCheckpointID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldCheckpointID, opts...).ToFunc()
-}
-
 // BySchemaVersion orders the results by the schema_version field.
 func BySchemaVersion(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSchemaVersion, opts...).ToFunc()
@@ -165,6 +177,31 @@ func ByEvidenceDigest(opts ...sql.OrderTermOption) OrderOption {
 // ByCalibrationDigest orders the results by the calibration_digest field.
 func ByCalibrationDigest(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCalibrationDigest, opts...).ToFunc()
+}
+
+// ByCalibrationInputTokens orders the results by the calibration_input_tokens field.
+func ByCalibrationInputTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCalibrationInputTokens, opts...).ToFunc()
+}
+
+// ByCalibrationOutputTokens orders the results by the calibration_output_tokens field.
+func ByCalibrationOutputTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCalibrationOutputTokens, opts...).ToFunc()
+}
+
+// ByCalibrationCacheCreationTokens orders the results by the calibration_cache_creation_tokens field.
+func ByCalibrationCacheCreationTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCalibrationCacheCreationTokens, opts...).ToFunc()
+}
+
+// ByCalibrationCacheReadTokens orders the results by the calibration_cache_read_tokens field.
+func ByCalibrationCacheReadTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCalibrationCacheReadTokens, opts...).ToFunc()
+}
+
+// ByCalibrationTotalTokens orders the results by the calibration_total_tokens field.
+func ByCalibrationTotalTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCalibrationTotalTokens, opts...).ToFunc()
 }
 
 // ByRequestCount orders the results by the request_count field.

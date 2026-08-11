@@ -110,16 +110,34 @@ type AttributionBucketBatchRequest struct {
 }
 
 type AttributionV2ClaimGroup struct {
-	SchemaVersion     int      `json:"schema_version"`
-	GroupID           string   `json:"group_id"`
-	RelayProviderID   int      `json:"relay_provider_id"`
-	RepoConfigID      int      `json:"repo_config_id"`
-	CheckpointEventID string   `json:"checkpoint_event_id"`
-	ThreadID          string   `json:"thread_id"`
-	TurnID            string   `json:"turn_id"`
-	EvidenceDigest    string   `json:"evidence_digest"`
-	CalibrationDigest string   `json:"calibration_digest,omitempty"`
-	RequestIDs        []string `json:"request_ids"`
+	SchemaVersion     int                             `json:"schema_version"`
+	GroupID           string                          `json:"group_id"`
+	RelayProviderID   int                             `json:"relay_provider_id"`
+	ThreadID          string                          `json:"thread_id"`
+	TurnID            string                          `json:"turn_id"`
+	EvidenceDigest    string                          `json:"evidence_digest"`
+	Calibration       *AttributionV2Calibration       `json:"calibration,omitempty"`
+	CommitAllocations []AttributionV2CommitAllocation `json:"commit_allocations"`
+	RequestIDs        []string                        `json:"request_ids"`
+}
+
+type AttributionV2Calibration struct {
+	Digest              string `json:"digest"`
+	InputTokens         int64  `json:"input_tokens"`
+	OutputTokens        int64  `json:"output_tokens"`
+	CacheCreationTokens int64  `json:"cache_creation_tokens"`
+	CacheReadTokens     int64  `json:"cache_read_tokens"`
+	TotalTokens         int64  `json:"total_tokens"`
+}
+
+type AttributionV2CommitAllocation struct {
+	Sequence          int    `json:"sequence"`
+	RepoConfigID      int    `json:"repo_config_id"`
+	RepoKey           string `json:"repo_key,omitempty"`
+	WorkspaceID       string `json:"workspace_id"`
+	CheckpointEventID string `json:"checkpoint_event_id"`
+	CommitSHA         string `json:"commit_sha"`
+	EvidenceDigest    string `json:"evidence_digest"`
 }
 
 type AttributionV2ClaimBatchRequest struct {

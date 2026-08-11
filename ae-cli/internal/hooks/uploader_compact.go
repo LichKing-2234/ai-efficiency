@@ -22,12 +22,8 @@ type CompactBackendUploader struct {
 	relayProviderID int
 }
 
-func NewCompactBackendUploader(client compactCheckpointSender, installationID string, relayProviderID ...int) CompactBackendUploader {
-	uploader := CompactBackendUploader{client: client, installationID: strings.TrimSpace(installationID)}
-	if len(relayProviderID) > 0 {
-		uploader.relayProviderID = relayProviderID[0]
-	}
-	return uploader
+func NewCompactBackendUploader(client compactCheckpointSender, installationID string, relayProviderID int) CompactBackendUploader {
+	return CompactBackendUploader{client: client, installationID: strings.TrimSpace(installationID), relayProviderID: relayProviderID}
 }
 
 func (u CompactBackendUploader) InstallationID() string { return u.installationID }

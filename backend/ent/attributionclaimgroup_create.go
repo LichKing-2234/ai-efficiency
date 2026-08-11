@@ -44,18 +44,6 @@ func (acgc *AttributionClaimGroupCreate) SetRelayProviderID(i int) *AttributionC
 	return acgc
 }
 
-// SetRepoConfigID sets the "repo_config_id" field.
-func (acgc *AttributionClaimGroupCreate) SetRepoConfigID(i int) *AttributionClaimGroupCreate {
-	acgc.mutation.SetRepoConfigID(i)
-	return acgc
-}
-
-// SetCheckpointID sets the "checkpoint_id" field.
-func (acgc *AttributionClaimGroupCreate) SetCheckpointID(i int) *AttributionClaimGroupCreate {
-	acgc.mutation.SetCheckpointID(i)
-	return acgc
-}
-
 // SetSchemaVersion sets the "schema_version" field.
 func (acgc *AttributionClaimGroupCreate) SetSchemaVersion(i int) *AttributionClaimGroupCreate {
 	acgc.mutation.SetSchemaVersion(i)
@@ -105,6 +93,82 @@ func (acgc *AttributionClaimGroupCreate) SetNillableCalibrationDigest(s *string)
 	if s != nil {
 		acgc.SetCalibrationDigest(*s)
 	}
+	return acgc
+}
+
+// SetCalibrationInputTokens sets the "calibration_input_tokens" field.
+func (acgc *AttributionClaimGroupCreate) SetCalibrationInputTokens(i int64) *AttributionClaimGroupCreate {
+	acgc.mutation.SetCalibrationInputTokens(i)
+	return acgc
+}
+
+// SetNillableCalibrationInputTokens sets the "calibration_input_tokens" field if the given value is not nil.
+func (acgc *AttributionClaimGroupCreate) SetNillableCalibrationInputTokens(i *int64) *AttributionClaimGroupCreate {
+	if i != nil {
+		acgc.SetCalibrationInputTokens(*i)
+	}
+	return acgc
+}
+
+// SetCalibrationOutputTokens sets the "calibration_output_tokens" field.
+func (acgc *AttributionClaimGroupCreate) SetCalibrationOutputTokens(i int64) *AttributionClaimGroupCreate {
+	acgc.mutation.SetCalibrationOutputTokens(i)
+	return acgc
+}
+
+// SetNillableCalibrationOutputTokens sets the "calibration_output_tokens" field if the given value is not nil.
+func (acgc *AttributionClaimGroupCreate) SetNillableCalibrationOutputTokens(i *int64) *AttributionClaimGroupCreate {
+	if i != nil {
+		acgc.SetCalibrationOutputTokens(*i)
+	}
+	return acgc
+}
+
+// SetCalibrationCacheCreationTokens sets the "calibration_cache_creation_tokens" field.
+func (acgc *AttributionClaimGroupCreate) SetCalibrationCacheCreationTokens(i int64) *AttributionClaimGroupCreate {
+	acgc.mutation.SetCalibrationCacheCreationTokens(i)
+	return acgc
+}
+
+// SetNillableCalibrationCacheCreationTokens sets the "calibration_cache_creation_tokens" field if the given value is not nil.
+func (acgc *AttributionClaimGroupCreate) SetNillableCalibrationCacheCreationTokens(i *int64) *AttributionClaimGroupCreate {
+	if i != nil {
+		acgc.SetCalibrationCacheCreationTokens(*i)
+	}
+	return acgc
+}
+
+// SetCalibrationCacheReadTokens sets the "calibration_cache_read_tokens" field.
+func (acgc *AttributionClaimGroupCreate) SetCalibrationCacheReadTokens(i int64) *AttributionClaimGroupCreate {
+	acgc.mutation.SetCalibrationCacheReadTokens(i)
+	return acgc
+}
+
+// SetNillableCalibrationCacheReadTokens sets the "calibration_cache_read_tokens" field if the given value is not nil.
+func (acgc *AttributionClaimGroupCreate) SetNillableCalibrationCacheReadTokens(i *int64) *AttributionClaimGroupCreate {
+	if i != nil {
+		acgc.SetCalibrationCacheReadTokens(*i)
+	}
+	return acgc
+}
+
+// SetCalibrationTotalTokens sets the "calibration_total_tokens" field.
+func (acgc *AttributionClaimGroupCreate) SetCalibrationTotalTokens(i int64) *AttributionClaimGroupCreate {
+	acgc.mutation.SetCalibrationTotalTokens(i)
+	return acgc
+}
+
+// SetNillableCalibrationTotalTokens sets the "calibration_total_tokens" field if the given value is not nil.
+func (acgc *AttributionClaimGroupCreate) SetNillableCalibrationTotalTokens(i *int64) *AttributionClaimGroupCreate {
+	if i != nil {
+		acgc.SetCalibrationTotalTokens(*i)
+	}
+	return acgc
+}
+
+// SetCommitAllocations sets the "commit_allocations" field.
+func (acgc *AttributionClaimGroupCreate) SetCommitAllocations(m []map[string]interface{}) *AttributionClaimGroupCreate {
+	acgc.mutation.SetCommitAllocations(m)
 	return acgc
 }
 
@@ -187,6 +251,26 @@ func (acgc *AttributionClaimGroupCreate) defaults() {
 		v := attributionclaimgroup.DefaultLedgerEpoch
 		acgc.mutation.SetLedgerEpoch(v)
 	}
+	if _, ok := acgc.mutation.CalibrationInputTokens(); !ok {
+		v := attributionclaimgroup.DefaultCalibrationInputTokens
+		acgc.mutation.SetCalibrationInputTokens(v)
+	}
+	if _, ok := acgc.mutation.CalibrationOutputTokens(); !ok {
+		v := attributionclaimgroup.DefaultCalibrationOutputTokens
+		acgc.mutation.SetCalibrationOutputTokens(v)
+	}
+	if _, ok := acgc.mutation.CalibrationCacheCreationTokens(); !ok {
+		v := attributionclaimgroup.DefaultCalibrationCacheCreationTokens
+		acgc.mutation.SetCalibrationCacheCreationTokens(v)
+	}
+	if _, ok := acgc.mutation.CalibrationCacheReadTokens(); !ok {
+		v := attributionclaimgroup.DefaultCalibrationCacheReadTokens
+		acgc.mutation.SetCalibrationCacheReadTokens(v)
+	}
+	if _, ok := acgc.mutation.CalibrationTotalTokens(); !ok {
+		v := attributionclaimgroup.DefaultCalibrationTotalTokens
+		acgc.mutation.SetCalibrationTotalTokens(v)
+	}
 	if _, ok := acgc.mutation.CreatedAt(); !ok {
 		v := attributionclaimgroup.DefaultCreatedAt()
 		acgc.mutation.SetCreatedAt(v)
@@ -215,12 +299,6 @@ func (acgc *AttributionClaimGroupCreate) check() error {
 	}
 	if _, ok := acgc.mutation.RelayProviderID(); !ok {
 		return &ValidationError{Name: "relay_provider_id", err: errors.New(`ent: missing required field "AttributionClaimGroup.relay_provider_id"`)}
-	}
-	if _, ok := acgc.mutation.RepoConfigID(); !ok {
-		return &ValidationError{Name: "repo_config_id", err: errors.New(`ent: missing required field "AttributionClaimGroup.repo_config_id"`)}
-	}
-	if _, ok := acgc.mutation.CheckpointID(); !ok {
-		return &ValidationError{Name: "checkpoint_id", err: errors.New(`ent: missing required field "AttributionClaimGroup.checkpoint_id"`)}
 	}
 	if _, ok := acgc.mutation.SchemaVersion(); !ok {
 		return &ValidationError{Name: "schema_version", err: errors.New(`ent: missing required field "AttributionClaimGroup.schema_version"`)}
@@ -251,6 +329,24 @@ func (acgc *AttributionClaimGroupCreate) check() error {
 		if err := attributionclaimgroup.EvidenceDigestValidator(v); err != nil {
 			return &ValidationError{Name: "evidence_digest", err: fmt.Errorf(`ent: validator failed for field "AttributionClaimGroup.evidence_digest": %w`, err)}
 		}
+	}
+	if _, ok := acgc.mutation.CalibrationInputTokens(); !ok {
+		return &ValidationError{Name: "calibration_input_tokens", err: errors.New(`ent: missing required field "AttributionClaimGroup.calibration_input_tokens"`)}
+	}
+	if _, ok := acgc.mutation.CalibrationOutputTokens(); !ok {
+		return &ValidationError{Name: "calibration_output_tokens", err: errors.New(`ent: missing required field "AttributionClaimGroup.calibration_output_tokens"`)}
+	}
+	if _, ok := acgc.mutation.CalibrationCacheCreationTokens(); !ok {
+		return &ValidationError{Name: "calibration_cache_creation_tokens", err: errors.New(`ent: missing required field "AttributionClaimGroup.calibration_cache_creation_tokens"`)}
+	}
+	if _, ok := acgc.mutation.CalibrationCacheReadTokens(); !ok {
+		return &ValidationError{Name: "calibration_cache_read_tokens", err: errors.New(`ent: missing required field "AttributionClaimGroup.calibration_cache_read_tokens"`)}
+	}
+	if _, ok := acgc.mutation.CalibrationTotalTokens(); !ok {
+		return &ValidationError{Name: "calibration_total_tokens", err: errors.New(`ent: missing required field "AttributionClaimGroup.calibration_total_tokens"`)}
+	}
+	if _, ok := acgc.mutation.CommitAllocations(); !ok {
+		return &ValidationError{Name: "commit_allocations", err: errors.New(`ent: missing required field "AttributionClaimGroup.commit_allocations"`)}
 	}
 	if _, ok := acgc.mutation.RequestCount(); !ok {
 		return &ValidationError{Name: "request_count", err: errors.New(`ent: missing required field "AttributionClaimGroup.request_count"`)}
@@ -306,14 +402,6 @@ func (acgc *AttributionClaimGroupCreate) createSpec() (*AttributionClaimGroup, *
 		_spec.SetField(attributionclaimgroup.FieldRelayProviderID, field.TypeInt, value)
 		_node.RelayProviderID = value
 	}
-	if value, ok := acgc.mutation.RepoConfigID(); ok {
-		_spec.SetField(attributionclaimgroup.FieldRepoConfigID, field.TypeInt, value)
-		_node.RepoConfigID = value
-	}
-	if value, ok := acgc.mutation.CheckpointID(); ok {
-		_spec.SetField(attributionclaimgroup.FieldCheckpointID, field.TypeInt, value)
-		_node.CheckpointID = value
-	}
 	if value, ok := acgc.mutation.SchemaVersion(); ok {
 		_spec.SetField(attributionclaimgroup.FieldSchemaVersion, field.TypeInt, value)
 		_node.SchemaVersion = value
@@ -337,6 +425,30 @@ func (acgc *AttributionClaimGroupCreate) createSpec() (*AttributionClaimGroup, *
 	if value, ok := acgc.mutation.CalibrationDigest(); ok {
 		_spec.SetField(attributionclaimgroup.FieldCalibrationDigest, field.TypeString, value)
 		_node.CalibrationDigest = value
+	}
+	if value, ok := acgc.mutation.CalibrationInputTokens(); ok {
+		_spec.SetField(attributionclaimgroup.FieldCalibrationInputTokens, field.TypeInt64, value)
+		_node.CalibrationInputTokens = value
+	}
+	if value, ok := acgc.mutation.CalibrationOutputTokens(); ok {
+		_spec.SetField(attributionclaimgroup.FieldCalibrationOutputTokens, field.TypeInt64, value)
+		_node.CalibrationOutputTokens = value
+	}
+	if value, ok := acgc.mutation.CalibrationCacheCreationTokens(); ok {
+		_spec.SetField(attributionclaimgroup.FieldCalibrationCacheCreationTokens, field.TypeInt64, value)
+		_node.CalibrationCacheCreationTokens = value
+	}
+	if value, ok := acgc.mutation.CalibrationCacheReadTokens(); ok {
+		_spec.SetField(attributionclaimgroup.FieldCalibrationCacheReadTokens, field.TypeInt64, value)
+		_node.CalibrationCacheReadTokens = value
+	}
+	if value, ok := acgc.mutation.CalibrationTotalTokens(); ok {
+		_spec.SetField(attributionclaimgroup.FieldCalibrationTotalTokens, field.TypeInt64, value)
+		_node.CalibrationTotalTokens = value
+	}
+	if value, ok := acgc.mutation.CommitAllocations(); ok {
+		_spec.SetField(attributionclaimgroup.FieldCommitAllocations, field.TypeJSON, value)
+		_node.CommitAllocations = value
 	}
 	if value, ok := acgc.mutation.RequestCount(); ok {
 		_spec.SetField(attributionclaimgroup.FieldRequestCount, field.TypeInt, value)

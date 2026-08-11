@@ -29,16 +29,13 @@ type AttributionHandler struct {
 	claims        *attributionclaim.Service
 }
 
-func NewAttributionHandler(installations *attributionledger.InstallationService, ledger *attributionledger.Service, correlation *attributionledger.CorrelationStore, claims ...*attributionclaim.Service) *AttributionHandler {
-	handler := &AttributionHandler{
+func NewAttributionHandler(installations *attributionledger.InstallationService, ledger *attributionledger.Service, correlation *attributionledger.CorrelationStore, claims *attributionclaim.Service) *AttributionHandler {
+	return &AttributionHandler{
 		installations: installations,
 		ledger:        ledger,
 		correlation:   correlation,
+		claims:        claims,
 	}
-	if len(claims) > 0 {
-		handler.claims = claims[0]
-	}
-	return handler
 }
 
 type ensureInstallationRequest struct {

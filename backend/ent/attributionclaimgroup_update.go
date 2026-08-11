@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/attributionclaimgroup"
 	"github.com/ai-efficiency/backend/ent/predicate"
@@ -102,48 +103,6 @@ func (acgu *AttributionClaimGroupUpdate) SetNillableRelayProviderID(i *int) *Att
 // AddRelayProviderID adds i to the "relay_provider_id" field.
 func (acgu *AttributionClaimGroupUpdate) AddRelayProviderID(i int) *AttributionClaimGroupUpdate {
 	acgu.mutation.AddRelayProviderID(i)
-	return acgu
-}
-
-// SetRepoConfigID sets the "repo_config_id" field.
-func (acgu *AttributionClaimGroupUpdate) SetRepoConfigID(i int) *AttributionClaimGroupUpdate {
-	acgu.mutation.ResetRepoConfigID()
-	acgu.mutation.SetRepoConfigID(i)
-	return acgu
-}
-
-// SetNillableRepoConfigID sets the "repo_config_id" field if the given value is not nil.
-func (acgu *AttributionClaimGroupUpdate) SetNillableRepoConfigID(i *int) *AttributionClaimGroupUpdate {
-	if i != nil {
-		acgu.SetRepoConfigID(*i)
-	}
-	return acgu
-}
-
-// AddRepoConfigID adds i to the "repo_config_id" field.
-func (acgu *AttributionClaimGroupUpdate) AddRepoConfigID(i int) *AttributionClaimGroupUpdate {
-	acgu.mutation.AddRepoConfigID(i)
-	return acgu
-}
-
-// SetCheckpointID sets the "checkpoint_id" field.
-func (acgu *AttributionClaimGroupUpdate) SetCheckpointID(i int) *AttributionClaimGroupUpdate {
-	acgu.mutation.ResetCheckpointID()
-	acgu.mutation.SetCheckpointID(i)
-	return acgu
-}
-
-// SetNillableCheckpointID sets the "checkpoint_id" field if the given value is not nil.
-func (acgu *AttributionClaimGroupUpdate) SetNillableCheckpointID(i *int) *AttributionClaimGroupUpdate {
-	if i != nil {
-		acgu.SetCheckpointID(*i)
-	}
-	return acgu
-}
-
-// AddCheckpointID adds i to the "checkpoint_id" field.
-func (acgu *AttributionClaimGroupUpdate) AddCheckpointID(i int) *AttributionClaimGroupUpdate {
-	acgu.mutation.AddCheckpointID(i)
 	return acgu
 }
 
@@ -241,6 +200,123 @@ func (acgu *AttributionClaimGroupUpdate) SetNillableCalibrationDigest(s *string)
 // ClearCalibrationDigest clears the value of the "calibration_digest" field.
 func (acgu *AttributionClaimGroupUpdate) ClearCalibrationDigest() *AttributionClaimGroupUpdate {
 	acgu.mutation.ClearCalibrationDigest()
+	return acgu
+}
+
+// SetCalibrationInputTokens sets the "calibration_input_tokens" field.
+func (acgu *AttributionClaimGroupUpdate) SetCalibrationInputTokens(i int64) *AttributionClaimGroupUpdate {
+	acgu.mutation.ResetCalibrationInputTokens()
+	acgu.mutation.SetCalibrationInputTokens(i)
+	return acgu
+}
+
+// SetNillableCalibrationInputTokens sets the "calibration_input_tokens" field if the given value is not nil.
+func (acgu *AttributionClaimGroupUpdate) SetNillableCalibrationInputTokens(i *int64) *AttributionClaimGroupUpdate {
+	if i != nil {
+		acgu.SetCalibrationInputTokens(*i)
+	}
+	return acgu
+}
+
+// AddCalibrationInputTokens adds i to the "calibration_input_tokens" field.
+func (acgu *AttributionClaimGroupUpdate) AddCalibrationInputTokens(i int64) *AttributionClaimGroupUpdate {
+	acgu.mutation.AddCalibrationInputTokens(i)
+	return acgu
+}
+
+// SetCalibrationOutputTokens sets the "calibration_output_tokens" field.
+func (acgu *AttributionClaimGroupUpdate) SetCalibrationOutputTokens(i int64) *AttributionClaimGroupUpdate {
+	acgu.mutation.ResetCalibrationOutputTokens()
+	acgu.mutation.SetCalibrationOutputTokens(i)
+	return acgu
+}
+
+// SetNillableCalibrationOutputTokens sets the "calibration_output_tokens" field if the given value is not nil.
+func (acgu *AttributionClaimGroupUpdate) SetNillableCalibrationOutputTokens(i *int64) *AttributionClaimGroupUpdate {
+	if i != nil {
+		acgu.SetCalibrationOutputTokens(*i)
+	}
+	return acgu
+}
+
+// AddCalibrationOutputTokens adds i to the "calibration_output_tokens" field.
+func (acgu *AttributionClaimGroupUpdate) AddCalibrationOutputTokens(i int64) *AttributionClaimGroupUpdate {
+	acgu.mutation.AddCalibrationOutputTokens(i)
+	return acgu
+}
+
+// SetCalibrationCacheCreationTokens sets the "calibration_cache_creation_tokens" field.
+func (acgu *AttributionClaimGroupUpdate) SetCalibrationCacheCreationTokens(i int64) *AttributionClaimGroupUpdate {
+	acgu.mutation.ResetCalibrationCacheCreationTokens()
+	acgu.mutation.SetCalibrationCacheCreationTokens(i)
+	return acgu
+}
+
+// SetNillableCalibrationCacheCreationTokens sets the "calibration_cache_creation_tokens" field if the given value is not nil.
+func (acgu *AttributionClaimGroupUpdate) SetNillableCalibrationCacheCreationTokens(i *int64) *AttributionClaimGroupUpdate {
+	if i != nil {
+		acgu.SetCalibrationCacheCreationTokens(*i)
+	}
+	return acgu
+}
+
+// AddCalibrationCacheCreationTokens adds i to the "calibration_cache_creation_tokens" field.
+func (acgu *AttributionClaimGroupUpdate) AddCalibrationCacheCreationTokens(i int64) *AttributionClaimGroupUpdate {
+	acgu.mutation.AddCalibrationCacheCreationTokens(i)
+	return acgu
+}
+
+// SetCalibrationCacheReadTokens sets the "calibration_cache_read_tokens" field.
+func (acgu *AttributionClaimGroupUpdate) SetCalibrationCacheReadTokens(i int64) *AttributionClaimGroupUpdate {
+	acgu.mutation.ResetCalibrationCacheReadTokens()
+	acgu.mutation.SetCalibrationCacheReadTokens(i)
+	return acgu
+}
+
+// SetNillableCalibrationCacheReadTokens sets the "calibration_cache_read_tokens" field if the given value is not nil.
+func (acgu *AttributionClaimGroupUpdate) SetNillableCalibrationCacheReadTokens(i *int64) *AttributionClaimGroupUpdate {
+	if i != nil {
+		acgu.SetCalibrationCacheReadTokens(*i)
+	}
+	return acgu
+}
+
+// AddCalibrationCacheReadTokens adds i to the "calibration_cache_read_tokens" field.
+func (acgu *AttributionClaimGroupUpdate) AddCalibrationCacheReadTokens(i int64) *AttributionClaimGroupUpdate {
+	acgu.mutation.AddCalibrationCacheReadTokens(i)
+	return acgu
+}
+
+// SetCalibrationTotalTokens sets the "calibration_total_tokens" field.
+func (acgu *AttributionClaimGroupUpdate) SetCalibrationTotalTokens(i int64) *AttributionClaimGroupUpdate {
+	acgu.mutation.ResetCalibrationTotalTokens()
+	acgu.mutation.SetCalibrationTotalTokens(i)
+	return acgu
+}
+
+// SetNillableCalibrationTotalTokens sets the "calibration_total_tokens" field if the given value is not nil.
+func (acgu *AttributionClaimGroupUpdate) SetNillableCalibrationTotalTokens(i *int64) *AttributionClaimGroupUpdate {
+	if i != nil {
+		acgu.SetCalibrationTotalTokens(*i)
+	}
+	return acgu
+}
+
+// AddCalibrationTotalTokens adds i to the "calibration_total_tokens" field.
+func (acgu *AttributionClaimGroupUpdate) AddCalibrationTotalTokens(i int64) *AttributionClaimGroupUpdate {
+	acgu.mutation.AddCalibrationTotalTokens(i)
+	return acgu
+}
+
+// SetCommitAllocations sets the "commit_allocations" field.
+func (acgu *AttributionClaimGroupUpdate) SetCommitAllocations(m []map[string]interface{}) *AttributionClaimGroupUpdate {
+	acgu.mutation.SetCommitAllocations(m)
+	return acgu
+}
+
+// AppendCommitAllocations appends m to the "commit_allocations" field.
+func (acgu *AttributionClaimGroupUpdate) AppendCommitAllocations(m []map[string]interface{}) *AttributionClaimGroupUpdate {
+	acgu.mutation.AppendCommitAllocations(m)
 	return acgu
 }
 
@@ -384,18 +460,6 @@ func (acgu *AttributionClaimGroupUpdate) sqlSave(ctx context.Context) (n int, er
 	if value, ok := acgu.mutation.AddedRelayProviderID(); ok {
 		_spec.AddField(attributionclaimgroup.FieldRelayProviderID, field.TypeInt, value)
 	}
-	if value, ok := acgu.mutation.RepoConfigID(); ok {
-		_spec.SetField(attributionclaimgroup.FieldRepoConfigID, field.TypeInt, value)
-	}
-	if value, ok := acgu.mutation.AddedRepoConfigID(); ok {
-		_spec.AddField(attributionclaimgroup.FieldRepoConfigID, field.TypeInt, value)
-	}
-	if value, ok := acgu.mutation.CheckpointID(); ok {
-		_spec.SetField(attributionclaimgroup.FieldCheckpointID, field.TypeInt, value)
-	}
-	if value, ok := acgu.mutation.AddedCheckpointID(); ok {
-		_spec.AddField(attributionclaimgroup.FieldCheckpointID, field.TypeInt, value)
-	}
 	if value, ok := acgu.mutation.SchemaVersion(); ok {
 		_spec.SetField(attributionclaimgroup.FieldSchemaVersion, field.TypeInt, value)
 	}
@@ -419,6 +483,44 @@ func (acgu *AttributionClaimGroupUpdate) sqlSave(ctx context.Context) (n int, er
 	}
 	if acgu.mutation.CalibrationDigestCleared() {
 		_spec.ClearField(attributionclaimgroup.FieldCalibrationDigest, field.TypeString)
+	}
+	if value, ok := acgu.mutation.CalibrationInputTokens(); ok {
+		_spec.SetField(attributionclaimgroup.FieldCalibrationInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := acgu.mutation.AddedCalibrationInputTokens(); ok {
+		_spec.AddField(attributionclaimgroup.FieldCalibrationInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := acgu.mutation.CalibrationOutputTokens(); ok {
+		_spec.SetField(attributionclaimgroup.FieldCalibrationOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := acgu.mutation.AddedCalibrationOutputTokens(); ok {
+		_spec.AddField(attributionclaimgroup.FieldCalibrationOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := acgu.mutation.CalibrationCacheCreationTokens(); ok {
+		_spec.SetField(attributionclaimgroup.FieldCalibrationCacheCreationTokens, field.TypeInt64, value)
+	}
+	if value, ok := acgu.mutation.AddedCalibrationCacheCreationTokens(); ok {
+		_spec.AddField(attributionclaimgroup.FieldCalibrationCacheCreationTokens, field.TypeInt64, value)
+	}
+	if value, ok := acgu.mutation.CalibrationCacheReadTokens(); ok {
+		_spec.SetField(attributionclaimgroup.FieldCalibrationCacheReadTokens, field.TypeInt64, value)
+	}
+	if value, ok := acgu.mutation.AddedCalibrationCacheReadTokens(); ok {
+		_spec.AddField(attributionclaimgroup.FieldCalibrationCacheReadTokens, field.TypeInt64, value)
+	}
+	if value, ok := acgu.mutation.CalibrationTotalTokens(); ok {
+		_spec.SetField(attributionclaimgroup.FieldCalibrationTotalTokens, field.TypeInt64, value)
+	}
+	if value, ok := acgu.mutation.AddedCalibrationTotalTokens(); ok {
+		_spec.AddField(attributionclaimgroup.FieldCalibrationTotalTokens, field.TypeInt64, value)
+	}
+	if value, ok := acgu.mutation.CommitAllocations(); ok {
+		_spec.SetField(attributionclaimgroup.FieldCommitAllocations, field.TypeJSON, value)
+	}
+	if value, ok := acgu.mutation.AppendedCommitAllocations(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, attributionclaimgroup.FieldCommitAllocations, value)
+		})
 	}
 	if value, ok := acgu.mutation.RequestCount(); ok {
 		_spec.SetField(attributionclaimgroup.FieldRequestCount, field.TypeInt, value)
@@ -529,48 +631,6 @@ func (acguo *AttributionClaimGroupUpdateOne) AddRelayProviderID(i int) *Attribut
 	return acguo
 }
 
-// SetRepoConfigID sets the "repo_config_id" field.
-func (acguo *AttributionClaimGroupUpdateOne) SetRepoConfigID(i int) *AttributionClaimGroupUpdateOne {
-	acguo.mutation.ResetRepoConfigID()
-	acguo.mutation.SetRepoConfigID(i)
-	return acguo
-}
-
-// SetNillableRepoConfigID sets the "repo_config_id" field if the given value is not nil.
-func (acguo *AttributionClaimGroupUpdateOne) SetNillableRepoConfigID(i *int) *AttributionClaimGroupUpdateOne {
-	if i != nil {
-		acguo.SetRepoConfigID(*i)
-	}
-	return acguo
-}
-
-// AddRepoConfigID adds i to the "repo_config_id" field.
-func (acguo *AttributionClaimGroupUpdateOne) AddRepoConfigID(i int) *AttributionClaimGroupUpdateOne {
-	acguo.mutation.AddRepoConfigID(i)
-	return acguo
-}
-
-// SetCheckpointID sets the "checkpoint_id" field.
-func (acguo *AttributionClaimGroupUpdateOne) SetCheckpointID(i int) *AttributionClaimGroupUpdateOne {
-	acguo.mutation.ResetCheckpointID()
-	acguo.mutation.SetCheckpointID(i)
-	return acguo
-}
-
-// SetNillableCheckpointID sets the "checkpoint_id" field if the given value is not nil.
-func (acguo *AttributionClaimGroupUpdateOne) SetNillableCheckpointID(i *int) *AttributionClaimGroupUpdateOne {
-	if i != nil {
-		acguo.SetCheckpointID(*i)
-	}
-	return acguo
-}
-
-// AddCheckpointID adds i to the "checkpoint_id" field.
-func (acguo *AttributionClaimGroupUpdateOne) AddCheckpointID(i int) *AttributionClaimGroupUpdateOne {
-	acguo.mutation.AddCheckpointID(i)
-	return acguo
-}
-
 // SetSchemaVersion sets the "schema_version" field.
 func (acguo *AttributionClaimGroupUpdateOne) SetSchemaVersion(i int) *AttributionClaimGroupUpdateOne {
 	acguo.mutation.ResetSchemaVersion()
@@ -665,6 +725,123 @@ func (acguo *AttributionClaimGroupUpdateOne) SetNillableCalibrationDigest(s *str
 // ClearCalibrationDigest clears the value of the "calibration_digest" field.
 func (acguo *AttributionClaimGroupUpdateOne) ClearCalibrationDigest() *AttributionClaimGroupUpdateOne {
 	acguo.mutation.ClearCalibrationDigest()
+	return acguo
+}
+
+// SetCalibrationInputTokens sets the "calibration_input_tokens" field.
+func (acguo *AttributionClaimGroupUpdateOne) SetCalibrationInputTokens(i int64) *AttributionClaimGroupUpdateOne {
+	acguo.mutation.ResetCalibrationInputTokens()
+	acguo.mutation.SetCalibrationInputTokens(i)
+	return acguo
+}
+
+// SetNillableCalibrationInputTokens sets the "calibration_input_tokens" field if the given value is not nil.
+func (acguo *AttributionClaimGroupUpdateOne) SetNillableCalibrationInputTokens(i *int64) *AttributionClaimGroupUpdateOne {
+	if i != nil {
+		acguo.SetCalibrationInputTokens(*i)
+	}
+	return acguo
+}
+
+// AddCalibrationInputTokens adds i to the "calibration_input_tokens" field.
+func (acguo *AttributionClaimGroupUpdateOne) AddCalibrationInputTokens(i int64) *AttributionClaimGroupUpdateOne {
+	acguo.mutation.AddCalibrationInputTokens(i)
+	return acguo
+}
+
+// SetCalibrationOutputTokens sets the "calibration_output_tokens" field.
+func (acguo *AttributionClaimGroupUpdateOne) SetCalibrationOutputTokens(i int64) *AttributionClaimGroupUpdateOne {
+	acguo.mutation.ResetCalibrationOutputTokens()
+	acguo.mutation.SetCalibrationOutputTokens(i)
+	return acguo
+}
+
+// SetNillableCalibrationOutputTokens sets the "calibration_output_tokens" field if the given value is not nil.
+func (acguo *AttributionClaimGroupUpdateOne) SetNillableCalibrationOutputTokens(i *int64) *AttributionClaimGroupUpdateOne {
+	if i != nil {
+		acguo.SetCalibrationOutputTokens(*i)
+	}
+	return acguo
+}
+
+// AddCalibrationOutputTokens adds i to the "calibration_output_tokens" field.
+func (acguo *AttributionClaimGroupUpdateOne) AddCalibrationOutputTokens(i int64) *AttributionClaimGroupUpdateOne {
+	acguo.mutation.AddCalibrationOutputTokens(i)
+	return acguo
+}
+
+// SetCalibrationCacheCreationTokens sets the "calibration_cache_creation_tokens" field.
+func (acguo *AttributionClaimGroupUpdateOne) SetCalibrationCacheCreationTokens(i int64) *AttributionClaimGroupUpdateOne {
+	acguo.mutation.ResetCalibrationCacheCreationTokens()
+	acguo.mutation.SetCalibrationCacheCreationTokens(i)
+	return acguo
+}
+
+// SetNillableCalibrationCacheCreationTokens sets the "calibration_cache_creation_tokens" field if the given value is not nil.
+func (acguo *AttributionClaimGroupUpdateOne) SetNillableCalibrationCacheCreationTokens(i *int64) *AttributionClaimGroupUpdateOne {
+	if i != nil {
+		acguo.SetCalibrationCacheCreationTokens(*i)
+	}
+	return acguo
+}
+
+// AddCalibrationCacheCreationTokens adds i to the "calibration_cache_creation_tokens" field.
+func (acguo *AttributionClaimGroupUpdateOne) AddCalibrationCacheCreationTokens(i int64) *AttributionClaimGroupUpdateOne {
+	acguo.mutation.AddCalibrationCacheCreationTokens(i)
+	return acguo
+}
+
+// SetCalibrationCacheReadTokens sets the "calibration_cache_read_tokens" field.
+func (acguo *AttributionClaimGroupUpdateOne) SetCalibrationCacheReadTokens(i int64) *AttributionClaimGroupUpdateOne {
+	acguo.mutation.ResetCalibrationCacheReadTokens()
+	acguo.mutation.SetCalibrationCacheReadTokens(i)
+	return acguo
+}
+
+// SetNillableCalibrationCacheReadTokens sets the "calibration_cache_read_tokens" field if the given value is not nil.
+func (acguo *AttributionClaimGroupUpdateOne) SetNillableCalibrationCacheReadTokens(i *int64) *AttributionClaimGroupUpdateOne {
+	if i != nil {
+		acguo.SetCalibrationCacheReadTokens(*i)
+	}
+	return acguo
+}
+
+// AddCalibrationCacheReadTokens adds i to the "calibration_cache_read_tokens" field.
+func (acguo *AttributionClaimGroupUpdateOne) AddCalibrationCacheReadTokens(i int64) *AttributionClaimGroupUpdateOne {
+	acguo.mutation.AddCalibrationCacheReadTokens(i)
+	return acguo
+}
+
+// SetCalibrationTotalTokens sets the "calibration_total_tokens" field.
+func (acguo *AttributionClaimGroupUpdateOne) SetCalibrationTotalTokens(i int64) *AttributionClaimGroupUpdateOne {
+	acguo.mutation.ResetCalibrationTotalTokens()
+	acguo.mutation.SetCalibrationTotalTokens(i)
+	return acguo
+}
+
+// SetNillableCalibrationTotalTokens sets the "calibration_total_tokens" field if the given value is not nil.
+func (acguo *AttributionClaimGroupUpdateOne) SetNillableCalibrationTotalTokens(i *int64) *AttributionClaimGroupUpdateOne {
+	if i != nil {
+		acguo.SetCalibrationTotalTokens(*i)
+	}
+	return acguo
+}
+
+// AddCalibrationTotalTokens adds i to the "calibration_total_tokens" field.
+func (acguo *AttributionClaimGroupUpdateOne) AddCalibrationTotalTokens(i int64) *AttributionClaimGroupUpdateOne {
+	acguo.mutation.AddCalibrationTotalTokens(i)
+	return acguo
+}
+
+// SetCommitAllocations sets the "commit_allocations" field.
+func (acguo *AttributionClaimGroupUpdateOne) SetCommitAllocations(m []map[string]interface{}) *AttributionClaimGroupUpdateOne {
+	acguo.mutation.SetCommitAllocations(m)
+	return acguo
+}
+
+// AppendCommitAllocations appends m to the "commit_allocations" field.
+func (acguo *AttributionClaimGroupUpdateOne) AppendCommitAllocations(m []map[string]interface{}) *AttributionClaimGroupUpdateOne {
+	acguo.mutation.AppendCommitAllocations(m)
 	return acguo
 }
 
@@ -838,18 +1015,6 @@ func (acguo *AttributionClaimGroupUpdateOne) sqlSave(ctx context.Context) (_node
 	if value, ok := acguo.mutation.AddedRelayProviderID(); ok {
 		_spec.AddField(attributionclaimgroup.FieldRelayProviderID, field.TypeInt, value)
 	}
-	if value, ok := acguo.mutation.RepoConfigID(); ok {
-		_spec.SetField(attributionclaimgroup.FieldRepoConfigID, field.TypeInt, value)
-	}
-	if value, ok := acguo.mutation.AddedRepoConfigID(); ok {
-		_spec.AddField(attributionclaimgroup.FieldRepoConfigID, field.TypeInt, value)
-	}
-	if value, ok := acguo.mutation.CheckpointID(); ok {
-		_spec.SetField(attributionclaimgroup.FieldCheckpointID, field.TypeInt, value)
-	}
-	if value, ok := acguo.mutation.AddedCheckpointID(); ok {
-		_spec.AddField(attributionclaimgroup.FieldCheckpointID, field.TypeInt, value)
-	}
 	if value, ok := acguo.mutation.SchemaVersion(); ok {
 		_spec.SetField(attributionclaimgroup.FieldSchemaVersion, field.TypeInt, value)
 	}
@@ -873,6 +1038,44 @@ func (acguo *AttributionClaimGroupUpdateOne) sqlSave(ctx context.Context) (_node
 	}
 	if acguo.mutation.CalibrationDigestCleared() {
 		_spec.ClearField(attributionclaimgroup.FieldCalibrationDigest, field.TypeString)
+	}
+	if value, ok := acguo.mutation.CalibrationInputTokens(); ok {
+		_spec.SetField(attributionclaimgroup.FieldCalibrationInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := acguo.mutation.AddedCalibrationInputTokens(); ok {
+		_spec.AddField(attributionclaimgroup.FieldCalibrationInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := acguo.mutation.CalibrationOutputTokens(); ok {
+		_spec.SetField(attributionclaimgroup.FieldCalibrationOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := acguo.mutation.AddedCalibrationOutputTokens(); ok {
+		_spec.AddField(attributionclaimgroup.FieldCalibrationOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := acguo.mutation.CalibrationCacheCreationTokens(); ok {
+		_spec.SetField(attributionclaimgroup.FieldCalibrationCacheCreationTokens, field.TypeInt64, value)
+	}
+	if value, ok := acguo.mutation.AddedCalibrationCacheCreationTokens(); ok {
+		_spec.AddField(attributionclaimgroup.FieldCalibrationCacheCreationTokens, field.TypeInt64, value)
+	}
+	if value, ok := acguo.mutation.CalibrationCacheReadTokens(); ok {
+		_spec.SetField(attributionclaimgroup.FieldCalibrationCacheReadTokens, field.TypeInt64, value)
+	}
+	if value, ok := acguo.mutation.AddedCalibrationCacheReadTokens(); ok {
+		_spec.AddField(attributionclaimgroup.FieldCalibrationCacheReadTokens, field.TypeInt64, value)
+	}
+	if value, ok := acguo.mutation.CalibrationTotalTokens(); ok {
+		_spec.SetField(attributionclaimgroup.FieldCalibrationTotalTokens, field.TypeInt64, value)
+	}
+	if value, ok := acguo.mutation.AddedCalibrationTotalTokens(); ok {
+		_spec.AddField(attributionclaimgroup.FieldCalibrationTotalTokens, field.TypeInt64, value)
+	}
+	if value, ok := acguo.mutation.CommitAllocations(); ok {
+		_spec.SetField(attributionclaimgroup.FieldCommitAllocations, field.TypeJSON, value)
+	}
+	if value, ok := acguo.mutation.AppendedCommitAllocations(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, attributionclaimgroup.FieldCommitAllocations, value)
+		})
 	}
 	if value, ok := acguo.mutation.RequestCount(); ok {
 		_spec.SetField(attributionclaimgroup.FieldRequestCount, field.TypeInt, value)

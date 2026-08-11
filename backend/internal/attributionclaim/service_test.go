@@ -41,9 +41,11 @@ func newFixture(t *testing.T) fixture {
 }
 
 func (f fixture) claim(group string, requests ...string) Request {
-	return Request{SchemaVersion: SchemaVersion, GroupID: group, RelayProviderID: f.providerID, RepoConfigID: f.repoID,
-		CheckpointEventID: f.checkpoint, ThreadID: "thread-1", TurnID: "turn-1", EvidenceDigest: "evidence-1",
-		CalibrationDigest: "calibration-1", RequestIDs: requests}
+	return Request{SchemaVersion: SchemaVersion, GroupID: group, RelayProviderID: f.providerID,
+		ThreadID: "thread-1", TurnID: "turn-1", EvidenceDigest: "evidence-1",
+		Calibration:       &Calibration{Digest: "calibration-1", InputTokens: 10, OutputTokens: 2, TotalTokens: 12},
+		CommitAllocations: []CommitAllocation{{Sequence: 1, RepoConfigID: f.repoID, WorkspaceID: "workspace-1", CheckpointEventID: f.checkpoint, CommitSHA: "commit-1", EvidenceDigest: "evidence-1"}},
+		RequestIDs:        requests}
 }
 
 func TestIngestReplayAndLateRequest(t *testing.T) {
@@ -98,6 +100,9 @@ func TestIngestConflictRollsBackIndependentGroup(t *testing.T) {
 	if len(result.Results[0].Requests) != 1 || result.Results[0].Requests[0].Status != "conflict" {
 		t.Fatalf("conflict item acknowledgement = %+v", result.Results[0].Requests)
 	}
+	if result.Results[0].Calibration.Status != "rolled_back" {
+		t.Fatalf("rolled back calibration acknowledgement = %+v", result.Results[0].Calibration)
+	}
 	if count := f.client.AttributionClaimGroup.Query().CountX(ctx); count != 2 {
 		t.Fatalf("group count = %d, want original plus valid", count)
 	}
@@ -119,5 +124,80 @@ func TestIngestFailsClosedAndDoesNotTouchV1Ledger(t *testing.T) {
 	}
 	if f.client.AttributionClaimGroup.Query().CountX(ctx) != 0 || f.client.AttributionUsageBucket.Query().CountX(ctx) != 0 {
 		t.Fatal("rejected shadow ingest changed claim or v1 formal ledger")
+	}
+}
+
+func TestIngestAppendsAllocationAcceptsOldReplayAndRejectsDivergence(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	base := f.claim("group-allocations", "req-1")
+	if _, err := f.service.Ingest(ctx, f.principal, BatchRequest{Groups: []Request{base}}); err != nil {
+		t.Fatal(err)
+	}
+	second := f.client.CommitCheckpoint.Create().SetEventID("checkpoint-2").SetUserID(f.principal.UserID).SetWorkspaceID("workspace-1").
+		SetRepoConfigID(f.repoID).SetCommitSha("commit-2").SetParentShas([]string{"commit-1"}).SetBindingSource(commitcheckpoint.BindingSourceManual).SaveX(ctx)
+	appended := base
+	appended.EvidenceDigest = "allocation-sequence-evidence"
+	appended.CommitAllocations = append(append([]CommitAllocation(nil), base.CommitAllocations...), CommitAllocation{
+		Sequence: 2, RepoConfigID: f.repoID, WorkspaceID: "workspace-1", CheckpointEventID: second.EventID, CommitSHA: "commit-2", EvidenceDigest: "evidence-2",
+	})
+	result, err := f.service.Ingest(ctx, f.principal, BatchRequest{Groups: []Request{appended}})
+	if err != nil || result.Results[0].Group.Status != "persisted" {
+		t.Fatalf("append result = %+v, err = %v", result, err)
+	}
+	oldReplay, err := f.service.Ingest(ctx, f.principal, BatchRequest{Groups: []Request{base}})
+	if err != nil || oldReplay.Results[0].Group.Status != "duplicate_identical" {
+		t.Fatalf("old replay = %+v, err = %v", oldReplay, err)
+	}
+	group := f.client.AttributionClaimGroup.Query().OnlyX(ctx)
+	if len(group.CommitAllocations) != 2 || group.EvidenceDigest != appended.EvidenceDigest {
+		t.Fatalf("stored allocation sequence = %+v", group)
+	}
+	divergent := appended
+	divergent.CommitAllocations = append([]CommitAllocation(nil), appended.CommitAllocations...)
+	divergent.CommitAllocations[0].EvidenceDigest = "different"
+	conflict, err := f.service.Ingest(ctx, f.principal, BatchRequest{Groups: []Request{divergent}})
+	if err != nil || conflict.Results[0].Group.Status != "rejected" {
+		t.Fatalf("divergent result = %+v, err = %v", conflict, err)
+	}
+}
+
+func TestIngestCalibrationConflictDoesNotBlockNewRequest(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	base := f.claim("group-calibration", "req-1")
+	if _, err := f.service.Ingest(ctx, f.principal, BatchRequest{Groups: []Request{base}}); err != nil {
+		t.Fatal(err)
+	}
+	changed := f.claim("group-calibration", "req-1", "req-2")
+	changed.Calibration = &Calibration{Digest: "different", InputTokens: 99, TotalTokens: 99}
+	result, err := f.service.Ingest(ctx, f.principal, BatchRequest{Groups: []Request{changed}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := result.Results[0]; got.Calibration.Status != "conflict" || got.Requests[1].Status != "persisted" {
+		t.Fatalf("independent calibration result = %+v", got)
+	}
+	group := f.client.AttributionClaimGroup.Query().OnlyX(ctx)
+	if group.CalibrationDigest != "calibration-1" || group.RequestCount != 2 {
+		t.Fatalf("stored group = %+v", group)
+	}
+}
+
+func TestIngestRejectsCheckpointWorkspaceAndCommitMismatch(t *testing.T) {
+	f := newFixture(t)
+	for _, mutate := range []func(*Request){
+		func(claim *Request) { claim.CommitAllocations[0].WorkspaceID = "other-workspace" },
+		func(claim *Request) { claim.CommitAllocations[0].CommitSHA = "other-commit" },
+	} {
+		claim := f.claim(uuid.NewString(), uuid.NewString())
+		mutate(&claim)
+		result, err := f.service.Ingest(context.Background(), f.principal, BatchRequest{Groups: []Request{claim}})
+		if err != nil || result.Results[0].Group.Status != "rejected" {
+			t.Fatalf("mismatch result = %+v, err = %v", result, err)
+		}
+	}
+	if f.client.AttributionClaimGroup.Query().CountX(context.Background()) != 0 {
+		t.Fatal("mismatched allocation was persisted")
 	}
 }

@@ -3,13 +3,13 @@ package attributionlocal
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -19,24 +19,25 @@ import (
 
 const v2ClaimSchemaVersion = 2
 
-var v2ClientRequestID = regexp.MustCompile(`(?i)["']?x-client-request-id["']?\s*[:=]\s*["']?([^"'\s,}]+)`)
-
 type V2ClaimScanOptions struct {
 	RepoRoot          string
 	CommitSHA         string
 	RelayProviderID   int
 	RepoConfigID      int
+	RepoKey           string
+	WorkspaceID       string
 	CheckpointEventID string
 }
 
 // V2ClaimCandidate retains source/mutation detail locally. Group is the only
 // value eligible for upload and contains digests rather than paths or content.
 type V2ClaimCandidate struct {
-	LocalKey  string                         `json:"local_key"`
-	Group     client.AttributionV2ClaimGroup `json:"group"`
-	Source    string                         `json:"source,omitempty"`
-	GapReason string                         `json:"gap_reason,omitempty"`
-	UpdatedAt time.Time                      `json:"updated_at"`
+	LocalKey    string                         `json:"local_key"`
+	Group       client.AttributionV2ClaimGroup `json:"group"`
+	Source      string                         `json:"source,omitempty"`
+	GapReason   string                         `json:"gap_reason,omitempty"`
+	FirstSeenAt time.Time                      `json:"first_seen_at"`
+	UpdatedAt   time.Time                      `json:"updated_at"`
 }
 
 type V2ClaimState struct {
@@ -56,7 +57,11 @@ func ScanCodexV2ClaimsFromHome(ctx context.Context, homeDir string, opts V2Claim
 			return nil, fmt.Errorf("resolve home: %w", err)
 		}
 	}
-	return ScanCodexV2Claims(ctx, findCodexJSONLFiles("", homeDir), opts)
+	evidence, err := loadCodexV2RequestEvidence(ctx, homeDir)
+	if err != nil {
+		return nil, err
+	}
+	return scanCodexV2ClaimsWithEvidence(ctx, findCodexJSONLFiles("", homeDir), opts, evidence)
 }
 
 func V2ClaimStatePath() string {
@@ -95,13 +100,19 @@ func MergeV2ClaimState(state *V2ClaimState, scanned []V2ClaimCandidate, now time
 	byKey := map[string]int{}
 	kept := make([]V2ClaimCandidate, 0, len(state.Claims)+len(scanned))
 	for _, existing := range state.Claims {
-		if !existing.UpdatedAt.IsZero() && existing.UpdatedAt.Before(cutoff) {
+		if !existing.FirstSeenAt.IsZero() && existing.FirstSeenAt.Before(cutoff) {
 			continue
 		}
 		kept = append(kept, existing)
 		byKey[existing.LocalKey] = len(kept) - 1
 	}
 	for _, candidate := range scanned {
+		if candidate.FirstSeenAt.IsZero() {
+			candidate.FirstSeenAt = now.UTC()
+		}
+		if candidate.FirstSeenAt.Before(cutoff) {
+			continue
+		}
 		candidate.UpdatedAt = now.UTC()
 		index, found := byKey[candidate.LocalKey]
 		if !found {
@@ -111,11 +122,16 @@ func MergeV2ClaimState(state *V2ClaimState, scanned []V2ClaimCandidate, now time
 		}
 		existing := &kept[index]
 		existing.Group.RequestIDs = uniqueSorted(append(existing.Group.RequestIDs, candidate.Group.RequestIDs...))
+		existing.Group.CommitAllocations = mergeV2Allocations(existing.Group.CommitAllocations, candidate.Group.CommitAllocations)
+		existing.Group.EvidenceDigest = v2AllocationEvidenceDigest(existing.Group.CommitAllocations)
+		if existing.Group.Calibration == nil && candidate.Group.Calibration != nil {
+			existing.Group.Calibration = candidate.Group.Calibration
+		}
 		existing.UpdatedAt = candidate.UpdatedAt
 		if existing.GapReason != "" && candidate.GapReason == "" {
 			existing.GapReason = ""
 			existing.Group.EvidenceDigest = candidate.Group.EvidenceDigest
-			existing.Group.CalibrationDigest = candidate.Group.CalibrationDigest
+			existing.Group.Calibration = candidate.Group.Calibration
 		}
 	}
 	state.Claims = kept
@@ -132,18 +148,26 @@ type v2Turn struct {
 	turnID      string
 	requests    map[string]struct{}
 	mutations   []v2Mutation
-	calibration []string
+	calibration client.AttributionV2Calibration
+	startedAt   time.Time
+}
+
+type v2RequestEvidence struct {
+	threadID   string
+	requestID  string
+	observedAt time.Time
 }
 
 func ScanCodexV2Claims(ctx context.Context, paths []string, opts V2ClaimScanOptions) ([]V2ClaimCandidate, error) {
+	return scanCodexV2ClaimsWithEvidence(ctx, paths, opts, nil)
+}
+
+func scanCodexV2ClaimsWithEvidence(ctx context.Context, paths []string, opts V2ClaimScanOptions, requestEvidence []v2RequestEvidence) ([]V2ClaimCandidate, error) {
 	merged := map[string]*V2ClaimCandidate{}
 	for _, path := range paths {
-		candidates, err := parseCodexV2ClaimFile(ctx, path, opts)
+		candidates, err := parseCodexV2ClaimFile(ctx, path, opts, requestEvidence)
 		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			continue
+			return nil, fmt.Errorf("scan Codex v2 source: %w", err)
 		}
 		for _, candidate := range candidates {
 			existing := merged[candidate.Group.GroupID]
@@ -154,8 +178,10 @@ func ScanCodexV2Claims(ctx context.Context, paths []string, opts V2ClaimScanOpti
 			}
 			existing.Group.RequestIDs = uniqueSorted(append(existing.Group.RequestIDs, candidate.Group.RequestIDs...))
 			if existing.GapReason != "" && candidate.GapReason == "" {
+				requests := existing.Group.RequestIDs
 				existing.GapReason = ""
 				existing.Group = candidate.Group
+				existing.Group.RequestIDs = requests
 			}
 		}
 	}
@@ -177,14 +203,16 @@ func UploadableV2ClaimGroups(candidates []V2ClaimCandidate) []client.Attribution
 	return groups
 }
 
-func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOptions) ([]V2ClaimCandidate, error) {
+func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOptions, requestEvidence []v2RequestEvidence) ([]V2ClaimCandidate, error) {
 	var sessionID, threadID string
+	var sessionEnd time.Time
 	turns := map[string]*v2Turn{}
 	var current *v2Turn
 	err := forEachCodexJSONLLine(ctx, path, func(_ int, raw []byte) error {
 		var row struct {
-			Type    string `json:"type"`
-			Payload struct {
+			Type      string `json:"type"`
+			Timestamp string `json:"timestamp"`
+			Payload   struct {
 				ID        string `json:"id"`
 				ThreadID  string `json:"thread_id"`
 				TurnID    string `json:"turn_id"`
@@ -203,6 +231,10 @@ func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOpt
 		if err := json.Unmarshal(raw, &row); err != nil {
 			return nil
 		}
+		observedAt := parseObservedAt(row.Timestamp)
+		if observedAt.After(sessionEnd) {
+			sessionEnd = observedAt
+		}
 		switch strings.TrimSpace(row.Type) {
 		case "session_meta":
 			sessionID = strings.TrimSpace(row.Payload.ID)
@@ -215,7 +247,7 @@ func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOpt
 			}
 			current = turns[turnID]
 			if current == nil {
-				current = &v2Turn{threadID: firstNonEmptyCompact(strings.TrimSpace(row.Payload.ThreadID), threadID, sessionID), turnID: turnID, requests: map[string]struct{}{}}
+				current = &v2Turn{threadID: firstNonEmptyCompact(strings.TrimSpace(row.Payload.ThreadID), threadID, sessionID), turnID: turnID, requests: map[string]struct{}{}, startedAt: observedAt}
 				turns[turnID] = current
 			}
 		case "response_item":
@@ -232,19 +264,7 @@ func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOpt
 				}
 			}
 			if current != nil && strings.TrimSpace(row.Payload.Type) == "token_count" && row.Payload.Info != nil {
-				encoded, _ := json.Marshal(row.Payload.Info)
-				current.calibration = append(current.calibration, string(encoded))
-			}
-		}
-		if current != nil {
-			normalizedRaw := []byte(strings.ReplaceAll(string(raw), `\"`, `"`))
-			for _, match := range v2ClientRequestID.FindAllSubmatch(normalizedRaw, -1) {
-				if len(match) == 2 {
-					requestID := normalizeV2RequestID(string(match[1]))
-					if requestID != "" {
-						current.requests[requestID] = struct{}{}
-					}
-				}
+				addV2Calibration(&current.calibration, row.Payload.Info)
 			}
 		}
 		return nil
@@ -252,18 +272,33 @@ func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOpt
 	if err != nil {
 		return nil, err
 	}
-	result := make([]V2ClaimCandidate, 0, len(turns))
+	orderedTurns := make([]*v2Turn, 0, len(turns))
 	for _, turn := range turns {
+		orderedTurns = append(orderedTurns, turn)
+	}
+	sort.Slice(orderedTurns, func(i, j int) bool { return orderedTurns[i].startedAt.Before(orderedTurns[j].startedAt) })
+	for index, turn := range orderedTurns {
+		end := sessionEnd
+		if index+1 < len(orderedTurns) {
+			end = orderedTurns[index+1].startedAt
+		}
+		for _, evidence := range requestEvidence {
+			if evidence.threadID == turn.threadID && !evidence.observedAt.Before(turn.startedAt) && (end.IsZero() || evidence.observedAt.Before(end)) {
+				turn.requests[normalizeV2RequestID(evidence.requestID)] = struct{}{}
+			}
+		}
+	}
+	result := make([]V2ClaimCandidate, 0, len(orderedTurns))
+	for _, turn := range orderedTurns {
 		requests := make([]string, 0, len(turn.requests))
 		for requestID := range turn.requests {
 			requests = append(requests, requestID)
 		}
 		requests = uniqueSorted(requests)
 		groupID := claimDigest(fmt.Sprintf("%d", opts.RelayProviderID), sessionID, turn.turnID)
-		candidate := V2ClaimCandidate{LocalKey: claimDigest(sessionID, turn.turnID), Source: path, Group: client.AttributionV2ClaimGroup{
+		candidate := V2ClaimCandidate{LocalKey: claimDigest(sessionID, turn.turnID), Source: path, FirstSeenAt: turn.startedAt, Group: client.AttributionV2ClaimGroup{
 			SchemaVersion: v2ClaimSchemaVersion, GroupID: groupID, RelayProviderID: opts.RelayProviderID,
-			RepoConfigID: opts.RepoConfigID, CheckpointEventID: opts.CheckpointEventID, ThreadID: turn.threadID, TurnID: turn.turnID,
-			RequestIDs: requests,
+			ThreadID: turn.threadID, TurnID: turn.turnID, RequestIDs: requests,
 		}}
 		if len(requests) == 0 {
 			candidate.GapReason = "missing_request_id"
@@ -272,9 +307,16 @@ func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOpt
 		} else if !verifyV2Mutations(ctx, opts.RepoRoot, opts.CommitSHA, turn.mutations) {
 			candidate.GapReason = "commit_content_mismatch"
 		} else {
-			candidate.Group.EvidenceDigest = v2MutationDigest(turn.mutations)
-			if len(turn.calibration) > 0 {
-				candidate.Group.CalibrationDigest = claimDigest(turn.calibration...)
+			evidenceDigest := v2MutationDigest(turn.mutations)
+			candidate.Group.EvidenceDigest = evidenceDigest
+			candidate.Group.CommitAllocations = []client.AttributionV2CommitAllocation{{
+				Sequence: 1, RepoConfigID: opts.RepoConfigID, RepoKey: strings.TrimSpace(opts.RepoKey), WorkspaceID: strings.TrimSpace(opts.WorkspaceID),
+				CheckpointEventID: opts.CheckpointEventID, CommitSHA: opts.CommitSHA, EvidenceDigest: evidenceDigest,
+			}}
+			if turn.calibration.TotalTokens > 0 {
+				turn.calibration.Digest = v2CalibrationDigest(turn.calibration)
+				calibration := turn.calibration
+				candidate.Group.Calibration = &calibration
 			}
 		}
 		result = append(result, candidate)
@@ -465,6 +507,101 @@ func equalClaimLines(left, right []string) bool {
 		}
 	}
 	return true
+}
+
+func loadCodexV2RequestEvidence(ctx context.Context, homeDir string) ([]v2RequestEvidence, error) {
+	paths := findCodexSQLiteFiles(homeDir)
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	db, err := sql.Open("sqlite", codexSQLiteReadOnlyDSN(paths[0]))
+	if err != nil {
+		return nil, fmt.Errorf("open Codex request log: %w", err)
+	}
+	defer db.Close()
+	rows, err := db.QueryContext(ctx, `
+		SELECT ts, ts_nanos, thread_id, feedback_log_body
+		FROM logs
+		WHERE target = ?
+		  AND feedback_log_body LIKE '%Request completed method=POST%'
+		  AND feedback_log_body LIKE '%api.path="responses"%'
+		  AND feedback_log_body LIKE '%"x-client-request-id"%'
+		ORDER BY ts, ts_nanos, id`, codexFailedRequestTarget)
+	if err != nil {
+		return nil, fmt.Errorf("query Codex request log: %w", err)
+	}
+	defer rows.Close()
+	var result []v2RequestEvidence
+	for rows.Next() {
+		var ts, nanos int64
+		var thread sql.NullString
+		var body string
+		if err := rows.Scan(&ts, &nanos, &thread, &body); err != nil {
+			return nil, fmt.Errorf("scan Codex request log: %w", err)
+		}
+		requestID := normalizeV2RequestID(firstSubmatch(reFailHdrClientReqID, body))
+		threadID := strings.TrimSpace(thread.String)
+		if requestID != "" && threadID != "" {
+			result = append(result, v2RequestEvidence{threadID: threadID, requestID: requestID, observedAt: time.Unix(ts, nanos).UTC()})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate Codex request log: %w", err)
+	}
+	return result, nil
+}
+
+func addV2Calibration(calibration *client.AttributionV2Calibration, raw any) {
+	info, _ := raw.(map[string]any)
+	selected, _ := info["last_token_usage"].(map[string]any)
+	if len(selected) == 0 {
+		selected, _ = info["total_token_usage"].(map[string]any)
+	}
+	if len(selected) == 0 {
+		return
+	}
+	calibration.InputTokens += asInt64(selected["input_tokens"])
+	calibration.OutputTokens += asInt64(selected["output_tokens"])
+	calibration.CacheReadTokens += asInt64(selected["cached_input_tokens"])
+	calibration.CacheCreationTokens += asInt64(selected["cache_write_input_tokens"])
+	total := asInt64(selected["total_tokens"])
+	if total == 0 {
+		total = asInt64(selected["input_tokens"]) + asInt64(selected["output_tokens"])
+	}
+	calibration.TotalTokens += total
+}
+
+func v2CalibrationDigest(calibration client.AttributionV2Calibration) string {
+	return claimDigest(
+		fmt.Sprintf("%d", calibration.InputTokens), fmt.Sprintf("%d", calibration.OutputTokens),
+		fmt.Sprintf("%d", calibration.CacheCreationTokens), fmt.Sprintf("%d", calibration.CacheReadTokens),
+		fmt.Sprintf("%d", calibration.TotalTokens),
+	)
+}
+
+func mergeV2Allocations(existing, incoming []client.AttributionV2CommitAllocation) []client.AttributionV2CommitAllocation {
+	result := append([]client.AttributionV2CommitAllocation(nil), existing...)
+	seen := map[string]struct{}{}
+	for _, allocation := range result {
+		seen[allocation.CheckpointEventID] = struct{}{}
+	}
+	for _, allocation := range incoming {
+		if _, ok := seen[allocation.CheckpointEventID]; ok {
+			continue
+		}
+		allocation.Sequence = len(result) + 1
+		result = append(result, allocation)
+		seen[allocation.CheckpointEventID] = struct{}{}
+	}
+	return result
+}
+
+func v2AllocationEvidenceDigest(allocations []client.AttributionV2CommitAllocation) string {
+	parts := make([]string, 0, len(allocations))
+	for _, allocation := range allocations {
+		parts = append(parts, fmt.Sprintf("%d", allocation.Sequence)+"\x00"+allocation.EvidenceDigest)
+	}
+	return claimDigest(parts...)
 }
 
 func normalizeV2RequestID(value string) string {
