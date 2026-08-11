@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** Implementation in progress; T02-T08 and T10 are merged with hosted CI green. T09 implementation and local qualification are complete and await PR/hosted CI. The T04 real read-only canary still requires separate authorization.
+**Status:** Implementation in progress; T02-T10 are merged with hosted CI green. T11 non-canary qualification, hosted CI, and final review are complete; the separately authorized real canary remains. The T04 real read-only canary also still requires separate authorization.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -135,16 +135,16 @@ T01 contract publication (#253)
 
 ### T11 — Shadow qualification and real E2E gate ([#250](https://github.com/LichKing-2234/ai-efficiency/issues/250))
 
-- [ ] Run synthetic contract, fault-injection, multi-replica, scale/query-plan,
+- [x] Run synthetic contract, fault-injection, multi-replica, scale/query-plan,
   and full backend/CLI/frontend suites.
-- [ ] Verify the complete scope/range/ratio/shared/filter/loading/mobile matrix.
-- [ ] Explicitly verify provider-set completeness, ratio labels,
+- [x] Verify the complete scope/range/ratio/shared/filter/loading/mobile matrix.
+- [x] Explicitly verify provider-set completeness, ratio labels,
   percentage-point comparison, cutover incomparability, and omission behavior.
-- [ ] Prove final reconciliation is scheduled no later than 24 hours before
+- [x] Prove final reconciliation is scheduled no later than 24 hours before
   nominal upstream cleanup, including exact-boundary and late-ingest cases.
 - [ ] Complete one controlled real Request-to-commit-to-Activity canary without
   contaminating the formal epoch.
-- [ ] Produce cutover checklist, dashboards, exact reset query, evidence export,
+- [x] Produce cutover checklist, dashboards, exact reset query, evidence export,
   and rollback runbook; close every P0/P1 finding.
 
 ### T12 — Explicit v2 cutover and v1 POC reset ([#251](https://github.com/LichKing-2234/ai-efficiency/issues/251))

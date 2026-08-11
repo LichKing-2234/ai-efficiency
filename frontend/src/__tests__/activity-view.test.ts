@@ -82,6 +82,25 @@ describe('ActivityView v2', () => {
     expect(vi.mocked(api.getActivityV2Overview)).toHaveBeenCalledWith(expect.objectContaining({ scope: 'member', subject_user_id: 7, from: '2026-08-01', to: '2026-08-07', timezone: 'America/Los_Angeles' }))
   })
 
+  it.each([
+    [7, '2026-08-06'],
+    [30, '2026-07-14'],
+    [90, '2026-05-15'],
+  ])('applies an inclusive %i-local-day preset through the page URL and API', async (days, expectedFrom) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 12, 12))
+    try {
+      const api = await import('@/api/activity')
+      const { wrapper, router } = await mountView('/activity?from=2026-07-14&to=2026-08-12&timezone=UTC')
+      await wrapper.get(`[data-testid="activity-range-${days}"]`).trigger('click')
+      await flushPromises()
+      expect(router.currentRoute.value.query).toEqual(expect.objectContaining({ from: expectedFrom, to: '2026-08-12', timezone: 'UTC' }))
+      expect(vi.mocked(api.getActivityV2Overview)).toHaveBeenLastCalledWith(expect.objectContaining({ from: expectedFrom, to: '2026-08-12', timezone: 'UTC' }))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('suppresses an older overview response after a newer range wins', async () => {
     const api = await import('@/api/activity')
     let resolveOld!: (value: any) => void

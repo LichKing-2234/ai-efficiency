@@ -39,13 +39,18 @@ type ScopeResolver interface {
 	Resolve(context.Context, int) (*representativescope.Scope, error)
 }
 
+type V2DB interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
 type ServiceOptions struct {
 	ScopeResolver ScopeResolver
 	CursorSecret  string
 	Cache         *Cache
 	V2LedgerEpoch string
 	V2Denominator V2DenominatorReader
-	V2DB          *sql.DB
+	V2DB          V2DB
 }
 
 type Service struct {
@@ -56,7 +61,7 @@ type Service struct {
 	cache         *Cache
 	v2LedgerEpoch string
 	v2Denominator V2DenominatorReader
-	v2DB          *sql.DB
+	v2DB          V2DB
 	now           func() time.Time
 }
 
