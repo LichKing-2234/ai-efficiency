@@ -150,8 +150,14 @@ type v2Turn struct {
 	turnID      string
 	requests    map[string]struct{}
 	mutations   []v2Mutation
+	replayFiles map[string]v2ReplayFile
 	calibration client.AttributionV2Calibration
 	startedAt   time.Time
+}
+
+type v2ReplayFile struct {
+	content string
+	exists  bool
 }
 
 type v2RequestEvidence struct {
@@ -247,12 +253,12 @@ func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOpt
 			}
 			current = turns[turnID]
 			if current == nil {
-				current = &v2Turn{threadID: firstNonEmptyCompact(strings.TrimSpace(row.Payload.ThreadID), threadID, sessionID), turnID: turnID, requests: map[string]struct{}{}, startedAt: observedAt}
+				current = &v2Turn{threadID: firstNonEmptyCompact(strings.TrimSpace(row.Payload.ThreadID), threadID, sessionID), turnID: turnID, requests: map[string]struct{}{}, replayFiles: map[string]v2ReplayFile{}, startedAt: observedAt}
 				turns[turnID] = current
 			}
 		case "response_item":
 			if current != nil && compactIsPatchTool(row.Payload.Name) {
-				current.mutations = append(current.mutations, v2PatchMutations(ctx, row.Payload.Input+"\n"+row.Payload.Arguments, opts.RepoRoot, opts.CommitSHA)...)
+				current.mutations = append(current.mutations, v2PatchMutations(ctx, row.Payload.Input+"\n"+row.Payload.Arguments, opts.RepoRoot, opts.CommitSHA, current.replayFiles)...)
 			}
 		case "event_msg":
 			if current != nil && strings.TrimSpace(row.Payload.Type) == "patch_apply_end" {
@@ -322,7 +328,7 @@ func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOpt
 	return result, nil
 }
 
-func v2PatchMutations(ctx context.Context, patch, repoRoot, commitSHA string) []v2Mutation {
+func v2PatchMutations(ctx context.Context, patch, repoRoot, commitSHA string, replayFiles map[string]v2ReplayFile) []v2Mutation {
 	lines := strings.Split(strings.ReplaceAll(patch, "\r\n", "\n"), "\n")
 	var mutations []v2Mutation
 	for i := 0; i < len(lines); i++ {
@@ -356,24 +362,50 @@ func v2PatchMutations(ctx context.Context, patch, repoRoot, commitSHA string) []
 					content = append(content, strings.TrimPrefix(line, "+"))
 				}
 			}
-			mutations = append(mutations, v2Mutation{path: path, hash: claimDigest(strings.Join(content, "\n") + "\n"), kind: kind})
+			value := strings.Join(content, "\n") + "\n"
+			file, loaded := replayFiles[path]
+			if !loaded {
+				parent, err := gitShowClaimFile(ctx, repoRoot, strings.TrimSpace(commitSHA)+"^", path)
+				file = v2ReplayFile{content: string(parent), exists: err == nil}
+			}
+			if file.exists {
+				if file.content == value {
+					mutations = append(mutations, v2Mutation{path: path, hash: claimDigest(value), kind: kind})
+				} else {
+					mutations = append(mutations, v2Mutation{path: path, kind: kind})
+				}
+				continue
+			}
+			replayFiles[path] = v2ReplayFile{content: value, exists: true}
+			mutations = append(mutations, v2Mutation{path: path, hash: claimDigest(value), kind: kind})
 		case "delete":
-			if _, err := gitShowClaimFile(ctx, repoRoot, strings.TrimSpace(commitSHA)+"^", path); err == nil {
+			file, loaded := replayFiles[path]
+			if !loaded {
+				parent, err := gitShowClaimFile(ctx, repoRoot, strings.TrimSpace(commitSHA)+"^", path)
+				file = v2ReplayFile{content: string(parent), exists: err == nil}
+			}
+			if file.exists {
 				mutations = append(mutations, v2Mutation{path: path, hash: claimDigest("deleted"), kind: kind})
 			}
+			replayFiles[path] = v2ReplayFile{}
 		case "update":
-			parent, err := gitShowClaimFile(ctx, repoRoot, strings.TrimSpace(commitSHA)+"^", path)
-			if err != nil {
+			file, loaded := replayFiles[path]
+			if !loaded {
+				parent, err := gitShowClaimFile(ctx, repoRoot, strings.TrimSpace(commitSHA)+"^", path)
+				file = v2ReplayFile{content: string(parent), exists: err == nil}
+			}
+			if !file.exists {
 				mutations = append(mutations, v2Mutation{path: path, kind: kind})
 				continue
 			}
-			expected, ok := applyV2PatchBlock(string(parent), block)
+			expected, ok := applyV2PatchBlock(file.content, block)
 			if ok {
+				replayFiles[path] = v2ReplayFile{content: expected, exists: true}
 				mutations = append(mutations, v2Mutation{path: path, hash: claimDigest(expected), kind: kind})
-			} else if _, ok := applyV2PatchBlock(string(parent), reverseV2PatchBlock(block)); ok {
+			} else if _, ok := applyV2PatchBlock(file.content, reverseV2PatchBlock(block)); ok {
 				// The patch was introduced by an earlier commit and the current
 				// parent already contains its result.
-				mutations = append(mutations, v2Mutation{path: path, hash: claimDigest(string(parent)), kind: kind})
+				mutations = append(mutations, v2Mutation{path: path, hash: claimDigest(file.content), kind: kind})
 			} else {
 				mutations = append(mutations, v2Mutation{path: path, kind: kind})
 			}
@@ -397,10 +429,6 @@ func reverseV2PatchBlock(block []string) []string {
 	return reversed
 }
 
-func verifyV2Mutations(ctx context.Context, repoRoot, commitSHA string, mutations []v2Mutation) bool {
-	return validV2Mutations(mutations) && len(introducedV2Mutations(ctx, repoRoot, commitSHA, mutations)) == len(mutations)
-}
-
 func validV2Mutations(mutations []v2Mutation) bool {
 	for _, mutation := range mutations {
 		if mutation.path == "" || mutation.hash == "" {
@@ -414,27 +442,59 @@ func introducedV2Mutations(ctx context.Context, repoRoot, commitSHA string, muta
 	if strings.TrimSpace(repoRoot) == "" || strings.TrimSpace(commitSHA) == "" {
 		return nil
 	}
+	selected := make([]bool, len(mutations))
+	byPath := map[string][]int{}
+	for index, mutation := range mutations {
+		byPath[mutation.path] = append(byPath[mutation.path], index)
+	}
+	for path, indices := range byPath {
+		parent, parentErr := gitShowClaimFile(ctx, repoRoot, strings.TrimSpace(commitSHA)+"^", path)
+		current, currentErr := gitShowClaimFile(ctx, repoRoot, strings.TrimSpace(commitSHA), path)
+		parentState := v2TreeState(parent, parentErr)
+		currentState := v2TreeState(current, currentErr)
+		if parentState == currentState {
+			continue
+		}
+		currentPosition := -1
+		for position, index := range indices {
+			if v2MutationState(mutations[index]) == currentState {
+				currentPosition = position
+			}
+		}
+		if currentPosition < 0 {
+			continue
+		}
+		parentPosition := -1
+		for position := 0; position < currentPosition; position++ {
+			if v2MutationState(mutations[indices[position]]) == parentState {
+				parentPosition = position
+			}
+		}
+		for position := parentPosition + 1; position <= currentPosition; position++ {
+			selected[indices[position]] = true
+		}
+	}
 	result := make([]v2Mutation, 0, len(mutations))
-	for _, mutation := range mutations {
-		parent, parentErr := gitShowClaimFile(ctx, repoRoot, strings.TrimSpace(commitSHA)+"^", mutation.path)
-		current, currentErr := gitShowClaimFile(ctx, repoRoot, strings.TrimSpace(commitSHA), mutation.path)
-		if mutation.kind == "delete" {
-			if parentErr == nil && currentErr != nil {
-				result = append(result, mutation)
-			}
-			continue
-		}
-		if mutation.kind == "add" {
-			if parentErr != nil && currentErr == nil && claimDigest(string(current)) == strings.ToLower(mutation.hash) {
-				result = append(result, mutation)
-			}
-			continue
-		}
-		if parentErr == nil && currentErr == nil && claimDigest(string(parent)) != strings.ToLower(mutation.hash) && claimDigest(string(current)) == strings.ToLower(mutation.hash) {
+	for index, mutation := range mutations {
+		if selected[index] {
 			result = append(result, mutation)
 		}
 	}
 	return result
+}
+
+func v2TreeState(content []byte, err error) string {
+	if err != nil {
+		return "deleted"
+	}
+	return claimDigest(string(content))
+}
+
+func v2MutationState(mutation v2Mutation) string {
+	if mutation.kind == "delete" {
+		return "deleted"
+	}
+	return strings.ToLower(mutation.hash)
 }
 
 func canonicalClaimPath(repoRoot, path string) string {

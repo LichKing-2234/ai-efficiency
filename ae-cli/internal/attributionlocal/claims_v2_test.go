@@ -333,6 +333,38 @@ func TestScanCodexV2ClaimsBuildsSequentialSameFileUpdateAllocations(t *testing.T
 	}
 }
 
+func TestScanCodexV2ClaimsReplaysOrderedUpdatesWithinOneCommit(t *testing.T) {
+	repo := t.TempDir()
+	for _, args := range [][]string{{"init"}, {"config", "user.email", "alice@example.com"}, {"config", "user.name", "Alice"}} {
+		gitClaim(t, repo, args...)
+	}
+	feature := filepath.Join(repo, "feature.go")
+	if err := os.WriteFile(feature, []byte("package feature\n\nconst Value = 0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitClaim(t, repo, "add", "feature.go")
+	gitClaim(t, repo, "commit", "-m", "parent")
+	if err := os.WriteFile(feature, []byte("package feature\n\nconst Value = 2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitClaim(t, repo, "add", "feature.go")
+	gitClaim(t, repo, "commit", "-m", "two patches")
+	commit := strings.TrimSpace(gitClaim(t, repo, "rev-parse", "HEAD"))
+	session := filepath.Join(t.TempDir(), "session.jsonl")
+	writeV2JSONL(t, session,
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "thread-ordered"}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-ordered"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Update File: feature.go\n@@\n-const Value = 0\n+const Value = 1\n*** End Patch"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Update File: feature.go\n@@\n-const Value = 1\n+const Value = 2\n*** End Patch"}},
+	)
+	claims, err := scanV2ClaimsForTest([]string{session}, V2ClaimScanOptions{
+		RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8, WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-ordered",
+	}, "thread-ordered", "req-ordered")
+	if err != nil || len(claims) != 1 || claims[0].GapReason != "" || len(claims[0].Group.CommitAllocations) != 1 {
+		t.Fatalf("ordered update claim = %+v, err = %v", claims, err)
+	}
+}
+
 func v2ClaimRepo(t *testing.T, path, content string) (string, string) {
 	t.Helper()
 	repo := t.TempDir()
