@@ -3,6 +3,7 @@ package attributionlocal
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -111,7 +112,7 @@ func ApplyV2ClaimAcknowledgements(state *V2ClaimState, sent []client.Attribution
 			kept = append(kept, claim)
 			continue
 		}
-		claim.GroupAcknowledged = claim.GroupAcknowledged || v2ItemAcknowledged(ack.Group.Status)
+		claim.GroupAcknowledged = claim.GroupAcknowledged || (sameV2GroupEnvelope(claim.Group, sentGroup) && v2ItemAcknowledged(ack.Group.Status))
 		requestACKs := make(map[string]client.AttributionV2ItemStatus, len(ack.Requests))
 		for _, item := range ack.Requests {
 			requestACKs[strings.TrimSpace(item.ID)] = item
@@ -148,6 +149,16 @@ func ApplyV2ClaimAcknowledgements(state *V2ClaimState, sent []client.Attribution
 	}
 	state.Claims = kept
 	return firstErr
+}
+
+func sameV2GroupEnvelope(current, sent client.AttributionV2ClaimGroup) bool {
+	return current.SchemaVersion == sent.SchemaVersion &&
+		current.GroupID == sent.GroupID &&
+		current.RelayProviderID == sent.RelayProviderID &&
+		current.ThreadID == sent.ThreadID &&
+		current.TurnID == sent.TurnID &&
+		current.EvidenceDigest == sent.EvidenceDigest &&
+		reflect.DeepEqual(current.CommitAllocations, sent.CommitAllocations)
 }
 
 func validateV2ItemAcknowledgements(sent client.AttributionV2ClaimGroup, ack client.AttributionV2ClaimResult) error {

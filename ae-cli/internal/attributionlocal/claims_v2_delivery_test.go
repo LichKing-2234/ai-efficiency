@@ -116,3 +116,28 @@ func TestApplyV2ClaimAcknowledgementsConsumesExplicitItemsAndRetainsMissing(t *t
 		t.Fatalf("partial acknowledgement state = %+v", claim)
 	}
 }
+
+func TestApplyV2ClaimAcknowledgementsDoesNotAcknowledgeNewerAllocation(t *testing.T) {
+	now := time.Now().UTC()
+	oldAllocation := client.AttributionV2CommitAllocation{Sequence: 1, CommitSHA: "commit-1", CheckpointEventID: "checkpoint-1"}
+	newAllocation := client.AttributionV2CommitAllocation{Sequence: 2, CommitSHA: "commit-2", CheckpointEventID: "checkpoint-2"}
+	sent := client.AttributionV2ClaimGroup{GroupID: "group-1", RequestIDs: []string{"req-1"}, EvidenceDigest: "evidence-1", CommitAllocations: []client.AttributionV2CommitAllocation{oldAllocation}}
+	current := sent
+	current.EvidenceDigest = "evidence-2"
+	current.CommitAllocations = []client.AttributionV2CommitAllocation{oldAllocation, newAllocation}
+	state := &V2ClaimState{Claims: []V2ClaimCandidate{{LocalKey: "local-1", Group: current, FirstSeenAt: now}}}
+	result := &client.AttributionV2ClaimBatchResult{LedgerEpoch: "shadow_v2", Results: []client.AttributionV2ClaimResult{{
+		Group:    client.AttributionV2ItemStatus{ID: "group-1", Status: "persisted"},
+		Requests: []client.AttributionV2ItemStatus{{ID: "req-1", Status: "persisted"}},
+	}}}
+	if err := ApplyV2ClaimAcknowledgements(state, []client.AttributionV2ClaimGroup{sent}, result, now); err == nil {
+		t.Fatal("stale group acknowledgement error = nil")
+	}
+	claim := state.Claims[0]
+	if claim.GroupAcknowledged || len(claim.Group.RequestIDs) != 0 || claim.DeliveryStatus != V2DeliveryUpgradeRequired {
+		t.Fatalf("stale group acknowledgement state = %+v", claim)
+	}
+	if groups := UploadableV2ClaimGroups(state.Claims); len(groups) != 1 || len(groups[0].CommitAllocations) != 2 {
+		t.Fatalf("newer allocation was not retained for upload: %+v", groups)
+	}
+}
