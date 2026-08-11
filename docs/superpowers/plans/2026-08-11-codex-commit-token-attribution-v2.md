@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** Implementation in progress; T02 and T03 pass full ae-cli/backend tests and await clean final review
+**Status:** Implementation in progress; T02 and T03 pass full ae-cli/backend tests and clean Standards/Spec review
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
