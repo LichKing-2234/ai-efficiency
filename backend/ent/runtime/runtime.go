@@ -159,12 +159,40 @@ func init() {
 	attributionrequestclaimDescCanonicalDigest := attributionrequestclaimFields[3].Descriptor()
 	// attributionrequestclaim.CanonicalDigestValidator is a validator for the "canonical_digest" field. It is called by the builders before save.
 	attributionrequestclaim.CanonicalDigestValidator = attributionrequestclaimDescCanonicalDigest.Validators[0].(func(string) error)
+	// attributionrequestclaimDescAttemptCount is the schema descriptor for attempt_count field.
+	attributionrequestclaimDescAttemptCount := attributionrequestclaimFields[5].Descriptor()
+	// attributionrequestclaim.DefaultAttemptCount holds the default value on creation for the attempt_count field.
+	attributionrequestclaim.DefaultAttemptCount = attributionrequestclaimDescAttemptCount.Default.(int)
+	// attributionrequestclaimDescNextAttemptAt is the schema descriptor for next_attempt_at field.
+	attributionrequestclaimDescNextAttemptAt := attributionrequestclaimFields[6].Descriptor()
+	// attributionrequestclaim.DefaultNextAttemptAt holds the default value on creation for the next_attempt_at field.
+	attributionrequestclaim.DefaultNextAttemptAt = attributionrequestclaimDescNextAttemptAt.Default.(func() time.Time)
+	// attributionrequestclaimDescInputTokens is the schema descriptor for input_tokens field.
+	attributionrequestclaimDescInputTokens := attributionrequestclaimFields[12].Descriptor()
+	// attributionrequestclaim.DefaultInputTokens holds the default value on creation for the input_tokens field.
+	attributionrequestclaim.DefaultInputTokens = attributionrequestclaimDescInputTokens.Default.(int64)
+	// attributionrequestclaimDescOutputTokens is the schema descriptor for output_tokens field.
+	attributionrequestclaimDescOutputTokens := attributionrequestclaimFields[13].Descriptor()
+	// attributionrequestclaim.DefaultOutputTokens holds the default value on creation for the output_tokens field.
+	attributionrequestclaim.DefaultOutputTokens = attributionrequestclaimDescOutputTokens.Default.(int64)
+	// attributionrequestclaimDescCacheCreationTokens is the schema descriptor for cache_creation_tokens field.
+	attributionrequestclaimDescCacheCreationTokens := attributionrequestclaimFields[14].Descriptor()
+	// attributionrequestclaim.DefaultCacheCreationTokens holds the default value on creation for the cache_creation_tokens field.
+	attributionrequestclaim.DefaultCacheCreationTokens = attributionrequestclaimDescCacheCreationTokens.Default.(int64)
+	// attributionrequestclaimDescCacheReadTokens is the schema descriptor for cache_read_tokens field.
+	attributionrequestclaimDescCacheReadTokens := attributionrequestclaimFields[15].Descriptor()
+	// attributionrequestclaim.DefaultCacheReadTokens holds the default value on creation for the cache_read_tokens field.
+	attributionrequestclaim.DefaultCacheReadTokens = attributionrequestclaimDescCacheReadTokens.Default.(int64)
+	// attributionrequestclaimDescTotalTokens is the schema descriptor for total_tokens field.
+	attributionrequestclaimDescTotalTokens := attributionrequestclaimFields[16].Descriptor()
+	// attributionrequestclaim.DefaultTotalTokens holds the default value on creation for the total_tokens field.
+	attributionrequestclaim.DefaultTotalTokens = attributionrequestclaimDescTotalTokens.Default.(int64)
 	// attributionrequestclaimDescCreatedAt is the schema descriptor for created_at field.
-	attributionrequestclaimDescCreatedAt := attributionrequestclaimFields[6].Descriptor()
+	attributionrequestclaimDescCreatedAt := attributionrequestclaimFields[19].Descriptor()
 	// attributionrequestclaim.DefaultCreatedAt holds the default value on creation for the created_at field.
 	attributionrequestclaim.DefaultCreatedAt = attributionrequestclaimDescCreatedAt.Default.(func() time.Time)
 	// attributionrequestclaimDescUpdatedAt is the schema descriptor for updated_at field.
-	attributionrequestclaimDescUpdatedAt := attributionrequestclaimFields[7].Descriptor()
+	attributionrequestclaimDescUpdatedAt := attributionrequestclaimFields[20].Descriptor()
 	// attributionrequestclaim.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	attributionrequestclaim.DefaultUpdatedAt = attributionrequestclaimDescUpdatedAt.Default.(func() time.Time)
 	// attributionrequestclaim.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

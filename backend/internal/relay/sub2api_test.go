@@ -4253,3 +4253,63 @@ func TestSub2APIGetBatchUserUsageStatsIgnoresCompleteRangePolicy(t *testing.T) {
 		})
 	}
 }
+
+func TestSub2APIReadRequestUsageUsesExactBoundedContract(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/usage", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-API-Key") != "test-admin-key" {
+			t.Fatalf("admin key = %q", r.Header.Get("X-API-Key"))
+		}
+		query := r.URL.Query()
+		if query.Get("request_id") != "req /+?" || query.Get("page") != "1" || query.Get("page_size") != "2" || query.Get("exact_total") != "true" {
+			t.Fatalf("query = %v", query)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "message": "success", "data": map[string]any{
+			"items": []map[string]any{{
+				"request_id": "req /+?", "user_id": 42, "model": "gpt-test", "created_at": "2026-08-11T12:00:00Z",
+				"input_tokens": 10, "output_tokens": 2, "cache_creation_tokens": 3, "cache_read_tokens": 4, "total_tokens": 19,
+			}},
+			"total": 1, "page": 1, "page_size": 2, "pages": 1,
+		}})
+	})
+	reader := newTestProvider(t, mux).(relay.RequestUsageReader)
+	rows, err := reader.ReadRequestUsage(context.Background(), " req /+? ", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].RequestID != "req /+?" || rows[0].UserID != 42 || rows[0].RequestedModel != "gpt-test" || rows[0].InputTokens != 10 || rows[0].OutputTokens != 2 || rows[0].CacheCreationTokens != 3 || rows[0].CacheReadTokens != 4 || rows[0].TotalTokens == nil || *rows[0].TotalTokens != 19 {
+		t.Fatalf("rows = %+v", rows)
+	}
+}
+
+func TestSub2APIReadRequestUsageRejectsInconsistentPagination(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/usage", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "message": "success", "data": map[string]any{"items": []any{}, "total": 2}})
+	})
+	reader := newTestProvider(t, mux).(relay.RequestUsageReader)
+	if _, err := reader.ReadRequestUsage(context.Background(), "req-1", 2); err == nil || !strings.Contains(err.Error(), "inconsistent exact pagination") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestSub2APIReadRequestUsageReturnsTwoRowsWhenExactTotalIsHigher(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/usage", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "message": "success", "data": map[string]any{
+			"items": []map[string]any{
+				{"request_id": "req-1", "user_id": 42, "model": "gpt-test", "created_at": "2026-08-11T12:00:00Z"},
+				{"request_id": "req-1", "user_id": 42, "model": "gpt-test", "created_at": "2026-08-11T12:00:01Z"},
+			},
+			"total": 3,
+		}})
+	})
+	reader := newTestProvider(t, mux).(relay.RequestUsageReader)
+	rows, err := reader.ReadRequestUsage(context.Background(), "req-1", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want ambiguity sentinel of two rows", len(rows))
+	}
+}

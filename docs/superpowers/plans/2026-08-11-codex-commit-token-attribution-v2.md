@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** Implementation in progress; T02 and T03 pass full ae-cli/backend tests and clean Standards/Spec review
+**Status:** Implementation in progress; T02 and T03 are merged, and T04 passes full backend tests plus clean Standards/Spec review; its real read-only canary still requires separate authorization
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -58,13 +58,14 @@ T01 contract publication (#253)
 
 ### T04 — Exact `sub2api` Request reconciliation ([#243](https://github.com/LichKing-2234/ai-efficiency/issues/243))
 
-- [ ] Implement the current admin usage HTTP contract behind a narrow
+- [x] Implement the current admin usage HTTP contract behind a narrow
   `relay.Provider` Request usage reader.
-- [ ] Centralize 0/1/many, relay-owner, model, Token, overflow, and consistency
+- [x] Centralize 0/1/many, relay-owner, model, Token, overflow, and consistency
   rules.
-- [ ] Add database leases, bounded concurrency, retry/backoff, and
+- [x] Add database leases, bounded concurrency, retry/backoff, and
   multi-replica collapse.
-- [ ] Verify fake-provider cases and a separately authorized read-only canary.
+- [x] Verify success and all fail-closed/retry branches with fake providers.
+- [ ] Run a separately authorized read-only canary against the real endpoint.
 
 ### T05 — Git hooks, outbox, runner, and OTel exit ([#244](https://github.com/LichKing-2234/ai-efficiency/issues/244))
 

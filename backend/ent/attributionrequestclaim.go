@@ -27,6 +27,32 @@ type AttributionRequestClaim struct {
 	CanonicalDigest string `json:"canonical_digest,omitempty"`
 	// Status holds the value of the "status" field.
 	Status attributionrequestclaim.Status `json:"status,omitempty"`
+	// AttemptCount holds the value of the "attempt_count" field.
+	AttemptCount int `json:"attempt_count,omitempty"`
+	// NextAttemptAt holds the value of the "next_attempt_at" field.
+	NextAttemptAt time.Time `json:"next_attempt_at,omitempty"`
+	// LeaseToken holds the value of the "lease_token" field.
+	LeaseToken string `json:"lease_token,omitempty"`
+	// LeaseExpiresAt holds the value of the "lease_expires_at" field.
+	LeaseExpiresAt *time.Time `json:"lease_expires_at,omitempty"`
+	// LastErrorCode holds the value of the "last_error_code" field.
+	LastErrorCode string `json:"last_error_code,omitempty"`
+	// RequestedModel holds the value of the "requested_model" field.
+	RequestedModel string `json:"requested_model,omitempty"`
+	// UsageAt holds the value of the "usage_at" field.
+	UsageAt *time.Time `json:"usage_at,omitempty"`
+	// InputTokens holds the value of the "input_tokens" field.
+	InputTokens int64 `json:"input_tokens,omitempty"`
+	// OutputTokens holds the value of the "output_tokens" field.
+	OutputTokens int64 `json:"output_tokens,omitempty"`
+	// CacheCreationTokens holds the value of the "cache_creation_tokens" field.
+	CacheCreationTokens int64 `json:"cache_creation_tokens,omitempty"`
+	// CacheReadTokens holds the value of the "cache_read_tokens" field.
+	CacheReadTokens int64 `json:"cache_read_tokens,omitempty"`
+	// TotalTokens holds the value of the "total_tokens" field.
+	TotalTokens int64 `json:"total_tokens,omitempty"`
+	// ReconciledAt holds the value of the "reconciled_at" field.
+	ReconciledAt *time.Time `json:"reconciled_at,omitempty"`
 	// ExpiresAt holds the value of the "expires_at" field.
 	ExpiresAt time.Time `json:"expires_at,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
@@ -41,11 +67,11 @@ func (*AttributionRequestClaim) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case attributionrequestclaim.FieldID, attributionrequestclaim.FieldClaimGroupID, attributionrequestclaim.FieldRelayProviderID:
+		case attributionrequestclaim.FieldID, attributionrequestclaim.FieldClaimGroupID, attributionrequestclaim.FieldRelayProviderID, attributionrequestclaim.FieldAttemptCount, attributionrequestclaim.FieldInputTokens, attributionrequestclaim.FieldOutputTokens, attributionrequestclaim.FieldCacheCreationTokens, attributionrequestclaim.FieldCacheReadTokens, attributionrequestclaim.FieldTotalTokens:
 			values[i] = new(sql.NullInt64)
-		case attributionrequestclaim.FieldRequestID, attributionrequestclaim.FieldCanonicalDigest, attributionrequestclaim.FieldStatus:
+		case attributionrequestclaim.FieldRequestID, attributionrequestclaim.FieldCanonicalDigest, attributionrequestclaim.FieldStatus, attributionrequestclaim.FieldLeaseToken, attributionrequestclaim.FieldLastErrorCode, attributionrequestclaim.FieldRequestedModel:
 			values[i] = new(sql.NullString)
-		case attributionrequestclaim.FieldExpiresAt, attributionrequestclaim.FieldCreatedAt, attributionrequestclaim.FieldUpdatedAt:
+		case attributionrequestclaim.FieldNextAttemptAt, attributionrequestclaim.FieldLeaseExpiresAt, attributionrequestclaim.FieldUsageAt, attributionrequestclaim.FieldReconciledAt, attributionrequestclaim.FieldExpiresAt, attributionrequestclaim.FieldCreatedAt, attributionrequestclaim.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -97,6 +123,87 @@ func (arc *AttributionRequestClaim) assignValues(columns []string, values []any)
 				return fmt.Errorf("unexpected type %T for field status", values[i])
 			} else if value.Valid {
 				arc.Status = attributionrequestclaim.Status(value.String)
+			}
+		case attributionrequestclaim.FieldAttemptCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field attempt_count", values[i])
+			} else if value.Valid {
+				arc.AttemptCount = int(value.Int64)
+			}
+		case attributionrequestclaim.FieldNextAttemptAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field next_attempt_at", values[i])
+			} else if value.Valid {
+				arc.NextAttemptAt = value.Time
+			}
+		case attributionrequestclaim.FieldLeaseToken:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field lease_token", values[i])
+			} else if value.Valid {
+				arc.LeaseToken = value.String
+			}
+		case attributionrequestclaim.FieldLeaseExpiresAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field lease_expires_at", values[i])
+			} else if value.Valid {
+				arc.LeaseExpiresAt = new(time.Time)
+				*arc.LeaseExpiresAt = value.Time
+			}
+		case attributionrequestclaim.FieldLastErrorCode:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field last_error_code", values[i])
+			} else if value.Valid {
+				arc.LastErrorCode = value.String
+			}
+		case attributionrequestclaim.FieldRequestedModel:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field requested_model", values[i])
+			} else if value.Valid {
+				arc.RequestedModel = value.String
+			}
+		case attributionrequestclaim.FieldUsageAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field usage_at", values[i])
+			} else if value.Valid {
+				arc.UsageAt = new(time.Time)
+				*arc.UsageAt = value.Time
+			}
+		case attributionrequestclaim.FieldInputTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field input_tokens", values[i])
+			} else if value.Valid {
+				arc.InputTokens = value.Int64
+			}
+		case attributionrequestclaim.FieldOutputTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field output_tokens", values[i])
+			} else if value.Valid {
+				arc.OutputTokens = value.Int64
+			}
+		case attributionrequestclaim.FieldCacheCreationTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field cache_creation_tokens", values[i])
+			} else if value.Valid {
+				arc.CacheCreationTokens = value.Int64
+			}
+		case attributionrequestclaim.FieldCacheReadTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field cache_read_tokens", values[i])
+			} else if value.Valid {
+				arc.CacheReadTokens = value.Int64
+			}
+		case attributionrequestclaim.FieldTotalTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field total_tokens", values[i])
+			} else if value.Valid {
+				arc.TotalTokens = value.Int64
+			}
+		case attributionrequestclaim.FieldReconciledAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field reconciled_at", values[i])
+			} else if value.Valid {
+				arc.ReconciledAt = new(time.Time)
+				*arc.ReconciledAt = value.Time
 			}
 		case attributionrequestclaim.FieldExpiresAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -166,6 +273,51 @@ func (arc *AttributionRequestClaim) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(fmt.Sprintf("%v", arc.Status))
+	builder.WriteString(", ")
+	builder.WriteString("attempt_count=")
+	builder.WriteString(fmt.Sprintf("%v", arc.AttemptCount))
+	builder.WriteString(", ")
+	builder.WriteString("next_attempt_at=")
+	builder.WriteString(arc.NextAttemptAt.Format(time.ANSIC))
+	builder.WriteString(", ")
+	builder.WriteString("lease_token=")
+	builder.WriteString(arc.LeaseToken)
+	builder.WriteString(", ")
+	if v := arc.LeaseExpiresAt; v != nil {
+		builder.WriteString("lease_expires_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("last_error_code=")
+	builder.WriteString(arc.LastErrorCode)
+	builder.WriteString(", ")
+	builder.WriteString("requested_model=")
+	builder.WriteString(arc.RequestedModel)
+	builder.WriteString(", ")
+	if v := arc.UsageAt; v != nil {
+		builder.WriteString("usage_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("input_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", arc.InputTokens))
+	builder.WriteString(", ")
+	builder.WriteString("output_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", arc.OutputTokens))
+	builder.WriteString(", ")
+	builder.WriteString("cache_creation_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", arc.CacheCreationTokens))
+	builder.WriteString(", ")
+	builder.WriteString("cache_read_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", arc.CacheReadTokens))
+	builder.WriteString(", ")
+	builder.WriteString("total_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", arc.TotalTokens))
+	builder.WriteString(", ")
+	if v := arc.ReconciledAt; v != nil {
+		builder.WriteString("reconciled_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("expires_at=")
 	builder.WriteString(arc.ExpiresAt.Format(time.ANSIC))

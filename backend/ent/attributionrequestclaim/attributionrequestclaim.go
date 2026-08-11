@@ -24,6 +24,32 @@ const (
 	FieldCanonicalDigest = "canonical_digest"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
+	// FieldAttemptCount holds the string denoting the attempt_count field in the database.
+	FieldAttemptCount = "attempt_count"
+	// FieldNextAttemptAt holds the string denoting the next_attempt_at field in the database.
+	FieldNextAttemptAt = "next_attempt_at"
+	// FieldLeaseToken holds the string denoting the lease_token field in the database.
+	FieldLeaseToken = "lease_token"
+	// FieldLeaseExpiresAt holds the string denoting the lease_expires_at field in the database.
+	FieldLeaseExpiresAt = "lease_expires_at"
+	// FieldLastErrorCode holds the string denoting the last_error_code field in the database.
+	FieldLastErrorCode = "last_error_code"
+	// FieldRequestedModel holds the string denoting the requested_model field in the database.
+	FieldRequestedModel = "requested_model"
+	// FieldUsageAt holds the string denoting the usage_at field in the database.
+	FieldUsageAt = "usage_at"
+	// FieldInputTokens holds the string denoting the input_tokens field in the database.
+	FieldInputTokens = "input_tokens"
+	// FieldOutputTokens holds the string denoting the output_tokens field in the database.
+	FieldOutputTokens = "output_tokens"
+	// FieldCacheCreationTokens holds the string denoting the cache_creation_tokens field in the database.
+	FieldCacheCreationTokens = "cache_creation_tokens"
+	// FieldCacheReadTokens holds the string denoting the cache_read_tokens field in the database.
+	FieldCacheReadTokens = "cache_read_tokens"
+	// FieldTotalTokens holds the string denoting the total_tokens field in the database.
+	FieldTotalTokens = "total_tokens"
+	// FieldReconciledAt holds the string denoting the reconciled_at field in the database.
+	FieldReconciledAt = "reconciled_at"
 	// FieldExpiresAt holds the string denoting the expires_at field in the database.
 	FieldExpiresAt = "expires_at"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
@@ -42,6 +68,19 @@ var Columns = []string{
 	FieldRequestID,
 	FieldCanonicalDigest,
 	FieldStatus,
+	FieldAttemptCount,
+	FieldNextAttemptAt,
+	FieldLeaseToken,
+	FieldLeaseExpiresAt,
+	FieldLastErrorCode,
+	FieldRequestedModel,
+	FieldUsageAt,
+	FieldInputTokens,
+	FieldOutputTokens,
+	FieldCacheCreationTokens,
+	FieldCacheReadTokens,
+	FieldTotalTokens,
+	FieldReconciledAt,
 	FieldExpiresAt,
 	FieldCreatedAt,
 	FieldUpdatedAt,
@@ -62,6 +101,20 @@ var (
 	RequestIDValidator func(string) error
 	// CanonicalDigestValidator is a validator for the "canonical_digest" field. It is called by the builders before save.
 	CanonicalDigestValidator func(string) error
+	// DefaultAttemptCount holds the default value on creation for the "attempt_count" field.
+	DefaultAttemptCount int
+	// DefaultNextAttemptAt holds the default value on creation for the "next_attempt_at" field.
+	DefaultNextAttemptAt func() time.Time
+	// DefaultInputTokens holds the default value on creation for the "input_tokens" field.
+	DefaultInputTokens int64
+	// DefaultOutputTokens holds the default value on creation for the "output_tokens" field.
+	DefaultOutputTokens int64
+	// DefaultCacheCreationTokens holds the default value on creation for the "cache_creation_tokens" field.
+	DefaultCacheCreationTokens int64
+	// DefaultCacheReadTokens holds the default value on creation for the "cache_read_tokens" field.
+	DefaultCacheReadTokens int64
+	// DefaultTotalTokens holds the default value on creation for the "total_tokens" field.
+	DefaultTotalTokens int64
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -83,6 +136,7 @@ const (
 	StatusOwnerMismatch       Status = "owner_mismatch"
 	StatusAmbiguous           Status = "ambiguous"
 	StatusProviderUnavailable Status = "provider_unavailable"
+	StatusInvalidUsage        Status = "invalid_usage"
 	StatusSourceExpired       Status = "source_expired"
 )
 
@@ -93,7 +147,7 @@ func (s Status) String() string {
 // StatusValidator is a validator for the "status" field enum values. It is called by the builders before save.
 func StatusValidator(s Status) error {
 	switch s {
-	case StatusPending, StatusReconciled, StatusOwnerMismatch, StatusAmbiguous, StatusProviderUnavailable, StatusSourceExpired:
+	case StatusPending, StatusReconciled, StatusOwnerMismatch, StatusAmbiguous, StatusProviderUnavailable, StatusInvalidUsage, StatusSourceExpired:
 		return nil
 	default:
 		return fmt.Errorf("attributionrequestclaim: invalid enum value for status field: %q", s)
@@ -131,6 +185,71 @@ func ByCanonicalDigest(opts ...sql.OrderTermOption) OrderOption {
 // ByStatus orders the results by the status field.
 func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
+}
+
+// ByAttemptCount orders the results by the attempt_count field.
+func ByAttemptCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAttemptCount, opts...).ToFunc()
+}
+
+// ByNextAttemptAt orders the results by the next_attempt_at field.
+func ByNextAttemptAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldNextAttemptAt, opts...).ToFunc()
+}
+
+// ByLeaseToken orders the results by the lease_token field.
+func ByLeaseToken(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLeaseToken, opts...).ToFunc()
+}
+
+// ByLeaseExpiresAt orders the results by the lease_expires_at field.
+func ByLeaseExpiresAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLeaseExpiresAt, opts...).ToFunc()
+}
+
+// ByLastErrorCode orders the results by the last_error_code field.
+func ByLastErrorCode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLastErrorCode, opts...).ToFunc()
+}
+
+// ByRequestedModel orders the results by the requested_model field.
+func ByRequestedModel(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRequestedModel, opts...).ToFunc()
+}
+
+// ByUsageAt orders the results by the usage_at field.
+func ByUsageAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUsageAt, opts...).ToFunc()
+}
+
+// ByInputTokens orders the results by the input_tokens field.
+func ByInputTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldInputTokens, opts...).ToFunc()
+}
+
+// ByOutputTokens orders the results by the output_tokens field.
+func ByOutputTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOutputTokens, opts...).ToFunc()
+}
+
+// ByCacheCreationTokens orders the results by the cache_creation_tokens field.
+func ByCacheCreationTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCacheCreationTokens, opts...).ToFunc()
+}
+
+// ByCacheReadTokens orders the results by the cache_read_tokens field.
+func ByCacheReadTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCacheReadTokens, opts...).ToFunc()
+}
+
+// ByTotalTokens orders the results by the total_tokens field.
+func ByTotalTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTotalTokens, opts...).ToFunc()
+}
+
+// ByReconciledAt orders the results by the reconciled_at field.
+func ByReconciledAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldReconciledAt, opts...).ToFunc()
 }
 
 // ByExpiresAt orders the results by the expires_at field.
