@@ -146,7 +146,7 @@ func TestIngestAppendsAllocationAcceptsOldReplayAndRejectsDivergence(t *testing.
 		t.Fatalf("append result = %+v, err = %v", result, err)
 	}
 	oldReplay, err := f.service.Ingest(ctx, f.principal, BatchRequest{Groups: []Request{base}})
-	if err != nil || oldReplay.Results[0].Group.Status != "duplicate_identical" {
+	if err != nil || oldReplay.Results[0].Group.Status != "rejected" {
 		t.Fatalf("old replay = %+v, err = %v", oldReplay, err)
 	}
 	group := f.client.AttributionClaimGroup.Query().OnlyX(ctx)
@@ -159,6 +159,17 @@ func TestIngestAppendsAllocationAcceptsOldReplayAndRejectsDivergence(t *testing.
 	conflict, err := f.service.Ingest(ctx, f.principal, BatchRequest{Groups: []Request{divergent}})
 	if err != nil || conflict.Results[0].Group.Status != "rejected" {
 		t.Fatalf("divergent result = %+v, err = %v", conflict, err)
+	}
+}
+
+func TestInvalidatePersistedACKsPreservesNonPersistedItems(t *testing.T) {
+	result := Result{
+		Calibration: ItemStatus{Status: "persisted"},
+		Requests:    []ItemStatus{{Status: "persisted"}, {Status: "duplicate_identical"}, {Status: "conflict"}},
+	}
+	invalidatePersistedACKs(&result, "unknown")
+	if result.Calibration.Status != "unknown" || result.Requests[0].Status != "unknown" || result.Requests[1].Status != "duplicate_identical" || result.Requests[2].Status != "conflict" {
+		t.Fatalf("invalidated result = %+v", result)
 	}
 }
 

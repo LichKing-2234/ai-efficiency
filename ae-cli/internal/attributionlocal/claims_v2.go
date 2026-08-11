@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -153,10 +154,12 @@ type v2Turn struct {
 }
 
 type v2RequestEvidence struct {
-	threadID   string
-	requestID  string
-	observedAt time.Time
+	threadID  string
+	turnID    string
+	requestID string
 }
+
+var v2LogTurnID = regexp.MustCompile(`(?:turn\.id|turn_id)=(?:"([^"]+)"|([^\s}:]+))`)
 
 func ScanCodexV2Claims(ctx context.Context, paths []string, opts V2ClaimScanOptions) ([]V2ClaimCandidate, error) {
 	return scanCodexV2ClaimsWithEvidence(ctx, paths, opts, nil)
@@ -205,7 +208,6 @@ func UploadableV2ClaimGroups(candidates []V2ClaimCandidate) []client.Attribution
 
 func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOptions, requestEvidence []v2RequestEvidence) ([]V2ClaimCandidate, error) {
 	var sessionID, threadID string
-	var sessionEnd time.Time
 	turns := map[string]*v2Turn{}
 	var current *v2Turn
 	err := forEachCodexJSONLLine(ctx, path, func(_ int, raw []byte) error {
@@ -232,9 +234,6 @@ func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOpt
 			return nil
 		}
 		observedAt := parseObservedAt(row.Timestamp)
-		if observedAt.After(sessionEnd) {
-			sessionEnd = observedAt
-		}
 		switch strings.TrimSpace(row.Type) {
 		case "session_meta":
 			sessionID = strings.TrimSpace(row.Payload.ID)
@@ -277,13 +276,9 @@ func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOpt
 		orderedTurns = append(orderedTurns, turn)
 	}
 	sort.Slice(orderedTurns, func(i, j int) bool { return orderedTurns[i].startedAt.Before(orderedTurns[j].startedAt) })
-	for index, turn := range orderedTurns {
-		end := sessionEnd
-		if index+1 < len(orderedTurns) {
-			end = orderedTurns[index+1].startedAt
-		}
+	for _, turn := range orderedTurns {
 		for _, evidence := range requestEvidence {
-			if evidence.threadID == turn.threadID && !evidence.observedAt.Before(turn.startedAt) && (end.IsZero() || evidence.observedAt.Before(end)) {
+			if evidence.threadID == turn.threadID && evidence.turnID == turn.turnID {
 				turn.requests[normalizeV2RequestID(evidence.requestID)] = struct{}{}
 			}
 		}
@@ -304,10 +299,12 @@ func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOpt
 			candidate.GapReason = "missing_request_id"
 		} else if len(turn.mutations) == 0 {
 			candidate.GapReason = "missing_structured_mutation"
-		} else if !verifyV2Mutations(ctx, opts.RepoRoot, opts.CommitSHA, turn.mutations) {
+		} else if !validV2Mutations(turn.mutations) {
+			candidate.GapReason = "invalid_structured_mutation"
+		} else if introduced := introducedV2Mutations(ctx, opts.RepoRoot, opts.CommitSHA, turn.mutations); len(introduced) == 0 {
 			candidate.GapReason = "commit_content_mismatch"
 		} else {
-			evidenceDigest := v2MutationDigest(turn.mutations)
+			evidenceDigest := v2MutationDigest(introduced)
 			candidate.Group.EvidenceDigest = evidenceDigest
 			candidate.Group.CommitAllocations = []client.AttributionV2CommitAllocation{{
 				Sequence: 1, RepoConfigID: opts.RepoConfigID, RepoKey: strings.TrimSpace(opts.RepoKey), WorkspaceID: strings.TrimSpace(opts.WorkspaceID),
@@ -381,30 +378,43 @@ func v2PatchMutations(ctx context.Context, patch, repoRoot, commitSHA string) []
 }
 
 func verifyV2Mutations(ctx context.Context, repoRoot, commitSHA string, mutations []v2Mutation) bool {
-	if strings.TrimSpace(repoRoot) == "" || strings.TrimSpace(commitSHA) == "" {
-		return false
-	}
+	return validV2Mutations(mutations) && len(introducedV2Mutations(ctx, repoRoot, commitSHA, mutations)) == len(mutations)
+}
+
+func validV2Mutations(mutations []v2Mutation) bool {
 	for _, mutation := range mutations {
 		if mutation.path == "" || mutation.hash == "" {
 			return false
 		}
+	}
+	return true
+}
+
+func introducedV2Mutations(ctx context.Context, repoRoot, commitSHA string, mutations []v2Mutation) []v2Mutation {
+	if strings.TrimSpace(repoRoot) == "" || strings.TrimSpace(commitSHA) == "" {
+		return nil
+	}
+	result := make([]v2Mutation, 0, len(mutations))
+	for _, mutation := range mutations {
+		parent, parentErr := gitShowClaimFile(ctx, repoRoot, strings.TrimSpace(commitSHA)+"^", mutation.path)
+		current, currentErr := gitShowClaimFile(ctx, repoRoot, strings.TrimSpace(commitSHA), mutation.path)
 		if mutation.kind == "delete" {
-			if _, err := gitShowClaimFile(ctx, repoRoot, strings.TrimSpace(commitSHA), mutation.path); err == nil {
-				return false
+			if parentErr == nil && currentErr != nil {
+				result = append(result, mutation)
 			}
 			continue
 		}
 		if mutation.kind == "add" {
-			if _, err := gitShowClaimFile(ctx, repoRoot, strings.TrimSpace(commitSHA)+"^", mutation.path); err == nil {
-				return false
+			if parentErr != nil && currentErr == nil && claimDigest(string(current)) == strings.ToLower(mutation.hash) {
+				result = append(result, mutation)
 			}
+			continue
 		}
-		content, err := gitShowClaimFile(ctx, repoRoot, strings.TrimSpace(commitSHA), mutation.path)
-		if err != nil || claimDigest(string(content)) != strings.ToLower(mutation.hash) {
-			return false
+		if parentErr == nil && currentErr == nil && claimDigest(string(parent)) != strings.ToLower(mutation.hash) && claimDigest(string(current)) == strings.ToLower(mutation.hash) {
+			result = append(result, mutation)
 		}
 	}
-	return true
+	return result
 }
 
 func canonicalClaimPath(repoRoot, path string) string {
@@ -520,35 +530,43 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string) ([]v2Reques
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx, `
-		SELECT ts, ts_nanos, thread_id, feedback_log_body
+		SELECT thread_id, feedback_log_body
 		FROM logs
-		WHERE target = ?
-		  AND feedback_log_body LIKE '%Request completed method=POST%'
+		WHERE feedback_log_body LIKE '%Request completed method=POST%'
 		  AND feedback_log_body LIKE '%api.path="responses"%'
 		  AND feedback_log_body LIKE '%"x-client-request-id"%'
-		ORDER BY ts, ts_nanos, id`, codexFailedRequestTarget)
+		  AND (feedback_log_body LIKE '%turn.id=%' OR feedback_log_body LIKE '%turn_id=%')
+		ORDER BY ts, ts_nanos, id`)
 	if err != nil {
 		return nil, fmt.Errorf("query Codex request log: %w", err)
 	}
 	defer rows.Close()
 	var result []v2RequestEvidence
 	for rows.Next() {
-		var ts, nanos int64
 		var thread sql.NullString
 		var body string
-		if err := rows.Scan(&ts, &nanos, &thread, &body); err != nil {
+		if err := rows.Scan(&thread, &body); err != nil {
 			return nil, fmt.Errorf("scan Codex request log: %w", err)
 		}
 		requestID := normalizeV2RequestID(firstSubmatch(reFailHdrClientReqID, body))
 		threadID := strings.TrimSpace(thread.String)
-		if requestID != "" && threadID != "" {
-			result = append(result, v2RequestEvidence{threadID: threadID, requestID: requestID, observedAt: time.Unix(ts, nanos).UTC()})
+		turnID := v2TurnIDFromLog(body)
+		if requestID != "" && threadID != "" && turnID != "" {
+			result = append(result, v2RequestEvidence{threadID: threadID, turnID: turnID, requestID: requestID})
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate Codex request log: %w", err)
 	}
 	return result, nil
+}
+
+func v2TurnIDFromLog(body string) string {
+	match := v2LogTurnID.FindStringSubmatch(body)
+	if len(match) != 3 {
+		return ""
+	}
+	return firstNonEmptyCompact(match[1], match[2])
 }
 
 func addV2Calibration(calibration *client.AttributionV2Calibration, raw any) {

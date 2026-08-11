@@ -141,8 +141,8 @@ func TestScanCodexV2ClaimsUsesTransportLogNotArbitraryJSONLText(t *testing.T) {
 		t.Fatal(err)
 	}
 	observed := time.Date(2026, 8, 11, 12, 0, 2, 0, time.UTC)
-	body := `model_client.stream_responses_api{api.path="responses"}: Request completed method=POST headers={"x-client-request-id": "client:real-request"}`
-	if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(1, ?, ?, ?, ?, ?)`, observed.Unix(), observed.Nanosecond(), "thread-real", codexFailedRequestTarget, body); err != nil {
+	body := `turn{turn.id=turn-real}:model_client.stream_responses_api{api.path="responses"}: Request completed method=POST headers={"x-client-request-id": "client:real-request"}`
+	if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(1, ?, ?, ?, ?, ?)`, observed.Unix(), observed.Nanosecond(), "thread-real", "codex_http_client::client", body); err != nil {
 		t.Fatal(err)
 	}
 	claims, err := ScanCodexV2ClaimsFromHome(context.Background(), home, V2ClaimScanOptions{RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8, WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-real"})
@@ -238,6 +238,51 @@ func TestScanCodexV2ClaimsDoesNotBindAddPatchToLaterCommit(t *testing.T) {
 	}
 }
 
+func TestScanCodexV2ClaimsBuildsMultiCommitAllocationSequence(t *testing.T) {
+	repo := t.TempDir()
+	for _, args := range [][]string{{"init"}, {"config", "user.email", "alice@example.com"}, {"config", "user.name", "Alice"}} {
+		gitClaim(t, repo, args...)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "a.go"), []byte("package feature\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitClaim(t, repo, "add", "a.go")
+	gitClaim(t, repo, "commit", "-m", "add a")
+	commitA := strings.TrimSpace(gitClaim(t, repo, "rev-parse", "HEAD"))
+	if err := os.WriteFile(filepath.Join(repo, "b.go"), []byte("package feature\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitClaim(t, repo, "add", "b.go")
+	gitClaim(t, repo, "commit", "-m", "add b")
+	commitB := strings.TrimSpace(gitClaim(t, repo, "rev-parse", "HEAD"))
+
+	session := filepath.Join(t.TempDir(), "session.jsonl")
+	writeV2JSONL(t, session,
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "thread-multi"}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-multi"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: a.go\n+package feature\n*** End Patch"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: b.go\n+package feature\n*** End Patch"}},
+	)
+	base := V2ClaimScanOptions{RepoRoot: repo, RelayProviderID: 7, RepoConfigID: 8, RepoKey: "example.com/org/repo", WorkspaceID: "workspace-8"}
+	base.CommitSHA, base.CheckpointEventID = commitA, "checkpoint-a"
+	first, err := scanV2ClaimsForTest([]string{session}, base, "thread-multi", "req-multi")
+	if err != nil || len(first) != 1 || first[0].GapReason != "" {
+		t.Fatalf("first allocation = %+v, err = %v", first, err)
+	}
+	base.CommitSHA, base.CheckpointEventID = commitB, "checkpoint-b"
+	second, err := scanV2ClaimsForTest([]string{session}, base, "thread-multi", "req-multi")
+	if err != nil || len(second) != 1 || second[0].GapReason != "" {
+		t.Fatalf("second allocation = %+v, err = %v", second, err)
+	}
+	state := &V2ClaimState{}
+	MergeV2ClaimState(state, first, time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC))
+	MergeV2ClaimState(state, second, time.Date(2026, 8, 11, 12, 1, 0, 0, time.UTC))
+	allocations := state.Claims[0].Group.CommitAllocations
+	if len(allocations) != 2 || allocations[0].CommitSHA != commitA || allocations[1].CommitSHA != commitB || allocations[1].Sequence != 2 || allocations[0].EvidenceDigest == allocations[1].EvidenceDigest {
+		t.Fatalf("allocation sequence = %+v", allocations)
+	}
+}
+
 func v2ClaimRepo(t *testing.T, path, content string) (string, string) {
 	t.Helper()
 	repo := t.TempDir()
@@ -302,10 +347,11 @@ func writeV2JSONL(t *testing.T, path string, rows ...map[string]any) {
 }
 
 func scanV2ClaimsForTest(paths []string, opts V2ClaimScanOptions, threadID string, requestIDs ...string) ([]V2ClaimCandidate, error) {
-	base := time.Date(2026, 8, 11, 12, 0, 2, 0, time.UTC)
 	evidence := make([]v2RequestEvidence, 0, len(requestIDs))
-	for index, requestID := range requestIDs {
-		evidence = append(evidence, v2RequestEvidence{threadID: threadID, requestID: requestID, observedAt: base.Add(time.Duration(index) * time.Millisecond)})
+	for _, requestID := range requestIDs {
+		evidence = append(evidence, v2RequestEvidence{
+			threadID: threadID, turnID: strings.Replace(threadID, "thread-", "turn-", 1), requestID: requestID,
+		})
 	}
 	return scanCodexV2ClaimsWithEvidence(context.Background(), paths, opts, evidence)
 }

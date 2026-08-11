@@ -152,14 +152,7 @@ func (s *Service) ingestOne(ctx context.Context, principal attributionledger.Ins
 	for _, requestID := range claim.RequestIDs {
 		status, wasCreated, err := upsertRequest(ctx, tx, group.ID, claim, requestID, group.ExpiresAt)
 		if err != nil {
-			if result.Calibration.Status == "persisted" {
-				result.Calibration.Status = "rolled_back"
-			}
-			for index := range result.Requests {
-				if result.Requests[index].Status == "persisted" {
-					result.Requests[index].Status = "rolled_back"
-				}
-			}
+			invalidatePersistedACKs(&result, "rolled_back")
 			result.Requests = append(result.Requests, ItemStatus{ID: requestID, Status: "conflict", Error: err.Error()})
 			return result, err
 		}
@@ -171,10 +164,12 @@ func (s *Service) ingestOne(ctx context.Context, principal attributionledger.Ins
 	if created > 0 && !groupCreated {
 		result.Group.Status = "persisted"
 		if err := group.Update().SetRequestCount(group.RequestCount + created).Exec(ctx); err != nil {
+			invalidatePersistedACKs(&result, "rolled_back")
 			return result, fmt.Errorf("update claim group request count: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
+		invalidatePersistedACKs(&result, "unknown")
 		return result, fmt.Errorf("commit transaction: %w", err)
 	}
 	return result, nil
@@ -192,6 +187,9 @@ func upsertGroup(ctx context.Context, tx *ent.Tx, principal attributionledger.In
 		allocationChanged, compatible := compatibleAllocations(group.CommitAllocations, incomingAllocations)
 		if !compatible {
 			return nil, false, false, "not_present", fmt.Errorf("claim group allocation conflict")
+		}
+		if !allocationChanged && group.EvidenceDigest != claim.EvidenceDigest {
+			return nil, false, false, "not_present", fmt.Errorf("claim group evidence conflict")
 		}
 		calibrationStatus := "not_present"
 		calibrationChanged := false
@@ -339,19 +337,28 @@ func allocationMaps(allocations []CommitAllocation) []map[string]any {
 }
 
 func compatibleAllocations(existing, incoming []map[string]any) (bool, bool) {
-	shorter := existing
-	longer := incoming
-	if len(existing) > len(incoming) {
-		shorter, longer = incoming, existing
+	if len(incoming) < len(existing) {
+		return false, false
 	}
-	for index := range shorter {
-		left, _ := json.Marshal(shorter[index])
-		right, _ := json.Marshal(longer[index])
+	for index := range existing {
+		left, _ := json.Marshal(existing[index])
+		right, _ := json.Marshal(incoming[index])
 		if string(left) != string(right) {
 			return false, false
 		}
 	}
 	return len(incoming) > len(existing), true
+}
+
+func invalidatePersistedACKs(result *Result, status string) {
+	if result.Calibration.Status == "persisted" {
+		result.Calibration.Status = status
+	}
+	for index := range result.Requests {
+		if result.Requests[index].Status == "persisted" {
+			result.Requests[index].Status = status
+		}
+	}
 }
 
 func calibrationMatches(group *ent.AttributionClaimGroup, calibration Calibration) bool {
