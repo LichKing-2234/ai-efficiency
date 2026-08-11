@@ -168,7 +168,7 @@ func IsAEManagedPath(path string, gitCtx *GitContext) bool {
 
 func HasExecutableDefaultHook(dir string) []string {
 	var out []string
-	for _, name := range []string{"post-commit", "post-rewrite"} {
+	for _, name := range []string{"post-commit", "post-rewrite", "pre-push"} {
 		path := filepath.Join(dir, name)
 		info, err := os.Stat(path)
 		if err != nil || info.IsDir() || info.Mode().Perm()&0o111 == 0 {

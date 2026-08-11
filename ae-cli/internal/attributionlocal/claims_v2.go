@@ -34,12 +34,17 @@ type V2ClaimScanOptions struct {
 // V2ClaimCandidate retains source/mutation detail locally. Group is the only
 // value eligible for upload and contains digests rather than paths or content.
 type V2ClaimCandidate struct {
-	LocalKey    string                         `json:"local_key"`
-	Group       client.AttributionV2ClaimGroup `json:"group"`
-	Source      string                         `json:"source,omitempty"`
-	GapReason   string                         `json:"gap_reason,omitempty"`
-	FirstSeenAt time.Time                      `json:"first_seen_at"`
-	UpdatedAt   time.Time                      `json:"updated_at"`
+	LocalKey                      string                         `json:"local_key"`
+	Group                         client.AttributionV2ClaimGroup `json:"group"`
+	Source                        string                         `json:"source,omitempty"`
+	GapReason                     string                         `json:"gap_reason,omitempty"`
+	DeliveryStatus                string                         `json:"delivery_status,omitempty"`
+	LastDeliveryError             string                         `json:"last_delivery_error,omitempty"`
+	GroupAcknowledged             bool                           `json:"group_acknowledged,omitempty"`
+	AcknowledgedRequestDigests    []string                       `json:"acknowledged_request_digests,omitempty"`
+	AcknowledgedCalibrationDigest string                         `json:"acknowledged_calibration_digest,omitempty"`
+	FirstSeenAt                   time.Time                      `json:"first_seen_at"`
+	UpdatedAt                     time.Time                      `json:"updated_at"`
 }
 
 type V2ClaimState struct {
@@ -123,13 +128,26 @@ func MergeV2ClaimState(state *V2ClaimState, scanned []V2ClaimCandidate, now time
 			continue
 		}
 		existing := &kept[index]
+		candidate.Group.RequestIDs = filterAcknowledgedV2Requests(candidate.Group.RequestIDs, existing.AcknowledgedRequestDigests)
+		newRequestCount := len(candidate.Group.RequestIDs)
 		existing.Group.RequestIDs = uniqueSorted(append(existing.Group.RequestIDs, candidate.Group.RequestIDs...))
+		allocationCount := len(existing.Group.CommitAllocations)
 		existing.Group.CommitAllocations = mergeV2Allocations(existing.Group.CommitAllocations, candidate.Group.CommitAllocations)
+		allocationChanged := len(existing.Group.CommitAllocations) > allocationCount
 		existing.Group.EvidenceDigest = v2AllocationEvidenceDigest(existing.Group.CommitAllocations)
-		if existing.Group.Calibration == nil && candidate.Group.Calibration != nil {
+		calibrationChanged := false
+		if existing.Group.Calibration == nil && candidate.Group.Calibration != nil && candidate.Group.Calibration.Digest != existing.AcknowledgedCalibrationDigest {
 			existing.Group.Calibration = candidate.Group.Calibration
+			calibrationChanged = true
 		}
 		existing.UpdatedAt = candidate.UpdatedAt
+		if allocationChanged {
+			existing.GroupAcknowledged = false
+		}
+		if newRequestCount > 0 || calibrationChanged || allocationChanged {
+			existing.DeliveryStatus = V2DeliveryPending
+			existing.LastDeliveryError = ""
+		}
 		if existing.GapReason != "" && candidate.GapReason == "" {
 			existing.GapReason = ""
 			existing.Group.EvidenceDigest = candidate.Group.EvidenceDigest
@@ -137,6 +155,20 @@ func MergeV2ClaimState(state *V2ClaimState, scanned []V2ClaimCandidate, now time
 		}
 	}
 	state.Claims = kept
+}
+
+func filterAcknowledgedV2Requests(requestIDs, acknowledgedDigests []string) []string {
+	acknowledged := make(map[string]struct{}, len(acknowledgedDigests))
+	for _, digest := range acknowledgedDigests {
+		acknowledged[digest] = struct{}{}
+	}
+	result := requestIDs[:0]
+	for _, requestID := range requestIDs {
+		if _, ok := acknowledged[claimDigest(requestID)]; !ok {
+			result = append(result, requestID)
+		}
+	}
+	return result
 }
 
 type v2Mutation struct {
@@ -206,7 +238,7 @@ func scanCodexV2ClaimsWithEvidence(ctx context.Context, paths []string, opts V2C
 func UploadableV2ClaimGroups(candidates []V2ClaimCandidate) []client.AttributionV2ClaimGroup {
 	groups := make([]client.AttributionV2ClaimGroup, 0, len(candidates))
 	for _, candidate := range candidates {
-		if candidate.GapReason == "" && len(candidate.Group.RequestIDs) > 0 {
+		if candidate.GapReason == "" && (len(candidate.Group.RequestIDs) > 0 || candidate.Group.Calibration != nil || !candidate.GroupAcknowledged) {
 			groups = append(groups, candidate.Group)
 		}
 	}

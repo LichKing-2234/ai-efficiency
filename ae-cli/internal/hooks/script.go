@@ -48,7 +48,7 @@ func WriteManagedScripts(dir, generatorVersion string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create hooks dir: %w", err)
 	}
-	for _, hookName := range []string{"post-commit", "post-rewrite"} {
+	for _, hookName := range []string{"post-commit", "post-rewrite", "pre-push"} {
 		path := filepath.Join(dir, hookName)
 		if err := os.WriteFile(path, []byte(RenderManagedHookScript(hookName, generatorVersion)), 0o755); err != nil {
 			return fmt.Errorf("write managed hook %s: %w", hookName, err)

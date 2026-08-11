@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
+	"github.com/ai-efficiency/ae-cli/internal/client"
 )
 
 func ptrTime(t time.Time) *time.Time {
@@ -227,6 +229,93 @@ func TestUpsertPendingSyncTaskCoalescesRequests(t *testing.T) {
 
 	if gotPath, wantPath := filepath.Join(attributionlocal.AttributionRootDir(), "workspaces", workspaceID, "sync-task.json"), filepath.Join(home, ".ae-cli", "state", "attribution", "workspaces", workspaceID, "sync-task.json"); gotPath != wantPath {
 		t.Fatalf("sync task path = %q, want %q", gotPath, wantPath)
+	}
+}
+
+func TestUpsertPendingSyncTaskRejectsSameEventIDDifferentPayload(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	now := time.Now().UTC()
+	first := SyncTask{WorkspaceID: "ws-conflict", Status: SyncTaskStatusPending, LastRequestedAt: now, V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: "event-1", CommitSHA: "aaa", CapturedAt: now}}}
+	if err := UpsertPendingSyncTask(first); err != nil {
+		t.Fatal(err)
+	}
+	second := first
+	second.V2Triggers = []V2SyncTrigger{{Kind: "post-commit", EventID: "event-1", CommitSHA: "bbb", CapturedAt: now.Add(time.Second)}}
+	if err := UpsertPendingSyncTask(second); err == nil || !strings.Contains(err.Error(), "conflicting canonical payload") {
+		t.Fatalf("conflicting trigger error = %v", err)
+	}
+	got, _ := LoadSyncTask(first.WorkspaceID)
+	if got == nil || got.V2Triggers[0].CommitSHA != "aaa" || !strings.Contains(got.LastError, "conflicting canonical payload") {
+		t.Fatalf("task after conflict = %+v", got)
+	}
+}
+
+func TestRunPendingSyncTaskDrainsWorkArrivingDuringRun(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == os.Getpid() })
+	now := time.Now().UTC()
+	task := SyncTask{WorkspaceID: "ws-successor", RepoRoot: t.TempDir(), ServerURL: "https://ae.example.com", AuthSubject: "user:1", RepoConfigID: 2, RepoKey: "github.com/acme/repo", Status: SyncTaskStatusPending, LastRequestedAt: now}
+	if err := UpsertPendingSyncTask(task); err != nil {
+		t.Fatal(err)
+	}
+	original := runAttributionSync
+	var calls int
+	runAttributionSync = func(context.Context, attributionlocal.RunOptions, attributionlocal.BackendClient) error {
+		calls++
+		if calls == 1 {
+			next := task
+			next.LastRequestedAt = now.Add(time.Second)
+			return UpsertPendingSyncTask(next)
+		}
+		return nil
+	}
+	t.Cleanup(func() { runAttributionSync = original })
+	execCtx := ExecutionContext{ServerURL: task.ServerURL, AuthSubject: task.AuthSubject, RepoConfigID: task.RepoConfigID, RepoKey: task.RepoKey, WorkspaceID: task.WorkspaceID, RepoRoot: task.RepoRoot, DurableReplay: true}
+	if err := RunPendingSyncTask(context.Background(), execCtx, syncCapableFakeUploader{fakeUploader: &fakeUploader{}}); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatalf("sync passes = %d, want successor pass", calls)
+	}
+	if got, err := LoadSyncTask(task.WorkspaceID); err != nil || got != nil {
+		t.Fatalf("completed task = %+v, %v, want deleted", got, err)
+	}
+}
+
+type failingV2ClaimClient struct{ err error }
+
+func (f failingV2ClaimClient) SendAttributionV2Claims(context.Context, []client.AttributionV2ClaimGroup) (*client.AttributionV2ClaimBatchResult, error) {
+	return nil, f.err
+}
+
+type failingV2Uploader struct {
+	*fakeUploader
+	client failingV2ClaimClient
+}
+
+func (f failingV2Uploader) V2ClaimClient() attributionlocal.V2ClaimBackendClient { return f.client }
+func (f failingV2Uploader) RelayProviderID() int                                 { return 7 }
+
+func TestRunV2ClaimSyncPreservesLocalStateOnResponseLoss(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	now := time.Now().UTC()
+	group := client.AttributionV2ClaimGroup{GroupID: "group-1", RelayProviderID: 7, RequestIDs: []string{"req-1"}}
+	if err := attributionlocal.SaveV2ClaimState(&attributionlocal.V2ClaimState{
+		Version: 1, Claims: []attributionlocal.V2ClaimCandidate{{LocalKey: "local-1", Group: group, FirstSeenAt: now}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	uploader := failingV2Uploader{fakeUploader: &fakeUploader{}, client: failingV2ClaimClient{err: errors.New("response lost")}}
+	err := runV2ClaimSync(context.Background(), uploader, ExecutionContext{WorkspaceID: "ws-1"}, &SyncTask{})
+	if err == nil || !strings.Contains(err.Error(), "response lost") {
+		t.Fatalf("runV2ClaimSync error = %v", err)
+	}
+	state, err := attributionlocal.LoadV2ClaimState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Claims) != 1 || len(state.Claims[0].Group.RequestIDs) != 1 || state.Claims[0].Group.RequestIDs[0] != "req-1" {
+		t.Fatalf("response loss mutated local state: %+v", state.Claims)
 	}
 }
 

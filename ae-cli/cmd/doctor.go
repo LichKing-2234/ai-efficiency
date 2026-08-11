@@ -96,6 +96,9 @@ var doctorCmd = &cobra.Command{
 			}
 		}
 		printSyncTaskStatus(out, task)
+		if err := printV2ClaimDeliveryStatus(out); err != nil {
+			fmt.Fprintf(out, "V2 Claim Delivery: unavailable (%v)\n", err)
+		}
 		printToolDiagnostics(out)
 		printRepoEligibilityDiagnostic(out)
 		printRecentFailures(out, doctorRecentFailures)
@@ -112,7 +115,7 @@ func printCompactReportingStatus(out io.Writer) {
 				fmt.Fprintf(out, "Compact reporting\n")
 				fmt.Fprintf(out, "  Installation: %s\n", identity.InstallationID)
 				fmt.Fprintf(out, "  Reporter credential: missing %s\n", style.badge(doctorcheck.StatusFailed))
-				fmt.Fprintf(out, "  OTLP credential:     missing %s\n", style.badge(doctorcheck.StatusFailed))
+				fmt.Fprintf(out, "  Legacy OTLP credential: unknown %s\n", style.badge("warn"))
 				fmt.Fprintf(out, "  Buckets:      unknown %s\n", style.badge("warn"))
 				fmt.Fprintf(out, "  Codex OTLP:   unknown %s\n", style.badge("warn"))
 				fmt.Fprintf(out, "  Recovery:     login again to recover credentials for this installation\n")
@@ -130,16 +133,22 @@ func printCompactReportingStatus(out io.Writer) {
 	if config.ReportingEnabled {
 		reportingStatus = "enabled"
 	}
-	otelStatus := "disabled"
+	otelStatus := "disabled (not required)"
+	otelBadge := doctorcheck.StatusOK
 	if config.OTelEnabled {
-		otelStatus = "enabled"
+		otelStatus = "legacy enabled"
+		otelBadge = "warn"
 	}
 	fmt.Fprintf(out, "Compact reporting\n")
 	fmt.Fprintf(out, "  Installation: %s\n", config.InstallationID)
 	fmt.Fprintf(out, "  Reporter credential: %s %s\n", availableLabel(reporterCredentialAvailable), style.badge(availableStatus(reporterCredentialAvailable)))
-	fmt.Fprintf(out, "  OTLP credential:     %s %s\n", availableLabel(otlpCredentialAvailable), style.badge(availableStatus(otlpCredentialAvailable)))
+	legacyCredentialStatus := doctorcheck.StatusOK
+	if otlpCredentialAvailable {
+		legacyCredentialStatus = "warn"
+	}
+	fmt.Fprintf(out, "  Legacy OTLP credential: %s %s\n", availableLabel(otlpCredentialAvailable), style.badge(legacyCredentialStatus))
 	fmt.Fprintf(out, "  Buckets:      %s %s\n", reportingStatus, style.badge(enabledStatus(config.ReportingEnabled)))
-	fmt.Fprintf(out, "  Codex OTLP:   %s %s\n", otelStatus, style.badge(enabledStatus(config.OTelEnabled)))
+	fmt.Fprintf(out, "  Codex OTLP:   %s %s\n", otelStatus, style.badge(otelBadge))
 	homeDir, homeErr := os.UserHomeDir()
 	if homeErr != nil {
 		fmt.Fprintf(out, "  Codex OTLP config: unavailable %s (%v)\n", style.badge(doctorcheck.StatusFailed), homeErr)
@@ -149,11 +158,14 @@ func printCompactReportingStatus(out io.Writer) {
 		if inspectErr != nil {
 			fmt.Fprintf(out, "  Codex OTLP config: unavailable %s (%v)\n", style.badge(doctorcheck.StatusFailed), inspectErr)
 		} else {
-			label := "degraded"
-			status := doctorcheck.StatusFailed
-			if inspection.Healthy() {
-				label = "healthy"
-				status = doctorcheck.StatusOK
+			label := "not configured"
+			status := doctorcheck.StatusOK
+			managed := inspection.Configured && inspection.EndpointMatches && inspection.CredentialMatches
+			if managed {
+				label = "legacy AE-managed"
+				status = "warn"
+			} else if inspection.Configured {
+				label = "user-managed (preserved)"
 			}
 			fmt.Fprintf(out, "  Codex OTLP config: %s %s (endpoint=%s credential=%s protocol=%s prompt_logging=%s trace_only=%t)\n",
 				label,
@@ -164,6 +176,9 @@ func printCompactReportingStatus(out io.Writer) {
 				promptLoggingLabel(inspection.PromptLoggingDisabled),
 				inspection.TraceOnly,
 			)
+			if managed || config.OTelEnabled {
+				fmt.Fprintln(out, "  Recovery: run 'ae-cli attribution enable' to disable the legacy AE-managed exporter")
+			}
 		}
 	}
 	if state, stateErr := attributionlocal.LoadCompactState(); stateErr == nil {

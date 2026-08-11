@@ -17,8 +17,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var attributionEnableOTel bool
-
 var attributionCmd = &cobra.Command{
 	Use:   "attribution",
 	Short: "Manage compact Codex Token attribution",
@@ -50,9 +48,10 @@ var attributionEnableCmd = &cobra.Command{
 		}
 
 		enabled := true
+		disabled := false
 		response, err := apiClient.SetAttributionInstallationEnabled(context.Background(), reportingConfig.InstallationID, client.SetInstallationEnabledRequest{
 			ReportingEnabled: &enabled,
-			OTelEnabled:      boolPointer(attributionEnableOTel),
+			OTelEnabled:      &disabled,
 		})
 		if err != nil {
 			return fmt.Errorf("enable reporting installation: %w", err)
@@ -66,7 +65,7 @@ var attributionEnableCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("resolve user home: %w", err)
 		}
-		if err := reconcileCodexOTLPConfig(home, reportingConfig, reportingConfig.OTelEnabled); err != nil {
+		if err := removeManagedCodexOTLPConfig(home, reportingConfig); err != nil {
 			return err
 		}
 		path, _ := reporting.DefaultPath()
@@ -80,7 +79,7 @@ var attributionEnableCmd = &cobra.Command{
 		fmt.Fprintf(cmd.OutOrStdout(), "Compact Codex attribution enabled for installation %s.\n", reportingConfig.InstallationID)
 		fmt.Fprintln(cmd.OutOrStdout(), "Baseline recorded; existing Token atoms will not be backfilled.")
 		fmt.Fprintf(cmd.OutOrStdout(), "Global Git hooks: %s\n", globalHookSummary())
-		fmt.Fprintf(cmd.OutOrStdout(), "Codex Request ID correlation: %t\n", reportingConfig.OTelEnabled)
+		fmt.Fprintln(cmd.OutOrStdout(), "Codex Request ID source: local Codex logs")
 		return nil
 	},
 }
@@ -99,7 +98,7 @@ var attributionStatusCmd = &cobra.Command{
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Installation: %s\n", config.InstallationID)
 		fmt.Fprintf(cmd.OutOrStdout(), "Compact reporting: %t\n", config.ReportingEnabled)
-		fmt.Fprintf(cmd.OutOrStdout(), "Codex OTLP: %t\n", config.OTelEnabled)
+		fmt.Fprintf(cmd.OutOrStdout(), "Legacy AE Codex OTLP: %t\n", config.OTelEnabled)
 		state, stateErr := attributionlocal.LoadCompactState()
 		if stateErr == nil {
 			fmt.Fprintf(cmd.OutOrStdout(), "Tracking started: %s\n", state.EnabledAt.Format(time.RFC3339))
@@ -107,23 +106,18 @@ var attributionStatusCmd = &cobra.Command{
 			fmt.Fprintf(cmd.OutOrStdout(), "Pending compact buckets: %d\n", len(state.Pending))
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Global Git hooks: %s\n", globalHookSummary())
+		if err := printV2ClaimDeliveryStatus(cmd.OutOrStdout()); err != nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "V2 Claim Delivery: unavailable (%v)\n", err)
+		}
 		return nil
 	},
 }
 
-func boolPointer(value bool) *bool { return &value }
-
-func reconcileCodexOTLPConfig(home string, config *reporting.Config, enabled bool) error {
+func removeManagedCodexOTLPConfig(home string, config *reporting.Config) error {
 	if config == nil {
 		return fmt.Errorf("reporting config is required")
 	}
 	endpoint := codexOTLPEndpoint(config.ServerURL)
-	if enabled {
-		if _, err := toolconfig.ConfigureCodexOTLP(home, endpoint, config.OTLPToken); err != nil {
-			return fmt.Errorf("configure Codex OTLP: %w", err)
-		}
-		return nil
-	}
 	if _, _, err := toolconfig.DisableCodexOTLP(home, endpoint, config.OTLPToken); err != nil {
 		return fmt.Errorf("disable Codex OTLP: %w", err)
 	}
@@ -143,7 +137,6 @@ func globalHookSummary() string {
 }
 
 func init() {
-	attributionEnableCmd.Flags().BoolVar(&attributionEnableOTel, "otel", true, "enable direct Codex trace-safe OTLP Request ID correlation")
 	attributionCmd.AddCommand(attributionEnableCmd, attributionStatusCmd)
 	rootCmd.AddCommand(attributionCmd)
 }

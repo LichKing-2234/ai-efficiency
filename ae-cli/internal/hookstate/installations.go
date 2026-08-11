@@ -9,7 +9,7 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/clistate"
 )
 
-const CurrentHookTemplateVersion = 2
+const CurrentHookTemplateVersion = 3
 
 type InstallationRecord struct {
 	Mode            string    `json:"mode"`

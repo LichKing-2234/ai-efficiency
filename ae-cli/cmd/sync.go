@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
@@ -136,6 +138,9 @@ var syncStatusCmd = &cobra.Command{
 			}
 		}
 		printSyncTaskStatus(cmd.OutOrStdout(), task)
+		if err := printV2ClaimDeliveryStatus(cmd.OutOrStdout()); err != nil {
+			return err
+		}
 		unresolvedCount, err := hooks.CountUnresolvedHookEvents()
 		if err != nil {
 			return fmt.Errorf("count unresolved hook events: %w", err)
@@ -149,6 +154,20 @@ var syncStatusCmd = &cobra.Command{
 		fmt.Fprintf(cmd.OutOrStdout(), "Tool Usage Dead Letters: %d\n", deadLetterCount)
 		return nil
 	},
+}
+
+func printV2ClaimDeliveryStatus(out io.Writer) error {
+	state, err := attributionlocal.LoadV2ClaimState()
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintln(out, "V2 Claim Delivery: pending=0 conflict=0 upgrade_required=0")
+			return nil
+		}
+		return fmt.Errorf("load v2 claim delivery state: %w", err)
+	}
+	summary := attributionlocal.SummarizeV2ClaimDelivery(state)
+	fmt.Fprintf(out, "V2 Claim Delivery: pending=%d conflict=%d upgrade_required=%d\n", summary.Pending, summary.Conflict, summary.UpgradeRequired)
+	return nil
 }
 
 func init() {

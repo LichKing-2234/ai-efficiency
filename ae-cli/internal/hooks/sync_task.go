@@ -23,26 +23,39 @@ var ErrSyncTaskAlreadyRunning = errors.New("sync task already running")
 var syncTaskRunnerAlive = syncTaskProcessAlive
 
 type SyncTask struct {
-	Version            int            `json:"version"`
-	WorkspaceID        string         `json:"workspace_id"`
-	RepoRoot           string         `json:"repo_root"`
-	ServerURL          string         `json:"server_url"`
-	AuthSubject        string         `json:"auth_subject"`
-	RepoConfigID       int            `json:"repo_config_id"`
-	RepoKey            string         `json:"repo_key"`
-	TriggerKind        string         `json:"trigger_kind,omitempty"`
-	TriggerEventID     string         `json:"trigger_event_id,omitempty"`
-	TriggerCommitSHA   string         `json:"trigger_commit_sha,omitempty"`
-	TriggerBranch      string         `json:"trigger_branch,omitempty"`
-	Status             SyncTaskStatus `json:"status"`
-	LastRequestedAt    time.Time      `json:"last_requested_at"`
-	LastStartedAt      *time.Time     `json:"last_started_at,omitempty"`
-	LastCompletedAt    *time.Time     `json:"last_completed_at,omitempty"`
-	LastError          string         `json:"last_error,omitempty"`
-	AttemptCount       int            `json:"attempt_count"`
-	RunnerPID          int            `json:"runner_pid,omitempty"`
-	LeaseExpiresAt     *time.Time     `json:"lease_expires_at,omitempty"`
-	LastSpawnAttemptAt *time.Time     `json:"last_spawn_attempt_at,omitempty"`
+	Version            int             `json:"version"`
+	WorkspaceID        string          `json:"workspace_id"`
+	RepoRoot           string          `json:"repo_root"`
+	ServerURL          string          `json:"server_url"`
+	AuthSubject        string          `json:"auth_subject"`
+	RepoConfigID       int             `json:"repo_config_id"`
+	RepoKey            string          `json:"repo_key"`
+	TriggerKind        string          `json:"trigger_kind,omitempty"`
+	TriggerEventID     string          `json:"trigger_event_id,omitempty"`
+	TriggerCommitSHA   string          `json:"trigger_commit_sha,omitempty"`
+	TriggerBranch      string          `json:"trigger_branch,omitempty"`
+	Status             SyncTaskStatus  `json:"status"`
+	LastRequestedAt    time.Time       `json:"last_requested_at"`
+	LastStartedAt      *time.Time      `json:"last_started_at,omitempty"`
+	LastCompletedAt    *time.Time      `json:"last_completed_at,omitempty"`
+	LastError          string          `json:"last_error,omitempty"`
+	AttemptCount       int             `json:"attempt_count"`
+	RunnerPID          int             `json:"runner_pid,omitempty"`
+	LeaseExpiresAt     *time.Time      `json:"lease_expires_at,omitempty"`
+	LastSpawnAttemptAt *time.Time      `json:"last_spawn_attempt_at,omitempty"`
+	V2Triggers         []V2SyncTrigger `json:"v2_triggers,omitempty"`
+	RequestGeneration  int             `json:"request_generation,omitempty"`
+}
+
+type V2SyncTrigger struct {
+	Kind         string    `json:"kind"`
+	EventID      string    `json:"event_id"`
+	CommitSHA    string    `json:"commit_sha,omitempty"`
+	Branch       string    `json:"branch,omitempty"`
+	RewriteType  string    `json:"rewrite_type,omitempty"`
+	OldCommitSHA string    `json:"old_commit_sha,omitempty"`
+	NewCommitSHA string    `json:"new_commit_sha,omitempty"`
+	CapturedAt   time.Time `json:"captured_at"`
 }
 
 func SyncTaskPath(workspaceID string) (string, error) {
@@ -158,7 +171,17 @@ func UpsertPendingSyncTask(next SyncTask) error {
 			return err
 		}
 		if current != nil {
+			var mergeErr error
+			next.V2Triggers, mergeErr = mergeV2SyncTriggers(current.V2Triggers, next.V2Triggers)
+			if mergeErr != nil {
+				current.LastError = mergeErr.Error()
+				if err := SaveSyncTask(*current); err != nil {
+					return err
+				}
+				return mergeErr
+			}
 			next.Version = current.Version
+			next.RequestGeneration = current.RequestGeneration + 1
 			next.AttemptCount = current.AttemptCount
 			next.LastStartedAt = current.LastStartedAt
 			next.LastCompletedAt = current.LastCompletedAt
@@ -170,11 +193,72 @@ func UpsertPendingSyncTask(next SyncTask) error {
 				next.Status = current.Status
 			}
 		}
+		if next.RequestGeneration == 0 {
+			next.RequestGeneration = 1
+		}
 		if next.Status == "" {
 			next.Status = SyncTaskStatusPending
 		}
 		return SaveSyncTask(next)
 	})
+}
+
+func AppendV2SyncTrigger(workspaceID string, trigger V2SyncTrigger) error {
+	now := time.Now().UTC()
+	return withSyncTaskLock(workspaceID, now, func() error {
+		current, _, err := LoadSyncTaskRecovering(workspaceID)
+		if err != nil {
+			return err
+		}
+		if current == nil {
+			return fmt.Errorf("sync task does not exist")
+		}
+		merged, err := mergeV2SyncTriggers(current.V2Triggers, []V2SyncTrigger{trigger})
+		if err != nil {
+			current.LastError = err.Error()
+			_ = SaveSyncTask(*current)
+			return err
+		}
+		current.V2Triggers = merged
+		current.RequestGeneration++
+		if trigger.CapturedAt.After(current.LastRequestedAt) {
+			current.LastRequestedAt = trigger.CapturedAt.UTC()
+		}
+		return SaveSyncTask(*current)
+	})
+}
+
+func mergeV2SyncTriggers(existing, incoming []V2SyncTrigger) ([]V2SyncTrigger, error) {
+	result := append([]V2SyncTrigger(nil), existing...)
+	byID := make(map[string]V2SyncTrigger, len(result))
+	for _, trigger := range result {
+		byID[strings.TrimSpace(trigger.EventID)] = trigger
+	}
+	for _, trigger := range incoming {
+		trigger.EventID = strings.TrimSpace(trigger.EventID)
+		if trigger.EventID == "" {
+			continue
+		}
+		if previous, ok := byID[trigger.EventID]; ok {
+			if !sameV2SyncTrigger(previous, trigger) {
+				return result, fmt.Errorf("v2 trigger %s has conflicting canonical payload", trigger.EventID)
+			}
+			continue
+		}
+		result = append(result, trigger)
+		byID[trigger.EventID] = trigger
+	}
+	return result, nil
+}
+
+func sameV2SyncTrigger(left, right V2SyncTrigger) bool {
+	return strings.TrimSpace(left.Kind) == strings.TrimSpace(right.Kind) &&
+		strings.TrimSpace(left.EventID) == strings.TrimSpace(right.EventID) &&
+		strings.TrimSpace(left.CommitSHA) == strings.TrimSpace(right.CommitSHA) &&
+		strings.TrimSpace(left.Branch) == strings.TrimSpace(right.Branch) &&
+		strings.TrimSpace(left.RewriteType) == strings.TrimSpace(right.RewriteType) &&
+		strings.TrimSpace(left.OldCommitSHA) == strings.TrimSpace(right.OldCommitSHA) &&
+		strings.TrimSpace(left.NewCommitSHA) == strings.TrimSpace(right.NewCommitSHA)
 }
 
 func TryClaimSyncTaskSpawn(workspaceID string, now time.Time, cooldown time.Duration) (bool, *SyncTask, error) {
@@ -318,6 +402,52 @@ func MarkSyncTaskSuccess(task *SyncTask, now time.Time) error {
 		*task = *latest
 		return nil
 	})
+}
+
+// CompleteSyncTaskPass atomically decides whether work arrived during a pass.
+// It keeps the current lease for a successor pass or deletes an idle task.
+func CompleteSyncTaskPass(task *SyncTask, passGeneration int, now time.Time) (bool, error) {
+	if task == nil {
+		return false, fmt.Errorf("task is nil")
+	}
+	idle := false
+	err := withSyncTaskLock(task.WorkspaceID, now, func() error {
+		current, err := LoadSyncTask(task.WorkspaceID)
+		if err != nil || current == nil {
+			return err
+		}
+		if current.RunnerPID != task.RunnerPID || current.RunnerPID == 0 {
+			return ErrSyncTaskAlreadyRunning
+		}
+		if current.RequestGeneration > passGeneration {
+			processed := make(map[string]struct{}, len(task.V2Triggers))
+			for _, trigger := range task.V2Triggers {
+				processed[trigger.EventID] = struct{}{}
+			}
+			remaining := current.V2Triggers[:0]
+			for _, trigger := range current.V2Triggers {
+				if _, ok := processed[trigger.EventID]; !ok {
+					remaining = append(remaining, trigger)
+				}
+			}
+			current.V2Triggers = remaining
+			completed := now.UTC()
+			current.LastCompletedAt = &completed
+			current.LastError = ""
+			*task = *current
+			return SaveSyncTask(*current)
+		}
+		path, err := SyncTaskPath(task.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		idle = true
+		return nil
+	})
+	return idle, err
 }
 
 func withSyncTaskLock(workspaceID string, now time.Time, fn func() error) error {

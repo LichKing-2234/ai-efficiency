@@ -162,6 +162,41 @@ func TestIngestAppendsAllocationAcceptsOldReplayAndRejectsDivergence(t *testing.
 	}
 }
 
+func TestIngestAllowsAcknowledgedClientToAppendAllocationWithoutRequestIDs(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	base := f.claim("group-allocation-only", "req-1")
+	if _, err := f.service.Ingest(ctx, f.principal, BatchRequest{Groups: []Request{base}}); err != nil {
+		t.Fatal(err)
+	}
+	second := f.client.CommitCheckpoint.Create().SetEventID("checkpoint-2").SetUserID(f.principal.UserID).SetWorkspaceID("workspace-1").
+		SetRepoConfigID(f.repoID).SetCommitSha("commit-2").SetParentShas([]string{"commit-1"}).SetBindingSource(commitcheckpoint.BindingSourceManual).SaveX(ctx)
+	appended := base
+	appended.RequestIDs = nil
+	appended.Calibration = nil
+	appended.EvidenceDigest = "allocation-sequence-evidence"
+	appended.CommitAllocations = append(append([]CommitAllocation(nil), base.CommitAllocations...), CommitAllocation{
+		Sequence: 2, RepoConfigID: f.repoID, WorkspaceID: "workspace-1", CheckpointEventID: second.EventID, CommitSHA: "commit-2", EvidenceDigest: "evidence-2",
+	})
+	result, err := f.service.Ingest(ctx, f.principal, BatchRequest{Groups: []Request{appended}})
+	if err != nil || result.Results[0].Group.Status != "persisted" || len(result.Results[0].Requests) != 0 {
+		t.Fatalf("allocation-only append = %+v, %v", result, err)
+	}
+	group := f.client.AttributionClaimGroup.Query().OnlyX(ctx)
+	if len(group.CommitAllocations) != 2 || group.RequestCount != 1 {
+		t.Fatalf("group = %+v", group)
+	}
+}
+
+func TestIngestRejectsNewGroupWithoutRequestIDs(t *testing.T) {
+	f := newFixture(t)
+	claim := f.claim("new-empty")
+	result, err := f.service.Ingest(context.Background(), f.principal, BatchRequest{Groups: []Request{claim}})
+	if err != nil || result.Results[0].Group.Status != "rejected" || f.client.AttributionClaimGroup.Query().CountX(context.Background()) != 0 {
+		t.Fatalf("new empty group = %+v, %v", result, err)
+	}
+}
+
 func TestInvalidatePersistedACKsPreservesNonPersistedItems(t *testing.T) {
 	result := Result{
 		Calibration: ItemStatus{Status: "persisted"},

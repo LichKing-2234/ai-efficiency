@@ -223,6 +223,9 @@ func upsertGroup(ctx context.Context, tx *ent.Tx, principal attributionledger.In
 	if !ent.IsNotFound(err) {
 		return nil, false, false, "not_present", fmt.Errorf("query claim group: %w", err)
 	}
+	if len(claim.RequestIDs) == 0 {
+		return nil, false, false, "not_present", fmt.Errorf("new claim group requires at least one request_id")
+	}
 	create := tx.AttributionClaimGroup.Create().
 		SetGroupID(claim.GroupID).SetInstallationID(principal.DatabaseID).SetUserID(principal.UserID).
 		SetRelayProviderID(claim.RelayProviderID).
@@ -318,8 +321,8 @@ func validate(claim Request) error {
 			return fmt.Errorf("commit allocation sequence %d is invalid", index+1)
 		}
 	}
-	if len(claim.RequestIDs) == 0 || len(claim.RequestIDs) > MaxRequests {
-		return fmt.Errorf("request_ids must contain 1-%d unique items", MaxRequests)
+	if len(claim.RequestIDs) > MaxRequests {
+		return fmt.Errorf("request_ids must contain at most %d unique items", MaxRequests)
 	}
 	for _, requestID := range claim.RequestIDs {
 		if len(requestID) > MaxIdentitySize {
