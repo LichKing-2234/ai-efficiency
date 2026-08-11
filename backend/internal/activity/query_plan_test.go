@@ -110,6 +110,106 @@ func TestV2RepositoryPageUsesPoolRangeAndCommitLookupIndexes(t *testing.T) {
 	}
 }
 
+func TestV2ReadPathsStayWithinScaleLatencyBudget(t *testing.T) {
+	const (
+		poolCount       = 2500
+		repositoryCount = 25
+		maxReadLatency  = 2 * time.Second
+	)
+	client, dsn := testdb.OpenWithDSN(t)
+	ctx := context.Background()
+	user := client.User.Create().SetUsername("scale-v2-user").SetEmail("scale-v2-user@example.com").SetAuthSource("ldap").SaveX(ctx)
+	provider := client.RelayProvider.Create().SetName("scale-v2-provider").SetDisplayName("Scale V2 Provider").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-key").SetEnabled(true).SaveX(ctx)
+	repositories := make([]*ent.RepoConfig, 0, repositoryCount)
+	pullRequests := make([]*ent.PrRecord, 0, repositoryCount)
+	for index := 0; index < repositoryCount; index++ {
+		repo := client.RepoConfig.Create().SetName(fmt.Sprintf("repo-%02d", index)).SetFullName(fmt.Sprintf("example/repo-%02d", index)).SetCloneURL(fmt.Sprintf("https://example.com/repo-%02d.git", index)).SaveX(ctx)
+		repositories = append(repositories, repo)
+		pullRequests = append(pullRequests, client.PrRecord.Create().SetRepoConfigID(repo.ID).SetScmPrID(index+1).SetTitle(fmt.Sprintf("Scale PR %02d", index)).SetScmPrURL(fmt.Sprintf("https://example.com/pr/%d", index+1)).SaveX(ctx))
+	}
+	poolBuilders := make([]*ent.AttributionUsagePoolCreate, 0, poolCount)
+	for index := 0; index < poolCount; index++ {
+		poolBuilders = append(poolBuilders, client.AttributionUsagePool.Create().SetCanonicalPoolKey(fmt.Sprintf("scale-v2-%04d", index)).SetLedgerEpoch("formal_v2").
+			SetRelayProviderID(provider.ID).SetUserID(user.ID).SetRequestedModel("model-test").SetBucketStartUtc(time.Date(2026, 8, 1, 0, index%60, 0, 0, time.UTC)).SetTotalTokens(1))
+	}
+	pools, err := client.AttributionUsagePool.CreateBulk(poolBuilders...).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitBuilders := make([]*ent.AttributionUsagePoolCommitCreate, 0, poolCount)
+	prCommitBuilders := make([]*ent.PRCommitUsageSnapshotCreate, 0, poolCount)
+	for index, pool := range pools {
+		repositoryIndex := index % repositoryCount
+		commitSHA := fmt.Sprintf("scale-v2-sha-%04d", index)
+		commitBuilders = append(commitBuilders, client.AttributionUsagePoolCommit.Create().SetPoolID(pool.ID).SetRepoConfigID(repositories[repositoryIndex].ID).SetCommitSha(commitSHA).SetRelationKind(attributionusagepoolcommit.RelationKindDirect))
+		prCommitBuilders = append(prCommitBuilders, client.PRCommitUsageSnapshot.Create().SetPrRecordID(pullRequests[repositoryIndex].ID).SetCommitSha(commitSHA))
+	}
+	if _, err := client.AttributionUsagePoolCommit.CreateBulk(commitBuilders...).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.PRCommitUsageSnapshot.CreateBulk(prCommitBuilders...).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.ExecContext(ctx, "ANALYZE attribution_usage_pools; ANALYZE attribution_usage_pool_commits; ANALYZE pr_commit_usage_snapshots; ANALYZE pr_records"); err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(client, nil, ServiceOptions{
+		CursorSecret: "scale-secret", V2LedgerEpoch: "formal_v2", V2DB: db,
+		V2Denominator: fixedV2Denominator{V2Denominator{TotalTokens: poolCount * 2, AsOf: time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC), Fresh: true, Complete: true}},
+	})
+	query := V2Query{Scope: V2ScopePersonal, FromDate: "2026-08-01", ToDate: "2026-08-01", Timezone: "UTC"}
+	withinBudget := func(name string, call func() error) {
+		t.Helper()
+		started := time.Now()
+		if err := call(); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if elapsed := time.Since(started); elapsed > maxReadLatency {
+			t.Fatalf("%s latency %s exceeds %s budget at %d pools", name, elapsed, maxReadLatency, poolCount)
+		}
+	}
+	withinBudget("summary and daily trend", func() error {
+		result, err := service.V2Overview(ctx, user.ID, query)
+		if err == nil && result.CommittedTokens != poolCount {
+			return fmt.Errorf("committed tokens = %d, want %d", result.CommittedTokens, poolCount)
+		}
+		return err
+	})
+	var repositoryPage *V2Page[V2RepositoryRow]
+	withinBudget("repository ranking", func() error {
+		var err error
+		repositoryPage, err = service.V2Repositories(ctx, user.ID, V2PageQuery{V2Query: query})
+		return err
+	})
+	withinBudget("repository search and name sort", func() error {
+		_, err := service.V2Repositories(ctx, user.ID, V2PageQuery{V2Query: query, Search: "repo-1", Sort: "name"})
+		return err
+	})
+	withinBudget("repository cursor page", func() error {
+		_, err := service.V2Repositories(ctx, user.ID, V2PageQuery{V2Query: query, Cursor: repositoryPage.NextCursor})
+		return err
+	})
+	var pullRequestPage *V2Page[V2PullRequestRow]
+	withinBudget("pull-request ranking", func() error {
+		var err error
+		pullRequestPage, err = service.V2PullRequests(ctx, user.ID, V2PageQuery{V2Query: query})
+		return err
+	})
+	withinBudget("pull-request search and name sort", func() error {
+		_, err := service.V2PullRequests(ctx, user.ID, V2PageQuery{V2Query: query, Search: "Scale PR 1", Sort: "name"})
+		return err
+	})
+	withinBudget("pull-request cursor page", func() error {
+		_, err := service.V2PullRequests(ctx, user.ID, V2PageQuery{V2Query: query, Cursor: pullRequestPage.NextCursor})
+		return err
+	})
+}
+
 func TestTeamProjectionQueryCountDoesNotGrowWithMemberCount(t *testing.T) {
 	seed, dsn := testdb.OpenWithDSN(t)
 	ctx := context.Background()
