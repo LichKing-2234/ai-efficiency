@@ -14,6 +14,7 @@ AI Efficiency Platform（AI 效能平台）是一个独立于 `sub2api` 的系�
 
 1. 当前代码
 2. 最新且最贴近问题域的 spec：
+   - `docs/superpowers/specs/2026-08-11-codex-commit-token-attribution-v2-design.md`
    - `docs/superpowers/specs/2026-08-05-codex-token-attribution-ledger-poc-design.md`
    - `docs/superpowers/specs/2026-07-25-stateless-team-usage-prewarm-worker-design.md`
    - `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md`
@@ -212,7 +213,8 @@ chore(deploy): update Docker Compose configuration
 ## Important Files
 
 - `docs/architecture.md` — 项目级架构总览与图示
-- `docs/superpowers/specs/2026-08-05-codex-token-attribution-ledger-poc-design.md` — 当前 Codex compact Token 归属、reporting installation、OTLP Request ID 关联与 `/attribution` POC 主设计
+- `docs/superpowers/specs/2026-08-11-codex-commit-token-attribution-v2-design.md` — 已批准但尚未 cutover 的 production v2 目标合同：sub2api 官方 Token、确定性 commit proof、90 天 hot claim、长期 usage pool、Activity/Usage/Repos 页面边界
+- `docs/superpowers/specs/2026-08-05-codex-token-attribution-ledger-poc-design.md` — 当前代码仍在运行的 compact POC 合同；在 v2 cutover 前用于解释 JSONL Token、OTLP correlation、bucket/revision 与现有 Activity 行为
 - `docs/ui-guidelines.md` — 当前前端组件库、响应式布局、图表和体积预算合同
 - `docs/superpowers/specs/2026-07-25-stateless-team-usage-prewarm-worker-design.md` — 当前 Team Usage prewarm worker、Redis generation/manifest 与 backend 只读 fallback 主设计
 - `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md` — 当前全站加载性能、Redis read model、Team Overview 拆分和 serving/observability 主设计
