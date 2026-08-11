@@ -31,9 +31,7 @@ export function useActivityTeam() {
   const teamID = computed(() => typeof route.params.team_id === 'string' ? route.params.team_id : '')
 
   function initialRange(): ActivityWindowParams {
-    const from = typeof route.query.from === 'string' ? route.query.from : undefined
-    const to = typeof route.query.to === 'string' ? route.query.to : undefined
-    return from && to ? { from, to } : rangeForDays(30)
+    return rangeForDays(30)
   }
 
   async function load() {

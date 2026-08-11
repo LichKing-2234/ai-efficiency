@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    ActivityAnalytics: typeof import('./components/activity/ActivityAnalytics.vue')['default']
     ActivityDateRange: typeof import('./components/activity/ActivityDateRange.vue')['default']
     ActivityDetails: typeof import('./components/activity/ActivityDetails.vue')['default']
     ActivityHero: typeof import('./components/activity/ActivityHero.vue')['default']

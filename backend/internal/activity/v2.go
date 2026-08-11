@@ -23,7 +23,7 @@ type v2Scope struct {
 }
 
 func (s *Service) V2Overview(ctx context.Context, actorUserID int, query V2Query) (*V2Overview, error) {
-	scope, from, to, _, err := s.resolveV2Query(ctx, actorUserID, query)
+	scope, from, to, location, err := s.resolveV2Query(ctx, actorUserID, query)
 	if err != nil {
 		return nil, err
 	}
@@ -45,35 +45,95 @@ func (s *Service) V2Overview(ctx context.Context, actorUserID int, query V2Query
 	if s.v2DB == nil {
 		return nil, fmt.Errorf("Activity v2 database is not configured")
 	}
-	return s.queryV2OverviewSQL(ctx, actorUserID, scope, query, from, to, denominator, result)
+	result, err = s.queryV2OverviewSQL(ctx, actorUserID, scope, query, from, to, denominator, result)
+	if err != nil || result.Ratio.State != "exact" || result.Ratio.Percent == nil {
+		return result, err
+	}
+	previousQuery, previousFrom, previousTo := previousV2Window(query, location)
+	inside, compareErr := s.v2ComparisonInsideEpoch(ctx, previousFrom)
+	if compareErr != nil || !inside || s.v2Denominator == nil {
+		return result, nil
+	}
+	previousDenominator, compareErr := s.v2Denominator.ResolveDenominator(ctx, V2DenominatorRequest{ActorUserID: actorUserID, Scope: query.Scope, SubjectUserID: query.SubjectID, TeamID: query.TeamID, FromDate: previousQuery.FromDate, ToDate: previousQuery.ToDate, Timezone: query.Timezone, ScopeVersion: scope.authorization.Version, ProviderSet: scope.providerSet})
+	if compareErr != nil {
+		return result, nil
+	}
+	_, previousCommitted, _, previousGap, providerMismatch, compareErr := s.queryV2ScopeTotalsSQL(ctx, scope, previousFrom, previousTo, previousDenominator)
+	if compareErr != nil || previousGap || providerMismatch {
+		return result, nil
+	}
+	previousRatio := v2Ratio(previousCommitted, V2Coverage{Complete: true}, previousDenominator)
+	if previousRatio.State == "exact" && previousRatio.Percent != nil {
+		change := *result.Ratio.Percent - *previousRatio.Percent
+		result.Ratio.PercentagePointChange = &change
+	}
+	return result, nil
 }
 
 func (s *Service) V2Repositories(ctx context.Context, actorUserID int, query V2PageQuery) (*V2Page[V2RepositoryRow], error) {
 	if err := validateV2PageQuery(query); err != nil {
 		return nil, err
 	}
-	scope, from, to, _, err := s.resolveV2Query(ctx, actorUserID, query.V2Query)
+	scope, from, to, location, err := s.resolveV2Query(ctx, actorUserID, query.V2Query)
 	if err != nil {
 		return nil, err
 	}
 	if s.v2DB == nil {
 		return nil, fmt.Errorf("Activity v2 database is not configured")
 	}
-	return s.queryV2RepositoriesSQL(ctx, actorUserID, scope, from, to, query)
+	page, err := s.queryV2RepositoriesSQL(ctx, actorUserID, scope, from, to, query)
+	if err != nil {
+		return nil, err
+	}
+	_, previousFrom, previousTo := previousV2Window(query.V2Query, location)
+	if inside, compareErr := s.v2ComparisonInsideEpoch(ctx, previousFrom); compareErr == nil && inside {
+		if compareErr = s.attachV2RepositoryChanges(ctx, scope, from, to, previousFrom, previousTo, page.Items); compareErr != nil {
+			return nil, compareErr
+		}
+	}
+	return page, nil
 }
 
 func (s *Service) V2PullRequests(ctx context.Context, actorUserID int, query V2PageQuery) (*V2Page[V2PullRequestRow], error) {
 	if err := validateV2PageQuery(query); err != nil {
 		return nil, err
 	}
-	scope, from, to, _, err := s.resolveV2Query(ctx, actorUserID, query.V2Query)
+	scope, from, to, location, err := s.resolveV2Query(ctx, actorUserID, query.V2Query)
 	if err != nil {
 		return nil, err
 	}
 	if s.v2DB == nil {
 		return nil, fmt.Errorf("Activity v2 database is not configured")
 	}
-	return s.queryV2PullRequestsSQL(ctx, actorUserID, scope, from, to, query)
+	page, err := s.queryV2PullRequestsSQL(ctx, actorUserID, scope, from, to, query)
+	if err != nil {
+		return nil, err
+	}
+	if err = s.attachV2PRCommits(ctx, scope, from, to, page.Items); err != nil {
+		return nil, err
+	}
+	_, previousFrom, previousTo := previousV2Window(query.V2Query, location)
+	if inside, compareErr := s.v2ComparisonInsideEpoch(ctx, previousFrom); compareErr == nil && inside {
+		if compareErr = s.attachV2PRChanges(ctx, scope, from, to, previousFrom, previousTo, page.Items); compareErr != nil {
+			return nil, compareErr
+		}
+	}
+	return page, nil
+}
+
+func previousV2Window(query V2Query, location *time.Location) (V2Query, time.Time, time.Time) {
+	from, _ := time.ParseInLocation("2006-01-02", query.FromDate, location)
+	to, _ := time.ParseInLocation("2006-01-02", query.ToDate, location)
+	days := 1
+	for day := from; day.Before(to); day = day.AddDate(0, 0, 1) {
+		days++
+	}
+	previousTo := from
+	previousFrom := from.AddDate(0, 0, -days)
+	previous := query
+	previous.FromDate = previousFrom.Format("2006-01-02")
+	previous.ToDate = previousTo.AddDate(0, 0, -1).Format("2006-01-02")
+	return previous, previousFrom.UTC(), previousTo.UTC()
 }
 
 func (s *Service) resolveV2Query(ctx context.Context, actorUserID int, query V2Query) (*v2Scope, time.Time, time.Time, *time.Location, error) {

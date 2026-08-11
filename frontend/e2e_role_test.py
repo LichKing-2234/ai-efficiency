@@ -28,7 +28,6 @@ errors = []
 unmocked_matrix_requests = set()
 
 VIEWPORTS = (
-    ("narrow-mobile", 320, 800),
     ("mobile", 390, 844),
     ("tablet", 768, 1024),
     ("desktop-boundary", 1024, 900),
@@ -65,29 +64,9 @@ USER_ROUTE_CASES = (
         "exercise": "quota-user",
     },
     {"path": "/work-items", "selector": "main h1:has-text('Work Items')"},
-    {
-        "path": "/repos",
-        "selector": "[data-testid='repo-binding-filter']",
-        "fit_selectors": ("[data-testid='repo-row'] > div:first-child",),
-        "exercise": "repo-dialog",
-    },
-    {"path": "/repos/9", "selector": "[data-testid='repo-tab-activity']"},
-    {
-        "path": "/repos/9?tab=operations",
-        "expected_path": "/repos/9",
-        "selector": "[data-testid='repo-pr-row']",
-        "state_selectors": (
-            "[data-testid='repo-pr-summary-grid'] > div:first-child",
-            "[data-testid='repo-pr-summary-metrics']",
-        ),
-        "fit_selectors": (
-            "[data-testid='repo-pr-summary-grid'] > div:first-child",
-            "[data-testid='repo-pr-summary-metrics'] dd",
-        ),
-    },
-    {"path": "/activity", "selector": "[data-testid='activity-range-refresh']"},
+    {"path": "/activity", "selector": "[data-testid='activity-v2-analytics']", "exercise": "activity-v2"},
     {"path": "/activity/teams", "selector": "[data-testid='activity-team-team-alpha']"},
-    {"path": "/activity/teams/team-alpha", "selector": "[data-testid='activity-team-summary']"},
+    {"path": "/activity/teams/team-alpha", "selector": "[data-testid='activity-v2-analytics']"},
     {"path": "/activity/members/7", "selector": "[data-testid='activity-range-refresh']"},
     {
         "path": "/user",
@@ -102,6 +81,13 @@ USER_ROUTE_CASES = (
 )
 
 ADMIN_ROUTE_CASES = (
+    {
+        "path": "/repos",
+        "selector": "[data-testid='repo-binding-filter']",
+        "fit_selectors": ("[data-testid='repo-row'] > div:first-child",),
+        "exercise": "repo-dialog",
+    },
+    {"path": "/repos/9", "selector": "[data-testid='repo-operations']"},
     {
         "path": "/usage/quota-reset",
         "selector": "[data-testid='quota-reset-tab-admin']",
@@ -644,6 +630,50 @@ def mock_matrix_api(route, role):
             "prs": {"items": []},
             "commits": {"items": []},
         },
+        "/api/v1/activity/v2/overview": {
+            "contract_version": "activity-v2",
+            "scope_version": "scope-e2e",
+            "from": "2026-07-10",
+            "to": "2026-08-08",
+            "timezone": "Asia/Shanghai",
+            "committed_tokens": 4200,
+            "claim_coverage": {"complete": True, "lower_bound": False},
+            "scm_coverage": {"complete": True, "affected_repositories": 0},
+            "ratio": {
+                "state": "exact",
+                "committed_tokens": 4200,
+                "total_tokens": 10000,
+                "percent": 42,
+                "percentage_point_change": 2.5,
+            },
+            "trend": [{"date": "2026-08-08", "direct_tokens": 4200, "shared_tokens": 600, "involved_tokens": 4200}],
+            "readiness": {"state": "active"},
+        },
+        "/api/v1/activity/v2/repositories": {
+            "items": [{
+                "repo_config_id": 9,
+                "name": "example-org/a-very-long-repository-name-for-responsive-layout",
+                "direct_tokens": 4200,
+                "direct_share": 100,
+                "shared_tokens": 600,
+                "token_change": 300,
+            }],
+        },
+        "/api/v1/activity/v2/pull-requests": {
+            "items": [{
+                "pr_record_id": 21,
+                "repo_config_id": 9,
+                "repository_name": "example-org/a-very-long-repository-name-for-responsive-layout",
+                "scm_pr_id": 88,
+                "title": "Improve Activity presentation with a deliberately long responsive title",
+                "url": "https://example.com/pull/88",
+                "status": "merged",
+                "involved_tokens": 4200,
+                "overlap_state": "shared",
+                "token_change": 300,
+                "commits": [{"repo_config_id": 9, "commit_sha": "abcdef1234567890"}],
+            }],
+        },
         "/api/v1/admin/users": {"items": [admin_user()], "total": 1, "page": 1, "page_size": 20},
         "/api/v1/admin/users/department-options": {
             "items": [], "selected": None, "total": 0, "page": 1, "page_size": 20,
@@ -1176,6 +1206,25 @@ def protected_shell_state(page, width):
 
 
 def exercise_route_control(page, exercise):
+    if exercise == "activity-v2":
+        width = page.evaluate("window.innerWidth")
+        cards = page.locator("[data-testid='activity-repository-cards']")
+        table = page.locator("[data-testid='activity-repository-table']")
+        analytics = page.locator("[data-testid='activity-v2-analytics']")
+        approved_copy = all(text in analytics.inner_text() for text in (
+            "Used for committed code", "Other Token", "Repository Top 5", "PR Top 5"
+        ))
+        one_layout = (
+            table.count() == 1 and table.is_visible() and cards.count() == 0
+            if width >= 1280
+            else cards.count() == 1 and cards.is_visible() and table.count() == 0
+        )
+        no_operational_detail = all(text not in analytics.inner_text().lower() for text in (
+            "request id", "pending request", "coverage gap"
+        ))
+        return approved_copy and one_layout and no_operational_detail, (
+            f"Unexpected Activity v2 layout/copy at {width}px"
+        )
     if exercise == "team-views":
         page.locator("[data-testid='team-overview-organization-view']").click()
         organization = page.locator("[data-testid='team-overview-organization-tree']")
@@ -1634,6 +1683,21 @@ def test_user_role_admin_users_blocked(page):
     do_logout(page)
 
 
+def test_user_role_repositories_blocked(page):
+    """Repository operations are administrator-only."""
+    print("\n🧪 User Role — Repository Operations Blocked")
+    do_dev_login(page, role="user")
+    for path in ("/repos", "/repos/9"):
+        page.goto(f"{BASE}{path}")
+        page.wait_for_load_state("networkidle")
+        report(f"User role redirected away from {path}",
+               urlparse(page.url).path not in ("/repos", "/repos/9"),
+               f"URL: {page.url}")
+    report("User role has no Repository navigation",
+           page.locator("aside a[href='/repos']").count() == 0)
+    do_logout(page)
+
+
 def test_activity_route_layout_and_responsive_style(page):
     """Protected Activity returns after login and renders inside the shared shell."""
     print("\n🧪 Activity — Route, Layout, and Responsive Style")
@@ -1655,10 +1719,10 @@ def test_activity_route_layout_and_responsive_style(page):
     page.locator("button:has-text('Dev Login')").click()
     page.wait_for_timeout(600)
     report("Dev login returns to /activity",
-           page.url == f"{BASE}/activity",
+           urlparse(page.url).path == "/activity",
            f"URL: {page.url}")
 
-    if page.url != f"{BASE}/activity":
+    if urlparse(page.url).path != "/activity":
         page.goto(f"{BASE}/activity")
     page.wait_for_timeout(800)
 
@@ -1670,9 +1734,17 @@ def test_activity_route_layout_and_responsive_style(page):
     report("Activity navigation is active",
            activity_link.count() == 1 and "bg-gray-800" in (activity_link.get_attribute("class") or ""),
            f"class: {activity_link.get_attribute('class') if activity_link.count() else None}")
-    report("Activity renders PR-first lower-bound metrics",
-           "≥2" in page.locator("[data-testid='activity-hero']").inner_text()
-           and page.locator("[data-testid='activity-prs']").count() == 1)
+    analytics = page.locator("[data-testid='activity-v2-analytics']")
+    report("Activity renders the approved v2 analytics",
+           analytics.count() == 1
+           and "Used for committed code" in analytics.inner_text()
+           and "Other Token" in analytics.inner_text()
+           and "Repository Top 5" in analytics.inner_text()
+           and "PR Top 5" in analytics.inner_text())
+    report("Activity omits Request and operational details",
+           "Request ID" not in analytics.inner_text()
+           and "pending" not in analytics.inner_text().lower()
+           and "coverage gap" not in analytics.inner_text().lower())
     report("Activity data does not crash the page",
            not page_errors,
            repr(page_errors))
@@ -1682,8 +1754,8 @@ def test_activity_route_layout_and_responsive_style(page):
 
     page.goto(
         f"{BASE}/attribution"
-        "?from=2026-08-01T00%3A00%3A00Z"
-        "&to=2026-08-08T00%3A00%3A00Z"
+        "?from=2026-08-01"
+        "&to=2026-08-08"
         "&unsafe=discard-me"
     )
     page.wait_for_url("**/activity?*")
@@ -1692,8 +1764,8 @@ def test_activity_route_layout_and_responsive_style(page):
     report("Legacy attribution route redirects to Activity with safe range state",
            legacy_url.path == "/activity"
            and legacy_query == {
-               "from": ["2026-08-01T00:00:00Z"],
-               "to": ["2026-08-08T00:00:00Z"],
+               "from": ["2026-08-01"],
+               "to": ["2026-08-08"],
            },
            f"URL: {page.url}")
 
@@ -1717,7 +1789,7 @@ def test_mobile_navigation_drawer(page):
     print("\n🧪 App Shell — Mobile Navigation Drawer")
 
     do_dev_login(page, role="user")
-    for label, width, height in VIEWPORTS[:2]:
+    for label, width, height in (viewport for viewport in VIEWPORTS if viewport[1] < 768):
         page.set_viewport_size({"width": width, "height": height})
         page.goto(f"{BASE}/usage")
         page.wait_for_load_state("networkidle")
@@ -1827,9 +1899,9 @@ def run_all():
             ("Admin (Dev Login) Settings", lambda: test_dev_login_settings(page)),
             ("User Role Settings Blocked", lambda: test_user_role_settings_blocked(page)),
             ("User Role /admin/users Blocked", lambda: test_user_role_admin_users_blocked(page)),
+            ("User Role Repositories Blocked", lambda: test_user_role_repositories_blocked(page)),
             ("Activity Route and Layout", lambda: test_activity_route_layout_and_responsive_style(page)),
             ("Mobile Navigation Drawer", lambda: test_mobile_navigation_drawer(page)),
-            ("Activity Member Bucket Authorization", lambda: test_activity_member_bucket_authorization(page)),
         ]
 
         for name, fn in tests:

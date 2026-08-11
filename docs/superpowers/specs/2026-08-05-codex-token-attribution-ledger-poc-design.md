@@ -288,6 +288,9 @@ GET /api/v1/activity/members/:user_id
 GET /api/v1/activity/teams/:team_id
 GET /api/v1/activity/repos/:repo_id
 GET /api/v1/activity/buckets/:bucket_id
+GET /api/v1/activity/v2/overview
+GET /api/v1/activity/v2/repositories
+GET /api/v1/activity/v2/pull-requests
 ```
 
 Activity defaults to a 30-day `[from,to)` window. Member, PR, commit, and Bucket
@@ -330,17 +333,19 @@ facts separate from repository output.
 `/activity/members/:user_id` is the authorized member drill-down.
 `/activity/teams` and `/activity/teams/:team_id` expose the current authorized
 directory subtree to representatives and all current active teams/members to
-Admins; directory-only members remain visible as unavailable. `/repos/:id` is
-Activity-first, while repository configuration, webhook repair, explicit PR
-sync, and legacy PR usage remain in a lazy Operations section. Opening or
-filtering Activity never starts PR sync.
+Admins; directory-only members remain visible as unavailable. Activity owns
+Token, Repository, and PR analysis. `/repos` and `/repos/:id` are
+administrator-only operations surfaces for repository configuration, SCM
+binding, webhook repair, explicit PR sync, and integration health; they do not
+show Activity, PR usage, or Token analysis. Opening or filtering Activity never
+starts PR sync.
 
-The owner and Admin may expand a Bucket to inspect the Token breakdown, current
-allocation revision, extractor/normalization versions, correlation state, and
-retained Request IDs. Representatives can inspect member/repository/PR/commit
-and quality summaries but do not receive Bucket rows or raw Request IDs. The UI
-never exposes prompts, responses, code, commands, local paths, raw spans, or
-conversation identifiers.
+The legacy v1 POC may retain its owner/Admin Bucket detail during shadow
+qualification, but Activity v2 does not expose Bucket rows, Request IDs,
+pending counts, or gap details. Representatives receive the same product-level
+Repository/PR analysis within their authorized scope and never receive raw
+Request evidence. The UI never exposes prompts, responses, code, commands,
+local paths, raw spans, or conversation identifiers.
 
 ## POC Acceptance Criteria
 

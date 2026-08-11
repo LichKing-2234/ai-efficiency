@@ -29,7 +29,6 @@ describe('RepositoryOperationsSection', () => {
     setLocale('en-US')
     vi.clearAllMocks()
     const pr = await import('@/api/pr')
-    vi.mocked(pr.listPRs).mockResolvedValue({ data: { data: { items: [], total: 0 } } } as any)
     vi.mocked(pr.getLatestPRSyncJob).mockResolvedValue({ data: { data: null } } as any)
     vi.mocked(pr.syncPRs).mockResolvedValue({ data: { data: { job_id: 44, status: 'completed', phase: 'completed' } } } as any)
     vi.mocked(pr.getPRSyncJob).mockResolvedValue({
@@ -54,6 +53,8 @@ describe('RepositoryOperationsSection', () => {
         },
       },
     } as any)
+    const provider = await import('@/api/scmProvider')
+    vi.mocked(provider.listProviders).mockResolvedValue({ data: { data: [] } } as any)
   })
 
   it('owns lazy operations loading and starts PR sync only after an explicit click', async () => {
@@ -79,7 +80,6 @@ describe('RepositoryOperationsSection', () => {
     })
     await flushPromises()
 
-    expect(pr.listPRs).toHaveBeenCalledWith(9, expect.objectContaining({ limit: 10, offset: 0, months: 3 }))
     expect(pr.getLatestPRSyncJob).toHaveBeenCalledWith(9)
     expect(pr.syncPRs).not.toHaveBeenCalled()
 
@@ -90,7 +90,7 @@ describe('RepositoryOperationsSection', () => {
     expect(pr.syncPRs).toHaveBeenCalledWith(9)
   })
 
-  it('keeps PR usage filters stacked until the content area is wide enough', async () => {
+  it('does not load or render PR usage analytics on the operations page', async () => {
     const wrapper = mount(RepositoryOperationsSection, {
       props: {
         repoId: 9,
@@ -112,19 +112,10 @@ describe('RepositoryOperationsSection', () => {
     })
     await flushPromises()
 
-    const header = wrapper.get('[data-testid="repo-pr-summary-header"]')
-    expect(header.classes()).toContain('lg:flex-row')
-    expect(header.classes()).not.toContain('sm:flex-row')
-
-    const controls = wrapper.get('[data-testid="repo-pr-summary-controls"]')
-    expect(controls.classes()).toContain('lg:w-auto')
-    expect(controls.classes()).toContain('lg:shrink-0')
-    expect(controls.classes()).not.toContain('sm:w-auto')
-
-    const range = wrapper.get('[data-testid="repo-pr-range"]')
-    expect(range.classes()).toContain('sm:!w-40')
-    expect(range.classes()).toContain('sm:shrink-0')
-    expect(range.classes()).not.toContain('sm:w-40')
+    const pr = await import('@/api/pr')
+    expect(pr.listPRs).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="repo-pr-summary-header"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('PR Usage Summary')
   })
 
   it('preserves the existing SCM provider when saving without changing the selection', async () => {
@@ -163,10 +154,7 @@ describe('RepositoryOperationsSection', () => {
     await wrapper.get('[data-testid="repo-save-binding"]').trigger('click')
     await flushPromises()
 
-    expect(repoApi.updateRepo).toHaveBeenCalledWith(9, {
-      scm_provider_id: 7,
-      clear_scm_provider: false,
-    })
+    expect(repoApi.updateRepo).toHaveBeenCalledWith(9, { scm_provider_id: 7 })
   })
 
   it('renders a failed binding save as an Element Plus error alert', async () => {

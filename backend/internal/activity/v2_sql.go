@@ -387,6 +387,146 @@ func (s *Service) v2ReadinessSQL(ctx context.Context, scope *v2Scope) (V2Readine
 	return V2Readiness{State: "active", FirstAcceptedAt: &value}, nil
 }
 
+func (s *Service) v2ComparisonInsideEpoch(ctx context.Context, previousFrom time.Time) (bool, error) {
+	if s.v2LedgerEpoch == "" {
+		return false, nil
+	}
+	var first sql.NullTime
+	if err := s.v2DB.QueryRowContext(ctx, `SELECT MIN(bucket_start_utc) FROM attribution_usage_pools WHERE ledger_epoch=$1`, s.v2LedgerEpoch).Scan(&first); err != nil {
+		return false, fmt.Errorf("load v2 comparison boundary: %w", err)
+	}
+	return first.Valid && !previousFrom.Before(first.Time.UTC()), nil
+}
+
+func (s *Service) attachV2RepositoryChanges(ctx context.Context, scope *v2Scope, from, to, previousFrom, previousTo time.Time, items []V2RepositoryRow) error {
+	ids := make([]int, len(items))
+	byID := make(map[int]*V2RepositoryRow, len(items))
+	for index := range items {
+		ids[index], byID[items[index].RepoConfigID] = items[index].RepoConfigID, &items[index]
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	args := []any{s.v2LedgerEpoch, from, to, previousFrom, previousTo}
+	users := appendSQLInts(&args, sortedIntKeys(scope.userIDs))
+	repositories := appendSQLInts(&args, ids)
+	statement := fmt.Sprintf(`WITH values_by_period AS (
+ SELECT c.repo_config_id, CASE WHEN p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3 THEN 'current' ELSE 'previous' END period,
+        p.id,p.total_tokens,p.coverage_gap_count,bool_or(c.relation_kind='direct') has_direct
+ FROM attribution_usage_pools p JOIN attribution_usage_pool_commits c ON c.pool_id=p.id
+ WHERE p.ledger_epoch=$1 AND ((p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3) OR (p.bucket_start_utc >= $4 AND p.bucket_start_utc < $5))
+   AND p.user_id IN (%s) AND p.relay_provider_id > 0 AND c.repo_config_id IN (%s)
+ GROUP BY c.repo_config_id,period,p.id,p.total_tokens,p.coverage_gap_count
+), totals AS (
+ SELECT repo_config_id,period,COALESCE(SUM(total_tokens) FILTER (WHERE has_direct),0)::bigint tokens,COALESCE(bool_or(coverage_gap_count>0),false) gap
+ FROM values_by_period GROUP BY repo_config_id,period
+)
+SELECT repo_config_id,COALESCE(MAX(tokens) FILTER (WHERE period='current'),0),COALESCE(MAX(tokens) FILTER (WHERE period='previous'),0),COALESCE(bool_or(gap),false) FROM totals GROUP BY repo_config_id`, users, repositories)
+	rows, err := s.v2DB.QueryContext(ctx, statement, args...)
+	if err != nil {
+		return fmt.Errorf("query v2 repository changes: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int
+		var current, previous int64
+		var gap bool
+		if err := rows.Scan(&id, &current, &previous, &gap); err != nil {
+			return fmt.Errorf("scan v2 repository changes: %w", err)
+		}
+		if row := byID[id]; row != nil && !gap {
+			change := current - previous
+			row.TokenChange = &change
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate v2 repository changes: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) attachV2PRChanges(ctx context.Context, scope *v2Scope, from, to, previousFrom, previousTo time.Time, items []V2PullRequestRow) error {
+	ids := make([]int, len(items))
+	byID := make(map[int]*V2PullRequestRow, len(items))
+	for index := range items {
+		ids[index], byID[items[index].PRRecordID] = items[index].PRRecordID, &items[index]
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	args := []any{s.v2LedgerEpoch, from, to, previousFrom, previousTo}
+	users := appendSQLInts(&args, sortedIntKeys(scope.userIDs))
+	prs := appendSQLInts(&args, ids)
+	statement := fmt.Sprintf(`WITH pool_pr AS (
+ SELECT pr.id pr_record_id,CASE WHEN p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3 THEN 'current' ELSE 'previous' END period,
+        p.id,p.total_tokens,p.coverage_gap_count
+ FROM attribution_usage_pools p JOIN attribution_usage_pool_commits c ON c.pool_id=p.id
+ JOIN pr_commit_usage_snapshots pcs ON pcs.commit_sha=c.commit_sha JOIN pr_records pr ON pr.id=pcs.pr_record_id AND pr.repo_config_pr_records=c.repo_config_id
+ WHERE p.ledger_epoch=$1 AND ((p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3) OR (p.bucket_start_utc >= $4 AND p.bucket_start_utc < $5))
+   AND p.user_id IN (%s) AND p.relay_provider_id > 0 AND pr.id IN (%s)
+   AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits counted WHERE counted.pool_id=p.id AND counted.relation_kind IN ('direct','shared'))
+ GROUP BY pr.id,period,p.id,p.total_tokens,p.coverage_gap_count
+), totals AS (SELECT pr_record_id,period,SUM(total_tokens)::bigint tokens,COALESCE(bool_or(coverage_gap_count>0),false) gap FROM pool_pr GROUP BY pr_record_id,period)
+SELECT pr_record_id,COALESCE(MAX(tokens) FILTER (WHERE period='current'),0),COALESCE(MAX(tokens) FILTER (WHERE period='previous'),0),COALESCE(bool_or(gap),false) FROM totals GROUP BY pr_record_id`, users, prs)
+	rows, err := s.v2DB.QueryContext(ctx, statement, args...)
+	if err != nil {
+		return fmt.Errorf("query v2 pull-request changes: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int
+		var current, previous int64
+		var gap bool
+		if err := rows.Scan(&id, &current, &previous, &gap); err != nil {
+			return fmt.Errorf("scan v2 pull-request changes: %w", err)
+		}
+		if row := byID[id]; row != nil && !gap {
+			change := current - previous
+			row.TokenChange = &change
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate v2 pull-request changes: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) attachV2PRCommits(ctx context.Context, scope *v2Scope, from, to time.Time, items []V2PullRequestRow) error {
+	ids := make([]int, len(items))
+	byID := make(map[int]*V2PullRequestRow, len(items))
+	for index := range items {
+		ids[index] = items[index].PRRecordID
+		items[index].Commits = []V2CommitReference{}
+		byID[items[index].PRRecordID] = &items[index]
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	args := []any{s.v2LedgerEpoch, from, to}
+	users := appendSQLInts(&args, sortedIntKeys(scope.userIDs))
+	prs := appendSQLInts(&args, ids)
+	statement := fmt.Sprintf(`SELECT DISTINCT pr.id,c.repo_config_id,c.commit_sha FROM attribution_usage_pools p JOIN attribution_usage_pool_commits c ON c.pool_id=p.id JOIN pr_commit_usage_snapshots pcs ON pcs.commit_sha=c.commit_sha JOIN pr_records pr ON pr.id=pcs.pr_record_id AND pr.repo_config_pr_records=c.repo_config_id WHERE p.ledger_epoch=$1 AND p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3 AND p.user_id IN (%s) AND p.relay_provider_id > 0 AND pr.id IN (%s) AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits counted WHERE counted.pool_id=p.id AND counted.relation_kind IN ('direct','shared')) ORDER BY pr.id,c.repo_config_id,c.commit_sha`, users, prs)
+	rows, err := s.v2DB.QueryContext(ctx, statement, args...)
+	if err != nil {
+		return fmt.Errorf("query v2 PR commits: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int
+		var commit V2CommitReference
+		if err := rows.Scan(&id, &commit.RepoConfigID, &commit.CommitSHA); err != nil {
+			return fmt.Errorf("scan v2 PR commits: %w", err)
+		}
+		if row := byID[id]; row != nil {
+			row.Commits = append(row.Commits, commit)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate v2 PR commits: %w", err)
+	}
+	return nil
+}
+
 func appendSQLInts(args *[]any, values []int) string {
 	if len(values) == 0 {
 		return "NULL"

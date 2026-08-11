@@ -59,6 +59,7 @@ const router = createRouter({
       path: '/repos',
       name: 'RepoList',
       component: () => import('@/views/repos/RepoListView.vue'),
+      meta: { requireAdmin: true },
     },
     {
       path: '/activity',
@@ -112,6 +113,7 @@ const router = createRouter({
       name: 'RepoDetail',
       component: () => import('@/views/repos/RepoDetailView.vue'),
       props: true,
+      meta: { requireAdmin: true },
     },
     {
       path: '/settings',

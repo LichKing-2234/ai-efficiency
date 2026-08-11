@@ -47,7 +47,19 @@ describe('Activity controls', () => {
     const changeFrom = new Date(change.from)
     const changeTo = new Date(change.to)
     expect([changeFrom.getFullYear(), changeFrom.getMonth(), changeFrom.getDate()]).toEqual([2026, 7, 1])
-    expect([changeTo.getFullYear(), changeTo.getMonth(), changeTo.getDate()]).toEqual([2026, 7, 4])
+    expect([changeTo.getFullYear(), changeTo.getMonth(), changeTo.getDate()]).toEqual([2026, 7, 3])
+  })
+
+  it('explains and blocks an invalid custom range', async () => {
+    const wrapper = mount(ActivityDateRange, { props: { from: '2026-08-01', to: '2026-08-08' } })
+    await wrapper.get('[data-testid="activity-range-custom"]').trigger('click')
+    await wrapper.get('input[data-testid="activity-custom-from"]').setValue('2026-01-01')
+    await wrapper.get('input[data-testid="activity-custom-to"]').setValue('2026-08-08')
+
+    expect(wrapper.get('[role="alert"]').text()).toContain('90 days')
+    expect(wrapper.get('[data-testid="activity-range-apply"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="activity-range-apply"]').trigger('click')
+    expect(wrapper.emitted('change')).toBeUndefined()
   })
 
   it('uses Element Plus for repository PR links and disclosure actions', async () => {
