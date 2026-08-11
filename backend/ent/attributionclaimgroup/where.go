@@ -134,6 +134,26 @@ func RequestCount(v int) predicate.AttributionClaimGroup {
 	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldRequestCount, v))
 }
 
+// FinalizedAt applies equality check predicate on the "finalized_at" field. It's identical to FinalizedAtEQ.
+func FinalizedAt(v time.Time) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldFinalizedAt, v))
+}
+
+// FinalizationAttemptCount applies equality check predicate on the "finalization_attempt_count" field. It's identical to FinalizationAttemptCountEQ.
+func FinalizationAttemptCount(v int) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldFinalizationAttemptCount, v))
+}
+
+// FinalizationNextAttemptAt applies equality check predicate on the "finalization_next_attempt_at" field. It's identical to FinalizationNextAttemptAtEQ.
+func FinalizationNextAttemptAt(v time.Time) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldFinalizationNextAttemptAt, v))
+}
+
+// FinalizationLastErrorCode applies equality check predicate on the "finalization_last_error_code" field. It's identical to FinalizationLastErrorCodeEQ.
+func FinalizationLastErrorCode(v string) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldFinalizationLastErrorCode, v))
+}
+
 // ExpiresAt applies equality check predicate on the "expires_at" field. It's identical to ExpiresAtEQ.
 func ExpiresAt(v time.Time) predicate.AttributionClaimGroup {
 	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldExpiresAt, v))
@@ -494,6 +514,16 @@ func ThreadIDHasSuffix(v string) predicate.AttributionClaimGroup {
 	return predicate.AttributionClaimGroup(sql.FieldHasSuffix(FieldThreadID, v))
 }
 
+// ThreadIDIsNil applies the IsNil predicate on the "thread_id" field.
+func ThreadIDIsNil() predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldIsNull(FieldThreadID))
+}
+
+// ThreadIDNotNil applies the NotNil predicate on the "thread_id" field.
+func ThreadIDNotNil() predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNotNull(FieldThreadID))
+}
+
 // ThreadIDEqualFold applies the EqualFold predicate on the "thread_id" field.
 func ThreadIDEqualFold(v string) predicate.AttributionClaimGroup {
 	return predicate.AttributionClaimGroup(sql.FieldEqualFold(FieldThreadID, v))
@@ -559,6 +589,16 @@ func TurnIDHasSuffix(v string) predicate.AttributionClaimGroup {
 	return predicate.AttributionClaimGroup(sql.FieldHasSuffix(FieldTurnID, v))
 }
 
+// TurnIDIsNil applies the IsNil predicate on the "turn_id" field.
+func TurnIDIsNil() predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldIsNull(FieldTurnID))
+}
+
+// TurnIDNotNil applies the NotNil predicate on the "turn_id" field.
+func TurnIDNotNil() predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNotNull(FieldTurnID))
+}
+
 // TurnIDEqualFold applies the EqualFold predicate on the "turn_id" field.
 func TurnIDEqualFold(v string) predicate.AttributionClaimGroup {
 	return predicate.AttributionClaimGroup(sql.FieldEqualFold(FieldTurnID, v))
@@ -622,6 +662,16 @@ func EvidenceDigestHasPrefix(v string) predicate.AttributionClaimGroup {
 // EvidenceDigestHasSuffix applies the HasSuffix predicate on the "evidence_digest" field.
 func EvidenceDigestHasSuffix(v string) predicate.AttributionClaimGroup {
 	return predicate.AttributionClaimGroup(sql.FieldHasSuffix(FieldEvidenceDigest, v))
+}
+
+// EvidenceDigestIsNil applies the IsNil predicate on the "evidence_digest" field.
+func EvidenceDigestIsNil() predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldIsNull(FieldEvidenceDigest))
+}
+
+// EvidenceDigestNotNil applies the NotNil predicate on the "evidence_digest" field.
+func EvidenceDigestNotNil() predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNotNull(FieldEvidenceDigest))
 }
 
 // EvidenceDigestEqualFold applies the EqualFold predicate on the "evidence_digest" field.
@@ -947,6 +997,211 @@ func RequestCountLT(v int) predicate.AttributionClaimGroup {
 // RequestCountLTE applies the LTE predicate on the "request_count" field.
 func RequestCountLTE(v int) predicate.AttributionClaimGroup {
 	return predicate.AttributionClaimGroup(sql.FieldLTE(FieldRequestCount, v))
+}
+
+// FinalizedAtEQ applies the EQ predicate on the "finalized_at" field.
+func FinalizedAtEQ(v time.Time) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldFinalizedAt, v))
+}
+
+// FinalizedAtNEQ applies the NEQ predicate on the "finalized_at" field.
+func FinalizedAtNEQ(v time.Time) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNEQ(FieldFinalizedAt, v))
+}
+
+// FinalizedAtIn applies the In predicate on the "finalized_at" field.
+func FinalizedAtIn(vs ...time.Time) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldIn(FieldFinalizedAt, vs...))
+}
+
+// FinalizedAtNotIn applies the NotIn predicate on the "finalized_at" field.
+func FinalizedAtNotIn(vs ...time.Time) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNotIn(FieldFinalizedAt, vs...))
+}
+
+// FinalizedAtGT applies the GT predicate on the "finalized_at" field.
+func FinalizedAtGT(v time.Time) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldGT(FieldFinalizedAt, v))
+}
+
+// FinalizedAtGTE applies the GTE predicate on the "finalized_at" field.
+func FinalizedAtGTE(v time.Time) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldGTE(FieldFinalizedAt, v))
+}
+
+// FinalizedAtLT applies the LT predicate on the "finalized_at" field.
+func FinalizedAtLT(v time.Time) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldLT(FieldFinalizedAt, v))
+}
+
+// FinalizedAtLTE applies the LTE predicate on the "finalized_at" field.
+func FinalizedAtLTE(v time.Time) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldLTE(FieldFinalizedAt, v))
+}
+
+// FinalizedAtIsNil applies the IsNil predicate on the "finalized_at" field.
+func FinalizedAtIsNil() predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldIsNull(FieldFinalizedAt))
+}
+
+// FinalizedAtNotNil applies the NotNil predicate on the "finalized_at" field.
+func FinalizedAtNotNil() predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNotNull(FieldFinalizedAt))
+}
+
+// FinalizationAttemptCountEQ applies the EQ predicate on the "finalization_attempt_count" field.
+func FinalizationAttemptCountEQ(v int) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldFinalizationAttemptCount, v))
+}
+
+// FinalizationAttemptCountNEQ applies the NEQ predicate on the "finalization_attempt_count" field.
+func FinalizationAttemptCountNEQ(v int) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNEQ(FieldFinalizationAttemptCount, v))
+}
+
+// FinalizationAttemptCountIn applies the In predicate on the "finalization_attempt_count" field.
+func FinalizationAttemptCountIn(vs ...int) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldIn(FieldFinalizationAttemptCount, vs...))
+}
+
+// FinalizationAttemptCountNotIn applies the NotIn predicate on the "finalization_attempt_count" field.
+func FinalizationAttemptCountNotIn(vs ...int) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNotIn(FieldFinalizationAttemptCount, vs...))
+}
+
+// FinalizationAttemptCountGT applies the GT predicate on the "finalization_attempt_count" field.
+func FinalizationAttemptCountGT(v int) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldGT(FieldFinalizationAttemptCount, v))
+}
+
+// FinalizationAttemptCountGTE applies the GTE predicate on the "finalization_attempt_count" field.
+func FinalizationAttemptCountGTE(v int) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldGTE(FieldFinalizationAttemptCount, v))
+}
+
+// FinalizationAttemptCountLT applies the LT predicate on the "finalization_attempt_count" field.
+func FinalizationAttemptCountLT(v int) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldLT(FieldFinalizationAttemptCount, v))
+}
+
+// FinalizationAttemptCountLTE applies the LTE predicate on the "finalization_attempt_count" field.
+func FinalizationAttemptCountLTE(v int) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldLTE(FieldFinalizationAttemptCount, v))
+}
+
+// FinalizationNextAttemptAtEQ applies the EQ predicate on the "finalization_next_attempt_at" field.
+func FinalizationNextAttemptAtEQ(v time.Time) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldFinalizationNextAttemptAt, v))
+}
+
+// FinalizationNextAttemptAtNEQ applies the NEQ predicate on the "finalization_next_attempt_at" field.
+func FinalizationNextAttemptAtNEQ(v time.Time) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNEQ(FieldFinalizationNextAttemptAt, v))
+}
+
+// FinalizationNextAttemptAtIn applies the In predicate on the "finalization_next_attempt_at" field.
+func FinalizationNextAttemptAtIn(vs ...time.Time) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldIn(FieldFinalizationNextAttemptAt, vs...))
+}
+
+// FinalizationNextAttemptAtNotIn applies the NotIn predicate on the "finalization_next_attempt_at" field.
+func FinalizationNextAttemptAtNotIn(vs ...time.Time) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNotIn(FieldFinalizationNextAttemptAt, vs...))
+}
+
+// FinalizationNextAttemptAtGT applies the GT predicate on the "finalization_next_attempt_at" field.
+func FinalizationNextAttemptAtGT(v time.Time) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldGT(FieldFinalizationNextAttemptAt, v))
+}
+
+// FinalizationNextAttemptAtGTE applies the GTE predicate on the "finalization_next_attempt_at" field.
+func FinalizationNextAttemptAtGTE(v time.Time) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldGTE(FieldFinalizationNextAttemptAt, v))
+}
+
+// FinalizationNextAttemptAtLT applies the LT predicate on the "finalization_next_attempt_at" field.
+func FinalizationNextAttemptAtLT(v time.Time) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldLT(FieldFinalizationNextAttemptAt, v))
+}
+
+// FinalizationNextAttemptAtLTE applies the LTE predicate on the "finalization_next_attempt_at" field.
+func FinalizationNextAttemptAtLTE(v time.Time) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldLTE(FieldFinalizationNextAttemptAt, v))
+}
+
+// FinalizationLastErrorCodeEQ applies the EQ predicate on the "finalization_last_error_code" field.
+func FinalizationLastErrorCodeEQ(v string) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldFinalizationLastErrorCode, v))
+}
+
+// FinalizationLastErrorCodeNEQ applies the NEQ predicate on the "finalization_last_error_code" field.
+func FinalizationLastErrorCodeNEQ(v string) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNEQ(FieldFinalizationLastErrorCode, v))
+}
+
+// FinalizationLastErrorCodeIn applies the In predicate on the "finalization_last_error_code" field.
+func FinalizationLastErrorCodeIn(vs ...string) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldIn(FieldFinalizationLastErrorCode, vs...))
+}
+
+// FinalizationLastErrorCodeNotIn applies the NotIn predicate on the "finalization_last_error_code" field.
+func FinalizationLastErrorCodeNotIn(vs ...string) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNotIn(FieldFinalizationLastErrorCode, vs...))
+}
+
+// FinalizationLastErrorCodeGT applies the GT predicate on the "finalization_last_error_code" field.
+func FinalizationLastErrorCodeGT(v string) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldGT(FieldFinalizationLastErrorCode, v))
+}
+
+// FinalizationLastErrorCodeGTE applies the GTE predicate on the "finalization_last_error_code" field.
+func FinalizationLastErrorCodeGTE(v string) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldGTE(FieldFinalizationLastErrorCode, v))
+}
+
+// FinalizationLastErrorCodeLT applies the LT predicate on the "finalization_last_error_code" field.
+func FinalizationLastErrorCodeLT(v string) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldLT(FieldFinalizationLastErrorCode, v))
+}
+
+// FinalizationLastErrorCodeLTE applies the LTE predicate on the "finalization_last_error_code" field.
+func FinalizationLastErrorCodeLTE(v string) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldLTE(FieldFinalizationLastErrorCode, v))
+}
+
+// FinalizationLastErrorCodeContains applies the Contains predicate on the "finalization_last_error_code" field.
+func FinalizationLastErrorCodeContains(v string) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldContains(FieldFinalizationLastErrorCode, v))
+}
+
+// FinalizationLastErrorCodeHasPrefix applies the HasPrefix predicate on the "finalization_last_error_code" field.
+func FinalizationLastErrorCodeHasPrefix(v string) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldHasPrefix(FieldFinalizationLastErrorCode, v))
+}
+
+// FinalizationLastErrorCodeHasSuffix applies the HasSuffix predicate on the "finalization_last_error_code" field.
+func FinalizationLastErrorCodeHasSuffix(v string) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldHasSuffix(FieldFinalizationLastErrorCode, v))
+}
+
+// FinalizationLastErrorCodeIsNil applies the IsNil predicate on the "finalization_last_error_code" field.
+func FinalizationLastErrorCodeIsNil() predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldIsNull(FieldFinalizationLastErrorCode))
+}
+
+// FinalizationLastErrorCodeNotNil applies the NotNil predicate on the "finalization_last_error_code" field.
+func FinalizationLastErrorCodeNotNil() predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNotNull(FieldFinalizationLastErrorCode))
+}
+
+// FinalizationLastErrorCodeEqualFold applies the EqualFold predicate on the "finalization_last_error_code" field.
+func FinalizationLastErrorCodeEqualFold(v string) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldEqualFold(FieldFinalizationLastErrorCode, v))
+}
+
+// FinalizationLastErrorCodeContainsFold applies the ContainsFold predicate on the "finalization_last_error_code" field.
+func FinalizationLastErrorCodeContainsFold(v string) predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldContainsFold(FieldFinalizationLastErrorCode, v))
 }
 
 // ExpiresAtEQ applies the EQ predicate on the "expires_at" field.

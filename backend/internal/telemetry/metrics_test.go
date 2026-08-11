@@ -110,6 +110,43 @@ func TestMetricsCacheRecorderUsesOnlyStableCacheAndOutcomeLabels(t *testing.T) {
 	}
 }
 
+func TestAttributionMetricsUseOnlyBoundedOperationalLabels(t *testing.T) {
+	metrics := NewMetrics("test-release")
+	recorder := metrics.AttributionRecorder()
+	recorder.SetAttributionHealth(3, 2*time.Hour, 1)
+	recorder.ObserveAttributionReconciliation("owner_mismatch", 90*time.Minute)
+	recorder.AddAttributionLifecycle("finalization", "succeeded", 2)
+	recorder.AddAttributionLifecycle("cleanup", "hard_expired", 1)
+
+	if got := gaugeValue(t, metrics.Gatherer(), "ai_efficiency_attribution_requests_pending", nil); got != 3 {
+		t.Fatalf("pending claims = %v, want 3", got)
+	}
+	if got := gaugeValue(t, metrics.Gatherer(), "ai_efficiency_attribution_oldest_pending_age_seconds", nil); got != 7200 {
+		t.Fatalf("oldest pending age = %v, want 7200", got)
+	}
+	if got := gaugeValue(t, metrics.Gatherer(), "ai_efficiency_attribution_groups_near_expiry", nil); got != 1 {
+		t.Fatalf("near-expiry groups = %v, want 1", got)
+	}
+	labels := map[string]string{"outcome": "owner_mismatch", "release": "test-release"}
+	if got := counterValue(t, metrics.Gatherer(), "ai_efficiency_attribution_reconciliations_total", labels); got != 1 {
+		t.Fatalf("owner mismatch reconciliations = %v, want 1", got)
+	}
+	age := histogramValue(t, metrics.Gatherer(), "ai_efficiency_attribution_reconciliation_age_seconds", labels)
+	if age.GetSampleCount() != 1 || age.GetSampleSum() != 5400 {
+		t.Fatalf("reconciliation age = count %d sum %v", age.GetSampleCount(), age.GetSampleSum())
+	}
+	if got := counterValue(t, metrics.Gatherer(), "ai_efficiency_attribution_lifecycle_total", map[string]string{
+		"operation": "finalization", "outcome": "succeeded", "release": "test-release",
+	}); got != 2 {
+		t.Fatalf("finalization count = %v, want 2", got)
+	}
+	if got := counterValue(t, metrics.Gatherer(), "ai_efficiency_attribution_lifecycle_total", map[string]string{
+		"operation": "cleanup", "outcome": "hard_expired", "release": "test-release",
+	}); got != 1 {
+		t.Fatalf("hard-expired cleanup count = %v, want 1", got)
+	}
+}
+
 func gatheredMetric(t *testing.T, gatherer prometheus.Gatherer, name string, labels map[string]string) *dto.Metric {
 	t.Helper()
 	families, err := gatherer.Gather()

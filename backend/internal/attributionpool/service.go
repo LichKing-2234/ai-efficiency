@@ -19,6 +19,8 @@ import (
 
 const LedgerEpoch = "shadow_v2"
 
+const CoverageGapModel = "unresolved"
+
 type commitRef struct {
 	repoConfigID int
 	commitSHA    string
@@ -117,6 +119,47 @@ func MaterializeRequestClaim(ctx context.Context, client *ent.Client, claimID in
 		return deleteEmptyPool(ctx, client, oldPoolID)
 	}
 	return nil
+}
+
+// MaterializeCoverageGaps stores unresolved Requests as zero-Token coverage
+// only. The group receive bucket is used because no upstream usage time or
+// requested model exists for an unresolved Request.
+func MaterializeCoverageGaps(ctx context.Context, client *ent.Client, groupID, count int) error {
+	if client == nil || groupID <= 0 || count <= 0 {
+		return fmt.Errorf("materialize coverage gaps: client, group_id, and positive count are required")
+	}
+	group, err := client.AttributionClaimGroup.Get(ctx, groupID)
+	if err != nil {
+		return fmt.Errorf("load claim group for coverage gaps: %w", err)
+	}
+	commits, err := canonicalCommits(group.CommitAllocations)
+	if err != nil {
+		return fmt.Errorf("build coverage gap contribution: %w", err)
+	}
+	bucket := group.CreatedAt.UTC().Truncate(15 * time.Minute)
+	parts := []string{strconv.Itoa(group.UserID), CoverageGapModel, bucket.Format(time.RFC3339)}
+	for _, commit := range commits {
+		parts = append(parts, fmt.Sprintf("%d:%s", commit.repoConfigID, commit.commitSHA))
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x1f")))
+	value := contribution{
+		key: hex.EncodeToString(sum[:]), userID: group.UserID, model: CoverageGapModel,
+		bucketStart: bucket, commits: commits,
+	}
+	pool, err := ensurePool(ctx, client, value)
+	if err != nil {
+		return err
+	}
+	updated, err := client.AttributionUsagePool.Update().Where(
+		attributionusagepool.IDEQ(pool.ID), attributionusagepool.CoverageGapCountLTE(math.MaxInt-count),
+	).AddCoverageGapCount(count).Save(ctx)
+	if err != nil {
+		return fmt.Errorf("add attribution pool coverage gaps: %w", err)
+	}
+	if updated != 1 {
+		return fmt.Errorf("add attribution pool coverage gaps: updated=%d", updated)
+	}
+	return ensureCommitRelations(ctx, client, pool.ID, commits)
 }
 
 func canonicalContribution(userID int, allocations []map[string]any, claim *ent.AttributionRequestClaim) (contribution, error) {

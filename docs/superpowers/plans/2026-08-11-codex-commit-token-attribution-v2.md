@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** Implementation in progress; T02-T05 are merged, T07 passes full backend, race, repeated tests, and clean Standards/Spec review and is awaiting PR/hosted CI, and the T04 real read-only canary still requires separate authorization
+**Status:** Implementation in progress; T02-T05 and T07 are merged with hosted CI green, T06 passes full backend, race, repeated tests, and clean Standards/Spec review and is awaiting PR/hosted CI, and the T04 real read-only canary still requires separate authorization
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -77,13 +77,13 @@ T01 contract publication (#253)
 
 ### T06 — Claim lifecycle, finalization, and health ([#246](https://github.com/LichKing-2234/ai-efficiency/issues/246))
 
-- [ ] Implement pending/reconciled/mismatch/ambiguous/expired states and partial
+- [x] Implement pending/reconciled/mismatch/ambiguous/expired states and partial
   lower bounds.
-- [ ] Calculate the final source lookup deadline at least 24 hours before the
+- [x] Calculate the final source lookup deadline at least 24 hours before the
   nominal upstream retention boundary, then transactionally freeze,
   materialize, gap, and clean.
-- [ ] Add bounded operational metrics without Request IDs in product DTOs.
-- [ ] Verify expiry, shutdown, lease recovery, and the exact 24-hour safety
+- [x] Add bounded operational metrics without Request IDs in product DTOs.
+- [x] Verify expiry, shutdown, lease recovery, and the exact 24-hour safety
   boundary on both sides.
 
 ### T07 — Durable usage pools and global shared conservation ([#245](https://github.com/LichKing-2234/ai-efficiency/issues/245))
