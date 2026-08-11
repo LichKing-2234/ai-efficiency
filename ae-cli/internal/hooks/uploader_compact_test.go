@@ -32,7 +32,7 @@ func (r *recordingCompactCheckpointSender) SendAttributionRevision(context.Conte
 func TestCompactBackendUploaderPreservesSubsecondCaptureTime(t *testing.T) {
 	now := time.Date(2026, 8, 5, 10, 0, 0, 987_654_321, time.UTC)
 	sender := &recordingCompactCheckpointSender{}
-	uploader := NewCompactBackendUploader(sender, "installation-a")
+	uploader := NewCompactBackendUploader(sender, "installation-a", 0)
 
 	if err := uploader.UploadHookEvent(context.Background(), HookEvent{
 		Kind: "post-commit", EventID: "event-a", RepoConfigID: 11, RepoFullName: "acme/repo",

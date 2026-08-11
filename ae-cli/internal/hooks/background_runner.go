@@ -90,6 +90,10 @@ func RunPendingSyncTask(ctx context.Context, execCtx ExecutionContext, uploader 
 			_ = MarkSyncTaskFailure(task, time.Now().UTC(), err)
 			return err
 		}
+		if err := runV2ClaimSync(ctx, uploader, execCtx, task); err != nil {
+			_ = MarkSyncTaskFailure(task, time.Now().UTC(), err)
+			return err
+		}
 	} else if syncClient == nil {
 		err := fmt.Errorf("sync uploader does not expose tool usage client")
 		_ = MarkSyncTaskFailure(task, time.Now().UTC(), err)
@@ -119,6 +123,51 @@ func RunPendingSyncTask(ctx context.Context, execCtx ExecutionContext, uploader 
 		return MarkSyncTaskSuccess(current, time.Now().UTC())
 	}
 	return DeleteSyncTask(execCtx.WorkspaceID)
+}
+
+type v2ClaimUploader interface {
+	V2ClaimClient() attributionlocal.V2ClaimBackendClient
+	RelayProviderID() int
+}
+
+func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionContext, task *SyncTask) error {
+	v2, ok := uploader.(v2ClaimUploader)
+	if !ok || v2.V2ClaimClient() == nil || v2.RelayProviderID() <= 0 || task == nil || task.TriggerEventID == "" || task.TriggerCommitSHA == "" {
+		return nil
+	}
+	candidates, err := attributionlocal.ScanCodexV2ClaimsFromHome(ctx, "", attributionlocal.V2ClaimScanOptions{
+		RepoRoot: execCtx.RepoRoot, CommitSHA: task.TriggerCommitSHA, RelayProviderID: v2.RelayProviderID(),
+		RepoConfigID: execCtx.RepoConfigID, RepoKey: execCtx.RepoKey, WorkspaceID: execCtx.WorkspaceID,
+		CheckpointEventID: task.TriggerEventID,
+	})
+	if err != nil {
+		return err
+	}
+	state, err := attributionlocal.LoadV2ClaimState()
+	if err != nil {
+		return err
+	}
+	attributionlocal.MergeV2ClaimState(state, candidates, time.Now().UTC())
+	if err := attributionlocal.SaveV2ClaimState(state); err != nil {
+		return err
+	}
+	groups := attributionlocal.UploadableV2ClaimGroups(state.Claims)
+	if len(groups) == 0 {
+		return nil
+	}
+	result, err := v2.V2ClaimClient().SendAttributionV2Claims(ctx, groups)
+	if err != nil {
+		return err
+	}
+	if result == nil || result.LedgerEpoch != "shadow_v2" || len(result.Results) != len(groups) {
+		return fmt.Errorf("invalid v2 claim acknowledgement")
+	}
+	for _, item := range result.Results {
+		if item.Group.Status != "persisted" && item.Group.Status != "duplicate_identical" {
+			return fmt.Errorf("v2 claim %s was not acknowledged: %s", item.Group.ID, item.Group.Status)
+		}
+	}
+	return nil
 }
 
 type compactInstallationIdentity interface {

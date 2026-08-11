@@ -27,7 +27,7 @@ var runBackgroundSyncTask = hooks.RunPendingSyncTask
 
 var newHookUploader = func() hooks.Uploader {
 	if reportingConfig, ok := loadEnabledReportingConfig(); ok {
-		return hooks.NewCompactBackendUploader(client.New(reportingConfig.ServerURL, reportingConfig.ReporterToken), reportingConfig.InstallationID)
+		return hooks.NewCompactBackendUploader(client.New(reportingConfig.ServerURL, reportingConfig.ReporterToken), reportingConfig.InstallationID, reportingConfig.RelayProviderID)
 	}
 	if apiClient == nil {
 		return hooks.UnsupportedUploader{}

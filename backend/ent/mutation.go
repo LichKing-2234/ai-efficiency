@@ -13,6 +13,8 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
 	"github.com/ai-efficiency/backend/ent/attributionallocationrevision"
+	"github.com/ai-efficiency/backend/ent/attributionclaimgroup"
+	"github.com/ai-efficiency/backend/ent/attributionrequestclaim"
 	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
@@ -54,6 +56,8 @@ const (
 	// Node types.
 	TypeAdminSubscriptionJob          = "AdminSubscriptionJob"
 	TypeAttributionAllocationRevision = "AttributionAllocationRevision"
+	TypeAttributionClaimGroup         = "AttributionClaimGroup"
+	TypeAttributionRequestClaim       = "AttributionRequestClaim"
 	TypeAttributionUsageBucket        = "AttributionUsageBucket"
 	TypeCommitCheckpoint              = "CommitCheckpoint"
 	TypeCommitRewrite                 = "CommitRewrite"
@@ -2935,6 +2939,2502 @@ func (m *AttributionAllocationRevisionMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown AttributionAllocationRevision edge %s", name)
+}
+
+// AttributionClaimGroupMutation represents an operation that mutates the AttributionClaimGroup nodes in the graph.
+type AttributionClaimGroupMutation struct {
+	config
+	op                                   Op
+	typ                                  string
+	id                                   *int
+	group_id                             *string
+	installation_id                      *int
+	addinstallation_id                   *int
+	user_id                              *int
+	adduser_id                           *int
+	relay_provider_id                    *int
+	addrelay_provider_id                 *int
+	schema_version                       *int
+	addschema_version                    *int
+	ledger_epoch                         *string
+	thread_id                            *string
+	turn_id                              *string
+	evidence_digest                      *string
+	calibration_digest                   *string
+	calibration_input_tokens             *int64
+	addcalibration_input_tokens          *int64
+	calibration_output_tokens            *int64
+	addcalibration_output_tokens         *int64
+	calibration_cache_creation_tokens    *int64
+	addcalibration_cache_creation_tokens *int64
+	calibration_cache_read_tokens        *int64
+	addcalibration_cache_read_tokens     *int64
+	calibration_total_tokens             *int64
+	addcalibration_total_tokens          *int64
+	commit_allocations                   *[]map[string]interface{}
+	appendcommit_allocations             []map[string]interface{}
+	request_count                        *int
+	addrequest_count                     *int
+	expires_at                           *time.Time
+	created_at                           *time.Time
+	updated_at                           *time.Time
+	clearedFields                        map[string]struct{}
+	done                                 bool
+	oldValue                             func(context.Context) (*AttributionClaimGroup, error)
+	predicates                           []predicate.AttributionClaimGroup
+}
+
+var _ ent.Mutation = (*AttributionClaimGroupMutation)(nil)
+
+// attributionclaimgroupOption allows management of the mutation configuration using functional options.
+type attributionclaimgroupOption func(*AttributionClaimGroupMutation)
+
+// newAttributionClaimGroupMutation creates new mutation for the AttributionClaimGroup entity.
+func newAttributionClaimGroupMutation(c config, op Op, opts ...attributionclaimgroupOption) *AttributionClaimGroupMutation {
+	m := &AttributionClaimGroupMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAttributionClaimGroup,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAttributionClaimGroupID sets the ID field of the mutation.
+func withAttributionClaimGroupID(id int) attributionclaimgroupOption {
+	return func(m *AttributionClaimGroupMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AttributionClaimGroup
+		)
+		m.oldValue = func(ctx context.Context) (*AttributionClaimGroup, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AttributionClaimGroup.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAttributionClaimGroup sets the old AttributionClaimGroup of the mutation.
+func withAttributionClaimGroup(node *AttributionClaimGroup) attributionclaimgroupOption {
+	return func(m *AttributionClaimGroupMutation) {
+		m.oldValue = func(context.Context) (*AttributionClaimGroup, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AttributionClaimGroupMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AttributionClaimGroupMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AttributionClaimGroupMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AttributionClaimGroupMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AttributionClaimGroup.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetGroupID sets the "group_id" field.
+func (m *AttributionClaimGroupMutation) SetGroupID(s string) {
+	m.group_id = &s
+}
+
+// GroupID returns the value of the "group_id" field in the mutation.
+func (m *AttributionClaimGroupMutation) GroupID() (r string, exists bool) {
+	v := m.group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupID returns the old "group_id" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldGroupID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupID: %w", err)
+	}
+	return oldValue.GroupID, nil
+}
+
+// ResetGroupID resets all changes to the "group_id" field.
+func (m *AttributionClaimGroupMutation) ResetGroupID() {
+	m.group_id = nil
+}
+
+// SetInstallationID sets the "installation_id" field.
+func (m *AttributionClaimGroupMutation) SetInstallationID(i int) {
+	m.installation_id = &i
+	m.addinstallation_id = nil
+}
+
+// InstallationID returns the value of the "installation_id" field in the mutation.
+func (m *AttributionClaimGroupMutation) InstallationID() (r int, exists bool) {
+	v := m.installation_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInstallationID returns the old "installation_id" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldInstallationID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInstallationID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInstallationID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInstallationID: %w", err)
+	}
+	return oldValue.InstallationID, nil
+}
+
+// AddInstallationID adds i to the "installation_id" field.
+func (m *AttributionClaimGroupMutation) AddInstallationID(i int) {
+	if m.addinstallation_id != nil {
+		*m.addinstallation_id += i
+	} else {
+		m.addinstallation_id = &i
+	}
+}
+
+// AddedInstallationID returns the value that was added to the "installation_id" field in this mutation.
+func (m *AttributionClaimGroupMutation) AddedInstallationID() (r int, exists bool) {
+	v := m.addinstallation_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetInstallationID resets all changes to the "installation_id" field.
+func (m *AttributionClaimGroupMutation) ResetInstallationID() {
+	m.installation_id = nil
+	m.addinstallation_id = nil
+}
+
+// SetUserID sets the "user_id" field.
+func (m *AttributionClaimGroupMutation) SetUserID(i int) {
+	m.user_id = &i
+	m.adduser_id = nil
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *AttributionClaimGroupMutation) UserID() (r int, exists bool) {
+	v := m.user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldUserID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// AddUserID adds i to the "user_id" field.
+func (m *AttributionClaimGroupMutation) AddUserID(i int) {
+	if m.adduser_id != nil {
+		*m.adduser_id += i
+	} else {
+		m.adduser_id = &i
+	}
+}
+
+// AddedUserID returns the value that was added to the "user_id" field in this mutation.
+func (m *AttributionClaimGroupMutation) AddedUserID() (r int, exists bool) {
+	v := m.adduser_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *AttributionClaimGroupMutation) ResetUserID() {
+	m.user_id = nil
+	m.adduser_id = nil
+}
+
+// SetRelayProviderID sets the "relay_provider_id" field.
+func (m *AttributionClaimGroupMutation) SetRelayProviderID(i int) {
+	m.relay_provider_id = &i
+	m.addrelay_provider_id = nil
+}
+
+// RelayProviderID returns the value of the "relay_provider_id" field in the mutation.
+func (m *AttributionClaimGroupMutation) RelayProviderID() (r int, exists bool) {
+	v := m.relay_provider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRelayProviderID returns the old "relay_provider_id" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldRelayProviderID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRelayProviderID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRelayProviderID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRelayProviderID: %w", err)
+	}
+	return oldValue.RelayProviderID, nil
+}
+
+// AddRelayProviderID adds i to the "relay_provider_id" field.
+func (m *AttributionClaimGroupMutation) AddRelayProviderID(i int) {
+	if m.addrelay_provider_id != nil {
+		*m.addrelay_provider_id += i
+	} else {
+		m.addrelay_provider_id = &i
+	}
+}
+
+// AddedRelayProviderID returns the value that was added to the "relay_provider_id" field in this mutation.
+func (m *AttributionClaimGroupMutation) AddedRelayProviderID() (r int, exists bool) {
+	v := m.addrelay_provider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRelayProviderID resets all changes to the "relay_provider_id" field.
+func (m *AttributionClaimGroupMutation) ResetRelayProviderID() {
+	m.relay_provider_id = nil
+	m.addrelay_provider_id = nil
+}
+
+// SetSchemaVersion sets the "schema_version" field.
+func (m *AttributionClaimGroupMutation) SetSchemaVersion(i int) {
+	m.schema_version = &i
+	m.addschema_version = nil
+}
+
+// SchemaVersion returns the value of the "schema_version" field in the mutation.
+func (m *AttributionClaimGroupMutation) SchemaVersion() (r int, exists bool) {
+	v := m.schema_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSchemaVersion returns the old "schema_version" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldSchemaVersion(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSchemaVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSchemaVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSchemaVersion: %w", err)
+	}
+	return oldValue.SchemaVersion, nil
+}
+
+// AddSchemaVersion adds i to the "schema_version" field.
+func (m *AttributionClaimGroupMutation) AddSchemaVersion(i int) {
+	if m.addschema_version != nil {
+		*m.addschema_version += i
+	} else {
+		m.addschema_version = &i
+	}
+}
+
+// AddedSchemaVersion returns the value that was added to the "schema_version" field in this mutation.
+func (m *AttributionClaimGroupMutation) AddedSchemaVersion() (r int, exists bool) {
+	v := m.addschema_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSchemaVersion resets all changes to the "schema_version" field.
+func (m *AttributionClaimGroupMutation) ResetSchemaVersion() {
+	m.schema_version = nil
+	m.addschema_version = nil
+}
+
+// SetLedgerEpoch sets the "ledger_epoch" field.
+func (m *AttributionClaimGroupMutation) SetLedgerEpoch(s string) {
+	m.ledger_epoch = &s
+}
+
+// LedgerEpoch returns the value of the "ledger_epoch" field in the mutation.
+func (m *AttributionClaimGroupMutation) LedgerEpoch() (r string, exists bool) {
+	v := m.ledger_epoch
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLedgerEpoch returns the old "ledger_epoch" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldLedgerEpoch(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLedgerEpoch is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLedgerEpoch requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLedgerEpoch: %w", err)
+	}
+	return oldValue.LedgerEpoch, nil
+}
+
+// ResetLedgerEpoch resets all changes to the "ledger_epoch" field.
+func (m *AttributionClaimGroupMutation) ResetLedgerEpoch() {
+	m.ledger_epoch = nil
+}
+
+// SetThreadID sets the "thread_id" field.
+func (m *AttributionClaimGroupMutation) SetThreadID(s string) {
+	m.thread_id = &s
+}
+
+// ThreadID returns the value of the "thread_id" field in the mutation.
+func (m *AttributionClaimGroupMutation) ThreadID() (r string, exists bool) {
+	v := m.thread_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldThreadID returns the old "thread_id" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldThreadID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldThreadID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldThreadID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldThreadID: %w", err)
+	}
+	return oldValue.ThreadID, nil
+}
+
+// ResetThreadID resets all changes to the "thread_id" field.
+func (m *AttributionClaimGroupMutation) ResetThreadID() {
+	m.thread_id = nil
+}
+
+// SetTurnID sets the "turn_id" field.
+func (m *AttributionClaimGroupMutation) SetTurnID(s string) {
+	m.turn_id = &s
+}
+
+// TurnID returns the value of the "turn_id" field in the mutation.
+func (m *AttributionClaimGroupMutation) TurnID() (r string, exists bool) {
+	v := m.turn_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTurnID returns the old "turn_id" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldTurnID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTurnID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTurnID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTurnID: %w", err)
+	}
+	return oldValue.TurnID, nil
+}
+
+// ResetTurnID resets all changes to the "turn_id" field.
+func (m *AttributionClaimGroupMutation) ResetTurnID() {
+	m.turn_id = nil
+}
+
+// SetEvidenceDigest sets the "evidence_digest" field.
+func (m *AttributionClaimGroupMutation) SetEvidenceDigest(s string) {
+	m.evidence_digest = &s
+}
+
+// EvidenceDigest returns the value of the "evidence_digest" field in the mutation.
+func (m *AttributionClaimGroupMutation) EvidenceDigest() (r string, exists bool) {
+	v := m.evidence_digest
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEvidenceDigest returns the old "evidence_digest" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldEvidenceDigest(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEvidenceDigest is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEvidenceDigest requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEvidenceDigest: %w", err)
+	}
+	return oldValue.EvidenceDigest, nil
+}
+
+// ResetEvidenceDigest resets all changes to the "evidence_digest" field.
+func (m *AttributionClaimGroupMutation) ResetEvidenceDigest() {
+	m.evidence_digest = nil
+}
+
+// SetCalibrationDigest sets the "calibration_digest" field.
+func (m *AttributionClaimGroupMutation) SetCalibrationDigest(s string) {
+	m.calibration_digest = &s
+}
+
+// CalibrationDigest returns the value of the "calibration_digest" field in the mutation.
+func (m *AttributionClaimGroupMutation) CalibrationDigest() (r string, exists bool) {
+	v := m.calibration_digest
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCalibrationDigest returns the old "calibration_digest" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldCalibrationDigest(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCalibrationDigest is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCalibrationDigest requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCalibrationDigest: %w", err)
+	}
+	return oldValue.CalibrationDigest, nil
+}
+
+// ClearCalibrationDigest clears the value of the "calibration_digest" field.
+func (m *AttributionClaimGroupMutation) ClearCalibrationDigest() {
+	m.calibration_digest = nil
+	m.clearedFields[attributionclaimgroup.FieldCalibrationDigest] = struct{}{}
+}
+
+// CalibrationDigestCleared returns if the "calibration_digest" field was cleared in this mutation.
+func (m *AttributionClaimGroupMutation) CalibrationDigestCleared() bool {
+	_, ok := m.clearedFields[attributionclaimgroup.FieldCalibrationDigest]
+	return ok
+}
+
+// ResetCalibrationDigest resets all changes to the "calibration_digest" field.
+func (m *AttributionClaimGroupMutation) ResetCalibrationDigest() {
+	m.calibration_digest = nil
+	delete(m.clearedFields, attributionclaimgroup.FieldCalibrationDigest)
+}
+
+// SetCalibrationInputTokens sets the "calibration_input_tokens" field.
+func (m *AttributionClaimGroupMutation) SetCalibrationInputTokens(i int64) {
+	m.calibration_input_tokens = &i
+	m.addcalibration_input_tokens = nil
+}
+
+// CalibrationInputTokens returns the value of the "calibration_input_tokens" field in the mutation.
+func (m *AttributionClaimGroupMutation) CalibrationInputTokens() (r int64, exists bool) {
+	v := m.calibration_input_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCalibrationInputTokens returns the old "calibration_input_tokens" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldCalibrationInputTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCalibrationInputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCalibrationInputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCalibrationInputTokens: %w", err)
+	}
+	return oldValue.CalibrationInputTokens, nil
+}
+
+// AddCalibrationInputTokens adds i to the "calibration_input_tokens" field.
+func (m *AttributionClaimGroupMutation) AddCalibrationInputTokens(i int64) {
+	if m.addcalibration_input_tokens != nil {
+		*m.addcalibration_input_tokens += i
+	} else {
+		m.addcalibration_input_tokens = &i
+	}
+}
+
+// AddedCalibrationInputTokens returns the value that was added to the "calibration_input_tokens" field in this mutation.
+func (m *AttributionClaimGroupMutation) AddedCalibrationInputTokens() (r int64, exists bool) {
+	v := m.addcalibration_input_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCalibrationInputTokens resets all changes to the "calibration_input_tokens" field.
+func (m *AttributionClaimGroupMutation) ResetCalibrationInputTokens() {
+	m.calibration_input_tokens = nil
+	m.addcalibration_input_tokens = nil
+}
+
+// SetCalibrationOutputTokens sets the "calibration_output_tokens" field.
+func (m *AttributionClaimGroupMutation) SetCalibrationOutputTokens(i int64) {
+	m.calibration_output_tokens = &i
+	m.addcalibration_output_tokens = nil
+}
+
+// CalibrationOutputTokens returns the value of the "calibration_output_tokens" field in the mutation.
+func (m *AttributionClaimGroupMutation) CalibrationOutputTokens() (r int64, exists bool) {
+	v := m.calibration_output_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCalibrationOutputTokens returns the old "calibration_output_tokens" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldCalibrationOutputTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCalibrationOutputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCalibrationOutputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCalibrationOutputTokens: %w", err)
+	}
+	return oldValue.CalibrationOutputTokens, nil
+}
+
+// AddCalibrationOutputTokens adds i to the "calibration_output_tokens" field.
+func (m *AttributionClaimGroupMutation) AddCalibrationOutputTokens(i int64) {
+	if m.addcalibration_output_tokens != nil {
+		*m.addcalibration_output_tokens += i
+	} else {
+		m.addcalibration_output_tokens = &i
+	}
+}
+
+// AddedCalibrationOutputTokens returns the value that was added to the "calibration_output_tokens" field in this mutation.
+func (m *AttributionClaimGroupMutation) AddedCalibrationOutputTokens() (r int64, exists bool) {
+	v := m.addcalibration_output_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCalibrationOutputTokens resets all changes to the "calibration_output_tokens" field.
+func (m *AttributionClaimGroupMutation) ResetCalibrationOutputTokens() {
+	m.calibration_output_tokens = nil
+	m.addcalibration_output_tokens = nil
+}
+
+// SetCalibrationCacheCreationTokens sets the "calibration_cache_creation_tokens" field.
+func (m *AttributionClaimGroupMutation) SetCalibrationCacheCreationTokens(i int64) {
+	m.calibration_cache_creation_tokens = &i
+	m.addcalibration_cache_creation_tokens = nil
+}
+
+// CalibrationCacheCreationTokens returns the value of the "calibration_cache_creation_tokens" field in the mutation.
+func (m *AttributionClaimGroupMutation) CalibrationCacheCreationTokens() (r int64, exists bool) {
+	v := m.calibration_cache_creation_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCalibrationCacheCreationTokens returns the old "calibration_cache_creation_tokens" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldCalibrationCacheCreationTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCalibrationCacheCreationTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCalibrationCacheCreationTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCalibrationCacheCreationTokens: %w", err)
+	}
+	return oldValue.CalibrationCacheCreationTokens, nil
+}
+
+// AddCalibrationCacheCreationTokens adds i to the "calibration_cache_creation_tokens" field.
+func (m *AttributionClaimGroupMutation) AddCalibrationCacheCreationTokens(i int64) {
+	if m.addcalibration_cache_creation_tokens != nil {
+		*m.addcalibration_cache_creation_tokens += i
+	} else {
+		m.addcalibration_cache_creation_tokens = &i
+	}
+}
+
+// AddedCalibrationCacheCreationTokens returns the value that was added to the "calibration_cache_creation_tokens" field in this mutation.
+func (m *AttributionClaimGroupMutation) AddedCalibrationCacheCreationTokens() (r int64, exists bool) {
+	v := m.addcalibration_cache_creation_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCalibrationCacheCreationTokens resets all changes to the "calibration_cache_creation_tokens" field.
+func (m *AttributionClaimGroupMutation) ResetCalibrationCacheCreationTokens() {
+	m.calibration_cache_creation_tokens = nil
+	m.addcalibration_cache_creation_tokens = nil
+}
+
+// SetCalibrationCacheReadTokens sets the "calibration_cache_read_tokens" field.
+func (m *AttributionClaimGroupMutation) SetCalibrationCacheReadTokens(i int64) {
+	m.calibration_cache_read_tokens = &i
+	m.addcalibration_cache_read_tokens = nil
+}
+
+// CalibrationCacheReadTokens returns the value of the "calibration_cache_read_tokens" field in the mutation.
+func (m *AttributionClaimGroupMutation) CalibrationCacheReadTokens() (r int64, exists bool) {
+	v := m.calibration_cache_read_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCalibrationCacheReadTokens returns the old "calibration_cache_read_tokens" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldCalibrationCacheReadTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCalibrationCacheReadTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCalibrationCacheReadTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCalibrationCacheReadTokens: %w", err)
+	}
+	return oldValue.CalibrationCacheReadTokens, nil
+}
+
+// AddCalibrationCacheReadTokens adds i to the "calibration_cache_read_tokens" field.
+func (m *AttributionClaimGroupMutation) AddCalibrationCacheReadTokens(i int64) {
+	if m.addcalibration_cache_read_tokens != nil {
+		*m.addcalibration_cache_read_tokens += i
+	} else {
+		m.addcalibration_cache_read_tokens = &i
+	}
+}
+
+// AddedCalibrationCacheReadTokens returns the value that was added to the "calibration_cache_read_tokens" field in this mutation.
+func (m *AttributionClaimGroupMutation) AddedCalibrationCacheReadTokens() (r int64, exists bool) {
+	v := m.addcalibration_cache_read_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCalibrationCacheReadTokens resets all changes to the "calibration_cache_read_tokens" field.
+func (m *AttributionClaimGroupMutation) ResetCalibrationCacheReadTokens() {
+	m.calibration_cache_read_tokens = nil
+	m.addcalibration_cache_read_tokens = nil
+}
+
+// SetCalibrationTotalTokens sets the "calibration_total_tokens" field.
+func (m *AttributionClaimGroupMutation) SetCalibrationTotalTokens(i int64) {
+	m.calibration_total_tokens = &i
+	m.addcalibration_total_tokens = nil
+}
+
+// CalibrationTotalTokens returns the value of the "calibration_total_tokens" field in the mutation.
+func (m *AttributionClaimGroupMutation) CalibrationTotalTokens() (r int64, exists bool) {
+	v := m.calibration_total_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCalibrationTotalTokens returns the old "calibration_total_tokens" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldCalibrationTotalTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCalibrationTotalTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCalibrationTotalTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCalibrationTotalTokens: %w", err)
+	}
+	return oldValue.CalibrationTotalTokens, nil
+}
+
+// AddCalibrationTotalTokens adds i to the "calibration_total_tokens" field.
+func (m *AttributionClaimGroupMutation) AddCalibrationTotalTokens(i int64) {
+	if m.addcalibration_total_tokens != nil {
+		*m.addcalibration_total_tokens += i
+	} else {
+		m.addcalibration_total_tokens = &i
+	}
+}
+
+// AddedCalibrationTotalTokens returns the value that was added to the "calibration_total_tokens" field in this mutation.
+func (m *AttributionClaimGroupMutation) AddedCalibrationTotalTokens() (r int64, exists bool) {
+	v := m.addcalibration_total_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCalibrationTotalTokens resets all changes to the "calibration_total_tokens" field.
+func (m *AttributionClaimGroupMutation) ResetCalibrationTotalTokens() {
+	m.calibration_total_tokens = nil
+	m.addcalibration_total_tokens = nil
+}
+
+// SetCommitAllocations sets the "commit_allocations" field.
+func (m *AttributionClaimGroupMutation) SetCommitAllocations(value []map[string]interface{}) {
+	m.commit_allocations = &value
+	m.appendcommit_allocations = nil
+}
+
+// CommitAllocations returns the value of the "commit_allocations" field in the mutation.
+func (m *AttributionClaimGroupMutation) CommitAllocations() (r []map[string]interface{}, exists bool) {
+	v := m.commit_allocations
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCommitAllocations returns the old "commit_allocations" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldCommitAllocations(ctx context.Context) (v []map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCommitAllocations is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCommitAllocations requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCommitAllocations: %w", err)
+	}
+	return oldValue.CommitAllocations, nil
+}
+
+// AppendCommitAllocations adds value to the "commit_allocations" field.
+func (m *AttributionClaimGroupMutation) AppendCommitAllocations(value []map[string]interface{}) {
+	m.appendcommit_allocations = append(m.appendcommit_allocations, value...)
+}
+
+// AppendedCommitAllocations returns the list of values that were appended to the "commit_allocations" field in this mutation.
+func (m *AttributionClaimGroupMutation) AppendedCommitAllocations() ([]map[string]interface{}, bool) {
+	if len(m.appendcommit_allocations) == 0 {
+		return nil, false
+	}
+	return m.appendcommit_allocations, true
+}
+
+// ResetCommitAllocations resets all changes to the "commit_allocations" field.
+func (m *AttributionClaimGroupMutation) ResetCommitAllocations() {
+	m.commit_allocations = nil
+	m.appendcommit_allocations = nil
+}
+
+// SetRequestCount sets the "request_count" field.
+func (m *AttributionClaimGroupMutation) SetRequestCount(i int) {
+	m.request_count = &i
+	m.addrequest_count = nil
+}
+
+// RequestCount returns the value of the "request_count" field in the mutation.
+func (m *AttributionClaimGroupMutation) RequestCount() (r int, exists bool) {
+	v := m.request_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestCount returns the old "request_count" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldRequestCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestCount: %w", err)
+	}
+	return oldValue.RequestCount, nil
+}
+
+// AddRequestCount adds i to the "request_count" field.
+func (m *AttributionClaimGroupMutation) AddRequestCount(i int) {
+	if m.addrequest_count != nil {
+		*m.addrequest_count += i
+	} else {
+		m.addrequest_count = &i
+	}
+}
+
+// AddedRequestCount returns the value that was added to the "request_count" field in this mutation.
+func (m *AttributionClaimGroupMutation) AddedRequestCount() (r int, exists bool) {
+	v := m.addrequest_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRequestCount resets all changes to the "request_count" field.
+func (m *AttributionClaimGroupMutation) ResetRequestCount() {
+	m.request_count = nil
+	m.addrequest_count = nil
+}
+
+// SetExpiresAt sets the "expires_at" field.
+func (m *AttributionClaimGroupMutation) SetExpiresAt(t time.Time) {
+	m.expires_at = &t
+}
+
+// ExpiresAt returns the value of the "expires_at" field in the mutation.
+func (m *AttributionClaimGroupMutation) ExpiresAt() (r time.Time, exists bool) {
+	v := m.expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExpiresAt returns the old "expires_at" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldExpiresAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExpiresAt: %w", err)
+	}
+	return oldValue.ExpiresAt, nil
+}
+
+// ResetExpiresAt resets all changes to the "expires_at" field.
+func (m *AttributionClaimGroupMutation) ResetExpiresAt() {
+	m.expires_at = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AttributionClaimGroupMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AttributionClaimGroupMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AttributionClaimGroupMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *AttributionClaimGroupMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *AttributionClaimGroupMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *AttributionClaimGroupMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the AttributionClaimGroupMutation builder.
+func (m *AttributionClaimGroupMutation) Where(ps ...predicate.AttributionClaimGroup) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AttributionClaimGroupMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AttributionClaimGroupMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AttributionClaimGroup, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AttributionClaimGroupMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AttributionClaimGroupMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AttributionClaimGroup).
+func (m *AttributionClaimGroupMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AttributionClaimGroupMutation) Fields() []string {
+	fields := make([]string, 0, 20)
+	if m.group_id != nil {
+		fields = append(fields, attributionclaimgroup.FieldGroupID)
+	}
+	if m.installation_id != nil {
+		fields = append(fields, attributionclaimgroup.FieldInstallationID)
+	}
+	if m.user_id != nil {
+		fields = append(fields, attributionclaimgroup.FieldUserID)
+	}
+	if m.relay_provider_id != nil {
+		fields = append(fields, attributionclaimgroup.FieldRelayProviderID)
+	}
+	if m.schema_version != nil {
+		fields = append(fields, attributionclaimgroup.FieldSchemaVersion)
+	}
+	if m.ledger_epoch != nil {
+		fields = append(fields, attributionclaimgroup.FieldLedgerEpoch)
+	}
+	if m.thread_id != nil {
+		fields = append(fields, attributionclaimgroup.FieldThreadID)
+	}
+	if m.turn_id != nil {
+		fields = append(fields, attributionclaimgroup.FieldTurnID)
+	}
+	if m.evidence_digest != nil {
+		fields = append(fields, attributionclaimgroup.FieldEvidenceDigest)
+	}
+	if m.calibration_digest != nil {
+		fields = append(fields, attributionclaimgroup.FieldCalibrationDigest)
+	}
+	if m.calibration_input_tokens != nil {
+		fields = append(fields, attributionclaimgroup.FieldCalibrationInputTokens)
+	}
+	if m.calibration_output_tokens != nil {
+		fields = append(fields, attributionclaimgroup.FieldCalibrationOutputTokens)
+	}
+	if m.calibration_cache_creation_tokens != nil {
+		fields = append(fields, attributionclaimgroup.FieldCalibrationCacheCreationTokens)
+	}
+	if m.calibration_cache_read_tokens != nil {
+		fields = append(fields, attributionclaimgroup.FieldCalibrationCacheReadTokens)
+	}
+	if m.calibration_total_tokens != nil {
+		fields = append(fields, attributionclaimgroup.FieldCalibrationTotalTokens)
+	}
+	if m.commit_allocations != nil {
+		fields = append(fields, attributionclaimgroup.FieldCommitAllocations)
+	}
+	if m.request_count != nil {
+		fields = append(fields, attributionclaimgroup.FieldRequestCount)
+	}
+	if m.expires_at != nil {
+		fields = append(fields, attributionclaimgroup.FieldExpiresAt)
+	}
+	if m.created_at != nil {
+		fields = append(fields, attributionclaimgroup.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, attributionclaimgroup.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AttributionClaimGroupMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case attributionclaimgroup.FieldGroupID:
+		return m.GroupID()
+	case attributionclaimgroup.FieldInstallationID:
+		return m.InstallationID()
+	case attributionclaimgroup.FieldUserID:
+		return m.UserID()
+	case attributionclaimgroup.FieldRelayProviderID:
+		return m.RelayProviderID()
+	case attributionclaimgroup.FieldSchemaVersion:
+		return m.SchemaVersion()
+	case attributionclaimgroup.FieldLedgerEpoch:
+		return m.LedgerEpoch()
+	case attributionclaimgroup.FieldThreadID:
+		return m.ThreadID()
+	case attributionclaimgroup.FieldTurnID:
+		return m.TurnID()
+	case attributionclaimgroup.FieldEvidenceDigest:
+		return m.EvidenceDigest()
+	case attributionclaimgroup.FieldCalibrationDigest:
+		return m.CalibrationDigest()
+	case attributionclaimgroup.FieldCalibrationInputTokens:
+		return m.CalibrationInputTokens()
+	case attributionclaimgroup.FieldCalibrationOutputTokens:
+		return m.CalibrationOutputTokens()
+	case attributionclaimgroup.FieldCalibrationCacheCreationTokens:
+		return m.CalibrationCacheCreationTokens()
+	case attributionclaimgroup.FieldCalibrationCacheReadTokens:
+		return m.CalibrationCacheReadTokens()
+	case attributionclaimgroup.FieldCalibrationTotalTokens:
+		return m.CalibrationTotalTokens()
+	case attributionclaimgroup.FieldCommitAllocations:
+		return m.CommitAllocations()
+	case attributionclaimgroup.FieldRequestCount:
+		return m.RequestCount()
+	case attributionclaimgroup.FieldExpiresAt:
+		return m.ExpiresAt()
+	case attributionclaimgroup.FieldCreatedAt:
+		return m.CreatedAt()
+	case attributionclaimgroup.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AttributionClaimGroupMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case attributionclaimgroup.FieldGroupID:
+		return m.OldGroupID(ctx)
+	case attributionclaimgroup.FieldInstallationID:
+		return m.OldInstallationID(ctx)
+	case attributionclaimgroup.FieldUserID:
+		return m.OldUserID(ctx)
+	case attributionclaimgroup.FieldRelayProviderID:
+		return m.OldRelayProviderID(ctx)
+	case attributionclaimgroup.FieldSchemaVersion:
+		return m.OldSchemaVersion(ctx)
+	case attributionclaimgroup.FieldLedgerEpoch:
+		return m.OldLedgerEpoch(ctx)
+	case attributionclaimgroup.FieldThreadID:
+		return m.OldThreadID(ctx)
+	case attributionclaimgroup.FieldTurnID:
+		return m.OldTurnID(ctx)
+	case attributionclaimgroup.FieldEvidenceDigest:
+		return m.OldEvidenceDigest(ctx)
+	case attributionclaimgroup.FieldCalibrationDigest:
+		return m.OldCalibrationDigest(ctx)
+	case attributionclaimgroup.FieldCalibrationInputTokens:
+		return m.OldCalibrationInputTokens(ctx)
+	case attributionclaimgroup.FieldCalibrationOutputTokens:
+		return m.OldCalibrationOutputTokens(ctx)
+	case attributionclaimgroup.FieldCalibrationCacheCreationTokens:
+		return m.OldCalibrationCacheCreationTokens(ctx)
+	case attributionclaimgroup.FieldCalibrationCacheReadTokens:
+		return m.OldCalibrationCacheReadTokens(ctx)
+	case attributionclaimgroup.FieldCalibrationTotalTokens:
+		return m.OldCalibrationTotalTokens(ctx)
+	case attributionclaimgroup.FieldCommitAllocations:
+		return m.OldCommitAllocations(ctx)
+	case attributionclaimgroup.FieldRequestCount:
+		return m.OldRequestCount(ctx)
+	case attributionclaimgroup.FieldExpiresAt:
+		return m.OldExpiresAt(ctx)
+	case attributionclaimgroup.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case attributionclaimgroup.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown AttributionClaimGroup field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AttributionClaimGroupMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case attributionclaimgroup.FieldGroupID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupID(v)
+		return nil
+	case attributionclaimgroup.FieldInstallationID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInstallationID(v)
+		return nil
+	case attributionclaimgroup.FieldUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case attributionclaimgroup.FieldRelayProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRelayProviderID(v)
+		return nil
+	case attributionclaimgroup.FieldSchemaVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSchemaVersion(v)
+		return nil
+	case attributionclaimgroup.FieldLedgerEpoch:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLedgerEpoch(v)
+		return nil
+	case attributionclaimgroup.FieldThreadID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetThreadID(v)
+		return nil
+	case attributionclaimgroup.FieldTurnID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTurnID(v)
+		return nil
+	case attributionclaimgroup.FieldEvidenceDigest:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEvidenceDigest(v)
+		return nil
+	case attributionclaimgroup.FieldCalibrationDigest:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCalibrationDigest(v)
+		return nil
+	case attributionclaimgroup.FieldCalibrationInputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCalibrationInputTokens(v)
+		return nil
+	case attributionclaimgroup.FieldCalibrationOutputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCalibrationOutputTokens(v)
+		return nil
+	case attributionclaimgroup.FieldCalibrationCacheCreationTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCalibrationCacheCreationTokens(v)
+		return nil
+	case attributionclaimgroup.FieldCalibrationCacheReadTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCalibrationCacheReadTokens(v)
+		return nil
+	case attributionclaimgroup.FieldCalibrationTotalTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCalibrationTotalTokens(v)
+		return nil
+	case attributionclaimgroup.FieldCommitAllocations:
+		v, ok := value.([]map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCommitAllocations(v)
+		return nil
+	case attributionclaimgroup.FieldRequestCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestCount(v)
+		return nil
+	case attributionclaimgroup.FieldExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExpiresAt(v)
+		return nil
+	case attributionclaimgroup.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case attributionclaimgroup.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AttributionClaimGroup field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AttributionClaimGroupMutation) AddedFields() []string {
+	var fields []string
+	if m.addinstallation_id != nil {
+		fields = append(fields, attributionclaimgroup.FieldInstallationID)
+	}
+	if m.adduser_id != nil {
+		fields = append(fields, attributionclaimgroup.FieldUserID)
+	}
+	if m.addrelay_provider_id != nil {
+		fields = append(fields, attributionclaimgroup.FieldRelayProviderID)
+	}
+	if m.addschema_version != nil {
+		fields = append(fields, attributionclaimgroup.FieldSchemaVersion)
+	}
+	if m.addcalibration_input_tokens != nil {
+		fields = append(fields, attributionclaimgroup.FieldCalibrationInputTokens)
+	}
+	if m.addcalibration_output_tokens != nil {
+		fields = append(fields, attributionclaimgroup.FieldCalibrationOutputTokens)
+	}
+	if m.addcalibration_cache_creation_tokens != nil {
+		fields = append(fields, attributionclaimgroup.FieldCalibrationCacheCreationTokens)
+	}
+	if m.addcalibration_cache_read_tokens != nil {
+		fields = append(fields, attributionclaimgroup.FieldCalibrationCacheReadTokens)
+	}
+	if m.addcalibration_total_tokens != nil {
+		fields = append(fields, attributionclaimgroup.FieldCalibrationTotalTokens)
+	}
+	if m.addrequest_count != nil {
+		fields = append(fields, attributionclaimgroup.FieldRequestCount)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AttributionClaimGroupMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case attributionclaimgroup.FieldInstallationID:
+		return m.AddedInstallationID()
+	case attributionclaimgroup.FieldUserID:
+		return m.AddedUserID()
+	case attributionclaimgroup.FieldRelayProviderID:
+		return m.AddedRelayProviderID()
+	case attributionclaimgroup.FieldSchemaVersion:
+		return m.AddedSchemaVersion()
+	case attributionclaimgroup.FieldCalibrationInputTokens:
+		return m.AddedCalibrationInputTokens()
+	case attributionclaimgroup.FieldCalibrationOutputTokens:
+		return m.AddedCalibrationOutputTokens()
+	case attributionclaimgroup.FieldCalibrationCacheCreationTokens:
+		return m.AddedCalibrationCacheCreationTokens()
+	case attributionclaimgroup.FieldCalibrationCacheReadTokens:
+		return m.AddedCalibrationCacheReadTokens()
+	case attributionclaimgroup.FieldCalibrationTotalTokens:
+		return m.AddedCalibrationTotalTokens()
+	case attributionclaimgroup.FieldRequestCount:
+		return m.AddedRequestCount()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AttributionClaimGroupMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case attributionclaimgroup.FieldInstallationID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddInstallationID(v)
+		return nil
+	case attributionclaimgroup.FieldUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUserID(v)
+		return nil
+	case attributionclaimgroup.FieldRelayProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRelayProviderID(v)
+		return nil
+	case attributionclaimgroup.FieldSchemaVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSchemaVersion(v)
+		return nil
+	case attributionclaimgroup.FieldCalibrationInputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCalibrationInputTokens(v)
+		return nil
+	case attributionclaimgroup.FieldCalibrationOutputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCalibrationOutputTokens(v)
+		return nil
+	case attributionclaimgroup.FieldCalibrationCacheCreationTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCalibrationCacheCreationTokens(v)
+		return nil
+	case attributionclaimgroup.FieldCalibrationCacheReadTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCalibrationCacheReadTokens(v)
+		return nil
+	case attributionclaimgroup.FieldCalibrationTotalTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCalibrationTotalTokens(v)
+		return nil
+	case attributionclaimgroup.FieldRequestCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRequestCount(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AttributionClaimGroup numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AttributionClaimGroupMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(attributionclaimgroup.FieldCalibrationDigest) {
+		fields = append(fields, attributionclaimgroup.FieldCalibrationDigest)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AttributionClaimGroupMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AttributionClaimGroupMutation) ClearField(name string) error {
+	switch name {
+	case attributionclaimgroup.FieldCalibrationDigest:
+		m.ClearCalibrationDigest()
+		return nil
+	}
+	return fmt.Errorf("unknown AttributionClaimGroup nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AttributionClaimGroupMutation) ResetField(name string) error {
+	switch name {
+	case attributionclaimgroup.FieldGroupID:
+		m.ResetGroupID()
+		return nil
+	case attributionclaimgroup.FieldInstallationID:
+		m.ResetInstallationID()
+		return nil
+	case attributionclaimgroup.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case attributionclaimgroup.FieldRelayProviderID:
+		m.ResetRelayProviderID()
+		return nil
+	case attributionclaimgroup.FieldSchemaVersion:
+		m.ResetSchemaVersion()
+		return nil
+	case attributionclaimgroup.FieldLedgerEpoch:
+		m.ResetLedgerEpoch()
+		return nil
+	case attributionclaimgroup.FieldThreadID:
+		m.ResetThreadID()
+		return nil
+	case attributionclaimgroup.FieldTurnID:
+		m.ResetTurnID()
+		return nil
+	case attributionclaimgroup.FieldEvidenceDigest:
+		m.ResetEvidenceDigest()
+		return nil
+	case attributionclaimgroup.FieldCalibrationDigest:
+		m.ResetCalibrationDigest()
+		return nil
+	case attributionclaimgroup.FieldCalibrationInputTokens:
+		m.ResetCalibrationInputTokens()
+		return nil
+	case attributionclaimgroup.FieldCalibrationOutputTokens:
+		m.ResetCalibrationOutputTokens()
+		return nil
+	case attributionclaimgroup.FieldCalibrationCacheCreationTokens:
+		m.ResetCalibrationCacheCreationTokens()
+		return nil
+	case attributionclaimgroup.FieldCalibrationCacheReadTokens:
+		m.ResetCalibrationCacheReadTokens()
+		return nil
+	case attributionclaimgroup.FieldCalibrationTotalTokens:
+		m.ResetCalibrationTotalTokens()
+		return nil
+	case attributionclaimgroup.FieldCommitAllocations:
+		m.ResetCommitAllocations()
+		return nil
+	case attributionclaimgroup.FieldRequestCount:
+		m.ResetRequestCount()
+		return nil
+	case attributionclaimgroup.FieldExpiresAt:
+		m.ResetExpiresAt()
+		return nil
+	case attributionclaimgroup.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case attributionclaimgroup.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown AttributionClaimGroup field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AttributionClaimGroupMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AttributionClaimGroupMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AttributionClaimGroupMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AttributionClaimGroupMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AttributionClaimGroupMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AttributionClaimGroupMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AttributionClaimGroupMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown AttributionClaimGroup unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AttributionClaimGroupMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown AttributionClaimGroup edge %s", name)
+}
+
+// AttributionRequestClaimMutation represents an operation that mutates the AttributionRequestClaim nodes in the graph.
+type AttributionRequestClaimMutation struct {
+	config
+	op                   Op
+	typ                  string
+	id                   *int
+	claim_group_id       *int
+	addclaim_group_id    *int
+	relay_provider_id    *int
+	addrelay_provider_id *int
+	request_id           *string
+	canonical_digest     *string
+	status               *attributionrequestclaim.Status
+	expires_at           *time.Time
+	created_at           *time.Time
+	updated_at           *time.Time
+	clearedFields        map[string]struct{}
+	done                 bool
+	oldValue             func(context.Context) (*AttributionRequestClaim, error)
+	predicates           []predicate.AttributionRequestClaim
+}
+
+var _ ent.Mutation = (*AttributionRequestClaimMutation)(nil)
+
+// attributionrequestclaimOption allows management of the mutation configuration using functional options.
+type attributionrequestclaimOption func(*AttributionRequestClaimMutation)
+
+// newAttributionRequestClaimMutation creates new mutation for the AttributionRequestClaim entity.
+func newAttributionRequestClaimMutation(c config, op Op, opts ...attributionrequestclaimOption) *AttributionRequestClaimMutation {
+	m := &AttributionRequestClaimMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAttributionRequestClaim,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAttributionRequestClaimID sets the ID field of the mutation.
+func withAttributionRequestClaimID(id int) attributionrequestclaimOption {
+	return func(m *AttributionRequestClaimMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AttributionRequestClaim
+		)
+		m.oldValue = func(ctx context.Context) (*AttributionRequestClaim, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AttributionRequestClaim.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAttributionRequestClaim sets the old AttributionRequestClaim of the mutation.
+func withAttributionRequestClaim(node *AttributionRequestClaim) attributionrequestclaimOption {
+	return func(m *AttributionRequestClaimMutation) {
+		m.oldValue = func(context.Context) (*AttributionRequestClaim, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AttributionRequestClaimMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AttributionRequestClaimMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AttributionRequestClaimMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AttributionRequestClaimMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AttributionRequestClaim.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetClaimGroupID sets the "claim_group_id" field.
+func (m *AttributionRequestClaimMutation) SetClaimGroupID(i int) {
+	m.claim_group_id = &i
+	m.addclaim_group_id = nil
+}
+
+// ClaimGroupID returns the value of the "claim_group_id" field in the mutation.
+func (m *AttributionRequestClaimMutation) ClaimGroupID() (r int, exists bool) {
+	v := m.claim_group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldClaimGroupID returns the old "claim_group_id" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldClaimGroupID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldClaimGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldClaimGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldClaimGroupID: %w", err)
+	}
+	return oldValue.ClaimGroupID, nil
+}
+
+// AddClaimGroupID adds i to the "claim_group_id" field.
+func (m *AttributionRequestClaimMutation) AddClaimGroupID(i int) {
+	if m.addclaim_group_id != nil {
+		*m.addclaim_group_id += i
+	} else {
+		m.addclaim_group_id = &i
+	}
+}
+
+// AddedClaimGroupID returns the value that was added to the "claim_group_id" field in this mutation.
+func (m *AttributionRequestClaimMutation) AddedClaimGroupID() (r int, exists bool) {
+	v := m.addclaim_group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetClaimGroupID resets all changes to the "claim_group_id" field.
+func (m *AttributionRequestClaimMutation) ResetClaimGroupID() {
+	m.claim_group_id = nil
+	m.addclaim_group_id = nil
+}
+
+// SetRelayProviderID sets the "relay_provider_id" field.
+func (m *AttributionRequestClaimMutation) SetRelayProviderID(i int) {
+	m.relay_provider_id = &i
+	m.addrelay_provider_id = nil
+}
+
+// RelayProviderID returns the value of the "relay_provider_id" field in the mutation.
+func (m *AttributionRequestClaimMutation) RelayProviderID() (r int, exists bool) {
+	v := m.relay_provider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRelayProviderID returns the old "relay_provider_id" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldRelayProviderID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRelayProviderID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRelayProviderID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRelayProviderID: %w", err)
+	}
+	return oldValue.RelayProviderID, nil
+}
+
+// AddRelayProviderID adds i to the "relay_provider_id" field.
+func (m *AttributionRequestClaimMutation) AddRelayProviderID(i int) {
+	if m.addrelay_provider_id != nil {
+		*m.addrelay_provider_id += i
+	} else {
+		m.addrelay_provider_id = &i
+	}
+}
+
+// AddedRelayProviderID returns the value that was added to the "relay_provider_id" field in this mutation.
+func (m *AttributionRequestClaimMutation) AddedRelayProviderID() (r int, exists bool) {
+	v := m.addrelay_provider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRelayProviderID resets all changes to the "relay_provider_id" field.
+func (m *AttributionRequestClaimMutation) ResetRelayProviderID() {
+	m.relay_provider_id = nil
+	m.addrelay_provider_id = nil
+}
+
+// SetRequestID sets the "request_id" field.
+func (m *AttributionRequestClaimMutation) SetRequestID(s string) {
+	m.request_id = &s
+}
+
+// RequestID returns the value of the "request_id" field in the mutation.
+func (m *AttributionRequestClaimMutation) RequestID() (r string, exists bool) {
+	v := m.request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestID returns the old "request_id" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldRequestID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestID: %w", err)
+	}
+	return oldValue.RequestID, nil
+}
+
+// ResetRequestID resets all changes to the "request_id" field.
+func (m *AttributionRequestClaimMutation) ResetRequestID() {
+	m.request_id = nil
+}
+
+// SetCanonicalDigest sets the "canonical_digest" field.
+func (m *AttributionRequestClaimMutation) SetCanonicalDigest(s string) {
+	m.canonical_digest = &s
+}
+
+// CanonicalDigest returns the value of the "canonical_digest" field in the mutation.
+func (m *AttributionRequestClaimMutation) CanonicalDigest() (r string, exists bool) {
+	v := m.canonical_digest
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCanonicalDigest returns the old "canonical_digest" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldCanonicalDigest(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCanonicalDigest is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCanonicalDigest requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCanonicalDigest: %w", err)
+	}
+	return oldValue.CanonicalDigest, nil
+}
+
+// ResetCanonicalDigest resets all changes to the "canonical_digest" field.
+func (m *AttributionRequestClaimMutation) ResetCanonicalDigest() {
+	m.canonical_digest = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *AttributionRequestClaimMutation) SetStatus(a attributionrequestclaim.Status) {
+	m.status = &a
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *AttributionRequestClaimMutation) Status() (r attributionrequestclaim.Status, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldStatus(ctx context.Context) (v attributionrequestclaim.Status, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *AttributionRequestClaimMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetExpiresAt sets the "expires_at" field.
+func (m *AttributionRequestClaimMutation) SetExpiresAt(t time.Time) {
+	m.expires_at = &t
+}
+
+// ExpiresAt returns the value of the "expires_at" field in the mutation.
+func (m *AttributionRequestClaimMutation) ExpiresAt() (r time.Time, exists bool) {
+	v := m.expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExpiresAt returns the old "expires_at" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldExpiresAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExpiresAt: %w", err)
+	}
+	return oldValue.ExpiresAt, nil
+}
+
+// ResetExpiresAt resets all changes to the "expires_at" field.
+func (m *AttributionRequestClaimMutation) ResetExpiresAt() {
+	m.expires_at = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AttributionRequestClaimMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AttributionRequestClaimMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AttributionRequestClaimMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *AttributionRequestClaimMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *AttributionRequestClaimMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the AttributionRequestClaim entity.
+// If the AttributionRequestClaim object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionRequestClaimMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *AttributionRequestClaimMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the AttributionRequestClaimMutation builder.
+func (m *AttributionRequestClaimMutation) Where(ps ...predicate.AttributionRequestClaim) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AttributionRequestClaimMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AttributionRequestClaimMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AttributionRequestClaim, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AttributionRequestClaimMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AttributionRequestClaimMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AttributionRequestClaim).
+func (m *AttributionRequestClaimMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AttributionRequestClaimMutation) Fields() []string {
+	fields := make([]string, 0, 8)
+	if m.claim_group_id != nil {
+		fields = append(fields, attributionrequestclaim.FieldClaimGroupID)
+	}
+	if m.relay_provider_id != nil {
+		fields = append(fields, attributionrequestclaim.FieldRelayProviderID)
+	}
+	if m.request_id != nil {
+		fields = append(fields, attributionrequestclaim.FieldRequestID)
+	}
+	if m.canonical_digest != nil {
+		fields = append(fields, attributionrequestclaim.FieldCanonicalDigest)
+	}
+	if m.status != nil {
+		fields = append(fields, attributionrequestclaim.FieldStatus)
+	}
+	if m.expires_at != nil {
+		fields = append(fields, attributionrequestclaim.FieldExpiresAt)
+	}
+	if m.created_at != nil {
+		fields = append(fields, attributionrequestclaim.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, attributionrequestclaim.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AttributionRequestClaimMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case attributionrequestclaim.FieldClaimGroupID:
+		return m.ClaimGroupID()
+	case attributionrequestclaim.FieldRelayProviderID:
+		return m.RelayProviderID()
+	case attributionrequestclaim.FieldRequestID:
+		return m.RequestID()
+	case attributionrequestclaim.FieldCanonicalDigest:
+		return m.CanonicalDigest()
+	case attributionrequestclaim.FieldStatus:
+		return m.Status()
+	case attributionrequestclaim.FieldExpiresAt:
+		return m.ExpiresAt()
+	case attributionrequestclaim.FieldCreatedAt:
+		return m.CreatedAt()
+	case attributionrequestclaim.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AttributionRequestClaimMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case attributionrequestclaim.FieldClaimGroupID:
+		return m.OldClaimGroupID(ctx)
+	case attributionrequestclaim.FieldRelayProviderID:
+		return m.OldRelayProviderID(ctx)
+	case attributionrequestclaim.FieldRequestID:
+		return m.OldRequestID(ctx)
+	case attributionrequestclaim.FieldCanonicalDigest:
+		return m.OldCanonicalDigest(ctx)
+	case attributionrequestclaim.FieldStatus:
+		return m.OldStatus(ctx)
+	case attributionrequestclaim.FieldExpiresAt:
+		return m.OldExpiresAt(ctx)
+	case attributionrequestclaim.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case attributionrequestclaim.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown AttributionRequestClaim field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AttributionRequestClaimMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case attributionrequestclaim.FieldClaimGroupID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetClaimGroupID(v)
+		return nil
+	case attributionrequestclaim.FieldRelayProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRelayProviderID(v)
+		return nil
+	case attributionrequestclaim.FieldRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestID(v)
+		return nil
+	case attributionrequestclaim.FieldCanonicalDigest:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCanonicalDigest(v)
+		return nil
+	case attributionrequestclaim.FieldStatus:
+		v, ok := value.(attributionrequestclaim.Status)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case attributionrequestclaim.FieldExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExpiresAt(v)
+		return nil
+	case attributionrequestclaim.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case attributionrequestclaim.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AttributionRequestClaim field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AttributionRequestClaimMutation) AddedFields() []string {
+	var fields []string
+	if m.addclaim_group_id != nil {
+		fields = append(fields, attributionrequestclaim.FieldClaimGroupID)
+	}
+	if m.addrelay_provider_id != nil {
+		fields = append(fields, attributionrequestclaim.FieldRelayProviderID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AttributionRequestClaimMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case attributionrequestclaim.FieldClaimGroupID:
+		return m.AddedClaimGroupID()
+	case attributionrequestclaim.FieldRelayProviderID:
+		return m.AddedRelayProviderID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AttributionRequestClaimMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case attributionrequestclaim.FieldClaimGroupID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddClaimGroupID(v)
+		return nil
+	case attributionrequestclaim.FieldRelayProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRelayProviderID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AttributionRequestClaim numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AttributionRequestClaimMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AttributionRequestClaimMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AttributionRequestClaimMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown AttributionRequestClaim nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AttributionRequestClaimMutation) ResetField(name string) error {
+	switch name {
+	case attributionrequestclaim.FieldClaimGroupID:
+		m.ResetClaimGroupID()
+		return nil
+	case attributionrequestclaim.FieldRelayProviderID:
+		m.ResetRelayProviderID()
+		return nil
+	case attributionrequestclaim.FieldRequestID:
+		m.ResetRequestID()
+		return nil
+	case attributionrequestclaim.FieldCanonicalDigest:
+		m.ResetCanonicalDigest()
+		return nil
+	case attributionrequestclaim.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case attributionrequestclaim.FieldExpiresAt:
+		m.ResetExpiresAt()
+		return nil
+	case attributionrequestclaim.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case attributionrequestclaim.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown AttributionRequestClaim field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AttributionRequestClaimMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AttributionRequestClaimMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AttributionRequestClaimMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AttributionRequestClaimMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AttributionRequestClaimMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AttributionRequestClaimMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AttributionRequestClaimMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown AttributionRequestClaim unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AttributionRequestClaimMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown AttributionRequestClaim edge %s", name)
 }
 
 // AttributionUsageBucketMutation represents an operation that mutates the AttributionUsageBucket nodes in the graph.

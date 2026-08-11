@@ -7,6 +7,8 @@ import (
 
 	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
 	"github.com/ai-efficiency/backend/ent/attributionallocationrevision"
+	"github.com/ai-efficiency/backend/ent/attributionclaimgroup"
+	"github.com/ai-efficiency/backend/ent/attributionrequestclaim"
 	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
@@ -95,6 +97,78 @@ func init() {
 	attributionallocationrevisionDescCreatedAt := attributionallocationrevisionFields[7].Descriptor()
 	// attributionallocationrevision.DefaultCreatedAt holds the default value on creation for the created_at field.
 	attributionallocationrevision.DefaultCreatedAt = attributionallocationrevisionDescCreatedAt.Default.(func() time.Time)
+	attributionclaimgroupFields := schema.AttributionClaimGroup{}.Fields()
+	_ = attributionclaimgroupFields
+	// attributionclaimgroupDescGroupID is the schema descriptor for group_id field.
+	attributionclaimgroupDescGroupID := attributionclaimgroupFields[0].Descriptor()
+	// attributionclaimgroup.GroupIDValidator is a validator for the "group_id" field. It is called by the builders before save.
+	attributionclaimgroup.GroupIDValidator = attributionclaimgroupDescGroupID.Validators[0].(func(string) error)
+	// attributionclaimgroupDescLedgerEpoch is the schema descriptor for ledger_epoch field.
+	attributionclaimgroupDescLedgerEpoch := attributionclaimgroupFields[5].Descriptor()
+	// attributionclaimgroup.DefaultLedgerEpoch holds the default value on creation for the ledger_epoch field.
+	attributionclaimgroup.DefaultLedgerEpoch = attributionclaimgroupDescLedgerEpoch.Default.(string)
+	// attributionclaimgroupDescThreadID is the schema descriptor for thread_id field.
+	attributionclaimgroupDescThreadID := attributionclaimgroupFields[6].Descriptor()
+	// attributionclaimgroup.ThreadIDValidator is a validator for the "thread_id" field. It is called by the builders before save.
+	attributionclaimgroup.ThreadIDValidator = attributionclaimgroupDescThreadID.Validators[0].(func(string) error)
+	// attributionclaimgroupDescTurnID is the schema descriptor for turn_id field.
+	attributionclaimgroupDescTurnID := attributionclaimgroupFields[7].Descriptor()
+	// attributionclaimgroup.TurnIDValidator is a validator for the "turn_id" field. It is called by the builders before save.
+	attributionclaimgroup.TurnIDValidator = attributionclaimgroupDescTurnID.Validators[0].(func(string) error)
+	// attributionclaimgroupDescEvidenceDigest is the schema descriptor for evidence_digest field.
+	attributionclaimgroupDescEvidenceDigest := attributionclaimgroupFields[8].Descriptor()
+	// attributionclaimgroup.EvidenceDigestValidator is a validator for the "evidence_digest" field. It is called by the builders before save.
+	attributionclaimgroup.EvidenceDigestValidator = attributionclaimgroupDescEvidenceDigest.Validators[0].(func(string) error)
+	// attributionclaimgroupDescCalibrationInputTokens is the schema descriptor for calibration_input_tokens field.
+	attributionclaimgroupDescCalibrationInputTokens := attributionclaimgroupFields[10].Descriptor()
+	// attributionclaimgroup.DefaultCalibrationInputTokens holds the default value on creation for the calibration_input_tokens field.
+	attributionclaimgroup.DefaultCalibrationInputTokens = attributionclaimgroupDescCalibrationInputTokens.Default.(int64)
+	// attributionclaimgroupDescCalibrationOutputTokens is the schema descriptor for calibration_output_tokens field.
+	attributionclaimgroupDescCalibrationOutputTokens := attributionclaimgroupFields[11].Descriptor()
+	// attributionclaimgroup.DefaultCalibrationOutputTokens holds the default value on creation for the calibration_output_tokens field.
+	attributionclaimgroup.DefaultCalibrationOutputTokens = attributionclaimgroupDescCalibrationOutputTokens.Default.(int64)
+	// attributionclaimgroupDescCalibrationCacheCreationTokens is the schema descriptor for calibration_cache_creation_tokens field.
+	attributionclaimgroupDescCalibrationCacheCreationTokens := attributionclaimgroupFields[12].Descriptor()
+	// attributionclaimgroup.DefaultCalibrationCacheCreationTokens holds the default value on creation for the calibration_cache_creation_tokens field.
+	attributionclaimgroup.DefaultCalibrationCacheCreationTokens = attributionclaimgroupDescCalibrationCacheCreationTokens.Default.(int64)
+	// attributionclaimgroupDescCalibrationCacheReadTokens is the schema descriptor for calibration_cache_read_tokens field.
+	attributionclaimgroupDescCalibrationCacheReadTokens := attributionclaimgroupFields[13].Descriptor()
+	// attributionclaimgroup.DefaultCalibrationCacheReadTokens holds the default value on creation for the calibration_cache_read_tokens field.
+	attributionclaimgroup.DefaultCalibrationCacheReadTokens = attributionclaimgroupDescCalibrationCacheReadTokens.Default.(int64)
+	// attributionclaimgroupDescCalibrationTotalTokens is the schema descriptor for calibration_total_tokens field.
+	attributionclaimgroupDescCalibrationTotalTokens := attributionclaimgroupFields[14].Descriptor()
+	// attributionclaimgroup.DefaultCalibrationTotalTokens holds the default value on creation for the calibration_total_tokens field.
+	attributionclaimgroup.DefaultCalibrationTotalTokens = attributionclaimgroupDescCalibrationTotalTokens.Default.(int64)
+	// attributionclaimgroupDescCreatedAt is the schema descriptor for created_at field.
+	attributionclaimgroupDescCreatedAt := attributionclaimgroupFields[18].Descriptor()
+	// attributionclaimgroup.DefaultCreatedAt holds the default value on creation for the created_at field.
+	attributionclaimgroup.DefaultCreatedAt = attributionclaimgroupDescCreatedAt.Default.(func() time.Time)
+	// attributionclaimgroupDescUpdatedAt is the schema descriptor for updated_at field.
+	attributionclaimgroupDescUpdatedAt := attributionclaimgroupFields[19].Descriptor()
+	// attributionclaimgroup.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	attributionclaimgroup.DefaultUpdatedAt = attributionclaimgroupDescUpdatedAt.Default.(func() time.Time)
+	// attributionclaimgroup.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	attributionclaimgroup.UpdateDefaultUpdatedAt = attributionclaimgroupDescUpdatedAt.UpdateDefault.(func() time.Time)
+	attributionrequestclaimFields := schema.AttributionRequestClaim{}.Fields()
+	_ = attributionrequestclaimFields
+	// attributionrequestclaimDescRequestID is the schema descriptor for request_id field.
+	attributionrequestclaimDescRequestID := attributionrequestclaimFields[2].Descriptor()
+	// attributionrequestclaim.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	attributionrequestclaim.RequestIDValidator = attributionrequestclaimDescRequestID.Validators[0].(func(string) error)
+	// attributionrequestclaimDescCanonicalDigest is the schema descriptor for canonical_digest field.
+	attributionrequestclaimDescCanonicalDigest := attributionrequestclaimFields[3].Descriptor()
+	// attributionrequestclaim.CanonicalDigestValidator is a validator for the "canonical_digest" field. It is called by the builders before save.
+	attributionrequestclaim.CanonicalDigestValidator = attributionrequestclaimDescCanonicalDigest.Validators[0].(func(string) error)
+	// attributionrequestclaimDescCreatedAt is the schema descriptor for created_at field.
+	attributionrequestclaimDescCreatedAt := attributionrequestclaimFields[6].Descriptor()
+	// attributionrequestclaim.DefaultCreatedAt holds the default value on creation for the created_at field.
+	attributionrequestclaim.DefaultCreatedAt = attributionrequestclaimDescCreatedAt.Default.(func() time.Time)
+	// attributionrequestclaimDescUpdatedAt is the schema descriptor for updated_at field.
+	attributionrequestclaimDescUpdatedAt := attributionrequestclaimFields[7].Descriptor()
+	// attributionrequestclaim.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	attributionrequestclaim.DefaultUpdatedAt = attributionrequestclaimDescUpdatedAt.Default.(func() time.Time)
+	// attributionrequestclaim.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	attributionrequestclaim.UpdateDefaultUpdatedAt = attributionrequestclaimDescUpdatedAt.UpdateDefault.(func() time.Time)
 	attributionusagebucketFields := schema.AttributionUsageBucket{}.Fields()
 	_ = attributionusagebucketFields
 	// attributionusagebucketDescBucketID is the schema descriptor for bucket_id field.

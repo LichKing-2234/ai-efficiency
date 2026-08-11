@@ -14,6 +14,8 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
 	"github.com/ai-efficiency/backend/ent/attributionallocationrevision"
+	"github.com/ai-efficiency/backend/ent/attributionclaimgroup"
+	"github.com/ai-efficiency/backend/ent/attributionrequestclaim"
 	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
@@ -103,6 +105,8 @@ func checkColumn(table, column string) error {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
 			adminsubscriptionjob.Table:          adminsubscriptionjob.ValidColumn,
 			attributionallocationrevision.Table: attributionallocationrevision.ValidColumn,
+			attributionclaimgroup.Table:         attributionclaimgroup.ValidColumn,
+			attributionrequestclaim.Table:       attributionrequestclaim.ValidColumn,
 			attributionusagebucket.Table:        attributionusagebucket.ValidColumn,
 			commitcheckpoint.Table:              commitcheckpoint.ValidColumn,
 			commitrewrite.Table:                 commitrewrite.ValidColumn,

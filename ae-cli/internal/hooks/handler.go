@@ -170,6 +170,7 @@ func (h *Handler) schedulePendingSync(execCtx ExecutionContext, trigger *HookEve
 	}
 	if trigger != nil {
 		task.TriggerKind = strings.TrimSpace(trigger.Kind)
+		task.TriggerEventID = strings.TrimSpace(trigger.EventID)
 		task.TriggerCommitSHA = strings.TrimSpace(trigger.CommitSHA)
 		task.TriggerBranch = strings.TrimSpace(trigger.BranchSnapshot)
 		if capturedAt, err := time.Parse(time.RFC3339, trigger.CapturedAt); err == nil {

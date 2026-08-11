@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ai-efficiency/ae-cli/internal/client"
+	"github.com/ai-efficiency/ae-cli/internal/reporting"
 	"github.com/ai-efficiency/ae-cli/internal/toolconfig"
 	"github.com/spf13/cobra"
 )
@@ -81,6 +82,11 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	if len(result.Configured) == 0 {
 		fmt.Fprintf(cmd.OutOrStdout(), "No supported local tools matched provider %s credentials.\n", selected.Name)
 		return nil
+	}
+	if !discoverDryRun {
+		if err := preserveDiscoveredRelayProvider(selected.ID); err != nil {
+			return err
+		}
 	}
 
 	mode := "Configured"
@@ -172,6 +178,7 @@ func mapProviders(items []client.ProviderInfo) []toolconfig.Provider {
 	out := make([]toolconfig.Provider, 0, len(items))
 	for _, item := range items {
 		out = append(out, toolconfig.Provider{
+			ID:           item.ID,
 			Name:         item.Name,
 			DisplayName:  item.DisplayName,
 			BaseURL:      item.BaseURL,
@@ -183,6 +190,24 @@ func mapProviders(items []client.ProviderInfo) []toolconfig.Provider {
 		})
 	}
 	return out
+}
+
+func preserveDiscoveredRelayProvider(providerID int) error {
+	if providerID <= 0 {
+		return nil
+	}
+	config, err := reporting.Load("")
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("load reporting state: %w", err)
+	}
+	config.RelayProviderID = providerID
+	if err := reporting.Save("", config); err != nil {
+		return fmt.Errorf("preserve selected relay provider: %w", err)
+	}
+	return nil
 }
 
 func mapProviderCredentials(items []client.ProviderCredentialInfo) []toolconfig.PlatformCredential {

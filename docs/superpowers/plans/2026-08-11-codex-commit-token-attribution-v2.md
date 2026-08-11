@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** Approved design; implementation has not started
+**Status:** Implementation in progress; T02 and T03 pass full ae-cli/backend tests and clean Standards/Spec review
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -40,21 +40,21 @@ T01 contract publication (#253)
 
 ### T02 — Provider-aware Request/turn/mutation/commit proof ([#241](https://github.com/LichKing-2234/ai-efficiency/issues/241))
 
-- [ ] Preserve backend provider ID through discover, tool config, reporting
+- [x] Preserve backend provider ID through discover, tool config, reporting
   state, and immutable claim-group identity.
-- [ ] Correlate `x-client-request-id`, thread, turn, structured mutation, and
+- [x] Correlate `x-client-request-id`, thread, turn, structured mutation, and
   deterministic Git content without cwd/time/path heuristics.
-- [ ] Support multi-Request turns, late Requests, active/archived source
+- [x] Support multi-Request turns, late Requests, active/archived source
   recovery, explicit gaps, and a single calibration envelope.
-- [ ] Verify privacy and deterministic evidence fixtures.
+- [x] Verify privacy and deterministic evidence fixtures.
 
 ### T03 — v2 claim ingest and item-level ACK ([#242](https://github.com/LichKing-2234/ai-efficiency/issues/242))
 
-- [ ] Add isolated v2 hot group/Request claim schema and routes.
-- [ ] Enforce provider/Request uniqueness, identical replay, conflict, owner,
+- [x] Add isolated v2 hot group/Request claim schema and routes.
+- [x] Enforce provider/Request uniqueness, identical replay, conflict, owner,
   checkpoint, and payload bounds.
-- [ ] Return independent group-envelope and per-Request ACK states.
-- [ ] Verify response-loss replay and v1/v2 epoch isolation.
+- [x] Return independent group-envelope and per-Request ACK states.
+- [x] Verify response-loss replay and v1/v2 epoch isolation.
 
 ### T04 — Exact `sub2api` Request reconciliation ([#243](https://github.com/LichKing-2234/ai-efficiency/issues/243))
 

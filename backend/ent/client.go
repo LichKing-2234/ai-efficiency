@@ -17,6 +17,8 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
 	"github.com/ai-efficiency/backend/ent/attributionallocationrevision"
+	"github.com/ai-efficiency/backend/ent/attributionclaimgroup"
+	"github.com/ai-efficiency/backend/ent/attributionrequestclaim"
 	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
@@ -55,6 +57,10 @@ type Client struct {
 	AdminSubscriptionJob *AdminSubscriptionJobClient
 	// AttributionAllocationRevision is the client for interacting with the AttributionAllocationRevision builders.
 	AttributionAllocationRevision *AttributionAllocationRevisionClient
+	// AttributionClaimGroup is the client for interacting with the AttributionClaimGroup builders.
+	AttributionClaimGroup *AttributionClaimGroupClient
+	// AttributionRequestClaim is the client for interacting with the AttributionRequestClaim builders.
+	AttributionRequestClaim *AttributionRequestClaimClient
 	// AttributionUsageBucket is the client for interacting with the AttributionUsageBucket builders.
 	AttributionUsageBucket *AttributionUsageBucketClient
 	// CommitCheckpoint is the client for interacting with the CommitCheckpoint builders.
@@ -122,6 +128,8 @@ func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.AdminSubscriptionJob = NewAdminSubscriptionJobClient(c.config)
 	c.AttributionAllocationRevision = NewAttributionAllocationRevisionClient(c.config)
+	c.AttributionClaimGroup = NewAttributionClaimGroupClient(c.config)
+	c.AttributionRequestClaim = NewAttributionRequestClaimClient(c.config)
 	c.AttributionUsageBucket = NewAttributionUsageBucketClient(c.config)
 	c.CommitCheckpoint = NewCommitCheckpointClient(c.config)
 	c.CommitRewrite = NewCommitRewriteClient(c.config)
@@ -243,6 +251,8 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		config:                        cfg,
 		AdminSubscriptionJob:          NewAdminSubscriptionJobClient(cfg),
 		AttributionAllocationRevision: NewAttributionAllocationRevisionClient(cfg),
+		AttributionClaimGroup:         NewAttributionClaimGroupClient(cfg),
+		AttributionRequestClaim:       NewAttributionRequestClaimClient(cfg),
 		AttributionUsageBucket:        NewAttributionUsageBucketClient(cfg),
 		CommitCheckpoint:              NewCommitCheckpointClient(cfg),
 		CommitRewrite:                 NewCommitRewriteClient(cfg),
@@ -291,6 +301,8 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		config:                        cfg,
 		AdminSubscriptionJob:          NewAdminSubscriptionJobClient(cfg),
 		AttributionAllocationRevision: NewAttributionAllocationRevisionClient(cfg),
+		AttributionClaimGroup:         NewAttributionClaimGroupClient(cfg),
+		AttributionRequestClaim:       NewAttributionRequestClaimClient(cfg),
 		AttributionUsageBucket:        NewAttributionUsageBucketClient(cfg),
 		CommitCheckpoint:              NewCommitCheckpointClient(cfg),
 		CommitRewrite:                 NewCommitRewriteClient(cfg),
@@ -348,14 +360,15 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.AdminSubscriptionJob, c.AttributionAllocationRevision,
-		c.AttributionUsageBucket, c.CommitCheckpoint, c.CommitRewrite, c.Credential,
-		c.DirectoryDepartment, c.DirectoryMember, c.DirectoryMemberDepartment,
-		c.DirectoryOffboardingAction, c.DirectorySource, c.DirectorySyncRun,
-		c.PRCommitUsageSnapshot, c.PRSyncJob, c.PrAttributionRun, c.PrRecord,
-		c.QuotaResetApproverConfig, c.QuotaResetNotificationSetting,
-		c.QuotaResetRequest, c.QuotaResetRequestEvent, c.RelayProvider, c.RepoConfig,
-		c.ReportingInstallation, c.ScmProvider, c.SystemSetting,
-		c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
+		c.AttributionClaimGroup, c.AttributionRequestClaim, c.AttributionUsageBucket,
+		c.CommitCheckpoint, c.CommitRewrite, c.Credential, c.DirectoryDepartment,
+		c.DirectoryMember, c.DirectoryMemberDepartment, c.DirectoryOffboardingAction,
+		c.DirectorySource, c.DirectorySyncRun, c.PRCommitUsageSnapshot, c.PRSyncJob,
+		c.PrAttributionRun, c.PrRecord, c.QuotaResetApproverConfig,
+		c.QuotaResetNotificationSetting, c.QuotaResetRequest, c.QuotaResetRequestEvent,
+		c.RelayProvider, c.RepoConfig, c.ReportingInstallation, c.ScmProvider,
+		c.SystemSetting, c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User,
+		c.WebhookDeadLetter,
 	} {
 		n.Use(hooks...)
 	}
@@ -366,14 +379,15 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.AdminSubscriptionJob, c.AttributionAllocationRevision,
-		c.AttributionUsageBucket, c.CommitCheckpoint, c.CommitRewrite, c.Credential,
-		c.DirectoryDepartment, c.DirectoryMember, c.DirectoryMemberDepartment,
-		c.DirectoryOffboardingAction, c.DirectorySource, c.DirectorySyncRun,
-		c.PRCommitUsageSnapshot, c.PRSyncJob, c.PrAttributionRun, c.PrRecord,
-		c.QuotaResetApproverConfig, c.QuotaResetNotificationSetting,
-		c.QuotaResetRequest, c.QuotaResetRequestEvent, c.RelayProvider, c.RepoConfig,
-		c.ReportingInstallation, c.ScmProvider, c.SystemSetting,
-		c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
+		c.AttributionClaimGroup, c.AttributionRequestClaim, c.AttributionUsageBucket,
+		c.CommitCheckpoint, c.CommitRewrite, c.Credential, c.DirectoryDepartment,
+		c.DirectoryMember, c.DirectoryMemberDepartment, c.DirectoryOffboardingAction,
+		c.DirectorySource, c.DirectorySyncRun, c.PRCommitUsageSnapshot, c.PRSyncJob,
+		c.PrAttributionRun, c.PrRecord, c.QuotaResetApproverConfig,
+		c.QuotaResetNotificationSetting, c.QuotaResetRequest, c.QuotaResetRequestEvent,
+		c.RelayProvider, c.RepoConfig, c.ReportingInstallation, c.ScmProvider,
+		c.SystemSetting, c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User,
+		c.WebhookDeadLetter,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -386,6 +400,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.AdminSubscriptionJob.mutate(ctx, m)
 	case *AttributionAllocationRevisionMutation:
 		return c.AttributionAllocationRevision.mutate(ctx, m)
+	case *AttributionClaimGroupMutation:
+		return c.AttributionClaimGroup.mutate(ctx, m)
+	case *AttributionRequestClaimMutation:
+		return c.AttributionRequestClaim.mutate(ctx, m)
 	case *AttributionUsageBucketMutation:
 		return c.AttributionUsageBucket.mutate(ctx, m)
 	case *CommitCheckpointMutation:
@@ -724,6 +742,272 @@ func (c *AttributionAllocationRevisionClient) mutate(ctx context.Context, m *Att
 		return (&AttributionAllocationRevisionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AttributionAllocationRevision mutation op: %q", m.Op())
+	}
+}
+
+// AttributionClaimGroupClient is a client for the AttributionClaimGroup schema.
+type AttributionClaimGroupClient struct {
+	config
+}
+
+// NewAttributionClaimGroupClient returns a client for the AttributionClaimGroup from the given config.
+func NewAttributionClaimGroupClient(c config) *AttributionClaimGroupClient {
+	return &AttributionClaimGroupClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `attributionclaimgroup.Hooks(f(g(h())))`.
+func (c *AttributionClaimGroupClient) Use(hooks ...Hook) {
+	c.hooks.AttributionClaimGroup = append(c.hooks.AttributionClaimGroup, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `attributionclaimgroup.Intercept(f(g(h())))`.
+func (c *AttributionClaimGroupClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AttributionClaimGroup = append(c.inters.AttributionClaimGroup, interceptors...)
+}
+
+// Create returns a builder for creating a AttributionClaimGroup entity.
+func (c *AttributionClaimGroupClient) Create() *AttributionClaimGroupCreate {
+	mutation := newAttributionClaimGroupMutation(c.config, OpCreate)
+	return &AttributionClaimGroupCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AttributionClaimGroup entities.
+func (c *AttributionClaimGroupClient) CreateBulk(builders ...*AttributionClaimGroupCreate) *AttributionClaimGroupCreateBulk {
+	return &AttributionClaimGroupCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AttributionClaimGroupClient) MapCreateBulk(slice any, setFunc func(*AttributionClaimGroupCreate, int)) *AttributionClaimGroupCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AttributionClaimGroupCreateBulk{err: fmt.Errorf("calling to AttributionClaimGroupClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AttributionClaimGroupCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AttributionClaimGroupCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AttributionClaimGroup.
+func (c *AttributionClaimGroupClient) Update() *AttributionClaimGroupUpdate {
+	mutation := newAttributionClaimGroupMutation(c.config, OpUpdate)
+	return &AttributionClaimGroupUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AttributionClaimGroupClient) UpdateOne(acg *AttributionClaimGroup) *AttributionClaimGroupUpdateOne {
+	mutation := newAttributionClaimGroupMutation(c.config, OpUpdateOne, withAttributionClaimGroup(acg))
+	return &AttributionClaimGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AttributionClaimGroupClient) UpdateOneID(id int) *AttributionClaimGroupUpdateOne {
+	mutation := newAttributionClaimGroupMutation(c.config, OpUpdateOne, withAttributionClaimGroupID(id))
+	return &AttributionClaimGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AttributionClaimGroup.
+func (c *AttributionClaimGroupClient) Delete() *AttributionClaimGroupDelete {
+	mutation := newAttributionClaimGroupMutation(c.config, OpDelete)
+	return &AttributionClaimGroupDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AttributionClaimGroupClient) DeleteOne(acg *AttributionClaimGroup) *AttributionClaimGroupDeleteOne {
+	return c.DeleteOneID(acg.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AttributionClaimGroupClient) DeleteOneID(id int) *AttributionClaimGroupDeleteOne {
+	builder := c.Delete().Where(attributionclaimgroup.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AttributionClaimGroupDeleteOne{builder}
+}
+
+// Query returns a query builder for AttributionClaimGroup.
+func (c *AttributionClaimGroupClient) Query() *AttributionClaimGroupQuery {
+	return &AttributionClaimGroupQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAttributionClaimGroup},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AttributionClaimGroup entity by its id.
+func (c *AttributionClaimGroupClient) Get(ctx context.Context, id int) (*AttributionClaimGroup, error) {
+	return c.Query().Where(attributionclaimgroup.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AttributionClaimGroupClient) GetX(ctx context.Context, id int) *AttributionClaimGroup {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AttributionClaimGroupClient) Hooks() []Hook {
+	return c.hooks.AttributionClaimGroup
+}
+
+// Interceptors returns the client interceptors.
+func (c *AttributionClaimGroupClient) Interceptors() []Interceptor {
+	return c.inters.AttributionClaimGroup
+}
+
+func (c *AttributionClaimGroupClient) mutate(ctx context.Context, m *AttributionClaimGroupMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AttributionClaimGroupCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AttributionClaimGroupUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AttributionClaimGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AttributionClaimGroupDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AttributionClaimGroup mutation op: %q", m.Op())
+	}
+}
+
+// AttributionRequestClaimClient is a client for the AttributionRequestClaim schema.
+type AttributionRequestClaimClient struct {
+	config
+}
+
+// NewAttributionRequestClaimClient returns a client for the AttributionRequestClaim from the given config.
+func NewAttributionRequestClaimClient(c config) *AttributionRequestClaimClient {
+	return &AttributionRequestClaimClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `attributionrequestclaim.Hooks(f(g(h())))`.
+func (c *AttributionRequestClaimClient) Use(hooks ...Hook) {
+	c.hooks.AttributionRequestClaim = append(c.hooks.AttributionRequestClaim, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `attributionrequestclaim.Intercept(f(g(h())))`.
+func (c *AttributionRequestClaimClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AttributionRequestClaim = append(c.inters.AttributionRequestClaim, interceptors...)
+}
+
+// Create returns a builder for creating a AttributionRequestClaim entity.
+func (c *AttributionRequestClaimClient) Create() *AttributionRequestClaimCreate {
+	mutation := newAttributionRequestClaimMutation(c.config, OpCreate)
+	return &AttributionRequestClaimCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AttributionRequestClaim entities.
+func (c *AttributionRequestClaimClient) CreateBulk(builders ...*AttributionRequestClaimCreate) *AttributionRequestClaimCreateBulk {
+	return &AttributionRequestClaimCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AttributionRequestClaimClient) MapCreateBulk(slice any, setFunc func(*AttributionRequestClaimCreate, int)) *AttributionRequestClaimCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AttributionRequestClaimCreateBulk{err: fmt.Errorf("calling to AttributionRequestClaimClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AttributionRequestClaimCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AttributionRequestClaimCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AttributionRequestClaim.
+func (c *AttributionRequestClaimClient) Update() *AttributionRequestClaimUpdate {
+	mutation := newAttributionRequestClaimMutation(c.config, OpUpdate)
+	return &AttributionRequestClaimUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AttributionRequestClaimClient) UpdateOne(arc *AttributionRequestClaim) *AttributionRequestClaimUpdateOne {
+	mutation := newAttributionRequestClaimMutation(c.config, OpUpdateOne, withAttributionRequestClaim(arc))
+	return &AttributionRequestClaimUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AttributionRequestClaimClient) UpdateOneID(id int) *AttributionRequestClaimUpdateOne {
+	mutation := newAttributionRequestClaimMutation(c.config, OpUpdateOne, withAttributionRequestClaimID(id))
+	return &AttributionRequestClaimUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AttributionRequestClaim.
+func (c *AttributionRequestClaimClient) Delete() *AttributionRequestClaimDelete {
+	mutation := newAttributionRequestClaimMutation(c.config, OpDelete)
+	return &AttributionRequestClaimDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AttributionRequestClaimClient) DeleteOne(arc *AttributionRequestClaim) *AttributionRequestClaimDeleteOne {
+	return c.DeleteOneID(arc.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AttributionRequestClaimClient) DeleteOneID(id int) *AttributionRequestClaimDeleteOne {
+	builder := c.Delete().Where(attributionrequestclaim.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AttributionRequestClaimDeleteOne{builder}
+}
+
+// Query returns a query builder for AttributionRequestClaim.
+func (c *AttributionRequestClaimClient) Query() *AttributionRequestClaimQuery {
+	return &AttributionRequestClaimQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAttributionRequestClaim},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AttributionRequestClaim entity by its id.
+func (c *AttributionRequestClaimClient) Get(ctx context.Context, id int) (*AttributionRequestClaim, error) {
+	return c.Query().Where(attributionrequestclaim.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AttributionRequestClaimClient) GetX(ctx context.Context, id int) *AttributionRequestClaim {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AttributionRequestClaimClient) Hooks() []Hook {
+	return c.hooks.AttributionRequestClaim
+}
+
+// Interceptors returns the client interceptors.
+func (c *AttributionRequestClaimClient) Interceptors() []Interceptor {
+	return c.inters.AttributionRequestClaim
+}
+
+func (c *AttributionRequestClaimClient) mutate(ctx context.Context, m *AttributionRequestClaimMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AttributionRequestClaimCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AttributionRequestClaimUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AttributionRequestClaimUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AttributionRequestClaimDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AttributionRequestClaim mutation op: %q", m.Op())
 	}
 }
 
@@ -4964,25 +5248,25 @@ func (c *WebhookDeadLetterClient) mutate(ctx context.Context, m *WebhookDeadLett
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		AdminSubscriptionJob, AttributionAllocationRevision, AttributionUsageBucket,
-		CommitCheckpoint, CommitRewrite, Credential, DirectoryDepartment,
-		DirectoryMember, DirectoryMemberDepartment, DirectoryOffboardingAction,
-		DirectorySource, DirectorySyncRun, PRCommitUsageSnapshot, PRSyncJob,
-		PrAttributionRun, PrRecord, QuotaResetApproverConfig,
-		QuotaResetNotificationSetting, QuotaResetRequest, QuotaResetRequestEvent,
-		RelayProvider, RepoConfig, ReportingInstallation, ScmProvider, SystemSetting,
-		TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
+		AdminSubscriptionJob, AttributionAllocationRevision, AttributionClaimGroup,
+		AttributionRequestClaim, AttributionUsageBucket, CommitCheckpoint,
+		CommitRewrite, Credential, DirectoryDepartment, DirectoryMember,
+		DirectoryMemberDepartment, DirectoryOffboardingAction, DirectorySource,
+		DirectorySyncRun, PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord,
+		QuotaResetApproverConfig, QuotaResetNotificationSetting, QuotaResetRequest,
+		QuotaResetRequestEvent, RelayProvider, RepoConfig, ReportingInstallation,
+		ScmProvider, SystemSetting, TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
 		WebhookDeadLetter []ent.Hook
 	}
 	inters struct {
-		AdminSubscriptionJob, AttributionAllocationRevision, AttributionUsageBucket,
-		CommitCheckpoint, CommitRewrite, Credential, DirectoryDepartment,
-		DirectoryMember, DirectoryMemberDepartment, DirectoryOffboardingAction,
-		DirectorySource, DirectorySyncRun, PRCommitUsageSnapshot, PRSyncJob,
-		PrAttributionRun, PrRecord, QuotaResetApproverConfig,
-		QuotaResetNotificationSetting, QuotaResetRequest, QuotaResetRequestEvent,
-		RelayProvider, RepoConfig, ReportingInstallation, ScmProvider, SystemSetting,
-		TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
+		AdminSubscriptionJob, AttributionAllocationRevision, AttributionClaimGroup,
+		AttributionRequestClaim, AttributionUsageBucket, CommitCheckpoint,
+		CommitRewrite, Credential, DirectoryDepartment, DirectoryMember,
+		DirectoryMemberDepartment, DirectoryOffboardingAction, DirectorySource,
+		DirectorySyncRun, PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord,
+		QuotaResetApproverConfig, QuotaResetNotificationSetting, QuotaResetRequest,
+		QuotaResetRequestEvent, RelayProvider, RepoConfig, ReportingInstallation,
+		ScmProvider, SystemSetting, TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
 		WebhookDeadLetter []ent.Interceptor
 	}
 )

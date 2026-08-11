@@ -109,6 +109,58 @@ type AttributionBucketBatchRequest struct {
 	Buckets []AttributionBucket `json:"buckets"`
 }
 
+type AttributionV2ClaimGroup struct {
+	SchemaVersion     int                             `json:"schema_version"`
+	GroupID           string                          `json:"group_id"`
+	RelayProviderID   int                             `json:"relay_provider_id"`
+	ThreadID          string                          `json:"thread_id"`
+	TurnID            string                          `json:"turn_id"`
+	EvidenceDigest    string                          `json:"evidence_digest"`
+	Calibration       *AttributionV2Calibration       `json:"calibration,omitempty"`
+	CommitAllocations []AttributionV2CommitAllocation `json:"commit_allocations"`
+	RequestIDs        []string                        `json:"request_ids"`
+}
+
+type AttributionV2Calibration struct {
+	Digest              string `json:"digest"`
+	InputTokens         int64  `json:"input_tokens"`
+	OutputTokens        int64  `json:"output_tokens"`
+	CacheCreationTokens int64  `json:"cache_creation_tokens"`
+	CacheReadTokens     int64  `json:"cache_read_tokens"`
+	TotalTokens         int64  `json:"total_tokens"`
+}
+
+type AttributionV2CommitAllocation struct {
+	Sequence          int    `json:"sequence"`
+	RepoConfigID      int    `json:"repo_config_id"`
+	RepoKey           string `json:"repo_key,omitempty"`
+	WorkspaceID       string `json:"workspace_id"`
+	CheckpointEventID string `json:"checkpoint_event_id"`
+	CommitSHA         string `json:"commit_sha"`
+	EvidenceDigest    string `json:"evidence_digest"`
+}
+
+type AttributionV2ClaimBatchRequest struct {
+	Groups []AttributionV2ClaimGroup `json:"groups"`
+}
+
+type AttributionV2ItemStatus struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+}
+
+type AttributionV2ClaimResult struct {
+	Group       AttributionV2ItemStatus   `json:"group"`
+	Calibration AttributionV2ItemStatus   `json:"calibration"`
+	Requests    []AttributionV2ItemStatus `json:"requests"`
+}
+
+type AttributionV2ClaimBatchResult struct {
+	LedgerEpoch string                     `json:"ledger_epoch"`
+	Results     []AttributionV2ClaimResult `json:"results"`
+}
+
 func (c *Client) EnsureAttributionInstallation(ctx context.Context, req EnsureInstallationRequest) (*InstallationCredentials, error) {
 	var response struct {
 		Data InstallationCredentials `json:"data"`
@@ -143,6 +195,16 @@ func (c *Client) RotateAttributionInstallationCredentials(ctx context.Context, i
 
 func (c *Client) SendAttributionBuckets(ctx context.Context, buckets []AttributionBucket) error {
 	return c.doAttributionJSON(ctx, http.MethodPost, "/api/v1/attribution/usage-buckets/batch", AttributionBucketBatchRequest{Buckets: buckets}, nil)
+}
+
+func (c *Client) SendAttributionV2Claims(ctx context.Context, groups []AttributionV2ClaimGroup) (*AttributionV2ClaimBatchResult, error) {
+	var response struct {
+		Data AttributionV2ClaimBatchResult `json:"data"`
+	}
+	if err := c.doAttributionJSON(ctx, http.MethodPost, "/api/v1/attribution/v2/claim-groups/batch", AttributionV2ClaimBatchRequest{Groups: groups}, &response); err != nil {
+		return nil, err
+	}
+	return &response.Data, nil
 }
 
 func (c *Client) SendAttributionRevision(ctx context.Context, bucketID string, revision AttributionRevision) error {

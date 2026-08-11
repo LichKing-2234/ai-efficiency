@@ -87,6 +87,83 @@ var (
 			},
 		},
 	}
+	// AttributionClaimGroupsColumns holds the columns for the "attribution_claim_groups" table.
+	AttributionClaimGroupsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "group_id", Type: field.TypeString, Unique: true},
+		{Name: "installation_id", Type: field.TypeInt},
+		{Name: "user_id", Type: field.TypeInt},
+		{Name: "relay_provider_id", Type: field.TypeInt},
+		{Name: "schema_version", Type: field.TypeInt},
+		{Name: "ledger_epoch", Type: field.TypeString, Default: "shadow_v2"},
+		{Name: "thread_id", Type: field.TypeString},
+		{Name: "turn_id", Type: field.TypeString},
+		{Name: "evidence_digest", Type: field.TypeString},
+		{Name: "calibration_digest", Type: field.TypeString, Nullable: true},
+		{Name: "calibration_input_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "calibration_output_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "calibration_cache_creation_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "calibration_cache_read_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "calibration_total_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "commit_allocations", Type: field.TypeJSON},
+		{Name: "request_count", Type: field.TypeInt},
+		{Name: "expires_at", Type: field.TypeTime},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// AttributionClaimGroupsTable holds the schema information for the "attribution_claim_groups" table.
+	AttributionClaimGroupsTable = &schema.Table{
+		Name:       "attribution_claim_groups",
+		Columns:    AttributionClaimGroupsColumns,
+		PrimaryKey: []*schema.Column{AttributionClaimGroupsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "attributionclaimgroup_user_id_ledger_epoch_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{AttributionClaimGroupsColumns[3], AttributionClaimGroupsColumns[6], AttributionClaimGroupsColumns[18]},
+			},
+			{
+				Name:    "attributionclaimgroup_installation_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{AttributionClaimGroupsColumns[2], AttributionClaimGroupsColumns[19]},
+			},
+		},
+	}
+	// AttributionRequestClaimsColumns holds the columns for the "attribution_request_claims" table.
+	AttributionRequestClaimsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "claim_group_id", Type: field.TypeInt},
+		{Name: "relay_provider_id", Type: field.TypeInt},
+		{Name: "request_id", Type: field.TypeString},
+		{Name: "canonical_digest", Type: field.TypeString},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"pending", "reconciled", "owner_mismatch", "ambiguous", "provider_unavailable", "source_expired"}, Default: "pending"},
+		{Name: "expires_at", Type: field.TypeTime},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// AttributionRequestClaimsTable holds the schema information for the "attribution_request_claims" table.
+	AttributionRequestClaimsTable = &schema.Table{
+		Name:       "attribution_request_claims",
+		Columns:    AttributionRequestClaimsColumns,
+		PrimaryKey: []*schema.Column{AttributionRequestClaimsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "attributionrequestclaim_relay_provider_id_request_id",
+				Unique:  true,
+				Columns: []*schema.Column{AttributionRequestClaimsColumns[2], AttributionRequestClaimsColumns[3]},
+			},
+			{
+				Name:    "attributionrequestclaim_claim_group_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{AttributionRequestClaimsColumns[1], AttributionRequestClaimsColumns[7]},
+			},
+			{
+				Name:    "attributionrequestclaim_status_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{AttributionRequestClaimsColumns[5], AttributionRequestClaimsColumns[6]},
+			},
+		},
+	}
 	// AttributionUsageBucketsColumns holds the columns for the "attribution_usage_buckets" table.
 	AttributionUsageBucketsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -1318,6 +1395,8 @@ var (
 	Tables = []*schema.Table{
 		AdminSubscriptionJobsTable,
 		AttributionAllocationRevisionsTable,
+		AttributionClaimGroupsTable,
+		AttributionRequestClaimsTable,
 		AttributionUsageBucketsTable,
 		CommitCheckpointsTable,
 		CommitRewritesTable,

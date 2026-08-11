@@ -33,6 +33,30 @@ func (f AttributionAllocationRevisionFunc) Mutate(ctx context.Context, m ent.Mut
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AttributionAllocationRevisionMutation", m)
 }
 
+// The AttributionClaimGroupFunc type is an adapter to allow the use of ordinary
+// function as AttributionClaimGroup mutator.
+type AttributionClaimGroupFunc func(context.Context, *ent.AttributionClaimGroupMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AttributionClaimGroupFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AttributionClaimGroupMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AttributionClaimGroupMutation", m)
+}
+
+// The AttributionRequestClaimFunc type is an adapter to allow the use of ordinary
+// function as AttributionRequestClaim mutator.
+type AttributionRequestClaimFunc func(context.Context, *ent.AttributionRequestClaimMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AttributionRequestClaimFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AttributionRequestClaimMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AttributionRequestClaimMutation", m)
+}
+
 // The AttributionUsageBucketFunc type is an adapter to allow the use of ordinary
 // function as AttributionUsageBucket mutator.
 type AttributionUsageBucketFunc func(context.Context, *ent.AttributionUsageBucketMutation) (ent.Value, error)

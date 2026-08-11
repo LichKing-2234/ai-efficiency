@@ -17,12 +17,13 @@ type compactCheckpointSender interface {
 }
 
 type CompactBackendUploader struct {
-	client         compactCheckpointSender
-	installationID string
+	client          compactCheckpointSender
+	installationID  string
+	relayProviderID int
 }
 
-func NewCompactBackendUploader(client compactCheckpointSender, installationID string) CompactBackendUploader {
-	return CompactBackendUploader{client: client, installationID: strings.TrimSpace(installationID)}
+func NewCompactBackendUploader(client compactCheckpointSender, installationID string, relayProviderID int) CompactBackendUploader {
+	return CompactBackendUploader{client: client, installationID: strings.TrimSpace(installationID), relayProviderID: relayProviderID}
 }
 
 func (u CompactBackendUploader) InstallationID() string { return u.installationID }
@@ -30,6 +31,12 @@ func (u CompactBackendUploader) InstallationID() string { return u.installationI
 func (u CompactBackendUploader) CompactUsageClient() attributionlocal.CompactBackendClient {
 	return u.client
 }
+
+func (u CompactBackendUploader) V2ClaimClient() attributionlocal.V2ClaimBackendClient {
+	client, _ := u.client.(attributionlocal.V2ClaimBackendClient)
+	return client
+}
+func (u CompactBackendUploader) RelayProviderID() int { return u.relayProviderID }
 
 func (u CompactBackendUploader) UploadHookEvent(ctx context.Context, ev HookEvent) error {
 	if u.client == nil {
