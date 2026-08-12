@@ -23,11 +23,41 @@ var (
 )
 
 type InstallationService struct {
-	client *ent.Client
+	client   *ent.Client
+	protocol ProtocolContract
 }
 
-func NewInstallationService(client *ent.Client) *InstallationService {
-	return &InstallationService{client: client}
+func NewInstallationService(client *ent.Client, protocol ProtocolContract) *InstallationService {
+	return &InstallationService{client: client, protocol: protocol}
+}
+
+func (s *InstallationService) SetupState(ctx context.Context, userID int) (ReportingSetupState, error) {
+	if s == nil || s.client == nil || userID <= 0 {
+		return "", fmt.Errorf("load reporting setup state: client and user are required")
+	}
+	rows, err := s.client.ReportingInstallation.Query().
+		Where(reportinginstallation.UserIDEQ(userID)).
+		Select(reportinginstallation.FieldStatus, reportinginstallation.FieldReportingEnabled).
+		All(ctx)
+	if err != nil {
+		return "", fmt.Errorf("load reporting setup state: %w", err)
+	}
+	if len(rows) == 0 {
+		return ReportingSetupNotEnrolled, nil
+	}
+	hasActive := false
+	for _, row := range rows {
+		if row.Status == reportinginstallation.StatusActive {
+			hasActive = true
+			if row.ReportingEnabled {
+				return ReportingSetupWaiting, nil
+			}
+		}
+	}
+	if hasActive {
+		return ReportingSetupDisabled, nil
+	}
+	return ReportingSetupRevoked, nil
 }
 
 func (s *InstallationService) Ensure(ctx context.Context, userID int, installationID, label, clientVersion string) (InstallationCredentials, error) {
@@ -60,6 +90,7 @@ func (s *InstallationService) Ensure(ctx context.Context, userID int, installati
 			InstallationID:   installationID,
 			ReportingEnabled: existing.ReportingEnabled,
 			OTelEnabled:      existing.OtelEnabled,
+			Protocol:         s.protocol,
 		}, nil
 	}
 	if !ent.IsNotFound(err) {
@@ -92,6 +123,7 @@ func (s *InstallationService) Ensure(ctx context.Context, userID int, installati
 		ReporterToken:  reporterToken,
 		OTLPToken:      otlpToken,
 		Created:        true,
+		Protocol:       s.protocol,
 	}, nil
 }
 
@@ -124,6 +156,7 @@ func (s *InstallationService) SetEnabled(ctx context.Context, userID int, instal
 		InstallationID:   row.InstallationID,
 		ReportingEnabled: row.ReportingEnabled,
 		OTelEnabled:      row.OtelEnabled,
+		Protocol:         s.protocol,
 	}, nil
 }
 
@@ -163,6 +196,7 @@ func (s *InstallationService) Rotate(ctx context.Context, userID int, installati
 		OTLPToken:        otlpToken,
 		ReportingEnabled: row.ReportingEnabled,
 		OTelEnabled:      row.OtelEnabled,
+		Protocol:         s.protocol,
 	}, nil
 }
 

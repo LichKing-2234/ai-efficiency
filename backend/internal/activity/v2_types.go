@@ -56,8 +56,9 @@ type V2TrendPoint struct {
 }
 
 type V2Readiness struct {
-	State           string     `json:"state"`
-	FirstAcceptedAt *time.Time `json:"first_accepted_at,omitempty"`
+	State            string     `json:"state"`
+	FirstAcceptedAt  *time.Time `json:"first_accepted_at,omitempty"`
+	LatestAcceptedAt *time.Time `json:"latest_accepted_at,omitempty"`
 }
 
 type V2Overview struct {

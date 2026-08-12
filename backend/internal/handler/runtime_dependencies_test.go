@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ai-efficiency/backend/internal/attributionledger"
 	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/teamusage"
 	"github.com/ai-efficiency/backend/internal/testdb"
@@ -11,6 +12,28 @@ import (
 	redis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
+
+func TestSetupRouterRejectsInvalidAttributionProtocolBeforeDependencies(t *testing.T) {
+	router, err := SetupRouter(
+		nil, nil, nil, nil, nil, nil, nil, "", "", nil, nil, nil, nil, nil, nil,
+		RouterOptions{AttributionProtocol: attributionledger.ProtocolContract{
+			LedgerEpoch: attributionledger.LedgerEpochFormalV2, V1WritePolicy: attributionledger.V1WritePolicyAccept,
+		}},
+	)
+	if err == nil || !strings.Contains(err.Error(), "initialize attribution protocol") {
+		t.Fatalf("SetupRouter() router=%v error=%v, want attribution protocol error", router, err)
+	}
+}
+
+func TestSetupRouterRejectsReadinessCapabilityWithoutSetup(t *testing.T) {
+	router, err := SetupRouter(
+		nil, nil, nil, nil, nil, nil, nil, "", "", nil, nil, nil, nil, nil, nil,
+		RouterOptions{AttributionReadinessAvailable: true},
+	)
+	if err == nil || !strings.Contains(err.Error(), "reporting readiness capability requires setup capability") {
+		t.Fatalf("SetupRouter() router=%v error=%v", router, err)
+	}
+}
 
 func TestSetupRouterReportsAllMissingPerformanceInputs(t *testing.T) {
 	router, err := SetupRouter(

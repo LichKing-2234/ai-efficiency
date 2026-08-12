@@ -57,6 +57,13 @@ relay:
   model: "claude-sonnet-4-20250514"
   default_group_id: ""
 
+attribution:
+  ledger_epoch: "shadow_v2"
+  v1_write_policy: "accept"
+  minimum_cli_version: ""
+  setup_available: false
+  readiness_available: false
+
 version_check:
   enabled: true
   release_api_url: "https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest"

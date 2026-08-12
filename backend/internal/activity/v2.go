@@ -70,6 +70,13 @@ func (s *Service) V2Overview(ctx context.Context, actorUserID int, query V2Query
 	return result, nil
 }
 
+func (s *Service) V2PersonalReadiness(ctx context.Context, userID int) (V2Readiness, error) {
+	if s == nil || s.v2DB == nil || strings.TrimSpace(s.v2LedgerEpoch) == "" || userID <= 0 {
+		return V2Readiness{}, errors.New("Activity v2 readiness is not configured")
+	}
+	return s.v2ReadinessSQL(ctx, &v2Scope{userIDs: map[int]struct{}{userID: {}}})
+}
+
 func (s *Service) V2Repositories(ctx context.Context, actorUserID int, query V2PageQuery) (*V2Page[V2RepositoryRow], error) {
 	if err := validateV2PageQuery(query); err != nil {
 		return nil, err

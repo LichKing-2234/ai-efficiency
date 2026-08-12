@@ -36,7 +36,7 @@ func newFixture(t *testing.T) fixture {
 	checkpoint := client.CommitCheckpoint.Create().SetEventID("checkpoint-1").SetUserID(user.ID).SetWorkspaceID("workspace-1").
 		SetRepoConfigID(repo.ID).SetCommitSha("commit-1").SetParentShas([]string{"parent-1"}).SetBindingSource(commitcheckpoint.BindingSourceManual).SaveX(ctx)
 	return fixture{
-		client: client, service: NewService(client),
+		client: client, service: NewService(client, attributionledger.DefaultProtocolContract()),
 		principal:  attributionledger.InstallationPrincipal{DatabaseID: installation.ID, InstallationID: installation.InstallationID, UserID: user.ID},
 		providerID: provider.ID, repoID: repo.ID, checkpoint: checkpoint.EventID,
 	}
@@ -75,7 +75,7 @@ func TestIngestReplayAndLateRequest(t *testing.T) {
 		t.Fatalf("late result = %+v", got)
 	}
 	group := f.client.AttributionClaimGroup.Query().OnlyX(ctx)
-	if group.RequestCount != 3 || group.LedgerEpoch != LedgerEpoch || group.ExpiresAt.Before(time.Now().Add(89*24*time.Hour)) {
+	if group.RequestCount != 3 || group.LedgerEpoch != attributionledger.LedgerEpochShadowV2 || group.ExpiresAt.Before(time.Now().Add(89*24*time.Hour)) {
 		t.Fatalf("group = %+v", group)
 	}
 	if count := f.client.AttributionRequestClaim.Query().CountX(ctx); count != 3 {
@@ -142,7 +142,7 @@ func TestIngestFailsClosedAndDoesNotTouchV1Ledger(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Epoch != LedgerEpoch || result.Results[0].Group.Status != "rejected" {
+	if result.Epoch != attributionledger.LedgerEpochShadowV2 || result.Results[0].Group.Status != "rejected" {
 		t.Fatalf("disabled provider result = %+v", result)
 	}
 	if f.client.AttributionClaimGroup.Query().CountX(ctx) != 0 || f.client.AttributionUsageBucket.Query().CountX(ctx) != 0 {

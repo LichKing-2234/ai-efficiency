@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -26,13 +27,26 @@ import (
 
 // setupFullTestEnv creates a test environment with all handlers wired up.
 func setupFullTestEnv(t *testing.T) *fullTestEnv {
-	return setupFullTestEnvWithHealth(t, nil)
+	return setupFullTestEnvWithHealthAndOptions(t, nil, RouterOptions{})
 }
 
 func setupFullTestEnvWithHealth(t *testing.T, healthHandler *HealthHandler) *fullTestEnv {
+	return setupFullTestEnvWithHealthAndOptions(t, healthHandler, RouterOptions{})
+}
+
+func setupFullTestEnvWithOptions(t *testing.T, options RouterOptions) *fullTestEnv {
+	return setupFullTestEnvWithHealthAndOptions(t, nil, options)
+}
+
+func setupFullTestEnvWithHealthAndOptions(t *testing.T, healthHandler *HealthHandler, options RouterOptions) *fullTestEnv {
 	t.Helper()
 
-	client := testdb.Open(t)
+	client, dsn := testdb.OpenWithDSN(t)
+	sqlDB, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatalf("open readiness database: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	logger := zap.NewNop()
 	authSvc := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)
@@ -48,7 +62,7 @@ func setupFullTestEnvWithHealth(t *testing.T, healthHandler *HealthHandler) *ful
 
 	router := setupRouterForTest(t,
 		client,
-		nil,
+		sqlDB,
 		authSvc,
 		repoSvc,
 		webhookHandler,
@@ -59,6 +73,7 @@ func setupFullTestEnvWithHealth(t *testing.T, healthHandler *HealthHandler) *ful
 		middleware.CORS(nil),
 		nil, nil, nil, handlerCheckpoint(client),
 		healthHandler,
+		options,
 	)
 
 	// Create admin user
@@ -83,6 +98,7 @@ func setupFullTestEnvWithHealth(t *testing.T, healthHandler *HealthHandler) *ful
 
 	return &fullTestEnv{
 		client:     client,
+		sqlDB:      sqlDB,
 		router:     router,
 		authSvc:    authSvc,
 		token:      pair.AccessToken,
@@ -96,6 +112,7 @@ func handlerCheckpoint(client *ent.Client) *CheckpointHandler {
 
 type fullTestEnv struct {
 	client     *ent.Client
+	sqlDB      *sql.DB
 	router     *gin.Engine
 	authSvc    *auth.Service
 	token      string

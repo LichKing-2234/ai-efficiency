@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ai-efficiency/backend/internal/activity"
 	"github.com/ai-efficiency/backend/internal/attributionclaim"
 	"github.com/ai-efficiency/backend/internal/attributionledger"
 	"github.com/ai-efficiency/backend/internal/auth"
@@ -27,14 +29,22 @@ type AttributionHandler struct {
 	ledger        *attributionledger.Service
 	correlation   *attributionledger.CorrelationStore
 	claims        *attributionclaim.Service
+	protocol      attributionledger.ProtocolContract
+	readiness     attributionReadinessService
 }
 
-func NewAttributionHandler(installations *attributionledger.InstallationService, ledger *attributionledger.Service, correlation *attributionledger.CorrelationStore, claims *attributionclaim.Service) *AttributionHandler {
+type attributionReadinessService interface {
+	V2PersonalReadiness(context.Context, int) (activity.V2Readiness, error)
+}
+
+func NewAttributionHandler(installations *attributionledger.InstallationService, ledger *attributionledger.Service, correlation *attributionledger.CorrelationStore, claims *attributionclaim.Service, protocol attributionledger.ProtocolContract, readiness attributionReadinessService) *AttributionHandler {
 	return &AttributionHandler{
 		installations: installations,
 		ledger:        ledger,
 		correlation:   correlation,
 		claims:        claims,
+		protocol:      protocol,
+		readiness:     readiness,
 	}
 }
 
@@ -47,6 +57,43 @@ type ensureInstallationRequest struct {
 type setInstallationEnabledRequest struct {
 	ReportingEnabled *bool `json:"reporting_enabled,omitempty"`
 	OTelEnabled      *bool `json:"otel_enabled,omitempty"`
+}
+
+type attributionStatusResponse struct {
+	State            attributionledger.ReportingSetupState `json:"state"`
+	Retryable        bool                                  `json:"retryable"`
+	LatestAcceptedAt *time.Time                            `json:"latest_accepted_at,omitempty"`
+}
+
+func (h *AttributionHandler) Status(c *gin.Context) {
+	uc := auth.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	state, err := h.installations.SetupState(c.Request.Context(), uc.UserID)
+	if err != nil {
+		pkg.ErrorWithDetails(c, http.StatusServiceUnavailable, "reporting readiness unavailable", gin.H{"retryable": true})
+		return
+	}
+	response := attributionStatusResponse{State: state}
+	if state == attributionledger.ReportingSetupWaiting {
+		if h.readiness == nil {
+			pkg.ErrorWithDetails(c, http.StatusServiceUnavailable, "reporting readiness unavailable", gin.H{"retryable": true})
+			return
+		}
+		readiness, err := h.readiness.V2PersonalReadiness(c.Request.Context(), uc.UserID)
+		if err != nil {
+			pkg.ErrorWithDetails(c, http.StatusServiceUnavailable, "reporting readiness unavailable", gin.H{"retryable": true})
+			return
+		}
+		if readiness.State == "active" {
+			response.State = attributionledger.ReportingSetupActive
+			response.LatestAcceptedAt = readiness.LatestAcceptedAt
+		}
+	}
+	pkg.Success(c, response)
 }
 
 func (h *AttributionHandler) EnsureInstallation(c *gin.Context) {
@@ -130,7 +177,7 @@ func (h *AttributionHandler) CreateBuckets(c *gin.Context) {
 	}
 	result, err := h.ledger.CreateBuckets(c.Request.Context(), *principal, req)
 	if err != nil {
-		writeAttributionMutationError(c, err)
+		writeAttributionMutationError(c, err, h.protocol)
 		return
 	}
 	pkg.Created(c, result)
@@ -172,7 +219,7 @@ func (h *AttributionHandler) CreateRevision(c *gin.Context) {
 	}
 	created, err := h.ledger.CreateRevision(c.Request.Context(), *principal, c.Param("bucket_id"), req)
 	if err != nil {
-		writeAttributionMutationError(c, err)
+		writeAttributionMutationError(c, err, h.protocol)
 		return
 	}
 	pkg.Success(c, gin.H{"created": created, "revision_id": req.RevisionID})
@@ -305,8 +352,10 @@ func decodeStrictJSON(c *gin.Context, target any) error {
 	return nil
 }
 
-func writeAttributionMutationError(c *gin.Context, err error) {
+func writeAttributionMutationError(c *gin.Context, err error, protocol attributionledger.ProtocolContract) {
 	switch {
+	case errors.Is(err, attributionledger.ErrUpgradeRequired):
+		pkg.ErrorWithDetails(c, http.StatusConflict, err.Error(), gin.H{"error_code": attributionledger.V1WritePolicyUpgradeNeeded, "minimum_cli_version": protocol.MinimumCLIVersion})
 	case errors.Is(err, attributionledger.ErrImmutableBucketConflict), errors.Is(err, attributionledger.ErrRevisionConflict):
 		pkg.Error(c, http.StatusConflict, err.Error())
 	case errors.Is(err, attributionledger.ErrInstallationForbidden), errors.Is(err, attributionledger.ErrAllocationForbidden):

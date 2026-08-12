@@ -10,8 +10,10 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/attributionrequestclaim"
+	"github.com/ai-efficiency/backend/ent/attributionusagepool"
 	"github.com/ai-efficiency/backend/ent/attributionusagepoolcommit"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/internal/attributionledger"
 	"github.com/ai-efficiency/backend/internal/testdb"
 )
 
@@ -82,17 +84,58 @@ func TestMaterializeRequestClaimStoresOfficialTokenOnce(t *testing.T) {
 	}
 }
 
+func TestMaterializeRequestClaimKeepsLedgerEpochsIsolated(t *testing.T) {
+	fixture := newPoolFixture(t)
+	if err := materializeInTransaction(t, fixture, fixture.claimID); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	shadowGroup := fixture.client.AttributionClaimGroup.GetX(ctx, fixture.groupID)
+	shadowClaim := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+	formalGroup := fixture.client.AttributionClaimGroup.Create().
+		SetGroupID("group-formal").SetInstallationID(2).SetUserID(shadowGroup.UserID).SetRelayProviderID(shadowGroup.RelayProviderID).
+		SetSchemaVersion(2).SetLedgerEpoch("formal_v2").SetThreadID("thread-formal").SetTurnID("turn-formal").SetEvidenceDigest("evidence-formal").
+		SetCommitAllocations(shadowGroup.CommitAllocations).SetRequestCount(1).SetExpiresAt(shadowGroup.ExpiresAt).SaveX(ctx)
+	formalClaim := fixture.client.AttributionRequestClaim.Create().SetClaimGroupID(formalGroup.ID).SetRelayProviderID(shadowClaim.RelayProviderID).SetRequestID("req-formal").
+		SetCanonicalDigest("digest-formal").SetStatus(attributionrequestclaim.StatusReconciled).SetRequestedModel(shadowClaim.RequestedModel).SetUsageAt(*shadowClaim.UsageAt).
+		SetInputTokens(10).SetOutputTokens(2).SetCacheCreationTokens(3).SetCacheReadTokens(4).SetTotalTokens(19).
+		SetNextAttemptAt(fixture.now).SetExpiresAt(shadowClaim.ExpiresAt).SaveX(ctx)
+
+	if err := materializeInTransaction(t, fixture, formalClaim.ID); err != nil {
+		t.Fatal(err)
+	}
+	pools := fixture.client.AttributionUsagePool.Query().Order(ent.Asc("ledger_epoch")).AllX(ctx)
+	if len(pools) != 2 || pools[0].LedgerEpoch != "formal_v2" || pools[1].LedgerEpoch != "shadow_v2" {
+		t.Fatalf("epoch pools = %+v", pools)
+	}
+	for _, pool := range pools {
+		if pool.TotalTokens != 19 || pool.RequestCount != 1 {
+			t.Fatalf("epoch pool contribution = %+v", pool)
+		}
+	}
+	for _, groupID := range []int{shadowGroup.ID, formalGroup.ID} {
+		if err := MaterializeCoverageGaps(ctx, fixture.client, groupID, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gaps := fixture.client.AttributionUsagePool.Query().Where(attributionusagepool.RequestedModelEQ(CoverageGapModel)).Order(ent.Asc("ledger_epoch")).AllX(ctx)
+	if len(gaps) != 2 || gaps[0].LedgerEpoch != "formal_v2" || gaps[1].LedgerEpoch != "shadow_v2" || gaps[0].CoverageGapCount != 1 || gaps[1].CoverageGapCount != 1 {
+		t.Fatalf("epoch coverage pools = %+v", gaps)
+	}
+}
+
 func TestCanonicalContributionIgnoresAllocationOrderAndDuplicates(t *testing.T) {
 	usageAt := time.Date(2026, 8, 11, 12, 17, 0, 0, time.UTC)
 	claim := &ent.AttributionRequestClaim{RequestedModel: "gpt-test", UsageAt: &usageAt, InputTokens: 1, TotalTokens: 1}
-	first, err := canonicalContribution(3, 7, []map[string]any{
+	first, err := canonicalContribution(attributionledger.LedgerEpochShadowV2, 3, 7, []map[string]any{
 		{"repo_config_id": float64(2), "commit_sha": "bbb"},
 		{"repo_config_id": float64(1), "commit_sha": "aaa"},
 	}, claim)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := canonicalContribution(3, 7, []map[string]any{
+	second, err := canonicalContribution(attributionledger.LedgerEpochShadowV2, 3, 7, []map[string]any{
 		{"repo_config_id": 1, "commit_sha": "aaa"},
 		{"repo_config_id": 2, "commit_sha": "bbb"},
 		{"repo_config_id": 1, "commit_sha": "aaa"},
@@ -103,7 +146,7 @@ func TestCanonicalContributionIgnoresAllocationOrderAndDuplicates(t *testing.T) 
 	if first.key != second.key || len(first.commits) != 2 || len(second.commits) != 2 {
 		t.Fatalf("canonical contributions differ: %+v %+v", first, second)
 	}
-	otherProvider, err := canonicalContribution(4, 7, []map[string]any{{"repo_config_id": 1, "commit_sha": "aaa"}, {"repo_config_id": 2, "commit_sha": "bbb"}}, claim)
+	otherProvider, err := canonicalContribution(attributionledger.LedgerEpochShadowV2, 4, 7, []map[string]any{{"repo_config_id": 1, "commit_sha": "aaa"}, {"repo_config_id": 2, "commit_sha": "bbb"}}, claim)
 	if err != nil || otherProvider.key == first.key {
 		t.Fatalf("provider identity not isolated: first=%+v other=%+v err=%v", first, otherProvider, err)
 	}

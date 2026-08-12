@@ -137,12 +137,13 @@ type RevisionRequest struct {
 }
 
 type InstallationCredentials struct {
-	InstallationID   string `json:"installation_id"`
-	ReporterToken    string `json:"reporter_token,omitempty"`
-	OTLPToken        string `json:"otlp_token,omitempty"`
-	Created          bool   `json:"created"`
-	ReportingEnabled bool   `json:"reporting_enabled"`
-	OTelEnabled      bool   `json:"otel_enabled"`
+	InstallationID   string           `json:"installation_id"`
+	ReporterToken    string           `json:"reporter_token,omitempty"`
+	OTLPToken        string           `json:"otlp_token,omitempty"`
+	Created          bool             `json:"created"`
+	ReportingEnabled bool             `json:"reporting_enabled"`
+	OTelEnabled      bool             `json:"otel_enabled"`
+	Protocol         ProtocolContract `json:"protocol"`
 }
 
 type InstallationPrincipal struct {
@@ -150,6 +151,16 @@ type InstallationPrincipal struct {
 	InstallationID string
 	UserID         int
 }
+
+type ReportingSetupState string
+
+const (
+	ReportingSetupNotEnrolled ReportingSetupState = "not_enrolled"
+	ReportingSetupRevoked     ReportingSetupState = "revoked"
+	ReportingSetupDisabled    ReportingSetupState = "disabled"
+	ReportingSetupWaiting     ReportingSetupState = "waiting_for_data"
+	ReportingSetupActive      ReportingSetupState = "active"
+)
 
 type Report struct {
 	From               time.Time      `json:"from"`

@@ -20,6 +20,7 @@ type Config struct {
 	Auth         AuthConfig         `mapstructure:"auth"`
 	Encryption   EncryptionConfig   `mapstructure:"encryption"`
 	Relay        RelayConfig        `mapstructure:"relay"`
+	Attribution  AttributionConfig  `mapstructure:"attribution"`
 	VersionCheck VersionCheckConfig `mapstructure:"version_check"`
 }
 
@@ -55,6 +56,14 @@ type RelayConfig struct {
 	AdminAPIKey    string `mapstructure:"admin_api_key"`
 	Model          string `mapstructure:"model"`
 	DefaultGroupID string `mapstructure:"default_group_id"`
+}
+
+type AttributionConfig struct {
+	LedgerEpoch        string `mapstructure:"ledger_epoch"`
+	V1WritePolicy      string `mapstructure:"v1_write_policy"`
+	MinimumCLIVersion  string `mapstructure:"minimum_cli_version"`
+	SetupAvailable     bool   `mapstructure:"setup_available"`
+	ReadinessAvailable bool   `mapstructure:"readiness_available"`
 }
 
 type DBConfig struct {
@@ -140,6 +149,11 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("relay.provider", "sub2api")
 	v.SetDefault("relay.model", "claude-sonnet-4-20250514")
 	v.SetDefault("relay.default_group_id", "")
+	v.SetDefault("attribution.ledger_epoch", "shadow_v2")
+	v.SetDefault("attribution.v1_write_policy", "accept")
+	v.SetDefault("attribution.minimum_cli_version", "")
+	v.SetDefault("attribution.setup_available", false)
+	v.SetDefault("attribution.readiness_available", false)
 	v.SetDefault("auth.access_token_ttl", 7200)
 	v.SetDefault("auth.refresh_token_ttl", 604800)
 	v.SetDefault("auth.ldap.user_filter", "(uid=%s)")
@@ -185,6 +199,11 @@ func Load(path string) (*Config, error) {
 		"relay.admin_api_key",
 		"relay.model",
 		"relay.default_group_id",
+		"attribution.ledger_epoch",
+		"attribution.v1_write_policy",
+		"attribution.minimum_cli_version",
+		"attribution.setup_available",
+		"attribution.readiness_available",
 		"auth.jwt_secret",
 		"auth.access_token_ttl",
 		"auth.refresh_token_ttl",

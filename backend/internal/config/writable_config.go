@@ -100,6 +100,13 @@ func configToYAMLMap(cfg *Config) map[string]any {
 			"model":            cfg.Relay.Model,
 			"default_group_id": cfg.Relay.DefaultGroupID,
 		},
+		"attribution": map[string]any{
+			"ledger_epoch":        cfg.Attribution.LedgerEpoch,
+			"v1_write_policy":     cfg.Attribution.V1WritePolicy,
+			"minimum_cli_version": cfg.Attribution.MinimumCLIVersion,
+			"setup_available":     cfg.Attribution.SetupAvailable,
+			"readiness_available": cfg.Attribution.ReadinessAvailable,
+		},
 		"version_check": map[string]any{
 			"enabled":         cfg.VersionCheck.Enabled,
 			"release_api_url": cfg.VersionCheck.ReleaseAPIURL,

@@ -15,18 +15,23 @@ import (
 
 // AuthHandler handles authentication HTTP requests.
 type AuthHandler struct {
-	authService          *auth.Service
-	entClient            *ent.Client
-	adminSettingsHandler *AdminSettingsHandler
+	authService           *auth.Service
+	entClient             *ent.Client
+	adminSettingsHandler  *AdminSettingsHandler
+	reportingCapabilities ReportingCapabilities
+}
+
+type ReportingCapabilities struct {
+	SetupAvailable     bool `json:"setup_available"`
+	ReadinessAvailable bool `json:"readiness_available"`
 }
 
 // NewAuthHandler creates a new auth handler.
-func NewAuthHandler(authService *auth.Service, entClient *ent.Client, adminSettingsHandlers ...*AdminSettingsHandler) *AuthHandler {
-	h := &AuthHandler{authService: authService, entClient: entClient}
-	if len(adminSettingsHandlers) > 0 {
-		h.adminSettingsHandler = adminSettingsHandlers[0]
+func NewAuthHandler(authService *auth.Service, entClient *ent.Client, adminSettingsHandler *AdminSettingsHandler, reportingCapabilities ReportingCapabilities) *AuthHandler {
+	return &AuthHandler{
+		authService: authService, entClient: entClient, adminSettingsHandler: adminSettingsHandler,
+		reportingCapabilities: reportingCapabilities,
 	}
-	return h
 }
 
 // Login handles POST /api/v1/auth/login
@@ -88,11 +93,12 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	}
 	if h.entClient == nil {
 		pkg.Success(c, gin.H{
-			"id":          uc.UserID,
-			"username":    uc.Username,
-			"email":       "",
-			"role":        uc.Role,
-			"auth_source": "",
+			"id":                     uc.UserID,
+			"username":               uc.Username,
+			"email":                  "",
+			"role":                   uc.Role,
+			"auth_source":            "",
+			"reporting_capabilities": h.reportingCapabilities,
 		})
 		return
 	}
@@ -102,11 +108,12 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		return
 	}
 	pkg.Success(c, gin.H{
-		"id":          u.ID,
-		"username":    u.Username,
-		"email":       u.Email,
-		"role":        string(u.Role),
-		"auth_source": string(u.AuthSource),
+		"id":                     u.ID,
+		"username":               u.Username,
+		"email":                  u.Email,
+		"role":                   string(u.Role),
+		"auth_source":            string(u.AuthSource),
+		"reporting_capabilities": h.reportingCapabilities,
 	})
 }
 

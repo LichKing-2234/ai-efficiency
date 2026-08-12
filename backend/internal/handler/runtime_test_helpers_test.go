@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/internal/attributionledger"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/readcache"
@@ -76,6 +77,10 @@ func setupRouterForTest(
 	if strings.TrimSpace(options.TeamUsageCursorSecret) == "" {
 		options.TeamUsageCursorSecret = "test-team-usage-cursor-secret"
 	}
+	protocol, err := attributionledger.NormalizeProtocolContract(options.AttributionProtocol)
+	if err != nil {
+		t.Fatalf("initialize test attribution protocol: %v", err)
+	}
 	router, err := setupRouter(
 		entClient,
 		sqlDB,
@@ -93,6 +98,7 @@ func setupRouterForTest(
 		checkpointHandler,
 		healthHandler,
 		options,
+		protocol,
 	)
 	if err != nil {
 		t.Fatalf("setup test router: %v", err)

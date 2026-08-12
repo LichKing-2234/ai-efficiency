@@ -36,24 +36,26 @@ var ginDefaultNotFoundBody = []byte("404 page not found")
 
 // RouterOptions supplies the runtime dependencies required by the production router.
 type RouterOptions struct {
-	DirectoryService         DirectoryAdminService
-	PersonalUsageCache       *personalusage.Cache
-	WorkItemsCache           *workitems.CountsCache
-	WorkItemsRevisionStore   *workitems.RevisionStore
-	RepresentativeScopeCache *representativescope.Cache
-	TeamUsageSnapshotCache   *teamusage.SnapshotCache
-	TeamUsageOriginCache     *teamusage.OriginCache
-	TeamUsagePrewarmReader   *teamusage.PrewarmReader
-	TeamUsageCursorSecret    string
-	WebhookHTTPClient        *http.Client
-	RequestLogger            *zap.Logger
-	RequestObserver          telemetry.RequestObserver
-	WebVitalsHandler         *WebVitalsHandler
-	AttributionCorrelation   *attributionledger.CorrelationStore
-	ActivityCache            *activity.Cache
-	ActivityV2LedgerEpoch    string
-	Release                  string
-	RequestTimeout           time.Duration
+	DirectoryService              DirectoryAdminService
+	PersonalUsageCache            *personalusage.Cache
+	WorkItemsCache                *workitems.CountsCache
+	WorkItemsRevisionStore        *workitems.RevisionStore
+	RepresentativeScopeCache      *representativescope.Cache
+	TeamUsageSnapshotCache        *teamusage.SnapshotCache
+	TeamUsageOriginCache          *teamusage.OriginCache
+	TeamUsagePrewarmReader        *teamusage.PrewarmReader
+	TeamUsageCursorSecret         string
+	WebhookHTTPClient             *http.Client
+	RequestLogger                 *zap.Logger
+	RequestObserver               telemetry.RequestObserver
+	WebVitalsHandler              *WebVitalsHandler
+	AttributionCorrelation        *attributionledger.CorrelationStore
+	AttributionProtocol           attributionledger.ProtocolContract
+	AttributionSetupAvailable     bool
+	AttributionReadinessAvailable bool
+	ActivityCache                 *activity.Cache
+	Release                       string
+	RequestTimeout                time.Duration
 }
 
 func validateRouterDependencies(providerHandler *ProviderHandler, options RouterOptions) error {
@@ -139,6 +141,17 @@ func SetupRouter(
 	healthHandler *HealthHandler,
 	options RouterOptions,
 ) (*gin.Engine, error) {
+	protocol, err := attributionledger.NormalizeProtocolContract(options.AttributionProtocol)
+	if err != nil {
+		return nil, fmt.Errorf("initialize attribution protocol: %w", err)
+	}
+	options.AttributionProtocol = protocol
+	if options.AttributionReadinessAvailable && !options.AttributionSetupAvailable {
+		return nil, fmt.Errorf("reporting readiness capability requires setup capability")
+	}
+	if options.AttributionReadinessAvailable && protocol.LedgerEpoch != attributionledger.LedgerEpochFormalV2 {
+		return nil, fmt.Errorf("reporting readiness capability requires the formal v2 ledger epoch")
+	}
 	if err := validateRouterDependencies(providerHandler, options); err != nil {
 		return nil, err
 	}
@@ -159,6 +172,7 @@ func SetupRouter(
 		checkpointHandler,
 		healthHandler,
 		options,
+		protocol,
 	)
 }
 
@@ -179,6 +193,7 @@ func setupRouter(
 	checkpointHandler *CheckpointHandler,
 	healthHandler *HealthHandler,
 	options RouterOptions,
+	protocol attributionledger.ProtocolContract,
 ) (*gin.Engine, error) {
 	r := gin.New()
 	// Keep canonical redirects inside the correlation and telemetry chain.
@@ -215,7 +230,9 @@ func setupRouter(
 	}
 
 	// Handlers
-	authHandler := NewAuthHandler(authService, entClient, adminSettingsHandler)
+	authHandler := NewAuthHandler(authService, entClient, adminSettingsHandler, ReportingCapabilities{
+		SetupAvailable: options.AttributionSetupAvailable, ReadinessAvailable: options.AttributionReadinessAvailable,
+	})
 	credentialHandler := NewCredentialHandler(entClient, encryptionKey)
 	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey, repoService)
 	repoHandler := NewRepoHandler(repoService)
@@ -223,8 +240,7 @@ func setupRouter(
 	efficiencyHandler := NewEfficiencyHandler(entClient)
 	toolUsageHandler := NewToolUsageHandler(toolusage.NewService(entClient))
 	eventsHandler := NewEventsHandler(toolusage.NewQueryService(entClient))
-	installationService := attributionledger.NewInstallationService(entClient)
-	attributionHandler := NewAttributionHandler(installationService, attributionledger.NewService(entClient, options.AttributionCorrelation), options.AttributionCorrelation, attributionclaim.NewService(entClient))
+	installationService := attributionledger.NewInstallationService(entClient, protocol)
 	teamUsageService, err := newTeamUsageService(entClient, sqlDB, providerHandler, options.RepresentativeScopeCache, options.TeamUsageSnapshotCache, options.TeamUsageOriginCache, options.TeamUsagePrewarmReader, options.TeamUsageCursorSecret)
 	if err != nil {
 		return nil, fmt.Errorf("initialize team usage service: %w", err)
@@ -233,14 +249,20 @@ func setupRouter(
 	if providerHandler != nil {
 		personalUsageService = personalusage.NewService(entClient, providerHandler, encryptionKey, options.PersonalUsageCache)
 	}
-	activityHandler := NewActivityHandler(activity.NewService(entClient, options.AttributionCorrelation, activity.ServiceOptions{
+	activityLedgerEpoch := ""
+	if protocol.LedgerEpoch == attributionledger.LedgerEpochFormalV2 {
+		activityLedgerEpoch = protocol.LedgerEpoch
+	}
+	activityService := activity.NewService(entClient, options.AttributionCorrelation, activity.ServiceOptions{
 		ScopeResolver: representativescope.NewWithCache(entClient, options.RepresentativeScopeCache),
 		CursorSecret:  options.TeamUsageCursorSecret,
 		Cache:         options.ActivityCache,
-		V2LedgerEpoch: options.ActivityV2LedgerEpoch,
+		V2LedgerEpoch: activityLedgerEpoch,
 		V2Denominator: &activityDenominatorResolver{personal: personalUsageService, team: teamUsageService, client: entClient, cache: options.ActivityCache},
 		V2DB:          sqlDB,
-	}))
+	})
+	activityHandler := NewActivityHandler(activityService)
+	attributionHandler := NewAttributionHandler(installationService, attributionledger.NewService(entClient, options.AttributionCorrelation, protocol), options.AttributionCorrelation, attributionclaim.NewService(entClient, protocol), protocol, activityService)
 	userSetupService := usersetup.NewService(entClient, providerHandler, encryptionKey)
 	userSetupHandler := NewUserSetupHandler(userSetupService)
 	adminUsersHandler := NewAdminUsersHandler(entClient, encryptionKey)
@@ -386,6 +408,9 @@ func setupRouter(
 
 	attributionReadGroup := protected.Group("/attribution")
 	{
+		if options.AttributionReadinessAvailable {
+			attributionReadGroup.GET("/status", attributionHandler.Status)
+		}
 		attributionReadGroup.POST("/installations", attributionHandler.EnsureInstallation)
 		attributionReadGroup.PUT("/installations/:installation_id", attributionHandler.SetInstallationEnabled)
 		attributionReadGroup.POST("/installations/:installation_id/credentials/rotate", attributionHandler.RotateInstallationCredentials)
