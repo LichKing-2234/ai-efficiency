@@ -490,7 +490,7 @@ describe('userSetupReview command builders', () => {
 
   it('builds machine and repo setup commands', () => {
     expect(buildHooksGlobalCommand()).toBe('ae-cli hooks enable --global')
-    expect(buildRepoInitCommand()).toBe('ae-cli init')
+    expect(buildRepoInitCommand()).toBe('ae-cli init --hooks repo')
     expect(buildDoctorCommand()).toBe('ae-cli doctor')
     expect(buildSyncCommand()).toBe('ae-cli sync')
     expect(buildHooksStatusUploadsCommand()).toBe('ae-cli hooks status --uploads')

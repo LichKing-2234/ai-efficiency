@@ -345,7 +345,7 @@ function cancelProviderDelete(event: MouseEvent, close: (event: MouseEvent) => v
         </div>
         <div v-if="!editingId">
           <label class="block text-sm font-medium text-gray-700">{{ t('settings.type') }}</label>
-          <ElSelect v-model="form.type" class="mt-1 w-full" :teleported="false" @change="onTypeChange">
+          <ElSelect v-model="form.type" class="mt-1 w-full" :teleported="false" :aria-label="t('settings.type')" @change="onTypeChange">
             <ElOption value="github" label="GitHub" />
             <ElOption value="bitbucket_server" label="Bitbucket Server" />
           </ElSelect>
@@ -361,21 +361,21 @@ function cancelProviderDelete(event: MouseEvent, close: (event: MouseEvent) => v
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">{{ t('settings.apiCredential') }}</label>
-          <ElSelect v-model="form.api_credential_id" data-testid="provider-api-credential" class="mt-1 w-full" :teleported="false">
+          <ElSelect v-model="form.api_credential_id" data-testid="provider-api-credential" class="mt-1 w-full" :teleported="false" :aria-label="t('settings.apiCredential')">
             <ElOption :value="0" :label="t('settings.selectApiCredential')" disabled />
             <ElOption v-for="credential in credentials.filter(item => item.kind !== 'ssh_username_with_private_key')" :key="credential.id" :value="credential.id" :label="`${credential.name} (${credentialKindLabel(credential.kind, t)})`" />
           </ElSelect>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">{{ t('settings.cloneProtocol') }}</label>
-          <ElSelect v-model="form.clone_protocol" data-testid="provider-clone-protocol" class="mt-1 w-full" :teleported="false">
+          <ElSelect v-model="form.clone_protocol" data-testid="provider-clone-protocol" class="mt-1 w-full" :teleported="false" :aria-label="t('settings.cloneProtocol')">
             <ElOption value="https" label="https" />
             <ElOption value="ssh" label="ssh" />
           </ElSelect>
         </div>
         <div v-if="form.clone_protocol === 'ssh'">
           <label class="block text-sm font-medium text-gray-700">{{ t('settings.cloneCredential') }}</label>
-          <ElSelect v-model="form.clone_credential_id" data-testid="provider-clone-credential" class="mt-1 w-full" :placeholder="t('settings.selectSshCredential')" :teleported="false" clearable>
+          <ElSelect v-model="form.clone_credential_id" data-testid="provider-clone-credential" class="mt-1 w-full" :placeholder="t('settings.selectSshCredential')" :teleported="false" :aria-label="t('settings.cloneCredential')" clearable>
             <ElOption v-for="credential in credentials.filter(item => item.kind === 'ssh_username_with_private_key')" :key="credential.id" :value="credential.id" :label="credential.name" />
           </ElSelect>
           <p class="mt-1 text-xs text-gray-400">{{ t('settings.sshCloneHelp') }}</p>

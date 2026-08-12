@@ -687,21 +687,11 @@ function repoStatusType(status: string) {
           @keydown.enter.self.prevent="goToDetail(repo)"
           @keydown.space.self.prevent="goToDetail(repo)"
         >
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="min-w-0">
+                  <div class="min-w-0">
             <el-button class="repo-name-button !m-0 min-w-0 max-w-full !p-0 text-left" type="primary" link :title="repo.name" @click.stop="goToDetail(repo)">
                         <span class="block min-w-0 truncate">{{ repo.name }}</span>
                       </el-button>
                       <div class="mt-1 truncate text-xs text-gray-500">{{ repo.full_name }}</div>
-                    </div>
-                    <el-tag
-                      class="shrink-0"
-                      :type="repo.binding_state === 'bound' ? 'success' : 'warning'"
-                      effect="light"
-                      size="small"
-                    >
-                      {{ repo.binding_state === 'bound' ? t('repos.bound') : t('repos.needsBinding') }}
-                    </el-tag>
                   </div>
           <dl class="mt-3 grid grid-cols-2 gap-3 text-xs xl:mt-0">
                     <div>

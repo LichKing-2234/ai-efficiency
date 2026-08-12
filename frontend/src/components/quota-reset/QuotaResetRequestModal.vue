@@ -22,10 +22,10 @@ const error = ref('')
 const selectedGroup = computed(() => props.groups.find((group) => group.group_id === selectedGroupID.value) ?? null)
 
 watch(
-  () => [props.open, props.groups] as const,
-  () => {
-    if (!props.open) return
-    selectedGroupID.value = props.groups[0]?.group_id ?? ''
+  () => props.open,
+  (open) => {
+    if (!open) return
+    selectedGroupID.value = ''
     reason.value = ''
     error.value = ''
   },
@@ -59,24 +59,36 @@ function submit() {
       <p class="text-sm text-slate-600">{{ t('quotaReset.modalHelp') }}</p>
 
       <div class="mt-5 space-y-4">
-        <label class="block">
-          <span class="text-sm font-medium text-slate-700">{{ t('quotaReset.subscriptionGroup') }}</span>
+        <div
+          data-testid="quota-reset-group-field"
+          class="rounded-lg border p-3 transition-colors"
+          :class="selectedGroupID ? 'border-slate-200 bg-white' : 'border-cyan-300 bg-cyan-50'"
+        >
+          <span class="text-sm font-semibold text-slate-800">
+            {{ t('quotaReset.subscriptionGroup') }}
+            <span class="text-red-600" aria-hidden="true">*</span>
+          </span>
           <ElSelect
             v-model="selectedGroupID"
+            data-testid="quota-reset-group-select"
             class="mt-1 w-full"
             :teleported="false"
+            :aria-label="t('quotaReset.subscriptionGroup')"
+            aria-required="true"
+            :placeholder="t('quotaReset.groupPlaceholder')"
             :disabled="props.submitting"
           >
             <ElOption
               v-for="group in props.groups"
               :key="group.group_id"
+              :data-testid="`quota-reset-group-option-${group.group_id}`"
               :value="group.group_id"
               :label="`${group.group_name} · ${group.platform}`"
             />
           </ElSelect>
-        </label>
+        </div>
 
-        <div v-if="selectedGroup" class="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        <div v-if="selectedGroup" data-testid="quota-reset-current-usage" class="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
           <span>{{ t('quotaReset.currentUsage') }}</span>
           <span class="ml-2 font-medium text-slate-900">
             {{ selectedGroup.daily_usage_usd.toFixed(2) }} / {{ selectedGroup.weekly_usage_usd.toFixed(2) }} /

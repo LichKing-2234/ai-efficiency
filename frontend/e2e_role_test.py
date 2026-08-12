@@ -41,6 +41,7 @@ USER_ROUTE_CASES = (
         "selector": "[data-testid='usage-center-tabs']",
         "state_selectors": ("[data-testid='usage-group-quotas']", "[data-model-row]"),
         "fit_selectors": ("[data-testid='usage-center-tabs'] .el-segmented__item-label",),
+        "exercise": "usage-personal",
     },
     {
         "path": "/usage/team",
@@ -67,7 +68,11 @@ USER_ROUTE_CASES = (
     {"path": "/activity", "selector": "[data-testid='activity-v2-analytics']", "exercise": "activity-v2"},
     {"path": "/activity/teams", "selector": "[data-testid='activity-team-team-alpha']"},
     {"path": "/activity/teams/team-alpha", "selector": "[data-testid='activity-v2-analytics']"},
-    {"path": "/activity/members/7", "selector": "[data-testid='activity-range-refresh']"},
+    {
+        "path": "/activity/members/7",
+        "selector": "[data-testid='activity-range-refresh']",
+        "exercise": "activity-member",
+    },
     {
         "path": "/user",
         "selector": "[data-testid='primary-onboarding-flow']",
@@ -521,6 +526,17 @@ def mock_matrix_api(route, role):
                 "source_status": "ok",
             },
         },
+        "/api/v1/user/quota-reset/options": {
+            "provider_id": 2,
+            "groups": [{
+                "group_id": "group-alpha",
+                "group_name": "Group Alpha",
+                "platform": "openai",
+                "daily_usage_usd": 10,
+                "weekly_usage_usd": 20,
+                "monthly_usage_usd": 30,
+            }],
+        },
         "/api/v1/user/team-usage/subjects/7/usage/dashboard": {
             **usage_snapshot,
             "subject": {
@@ -674,6 +690,11 @@ def mock_matrix_api(route, role):
                 "commits": [{"repo_config_id": 9, "commit_sha": "abcdef1234567890"}],
             }],
         },
+        "/api/v1/attribution/status": {
+            "state": "active",
+            "retryable": False,
+            "latest_accepted_at": "2026-08-08T08:00:00Z",
+        },
         "/api/v1/admin/users": {"items": [admin_user()], "total": 1, "page": 1, "page_size": 20},
         "/api/v1/admin/users/department-options": {
             "items": [], "selected": None, "total": 0, "page": 1, "page_size": 20,
@@ -788,6 +809,10 @@ def mock_auth_endpoints(page, role="admin"):
                 "email": "admin@example.com" if role == "admin" else "alice@example.com",
                 "role": role,
                 "auth_source": "dev" if role == "admin" else "relay_sso",
+                "reporting_capabilities": {
+                    "setup_available": True,
+                    "readiness_available": True,
+                },
             },
         }),
     ))
@@ -1222,9 +1247,32 @@ def exercise_route_control(page, exercise):
         no_operational_detail = all(text not in analytics.inner_text().lower() for text in (
             "request id", "pending request", "coverage gap"
         ))
-        return approved_copy and one_layout and no_operational_detail, (
+        compact_guide = page.locator("[data-testid='reporting-compact-guide']")
+        reporting_is_active = compact_guide.locator("[data-testid='reporting-active-state']").is_visible()
+        no_commands = "ae-cli" not in compact_guide.inner_text()
+        return approved_copy and one_layout and no_operational_detail and reporting_is_active and no_commands, (
             f"Unexpected Activity v2 layout/copy at {width}px"
         )
+    if exercise == "activity-member":
+        return page.locator("[data-testid^='reporting-']").count() == 0, (
+            "Member Activity exposed personal reporting guidance"
+        )
+    if exercise == "usage-personal":
+        page.locator("[data-testid='open-quota-reset-request']").click()
+        group_select = page.locator("[data-testid='quota-reset-group-select']")
+        group_select.wait_for(state="visible")
+        starts_empty = page.locator("[data-testid='quota-reset-current-usage']").count() == 0
+        group_select.click()
+        option = page.locator("[data-testid='quota-reset-group-option-group-alpha']")
+        option.wait_for(state="visible")
+        option.click()
+        combobox = group_select.locator("[role='combobox']")
+        selected = (
+            combobox.get_attribute("aria-expanded") == "false"
+            and page.locator("[data-testid='quota-reset-current-usage']").is_visible()
+        )
+        page.keyboard.press("Escape")
+        return starts_empty and selected, "Quota reset request did not require an explicit access group"
     if exercise == "team-views":
         page.locator("[data-testid='team-overview-organization-view']").click()
         organization = page.locator("[data-testid='team-overview-organization-tree']")
@@ -1264,13 +1312,15 @@ def exercise_route_control(page, exercise):
         dialog.wait_for(state="hidden")
         return opened, "Administrator decision dialog did not open"
     if exercise == "repo-dialog":
+        row = page.locator("[data-testid='repo-row']").first
+        one_binding_state = row.get_by_text("Bound", exact=True).count() == 1
         page.locator("main button:has-text('Add Repo')").click()
         dialog = page.locator(".el-dialog").first
         dialog.wait_for(state="visible")
         opened = dialog.is_visible()
         page.keyboard.press("Escape")
         dialog.wait_for(state="hidden")
-        return opened, "Repository dialog did not open"
+        return opened and one_binding_state, "Repository row duplicated binding state or dialog did not open"
     if exercise == "settings-dialog":
         page.locator("main button:has-text('Add Service Endpoint')").click()
         dialog = page.locator("[data-testid='relay-provider-dialog']")
@@ -1404,6 +1454,33 @@ def exercise_route_control(page, exercise):
             and recommended_box["x"] >= cc_switch_box["x"]
             and recommended_box["x"] + recommended_box["width"] <= cc_switch_box["x"] + cc_switch_box["width"] + 1
         )
+        reporting = page.locator("[data-testid='reporting-full-guide']")
+        normal_commands = reporting.locator("[data-testid='reporting-normal-commands']")
+        advanced = reporting.locator("[data-testid='reporting-advanced']")
+        advanced_header = advanced.locator(".el-collapse-item__header")
+        advanced_content = reporting.locator("[data-testid='reporting-advanced-content']")
+        commands_are_current = (
+            reporting.is_visible()
+            and "ae-cli login" in normal_commands.inner_text()
+            and "ae-cli discover" in normal_commands.inner_text()
+            and "ae-cli attribution enable" not in reporting.inner_text()
+            and not advanced_content.is_visible()
+        )
+        advanced_header.focus()
+        advanced_header.press("Enter")
+        advanced_content.wait_for(state="visible")
+        advanced_box = advanced.bounding_box()
+        title_box = reporting.locator("[data-testid='reporting-advanced-title']").bounding_box()
+        content_box = advanced_content.bounding_box()
+        advanced_is_usable = (
+            advanced_header.evaluate("element => document.activeElement === element")
+            and advanced_box is not None
+            and title_box is not None
+            and content_box is not None
+            and title_box["x"] >= advanced_box["x"]
+            and content_box["x"] >= advanced_box["x"]
+            and advanced.evaluate("element => parseFloat(getComputedStyle(element).borderLeftWidth) > 0")
+        )
         usable = (
             (stacked if width < 1280 else split)
             and step_direction_fits
@@ -1412,6 +1489,8 @@ def exercise_route_control(page, exercise):
             and radio_selection
             and method_sizes_match
             and cc_switch_recommended
+            and commands_are_current
+            and advanced_is_usable
         )
         return usable, f"Unexpected onboarding layout at {width}px"
     return True, ""

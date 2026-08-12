@@ -5,6 +5,10 @@ export interface User {
   role: string
   auth_source: string
   relay_auth_password?: string | null
+  reporting_capabilities?: {
+    setup_available: boolean
+    readiness_available: boolean
+  }
 }
 
 export interface SCMProvider {

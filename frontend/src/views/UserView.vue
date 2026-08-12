@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
+import ReportingReadinessGuide from '@/components/activity/ReportingReadinessGuide.vue'
 import { createGroupCredential, getUserProviderModels, getUserProviders, regenerateGroupCredential, testUserProvider } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from '@/i18n'
@@ -12,21 +13,9 @@ import type {
 } from '@/types'
 import {
   buildCCSwitchProviderImportLink,
-  buildDeviceLoginCommand,
   buildDiscoverCommand,
-  buildDoctorCommand,
-  buildPreferredGithubConnectivityCommand,
-  buildHooksGlobalCommand,
-  buildHooksStatusUploadsCommand,
-  buildInstallCommand,
-  buildLoginCommand,
   buildManualConfigSnippets,
-  buildPreferredInstallCommand,
-  buildRepoInitCommand,
   resolveCCSwitchAppsForGroup,
-  buildSyncCommand,
-  buildWindowsInstallCommand,
-  detectInstallPlatform,
   isAgentAccessGroup,
   resolveDiscoverToolForPlatform,
 } from '@/utils/userSetupReview'
@@ -63,6 +52,7 @@ type SecretAction = 'reveal' | 'copy' | 'regenerate'
 const secretConfirmAction = ref<SecretAction | null>(null)
 
 const currentOrigin = computed(() => window.location.origin)
+const reportingCapabilities = computed(() => auth.user?.reporting_capabilities)
 const selectedProvider = computed(() => providers.value.find((provider) => provider.id === selectedProviderId.value) ?? null)
 const selectedGroup = computed(() => selectedProvider.value?.groups.find((group) => group.group_id === selectedGroupId.value) ?? null)
 const selectedIsAgentGroup = computed(() => isAgentAccessGroup(selectedGroup.value?.group_name))
@@ -70,17 +60,6 @@ const showAutomaticConfigMethod = computed(() => !selectedIsAgentGroup.value)
 const ccSwitchMethodTitle = computed(() => selectedIsAgentGroup.value ? t('user.appImportMethodTitle') : t('user.ccSwitchConfigMethodTitle'))
 const ccSwitchMethodHelp = computed(() => selectedIsAgentGroup.value ? t('user.appImportMethodHelp') : t('user.ccSwitchConfigMethodHelp'))
 const ccSwitchMethodAudience = computed(() => selectedIsAgentGroup.value ? t('user.appImportMethodAudience') : t('user.ccSwitchConfigMethodAudience'))
-const installPlatform = computed(() => detectInstallPlatform())
-const shellInstallCommand = computed(() => buildInstallCommand(currentOrigin.value))
-const windowsInstallCommand = computed(() => buildWindowsInstallCommand(currentOrigin.value))
-const installCommand = computed(() => buildPreferredInstallCommand(currentOrigin.value, installPlatform.value))
-const repoChangeDirCommand = computed(() => 'cd /path/to/repo')
-const alternateInstallLabel = computed(() => installPlatform.value === 'windows' ? 'macOS / Linux' : 'Windows PowerShell')
-const alternateInstallCommand = computed(() => installPlatform.value === 'windows' ? shellInstallCommand.value : windowsInstallCommand.value)
-const alternateInstallCopyKey = computed(() => installPlatform.value === 'windows' ? 'install-macos' : 'install-windows')
-const githubConnectivityCommand = computed(() => buildPreferredGithubConnectivityCommand(installPlatform.value))
-const loginCommand = computed(() => buildLoginCommand(currentOrigin.value))
-const deviceLoginCommand = computed(() => buildDeviceLoginCommand(currentOrigin.value))
 const discoverCommand = computed(() => selectedProvider.value ? buildDiscoverCommand(currentOrigin.value, selectedProvider.value.name) : '')
 const discoverTool = computed(() => resolveDiscoverToolForPlatform(selectedGroup.value?.platform ?? ''))
 const discoverFallbackCommand = computed(() =>
@@ -88,11 +67,6 @@ const discoverFallbackCommand = computed(() =>
     ? buildDiscoverCommand(currentOrigin.value, selectedProvider.value.name, discoverTool.value)
     : ''
 )
-const hooksGlobalCommand = computed(() => buildHooksGlobalCommand())
-const repoInitCommand = computed(() => buildRepoInitCommand())
-const doctorCommand = computed(() => buildDoctorCommand())
-const syncCommand = computed(() => buildSyncCommand())
-const hooksStatusUploadsCommand = computed(() => buildHooksStatusUploadsCommand())
 const readyAccessGroupCount = computed(() =>
   providers.value.reduce(
     (count, provider) => count + provider.groups.filter((group) => group.credential.state === 'existing_hidden').length,
@@ -155,33 +129,7 @@ const ccSwitchImports = computed(() => {
     }),
   }))
 })
-const automaticMachineCommands = computed(() => [
-  {
-    key: 'auto-install',
-    label: t('user.installCli'),
-    value: installCommand.value,
-    fallback: {
-      detailsTestId: 'auto-install-fallback',
-      title: t('user.alternateInstall'),
-      help: t('user.automaticConfigAlternateInstallHelp'),
-      label: alternateInstallLabel.value,
-      value: alternateInstallCommand.value,
-      copyKey: alternateInstallCopyKey.value,
-    },
-  },
-  {
-    key: 'auto-login',
-    label: t('user.setupStepLoginTitle'),
-    value: loginCommand.value,
-    fallback: {
-      detailsTestId: 'auto-login-fallback',
-      title: t('user.deviceLoginFallback'),
-      help: t('user.automaticConfigDeviceLoginHelp'),
-      label: t('user.fallbackCommand'),
-      value: deviceLoginCommand.value,
-      copyKey: 'device-login',
-    },
-  },
+const automaticAccessCommands = computed(() => [
   {
     key: 'auto-discover',
     label: t('user.setupStepConfigureTitle'),
@@ -196,34 +144,6 @@ const automaticMachineCommands = computed(() => [
           copyKey: 'discover-tool',
         }
       : undefined,
-  },
-  { key: 'auto-hooks', label: t('user.setupStepHooksTitle'), value: hooksGlobalCommand.value },
-])
-const automaticRepoCommands = computed(() => [
-  { key: 'auto-repo-cd', label: t('user.repoStep1'), value: repoChangeDirCommand.value },
-  { key: 'auto-init', label: t('user.repoStep2'), value: repoInitCommand.value },
-])
-const automaticAdvancedCommands = computed(() => [
-  {
-    key: 'auto-doctor',
-    title: t('user.setupStepDoctorTitle'),
-    help: t('user.automaticConfigDoctorHelp'),
-    label: t('user.diagnosisCommand'),
-    value: doctorCommand.value,
-  },
-  {
-    key: 'manual-sync',
-    title: t('user.manualSync'),
-    help: t('user.automaticConfigSyncHelp'),
-    label: t('user.recoveryCommand'),
-    value: syncCommand.value,
-  },
-  {
-    key: 'hook-status',
-    title: t('user.hookStatus'),
-    help: t('user.automaticConfigHookStatusHelp'),
-    label: t('user.statusCommand'),
-    value: hooksStatusUploadsCommand.value,
   },
 ])
 
@@ -303,6 +223,7 @@ function selectProvider(providerId: number) {
   const provider = providers.value.find((item) => item.id === providerId) ?? null
   selectDefaultGroup(provider)
   resetPostKeyFlow()
+  onboardingVisibleStep.value = 0
 }
 
 function selectGroup(groupId: string) {
@@ -310,6 +231,7 @@ function selectGroup(groupId: string) {
   manualConfigConfirmKey.value = ''
   selectedGroupId.value = groupId
   resetPostKeyFlow()
+  onboardingVisibleStep.value = 0
 }
 
 function resetProviderModels(message = '') {
@@ -467,6 +389,7 @@ async function handleCreateKey() {
     revealedSecretKeys[selectedSecretKey.value] = false
     updateSelectedGroupCredential(data.api_key_id, data.name, data.status, data.secret)
     resetPostKeyFlow()
+    onboardingVisibleStep.value = 1
   } catch (err: any) {
     error.value = err.response?.data?.message || err.message || t('user.createKeyFailed')
   } finally {
@@ -609,10 +532,8 @@ async function handleTestProvider() {
   }
 }
 
-watch(onboardingActiveStep, (step, previousStep) => {
-  if (previousStep === undefined || step < previousStep || (previousStep === 0 && step === 1)) {
-    onboardingVisibleStep.value = step
-  }
+watch(onboardingActiveStep, (step) => {
+  if (step === 0) onboardingVisibleStep.value = 0
 }, { immediate: true })
 
 watch(
@@ -966,6 +887,7 @@ onBeforeUnmount(() => {
                           v-model="providerTestModel"
                           data-testid="user-provider-test-model"
                           :teleported="false"
+                          :aria-label="t('user.model')"
                           class="mt-1 w-full"
                         >
                           <ElOption
@@ -1150,10 +1072,9 @@ onBeforeUnmount(() => {
                   <p class="mt-2 text-sm leading-5 text-gray-600">{{ t('user.automaticConfigOverview') }}</p>
 
                   <section class="mt-4">
-                    <div class="text-base font-semibold leading-6 text-gray-900">{{ t('user.automaticConfigMachineTitle') }}</div>
-                    <p class="mt-1 text-sm leading-5 text-gray-600">{{ t('user.automaticConfigMachineHelp') }}</p>
+                    <div class="text-base font-semibold leading-6 text-gray-900">{{ t('user.setupStepConfigureTitle') }}</div>
                     <div class="mt-4 space-y-3 text-sm">
-                      <div v-for="command in automaticMachineCommands" :key="command.key" class="rounded-md border border-gray-200 p-3 shadow-sm">
+                      <div v-for="command in automaticAccessCommands" :key="command.key" class="rounded-md border border-gray-200 p-3 shadow-sm">
                         <div class="flex items-center justify-between gap-3">
                           <div class="text-[11px] font-semibold text-gray-500">{{ command.label }}</div>
                           <ElButton link type="primary" @click="copyCommand(command.key, command.value)">
@@ -1183,49 +1104,6 @@ onBeforeUnmount(() => {
                       </div>
                     </div>
                   </section>
-
-                  <section class="mt-6">
-                    <div class="text-base font-semibold leading-6 text-gray-900">{{ t('user.automaticConfigRepoTitle') }}</div>
-                    <p class="mt-1 text-sm leading-5 text-gray-600">{{ t('user.automaticConfigRepoHelp') }}</p>
-                    <div class="mt-4 space-y-3 text-sm">
-                      <div v-for="command in automaticRepoCommands" :key="command.key" class="rounded-md border border-gray-200 p-3 shadow-sm">
-                        <div class="flex items-center justify-between gap-3">
-                          <div class="text-[11px] font-semibold text-gray-500">{{ command.label }}</div>
-                          <ElButton link type="primary" @click="copyCommand(command.key, command.value)">
-                            {{ copyCommandLabel(command.key) }}
-                          </ElButton>
-                        </div>
-                        <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.value }}</pre>
-                      </div>
-                    </div>
-                  </section>
-
-                  <ElCollapse data-testid="auto-advanced" class="mt-6 rounded-lg border border-gray-200 px-4">
-                    <ElCollapseItem name="advanced">
-                      <template #title>
-                        <span class="text-base font-semibold leading-6 text-gray-900">{{ t('user.commandReference') }}</span>
-                      </template>
-                      <p class="text-sm leading-5 text-gray-600">{{ t('user.commandReferenceHelp') }}</p>
-
-                      <div class="mt-4 space-y-3 text-sm">
-                        <div
-                          v-for="command in automaticAdvancedCommands"
-                          :key="command.key"
-                          class="rounded-md border border-gray-200 p-3 shadow-sm"
-                        >
-                          <div class="font-medium leading-6 text-gray-900">{{ command.title }}</div>
-                          <p class="mt-1 text-sm leading-5 text-gray-600">{{ command.help }}</p>
-                          <div class="mt-3 flex items-center justify-between gap-3">
-                            <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{{ command.label }}</div>
-                            <ElButton link type="primary" @click="copyCommand(command.key, command.value)">
-                              {{ copyCommandLabel(command.key) }}
-                            </ElButton>
-                          </div>
-                          <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.value }}</pre>
-                        </div>
-                      </div>
-                    </ElCollapseItem>
-                  </ElCollapse>
                 </div>
 
                 <div v-if="selectedConfigMethod === 'ccswitch'" class="mt-4 rounded-lg border border-gray-200 p-4">
@@ -1273,6 +1151,12 @@ onBeforeUnmount(() => {
 
         </div>
       </div>
+
+      <ReportingReadinessGuide
+        v-if="reportingCapabilities?.setup_available"
+        variant="full"
+        :readiness-available="reportingCapabilities.readiness_available"
+      />
     </div>
   </AppLayout>
 </template>

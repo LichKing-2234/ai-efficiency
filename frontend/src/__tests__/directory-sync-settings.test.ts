@@ -143,6 +143,20 @@ describe('DirectorySyncSettings', () => {
     expect(wrapper.get('[data-testid="directory-copy-ai-prompt"]').classes()).toContain('el-button')
   })
 
+  it('keeps the non-teleported schedule selector accessible and closed after selection', async () => {
+    const { wrapper } = await mountDirectorySyncSettings()
+    const select = wrapper.get('[data-testid="directory-schedule-select"]')
+    const input = select.get('input[role="combobox"]')
+
+    expect(select.element.closest('label')).toBeNull()
+    expect(input.attributes('aria-label')).toBe('Schedule')
+    await select.get('.el-select__wrapper').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="directory-schedule-option-weekly"]').trigger('click')
+    await flushPromises()
+    expect(input.attributes('aria-expanded')).toBe('false')
+  })
+
   it('shows a source load error without also showing the empty state', async () => {
     const { wrapper } = await mountDirectorySyncSettings((api) => {
       api.listDirectorySources.mockRejectedValue(new Error('synthetic source load failure'))

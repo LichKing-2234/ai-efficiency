@@ -400,7 +400,7 @@ function approverConfigRowKey(config: QuotaResetApproverConfig) {
       </div>
 
       <div class="grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_auto] md:items-start">
-        <label class="block">
+        <div class="block">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.departmentSearch') }}</span>
           <ElSelect
             v-model="configForm.department_external_id"
@@ -413,6 +413,7 @@ function approverConfigRowKey(config: QuotaResetApproverConfig) {
             :disabled="!selectedDirectorySourceID"
             :placeholder="t('quotaResetSettings.departmentSelectPlaceholder')"
             :teleported="false"
+            :aria-label="t('quotaResetSettings.departmentSearch')"
             @change="handleDepartmentChange"
           >
             <ElOption
@@ -426,7 +427,7 @@ function approverConfigRowKey(config: QuotaResetApproverConfig) {
               <span class="block truncate text-xs text-slate-500">{{ department.external_id }}</span>
             </ElOption>
           </ElSelect>
-        </label>
+        </div>
         <div class="block">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.approverSelect') }}</span>
           <ElSelect
@@ -439,6 +440,7 @@ function approverConfigRowKey(config: QuotaResetApproverConfig) {
             :disabled="loadingApproverCandidates || !configForm.department_external_id || approverCandidates.length === 0"
             :placeholder="t('quotaResetSettings.selectApproverPlaceholder')"
             :teleported="false"
+            :aria-label="t('quotaResetSettings.approverSelect')"
             @visible-change="handleApproverVisibility"
           >
             <template v-if="selectedApprover" #prefix>
@@ -496,18 +498,19 @@ function approverConfigRowKey(config: QuotaResetApproverConfig) {
           />
           {{ t('settings.enabled') }}
         </label>
-        <label class="block">
+        <div class="block">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.channel') }}</span>
           <ElSelect
             v-model="notification.channel"
             data-testid="quota-reset-webhook-channel"
             class="mt-1 w-full"
             :teleported="false"
+            :aria-label="t('quotaResetSettings.channel')"
           >
-            <ElOption value="generic_webhook" :label="t('quotaResetSettings.channelGeneric')" />
-            <ElOption value="wecom_group_robot" :label="t('quotaResetSettings.channelWeCom')" />
+            <ElOption data-testid="quota-reset-webhook-channel-option-generic" value="generic_webhook" :label="t('quotaResetSettings.channelGeneric')" />
+            <ElOption data-testid="quota-reset-webhook-channel-option-wecom" value="wecom_group_robot" :label="t('quotaResetSettings.channelWeCom')" />
           </ElSelect>
-        </label>
+        </div>
         <label class="block md:col-span-2">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.webhookURL') }}</span>
           <ElInput
@@ -517,19 +520,19 @@ function approverConfigRowKey(config: QuotaResetApproverConfig) {
             class="mt-1 w-full"
           />
         </label>
-        <label class="block">
+        <div class="block">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.authType') }}</span>
-          <ElSelect v-model="notification.auth_type" class="mt-1 w-full" :teleported="false">
+          <ElSelect v-model="notification.auth_type" data-testid="quota-reset-webhook-auth-type" class="mt-1 w-full" :teleported="false" :aria-label="t('quotaResetSettings.authType')">
             <ElOption value="none" :label="t('quotaResetSettings.authNone')" />
             <ElOption value="bearer_token" :label="t('quotaResetSettings.authBearer')" />
           </ElSelect>
-        </label>
-        <label class="block">
+        </div>
+        <div class="block">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.credential') }}</span>
-          <ElSelect v-model="notification.credential_id" class="mt-1 w-full" :placeholder="t('settings.selectApiCredential')" :disabled="notification.auth_type !== 'bearer_token'" :teleported="false" clearable>
+          <ElSelect v-model="notification.credential_id" data-testid="quota-reset-webhook-credential" class="mt-1 w-full" :placeholder="t('settings.selectApiCredential')" :disabled="notification.auth_type !== 'bearer_token'" :teleported="false" :aria-label="t('quotaResetSettings.credential')" clearable>
             <ElOption v-for="credential in bearerCredentials" :key="credential.id" :value="credential.id" :label="credentialOptionLabel(credential)" />
           </ElSelect>
-        </label>
+        </div>
       </div>
       <div class="mt-4 flex flex-wrap justify-end gap-2">
         <ElButton

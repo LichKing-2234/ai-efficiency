@@ -514,7 +514,7 @@ export function buildHooksGlobalCommand() {
 }
 
 export function buildRepoInitCommand() {
-  return 'ae-cli init'
+	return 'ae-cli init --hooks repo'
 }
 
 export function buildDoctorCommand() {

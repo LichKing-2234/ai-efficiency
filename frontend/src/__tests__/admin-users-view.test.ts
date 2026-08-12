@@ -701,9 +701,27 @@ describe('AdminUsersView', () => {
   it('filters users by access status and keeps the filter in the URL', async () => {
     const { wrapper, router, listAdminUsers } = await mountAdminUsersView()
 
+    const auditedSelects = [
+      ['admin-users-access-status-filter', 'Access status'],
+      ['admin-users-page-size', 'Page Size'],
+      ['subscription-scope', 'Scope'],
+      ['subscription-operation', 'Operation'],
+      ['subscription-provider', 'Select provider'],
+      ['subscription-group', 'Select group'],
+    ] as const
+    for (const [testID, accessibleName] of auditedSelects) {
+      const select = wrapper.get(`[data-testid="${testID}"]`)
+      expect(select.element.closest('label')).toBeNull()
+      expect(select.get('input[role="combobox"]').attributes('aria-label')).toBe(accessibleName)
+    }
+
+    const callsBeforeSelection = (listAdminUsers as any).mock.calls.length
+
     await selectElementOption(wrapper, 'admin-users-access-status-filter', 'admin-users-access-status-option-disabled')
     await flushPromises()
 
+    expect(wrapper.get('[data-testid="admin-users-access-status-filter"] input[role="combobox"]').attributes('aria-expanded')).toBe('false')
+    expect((listAdminUsers as any).mock.calls.length).toBe(callsBeforeSelection + 1)
     expect((listAdminUsers as any).mock.calls.at(-1)[0]).toEqual({
       q: '',
       access_status: 'disabled',
