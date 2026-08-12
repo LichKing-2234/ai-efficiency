@@ -1,7 +1,7 @@
 # Codex Attribution v2 Cutover Runbook
 
 **Date:** 2026-08-12  
-**Status:** #251 execution in progress; deletion, CLI/platform release, staging rehearsal, production deployment, and cutover authority were recorded on 2026-08-12. Candidate-wide gates and every runtime mutation remain pending.
+**Status:** #251 execution complete. The immutable candidate, separate CLI and platform releases, staging rehearsal/reset, production two-phase deployment, verified export, formal Request-to-Activity canary, exact failed-canary cleanup, production v1 reset, and all final readbacks are green. The seven-day legacy-code cleanup remains exclusively tracked by #252 and was not executed.
 **Owner ticket:** [#250](https://github.com/LichKing-2234/ai-efficiency/issues/250)  
 **Execution ticket:** [#251](https://github.com/LichKing-2234/ai-efficiency/issues/251)
 
@@ -26,33 +26,49 @@ runtime state.
   (126/126). The first development-server matrix was invalidated by Vite
   dependency-optimization reloads during its first lazy dialog load; no product
   assertion failed on the production-preview rerun.
-- [ ] Pass candidate-wide backend, ae-cli, frontend, build, E2E, race, repeat,
+- [x] Pass candidate-wide backend, ae-cli, frontend, build, E2E, race, repeat,
   vet, scale, query-plan, and synthetic gates at one immutable SHA.
-- [ ] Create and verify separate CLI and platform releases.
-- [ ] Complete the staging formal-v2 rehearsal and reset verification.
-- [ ] Execute the ordered production cutover/reset and complete all readbacks.
+- [x] Create and verify separate CLI and platform releases.
+- [x] Complete the staging formal-v2 rehearsal and reset verification. Revision
+  122 runs `v0.1.0-preview.83` at the frozen
+  `2026-08-12T11:01:31Z` boundary; the formal canary reconciled to one
+  43,046-Token pool, formal-only Activity/readiness passed, the verified
+  private export manifest SHA-256 is
+  `9b142652b010abd7005dc9ee9abcb1f709bfbbfed2ada1c4de225ce6afe88b1f`,
+  and the atomic reset removed 22 revisions plus 21 buckets with both v1
+  tables reading back zero.
+- [x] Execute the ordered production cutover/reset and complete all readbacks.
+  Production revision 83 runs `v0.1.0-preview.83` with frozen
+  `cutover_at=2026-08-12T11:22:58Z`; the private export manifest SHA-256 is
+  `9b142652b010abd7005dc9ee9abcb1f709bfbbfed2ada1c4de225ce6afe88b1f`.
+  A response-header Request canary reconciled to one 4,395-Token formal pool
+  and is visible in Activity. One request-side-ID canary was rejected by the
+  upstream reader and then removed under separately confirmed exact-match
+  guards: one unmaterialized `pending/not_found` claim and its one empty group,
+  with no pool mutation. Pending returned from 4 to the baseline 3 before the
+  production reset removed 22 revisions plus 21 buckets. Both v1 tables and
+  all four v1 totals read back zero; formal and shadow pools remain isolated.
 
 ## 1. Hard Go/No-Go Gates
 
 Record every value in the #251 execution log. Any missing or failing item is a
 no-go.
 
-- [ ] Candidate commit is immutable and its hosted backend, ae-cli, frontend,
+- [x] Candidate commit is immutable and its hosted backend, ae-cli, frontend,
   deploy-static, role E2E, build-measurement, race, repeat, vet, scale, query-plan,
   and synthetic contract gates are green at that exact SHA.
-- [ ] One separately authorized real Request-to-commit-to-Activity canary has
+- [x] One separately authorized real Request-to-commit-to-Activity canary has
   passed in `shadow_v2`; its pool is absent from formal Activity/readiness.
-- [ ] The candidate rejects v1 writes with `upgrade_required`, freezes one UTC
+- [x] The candidate rejects v1 writes with `upgrade_required`, freezes one UTC
   `cutover_at`, writes new accepted claims to the formal epoch, and reads only
-  that formal epoch. These are #251 implementation requirements; current #250
-  code intentionally remains hard-coded to `shadow_v2`.
-- [ ] Shadow/canary pool, claim-group, and Request-claim counts are captured and
+  that formal epoch.
+- [x] Shadow/canary pool, claim-group, and Request-claim counts are captured and
   excluded or cleaned before formal reads are enabled.
-- [ ] `ai_efficiency_attribution_groups_near_expiry == 0`; no finalization or
+- [x] `ai_efficiency_attribution_groups_near_expiry == 0`; no finalization or
   cleanup error increase is present; P0/P1 findings are zero.
-- [ ] Database backup/restore is current and tested. The v1 evidence export and
+- [x] Database backup/restore is current and tested. The v1 evidence export and
   SHA-256 manifest below exist outside the database host's ephemeral storage.
-- [ ] Release, deployment, and v1 deletion are separately and explicitly
+- [x] Release, deployment, and v1 deletion are separately and explicitly
   authorized in the #251 execution turn.
 
 ## 2. Observability Dashboard And Alerts
