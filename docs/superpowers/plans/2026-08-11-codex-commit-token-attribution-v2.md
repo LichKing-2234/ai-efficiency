@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** Production now accepts shadow v2 claims, but the real canary exposed an official Request identity mismatch: reconciliation needs `client:<x-client-request-id>`, not SSE `resp_*`. The CLI correction is locally green; T04/T11 and #251 remain blocked until a fresh canary reconciles through Activity shadow reads.
+**Status:** T01-T11 qualification is complete. The corrected `client:<x-client-request-id>` path passed a released-CLI production shadow canary through exact commit association, official Token reconciliation, pool materialization, and Activity aggregation. #251 remains blocked on explicit cutover and v1 reset authority.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -42,11 +42,11 @@ T01 contract publication (#253)
 
 - [x] Preserve backend provider ID through discover, tool config, reporting
   state, and immutable claim-group identity.
-- [ ] Correlate the exact `sub2api` logical Request identity, thread, turn,
+- [x] Correlate the exact `sub2api` logical Request identity, thread, turn,
   structured mutation, and deterministic Git content without cwd/time/path
-  heuristics on the forced-HTTP App Server path. The corrected HTTP identity
-  implementation is locally green but still requires the fresh real canary.
-  Responses WebSocket remains unsupported and fails closed.
+  heuristics on the forced-HTTP App Server path. The released HTTP identity
+  implementation passed the fresh real canary. Responses WebSocket remains
+  unsupported and fails closed.
 - [x] Support multi-Request turns, late Requests, active/archived source
   recovery, explicit gaps, and a single calibration envelope.
 - [x] Verify privacy and deterministic evidence fixtures.
@@ -68,12 +68,11 @@ T01 contract publication (#253)
 - [x] Add database leases, bounded concurrency, retry/backoff, and
   multi-replica collapse.
 - [x] Verify success and all fail-closed/retry branches with fake providers.
-- [ ] Run a separately authorized read-only canary against the real endpoint.
-  Production `v0.1.0-preview.82` accepted one deterministic shadow claim group,
-  but its three SSE `resp_*` identities stayed `pending/not_found`. The same
-  real HTTP responses are stored by sub2api under
-  `client:<x-client-request-id>`. The corrected scanner is locally green; a
-  fresh real reconciliation and Activity shadow readback remain required.
+- [x] Run a separately authorized read-only canary against the real endpoint.
+  Released CLI `ae-cli/v0.2.0-preview.4` produced two normalized Request claims
+  for one exact commit. Both reconciled on attempt one; official totals were
+  materialized once into one direct `shadow_v2` pool. No Request identity is
+  retained in the long-lived pool.
 
 ### T05 — Git hooks, outbox, runner, and OTel exit ([#244](https://github.com/LichKing-2234/ai-efficiency/issues/244))
 
@@ -150,13 +149,13 @@ T01 contract publication (#253)
   percentage-point comparison, cutover incomparability, and omission behavior.
 - [x] Prove final reconciliation is scheduled no later than 24 hours before
   nominal upstream cleanup, including exact-boundary and late-ingest cases.
-- [ ] Complete one controlled real Request-to-commit-to-Activity canary without
-  contaminating the formal epoch. Production ingest and deterministic commit
-  association passed, but the first claim used the wrong upstream lookup
-  identity and did not reconcile.
+- [x] Complete one controlled real Request-to-commit-to-Activity canary without
+  contaminating the formal epoch. The shadow Activity aggregation read back
+  19,607 committed Token, two Requests, one direct Repository pool, and no
+  shared Token. The formal Activity API remained at zero/waiting-for-data.
 - [x] Produce cutover checklist, dashboards, exact reset query, evidence export,
   and rollback runbook.
-- [ ] Close every P0/P1 finding before #251 may start.
+- [x] Close every P0/P1 finding before #251 may start.
 
 ### T12 — Explicit v2 cutover and v1 POC reset ([#251](https://github.com/LichKing-2234/ai-efficiency/issues/251))
 
