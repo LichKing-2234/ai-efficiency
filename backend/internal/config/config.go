@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -62,6 +63,7 @@ type AttributionConfig struct {
 	LedgerEpoch        string `mapstructure:"ledger_epoch"`
 	V1WritePolicy      string `mapstructure:"v1_write_policy"`
 	MinimumCLIVersion  string `mapstructure:"minimum_cli_version"`
+	CutoverAt          string `mapstructure:"cutover_at"`
 	SetupAvailable     bool   `mapstructure:"setup_available"`
 	ReadinessAvailable bool   `mapstructure:"readiness_available"`
 }
@@ -152,6 +154,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("attribution.ledger_epoch", "shadow_v2")
 	v.SetDefault("attribution.v1_write_policy", "accept")
 	v.SetDefault("attribution.minimum_cli_version", "")
+	v.SetDefault("attribution.cutover_at", "")
 	v.SetDefault("attribution.setup_available", false)
 	v.SetDefault("attribution.readiness_available", false)
 	v.SetDefault("auth.access_token_ttl", 7200)
@@ -202,6 +205,7 @@ func Load(path string) (*Config, error) {
 		"attribution.ledger_epoch",
 		"attribution.v1_write_policy",
 		"attribution.minimum_cli_version",
+		"attribution.cutover_at",
 		"attribution.setup_available",
 		"attribution.readiness_available",
 		"auth.jwt_secret",
@@ -238,6 +242,9 @@ func Load(path string) (*Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, err
 	}
+	if _, err := AttributionCutoverTime(cfg.Attribution); err != nil {
+		return nil, err
+	}
 	if err := ValidateRedisNamespace(cfg.Redis.Namespace); err != nil {
 		return nil, fmt.Errorf("invalid redis namespace %q: %w", cfg.Redis.Namespace, err)
 	}
@@ -249,6 +256,29 @@ func Load(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// AttributionCutoverTime returns the frozen formal-v2 boundary. Shadow epochs
+// must not carry a boundary, and formal_v2 accepts only an explicit UTC value.
+func AttributionCutoverTime(cfg AttributionConfig) (time.Time, error) {
+	raw := strings.TrimSpace(cfg.CutoverAt)
+	if strings.TrimSpace(cfg.LedgerEpoch) != "formal_v2" {
+		if raw != "" {
+			return time.Time{}, fmt.Errorf("attribution.cutover_at must be empty outside formal_v2")
+		}
+		return time.Time{}, nil
+	}
+	if raw == "" {
+		return time.Time{}, fmt.Errorf("attribution.cutover_at is required for formal_v2")
+	}
+	if !strings.HasSuffix(raw, "Z") {
+		return time.Time{}, fmt.Errorf("attribution.cutover_at must be an RFC3339 UTC timestamp ending in Z")
+	}
+	cutoverAt, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("attribution.cutover_at must be an RFC3339 UTC timestamp: %w", err)
+	}
+	return cutoverAt.UTC(), nil
 }
 
 func validateMetricsConfig(cfg MetricsConfig) error {

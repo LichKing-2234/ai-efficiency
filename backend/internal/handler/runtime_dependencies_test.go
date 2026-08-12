@@ -3,6 +3,7 @@ package handler
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/backend/internal/attributionledger"
 	"github.com/ai-efficiency/backend/internal/readcache"
@@ -22,6 +23,23 @@ func TestSetupRouterRejectsInvalidAttributionProtocolBeforeDependencies(t *testi
 	)
 	if err == nil || !strings.Contains(err.Error(), "initialize attribution protocol") {
 		t.Fatalf("SetupRouter() router=%v error=%v, want attribution protocol error", router, err)
+	}
+}
+
+func TestSetupRouterRejectsAttributionCutoverMismatchBeforeDependencies(t *testing.T) {
+	formal := attributionledger.ProtocolContract{
+		LedgerEpoch: attributionledger.LedgerEpochFormalV2, V1WritePolicy: attributionledger.V1WritePolicyUpgradeNeeded, MinimumCLIVersion: "0.2.0-preview.5",
+	}
+	for _, options := range []RouterOptions{
+		{AttributionProtocol: formal},
+		{AttributionProtocol: attributionledger.DefaultProtocolContract(), AttributionCutoverAt: time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)},
+	} {
+		router, err := SetupRouter(
+			nil, nil, nil, nil, nil, nil, nil, "", "", nil, nil, nil, nil, nil, nil, options,
+		)
+		if err == nil || !strings.Contains(err.Error(), "attribution cutover") {
+			t.Fatalf("SetupRouter() router=%v error=%v, want attribution cutover error", router, err)
+		}
 	}
 }
 

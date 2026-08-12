@@ -289,6 +289,7 @@ func TestAttributionStatusIsUnavailableWhenReadinessCapabilityIsOff(t *testing.T
 
 func formalReadinessRouterOptions() RouterOptions {
 	return RouterOptions{
+		AttributionCutoverAt:          time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC),
 		AttributionSetupAvailable:     true,
 		AttributionReadinessAvailable: true,
 		AttributionProtocol: attributionledger.ProtocolContract{

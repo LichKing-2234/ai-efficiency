@@ -50,7 +50,7 @@ func (s *Service) V2Overview(ctx context.Context, actorUserID int, query V2Query
 		return result, err
 	}
 	previousQuery, previousFrom, previousTo := previousV2Window(query, location)
-	inside, compareErr := s.v2ComparisonInsideEpoch(ctx, previousFrom)
+	inside, compareErr := s.v2ComparisonInsideEpoch(previousFrom)
 	if compareErr != nil || !inside || s.v2Denominator == nil {
 		return result, nil
 	}
@@ -93,7 +93,7 @@ func (s *Service) V2Repositories(ctx context.Context, actorUserID int, query V2P
 		return nil, err
 	}
 	_, previousFrom, previousTo := previousV2Window(query.V2Query, location)
-	if inside, compareErr := s.v2ComparisonInsideEpoch(ctx, previousFrom); compareErr == nil && inside {
+	if inside, compareErr := s.v2ComparisonInsideEpoch(previousFrom); compareErr == nil && inside {
 		if compareErr = s.attachV2RepositoryChanges(ctx, scope, from, to, previousFrom, previousTo, page.Items); compareErr != nil {
 			return nil, compareErr
 		}
@@ -120,7 +120,7 @@ func (s *Service) V2PullRequests(ctx context.Context, actorUserID int, query V2P
 		return nil, err
 	}
 	_, previousFrom, previousTo := previousV2Window(query.V2Query, location)
-	if inside, compareErr := s.v2ComparisonInsideEpoch(ctx, previousFrom); compareErr == nil && inside {
+	if inside, compareErr := s.v2ComparisonInsideEpoch(previousFrom); compareErr == nil && inside {
 		if compareErr = s.attachV2PRChanges(ctx, scope, from, to, previousFrom, previousTo, page.Items); compareErr != nil {
 			return nil, compareErr
 		}

@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** T01-T11 qualification is complete. The corrected `client:<x-client-request-id>` path passed a released-CLI production shadow canary through exact commit association, official Token reconciliation, pool materialization, and Activity aggregation. #251 remains blocked on explicit cutover and v1 reset authority.
+**Status:** T01-T11 qualification is complete. #251 is in progress with explicit deletion, CLI/platform release, staging rehearsal, production deployment, and v1 reset authority recorded on 2026-08-12. The frozen `cutover_at` implementation is focused-test green; candidate-wide gates, releases, rehearsal, cutover, reset, and production readback remain pending.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -159,7 +159,7 @@ T01 contract publication (#253)
 
 ### T12 — Explicit v2 cutover and v1 POC reset ([#251](https://github.com/LichKing-2234/ai-efficiency/issues/251))
 
-- [ ] Obtain explicit deletion, release, and deployment authority.
+- [x] Obtain explicit deletion, release, and deployment authority.
 - [ ] Gate v1, freeze epoch, exclude shadow data, switch reads, export exact v1
   evidence, and reset the resolved POC dataset in the approved order.
 - [ ] Update `docs/architecture.md` and current-contract navigation in the same

@@ -51,6 +51,7 @@ type RouterOptions struct {
 	WebVitalsHandler              *WebVitalsHandler
 	AttributionCorrelation        *attributionledger.CorrelationStore
 	AttributionProtocol           attributionledger.ProtocolContract
+	AttributionCutoverAt          time.Time
 	AttributionSetupAvailable     bool
 	AttributionReadinessAvailable bool
 	ActivityCache                 *activity.Cache
@@ -146,6 +147,13 @@ func SetupRouter(
 		return nil, fmt.Errorf("initialize attribution protocol: %w", err)
 	}
 	options.AttributionProtocol = protocol
+	if protocol.LedgerEpoch == attributionledger.LedgerEpochFormalV2 {
+		if options.AttributionCutoverAt.IsZero() || options.AttributionCutoverAt.Location() != time.UTC {
+			return nil, fmt.Errorf("attribution cutover requires one explicit UTC instant for formal_v2")
+		}
+	} else if !options.AttributionCutoverAt.IsZero() {
+		return nil, fmt.Errorf("attribution cutover must be empty outside formal_v2")
+	}
 	if options.AttributionReadinessAvailable && !options.AttributionSetupAvailable {
 		return nil, fmt.Errorf("reporting readiness capability requires setup capability")
 	}
@@ -258,6 +266,7 @@ func setupRouter(
 		CursorSecret:  options.TeamUsageCursorSecret,
 		Cache:         options.ActivityCache,
 		V2LedgerEpoch: activityLedgerEpoch,
+		V2CutoverAt:   options.AttributionCutoverAt,
 		V2Denominator: &activityDenominatorResolver{personal: personalUsageService, team: teamUsageService, client: entClient, cache: options.ActivityCache},
 		V2DB:          sqlDB,
 	})

@@ -297,6 +297,7 @@ func TestLoadEnvOverride(t *testing.T) {
 	t.Setenv("AE_ATTRIBUTION_LEDGER_EPOCH", "formal_v2")
 	t.Setenv("AE_ATTRIBUTION_V1_WRITE_POLICY", "upgrade_required")
 	t.Setenv("AE_ATTRIBUTION_MINIMUM_CLI_VERSION", "0.2.0-preview.5")
+	t.Setenv("AE_ATTRIBUTION_CUTOVER_AT", "2026-08-12T12:00:00Z")
 	t.Setenv("AE_ATTRIBUTION_SETUP_AVAILABLE", "true")
 	t.Setenv("AE_ATTRIBUTION_READINESS_AVAILABLE", "true")
 
@@ -319,8 +320,37 @@ func TestLoadEnvOverride(t *testing.T) {
 	if cfg.Auth.LDAP.URL != "ldap://env-ldap.example.com:389" {
 		t.Errorf("auth.ldap.url = %q, want %q", cfg.Auth.LDAP.URL, "ldap://env-ldap.example.com:389")
 	}
-	if cfg.Attribution != (AttributionConfig{LedgerEpoch: "formal_v2", V1WritePolicy: "upgrade_required", MinimumCLIVersion: "0.2.0-preview.5", SetupAvailable: true, ReadinessAvailable: true}) {
+	if cfg.Attribution != (AttributionConfig{LedgerEpoch: "formal_v2", V1WritePolicy: "upgrade_required", MinimumCLIVersion: "0.2.0-preview.5", CutoverAt: "2026-08-12T12:00:00Z", SetupAvailable: true, ReadinessAvailable: true}) {
 		t.Errorf("attribution protocol = %#v", cfg.Attribution)
+	}
+}
+
+func TestLoadRejectsInvalidAttributionCutoverContract(t *testing.T) {
+	tests := []struct {
+		name      string
+		epoch     string
+		cutoverAt string
+		wantError bool
+	}{
+		{name: "formal requires cutover", epoch: "formal_v2", wantError: true},
+		{name: "formal requires explicit UTC", epoch: "formal_v2", cutoverAt: "2026-08-12T20:00:00+08:00", wantError: true},
+		{name: "shadow rejects cutover", epoch: "shadow_v2", cutoverAt: "2026-08-12T12:00:00Z", wantError: true},
+		{name: "formal accepts frozen UTC instant", epoch: "formal_v2", cutoverAt: "2026-08-12T12:00:00Z"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AE_ATTRIBUTION_LEDGER_EPOCH", tt.epoch)
+			t.Setenv("AE_ATTRIBUTION_V1_WRITE_POLICY", "upgrade_required")
+			t.Setenv("AE_ATTRIBUTION_MINIMUM_CLI_VERSION", "0.2.0-preview.5")
+			t.Setenv("AE_ATTRIBUTION_CUTOVER_AT", tt.cutoverAt)
+			_, err := Load("")
+			if tt.wantError && (err == nil || !strings.Contains(err.Error(), "attribution.cutover_at")) {
+				t.Fatalf("Load() error = %v, want attribution.cutover_at validation error", err)
+			}
+			if !tt.wantError && err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+		})
 	}
 }
 
@@ -704,6 +734,7 @@ func TestDeployExamplesDeclareDefaultAttributionProtocol(t *testing.T) {
 			LedgerEpoch        string `yaml:"ledger_epoch"`
 			V1WritePolicy      string `yaml:"v1_write_policy"`
 			MinimumCLIVersion  string `yaml:"minimum_cli_version"`
+			CutoverAt          string `yaml:"cutover_at"`
 			SetupAvailable     bool   `yaml:"setup_available"`
 			ReadinessAvailable bool   `yaml:"readiness_available"`
 		} `yaml:"attribution"`
@@ -715,6 +746,7 @@ func TestDeployExamplesDeclareDefaultAttributionProtocol(t *testing.T) {
 		LedgerEpoch        string `yaml:"ledger_epoch"`
 		V1WritePolicy      string `yaml:"v1_write_policy"`
 		MinimumCLIVersion  string `yaml:"minimum_cli_version"`
+		CutoverAt          string `yaml:"cutover_at"`
 		SetupAvailable     bool   `yaml:"setup_available"`
 		ReadinessAvailable bool   `yaml:"readiness_available"`
 	}{LedgerEpoch: "shadow_v2", V1WritePolicy: "accept"}) {
@@ -730,6 +762,9 @@ func TestDeployExamplesDeclareDefaultAttributionProtocol(t *testing.T) {
 	}
 	if got := envFileValue(string(envData), "AE_ATTRIBUTION_V1_WRITE_POLICY"); got != "accept" {
 		t.Fatalf(".env.example v1 write policy = %q", got)
+	}
+	if got := envFileValue(string(envData), "AE_ATTRIBUTION_CUTOVER_AT"); got != "" {
+		t.Fatalf(".env.example cutover at = %q", got)
 	}
 	if got := envFileValue(string(envData), "AE_ATTRIBUTION_SETUP_AVAILABLE"); got != "false" {
 		t.Fatalf(".env.example setup capability = %q", got)
@@ -752,7 +787,7 @@ func TestDeployExamplesDeclareDefaultAttributionProtocol(t *testing.T) {
 			t.Fatal(err)
 		}
 		environment := compose.Services["backend"].Environment
-		if environment["AE_ATTRIBUTION_LEDGER_EPOCH"] != "${AE_ATTRIBUTION_LEDGER_EPOCH:-shadow_v2}" || environment["AE_ATTRIBUTION_V1_WRITE_POLICY"] != "${AE_ATTRIBUTION_V1_WRITE_POLICY:-accept}" || environment["AE_ATTRIBUTION_MINIMUM_CLI_VERSION"] != "${AE_ATTRIBUTION_MINIMUM_CLI_VERSION:-}" || environment["AE_ATTRIBUTION_SETUP_AVAILABLE"] != "${AE_ATTRIBUTION_SETUP_AVAILABLE:-false}" || environment["AE_ATTRIBUTION_READINESS_AVAILABLE"] != "${AE_ATTRIBUTION_READINESS_AVAILABLE:-false}" {
+		if environment["AE_ATTRIBUTION_LEDGER_EPOCH"] != "${AE_ATTRIBUTION_LEDGER_EPOCH:-shadow_v2}" || environment["AE_ATTRIBUTION_V1_WRITE_POLICY"] != "${AE_ATTRIBUTION_V1_WRITE_POLICY:-accept}" || environment["AE_ATTRIBUTION_MINIMUM_CLI_VERSION"] != "${AE_ATTRIBUTION_MINIMUM_CLI_VERSION:-}" || environment["AE_ATTRIBUTION_CUTOVER_AT"] != "${AE_ATTRIBUTION_CUTOVER_AT:-}" || environment["AE_ATTRIBUTION_SETUP_AVAILABLE"] != "${AE_ATTRIBUTION_SETUP_AVAILABLE:-false}" || environment["AE_ATTRIBUTION_READINESS_AVAILABLE"] != "${AE_ATTRIBUTION_READINESS_AVAILABLE:-false}" {
 			t.Fatalf("%s attribution environment = %#v", name, environment)
 		}
 	}
@@ -897,6 +932,7 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 			LedgerEpoch:        "formal_v2",
 			V1WritePolicy:      "upgrade_required",
 			MinimumCLIVersion:  "0.2.0-preview.5",
+			CutoverAt:          "2026-08-12T12:00:00Z",
 			SetupAvailable:     true,
 			ReadinessAvailable: true,
 		},

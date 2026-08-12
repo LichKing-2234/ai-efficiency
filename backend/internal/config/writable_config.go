@@ -104,6 +104,7 @@ func configToYAMLMap(cfg *Config) map[string]any {
 			"ledger_epoch":        cfg.Attribution.LedgerEpoch,
 			"v1_write_policy":     cfg.Attribution.V1WritePolicy,
 			"minimum_cli_version": cfg.Attribution.MinimumCLIVersion,
+			"cutover_at":          cfg.Attribution.CutoverAt,
 			"setup_available":     cfg.Attribution.SetupAvailable,
 			"readiness_available": cfg.Attribution.ReadinessAvailable,
 		},

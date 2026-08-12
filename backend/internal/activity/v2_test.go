@@ -283,6 +283,7 @@ func TestV2OverviewReturnsExactAdjacentPercentagePointChange(t *testing.T) {
 	}
 	service := NewService(client, nil, ServiceOptions{
 		V2LedgerEpoch: "formal_v2",
+		V2CutoverAt:   time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC),
 		V2DB:          db,
 		V2Denominator: fixedV2Denominator{V2Denominator{TotalTokens: 200, AsOf: time.Date(2026, 8, 9, 0, 0, 0, 0, time.UTC), Fresh: true, Complete: true}},
 	})
@@ -292,6 +293,50 @@ func TestV2OverviewReturnsExactAdjacentPercentagePointChange(t *testing.T) {
 	}
 	if result.Ratio.PercentagePointChange == nil || *result.Ratio.PercentagePointChange != 25 {
 		t.Fatalf("ratio=%+v, want +25 percentage points", result.Ratio)
+	}
+}
+
+func TestV2RepositoryComparisonUsesFrozenCutoverWithZeroDataPreviousPeriod(t *testing.T) {
+	client, dsn := testdb.OpenWithDSN(t)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	actor := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource("ldap").SaveX(ctx)
+	repo := client.RepoConfig.Create().SetName("repo").SetFullName("example/repo").SetCloneURL("https://example.com/example/repo.git").SaveX(ctx)
+	current := createV2Pool(t, client, actor.ID, "formal_v2", "2026-08-08T00:00:00Z", 100, 0)
+	client.AttributionUsagePoolCommit.Create().SetPoolID(current.ID).SetRepoConfigID(repo.ID).SetCommitSha("current").SetRelationKind(attributionusagepoolcommit.RelationKindDirect).SaveX(ctx)
+	service := NewService(client, nil, ServiceOptions{
+		CursorSecret:  "secret",
+		V2LedgerEpoch: "formal_v2",
+		V2CutoverAt:   time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC),
+		V2DB:          db,
+	})
+	page, err := service.V2Repositories(ctx, actor.ID, V2PageQuery{V2Query: V2Query{
+		Scope: V2ScopePersonal, FromDate: "2026-08-08", ToDate: "2026-08-08", Timezone: "UTC",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || page.Items[0].TokenChange == nil || *page.Items[0].TokenChange != 100 {
+		t.Fatalf("repositories = %+v, want zero-to-100 comparison after cutover", page.Items)
+	}
+	crossing := NewService(client, nil, ServiceOptions{
+		CursorSecret:  "secret",
+		V2LedgerEpoch: "formal_v2",
+		V2CutoverAt:   time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC),
+		V2DB:          db,
+	})
+	crossingPage, err := crossing.V2Repositories(ctx, actor.ID, V2PageQuery{V2Query: V2Query{
+		Scope: V2ScopePersonal, FromDate: "2026-08-08", ToDate: "2026-08-08", Timezone: "UTC",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(crossingPage.Items) != 1 || crossingPage.Items[0].TokenChange != nil {
+		t.Fatalf("repositories = %+v, want comparison omitted across cutover", crossingPage.Items)
 	}
 }
 
