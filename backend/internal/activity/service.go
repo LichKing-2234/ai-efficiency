@@ -49,6 +49,7 @@ type ServiceOptions struct {
 	CursorSecret  string
 	Cache         *Cache
 	V2LedgerEpoch string
+	V2CutoverAt   time.Time
 	V2Denominator V2DenominatorReader
 	V2DB          V2DB
 }
@@ -60,6 +61,7 @@ type Service struct {
 	cursorSecret  []byte
 	cache         *Cache
 	v2LedgerEpoch string
+	v2CutoverAt   time.Time
 	v2Denominator V2DenominatorReader
 	v2DB          V2DB
 	now           func() time.Time
@@ -70,7 +72,7 @@ func NewService(client *ent.Client, correlation *attributionledger.CorrelationSt
 	if scopeResolver == nil && client != nil {
 		scopeResolver = representativescope.New(client)
 	}
-	return &Service{client: client, correlation: correlation, scope: scopeResolver, cursorSecret: []byte(options.CursorSecret), cache: options.Cache, v2LedgerEpoch: strings.TrimSpace(options.V2LedgerEpoch), v2Denominator: options.V2Denominator, v2DB: options.V2DB, now: time.Now}
+	return &Service{client: client, correlation: correlation, scope: scopeResolver, cursorSecret: []byte(options.CursorSecret), cache: options.Cache, v2LedgerEpoch: strings.TrimSpace(options.V2LedgerEpoch), v2CutoverAt: options.V2CutoverAt.UTC(), v2Denominator: options.V2Denominator, v2DB: options.V2DB, now: time.Now}
 }
 
 func (s *Service) Scope(ctx context.Context, actorUserID int) (*ScopeResponse, error) {

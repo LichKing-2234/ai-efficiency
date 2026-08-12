@@ -174,6 +174,15 @@ v1 request as a normal feature probe. A transition-era v1 `409
 upgrade_required` is not an ACK, does not advance local v1 state, and cannot
 prevent the same runner pass from delivering eligible v2 claims.
 
+The same backend-owned cutover configuration has one server-only `cutover_at`
+UTC instant. It is empty before cutover, required as an explicit RFC3339 `Z`
+timestamp for `formal_v2`, and immutable across rollback or repair. A shadow
+epoch with `cutover_at`, or a formal epoch without it, fails startup. This
+boundary is not a second client protocol field: clients continue to consume the
+three-field contract above, while Activity uses `cutover_at` to decide whether
+the complete adjacent period is comparable even when that period contains zero
+formal pools.
+
 ## 7. Hot Claim And Reconciliation Contract
 
 The backend keeps hot claim groups and Request claims for at most 90 days.
@@ -375,7 +384,9 @@ The donut labels are `Used for committed code` and `Other Token`. `Other Token`
 does not mean non-development work. When the adjacent equal period is fully
 comparable, the headline displays percentage-point change (for example,
 `+8 percentage points`), not relative growth. The comparison is omitted when
-the prior period crosses the v2 cutover or either period is incomplete.
+the prior period crosses the frozen `cutover_at` or either period is
+incomplete. The boundary is never inferred from the first formal pool; a
+complete zero-data prior period wholly after `cutover_at` remains comparable.
 
 ## 12. Activity Frontend Contract
 

@@ -387,15 +387,11 @@ func (s *Service) v2ReadinessSQL(ctx context.Context, scope *v2Scope) (V2Readine
 	return V2Readiness{State: "active", FirstAcceptedAt: &firstValue, LatestAcceptedAt: &latestValue}, nil
 }
 
-func (s *Service) v2ComparisonInsideEpoch(ctx context.Context, previousFrom time.Time) (bool, error) {
-	if s.v2LedgerEpoch == "" {
+func (s *Service) v2ComparisonInsideEpoch(previousFrom time.Time) (bool, error) {
+	if s.v2LedgerEpoch == "" || s.v2CutoverAt.IsZero() {
 		return false, nil
 	}
-	var first sql.NullTime
-	if err := s.v2DB.QueryRowContext(ctx, `SELECT MIN(bucket_start_utc) FROM attribution_usage_pools WHERE ledger_epoch=$1`, s.v2LedgerEpoch).Scan(&first); err != nil {
-		return false, fmt.Errorf("load v2 comparison boundary: %w", err)
-	}
-	return first.Valid && !previousFrom.Before(first.Time.UTC()), nil
+	return !previousFrom.Before(s.v2CutoverAt), nil
 }
 
 func (s *Service) attachV2RepositoryChanges(ctx context.Context, scope *v2Scope, from, to, previousFrom, previousTo time.Time, items []V2RepositoryRow) error {

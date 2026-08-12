@@ -61,6 +61,7 @@ attribution:
   ledger_epoch: "shadow_v2"
   v1_write_policy: "accept"
   minimum_cli_version: ""
+  cutover_at: ""
   setup_available: false
   readiness_available: false
 

@@ -1,14 +1,36 @@
 # Codex Attribution v2 Cutover Runbook
 
 **Date:** 2026-08-12  
-**Status:** Qualification artifact only; no release, deployment, deletion, or cutover is authorized  
+**Status:** #251 execution in progress; deletion, CLI/platform release, staging rehearsal, production deployment, and cutover authority were recorded on 2026-08-12. Candidate-wide gates and every runtime mutation remain pending.
 **Owner ticket:** [#250](https://github.com/LichKing-2234/ai-efficiency/issues/250)  
 **Execution ticket:** [#251](https://github.com/LichKing-2234/ai-efficiency/issues/251)
 
 This runbook prepares the reversible evidence and exact operator sequence for
-the v2 cutover. It must not be executed from #250. The #251 execution turn must
-record the approved candidate SHA, release, deployment, and deletion authority
-before changing runtime state.
+the v2 cutover. It was not executed from #250. The #251 execution turn has
+recorded release, deployment, cutover, and deletion authority; it must still
+record the approved immutable candidate SHA and pass every gate before changing
+runtime state.
+
+## Execution Status
+
+- [x] Record explicit #251 deletion, CLI/platform release, staging rehearsal,
+  production deployment, and cutover authority.
+- [x] Add one frozen UTC `cutover_at` configuration seam; reject missing formal
+  boundaries and shadow/formal contradictions before router startup.
+- [x] Replace first-formal-pool comparison inference with the frozen boundary;
+  focused tests prove a zero-data previous period wholly after cutover remains
+  comparable.
+- [x] Pass local backend/ae-cli/frontend defaults, focused race and 20-repeat
+  cutover tests, `go vet`, frontend build measurement, ae-cli discover E2E,
+  deploy/compose contracts, and the built production-preview role matrix
+  (126/126). The first development-server matrix was invalidated by Vite
+  dependency-optimization reloads during its first lazy dialog load; no product
+  assertion failed on the production-preview rerun.
+- [ ] Pass candidate-wide backend, ae-cli, frontend, build, E2E, race, repeat,
+  vet, scale, query-plan, and synthetic gates at one immutable SHA.
+- [ ] Create and verify separate CLI and platform releases.
+- [ ] Complete the staging formal-v2 rehearsal and reset verification.
+- [ ] Execute the ordered production cutover/reset and complete all readbacks.
 
 ## 1. Hard Go/No-Go Gates
 

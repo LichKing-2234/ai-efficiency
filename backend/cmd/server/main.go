@@ -168,6 +168,10 @@ func main() {
 	if err != nil {
 		logger.Fatal("load config", zap.Error(err))
 	}
+	attributionCutoverAt, err := config.AttributionCutoverTime(cfg.Attribution)
+	if err != nil {
+		logger.Fatal("load attribution cutover", zap.Error(err))
+	}
 	if err := config.EnsureWritableConfigFile(settingsConfigPath, cfg); err != nil {
 		logger.Fatal("ensure writable config", zap.String("path", settingsConfigPath), zap.Error(err))
 	}
@@ -545,6 +549,7 @@ func main() {
 			AttributionProtocol: attributionledger.ProtocolContract{
 				LedgerEpoch: cfg.Attribution.LedgerEpoch, V1WritePolicy: cfg.Attribution.V1WritePolicy, MinimumCLIVersion: cfg.Attribution.MinimumCLIVersion,
 			},
+			AttributionCutoverAt:          attributionCutoverAt,
 			AttributionSetupAvailable:     cfg.Attribution.SetupAvailable,
 			AttributionReadinessAvailable: cfg.Attribution.ReadinessAvailable,
 			ActivityCache:                 activityCache,
