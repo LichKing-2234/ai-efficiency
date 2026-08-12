@@ -1,14 +1,15 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** T01-T11 qualification is complete. #251 is in progress with explicit deletion, CLI/platform release, staging rehearsal, production deployment, and v1 reset authority recorded on 2026-08-12. The frozen `cutover_at` implementation is focused-test green; candidate-wide gates, releases, rehearsal, cutover, reset, and production readback remain pending.
+**Status:** T01-T12 are complete. #251 finished the separate CLI/platform releases, staging rehearsal, production formal-v2 cutover, v1 POC export/reset, and final readbacks on 2026-08-12. T13 is in its seven-day stable window; #252 cleanup must not run before `2026-08-19T12:59:09Z` and remains conditional on every acceptance gate being green.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
 
 - This is a live execution ledger. Check a box only in the same work turn that
   completes and verifies it.
-- Current v1 and v2 shadow data remain non-formal until the explicit cutover.
+- Pre-cutover v1 and `shadow_v2` data remain non-formal; only the post-cutover
+  `formal_v2` epoch feeds Activity and readiness.
 - Do not modify `sub2api` source or couple to its database.
 - Do not release, deploy, or reset data without explicit authority in that
   execution turn.
@@ -160,11 +161,11 @@ T01 contract publication (#253)
 ### T12 — Explicit v2 cutover and v1 POC reset ([#251](https://github.com/LichKing-2234/ai-efficiency/issues/251))
 
 - [x] Obtain explicit deletion, release, and deployment authority.
-- [ ] Gate v1, freeze epoch, exclude shadow data, switch reads, export exact v1
+- [x] Gate v1, freeze epoch, exclude shadow data, switch reads, export exact v1
   evidence, and reset the resolved POC dataset in the approved order.
-- [ ] Update `docs/architecture.md` and current-contract navigation in the same
+- [x] Update `docs/architecture.md` and current-contract navigation in the same
   delivery.
-- [ ] Read back v1 rejection, v2 writes, Activity/readiness, zero old totals,
+- [x] Read back v1 rejection, v2 writes, Activity/readiness, zero old totals,
   release artifacts, health, and production rollout.
 
 ### T13 — Stable-window legacy cleanup ([#252](https://github.com/LichKing-2234/ai-efficiency/issues/252))
@@ -175,7 +176,8 @@ T01 contract publication (#253)
   legacy-only credentials/fields without touching user OTel.
 - [ ] Verify schema/data safety, upgrade behavior, backend/CLI/frontend tests,
   separate platform/CLI releases, and production health.
-- [ ] Close or supersede #232-#234 with final v2 evidence.
+- [x] Verify #232-#234 were completed by merged PR #235 and closed before the
+  cleanup window; do not defer their closure to T13 execution.
 
 ## Cross-Ticket Invariants
 
