@@ -1,7 +1,7 @@
 # Codex Attribution v2 Qualification Evidence
 
 **Date:** 2026-08-12  
-**Status:** Non-canary qualification complete; production shadow ingest passed, but official Request reconciliation is awaiting the corrected HTTP identity canary
+**Status:** Qualification complete; released-CLI production shadow canary passed through Activity aggregation without formal-epoch contamination
 **Ticket:** [#250](https://github.com/LichKing-2234/ai-efficiency/issues/250)
 
 This record maps the #250 acceptance criteria to executable evidence. Synthetic
@@ -71,13 +71,11 @@ contains:
 - [x] Hosted CI is green at candidate `77279437` (run `31534537173`).
 - [x] Standards and spec reviews have no P0/P1 findings at candidate
   `77279437`.
-- [ ] A separately authorized real Request-to-commit-to-Activity canary passes
-  without entering the formal epoch. Production `v0.1.0-preview.82` accepted
-  the deterministic shadow claim, but the first attempt used SSE `resp_*`
-  values and stayed `pending/not_found`. Real sub2api usage for the same HTTP
-  requests is keyed by `client:<x-client-request-id>`. The corrected scanner
-  must still prove reconciliation, pool materialization, and Activity shadow
-  readback.
+- [x] A separately authorized real Request-to-commit-to-Activity canary passes
+  without entering the formal epoch. Released CLI `ae-cli/v0.2.0-preview.4`
+  generated two exact Request claims for commit `09bb98af`; both reconciled on
+  attempt one and materialized one direct shadow pool. Shadow Activity read
+  back 19,607 committed Token and the formal API remained zero.
 
 ## Authorized Real Canary Attempts
 
@@ -124,5 +122,20 @@ The scanner correction accepts only successful Responses HTTP completion logs,
 binds their `x-client-request-id` directly to the logged thread and turn,
 normalizes exactly one `client:` prefix, and rejects other headers, targets,
 failed responses, unmatched turns, and ambiguous identities. A fresh real
-canary remains required. Until it reconciles through the Activity shadow read,
-#251 remains blocked and this document is not cutover authorization.
+canary was released as `ae-cli/v0.2.0-preview.4` from merge commit `d7e64e4c`
+after CI run `31553630311` passed. Release run `31554039074` published and
+verified the CLI-only artifacts without changing the repository latest release
+or Helm inputs.
+
+The fresh forced-HTTP canary used a post-baseline App Server turn with an exact
+structured Add mutation and deterministic commit. Sanitized production
+readback showed:
+
+- two claims, both `reconciled` on attempt one with official Token;
+- one `shadow_v2` pool and one direct commit relation;
+- shadow Activity aggregation of 19,607 committed Token and two Requests;
+- one Repository row with 19,607 direct Token, zero shared Token, and one pool;
+- formal Activity still at zero with `waiting_for_data`, proving epoch isolation.
+
+This completes #250 qualification. It does not authorize #251 cutover, v1 data
+deletion, formal epoch activation, or a Helm change.
