@@ -1,12 +1,13 @@
 # Codex Attribution v2 Qualification Evidence
 
 **Date:** 2026-08-12  
-**Status:** Non-canary qualification complete; forced-HTTP App Server identity canary passed, but production v2 claim ingest is not deployed
+**Status:** Non-canary qualification complete; production shadow ingest passed, but official Request reconciliation is awaiting the corrected HTTP identity canary
 **Ticket:** [#250](https://github.com/LichKing-2234/ai-efficiency/issues/250)
 
 This record maps the #250 acceptance criteria to executable evidence. Synthetic
-fixtures use only example identities and fake Relay providers. No production
-endpoint, release, deployment, cutover, or data reset was used.
+fixtures use only example identities and fake Relay providers. A separately
+authorized production shadow canary is recorded below. No cutover or data reset
+was performed.
 
 ## Contract And Failure Matrix
 
@@ -71,14 +72,14 @@ contains:
 - [x] Standards and spec reviews have no P0/P1 findings at candidate
   `77279437`.
 - [ ] A separately authorized real Request-to-commit-to-Activity canary passes
-  without entering the formal epoch. The App Server persisted the trusted
-  completed-response identity and the scanner matched it to one deterministic
-  commit; production returned HTTP 404 for the v2 claim ingest route, so no
-  formal or shadow Activity data was written. The live health probe reports
-  `v0.1.0-preview.81` at `4008d3fc`; that deployed commit predates the route,
-  while current `origin/main` contains it.
+  without entering the formal epoch. Production `v0.1.0-preview.82` accepted
+  the deterministic shadow claim, but the first attempt used SSE `resp_*`
+  values and stayed `pending/not_found`. Real sub2api usage for the same HTTP
+  requests is keyed by `client:<x-client-request-id>`. The corrected scanner
+  must still prove reconciliation, pool materialization, and Activity shadow
+  readback.
 
-## Authorized Real Canary Attempt
+## Authorized Real Canary Attempts
 
 The authorized 2026-08-12 canary used a separate temporary Git repository with
 hooks disabled and a shadow-only local backend/database path. A real Codex
@@ -110,5 +111,18 @@ fresh canary, the implementation needs a trusted persistent WebSocket logical
 response-ID seam, a scanner regression test, and normal-operation validation
 without AE OTel.
 
-Until all three are complete, #251 remains blocked and this document is not
-cutover authorization.
+After production was upgraded to `v0.1.0-preview.82`, a forced-HTTP App Server
+canary produced real Requests, structured mutation evidence, and one
+deterministic commit. The v2 route persisted the shadow group and independently
+ACKed all three Request claims without changing v1 totals. Reconciliation then
+remained `pending/not_found`: Codex SSE stored `resp_*`, while the same HTTP
+completions exposed `x-client-request-id` and sub2api indexed the official rows
+as `client:<x-client-request-id>`. This is an identity-contract finding, not a
+successful end-to-end canary.
+
+The scanner correction accepts only successful Responses HTTP completion logs,
+binds their `x-client-request-id` directly to the logged thread and turn,
+normalizes exactly one `client:` prefix, and rejects other headers, targets,
+failed responses, unmatched turns, and ambiguous identities. A fresh real
+canary remains required. Until it reconciles through the Activity shadow read,
+#251 remains blocked and this document is not cutover authorization.

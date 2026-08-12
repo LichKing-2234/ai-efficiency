@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -18,7 +19,13 @@ import (
 )
 
 const v2ClaimSchemaVersion = 2
-const codexResponsesSSETarget = "codex_api::sse::responses"
+const codexResponsesHTTPClientTarget = "codex_http_client::client"
+
+var (
+	v2ThreadIDPattern          = regexp.MustCompile(`thread\.id=([^ }]+)`)
+	v2TurnIDPattern            = regexp.MustCompile(`turn\.id=([^ }]+)`)
+	v2SuccessfulResponseStatus = regexp.MustCompile(` status=2[0-9]{2} `)
+)
 
 type V2ClaimScanOptions struct {
 	RepoRoot          string
@@ -675,48 +682,50 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string) ([]v2Reques
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx, `
-		SELECT feedback_log_body
+		SELECT thread_id, feedback_log_body
 		FROM logs
 		WHERE target = ?
-		  AND feedback_log_body LIKE '%SSE event: %"type":"response.completed"%'
-		ORDER BY ts, ts_nanos, id`, codexResponsesSSETarget)
+		  AND feedback_log_body LIKE '%Request completed method=POST%'
+		  AND feedback_log_body LIKE '%api.path="responses"%'
+		  AND feedback_log_body LIKE '%status=2%'
+		  AND feedback_log_body LIKE '%"x-client-request-id"%'
+		ORDER BY ts, ts_nanos, id`, codexResponsesHTTPClientTarget)
 	if err != nil {
 		return nil, fmt.Errorf("query Codex request log: %w", err)
 	}
 	defer rows.Close()
-	var result []v2RequestEvidence
+	byRequest := map[string]v2RequestEvidence{}
+	ambiguous := map[string]struct{}{}
 	for rows.Next() {
+		var threadID sql.NullString
 		var body string
-		if err := rows.Scan(&body); err != nil {
+		if err := rows.Scan(&threadID, &body); err != nil {
 			return nil, fmt.Errorf("scan Codex request log: %w", err)
 		}
-		var event struct {
-			Type     string `json:"type"`
-			Response struct {
-				ID     string `json:"id"`
-				Output []struct {
-					ID     string `json:"id"`
-					CallID string `json:"call_id"`
-				} `json:"output"`
-			} `json:"response"`
-		}
-		eventStart := strings.Index(body, "SSE event: ")
-		if eventStart < 0 || json.Unmarshal([]byte(body[eventStart+len("SSE event: "):]), &event) != nil || event.Type != "response.completed" {
+		requestID := normalizeV2RequestID(firstSubmatch(reFailHdrClientReqID, body))
+		turnID := firstSubmatch(v2TurnIDPattern, body)
+		thread := firstNonEmptyCompact(firstSubmatch(v2ThreadIDPattern, body), threadID.String)
+		if requestID == "" || thread == "" || turnID == "" || !v2SuccessfulResponseStatus.MatchString(body) {
 			continue
 		}
-		requestID := normalizeV2RequestID(event.Response.ID)
-		var transportIDs []string
-		for _, output := range event.Response.Output {
-			transportIDs = append(transportIDs, output.ID, output.CallID)
+		evidence := v2RequestEvidence{threadID: thread, turnID: turnID, requestID: requestID}
+		if existing, ok := byRequest[requestID]; ok && (existing.threadID != thread || existing.turnID != turnID) {
+			delete(byRequest, requestID)
+			ambiguous[requestID] = struct{}{}
+			continue
 		}
-		transportIDs = uniqueSorted(transportIDs)
-		if requestID != "" && len(transportIDs) > 0 {
-			result = append(result, v2RequestEvidence{requestID: requestID, transportIDs: transportIDs})
+		if _, rejected := ambiguous[requestID]; !rejected {
+			byRequest[requestID] = evidence
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate Codex request log: %w", err)
 	}
+	result := make([]v2RequestEvidence, 0, len(byRequest))
+	for _, evidence := range byRequest {
+		result = append(result, evidence)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].requestID < result[j].requestID })
 	return result, nil
 }
 
@@ -783,8 +792,11 @@ func v2AllocationEvidenceDigest(allocations []client.AttributionV2CommitAllocati
 }
 
 func normalizeV2RequestID(value string) string {
-	value = strings.TrimSpace(value)
-	return strings.TrimSpace(strings.TrimPrefix(value, "client:"))
+	value = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(value), "client:"))
+	if value == "" {
+		return ""
+	}
+	return "client:" + value
 }
 
 func uniqueSorted(values []string) []string {

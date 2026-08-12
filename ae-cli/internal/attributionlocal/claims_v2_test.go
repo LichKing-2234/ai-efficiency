@@ -118,7 +118,7 @@ func TestScanCodexV2ClaimsMultiRequestStableArchiveRecoveryAndPrivacy(t *testing
 	}
 }
 
-func TestScanCodexV2ClaimsUsesCompletedResponseIdentityAndTransportItem(t *testing.T) {
+func TestScanCodexV2ClaimsUsesHTTPClientRequestIdentityAndTurn(t *testing.T) {
 	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
 	home := t.TempDir()
 	alias := filepath.Join(t.TempDir(), "repo-alias")
@@ -146,11 +146,11 @@ func TestScanCodexV2ClaimsUsesCompletedResponseIdentityAndTransportItem(t *testi
 		t.Fatal(err)
 	}
 	observed := time.Date(2026, 8, 11, 12, 0, 2, 0, time.UTC)
-	body := `session_loop{thread_id=thread-real}: SSE event: {"type":"response.completed","response":{"id":"real-request","output":[{"type":"custom_tool_call","id":"ctc-real","call_id":"call-real"}]}}`
-	if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(1, ?, ?, ?, ?, ?)`, observed.Unix(), observed.Nanosecond(), nil, "codex_api::sse::responses", body); err != nil {
+	body := `session_loop{thread_id=thread-real}:turn{thread.id=thread-real turn.id=turn-real}:model_client.stream_responses_api{api.path="responses"}: Request completed method=POST url=https://relay.example.com/responses status=200 OK headers={"x-client-request-id":"request-real","x-request-id":"wrong-request","x-kong-request-id":"wrong-kong"}`
+	if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(1, ?, ?, ?, ?, ?)`, observed.Unix(), observed.Nanosecond(), nil, codexResponsesHTTPClientTarget, body); err != nil {
 		t.Fatal(err)
 	}
-	forged := `SSE event: {"type":"response.completed","response":{"id":"forged-request","output":[{"type":"custom_tool_call","id":"ctc-real","call_id":"call-real"}]}}`
+	forged := `session_loop{thread_id=thread-real}:turn{thread.id=thread-real turn.id=turn-real}:model_client.stream_responses_api{api.path="responses"}: Request completed method=POST url=https://relay.example.com/responses status=200 OK headers={"x-client-request-id":"forged-request"}`
 	if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(2, ?, ?, ?, ?, ?)`, observed.Unix(), observed.Nanosecond(), "thread-real", "untrusted_target", forged); err != nil {
 		t.Fatal(err)
 	}
@@ -158,12 +158,12 @@ func TestScanCodexV2ClaimsUsesCompletedResponseIdentityAndTransportItem(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(claims) != 1 || strings.Join(claims[0].Group.RequestIDs, ",") != "real-request" || claims[0].GapReason != "" || claims[0].Group.Calibration == nil || claims[0].Group.Calibration.TotalTokens != 12 {
+	if len(claims) != 1 || strings.Join(claims[0].Group.RequestIDs, ",") != "client:request-real" || claims[0].GapReason != "" || claims[0].Group.Calibration == nil || claims[0].Group.Calibration.TotalTokens != 12 {
 		t.Fatalf("transport-correlated claims = %+v", claims)
 	}
 }
 
-func TestScanCodexV2ClaimsRejectsHeaderAndUnmatchedResponseIdentity(t *testing.T) {
+func TestScanCodexV2ClaimsRejectsWrongHeadersTargetsAndUnmatchedTurns(t *testing.T) {
 	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
 	home := t.TempDir()
 	session := filepath.Join(home, ".codex", "sessions", "session.jsonl")
@@ -184,8 +184,10 @@ func TestScanCodexV2ClaimsRejectsHeaderAndUnmatchedResponseIdentity(t *testing.T
 		t.Fatal(err)
 	}
 	rows := []struct{ target, body string }{
-		{"codex_http_client::client", `turn{turn.id=turn-real}: Request completed method=POST api.path="responses" headers={"x-client-request-id":"wrong-header"}`},
-		{"codex_api::sse::responses", `SSE event: {"type":"response.completed","response":{"id":"unmatched-response","output":[{"id":"ctc-other"}]}}`},
+		{codexResponsesHTTPClientTarget, `turn{thread.id=thread-real turn.id=turn-real}: Request completed method=POST api.path="responses" status=200 OK headers={"x-request-id":"wrong-request","x-kong-request-id":"wrong-kong"}`},
+		{codexResponsesHTTPClientTarget, `turn{thread.id=thread-real turn.id=turn-other}: Request completed method=POST api.path="responses" status=200 OK headers={"x-client-request-id":"wrong-turn"}`},
+		{codexResponsesHTTPClientTarget, `turn{thread.id=thread-real turn.id=turn-real}: Request completed method=POST api.path="responses" status=503 Service Unavailable headers={"x-client-request-id":"failed-request"}`},
+		{"codex_api::sse::responses", `turn{thread.id=thread-real turn.id=turn-real}: Request completed method=POST api.path="responses" status=200 OK headers={"x-client-request-id":"wrong-target"}`},
 	}
 	for index, row := range rows {
 		if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, target, feedback_log_body) VALUES(?, ?, 0, ?, ?)`, index+1, time.Now().Unix(), row.target, row.body); err != nil {
@@ -198,6 +200,42 @@ func TestScanCodexV2ClaimsRejectsHeaderAndUnmatchedResponseIdentity(t *testing.T
 	}
 	if len(claims) != 1 || claims[0].GapReason != "missing_request_id" || len(claims[0].Group.RequestIDs) != 0 {
 		t.Fatalf("untrusted identity was accepted: %+v", claims)
+	}
+}
+
+func TestLoadCodexV2RequestEvidenceRejectsAmbiguousRequestIdentity(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(home, ".codex", "logs_2.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE logs (id INTEGER PRIMARY KEY, ts INTEGER, ts_nanos INTEGER, thread_id TEXT, target TEXT, feedback_log_body TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	for index, turn := range []string{"turn-a", "turn-b"} {
+		body := `turn{thread.id=thread-real turn.id=` + turn + `}: Request completed method=POST api.path="responses" status=200 OK headers={"x-client-request-id":"same-request"}`
+		if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, target, feedback_log_body) VALUES(?, 1, ?, ?, ?)`, index+1, index, codexResponsesHTTPClientTarget, body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	evidence, err := loadCodexV2RequestEvidence(context.Background(), home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evidence) != 0 {
+		t.Fatalf("ambiguous evidence = %+v", evidence)
+	}
+}
+
+func TestNormalizeV2RequestIDKeepsOneClientPrefix(t *testing.T) {
+	for input, want := range map[string]string{"request": "client:request", " client:request ": "client:request", "client:": ""} {
+		if got := normalizeV2RequestID(input); got != want {
+			t.Fatalf("normalize %q = %q, want %q", input, got, want)
+		}
 	}
 }
 
