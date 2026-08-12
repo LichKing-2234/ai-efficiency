@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** HTTP identity implementation is locally green and the App Server identity canary passed; T04/T11 remain incomplete because the authorized real endpoint lookup returned 401 with the available non-admin credentials. #251 remains blocked.
+**Status:** HTTP identity implementation is locally green and the App Server identity canary passed; T04/T11 remain incomplete because production returns 404 for the v2 claim ingest route. #251 remains blocked.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -69,8 +69,8 @@ T01 contract publication (#253)
 - [x] Verify success and all fail-closed/retry branches with fake providers.
 - [ ] Run a separately authorized read-only canary against the real endpoint.
   The App Server produced a trusted identity and the scanner matched it to one
-  deterministic commit, but the available local credentials were rejected
-  with HTTP 401 by `/api/v1/admin/usage`; no claim was ingested or reconciled.
+  deterministic commit, but production returned HTTP 404 for
+  `/api/v1/attribution/v2/claim-groups/batch`; no claim was ingested or reconciled.
 
 ### T05 — Git hooks, outbox, runner, and OTel exit ([#244](https://github.com/LichKing-2234/ai-efficiency/issues/244))
 
@@ -149,7 +149,7 @@ T01 contract publication (#253)
   nominal upstream cleanup, including exact-boundary and late-ingest cases.
 - [ ] Complete one controlled real Request-to-commit-to-Activity canary without
   contaminating the formal epoch. The identity and commit half passed on the
-  App Server HTTP path; official lookup stopped at HTTP 401 before ingest.
+  App Server HTTP path; production ingest stopped at HTTP 404 before reconciliation.
 - [x] Produce cutover checklist, dashboards, exact reset query, evidence export,
   and rollback runbook.
 - [ ] Close every P0/P1 finding before #251 may start.
