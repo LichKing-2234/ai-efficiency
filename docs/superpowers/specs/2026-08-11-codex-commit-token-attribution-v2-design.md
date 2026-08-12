@@ -98,13 +98,13 @@ Rules:
   to `thread_id + turn_id`; transport connection or handshake IDs are not
   Request identities;
 - Codex is deterministically configured with
-  `model_providers.<provider>.supports_websockets = false`. The trusted
-  `response.completed.response.id` in the Codex Responses SSE SQLite log is
-  the official identity. Its `response.output[].id`/`call_id` must intersect
-  exactly one rollout turn's `response_item` transport IDs; ambiguous or
-  unmatched evidence fails closed. Responses WebSocket remains unsupported
+  `model_providers.<provider>.supports_websockets = false`. The official
+  sub2api lookup identity is the successful Responses HTTP completion's
+  `x-client-request-id`, normalized to one `client:` prefix. The trusted Codex
+  SQLite transport log must bind it directly to the same `thread.id + turn.id`;
+  `x-request-id`, Kong IDs, SSE `response.id`, timing proximity, and unmatched
+  or ambiguous evidence are rejected. Responses WebSocket remains unsupported
   until Codex provides an equivalent trusted persistent seam;
-- any accepted legacy `client:` prefix is normalized exactly once;
 - one turn may contain multiple Requests and all Requests share the turn's
   mutation set;
 - local Token exists once at group level for calibration and is never treated

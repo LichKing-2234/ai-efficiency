@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** HTTP identity implementation is locally green and the App Server identity canary passed; T04/T11 remain incomplete because production returns 404 for the v2 claim ingest route. #251 remains blocked.
+**Status:** Production now accepts shadow v2 claims, but the real canary exposed an official Request identity mismatch: reconciliation needs `client:<x-client-request-id>`, not SSE `resp_*`. The CLI correction is locally green; T04/T11 and #251 remain blocked until a fresh canary reconciles through Activity shadow reads.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -42,10 +42,11 @@ T01 contract publication (#253)
 
 - [x] Preserve backend provider ID through discover, tool config, reporting
   state, and immutable claim-group identity.
-- [x] Correlate the exact `sub2api` logical Request identity, thread, turn,
+- [ ] Correlate the exact `sub2api` logical Request identity, thread, turn,
   structured mutation, and deterministic Git content without cwd/time/path
-  heuristics on the forced-HTTP App Server path. Responses WebSocket remains
-  unsupported and fails closed.
+  heuristics on the forced-HTTP App Server path. The corrected HTTP identity
+  implementation is locally green but still requires the fresh real canary.
+  Responses WebSocket remains unsupported and fails closed.
 - [x] Support multi-Request turns, late Requests, active/archived source
   recovery, explicit gaps, and a single calibration envelope.
 - [x] Verify privacy and deterministic evidence fixtures.
@@ -68,11 +69,11 @@ T01 contract publication (#253)
   multi-replica collapse.
 - [x] Verify success and all fail-closed/retry branches with fake providers.
 - [ ] Run a separately authorized read-only canary against the real endpoint.
-  The App Server produced a trusted identity and the scanner matched it to one
-  deterministic commit, but production returned HTTP 404 for
-  `/api/v1/attribution/v2/claim-groups/batch`; no claim was ingested or reconciled.
-  The live probe reports `v0.1.0-preview.81` at commit `4008d3fc`, whose
-  deployed router does not contain the v2 route; current `origin/main` does.
+  Production `v0.1.0-preview.82` accepted one deterministic shadow claim group,
+  but its three SSE `resp_*` identities stayed `pending/not_found`. The same
+  real HTTP responses are stored by sub2api under
+  `client:<x-client-request-id>`. The corrected scanner is locally green; a
+  fresh real reconciliation and Activity shadow readback remain required.
 
 ### T05 — Git hooks, outbox, runner, and OTel exit ([#244](https://github.com/LichKing-2234/ai-efficiency/issues/244))
 
@@ -150,8 +151,9 @@ T01 contract publication (#253)
 - [x] Prove final reconciliation is scheduled no later than 24 hours before
   nominal upstream cleanup, including exact-boundary and late-ingest cases.
 - [ ] Complete one controlled real Request-to-commit-to-Activity canary without
-  contaminating the formal epoch. The identity and commit half passed on the
-  App Server HTTP path; production ingest stopped at HTTP 404 before reconciliation.
+  contaminating the formal epoch. Production ingest and deterministic commit
+  association passed, but the first claim used the wrong upstream lookup
+  identity and did not reconcile.
 - [x] Produce cutover checklist, dashboards, exact reset query, evidence export,
   and rollback runbook.
 - [ ] Close every P0/P1 finding before #251 may start.
