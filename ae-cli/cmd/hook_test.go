@@ -232,6 +232,7 @@ func TestHookResolveUsesReporterTokenWithoutOAuthLoginState(t *testing.T) {
 	if err := reporting.Save("", &reporting.Config{
 		Version: 1, InstallationID: "11111111-1111-4111-8111-111111111111",
 		ServerURL: server.URL, AuthSubject: "user:123", ReporterToken: "reporter-token", ReportingEnabled: true,
+		Protocol: client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept},
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -64,6 +64,10 @@ func (s compactSyncCapableFakeUploader) CompactUsageClient() attributionlocal.Co
 	return noopCompactBackendClient{}
 }
 
+func (s compactSyncCapableFakeUploader) AttributionProtocol() client.AttributionProtocol {
+	return client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept}
+}
+
 type recordingBackendHookClient struct {
 	checkpoints []client.CommitCheckpointRequest
 	toolUsage   []client.ToolUsageEventRequest

@@ -8,20 +8,22 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/google/uuid"
 )
 
 type Config struct {
-	Version          int        `json:"version"`
-	InstallationID   string     `json:"installation_id"`
-	ServerURL        string     `json:"server_url,omitempty"`
-	AuthSubject      string     `json:"auth_subject,omitempty"`
-	RelayProviderID  int        `json:"relay_provider_id,omitempty"`
-	ReporterToken    string     `json:"reporter_token,omitempty"`
-	OTLPToken        string     `json:"otlp_token,omitempty"`
-	ReportingEnabled bool       `json:"reporting_enabled"`
-	OTelEnabled      bool       `json:"otel_enabled"`
-	EnabledAt        *time.Time `json:"enabled_at,omitempty"`
+	Version          int                        `json:"version"`
+	InstallationID   string                     `json:"installation_id"`
+	ServerURL        string                     `json:"server_url,omitempty"`
+	AuthSubject      string                     `json:"auth_subject,omitempty"`
+	RelayProviderID  int                        `json:"relay_provider_id,omitempty"`
+	ReporterToken    string                     `json:"reporter_token,omitempty"`
+	OTLPToken        string                     `json:"otlp_token,omitempty"`
+	ReportingEnabled bool                       `json:"reporting_enabled"`
+	OTelEnabled      bool                       `json:"otel_enabled"`
+	EnabledAt        *time.Time                 `json:"enabled_at,omitempty"`
+	Protocol         client.AttributionProtocol `json:"protocol,omitempty"`
 }
 
 type InstallationIdentity struct {

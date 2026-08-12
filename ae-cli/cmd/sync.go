@@ -157,6 +157,13 @@ var syncStatusCmd = &cobra.Command{
 }
 
 func printV2ClaimDeliveryStatus(out io.Writer) error {
+	if compact, err := attributionlocal.LoadCompactState(); err == nil && compact.V1WritePolicy == "upgrade_required" {
+		fmt.Fprintf(out, "V1 Delivery: upgrade_required")
+		if compact.MinimumCLIVersion != "" {
+			fmt.Fprintf(out, " minimum_cli_version=%s", compact.MinimumCLIVersion)
+		}
+		fmt.Fprintln(out)
+	}
 	state, err := attributionlocal.LoadV2ClaimState()
 	if err != nil {
 		if os.IsNotExist(err) {

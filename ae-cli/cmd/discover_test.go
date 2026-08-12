@@ -3,11 +3,17 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/ae-cli/config"
+	"github.com/ai-efficiency/ae-cli/internal/auth"
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/reporting"
 	"github.com/ai-efficiency/ae-cli/internal/toolconfig"
@@ -55,6 +61,7 @@ func TestDiscoverCommandConfiguresDetectedTools(t *testing.T) {
 	oldClient := apiClient
 	oldLister := discoverInstalledTools
 	oldConfigurer := configureDiscoveredTools
+	oldActivation := activateAfterDiscover
 	oldProviderName := discoverProviderName
 	oldDryRun := discoverDryRun
 	oldToolNames := discoverToolNames
@@ -63,6 +70,7 @@ func TestDiscoverCommandConfiguresDetectedTools(t *testing.T) {
 		apiClient = oldClient
 		discoverInstalledTools = oldLister
 		configureDiscoveredTools = oldConfigurer
+		activateAfterDiscover = oldActivation
 		discoverProviderName = oldProviderName
 		discoverDryRun = oldDryRun
 		discoverToolNames = oldToolNames
@@ -82,6 +90,9 @@ func TestDiscoverCommandConfiguresDetectedTools(t *testing.T) {
 			t.Fatalf("provider credential = %+v, want openai/sk-openai", opts.Provider.Credentials[0])
 		}
 		return toolconfig.Result{Configured: []toolconfig.ConfiguredTool{{Name: "codex"}}}, nil
+	}
+	activateAfterDiscover = func(context.Context, *client.Client, string, string) (*reporting.Config, error) {
+		return &reporting.Config{}, nil
 	}
 	apiClient = &client.Client{}
 
@@ -114,11 +125,268 @@ func TestDiscoverCommandConfiguresDetectedTools(t *testing.T) {
 	}
 }
 
+func TestDiscoverCommandActivatesReportingAndPreservesSelectedProvider(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+	var ensureCalls, enableCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/attribution/installations":
+			ensureCalls++
+			var request client.EnsureInstallationRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"code":0,"data":{"installation_id":"` + request.InstallationID + `","reporter_token":"reporter-secret","reporting_enabled":false,"otel_enabled":false,"protocol":{"ledger_epoch":"shadow_v2","v1_write_policy":"accept"}}}`))
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/v1/attribution/installations/"):
+			enableCalls++
+			installationID := strings.TrimPrefix(r.URL.Path, "/api/v1/attribution/installations/")
+			_, _ = w.Write([]byte(`{"code":0,"data":{"installation_id":"` + installationID + `","reporting_enabled":true,"otel_enabled":false,"protocol":{"ledger_epoch":"shadow_v2","v1_write_policy":"accept"}}}`))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+	if err := auth.WriteToken(home+"/.ae-cli/token.json", &auth.TokenFile{
+		AccessToken: "access-token", ExpiresAt: time.Now().Add(time.Hour), ServerURL: server.URL, AuthSubject: "user:123",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	oldCfg := cfg
+	oldClient := apiClient
+	oldLister := discoverInstalledTools
+	oldConfigurer := configureDiscoveredTools
+	oldActivation := activateAfterDiscover
+	oldProviderLister := listProvidersForDiscover
+	oldProviderName := discoverProviderName
+	oldDryRun := discoverDryRun
+	oldToolNames := discoverToolNames
+	t.Cleanup(func() {
+		cfg = oldCfg
+		apiClient = oldClient
+		discoverInstalledTools = oldLister
+		configureDiscoveredTools = oldConfigurer
+		activateAfterDiscover = oldActivation
+		listProvidersForDiscover = oldProviderLister
+		discoverProviderName = oldProviderName
+		discoverDryRun = oldDryRun
+		discoverToolNames = oldToolNames
+	})
+	cfg = &config.Config{Server: config.ServerConfig{URL: server.URL, Token: "access-token"}}
+	apiClient = client.New(server.URL, "access-token")
+	discoverProviderName = ""
+	discoverDryRun = false
+	discoverToolNames = nil
+	discoverInstalledTools = func([]string) ([]toolconfig.InstalledTool, error) {
+		return []toolconfig.InstalledTool{{Name: "codex", Path: "/usr/local/bin/codex"}}, nil
+	}
+	configureDiscoveredTools = func(toolconfig.Options) (toolconfig.Result, error) {
+		return toolconfig.Result{Configured: []toolconfig.ConfiguredTool{{Name: "codex"}}}, nil
+	}
+	listProvidersForDiscover = func(context.Context) ([]client.ProviderInfo, error) {
+		return []client.ProviderInfo{{ID: 17, Name: "primary", IsPrimary: true}}, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	discoverCmd.SetOut(&stdout)
+	discoverCmd.SetErr(&stderr)
+	if err := runDiscover(discoverCmd, nil); err != nil {
+		t.Fatalf("runDiscover: %v", err)
+	}
+	if ensureCalls != 1 || enableCalls != 1 {
+		t.Fatalf("reporting calls ensure=%d enable=%d, want 1/1; stdout=%q stderr=%q", ensureCalls, enableCalls, stdout.String(), stderr.String())
+	}
+	reportingConfig, err := reporting.Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reportingConfig.RelayProviderID != 17 || !reportingConfig.ReportingEnabled {
+		t.Fatalf("reporting config = %+v, want provider 17 and enabled", reportingConfig)
+	}
+}
+
+func TestDiscoverCommandDoesNotActivateWhenNoSupportedToolIsDetected(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	oldCfg := cfg
+	oldClient := apiClient
+	oldLister := discoverInstalledTools
+	oldActivation := activateAfterDiscover
+	oldProviderLister := listProvidersForDiscover
+	oldProviderName := discoverProviderName
+	oldDryRun := discoverDryRun
+	oldToolNames := discoverToolNames
+	t.Cleanup(func() {
+		cfg = oldCfg
+		apiClient = oldClient
+		discoverInstalledTools = oldLister
+		activateAfterDiscover = oldActivation
+		listProvidersForDiscover = oldProviderLister
+		discoverProviderName = oldProviderName
+		discoverDryRun = oldDryRun
+		discoverToolNames = oldToolNames
+	})
+	cfg = &config.Config{Server: config.ServerConfig{URL: "https://ae.example.com", Token: "access-token"}}
+	apiClient = &client.Client{}
+	discoverProviderName = ""
+	discoverDryRun = false
+	discoverToolNames = nil
+	discoverInstalledTools = func([]string) ([]toolconfig.InstalledTool, error) { return nil, nil }
+	listProvidersForDiscover = func(context.Context) ([]client.ProviderInfo, error) {
+		return []client.ProviderInfo{{ID: 17, Name: "primary", IsPrimary: true}}, nil
+	}
+	var activationCalls int
+	activateAfterDiscover = func(context.Context, *client.Client, string, string) (*reporting.Config, error) {
+		activationCalls++
+		return &reporting.Config{}, nil
+	}
+
+	discoverCmd.SetOut(new(bytes.Buffer))
+	discoverCmd.SetErr(new(bytes.Buffer))
+	if err := runDiscover(discoverCmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	if activationCalls != 0 {
+		t.Fatalf("reporting activation calls = %d, want 0", activationCalls)
+	}
+}
+
+func TestDiscoverCommandDoesNotActivateWhenNoToolConfigurationIsWritten(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	oldCfg := cfg
+	oldClient := apiClient
+	oldLister := discoverInstalledTools
+	oldConfigurer := configureDiscoveredTools
+	oldActivation := activateAfterDiscover
+	oldProviderLister := listProvidersForDiscover
+	oldProviderName := discoverProviderName
+	oldDryRun := discoverDryRun
+	oldToolNames := discoverToolNames
+	t.Cleanup(func() {
+		cfg = oldCfg
+		apiClient = oldClient
+		discoverInstalledTools = oldLister
+		configureDiscoveredTools = oldConfigurer
+		activateAfterDiscover = oldActivation
+		listProvidersForDiscover = oldProviderLister
+		discoverProviderName = oldProviderName
+		discoverDryRun = oldDryRun
+		discoverToolNames = oldToolNames
+	})
+	cfg = &config.Config{Server: config.ServerConfig{URL: "https://ae.example.com", Token: "access-token"}}
+	apiClient = &client.Client{}
+	discoverProviderName = ""
+	discoverDryRun = false
+	discoverToolNames = nil
+	discoverInstalledTools = func([]string) ([]toolconfig.InstalledTool, error) {
+		return []toolconfig.InstalledTool{{Name: "codex", Path: "/usr/local/bin/codex"}}, nil
+	}
+	configureDiscoveredTools = func(toolconfig.Options) (toolconfig.Result, error) { return toolconfig.Result{}, nil }
+	listProvidersForDiscover = func(context.Context) ([]client.ProviderInfo, error) {
+		return []client.ProviderInfo{{ID: 17, Name: "primary", IsPrimary: true}}, nil
+	}
+	var activationCalls int
+	activateAfterDiscover = func(context.Context, *client.Client, string, string) (*reporting.Config, error) {
+		activationCalls++
+		return &reporting.Config{}, nil
+	}
+
+	discoverCmd.SetOut(new(bytes.Buffer))
+	discoverCmd.SetErr(new(bytes.Buffer))
+	if err := runDiscover(discoverCmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	if activationCalls != 0 {
+		t.Fatalf("reporting activation calls = %d, want 0", activationCalls)
+	}
+}
+
+func TestDiscoverCommandActivationBoundaries(t *testing.T) {
+	t.Run("dry run does not activate", func(t *testing.T) {
+		calls, _, err := runDiscoverActivationCase(t, true, nil, nil)
+		if err != nil || calls != 0 {
+			t.Fatalf("activation_calls=%d err=%v", calls, err)
+		}
+	})
+	t.Run("configuration failure does not activate", func(t *testing.T) {
+		calls, _, err := runDiscoverActivationCase(t, false, errors.New("config write failed"), nil)
+		if err == nil || !strings.Contains(err.Error(), "config write failed") || calls != 0 {
+			t.Fatalf("activation_calls=%d err=%v", calls, err)
+		}
+	})
+	t.Run("activation failure is a warning after successful configuration", func(t *testing.T) {
+		calls, stderr, err := runDiscoverActivationCase(t, false, nil, errors.New("reporting unavailable"))
+		if err != nil || calls != 1 || !strings.Contains(stderr, "tool configuration succeeded, but reporting activation is degraded") {
+			t.Fatalf("activation_calls=%d stderr=%q err=%v", calls, stderr, err)
+		}
+	})
+}
+
+func runDiscoverActivationCase(t *testing.T, dryRun bool, configureErr, activationErr error) (int, string, error) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+
+	oldCfg := cfg
+	oldClient := apiClient
+	oldLister := discoverInstalledTools
+	oldConfigurer := configureDiscoveredTools
+	oldActivation := activateAfterDiscover
+	oldProviderLister := listProvidersForDiscover
+	oldProviderName := discoverProviderName
+	oldDryRun := discoverDryRun
+	oldToolNames := discoverToolNames
+	t.Cleanup(func() {
+		cfg = oldCfg
+		apiClient = oldClient
+		discoverInstalledTools = oldLister
+		configureDiscoveredTools = oldConfigurer
+		activateAfterDiscover = oldActivation
+		listProvidersForDiscover = oldProviderLister
+		discoverProviderName = oldProviderName
+		discoverDryRun = oldDryRun
+		discoverToolNames = oldToolNames
+	})
+	cfg = &config.Config{Server: config.ServerConfig{URL: "https://ae.example.com", Token: "access-token"}}
+	apiClient = &client.Client{}
+	discoverProviderName = ""
+	discoverDryRun = dryRun
+	discoverToolNames = nil
+	discoverInstalledTools = func([]string) ([]toolconfig.InstalledTool, error) {
+		return []toolconfig.InstalledTool{{Name: "codex", Path: "/usr/local/bin/codex"}}, nil
+	}
+	configureDiscoveredTools = func(toolconfig.Options) (toolconfig.Result, error) {
+		if configureErr != nil {
+			return toolconfig.Result{}, configureErr
+		}
+		return toolconfig.Result{Configured: []toolconfig.ConfiguredTool{{Name: "codex"}}}, nil
+	}
+	listProvidersForDiscover = func(context.Context) ([]client.ProviderInfo, error) {
+		return []client.ProviderInfo{{ID: 17, Name: "primary", IsPrimary: true}}, nil
+	}
+	var activationCalls int
+	activateAfterDiscover = func(context.Context, *client.Client, string, string) (*reporting.Config, error) {
+		activationCalls++
+		return &reporting.Config{}, activationErr
+	}
+
+	var stderr bytes.Buffer
+	discoverCmd.SetOut(new(bytes.Buffer))
+	discoverCmd.SetErr(&stderr)
+	err := runDiscover(discoverCmd, nil)
+	return activationCalls, stderr.String(), err
+}
+
 func TestDiscoverCommandPrintsGeminiModelGuidance(t *testing.T) {
 	oldCfg := cfg
 	oldClient := apiClient
 	oldLister := discoverInstalledTools
 	oldConfigurer := configureDiscoveredTools
+	oldActivation := activateAfterDiscover
 	oldProviderName := discoverProviderName
 	oldDryRun := discoverDryRun
 	oldToolNames := discoverToolNames
@@ -128,6 +396,7 @@ func TestDiscoverCommandPrintsGeminiModelGuidance(t *testing.T) {
 		apiClient = oldClient
 		discoverInstalledTools = oldLister
 		configureDiscoveredTools = oldConfigurer
+		activateAfterDiscover = oldActivation
 		discoverProviderName = oldProviderName
 		discoverDryRun = oldDryRun
 		discoverToolNames = oldToolNames
@@ -147,6 +416,9 @@ func TestDiscoverCommandPrintsGeminiModelGuidance(t *testing.T) {
 			Name:  "gemini",
 			Paths: []string{"/home/alice/.ae-cli/env.sh", "/home/alice/.zshrc"},
 		}}}, nil
+	}
+	activateAfterDiscover = func(context.Context, *client.Client, string, string) (*reporting.Config, error) {
+		return &reporting.Config{}, nil
 	}
 	listProvidersForDiscover = func(ctx context.Context) ([]client.ProviderInfo, error) {
 		return []client.ProviderInfo{{
@@ -294,6 +566,7 @@ func executeDiscoverWithToolArgs(t *testing.T, args []string) ([]toolconfig.Inst
 	oldClient := apiClient
 	oldLister := discoverInstalledTools
 	oldConfigurer := configureDiscoveredTools
+	oldActivation := activateAfterDiscover
 	oldProviderName := discoverProviderName
 	oldDryRun := discoverDryRun
 	oldToolNames := discoverToolNames
@@ -322,6 +595,7 @@ func executeDiscoverWithToolArgs(t *testing.T, args []string) ([]toolconfig.Inst
 		apiClient = oldClient
 		discoverInstalledTools = oldLister
 		configureDiscoveredTools = oldConfigurer
+		activateAfterDiscover = oldActivation
 		discoverProviderName = oldProviderName
 		discoverDryRun = oldDryRun
 		discoverToolNames = oldToolNames
@@ -360,6 +634,9 @@ func executeDiscoverWithToolArgs(t *testing.T, args []string) ([]toolconfig.Inst
 			result.Configured = append(result.Configured, toolconfig.ConfiguredTool{Name: tool.Name})
 		}
 		return result, nil
+	}
+	activateAfterDiscover = func(context.Context, *client.Client, string, string) (*reporting.Config, error) {
+		return &reporting.Config{}, nil
 	}
 
 	testCommand.SetOut(new(bytes.Buffer))

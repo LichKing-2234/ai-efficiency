@@ -8,17 +8,19 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/client"
 )
 
+var testShadowProtocol = client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept}
+
 func TestApplyV2ClaimAcknowledgementsConsumesOnlyAcknowledgedItems(t *testing.T) {
 	now := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
 	calibration := &client.AttributionV2Calibration{Digest: "calibration-1", TotalTokens: 12}
 	group := client.AttributionV2ClaimGroup{GroupID: "group-1", RequestIDs: []string{"req-1", "req-2"}, Calibration: calibration}
 	state := &V2ClaimState{Claims: []V2ClaimCandidate{{LocalKey: "local-1", Group: group, FirstSeenAt: now}}}
-	result := &client.AttributionV2ClaimBatchResult{LedgerEpoch: "shadow_v2", Results: []client.AttributionV2ClaimResult{{
+	result := &client.AttributionV2ClaimBatchResult{LedgerEpoch: "shadow_v2", V1WritePolicy: "accept", Results: []client.AttributionV2ClaimResult{{
 		Group:       client.AttributionV2ItemStatus{ID: "group-1", Status: "persisted"},
 		Calibration: client.AttributionV2ItemStatus{ID: "calibration-1", Status: "conflict", Error: "calibration differs"},
 		Requests:    []client.AttributionV2ItemStatus{{ID: "req-1", Status: "persisted"}, {ID: "req-2", Status: "conflict", Error: "claimed elsewhere"}},
 	}}}
-	if err := ApplyV2ClaimAcknowledgements(state, []client.AttributionV2ClaimGroup{group}, result, now); err == nil {
+	if err := ApplyV2ClaimAcknowledgements(state, []client.AttributionV2ClaimGroup{group}, result, testShadowProtocol, now); err == nil {
 		t.Fatal("partial conflict error = nil")
 	}
 	claim := state.Claims[0]
@@ -35,12 +37,12 @@ func TestApplyV2ClaimAcknowledgementsRetainsDigestOnlyAuditAndAcceptsLateRequest
 	calibration := &client.AttributionV2Calibration{Digest: "calibration-1", TotalTokens: 12}
 	group := client.AttributionV2ClaimGroup{GroupID: "group-1", RequestIDs: []string{"req-1"}, Calibration: calibration}
 	state := &V2ClaimState{Claims: []V2ClaimCandidate{{LocalKey: "local-1", Group: group, FirstSeenAt: now}}}
-	result := &client.AttributionV2ClaimBatchResult{LedgerEpoch: "shadow_v2", Results: []client.AttributionV2ClaimResult{{
+	result := &client.AttributionV2ClaimBatchResult{LedgerEpoch: "shadow_v2", V1WritePolicy: "accept", Results: []client.AttributionV2ClaimResult{{
 		Group:       client.AttributionV2ItemStatus{ID: "group-1", Status: "duplicate_identical"},
 		Calibration: client.AttributionV2ItemStatus{ID: "calibration-1", Status: "persisted"},
 		Requests:    []client.AttributionV2ItemStatus{{ID: "req-1", Status: "duplicate_identical"}},
 	}}}
-	if err := ApplyV2ClaimAcknowledgements(state, []client.AttributionV2ClaimGroup{group}, result, now); err != nil {
+	if err := ApplyV2ClaimAcknowledgements(state, []client.AttributionV2ClaimGroup{group}, result, testShadowProtocol, now); err != nil {
 		t.Fatal(err)
 	}
 	claim := state.Claims[0]
@@ -61,11 +63,44 @@ func TestApplyV2ClaimAcknowledgementsPreservesUnknownResponse(t *testing.T) {
 	now := time.Now().UTC()
 	group := client.AttributionV2ClaimGroup{GroupID: "group-1", RequestIDs: []string{"req-1"}}
 	state := &V2ClaimState{Claims: []V2ClaimCandidate{{LocalKey: "local-1", Group: group, FirstSeenAt: now}}}
-	if err := ApplyV2ClaimAcknowledgements(state, []client.AttributionV2ClaimGroup{group}, &client.AttributionV2ClaimBatchResult{LedgerEpoch: "future"}, now); err == nil {
+	if err := ApplyV2ClaimAcknowledgements(state, []client.AttributionV2ClaimGroup{group}, &client.AttributionV2ClaimBatchResult{LedgerEpoch: "future"}, testShadowProtocol, now); err == nil {
 		t.Fatal("unknown epoch error = nil")
 	}
 	if strings.Join(state.Claims[0].Group.RequestIDs, ",") != "req-1" || state.Claims[0].DeliveryStatus != V2DeliveryUpgradeRequired {
 		t.Fatalf("unknown response mutated claim = %+v", state.Claims[0])
+	}
+}
+
+func TestApplyV2ClaimAcknowledgementsRejectsMismatchedValidProtocolWithoutConsumption(t *testing.T) {
+	now := time.Now().UTC()
+	group := client.AttributionV2ClaimGroup{GroupID: "group-1", RequestIDs: []string{"req-1"}}
+	formal := client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochFormalV2, V1WritePolicy: client.AttributionV1WritePolicyUpgradeNeeded, MinimumCLIVersion: "0.2.0-preview.5"}
+	shadowUpgrade := client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyUpgradeNeeded, MinimumCLIVersion: "0.2.0-preview.5"}
+
+	for _, tt := range []struct {
+		name     string
+		expected client.AttributionProtocol
+		actual   client.AttributionProtocol
+	}{
+		{name: "formal enrollment cannot accept shadow ACK", expected: formal, actual: shadowUpgrade},
+		{name: "shadow enrollment cannot accept formal ACK", expected: shadowUpgrade, actual: formal},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			state := &V2ClaimState{Claims: []V2ClaimCandidate{{LocalKey: "local-1", Group: group, FirstSeenAt: now}}}
+			result := &client.AttributionV2ClaimBatchResult{
+				LedgerEpoch: tt.actual.LedgerEpoch, V1WritePolicy: tt.actual.V1WritePolicy, MinimumCLIVersion: tt.actual.MinimumCLIVersion,
+				Results: []client.AttributionV2ClaimResult{{
+					Group:    client.AttributionV2ItemStatus{ID: "group-1", Status: "persisted"},
+					Requests: []client.AttributionV2ItemStatus{{ID: "req-1", Status: "persisted"}},
+				}},
+			}
+			if err := ApplyV2ClaimAcknowledgements(state, []client.AttributionV2ClaimGroup{group}, result, tt.expected, now); err == nil {
+				t.Fatal("mismatched protocol error = nil")
+			}
+			if len(state.Claims) != 1 || len(state.Claims[0].Group.RequestIDs) != 1 || state.Claims[0].Group.RequestIDs[0] != "req-1" {
+				t.Fatalf("mismatched protocol consumed local claim: %+v", state.Claims)
+			}
+		})
 	}
 }
 
@@ -85,11 +120,11 @@ func TestApplyV2ClaimAcknowledgementsRejectsMalformedItemListsWithoutConsumption
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			state := &V2ClaimState{Claims: []V2ClaimCandidate{{LocalKey: "local-1", Group: group, FirstSeenAt: now}}}
-			result := &client.AttributionV2ClaimBatchResult{LedgerEpoch: "shadow_v2", Results: []client.AttributionV2ClaimResult{{
+			result := &client.AttributionV2ClaimBatchResult{LedgerEpoch: "shadow_v2", V1WritePolicy: "accept", Results: []client.AttributionV2ClaimResult{{
 				Group: client.AttributionV2ItemStatus{ID: "group-1", Status: "persisted"}, Requests: tt.requests,
 				Calibration: client.AttributionV2ItemStatus{ID: tt.calID, Status: "persisted"},
 			}}}
-			if err := ApplyV2ClaimAcknowledgements(state, []client.AttributionV2ClaimGroup{group}, result, now); err == nil {
+			if err := ApplyV2ClaimAcknowledgements(state, []client.AttributionV2ClaimGroup{group}, result, testShadowProtocol, now); err == nil {
 				t.Fatal("malformed acknowledgement error = nil")
 			}
 			claim := state.Claims[0]
@@ -104,11 +139,11 @@ func TestApplyV2ClaimAcknowledgementsConsumesExplicitItemsAndRetainsMissing(t *t
 	now := time.Now().UTC()
 	group := client.AttributionV2ClaimGroup{GroupID: "group-1", RequestIDs: []string{"req-1", "req-2"}}
 	state := &V2ClaimState{Claims: []V2ClaimCandidate{{LocalKey: "local-1", Group: group, FirstSeenAt: now}}}
-	result := &client.AttributionV2ClaimBatchResult{LedgerEpoch: "shadow_v2", Results: []client.AttributionV2ClaimResult{{
+	result := &client.AttributionV2ClaimBatchResult{LedgerEpoch: "shadow_v2", V1WritePolicy: "accept", Results: []client.AttributionV2ClaimResult{{
 		Group:    client.AttributionV2ItemStatus{ID: "group-1", Status: "persisted"},
 		Requests: []client.AttributionV2ItemStatus{{ID: "req-1", Status: "persisted"}},
 	}}}
-	if err := ApplyV2ClaimAcknowledgements(state, []client.AttributionV2ClaimGroup{group}, result, now); err == nil {
+	if err := ApplyV2ClaimAcknowledgements(state, []client.AttributionV2ClaimGroup{group}, result, testShadowProtocol, now); err == nil {
 		t.Fatal("missing item acknowledgement error = nil")
 	}
 	claim := state.Claims[0]
@@ -126,11 +161,11 @@ func TestApplyV2ClaimAcknowledgementsDoesNotAcknowledgeNewerAllocation(t *testin
 	current.EvidenceDigest = "evidence-2"
 	current.CommitAllocations = []client.AttributionV2CommitAllocation{oldAllocation, newAllocation}
 	state := &V2ClaimState{Claims: []V2ClaimCandidate{{LocalKey: "local-1", Group: current, FirstSeenAt: now}}}
-	result := &client.AttributionV2ClaimBatchResult{LedgerEpoch: "shadow_v2", Results: []client.AttributionV2ClaimResult{{
+	result := &client.AttributionV2ClaimBatchResult{LedgerEpoch: "shadow_v2", V1WritePolicy: "accept", Results: []client.AttributionV2ClaimResult{{
 		Group:    client.AttributionV2ItemStatus{ID: "group-1", Status: "persisted"},
 		Requests: []client.AttributionV2ItemStatus{{ID: "req-1", Status: "persisted"}},
 	}}}
-	if err := ApplyV2ClaimAcknowledgements(state, []client.AttributionV2ClaimGroup{sent}, result, now); err == nil {
+	if err := ApplyV2ClaimAcknowledgements(state, []client.AttributionV2ClaimGroup{sent}, result, testShadowProtocol, now); err == nil {
 		t.Fatal("stale group acknowledgement error = nil")
 	}
 	claim := state.Claims[0]

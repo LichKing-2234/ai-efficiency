@@ -23,7 +23,7 @@ var (
 	loginFlow          = auth.Login
 	loginDeviceFlow    = auth.LoginDevice
 	headlessBrowserEnv = auth.IsHeadlessLinux
-	enrollAfterLogin   = ensureReportingEnrollment
+	activateAfterLogin = activateV2Reporting
 )
 
 var loginCmd = &cobra.Command{
@@ -42,6 +42,13 @@ var loginCmd = &cobra.Command{
 		}
 		if !loginForce {
 			if token, err := auth.ReadToken(tokenPath); err == nil && token.IsValid() {
+				activationServerURL := strings.TrimSpace(token.ServerURL)
+				if activationServerURL == "" {
+					activationServerURL = serverURL
+				}
+				if _, activationErr := activateAfterLogin(context.Background(), client.New(activationServerURL, token.AccessToken), activationServerURL, token.StableAuthSubject()); activationErr != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: login remains valid, but reporting activation is degraded: %v\n", activationErr)
+				}
 				cmd.Println("Already logged in. Use --force to re-login.")
 				return nil
 			}
@@ -81,8 +88,8 @@ var loginCmd = &cobra.Command{
 		if err := auth.WriteToken(tokenPath, token); err != nil {
 			return fmt.Errorf("save token: %w", err)
 		}
-		if _, enrollErr := enrollAfterLogin(context.Background(), client.New(serverURL, result.AccessToken), serverURL, token.AuthSubject); enrollErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: login succeeded, but reporting installation enrollment is degraded: %v\n", enrollErr)
+		if _, activationErr := activateAfterLogin(context.Background(), client.New(serverURL, result.AccessToken), serverURL, token.AuthSubject); activationErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: login succeeded, but reporting activation is degraded: %v\n", activationErr)
 		}
 
 		fmt.Fprintf(cmd.OutOrStdout(), "Login successful! Token saved to %s\n", tokenPath)

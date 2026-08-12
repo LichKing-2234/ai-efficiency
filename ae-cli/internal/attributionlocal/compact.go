@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -54,12 +55,14 @@ type CompactTrigger struct {
 }
 
 type CompactState struct {
-	Version   int              `json:"version"`
-	EnabledAt time.Time        `json:"enabled_at"`
-	SeenAtoms map[string]bool  `json:"seen_atoms"`
-	Pending   []CompactPending `json:"pending,omitempty"`
-	Closed    []CompactClosed  `json:"closed,omitempty"`
-	Triggers  []CompactTrigger `json:"triggers,omitempty"`
+	Version           int              `json:"version"`
+	EnabledAt         time.Time        `json:"enabled_at"`
+	SeenAtoms         map[string]bool  `json:"seen_atoms"`
+	Pending           []CompactPending `json:"pending,omitempty"`
+	Closed            []CompactClosed  `json:"closed,omitempty"`
+	Triggers          []CompactTrigger `json:"triggers,omitempty"`
+	V1WritePolicy     string           `json:"v1_write_policy,omitempty"`
+	MinimumCLIVersion string           `json:"minimum_cli_version,omitempty"`
 }
 
 type CompactPending struct {
@@ -223,6 +226,14 @@ func (e *CompactSyncEngine) uploadPending(ctx context.Context, state *CompactSta
 		buckets = append(buckets, pending.Bucket)
 	}
 	if err := e.Client.SendAttributionBuckets(ctx, buckets); err != nil {
+		var upgrade *client.AttributionUpgradeRequiredError
+		if errors.As(err, &upgrade) {
+			state.V1WritePolicy = client.AttributionV1WritePolicyUpgradeNeeded
+			state.MinimumCLIVersion = upgrade.MinimumCLIVersion
+			if persistErr := persistCompactState(ctx, state); persistErr != nil {
+				return persistErr
+			}
+		}
 		return err
 	}
 	for _, pending := range state.Pending {
