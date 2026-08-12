@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Design
 
 **Date:** 2026-08-11
-**Status:** Approved target contract; cutover blocked by the Codex Responses WebSocket identity gap documented on 2026-08-12
+**Status:** Approved target contract; cutover remains blocked pending official sub2api usage-reader authorization for the real canary
 **Scope:** `ae-cli`, backend attribution/reconciliation/read models, frontend Activity, repository administration
 **Supersedes for target behavior:** [Codex Token Attribution Ledger POC](./2026-08-05-codex-token-attribution-ledger-poc-design.md)
 **Related:**
@@ -97,10 +97,13 @@ Rules:
 - the local correlation seam must bind the exact `sub2api` usage `request_id`
   to `thread_id + turn_id`; transport connection or handshake IDs are not
   Request identities;
-- for Codex HTTP, the trusted completed-response `x-request-id` may provide
-  that identity; for Responses WebSocket, the logical response ID is the
-  matching identity, but v2 cannot support that transport until Codex persists
-  it in a trusted local source available during normal operation;
+- Codex is deterministically configured with
+  `model_providers.<provider>.supports_websockets = false`. The trusted
+  `response.completed.response.id` in the Codex Responses SSE SQLite log is
+  the official identity. Its `response.output[].id`/`call_id` must intersect
+  exactly one rollout turn's `response_item` transport IDs; ambiguous or
+  unmatched evidence fails closed. Responses WebSocket remains unsupported
+  until Codex provides an equivalent trusted persistent seam;
 - any accepted legacy `client:` prefix is normalized exactly once;
 - one turn may contain multiple Requests and all Requests share the turn's
   mutation set;

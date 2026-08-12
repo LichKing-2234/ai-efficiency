@@ -266,6 +266,7 @@ func configureCodex(opts Options, credential PlatformCredential) ([]string, erro
 	codexProvider["base_url"] = opts.Provider.BaseURL
 	codexProvider["wire_api"] = "responses"
 	codexProvider["requires_openai_auth"] = true
+	codexProvider["supports_websockets"] = false
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
 		return nil, fmt.Errorf("create codex config dir: %w", err)
 	}

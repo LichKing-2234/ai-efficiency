@@ -200,6 +200,7 @@ func TestConfigureToolsWritesCodexClaudeAndGeminiWithPlatformCredentials(t *test
 		"base_url = 'https://relay.example.com/v1'",
 		"wire_api = 'responses'",
 		"requires_openai_auth = true",
+		"supports_websockets = false",
 	} {
 		if !contains(codexCfg, want) {
 			t.Fatalf("codex config missing %q\n%s", want, codexCfg)

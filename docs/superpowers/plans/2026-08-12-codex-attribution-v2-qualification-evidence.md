@@ -1,7 +1,7 @@
 # Codex Attribution v2 Qualification Evidence
 
 **Date:** 2026-08-12  
-**Status:** Non-canary qualification complete; authorized real canary failed on a P1 Codex Responses WebSocket identity gap
+**Status:** Non-canary qualification complete; forced-HTTP App Server identity canary passed, but official sub2api usage lookup was blocked by missing admin-reader authorization
 **Ticket:** [#250](https://github.com/LichKing-2234/ai-efficiency/issues/250)
 
 This record maps the #250 acceptance criteria to executable evidence. Synthetic
@@ -71,7 +71,10 @@ contains:
 - [x] Standards and spec reviews have no P0/P1 findings at candidate
   `77279437`.
 - [ ] A separately authorized real Request-to-commit-to-Activity canary passes
-  without entering the formal epoch.
+  without entering the formal epoch. The App Server persisted the trusted
+  completed-response identity and the scanner matched it to one deterministic
+  commit; the real `/api/v1/admin/usage` read returned HTTP 401 before claim
+  ingest, so no formal or shadow Activity data was written.
 
 ## Authorized Real Canary Attempt
 
