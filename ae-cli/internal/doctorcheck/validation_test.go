@@ -53,6 +53,7 @@ review_model = 'gpt-5.4'
 base_url = 'https://relay.example.com/v1'
 wire_api = 'responses'
 requires_openai_auth = true
+supports_websockets = false
 `)
 	writeJSON(t, filepath.Join(home, ".codex", "auth.json"), map[string]any{"OPENAI_API_KEY": "sk-openai"})
 	writeJSON(t, filepath.Join(home, ".claude", "settings.json"), map[string]any{
@@ -104,6 +105,25 @@ requires_openai_auth = true
 	}
 	if got := report.ByName("codex").ModelContract; got != Mismatch {
 		t.Fatalf("codex model contract = %s, want mismatch", got)
+	}
+}
+
+func TestValidateToolsRejectsCodexWebsocketTransport(t *testing.T) {
+	home := t.TempDir()
+	writeFile(t, filepath.Join(home, ".codex", "config.toml"), `
+model_provider = 'sub2api'
+model = 'gpt-5.4'
+[model_providers.sub2api]
+base_url = 'https://relay.example.com/v1'
+wire_api = 'responses'
+requires_openai_auth = true
+supports_websockets = true
+`)
+	writeJSON(t, filepath.Join(home, ".codex", "auth.json"), map[string]any{"OPENAI_API_KEY": "sk-openai"})
+	report := ValidateTools(ValidateOptions{HomeDir: home, Provider: testProvider(), ProviderAvailable: true, Tools: []ToolState{{Name: "codex", ExecutablePath: "/tmp/bin/codex", Probeable: true}}})
+	result := report.ByName("codex")
+	if result.Status != StatusFailed || !strings.Contains(strings.Join(result.Details, ","), "supports_websockets is not false") {
+		t.Fatalf("result = %+v", result)
 	}
 }
 

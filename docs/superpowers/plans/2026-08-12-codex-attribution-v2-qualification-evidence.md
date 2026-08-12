@@ -1,7 +1,7 @@
 # Codex Attribution v2 Qualification Evidence
 
 **Date:** 2026-08-12  
-**Status:** Non-canary qualification complete; authorized real canary failed on a P1 Codex Responses WebSocket identity gap
+**Status:** Non-canary qualification complete; forced-HTTP App Server identity canary passed, but production v2 claim ingest is not deployed
 **Ticket:** [#250](https://github.com/LichKing-2234/ai-efficiency/issues/250)
 
 This record maps the #250 acceptance criteria to executable evidence. Synthetic
@@ -71,7 +71,12 @@ contains:
 - [x] Standards and spec reviews have no P0/P1 findings at candidate
   `77279437`.
 - [ ] A separately authorized real Request-to-commit-to-Activity canary passes
-  without entering the formal epoch.
+  without entering the formal epoch. The App Server persisted the trusted
+  completed-response identity and the scanner matched it to one deterministic
+  commit; production returned HTTP 404 for the v2 claim ingest route, so no
+  formal or shadow Activity data was written. The live health probe reports
+  `v0.1.0-preview.81` at `4008d3fc`; that deployed commit predates the route,
+  while current `origin/main` contains it.
 
 ## Authorized Real Canary Attempt
 

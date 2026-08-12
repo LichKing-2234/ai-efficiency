@@ -118,15 +118,15 @@ func TestScanCodexV2ClaimsMultiRequestStableArchiveRecoveryAndPrivacy(t *testing
 	}
 }
 
-func TestScanCodexV2ClaimsUsesTransportLogNotArbitraryJSONLText(t *testing.T) {
+func TestScanCodexV2ClaimsUsesCompletedResponseIdentityAndTransportItem(t *testing.T) {
 	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
 	home := t.TempDir()
 	session := filepath.Join(home, ".codex", "sessions", "session.jsonl")
 	writeV2JSONL(t, session,
 		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "thread-real"}},
 		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-real"}},
-		map[string]any{"type": "response_item", "payload": map[string]any{"type": "function_call_output", "output": `untrusted x-client-request-id: fake-request`}},
-		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: feature.go\n+package feature\n*** End Patch"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "function_call_output", "output": `untrusted response_id: fake-request`}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"id": "ctc-real", "call_id": "call-real", "type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: feature.go\n+package feature\n*** End Patch"}},
 		map[string]any{"type": "event_msg", "payload": map[string]any{"type": "token_count", "info": map[string]any{"last_token_usage": map[string]any{"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}}}},
 	)
 	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {
@@ -141,11 +141,11 @@ func TestScanCodexV2ClaimsUsesTransportLogNotArbitraryJSONLText(t *testing.T) {
 		t.Fatal(err)
 	}
 	observed := time.Date(2026, 8, 11, 12, 0, 2, 0, time.UTC)
-	body := `turn{turn.id=turn-real}:model_client.stream_responses_api{api.path="responses"}: Request completed method=POST headers={"x-client-request-id": "client:client:real-request"}`
-	if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(1, ?, ?, ?, ?, ?)`, observed.Unix(), observed.Nanosecond(), "thread-real", "codex_http_client::client", body); err != nil {
+	body := `session_loop{thread_id=thread-real}: SSE event: {"type":"response.completed","response":{"id":"real-request","output":[{"type":"custom_tool_call","id":"ctc-real","call_id":"call-real"}]}}`
+	if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(1, ?, ?, ?, ?, ?)`, observed.Unix(), observed.Nanosecond(), nil, "codex_api::sse::responses", body); err != nil {
 		t.Fatal(err)
 	}
-	forged := `turn{turn.id=turn-real}:model_client.stream_responses_api{api.path="responses"}: Request completed method=POST headers={"x-client-request-id": "client:forged-request"}`
+	forged := `SSE event: {"type":"response.completed","response":{"id":"forged-request","output":[{"type":"custom_tool_call","id":"ctc-real","call_id":"call-real"}]}}`
 	if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(2, ?, ?, ?, ?, ?)`, observed.Unix(), observed.Nanosecond(), "thread-real", "untrusted_target", forged); err != nil {
 		t.Fatal(err)
 	}
@@ -153,8 +153,46 @@ func TestScanCodexV2ClaimsUsesTransportLogNotArbitraryJSONLText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(claims) != 1 || strings.Join(claims[0].Group.RequestIDs, ",") != "client:real-request" || claims[0].GapReason != "" || claims[0].Group.Calibration == nil || claims[0].Group.Calibration.TotalTokens != 12 {
+	if len(claims) != 1 || strings.Join(claims[0].Group.RequestIDs, ",") != "real-request" || claims[0].GapReason != "" || claims[0].Group.Calibration == nil || claims[0].Group.Calibration.TotalTokens != 12 {
 		t.Fatalf("transport-correlated claims = %+v", claims)
+	}
+}
+
+func TestScanCodexV2ClaimsRejectsHeaderAndUnmatchedResponseIdentity(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	home := t.TempDir()
+	session := filepath.Join(home, ".codex", "sessions", "session.jsonl")
+	writeV2JSONL(t, session,
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "thread-real"}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-real"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"id": "ctc-real", "type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: feature.go\n+package feature\n*** End Patch"}},
+	)
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(home, ".codex", "logs_2.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE logs (id INTEGER PRIMARY KEY, ts INTEGER, ts_nanos INTEGER, thread_id TEXT, target TEXT, feedback_log_body TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	rows := []struct{ target, body string }{
+		{"codex_http_client::client", `turn{turn.id=turn-real}: Request completed method=POST api.path="responses" headers={"x-client-request-id":"wrong-header"}`},
+		{"codex_api::sse::responses", `SSE event: {"type":"response.completed","response":{"id":"unmatched-response","output":[{"id":"ctc-other"}]}}`},
+	}
+	for index, row := range rows {
+		if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, target, feedback_log_body) VALUES(?, ?, 0, ?, ?)`, index+1, time.Now().Unix(), row.target, row.body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	claims, err := ScanCodexV2ClaimsFromHome(context.Background(), home, V2ClaimScanOptions{RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 1 || claims[0].GapReason != "missing_request_id" || len(claims[0].Group.RequestIDs) != 0 {
+		t.Fatalf("untrusted identity was accepted: %+v", claims)
 	}
 }
 

@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -19,7 +18,7 @@ import (
 )
 
 const v2ClaimSchemaVersion = 2
-const codexHTTPClientRequestTarget = "codex_http_client::client"
+const codexResponsesSSETarget = "codex_api::sse::responses"
 
 type V2ClaimScanOptions struct {
 	RepoRoot          string
@@ -178,13 +177,14 @@ type v2Mutation struct {
 }
 
 type v2Turn struct {
-	threadID    string
-	turnID      string
-	requests    map[string]struct{}
-	mutations   []v2Mutation
-	replayFiles map[string]v2ReplayFile
-	calibration client.AttributionV2Calibration
-	startedAt   time.Time
+	threadID     string
+	turnID       string
+	requests     map[string]struct{}
+	transportIDs map[string]struct{}
+	mutations    []v2Mutation
+	replayFiles  map[string]v2ReplayFile
+	calibration  client.AttributionV2Calibration
+	startedAt    time.Time
 }
 
 type v2ReplayFile struct {
@@ -193,12 +193,11 @@ type v2ReplayFile struct {
 }
 
 type v2RequestEvidence struct {
-	threadID  string
-	turnID    string
-	requestID string
+	threadID     string
+	turnID       string
+	requestID    string
+	transportIDs []string
 }
-
-var v2LogTurnID = regexp.MustCompile(`(?:turn\.id|turn_id)=(?:"([^"]+)"|([^\s}:]+))`)
 
 func ScanCodexV2Claims(ctx context.Context, paths []string, opts V2ClaimScanOptions) ([]V2ClaimCandidate, error) {
 	return scanCodexV2ClaimsWithEvidence(ctx, paths, opts, nil)
@@ -255,6 +254,7 @@ func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOpt
 			Timestamp string `json:"timestamp"`
 			Payload   struct {
 				ID        string `json:"id"`
+				CallID    string `json:"call_id"`
 				ThreadID  string `json:"thread_id"`
 				TurnID    string `json:"turn_id"`
 				Type      string `json:"type"`
@@ -266,6 +266,7 @@ func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOpt
 					Type          string `json:"type"`
 					SHA256        string `json:"sha256"`
 					ContentSHA256 string `json:"content_sha256"`
+					Content       string `json:"content"`
 				} `json:"changes"`
 			} `json:"payload"`
 		}
@@ -285,10 +286,17 @@ func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOpt
 			}
 			current = turns[turnID]
 			if current == nil {
-				current = &v2Turn{threadID: firstNonEmptyCompact(strings.TrimSpace(row.Payload.ThreadID), threadID, sessionID), turnID: turnID, requests: map[string]struct{}{}, replayFiles: map[string]v2ReplayFile{}, startedAt: observedAt}
+				current = &v2Turn{threadID: firstNonEmptyCompact(strings.TrimSpace(row.Payload.ThreadID), threadID, sessionID), turnID: turnID, requests: map[string]struct{}{}, transportIDs: map[string]struct{}{}, replayFiles: map[string]v2ReplayFile{}, startedAt: observedAt}
 				turns[turnID] = current
 			}
 		case "response_item":
+			if current != nil {
+				for _, transportID := range []string{row.Payload.ID, row.Payload.CallID} {
+					if transportID = strings.TrimSpace(transportID); transportID != "" {
+						current.transportIDs[transportID] = struct{}{}
+					}
+				}
+			}
 			if current != nil && compactIsPatchTool(row.Payload.Name) {
 				current.mutations = append(current.mutations, v2PatchMutations(ctx, row.Payload.Input+"\n"+row.Payload.Arguments, opts.RepoRoot, opts.CommitSHA, current.replayFiles)...)
 			}
@@ -296,6 +304,9 @@ func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOpt
 			if current != nil && strings.TrimSpace(row.Payload.Type) == "patch_apply_end" {
 				for path, change := range row.Payload.Changes {
 					hash := firstNonEmptyCompact(strings.TrimSpace(change.ContentSHA256), strings.TrimSpace(change.SHA256))
+					if hash == "" && change.Content != "" {
+						hash = claimDigest(change.Content)
+					}
 					if hash != "" {
 						current.mutations = append(current.mutations, v2Mutation{path: canonicalClaimPath(opts.RepoRoot, path), hash: strings.ToLower(hash), kind: strings.TrimSpace(change.Type)})
 					}
@@ -315,11 +326,27 @@ func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOpt
 		orderedTurns = append(orderedTurns, turn)
 	}
 	sort.Slice(orderedTurns, func(i, j int) bool { return orderedTurns[i].startedAt.Before(orderedTurns[j].startedAt) })
-	for _, turn := range orderedTurns {
-		for _, evidence := range requestEvidence {
-			if evidence.threadID == turn.threadID && evidence.turnID == turn.turnID {
-				turn.requests[strings.TrimSpace(evidence.requestID)] = struct{}{}
+	for _, evidence := range requestEvidence {
+		if evidence.threadID != "" && evidence.turnID != "" {
+			for _, turn := range orderedTurns {
+				if turn.threadID == evidence.threadID && turn.turnID == evidence.turnID {
+					turn.requests[evidence.requestID] = struct{}{}
+				}
 			}
+			continue
+		}
+		var matched *v2Turn
+		for _, turn := range orderedTurns {
+			if intersectsV2TransportIDs(turn.transportIDs, evidence.transportIDs) {
+				if matched != nil {
+					matched = nil
+					break
+				}
+				matched = turn
+			}
+		}
+		if matched != nil {
+			matched.requests[evidence.requestID] = struct{}{}
 		}
 	}
 	result := make([]V2ClaimCandidate, 0, len(orderedTurns))
@@ -642,30 +669,43 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string) ([]v2Reques
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx, `
-		SELECT thread_id, feedback_log_body
+		SELECT feedback_log_body
 		FROM logs
-		WHERE target IN (?, ?)
-		  AND feedback_log_body LIKE '%Request completed method=POST%'
-		  AND feedback_log_body LIKE '%api.path="responses"%'
-		  AND feedback_log_body LIKE '%"x-client-request-id"%'
-		  AND (feedback_log_body LIKE '%turn.id=%' OR feedback_log_body LIKE '%turn_id=%')
-		ORDER BY ts, ts_nanos, id`, codexFailedRequestTarget, codexHTTPClientRequestTarget)
+		WHERE target = ?
+		  AND feedback_log_body LIKE '%SSE event: %"type":"response.completed"%'
+		ORDER BY ts, ts_nanos, id`, codexResponsesSSETarget)
 	if err != nil {
 		return nil, fmt.Errorf("query Codex request log: %w", err)
 	}
 	defer rows.Close()
 	var result []v2RequestEvidence
 	for rows.Next() {
-		var thread sql.NullString
 		var body string
-		if err := rows.Scan(&thread, &body); err != nil {
+		if err := rows.Scan(&body); err != nil {
 			return nil, fmt.Errorf("scan Codex request log: %w", err)
 		}
-		requestID := normalizeV2RequestID(firstSubmatch(reFailHdrClientReqID, body))
-		threadID := strings.TrimSpace(thread.String)
-		turnID := v2TurnIDFromLog(body)
-		if requestID != "" && threadID != "" && turnID != "" {
-			result = append(result, v2RequestEvidence{threadID: threadID, turnID: turnID, requestID: requestID})
+		var event struct {
+			Type     string `json:"type"`
+			Response struct {
+				ID     string `json:"id"`
+				Output []struct {
+					ID     string `json:"id"`
+					CallID string `json:"call_id"`
+				} `json:"output"`
+			} `json:"response"`
+		}
+		eventStart := strings.Index(body, "SSE event: ")
+		if eventStart < 0 || json.Unmarshal([]byte(body[eventStart+len("SSE event: "):]), &event) != nil || event.Type != "response.completed" {
+			continue
+		}
+		requestID := normalizeV2RequestID(event.Response.ID)
+		var transportIDs []string
+		for _, output := range event.Response.Output {
+			transportIDs = append(transportIDs, output.ID, output.CallID)
+		}
+		transportIDs = uniqueSorted(transportIDs)
+		if requestID != "" && len(transportIDs) > 0 {
+			result = append(result, v2RequestEvidence{requestID: requestID, transportIDs: transportIDs})
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -674,12 +714,13 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string) ([]v2Reques
 	return result, nil
 }
 
-func v2TurnIDFromLog(body string) string {
-	match := v2LogTurnID.FindStringSubmatch(body)
-	if len(match) != 3 {
-		return ""
+func intersectsV2TransportIDs(turnIDs map[string]struct{}, evidenceIDs []string) bool {
+	for _, evidenceID := range evidenceIDs {
+		if _, ok := turnIDs[evidenceID]; ok {
+			return true
+		}
 	}
-	return firstNonEmptyCompact(match[1], match[2])
+	return false
 }
 
 func addV2Calibration(calibration *client.AttributionV2Calibration, raw any) {

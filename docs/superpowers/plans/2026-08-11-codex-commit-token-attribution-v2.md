@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** Implementation blocked by a P1 Codex 0.147.0 Responses WebSocket compatibility gap found by the authorized real canary. T02-T10 and T11 non-canary qualification are merged with hosted CI green, but the current client does not persist the logical response ID required for exact `sub2api` reconciliation. T04/T11 real canary gates remain incomplete; #251 is blocked.
+**Status:** HTTP identity implementation is locally green and the App Server identity canary passed; T04/T11 remain incomplete because production returns 404 for the v2 claim ingest route. #251 remains blocked.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -42,11 +42,10 @@ T01 contract publication (#253)
 
 - [x] Preserve backend provider ID through discover, tool config, reporting
   state, and immutable claim-group identity.
-- [ ] Correlate the exact `sub2api` logical Request identity, thread, turn,
+- [x] Correlate the exact `sub2api` logical Request identity, thread, turn,
   structured mutation, and deterministic Git content without cwd/time/path
-  heuristics. HTTP completed-response evidence is implemented, but Codex
-  0.147.0 Responses WebSocket does not persist its matching logical response
-  ID in a trusted normal-operation local source; #241 is reopened.
+  heuristics on the forced-HTTP App Server path. Responses WebSocket remains
+  unsupported and fails closed.
 - [x] Support multi-Request turns, late Requests, active/archived source
   recovery, explicit gaps, and a single calibration envelope.
 - [x] Verify privacy and deterministic evidence fixtures.
@@ -69,10 +68,11 @@ T01 contract publication (#253)
   multi-replica collapse.
 - [x] Verify success and all fail-closed/retry branches with fake providers.
 - [ ] Run a separately authorized read-only canary against the real endpoint.
-  The 2026-08-12 authorized probe proved that a WebSocket handshake client ID
-  returns zero rows while the logical response ID returns exactly one official
-  usage row. The read contract is therefore correct, but this gate remains
-  unchecked until the end-to-end client can supply that identity normally.
+  The App Server produced a trusted identity and the scanner matched it to one
+  deterministic commit, but production returned HTTP 404 for
+  `/api/v1/attribution/v2/claim-groups/batch`; no claim was ingested or reconciled.
+  The live probe reports `v0.1.0-preview.81` at commit `4008d3fc`, whose
+  deployed router does not contain the v2 route; current `origin/main` does.
 
 ### T05 — Git hooks, outbox, runner, and OTel exit ([#244](https://github.com/LichKing-2234/ai-efficiency/issues/244))
 
@@ -150,11 +150,8 @@ T01 contract publication (#253)
 - [x] Prove final reconciliation is scheduled no later than 24 hours before
   nominal upstream cleanup, including exact-boundary and late-ingest cases.
 - [ ] Complete one controlled real Request-to-commit-to-Activity canary without
-  contaminating the formal epoch.
-  The 2026-08-12 attempt stopped fail-closed before claim ingest: Codex 0.147.0
-  persists neither the WebSocket logical response ID nor an equivalent Request
-  ID in SQLite/rollout data. Its opt-in timing trace exposes the correct value
-  only on process stderr, which is not a continuous collection seam.
+  contaminating the formal epoch. The identity and commit half passed on the
+  App Server HTTP path; production ingest stopped at HTTP 404 before reconciliation.
 - [x] Produce cutover checklist, dashboards, exact reset query, evidence export,
   and rollback runbook.
 - [ ] Close every P0/P1 finding before #251 may start.

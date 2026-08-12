@@ -189,6 +189,10 @@ func validateCodex(opts ValidateOptions, credential toolconfig.PlatformCredentia
 				result.Details = append(result.Details, "requires_openai_auth is not true")
 				result.Status = StatusFailed
 			}
+			if supportsWebSockets, exists := providerCfg["supports_websockets"]; !exists || boolValue(supportsWebSockets) {
+				result.Details = append(result.Details, "supports_websockets is not false")
+				result.Status = StatusFailed
+			}
 		}
 	}
 	if baseURL == "" {

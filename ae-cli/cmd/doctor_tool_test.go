@@ -428,6 +428,7 @@ review_model = 'gpt-5.4'
 base_url = 'https://relay.example.com/v1'
 wire_api = 'responses'
 requires_openai_auth = true
+supports_websockets = false
 `)
 	writeFileForDoctor(t, filepath.Join(home, ".codex", "auth.json"), `{"OPENAI_API_KEY":"sk-openai"}`)
 	writeFileForDoctor(t, filepath.Join(home, ".claude", "settings.json"), `{"env":{"ANTHROPIC_BASE_URL":"https://relay.example.com/v1","ANTHROPIC_AUTH_TOKEN":"sk-anthropic","CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":"1","CLAUDE_CODE_ATTRIBUTION_HEADER":"0"}}`)
