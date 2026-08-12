@@ -53,6 +53,16 @@ At minimum, set:
 - `AE_RELAY_URL`
 - `AE_RELAY_ADMIN_API_KEY`
 
+The attribution cutover variables default to `shadow_v2`, `accept`, and an
+empty minimum CLI version. Change `AE_ATTRIBUTION_LEDGER_EPOCH`,
+`AE_ATTRIBUTION_V1_WRITE_POLICY`, and `AE_ATTRIBUTION_MINIMUM_CLI_VERSION`
+only together through the explicit v2 cutover runbook; contradictory values
+make backend startup fail closed.
+`AE_ATTRIBUTION_SETUP_AVAILABLE` and
+`AE_ATTRIBUTION_READINESS_AVAILABLE` both default to `false`. Readiness
+requires setup plus the formal v2 protocol and is enabled only in the explicit
+cutover after compatible platform and CLI releases are verified.
+
 Then run the local preflight and start the stack:
 
 ```bash

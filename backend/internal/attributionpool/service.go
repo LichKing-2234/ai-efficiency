@@ -20,8 +20,6 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 )
 
-const LedgerEpoch = "shadow_v2"
-
 const CoverageGapModel = "unresolved"
 
 type commitRef struct {
@@ -31,6 +29,7 @@ type commitRef struct {
 
 type contribution struct {
 	key         string
+	ledgerEpoch string
 	providerID  int
 	userID      int
 	model       string
@@ -180,7 +179,7 @@ func MaterializeRequestClaim(ctx context.Context, client *ent.Client, claimID in
 	if err != nil {
 		return fmt.Errorf("load claim group for materialization: %w", err)
 	}
-	desired, err := canonicalContribution(group.RelayProviderID, group.UserID, group.CommitAllocations, claim)
+	desired, err := canonicalContribution(group.LedgerEpoch, group.RelayProviderID, group.UserID, group.CommitAllocations, claim)
 	if err != nil {
 		return fmt.Errorf("build request claim contribution: %w", err)
 	}
@@ -238,13 +237,13 @@ func MaterializeCoverageGaps(ctx context.Context, client *ent.Client, groupID, c
 		return fmt.Errorf("build coverage gap contribution: %w", err)
 	}
 	bucket := group.CreatedAt.UTC().Truncate(15 * time.Minute)
-	parts := []string{strconv.Itoa(group.RelayProviderID), strconv.Itoa(group.UserID), CoverageGapModel, bucket.Format(time.RFC3339)}
+	parts := []string{group.LedgerEpoch, strconv.Itoa(group.RelayProviderID), strconv.Itoa(group.UserID), CoverageGapModel, bucket.Format(time.RFC3339)}
 	for _, commit := range commits {
 		parts = append(parts, fmt.Sprintf("%d:%s", commit.repoConfigID, commit.commitSHA))
 	}
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x1f")))
 	value := contribution{
-		key: hex.EncodeToString(sum[:]), providerID: group.RelayProviderID, userID: group.UserID, model: CoverageGapModel,
+		key: hex.EncodeToString(sum[:]), ledgerEpoch: group.LedgerEpoch, providerID: group.RelayProviderID, userID: group.UserID, model: CoverageGapModel,
 		bucketStart: bucket, commits: commits,
 	}
 	pool, err := ensurePool(ctx, client, value)
@@ -263,8 +262,9 @@ func MaterializeCoverageGaps(ctx context.Context, client *ent.Client, groupID, c
 	return ensureAllCommitRelations(ctx, client, pool.ID, group.UserID, commits)
 }
 
-func canonicalContribution(providerID, userID int, allocations []map[string]any, claim *ent.AttributionRequestClaim) (contribution, error) {
-	if providerID <= 0 || userID <= 0 || claim == nil || strings.TrimSpace(claim.RequestedModel) == "" || claim.UsageAt == nil || claim.UsageAt.IsZero() {
+func canonicalContribution(ledgerEpoch string, providerID, userID int, allocations []map[string]any, claim *ent.AttributionRequestClaim) (contribution, error) {
+	ledgerEpoch = strings.TrimSpace(ledgerEpoch)
+	if ledgerEpoch == "" || providerID <= 0 || userID <= 0 || claim == nil || strings.TrimSpace(claim.RequestedModel) == "" || claim.UsageAt == nil || claim.UsageAt.IsZero() {
 		return contribution{}, fmt.Errorf("provider, user, requested model, and usage time are required")
 	}
 	if claim.InputTokens < 0 || claim.OutputTokens < 0 || claim.CacheCreationTokens < 0 || claim.CacheReadTokens < 0 || claim.TotalTokens < 0 {
@@ -280,7 +280,7 @@ func canonicalContribution(providerID, userID int, allocations []map[string]any,
 	bucket := claim.UsageAt.UTC().Truncate(15 * time.Minute)
 	model := strings.TrimSpace(claim.RequestedModel)
 	return contribution{
-		key: canonicalPoolKey(providerID, userID, model, bucket, commits), providerID: providerID, userID: userID, model: model, bucketStart: bucket, commits: commits,
+		key: canonicalPoolKey(ledgerEpoch, providerID, userID, model, bucket, commits), ledgerEpoch: ledgerEpoch, providerID: providerID, userID: userID, model: model, bucketStart: bucket, commits: commits,
 		input: claim.InputTokens, output: claim.OutputTokens, cacheCreate: claim.CacheCreationTokens,
 		cacheRead: claim.CacheReadTokens, total: claim.TotalTokens,
 	}, nil
@@ -330,13 +330,13 @@ func ensurePool(ctx context.Context, client *ent.Client, value contribution) (*e
 	pool, err := client.AttributionUsagePool.Query().Where(attributionusagepool.CanonicalPoolKeyEQ(value.key)).Only(ctx)
 	if ent.IsNotFound(err) {
 		pool, err = client.AttributionUsagePool.Create().
-			SetCanonicalPoolKey(value.key).SetLedgerEpoch(LedgerEpoch).SetRelayProviderID(value.providerID).SetUserID(value.userID).
+			SetCanonicalPoolKey(value.key).SetLedgerEpoch(value.ledgerEpoch).SetRelayProviderID(value.providerID).SetUserID(value.userID).
 			SetRequestedModel(value.model).SetBucketStartUtc(value.bucketStart).Save(ctx)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("ensure attribution usage pool: %w", err)
 	}
-	if pool.LedgerEpoch != LedgerEpoch || pool.RelayProviderID != value.providerID || pool.UserID != value.userID || pool.RequestedModel != value.model || !pool.BucketStartUtc.Equal(value.bucketStart) {
+	if pool.LedgerEpoch != value.ledgerEpoch || pool.RelayProviderID != value.providerID || pool.UserID != value.userID || pool.RequestedModel != value.model || !pool.BucketStartUtc.Equal(value.bucketStart) {
 		return nil, fmt.Errorf("canonical attribution usage pool conflict")
 	}
 	return pool, nil
@@ -637,8 +637,9 @@ func migrateDurablePools(ctx context.Context, client *ent.Client, userID, repoCo
 		}
 		counting = uniqueCommitRefs(counting)
 		desired := contribution{
-			key:        canonicalPoolKey(pool.RelayProviderID, pool.UserID, pool.RequestedModel, pool.BucketStartUtc, counting),
-			providerID: pool.RelayProviderID, userID: pool.UserID, model: pool.RequestedModel, bucketStart: pool.BucketStartUtc, commits: counting,
+			key:         canonicalPoolKey(pool.LedgerEpoch, pool.RelayProviderID, pool.UserID, pool.RequestedModel, pool.BucketStartUtc, counting),
+			ledgerEpoch: pool.LedgerEpoch,
+			providerID:  pool.RelayProviderID, userID: pool.UserID, model: pool.RequestedModel, bucketStart: pool.BucketStartUtc, commits: counting,
 			input: pool.InputTokens, output: pool.OutputTokens, cacheCreate: pool.CacheCreationTokens,
 			cacheRead: pool.CacheReadTokens, total: pool.TotalTokens,
 		}
@@ -701,8 +702,8 @@ func migrateDurablePools(ctx context.Context, client *ent.Client, userID, repoCo
 	return nil
 }
 
-func canonicalPoolKey(providerID, userID int, model string, bucket time.Time, commits []commitRef) string {
-	parts := []string{strconv.Itoa(providerID), strconv.Itoa(userID), strings.TrimSpace(model), bucket.UTC().Format(time.RFC3339)}
+func canonicalPoolKey(ledgerEpoch string, providerID, userID int, model string, bucket time.Time, commits []commitRef) string {
+	parts := []string{strings.TrimSpace(ledgerEpoch), strconv.Itoa(providerID), strconv.Itoa(userID), strings.TrimSpace(model), bucket.UTC().Format(time.RFC3339)}
 	for _, commit := range commits {
 		parts = append(parts, fmt.Sprintf("%d:%s", commit.repoConfigID, commit.commitSHA))
 	}

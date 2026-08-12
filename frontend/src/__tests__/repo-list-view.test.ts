@@ -493,7 +493,7 @@ describe('RepoListView', () => {
     expect(wrapper.find('.el-empty').exists()).toBe(true)
   })
 
-  it('shows an Unbound badge for repos without scm_provider', async () => {
+  it('shows an unbound row detail and bind action without a duplicate badge', async () => {
     const { wrapper } = await mountRepoList([
       {
         id: 7,
@@ -510,13 +510,20 @@ describe('RepoListView', () => {
       },
     ])
 
-    expect(wrapper.text()).toContain('Unbound')
+    const row = wrapper.get('[data-testid="repo-row"]')
+    expect(row.text().match(/Needs binding/g)).toHaveLength(1)
+    expect(row.get('dl').text()).toContain('BindingNeeds binding')
+    expect(row.text()).toContain('Bind platform')
   })
 
-  it('presents repository binding state with Element Plus tags', async () => {
+  it('shows repository health and binding once in the responsive row details', async () => {
     const { wrapper } = await mountRepoList(sampleRepos)
+    const row = wrapper.get('[data-testid="repo-row"]')
 
-    expect(wrapper.findAll('.el-tag').length).toBeGreaterThan(0)
+    expect(row.classes()).toContain('xl:grid')
+    expect(row.text().match(/Bound/g)).toHaveLength(1)
+    expect(row.get('dl').text()).toContain('StatusActive')
+    expect(row.get('dl').text()).toContain('BindingBound')
   })
 
   it('shows auto-bind action only for admins', async () => {

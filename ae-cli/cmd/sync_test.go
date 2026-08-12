@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,9 +11,11 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
+	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
 	"github.com/ai-efficiency/ae-cli/internal/reporting"
 	"github.com/ai-efficiency/ae-cli/internal/toolconfig"
+	"github.com/google/uuid"
 )
 
 func ptrTimeValue(t time.Time) *time.Time {
@@ -437,5 +441,192 @@ func TestSyncCommandReportsAlreadyRunningTask(t *testing.T) {
 	}
 	if !bytes.Contains([]byte(output), []byte("Attribution sync already running")) {
 		t.Fatalf("sync output missing active runner message:\n%s", output)
+	}
+}
+
+func TestSyncCommandUsesPersistedFormalProtocolWithoutV1BaselineOrRequest(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	withWorkingDir(t, repo)
+
+	var v1Calls, v2Calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/attribution/repos/resolve-remote":
+			_, _ = w.Write([]byte(`{"code":0,"data":{"eligible":true,"repo_config_id":123,"repo_key":"github.com/acme/repo","full_name":"acme/repo","clone_url":"https://github.com/acme/repo.git","status":"active","binding_state":"bound"}}`))
+		case "/api/v1/attribution/v2/claim-groups/batch":
+			v2Calls++
+			_, _ = w.Write([]byte(`{"code":201,"data":{"ledger_epoch":"formal_v2","v1_write_policy":"upgrade_required","minimum_cli_version":"0.2.0-preview.5","results":[{"group":{"id":"group-1","status":"persisted"},"calibration":{"status":"not_present"},"requests":[{"id":"req-1","status":"persisted"}]}]}}`))
+		case "/api/v1/attribution/usage-buckets/batch":
+			v1Calls++
+			w.WriteHeader(http.StatusConflict)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	now := time.Now().UTC().Add(-time.Hour)
+	if err := attributionlocal.SaveV2ClaimState(&attributionlocal.V2ClaimState{
+		Version: 1,
+		Claims: []attributionlocal.V2ClaimCandidate{{
+			LocalKey: "local-1",
+			Group: client.AttributionV2ClaimGroup{
+				SchemaVersion: 2, GroupID: "group-1", RelayProviderID: 7, ThreadID: "thread-1", TurnID: "turn-1",
+				EvidenceDigest: "evidence-1", RequestIDs: []string{"req-1"},
+			},
+			FirstSeenAt: now,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := reporting.Save("", &reporting.Config{
+		Version: 1, InstallationID: uuid.NewString(), ServerURL: server.URL, AuthSubject: "user:123",
+		ReporterToken: "reporter-token", ReportingEnabled: true, RelayProviderID: 7, EnabledAt: &now,
+		Protocol: client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochFormalV2, V1WritePolicy: client.AttributionV1WritePolicyUpgradeNeeded, MinimumCLIVersion: "0.2.0-preview.5"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	oldCfg := cfg
+	oldClient := apiClient
+	cfg = nil
+	apiClient = nil
+	t.Cleanup(func() {
+		cfg = oldCfg
+		apiClient = oldClient
+	})
+	var output bytes.Buffer
+	syncCmd.SetOut(&output)
+	syncCmd.SetErr(&output)
+	if err := syncCmd.RunE(syncCmd, nil); err != nil {
+		t.Fatalf("sync formal v2 ACK: %v\n%s", err, output.String())
+	}
+	if v1Calls != 0 || v2Calls != 1 {
+		t.Fatalf("formal delivery calls v1=%d v2=%d, want 0/1", v1Calls, v2Calls)
+	}
+	if _, err := attributionlocal.LoadCompactState(); !os.IsNotExist(err) {
+		t.Fatalf("formal sync created or required v1 state: %v", err)
+	}
+	state, err := attributionlocal.LoadV2ClaimState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Claims) != 1 || !state.Claims[0].GroupAcknowledged || len(state.Claims[0].Group.RequestIDs) != 0 {
+		t.Fatalf("formal v2 ACK did not consume explicit items: %+v", state.Claims)
+	}
+}
+
+func TestSyncCommandContinuesV2AfterV1UpgradeRequired(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	withWorkingDir(t, repo)
+
+	var v1Calls, v2Calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/attribution/repos/resolve-remote":
+			_, _ = w.Write([]byte(`{"code":0,"data":{"eligible":true,"repo_config_id":123,"repo_key":"github.com/acme/repo","full_name":"acme/repo","clone_url":"https://github.com/acme/repo.git","status":"active","binding_state":"bound"}}`))
+		case "/api/v1/attribution/usage-buckets/batch":
+			v1Calls++
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"code":409,"message":"ae-cli upgrade required","details":{"error_code":"upgrade_required","minimum_cli_version":"0.2.0-preview.5"}}`))
+		case "/api/v1/attribution/v2/claim-groups/batch":
+			v2Calls++
+			_, _ = w.Write([]byte(`{"code":201,"data":{"ledger_epoch":"shadow_v2","v1_write_policy":"upgrade_required","minimum_cli_version":"0.2.0-preview.5","results":[{"group":{"id":"group-1","status":"persisted"},"calibration":{"status":"not_present"},"requests":[{"id":"req-1","status":"persisted"}]}]}}`))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	now := time.Now().UTC().Add(-time.Hour)
+	if err := attributionlocal.SaveJSON(attributionlocal.CompactStatePath(), attributionlocal.CompactState{
+		Version: 2, EnabledAt: now, SeenAtoms: map[string]bool{},
+		Pending: []attributionlocal.CompactPending{{Bucket: client.AttributionBucket{BucketID: "v1-bucket-1"}, AtomIDs: []string{"atom-1"}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := attributionlocal.SaveV2ClaimState(&attributionlocal.V2ClaimState{
+		Version: 1,
+		Claims: []attributionlocal.V2ClaimCandidate{{
+			LocalKey: "local-1",
+			Group: client.AttributionV2ClaimGroup{
+				SchemaVersion: 2, GroupID: "group-1", RelayProviderID: 7, ThreadID: "thread-1", TurnID: "turn-1",
+				EvidenceDigest: "evidence-1", RequestIDs: []string{"req-1"},
+			},
+			FirstSeenAt: now,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := reporting.Save("", &reporting.Config{
+		Version: 1, InstallationID: uuid.NewString(), ServerURL: server.URL, AuthSubject: "user:123",
+		ReporterToken: "reporter-token", ReportingEnabled: true, RelayProviderID: 7, EnabledAt: &now,
+		Protocol: client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	oldCfg := cfg
+	oldClient := apiClient
+	cfg = nil
+	apiClient = nil
+	t.Cleanup(func() {
+		cfg = oldCfg
+		apiClient = oldClient
+	})
+	var output bytes.Buffer
+	syncCmd.SetOut(&output)
+	syncCmd.SetErr(&output)
+	if err := syncCmd.RunE(syncCmd, nil); err != nil {
+		t.Fatalf("sync after v1 upgrade_required: %v\n%s", err, output.String())
+	}
+	if v1Calls != 1 || v2Calls != 1 {
+		t.Fatalf("delivery calls v1=%d v2=%d, want 1/1", v1Calls, v2Calls)
+	}
+	compact, err := attributionlocal.LoadCompactState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(compact.Pending) != 1 || compact.SeenAtoms["atom-1"] {
+		t.Fatalf("v1 rejection was treated as ACK: %+v", compact)
+	}
+	v2, err := attributionlocal.LoadV2ClaimState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v2.Claims) != 1 || !v2.Claims[0].GroupAcknowledged || len(v2.Claims[0].Group.RequestIDs) != 0 {
+		t.Fatalf("v2 claim was not delivered after v1 rejection: %+v", v2.Claims)
+	}
+}
+
+func TestSyncStatusShowsV1UpgradeRequirement(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	withWorkingDir(t, repo)
+
+	now := time.Now().UTC().Add(-time.Hour)
+	if err := attributionlocal.SaveJSON(attributionlocal.CompactStatePath(), attributionlocal.CompactState{
+		Version: 2, EnabledAt: now, SeenAtoms: map[string]bool{},
+		V1WritePolicy: client.AttributionV1WritePolicyUpgradeNeeded, MinimumCLIVersion: "0.2.0-preview.5",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	syncStatusCmd.SetOut(&output)
+	syncStatusCmd.SetErr(&output)
+	if err := syncStatusCmd.RunE(syncStatusCmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"upgrade_required", "minimum_cli_version=0.2.0-preview.5"} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("sync status missing %q:\n%s", want, output.String())
+		}
 	}
 }

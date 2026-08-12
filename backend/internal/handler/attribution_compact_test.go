@@ -18,7 +18,7 @@ func TestAttributionInstallationTokensHaveDisjointScopes(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()
 	user := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource("ldap").SaveX(ctx)
-	installations := attributionledger.NewInstallationService(client)
+	installations := attributionledger.NewInstallationService(client, attributionledger.DefaultProtocolContract())
 	credentials, err := installations.Ensure(ctx, user.ID, uuid.NewString(), "test machine", "test")
 	if err != nil {
 		t.Fatal(err)

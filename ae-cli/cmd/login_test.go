@@ -4,12 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/config"
+	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/auth"
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/reporting"
@@ -101,6 +106,226 @@ func TestLoginCommandSkipsOAuthWhenValidTokenExists(t *testing.T) {
 	}
 }
 
+func TestLoginCommandActivatesReportingWhenValidTokenExists(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+	var ensureCalls, enableCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/attribution/installations":
+			ensureCalls++
+			var request client.EnsureInstallationRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatalf("decode ensure request: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"code":0,"data":{"installation_id":"` + request.InstallationID + `","reporter_token":"reporter-secret","otlp_token":"legacy-otlp-secret","created":true,"reporting_enabled":false,"otel_enabled":false,"protocol":{"ledger_epoch":"shadow_v2","v1_write_policy":"accept"}}}`))
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/v1/attribution/installations/"):
+			enableCalls++
+			var request client.SetInstallationEnabledRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatalf("decode enable request: %v", err)
+			}
+			if request.ReportingEnabled == nil || !*request.ReportingEnabled || request.OTelEnabled == nil || *request.OTelEnabled {
+				t.Fatalf("enable request = %+v, want reporting=true otel=false", request)
+			}
+			installationID := strings.TrimPrefix(r.URL.Path, "/api/v1/attribution/installations/")
+			_, _ = w.Write([]byte(`{"code":0,"data":{"installation_id":"` + installationID + `","reporting_enabled":true,"otel_enabled":false,"protocol":{"ledger_epoch":"shadow_v2","v1_write_policy":"accept"}}}`))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	oldCfg := cfg
+	oldForce := loginForce
+	oldDevice := loginDevice
+	oldLogin := loginFlow
+	t.Cleanup(func() {
+		cfg = oldCfg
+		loginForce = oldForce
+		loginDevice = oldDevice
+		loginFlow = oldLogin
+	})
+	cfg = &config.Config{Server: config.ServerConfig{URL: server.URL}}
+	loginForce = false
+	loginDevice = false
+	loginFlow = func(context.Context, auth.OAuthConfig) (*auth.OAuthResult, error) {
+		t.Fatal("valid login must not start OAuth")
+		return nil, nil
+	}
+	tokenPath, err := auth.DefaultTokenPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := auth.WriteToken(tokenPath, &auth.TokenFile{
+		AccessToken: "access-token", ExpiresAt: time.Now().Add(time.Hour), ServerURL: server.URL, AuthSubject: "user:123",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	loginCmd.SetOut(&stdout)
+	loginCmd.SetErr(&stderr)
+	if err := loginCmd.RunE(loginCmd, nil); err != nil {
+		t.Fatalf("login RunE: %v", err)
+	}
+	if ensureCalls != 1 || enableCalls != 1 {
+		t.Fatalf("reporting calls ensure=%d enable=%d, want 1/1; stdout=%q stderr=%q", ensureCalls, enableCalls, stdout.String(), stderr.String())
+	}
+	reportingConfig, err := reporting.Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reportingConfig.ReportingEnabled || reportingConfig.ReporterToken != "reporter-secret" || reportingConfig.EnabledAt == nil {
+		t.Fatalf("reporting config = %+v, want enabled reporter config with baseline time", reportingConfig)
+	}
+	if _, err := attributionlocal.LoadCompactState(); err != nil {
+		t.Fatalf("load compact baseline: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".ae-cli", "git-hooks", "post-commit")); err != nil {
+		t.Fatalf("global managed hook not installed: %v", err)
+	}
+}
+
+func TestLoginCommandDoesNotReactivateRevokedReportingInstallation(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	installationID := "11111111-1111-4111-8111-111111111111"
+	if err := reporting.Save("", &reporting.Config{Version: 1, InstallationID: installationID}); err != nil {
+		t.Fatal(err)
+	}
+	var ensureCalls, enableCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/attribution/installations":
+			ensureCalls++
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"code":409,"message":"reporting installation is revoked"}`))
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/v1/attribution/installations/"):
+			enableCalls++
+			t.Fatal("revoked installation reached enable endpoint")
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	oldCfg := cfg
+	oldForce := loginForce
+	oldDevice := loginDevice
+	oldLogin := loginFlow
+	t.Cleanup(func() {
+		cfg = oldCfg
+		loginForce = oldForce
+		loginDevice = oldDevice
+		loginFlow = oldLogin
+	})
+	cfg = &config.Config{Server: config.ServerConfig{URL: server.URL}}
+	loginForce = false
+	loginDevice = false
+	loginFlow = func(context.Context, auth.OAuthConfig) (*auth.OAuthResult, error) {
+		t.Fatal("valid login must not start OAuth")
+		return nil, nil
+	}
+	tokenPath, err := auth.DefaultTokenPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := auth.WriteToken(tokenPath, &auth.TokenFile{
+		AccessToken: "access-token", ExpiresAt: time.Now().Add(time.Hour), ServerURL: server.URL, AuthSubject: "user:123",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	loginCmd.SetOut(&stdout)
+	loginCmd.SetErr(&stderr)
+	if err := loginCmd.RunE(loginCmd, nil); err != nil {
+		t.Fatalf("valid login should remain usable: %v", err)
+	}
+	if ensureCalls != 1 || enableCalls != 0 || !strings.Contains(stderr.String(), "reporting activation is degraded") {
+		t.Fatalf("ensure=%d enable=%d stderr=%q", ensureCalls, enableCalls, stderr.String())
+	}
+}
+
+func TestLoginCommandPersistsFormalProtocolWithoutCreatingV1Baseline(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/attribution/installations":
+			var request client.EnsureInstallationRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"code":0,"data":{"installation_id":"` + request.InstallationID + `","reporter_token":"reporter-secret","created":true,"reporting_enabled":false,"otel_enabled":false,"protocol":{"ledger_epoch":"formal_v2","v1_write_policy":"upgrade_required","minimum_cli_version":"0.2.0-preview.5"}}}`))
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/v1/attribution/installations/"):
+			installationID := strings.TrimPrefix(r.URL.Path, "/api/v1/attribution/installations/")
+			_, _ = w.Write([]byte(`{"code":0,"data":{"installation_id":"` + installationID + `","reporting_enabled":true,"otel_enabled":false,"protocol":{"ledger_epoch":"formal_v2","v1_write_policy":"upgrade_required","minimum_cli_version":"0.2.0-preview.5"}}}`))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	oldCfg := cfg
+	oldForce := loginForce
+	oldDevice := loginDevice
+	oldLogin := loginFlow
+	oldActivate := activateAfterLogin
+	t.Cleanup(func() {
+		cfg = oldCfg
+		loginForce = oldForce
+		loginDevice = oldDevice
+		loginFlow = oldLogin
+		activateAfterLogin = oldActivate
+	})
+	cfg = &config.Config{Server: config.ServerConfig{URL: server.URL}}
+	loginForce = false
+	loginDevice = false
+	activateAfterLogin = activateV2Reporting
+	loginFlow = func(context.Context, auth.OAuthConfig) (*auth.OAuthResult, error) {
+		t.Fatal("valid login must not start OAuth")
+		return nil, nil
+	}
+	tokenPath, err := auth.DefaultTokenPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := auth.WriteToken(tokenPath, &auth.TokenFile{AccessToken: "access-token", ExpiresAt: time.Now().Add(time.Hour), ServerURL: server.URL, AuthSubject: "user:123"}); err != nil {
+		t.Fatal(err)
+	}
+
+	loginCmd.SetOut(new(bytes.Buffer))
+	loginCmd.SetErr(new(bytes.Buffer))
+	if err := loginCmd.RunE(loginCmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	path, err := reporting.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"ledger_epoch": "formal_v2"`, `"v1_write_policy": "upgrade_required"`, `"minimum_cli_version": "0.2.0-preview.5"`} {
+		if !bytes.Contains(payload, []byte(want)) {
+			t.Fatalf("reporting config missing %s:\n%s", want, payload)
+		}
+	}
+	if _, err := attributionlocal.LoadCompactState(); !os.IsNotExist(err) {
+		t.Fatalf("formal activation created or loaded a v1 baseline: %v", err)
+	}
+}
+
 func TestLoginCommandForceBypassesExistingToken(t *testing.T) {
 	tmpHome := t.TempDir()
 	oldHome := os.Getenv("HOME")
@@ -108,14 +333,14 @@ func TestLoginCommandForceBypassesExistingToken(t *testing.T) {
 	oldForce := loginForce
 	oldLogin := loginFlow
 	oldHeadless := headlessBrowserEnv
-	oldEnroll := enrollAfterLogin
+	oldEnroll := activateAfterLogin
 	defer func() {
 		_ = os.Setenv("HOME", oldHome)
 		cfg = oldCfg
 		loginForce = oldForce
 		loginFlow = oldLogin
 		headlessBrowserEnv = oldHeadless
-		enrollAfterLogin = oldEnroll
+		activateAfterLogin = oldEnroll
 	}()
 
 	if err := os.Setenv("HOME", tmpHome); err != nil {
@@ -147,7 +372,7 @@ func TestLoginCommandForceBypassesExistingToken(t *testing.T) {
 			ExpiresIn:    3600,
 		}, nil
 	}
-	enrollAfterLogin = func(context.Context, *client.Client, string, string) (*reporting.Config, error) {
+	activateAfterLogin = func(context.Context, *client.Client, string, string) (*reporting.Config, error) {
 		return &reporting.Config{}, nil
 	}
 
@@ -178,14 +403,14 @@ func TestLoginCommandKeepsSuccessfulLoginWhenEnrollmentDegrades(t *testing.T) {
 	oldDevice := loginDevice
 	oldLogin := loginFlow
 	oldHeadless := headlessBrowserEnv
-	oldEnroll := enrollAfterLogin
+	oldEnroll := activateAfterLogin
 	t.Cleanup(func() {
 		cfg = oldCfg
 		loginForce = oldForce
 		loginDevice = oldDevice
 		loginFlow = oldLogin
 		headlessBrowserEnv = oldHeadless
-		enrollAfterLogin = oldEnroll
+		activateAfterLogin = oldEnroll
 	})
 	cfg = &config.Config{Server: config.ServerConfig{URL: "http://localhost:18081"}}
 	loginForce = true
@@ -194,7 +419,7 @@ func TestLoginCommandKeepsSuccessfulLoginWhenEnrollmentDegrades(t *testing.T) {
 	loginFlow = func(context.Context, auth.OAuthConfig) (*auth.OAuthResult, error) {
 		return &auth.OAuthResult{AccessToken: "new-access-token", RefreshToken: "new-refresh-token", ExpiresIn: 3600}, nil
 	}
-	enrollAfterLogin = func(context.Context, *client.Client, string, string) (*reporting.Config, error) {
+	activateAfterLogin = func(context.Context, *client.Client, string, string) (*reporting.Config, error) {
 		return nil, context.DeadlineExceeded
 	}
 
@@ -205,7 +430,7 @@ func TestLoginCommandKeepsSuccessfulLoginWhenEnrollmentDegrades(t *testing.T) {
 	if err := loginCmd.RunE(loginCmd, nil); err != nil {
 		t.Fatalf("login should succeed despite degraded enrollment: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "Login successful!") || !strings.Contains(stderr.String(), "login succeeded, but reporting installation enrollment is degraded") {
+	if !strings.Contains(stdout.String(), "Login successful!") || !strings.Contains(stderr.String(), "login succeeded, but reporting activation is degraded") {
 		t.Fatalf("stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
 	tokenPath, _ := auth.DefaultTokenPath()
@@ -223,14 +448,14 @@ func TestLoginCommandClearsPriorAccountReportingCredentialsBeforeDegradedEnrollm
 	oldDevice := loginDevice
 	oldLogin := loginFlow
 	oldHeadless := headlessBrowserEnv
-	oldEnroll := enrollAfterLogin
+	oldEnroll := activateAfterLogin
 	t.Cleanup(func() {
 		cfg = oldCfg
 		loginForce = oldForce
 		loginDevice = oldDevice
 		loginFlow = oldLogin
 		headlessBrowserEnv = oldHeadless
-		enrollAfterLogin = oldEnroll
+		activateAfterLogin = oldEnroll
 	})
 
 	serverURL := "http://localhost:18081"
@@ -257,7 +482,7 @@ func TestLoginCommandClearsPriorAccountReportingCredentialsBeforeDegradedEnrollm
 	loginFlow = func(context.Context, auth.OAuthConfig) (*auth.OAuthResult, error) {
 		return &auth.OAuthResult{AccessToken: "header." + payload + ".signature", RefreshToken: "new-refresh-token", ExpiresIn: 3600}, nil
 	}
-	enrollAfterLogin = func(context.Context, *client.Client, string, string) (*reporting.Config, error) {
+	activateAfterLogin = func(context.Context, *client.Client, string, string) (*reporting.Config, error) {
 		return nil, context.DeadlineExceeded
 	}
 
@@ -287,7 +512,7 @@ func TestLoginCommandUsesDeviceFlowWhenFlagSet(t *testing.T) {
 	oldBrowser := loginFlow
 	oldDeviceFlow := loginDeviceFlow
 	oldHeadless := headlessBrowserEnv
-	oldEnroll := enrollAfterLogin
+	oldEnroll := activateAfterLogin
 	defer func() {
 		_ = os.Setenv("HOME", oldHome)
 		cfg = oldCfg
@@ -296,7 +521,7 @@ func TestLoginCommandUsesDeviceFlowWhenFlagSet(t *testing.T) {
 		loginFlow = oldBrowser
 		loginDeviceFlow = oldDeviceFlow
 		headlessBrowserEnv = oldHeadless
-		enrollAfterLogin = oldEnroll
+		activateAfterLogin = oldEnroll
 	}()
 
 	if err := os.Setenv("HOME", tmpHome); err != nil {
@@ -321,7 +546,7 @@ func TestLoginCommandUsesDeviceFlowWhenFlagSet(t *testing.T) {
 			ExpiresIn:    3600,
 		}, nil
 	}
-	enrollAfterLogin = func(context.Context, *client.Client, string, string) (*reporting.Config, error) {
+	activateAfterLogin = func(context.Context, *client.Client, string, string) (*reporting.Config, error) {
 		return &reporting.Config{}, nil
 	}
 

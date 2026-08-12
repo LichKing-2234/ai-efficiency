@@ -1003,13 +1003,14 @@ onBeforeUnmount(() => {
 	              @change="changeDepartmentFilter"
 	            />
 	          </div>
-          <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
-            {{ t('adminUsers.accessStatus') }}
+          <div class="text-xs font-medium uppercase tracking-wide text-gray-500">
+            <span>{{ t('adminUsers.accessStatus') }}</span>
             <ElSelect
               v-model="filters.access_status"
               data-testid="admin-users-access-status-filter"
               class="mt-1 w-full"
               :teleported="false"
+              :aria-label="t('adminUsers.accessStatus')"
               @change="changeAccessStatusFilter"
             >
               <ElOption data-testid="admin-users-access-status-option-all" value="" :label="t('adminUsers.allAccessStatuses')" />
@@ -1017,14 +1018,15 @@ onBeforeUnmount(() => {
               <ElOption data-testid="admin-users-access-status-option-disabled" value="disabled" :label="t('adminUsers.disabled')" />
               <ElOption data-testid="admin-users-access-status-option-missing-credential" value="missing_credential" :label="t('adminUsers.missingRelayCredential')" />
             </ElSelect>
-          </label>
-          <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
-            {{ t('adminUsers.pageSize') }}
+          </div>
+          <div class="text-xs font-medium uppercase tracking-wide text-gray-500">
+            <span>{{ t('adminUsers.pageSize') }}</span>
             <ElSelect
               v-model="filters.page_size"
               data-testid="admin-users-page-size"
               class="mt-1 w-full"
               :teleported="false"
+              :aria-label="t('adminUsers.pageSize')"
               @change="changePageSize"
             >
               <ElOption data-testid="admin-users-page-size-option-10" :value="10" label="10" />
@@ -1032,7 +1034,7 @@ onBeforeUnmount(() => {
               <ElOption data-testid="admin-users-page-size-option-50" :value="50" label="50" />
               <ElOption data-testid="admin-users-page-size-option-100" :value="100" label="100" />
             </ElSelect>
-          </label>
+          </div>
           <div class="flex items-end">
             <ElButton
               data-testid="admin-users-search-button"
@@ -1085,13 +1087,14 @@ onBeforeUnmount(() => {
           <ElAlert v-if="subscriptionOptionsError" class="mt-3" type="error" :closable="false" show-icon :title="subscriptionOptionsError" />
 
         <div class="mt-4 grid gap-3 lg:grid-cols-[150px_150px_minmax(0,1fr)_minmax(0,1fr)_130px]">
-          <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
-            {{ t('adminUsers.subscriptionScope') }}
+          <div class="text-xs font-medium uppercase tracking-wide text-gray-500">
+            <span>{{ t('adminUsers.subscriptionScope') }}</span>
             <ElSelect
               data-testid="subscription-scope"
               class="mt-1 w-full"
               :model-value="subscriptionForm.scope"
               :teleported="false"
+              :aria-label="t('adminUsers.subscriptionScope')"
               :disabled="subscriptionForm.loading"
               @change="setSubscriptionScope(String($event))"
             >
@@ -1099,15 +1102,16 @@ onBeforeUnmount(() => {
               <ElOption data-testid="subscription-scope-option-current-filter" value="current_filter" :label="t('adminUsers.scopeCurrentFilter')" />
               <ElOption data-testid="subscription-scope-option-all-mapped" value="all_mapped" :label="t('adminUsers.scopeAllMapped')" />
             </ElSelect>
-          </label>
+          </div>
 
-          <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
-            {{ t('adminUsers.subscriptionOperation') }}
+          <div class="text-xs font-medium uppercase tracking-wide text-gray-500">
+            <span>{{ t('adminUsers.subscriptionOperation') }}</span>
             <ElSelect
               data-testid="subscription-operation"
               class="mt-1 w-full"
               :model-value="subscriptionForm.operation"
               :teleported="false"
+              :aria-label="t('adminUsers.subscriptionOperation')"
               :disabled="subscriptionForm.loading"
               @change="setSubscriptionOperation(String($event))"
             >
@@ -1116,15 +1120,16 @@ onBeforeUnmount(() => {
               <ElOption data-testid="subscription-operation-option-remove" value="remove" :label="t('adminUsers.operationRemove')" />
               <ElOption data-testid="subscription-operation-option-reset-quota" value="reset_quota" :label="t('adminUsers.operationResetQuota')" />
             </ElSelect>
-          </label>
+          </div>
 
-          <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
-            {{ t('adminUsers.selectProvider') }}
+          <div class="text-xs font-medium uppercase tracking-wide text-gray-500">
+            <span>{{ t('adminUsers.selectProvider') }}</span>
             <ElSelect
               data-testid="subscription-provider"
               class="mt-1 w-full"
               :model-value="subscriptionForm.provider_id ?? ''"
               :teleported="false"
+              :aria-label="t('adminUsers.selectProvider')"
               :disabled="subscriptionOptionsLoading || subscriptionForm.loading"
               @change="setBulkProvider(String($event))"
             >
@@ -1137,15 +1142,16 @@ onBeforeUnmount(() => {
                 :label="provider.display_name"
               />
             </ElSelect>
-          </label>
+          </div>
 
-          <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
-            {{ t('adminUsers.selectGroup') }}
+          <div class="text-xs font-medium uppercase tracking-wide text-gray-500">
+            <span>{{ t('adminUsers.selectGroup') }}</span>
             <ElSelect
               data-testid="subscription-group"
               class="mt-1 w-full"
               :model-value="subscriptionForm.group_id"
               :teleported="false"
+              :aria-label="t('adminUsers.selectGroup')"
               :disabled="subscriptionOptionsLoading || subscriptionForm.loading || bulkGroups.length === 0"
               @change="setBulkGroup(String($event))"
             >
@@ -1158,7 +1164,7 @@ onBeforeUnmount(() => {
                 :label="`${group.group_name} · ${group.platform}`"
               />
             </ElSelect>
-          </label>
+          </div>
 
           <label v-if="bulkUsesDays" class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ operationDaysLabel() }}

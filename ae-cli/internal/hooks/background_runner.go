@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -91,14 +92,31 @@ func runPendingSyncPass(ctx context.Context, execCtx ExecutionContext, uploader 
 	syncClient := h.attributionSyncClient()
 	compactClient := h.compactAttributionSyncClient()
 	if compactClient != nil {
-		if err := (&attributionlocal.CompactSyncEngine{Client: compactClient}).Run(ctx, attributionlocal.CompactRunOptions{
-			InstallationID: compactInstallationID(uploader), RepoRoot: execCtx.RepoRoot, RepoConfigID: execCtx.RepoConfigID,
-			RepoKey: execCtx.RepoKey, WorkspaceID: execCtx.WorkspaceID, CommitSHA: task.TriggerCommitSHA,
-			Branch: task.TriggerBranch, TriggerKind: task.TriggerKind, Cutoff: task.LastRequestedAt,
-		}); err != nil {
+		protocolSource, ok := uploader.(interface {
+			AttributionProtocol() client.AttributionProtocol
+		})
+		if !ok {
+			return fmt.Errorf("compact uploader does not expose attribution protocol")
+		}
+		protocol := protocolSource.AttributionProtocol()
+		if err := protocol.Validate(); err != nil {
 			return err
 		}
-		return runV2ClaimSync(ctx, uploader, execCtx, task)
+		if protocol.V1WritePolicy == client.AttributionV1WritePolicyAccept {
+			if err := (&attributionlocal.CompactSyncEngine{Client: compactClient}).Run(ctx, attributionlocal.CompactRunOptions{
+				InstallationID: compactInstallationID(uploader), RepoRoot: execCtx.RepoRoot, RepoConfigID: execCtx.RepoConfigID,
+				RepoKey: execCtx.RepoKey, WorkspaceID: execCtx.WorkspaceID, CommitSHA: task.TriggerCommitSHA,
+				Branch: task.TriggerBranch, TriggerKind: task.TriggerKind, Cutoff: task.LastRequestedAt,
+			}); err != nil {
+				var upgrade *client.AttributionUpgradeRequiredError
+				if !errors.As(err, &upgrade) {
+					return err
+				}
+				protocol.V1WritePolicy = client.AttributionV1WritePolicyUpgradeNeeded
+				protocol.MinimumCLIVersion = upgrade.MinimumCLIVersion
+			}
+		}
+		return runV2ClaimSync(ctx, uploader, execCtx, task, protocol)
 	}
 	if syncClient == nil {
 		return fmt.Errorf("sync uploader does not expose tool usage client")
@@ -115,7 +133,7 @@ type v2ClaimUploader interface {
 	RelayProviderID() int
 }
 
-func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionContext, task *SyncTask) error {
+func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionContext, task *SyncTask, protocol client.AttributionProtocol) error {
 	v2, ok := uploader.(v2ClaimUploader)
 	if !ok || v2.V2ClaimClient() == nil || v2.RelayProviderID() <= 0 || task == nil {
 		return nil
@@ -162,7 +180,7 @@ func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionCon
 	}
 	var ackErr error
 	if err := attributionlocal.UpdateV2ClaimState(ctx, func(state *attributionlocal.V2ClaimState) error {
-		ackErr = attributionlocal.ApplyV2ClaimAcknowledgements(state, groups, result, time.Now().UTC())
+		ackErr = attributionlocal.ApplyV2ClaimAcknowledgements(state, groups, result, protocol, time.Now().UTC())
 		return nil
 	}); err != nil {
 		return err

@@ -17,6 +17,9 @@ vi.mock('@/api/user', () => ({
   getUserProviderModels: vi.fn(),
   testUserProvider: vi.fn(),
 }))
+vi.mock('@/api/attribution', () => ({
+	getReportingReadiness: vi.fn(),
+}))
 
 Object.assign(navigator, {
   clipboard: {
@@ -44,7 +47,7 @@ function createTestRouter() {
   })
 }
 
-async function mountUserView() {
+async function mountUserView(reportingCapabilities?: { setup_available: boolean; readiness_available: boolean }) {
   const { getUserProviders, getUserProviderModels } = await import('@/api/user')
   const providers = [
     {
@@ -145,7 +148,7 @@ async function mountUserView() {
   setActivePinia(pinia)
   const auth = useAuthStore(pinia)
   auth.token = 'token'
-  auth.user = { id: 1, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'relay_sso' }
+  auth.user = { id: 1, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'relay_sso', reporting_capabilities: reportingCapabilities }
 
   const router = createTestRouter()
   await router.push('/user')
@@ -239,6 +242,74 @@ describe('UserView', () => {
     vi.stubGlobal('confirm', vi.fn(() => true))
   })
 
+  it('does not mount reporting setup or call readiness when the capability is off', async () => {
+    const attributionApi = await import('@/api/attribution')
+    const { wrapper } = await mountUserView()
+    expect(wrapper.find('[data-testid="reporting-full-guide"]').exists()).toBe(false)
+    expect(attributionApi.getReportingReadiness).not.toHaveBeenCalled()
+  })
+
+  it('keeps v2 Activity reporting separate with the normal path and collapsed advanced commands', async () => {
+    const attributionApi = await import('@/api/attribution')
+    vi.mocked(attributionApi.getReportingReadiness).mockResolvedValue({
+      data: { data: { state: 'waiting_for_data', retryable: false } },
+    } as any)
+
+    const { wrapper } = await mountUserView({ setup_available: true, readiness_available: true })
+    const guide = wrapper.get('[data-testid="reporting-full-guide"]')
+    expect(guide.classes()).toContain('w-full')
+    expect(guide.text()).toContain('AI Coding Activity reporting')
+    expect(guide.text()).toContain('Codex HTTP reporting')
+    expect(guide.text()).toContain('Waiting for the first accepted commit')
+    const normal = guide.get('[data-testid="reporting-normal-commands"]')
+    expect(normal.text()).toContain('ae-cli login')
+    expect(normal.text()).toContain('ae-cli discover')
+    expect(normal.text()).not.toContain('ae-cli attribution enable')
+    expect(normal.text()).not.toContain('OTel')
+
+    const advanced = guide.get('[data-testid="reporting-advanced"]')
+    expect(advanced.classes()).toContain('el-collapse')
+    expect(advanced.classes()).not.toContain('px-4')
+    expect(advanced.get('[data-testid="reporting-advanced-title"]').classes()).toContain('px-4')
+    expect(advanced.get('[data-testid="reporting-advanced-content"]').classes()).toContain('px-4')
+    const trigger = advanced.get('.el-collapse-item__header')
+    expect(trigger.attributes('aria-expanded')).toBe('false')
+    expect(guide.text()).toContain('Advanced command reference')
+
+    await trigger.trigger('click')
+    await flushPromises()
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+    expect(advanced.text()).toContain('ae-cli attribution status')
+    expect(advanced.text()).toContain('ae-cli doctor')
+    expect(advanced.text()).toContain('ae-cli sync')
+    expect(advanced.text()).toContain('ae-cli hooks status --uploads')
+    expect(advanced.text()).toContain('ae-cli init --hooks repo')
+    expect(advanced.text()).toContain('Use repo-local init only when managed global hooks are unavailable')
+    expect(advanced.text()).not.toContain('ae-cli attribution enable')
+    expect(guide.text()).not.toMatch(/Claude|Gemini|Kiro|WebSocket|OTel/)
+  })
+
+  it('shows setup without requesting readiness when only setup is available', async () => {
+    const attributionApi = await import('@/api/attribution')
+    const { wrapper } = await mountUserView({ setup_available: true, readiness_available: false })
+    expect(wrapper.get('[data-testid="reporting-full-guide"]').text()).toContain('AI Coding Activity reporting')
+    expect(attributionApi.getReportingReadiness).not.toHaveBeenCalled()
+  })
+
+  it('renders the reporting guide in Chinese without changing command semantics', async () => {
+    setLocale('zh-CN')
+    const attributionApi = await import('@/api/attribution')
+    vi.mocked(attributionApi.getReportingReadiness).mockResolvedValue({
+      data: { data: { state: 'active', retryable: false, latest_accepted_at: '2026-08-10T09:30:00Z' } },
+    } as any)
+    const { wrapper } = await mountUserView({ setup_available: true, readiness_available: true })
+    const guide = wrapper.get('[data-testid="reporting-full-guide"]')
+    expect(guide.text()).toContain('AI 开发动态上报')
+    expect(guide.text()).toContain('Codex 开发动态上报正常')
+    expect(guide.text()).toContain('ae-cli discover')
+    expect(guide.text()).not.toContain('ae-cli attribution enable')
+  })
+
   it('loads profile and provider data, selects primary provider by default, and renders group info', async () => {
     const { wrapper } = await mountUserView()
     const refresh = wrapper.findAll('button').find((button) => button.text() === 'Refresh')
@@ -309,6 +380,18 @@ describe('UserView', () => {
     expect(alternateIndicator.classes()).toEqual(
       expect.arrayContaining(['h-5', 'w-5', 'rounded-full', 'border']),
     )
+  })
+
+  it('keeps existing-key onboarding on access-group selection until the key step is explicitly opened', async () => {
+    const { wrapper } = await mountUserView()
+
+    expect(wrapper.find('[data-testid="onboarding-step-0"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="onboarding-step-1"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('sk-exi...3456')
+
+    await openOnboardingStep(wrapper, 1)
+    expect(wrapper.find('[data-testid="onboarding-step-1"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('sk-exi...3456')
   })
 
   it('keeps the summary and primary action stacked until the wide-content breakpoint', async () => {
@@ -408,8 +491,9 @@ describe('UserView', () => {
     expect(wrapper.text()).toContain('1. Choose an access group')
     expect(wrapper.text()).toContain('Ready to use')
     expect(wrapper.text()).toContain('2. Create API key')
-    expect(wrapper.text()).toContain('Connection test')
     expect(wrapper.text()).toContain('3. Configure tools')
+    await openOnboardingStep(wrapper, 1)
+    expect(wrapper.text()).toContain('Connection test')
     expect(wrapper.text()).not.toContain('Profile Summary')
     expect(wrapper.text()).not.toContain('Provider & Group Credential')
     expect(wrapper.text()).not.toContain('Credential state')
@@ -443,6 +527,7 @@ describe('UserView', () => {
     await wrapper.get('[data-testid="primary-onboarding-action"]').trigger('click')
     await flushPromises()
 
+    expect(wrapper.find('[data-testid="onboarding-step-1"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="user-provider-test-run"]').text()).toBe('Run connection test')
     const methods = await openConfigurationMethods(wrapper)
     expect(methods.text()).toContain('Manual configuration')
@@ -528,16 +613,25 @@ describe('UserView', () => {
     })
 
     const { wrapper } = await mountUserView()
+    await openOnboardingStep(wrapper, 1)
     await selectProviderModel(wrapper, 'Claude Sonnet 4.6', 'claude-sonnet-4-6')
     await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="onboarding-step-1"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Connection successful')
+    await wrapper.get('[data-testid="copy-key"]').trigger('click')
+    expect(wrapper.text()).toContain('Confirm copy API key')
 
     await selectAccessGroup(wrapper, '44')
+    expect(wrapper.find('[data-testid="onboarding-step-0"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Connection successful')
+    expect(wrapper.text()).not.toContain('Confirm copy API key')
 
+    await wrapper.get('[data-testid="provider-1"]').trigger('click')
+    expect(wrapper.find('[data-testid="onboarding-step-0"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="provider-2"]').trigger('click')
     await selectAccessGroup(wrapper, '43')
     await openOnboardingStep(wrapper, 1)
     await wrapper.get('[data-testid="regenerate-key"]').trigger('click')
@@ -708,57 +802,18 @@ describe('UserView', () => {
     expect(wrapper.find('[data-testid="agent-import-v1-notice"]').exists()).toBe(true)
   })
 
-  it('shows advanced command reference only inside automatic configuration', async () => {
+  it('keeps access-group automatic configuration focused on the selected provider', async () => {
     const { wrapper } = await mountUserView()
 
-    expect(wrapper.text()).not.toContain('Advanced command reference')
     await openConfigurationMethods(wrapper)
     await wrapper.get('[data-testid="config-method-automatic"]').trigger('click')
-    expect(wrapper.text()).toContain('One-time machine setup')
-    expect(wrapper.text()).toContain('Per-repo setup')
-    expect(wrapper.text()).toContain('cd /path/to/repo')
-    expect(wrapper.text()).toContain('Device login fallback')
-    expect(wrapper.text()).toContain('Alternate OS installer')
-    expect(wrapper.text()).toContain('Advanced command reference')
     expect(wrapper.text()).toContain('ae-cli discover --provider prod')
-    expect(wrapper.text()).toContain('ae-cli hooks enable --global')
-    expect(wrapper.text()).toContain('ae-cli init')
-    expect(wrapper.text()).not.toContain('Check GitHub connectivity')
-
-    const repoSectionStart = wrapper.text().indexOf('Per-repo setup')
-    const advancedSectionStart = wrapper.text().indexOf('Advanced command reference')
-    const repoSectionText = wrapper.text().slice(repoSectionStart, advancedSectionStart)
-    expect(repoSectionText).not.toContain('ae-cli doctor')
-
-    const installFallback = wrapper.get('[data-testid="auto-install-fallback"]')
-    const loginFallback = wrapper.get('[data-testid="auto-login-fallback"]')
-    const advancedDetails = wrapper.get('[data-testid="auto-advanced"]')
-
-    expect(installFallback.classes()).toContain('el-collapse')
-    expect(loginFallback.classes()).toContain('el-collapse')
-    expect(advancedDetails.classes()).toContain('el-collapse')
-
-    expect(wrapper.text()).toContain('Alternate OS installer')
-    expect(wrapper.text()).toContain('Device login fallback')
-
-    expect(installFallback.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('false')
-    expect(loginFallback.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('false')
-    expect(advancedDetails.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('false')
-
-    await installFallback.get('.el-collapse-item__header').trigger('click')
-    await loginFallback.get('.el-collapse-item__header').trigger('click')
-    await advancedDetails.get('.el-collapse-item__header').trigger('click')
-
-    expect(installFallback.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('true')
-    expect(loginFallback.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('true')
-    expect(advancedDetails.get('.el-collapse-item__header').attributes('aria-expanded')).toBe('true')
-
-    expect(wrapper.text()).toContain('ae-cli doctor')
-    const advancedText = wrapper.text().slice(wrapper.text().indexOf('Advanced command reference'))
-    expect(advancedText).not.toContain('Alternate OS installer')
-    expect(advancedText).not.toContain('Device login fallback')
-    expect(wrapper.text()).toContain('Windows PowerShell')
-    expect(wrapper.text()).toContain('ae-cli login --device')
+    expect(wrapper.text()).not.toContain('One-time machine setup')
+    expect(wrapper.text()).not.toContain('Per-repo setup')
+    expect(wrapper.text()).not.toContain('ae-cli hooks enable --global')
+    expect(wrapper.text()).not.toContain('ae-cli init --hooks repo')
+    expect(wrapper.text()).not.toContain('ae-cli doctor')
+    expect(wrapper.find('[data-testid="auto-advanced"]').exists()).toBe(false)
   })
 
   it('shows a collapsed platform-specific discover fallback only inside automatic configuration', async () => {
@@ -896,6 +951,7 @@ describe('UserView', () => {
 
   it('shows an existing key partially and copies the full key', async () => {
     const { wrapper } = await mountUserView()
+    await openOnboardingStep(wrapper, 1)
 
     expect(wrapper.text()).toContain('sk-exi...3456')
     expect(wrapper.text()).not.toContain('sk-existing-claude-123456')
@@ -911,6 +967,7 @@ describe('UserView', () => {
   it('shows Element Plus feedback when copying a key fails', async () => {
     ;(navigator.clipboard.writeText as any).mockRejectedValueOnce(new Error('clipboard unavailable'))
     const { wrapper } = await mountUserView()
+    await openOnboardingStep(wrapper, 1)
 
     await wrapper.get('[data-testid="copy-key"]').trigger('click')
     await wrapper.get('[data-testid="confirm-secret-action"]').trigger('click')
@@ -926,6 +983,7 @@ describe('UserView', () => {
     })
 
     const { wrapper } = await mountUserView()
+    await openOnboardingStep(wrapper, 1)
     await selectProviderModel(wrapper, 'Claude Sonnet 4.6', 'claude-sonnet-4-6')
     await wrapper.get('[data-testid="user-provider-test-prompt"]').setValue('Say hello')
     await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
@@ -944,6 +1002,7 @@ describe('UserView', () => {
   it('loads model choices for the selected group platform', async () => {
     const { getUserProviderModels } = await import('@/api/user')
     const { wrapper } = await mountUserView()
+    await openOnboardingStep(wrapper, 1)
 
     const modelSelect = wrapper.get('[data-testid="user-provider-test-model"]')
     expect(modelSelect.classes()).toContain('el-select')

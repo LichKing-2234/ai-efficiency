@@ -542,9 +542,14 @@ func main() {
 			RequestObserver:          metrics.RequestObserver(),
 			WebVitalsHandler:         webVitalsHandler,
 			AttributionCorrelation:   attributionledger.NewCorrelationStore(redisStore, cfg.Redis.Namespace),
-			ActivityCache:            activityCache,
-			Release:                  versionInfo.Version,
-			RequestTimeout:           time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
+			AttributionProtocol: attributionledger.ProtocolContract{
+				LedgerEpoch: cfg.Attribution.LedgerEpoch, V1WritePolicy: cfg.Attribution.V1WritePolicy, MinimumCLIVersion: cfg.Attribution.MinimumCLIVersion,
+			},
+			AttributionSetupAvailable:     cfg.Attribution.SetupAvailable,
+			AttributionReadinessAvailable: cfg.Attribution.ReadinessAvailable,
+			ActivityCache:                 activityCache,
+			Release:                       versionInfo.Version,
+			RequestTimeout:                time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
 		},
 	)
 	if err != nil {

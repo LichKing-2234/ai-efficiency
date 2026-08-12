@@ -20,7 +20,6 @@ import (
 
 const (
 	SchemaVersion   = 2
-	LedgerEpoch     = "shadow_v2"
 	MaxGroups       = 20
 	MaxRequests     = 100
 	MaxIdentitySize = 256
@@ -75,21 +74,24 @@ type Result struct {
 }
 
 type BatchResult struct {
-	Epoch   string   `json:"ledger_epoch"`
-	Results []Result `json:"results"`
+	Epoch             string   `json:"ledger_epoch"`
+	V1WritePolicy     string   `json:"v1_write_policy"`
+	MinimumCLIVersion string   `json:"minimum_cli_version,omitempty"`
+	Results           []Result `json:"results"`
 }
 
 type Service struct {
-	client *ent.Client
-	now    func() time.Time
+	client   *ent.Client
+	now      func() time.Time
+	protocol attributionledger.ProtocolContract
 }
 
-func NewService(client *ent.Client) *Service {
-	return &Service{client: client, now: time.Now}
+func NewService(client *ent.Client, protocol attributionledger.ProtocolContract) *Service {
+	return &Service{client: client, now: time.Now, protocol: protocol}
 }
 
 func (s *Service) Ingest(ctx context.Context, principal attributionledger.InstallationPrincipal, batch BatchRequest) (BatchResult, error) {
-	result := BatchResult{Epoch: LedgerEpoch, Results: make([]Result, 0, len(batch.Groups))}
+	result := BatchResult{Epoch: s.protocol.LedgerEpoch, V1WritePolicy: s.protocol.V1WritePolicy, MinimumCLIVersion: s.protocol.MinimumCLIVersion, Results: make([]Result, 0, len(batch.Groups))}
 	if s == nil || s.client == nil || principal.DatabaseID <= 0 || principal.UserID <= 0 {
 		return result, fmt.Errorf("ingest v2 claims: client and installation principal are required")
 	}
@@ -138,7 +140,7 @@ func (s *Service) ingestOne(ctx context.Context, principal attributionledger.Ins
 		}
 	}
 
-	group, groupCreated, groupChanged, calibrationStatus, err := upsertGroup(ctx, tx, principal, claim, s.now().UTC().Add(HotRetention))
+	group, groupCreated, groupChanged, calibrationStatus, err := upsertGroup(ctx, tx, principal, claim, s.now().UTC().Add(HotRetention), s.protocol.LedgerEpoch)
 	if err != nil {
 		return result, err
 	}
@@ -182,7 +184,7 @@ func (s *Service) ingestOne(ctx context.Context, principal attributionledger.Ins
 	return result, nil
 }
 
-func upsertGroup(ctx context.Context, tx *ent.Tx, principal attributionledger.InstallationPrincipal, claim Request, expiresAt time.Time) (*ent.AttributionClaimGroup, bool, bool, string, error) {
+func upsertGroup(ctx context.Context, tx *ent.Tx, principal attributionledger.InstallationPrincipal, claim Request, expiresAt time.Time, ledgerEpoch string) (*ent.AttributionClaimGroup, bool, bool, string, error) {
 	incomingAllocations := allocationMaps(claim.CommitAllocations)
 	group, err := tx.AttributionClaimGroup.Query().Where(attributionclaimgroup.GroupIDEQ(claim.GroupID)).Only(ctx)
 	if err == nil {
@@ -201,7 +203,7 @@ func upsertGroup(ctx context.Context, tx *ent.Tx, principal attributionledger.In
 		}
 		if group.InstallationID != principal.DatabaseID || group.UserID != principal.UserID || group.RelayProviderID != claim.RelayProviderID ||
 			group.ThreadID != claim.ThreadID || group.TurnID != claim.TurnID ||
-			group.SchemaVersion != SchemaVersion || group.LedgerEpoch != LedgerEpoch {
+			group.SchemaVersion != SchemaVersion || group.LedgerEpoch != ledgerEpoch {
 			return nil, false, false, "not_present", fmt.Errorf("claim group conflict")
 		}
 		allocationChanged, compatible := compatibleAllocations(group.CommitAllocations, incomingAllocations)
@@ -249,7 +251,7 @@ func upsertGroup(ctx context.Context, tx *ent.Tx, principal attributionledger.In
 	create := tx.AttributionClaimGroup.Create().
 		SetGroupID(claim.GroupID).SetInstallationID(principal.DatabaseID).SetUserID(principal.UserID).
 		SetRelayProviderID(claim.RelayProviderID).
-		SetSchemaVersion(SchemaVersion).SetLedgerEpoch(LedgerEpoch).SetThreadID(claim.ThreadID).SetTurnID(claim.TurnID).
+		SetSchemaVersion(SchemaVersion).SetLedgerEpoch(ledgerEpoch).SetThreadID(claim.ThreadID).SetTurnID(claim.TurnID).
 		SetEvidenceDigest(claim.EvidenceDigest).SetCommitAllocations(incomingAllocations).
 		SetRequestCount(len(claim.RequestIDs)).SetExpiresAt(expiresAt)
 	calibrationStatus := "not_present"

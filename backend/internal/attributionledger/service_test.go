@@ -53,7 +53,7 @@ func TestCompactBucketReplayRevisionAndConservation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	installations := NewInstallationService(client)
+	installations := NewInstallationService(client, DefaultProtocolContract())
 	installationID := uuid.NewString()
 	credentials, err := installations.Ensure(ctx, user.ID, installationID, "test machine", "test")
 	if err != nil {
@@ -101,14 +101,14 @@ func TestCompactBucketReplayRevisionAndConservation(t *testing.T) {
 			}},
 		},
 	}
-	first, err := NewService(client, nil).CreateBuckets(ctx, principal, BatchRequest{Buckets: []UsageBucket{bucket}})
+	first, err := NewService(client, nil, DefaultProtocolContract()).CreateBuckets(ctx, principal, BatchRequest{Buckets: []UsageBucket{bucket}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first.CreatedBuckets != 1 || first.CreatedRevisions != 1 {
 		t.Fatalf("first result = %+v", first)
 	}
-	replay, err := NewService(client, nil).CreateBuckets(ctx, principal, BatchRequest{Buckets: []UsageBucket{bucket}})
+	replay, err := NewService(client, nil, DefaultProtocolContract()).CreateBuckets(ctx, principal, BatchRequest{Buckets: []UsageBucket{bucket}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestCompactBucketReplayRevisionAndConservation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	created, err := NewService(client, nil).CreateRevision(ctx, principal, bucket.BucketID, RevisionRequest{
+	created, err := NewService(client, nil, DefaultProtocolContract()).CreateRevision(ctx, principal, bucket.BucketID, RevisionRequest{
 		SchemaVersion: CurrentSchemaVersion,
 		AllocationRevision: AllocationRevision{
 			RevisionID:      "revision-a-2",
@@ -158,7 +158,7 @@ func TestCompactBucketReplayRevisionAndConservation(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	created, err = NewService(client, nil).CreateRevision(ctx, principal, bucket.BucketID, RevisionRequest{
+	created, err = NewService(client, nil, DefaultProtocolContract()).CreateRevision(ctx, principal, bucket.BucketID, RevisionRequest{
 		SchemaVersion: CurrentSchemaVersion,
 		AllocationRevision: AllocationRevision{
 			RevisionID: "revision-a-3", Sequence: 3, Reason: "cherry-pick inherited usage", EvidenceVersion: "test",
@@ -174,7 +174,7 @@ func TestCompactBucketReplayRevisionAndConservation(t *testing.T) {
 	if err != nil || !created {
 		t.Fatalf("create inherited revision: created=%v err=%v", created, err)
 	}
-	report, err := NewService(client, nil).Report(ctx, user.ID, observed.Add(-time.Hour), observed.Add(time.Hour))
+	report, err := NewService(client, nil, DefaultProtocolContract()).Report(ctx, user.ID, observed.Add(-time.Hour), observed.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestCompactBucketReplayRevisionAndConservation(t *testing.T) {
 	conflict := bucket
 	conflict.Tokens.Output++
 	conflict.Tokens.Processed++
-	_, err = NewService(client, nil).CreateBuckets(ctx, principal, BatchRequest{Buckets: []UsageBucket{conflict}})
+	_, err = NewService(client, nil, DefaultProtocolContract()).CreateBuckets(ctx, principal, BatchRequest{Buckets: []UsageBucket{conflict}})
 	if !errors.Is(err, ErrImmutableBucketConflict) {
 		t.Fatalf("conflict err = %v", err)
 	}
@@ -214,7 +214,7 @@ func TestNewInstallationDoesNotEnableReporting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := NewInstallationService(client)
+	service := NewInstallationService(client, DefaultProtocolContract())
 	credentials, err := service.Ensure(ctx, user.ID, uuid.NewString(), "test", "test")
 	if err != nil {
 		t.Fatal(err)
@@ -234,7 +234,7 @@ func TestInstallationCredentialRotationInvalidatesOldTokens(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()
 	user := client.User.Create().SetUsername("dave").SetEmail("dave@example.net").SetAuthSource("ldap").SaveX(ctx)
-	service := NewInstallationService(client)
+	service := NewInstallationService(client, DefaultProtocolContract())
 	credentials, err := service.Ensure(ctx, user.ID, uuid.NewString(), "test", "test")
 	if err != nil {
 		t.Fatal(err)
@@ -268,7 +268,7 @@ func TestInstallationIdentityDoesNotCollapseMachinesWithTheSameHostnameLabel(t *
 	client := testdb.Open(t)
 	ctx := context.Background()
 	user := client.User.Create().SetUsername("erin").SetEmail("erin@example.com").SetAuthSource("ldap").SaveX(ctx)
-	service := NewInstallationService(client)
+	service := NewInstallationService(client, DefaultProtocolContract())
 	firstID := uuid.NewString()
 	secondID := uuid.NewString()
 	if _, err := service.Ensure(ctx, user.ID, firstID, "developer-mac", "test"); err != nil {
@@ -289,7 +289,7 @@ func TestLateOTLPEvidenceRefreshesOnlyCorrelationMetadata(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()
 	user := client.User.Create().SetUsername("carol").SetEmail("carol@example.com").SetAuthSource("ldap").SaveX(ctx)
-	installations := NewInstallationService(client)
+	installations := NewInstallationService(client, DefaultProtocolContract())
 	credentials, err := installations.Ensure(ctx, user.ID, uuid.NewString(), "test machine", "test")
 	if err != nil {
 		t.Fatal(err)
@@ -304,7 +304,7 @@ func TestLateOTLPEvidenceRefreshesOnlyCorrelationMetadata(t *testing.T) {
 	}
 	store := &attributionMemoryStore{values: map[string][]byte{}}
 	correlation := NewCorrelationStore(store, "test")
-	service := NewService(client, correlation)
+	service := NewService(client, correlation, DefaultProtocolContract())
 	observed := time.Date(2026, 8, 5, 11, 0, 0, 0, time.UTC)
 	correlation.now = func() time.Time { return observed.Add(time.Minute) }
 	tokens := Tokens{FreshInput: 70, CacheRead: 30, Output: 40, Reasoning: 15, ProviderTotal: 140, Processed: 140}

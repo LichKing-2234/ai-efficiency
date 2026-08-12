@@ -954,14 +954,14 @@ overrides:
             {{ t('settings.name') }}
             <ElInput data-testid="directory-source-name" v-model="form.name" class="mt-1" />
           </label>
-          <label class="text-sm font-medium text-gray-700">
-            {{ t('directorySync.schedule') }}
-            <ElSelect v-model="form.schedule_interval" class="mt-1 w-full" :teleported="false">
-              <ElOption value="hourly" :label="t('directorySync.hourly')" />
-              <ElOption value="daily" :label="t('directorySync.daily')" />
-              <ElOption value="weekly" :label="t('directorySync.weekly')" />
+          <div class="text-sm font-medium text-gray-700">
+            <span>{{ t('directorySync.schedule') }}</span>
+            <ElSelect v-model="form.schedule_interval" data-testid="directory-schedule-select" class="mt-1 w-full" :teleported="false" :aria-label="t('directorySync.schedule')">
+              <ElOption data-testid="directory-schedule-option-hourly" value="hourly" :label="t('directorySync.hourly')" />
+              <ElOption data-testid="directory-schedule-option-daily" value="daily" :label="t('directorySync.daily')" />
+              <ElOption data-testid="directory-schedule-option-weekly" value="weekly" :label="t('directorySync.weekly')" />
             </ElSelect>
-          </label>
+          </div>
         </div>
 
         <div class="flex flex-wrap items-center gap-4 text-sm text-gray-700">

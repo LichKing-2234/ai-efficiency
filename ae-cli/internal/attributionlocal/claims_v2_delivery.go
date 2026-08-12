@@ -61,7 +61,7 @@ func v2ClaimUploadable(claim V2ClaimCandidate) bool {
 
 // ApplyV2ClaimAcknowledgements removes only independently acknowledged local
 // items. It returns an error while retaining conflicts and unknown responses.
-func ApplyV2ClaimAcknowledgements(state *V2ClaimState, sent []client.AttributionV2ClaimGroup, result *client.AttributionV2ClaimBatchResult, now time.Time) error {
+func ApplyV2ClaimAcknowledgements(state *V2ClaimState, sent []client.AttributionV2ClaimGroup, result *client.AttributionV2ClaimBatchResult, expected client.AttributionProtocol, now time.Time) error {
 	if state == nil {
 		return fmt.Errorf("v2 claim state is nil")
 	}
@@ -69,7 +69,7 @@ func ApplyV2ClaimAcknowledgements(state *V2ClaimState, sent []client.Attribution
 	for _, group := range sent {
 		sentByID[group.GroupID] = group
 	}
-	if result == nil || result.LedgerEpoch != "shadow_v2" {
+	if result == nil || expected.Validate() != nil || result.Protocol().Validate() != nil || result.Protocol() != expected {
 		markV2SentClaims(state, sentByID, V2DeliveryUpgradeRequired, "invalid v2 claim acknowledgement", now)
 		return fmt.Errorf("invalid v2 claim acknowledgement")
 	}

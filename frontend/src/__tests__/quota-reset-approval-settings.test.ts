@@ -281,6 +281,27 @@ describe('QuotaResetApprovalSettings', () => {
     expect(wrapper.text()).not.toContain('Subscription group approval chains')
   })
 
+  it('keeps audited non-teleported selectors outside native labels with accessible names', async () => {
+    const wrapper = mount(QuotaResetApprovalSettings, { props: { credentials: [] } })
+    await flushPromises()
+
+    const auditedSelects = [
+      ['quota-reset-department-select', 'Department'],
+      ['quota-reset-webhook-channel', 'Channel'],
+      ['quota-reset-webhook-auth-type', 'Auth type'],
+      ['quota-reset-webhook-credential', 'Credential'],
+    ] as const
+    for (const [testID, accessibleName] of auditedSelects) {
+      const select = wrapper.get(`[data-testid="${testID}"]`)
+      expect(select.element.closest('label')).toBeNull()
+      expect(select.get('input[role="combobox"]').attributes('aria-label')).toBe(accessibleName)
+    }
+
+    await openElementPlusSelect(wrapper, 'quota-reset-webhook-channel')
+    await wrapper.get('[data-testid="quota-reset-webhook-channel-option-wecom"]').trigger('click')
+    expect(elementPlusSelectInput(wrapper, 'quota-reset-webhook-channel').attributes('aria-expanded')).toBe('false')
+  })
+
   it('shows backend webhook test failure reason', async () => {
     const api = await import('@/api/quotaReset') as any
     api.testQuotaResetNotificationSettings.mockRejectedValueOnce({

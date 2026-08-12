@@ -295,7 +295,7 @@ function cancelCredentialDelete(event: MouseEvent, close: (event: MouseEvent) =>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">{{ t('settings.kind') }}</label>
-          <ElSelect v-model="credentialForm.kind" data-testid="credential-kind" class="mt-1 w-full" :teleported="false">
+          <ElSelect v-model="credentialForm.kind" data-testid="credential-kind" class="mt-1 w-full" :teleported="false" :aria-label="t('settings.kind')">
             <ElOption value="secret_text" :label="t('settings.secretTextKind')" />
             <ElOption value="username_password" :label="t('settings.usernamePasswordKind')" />
             <ElOption value="ssh_username_with_private_key" :label="t('settings.sshPrivateKeyKind')" />

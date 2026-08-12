@@ -1,14 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia } from 'pinia'
 import ActivityView from '@/views/activity/ActivityView.vue'
 import { setLocale } from '@/i18n'
+import { useAuthStore } from '@/stores/auth'
 
 vi.mock('@/api/activity', () => ({
   getActivityV2Overview: vi.fn(),
   listActivityV2Repositories: vi.fn(),
   listActivityV2PullRequests: vi.fn(),
+}))
+vi.mock('@/api/attribution', () => ({
+  getReportingReadiness: vi.fn(),
 }))
 vi.mock('@/api/workItems', () => ({
   getWorkItemCounts: vi.fn().mockResolvedValue({ data: { data: { total_count: 0 } } }),
@@ -22,8 +26,9 @@ const overview = {
 }
 const repositories = { items: [{ repo_config_id: 9, name: 'example/repo', direct_tokens: 400, direct_share: 100, shared_tokens: 50 }] }
 const pullRequests = { items: [{ pr_record_id: 21, repo_config_id: 9, repository_name: 'example/repo', scm_pr_id: 88, title: 'Improve Activity', url: 'https://example.com/pr/88', status: 'merged', involved_tokens: 400, overlap_state: 'shared', commits: [{ repo_config_id: 9, commit_sha: 'abcdef1234567890' }] }] }
+const mountedWrappers: Array<{ unmount: () => void }> = []
 
-async function mountView(path = '/activity') {
+async function mountView(path = '/activity', reportingCapabilities?: { setup_available: boolean; readiness_available: boolean }) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/activity', component: ActivityView },
     { path: '/activity/members/:user_id', component: ActivityView },
@@ -33,7 +38,11 @@ async function mountView(path = '/activity') {
   ] })
   await router.push(path)
   await router.isReady()
-  const wrapper = mount(ActivityView, { global: { plugins: [createPinia(), router] } })
+  const pinia = createPinia()
+  const auth = useAuthStore(pinia)
+  auth.user = { id: 1, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'relay_sso', reporting_capabilities: reportingCapabilities }
+  const wrapper = mount(ActivityView, { global: { plugins: [pinia, router] } })
+  mountedWrappers.push(wrapper)
   await flushPromises()
   return { wrapper, router }
 }
@@ -45,6 +54,86 @@ describe('ActivityView v2', () => {
     vi.mocked(api.getActivityV2Overview).mockReset().mockResolvedValue({ data: { data: overview } } as any)
     vi.mocked(api.listActivityV2Repositories).mockReset().mockResolvedValue({ data: { data: repositories } } as any)
     vi.mocked(api.listActivityV2PullRequests).mockReset().mockResolvedValue({ data: { data: pullRequests } } as any)
+    const attributionApi = await import('@/api/attribution')
+    vi.mocked(attributionApi.getReportingReadiness).mockReset()
+  })
+
+  afterEach(() => {
+    mountedWrappers.splice(0).forEach((wrapper) => wrapper.unmount())
+  })
+
+  it('does not mount readiness or call its endpoint when the capability is off', async () => {
+    const attributionApi = await import('@/api/attribution')
+    const { wrapper } = await mountView()
+    expect(wrapper.find('[data-testid="reporting-compact-guide"]').exists()).toBe(false)
+    expect(attributionApi.getReportingReadiness).not.toHaveBeenCalled()
+  })
+
+  it('shows persistent active readiness only on personal Activity', async () => {
+    const attributionApi = await import('@/api/attribution')
+    vi.mocked(attributionApi.getReportingReadiness).mockResolvedValue({
+      data: { data: { state: 'active', retryable: false, latest_accepted_at: '2026-08-10T09:30:00Z' } },
+    } as any)
+    const capabilities = { setup_available: true, readiness_available: true }
+    const { wrapper } = await mountView('/activity', capabilities)
+    const guide = wrapper.get('[data-testid="reporting-compact-guide"]')
+    expect(guide.get('[data-testid="reporting-active-state"]').text()).toContain('Codex activity reporting is active')
+    expect(guide.text()).toContain('Latest accepted activity')
+    expect(guide.findComponent({ name: 'ElCollapse' }).exists()).toBe(false)
+    expect(guide.text()).not.toContain('ae-cli')
+
+    vi.mocked(attributionApi.getReportingReadiness).mockClear()
+    const member = await mountView('/activity/members/7', capabilities)
+    expect(member.wrapper.find('[data-testid="reporting-compact-guide"]').exists()).toBe(false)
+    expect(attributionApi.getReportingReadiness).not.toHaveBeenCalled()
+  })
+
+  it('keeps a readiness failure local while Activity analytics still render', async () => {
+    const attributionApi = await import('@/api/attribution')
+    vi.mocked(attributionApi.getReportingReadiness).mockRejectedValue(new Error('readiness unavailable'))
+    const { wrapper } = await mountView('/activity', { setup_available: true, readiness_available: true })
+    expect(wrapper.get('[data-testid="reporting-compact-guide"]').text()).toContain('Reporting status is temporarily unavailable')
+    expect(wrapper.text()).toContain('Token used for actual code')
+    expect(wrapper.find('[data-testid="activity-ratio-chart"]').exists()).toBe(true)
+  })
+
+  it('polls waiting readiness every 30 seconds, pauses while hidden, checks on visibility, and stops active', async () => {
+    vi.useFakeTimers()
+    let visibility: DocumentVisibilityState = 'visible'
+    const visibilitySpy = vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
+    try {
+      const attributionApi = await import('@/api/attribution')
+      const waiting = { data: { data: { state: 'waiting_for_data', retryable: false } } } as any
+      const active = { data: { data: { state: 'active', retryable: false, latest_accepted_at: '2026-08-10T09:30:00Z' } } } as any
+      vi.mocked(attributionApi.getReportingReadiness)
+        .mockResolvedValueOnce(waiting)
+        .mockResolvedValueOnce(waiting)
+        .mockResolvedValueOnce(active)
+
+      const { wrapper } = await mountView('/activity', { setup_available: true, readiness_available: true })
+      expect(attributionApi.getReportingReadiness).toHaveBeenCalledTimes(1)
+      expect(wrapper.get('[data-testid="reporting-compact-guide"]').text()).toContain('Waiting for the first accepted commit')
+
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(attributionApi.getReportingReadiness).toHaveBeenCalledTimes(2)
+
+      visibility = 'hidden'
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(attributionApi.getReportingReadiness).toHaveBeenCalledTimes(2)
+
+      visibility = 'visible'
+      document.dispatchEvent(new Event('visibilitychange'))
+      await flushPromises()
+      expect(attributionApi.getReportingReadiness).toHaveBeenCalledTimes(3)
+      expect(wrapper.get('[data-testid="reporting-active-state"]').text()).toContain('Codex activity reporting is active')
+
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(attributionApi.getReportingReadiness).toHaveBeenCalledTimes(3)
+    } finally {
+      visibilitySpy.mockRestore()
+      vi.useRealTimers()
+    }
   })
 
   it('renders ratio, trend, overall Top 5 and full lists without Request detail', async () => {

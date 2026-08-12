@@ -57,8 +57,8 @@ func TestSyntheticRequestToActivityKeepsShadowEpochIsolated(t *testing.T) {
 		RequestIDs: []string{"request-qualification"},
 	}
 	principal := attributionledger.InstallationPrincipal{DatabaseID: installation.ID, InstallationID: installation.InstallationID, UserID: user.ID}
-	result, err := attributionclaim.NewService(client).Ingest(ctx, principal, attributionclaim.BatchRequest{Groups: []attributionclaim.Request{claim}})
-	if err != nil || result.Epoch != attributionclaim.LedgerEpoch || result.Results[0].Requests[0].Status != "persisted" {
+	result, err := attributionclaim.NewService(client, attributionledger.DefaultProtocolContract()).Ingest(ctx, principal, attributionclaim.BatchRequest{Groups: []attributionclaim.Request{claim}})
+	if err != nil || result.Epoch != attributionledger.LedgerEpochShadowV2 || result.Results[0].Requests[0].Status != "persisted" {
 		t.Fatalf("claim ingest = %+v, %v", result, err)
 	}
 	if client.AttributionUsageBucket.Query().CountX(ctx) != 0 {
@@ -86,7 +86,7 @@ func TestSyntheticRequestToActivityKeepsShadowEpochIsolated(t *testing.T) {
 		t.Fatalf("reconcile = %d, %v", processed, err)
 	}
 	pool := client.AttributionUsagePool.Query().OnlyX(ctx)
-	if pool.LedgerEpoch != attributionclaim.LedgerEpoch || pool.TotalTokens != 19 || pool.RequestCount != 1 {
+	if pool.LedgerEpoch != attributionledger.LedgerEpochShadowV2 || pool.TotalTokens != 19 || pool.RequestCount != 1 {
 		t.Fatalf("shadow pool = %+v", pool)
 	}
 	if client.AttributionUsageBucket.Query().CountX(ctx) != 0 {
@@ -99,7 +99,7 @@ func TestSyntheticRequestToActivityKeepsShadowEpochIsolated(t *testing.T) {
 	if err != nil || formalOverview.CommittedTokens != 0 || formalOverview.Readiness.State != "waiting_for_data" {
 		t.Fatalf("formal Activity consumed shadow data: overview=%+v err=%v", formalOverview, err)
 	}
-	shadow := activity.NewService(client, nil, activity.ServiceOptions{V2LedgerEpoch: attributionclaim.LedgerEpoch, V2DB: db, V2Denominator: qualificationDenominator{}})
+	shadow := activity.NewService(client, nil, activity.ServiceOptions{V2LedgerEpoch: attributionledger.LedgerEpochShadowV2, V2DB: db, V2Denominator: qualificationDenominator{}})
 	shadowOverview, err := shadow.V2Overview(ctx, user.ID, query)
 	if err != nil || shadowOverview.CommittedTokens != 19 || shadowOverview.Readiness.State != "active" || shadowOverview.Ratio.Percent == nil || *shadowOverview.Ratio.Percent != 19 {
 		t.Fatalf("shadow Activity readback = %+v, %v", shadowOverview, err)

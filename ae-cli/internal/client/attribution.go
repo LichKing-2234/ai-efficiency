@@ -19,12 +19,56 @@ type EnsureInstallationRequest struct {
 }
 
 type InstallationCredentials struct {
-	InstallationID   string `json:"installation_id"`
-	ReporterToken    string `json:"reporter_token,omitempty"`
-	OTLPToken        string `json:"otlp_token,omitempty"`
-	Created          bool   `json:"created"`
-	ReportingEnabled bool   `json:"reporting_enabled"`
-	OTelEnabled      bool   `json:"otel_enabled"`
+	InstallationID   string              `json:"installation_id"`
+	ReporterToken    string              `json:"reporter_token,omitempty"`
+	OTLPToken        string              `json:"otlp_token,omitempty"`
+	Created          bool                `json:"created"`
+	ReportingEnabled bool                `json:"reporting_enabled"`
+	OTelEnabled      bool                `json:"otel_enabled"`
+	Protocol         AttributionProtocol `json:"protocol"`
+}
+
+const (
+	AttributionLedgerEpochShadowV2        = "shadow_v2"
+	AttributionLedgerEpochFormalV2        = "formal_v2"
+	AttributionV1WritePolicyAccept        = "accept"
+	AttributionV1WritePolicyUpgradeNeeded = "upgrade_required"
+)
+
+type AttributionProtocol struct {
+	LedgerEpoch       string `json:"ledger_epoch"`
+	V1WritePolicy     string `json:"v1_write_policy"`
+	MinimumCLIVersion string `json:"minimum_cli_version,omitempty"`
+}
+
+type AttributionUpgradeRequiredError struct {
+	MinimumCLIVersion string
+	Message           string
+}
+
+func (e *AttributionUpgradeRequiredError) Error() string {
+	message := strings.TrimSpace(e.Message)
+	if message == "" {
+		message = "ae-cli upgrade required"
+	}
+	if minimum := strings.TrimSpace(e.MinimumCLIVersion); minimum != "" {
+		return fmt.Sprintf("%s (minimum_cli_version=%s)", message, minimum)
+	}
+	return message
+}
+
+func (p AttributionProtocol) Validate() error {
+	epoch := strings.TrimSpace(p.LedgerEpoch)
+	policy := strings.TrimSpace(p.V1WritePolicy)
+	minimum := strings.TrimSpace(p.MinimumCLIVersion)
+	switch {
+	case epoch == AttributionLedgerEpochShadowV2 && policy == AttributionV1WritePolicyAccept && minimum == "":
+		return nil
+	case (epoch == AttributionLedgerEpochShadowV2 || epoch == AttributionLedgerEpochFormalV2) && policy == AttributionV1WritePolicyUpgradeNeeded && minimum != "":
+		return nil
+	default:
+		return fmt.Errorf("unsupported or contradictory attribution protocol: ledger_epoch=%q v1_write_policy=%q minimum_cli_version=%q", epoch, policy, minimum)
+	}
 }
 
 type SetInstallationEnabledRequest struct {
@@ -157,8 +201,14 @@ type AttributionV2ClaimResult struct {
 }
 
 type AttributionV2ClaimBatchResult struct {
-	LedgerEpoch string                     `json:"ledger_epoch"`
-	Results     []AttributionV2ClaimResult `json:"results"`
+	LedgerEpoch       string                     `json:"ledger_epoch"`
+	V1WritePolicy     string                     `json:"v1_write_policy"`
+	MinimumCLIVersion string                     `json:"minimum_cli_version,omitempty"`
+	Results           []AttributionV2ClaimResult `json:"results"`
+}
+
+func (r AttributionV2ClaimBatchResult) Protocol() AttributionProtocol {
+	return AttributionProtocol{LedgerEpoch: r.LedgerEpoch, V1WritePolicy: r.V1WritePolicy, MinimumCLIVersion: r.MinimumCLIVersion}
 }
 
 func (c *Client) EnsureAttributionInstallation(ctx context.Context, req EnsureInstallationRequest) (*InstallationCredentials, error) {
@@ -244,6 +294,16 @@ func (c *Client) doAttributionJSON(ctx context.Context, method, path string, req
 	defer resp.Body.Close()
 	payload, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var apiError struct {
+			Message string `json:"message"`
+			Details struct {
+				ErrorCode         string `json:"error_code"`
+				MinimumCLIVersion string `json:"minimum_cli_version"`
+			} `json:"details"`
+		}
+		if resp.StatusCode == http.StatusConflict && json.Unmarshal(payload, &apiError) == nil && strings.TrimSpace(apiError.Details.ErrorCode) == AttributionV1WritePolicyUpgradeNeeded {
+			return &AttributionUpgradeRequiredError{MinimumCLIVersion: strings.TrimSpace(apiError.Details.MinimumCLIVersion), Message: strings.TrimSpace(apiError.Message)}
+		}
 		return fmt.Errorf("attribution endpoint %s returned %d: %s", path, resp.StatusCode, strings.TrimSpace(string(payload)))
 	}
 	if response != nil && len(payload) > 0 {

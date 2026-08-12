@@ -154,6 +154,26 @@ The client deletes only data covered by explicit server ACKs:
 The local unresolved and audit-minimal state is retained for at most 90 days
 and cleaned lazily on later hook, sync, or CLI activity.
 
+The backend owns one cutover protocol contract and returns it from installation
+enrollment and every v2 batch acknowledgement:
+
+```text
+ledger_epoch
+v1_write_policy: accept | upgrade_required
+minimum_cli_version
+```
+
+Before cutover the exact default is `shadow_v2 + accept` with no minimum
+version. The transition may advertise `upgrade_required` for the supported
+shadow or formal v2 epoch only when a non-empty minimum CLI version is also
+present. Unknown or contradictory combinations fail startup and fail closed on
+the client; they are never inferred from deployment capabilities. The CLI
+persists the enrolled contract in its existing reporting configuration. Formal
+mode does not create or require a new v1 baseline and does not use a rejected
+v1 request as a normal feature probe. A transition-era v1 `409
+upgrade_required` is not an ACK, does not advance local v1 state, and cannot
+prevent the same runner pass from delivering eligible v2 claims.
+
 ## 7. Hot Claim And Reconciliation Contract
 
 The backend keeps hot claim groups and Request claims for at most 90 days.
@@ -230,8 +250,10 @@ attribution_usage_pool_commits
 - relation_kind: direct | shared | inherited_non_counting
 ```
 
-The canonical pool key covers the Relay provider, user, sorted counting commit
-set, requested model, and a non-empty 15-minute UTC bucket based on the upstream usage time.
+The canonical pool identity is partitioned by ledger epoch and, within that
+epoch, covers the Relay provider, user, sorted counting commit set, requested
+model, and a non-empty 15-minute UTC bucket based on the upstream usage time.
+Otherwise identical shadow and formal contributions cannot collide or merge.
 Fifteen-minute buckets support local natural-day aggregation for IANA zones
 with whole-hour, half-hour, and quarter-hour offsets without preallocating empty
 rows.
@@ -464,10 +486,35 @@ group in the formal epoch. An uncommitted, unbound, shadow, or old v1 bucket
 cannot activate readiness. Once active, later orphan marking or Relay-provider
 switching cannot return that user to `waiting_for_data`.
 
+The authenticated current-user contract advertises two deployment-owned flags:
+`setup_available` and `readiness_available`. Both default false, readiness may
+not be enabled without setup, and readiness may be enabled only when the single
+backend protocol contract selects the formal v2 epoch. The frontend never
+infers these flags from an epoch, release, or failed endpoint.
+
+`GET /api/v1/attribution/status` is mounted only when readiness is available,
+uses `Cache-Control: no-store`, and returns one aggregate user state:
+`not_enrolled`, `revoked`, `disabled`, `waiting_for_data`, or `active`. It never
+returns installation counts, identifiers, labels, last-seen timestamps, or a
+device list. Installation rows determine the first four states. An enabled
+installation becomes `active` only through the same PostgreSQL formal-pool
+predicate used by Activity, and `latest_accepted_at` is the latest qualifying
+pool server `created_at` across full history. A query failure is a local
+retryable error and must not be converted into `waiting_for_data` or block
+Activity analytics. No Redis readiness cache is introduced.
+
 Normal setup remains install, login, and discover. Explicit enable, hook
 management, repo init, sync, and diagnostics are advanced/recovery paths. v2
 does not require Codex OTel. Upgrade removes only AE-managed Codex OTel config
 and never touches user-managed OTel.
+
+Both a successful new or already-valid login and a successful non-dry-run
+discover that persisted at least one supported tool configuration run the same
+idempotent, best-effort v2 activation path. Activation preserves a valid
+installation and selected provider, recovers a missing reporter credential,
+enables managed global hooks, disables legacy AE-managed OTel, and never turns
+an otherwise successful login or tool configuration into a failure. No-tool,
+no-matching-credential, failed, and dry-run discovery do not activate reporting.
 
 Product DTOs and UI exclude Request ID, raw claim rows, local calibration
 Token, API key/account, prompt/response/code, local paths, pending Request

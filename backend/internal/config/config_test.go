@@ -38,6 +38,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Redis.Namespace != "ai-efficiency" {
 		t.Errorf("default redis namespace = %q, want ai-efficiency", cfg.Redis.Namespace)
 	}
+	if cfg.Attribution != (AttributionConfig{LedgerEpoch: "shadow_v2", V1WritePolicy: "accept", SetupAvailable: false, ReadinessAvailable: false}) {
+		t.Errorf("default attribution protocol = %#v", cfg.Attribution)
+	}
 }
 
 func TestLoadPrewarmerDefaultsToExactTimezoneListWithoutEnabledFlag(t *testing.T) {
@@ -291,6 +294,11 @@ func TestLoadEnvOverride(t *testing.T) {
 	t.Setenv("AE_RELAY_URL", "http://relay.internal:4000")
 	t.Setenv("AE_RELAY_ADMIN_API_KEY", "relay-admin-key-from-env")
 	t.Setenv("AE_AUTH_LDAP_URL", "ldap://env-ldap.example.com:389")
+	t.Setenv("AE_ATTRIBUTION_LEDGER_EPOCH", "formal_v2")
+	t.Setenv("AE_ATTRIBUTION_V1_WRITE_POLICY", "upgrade_required")
+	t.Setenv("AE_ATTRIBUTION_MINIMUM_CLI_VERSION", "0.2.0-preview.5")
+	t.Setenv("AE_ATTRIBUTION_SETUP_AVAILABLE", "true")
+	t.Setenv("AE_ATTRIBUTION_READINESS_AVAILABLE", "true")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -310,6 +318,9 @@ func TestLoadEnvOverride(t *testing.T) {
 	}
 	if cfg.Auth.LDAP.URL != "ldap://env-ldap.example.com:389" {
 		t.Errorf("auth.ldap.url = %q, want %q", cfg.Auth.LDAP.URL, "ldap://env-ldap.example.com:389")
+	}
+	if cfg.Attribution != (AttributionConfig{LedgerEpoch: "formal_v2", V1WritePolicy: "upgrade_required", MinimumCLIVersion: "0.2.0-preview.5", SetupAvailable: true, ReadinessAvailable: true}) {
+		t.Errorf("attribution protocol = %#v", cfg.Attribution)
 	}
 }
 
@@ -682,6 +693,71 @@ func TestDeployExamplesDeclareExplicitValidRedisNamespace(t *testing.T) {
 	}
 }
 
+func TestDeployExamplesDeclareDefaultAttributionProtocol(t *testing.T) {
+	deployDir := filepath.Clean(filepath.Join("..", "..", "..", "deploy"))
+	configData, err := os.ReadFile(filepath.Join(deployDir, "config.example.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var configExample struct {
+		Attribution struct {
+			LedgerEpoch        string `yaml:"ledger_epoch"`
+			V1WritePolicy      string `yaml:"v1_write_policy"`
+			MinimumCLIVersion  string `yaml:"minimum_cli_version"`
+			SetupAvailable     bool   `yaml:"setup_available"`
+			ReadinessAvailable bool   `yaml:"readiness_available"`
+		} `yaml:"attribution"`
+	}
+	if err := yaml.Unmarshal(configData, &configExample); err != nil {
+		t.Fatal(err)
+	}
+	if configExample.Attribution != (struct {
+		LedgerEpoch        string `yaml:"ledger_epoch"`
+		V1WritePolicy      string `yaml:"v1_write_policy"`
+		MinimumCLIVersion  string `yaml:"minimum_cli_version"`
+		SetupAvailable     bool   `yaml:"setup_available"`
+		ReadinessAvailable bool   `yaml:"readiness_available"`
+	}{LedgerEpoch: "shadow_v2", V1WritePolicy: "accept"}) {
+		t.Fatalf("config.example.yaml attribution = %#v", configExample.Attribution)
+	}
+
+	envData, err := os.ReadFile(filepath.Join(deployDir, ".env.example"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := envFileValue(string(envData), "AE_ATTRIBUTION_LEDGER_EPOCH"); got != "shadow_v2" {
+		t.Fatalf(".env.example ledger epoch = %q", got)
+	}
+	if got := envFileValue(string(envData), "AE_ATTRIBUTION_V1_WRITE_POLICY"); got != "accept" {
+		t.Fatalf(".env.example v1 write policy = %q", got)
+	}
+	if got := envFileValue(string(envData), "AE_ATTRIBUTION_SETUP_AVAILABLE"); got != "false" {
+		t.Fatalf(".env.example setup capability = %q", got)
+	}
+	if got := envFileValue(string(envData), "AE_ATTRIBUTION_READINESS_AVAILABLE"); got != "false" {
+		t.Fatalf(".env.example readiness capability = %q", got)
+	}
+
+	for _, name := range []string{"docker-compose.yml", "docker-compose.bootstrap.yml", "docker-compose.dev.yml", "docker-compose.external.yml", "docker-compose.local.yml"} {
+		data, err := os.ReadFile(filepath.Join(deployDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var compose struct {
+			Services map[string]struct {
+				Environment map[string]string `yaml:"environment"`
+			} `yaml:"services"`
+		}
+		if err := yaml.Unmarshal(data, &compose); err != nil {
+			t.Fatal(err)
+		}
+		environment := compose.Services["backend"].Environment
+		if environment["AE_ATTRIBUTION_LEDGER_EPOCH"] != "${AE_ATTRIBUTION_LEDGER_EPOCH:-shadow_v2}" || environment["AE_ATTRIBUTION_V1_WRITE_POLICY"] != "${AE_ATTRIBUTION_V1_WRITE_POLICY:-accept}" || environment["AE_ATTRIBUTION_MINIMUM_CLI_VERSION"] != "${AE_ATTRIBUTION_MINIMUM_CLI_VERSION:-}" || environment["AE_ATTRIBUTION_SETUP_AVAILABLE"] != "${AE_ATTRIBUTION_SETUP_AVAILABLE:-false}" || environment["AE_ATTRIBUTION_READINESS_AVAILABLE"] != "${AE_ATTRIBUTION_READINESS_AVAILABLE:-false}" {
+			t.Fatalf("%s attribution environment = %#v", name, environment)
+		}
+	}
+}
+
 func envFileValue(content, key string) string {
 	for _, line := range strings.Split(content, "\n") {
 		if name, value, ok := strings.Cut(line, "="); ok && strings.TrimSpace(name) == key {
@@ -817,6 +893,13 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 			Model:          "gpt-5.4",
 			DefaultGroupID: "42",
 		},
+		Attribution: AttributionConfig{
+			LedgerEpoch:        "formal_v2",
+			V1WritePolicy:      "upgrade_required",
+			MinimumCLIVersion:  "0.2.0-preview.5",
+			SetupAvailable:     true,
+			ReadinessAvailable: true,
+		},
 		Auth: AuthConfig{
 			JWTSecret:       "jwt-secret",
 			AccessTokenTTL:  7200,
@@ -858,6 +941,9 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 	}
 	if loaded.Redis.Namespace != "test-blue" {
 		t.Fatalf("redis.namespace = %q, want test-blue", loaded.Redis.Namespace)
+	}
+	if loaded.Attribution != cfg.Attribution {
+		t.Fatalf("persisted Attribution = %#v, want %#v", loaded.Attribution, cfg.Attribution)
 	}
 	if !reflect.DeepEqual(loaded.Server, cfg.Server) {
 		t.Fatalf("persisted Server = %#v, want %#v", loaded.Server, cfg.Server)

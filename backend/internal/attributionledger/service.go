@@ -25,11 +25,13 @@ var (
 	ErrImmutableBucketConflict = errors.New("usage bucket immutable content conflicts with existing bucket")
 	ErrRevisionConflict        = errors.New("allocation revision conflicts with existing revision")
 	ErrAllocationForbidden     = errors.New("allocation target is not backed by an authenticated-user checkpoint")
+	ErrUpgradeRequired         = errors.New("ae-cli upgrade required")
 )
 
 type Service struct {
 	client      *ent.Client
 	correlation *CorrelationStore
+	protocol    ProtocolContract
 }
 
 type repoAccumulator struct {
@@ -39,12 +41,15 @@ type repoAccumulator struct {
 	commits   map[string]*CommitReport
 }
 
-func NewService(client *ent.Client, correlation *CorrelationStore) *Service {
-	return &Service{client: client, correlation: correlation}
+func NewService(client *ent.Client, correlation *CorrelationStore, protocol ProtocolContract) *Service {
+	return &Service{client: client, correlation: correlation, protocol: protocol}
 }
 
 func (s *Service) CreateBuckets(ctx context.Context, principal InstallationPrincipal, req BatchRequest) (BatchResult, error) {
 	var result BatchResult
+	if s != nil && s.protocol.V1WritePolicy == V1WritePolicyUpgradeNeeded {
+		return result, ErrUpgradeRequired
+	}
 	if s == nil || s.client == nil || principal.DatabaseID <= 0 || principal.UserID <= 0 {
 		return result, fmt.Errorf("create usage buckets: service and installation principal are required")
 	}
@@ -93,6 +98,9 @@ func (s *Service) CreateBuckets(ctx context.Context, principal InstallationPrinc
 }
 
 func (s *Service) CreateRevision(ctx context.Context, principal InstallationPrincipal, bucketID string, req RevisionRequest) (bool, error) {
+	if s != nil && s.protocol.V1WritePolicy == V1WritePolicyUpgradeNeeded {
+		return false, ErrUpgradeRequired
+	}
 	if req.SchemaVersion != CurrentSchemaVersion {
 		return false, fmt.Errorf("unsupported schema_version %d", req.SchemaVersion)
 	}

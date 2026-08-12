@@ -375,16 +375,16 @@ func (s *Service) v2RepoAuthorizedSQL(ctx context.Context, scope *v2Scope, repoI
 func (s *Service) v2ReadinessSQL(ctx context.Context, scope *v2Scope) (V2Readiness, error) {
 	args := []any{s.v2LedgerEpoch}
 	users := appendSQLInts(&args, sortedIntKeys(scope.userIDs))
-	statement := fmt.Sprintf(`SELECT MIN(p.created_at) FROM attribution_usage_pools p WHERE p.ledger_epoch=$1 AND p.user_id IN (%s) AND p.relay_provider_id > 0 AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits c WHERE c.pool_id=p.id AND c.relation_kind IN ('direct','shared'))`, users)
-	var at sql.NullTime
-	if err := s.v2DB.QueryRowContext(ctx, statement, args...).Scan(&at); err != nil {
+	statement := fmt.Sprintf(`SELECT MIN(p.created_at),MAX(p.created_at) FROM attribution_usage_pools p WHERE p.ledger_epoch=$1 AND p.user_id IN (%s) AND p.relay_provider_id > 0 AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits c WHERE c.pool_id=p.id AND c.relation_kind IN ('direct','shared'))`, users)
+	var first, latest sql.NullTime
+	if err := s.v2DB.QueryRowContext(ctx, statement, args...).Scan(&first, &latest); err != nil {
 		return V2Readiness{}, fmt.Errorf("query v2 readiness: %w", err)
 	}
-	if !at.Valid {
+	if !first.Valid || !latest.Valid {
 		return V2Readiness{State: "waiting_for_data"}, nil
 	}
-	value := at.Time.UTC()
-	return V2Readiness{State: "active", FirstAcceptedAt: &value}, nil
+	firstValue, latestValue := first.Time.UTC(), latest.Time.UTC()
+	return V2Readiness{State: "active", FirstAcceptedAt: &firstValue, LatestAcceptedAt: &latestValue}, nil
 }
 
 func (s *Service) v2ComparisonInsideEpoch(ctx context.Context, previousFrom time.Time) (bool, error) {

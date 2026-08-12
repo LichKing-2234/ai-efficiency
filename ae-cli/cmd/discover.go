@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ai-efficiency/ae-cli/internal/auth"
+	"github.com/ai-efficiency/ae-cli/internal/buildinfo"
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/reporting"
 	"github.com/ai-efficiency/ae-cli/internal/toolconfig"
@@ -21,6 +23,7 @@ var (
 	discoverInstalledTools   = toolconfig.DetectInstalledTools
 	configureDiscoveredTools = toolconfig.ConfigureTools
 	listProvidersForDiscover = defaultListProvidersForDiscover
+	activateAfterDiscover    = activateV2Reporting
 	defaultDiscoverToolNames = []string{"codex", "claude", "gemini"}
 )
 
@@ -83,11 +86,7 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(cmd.OutOrStdout(), "No supported local tools matched provider %s credentials.\n", selected.Name)
 		return nil
 	}
-	if !discoverDryRun {
-		if err := preserveDiscoveredRelayProvider(selected.ID); err != nil {
-			return err
-		}
-	}
+	activateReportingForDiscover(cmd, selected.ID)
 
 	mode := "Configured"
 	if discoverDryRun {
@@ -110,6 +109,29 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(cmd.OutOrStdout(), "Do not switch models manually inside Gemini.")
 	}
 	return nil
+}
+
+func activateReportingForDiscover(cmd *cobra.Command, providerID int) {
+	if discoverDryRun {
+		return
+	}
+	if err := preserveDiscoveredRelayProvider(providerID); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: tool configuration succeeded, but reporting activation is degraded: %v\n", err)
+		return
+	}
+	serverURL := resolveLoginServerURL(cfg, buildinfo.ServerURL)
+	authSubject := ""
+	if tokenPath, err := auth.DefaultTokenPath(); err == nil {
+		if token := readTokenFile(tokenPath); token != nil {
+			if strings.TrimSpace(token.ServerURL) != "" {
+				serverURL = token.ServerURL
+			}
+			authSubject = token.StableAuthSubject()
+		}
+	}
+	if _, err := activateAfterDiscover(context.Background(), apiClient, serverURL, authSubject); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: tool configuration succeeded, but reporting activation is degraded: %v\n", err)
+	}
 }
 
 func resolveDiscoverTools(explicit []string) ([]toolconfig.InstalledTool, error) {
@@ -196,10 +218,7 @@ func preserveDiscoveredRelayProvider(providerID int) error {
 	if providerID <= 0 {
 		return nil
 	}
-	config, err := reporting.Load("")
-	if os.IsNotExist(err) {
-		return nil
-	}
+	config, err := reporting.LoadOrCreate("")
 	if err != nil {
 		return fmt.Errorf("load reporting state: %w", err)
 	}
