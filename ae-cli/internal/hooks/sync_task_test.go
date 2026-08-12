@@ -163,6 +163,79 @@ func TestMarkSyncTaskFailurePreservesNewerRequestForSameRunner(t *testing.T) {
 	}
 }
 
+func TestMarkSyncTaskFailureRecordsSafeStageAndExactRemainingTriggers(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	now := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+	task := &SyncTask{
+		WorkspaceID: "ws-safe-failure", Status: SyncTaskStatusRunning, RunnerPID: 1111,
+		LastRequestedAt: now, LeaseExpiresAt: ptrTime(now.Add(time.Minute)),
+		V2Triggers: []V2SyncTrigger{{EventID: "event-a"}, {EventID: "event-b"}},
+	}
+	if err := SaveSyncTask(*task); err != nil {
+		t.Fatal(err)
+	}
+	if err := MarkSyncTaskFailure(task, now, syncTaskFailure(SyncTaskFailureStageBackendDelivery, "backend claim delivery failed", errors.New("backend rejected client:raw-request"))); err != nil {
+		t.Fatal(err)
+	}
+	if task.LastFailureStage != "backend_delivery" || task.LastFailureReason != "backend claim delivery failed" || task.RemainingTriggerCount != 2 || task.FirstFailureAt == nil || !task.FirstFailureAt.Equal(now) {
+		t.Fatalf("failure diagnostics = %+v", task)
+	}
+	firstFailure := *task.FirstFailureAt
+	if err := MarkSyncTaskFailure(task, now.Add(time.Minute), syncTaskFailure(SyncTaskFailureStageSourceScan, "local Codex evidence scan failed", errors.New("retry failed"))); err != nil {
+		t.Fatal(err)
+	}
+	if task.FirstFailureAt == nil || !task.FirstFailureAt.Equal(firstFailure) {
+		t.Fatalf("first_failure_at changed = %v, want %v", task.FirstFailureAt, firstFailure)
+	}
+}
+
+func TestV2ClaimScanProgressPersistsCompletedSourceUnits(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	progress := &V2ClaimScanProgress{
+		Version: 1, WorkspaceID: "ws-progress", ContextID: "context-1",
+		SourceKeys: []string{"source-a", "source-b"}, CompletedUnits: []string{"source-a"},
+		StartedAt: time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC),
+	}
+	if err := SaveV2ClaimScanProgress(progress); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadV2ClaimScanProgress("ws-progress")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded == nil || loaded.ContextID != "context-1" || len(loaded.CompletedUnits) != 1 || loaded.Complete {
+		t.Fatalf("loaded progress = %+v", loaded)
+	}
+	loaded.CompletedUnits = append(loaded.CompletedUnits, "source-b")
+	loaded.Complete = true
+	if err := SaveV2ClaimScanProgress(loaded); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := LoadV2ClaimScanProgress("ws-progress")
+	if err != nil || reloaded == nil || !reloaded.Complete || len(reloaded.CompletedUnits) != 2 {
+		t.Fatalf("reloaded progress = %+v, err=%v", reloaded, err)
+	}
+}
+
+func TestV2ClaimScanContextIDIgnoresTriggerCommit(t *testing.T) {
+	option := attributionlocal.V2ClaimScanOptions{RepoRoot: "/tmp/repo", RepoConfigID: 1, RepoKey: "example.com/org/repo", WorkspaceID: "workspace"}
+	option.CommitSHA = "commit-a"
+	option.CheckpointEventID = "event-a"
+	first, err := v2ClaimScanContextID(option)
+	if err != nil {
+		t.Fatal(err)
+	}
+	option.CommitSHA = "commit-b"
+	option.CheckpointEventID = "event-b"
+	second, err := v2ClaimScanContextID(option)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatal("new commit trigger reset the shared scan context")
+	}
+}
+
 func TestMarkSyncTaskFailureDoesNotClearDifferentActiveRunner(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -198,19 +271,30 @@ func TestUpsertPendingSyncTaskCoalescesRequests(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
+	firstFailureAt := time.Date(2026, 5, 26, 7, 59, 0, 0, time.UTC)
 	workspaceID := "ws-1"
 	first := SyncTask{
-		WorkspaceID:     workspaceID,
-		RepoRoot:        "/tmp/repo",
-		ServerURL:       "https://ae.example.com",
-		AuthSubject:     "user:1",
-		RepoConfigID:    2,
-		RepoKey:         "github.com/acme/repo",
-		Status:          SyncTaskStatusPending,
-		LastRequestedAt: time.Date(2026, 5, 26, 8, 0, 0, 0, time.UTC),
+		WorkspaceID:           workspaceID,
+		RepoRoot:              "/tmp/repo",
+		ServerURL:             "https://ae.example.com",
+		AuthSubject:           "user:1",
+		RepoConfigID:          2,
+		RepoKey:               "github.com/acme/repo",
+		Status:                SyncTaskStatusPending,
+		LastRequestedAt:       time.Date(2026, 5, 26, 8, 0, 0, 0, time.UTC),
+		LastError:             "backend claim delivery failed",
+		LastFailureStage:      "backend_delivery",
+		LastFailureReason:     "backend claim delivery failed",
+		FirstFailureAt:        &firstFailureAt,
+		RemainingTriggerCount: 2,
+		V2Triggers: []V2SyncTrigger{
+			{Kind: "post-commit", EventID: "event-a", CommitSHA: "commit-a"},
+			{Kind: "post-commit", EventID: "event-b", CommitSHA: "commit-b"},
+		},
 	}
 	second := first
 	second.LastRequestedAt = first.LastRequestedAt.Add(2 * time.Minute)
+	second.V2Triggers = []V2SyncTrigger{{Kind: "post-commit", EventID: "event-c", CommitSHA: "commit-c"}}
 
 	if err := SaveSyncTask(first); err != nil {
 		t.Fatalf("SaveSyncTask(first): %v", err)
@@ -225,6 +309,9 @@ func TestUpsertPendingSyncTaskCoalescesRequests(t *testing.T) {
 	}
 	if got == nil || got.LastRequestedAt != second.LastRequestedAt {
 		t.Fatalf("task=%+v, want last_requested_at=%s", got, second.LastRequestedAt)
+	}
+	if got.LastFailureStage != first.LastFailureStage || got.LastFailureReason != first.LastFailureReason || got.FirstFailureAt == nil || !got.FirstFailureAt.Equal(firstFailureAt) || got.RemainingTriggerCount != 3 {
+		t.Fatalf("task diagnostics=%+v, want inherited diagnostics from prior failure", got)
 	}
 
 	if gotPath, wantPath := filepath.Join(attributionlocal.AttributionRootDir(), "workspaces", workspaceID, "sync-task.json"), filepath.Join(home, ".ae-cli", "state", "attribution", "workspaces", workspaceID, "sync-task.json"); gotPath != wantPath {
@@ -296,6 +383,42 @@ type failingV2Uploader struct {
 func (f failingV2Uploader) V2ClaimClient() attributionlocal.V2ClaimBackendClient { return f.client }
 func (f failingV2Uploader) RelayProviderID() int                                 { return 7 }
 
+type countingV2ClaimClient struct{ calls int }
+
+func (c *countingV2ClaimClient) SendAttributionV2Claims(context.Context, []client.AttributionV2ClaimGroup) (*client.AttributionV2ClaimBatchResult, error) {
+	c.calls++
+	return nil, nil
+}
+
+type countingV2Uploader struct {
+	*fakeUploader
+	client *countingV2ClaimClient
+}
+
+func (u countingV2Uploader) V2ClaimClient() attributionlocal.V2ClaimBackendClient { return u.client }
+func (u countingV2Uploader) RelayProviderID() int                                 { return 7 }
+
+func TestRunV2ClaimSyncDoesNotUploadManualCommitWithoutCodexEvidence(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	backend := &countingV2ClaimClient{}
+	task := &SyncTask{WorkspaceID: "ws-manual", V2Triggers: []V2SyncTrigger{{
+		Kind: "post-commit", EventID: "event-manual", CommitSHA: "commit-manual", CapturedAt: time.Now().UTC(),
+	}}}
+	err := runV2ClaimSync(context.Background(), countingV2Uploader{fakeUploader: &fakeUploader{}, client: backend}, ExecutionContext{
+		WorkspaceID: "ws-manual", RepoRoot: t.TempDir(), RepoConfigID: 9, RepoKey: "repo-host.example.com/org/repo",
+	}, task, client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backend.calls != 0 {
+		t.Fatalf("claim uploads = %d, want 0", backend.calls)
+	}
+	progress, err := LoadV2ClaimScanProgress("ws-manual")
+	if err != nil || progress != nil {
+		t.Fatalf("completed scan progress = %+v, err=%v, want removed", progress, err)
+	}
+}
+
 type failingV1Client struct {
 	err     error
 	v2Calls int
@@ -349,6 +472,98 @@ func TestRunV2ClaimSyncPreservesLocalStateOnResponseLoss(t *testing.T) {
 	}
 	if len(state.Claims) != 1 || len(state.Claims[0].Group.RequestIDs) != 1 || state.Claims[0].Group.RequestIDs[0] != "req-1" {
 		t.Fatalf("response loss mutated local state: %+v", state.Claims)
+	}
+}
+
+func TestRunV2ClaimSyncAddsOnlyNewTriggerUnitsAfterBackendFailure(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	for _, name := range []string{"one.jsonl", "two.jsonl"} {
+		path := filepath.Join(home, ".codex", "sessions", name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now().UTC()
+	group := client.AttributionV2ClaimGroup{GroupID: "group-progress", RelayProviderID: 7, RequestIDs: []string{"req-progress"}}
+	if err := attributionlocal.SaveV2ClaimState(&attributionlocal.V2ClaimState{
+		Version: 1, Claims: []attributionlocal.V2ClaimCandidate{{LocalKey: "local-progress", Group: group, FirstSeenAt: now}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	uploader := failingV2Uploader{fakeUploader: &fakeUploader{}, client: failingV2ClaimClient{err: errors.New("backend unavailable")}}
+	execCtx := ExecutionContext{WorkspaceID: "ws-progress-retry", RepoRoot: t.TempDir(), RepoConfigID: 9, RepoKey: "repo-host.example.com/org/repo"}
+	task := &SyncTask{WorkspaceID: execCtx.WorkspaceID, V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: "event-a", CommitSHA: "commit-a", CapturedAt: now}}}
+	protocol := client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept}
+	if err := runV2ClaimSync(context.Background(), uploader, execCtx, task, protocol); err == nil {
+		t.Fatal("first backend failure = nil")
+	}
+	first, err := LoadV2ClaimScanProgress(execCtx.WorkspaceID)
+	if err != nil || first == nil || len(first.CompletedUnits) != 2 {
+		t.Fatalf("first progress = %+v, err=%v", first, err)
+	}
+	task.V2Triggers = append(task.V2Triggers, V2SyncTrigger{Kind: "post-commit", EventID: "event-b", CommitSHA: "commit-b", CapturedAt: now.Add(time.Minute)})
+	if err := runV2ClaimSync(context.Background(), uploader, execCtx, task, protocol); err == nil {
+		t.Fatal("second backend failure = nil")
+	}
+	second, err := LoadV2ClaimScanProgress(execCtx.WorkspaceID)
+	if err != nil || second == nil || len(second.CompletedUnits) != 4 {
+		t.Fatalf("second progress = %+v, err=%v, want one new unit per source", second, err)
+	}
+}
+
+func TestRunV2ClaimSyncResumesRemainingUnitsAfterSourceInterruption(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	for _, name := range []string{"one.jsonl", "two.jsonl"} {
+		path := filepath.Join(home, ".codex", "sessions", name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	execCtx := ExecutionContext{WorkspaceID: "ws-interrupted-scan", RepoRoot: t.TempDir(), RepoConfigID: 9, RepoKey: "repo-host.example.com/org/repo"}
+	now := time.Now().UTC()
+	task := &SyncTask{WorkspaceID: execCtx.WorkspaceID, V2Triggers: []V2SyncTrigger{
+		{Kind: "post-commit", EventID: "event-a", CommitSHA: "commit-a", CapturedAt: now},
+		{Kind: "post-commit", EventID: "event-b", CommitSHA: "commit-b", CapturedAt: now},
+	}}
+	protocol := client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept}
+	backend := &countingV2ClaimClient{}
+	uploader := countingV2Uploader{fakeUploader: &fakeUploader{}, client: backend}
+	original := scanCodexV2ClaimSource
+	calls := 0
+	interrupt := true
+	scanCodexV2ClaimSource = func(scan *attributionlocal.CodexV2ClaimScan, ctx context.Context, sourceKey string, options []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
+		calls++
+		if interrupt && calls == 2 {
+			return nil, context.Canceled
+		}
+		return scan.ScanSource(ctx, sourceKey, options)
+	}
+	t.Cleanup(func() { scanCodexV2ClaimSource = original })
+
+	if err := runV2ClaimSync(context.Background(), uploader, execCtx, task, protocol); !errors.Is(err, context.Canceled) {
+		t.Fatalf("first interrupted run = %v, want context.Canceled", err)
+	}
+	first, err := LoadV2ClaimScanProgress(execCtx.WorkspaceID)
+	if err != nil || first == nil || len(first.CompletedUnits) != 2 {
+		t.Fatalf("interrupted progress = %+v, err=%v, want first source x two triggers", first, err)
+	}
+	interrupt = false
+	if err := runV2ClaimSync(context.Background(), uploader, execCtx, task, protocol); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 3 {
+		t.Fatalf("source calls across interruption and resume = %d, want two initial calls plus only one remaining source", calls)
+	}
+	if progress, err := LoadV2ClaimScanProgress(execCtx.WorkspaceID); err != nil || progress != nil {
+		t.Fatalf("completed progress = %+v, err=%v, want removed", progress, err)
 	}
 }
 

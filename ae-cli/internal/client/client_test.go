@@ -391,6 +391,24 @@ func TestEnsureRepoFromRemote(t *testing.T) {
 	}
 }
 
+func TestEnsureAttributionRepoFromRemote(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/attribution/repos/ensure-remote" || r.Header.Get("Authorization") != "Bearer reporter-token" {
+			t.Fatalf("request = %s %s auth=%q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": RepoEligibilityResponse{
+			Eligible: true, RepoConfigID: 17, RepoKey: "repo-host.example.com/org/repo", BindingState: "unbound",
+		}})
+	}))
+	defer srv.Close()
+	response, err := New(srv.URL, "reporter-token").EnsureAttributionRepoFromRemote(context.Background(), ResolveRepoRequest{
+		RemoteURL: "git@repo-host.example.com:org/repo.git", Branch: "main",
+	})
+	if err != nil || response == nil || !response.Eligible || response.RepoConfigID != 17 {
+		t.Fatalf("response = %+v, err=%v", response, err)
+	}
+}
+
 func TestResolveRepoFromRemote(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/repos/resolve-remote" {

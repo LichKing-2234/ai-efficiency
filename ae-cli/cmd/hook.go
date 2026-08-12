@@ -180,9 +180,12 @@ func resolveHookExecutionContext(ctx context.Context, gitCtx *hooks.GitContext) 
 		record, ok := cache.Lookup(binding, now, true)
 		if ok {
 			if !record.Eligible || record.RepoConfigID == 0 {
-				return hooks.ExecutionContext{}, false
+				if !compactEnabled || strings.TrimSpace(record.Reason) != "not_found" {
+					return hooks.ExecutionContext{}, false
+				}
+			} else {
+				return executionContextFromEligibility(gitCtx, binding, record, true), true
 			}
-			return executionContextFromEligibility(gitCtx, binding, record, true), true
 		}
 		stalePositive, hasStalePositive = cache.LookupStalePositive(binding, true)
 	}
@@ -215,6 +218,19 @@ func resolveHookExecutionContext(ctx context.Context, gitCtx *hooks.GitContext) 
 			return executionContextFromEligibility(gitCtx, binding, stalePositive, true), true
 		}
 		return hooks.ExecutionContext{}, false
+	}
+	if compactEnabled && !resp.Eligible && strings.TrimSpace(resp.Reason) == "not_found" {
+		ensurer, ok := resolver.(attributionHookRepoEnsurer)
+		if !ok {
+			return hooks.ExecutionContext{}, false
+		}
+		resp, err = ensurer.EnsureAttributionRepoFromRemote(resolveCtx, client.ResolveRepoRequest{
+			RemoteURL: gitCtx.RemoteURL,
+			Branch:    gitCtx.Branch,
+		})
+		if err != nil || resp == nil {
+			return hooks.ExecutionContext{}, false
+		}
 	}
 	if stable {
 		cache, err := hookstate.LoadEligibilityCache()
@@ -347,11 +363,20 @@ func shouldSkipUnresolvedHookQueue(serverURL, authSubject, repoKey string) bool 
 		return false
 	}
 	record, ok := cache.Lookup(binding, time.Now(), true)
+	if ok && strings.TrimSpace(record.Reason) == "not_found" {
+		if _, reportingEnabled := loadEnabledReportingConfig(); reportingEnabled {
+			return false
+		}
+	}
 	return ok && !record.Eligible
 }
 
 type hookRepoResolver interface {
 	ResolveRepoFromRemote(ctx context.Context, req client.ResolveRepoRequest) (*client.RepoEligibilityResponse, error)
+}
+
+type attributionHookRepoEnsurer interface {
+	EnsureAttributionRepoFromRemote(ctx context.Context, req client.ResolveRepoRequest) (*client.RepoEligibilityResponse, error)
 }
 
 type attributionHookRepoResolver struct {
@@ -360,6 +385,10 @@ type attributionHookRepoResolver struct {
 
 func (r attributionHookRepoResolver) ResolveRepoFromRemote(ctx context.Context, req client.ResolveRepoRequest) (*client.RepoEligibilityResponse, error) {
 	return r.client.ResolveAttributionRepoFromRemote(ctx, req)
+}
+
+func (r attributionHookRepoResolver) EnsureAttributionRepoFromRemote(ctx context.Context, req client.ResolveRepoRequest) (*client.RepoEligibilityResponse, error) {
+	return r.client.EnsureAttributionRepoFromRemote(ctx, req)
 }
 
 func attributionHookRepoResolverFor(serverURL, token string) hookRepoResolver {

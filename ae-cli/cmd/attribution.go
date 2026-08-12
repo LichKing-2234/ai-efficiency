@@ -76,6 +76,12 @@ var attributionStatusCmd = &cobra.Command{
 			fmt.Fprintf(cmd.OutOrStdout(), "Pending compact buckets: %d\n", len(state.Pending))
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Global Git hooks: %s\n", globalHookSummary())
+		if attrCtx, detectErr := detectAttributionContext(); detectErr == nil {
+			task, loadErr := hooks.LoadSyncTask(attrCtx.workspaceID)
+			if loadErr == nil {
+				printSyncTaskStatus(cmd.OutOrStdout(), task)
+			}
+		}
 		if err := printV2ClaimDeliveryStatus(cmd.OutOrStdout()); err != nil {
 			fmt.Fprintf(cmd.OutOrStdout(), "V2 Claim Delivery: unavailable (%v)\n", err)
 		}

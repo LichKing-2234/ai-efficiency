@@ -12,10 +12,19 @@ import (
 )
 
 type SyncTaskStatus string
+type SyncTaskFailureStage string
 
 const (
 	SyncTaskStatusPending SyncTaskStatus = "pending"
 	SyncTaskStatusRunning SyncTaskStatus = "running"
+
+	SyncTaskFailureStageSync            SyncTaskFailureStage = "sync"
+	SyncTaskFailureStageRunner          SyncTaskFailureStage = "runner"
+	SyncTaskFailureStageLocalState      SyncTaskFailureStage = "local_state"
+	SyncTaskFailureStageSourceDiscovery SyncTaskFailureStage = "source_discovery"
+	SyncTaskFailureStageSourceScan      SyncTaskFailureStage = "source_scan"
+	SyncTaskFailureStageBackendDelivery SyncTaskFailureStage = "backend_delivery"
+	SyncTaskFailureStageAcknowledgement SyncTaskFailureStage = "acknowledgement"
 )
 
 var ErrSyncTaskAlreadyRunning = errors.New("sync task already running")
@@ -23,28 +32,48 @@ var ErrSyncTaskAlreadyRunning = errors.New("sync task already running")
 var syncTaskRunnerAlive = syncTaskProcessAlive
 
 type SyncTask struct {
-	Version            int             `json:"version"`
-	WorkspaceID        string          `json:"workspace_id"`
-	RepoRoot           string          `json:"repo_root"`
-	ServerURL          string          `json:"server_url"`
-	AuthSubject        string          `json:"auth_subject"`
-	RepoConfigID       int             `json:"repo_config_id"`
-	RepoKey            string          `json:"repo_key"`
-	TriggerKind        string          `json:"trigger_kind,omitempty"`
-	TriggerEventID     string          `json:"trigger_event_id,omitempty"`
-	TriggerCommitSHA   string          `json:"trigger_commit_sha,omitempty"`
-	TriggerBranch      string          `json:"trigger_branch,omitempty"`
-	Status             SyncTaskStatus  `json:"status"`
-	LastRequestedAt    time.Time       `json:"last_requested_at"`
-	LastStartedAt      *time.Time      `json:"last_started_at,omitempty"`
-	LastCompletedAt    *time.Time      `json:"last_completed_at,omitempty"`
-	LastError          string          `json:"last_error,omitempty"`
-	AttemptCount       int             `json:"attempt_count"`
-	RunnerPID          int             `json:"runner_pid,omitempty"`
-	LeaseExpiresAt     *time.Time      `json:"lease_expires_at,omitempty"`
-	LastSpawnAttemptAt *time.Time      `json:"last_spawn_attempt_at,omitempty"`
-	V2Triggers         []V2SyncTrigger `json:"v2_triggers,omitempty"`
-	RequestGeneration  int             `json:"request_generation,omitempty"`
+	Version               int                  `json:"version"`
+	WorkspaceID           string               `json:"workspace_id"`
+	RepoRoot              string               `json:"repo_root"`
+	ServerURL             string               `json:"server_url"`
+	AuthSubject           string               `json:"auth_subject"`
+	RepoConfigID          int                  `json:"repo_config_id"`
+	RepoKey               string               `json:"repo_key"`
+	TriggerKind           string               `json:"trigger_kind,omitempty"`
+	TriggerEventID        string               `json:"trigger_event_id,omitempty"`
+	TriggerCommitSHA      string               `json:"trigger_commit_sha,omitempty"`
+	TriggerBranch         string               `json:"trigger_branch,omitempty"`
+	Status                SyncTaskStatus       `json:"status"`
+	LastRequestedAt       time.Time            `json:"last_requested_at"`
+	LastStartedAt         *time.Time           `json:"last_started_at,omitempty"`
+	LastCompletedAt       *time.Time           `json:"last_completed_at,omitempty"`
+	LastError             string               `json:"last_error,omitempty"`
+	LastFailureStage      SyncTaskFailureStage `json:"last_failure_stage,omitempty"`
+	LastFailureReason     string               `json:"last_failure_reason,omitempty"`
+	FirstFailureAt        *time.Time           `json:"first_failure_at,omitempty"`
+	RemainingTriggerCount int                  `json:"remaining_trigger_count,omitempty"`
+	AttemptCount          int                  `json:"attempt_count"`
+	RunnerPID             int                  `json:"runner_pid,omitempty"`
+	LeaseExpiresAt        *time.Time           `json:"lease_expires_at,omitempty"`
+	LastSpawnAttemptAt    *time.Time           `json:"last_spawn_attempt_at,omitempty"`
+	V2Triggers            []V2SyncTrigger      `json:"v2_triggers,omitempty"`
+	RequestGeneration     int                  `json:"request_generation,omitempty"`
+}
+
+type syncTaskStageError struct {
+	stage  SyncTaskFailureStage
+	reason string
+	err    error
+}
+
+func (e *syncTaskStageError) Error() string { return e.err.Error() }
+func (e *syncTaskStageError) Unwrap() error { return e.err }
+
+func syncTaskFailure(stage SyncTaskFailureStage, reason string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &syncTaskStageError{stage: stage, reason: reason, err: err}
 }
 
 type V2SyncTrigger struct {
@@ -153,6 +182,13 @@ func RecoverInactiveSyncTaskRunner(workspaceID string, now time.Time) (*SyncTask
 		current.RunnerPID = 0
 		current.LeaseExpiresAt = nil
 		current.LastError = "runner exited before updating sync task"
+		current.LastFailureStage = SyncTaskFailureStageRunner
+		current.LastFailureReason = "runner exited before updating sync task"
+		if current.FirstFailureAt == nil {
+			failedAt := now.UTC()
+			current.FirstFailureAt = &failedAt
+		}
+		current.RemainingTriggerCount = len(current.V2Triggers)
 		if err := SaveSyncTask(*current); err != nil {
 			return err
 		}
@@ -186,6 +222,12 @@ func UpsertPendingSyncTask(next SyncTask) error {
 			next.LastStartedAt = current.LastStartedAt
 			next.LastCompletedAt = current.LastCompletedAt
 			next.LastError = current.LastError
+			next.LastFailureStage = current.LastFailureStage
+			next.LastFailureReason = current.LastFailureReason
+			next.FirstFailureAt = current.FirstFailureAt
+			if current.FirstFailureAt != nil {
+				next.RemainingTriggerCount = len(next.V2Triggers)
+			}
 			next.LastSpawnAttemptAt = current.LastSpawnAttemptAt
 			if current.HasActiveLease(now) {
 				next.RunnerPID = current.RunnerPID
@@ -363,6 +405,18 @@ func MarkSyncTaskFailure(task *SyncTask, now time.Time, err error) error {
 		latest.Status = SyncTaskStatusPending
 		latest.AttemptCount++
 		latest.LastError = err.Error()
+		latest.LastFailureStage = SyncTaskFailureStageSync
+		latest.LastFailureReason = "attribution sync failed"
+		var stageErr *syncTaskStageError
+		if errors.As(err, &stageErr) {
+			latest.LastFailureStage = stageErr.stage
+			latest.LastFailureReason = stageErr.reason
+		}
+		if latest.FirstFailureAt == nil {
+			failedAt := now.UTC()
+			latest.FirstFailureAt = &failedAt
+		}
+		latest.RemainingTriggerCount = len(latest.V2Triggers)
 		latest.RunnerPID = 0
 		latest.LeaseExpiresAt = nil
 		if saveErr := SaveSyncTask(*latest); saveErr != nil {
@@ -393,6 +447,10 @@ func MarkSyncTaskSuccess(task *SyncTask, now time.Time) error {
 		latest.Status = SyncTaskStatusPending
 		latest.LastCompletedAt = &completed
 		latest.LastError = ""
+		latest.LastFailureStage = ""
+		latest.LastFailureReason = ""
+		latest.FirstFailureAt = nil
+		latest.RemainingTriggerCount = 0
 		latest.RunnerPID = 0
 		latest.LeaseExpiresAt = nil
 		latest.LastSpawnAttemptAt = nil
@@ -434,6 +492,10 @@ func CompleteSyncTaskPass(task *SyncTask, passGeneration int, now time.Time) (bo
 			completed := now.UTC()
 			current.LastCompletedAt = &completed
 			current.LastError = ""
+			current.LastFailureStage = ""
+			current.LastFailureReason = ""
+			current.FirstFailureAt = nil
+			current.RemainingTriggerCount = 0
 			*task = *current
 			return SaveSyncTask(*current)
 		}

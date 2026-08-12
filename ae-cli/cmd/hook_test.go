@@ -250,6 +250,121 @@ func TestHookResolveUsesReporterTokenWithoutOAuthLoginState(t *testing.T) {
 	}
 }
 
+func TestHookPostCommitEnsuresMissingRepoAndContinuesSameEvent(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	var resolveCalls, ensureCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer reporter-token" {
+			t.Fatalf("authorization = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/attribution/repos/resolve-remote":
+			resolveCalls++
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": client.RepoEligibilityResponse{
+				Eligible: false, RepoKey: "github.com/acme/repo", Reason: "not_found",
+			}})
+		case "/api/v1/attribution/repos/ensure-remote":
+			ensureCalls++
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": client.RepoEligibilityResponse{
+				Eligible: true, RepoConfigID: 321, RepoKey: "github.com/acme/repo", FullName: "acme/repo",
+				CloneURL: "https://github.com/acme/repo.git", Status: "active", BindingState: "unbound",
+			}})
+		default:
+			t.Fatalf("unexpected path = %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	if err := reporting.Save("", &reporting.Config{
+		Version: 1, InstallationID: "11111111-1111-4111-8111-111111111111",
+		ServerURL: server.URL, AuthSubject: "user:123", ReporterToken: "reporter-token", ReportingEnabled: true,
+		Protocol: client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cache, err := hookstate.LoadEligibilityCache()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache.PutNegative(hookstate.Context{ServerURL: server.URL, AuthSubject: "user:123", RepoKey: "github.com/acme/repo"}, "https://github.com/acme/repo.git", "not_found", time.Now())
+	if err := cache.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	uploader := &recordingHookUploader{}
+	originalUploader := newHookUploader
+	originalAPIClient := apiClient
+	newHookUploader = func() hooks.Uploader { return uploader }
+	apiClient = nil
+	t.Cleanup(func() {
+		newHookUploader = originalUploader
+		apiClient = originalAPIClient
+	})
+	withWorkingDir(t, repo)
+
+	if err := hookPostCommitCmd.RunE(hookPostCommitCmd, nil); err != nil {
+		t.Fatalf("hook post-commit: %v", err)
+	}
+	if resolveCalls != 1 || ensureCalls != 1 {
+		t.Fatalf("resolve/ensure calls = %d/%d, want 1/1", resolveCalls, ensureCalls)
+	}
+	if len(uploader.events) != 1 || uploader.events[0].RepoConfigID != 321 || uploader.events[0].CommitSHA != runGitOutput(t, repo, "rev-parse", "HEAD") {
+		t.Fatalf("continued hook event = %+v", uploader.events)
+	}
+}
+
+func TestHookPostCommitQueuesRecoveryWhenAutomaticEnsureFails(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/attribution/repos/resolve-remote":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": client.RepoEligibilityResponse{Eligible: false, RepoKey: "github.com/acme/repo", Reason: "not_found"}})
+		case "/api/v1/attribution/repos/ensure-remote":
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{"message": "temporarily unavailable"})
+		default:
+			t.Fatalf("unexpected path = %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	if err := reporting.Save("", &reporting.Config{
+		Version: 1, InstallationID: "11111111-1111-4111-8111-111111111111",
+		ServerURL: server.URL, AuthSubject: "user:123", ReporterToken: "reporter-token", ReportingEnabled: true,
+		Protocol: client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cache, err := hookstate.LoadEligibilityCache()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache.PutNegative(hookstate.Context{ServerURL: server.URL, AuthSubject: "user:123", RepoKey: "github.com/acme/repo"}, "https://github.com/acme/repo.git", "not_found", time.Now())
+	if err := cache.Save(); err != nil {
+		t.Fatal(err)
+	}
+	originalAPIClient := apiClient
+	apiClient = nil
+	t.Cleanup(func() { apiClient = originalAPIClient })
+	withWorkingDir(t, repo)
+
+	if err := hookPostCommitCmd.RunE(hookPostCommitCmd, nil); err != nil {
+		t.Fatalf("hook post-commit must fail open: %v", err)
+	}
+	items, err := hooks.ListUnresolvedHookEvents()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].CommitSHA != runGitOutput(t, repo, "rev-parse", "HEAD") {
+		t.Fatalf("recoverable events = %+v, want current commit", items)
+	}
+}
+
 func TestHookPostCommitUsesExpiredPositiveEligibilityWhenRefreshTimesOut(t *testing.T) {
 	repo := initRepoWithCommitForCmdTests(t)
 	home := t.TempDir()

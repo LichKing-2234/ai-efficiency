@@ -55,6 +55,76 @@ func TestAttributionInstallationTokensHaveDisjointScopes(t *testing.T) {
 	}
 }
 
+func TestReporterCanEnsureMissingRepositoryWithoutAdminSetup(t *testing.T) {
+	env := setupFullTestEnv(t)
+	ctx := context.Background()
+	installationID := uuid.NewString()
+	enroll := doFullRequest(env, http.MethodPost, "/api/v1/attribution/installations", map[string]any{
+		"installation_id": installationID,
+		"label":           "test machine",
+		"client_version":  "test",
+	})
+	credentials := parseFullResponse(t, enroll)["data"].(map[string]any)
+	reporterToken := credentials["reporter_token"].(string)
+	enable := doFullRequest(env, http.MethodPut, "/api/v1/attribution/installations/"+installationID, map[string]any{"reporting_enabled": true})
+	if enable.Code != http.StatusOK {
+		t.Fatalf("enable status = %d, body=%s", enable.Code, enable.Body.String())
+	}
+
+	missing := doFullRequestWithToken(env, http.MethodPost, "/api/v1/attribution/repos/resolve-remote", map[string]any{
+		"remote_url": "git@repo-host.example.com:org/new-repo.git",
+	}, reporterToken)
+	missingData := parseFullResponse(t, missing)["data"].(map[string]any)
+	if missingData["eligible"] != false || missingData["reason"] != "not_found" {
+		t.Fatalf("initial resolve = %+v, want not_found", missingData)
+	}
+
+	var repoID int
+	for attempt := 0; attempt < 2; attempt++ {
+		ensured := doFullRequestWithToken(env, http.MethodPost, "/api/v1/attribution/repos/ensure-remote", map[string]any{
+			"remote_url": "git@repo-host.example.com:org/new-repo.git",
+			"branch":     "main",
+		}, reporterToken)
+		if ensured.Code != http.StatusOK {
+			t.Fatalf("ensure attempt %d status = %d, body=%s", attempt, ensured.Code, ensured.Body.String())
+		}
+		data := parseFullResponse(t, ensured)["data"].(map[string]any)
+		if data["eligible"] != true || data["binding_state"] != "unbound" {
+			t.Fatalf("ensure attempt %d = %+v", attempt, data)
+		}
+		currentID := int(data["repo_config_id"].(float64))
+		if repoID == 0 {
+			repoID = currentID
+		} else if currentID != repoID {
+			t.Fatalf("ensure returned repo ids %d and %d", repoID, currentID)
+		}
+	}
+	provider := env.client.RelayProvider.Create().SetName("relay-unbound").SetDisplayName("Relay Unbound").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-key").SaveX(ctx)
+	checkpoint := doFullRequestWithToken(env, http.MethodPost, "/api/v1/attribution/checkpoints/commit", map[string]any{
+		"event_id": "checkpoint-unbound", "repo_config_id": repoID, "workspace_id": "workspace-unbound",
+		"commit_sha": "commit-unbound", "binding_source": "unbound", "captured_at": time.Now().UTC(),
+	}, reporterToken)
+	if checkpoint.Code != http.StatusCreated {
+		t.Fatalf("unbound checkpoint status = %d, body=%s", checkpoint.Code, checkpoint.Body.String())
+	}
+	claim := doFullRequestWithToken(env, http.MethodPost, "/api/v1/attribution/v2/claim-groups/batch", map[string]any{"groups": []map[string]any{{
+		"schema_version": 2, "group_id": "group-unbound", "relay_provider_id": provider.ID,
+		"thread_id": "thread-unbound", "turn_id": "turn-unbound", "evidence_digest": "evidence-unbound",
+		"commit_allocations": []map[string]any{{"sequence": 1, "repo_config_id": repoID, "workspace_id": "workspace-unbound", "checkpoint_event_id": "checkpoint-unbound", "commit_sha": "commit-unbound", "evidence_digest": "evidence-unbound"}},
+		"request_ids":        []string{"request-unbound"},
+	}}}, reporterToken)
+	if claim.Code != http.StatusCreated {
+		t.Fatalf("unbound v2 claim status = %d, body=%s", claim.Code, claim.Body.String())
+	}
+
+	unauthorized := doFullRequestWithToken(env, http.MethodPost, "/api/v1/attribution/repos/ensure-remote", map[string]any{
+		"remote_url": "https://repo-host.example.com/org/other.git",
+	}, "not-a-reporter-token")
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized ensure status = %d, want %d", unauthorized.Code, http.StatusUnauthorized)
+	}
+}
+
 func TestCompactAttributionHTTPVerticalSlice(t *testing.T) {
 	env := setupFullTestEnv(t)
 	installationID := uuid.NewString()

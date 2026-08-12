@@ -382,6 +382,94 @@ func TestEnsureFromRemote_AutoBindsSingleMatchedProvider(t *testing.T) {
 	}
 }
 
+func TestEnsureReportingFromRemoteDoesNotBindOrConfigureWebhook(t *testing.T) {
+	client, svc := setupTest(t)
+	ctx := context.Background()
+	client.ScmProvider.Create().
+		SetName("GitHub").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetStatus("active").
+		SaveX(ctx)
+	postBindCalls := 0
+	svc.autoBindPostBind = func(context.Context, int, int) (string, error) {
+		postBindCalls++
+		return AutoBindWebhookRegistered, nil
+	}
+
+	rc, err := svc.EnsureReportingFromRemote(ctx, "https://github.com/acme/reporting-only.git", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded := client.RepoConfig.Query().Where(repoconfig.IDEQ(rc.ID)).WithScmProvider().OnlyX(ctx)
+	if loaded.Edges.ScmProvider != nil || loaded.WebhookID != nil || loaded.WebhookSecret != nil || postBindCalls != 0 {
+		t.Fatalf("reporting ensure changed integration configuration: repo=%+v post_bind_calls=%d", loaded, postBindCalls)
+	}
+}
+
+func TestEnsureReportingFromRemoteDoesNotRefreshExistingMetadata(t *testing.T) {
+	client, svc := setupTest(t)
+	ctx := context.Background()
+	existing := client.RepoConfig.Create().
+		SetRepoKey("github.com/acme/existing").
+		SetName("admin-name").
+		SetFullName("admin/full-name").
+		SetCloneURL("https://mirror.example.com/admin/existing.git").
+		SetDefaultBranch("admin-default").
+		SetStatus(repoconfig.StatusActive).
+		SaveX(ctx)
+
+	got, err := svc.EnsureReportingFromRemote(ctx, "git@github.com:acme/existing.git", "hook-branch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != existing.ID || got.Name != existing.Name || got.FullName != existing.FullName || got.CloneURL != existing.CloneURL || got.DefaultBranch != existing.DefaultBranch {
+		t.Fatalf("reporter ensure changed existing metadata: got=%+v existing=%+v", got, existing)
+	}
+}
+
+func TestEnsureReportingFromRemoteConcurrentReplayReturnsOneRepository(t *testing.T) {
+	client, svc := setupTest(t)
+	ctx := context.Background()
+	const workers = 8
+	start := make(chan struct{})
+	results := make(chan int, workers)
+	errors := make(chan error, workers)
+	var wg sync.WaitGroup
+	for index := 0; index < workers; index++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			repoConfig, err := svc.EnsureReportingFromRemote(ctx, "git@github.com:acme/concurrent.git", "main")
+			if err != nil {
+				errors <- err
+				return
+			}
+			results <- repoConfig.ID
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errors)
+	for err := range errors {
+		t.Fatalf("concurrent reporter ensure: %v", err)
+	}
+	wantID := 0
+	for id := range results {
+		if wantID == 0 {
+			wantID = id
+		}
+		if id != wantID {
+			t.Fatalf("concurrent reporter ensure ids include %d and %d", wantID, id)
+		}
+	}
+	if wantID == 0 || client.RepoConfig.Query().CountX(ctx) != 1 {
+		t.Fatalf("concurrent reporter ensure created %d repositories, want one", client.RepoConfig.Query().CountX(ctx))
+	}
+}
+
 func TestCreateDirect_AutoBindsWhenProviderOmitted(t *testing.T) {
 	client, svc := setupTest(t)
 	ctx := context.Background()

@@ -234,7 +234,10 @@ func spooledEventIdentity(item LocalToolUsageEvent) string {
 
 func findCodexJSONLFiles(workspaceRoot, homeDir string) []string {
 	_ = workspaceRoot
-	return walkFiles(filepath.Join(homeDir, ".codex", "sessions"), ".jsonl")
+	paths := walkFiles(filepath.Join(homeDir, ".codex", "sessions"), ".jsonl")
+	paths = append(paths, walkFiles(filepath.Join(homeDir, ".codex", "archived_sessions"), ".jsonl")...)
+	sort.Strings(paths)
+	return paths
 }
 
 func findCodexSQLiteFiles(homeDir string) []string {

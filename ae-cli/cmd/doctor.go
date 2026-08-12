@@ -646,8 +646,17 @@ func printSyncTaskStatus(out io.Writer, task *hooks.SyncTask) {
 	if task.RunnerPID != 0 {
 		fmt.Fprintf(out, "  runner_pid: %d\n", task.RunnerPID)
 	}
-	if strings.TrimSpace(task.LastError) != "" {
-		fmt.Fprintf(out, "  last_error: %s\n", task.LastError)
+	if task.RemainingTriggerCount > 0 {
+		fmt.Fprintf(out, "  remaining_triggers: %d\n", task.RemainingTriggerCount)
+	}
+	if strings.TrimSpace(string(task.LastFailureStage)) != "" {
+		fmt.Fprintf(out, "  failure_stage: %s\n", task.LastFailureStage)
+	}
+	if strings.TrimSpace(task.LastFailureReason) != "" {
+		fmt.Fprintf(out, "  failure_reason: %s\n", task.LastFailureReason)
+	}
+	if task.FirstFailureAt != nil {
+		fmt.Fprintf(out, "  first_failure_at: %s\n", task.FirstFailureAt.UTC().Format(time.RFC3339))
 	}
 }
 

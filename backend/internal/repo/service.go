@@ -325,6 +325,10 @@ func (s *Service) CreateDirect(ctx context.Context, req CreateDirectRequest) (*e
 // FindOrCreateFromRemote finds an existing repo by stable identity or creates
 // an unbound repo from the local git remote metadata.
 func (s *Service) FindOrCreateFromRemote(ctx context.Context, remoteURL, branch string) (*ent.RepoConfig, error) {
+	return s.findOrCreateFromRemote(ctx, remoteURL, branch, true, true)
+}
+
+func (s *Service) findOrCreateFromRemote(ctx context.Context, remoteURL, branch string, autoBind, refreshExisting bool) (*ent.RepoConfig, error) {
 	remoteURL = strings.TrimSpace(remoteURL)
 	if remoteURL == "" {
 		return nil, fmt.Errorf("find or create repo: remote URL is empty")
@@ -342,6 +346,9 @@ func (s *Service) FindOrCreateFromRemote(ctx context.Context, remoteURL, branch 
 	}
 
 	if existing, err := s.findExistingRepoByIdentity(ctx, identity, remoteURL); err == nil && existing != nil {
+		if !refreshExisting {
+			return existing, nil
+		}
 		return s.refreshRepoMetadata(ctx, existing.ID, identity, branch)
 	} else if err != nil {
 		return nil, err
@@ -368,6 +375,9 @@ func (s *Service) FindOrCreateFromRemote(ctx context.Context, remoteURL, branch 
 	if err != nil {
 		if ent.IsConstraintError(err) {
 			if existing, findErr := s.findExistingRepoByIdentity(ctx, identity, remoteURL); findErr == nil && existing != nil {
+				if !refreshExisting {
+					return existing, nil
+				}
 				return s.refreshRepoMetadata(ctx, existing.ID, identity, branch)
 			}
 		}
@@ -375,8 +385,10 @@ func (s *Service) FindOrCreateFromRemote(ctx context.Context, remoteURL, branch 
 	}
 	if s.afterRemoteCreate != nil {
 		s.afterRemoteCreate(rc.ID)
-	} else if _, bindErr := s.AutoBindRepo(ctx, rc.ID); bindErr != nil && s.logger != nil {
-		s.logger.Warn("auto-bind newly discovered repo failed", zap.Int("repo_config_id", rc.ID), zap.Error(bindErr))
+	} else if autoBind {
+		if _, bindErr := s.AutoBindRepo(ctx, rc.ID); bindErr != nil && s.logger != nil {
+			s.logger.Warn("auto-bind newly discovered repo failed", zap.Int("repo_config_id", rc.ID), zap.Error(bindErr))
+		}
 	}
 	return s.entClient.RepoConfig.Query().
 		Where(repoconfig.IDEQ(rc.ID)).

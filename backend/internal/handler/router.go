@@ -431,6 +431,7 @@ func setupRouter(
 	{
 		attributionReporterGroup.POST("/v2/claim-groups/batch", attributionHandler.CreateV2Claims)
 		attributionReporterGroup.POST("/repos/resolve-remote", repoHandler.ResolveRemote)
+		attributionReporterGroup.POST("/repos/ensure-remote", repoHandler.EnsureReportingRemote)
 		attributionReporterGroup.POST("/usage-buckets/batch", attributionHandler.CreateBuckets)
 		attributionReporterGroup.POST("/usage-buckets/:bucket_id/revisions", attributionHandler.CreateRevision)
 		if checkpointHandler != nil {
