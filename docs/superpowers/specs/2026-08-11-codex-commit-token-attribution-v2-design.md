@@ -1,9 +1,9 @@
 # Codex Commit Token Attribution v2 Design
 
 **Date:** 2026-08-11
-**Status:** Approved target contract; cutover remains blocked pending official sub2api usage-reader authorization for the real canary
+**Status:** Active production contract since the verified 2026-08-12 cutover; #252 stable-window legacy cleanup remains pending
 **Scope:** `ae-cli`, backend attribution/reconciliation/read models, frontend Activity, repository administration
-**Supersedes for target behavior:** [Codex Token Attribution Ledger POC](./2026-08-05-codex-token-attribution-ledger-poc-design.md)
+**Supersedes for active behavior:** [Codex Token Attribution Ledger POC](./2026-08-05-codex-token-attribution-ledger-poc-design.md)
 **Related:**
 
 - [Architecture](../../architecture.md)
@@ -14,20 +14,15 @@
 
 ## 1. Contract Status And Migration Boundary
 
-This specification defines the approved production target for Codex commit
-Token attribution. It does not describe the currently deployed/runtime POC and
-does not authorize a release, deployment, data reset, or `sub2api` change.
+This specification is the active production contract for Codex commit Token
+attribution. The verified 2026-08-12 cutover selected `formal_v2`, rejected v1
+writes, reset the exported v1 POC dataset, and enabled formal Activity and
+readiness. The 2026-08-05 document remains historical POC context; its v1 and
+`shadow_v2` data never becomes formal truth.
 
-Until the explicit v2 cutover:
-
-- current code and the 2026-08-05 POC remain the runtime truth;
-- v2 writes and reads use an isolated shadow epoch;
-- current Activity and readiness must not consume v2 canary data;
-- `docs/architecture.md` continues to describe the implemented runtime.
-
-At cutover, this specification becomes the active attribution contract. The
-cutover must update `docs/architecture.md` in the same delivery and preserve the
-2026-08-05 document as historical POC context.
+This contract does not authorize a later release, deployment, data migration,
+legacy cleanup, or `sub2api` change. Those actions retain their own execution
+authority and verification gates.
 
 ## 2. Product Boundary
 
@@ -548,10 +543,29 @@ No historical data is backfilled. Rollback may pause or hide v2, but known
 incorrect v1 totals never become formal again. Data deletion, release, and
 deployment each require explicit authority in the execution turn.
 
-After at least seven continuous stable days and explicit adoption/health gates,
-remove v1 ingest/read code, v1 frontend Bucket/Request UI, AE OTLP ingest,
-`aeo_*` credentials, and fields used only by the POC. Platform and CLI releases
-remain separate release units.
+The stable window starts only after every cutover readback is green. After at
+least seven continuous stable days, legacy cleanup requires all of these gates:
+
+- adoption is a pool delta, not a Token-volume threshold: relative to the
+  recorded Day 0 baseline, at least one additional `formal_v2` direct/shared
+  pool must come from an ordinary developer workflow; staging, synthetic,
+  qualification, cutover, and operator canaries do not qualify;
+- production live/readiness remains healthy, v1 writes continue returning the
+  structured `upgrade_required` response, near-expiry remains zero, pending
+  claims remain before the final-attempt boundary, and no terminal
+  reconciliation, source-expiry, hard-expiry, finalization, or cleanup error
+  counter increases;
+- authenticated readiness remains `active`; Activity shows the additional
+  formal pool with complete claim coverage and an exact fresh Usage ratio; the
+  final SCM coverage read has no failed, partial, unsynced, or stale Repository;
+- formal pool and commit-relation counts and totals have not decreased or been
+  recounted, and both reset v1 tables remain zero.
+
+Any failed gate restarts the seven-day clock after correction. Only then may a
+separately authorized cleanup remove v1 ingest/read code, v1 frontend
+Bucket/Request UI, AE OTLP ingest, `aeo_*` credentials, and fields used only by
+the POC. It must preserve user-managed OTel and every formal pool and commit
+relation. Platform and CLI releases remain separate release units.
 
 ## 15. Acceptance Matrix
 
