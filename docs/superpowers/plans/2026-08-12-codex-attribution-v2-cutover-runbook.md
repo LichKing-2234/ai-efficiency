@@ -5,11 +5,10 @@
 **Owner ticket:** [#250](https://github.com/LichKing-2234/ai-efficiency/issues/250)  
 **Execution ticket:** [#251](https://github.com/LichKing-2234/ai-efficiency/issues/251)
 
-This runbook prepares the reversible evidence and exact operator sequence for
-the v2 cutover. It was not executed from #250. The #251 execution turn has
-recorded release, deployment, cutover, and deletion authority; it must still
-record the approved immutable candidate SHA and pass every gate before changing
-runtime state.
+This runbook records the reversible evidence and exact operator sequence used
+for the completed #251 cutover. The later #252 legacy cleanup remains blocked
+until `2026-08-19T12:59:09Z` and may proceed only if every stable-window gate is
+still green.
 
 ## Execution Status
 
@@ -131,7 +130,7 @@ counts/totals and manifest hash, never raw rows.
 
 ## 4. Exact v1 Reset Procedure
 
-This is the complete current v1 POC dataset: immutable
+At cutover, this was the complete v1 POC dataset: immutable
 `attribution_usage_buckets` plus its append-only
 `attribution_allocation_revisions`. Reporting installations, checkpoints,
 repositories, PRs, users, and every v2 table are deliberately preserved.
