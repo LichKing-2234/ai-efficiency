@@ -71,6 +71,8 @@ T01 contract publication (#253)
   The App Server produced a trusted identity and the scanner matched it to one
   deterministic commit, but production returned HTTP 404 for
   `/api/v1/attribution/v2/claim-groups/batch`; no claim was ingested or reconciled.
+  The live probe reports `v0.1.0-preview.81` at commit `4008d3fc`, whose
+  deployed router does not contain the v2 route; current `origin/main` does.
 
 ### T05 — Git hooks, outbox, runner, and OTel exit ([#244](https://github.com/LichKing-2234/ai-efficiency/issues/244))
 

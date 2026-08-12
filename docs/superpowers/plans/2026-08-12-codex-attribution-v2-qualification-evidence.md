@@ -74,7 +74,9 @@ contains:
   without entering the formal epoch. The App Server persisted the trusted
   completed-response identity and the scanner matched it to one deterministic
   commit; production returned HTTP 404 for the v2 claim ingest route, so no
-  formal or shadow Activity data was written.
+  formal or shadow Activity data was written. The live health probe reports
+  `v0.1.0-preview.81` at `4008d3fc`; that deployed commit predates the route,
+  while current `origin/main` contains it.
 
 ## Authorized Real Canary Attempt
 
