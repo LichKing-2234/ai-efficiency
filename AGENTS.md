@@ -213,8 +213,8 @@ chore(deploy): update Docker Compose configuration
 ## Important Files
 
 - `docs/architecture.md` — 项目级架构总览与图示
-- `docs/superpowers/specs/2026-08-11-codex-commit-token-attribution-v2-design.md` — 已批准但尚未 cutover 的 production v2 目标合同：sub2api 官方 Token、确定性 commit proof、90 天 hot claim、长期 usage pool、Activity/Usage/Repos 页面边界
-- `docs/superpowers/specs/2026-08-05-codex-token-attribution-ledger-poc-design.md` — 当前代码仍在运行的 compact POC 合同；在 v2 cutover 前用于解释 JSONL Token、OTLP correlation、bucket/revision 与现有 Activity 行为
+- `docs/superpowers/specs/2026-08-11-codex-commit-token-attribution-v2-design.md` — 2026-08-12 cutover 后生效的 production v2 合同：sub2api 官方 Token、确定性 commit proof、90 天 hot claim、长期 usage pool、Activity/Usage/Repos 页面边界与 #252 稳定窗口清理门禁
+- `docs/superpowers/specs/2026-08-05-codex-token-attribution-ledger-poc-design.md` — 已完成 reset 的历史 compact POC 合同；仅用于解释 v1 JSONL Token、OTLP correlation、bucket/revision 的设计背景，不再代表当前 formal Activity
 - `docs/ui-guidelines.md` — 当前前端组件库、响应式布局、图表和体积预算合同
 - `docs/superpowers/specs/2026-07-25-stateless-team-usage-prewarm-worker-design.md` — 当前 Team Usage prewarm worker、Redis generation/manifest 与 backend 只读 fallback 主设计
 - `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md` — 当前全站加载性能、Redis read model、Team Overview 拆分和 serving/observability 主设计

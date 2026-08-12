@@ -2,6 +2,7 @@
 
 **Date:** 2026-08-11
 **Status:** T01-T12 are complete. #251 finished the separate CLI/platform releases, staging rehearsal, production formal-v2 cutover, v1 POC export/reset, and final readbacks on 2026-08-12. T13 is in its seven-day stable window; #252 cleanup must not run before `2026-08-19T12:59:09Z` and remains conditional on every acceptance gate being green.
+**T13 Day 0:** The read-only production baseline has one formal pool, pending `3`, near-expiry `0`, active readiness, complete claim coverage, and an exact ratio. The additional ordinary-workflow pool and final SCM freshness gates remain unsatisfied; no cleanup has run.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -170,8 +171,14 @@ T01 contract publication (#253)
 
 ### T13 — Stable-window legacy cleanup ([#252](https://github.com/LichKing-2234/ai-efficiency/issues/252))
 
-- [ ] Observe at least seven continuous stable days and satisfy explicit
-  adoption/health gates.
+- [ ] Observe seven continuous stable days from `2026-08-12T12:59:09Z`; do not
+  clean before `2026-08-19T12:59:09Z`, and restart the clock after any failed
+  gate.
+- [ ] From the Day 0 baseline of one formal pool, read back at least one
+  additional non-canary ordinary-workflow `formal_v2` direct/shared pool.
+- [ ] Keep live/ready, structured v1 `upgrade_required`, reconciliation/error,
+  near-expiry, pending-boundary, Activity/readiness/ratio, final SCM freshness,
+  formal pool/relation conservation, and zero-v1-table gates green.
 - [ ] Remove v1 ingest/read/frontend Bucket surfaces, AE OTLP route/config, and
   legacy-only credentials/fields without touching user OTel.
 - [ ] Verify schema/data safety, upgrade behavior, backend/CLI/frontend tests,
