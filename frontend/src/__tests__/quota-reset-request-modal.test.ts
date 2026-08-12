@@ -56,7 +56,7 @@ describe('QuotaResetRequestModal', () => {
     expect(dialog.props('alignCenter')).toBe(true)
 
     const field = wrapper.get('[data-testid="quota-reset-group-field"]')
-    expect(field.classes()).toContain('border-cyan-300')
+    expect(field.classes()).toEqual(expect.arrayContaining(['border-cyan-200', 'ring-1', 'ring-cyan-200']))
     expect(selectInput(wrapper).attributes('aria-label')).toBe('Access group')
     expect(wrapper.get('[data-testid="quota-reset-group-select"]').text()).toContain('Select an access group')
     expect(wrapper.find('[data-testid="quota-reset-current-usage"]').exists()).toBe(false)

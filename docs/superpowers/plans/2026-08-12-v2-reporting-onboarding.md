@@ -1,7 +1,7 @@
 # v2 上报接入与个人 Activity 状态实施台账
 
 **日期：** 2026-08-12  
-**状态：** 功能实现、全量测试和真实浏览器矩阵完成；#271、#268、#232、#233、#234、#237、#238、#239、#270 均已完成实现、回归与逐项设计审计；正在执行最终 diff 审计和 PR/staging 交付。  
+**状态：** 功能实现、全量测试和真实浏览器矩阵完成；#271、#268、#232、#233、#234、#237、#238、#239、#270 均已完成实现、回归与逐项设计审计；hosted CI 暴露的 frontend 体积余量问题已按 #234 合同完成本地修复，等待新 exact head CI 与 staging 交付。
 **设计合同：** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)  
 **交付 PR：** [#235](https://github.com/LichKing-2234/ai-efficiency/pull/235)
 
@@ -95,7 +95,7 @@
 - [x] `cd frontend && npm run test:e2e:role`
 - [x] 390/768/1024/1280/1440 浏览器矩阵、键盘/焦点、无页面级横向溢出。
 - [x] `git diff --check` 与最终 spec/Issue/代码逐项审计。
-- [ ] PR #235 标题、正文和 head 更新为本轮真实含义。
+- [x] PR #235 标题、正文和 head 更新为本轮真实含义。
 - [ ] Hosted CI 对 exact PR head 全绿。
 - [ ] Staging 部署 exact candidate，并回读镜像/提交、health、capabilities、CLI/Activity 行为。
 - [ ] production 保持不变。
@@ -242,6 +242,14 @@
 - 红灯：现有角色矩阵的 `/auth/me` 未声明 `reporting_capabilities`，也未 mock `/api/v1/attribution/status` 与 `/api/v1/user/quota-reset/options`；因此旧 126 条检查虽绿，但从未渲染新 reporting guide 或真实打开申请弹窗。
 - 绿灯：只扩展现有 HTTP boundary mock 和 route exercise；`/user` 验证 full guide、正常命令、默认折叠与键盘展开的连续边框，个人 `/activity` 验证 command-free active compact guide，member Activity 验证零引导，`/usage` 验证空组选项、选择关闭与用量后显，`/repos` 验证每行单一 binding 表达。
 - 完整矩阵：`126/126`，覆盖 390/768/1024/1280/1440；截图写入 `/tmp/ae-e2e-role-v2-final/`。所有页面无 document/body/main 横向溢出，视觉复核通过。
+
+### #234 / Hosted CI 体积预算修复
+
+- 红灯：PR head `0bb9d02f` 的 hosted frontend CI 在 Node 20 测得 initial shell `72,819/72,800 B gzip`；本地 Node 26 为 `72,678 B`，说明原本只留 122 B 的余量不足以覆盖 Node/zlib 差异。现有 72,800 阈值保持不变。
+- 根因：本 PR 没有修改 initial-shell TypeScript 模块；新增 lazy route UI 使用了 9 个主干未生成的 Tailwind utilities，它们进入全局入口 CSS。未改 auth、router chunk recovery、session 逻辑或构建阈值。
+- 绿灯：Reporting guide 与 quota modal 改为复用主干已有的颜色、tracking、ring 和 code-block utilities，并删除无意义的 `transition-colors`；空接入组现在以已有 `border + ring` 组合保持明确高亮。没有新增 CSS helper、wrapper、依赖或构建特例。
+- 回归：相关三套组件测试 `63/63`、frontend 全量 `774/774`、`vue-tsc --noEmit`、角色 E2E 重跑和 `git diff --check` 均通过。`build:measure` 为 initial shell `72,605/72,800 B gzip`，保留 195 B 本地余量；`/usage` 为 `159,052/159,500 B gzip`。
+- 设计审计：改动只收敛 #234/#237 的表现层 utility 选择，不改变五态 readiness、轮询、命令、额度重置显式选择、Element Plus 交互或 v2 协议；仍复用原组件和既有 Tailwind 设计系统，不存在 workaround 或重复实现。
 
 ### 最终审计
 

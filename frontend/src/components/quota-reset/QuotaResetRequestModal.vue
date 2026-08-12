@@ -61,8 +61,8 @@ function submit() {
       <div class="mt-5 space-y-4">
         <div
           data-testid="quota-reset-group-field"
-          class="rounded-lg border p-3 transition-colors"
-          :class="selectedGroupID ? 'border-slate-200 bg-white' : 'border-cyan-300 bg-cyan-50'"
+          class="rounded-lg border p-3"
+          :class="selectedGroupID ? 'border-slate-200 bg-white' : 'border-cyan-200 bg-cyan-50 ring-1 ring-inset ring-cyan-200'"
         >
           <span class="text-sm font-semibold text-slate-800">
             {{ t('quotaReset.subscriptionGroup') }}

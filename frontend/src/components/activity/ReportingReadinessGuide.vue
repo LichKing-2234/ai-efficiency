@@ -126,7 +126,7 @@ onBeforeUnmount(() => {
     :class="variant === 'full' ? 'w-full rounded-xl border border-slate-200 bg-white p-4 sm:p-6' : 'min-w-0'"
   >
     <header v-if="variant === 'full'">
-      <p class="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-700">{{ txt('eyebrow') }}</p>
+      <p class="text-xs font-semibold uppercase tracking-wide text-cyan-700">{{ txt('eyebrow') }}</p>
       <h2 class="mt-1 text-xl font-semibold text-slate-950">{{ txt('title') }}</h2>
       <p class="mt-1 max-w-3xl text-sm leading-6 text-slate-600">{{ txt('fullDescription') }}</p>
     </header>
@@ -149,13 +149,13 @@ onBeforeUnmount(() => {
         <div
           v-if="readiness.state === 'active'"
           data-testid="reporting-active-state"
-          class="flex min-w-0 items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-950"
+          class="flex min-w-0 items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-900"
         >
-          <span aria-hidden="true" class="mt-1 h-2 w-2 shrink-0 rounded-full bg-emerald-500"></span>
+          <span aria-hidden="true" class="mt-0.5 shrink-0 text-emerald-700">●</span>
           <div class="min-w-0">
             <p class="text-sm font-semibold">{{ stateTitle }}</p>
             <p class="mt-0.5 text-sm leading-5 text-emerald-900">{{ stateDescription }}</p>
-            <p v-if="latestAccepted" class="mt-1 text-xs text-emerald-800">{{ txt('latestAccepted') }} · {{ latestAccepted }}</p>
+            <p v-if="latestAccepted" class="mt-1 text-xs text-emerald-700">{{ txt('latestAccepted') }} · {{ latestAccepted }}</p>
           </div>
         </div>
         <ElAlert
@@ -191,7 +191,7 @@ onBeforeUnmount(() => {
                 {{ copiedCommand === command.key ? txt('copied') : txt('copy') }}
               </ElButton>
             </div>
-            <pre class="mt-2 overflow-x-auto rounded-md bg-slate-950 px-3 py-2 font-mono text-xs leading-5 text-green-300"><code>{{ command.value }}</code></pre>
+            <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 font-mono text-xs leading-5 text-green-300"><code>{{ command.value }}</code></pre>
           </li>
         </ol>
       </section>
@@ -216,7 +216,7 @@ onBeforeUnmount(() => {
                     {{ copiedCommand === command.key ? txt('copied') : txt('copy') }}
                   </ElButton>
                 </div>
-                <pre class="mt-2 overflow-x-auto rounded-md bg-slate-950 px-3 py-2 font-mono text-xs leading-5 text-green-300"><code>{{ command.value }}</code></pre>
+                <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 font-mono text-xs leading-5 text-green-300"><code>{{ command.value }}</code></pre>
               </div>
             </div>
           </div>
