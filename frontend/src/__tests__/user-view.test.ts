@@ -737,6 +737,9 @@ describe('UserView', () => {
     expect(installFallback.classes()).toContain('el-collapse')
     expect(loginFallback.classes()).toContain('el-collapse')
     expect(advancedDetails.classes()).toContain('el-collapse')
+    expect(advancedDetails.classes()).not.toContain('px-4')
+    expect(advancedDetails.get('[data-testid="auto-advanced-title"]').classes()).toContain('px-4')
+    expect(advancedDetails.get('[data-testid="auto-advanced-content"]').classes()).toContain('px-4')
 
     expect(wrapper.text()).toContain('Alternate OS installer')
     expect(wrapper.text()).toContain('Device login fallback')

@@ -703,14 +703,10 @@ function repoStatusType(status: string) {
                       {{ repo.binding_state === 'bound' ? t('repos.bound') : t('repos.needsBinding') }}
                     </el-tag>
                   </div>
-          <dl class="mt-3 grid grid-cols-2 gap-3 text-xs xl:mt-0">
+          <dl class="mt-3 text-xs xl:mt-0">
                     <div>
                       <dt class="text-gray-400">{{ t('repos.status') }}</dt>
                       <dd class="mt-1"><el-tag :type="repoStatusType(repo.status)" size="small">{{ repositoryStatusLabel(repo.status, t) }}</el-tag></dd>
-                    </div>
-                    <div>
-                      <dt class="text-gray-400">{{ t('repos.binding') }}</dt>
-                      <dd class="mt-1 text-gray-800">{{ repo.binding_state === 'bound' ? t('repos.bound') : t('repos.needsBinding') }}</dd>
                     </div>
                   </dl>
           <div class="mt-3 flex flex-wrap items-center gap-3 text-sm xl:mt-0 xl:justify-end" @click.stop>

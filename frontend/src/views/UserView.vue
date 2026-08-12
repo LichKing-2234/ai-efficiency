@@ -1200,28 +1200,30 @@ onBeforeUnmount(() => {
                     </div>
                   </section>
 
-                  <ElCollapse data-testid="auto-advanced" class="mt-6 rounded-lg border border-gray-200 px-4">
+                  <ElCollapse data-testid="auto-advanced" class="mt-6 overflow-hidden rounded-lg border border-gray-200">
                     <ElCollapseItem name="advanced">
                       <template #title>
-                        <span class="text-base font-semibold leading-6 text-gray-900">{{ t('user.commandReference') }}</span>
+                        <span data-testid="auto-advanced-title" class="block w-full px-4 text-base font-semibold leading-6 text-gray-900">{{ t('user.commandReference') }}</span>
                       </template>
-                      <p class="text-sm leading-5 text-gray-600">{{ t('user.commandReferenceHelp') }}</p>
+                      <div data-testid="auto-advanced-content" class="px-4 pb-4">
+                        <p class="text-sm leading-5 text-gray-600">{{ t('user.commandReferenceHelp') }}</p>
 
-                      <div class="mt-4 space-y-3 text-sm">
-                        <div
-                          v-for="command in automaticAdvancedCommands"
-                          :key="command.key"
-                          class="rounded-md border border-gray-200 p-3 shadow-sm"
-                        >
-                          <div class="font-medium leading-6 text-gray-900">{{ command.title }}</div>
-                          <p class="mt-1 text-sm leading-5 text-gray-600">{{ command.help }}</p>
-                          <div class="mt-3 flex items-center justify-between gap-3">
-                            <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{{ command.label }}</div>
-                            <ElButton link type="primary" @click="copyCommand(command.key, command.value)">
-                              {{ copyCommandLabel(command.key) }}
-                            </ElButton>
+                        <div class="mt-4 space-y-3 text-sm">
+                          <div
+                            v-for="command in automaticAdvancedCommands"
+                            :key="command.key"
+                            class="rounded-md border border-gray-200 p-3 shadow-sm"
+                          >
+                            <div class="font-medium leading-6 text-gray-900">{{ command.title }}</div>
+                            <p class="mt-1 text-sm leading-5 text-gray-600">{{ command.help }}</p>
+                            <div class="mt-3 flex items-center justify-between gap-3">
+                              <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{{ command.label }}</div>
+                              <ElButton link type="primary" @click="copyCommand(command.key, command.value)">
+                                {{ copyCommandLabel(command.key) }}
+                              </ElButton>
+                            </div>
+                            <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.value }}</pre>
                           </div>
-                          <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.value }}</pre>
                         </div>
                       </div>
                     </ElCollapseItem>

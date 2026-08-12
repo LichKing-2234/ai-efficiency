@@ -519,6 +519,14 @@ describe('RepoListView', () => {
     expect(wrapper.findAll('.el-tag').length).toBeGreaterThan(0)
   })
 
+  it('shows repository binding state only once per row', async () => {
+    setLocale('en-US')
+    const { wrapper } = await mountRepoList(sampleRepos)
+    const row = wrapper.findAll('[data-testid="repo-row"]')[0]
+
+    expect(row.findAll('dt').map((term) => term.text())).toEqual(['Status'])
+  })
+
   it('shows auto-bind action only for admins', async () => {
     const admin = await mountRepoList(sampleRepos, '/repos', { admin: true })
     expect(admin.wrapper.find('[data-testid="repo-auto-bind-button"]').exists()).toBe(true)
