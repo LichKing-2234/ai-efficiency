@@ -121,12 +121,17 @@ func TestScanCodexV2ClaimsMultiRequestStableArchiveRecoveryAndPrivacy(t *testing
 func TestScanCodexV2ClaimsUsesCompletedResponseIdentityAndTransportItem(t *testing.T) {
 	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
 	home := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "repo-alias")
+	if err := os.Symlink(repo, alias); err != nil {
+		t.Fatal(err)
+	}
 	session := filepath.Join(home, ".codex", "sessions", "session.jsonl")
 	writeV2JSONL(t, session,
 		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "thread-real"}},
 		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-real"}},
 		map[string]any{"type": "response_item", "payload": map[string]any{"type": "function_call_output", "output": `untrusted response_id: fake-request`}},
 		map[string]any{"type": "response_item", "payload": map[string]any{"id": "ctc-real", "call_id": "call-real", "type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: feature.go\n+package feature\n*** End Patch"}},
+		map[string]any{"type": "event_msg", "payload": map[string]any{"type": "patch_apply_end", "call_id": "call-real", "turn_id": "turn-real", "changes": map[string]any{filepath.Join(alias, "feature.go"): map[string]any{"type": "add", "content": "package feature\n"}}}},
 		map[string]any{"type": "event_msg", "payload": map[string]any{"type": "token_count", "info": map[string]any{"last_token_usage": map[string]any{"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}}}},
 	)
 	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {

@@ -562,6 +562,12 @@ func canonicalClaimPath(repoRoot, path string) string {
 		return ""
 	}
 	if filepath.IsAbs(path) {
+		if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
+			repoRoot = resolved
+		}
+		if resolved, err := filepath.EvalSymlinks(filepath.Dir(path)); err == nil {
+			path = filepath.Join(resolved, filepath.Base(path))
+		}
 		relative, err := filepath.Rel(repoRoot, path)
 		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 			return ""
