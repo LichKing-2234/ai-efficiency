@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Design
 
 **Date:** 2026-08-11
-**Status:** Active production contract since the verified 2026-08-12 cutover; #252 stable-window legacy cleanup remains pending
+**Status:** Active production contract since the verified 2026-08-12 cutover; the approved Responses WebSocket extension uses Codex-local Token and remains pending release and a real canary; #252 stable-window legacy cleanup remains pending
 **Scope:** `ae-cli`, backend attribution/reconciliation/read models, frontend Activity, repository administration
 **Supersedes for active behavior:** [Codex Token Attribution Ledger POC](./2026-08-05-codex-token-attribution-ledger-poc-design.md)
 **Related:**
@@ -42,11 +42,15 @@ chargeback, or cost accounting.
 
 ## 3. Accounting Truth
 
-For a Request accepted into the formal commit ledger, `sub2api` is the only
-Token value authority. Local Codex artifacts provide correlation and
-calibration evidence only.
+The Token authority is explicit and mutually exclusive per claim group:
 
-The formal Request total is:
+- `relay_official`: Responses HTTP uses exact Request IDs and the current
+  `sub2api` admin usage result;
+- `codex_local`: Responses WebSocket uses measured Codex JSONL
+  `token_count.info.last_token_usage` because no stable Request identity is
+  available through the supported Relay API.
+
+The formal contribution total is:
 
 ```text
 total_tokens
@@ -56,19 +60,29 @@ total_tokens
 + cache_read_tokens
 ```
 
-The ledger preserves all four components and the effective requested model
-returned by the current `sub2api` admin usage contract. It does not persist API
-key, account, upstream routing model, prompt, response, code, patch, command, or
-local path in the long-lived pool.
+For `codex_local`, Codex `input_tokens` already includes cached input. The CLI
+normalizes it to `input_tokens = raw input - cached input - cache write` before
+upload, so the four stored components still sum exactly to `total_tokens`.
+Reasoning output remains part of `output_tokens` and is not added again.
 
-AI Efficiency does not attempt to equal all AI usage. A Request without
-deterministic committed-code evidence remains local and never contributes
-formal AE Token.
+The ledger preserves all four components, requested model, and a 15-minute UTC
+usage bucket. It does not persist API key, account, upstream routing model,
+prompt, response, code, patch, command, local path, or a WebSocket response ID
+in the long-lived pool.
+
+`codex_local` is authenticated to the reporting installation and frozen Relay
+provider, but without an upstream Request identity AE cannot independently
+revalidate Relay user/API-key ownership. It is therefore suitable for the
+committed-code Activity metric, not billing, chargeback, or security audit.
+
+AI Efficiency does not attempt to equal all AI usage. An HTTP Request or local
+WebSocket response without deterministic committed-code evidence remains local
+and never contributes formal AE Token.
 
 The accounting invariant is:
 
-> Every reconciled Request associated with committed code contributes exactly
-> the official `sub2api` Token once globally.
+> Every accepted HTTP Request or WebSocket local usage aggregate associated
+> with committed code contributes exactly once globally.
 
 ## 4. Local Claim Construction
 
@@ -76,34 +90,44 @@ The local v2 claim group binds:
 
 ```text
 relay_provider_id
-request_ids[]
+token_source: relay_official | codex_local
+request_ids[]                 # relay_official only
+local_usage[]                 # codex_local only
 thread_id / turn_id
 structured mutation evidence
 repo / worktree evidence
 commit allocation sequence
-local calibration envelope
+local calibration envelope    # relay_official only
 ```
 
 Rules:
 
 - `relay_provider_id` is the backend provider selected by discover and is
   frozen when the group is created;
-- provider switching never rewrites an older pending group;
-- the local correlation seam must bind the exact `sub2api` usage `request_id`
-  to `thread_id + turn_id`; transport connection or handshake IDs are not
-  Request identities;
-- Codex is deterministically configured with
-  `model_providers.<provider>.supports_websockets = false`. The official
-  sub2api lookup identity is the successful Responses HTTP completion's
-  `x-client-request-id`, normalized to one `client:` prefix. The trusted Codex
-  SQLite transport log must bind it directly to the same `thread.id + turn.id`;
+- provider and Token source switching never rewrite an older pending group;
+- `relay_official` binds the successful Responses HTTP completion's
+  `x-client-request-id`, normalized to one `client:` prefix, directly to the
+  same trusted SQLite `thread.id + turn.id`. Transport connection IDs,
   `x-request-id`, Kong IDs, SSE `response.id`, timing proximity, and unmatched
-  or ambiguous evidence are rejected. Responses WebSocket remains unsupported
-  until Codex provides an equivalent trusted persistent seam;
-- one turn may contain multiple Requests and all Requests share the turn's
-  mutation set;
-- local Token exists once at group level for calibration and is never treated
-  as per-Request official Token;
+  or ambiguous evidence are rejected;
+- `codex_local` requires a trusted SQLite `response.completed` event from the
+  Responses WebSocket transport for the exact local `thread.id + turn.id`.
+  Its `resp_*` value proves only that the transport completed; it is neither a
+  Relay Request identity nor uploaded or persisted by AE;
+- WebSocket Token comes from JSONL `last_token_usage`, which is an incremental
+  response total. A matching cumulative `total_token_usage` snapshot is
+  required to suppress repeated terminal rows. Missing model, usage timestamp,
+  cumulative snapshot, invalid cache decomposition, inconsistent totals, or
+  overflow fails the local source closed;
+- WebSocket Token is normalized and aggregated locally by requested model and
+  15-minute UTC usage bucket. The aggregate `request_count` counts accepted
+  incremental response rows; it does not preserve their identities;
+- a turn containing both trusted HTTP Request IDs and trusted WebSocket
+  completion evidence is `mixed_token_sources` and is not uploaded;
+- one turn may contain multiple HTTP Requests or WebSocket responses and all
+  share the turn's mutation set;
+- HTTP local Token exists once at group level for calibration only. WebSocket
+  local usage is the formal source and never carries calibration or Request IDs;
 - the stable group ID must not depend on a file path, line number, or the
   current count of late-arriving Requests.
 
@@ -140,7 +164,7 @@ Failed delivery remains in a durable local outbox. Hooks never block commit or
 push. A runner that receives new work while draining must consume it or
 reliably start a successor; it may not require another Git event.
 
-One runner pass performs one 90-day-bounded Codex Request-evidence query and
+One runner pass performs one 90-day-bounded Codex transport-evidence query and
 one discovery of active `sessions` plus `archived_sessions`. File modification
 time and the indexed SQLite timestamp predicate apply the window before JSONL
 or log contents are read. Every discovered source is streamed once for all
@@ -149,10 +173,11 @@ completion units are saved after the corresponding claim candidates are saved,
 so timeout, process exit, or backend failure resumes the exact remaining units.
 A later trigger adds only its own units; it does not invalidate completed work
 for older triggers. For each source, progress also retains digest-only turn keys
-and the digest of trusted SQLite Request evidence relevant to those turns. Late
-Request evidence invalidates completed units only for the affected source;
-unrelated Requests do not restart completed sources or older triggers. Raw
-Request, thread, and turn identifiers are not persisted in scan progress.
+and the digest of trusted SQLite HTTP Request or WebSocket completion evidence
+relevant to those turns. Late transport evidence invalidates completed units
+only for the affected source; unrelated events do not restart completed
+sources or older triggers. Raw Request, response, thread, and turn identifiers
+are not persisted in scan progress.
 Successful delivery removes the transient progress file.
 
 When reporter-authenticated Repository resolution returns `not_found`, the
@@ -166,9 +191,15 @@ commit can register the Repository but creates no claim, pool, or Token.
 
 The client deletes only data covered by explicit server ACKs:
 
-- a Request ID only after `persisted` or `duplicate_identical`;
-- the calibration envelope only after its independent ACK;
+- an HTTP Request ID only after `persisted` or `duplicate_identical`;
+- the HTTP calibration envelope only after its independent ACK;
+- a WebSocket group envelope only after the acknowledged source, allocation,
+  and complete `local_usage[]` aggregate still match local state;
 - conflicts, unknown responses, and unacknowledged items remain local.
+
+If later JSONL rows monotonically increase an acknowledged WebSocket aggregate,
+the group is reopened and redelivered. The client never sends a decreasing or
+source-switched replacement.
 
 The local unresolved and audit-minimal state is retained for at most 90 days
 and cleaned lazily on later hook, sync, or CLI activity.
@@ -209,7 +240,8 @@ formal pools.
 
 ## 7. Hot Claim And Reconciliation Contract
 
-The backend keeps hot claim groups and Request claims for at most 90 days.
+The backend keeps hot claim groups, HTTP Request claims, and WebSocket local
+aggregates for at most 90 days.
 
 The Request identity constraint is:
 
@@ -242,10 +274,22 @@ local AE database user ID.
 A database lease, bounded concurrency, retry backoff with jitter, and lease
 expiry prevent backend replicas from multiplying the same upstream lookup.
 
+`codex_local` is a separate fail-closed ingest contract:
+
+- it requires non-empty `local_usage[]` and forbids Request IDs and calibration;
+- each model/bucket aggregate must have non-negative components, a positive
+  total and count, exact component conservation, and a 15-minute UTC boundary;
+- the ingest transaction materializes it directly into the same usage-pool
+  model without creating an `attribution_request_claim` row or calling Relay;
+- identical replay is a no-op; late aggregate growth and appended deterministic
+  allocations atomically replace only that group's prior contribution;
+- every existing component, count, and bucket must remain present and
+  monotonic. Regression, source switching, duplicates, or overflow fails closed.
+
 Partial groups expose only the reconciled lower bound. Before source expiry,
 the reconciler performs a final attempt. The finalization deadline is at least
 24 hours earlier than the nominal upstream retention boundary so scheduled
-cleanup cannot race the last lookup. At finalization:
+cleanup cannot race the last lookup. At HTTP finalization:
 
 1. freeze allocation;
 2. ensure every reconciled Request is materialized;
@@ -253,13 +297,17 @@ cleanup cannot race the last lookup. At finalization:
 4. remove Request ID, local calibration, and hot claim detail in the same
    retryable transaction boundary.
 
+WebSocket finalization has no unresolved Request lookup or coverage gap. It
+only freezes the already materialized aggregate and removes `local_usage` plus
+the other hot proof details. In both paths, long-lived pool facts remain.
+
 Long-lived product data never contains Request ID. Operational metrics cover
 pending age, reconciliation latency, mismatch/ambiguity, expiry, finalization,
 and cleanup failure without exposing Request identifiers in the UI.
 
 ## 8. Long-Lived Usage Pool
 
-Official Token is stored once in a unified long-lived pool:
+Formal Token is stored once in a unified long-lived pool:
 
 ```text
 attribution_usage_pools
@@ -285,7 +333,8 @@ attribution_usage_pool_commits
 
 The canonical pool identity is partitioned by ledger epoch and, within that
 epoch, covers the Relay provider, user, sorted counting commit set, requested
-model, and a non-empty 15-minute UTC bucket based on the upstream usage time.
+model, and a non-empty 15-minute UTC bucket based on the authoritative source
+usage time: Relay usage time for HTTP or JSONL event time for WebSocket.
 Otherwise identical shadow and formal contributions cannot collide or merge.
 Fifteen-minute buckets support local natural-day aggregation for IANA zones
 with whole-hour, half-hour, and quarter-hour offsets without preallocating empty
@@ -301,7 +350,11 @@ rows.
   time, its gap is stored in a deterministic coverage-only pool using the
   reserved model `unresolved` and the claim group's first server-received
   15-minute UTC bucket; this pool never contributes Token or Request count;
-- Request claims may be deleted without affecting Activity reads.
+- Request claims may be deleted without affecting Activity reads;
+- WebSocket hot aggregates may be deleted without affecting Activity reads;
+- `request_count` means reconciled Relay Requests for `relay_official` and
+  accepted incremental response rows for `codex_local`; product UI does not
+  expose this operational count.
 
 ## 9. Rewrite, Reachability, And PR Projection
 
@@ -355,7 +408,7 @@ Daily trend semantics:
   shared participation only as a secondary non-additive series/tooltip;
 - PR-filtered trend uses involved Token and labels it non-additive across PRs;
 - local natural days are computed by the backend using the browser IANA zone;
-- Token belongs to upstream usage time, not commit time.
+- Token belongs to its authoritative source usage time, not commit time.
 
 ## 11. Code Token Ratio And Usage Reuse
 
@@ -563,10 +616,11 @@ enables managed global hooks, disables legacy AE-managed OTel, and never turns
 an otherwise successful login or tool configuration into a failure. No-tool,
 no-matching-credential, failed, and dry-run discovery do not activate reporting.
 
-Product DTOs and UI exclude Request ID, raw claim rows, local calibration
-Token, API key/account, prompt/response/code, local paths, pending Request
-counts, and coverage-gap Request details. Aggregate operational health belongs
-in backend metrics rather than normal Activity UI.
+Product DTOs and UI exclude Request ID, WebSocket response ID, raw claim rows,
+local calibration, hot local-usage aggregates, API key/account,
+prompt/response/code, local paths, pending Request counts, and coverage-gap
+Request details. Aggregate operational health belongs in backend metrics rather
+than normal Activity UI.
 
 ## 14. Cutover And Cleanup
 
@@ -617,6 +671,9 @@ Implementation is not complete until tests and readbacks cover:
 - provider switching, multi-Request turns, duplicate/conflict, response loss,
   partial reconciliation, expiry, shared, late claims, rewrite, orphan, and
   cherry-pick;
+- HTTP/WebSocket source exclusivity, repeated WebSocket terminal snapshots,
+  same-bucket aggregation, cache normalization, missing/invalid local usage,
+  monotonic late growth, allocation migration, finalization, and cleanup;
 - large active/archive homes, multiple commit triggers sharing one source read,
   timeout/backend-failure resume, and automatic missing-Repository registration
   without claim creation for a manual commit;
@@ -636,9 +693,12 @@ Implementation is not complete until tests and readbacks cover:
 
 ## 16. Explicit Non-Goals
 
-- changing `sub2api` source or coupling directly to its database;
+- changing `sub2api`, coupling directly to its database, Relay turn discovery,
+  or depending on upstream persistence of WebSocket client metadata;
 - a daemon or periodic local synchronizer;
 - uploading uncommitted/unverified usage;
+- persisting or uploading WebSocket Request/response identities or one row per
+  local response;
 - splitting one Request's Token by lines, files, commits, repositories, or PRs;
 - inferring a primary PR;
 - individual ranking, productivity scoring, cost allocation, or chargeback;

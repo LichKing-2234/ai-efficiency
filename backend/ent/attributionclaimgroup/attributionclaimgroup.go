@@ -43,6 +43,8 @@ const (
 	FieldCalibrationCacheReadTokens = "calibration_cache_read_tokens"
 	// FieldCalibrationTotalTokens holds the string denoting the calibration_total_tokens field in the database.
 	FieldCalibrationTotalTokens = "calibration_total_tokens"
+	// FieldLocalUsage holds the string denoting the local_usage field in the database.
+	FieldLocalUsage = "local_usage"
 	// FieldCommitAllocations holds the string denoting the commit_allocations field in the database.
 	FieldCommitAllocations = "commit_allocations"
 	// FieldRequestCount holds the string denoting the request_count field in the database.
@@ -83,6 +85,7 @@ var Columns = []string{
 	FieldCalibrationCacheCreationTokens,
 	FieldCalibrationCacheReadTokens,
 	FieldCalibrationTotalTokens,
+	FieldLocalUsage,
 	FieldCommitAllocations,
 	FieldRequestCount,
 	FieldFinalizedAt,

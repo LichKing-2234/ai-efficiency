@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,23 +21,38 @@ import (
 )
 
 const (
-	SchemaVersion   = 2
-	MaxGroups       = 20
-	MaxRequests     = 100
-	MaxIdentitySize = 256
-	HotRetention    = 90 * 24 * time.Hour
+	SchemaVersion            = 2
+	MaxGroups                = 20
+	MaxRequests              = 100
+	MaxIdentitySize          = 256
+	HotRetention             = 90 * 24 * time.Hour
+	TokenSourceRelayOfficial = "relay_official"
+	TokenSourceCodexLocal    = "codex_local"
 )
 
 type Request struct {
 	SchemaVersion     int                `json:"schema_version"`
 	GroupID           string             `json:"group_id"`
 	RelayProviderID   int                `json:"relay_provider_id"`
+	TokenSource       string             `json:"token_source,omitempty"`
 	ThreadID          string             `json:"thread_id"`
 	TurnID            string             `json:"turn_id"`
 	EvidenceDigest    string             `json:"evidence_digest"`
 	Calibration       *Calibration       `json:"calibration,omitempty"`
+	LocalUsage        []LocalUsageBucket `json:"local_usage,omitempty"`
 	CommitAllocations []CommitAllocation `json:"commit_allocations"`
 	RequestIDs        []string           `json:"request_ids"`
+}
+
+type LocalUsageBucket struct {
+	RequestedModel      string    `json:"requested_model"`
+	BucketStartUTC      time.Time `json:"bucket_start_utc"`
+	InputTokens         int64     `json:"input_tokens"`
+	OutputTokens        int64     `json:"output_tokens"`
+	CacheCreationTokens int64     `json:"cache_creation_tokens"`
+	CacheReadTokens     int64     `json:"cache_read_tokens"`
+	TotalTokens         int64     `json:"total_tokens"`
+	RequestCount        int       `json:"request_count"`
 }
 
 type Calibration struct {
@@ -202,6 +219,7 @@ func upsertGroup(ctx context.Context, tx *ent.Tx, principal attributionledger.In
 			return nil, false, false, "not_present", fmt.Errorf("reload claim group: %w", err)
 		}
 		if group.InstallationID != principal.DatabaseID || group.UserID != principal.UserID || group.RelayProviderID != claim.RelayProviderID ||
+			tokenSourceForGroup(group) != claim.TokenSource ||
 			group.ThreadID != claim.ThreadID || group.TurnID != claim.TurnID ||
 			group.SchemaVersion != SchemaVersion || group.LedgerEpoch != ledgerEpoch {
 			return nil, false, false, "not_present", fmt.Errorf("claim group conflict")
@@ -226,7 +244,17 @@ func upsertGroup(ctx context.Context, tx *ent.Tx, principal attributionledger.In
 				calibrationStatus = "conflict"
 			}
 		}
-		if allocationChanged || calibrationChanged {
+		incomingLocalUsage := localUsageMaps(claim.LocalUsage)
+		localUsageChanged, localUsageCompatible := compatibleLocalUsage(group.LocalUsage, incomingLocalUsage)
+		if !localUsageCompatible {
+			return nil, false, false, "not_present", fmt.Errorf("claim group local usage conflict")
+		}
+		if claim.TokenSource == TokenSourceCodexLocal && (allocationChanged || localUsageChanged) {
+			if err := attributionpool.ApplyLocalGroupChange(ctx, tx.Client(), group.LedgerEpoch, group.RelayProviderID, group.UserID, group.CommitAllocations, group.LocalUsage, incomingAllocations, incomingLocalUsage); err != nil {
+				return nil, false, false, "not_present", fmt.Errorf("rematerialize local claim group: %w", err)
+			}
+		}
+		if allocationChanged || calibrationChanged || localUsageChanged {
 			update := group.Update()
 			if allocationChanged {
 				update.SetCommitAllocations(incomingAllocations).SetEvidenceDigest(claim.EvidenceDigest)
@@ -236,24 +264,29 @@ func upsertGroup(ctx context.Context, tx *ent.Tx, principal attributionledger.In
 			if calibrationChanged {
 				setCalibrationUpdate(update, *claim.Calibration)
 			}
+			if localUsageChanged {
+				update.SetLocalUsage(incomingLocalUsage).SetRequestCount(localUsageRequestCount(claim.LocalUsage))
+				group.LocalUsage = incomingLocalUsage
+			}
 			if err := update.Exec(ctx); err != nil {
 				return nil, false, false, calibrationStatus, fmt.Errorf("update claim group: %w", err)
 			}
 		}
-		return group, false, allocationChanged || calibrationChanged, calibrationStatus, nil
+		return group, false, allocationChanged || calibrationChanged || localUsageChanged, calibrationStatus, nil
 	}
 	if !ent.IsNotFound(err) {
 		return nil, false, false, "not_present", fmt.Errorf("query claim group: %w", err)
 	}
-	if len(claim.RequestIDs) == 0 {
-		return nil, false, false, "not_present", fmt.Errorf("new claim group requires at least one request_id")
+	if claim.TokenSource == TokenSourceRelayOfficial && len(claim.RequestIDs) == 0 {
+		return nil, false, false, "not_present", fmt.Errorf("new relay_official claim group requires at least one request_id")
 	}
+	incomingLocalUsage := localUsageMaps(claim.LocalUsage)
 	create := tx.AttributionClaimGroup.Create().
 		SetGroupID(claim.GroupID).SetInstallationID(principal.DatabaseID).SetUserID(principal.UserID).
 		SetRelayProviderID(claim.RelayProviderID).
 		SetSchemaVersion(SchemaVersion).SetLedgerEpoch(ledgerEpoch).SetThreadID(claim.ThreadID).SetTurnID(claim.TurnID).
-		SetEvidenceDigest(claim.EvidenceDigest).SetCommitAllocations(incomingAllocations).
-		SetRequestCount(len(claim.RequestIDs)).SetExpiresAt(expiresAt)
+		SetEvidenceDigest(claim.EvidenceDigest).SetLocalUsage(incomingLocalUsage).SetCommitAllocations(incomingAllocations).
+		SetRequestCount(maxInt(len(claim.RequestIDs), localUsageRequestCount(claim.LocalUsage))).SetExpiresAt(expiresAt)
 	calibrationStatus := "not_present"
 	if claim.Calibration != nil {
 		setCalibrationCreate(create, *claim.Calibration)
@@ -262,6 +295,11 @@ func upsertGroup(ctx context.Context, tx *ent.Tx, principal attributionledger.In
 	group, err = create.Save(ctx)
 	if err != nil {
 		return nil, false, false, calibrationStatus, fmt.Errorf("create claim group: %w", err)
+	}
+	if claim.TokenSource == TokenSourceCodexLocal {
+		if err := attributionpool.ApplyLocalGroupChange(ctx, tx.Client(), ledgerEpoch, claim.RelayProviderID, principal.UserID, nil, nil, incomingAllocations, incomingLocalUsage); err != nil {
+			return nil, false, false, calibrationStatus, fmt.Errorf("materialize local claim group: %w", err)
+		}
 	}
 	return group, true, true, calibrationStatus, nil
 }
@@ -293,6 +331,10 @@ func normalize(claim Request) Request {
 	claim.ThreadID = strings.TrimSpace(claim.ThreadID)
 	claim.TurnID = strings.TrimSpace(claim.TurnID)
 	claim.EvidenceDigest = strings.TrimSpace(claim.EvidenceDigest)
+	claim.TokenSource = strings.TrimSpace(claim.TokenSource)
+	if claim.TokenSource == "" {
+		claim.TokenSource = TokenSourceRelayOfficial
+	}
 	if claim.Calibration != nil {
 		claim.Calibration.Digest = strings.TrimSpace(claim.Calibration.Digest)
 	}
@@ -304,6 +346,17 @@ func normalize(claim Request) Request {
 		allocation.CommitSHA = strings.TrimSpace(allocation.CommitSHA)
 		allocation.EvidenceDigest = strings.TrimSpace(allocation.EvidenceDigest)
 	}
+	for index := range claim.LocalUsage {
+		usage := &claim.LocalUsage[index]
+		usage.RequestedModel = strings.TrimSpace(usage.RequestedModel)
+		usage.BucketStartUTC = usage.BucketStartUTC.UTC()
+	}
+	sort.Slice(claim.LocalUsage, func(i, j int) bool {
+		if claim.LocalUsage[i].BucketStartUTC.Equal(claim.LocalUsage[j].BucketStartUTC) {
+			return claim.LocalUsage[i].RequestedModel < claim.LocalUsage[j].RequestedModel
+		}
+		return claim.LocalUsage[i].BucketStartUTC.Before(claim.LocalUsage[j].BucketStartUTC)
+	})
 	seen := map[string]struct{}{}
 	requestIDs := make([]string, 0, len(claim.RequestIDs))
 	for _, requestID := range claim.RequestIDs {
@@ -325,6 +378,15 @@ func validate(claim Request) error {
 	if claim.RelayProviderID <= 0 {
 		return fmt.Errorf("relay_provider_id is required")
 	}
+	if claim.TokenSource != TokenSourceRelayOfficial && claim.TokenSource != TokenSourceCodexLocal {
+		return fmt.Errorf("token_source must be %q or %q", TokenSourceRelayOfficial, TokenSourceCodexLocal)
+	}
+	if claim.TokenSource == TokenSourceRelayOfficial && len(claim.LocalUsage) > 0 {
+		return fmt.Errorf("relay_official claims forbid local_usage")
+	}
+	if claim.TokenSource == TokenSourceCodexLocal && (len(claim.RequestIDs) > 0 || claim.Calibration != nil || len(claim.LocalUsage) == 0) {
+		return fmt.Errorf("codex_local claims require local_usage and forbid request_ids and calibration")
+	}
 	for name, value := range map[string]string{"group_id": claim.GroupID, "thread_id": claim.ThreadID, "turn_id": claim.TurnID, "evidence_digest": claim.EvidenceDigest} {
 		if value == "" || len(value) > MaxIdentitySize {
 			return fmt.Errorf("%s is required and must be at most %d bytes", name, MaxIdentitySize)
@@ -345,6 +407,31 @@ func validate(claim Request) error {
 	}
 	if len(claim.RequestIDs) > MaxRequests {
 		return fmt.Errorf("request_ids must contain at most %d unique items", MaxRequests)
+	}
+	if len(claim.LocalUsage) > MaxRequests {
+		return fmt.Errorf("local_usage must contain at most %d buckets", MaxRequests)
+	}
+	seenUsage := map[string]struct{}{}
+	localRequestCount := 0
+	for _, usage := range claim.LocalUsage {
+		if usage.RequestedModel == "" || len(usage.RequestedModel) > MaxIdentitySize || usage.BucketStartUTC.IsZero() || !usage.BucketStartUTC.Equal(usage.BucketStartUTC.UTC().Truncate(15*time.Minute)) || usage.RequestCount <= 0 {
+			return fmt.Errorf("local_usage model, aligned UTC bucket, and positive request_count are required")
+		}
+		if usage.InputTokens < 0 || usage.OutputTokens < 0 || usage.CacheCreationTokens < 0 || usage.CacheReadTokens < 0 || usage.TotalTokens <= 0 ||
+			usage.InputTokens > math.MaxInt64-usage.OutputTokens || usage.InputTokens+usage.OutputTokens > math.MaxInt64-usage.CacheCreationTokens ||
+			usage.InputTokens+usage.OutputTokens+usage.CacheCreationTokens > math.MaxInt64-usage.CacheReadTokens ||
+			usage.InputTokens+usage.OutputTokens+usage.CacheCreationTokens+usage.CacheReadTokens != usage.TotalTokens {
+			return fmt.Errorf("local_usage Token total is inconsistent")
+		}
+		key := usage.RequestedModel + "\x00" + usage.BucketStartUTC.Format(time.RFC3339)
+		if _, duplicate := seenUsage[key]; duplicate {
+			return fmt.Errorf("local_usage bucket is duplicated")
+		}
+		seenUsage[key] = struct{}{}
+		if usage.RequestCount > math.MaxInt-localRequestCount {
+			return fmt.Errorf("local_usage request_count overflows")
+		}
+		localRequestCount += usage.RequestCount
 	}
 	for _, requestID := range claim.RequestIDs {
 		if len(requestID) > MaxIdentitySize {
@@ -373,6 +460,72 @@ func compatibleAllocations(existing, incoming []map[string]any) (bool, bool) {
 		}
 	}
 	return len(incoming) > len(existing), true
+}
+
+func tokenSourceForGroup(group *ent.AttributionClaimGroup) string {
+	if group != nil && len(group.LocalUsage) > 0 {
+		return TokenSourceCodexLocal
+	}
+	return TokenSourceRelayOfficial
+}
+
+func localUsageMaps(usage []LocalUsageBucket) []map[string]any {
+	payload, _ := json.Marshal(usage)
+	var result []map[string]any
+	_ = json.Unmarshal(payload, &result)
+	return result
+}
+
+func compatibleLocalUsage(existing, incoming []map[string]any) (bool, bool) {
+	decode := func(values []map[string]any) ([]LocalUsageBucket, bool) {
+		payload, err := json.Marshal(values)
+		if err != nil {
+			return nil, false
+		}
+		var result []LocalUsageBucket
+		if err := json.Unmarshal(payload, &result); err != nil {
+			return nil, false
+		}
+		return result, true
+	}
+	oldValues, ok := decode(existing)
+	if !ok {
+		return false, false
+	}
+	newValues, ok := decode(incoming)
+	if !ok {
+		return false, false
+	}
+	byKey := make(map[string]LocalUsageBucket, len(newValues))
+	for _, usage := range newValues {
+		byKey[strings.TrimSpace(usage.RequestedModel)+"\x00"+usage.BucketStartUTC.UTC().Format(time.RFC3339)] = usage
+	}
+	changed := len(oldValues) != len(newValues)
+	for _, old := range oldValues {
+		incoming, found := byKey[strings.TrimSpace(old.RequestedModel)+"\x00"+old.BucketStartUTC.UTC().Format(time.RFC3339)]
+		if !found || incoming.InputTokens < old.InputTokens || incoming.OutputTokens < old.OutputTokens ||
+			incoming.CacheCreationTokens < old.CacheCreationTokens || incoming.CacheReadTokens < old.CacheReadTokens ||
+			incoming.TotalTokens < old.TotalTokens || incoming.RequestCount < old.RequestCount {
+			return false, false
+		}
+		changed = changed || incoming != old
+	}
+	return changed, true
+}
+
+func localUsageRequestCount(usage []LocalUsageBucket) int {
+	count := 0
+	for _, item := range usage {
+		count += item.RequestCount
+	}
+	return count
+}
+
+func maxInt(left, right int) int {
+	if left > right {
+		return left
+	}
+	return right
 }
 
 func invalidatePersistedACKs(result *Result, status string) {

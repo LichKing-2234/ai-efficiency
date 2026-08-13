@@ -159,9 +159,11 @@ func sameV2GroupEnvelope(current, sent client.AttributionV2ClaimGroup) bool {
 	return current.SchemaVersion == sent.SchemaVersion &&
 		current.GroupID == sent.GroupID &&
 		current.RelayProviderID == sent.RelayProviderID &&
+		current.TokenSource == sent.TokenSource &&
 		current.ThreadID == sent.ThreadID &&
 		current.TurnID == sent.TurnID &&
 		current.EvidenceDigest == sent.EvidenceDigest &&
+		reflect.DeepEqual(current.LocalUsage, sent.LocalUsage) &&
 		reflect.DeepEqual(current.CommitAllocations, sent.CommitAllocations)
 }
 

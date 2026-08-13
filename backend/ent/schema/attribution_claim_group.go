@@ -6,8 +6,8 @@ import (
 	"entgo.io/ent/schema/index"
 )
 
-// AttributionClaimGroup stores short-lived v2 commit proof in the shadow
-// epoch. It deliberately stores digests, never local source payloads.
+// AttributionClaimGroup stores short-lived v2 commit proof and bounded local
+// Token aggregates. It never stores raw local source payloads.
 type AttributionClaimGroup struct{ ent.Schema }
 
 func (AttributionClaimGroup) Fields() []ent.Field {
@@ -27,6 +27,7 @@ func (AttributionClaimGroup) Fields() []ent.Field {
 		field.Int64("calibration_cache_creation_tokens").Default(0),
 		field.Int64("calibration_cache_read_tokens").Default(0),
 		field.Int64("calibration_total_tokens").Default(0),
+		field.JSON("local_usage", []map[string]any{}).Optional(),
 		field.JSON("commit_allocations", []map[string]any{}),
 		field.Int("request_count"),
 		field.Time("finalized_at").Optional().Nillable(),

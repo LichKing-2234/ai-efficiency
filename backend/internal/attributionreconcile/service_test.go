@@ -134,6 +134,60 @@ func TestRunOnceFinalizesPartialGroupAtExactSafetyBoundary(t *testing.T) {
 	}
 }
 
+func TestRunOnceFinalizesAndCleansCodexLocalGroupWithoutDeletingPool(t *testing.T) {
+	fixture := newReconcileFixture(t)
+	ctx := context.Background()
+	claim := fixture.client.AttributionRequestClaim.GetX(ctx, fixture.claimID)
+	group := fixture.client.AttributionClaimGroup.GetX(ctx, claim.ClaimGroupID)
+	fixture.client.AttributionRequestClaim.DeleteOneID(claim.ID).ExecX(ctx)
+	usage := []map[string]any{{
+		"requested_model": "gpt-test", "bucket_start_utc": fixture.now.UTC().Truncate(15 * time.Minute),
+		"input_tokens": int64(10), "output_tokens": int64(2), "cache_creation_tokens": int64(0), "cache_read_tokens": int64(0), "total_tokens": int64(12), "request_count": 1,
+	}}
+	tx, err := fixture.client.Tx(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Client().AttributionClaimGroup.UpdateOneID(group.ID).SetLocalUsage(usage).SetRequestCount(1).SetExpiresAt(fixture.now.Add(FinalAttemptLead)).Exec(ctx); err != nil {
+		_ = tx.Rollback()
+		t.Fatal(err)
+	}
+	if err := attributionpool.ApplyLocalGroupChange(ctx, tx.Client(), group.LedgerEpoch, group.RelayProviderID, group.UserID, nil, nil, group.CommitAllocations, usage); err != nil {
+		_ = tx.Rollback()
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	reader := &requestReaderProvider{read: func(context.Context, string, int) ([]relay.RequestUsage, error) {
+		t.Fatal("Codex-local group must not query Relay usage")
+		return nil, nil
+	}}
+	service := newTestService(t, fixture, reader)
+	if processed, err := service.RunOnce(ctx); err != nil || processed != 0 {
+		t.Fatalf("finalize local group = %d, %v", processed, err)
+	}
+	group = fixture.client.AttributionClaimGroup.GetX(ctx, group.ID)
+	if group.FinalizedAt == nil || group.RequestCount != 0 || len(group.LocalUsage) != 0 || len(group.CommitAllocations) != 0 {
+		t.Fatalf("finalized local group = %+v", group)
+	}
+	pool := fixture.client.AttributionUsagePool.Query().OnlyX(ctx)
+	if pool.TotalTokens != 12 || pool.RequestCount != 1 {
+		t.Fatalf("local pool after finalization = %+v", pool)
+	}
+	fixture.client.AttributionClaimGroup.UpdateOneID(group.ID).SetExpiresAt(fixture.now).ExecX(ctx)
+	if _, err := service.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.client.AttributionClaimGroup.Query().ExistX(ctx) {
+		t.Fatal("expired local hot group was not deleted")
+	}
+	pool = fixture.client.AttributionUsagePool.Query().OnlyX(ctx)
+	if pool.TotalTokens != 12 || pool.RequestCount != 1 {
+		t.Fatalf("local pool after hot cleanup = %+v", pool)
+	}
+}
+
 func TestFinalizationWaitsUntilSafetyBoundaryAndForActiveLease(t *testing.T) {
 	fixture := newReconcileFixture(t)
 	ctx := context.Background()

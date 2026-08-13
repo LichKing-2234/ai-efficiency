@@ -448,7 +448,7 @@ func (s *Service) finalizeGroup(ctx context.Context, groupID int, now time.Time)
 	}
 	updated, err := tx.Client().AttributionClaimGroup.Update().Where(
 		attributionclaimgroup.IDEQ(groupID), attributionclaimgroup.FinalizedAtIsNil(),
-	).SetFinalizedAt(now).SetRequestCount(0).SetThreadID("").SetTurnID("").SetEvidenceDigest("").SetCommitAllocations([]map[string]any{}).ClearFinalizationLastErrorCode().ClearCalibrationDigest().
+	).SetFinalizedAt(now).SetRequestCount(0).SetThreadID("").SetTurnID("").SetEvidenceDigest("").SetLocalUsage([]map[string]any{}).SetCommitAllocations([]map[string]any{}).ClearFinalizationLastErrorCode().ClearCalibrationDigest().
 		SetCalibrationInputTokens(0).SetCalibrationOutputTokens(0).SetCalibrationCacheCreationTokens(0).
 		SetCalibrationCacheReadTokens(0).SetCalibrationTotalTokens(0).Save(ctx)
 	if err != nil {
@@ -471,7 +471,7 @@ func (s *Service) cleanupExpiredGroups(ctx context.Context, now time.Time) error
 	defer func() { _ = tx.Rollback() }()
 	hardExpired, err := tx.Client().AttributionClaimGroup.Update().Where(
 		attributionclaimgroup.FinalizedAtIsNil(), attributionclaimgroup.ExpiresAtLTE(now),
-	).SetFinalizedAt(now).SetRequestCount(0).SetThreadID("").SetTurnID("").SetEvidenceDigest("").SetCommitAllocations([]map[string]any{}).
+	).SetFinalizedAt(now).SetRequestCount(0).SetThreadID("").SetTurnID("").SetEvidenceDigest("").SetLocalUsage([]map[string]any{}).SetCommitAllocations([]map[string]any{}).
 		ClearCalibrationDigest().SetCalibrationInputTokens(0).SetCalibrationOutputTokens(0).SetCalibrationCacheCreationTokens(0).
 		SetCalibrationCacheReadTokens(0).SetCalibrationTotalTokens(0).SetFinalizationLastErrorCode("hard_expired").Save(ctx)
 	if err != nil {

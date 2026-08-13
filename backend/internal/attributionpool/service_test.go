@@ -216,6 +216,72 @@ func TestMaterializeRequestClaimsAggregateAcrossRequestsAndSplitModelBucket(t *t
 	}
 }
 
+func TestApplyLocalGroupGrowthPreservesPoolLineage(t *testing.T) {
+	fixture := newPoolFixture(t)
+	ctx := context.Background()
+	group := fixture.client.AttributionClaimGroup.GetX(ctx, fixture.groupID)
+	allocations := group.CommitAllocations
+	first := []map[string]any{{
+		"requested_model": "gpt-test", "bucket_start_utc": fixture.now.UTC().Truncate(15 * time.Minute),
+		"input_tokens": int64(10), "output_tokens": int64(2), "cache_creation_tokens": int64(3), "cache_read_tokens": int64(4), "total_tokens": int64(19), "request_count": 1,
+	}}
+	applyLocalGroupChangeInTransaction(t, fixture, nil, nil, allocations, first)
+	pool := fixture.client.AttributionUsagePool.Query().OnlyX(ctx)
+	fixture.client.AttributionUsagePoolCommit.Create().SetPoolID(pool.ID).SetRepoConfigID(fixture.repo1).
+		SetCommitSha("commit-cherry").SetRelationKind(attributionusagepoolcommit.RelationKindInheritedNonCounting).SaveX(ctx)
+
+	late := []map[string]any{{
+		"requested_model": "gpt-test", "bucket_start_utc": fixture.now.UTC().Truncate(15 * time.Minute),
+		"input_tokens": int64(15), "output_tokens": int64(3), "cache_creation_tokens": int64(3), "cache_read_tokens": int64(5), "total_tokens": int64(26), "request_count": 2,
+	}}
+	applyLocalGroupChangeInTransaction(t, fixture, allocations, first, allocations, late)
+	updated := fixture.client.AttributionUsagePool.Query().OnlyX(ctx)
+	if updated.ID != pool.ID || updated.TotalTokens != 26 || updated.RequestCount != 2 {
+		t.Fatalf("updated local pool = %+v, want stable identity and latest totals", updated)
+	}
+	relations := fixture.client.AttributionUsagePoolCommit.Query().Where(attributionusagepoolcommit.PoolIDEQ(pool.ID)).AllX(ctx)
+	if len(relations) != 2 {
+		t.Fatalf("local pool relations after growth = %+v, want counting and inherited", relations)
+	}
+}
+
+func TestApplyLocalGroupAllocationAppendPreservesOrphanedRelation(t *testing.T) {
+	fixture := newPoolFixture(t)
+	ctx := context.Background()
+	group := fixture.client.AttributionClaimGroup.GetX(ctx, fixture.groupID)
+	usage := []map[string]any{{
+		"requested_model": "gpt-test", "bucket_start_utc": fixture.now.UTC().Truncate(15 * time.Minute),
+		"input_tokens": int64(10), "output_tokens": int64(2), "cache_creation_tokens": int64(3), "cache_read_tokens": int64(4), "total_tokens": int64(19), "request_count": 1,
+	}}
+	applyLocalGroupChangeInTransaction(t, fixture, nil, nil, group.CommitAllocations, usage)
+	if err := MarkCommitOrphaned(ctx, fixture.client, fixture.userID, fixture.repo1, "commit-a", "authoritative_scm"); err != nil {
+		t.Fatal(err)
+	}
+	sharedAllocations := append(append([]map[string]any(nil), group.CommitAllocations...), map[string]any{"repo_config_id": fixture.repo2, "commit_sha": "commit-b"})
+	applyLocalGroupChangeInTransaction(t, fixture, group.CommitAllocations, usage, sharedAllocations, usage)
+	relations := fixture.client.AttributionUsagePoolCommit.Query().Order(ent.Asc(attributionusagepoolcommit.FieldCommitSha)).AllX(ctx)
+	if len(relations) != 2 || !relations[0].Orphaned || relations[0].CommitSha != "commit-a" || relations[1].Orphaned {
+		t.Fatalf("relations after local allocation append = %+v", relations)
+	}
+}
+
+func applyLocalGroupChangeInTransaction(t *testing.T, fixture poolFixture, oldAllocations, oldUsage, newAllocations, newUsage []map[string]any) {
+	t.Helper()
+	ctx := context.Background()
+	group := fixture.client.AttributionClaimGroup.GetX(ctx, fixture.groupID)
+	tx, err := fixture.client.Tx(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := ApplyLocalGroupChange(ctx, tx.Client(), group.LedgerEpoch, group.RelayProviderID, group.UserID, oldAllocations, oldUsage, newAllocations, newUsage); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestConcurrentMaterializationCountsEachClaimOnce(t *testing.T) {
 	fixture := newPoolFixture(t)
 	const workers = 6
@@ -292,6 +358,33 @@ func TestApplyRewriteMigratesPostRetentionPoolWithoutRequestRows(t *testing.T) {
 	fixture.client.AttributionClaimGroup.DeleteOneID(fixture.groupID).ExecX(ctx)
 	applyRewriteInTransaction(t, fixture, "commit-a", "commit-b")
 	assertSingleRewrittenPool(t, fixture, "commit-b")
+}
+
+func TestApplyRewriteMigratesCodexLocalPoolAndAcceptsLateGrowth(t *testing.T) {
+	fixture := newPoolFixture(t)
+	ctx := context.Background()
+	fixture.client.AttributionRequestClaim.DeleteOneID(fixture.claimID).ExecX(ctx)
+	group := fixture.client.AttributionClaimGroup.GetX(ctx, fixture.groupID)
+	usage := []map[string]any{{
+		"requested_model": "gpt-test", "bucket_start_utc": fixture.now.UTC().Truncate(15 * time.Minute),
+		"input_tokens": int64(10), "output_tokens": int64(2), "cache_creation_tokens": int64(3), "cache_read_tokens": int64(4), "total_tokens": int64(19), "request_count": 1,
+	}}
+	applyLocalGroupChangeInTransaction(t, fixture, nil, nil, group.CommitAllocations, usage)
+	fixture.client.AttributionClaimGroup.UpdateOneID(group.ID).SetLocalUsage(usage).ExecX(ctx)
+	applyRewriteInTransaction(t, fixture, "commit-a", "commit-b")
+	assertSingleRewrittenPool(t, fixture, "commit-b")
+
+	group = fixture.client.AttributionClaimGroup.GetX(ctx, group.ID)
+	rewrittenPool := fixture.client.AttributionUsagePool.Query().OnlyX(ctx)
+	late := []map[string]any{{
+		"requested_model": "gpt-test", "bucket_start_utc": fixture.now.UTC().Truncate(15 * time.Minute),
+		"input_tokens": int64(15), "output_tokens": int64(3), "cache_creation_tokens": int64(3), "cache_read_tokens": int64(5), "total_tokens": int64(26), "request_count": 2,
+	}}
+	applyLocalGroupChangeInTransaction(t, fixture, group.CommitAllocations, usage, group.CommitAllocations, late)
+	pool := fixture.client.AttributionUsagePool.Query().OnlyX(ctx)
+	if pool.ID != rewrittenPool.ID || pool.TotalTokens != 26 || pool.RequestCount != 2 {
+		t.Fatalf("rewritten local pool after late growth = %+v", pool)
+	}
 }
 
 func TestApplyRewriteResolvesOutOfOrderChainToTerminalCommit(t *testing.T) {

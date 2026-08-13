@@ -326,6 +326,24 @@ func (acgu *AttributionClaimGroupUpdate) AddCalibrationTotalTokens(i int64) *Att
 	return acgu
 }
 
+// SetLocalUsage sets the "local_usage" field.
+func (acgu *AttributionClaimGroupUpdate) SetLocalUsage(m []map[string]interface{}) *AttributionClaimGroupUpdate {
+	acgu.mutation.SetLocalUsage(m)
+	return acgu
+}
+
+// AppendLocalUsage appends m to the "local_usage" field.
+func (acgu *AttributionClaimGroupUpdate) AppendLocalUsage(m []map[string]interface{}) *AttributionClaimGroupUpdate {
+	acgu.mutation.AppendLocalUsage(m)
+	return acgu
+}
+
+// ClearLocalUsage clears the value of the "local_usage" field.
+func (acgu *AttributionClaimGroupUpdate) ClearLocalUsage() *AttributionClaimGroupUpdate {
+	acgu.mutation.ClearLocalUsage()
+	return acgu
+}
+
 // SetCommitAllocations sets the "commit_allocations" field.
 func (acgu *AttributionClaimGroupUpdate) SetCommitAllocations(m []map[string]interface{}) *AttributionClaimGroupUpdate {
 	acgu.mutation.SetCommitAllocations(m)
@@ -600,6 +618,17 @@ func (acgu *AttributionClaimGroupUpdate) sqlSave(ctx context.Context) (n int, er
 	}
 	if value, ok := acgu.mutation.AddedCalibrationTotalTokens(); ok {
 		_spec.AddField(attributionclaimgroup.FieldCalibrationTotalTokens, field.TypeInt64, value)
+	}
+	if value, ok := acgu.mutation.LocalUsage(); ok {
+		_spec.SetField(attributionclaimgroup.FieldLocalUsage, field.TypeJSON, value)
+	}
+	if value, ok := acgu.mutation.AppendedLocalUsage(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, attributionclaimgroup.FieldLocalUsage, value)
+		})
+	}
+	if acgu.mutation.LocalUsageCleared() {
+		_spec.ClearField(attributionclaimgroup.FieldLocalUsage, field.TypeJSON)
 	}
 	if value, ok := acgu.mutation.CommitAllocations(); ok {
 		_spec.SetField(attributionclaimgroup.FieldCommitAllocations, field.TypeJSON, value)
@@ -959,6 +988,24 @@ func (acguo *AttributionClaimGroupUpdateOne) AddCalibrationTotalTokens(i int64) 
 	return acguo
 }
 
+// SetLocalUsage sets the "local_usage" field.
+func (acguo *AttributionClaimGroupUpdateOne) SetLocalUsage(m []map[string]interface{}) *AttributionClaimGroupUpdateOne {
+	acguo.mutation.SetLocalUsage(m)
+	return acguo
+}
+
+// AppendLocalUsage appends m to the "local_usage" field.
+func (acguo *AttributionClaimGroupUpdateOne) AppendLocalUsage(m []map[string]interface{}) *AttributionClaimGroupUpdateOne {
+	acguo.mutation.AppendLocalUsage(m)
+	return acguo
+}
+
+// ClearLocalUsage clears the value of the "local_usage" field.
+func (acguo *AttributionClaimGroupUpdateOne) ClearLocalUsage() *AttributionClaimGroupUpdateOne {
+	acguo.mutation.ClearLocalUsage()
+	return acguo
+}
+
 // SetCommitAllocations sets the "commit_allocations" field.
 func (acguo *AttributionClaimGroupUpdateOne) SetCommitAllocations(m []map[string]interface{}) *AttributionClaimGroupUpdateOne {
 	acguo.mutation.SetCommitAllocations(m)
@@ -1263,6 +1310,17 @@ func (acguo *AttributionClaimGroupUpdateOne) sqlSave(ctx context.Context) (_node
 	}
 	if value, ok := acguo.mutation.AddedCalibrationTotalTokens(); ok {
 		_spec.AddField(attributionclaimgroup.FieldCalibrationTotalTokens, field.TypeInt64, value)
+	}
+	if value, ok := acguo.mutation.LocalUsage(); ok {
+		_spec.SetField(attributionclaimgroup.FieldLocalUsage, field.TypeJSON, value)
+	}
+	if value, ok := acguo.mutation.AppendedLocalUsage(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, attributionclaimgroup.FieldLocalUsage, value)
+		})
+	}
+	if acguo.mutation.LocalUsageCleared() {
+		_spec.ClearField(attributionclaimgroup.FieldLocalUsage, field.TypeJSON)
 	}
 	if value, ok := acguo.mutation.CommitAllocations(); ok {
 		_spec.SetField(attributionclaimgroup.FieldCommitAllocations, field.TypeJSON, value)
