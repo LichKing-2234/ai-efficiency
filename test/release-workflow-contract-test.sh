@@ -23,6 +23,11 @@ grep -q "Platform release workflow must not publish CLI bridge tag" "$PLATFORM_W
 
 grep -q "      - 'ae-cli/v\\*'" "$CLI_WORKFLOW"
 grep -q -- "--latest=false" "$CLI_WORKFLOW"
+grep -q "args: release --snapshot --clean --config .goreleaser.ae-cli.yaml" "$CLI_WORKFLOW"
+! grep -q "packages: write" "$CLI_WORKFLOW"
+! grep -q "docker/build-push-action" "$CLI_WORKFLOW"
+! grep -q "deploy/Dockerfile" "$CLI_WORKFLOW"
+! grep -qi "helm" "$CLI_WORKFLOW"
 
 grep -q "      - 'v0.2.0-cli.1'" "$BRIDGE_WORKFLOW"
 grep -q "CLI bridge release tag v0.2.0-cli.1 must already exist before manual dispatch" "$BRIDGE_WORKFLOW"

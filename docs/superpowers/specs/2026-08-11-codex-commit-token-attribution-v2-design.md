@@ -541,7 +541,14 @@ Activity analytics. No Redis readiness cache is introduced.
 Normal setup remains install, login, and discover. Explicit enable, hook
 management, repo init, sync, and diagnostics are advanced/recovery paths. v2
 does not require Codex OTel. Upgrade removes only AE-managed Codex OTel config
-and never touches user-managed OTel.
+and never touches user-managed OTel. After replacing the executable, both
+installers invoke a hidden post-install command on the newly installed binary,
+so an older running updater cannot skip the cleanup implementation delivered by
+the new release. The command supports users who skip intermediate CLI releases.
+It removes the local legacy OTLP plaintext only after exact managed-exporter
+removal or when no `otlp-http` exporter exists; a user-modified exporter and its
+local ownership evidence are preserved, and the completed install emits a
+warning without failing.
 
 Per-Repository `ae-cli init` is not a prerequisite. A managed hook first
 resolves the canonical remote and, only for reporter-authenticated `not_found`,

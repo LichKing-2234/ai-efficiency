@@ -11,6 +11,7 @@ import (
 
 type CodexOTLPInspection struct {
 	Configured            bool
+	ExporterPresent       bool
 	EndpointMatches       bool
 	ProtocolJSON          bool
 	CredentialAvailable   bool
@@ -109,11 +110,15 @@ func DisableCodexOTLP(homeDir, expectedEndpoint, expectedToken string) (string, 
 
 func codexOTLPExporterMatches(exporter map[string]any, expectedEndpoint, expectedToken string) bool {
 	endpoint, _ := exporter["endpoint"].(string)
+	protocol, _ := exporter["protocol"].(string)
 	headers, _ := exporter["headers"].(map[string]any)
 	authorization, _ := headers["Authorization"].(string)
 	return strings.TrimSpace(expectedEndpoint) != "" &&
 		strings.TrimSpace(expectedToken) != "" &&
+		len(exporter) == 3 &&
+		len(headers) == 1 &&
 		strings.TrimSpace(endpoint) == strings.TrimSpace(expectedEndpoint) &&
+		strings.EqualFold(strings.TrimSpace(protocol), "json") &&
 		strings.TrimSpace(authorization) == "Bearer "+strings.TrimSpace(expectedToken)
 }
 
@@ -143,7 +148,9 @@ func InspectCodexOTLP(homeDir, expectedEndpoint, expectedToken string) (CodexOTL
 	if !ok {
 		return inspection, nil
 	}
-	otlpHTTP, ok := traceExporters["otlp-http"].(map[string]any)
+	rawOTLPHTTP, present := traceExporters["otlp-http"]
+	inspection.ExporterPresent = present
+	otlpHTTP, ok := rawOTLPHTTP.(map[string]any)
 	if !ok {
 		return inspection, nil
 	}

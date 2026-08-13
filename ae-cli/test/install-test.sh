@@ -29,6 +29,7 @@ BAD_CHECKSUM_TAG="ae-cli/v0.2.2-bad"
 MISSING_BINARY_TAG="ae-cli/v0.2.3-missing-binary"
 PATH_WARNING_TAG="ae-cli/v0.2.4-path-warning"
 SYMLINK_TAG="ae-cli/v0.2.5-symlink"
+POST_INSTALL_WARNING_TAG="ae-cli/v0.2.6-post-install-warning"
 
 release_version_from_tag() {
   local tag="$1"
@@ -60,6 +61,14 @@ make_cli_archive() {
 set -euo pipefail
 if [[ "\${1:-}" == "hooks" && "\${2:-}" == "refresh-installations" ]]; then
   printf '%s\n' "${tag}" >> "\${HOME}/.ae-cli/refresh-installations.log"
+  exit 0
+fi
+if [[ "\${1:-}" == "update" && "\${2:-}" == "post-install" ]]; then
+  mkdir -p "\${HOME}/.ae-cli"
+  printf '%s\n' "${tag}" >> "\${HOME}/.ae-cli/post-install.log"
+  if [[ "${tag}" == "${POST_INSTALL_WARNING_TAG}" ]]; then
+    exit 1
+  fi
   exit 0
 fi
 echo "ae-cli ${tag}"
@@ -145,6 +154,7 @@ make_bad_checksum_archive "$BAD_CHECKSUM_TAG"
 make_missing_binary_archive "$MISSING_BINARY_TAG"
 make_cli_archive "$PATH_WARNING_TAG"
 make_symlink_archive "$SYMLINK_TAG"
+make_cli_archive "$POST_INSTALL_WARNING_TAG"
 printf '[{"tag_name":"%s"},{"tag_name":"%s"}]\n' "$PLATFORM_LATEST_TAG" "$LATEST_TAG" >"$TMP_ROOT/latest.json"
 
 PAGINATED_API_URL_FILE="$TMP_ROOT/paginated-api-url.txt"
@@ -226,6 +236,7 @@ run_installer \
 test -x "$LATEST_HOME/.local/bin/ae-cli"
 "$LATEST_HOME/.local/bin/ae-cli" | grep -q "ae-cli ${LATEST_TAG}"
 grep -q "${LATEST_TAG}" "$LATEST_HOME/.ae-cli/refresh-installations.log"
+grep -q "${LATEST_TAG}" "$LATEST_HOME/.ae-cli/post-install.log"
 test -f "$LATEST_HOME/.ae-cli/config.yaml"
 grep -q 'url: "https://ai-efficiency.la3.agoralab.co"' "$LATEST_HOME/.ae-cli/config.yaml"
 grep -q "Installing ae-cli ${LATEST_TAG}" "$LATEST_LOG"
@@ -357,6 +368,21 @@ test "$network_status" -ne 0
 grep -q "ae-cli downloads releases from GitHub Releases" "$NETWORK_LOG"
 grep -q "HTTPS_PROXY" "$NETWORK_LOG"
 test ! -e "$NETWORK_HOME/.local/bin/ae-cli"
+
+POST_INSTALL_WARNING_HOME="$TMP_ROOT/home-post-install-warning"
+mkdir -p "$POST_INSTALL_WARNING_HOME"
+POST_INSTALL_WARNING_LOG="$TMP_ROOT/post-install-warning.log"
+run_installer \
+  "$POST_INSTALL_WARNING_HOME" \
+  "$POST_INSTALL_WARNING_HOME/.local/bin:/usr/bin:/bin" \
+  "file://$TMP_ROOT/latest.json" \
+  "$POST_INSTALL_WARNING_TAG" \
+  >"$POST_INSTALL_WARNING_LOG" 2>&1
+
+test -x "$POST_INSTALL_WARNING_HOME/.local/bin/ae-cli"
+grep -q "$POST_INSTALL_WARNING_TAG" "$POST_INSTALL_WARNING_HOME/.ae-cli/post-install.log"
+grep -q "legacy AE Codex OTLP cleanup did not complete" "$POST_INSTALL_WARNING_LOG"
+grep -q "Installed ae-cli ${POST_INSTALL_WARNING_TAG}" "$POST_INSTALL_WARNING_LOG"
 
 printf '# existing zsh config\n' >"$PATH_WARNING_HOME/.zshrc"
 printf '# existing bash config\n' >"$PATH_WARNING_HOME/.bashrc"

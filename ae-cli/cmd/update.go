@@ -3,8 +3,11 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/ai-efficiency/ae-cli/internal/buildinfo"
+	"github.com/ai-efficiency/ae-cli/internal/reporting"
+	"github.com/ai-efficiency/ae-cli/internal/toolconfig"
 	updatepkg "github.com/ai-efficiency/ae-cli/internal/update"
 	"github.com/spf13/cobra"
 )
@@ -59,6 +62,16 @@ var updateUpgradeCmd = &cobra.Command{
 	},
 }
 
+var updatePostInstallCmd = &cobra.Command{
+	Use:    "post-install",
+	Short:  "Run compatibility cleanup after installing a release",
+	Hidden: true,
+	Args:   cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return cleanupLegacyCodexOTLPAfterUpdate()
+	},
+}
+
 func runUpdateInstall(cmd *cobra.Command) error {
 	result, err := installUpdate(commandContext(cmd), updatepkg.InstallOptions{
 		CurrentVersion: buildinfo.Version,
@@ -69,7 +82,6 @@ func runUpdateInstall(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-
 	switch result.Status {
 	case "updated":
 		fmt.Fprintf(cmd.OutOrStdout(), "Upgraded ae-cli %s -> %s\n", result.PreviousVersion, result.InstalledVersion)
@@ -77,6 +89,44 @@ func runUpdateInstall(cmd *cobra.Command) error {
 		fmt.Fprintf(cmd.OutOrStdout(), "No update installed: current version %s is newer than latest published stable %s\n", result.PreviousVersion, result.InstalledVersion)
 	default:
 		fmt.Fprintf(cmd.OutOrStdout(), "ae-cli is up to date (%s)\n", result.PreviousVersion)
+	}
+	return nil
+}
+
+func cleanupLegacyCodexOTLPAfterUpdate() error {
+	config, err := reporting.Load("")
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("load reporting config: %w", err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolve user home: %w", err)
+	}
+	endpoint := codexOTLPEndpoint(config.ServerURL)
+	_, changed, err := toolconfig.DisableCodexOTLP(home, endpoint, config.OTLPToken)
+	if err != nil {
+		return fmt.Errorf("remove managed Codex OTLP: %w", err)
+	}
+	if !changed {
+		inspection, err := toolconfig.InspectCodexOTLP(home, endpoint, config.OTLPToken)
+		if err != nil {
+			return fmt.Errorf("inspect retained Codex OTLP: %w", err)
+		}
+		if inspection.ExporterPresent {
+			return fmt.Errorf("preserved user-modified Codex OTLP exporter because it does not exactly match AE ownership evidence")
+		}
+	}
+	config.OTLPToken = ""
+	config.OTelEnabled = false
+	path, err := reporting.DefaultPath()
+	if err != nil {
+		return fmt.Errorf("resolve reporting config path: %w", err)
+	}
+	if err := reporting.Save(path, config); err != nil {
+		return fmt.Errorf("save cleared legacy OTLP state: %w", err)
 	}
 	return nil
 }
@@ -91,6 +141,6 @@ func commandContext(cmd *cobra.Command) context.Context {
 func init() {
 	updateInstallCmd.Flags().BoolVar(&updateInstallForce, "force", false, "reinstall the latest published release even when the current version is already up to date")
 	updateUpgradeCmd.Flags().BoolVar(&updateInstallForce, "force", false, "reinstall the latest published release even when the current version is already up to date")
-	updateCmd.AddCommand(updateCheckCmd, updateInstallCmd, updateUpgradeCmd)
+	updateCmd.AddCommand(updateCheckCmd, updateInstallCmd, updateUpgradeCmd, updatePostInstallCmd)
 	rootCmd.AddCommand(updateCmd)
 }
