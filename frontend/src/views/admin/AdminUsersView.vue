@@ -162,6 +162,9 @@ const bulkUsesDays = computed(() => subscriptionForm.operation === 'add' || subs
 const bulkRequiresRemoveConfirmation = computed(() => subscriptionForm.operation === 'remove')
 const bulkRequiresResetConfirmation = computed(() => subscriptionForm.operation === 'reset_quota')
 const subscriptionResults = computed(() => subscriptionJob.value?.results ?? subscriptionForm.results)
+const visibleSubscriptionResults = computed(() => [...subscriptionResults.value]
+  .sort((left, right) => Number(right.status === 'failed') - Number(left.status === 'failed'))
+  .slice(0, 6))
 const disableAccessConfirmMatches = computed(() => {
   if (!disableAccessDialog.user) return false
   return disableAccessDialog.confirmEmail.trim().toLowerCase() === disableAccessDialog.user.email.trim().toLowerCase()
@@ -1209,9 +1212,9 @@ onBeforeUnmount(() => {
           <span>{{ t('adminUsers.subscriptionSkippedCount', { count: subscriptionJob.skipped_count }) }}</span>
           <span>{{ t('adminUsers.subscriptionFailedCount', { count: subscriptionJob.failed_count }) }}</span>
         </div>
-        <div v-if="subscriptionResults.length > 0" class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <div v-if="visibleSubscriptionResults.length > 0" class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           <div
-            v-for="result in subscriptionResults.slice(0, 6)"
+            v-for="result in visibleSubscriptionResults"
             :key="`${result.user_id}-${result.status}`"
             :data-testid="`subscription-result-${result.user_id}`"
             class="rounded-md border border-gray-200 p-2 text-xs"
