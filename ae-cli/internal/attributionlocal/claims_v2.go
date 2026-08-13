@@ -480,6 +480,10 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 				currentTurnID = ""
 				return nil
 			}
+			if turnID != currentTurnID {
+				previousCumulativeUsage = v2TokenUsage{}
+				previousIncrementalUsage = v2TokenUsage{}
+			}
 			currentTurnID = turnID
 			for _, turns := range turnSets {
 				if turns[turnID] == nil {
@@ -604,6 +608,9 @@ func buildCodexV2ClaimCandidates(ctx context.Context, path, sessionID string, op
 			SchemaVersion: v2ClaimSchemaVersion, GroupID: groupID, RelayProviderID: opts.RelayProviderID,
 			TokenSource: client.AttributionV2TokenSourceRelayOfficial, ThreadID: turn.threadID, TurnID: turn.turnID, RequestIDs: requests,
 		}}
+		if turn.webSocket {
+			candidate.Group.TokenSource = client.AttributionV2TokenSourceCodexLocal
+		}
 		if len(requests) > 0 && turn.webSocket {
 			candidate.GapReason = "mixed_token_sources"
 		} else if len(requests) == 0 && !turn.webSocket {
@@ -620,7 +627,6 @@ func buildCodexV2ClaimCandidates(ctx context.Context, path, sessionID string, op
 			candidate.GapReason = "commit_content_mismatch"
 		} else {
 			if turn.webSocket {
-				candidate.Group.TokenSource = client.AttributionV2TokenSourceCodexLocal
 				candidate.Group.LocalUsage = sortedV2LocalUsage(turn.localUsage)
 			}
 			evidenceDigest := v2MutationDigest(introduced)
