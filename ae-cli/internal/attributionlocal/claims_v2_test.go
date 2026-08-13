@@ -440,9 +440,14 @@ func TestScanCodexV2ClaimsUsesDeduplicatedLocalTokenBucketsForWebSocket(t *testi
 	if _, err := db.Exec(`CREATE TABLE logs (id INTEGER PRIMARY KEY, ts INTEGER, ts_nanos INTEGER, thread_id TEXT, target TEXT, feedback_log_body TEXT)`); err != nil {
 		t.Fatal(err)
 	}
-	body := `session_loop{thread_id=thread-websocket}:turn{thread.id=thread-websocket turn.id=turn-websocket}:stream_request:model_client.stream_responses_websocket{transport="responses_websocket" api.path="responses"}: websocket event: {"type":"response.completed","response":{"id":"resp-not-uploaded"}}`
-	if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(1, ?, 0, ?, ?, ?)`, time.Now().UTC().Unix(), "thread-websocket", codexResponsesWebSocketEventTarget, body); err != nil {
-		t.Fatal(err)
+	rows := []struct{ target, body string }{
+		{codexResponsesWebSocketEventTarget, `session_loop{thread_id=thread-websocket}:turn{thread.id=thread-websocket turn.id=turn-websocket}:session_task.run:run_turn:run_sampling_request{turn_id=turn-websocket}:stream_request:model_client.stream_responses_websocket{transport="responses_websocket" api.path="responses" websocket.warmup=false}:responses_websocket.stream_request{transport="responses_websocket" api.path="responses"}: unhandled responses event: response.in_progress`},
+		{codexResponsesWebSocketCompletionTarget, `session_loop{thread_id=thread-websocket}:turn{thread.id=thread-websocket turn.id=turn-websocket}:session_task.run:run_turn: post sampling token usage turn_id=turn-websocket total_usage_tokens=178`},
+	}
+	for index, row := range rows {
+		if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(?, ?, 0, ?, ?, ?)`, index+1, time.Now().UTC().Unix(), "thread-websocket", row.target, row.body); err != nil {
+			t.Fatal(err)
+		}
 	}
 	claims, err := ScanCodexV2ClaimsFromHome(context.Background(), home, V2ClaimScanOptions{
 		RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
@@ -459,12 +464,89 @@ func TestScanCodexV2ClaimsUsesDeduplicatedLocalTokenBucketsForWebSocket(t *testi
 		second.InputTokens != 40 || second.CacheReadTokens != 10 || second.OutputTokens != 8 || second.TotalTokens != 58 || second.RequestCount != 2 {
 		t.Fatalf("local usage buckets = %+v", claims[0].Group.LocalUsage)
 	}
-	encoded, err := json.Marshal(claims[0].Group)
+	if _, err := db.Exec(`DELETE FROM logs`); err != nil {
+		t.Fatal(err)
+	}
+	legacyBody := `session_loop{thread_id=thread-websocket}:turn{thread.id=thread-websocket turn.id=turn-websocket}:stream_request:model_client.stream_responses_websocket{transport="responses_websocket" api.path="responses"}: websocket event: {"type":"response.completed","response":{"id":"resp-not-uploaded"}}`
+	if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(1, ?, 0, ?, ?, ?)`, time.Now().UTC().Unix(), "thread-websocket", codexResponsesWebSocketEventTarget, legacyBody); err != nil {
+		t.Fatal(err)
+	}
+	legacyClaims, err := ScanCodexV2ClaimsFromHome(context.Background(), home, V2ClaimScanOptions{
+		RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
+		WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-websocket",
+	})
+	if err != nil || len(legacyClaims) != 1 || legacyClaims[0].GapReason != "" || legacyClaims[0].Group.TokenSource != client.AttributionV2TokenSourceCodexLocal {
+		t.Fatalf("legacy WebSocket claim = %+v, err=%v", legacyClaims, err)
+	}
+	encoded, err := json.Marshal(legacyClaims[0].Group)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(encoded), "resp-not-uploaded") {
 		t.Fatalf("WebSocket response identity leaked into claim: %s", encoded)
+	}
+}
+
+func TestParseCodexV2WebSocketTurnEvidenceRequiresCompletedResponse(t *testing.T) {
+	prefix := `turn{thread.id=thread-websocket turn.id=turn-websocket}:model_client.stream_responses_websocket{transport="responses_websocket"}: websocket event: `
+	for name, testCase := range map[string]struct {
+		body string
+		want bool
+	}{
+		"completed":    {body: prefix + `{"type":"response.completed","response":{"id":"resp-placeholder"}}`, want: true},
+		"not complete": {body: prefix + `{"type":"response.created","response":{"id":"resp-placeholder"}}`},
+		"missing id":   {body: prefix + `{"type":"response.completed","response":{}}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			thread, turn, ok := parseCodexV2WebSocketTurnEvidence("", testCase.body)
+			if ok != testCase.want || ok && (thread != "thread-websocket" || turn != "turn-websocket") {
+				t.Fatalf("parse result = (%q, %q, %t), want valid=%t", thread, turn, ok, testCase.want)
+			}
+		})
+	}
+}
+
+func TestLoadCodexV2RequestEvidenceRequiresLiteralWebSocketSpans(t *testing.T) {
+	for name, rows := range map[string][]struct{ target, body string }{
+		"transport": {
+			{codexResponsesWebSocketEventTarget, `turn{thread.id=thread-websocket turn.id=turn-websocket}:modelXclient.streamYresponsesZwebsocket{transport="responses_websocket" websocket.warmup=false}: unhandled responses event: response.in_progress`},
+			{codexResponsesWebSocketCompletionTarget, `turn{thread.id=thread-websocket turn.id=turn-websocket}:session_task.run:run_turn: post sampling token usage turn_id=turn-websocket total_usage_tokens=10`},
+		},
+		"completion": {
+			{codexResponsesWebSocketEventTarget, `turn{thread.id=thread-websocket turn.id=turn-websocket}:model_client.stream_responses_websocket{transport="responses_websocket" websocket.warmup=false}: unhandled responses event: response.in_progress`},
+			{codexResponsesWebSocketCompletionTarget, `turn{thread.id=thread-websocket turn.id=turn-websocket}:sessionXtask.run:runXturn: post sampling token usage turn_id=turn-websocket total_usage_tokens=10`},
+		},
+		"warmup": {
+			{codexResponsesWebSocketEventTarget, `turn{thread.id=thread-websocket turn.id=turn-websocket}:model_client.stream_responses_websocket{transport="responses_websocket" websocket.warmup=true}: unhandled responses event: response.in_progress`},
+			{codexResponsesWebSocketCompletionTarget, `turn{thread.id=thread-websocket turn.id=turn-websocket}:session_task.run:run_turn: post sampling token usage turn_id=turn-websocket total_usage_tokens=10`},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			db, err := sql.Open("sqlite", filepath.Join(home, ".codex", "logs_2.sqlite"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			if _, err := db.Exec(`CREATE TABLE logs (id INTEGER PRIMARY KEY, ts INTEGER, ts_nanos INTEGER, thread_id TEXT, target TEXT, feedback_log_body TEXT)`); err != nil {
+				t.Fatal(err)
+			}
+			for index, row := range rows {
+				if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(?, ?, 0, ?, ?, ?)`, index+1, time.Now().UTC().Unix(), "thread-websocket", row.target, row.body); err != nil {
+					t.Fatal(err)
+				}
+			}
+			evidence, err := loadCodexV2RequestEvidence(context.Background(), home, time.Time{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(evidence) != 0 {
+				t.Fatalf("near-match WebSocket span was trusted: %+v", evidence)
+			}
+		})
 	}
 }
 
@@ -737,6 +819,10 @@ func TestScanCodexV2ClaimsRejectsWrongHeadersTargetsAndUnmatchedTurns(t *testing
 		{codexResponsesHTTPClientTarget, `turn{thread.id=thread-real turn.id=turn-other}: Request completed method=POST api.path="responses" status=200 OK headers={"x-client-request-id":"wrong-turn"}`},
 		{codexResponsesHTTPClientTarget, `turn{thread.id=thread-real turn.id=turn-real}: Request completed method=POST api.path="responses" status=503 Service Unavailable headers={"x-client-request-id":"failed-request"}`},
 		{"codex_api::sse::responses", `turn{thread.id=thread-real turn.id=turn-real}: Request completed method=POST api.path="responses" status=200 OK headers={"x-client-request-id":"wrong-target"}`},
+		{codexResponsesWebSocketEventTarget, `turn{thread.id=thread-real turn.id=turn-real}:model_client.stream_responses_websocket{transport="responses_websocket" websocket.warmup=false}: unhandled responses event: response.in_progress`},
+		{codexResponsesWebSocketCompletionTarget, `turn{thread.id=thread-real turn.id=turn-other}:session_task.run:run_turn: post sampling token usage turn_id=turn-other total_usage_tokens=10`},
+		{codexResponsesWebSocketEventTarget, `turn{thread.id=thread-real turn.id=turn-real}:modelXclient.streamYresponsesZwebsocket{transport="responses_websocket" websocket.warmup=false}: unhandled responses event: response.in_progress`},
+		{codexResponsesWebSocketCompletionTarget, `turn{thread.id=thread-real turn.id=turn-real}:sessionXtask.run:runXturn: post sampling token usage turn_id=turn-real total_usage_tokens=10`},
 	}
 	for index, row := range rows {
 		if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, target, feedback_log_body) VALUES(?, ?, 0, ?, ?)`, index+1, time.Now().Unix(), row.target, row.body); err != nil {

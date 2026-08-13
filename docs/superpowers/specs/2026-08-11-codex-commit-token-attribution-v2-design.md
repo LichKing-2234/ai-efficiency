@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Design
 
 **Date:** 2026-08-11
-**Status:** Active production contract since the verified 2026-08-12 cutover; the approved Responses WebSocket extension uses Codex-local Token and remains pending release and a real canary; #252 stable-window legacy cleanup remains pending
+**Status:** Active production contract since the verified 2026-08-12 cutover; the approved Responses WebSocket extension uses Codex-local Token and shipped in `ae-cli/v0.2.0-preview.8` plus platform `v0.1.0-preview.85`, but its first real Codex 0.147 canary failed closed on a changed trusted-log shape and remains pending a scanner repair release plus a successful canary; #252 stable-window legacy cleanup remains pending
 **Scope:** `ae-cli`, backend attribution/reconciliation/read models, frontend Activity, repository administration
 **Supersedes for active behavior:** [Codex Token Attribution Ledger POC](./2026-08-05-codex-token-attribution-ledger-poc-design.md)
 **Related:**
@@ -110,9 +110,19 @@ Rules:
   same trusted SQLite `thread.id + turn.id`. Transport connection IDs,
   `x-request-id`, Kong IDs, SSE `response.id`, timing proximity, and unmatched
   or ambiguous evidence are rejected;
-- `codex_local` requires a trusted SQLite `response.completed` event from the
-  Responses WebSocket transport for the exact local `thread.id + turn.id`.
-  Its `resp_*` value proves only that the transport completed; it is neither a
+- `codex_local` requires trusted SQLite WebSocket transport and successful
+  sampling evidence for the exact local `thread.id + turn.id`. For Codex
+  0.147, the transport side is a non-warmup `response.in_progress` event emitted under
+  `codex_api::sse::responses` and the
+  `model_client.stream_responses_websocket` span, while the success side is
+  the `codex_core::session::turn` `post sampling token usage` event emitted
+  only after the sampling request returns successfully. A `generate=false`
+  WebSocket warmup is never completion evidence. The two rows are
+  joined only by their exact thread and turn identities; target, process, or
+  timestamp proximity is insufficient. An older raw WebSocket
+  `response.completed` row remains accepted when it contains the same exact
+  identities;
+- any raw `resp_*` value is only local transport evidence. It is neither a
   Relay Request identity nor uploaded or persisted by AE;
 - WebSocket Token comes from JSONL `last_token_usage`, which is an incremental
   response total. A matching cumulative `total_token_usage` snapshot is
@@ -173,7 +183,7 @@ completion units are saved after the corresponding claim candidates are saved,
 so timeout, process exit, or backend failure resumes the exact remaining units.
 A later trigger adds only its own units; it does not invalidate completed work
 for older triggers. For each source, progress also retains digest-only turn keys
-and the digest of trusted SQLite HTTP Request or WebSocket completion evidence
+and the digest of trusted SQLite HTTP Request or WebSocket transport/success evidence
 relevant to those turns. Late transport evidence invalidates completed units
 only for the affected source; unrelated events do not restart completed
 sources or older triggers. Raw Request, response, thread, and turn identifiers

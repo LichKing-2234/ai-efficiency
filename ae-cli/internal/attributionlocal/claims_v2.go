@@ -25,6 +25,7 @@ import (
 const v2ClaimSchemaVersion = 2
 const codexResponsesHTTPClientTarget = "codex_http_client::client"
 const codexResponsesWebSocketEventTarget = "codex_api::sse::responses"
+const codexResponsesWebSocketCompletionTarget = "codex_core::session::turn"
 const v2LocalEvidenceWindow = 90 * 24 * time.Hour
 
 var codexV2SourceReadObserver = func(string) {}
@@ -1011,6 +1012,17 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string, cutoff time
 	}
 	defer webSocketRows.Close()
 	seenTurns := map[string]struct{}{}
+	appendWebSocketTurn := func(thread, turn string) {
+		if thread == "" || turn == "" {
+			return
+		}
+		key := claimDigest(thread, turn)
+		if _, exists := seenTurns[key]; exists {
+			return
+		}
+		seenTurns[key] = struct{}{}
+		result = append(result, v2RequestEvidence{threadID: thread, turnID: turn, webSocket: true})
+	}
 	for webSocketRows.Next() {
 		var threadID sql.NullString
 		var body string
@@ -1021,15 +1033,66 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string, cutoff time
 		if !ok {
 			continue
 		}
-		key := claimDigest(thread, turn)
-		if _, exists := seenTurns[key]; exists {
-			continue
-		}
-		seenTurns[key] = struct{}{}
-		result = append(result, v2RequestEvidence{threadID: thread, turnID: turn, webSocket: true})
+		appendWebSocketTurn(thread, turn)
 	}
 	if err := webSocketRows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate Codex WebSocket turn evidence: %w", err)
+	}
+	webSocketTransportRows, err := db.QueryContext(ctx, `
+		SELECT thread_id, feedback_log_body
+		FROM logs
+		WHERE target = ?
+		  AND ts >= ?
+		  AND instr(feedback_log_body, 'model_client.stream_responses_websocket') > 0
+		  AND instr(feedback_log_body, 'websocket.warmup=false') > 0
+		  AND instr(feedback_log_body, 'unhandled responses event: response.in_progress') > 0
+		ORDER BY ts, ts_nanos, id`, codexResponsesWebSocketEventTarget, cutoff.Unix())
+	if err != nil {
+		return nil, fmt.Errorf("query Codex WebSocket transport evidence: %w", err)
+	}
+	defer webSocketTransportRows.Close()
+	transportTurns := map[string]v2RequestEvidence{}
+	for webSocketTransportRows.Next() {
+		var threadID sql.NullString
+		var body string
+		if err := webSocketTransportRows.Scan(&threadID, &body); err != nil {
+			return nil, fmt.Errorf("scan Codex WebSocket transport evidence: %w", err)
+		}
+		thread, turn, ok := parseCodexV2TurnSpan(threadID.String, body)
+		if ok {
+			transportTurns[claimDigest(thread, turn)] = v2RequestEvidence{threadID: thread, turnID: turn}
+		}
+	}
+	if err := webSocketTransportRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate Codex WebSocket transport evidence: %w", err)
+	}
+	webSocketCompletionRows, err := db.QueryContext(ctx, `
+		SELECT thread_id, feedback_log_body
+		FROM logs
+		WHERE target = ?
+		  AND ts >= ?
+		  AND instr(feedback_log_body, ':session_task.run:run_turn: post sampling token usage ') > 0
+		ORDER BY ts, ts_nanos, id`, codexResponsesWebSocketCompletionTarget, cutoff.Unix())
+	if err != nil {
+		return nil, fmt.Errorf("query Codex sampling completion evidence: %w", err)
+	}
+	defer webSocketCompletionRows.Close()
+	for webSocketCompletionRows.Next() {
+		var threadID sql.NullString
+		var body string
+		if err := webSocketCompletionRows.Scan(&threadID, &body); err != nil {
+			return nil, fmt.Errorf("scan Codex sampling completion evidence: %w", err)
+		}
+		thread, turn, ok := parseCodexV2TurnSpan(threadID.String, body)
+		if !ok {
+			continue
+		}
+		if transport, exists := transportTurns[claimDigest(thread, turn)]; exists {
+			appendWebSocketTurn(transport.threadID, transport.turnID)
+		}
+	}
+	if err := webSocketCompletionRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate Codex sampling completion evidence: %w", err)
 	}
 	sort.Slice(result, func(i, j int) bool {
 		left := result[i].threadID + "\x00" + result[i].turnID + "\x00" + result[i].requestID
@@ -1058,8 +1121,12 @@ func parseCodexV2WebSocketTurnEvidence(fallbackThreadID, body string) (string, s
 	if err := json.NewDecoder(strings.NewReader(strings.TrimSpace(body[markerIndex+len(marker):]))).Decode(&event); err != nil || event.Type != "response.completed" || strings.TrimSpace(event.Response.ID) == "" {
 		return "", "", false
 	}
-	threadID := firstNonEmptyCompact(firstSubmatch(v2ThreadIDPattern, prefix), strings.TrimSpace(fallbackThreadID))
-	turnID := firstSubmatch(v2TurnIDPattern, prefix)
+	return parseCodexV2TurnSpan(fallbackThreadID, prefix)
+}
+
+func parseCodexV2TurnSpan(fallbackThreadID, body string) (string, string, bool) {
+	threadID := firstNonEmptyCompact(firstSubmatch(v2ThreadIDPattern, body), strings.TrimSpace(fallbackThreadID))
+	turnID := firstSubmatch(v2TurnIDPattern, body)
 	return threadID, turnID, threadID != "" && turnID != ""
 }
 
