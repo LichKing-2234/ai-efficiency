@@ -3,6 +3,10 @@ Set-StrictMode -Version Latest
 
 $RootDir = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 $Installer = Join-Path $RootDir "ae-cli/install.ps1"
+$InstallerSource = Get-Content -LiteralPath $Installer -Raw
+if (-not $InstallerSource.Contains('update post-install')) {
+  throw "Windows installer must invoke the newly installed binary post-install cleanup"
+}
 $TmpRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("ae-cli-install-ps1-test-" + [System.Guid]::NewGuid().ToString("N"))
 $SiteRoot = Join-Path $TmpRoot "site"
 $ServerProcess = $null

@@ -203,6 +203,17 @@ try {
   New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
   Copy-Item -LiteralPath $BinaryPath -Destination $TargetPath -Force
 
+  $PostInstallSucceeded = $true
+  try {
+    & $TargetPath update post-install *> $null
+    $PostInstallSucceeded = $LASTEXITCODE -eq 0
+  } catch {
+    $PostInstallSucceeded = $false
+  }
+  if (-not $PostInstallSucceeded) {
+    Write-Host "Warning: installed ae-cli but legacy AE Codex OTLP cleanup did not complete; user-modified exporters are preserved."
+  }
+
   $ExistingConfig = Get-ExistingConfigPath
   if ($ExistingConfig) {
     if ($ServerUrlExplicit -and $ServerUrl) {

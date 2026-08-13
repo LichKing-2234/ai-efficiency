@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -26,9 +27,10 @@ func TestUpdateCommandIsRegistered(t *testing.T) {
 	}
 
 	expected := map[string]bool{
-		"check":   false,
-		"install": false,
-		"upgrade": false,
+		"check":        false,
+		"install":      false,
+		"post-install": false,
+		"upgrade":      false,
 	}
 	for _, cmd := range update.Commands() {
 		if _, ok := expected[cmd.Name()]; ok {
@@ -106,7 +108,7 @@ func TestUpdateInstallCommandPrintsUpgradeMessage(t *testing.T) {
 	}
 }
 
-func TestUpdateInstallRemovesOnlyManagedCodexOTLP(t *testing.T) {
+func TestUpdatePostInstallRemovesOnlyManagedCodexOTLP(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	endpoint := "https://ae.example.com/api/v1/attribution/otel/v1/traces"
@@ -122,16 +124,7 @@ func TestUpdateInstallRemovesOnlyManagedCodexOTLP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	oldInstall := installUpdate
-	defer func() { installUpdate = oldInstall }()
-	installUpdate = func(_ context.Context, _ updatepkg.InstallOptions) (updatepkg.InstallResult, error) {
-		return updatepkg.InstallResult{PreviousVersion: "v0.1.0", InstalledVersion: "v0.2.0", Updated: true, Status: "updated"}, nil
-	}
-
-	cmd := &cobra.Command{}
-	cmd.SetOut(&bytes.Buffer{})
-	cmd.SetErr(&bytes.Buffer{})
-	if err := runUpdateInstall(cmd); err != nil {
+	if err := cleanupLegacyCodexOTLPAfterUpdate(); err != nil {
 		t.Fatal(err)
 	}
 	inspection, err := toolconfig.InspectCodexOTLP(home, endpoint, "test-otlp-token")
@@ -147,5 +140,77 @@ func TestUpdateInstallRemovesOnlyManagedCodexOTLP(t *testing.T) {
 	}
 	if config.OTLPToken != "" || config.OTelEnabled {
 		t.Fatalf("legacy local OTLP state survived successful update: token_present=%t enabled=%t", config.OTLPToken != "", config.OTelEnabled)
+	}
+}
+
+func TestUpdatePostInstallClearsLegacyStateWhenCodexExporterIsAbsent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	reportingPath := filepath.Join(home, ".ae-cli", "reporting.json")
+	if err := reporting.Save(reportingPath, &reporting.Config{
+		InstallationID: "11111111-1111-4111-8111-111111111111",
+		ServerURL:      "https://ae.example.com",
+		OTLPToken:      "test-otlp-token",
+		OTelEnabled:    true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cleanupLegacyCodexOTLPAfterUpdate(); err != nil {
+		t.Fatal(err)
+	}
+	config, err := reporting.Load(reportingPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.OTLPToken != "" || config.OTelEnabled {
+		t.Fatalf("legacy state survived absent exporter cleanup: token_present=%t enabled=%t", config.OTLPToken != "", config.OTelEnabled)
+	}
+}
+
+func TestUpdatePostInstallPreservesOwnershipStateForUserModifiedExporter(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	endpoint := "https://ae.example.com/api/v1/attribution/otel/v1/traces"
+	if _, err := toolconfig.ConfigureCodexOTLP(home, endpoint, "test-otlp-token"); err != nil {
+		t.Fatal(err)
+	}
+	codexPath := filepath.Join(home, ".codex", "config.toml")
+	payload, err := os.ReadFile(codexPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload = []byte(strings.Replace(string(payload), `protocol = 'json'`, `protocol = 'grpc'`, 1))
+	if err := os.WriteFile(codexPath, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	reportingPath := filepath.Join(home, ".ae-cli", "reporting.json")
+	if err := reporting.Save(reportingPath, &reporting.Config{
+		InstallationID: "11111111-1111-4111-8111-111111111111",
+		ServerURL:      "https://ae.example.com",
+		OTLPToken:      "test-otlp-token",
+		OTelEnabled:    true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err = cleanupLegacyCodexOTLPAfterUpdate()
+	if err == nil || !strings.Contains(err.Error(), "user-modified Codex OTLP exporter") {
+		t.Fatalf("cleanup error = %v, want user-modified exporter warning", err)
+	}
+	config, err := reporting.Load(reportingPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.OTLPToken != "test-otlp-token" || !config.OTelEnabled {
+		t.Fatalf("ownership evidence was cleared: token=%q enabled=%t", config.OTLPToken, config.OTelEnabled)
+	}
+	inspection, err := toolconfig.InspectCodexOTLP(home, endpoint, "test-otlp-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !inspection.Configured || inspection.ProtocolJSON {
+		t.Fatalf("user-modified exporter was not preserved: %+v", inspection)
 	}
 }

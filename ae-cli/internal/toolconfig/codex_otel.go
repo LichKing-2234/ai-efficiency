@@ -11,6 +11,7 @@ import (
 
 type CodexOTLPInspection struct {
 	Configured            bool
+	ExporterPresent       bool
 	EndpointMatches       bool
 	ProtocolJSON          bool
 	CredentialAvailable   bool
@@ -147,7 +148,9 @@ func InspectCodexOTLP(homeDir, expectedEndpoint, expectedToken string) (CodexOTL
 	if !ok {
 		return inspection, nil
 	}
-	otlpHTTP, ok := traceExporters["otlp-http"].(map[string]any)
+	rawOTLPHTTP, present := traceExporters["otlp-http"]
+	inspection.ExporterPresent = present
+	otlpHTTP, ok := rawOTLPHTTP.(map[string]any)
 	if !ok {
 		return inspection, nil
 	}

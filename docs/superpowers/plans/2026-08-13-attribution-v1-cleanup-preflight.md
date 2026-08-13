@@ -1,7 +1,7 @@
 # Attribution v1 and AE OTel Cleanup Preflight
 
 **Date:** 2026-08-13
-**Status:** Protection implementation and full local verification are complete; code review and PR remain. Production cleanup remains blocked by #278, a new seven-day stable window, and separate release/deployment/data-mutation authority.
+**Status:** Protection implementation, local verification, and code review are complete; the PR remains. The PowerShell installer contract is checked statically, but its runtime test was unavailable because `pwsh` is not installed locally. Production cleanup remains blocked by #278, a new seven-day stable window, and separate release/deployment/data-mutation authority.
 **Parent:** [Codex Commit Token Attribution v2 Implementation Plan](./2026-08-11-codex-commit-token-attribution-v2.md)
 **Issue:** [#252](https://github.com/LichKing-2234/ai-efficiency/issues/252)
 
@@ -39,17 +39,22 @@ current cleanup date.
 
 ### CLI upgrade and user-managed OTel
 
-The public seams are `ae-cli update install` and
-`toolconfig.DisableCodexOTLP`.
+The public seams are both installers, the hidden `ae-cli update post-install`
+compatibility command, and `toolconfig.DisableCodexOTLP`.
 
 - Removal requires the exact AE endpoint, credential, JSON protocol, exporter
   shape, and header shape.
 - A changed protocol, extra exporter option, extra header, different endpoint,
   or different credential is user-modified and must be preserved.
-- A successful update attempts the scrubber even when no new binary was
-  required, so users may skip intermediate CLI releases safely.
-- After a successful scrub attempt, the local legacy OTLP plaintext and enable
-  flag are removed from `reporting.json`.
+- After replacing the executable, each installer invokes the hidden command on
+  the newly installed binary; cleanup therefore does not depend on the older
+  updater process and remains effective when users skip intermediate releases.
+- The local legacy OTLP plaintext and enable flag are removed from
+  `reporting.json` only after exact managed-exporter removal or when no
+  `otlp-http` exporter exists.
+- A mismatched exporter preserves both Codex configuration and local ownership
+  evidence. The installer emits a warning but does not fail the completed
+  binary installation.
 - Missing reporting state is a no-op. A malformed local file or unsafe config
   mismatch is warning-only and never converts a completed binary update into
   a failed install.
@@ -176,6 +181,6 @@ two phases because a rolling deployment can overlap replicas.
 - [x] Run frontend role E2E. The first cold Vite pass completed 125/126 with
   one `/usage` mobile selector timeout; the unchanged warm rerun completed
   126/126.
-- [ ] Complete code review and close every accepted finding.
+- [x] Complete code review and close every accepted finding.
 - [ ] Open and merge the preflight PR.
 - [ ] Obtain authority for any later release, deployment, or cleanup.

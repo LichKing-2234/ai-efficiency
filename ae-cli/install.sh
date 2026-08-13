@@ -333,6 +333,14 @@ refresh_managed_hooks() {
   fi
 }
 
+run_post_install_cleanup() {
+  if [[ -x "$TARGET_PATH" ]]; then
+    "$TARGET_PATH" update post-install >/dev/null 2>&1 || {
+      echo "Warning: installed ae-cli but legacy AE Codex OTLP cleanup did not complete; user-modified exporters are preserved." >&2
+    }
+  fi
+}
+
 update_existing_cli_config() {
   local existing="$1"
   local tmp="${existing}.tmp.$$"
@@ -397,6 +405,7 @@ main() {
   echo "Installing ae-cli ${tag}..."
   download_release "$tag"
   install_binary
+  run_post_install_cleanup
   prompt_server_url
   write_cli_config
   refresh_managed_hooks
