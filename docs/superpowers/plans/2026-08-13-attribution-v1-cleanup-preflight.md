@@ -1,7 +1,7 @@
 # Attribution v1 and AE OTel Cleanup Preflight
 
 **Date:** 2026-08-13
-**Status:** Protection implementation, local verification, and code review are complete; [PR #284](https://github.com/LichKing-2234/ai-efficiency/pull/284) is open and merge remains. The PowerShell installer contract is checked statically, but its runtime test was unavailable because `pwsh` is not installed locally. Production cleanup remains blocked by #278, a new seven-day stable window, and separate release/deployment/data-mutation authority.
+**Status:** Preflight implementation, verification, and review merged through [PR #284](https://github.com/LichKing-2234/ai-efficiency/pull/284) as `f6c9de84`; hosted CI `31685184654` passed backend, ae-cli, frontend, and deploy/static validation. Local PowerShell runtime testing was unavailable because `pwsh` is not installed, while the hosted PowerShell installer validation passed. Production cleanup remains blocked by #278, a new seven-day stable window, and separate release/deployment/data-mutation authority.
 **Parent:** [Codex Commit Token Attribution v2 Implementation Plan](./2026-08-11-codex-commit-token-attribution-v2.md)
 **Issue:** [#252](https://github.com/LichKing-2234/ai-efficiency/issues/252)
 
@@ -182,5 +182,5 @@ two phases because a rolling deployment can overlap replicas.
   one `/usage` mobile selector timeout; the unchanged warm rerun completed
   126/126.
 - [x] Complete code review and close every accepted finding.
-- [ ] Open and merge the preflight PR.
+- [x] Open and merge the preflight PR.
 - [ ] Obtain authority for any later release, deployment, or cleanup.
