@@ -388,6 +388,64 @@ func TestScanCodexV2ClaimsUsesHTTPClientRequestIdentityAndTurn(t *testing.T) {
 	}
 }
 
+func TestScanCodexV2ClaimsAcceptsExecWrappedApplyPatch(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	home := t.TempDir()
+	writeV2JSONL(t, filepath.Join(home, ".codex", "sessions", "session.jsonl"),
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "thread-wrapped"}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-wrapped"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{
+			"type": "custom_tool_call", "name": "exec",
+			"input": "const patch = \"*** Begin Patch\\n*** Add File: feature.go\\n+package feature\\n*** End Patch\";\ntext(await tools.apply_patch(patch));",
+		}},
+	)
+	writeV2RequestLog(t, home, map[string]string{"thread-wrapped/request-wrapped": "turn-wrapped"})
+
+	claims, err := ScanCodexV2ClaimsFromHome(context.Background(), home, V2ClaimScanOptions{
+		RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
+		WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-wrapped",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 1 || claims[0].GapReason != "" || len(UploadableV2ClaimGroups(claims)) != 1 {
+		t.Fatalf("wrapped apply_patch claim = %+v, want one uploadable deterministic claim", claims)
+	}
+}
+
+func TestScanCodexV2ClaimsRejectsAmbiguousExecWrappedPatches(t *testing.T) {
+	patch := `"*** Begin Patch\n*** Add File: feature.go\n+package feature\n*** End Patch"`
+	cases := map[string]string{
+		"comment marker":        "// tools.apply_patch(patch)\nconst patch = " + patch + ";",
+		"unrelated variable":    "const patch = " + patch + ";\ntext(await tools.apply_patch(other));",
+		"malformed call":        "const patch = " + patch + ";\ntools.apply_patch(patch",
+		"multiple calls":        "const patch = " + patch + ";\ntext(await tools.apply_patch(patch));\ntext(await tools.apply_patch(patch));",
+		"patch outside binding": "const other = " + patch + ";\ntext(await tools.apply_patch(patch));",
+	}
+	for name, input := range cases {
+		t.Run(name, func(t *testing.T) {
+			repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+			home := t.TempDir()
+			writeV2JSONL(t, filepath.Join(home, ".codex", "sessions", "session.jsonl"),
+				map[string]any{"type": "session_meta", "payload": map[string]any{"id": "thread-ambiguous"}},
+				map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-ambiguous"}},
+				map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "exec", "input": input}},
+			)
+			writeV2RequestLog(t, home, map[string]string{"thread-ambiguous/request-ambiguous": "turn-ambiguous"})
+			claims, err := ScanCodexV2ClaimsFromHome(context.Background(), home, V2ClaimScanOptions{
+				RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
+				WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-ambiguous",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(claims) != 1 || claims[0].GapReason != "missing_structured_mutation" || len(UploadableV2ClaimGroups(claims)) != 0 {
+				t.Fatalf("ambiguous wrapped patch was accepted: %+v", claims)
+			}
+		})
+	}
+}
+
 func TestScanCodexV2ClaimsRejectsWrongHeadersTargetsAndUnmatchedTurns(t *testing.T) {
 	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
 	home := t.TempDir()
