@@ -186,3 +186,27 @@ func TestSummarizeV2ClaimDeliveryExcludesCompletedAudit(t *testing.T) {
 		t.Fatalf("delivery summary = %+v", summary)
 	}
 }
+
+func TestLocalUsageAcknowledgementIsReopenedByLateToken(t *testing.T) {
+	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+	usage := client.AttributionV2LocalUsageBucket{RequestedModel: "gpt-test", BucketStartUTC: now, InputTokens: 10, OutputTokens: 2, TotalTokens: 12, RequestCount: 1}
+	group := client.AttributionV2ClaimGroup{GroupID: "group-local", TokenSource: client.AttributionV2TokenSourceCodexLocal, LocalUsage: []client.AttributionV2LocalUsageBucket{usage}}
+	state := &V2ClaimState{Claims: []V2ClaimCandidate{{LocalKey: "local-turn", Group: group, FirstSeenAt: now}}}
+	result := &client.AttributionV2ClaimBatchResult{LedgerEpoch: "shadow_v2", V1WritePolicy: "accept", Results: []client.AttributionV2ClaimResult{{
+		Group: client.AttributionV2ItemStatus{ID: group.GroupID, Status: "persisted"},
+	}}}
+	if err := ApplyV2ClaimAcknowledgements(state, []client.AttributionV2ClaimGroup{group}, result, testShadowProtocol, now); err != nil {
+		t.Fatal(err)
+	}
+	if !state.Claims[0].GroupAcknowledged || len(UploadableV2ClaimGroups(state.Claims)) != 0 {
+		t.Fatalf("acknowledged local claim = %+v", state.Claims[0])
+	}
+	usage.InputTokens = 20
+	usage.TotalTokens = 22
+	usage.RequestCount = 2
+	late := V2ClaimCandidate{LocalKey: "local-turn", Group: client.AttributionV2ClaimGroup{GroupID: group.GroupID, TokenSource: group.TokenSource, LocalUsage: []client.AttributionV2LocalUsageBucket{usage}}, FirstSeenAt: now}
+	MergeV2ClaimState(state, []V2ClaimCandidate{late}, now.Add(time.Minute))
+	if state.Claims[0].GroupAcknowledged || len(UploadableV2ClaimGroups(state.Claims)) != 1 {
+		t.Fatalf("late local usage was not reopened: %+v", state.Claims[0])
+	}
+}

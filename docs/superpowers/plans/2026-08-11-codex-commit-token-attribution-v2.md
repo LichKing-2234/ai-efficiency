@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** T01-T12 and T14/T15 are implemented and released. `ae-cli/v0.2.0-preview.6` and platform `v0.1.0-preview.84` shipped T14/T15, and production runs Helm revision `84`; the CLI-only wrapper-proof follow-up shipped as `ae-cli/v0.2.0-preview.7`. T16 verified automatic Repository registration, bounded/resumable fail-closed recovery, and a three-commit qualification branch. The first two commits proved event-driven capture, coalescing, timeout persistence, and pre-push recovery; a third commit from a freshly started HTTP-only Codex TUI produced the first new agent-infra formal pool without manual sync. Agent Infra is now bound to the GitHub provider with a registered webhook, and focused Agent Infra/AI Efficiency PR syncs restored current Activity SCM coverage to complete with zero failed, partial, unsynced, or stale Repository. These qualification and recovery actions do not satisfy the two-subsequent-ordinary-commit or T13 adoption gates. The seven-day stability clock must restart from the first qualifying ordinary pool and aggregate Activity readback; #252 cleanup remains blocked and no cleanup has run.
+**Status:** T01-T12 and T14/T15 are implemented and released. `ae-cli/v0.2.0-preview.6` and platform `v0.1.0-preview.84` shipped T14/T15, and production runs Helm revision `84`; the CLI-only wrapper-proof follow-up shipped as `ae-cli/v0.2.0-preview.7`. T16 verified automatic Repository registration, bounded/resumable fail-closed recovery, and a three-commit HTTP qualification branch. T17 implements the approved Responses WebSocket path with Codex-local 15-minute Token aggregates while keeping HTTP on Relay-official Request reconciliation; #269 now reflects that contract, and code, full ae-cli/backend suites, diff checks, and two-axis review are complete, but commit/PR, separate releases, production deployment, and a real WebSocket canary remain pending. The earlier qualification and recovery actions do not satisfy the two-subsequent-ordinary-commit or T13 adoption gates. The seven-day stability clock must restart from the first qualifying ordinary pool and aggregate Activity readback; #252 cleanup remains blocked and no cleanup has run.
 **T13 baseline (Day 0 not established):** The production baseline had one formal pool, one direct relation, `4,395` formal Token, and one formal Request. The excluded qualification canary increased the current readback to two formal pools, two direct relations, `173,357` formal Token, and seven formal Requests; its exact delta is one pool, one relation, `168,962` Token, and six Requests. Shadow remains isolated at `19,607` Token and v1 bucket/revision tables remain zero. The additional ordinary-workflow pool and final-at-execution SCM freshness gates remain unsatisfied; the current SCM recovery readback is green but expires under the 24-hour freshness contract.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
@@ -28,6 +28,7 @@ T01 contract publication (#253)
   -> T05 + T07 -> T10 lineage
   -> T05 + T06 + T08 + T09 + T10 -> T11 qualification -> T12 cutover -> T13 cleanup
   -> T14 bounded delivery + T15 automatic Repository registration -> T16 sustained qualification -> T13 adoption gate
+  -> T17 WebSocket local Token expansion -> separately authorized release/canary
 ```
 
 ## Execution Ledger
@@ -290,13 +291,36 @@ T01 contract publication (#253)
   the seven-day stability clock from the first qualifying ordinary pool and
   aggregate Activity readback.
 
+### T17 — Responses WebSocket Codex-local Token expansion ([#269](https://github.com/LichKing-2234/ai-efficiency/issues/269))
+
+- [x] Replace the obsolete Relay turn-discovery dependency with trusted local
+  WebSocket completion evidence plus Codex JSONL `last_token_usage`, requiring
+  cumulative snapshots for exact terminal-row deduplication.
+- [x] Keep HTTP `relay_official` and WebSocket `codex_local` mutually exclusive;
+  upload no WebSocket Request/response identity and retain only bounded
+  model/15-minute UTC aggregates in the hot group.
+- [x] Materialize WebSocket aggregates transactionally into the existing pool,
+  accept only monotonic late growth/allocation extension, preserve same-pool
+  lineage, and remove hot local detail without deleting durable Token.
+- [x] Cover cache normalization, repeated terminal rows, same-bucket and
+  cross-bucket aggregation, missing cumulative usage, mixed transports,
+  invalid/overflow payloads, replay, late growth, shared allocation, rewrite,
+  finalization, and cleanup with focused tests.
+- [x] Run final full ae-cli/backend suites, diff checks, and code review; close
+  every actionable finding before publication.
+- [x] Refresh #269 to the implemented contract without the obsolete sub2api
+  dependency or Relay turn-discovery design.
+- [ ] Separately authorize and perform commit/PR, CLI/platform releases,
+  production deployment, and one real WebSocket commit-to-Activity
+  conservation canary.
+
 ## Cross-Ticket Invariants
 
 | Invariant | Owner | Final gate |
 | --- | --- | --- |
 | Only deterministic committed evidence uploads | T02, T05 | T11 |
-| Official Token comes only from `sub2api` | T04, T07 | T11 |
-| Provider and relay owner never cross-account | T02-T04 | T11 |
+| Token authority is source-explicit: HTTP from `sub2api`, WebSocket from normalized Codex JSONL | T04, T07, T17 | T11/T17 |
+| HTTP Relay owner matches the installation; WebSocket local Token is owned by the authenticated installation and is not billing truth | T02-T04, T17 | T11/T17 |
 | Request replay, replica count, and shared projection never duplicate Token | T03-T07 | T11 |
 | Partial/expiry never appears complete | T06, T08, T09 | T11 |
 | Frontend never derives scope totals from rows | T08, T09 | T11 |

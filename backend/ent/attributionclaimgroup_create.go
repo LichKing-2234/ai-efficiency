@@ -190,6 +190,12 @@ func (acgc *AttributionClaimGroupCreate) SetNillableCalibrationTotalTokens(i *in
 	return acgc
 }
 
+// SetLocalUsage sets the "local_usage" field.
+func (acgc *AttributionClaimGroupCreate) SetLocalUsage(m []map[string]interface{}) *AttributionClaimGroupCreate {
+	acgc.mutation.SetLocalUsage(m)
+	return acgc
+}
+
 // SetCommitAllocations sets the "commit_allocations" field.
 func (acgc *AttributionClaimGroupCreate) SetCommitAllocations(m []map[string]interface{}) *AttributionClaimGroupCreate {
 	acgc.mutation.SetCommitAllocations(m)
@@ -515,6 +521,10 @@ func (acgc *AttributionClaimGroupCreate) createSpec() (*AttributionClaimGroup, *
 	if value, ok := acgc.mutation.CalibrationTotalTokens(); ok {
 		_spec.SetField(attributionclaimgroup.FieldCalibrationTotalTokens, field.TypeInt64, value)
 		_node.CalibrationTotalTokens = value
+	}
+	if value, ok := acgc.mutation.LocalUsage(); ok {
+		_spec.SetField(attributionclaimgroup.FieldLocalUsage, field.TypeJSON, value)
+		_node.LocalUsage = value
 	}
 	if value, ok := acgc.mutation.CommitAllocations(); ok {
 		_spec.SetField(attributionclaimgroup.FieldCommitAllocations, field.TypeJSON, value)

@@ -105,6 +105,7 @@ var (
 		{Name: "calibration_cache_creation_tokens", Type: field.TypeInt64, Default: 0},
 		{Name: "calibration_cache_read_tokens", Type: field.TypeInt64, Default: 0},
 		{Name: "calibration_total_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "local_usage", Type: field.TypeJSON, Nullable: true},
 		{Name: "commit_allocations", Type: field.TypeJSON},
 		{Name: "request_count", Type: field.TypeInt},
 		{Name: "finalized_at", Type: field.TypeTime, Nullable: true},
@@ -124,12 +125,12 @@ var (
 			{
 				Name:    "attributionclaimgroup_user_id_ledger_epoch_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{AttributionClaimGroupsColumns[3], AttributionClaimGroupsColumns[6], AttributionClaimGroupsColumns[22]},
+				Columns: []*schema.Column{AttributionClaimGroupsColumns[3], AttributionClaimGroupsColumns[6], AttributionClaimGroupsColumns[23]},
 			},
 			{
 				Name:    "attributionclaimgroup_installation_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{AttributionClaimGroupsColumns[2], AttributionClaimGroupsColumns[23]},
+				Columns: []*schema.Column{AttributionClaimGroupsColumns[2], AttributionClaimGroupsColumns[24]},
 			},
 		},
 	}

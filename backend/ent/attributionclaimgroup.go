@@ -48,6 +48,8 @@ type AttributionClaimGroup struct {
 	CalibrationCacheReadTokens int64 `json:"calibration_cache_read_tokens,omitempty"`
 	// CalibrationTotalTokens holds the value of the "calibration_total_tokens" field.
 	CalibrationTotalTokens int64 `json:"calibration_total_tokens,omitempty"`
+	// LocalUsage holds the value of the "local_usage" field.
+	LocalUsage []map[string]interface{} `json:"local_usage,omitempty"`
 	// CommitAllocations holds the value of the "commit_allocations" field.
 	CommitAllocations []map[string]interface{} `json:"commit_allocations,omitempty"`
 	// RequestCount holds the value of the "request_count" field.
@@ -74,7 +76,7 @@ func (*AttributionClaimGroup) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case attributionclaimgroup.FieldCommitAllocations:
+		case attributionclaimgroup.FieldLocalUsage, attributionclaimgroup.FieldCommitAllocations:
 			values[i] = new([]byte)
 		case attributionclaimgroup.FieldID, attributionclaimgroup.FieldInstallationID, attributionclaimgroup.FieldUserID, attributionclaimgroup.FieldRelayProviderID, attributionclaimgroup.FieldSchemaVersion, attributionclaimgroup.FieldCalibrationInputTokens, attributionclaimgroup.FieldCalibrationOutputTokens, attributionclaimgroup.FieldCalibrationCacheCreationTokens, attributionclaimgroup.FieldCalibrationCacheReadTokens, attributionclaimgroup.FieldCalibrationTotalTokens, attributionclaimgroup.FieldRequestCount, attributionclaimgroup.FieldFinalizationAttemptCount:
 			values[i] = new(sql.NullInt64)
@@ -192,6 +194,14 @@ func (acg *AttributionClaimGroup) assignValues(columns []string, values []any) e
 				return fmt.Errorf("unexpected type %T for field calibration_total_tokens", values[i])
 			} else if value.Valid {
 				acg.CalibrationTotalTokens = value.Int64
+			}
+		case attributionclaimgroup.FieldLocalUsage:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field local_usage", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &acg.LocalUsage); err != nil {
+					return fmt.Errorf("unmarshal field local_usage: %w", err)
+				}
 			}
 		case attributionclaimgroup.FieldCommitAllocations:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -330,6 +340,9 @@ func (acg *AttributionClaimGroup) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("calibration_total_tokens=")
 	builder.WriteString(fmt.Sprintf("%v", acg.CalibrationTotalTokens))
+	builder.WriteString(", ")
+	builder.WriteString("local_usage=")
+	builder.WriteString(fmt.Sprintf("%v", acg.LocalUsage))
 	builder.WriteString(", ")
 	builder.WriteString("commit_allocations=")
 	builder.WriteString(fmt.Sprintf("%v", acg.CommitAllocations))

@@ -1,12 +1,15 @@
 package attributionlocal
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +24,7 @@ import (
 
 const v2ClaimSchemaVersion = 2
 const codexResponsesHTTPClientTarget = "codex_http_client::client"
+const codexResponsesWebSocketEventTarget = "codex_api::sse::responses"
 const v2LocalEvidenceWindow = 90 * 24 * time.Hour
 
 var codexV2SourceReadObserver = func(string) {}
@@ -265,6 +269,20 @@ func MergeV2ClaimState(state *V2ClaimState, scanned []V2ClaimCandidate, now time
 			continue
 		}
 		existing := &kept[index]
+		if existing.Group.TokenSource != "" && candidate.Group.TokenSource != "" && existing.Group.TokenSource != candidate.Group.TokenSource {
+			existing.GapReason = "mixed_token_sources"
+			existing.DeliveryStatus = ""
+			existing.LastDeliveryError = ""
+			existing.UpdatedAt = candidate.UpdatedAt
+			continue
+		}
+		if candidate.GapReason == "mixed_token_sources" {
+			existing.GapReason = candidate.GapReason
+			existing.DeliveryStatus = ""
+			existing.LastDeliveryError = ""
+			existing.UpdatedAt = candidate.UpdatedAt
+			continue
+		}
 		candidate.Group.RequestIDs = filterAcknowledgedV2Requests(candidate.Group.RequestIDs, existing.AcknowledgedRequestDigests)
 		newRequestCount := len(candidate.Group.RequestIDs)
 		existing.Group.RequestIDs = uniqueSorted(append(existing.Group.RequestIDs, candidate.Group.RequestIDs...))
@@ -272,23 +290,33 @@ func MergeV2ClaimState(state *V2ClaimState, scanned []V2ClaimCandidate, now time
 		existing.Group.CommitAllocations = mergeV2Allocations(existing.Group.CommitAllocations, candidate.Group.CommitAllocations)
 		allocationChanged := len(existing.Group.CommitAllocations) > allocationCount
 		existing.Group.EvidenceDigest = v2AllocationEvidenceDigest(existing.Group.CommitAllocations)
+		if existing.Group.TokenSource == "" {
+			existing.Group.TokenSource = candidate.Group.TokenSource
+		}
+		localUsageBefore := v2LocalUsageDigest(existing.Group.LocalUsage)
+		if existing.Group.TokenSource == candidate.Group.TokenSource {
+			existing.Group.LocalUsage = mergeV2LocalUsage(existing.Group.LocalUsage, candidate.Group.LocalUsage)
+		}
+		localUsageChanged := localUsageBefore != v2LocalUsageDigest(existing.Group.LocalUsage)
 		calibrationChanged := false
 		if existing.Group.Calibration == nil && candidate.Group.Calibration != nil && candidate.Group.Calibration.Digest != existing.AcknowledgedCalibrationDigest {
 			existing.Group.Calibration = candidate.Group.Calibration
 			calibrationChanged = true
 		}
 		existing.UpdatedAt = candidate.UpdatedAt
-		if allocationChanged {
+		if allocationChanged || localUsageChanged {
 			existing.GroupAcknowledged = false
 		}
-		if newRequestCount > 0 || calibrationChanged || allocationChanged {
+		if newRequestCount > 0 || calibrationChanged || allocationChanged || localUsageChanged {
 			existing.DeliveryStatus = V2DeliveryPending
 			existing.LastDeliveryError = ""
 		}
 		if existing.GapReason != "" && candidate.GapReason == "" {
 			existing.GapReason = ""
+			existing.Group.TokenSource = candidate.Group.TokenSource
 			existing.Group.EvidenceDigest = candidate.Group.EvidenceDigest
 			existing.Group.Calibration = candidate.Group.Calibration
+			existing.Group.LocalUsage = candidate.Group.LocalUsage
 		}
 	}
 	state.Claims = kept
@@ -317,11 +345,15 @@ type v2Mutation struct {
 type v2Turn struct {
 	threadID     string
 	turnID       string
+	model        string
+	webSocket    bool
 	requests     map[string]struct{}
 	transportIDs map[string]struct{}
 	mutations    []v2Mutation
 	replayFiles  map[string]v2ReplayFile
 	calibration  client.AttributionV2Calibration
+	localUsage   map[string]*client.AttributionV2LocalUsageBucket
+	localInvalid bool
 	startedAt    time.Time
 }
 
@@ -334,6 +366,7 @@ type v2RequestEvidence struct {
 	threadID     string
 	turnID       string
 	requestID    string
+	webSocket    bool
 	transportIDs []string
 }
 
@@ -365,6 +398,7 @@ func mergeV2ScannedCandidates(scanned []V2ClaimCandidate) []V2ClaimCandidate {
 		existing.Group.CommitAllocations = mergeV2Allocations(existing.Group.CommitAllocations, candidate.Group.CommitAllocations)
 		existing.Group.EvidenceDigest = v2AllocationEvidenceDigest(existing.Group.CommitAllocations)
 		existing.Group.RequestIDs = uniqueSorted(append(existing.Group.RequestIDs, candidate.Group.RequestIDs...))
+		existing.Group.LocalUsage = mergeV2LocalUsage(existing.Group.LocalUsage, candidate.Group.LocalUsage)
 		if existing.GapReason != "" && candidate.GapReason == "" {
 			requests := existing.Group.RequestIDs
 			existing.GapReason = ""
@@ -401,6 +435,8 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 		turnSets[index] = map[string]*v2Turn{}
 	}
 	currentTurnID := ""
+	var previousCumulativeUsage v2TokenUsage
+	var previousIncrementalUsage v2TokenUsage
 	err := forEachCodexJSONLLine(ctx, path, func(_ int, raw []byte) error {
 		var row struct {
 			Type      string `json:"type"`
@@ -410,6 +446,7 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 				CallID    string `json:"call_id"`
 				ThreadID  string `json:"thread_id"`
 				TurnID    string `json:"turn_id"`
+				Model     string `json:"model"`
 				Type      string `json:"type"`
 				Name      string `json:"name"`
 				Input     string `json:"input"`
@@ -423,7 +460,13 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 				} `json:"changes"`
 			} `json:"payload"`
 		}
-		if err := json.Unmarshal(raw, &row); err != nil {
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&row); err != nil {
+			return nil
+		}
+		var trailing any
+		if err := decoder.Decode(&trailing); err != io.EOF {
 			return nil
 		}
 		observedAt := parseObservedAt(row.Timestamp)
@@ -440,7 +483,7 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 			currentTurnID = turnID
 			for _, turns := range turnSets {
 				if turns[turnID] == nil {
-					turns[turnID] = &v2Turn{threadID: firstNonEmptyCompact(strings.TrimSpace(row.Payload.ThreadID), threadID, sessionID), turnID: turnID, requests: map[string]struct{}{}, transportIDs: map[string]struct{}{}, replayFiles: map[string]v2ReplayFile{}, startedAt: observedAt}
+					turns[turnID] = &v2Turn{threadID: firstNonEmptyCompact(strings.TrimSpace(row.Payload.ThreadID), threadID, sessionID), turnID: turnID, model: strings.TrimSpace(row.Payload.Model), requests: map[string]struct{}{}, transportIDs: map[string]struct{}{}, replayFiles: map[string]v2ReplayFile{}, localUsage: map[string]*client.AttributionV2LocalUsageBucket{}, startedAt: observedAt}
 				}
 			}
 		case "response_item":
@@ -460,6 +503,24 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 				}
 			}
 		case "event_msg":
+			var tokenUsage v2TokenUsage
+			invalidLocalUsage := false
+			if strings.TrimSpace(row.Payload.Type) == "token_count" && row.Payload.Info != nil {
+				var cumulativeUsage v2TokenUsage
+				tokenUsage, cumulativeUsage = parseV2TokenUsage(row.Payload.Info)
+				if tokenUsage.valid && cumulativeUsage.valid && v2TokenUsageEqual(cumulativeUsage, previousCumulativeUsage) {
+					if v2TokenUsageEqual(tokenUsage, previousIncrementalUsage) {
+						tokenUsage = v2TokenUsage{}
+					} else {
+						invalidLocalUsage = true
+					}
+				} else if !tokenUsage.valid || !cumulativeUsage.valid || !v2TokenUsageDeltaMatches(previousCumulativeUsage, cumulativeUsage, tokenUsage) {
+					invalidLocalUsage = true
+				} else {
+					previousCumulativeUsage = cumulativeUsage
+					previousIncrementalUsage = tokenUsage
+				}
+			}
 			for index, turns := range turnSets {
 				current := turns[currentTurnID]
 				if current == nil {
@@ -476,8 +537,14 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 						}
 					}
 				}
-				if strings.TrimSpace(row.Payload.Type) == "token_count" && row.Payload.Info != nil {
-					addV2Calibration(&current.calibration, row.Payload.Info)
+				if tokenUsage.valid {
+					addV2Calibration(&current.calibration, tokenUsage)
+					if !invalidLocalUsage && !addV2LocalUsage(current, tokenUsage, observedAt) {
+						invalidLocalUsage = true
+					}
+				}
+				if invalidLocalUsage {
+					current.localInvalid = true
 				}
 			}
 		}
@@ -503,7 +570,10 @@ func buildCodexV2ClaimCandidates(ctx context.Context, path, sessionID string, op
 		if evidence.threadID != "" && evidence.turnID != "" {
 			for _, turn := range orderedTurns {
 				if turn.threadID == evidence.threadID && turn.turnID == evidence.turnID {
-					turn.requests[evidence.requestID] = struct{}{}
+					if evidence.requestID != "" {
+						turn.requests[evidence.requestID] = struct{}{}
+					}
+					turn.webSocket = turn.webSocket || evidence.webSocket
 				}
 			}
 			continue
@@ -532,10 +602,16 @@ func buildCodexV2ClaimCandidates(ctx context.Context, path, sessionID string, op
 		groupID := claimDigest(fmt.Sprintf("%d", opts.RelayProviderID), sessionID, turn.turnID)
 		candidate := V2ClaimCandidate{LocalKey: claimDigest(sessionID, turn.turnID), Source: path, FirstSeenAt: turn.startedAt, Group: client.AttributionV2ClaimGroup{
 			SchemaVersion: v2ClaimSchemaVersion, GroupID: groupID, RelayProviderID: opts.RelayProviderID,
-			ThreadID: turn.threadID, TurnID: turn.turnID, RequestIDs: requests,
+			TokenSource: client.AttributionV2TokenSourceRelayOfficial, ThreadID: turn.threadID, TurnID: turn.turnID, RequestIDs: requests,
 		}}
-		if len(requests) == 0 {
+		if len(requests) > 0 && turn.webSocket {
+			candidate.GapReason = "mixed_token_sources"
+		} else if len(requests) == 0 && !turn.webSocket {
 			candidate.GapReason = "missing_request_id"
+		} else if turn.webSocket && turn.localInvalid {
+			candidate.GapReason = "invalid_local_usage"
+		} else if len(requests) == 0 && len(turn.localUsage) == 0 {
+			candidate.GapReason = "missing_local_usage"
 		} else if len(turn.mutations) == 0 {
 			candidate.GapReason = "missing_structured_mutation"
 		} else if !validV2Mutations(turn.mutations) {
@@ -543,13 +619,17 @@ func buildCodexV2ClaimCandidates(ctx context.Context, path, sessionID string, op
 		} else if introduced := introducedV2Mutations(ctx, opts.RepoRoot, opts.CommitSHA, turn.mutations); len(introduced) == 0 {
 			candidate.GapReason = "commit_content_mismatch"
 		} else {
+			if turn.webSocket {
+				candidate.Group.TokenSource = client.AttributionV2TokenSourceCodexLocal
+				candidate.Group.LocalUsage = sortedV2LocalUsage(turn.localUsage)
+			}
 			evidenceDigest := v2MutationDigest(introduced)
 			candidate.Group.EvidenceDigest = evidenceDigest
 			candidate.Group.CommitAllocations = []client.AttributionV2CommitAllocation{{
 				Sequence: 1, RepoConfigID: opts.RepoConfigID, RepoKey: strings.TrimSpace(opts.RepoKey), WorkspaceID: strings.TrimSpace(opts.WorkspaceID),
 				CheckpointEventID: opts.CheckpointEventID, CommitSHA: opts.CommitSHA, EvidenceDigest: evidenceDigest,
 			}}
-			if turn.calibration.TotalTokens > 0 {
+			if !turn.webSocket && turn.calibration.TotalTokens > 0 {
 				turn.calibration.Digest = v2CalibrationDigest(turn.calibration)
 				calibration := turn.calibration
 				candidate.Group.Calibration = &calibration
@@ -912,8 +992,69 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string, cutoff time
 	for _, evidence := range byRequest {
 		result = append(result, evidence)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].requestID < result[j].requestID })
+	webSocketRows, err := db.QueryContext(ctx, `
+		SELECT thread_id, feedback_log_body
+		FROM logs
+		WHERE target = ?
+		  AND ts >= ?
+		  AND feedback_log_body LIKE '%model_client.stream_responses_websocket%'
+		  AND feedback_log_body LIKE '%websocket event:%'
+		ORDER BY ts, ts_nanos, id`, codexResponsesWebSocketEventTarget, cutoff.Unix())
+	if err != nil {
+		return nil, fmt.Errorf("query Codex WebSocket turn evidence: %w", err)
+	}
+	defer webSocketRows.Close()
+	seenTurns := map[string]struct{}{}
+	for webSocketRows.Next() {
+		var threadID sql.NullString
+		var body string
+		if err := webSocketRows.Scan(&threadID, &body); err != nil {
+			return nil, fmt.Errorf("scan Codex WebSocket turn evidence: %w", err)
+		}
+		thread, turn, ok := parseCodexV2WebSocketTurnEvidence(threadID.String, body)
+		if !ok {
+			continue
+		}
+		key := claimDigest(thread, turn)
+		if _, exists := seenTurns[key]; exists {
+			continue
+		}
+		seenTurns[key] = struct{}{}
+		result = append(result, v2RequestEvidence{threadID: thread, turnID: turn, webSocket: true})
+	}
+	if err := webSocketRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate Codex WebSocket turn evidence: %w", err)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		left := result[i].threadID + "\x00" + result[i].turnID + "\x00" + result[i].requestID
+		right := result[j].threadID + "\x00" + result[j].turnID + "\x00" + result[j].requestID
+		return left < right
+	})
 	return result, nil
+}
+
+func parseCodexV2WebSocketTurnEvidence(fallbackThreadID, body string) (string, string, bool) {
+	const marker = "websocket event:"
+	markerIndex := strings.Index(body, marker)
+	if markerIndex < 0 {
+		return "", "", false
+	}
+	prefix := body[:markerIndex]
+	if !strings.Contains(prefix, "model_client.stream_responses_websocket{") {
+		return "", "", false
+	}
+	var event struct {
+		Type     string `json:"type"`
+		Response struct {
+			ID string `json:"id"`
+		} `json:"response"`
+	}
+	if err := json.NewDecoder(strings.NewReader(strings.TrimSpace(body[markerIndex+len(marker):]))).Decode(&event); err != nil || event.Type != "response.completed" || strings.TrimSpace(event.Response.ID) == "" {
+		return "", "", false
+	}
+	threadID := firstNonEmptyCompact(firstSubmatch(v2ThreadIDPattern, prefix), strings.TrimSpace(fallbackThreadID))
+	turnID := firstSubmatch(v2TurnIDPattern, prefix)
+	return threadID, turnID, threadID != "" && turnID != ""
 }
 
 func intersectsV2TransportIDs(turnIDs map[string]struct{}, evidenceIDs []string) bool {
@@ -925,24 +1066,161 @@ func intersectsV2TransportIDs(turnIDs map[string]struct{}, evidenceIDs []string)
 	return false
 }
 
-func addV2Calibration(calibration *client.AttributionV2Calibration, raw any) {
+type v2TokenUsage struct {
+	valid       bool
+	input       int64
+	output      int64
+	cacheCreate int64
+	cacheRead   int64
+	total       int64
+}
+
+func parseV2TokenUsage(raw any) (v2TokenUsage, v2TokenUsage) {
 	info, _ := raw.(map[string]any)
-	selected, _ := info["last_token_usage"].(map[string]any)
+	last, _ := info["last_token_usage"].(map[string]any)
+	total, _ := info["total_token_usage"].(map[string]any)
+	return parseV2TokenUsageValues(last), parseV2TokenUsageValues(total)
+}
+
+func parseV2TokenUsageValues(selected map[string]any) v2TokenUsage {
 	if len(selected) == 0 {
-		selected, _ = info["total_token_usage"].(map[string]any)
+		return v2TokenUsage{}
 	}
-	if len(selected) == 0 {
-		return
+	input, inputOK := v2ExactTokenInt64(selected["input_tokens"])
+	output, outputOK := v2ExactTokenInt64(selected["output_tokens"])
+	cacheRead, cacheReadOK := v2ExactTokenInt64(selected["cached_input_tokens"])
+	cacheCreate, cacheCreateOK := v2ExactTokenInt64(selected["cache_write_input_tokens"])
+	total, totalOK := v2ExactTokenInt64(selected["total_tokens"])
+	if !inputOK || !outputOK || !cacheReadOK || !cacheCreateOK || !totalOK {
+		return v2TokenUsage{}
 	}
-	calibration.InputTokens += asInt64(selected["input_tokens"])
-	calibration.OutputTokens += asInt64(selected["output_tokens"])
-	calibration.CacheReadTokens += asInt64(selected["cached_input_tokens"])
-	calibration.CacheCreationTokens += asInt64(selected["cache_write_input_tokens"])
-	total := asInt64(selected["total_tokens"])
 	if total == 0 {
-		total = asInt64(selected["input_tokens"]) + asInt64(selected["output_tokens"])
+		if input > math.MaxInt64-output {
+			return v2TokenUsage{}
+		}
+		total = input + output
 	}
-	calibration.TotalTokens += total
+	if input < 0 || output < 0 || cacheRead < 0 || cacheCreate < 0 || cacheRead > input || cacheCreate > input-cacheRead || input > math.MaxInt64-output || total != input+output || total == 0 {
+		return v2TokenUsage{}
+	}
+	return v2TokenUsage{valid: true, input: input - cacheRead - cacheCreate, output: output, cacheCreate: cacheCreate, cacheRead: cacheRead, total: total}
+}
+
+func v2ExactTokenInt64(value any) (int64, bool) {
+	if value == nil {
+		return 0, true
+	}
+	switch value := value.(type) {
+	case int:
+		return int64(value), true
+	case int64:
+		return value, true
+	case json.Number:
+		parsed, err := value.Int64()
+		return parsed, err == nil
+	case float64:
+		if math.IsNaN(value) || math.IsInf(value, 0) || math.Trunc(value) != value || value < math.MinInt64 || value > math.MaxInt64 {
+			return 0, false
+		}
+		parsed := int64(value)
+		return parsed, float64(parsed) == value
+	default:
+		return 0, false
+	}
+}
+
+func v2TokenUsageEqual(left, right v2TokenUsage) bool {
+	return left.valid == right.valid && left.input == right.input && left.output == right.output && left.cacheCreate == right.cacheCreate && left.cacheRead == right.cacheRead && left.total == right.total
+}
+
+func v2TokenUsageDeltaMatches(previous, cumulative, delta v2TokenUsage) bool {
+	if !cumulative.valid || !delta.valid || cumulative.input < previous.input || cumulative.output < previous.output ||
+		cumulative.cacheCreate < previous.cacheCreate || cumulative.cacheRead < previous.cacheRead || cumulative.total < previous.total {
+		return false
+	}
+	return cumulative.input-previous.input == delta.input && cumulative.output-previous.output == delta.output &&
+		cumulative.cacheCreate-previous.cacheCreate == delta.cacheCreate && cumulative.cacheRead-previous.cacheRead == delta.cacheRead &&
+		cumulative.total-previous.total == delta.total
+}
+
+func addV2Calibration(calibration *client.AttributionV2Calibration, usage v2TokenUsage) {
+	calibration.InputTokens += usage.input
+	calibration.OutputTokens += usage.output
+	calibration.CacheReadTokens += usage.cacheRead
+	calibration.CacheCreationTokens += usage.cacheCreate
+	calibration.TotalTokens += usage.total
+}
+
+func addV2LocalUsage(turn *v2Turn, usage v2TokenUsage, observedAt time.Time) bool {
+	if turn == nil || strings.TrimSpace(turn.model) == "" || observedAt.IsZero() {
+		return false
+	}
+	bucket := observedAt.UTC().Truncate(15 * time.Minute)
+	key := strings.TrimSpace(turn.model) + "\x00" + bucket.Format(time.RFC3339)
+	value := turn.localUsage[key]
+	if value == nil {
+		value = &client.AttributionV2LocalUsageBucket{RequestedModel: strings.TrimSpace(turn.model), BucketStartUTC: bucket}
+		turn.localUsage[key] = value
+	}
+	if value.InputTokens > math.MaxInt64-usage.input || value.OutputTokens > math.MaxInt64-usage.output ||
+		value.CacheCreationTokens > math.MaxInt64-usage.cacheCreate || value.CacheReadTokens > math.MaxInt64-usage.cacheRead ||
+		value.TotalTokens > math.MaxInt64-usage.total || value.RequestCount == math.MaxInt {
+		return false
+	}
+	value.InputTokens += usage.input
+	value.OutputTokens += usage.output
+	value.CacheCreationTokens += usage.cacheCreate
+	value.CacheReadTokens += usage.cacheRead
+	value.TotalTokens += usage.total
+	value.RequestCount++
+	return true
+}
+
+func sortedV2LocalUsage(values map[string]*client.AttributionV2LocalUsageBucket) []client.AttributionV2LocalUsageBucket {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	result := make([]client.AttributionV2LocalUsageBucket, 0, len(keys))
+	for _, key := range keys {
+		result = append(result, *values[key])
+	}
+	return result
+}
+
+func mergeV2LocalUsage(existing, incoming []client.AttributionV2LocalUsageBucket) []client.AttributionV2LocalUsageBucket {
+	values := make(map[string]*client.AttributionV2LocalUsageBucket, len(existing)+len(incoming))
+	for _, usage := range append(append([]client.AttributionV2LocalUsageBucket(nil), existing...), incoming...) {
+		key := strings.TrimSpace(usage.RequestedModel) + "\x00" + usage.BucketStartUTC.UTC().Format(time.RFC3339)
+		current := values[key]
+		if current == nil || localUsageContains(usage, *current) {
+			copy := usage
+			copy.RequestedModel = strings.TrimSpace(copy.RequestedModel)
+			copy.BucketStartUTC = copy.BucketStartUTC.UTC()
+			values[key] = &copy
+		}
+	}
+	return sortedV2LocalUsage(values)
+}
+
+func localUsageContains(left, right client.AttributionV2LocalUsageBucket) bool {
+	return left.InputTokens >= right.InputTokens && left.OutputTokens >= right.OutputTokens &&
+		left.CacheCreationTokens >= right.CacheCreationTokens && left.CacheReadTokens >= right.CacheReadTokens &&
+		left.TotalTokens >= right.TotalTokens && left.RequestCount >= right.RequestCount
+}
+
+func v2LocalUsageDigest(values []client.AttributionV2LocalUsageBucket) string {
+	parts := make([]string, 0, len(values))
+	for _, usage := range mergeV2LocalUsage(nil, values) {
+		parts = append(parts, strings.Join([]string{
+			usage.RequestedModel, usage.BucketStartUTC.UTC().Format(time.RFC3339),
+			fmt.Sprintf("%d", usage.InputTokens), fmt.Sprintf("%d", usage.OutputTokens),
+			fmt.Sprintf("%d", usage.CacheCreationTokens), fmt.Sprintf("%d", usage.CacheReadTokens),
+			fmt.Sprintf("%d", usage.TotalTokens), fmt.Sprintf("%d", usage.RequestCount),
+		}, "\x00"))
+	}
+	return claimDigest(parts...)
 }
 
 func v2CalibrationDigest(calibration client.AttributionV2Calibration) string {

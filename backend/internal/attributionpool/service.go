@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -40,6 +41,173 @@ type contribution struct {
 	cacheCreate int64
 	cacheRead   int64
 	total       int64
+	count       int
+}
+
+// ApplyLocalGroupChange atomically replaces one Codex-local turn aggregate.
+// The hot claim stores only 15-minute aggregates; no Request identity is
+// created for this path.
+func ApplyLocalGroupChange(ctx context.Context, client *ent.Client, ledgerEpoch string, providerID, userID int, oldAllocations, oldUsage, newAllocations, newUsage []map[string]any) error {
+	oldContributions, err := localGroupContributions(ledgerEpoch, providerID, userID, oldAllocations, oldUsage)
+	if err != nil {
+		return fmt.Errorf("build prior local attribution contribution: %w", err)
+	}
+	newContributions, err := localGroupContributions(ledgerEpoch, providerID, userID, newAllocations, newUsage)
+	if err != nil {
+		return fmt.Errorf("build local attribution contribution: %w", err)
+	}
+	newByKey := make(map[string]contribution, len(newContributions))
+	for _, value := range newContributions {
+		newByKey[value.key] = value
+	}
+	orphaned := make(map[string]commitRef)
+	oldPoolIDs := make([]int, 0, len(oldContributions))
+	for _, value := range oldContributions {
+		pool, err := client.AttributionUsagePool.Query().Where(attributionusagepool.CanonicalPoolKeyEQ(value.key)).Only(ctx)
+		if err != nil {
+			return fmt.Errorf("load prior local attribution pool: %w", err)
+		}
+		if replacement, ok := newByKey[value.key]; ok {
+			delta, err := localContributionGrowth(value, replacement)
+			if err != nil {
+				return err
+			}
+			if delta.input != 0 || delta.output != 0 || delta.cacheCreate != 0 || delta.cacheRead != 0 || delta.total != 0 || delta.count != 0 {
+				if err := addContribution(ctx, client, pool.ID, delta); err != nil {
+					return err
+				}
+			}
+			if err := ensureAllCommitRelations(ctx, client, pool.ID, userID, replacement.commits); err != nil {
+				return err
+			}
+			delete(newByKey, value.key)
+			continue
+		}
+		relations, err := client.AttributionUsagePoolCommit.Query().Where(
+			attributionusagepoolcommit.PoolIDEQ(pool.ID), attributionusagepoolcommit.OrphanedEQ(true),
+		).All(ctx)
+		if err != nil {
+			return fmt.Errorf("load prior local attribution orphan relations: %w", err)
+		}
+		for _, relation := range relations {
+			key := fmt.Sprintf("%d:%s", relation.RepoConfigID, relation.CommitSha)
+			orphaned[key] = commitRef{repoConfigID: relation.RepoConfigID, commitSHA: relation.CommitSha}
+		}
+		if err := subtractContribution(ctx, client, pool.ID, value); err != nil {
+			return err
+		}
+		oldPoolIDs = append(oldPoolIDs, pool.ID)
+	}
+	for _, poolID := range oldPoolIDs {
+		if err := deleteEmptyPool(ctx, client, poolID); err != nil {
+			return err
+		}
+	}
+	for _, value := range newContributions {
+		if _, ok := newByKey[value.key]; !ok {
+			continue
+		}
+		pool, err := ensurePool(ctx, client, value)
+		if err != nil {
+			return err
+		}
+		if err := addContribution(ctx, client, pool.ID, value); err != nil {
+			return err
+		}
+		if err := ensureAllCommitRelations(ctx, client, pool.ID, userID, value.commits); err != nil {
+			return err
+		}
+		if err := preserveOrphanedRelations(ctx, client, pool.ID, orphaned); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func preserveOrphanedRelations(ctx context.Context, client *ent.Client, poolID int, orphaned map[string]commitRef) error {
+	for _, commit := range orphaned {
+		updated, err := client.AttributionUsagePoolCommit.Update().Where(
+			attributionusagepoolcommit.PoolIDEQ(poolID), attributionusagepoolcommit.RepoConfigIDEQ(commit.repoConfigID),
+			attributionusagepoolcommit.CommitShaEQ(commit.commitSHA),
+		).SetOrphaned(true).Save(ctx)
+		if err != nil {
+			return fmt.Errorf("preserve local attribution orphan relation: %w", err)
+		}
+		if updated > 1 {
+			return fmt.Errorf("preserve local attribution orphan relation: updated=%d", updated)
+		}
+	}
+	return nil
+}
+
+func localContributionGrowth(old, next contribution) (contribution, error) {
+	if old.key != next.key || next.input < old.input || next.output < old.output || next.cacheCreate < old.cacheCreate ||
+		next.cacheRead < old.cacheRead || next.total < old.total || next.count < old.count {
+		return contribution{}, fmt.Errorf("local attribution contribution regressed")
+	}
+	next.input -= old.input
+	next.output -= old.output
+	next.cacheCreate -= old.cacheCreate
+	next.cacheRead -= old.cacheRead
+	next.total -= old.total
+	next.count -= old.count
+	return next, nil
+}
+
+type localUsage struct {
+	RequestedModel      string    `json:"requested_model"`
+	BucketStartUTC      time.Time `json:"bucket_start_utc"`
+	InputTokens         int64     `json:"input_tokens"`
+	OutputTokens        int64     `json:"output_tokens"`
+	CacheCreationTokens int64     `json:"cache_creation_tokens"`
+	CacheReadTokens     int64     `json:"cache_read_tokens"`
+	TotalTokens         int64     `json:"total_tokens"`
+	RequestCount        int       `json:"request_count"`
+}
+
+func localGroupContributions(ledgerEpoch string, providerID, userID int, allocations, rawUsage []map[string]any) ([]contribution, error) {
+	if len(rawUsage) == 0 {
+		return nil, nil
+	}
+	commits, err := canonicalCommits(allocations)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := json.Marshal(rawUsage)
+	if err != nil {
+		return nil, fmt.Errorf("marshal local usage: %w", err)
+	}
+	var usage []localUsage
+	if err := json.Unmarshal(payload, &usage); err != nil {
+		return nil, fmt.Errorf("decode local usage: %w", err)
+	}
+	result := make([]contribution, 0, len(usage))
+	seen := make(map[string]struct{}, len(usage))
+	for _, item := range usage {
+		item.RequestedModel = strings.TrimSpace(item.RequestedModel)
+		item.BucketStartUTC = item.BucketStartUTC.UTC()
+		if item.RequestedModel == "" || item.BucketStartUTC.IsZero() || !item.BucketStartUTC.Equal(item.BucketStartUTC.Truncate(15*time.Minute)) || item.RequestCount <= 0 {
+			return nil, fmt.Errorf("local usage model, aligned UTC bucket, and positive request count are required")
+		}
+		if item.InputTokens < 0 || item.OutputTokens < 0 || item.CacheCreationTokens < 0 || item.CacheReadTokens < 0 || item.TotalTokens <= 0 ||
+			item.InputTokens > math.MaxInt64-item.OutputTokens || item.InputTokens+item.OutputTokens > math.MaxInt64-item.CacheCreationTokens ||
+			item.InputTokens+item.OutputTokens+item.CacheCreationTokens > math.MaxInt64-item.CacheReadTokens ||
+			item.InputTokens+item.OutputTokens+item.CacheCreationTokens+item.CacheReadTokens != item.TotalTokens {
+			return nil, fmt.Errorf("local usage Token total is inconsistent")
+		}
+		key := canonicalPoolKey(ledgerEpoch, providerID, userID, item.RequestedModel, item.BucketStartUTC, commits)
+		if _, duplicate := seen[key]; duplicate {
+			return nil, fmt.Errorf("local usage bucket is duplicated")
+		}
+		seen[key] = struct{}{}
+		result = append(result, contribution{
+			key: key, ledgerEpoch: ledgerEpoch, providerID: providerID, userID: userID,
+			model: item.RequestedModel, bucketStart: item.BucketStartUTC, commits: commits,
+			input: item.InputTokens, output: item.OutputTokens, cacheCreate: item.CacheCreationTokens,
+			cacheRead: item.CacheReadTokens, total: item.TotalTokens, count: item.RequestCount,
+		})
+	}
+	return result, nil
 }
 
 // ValidateRewrite rejects ambiguous lineage before the event is persisted.
@@ -282,7 +450,7 @@ func canonicalContribution(ledgerEpoch string, providerID, userID int, allocatio
 	return contribution{
 		key: canonicalPoolKey(ledgerEpoch, providerID, userID, model, bucket, commits), ledgerEpoch: ledgerEpoch, providerID: providerID, userID: userID, model: model, bucketStart: bucket, commits: commits,
 		input: claim.InputTokens, output: claim.OutputTokens, cacheCreate: claim.CacheCreationTokens,
-		cacheRead: claim.CacheReadTokens, total: claim.TotalTokens,
+		cacheRead: claim.CacheReadTokens, total: claim.TotalTokens, count: 1,
 	}, nil
 }
 
@@ -350,9 +518,9 @@ func addContribution(ctx context.Context, client *ent.Client, poolID int, value 
 		attributionusagepool.CacheCreationTokensLTE(math.MaxInt64-value.cacheCreate),
 		attributionusagepool.CacheReadTokensLTE(math.MaxInt64-value.cacheRead),
 		attributionusagepool.TotalTokensLTE(math.MaxInt64-value.total),
-		attributionusagepool.RequestCountLT(math.MaxInt),
+		attributionusagepool.RequestCountLTE(math.MaxInt-value.count),
 	).AddInputTokens(value.input).AddOutputTokens(value.output).AddCacheCreationTokens(value.cacheCreate).
-		AddCacheReadTokens(value.cacheRead).AddTotalTokens(value.total).AddRequestCount(1).Save(ctx)
+		AddCacheReadTokens(value.cacheRead).AddTotalTokens(value.total).AddRequestCount(value.count).Save(ctx)
 	if err != nil {
 		return fmt.Errorf("add attribution pool contribution: %w", err)
 	}
@@ -363,7 +531,7 @@ func addContribution(ctx context.Context, client *ent.Client, poolID int, value 
 }
 
 func desiredFromClaim(claim *ent.AttributionRequestClaim) contribution {
-	return contribution{input: claim.InputTokens, output: claim.OutputTokens, cacheCreate: claim.CacheCreationTokens, cacheRead: claim.CacheReadTokens, total: claim.TotalTokens}
+	return contribution{input: claim.InputTokens, output: claim.OutputTokens, cacheCreate: claim.CacheCreationTokens, cacheRead: claim.CacheReadTokens, total: claim.TotalTokens, count: 1}
 }
 
 func subtractContribution(ctx context.Context, client *ent.Client, poolID int, value contribution) error {
@@ -371,9 +539,9 @@ func subtractContribution(ctx context.Context, client *ent.Client, poolID int, v
 		attributionusagepool.IDEQ(poolID), attributionusagepool.InputTokensGTE(value.input),
 		attributionusagepool.OutputTokensGTE(value.output), attributionusagepool.CacheCreationTokensGTE(value.cacheCreate),
 		attributionusagepool.CacheReadTokensGTE(value.cacheRead), attributionusagepool.TotalTokensGTE(value.total),
-		attributionusagepool.RequestCountGT(0),
+		attributionusagepool.RequestCountGTE(value.count),
 	).AddInputTokens(-value.input).AddOutputTokens(-value.output).AddCacheCreationTokens(-value.cacheCreate).
-		AddCacheReadTokens(-value.cacheRead).AddTotalTokens(-value.total).AddRequestCount(-1).Save(ctx)
+		AddCacheReadTokens(-value.cacheRead).AddTotalTokens(-value.total).AddRequestCount(-value.count).Save(ctx)
 	if err != nil {
 		return fmt.Errorf("subtract attribution pool contribution: %w", err)
 	}

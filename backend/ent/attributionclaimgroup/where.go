@@ -959,6 +959,16 @@ func CalibrationTotalTokensLTE(v int64) predicate.AttributionClaimGroup {
 	return predicate.AttributionClaimGroup(sql.FieldLTE(FieldCalibrationTotalTokens, v))
 }
 
+// LocalUsageIsNil applies the IsNil predicate on the "local_usage" field.
+func LocalUsageIsNil() predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldIsNull(FieldLocalUsage))
+}
+
+// LocalUsageNotNil applies the NotNil predicate on the "local_usage" field.
+func LocalUsageNotNil() predicate.AttributionClaimGroup {
+	return predicate.AttributionClaimGroup(sql.FieldNotNull(FieldLocalUsage))
+}
+
 // RequestCountEQ applies the EQ predicate on the "request_count" field.
 func RequestCountEQ(v int) predicate.AttributionClaimGroup {
 	return predicate.AttributionClaimGroup(sql.FieldEQ(FieldRequestCount, v))

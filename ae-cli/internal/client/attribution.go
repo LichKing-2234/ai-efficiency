@@ -157,12 +157,30 @@ type AttributionV2ClaimGroup struct {
 	SchemaVersion     int                             `json:"schema_version"`
 	GroupID           string                          `json:"group_id"`
 	RelayProviderID   int                             `json:"relay_provider_id"`
+	TokenSource       string                          `json:"token_source,omitempty"`
 	ThreadID          string                          `json:"thread_id"`
 	TurnID            string                          `json:"turn_id"`
 	EvidenceDigest    string                          `json:"evidence_digest"`
 	Calibration       *AttributionV2Calibration       `json:"calibration,omitempty"`
+	LocalUsage        []AttributionV2LocalUsageBucket `json:"local_usage,omitempty"`
 	CommitAllocations []AttributionV2CommitAllocation `json:"commit_allocations"`
 	RequestIDs        []string                        `json:"request_ids"`
+}
+
+const (
+	AttributionV2TokenSourceRelayOfficial = "relay_official"
+	AttributionV2TokenSourceCodexLocal    = "codex_local"
+)
+
+type AttributionV2LocalUsageBucket struct {
+	RequestedModel      string    `json:"requested_model"`
+	BucketStartUTC      time.Time `json:"bucket_start_utc"`
+	InputTokens         int64     `json:"input_tokens"`
+	OutputTokens        int64     `json:"output_tokens"`
+	CacheCreationTokens int64     `json:"cache_creation_tokens"`
+	CacheReadTokens     int64     `json:"cache_read_tokens"`
+	TotalTokens         int64     `json:"total_tokens"`
+	RequestCount        int       `json:"request_count"`
 }
 
 type AttributionV2Calibration struct {

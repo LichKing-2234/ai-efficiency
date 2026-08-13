@@ -2975,6 +2975,8 @@ type AttributionClaimGroupMutation struct {
 	addcalibration_cache_read_tokens     *int64
 	calibration_total_tokens             *int64
 	addcalibration_total_tokens          *int64
+	local_usage                          *[]map[string]interface{}
+	appendlocal_usage                    []map[string]interface{}
 	commit_allocations                   *[]map[string]interface{}
 	appendcommit_allocations             []map[string]interface{}
 	request_count                        *int
@@ -3863,6 +3865,71 @@ func (m *AttributionClaimGroupMutation) ResetCalibrationTotalTokens() {
 	m.addcalibration_total_tokens = nil
 }
 
+// SetLocalUsage sets the "local_usage" field.
+func (m *AttributionClaimGroupMutation) SetLocalUsage(value []map[string]interface{}) {
+	m.local_usage = &value
+	m.appendlocal_usage = nil
+}
+
+// LocalUsage returns the value of the "local_usage" field in the mutation.
+func (m *AttributionClaimGroupMutation) LocalUsage() (r []map[string]interface{}, exists bool) {
+	v := m.local_usage
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLocalUsage returns the old "local_usage" field's value of the AttributionClaimGroup entity.
+// If the AttributionClaimGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionClaimGroupMutation) OldLocalUsage(ctx context.Context) (v []map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLocalUsage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLocalUsage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLocalUsage: %w", err)
+	}
+	return oldValue.LocalUsage, nil
+}
+
+// AppendLocalUsage adds value to the "local_usage" field.
+func (m *AttributionClaimGroupMutation) AppendLocalUsage(value []map[string]interface{}) {
+	m.appendlocal_usage = append(m.appendlocal_usage, value...)
+}
+
+// AppendedLocalUsage returns the list of values that were appended to the "local_usage" field in this mutation.
+func (m *AttributionClaimGroupMutation) AppendedLocalUsage() ([]map[string]interface{}, bool) {
+	if len(m.appendlocal_usage) == 0 {
+		return nil, false
+	}
+	return m.appendlocal_usage, true
+}
+
+// ClearLocalUsage clears the value of the "local_usage" field.
+func (m *AttributionClaimGroupMutation) ClearLocalUsage() {
+	m.local_usage = nil
+	m.appendlocal_usage = nil
+	m.clearedFields[attributionclaimgroup.FieldLocalUsage] = struct{}{}
+}
+
+// LocalUsageCleared returns if the "local_usage" field was cleared in this mutation.
+func (m *AttributionClaimGroupMutation) LocalUsageCleared() bool {
+	_, ok := m.clearedFields[attributionclaimgroup.FieldLocalUsage]
+	return ok
+}
+
+// ResetLocalUsage resets all changes to the "local_usage" field.
+func (m *AttributionClaimGroupMutation) ResetLocalUsage() {
+	m.local_usage = nil
+	m.appendlocal_usage = nil
+	delete(m.clearedFields, attributionclaimgroup.FieldLocalUsage)
+}
+
 // SetCommitAllocations sets the "commit_allocations" field.
 func (m *AttributionClaimGroupMutation) SetCommitAllocations(value []map[string]interface{}) {
 	m.commit_allocations = &value
@@ -4302,7 +4369,7 @@ func (m *AttributionClaimGroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AttributionClaimGroupMutation) Fields() []string {
-	fields := make([]string, 0, 24)
+	fields := make([]string, 0, 25)
 	if m.group_id != nil {
 		fields = append(fields, attributionclaimgroup.FieldGroupID)
 	}
@@ -4347,6 +4414,9 @@ func (m *AttributionClaimGroupMutation) Fields() []string {
 	}
 	if m.calibration_total_tokens != nil {
 		fields = append(fields, attributionclaimgroup.FieldCalibrationTotalTokens)
+	}
+	if m.local_usage != nil {
+		fields = append(fields, attributionclaimgroup.FieldLocalUsage)
 	}
 	if m.commit_allocations != nil {
 		fields = append(fields, attributionclaimgroup.FieldCommitAllocations)
@@ -4413,6 +4483,8 @@ func (m *AttributionClaimGroupMutation) Field(name string) (ent.Value, bool) {
 		return m.CalibrationCacheReadTokens()
 	case attributionclaimgroup.FieldCalibrationTotalTokens:
 		return m.CalibrationTotalTokens()
+	case attributionclaimgroup.FieldLocalUsage:
+		return m.LocalUsage()
 	case attributionclaimgroup.FieldCommitAllocations:
 		return m.CommitAllocations()
 	case attributionclaimgroup.FieldRequestCount:
@@ -4470,6 +4542,8 @@ func (m *AttributionClaimGroupMutation) OldField(ctx context.Context, name strin
 		return m.OldCalibrationCacheReadTokens(ctx)
 	case attributionclaimgroup.FieldCalibrationTotalTokens:
 		return m.OldCalibrationTotalTokens(ctx)
+	case attributionclaimgroup.FieldLocalUsage:
+		return m.OldLocalUsage(ctx)
 	case attributionclaimgroup.FieldCommitAllocations:
 		return m.OldCommitAllocations(ctx)
 	case attributionclaimgroup.FieldRequestCount:
@@ -4601,6 +4675,13 @@ func (m *AttributionClaimGroupMutation) SetField(name string, value ent.Value) e
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetCalibrationTotalTokens(v)
+		return nil
+	case attributionclaimgroup.FieldLocalUsage:
+		v, ok := value.([]map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLocalUsage(v)
 		return nil
 	case attributionclaimgroup.FieldCommitAllocations:
 		v, ok := value.([]map[string]interface{})
@@ -4842,6 +4923,9 @@ func (m *AttributionClaimGroupMutation) ClearedFields() []string {
 	if m.FieldCleared(attributionclaimgroup.FieldCalibrationDigest) {
 		fields = append(fields, attributionclaimgroup.FieldCalibrationDigest)
 	}
+	if m.FieldCleared(attributionclaimgroup.FieldLocalUsage) {
+		fields = append(fields, attributionclaimgroup.FieldLocalUsage)
+	}
 	if m.FieldCleared(attributionclaimgroup.FieldFinalizedAt) {
 		fields = append(fields, attributionclaimgroup.FieldFinalizedAt)
 	}
@@ -4873,6 +4957,9 @@ func (m *AttributionClaimGroupMutation) ClearField(name string) error {
 		return nil
 	case attributionclaimgroup.FieldCalibrationDigest:
 		m.ClearCalibrationDigest()
+		return nil
+	case attributionclaimgroup.FieldLocalUsage:
+		m.ClearLocalUsage()
 		return nil
 	case attributionclaimgroup.FieldFinalizedAt:
 		m.ClearFinalizedAt()
@@ -4932,6 +5019,9 @@ func (m *AttributionClaimGroupMutation) ResetField(name string) error {
 		return nil
 	case attributionclaimgroup.FieldCalibrationTotalTokens:
 		m.ResetCalibrationTotalTokens()
+		return nil
+	case attributionclaimgroup.FieldLocalUsage:
+		m.ResetLocalUsage()
 		return nil
 	case attributionclaimgroup.FieldCommitAllocations:
 		m.ResetCommitAllocations()
