@@ -1,8 +1,8 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** T01-T12 and T14/T15 are implemented and released. `ae-cli/v0.2.0-preview.6` and platform `v0.1.0-preview.84` shipped T14/T15, and production runs Helm revision `84`; the CLI-only wrapper-proof follow-up shipped as `ae-cli/v0.2.0-preview.7`. T16 verified automatic Repository registration, bounded/resumable fail-closed recovery, and a three-commit qualification branch. The first two commits proved event-driven capture, coalescing, timeout persistence, and pre-push recovery; a third commit from a freshly started HTTP-only Codex TUI produced the first new agent-infra formal pool without manual sync. These qualification commits do not satisfy the two-subsequent-ordinary-commit or T13 adoption gates. The seven-day stability clock must restart from the first qualifying ordinary pool and aggregate Activity readback; #252 cleanup remains blocked and no cleanup has run.
-**T13 Day 0:** The production baseline had one formal pool, one direct relation, `4,395` formal Token, and one formal Request. The excluded qualification canary increased the current readback to two formal pools, two direct relations, `173,357` formal Token, and seven formal Requests; its exact delta is one pool, one relation, `168,962` Token, and six Requests. Shadow remains isolated at `19,607` Token and v1 bucket/revision tables remain zero. The additional ordinary-workflow pool and final SCM freshness gates remain unsatisfied.
+**Status:** T01-T12 and T14/T15 are implemented and released. `ae-cli/v0.2.0-preview.6` and platform `v0.1.0-preview.84` shipped T14/T15, and production runs Helm revision `84`; the CLI-only wrapper-proof follow-up shipped as `ae-cli/v0.2.0-preview.7`. T16 verified automatic Repository registration, bounded/resumable fail-closed recovery, and a three-commit qualification branch. The first two commits proved event-driven capture, coalescing, timeout persistence, and pre-push recovery; a third commit from a freshly started HTTP-only Codex TUI produced the first new agent-infra formal pool without manual sync. Agent Infra is now bound to the GitHub provider with a registered webhook, and focused Agent Infra/AI Efficiency PR syncs restored current Activity SCM coverage to complete with zero failed, partial, unsynced, or stale Repository. These qualification and recovery actions do not satisfy the two-subsequent-ordinary-commit or T13 adoption gates. The seven-day stability clock must restart from the first qualifying ordinary pool and aggregate Activity readback; #252 cleanup remains blocked and no cleanup has run.
+**T13 Day 0:** The production baseline had one formal pool, one direct relation, `4,395` formal Token, and one formal Request. The excluded qualification canary increased the current readback to two formal pools, two direct relations, `173,357` formal Token, and seven formal Requests; its exact delta is one pool, one relation, `168,962` Token, and six Requests. Shadow remains isolated at `19,607` Token and v1 bucket/revision tables remain zero. The additional ordinary-workflow pool and final-at-execution SCM freshness gates remain unsatisfied; the current SCM recovery readback is green but expires under the 24-hour freshness contract.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -254,6 +254,14 @@ T01 contract publication (#253)
   historical workspaces, so the later global status-cleanliness gate remains
   open and no legacy queue cleanup was performed. This operator qualification
   remains excluded from T13 adoption.
+- [x] Restore the current Activity SCM coverage checkpoint without batch
+  mutation. Bind only agent-infra repo 70 to the single active GitHub provider,
+  register its webhook, and run focused PR sync jobs 29 and 30. Agent Infra
+  completed 63/63 and AI Efficiency 168/168 PR usage refreshes with zero
+  failures. Activity read back complete SCM coverage with every affected
+  category at zero, while formal committed Token remained `173,357`. Because
+  freshness expires after 24 hours, this proves the recovery path but does not
+  check the final T13 freshness gate in advance.
 - [ ] Observe at least two subsequent genuine ordinary commits through hooks
   without manual sync, including a new agent-infra formal pool visible in
   Activity. Status/doctor must remain clear, and the formal pool/relation/Token
