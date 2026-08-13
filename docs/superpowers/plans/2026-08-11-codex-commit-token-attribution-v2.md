@@ -172,9 +172,10 @@ T01 contract publication (#253)
 
 ### T13 — Stable-window legacy cleanup ([#252](https://github.com/LichKing-2234/ai-efficiency/issues/252))
 
-- [ ] Observe seven continuous stable days from `2026-08-12T12:59:09Z`; do not
-  clean before `2026-08-19T12:59:09Z`, and restart the clock after any failed
-  gate.
+- [ ] Observe seven continuous stable days from the first qualifying ordinary
+  pool confirmed by aggregate Activity readback. The earlier cutover-based
+  clock ending on `2026-08-19T12:59:09Z` is superseded; restart the new clock
+  after any failed gate.
 - [ ] From the Day 0 baseline of one formal pool, read back at least one
   additional non-canary ordinary-workflow `formal_v2` direct/shared pool.
 - [ ] Keep live/ready, structured v1 `upgrade_required`, reconciliation/error,
@@ -186,6 +187,23 @@ T01 contract publication (#253)
   separate platform/CLI releases, and production health.
 - [x] Verify #232-#234 were completed by merged PR #235 and closed before the
   cleanup window; do not defer their closure to T13 execution.
+
+#### T13 preflight record — 2026-08-13
+
+- [x] Correct #240/#252/#278 so closed #276/#277 and the obsolete cleanup date
+  no longer appear as current blockers.
+- [x] Add upgrade-seam protection for exact AE-managed OTel cleanup,
+  user-modified OTel preservation, and local legacy-token removal.
+- [x] Rehearse the planned legacy DDL in a rolled-back PostgreSQL transaction
+  and prove formal Token components, Request count, pool count, and commit
+  relations remain exact.
+- [x] Strengthen the existing release workflow contract so a normal CLI-only
+  release cannot publish packages/images or reference Docker/Helm paths.
+- [x] Publish the removal inventory, staged deployment boundary, readbacks, and
+  rollback contract in
+  [`2026-08-13-attribution-v1-cleanup-preflight.md`](./2026-08-13-attribution-v1-cleanup-preflight.md).
+- [ ] Complete all preflight suites and code review, then merge without release,
+  deployment, or production cleanup.
 
 ### T14 — Bounded and resumable v2 claim delivery ([#276](https://github.com/LichKing-2234/ai-efficiency/issues/276))
 
