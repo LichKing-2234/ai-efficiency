@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** T01-T12 and T14/T15 are implemented and released. T16 verified automatic Repository registration, bounded/resumable fail-closed recovery, and a three-commit HTTP qualification branch. T17 shipped in `ae-cli/v0.2.0-preview.8` and platform `v0.1.0-preview.85`; production runs Helm revision `85`. Two authorized real Codex 0.147 WebSocket canary commits correctly failed closed because the released scanner expected a raw `response.completed` row that current Codex no longer persists. The exact affected commits added no claim, pool, relation, Request, or Token. The local repair now joins the trusted WebSocket transport and successful sampling rows only by exact thread/turn identity, passes the focused RED/GREEN regression and full ae-cli suite, and replays the real TUI fixture as one gap-free `codex_local` claim with `294,210` Token. It still requires code review, merge, a newly authorized CLI release, and a successful production canary. The earlier qualification, repair, and canary actions do not satisfy the two-subsequent-ordinary-commit or T13 adoption gates. The seven-day stability clock must restart from the first qualifying ordinary pool and aggregate Activity readback; #252 cleanup remains blocked and no cleanup has run.
+**Status:** T01-T12 and T14/T15 are implemented and released. T16 verified automatic Repository registration, bounded/resumable fail-closed recovery, and a three-commit HTTP qualification branch. T17 shipped in `ae-cli/v0.2.0-preview.8` and platform `v0.1.0-preview.85`; production runs Helm revision `85`. Two authorized real Codex 0.147 WebSocket canary commits correctly failed closed because the released scanner expected a raw `response.completed` row that current Codex no longer persists. The exact affected commits added no claim, pool, relation, Request, or Token. PR #290 repairs the current trusted-log shape by joining literal non-warmup WebSocket transport and successful sampling rows only by exact thread/turn identity. Focused RED/GREEN coverage, the full ae-cli suite, two-axis review, real TUI read-only replay as one gap-free `codex_local` claim with `294,210` Token, and the first hosted CI run `31721565534` all passed. The repair still requires merge, a newly authorized CLI release, and a successful production canary. The earlier qualification, repair, and canary actions do not satisfy the two-subsequent-ordinary-commit or T13 adoption gates. The seven-day stability clock must restart from the first qualifying ordinary pool and aggregate Activity readback; #252 cleanup remains blocked and no cleanup has run.
 **T13 baseline (Day 0 not established):** The production baseline had one formal pool, one direct relation, `4,395` formal Token, and one formal Request. The latest pre-WebSocket-canary readback had three formal pools, three direct relations, `1,146,707` formal Token, and 12 formal Request claims. Both failed WebSocket canary commits contributed zero, so that readback was unchanged by them. Shadow remains isolated and v1 bucket/revision tables remain zero. The additional ordinary-workflow pool and final-at-execution SCM freshness gates remain unsatisfied; SCM freshness must be read at the final gate rather than inferred from an older recovery.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
@@ -328,7 +328,10 @@ T01 contract publication (#253)
   keep older raw completion compatibility, pass the full ae-cli suite, and
   replay the real TUI fixture locally as one gap-free `codex_local` claim with
   `294,210` Token and one deterministic commit allocation.
-- [ ] Complete code review and merge the scanner repair, then separately
+- [x] Complete final two-axis code review and the first PR #290 hosted CI run;
+  both review axes have zero findings and run `31721565534` passed all four
+  jobs.
+- [ ] Merge the scanner repair, then separately
   authorize a new CLI release and run one successful real WebSocket
   commit-to-Activity conservation canary while retaining its production data.
 
