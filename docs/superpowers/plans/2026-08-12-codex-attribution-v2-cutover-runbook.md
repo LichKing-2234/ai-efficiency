@@ -6,9 +6,10 @@
 **Execution ticket:** [#251](https://github.com/LichKing-2234/ai-efficiency/issues/251)
 
 This runbook records the reversible evidence and exact operator sequence used
-for the completed #251 cutover. The later #252 legacy cleanup remains blocked
-until `2026-08-19T12:59:09Z` and may proceed only if every stable-window gate is
-still green.
+for the completed #251 cutover. The earlier cutover-based cleanup date ending
+on `2026-08-19T12:59:09Z` is superseded. #252 remains blocked until #278
+establishes a new Day 0 from a qualifying ordinary-workflow pool and every gate
+then stays green for seven continuous days.
 
 ## Execution Status
 
