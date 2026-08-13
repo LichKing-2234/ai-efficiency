@@ -1854,6 +1854,44 @@ describe('AdminUsersView', () => {
     expect(getAdminUserSubscriptionJob).not.toHaveBeenCalled()
   })
 
+  it('shows failed subscription results before truncating the preview to six users', async () => {
+    const { getLatestAdminUserSubscriptionJob } = await import('@/api/adminUsers')
+    ;(getLatestAdminUserSubscriptionJob as any).mockResolvedValue({
+      data: {
+        data: subscriptionJob({
+          status: 'completed',
+          phase: 'completed',
+          total_count: 8,
+          processed_count: 8,
+          success_count: 7,
+          failed_count: 1,
+          results: [
+            ...Array.from({ length: 7 }, (_, index) => ({
+              user_id: index + 1,
+              username: `success-${index + 1}`,
+              status: 'success',
+            })),
+            { user_id: 8, username: 'failed-8', status: 'failed', message: 'assignment failed' },
+          ],
+        }),
+      },
+    })
+
+    const { wrapper } = await mountAdminUsersView()
+    const results = wrapper.findAll('[data-testid^="subscription-result-"]')
+
+    expect(results).toHaveLength(6)
+    expect(results.map((result) => result.attributes('data-testid'))).toEqual([
+      'subscription-result-8',
+      'subscription-result-1',
+      'subscription-result-2',
+      'subscription-result-3',
+      'subscription-result-4',
+      'subscription-result-5',
+    ])
+    expect(results[0].text()).toContain('assignment failed')
+  })
+
   it('disables selection controls while a subscription job is active and keeps polling', async () => {
     vi.useFakeTimers()
     const { getAdminUserSubscriptionJob, getLatestAdminUserSubscriptionJob } = await import('@/api/adminUsers')

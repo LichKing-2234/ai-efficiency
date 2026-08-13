@@ -258,6 +258,7 @@ The frontend also disables create/regenerate buttons while the request is in fli
 5. Add uses validity days; extend uses extension days; remove and reset quota require explicit confirmation.
 6. Submitting the form starts a subscription job and then polls progress until the job is completed or failed.
 7. The progress and result summary show processed, total, success, skipped, and failed counts plus per-user result rows.
+8. The per-user result preview remains limited to six rows and prioritizes failed rows before preserving the original order of all other results.
 
 The local user table no longer contains repeated row-level subscription forms. Mobile uses selectable user cards with the same centralized operation panel.
 
@@ -284,4 +285,5 @@ Frontend tests cover:
 4. Removing subscriptions for all mapped users requires explicit confirmation before starting the job.
 5. Resetting subscription quota for all mapped users requires explicit confirmation before starting the job.
 6. The admin users page polls a running subscription job and renders progress plus final per-user rows.
-7. User setup disables create key while the request is in flight and does not fire a second create request.
+7. The six-row result preview prioritizes failures even when they occur after the first six processed users.
+8. User setup disables create key while the request is in flight and does not fire a second create request.
