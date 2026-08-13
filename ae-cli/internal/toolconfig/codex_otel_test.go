@@ -135,3 +135,67 @@ func TestDisableCodexOTLPPreservesExporterWhenOwnershipDoesNotMatch(t *testing.T
 		})
 	}
 }
+
+func TestDisableCodexOTLPPreservesUserModifiedExporter(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".codex", "config.toml")
+	endpoint := "https://ae.example.com/api/v1/attribution/otel/v1/traces"
+	if _, err := ConfigureCodexOTLP(home, endpoint, "test-otlp-token"); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := toml.Unmarshal(payload, &config); err != nil {
+		t.Fatal(err)
+	}
+	exporter := config["otel"].(map[string]any)["trace_exporter"].(map[string]any)["otlp-http"].(map[string]any)
+	exporter["protocol"] = "grpc"
+	payload, err = toml.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, changed, err := DisableCodexOTLP(home, endpoint, "test-otlp-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed {
+		t.Fatal("user-modified exporter was removed")
+	}
+	payload, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config = nil
+	if err := toml.Unmarshal(payload, &config); err != nil {
+		t.Fatal(err)
+	}
+	exporter = config["otel"].(map[string]any)["trace_exporter"].(map[string]any)["otlp-http"].(map[string]any)
+	if exporter["protocol"] != "grpc" {
+		t.Fatalf("user-modified exporter = %+v, want preserved grpc protocol", exporter)
+	}
+
+	exporter["protocol"] = "json"
+	exporter["user_option"] = "keep"
+	exporter["headers"].(map[string]any)["X-User-Header"] = "keep"
+	payload, err = toml.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, changed, err = DisableCodexOTLP(home, endpoint, "test-otlp-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed {
+		t.Fatal("user-extended exporter was removed")
+	}
+}

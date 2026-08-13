@@ -3,8 +3,10 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/ai-efficiency/ae-cli/internal/buildinfo"
+	"github.com/ai-efficiency/ae-cli/internal/reporting"
 	updatepkg "github.com/ai-efficiency/ae-cli/internal/update"
 	"github.com/spf13/cobra"
 )
@@ -69,6 +71,9 @@ func runUpdateInstall(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
+	if err := cleanupLegacyCodexOTLPAfterUpdate(); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: could not remove legacy AE Codex OTLP configuration: %v\n", err)
+	}
 
 	switch result.Status {
 	case "updated":
@@ -79,6 +84,30 @@ func runUpdateInstall(cmd *cobra.Command) error {
 		fmt.Fprintf(cmd.OutOrStdout(), "ae-cli is up to date (%s)\n", result.PreviousVersion)
 	}
 	return nil
+}
+
+func cleanupLegacyCodexOTLPAfterUpdate() error {
+	config, err := reporting.Load("")
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	if err := removeManagedCodexOTLPConfig(home, config); err != nil {
+		return err
+	}
+	config.OTLPToken = ""
+	config.OTelEnabled = false
+	path, err := reporting.DefaultPath()
+	if err != nil {
+		return err
+	}
+	return reporting.Save(path, config)
 }
 
 func commandContext(cmd *cobra.Command) context.Context {

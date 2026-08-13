@@ -3,9 +3,12 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/ai-efficiency/ae-cli/internal/reporting"
+	"github.com/ai-efficiency/ae-cli/internal/toolconfig"
 	updatepkg "github.com/ai-efficiency/ae-cli/internal/update"
 	"github.com/spf13/cobra"
 )
@@ -100,5 +103,49 @@ func TestUpdateInstallCommandPrintsUpgradeMessage(t *testing.T) {
 
 	if got := out.String(); !strings.Contains(got, "Upgraded ae-cli v0.1.0 -> v0.2.0") {
 		t.Fatalf("output = %q, want upgrade message", got)
+	}
+}
+
+func TestUpdateInstallRemovesOnlyManagedCodexOTLP(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	endpoint := "https://ae.example.com/api/v1/attribution/otel/v1/traces"
+	if _, err := toolconfig.ConfigureCodexOTLP(home, endpoint, "test-otlp-token"); err != nil {
+		t.Fatal(err)
+	}
+	reportingPath := filepath.Join(home, ".ae-cli", "reporting.json")
+	if err := reporting.Save(reportingPath, &reporting.Config{
+		InstallationID: "11111111-1111-4111-8111-111111111111",
+		ServerURL:      "https://ae.example.com",
+		OTLPToken:      "test-otlp-token",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	oldInstall := installUpdate
+	defer func() { installUpdate = oldInstall }()
+	installUpdate = func(_ context.Context, _ updatepkg.InstallOptions) (updatepkg.InstallResult, error) {
+		return updatepkg.InstallResult{PreviousVersion: "v0.1.0", InstalledVersion: "v0.2.0", Updated: true, Status: "updated"}, nil
+	}
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	if err := runUpdateInstall(cmd); err != nil {
+		t.Fatal(err)
+	}
+	inspection, err := toolconfig.InspectCodexOTLP(home, endpoint, "test-otlp-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspection.Configured {
+		t.Fatalf("managed Codex OTLP survived successful update: %+v", inspection)
+	}
+	config, err := reporting.Load(reportingPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.OTLPToken != "" || config.OTelEnabled {
+		t.Fatalf("legacy local OTLP state survived successful update: token_present=%t enabled=%t", config.OTLPToken != "", config.OTelEnabled)
 	}
 }

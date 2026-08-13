@@ -109,11 +109,15 @@ func DisableCodexOTLP(homeDir, expectedEndpoint, expectedToken string) (string, 
 
 func codexOTLPExporterMatches(exporter map[string]any, expectedEndpoint, expectedToken string) bool {
 	endpoint, _ := exporter["endpoint"].(string)
+	protocol, _ := exporter["protocol"].(string)
 	headers, _ := exporter["headers"].(map[string]any)
 	authorization, _ := headers["Authorization"].(string)
 	return strings.TrimSpace(expectedEndpoint) != "" &&
 		strings.TrimSpace(expectedToken) != "" &&
+		len(exporter) == 3 &&
+		len(headers) == 1 &&
 		strings.TrimSpace(endpoint) == strings.TrimSpace(expectedEndpoint) &&
+		strings.EqualFold(strings.TrimSpace(protocol), "json") &&
 		strings.TrimSpace(authorization) == "Bearer "+strings.TrimSpace(expectedToken)
 }
 
