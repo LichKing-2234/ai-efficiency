@@ -1,8 +1,8 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** T01-T12 and the reviewed T14/T15 implementation are complete. #251 finished the separate CLI/platform releases, staging rehearsal, production formal-v2 cutover, v1 POC export/reset, and final readbacks on 2026-08-12. T14/T15 passed the final backend and ae-cli suites plus Standards and Spec review on 2026-08-13; they remain unreleased and undeployed. T13 remains in its seven-day stable window, but the ordinary-workflow adoption gate cannot be satisfied until T16 qualifies sustained production reporting. #252 cleanup must not run before `2026-08-19T12:59:09Z` and remains conditional on every acceptance gate being green.
-**T13 Day 0:** The read-only production baseline has one formal pool, pending `3`, near-expiry `0`, active readiness, complete claim coverage, and an exact ratio. The additional ordinary-workflow pool and final SCM freshness gates remain unsatisfied; no cleanup has run.
+**Status:** T01-T12 and T14/T15 are implemented and released. `ae-cli/v0.2.0-preview.6` and platform `v0.1.0-preview.84` shipped T14/T15, and production runs Helm revision `84`; the CLI-only wrapper-proof follow-up shipped as `ae-cli/v0.2.0-preview.7`. T16 verified automatic Repository registration and bounded/resumable fail-closed recovery, but the retained agent-infra evidence did not deterministically bind any eligible commit, so it produced no formal claim or pool. The two-subsequent-ordinary-commit gate and T13 adoption gate remain open. The seven-day stability clock must restart from the first qualifying ordinary pool and aggregate Activity readback; #252 cleanup remains blocked and no cleanup has run.
+**T13 Day 0:** The production baseline and post-recovery readback both have one formal pool, one direct relation, `4,395` formal Token, one formal Request, active readiness, complete claim coverage, and an exact ratio. Shadow remains isolated at `19,607` Token and v1 bucket/revision tables remain zero. The additional ordinary-workflow pool and final SCM freshness gates remain unsatisfied.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -218,13 +218,31 @@ T01 contract publication (#253)
 
 ### T16 — Sustained production qualification and missed-commit recovery ([#278](https://github.com/LichKing-2234/ai-efficiency/issues/278))
 
-- [ ] Obtain explicit release, deployment, recovery, and production-data
+- [x] Obtain explicit release, deployment, recovery, and production-data
   mutation authority in the execution turn.
-- [ ] Release/deploy the reviewed T14/T15 changes, recover only deterministic
-  post-cutover claims, and verify ordinary developer pool deltas without
-  duplicate Token.
-- [ ] Qualify repeated hooks across repositories and complete the T13 adoption
-  gate readbacks before restarting the seven-day stability clock.
+- [x] Release/deploy the reviewed T14/T15 changes as
+  `ae-cli/v0.2.0-preview.6` and platform `v0.1.0-preview.84`, then deploy Helm
+  revision `84`. Ship the exact wrapper-proof follow-up as CLI-only
+  `ae-cli/v0.2.0-preview.7`; do not create another platform release or Helm
+  rollout for that CLI-only fix.
+- [x] Exercise the normal `not_found -> ensure -> continue` hook path for
+  agent-infra without `ae-cli init`, creating exactly one unbound Repository
+  configuration, then replay the three post-closeout main commits through the
+  released `.7` runner. The bounded scan resumed after its five-minute
+  boundary and cleared its progress/task state, but no commit retained the
+  complete Request -> turn -> structured mutation -> Git-content proof. The
+  replay therefore failed closed with no new claim, pool, relation, Request,
+  or Token. Aggregate before/after conservation stayed at one formal pool,
+  one direct relation, `4,395` Token, and one Request; duplicate pool,
+  relation, and Request identities were all zero; shadow stayed isolated and
+  v1 stayed zero.
+- [ ] Observe at least two subsequent genuine ordinary commits through hooks
+  without manual sync, including a new agent-infra formal pool visible in
+  Activity. Status/doctor must remain clear, and the formal pool/relation/Token
+  delta must conserve exactly.
+- [ ] Complete the T13 adoption and final SCM-freshness readbacks, then restart
+  the seven-day stability clock from the first qualifying ordinary pool and
+  aggregate Activity readback.
 
 ## Cross-Ticket Invariants
 
