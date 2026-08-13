@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** T01-T12 are complete. #251 finished the separate CLI/platform releases, staging rehearsal, production formal-v2 cutover, v1 POC export/reset, and final readbacks on 2026-08-12. T13 is in its seven-day stable window; #252 cleanup must not run before `2026-08-19T12:59:09Z` and remains conditional on every acceptance gate being green.
+**Status:** T01-T12 and the reviewed T14/T15 implementation are complete. #251 finished the separate CLI/platform releases, staging rehearsal, production formal-v2 cutover, v1 POC export/reset, and final readbacks on 2026-08-12. T14/T15 passed the final backend and ae-cli suites plus Standards and Spec review on 2026-08-13; they remain unreleased and undeployed. T13 remains in its seven-day stable window, but the ordinary-workflow adoption gate cannot be satisfied until T16 qualifies sustained production reporting. #252 cleanup must not run before `2026-08-19T12:59:09Z` and remains conditional on every acceptance gate being green.
 **T13 Day 0:** The read-only production baseline has one formal pool, pending `3`, near-expiry `0`, active readiness, complete claim coverage, and an exact ratio. The additional ordinary-workflow pool and final SCM freshness gates remain unsatisfied; no cleanup has run.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
@@ -27,6 +27,7 @@ T01 contract publication (#253)
   -> T03 ingest -> T05 delivery
   -> T05 + T07 -> T10 lineage
   -> T05 + T06 + T08 + T09 + T10 -> T11 qualification -> T12 cutover -> T13 cleanup
+  -> T14 bounded delivery + T15 automatic Repository registration -> T16 sustained qualification -> T13 adoption gate
 ```
 
 ## Execution Ledger
@@ -185,6 +186,45 @@ T01 contract publication (#253)
   separate platform/CLI releases, and production health.
 - [x] Verify #232-#234 were completed by merged PR #235 and closed before the
   cleanup window; do not defer their closure to T13 execution.
+
+### T14 — Bounded and resumable v2 claim delivery ([#276](https://github.com/LichKing-2234/ai-efficiency/issues/276))
+
+- [x] Share one 90-day-bounded Request-evidence query and active/archive source
+  scan across every pending commit trigger in a runner pass.
+- [x] Persist digest-only `source × trigger` completion units after claim-state
+  persistence so timeout, process exit, backend failure, and newly arriving
+  triggers resume without duplicate claims or full restart; invalidate units
+  only when that source's digest-only turn evidence changes so late Requests
+  are recovered without unrelated full restart.
+- [x] Make status and doctor expose the safe failure stage/reason, first failure
+  time, and exact remaining trigger count without Request identifiers.
+- [x] Add deterministic multi-trigger, response-loss, source-interruption
+  resume, privacy, and no-duplication coverage; qualify 2,268 expired sources
+  plus one 50,000-line recent source within the five-second fixture budget.
+- [x] Run the final full suites and close all code-review findings.
+
+### T15 — Automatic Repository registration during hook delivery ([#277](https://github.com/LichKing-2234/ai-efficiency/issues/277))
+
+- [x] Add the reporter-authenticated minimum Repository ensure route and reuse
+  canonical identity uniqueness for idempotent concurrent creation.
+- [x] Continue the exact first post-commit after `not_found`, including when a
+  cached negative result exists; keep Git fail-open and preserve recovery work
+  if registration fails.
+- [x] Keep automatic registration unbound and free of credential/webhook
+  mutation; a manual commit creates no claim or Token.
+- [x] Add focused backend, client, hook, authorization, replay, and privacy
+  tests and update the active contract/architecture.
+- [x] Run the final full suites and close all code-review findings.
+
+### T16 — Sustained production qualification and missed-commit recovery ([#278](https://github.com/LichKing-2234/ai-efficiency/issues/278))
+
+- [ ] Obtain explicit release, deployment, recovery, and production-data
+  mutation authority in the execution turn.
+- [ ] Release/deploy the reviewed T14/T15 changes, recover only deterministic
+  post-cutover claims, and verify ordinary developer pool deltas without
+  duplicate Token.
+- [ ] Qualify repeated hooks across repositories and complete the T13 adoption
+  gate readbacks before restarting the seven-day stability clock.
 
 ## Cross-Ticket Invariants
 

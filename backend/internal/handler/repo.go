@@ -165,6 +165,29 @@ func (h *RepoHandler) EnsureRemote(c *gin.Context) {
 	pkg.Success(c, buildRepoResponse(loaded))
 }
 
+// EnsureReportingRemote narrowly ensures repository identity for an
+// authenticated attribution reporter and returns the normal eligibility DTO.
+func (h *RepoHandler) EnsureReportingRemote(c *gin.Context) {
+	var req ensureRemoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if _, err := h.repoService.EnsureReportingFromRemote(c.Request.Context(), req.RemoteURL, req.Branch); err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	result, err := h.repoService.ResolveRemoteEligibility(c.Request.Context(), repo.ResolveRemoteRequest{
+		RemoteURL: req.RemoteURL,
+		Branch:    req.Branch,
+	})
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	pkg.Success(c, result)
+}
+
 // ResolveRemote handles POST /api/v1/repos/resolve-remote.
 func (h *RepoHandler) ResolveRemote(c *gin.Context) {
 	var req repo.ResolveRemoteRequest

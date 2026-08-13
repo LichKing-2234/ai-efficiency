@@ -257,6 +257,16 @@ func (c *Client) SendAttributionV2Claims(ctx context.Context, groups []Attributi
 	return &response.Data, nil
 }
 
+func (c *Client) EnsureAttributionRepoFromRemote(ctx context.Context, req ResolveRepoRequest) (*RepoEligibilityResponse, error) {
+	var response struct {
+		Data RepoEligibilityResponse `json:"data"`
+	}
+	if err := c.doAttributionJSON(ctx, http.MethodPost, "/api/v1/attribution/repos/ensure-remote", req, &response); err != nil {
+		return nil, fmt.Errorf("ensure attribution repository: %w", err)
+	}
+	return &response.Data, nil
+}
+
 func (c *Client) SendAttributionRevision(ctx context.Context, bucketID string, revision AttributionRevision) error {
 	path := "/api/v1/attribution/usage-buckets/" + url.PathEscape(strings.TrimSpace(bucketID)) + "/revisions"
 	request := struct {

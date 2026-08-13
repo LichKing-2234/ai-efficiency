@@ -20,6 +20,9 @@ import (
 
 const v2ClaimSchemaVersion = 2
 const codexResponsesHTTPClientTarget = "codex_http_client::client"
+const v2LocalEvidenceWindow = 90 * 24 * time.Hour
+
+var codexV2SourceReadObserver = func(string) {}
 
 var (
 	v2ThreadIDPattern          = regexp.MustCompile(`thread\.id=([^ }]+)`)
@@ -62,7 +65,53 @@ type V2ClaimBackendClient interface {
 	SendAttributionV2Claims(context.Context, []client.AttributionV2ClaimGroup) (*client.AttributionV2ClaimBatchResult, error)
 }
 
-func ScanCodexV2ClaimsFromHome(ctx context.Context, homeDir string, opts V2ClaimScanOptions) ([]V2ClaimCandidate, error) {
+type codexV2ClaimSource struct {
+	key  string
+	path string
+}
+
+// CodexV2ClaimScan holds one bounded source discovery and Request-evidence
+// query that can be reused across every commit trigger in a runner pass.
+type CodexV2ClaimScan struct {
+	sources  []codexV2ClaimSource
+	evidence []v2RequestEvidence
+}
+
+// SourceEvidenceKey changes only when trusted Request evidence for one
+// source's digest-only turn keys changes.
+func (s *CodexV2ClaimScan) SourceEvidenceKey(turnKeys []string) string {
+	if s == nil {
+		return ""
+	}
+	wanted := make(map[string]struct{}, len(turnKeys))
+	for _, key := range turnKeys {
+		wanted[key] = struct{}{}
+	}
+	values := make([]string, 0, len(s.evidence))
+	for _, evidence := range s.evidence {
+		if _, ok := wanted[claimDigest(evidence.threadID, evidence.turnID)]; ok {
+			values = append(values, claimDigest(evidence.requestID, strings.Join(evidence.transportIDs, "\x00")))
+		}
+	}
+	sort.Strings(values)
+	return claimDigest(values...)
+}
+
+// V2ClaimTurnKeys returns privacy-safe identities for the turns observed while
+// scanning one source. Raw thread and turn identifiers are not persisted.
+func V2ClaimTurnKeys(candidates []V2ClaimCandidate) []string {
+	keys := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		keys = append(keys, claimDigest(candidate.Group.ThreadID, candidate.Group.TurnID))
+	}
+	return uniqueSorted(keys)
+}
+
+func MergeV2ClaimTurnKeys(existing, scanned []string) []string {
+	return uniqueSorted(append(append([]string(nil), existing...), scanned...))
+}
+
+func PrepareCodexV2ClaimScan(ctx context.Context, homeDir string, cutoff time.Time) (*CodexV2ClaimScan, error) {
 	if strings.TrimSpace(homeDir) == "" {
 		var err error
 		homeDir, err = os.UserHomeDir()
@@ -70,11 +119,91 @@ func ScanCodexV2ClaimsFromHome(ctx context.Context, homeDir string, opts V2Claim
 			return nil, fmt.Errorf("resolve home: %w", err)
 		}
 	}
-	evidence, err := loadCodexV2RequestEvidence(ctx, homeDir)
-	if err != nil {
-		return nil, err
+	if cutoff.IsZero() {
+		cutoff = time.Now().UTC().Add(-v2LocalEvidenceWindow)
 	}
-	return scanCodexV2ClaimsWithEvidence(ctx, findCodexJSONLFiles("", homeDir), opts, evidence)
+	evidence, err := loadCodexV2RequestEvidence(ctx, homeDir, cutoff)
+	if err != nil {
+		return nil, fmt.Errorf("load Codex v2 request evidence: %w", err)
+	}
+	paths := findCodexV2JSONLFiles(homeDir, cutoff)
+	sources := make([]codexV2ClaimSource, 0, len(paths))
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		sources = append(sources, codexV2ClaimSource{
+			key:  claimDigest(filepath.Clean(path), fmt.Sprintf("%d", info.ModTime().UnixNano()), fmt.Sprintf("%d", info.Size())),
+			path: path,
+		})
+	}
+	return &CodexV2ClaimScan{sources: sources, evidence: evidence}, nil
+}
+
+func (s *CodexV2ClaimScan) SourceKeys() []string {
+	if s == nil {
+		return nil
+	}
+	keys := make([]string, 0, len(s.sources))
+	for _, source := range s.sources {
+		keys = append(keys, source.key)
+	}
+	return keys
+}
+
+func (s *CodexV2ClaimScan) ScanSource(ctx context.Context, sourceKey string, options []V2ClaimScanOptions) ([]V2ClaimCandidate, error) {
+	if s == nil || len(options) == 0 {
+		return nil, nil
+	}
+	for _, source := range s.sources {
+		if source.key != sourceKey {
+			continue
+		}
+		codexV2SourceReadObserver(source.key)
+		candidates, err := parseCodexV2ClaimFileBatch(ctx, source.path, options, s.evidence)
+		if err != nil {
+			return nil, fmt.Errorf("scan Codex v2 source: %w", err)
+		}
+		return candidates, nil
+	}
+	return nil, nil
+}
+
+func ScanCodexV2ClaimsFromHome(ctx context.Context, homeDir string, opts V2ClaimScanOptions) ([]V2ClaimCandidate, error) {
+	candidates, err := ScanCodexV2ClaimsFromHomeBatch(ctx, homeDir, []V2ClaimScanOptions{opts})
+	if err != nil {
+		return nil, fmt.Errorf("scan Codex v2 claims from home: %w", err)
+	}
+	return mergeV2ScannedCandidates(candidates), nil
+}
+
+func ScanCodexV2ClaimsFromHomeBatch(ctx context.Context, homeDir string, options []V2ClaimScanOptions) ([]V2ClaimCandidate, error) {
+	scan, err := PrepareCodexV2ClaimScan(ctx, homeDir, time.Time{})
+	if err != nil {
+		return nil, fmt.Errorf("prepare Codex v2 claim scan: %w", err)
+	}
+	var candidates []V2ClaimCandidate
+	for _, sourceKey := range scan.SourceKeys() {
+		scanned, err := scan.ScanSource(ctx, sourceKey, options)
+		if err != nil {
+			return nil, fmt.Errorf("scan Codex v2 claim source: %w", err)
+		}
+		candidates = append(candidates, scanned...)
+	}
+	return candidates, nil
+}
+
+func findCodexV2JSONLFiles(homeDir string, cutoff time.Time) []string {
+	paths := findCodexJSONLFiles("", homeDir)
+	kept := paths[:0]
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err == nil && !info.ModTime().Before(cutoff) {
+			kept = append(kept, path)
+		}
+	}
+	return kept
 }
 
 func V2ClaimStatePath() string {
@@ -211,26 +340,34 @@ func ScanCodexV2Claims(ctx context.Context, paths []string, opts V2ClaimScanOpti
 }
 
 func scanCodexV2ClaimsWithEvidence(ctx context.Context, paths []string, opts V2ClaimScanOptions, requestEvidence []v2RequestEvidence) ([]V2ClaimCandidate, error) {
-	merged := map[string]*V2ClaimCandidate{}
+	var scanned []V2ClaimCandidate
 	for _, path := range paths {
 		candidates, err := parseCodexV2ClaimFile(ctx, path, opts, requestEvidence)
 		if err != nil {
 			return nil, fmt.Errorf("scan Codex v2 source: %w", err)
 		}
-		for _, candidate := range candidates {
-			existing := merged[candidate.Group.GroupID]
-			if existing == nil {
-				copy := candidate
-				merged[candidate.Group.GroupID] = &copy
-				continue
-			}
-			existing.Group.RequestIDs = uniqueSorted(append(existing.Group.RequestIDs, candidate.Group.RequestIDs...))
-			if existing.GapReason != "" && candidate.GapReason == "" {
-				requests := existing.Group.RequestIDs
-				existing.GapReason = ""
-				existing.Group = candidate.Group
-				existing.Group.RequestIDs = requests
-			}
+		scanned = append(scanned, candidates...)
+	}
+	return mergeV2ScannedCandidates(scanned), nil
+}
+
+func mergeV2ScannedCandidates(scanned []V2ClaimCandidate) []V2ClaimCandidate {
+	merged := map[string]*V2ClaimCandidate{}
+	for _, candidate := range scanned {
+		existing := merged[candidate.Group.GroupID]
+		if existing == nil {
+			copy := candidate
+			merged[candidate.Group.GroupID] = &copy
+			continue
+		}
+		existing.Group.CommitAllocations = mergeV2Allocations(existing.Group.CommitAllocations, candidate.Group.CommitAllocations)
+		existing.Group.EvidenceDigest = v2AllocationEvidenceDigest(existing.Group.CommitAllocations)
+		existing.Group.RequestIDs = uniqueSorted(append(existing.Group.RequestIDs, candidate.Group.RequestIDs...))
+		if existing.GapReason != "" && candidate.GapReason == "" {
+			requests := existing.Group.RequestIDs
+			existing.GapReason = ""
+			existing.Group = candidate.Group
+			existing.Group.RequestIDs = requests
 		}
 	}
 	result := make([]V2ClaimCandidate, 0, len(merged))
@@ -238,7 +375,7 @@ func scanCodexV2ClaimsWithEvidence(ctx context.Context, paths []string, opts V2C
 		result = append(result, *candidate)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Group.GroupID < result[j].Group.GroupID })
-	return result, nil
+	return result
 }
 
 func UploadableV2ClaimGroups(candidates []V2ClaimCandidate) []client.AttributionV2ClaimGroup {
@@ -252,9 +389,16 @@ func UploadableV2ClaimGroups(candidates []V2ClaimCandidate) []client.Attribution
 }
 
 func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOptions, requestEvidence []v2RequestEvidence) ([]V2ClaimCandidate, error) {
+	return parseCodexV2ClaimFileBatch(ctx, path, []V2ClaimScanOptions{opts}, requestEvidence)
+}
+
+func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2ClaimScanOptions, requestEvidence []v2RequestEvidence) ([]V2ClaimCandidate, error) {
 	var sessionID, threadID string
-	turns := map[string]*v2Turn{}
-	var current *v2Turn
+	turnSets := make([]map[string]*v2Turn, len(options))
+	for index := range turnSets {
+		turnSets[index] = map[string]*v2Turn{}
+	}
+	currentTurnID := ""
 	err := forEachCodexJSONLLine(ctx, path, func(_ int, raw []byte) error {
 		var row struct {
 			Type      string `json:"type"`
@@ -288,39 +432,51 @@ func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOpt
 		case "turn_context":
 			turnID := strings.TrimSpace(row.Payload.TurnID)
 			if turnID == "" {
-				current = nil
+				currentTurnID = ""
 				return nil
 			}
-			current = turns[turnID]
-			if current == nil {
-				current = &v2Turn{threadID: firstNonEmptyCompact(strings.TrimSpace(row.Payload.ThreadID), threadID, sessionID), turnID: turnID, requests: map[string]struct{}{}, transportIDs: map[string]struct{}{}, replayFiles: map[string]v2ReplayFile{}, startedAt: observedAt}
-				turns[turnID] = current
+			currentTurnID = turnID
+			for _, turns := range turnSets {
+				if turns[turnID] == nil {
+					turns[turnID] = &v2Turn{threadID: firstNonEmptyCompact(strings.TrimSpace(row.Payload.ThreadID), threadID, sessionID), turnID: turnID, requests: map[string]struct{}{}, transportIDs: map[string]struct{}{}, replayFiles: map[string]v2ReplayFile{}, startedAt: observedAt}
+				}
 			}
 		case "response_item":
-			if current != nil {
+			for index, turns := range turnSets {
+				current := turns[currentTurnID]
+				if current == nil {
+					continue
+				}
 				for _, transportID := range []string{row.Payload.ID, row.Payload.CallID} {
 					if transportID = strings.TrimSpace(transportID); transportID != "" {
 						current.transportIDs[transportID] = struct{}{}
 					}
 				}
-			}
-			if current != nil && compactIsPatchTool(row.Payload.Name) {
-				current.mutations = append(current.mutations, v2PatchMutations(ctx, row.Payload.Input+"\n"+row.Payload.Arguments, opts.RepoRoot, opts.CommitSHA, current.replayFiles)...)
-			}
-		case "event_msg":
-			if current != nil && strings.TrimSpace(row.Payload.Type) == "patch_apply_end" {
-				for path, change := range row.Payload.Changes {
-					hash := firstNonEmptyCompact(strings.TrimSpace(change.ContentSHA256), strings.TrimSpace(change.SHA256))
-					if hash == "" && change.Content != "" {
-						hash = claimDigest(change.Content)
-					}
-					if hash != "" {
-						current.mutations = append(current.mutations, v2Mutation{path: canonicalClaimPath(opts.RepoRoot, path), hash: strings.ToLower(hash), kind: strings.TrimSpace(change.Type)})
-					}
+				if compactIsPatchTool(row.Payload.Name) {
+					opts := options[index]
+					current.mutations = append(current.mutations, v2PatchMutations(ctx, row.Payload.Input+"\n"+row.Payload.Arguments, opts.RepoRoot, opts.CommitSHA, current.replayFiles)...)
 				}
 			}
-			if current != nil && strings.TrimSpace(row.Payload.Type) == "token_count" && row.Payload.Info != nil {
-				addV2Calibration(&current.calibration, row.Payload.Info)
+		case "event_msg":
+			for index, turns := range turnSets {
+				current := turns[currentTurnID]
+				if current == nil {
+					continue
+				}
+				if strings.TrimSpace(row.Payload.Type) == "patch_apply_end" {
+					for path, change := range row.Payload.Changes {
+						hash := firstNonEmptyCompact(strings.TrimSpace(change.ContentSHA256), strings.TrimSpace(change.SHA256))
+						if hash == "" && change.Content != "" {
+							hash = claimDigest(change.Content)
+						}
+						if hash != "" {
+							current.mutations = append(current.mutations, v2Mutation{path: canonicalClaimPath(options[index].RepoRoot, path), hash: strings.ToLower(hash), kind: strings.TrimSpace(change.Type)})
+						}
+					}
+				}
+				if strings.TrimSpace(row.Payload.Type) == "token_count" && row.Payload.Info != nil {
+					addV2Calibration(&current.calibration, row.Payload.Info)
+				}
 			}
 		}
 		return nil
@@ -328,6 +484,14 @@ func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOpt
 	if err != nil {
 		return nil, err
 	}
+	var result []V2ClaimCandidate
+	for index, turns := range turnSets {
+		result = append(result, buildCodexV2ClaimCandidates(ctx, path, sessionID, options[index], turns, requestEvidence)...)
+	}
+	return result, nil
+}
+
+func buildCodexV2ClaimCandidates(ctx context.Context, path, sessionID string, opts V2ClaimScanOptions, turns map[string]*v2Turn, requestEvidence []v2RequestEvidence) []V2ClaimCandidate {
 	orderedTurns := make([]*v2Turn, 0, len(turns))
 	for _, turn := range turns {
 		orderedTurns = append(orderedTurns, turn)
@@ -391,7 +555,7 @@ func parseCodexV2ClaimFile(ctx context.Context, path string, opts V2ClaimScanOpt
 		}
 		result = append(result, candidate)
 	}
-	return result, nil
+	return result
 }
 
 func v2PatchMutations(ctx context.Context, patch, repoRoot, commitSHA string, replayFiles map[string]v2ReplayFile) []v2Mutation {
@@ -671,7 +835,7 @@ func equalClaimLines(left, right []string) bool {
 	return true
 }
 
-func loadCodexV2RequestEvidence(ctx context.Context, homeDir string) ([]v2RequestEvidence, error) {
+func loadCodexV2RequestEvidence(ctx context.Context, homeDir string, cutoff time.Time) ([]v2RequestEvidence, error) {
 	paths := findCodexSQLiteFiles(homeDir)
 	if len(paths) == 0 {
 		return nil, nil
@@ -685,11 +849,12 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string) ([]v2Reques
 		SELECT thread_id, feedback_log_body
 		FROM logs
 		WHERE target = ?
+		  AND ts >= ?
 		  AND feedback_log_body LIKE '%Request completed method=POST%'
 		  AND feedback_log_body LIKE '%api.path="responses"%'
 		  AND feedback_log_body LIKE '%status=2%'
 		  AND feedback_log_body LIKE '%"x-client-request-id"%'
-		ORDER BY ts, ts_nanos, id`, codexResponsesHTTPClientTarget)
+		ORDER BY ts, ts_nanos, id`, codexResponsesHTTPClientTarget, cutoff.Unix())
 	if err != nil {
 		return nil, fmt.Errorf("query Codex request log: %w", err)
 	}

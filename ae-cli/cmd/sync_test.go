@@ -47,16 +47,18 @@ func TestDoctorPrintsPendingSyncTask(t *testing.T) {
 		t.Fatalf("DetectGitContext: %v", err)
 	}
 	task := hooks.SyncTask{
-		WorkspaceID:     gitCtx.WorkspaceID,
-		RepoRoot:        repo,
-		ServerURL:       "https://ae.example.com",
-		AuthSubject:     "user:123",
-		RepoConfigID:    123,
-		RepoKey:         gitCtx.RepoKey,
-		Status:          hooks.SyncTaskStatusPending,
-		LastRequestedAt: time.Date(2026, 5, 26, 9, 0, 0, 0, time.UTC),
-		LastError:       "spawn failed",
-		AttemptCount:    3,
+		WorkspaceID:       gitCtx.WorkspaceID,
+		RepoRoot:          repo,
+		ServerURL:         "https://ae.example.com",
+		AuthSubject:       "user:123",
+		RepoConfigID:      123,
+		RepoKey:           gitCtx.RepoKey,
+		Status:            hooks.SyncTaskStatusPending,
+		LastRequestedAt:   time.Date(2026, 5, 26, 9, 0, 0, 0, time.UTC),
+		LastError:         "spawn failed",
+		LastFailureStage:  hooks.SyncTaskFailureStageRunner,
+		LastFailureReason: "background sync could not start",
+		AttemptCount:      3,
 	}
 	if err := hooks.SaveSyncTask(task); err != nil {
 		t.Fatalf("SaveSyncTask: %v", err)
@@ -91,7 +93,7 @@ func TestDoctorPrintsPendingSyncTask(t *testing.T) {
 		t.Fatalf("doctorCmd.RunE: %v", err)
 	}
 	output := buf.String()
-	for _, want := range []string{"Sync Task: pending", "spawn failed", "attempt_count: 3", "last_success=2026-05-26T08:55:00Z", "last_error=upload failed locally"} {
+	for _, want := range []string{"Sync Task: pending", "background sync could not start", "attempt_count: 3", "last_success=2026-05-26T08:55:00Z", "last_error=upload failed locally"} {
 		if !bytes.Contains(buf.Bytes(), []byte(want)) {
 			t.Fatalf("doctor output missing %q:\n%s", want, output)
 		}
@@ -345,6 +347,31 @@ func TestSyncStatusRecoversCorruptSyncTask(t *testing.T) {
 	}
 	if !bytes.Contains(buf.Bytes(), []byte("corrupt sync task moved aside")) {
 		t.Fatalf("sync status output missing corrupt recovery message:\n%s", buf.String())
+	}
+}
+
+func TestPrintSyncTaskStatusShowsSafeV2FailureWithoutRawIdentifiers(t *testing.T) {
+	firstFailure := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+	task := &hooks.SyncTask{
+		WorkspaceID: "ws-safe-status", Status: hooks.SyncTaskStatusPending, LastRequestedAt: firstFailure,
+		LastError:        "backend rejected client:raw-request-value",
+		LastFailureStage: "backend_delivery", LastFailureReason: "backend claim delivery failed",
+		FirstFailureAt: &firstFailure, RemainingTriggerCount: 2,
+	}
+	var output bytes.Buffer
+	printSyncTaskStatus(&output, task)
+	for _, want := range []string{"failure_stage: backend_delivery", "failure_reason: backend claim delivery failed", "first_failure_at: 2026-08-12T12:00:00Z", "remaining_triggers: 2"} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("status missing %q:\n%s", want, output.String())
+		}
+	}
+	if strings.Contains(output.String(), "raw-request-value") {
+		t.Fatalf("status leaked a Request ID:\n%s", output.String())
+	}
+	output.Reset()
+	printSyncTaskStatus(&output, &hooks.SyncTask{Status: hooks.SyncTaskStatusPending, LastRequestedAt: firstFailure, LastError: "legacy error client:raw-request-value"})
+	if strings.Contains(output.String(), "raw-request-value") {
+		t.Fatalf("legacy sync task leaked a Request ID:\n%s", output.String())
 	}
 }
 

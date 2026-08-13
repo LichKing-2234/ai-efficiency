@@ -148,7 +148,7 @@ func TestScanner_ScanWorkspaceReadsMatchingKiroIDEExecution(t *testing.T) {
 	}
 }
 
-func TestFindCodexJSONLFiles_UsesGlobalCodexHome(t *testing.T) {
+func TestFindCodexJSONLFiles_UsesActiveAndArchivedCodexHome(t *testing.T) {
 	homeDir := t.TempDir()
 
 	globalCodex := filepath.Join(homeDir, ".codex", "sessions", "global.jsonl")
@@ -171,8 +171,8 @@ func TestFindCodexJSONLFiles_UsesGlobalCodexHome(t *testing.T) {
 	}
 
 	paths := findCodexJSONLFiles(t.TempDir(), homeDir)
-	if len(paths) != 1 || paths[0] != globalCodex {
-		t.Fatalf("paths = %v, want only %s", paths, globalCodex)
+	if len(paths) != 2 || paths[0] != archivedCodex || paths[1] != globalCodex {
+		t.Fatalf("paths = %v, want active and archived sessions", paths)
 	}
 }
 

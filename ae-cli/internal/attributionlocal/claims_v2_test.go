@@ -4,10 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -55,6 +59,227 @@ func TestMergeV2ClaimStatePromotesGapWithoutLosingRequests(t *testing.T) {
 	got := state.Claims[0]
 	if got.GapReason != "" || strings.Join(got.Group.RequestIDs, ",") != "req-new,req-old" || got.Group.Calibration == nil || len(got.Group.CommitAllocations) != 1 {
 		t.Fatalf("promoted claim = %+v", got)
+	}
+}
+
+func TestScanCodexV2ClaimsFromHomeUsesRecentActiveAndArchivedSources(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	home := t.TempDir()
+	active := filepath.Join(home, ".codex", "sessions", "active.jsonl")
+	archived := filepath.Join(home, ".codex", "archived_sessions", "archived.jsonl")
+	old := filepath.Join(home, ".codex", "sessions", "old.jsonl")
+	for path, turn := range map[string]string{active: "active", archived: "archived", old: "old"} {
+		writeV2JSONL(t, path,
+			map[string]any{"type": "session_meta", "payload": map[string]any{"id": "thread-" + turn}},
+			map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-" + turn}},
+			map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: feature.go\n+package feature\n*** End Patch"}},
+		)
+	}
+	oldTime := time.Now().UTC().Add(-91 * 24 * time.Hour)
+	if err := os.Chtimes(old, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+	writeV2RequestLog(t, home, map[string]string{
+		"thread-active":   "turn-active",
+		"thread-archived": "turn-archived",
+		"thread-old":      "turn-old",
+	})
+
+	claims, err := ScanCodexV2ClaimsFromHome(context.Background(), home, V2ClaimScanOptions{
+		RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8, WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 2 {
+		t.Fatalf("claims = %+v, want only recent active and archived sources", claims)
+	}
+}
+
+func TestScanCodexV2ClaimsFromHomeBatchReadsSourceOnceForMultipleCommits(t *testing.T) {
+	repo := t.TempDir()
+	for _, args := range [][]string{{"init"}, {"config", "user.email", "alice@example.com"}, {"config", "user.name", "Alice"}} {
+		gitClaim(t, repo, args...)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "a.go"), []byte("package feature\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitClaim(t, repo, "add", "a.go")
+	gitClaim(t, repo, "commit", "-m", "add a")
+	commitA := strings.TrimSpace(gitClaim(t, repo, "rev-parse", "HEAD"))
+	if err := os.WriteFile(filepath.Join(repo, "b.go"), []byte("package feature\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitClaim(t, repo, "add", "b.go")
+	gitClaim(t, repo, "commit", "-m", "add b")
+	commitB := strings.TrimSpace(gitClaim(t, repo, "rev-parse", "HEAD"))
+
+	home := t.TempDir()
+	writeV2JSONL(t, filepath.Join(home, ".codex", "sessions", "session.jsonl"),
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "thread-batch"}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-a"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: a.go\n+package feature\n*** End Patch"}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-b"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: b.go\n+package feature\n*** End Patch"}},
+	)
+	writeV2RequestLog(t, home, map[string]string{"thread-batch/req-a": "turn-a", "thread-batch/req-b": "turn-b"})
+
+	var reads int32
+	originalObserver := codexV2SourceReadObserver
+	codexV2SourceReadObserver = func(string) { atomic.AddInt32(&reads, 1) }
+	t.Cleanup(func() { codexV2SourceReadObserver = originalObserver })
+	base := V2ClaimScanOptions{RepoRoot: repo, RelayProviderID: 7, RepoConfigID: 8, RepoKey: "example.com/org/repo", WorkspaceID: "workspace-8"}
+	first := base
+	first.CommitSHA, first.CheckpointEventID = commitA, "checkpoint-a"
+	second := base
+	second.CommitSHA, second.CheckpointEventID = commitB, "checkpoint-b"
+	candidates, err := ScanCodexV2ClaimsFromHomeBatch(context.Background(), home, []V2ClaimScanOptions{first, second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := &V2ClaimState{}
+	MergeV2ClaimState(state, candidates, time.Now().UTC())
+	if reads != 1 {
+		t.Fatalf("source reads = %d, want 1", reads)
+	}
+	if groups := UploadableV2ClaimGroups(state.Claims); len(groups) != 2 {
+		t.Fatalf("uploadable groups = %+v, want two commit claims", groups)
+	}
+}
+
+func TestCodexV2ClaimScanSourceEvidenceKeyChangesOnlyForRelevantLateRequest(t *testing.T) {
+	home := t.TempDir()
+	writeV2RequestLog(t, home, map[string]string{"thread-late/req-first": "turn-late"})
+	first, err := PrepareCodexV2ClaimScan(context.Background(), home, time.Now().UTC().Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	turnKeys := []string{claimDigest("thread-late", "turn-late")}
+	firstKey := first.SourceEvidenceKey(turnKeys)
+	db, err := sql.Open("sqlite", filepath.Join(home, ".codex", "logs_2.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	body := `turn{thread.id=thread-late turn.id=turn-late}: Request completed method=POST api.path="responses" status=200 OK headers={"x-client-request-id":"req-second"}`
+	if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(2, ?, 0, ?, ?, ?)`, time.Now().UTC().Unix(), "thread-late", codexResponsesHTTPClientTarget, body); err != nil {
+		t.Fatal(err)
+	}
+	second, err := PrepareCodexV2ClaimScan(context.Background(), home, time.Now().UTC().Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondKey := second.SourceEvidenceKey(turnKeys)
+	if firstKey == secondKey {
+		t.Fatal("evidence key did not change after a late Request")
+	}
+	if strings.Contains(secondKey, "req-") {
+		t.Fatalf("evidence key exposed Request identity: %q", secondKey)
+	}
+	unrelatedBody := `turn{thread.id=thread-other turn.id=turn-other}: Request completed method=POST api.path="responses" status=200 OK headers={"x-client-request-id":"req-unrelated"}`
+	if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(3, ?, 0, ?, ?, ?)`, time.Now().UTC().Unix(), "thread-other", codexResponsesHTTPClientTarget, unrelatedBody); err != nil {
+		t.Fatal(err)
+	}
+	third, err := PrepareCodexV2ClaimScan(context.Background(), home, time.Now().UTC().Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if third.SourceEvidenceKey(turnKeys) != secondKey {
+		t.Fatal("unrelated late Request invalidated a completed source")
+	}
+}
+
+func TestMergeV2ClaimTurnKeysPreservesOlderTriggerTurns(t *testing.T) {
+	older := []string{claimDigest("thread-old", "turn-old")}
+	newer := []string{claimDigest("thread-new", "turn-new")}
+	merged := MergeV2ClaimTurnKeys(older, newer)
+	if len(merged) != 2 || !slices.Contains(merged, older[0]) || !slices.Contains(merged, newer[0]) {
+		t.Fatalf("merged turn keys = %v, want old and new trigger turns", merged)
+	}
+	if len(MergeV2ClaimTurnKeys(merged, older)) != 2 {
+		t.Fatal("replayed trigger duplicated a source turn key")
+	}
+}
+
+func TestCodexV2ClaimScanCancellationDoesNotReturnPartialMultiTriggerResults(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".codex", "sessions", "large.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var body strings.Builder
+	for index := 0; index < 50_000; index++ {
+		body.WriteString("{\"type\":\"event_msg\",\"payload\":{\"type\":\"noise\"}}\n")
+	}
+	if err := os.WriteFile(path, []byte(body.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scan, err := PrepareCodexV2ClaimScan(context.Background(), home, time.Now().UTC().Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	originalObserver := codexV2SourceReadObserver
+	codexV2SourceReadObserver = func(string) { cancel() }
+	t.Cleanup(func() { codexV2SourceReadObserver = originalObserver })
+	options := []V2ClaimScanOptions{{CommitSHA: "commit-a", CheckpointEventID: "event-a"}, {CommitSHA: "commit-b", CheckpointEventID: "event-b"}}
+	candidates, err := scan.ScanSource(ctx, scan.SourceKeys()[0], options)
+	if !errors.Is(err, context.Canceled) || len(candidates) != 0 {
+		t.Fatalf("cancelled scan = candidates %+v, err %v; want no partial results and context.Canceled", candidates, err)
+	}
+}
+
+func TestScanCodexV2ClaimsFromLargeHomeSkipsExpiredContentsWithinBudget(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	home := t.TempDir()
+	oldTime := time.Now().UTC().Add(-91 * 24 * time.Hour)
+	for index := 0; index < 2268; index++ {
+		path := filepath.Join(home, ".codex", "sessions", "old", fmt.Sprintf("session-%04d.jsonl", index))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("{expired source contents}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, oldTime, oldTime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recent := filepath.Join(home, ".codex", "sessions", "recent.jsonl")
+	writeV2JSONL(t, recent,
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "thread-recent"}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-recent"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: feature.go\n+package feature\n*** End Patch"}},
+	)
+	file, err := os.OpenFile(recent, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString(strings.Repeat("{\"type\":\"event_msg\",\"payload\":{\"type\":\"noise\"}}\n", 50_000)); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	writeV2RequestLog(t, home, map[string]string{"thread-recent": "turn-recent"})
+	var reads int32
+	originalObserver := codexV2SourceReadObserver
+	codexV2SourceReadObserver = func(string) { atomic.AddInt32(&reads, 1) }
+	t.Cleanup(func() { codexV2SourceReadObserver = originalObserver })
+
+	started := time.Now()
+	claims, err := ScanCodexV2ClaimsFromHome(context.Background(), home, V2ClaimScanOptions{
+		RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8, WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-recent",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Fatalf("large-home scan elapsed = %s, budget = 5s", elapsed)
+	}
+	if reads != 1 || len(UploadableV2ClaimGroups(claims)) != 1 {
+		t.Fatalf("source reads/claims = %d/%+v, want one recent source", reads, claims)
 	}
 }
 
@@ -222,7 +447,7 @@ func TestLoadCodexV2RequestEvidenceRejectsAmbiguousRequestIdentity(t *testing.T)
 			t.Fatal(err)
 		}
 	}
-	evidence, err := loadCodexV2RequestEvidence(context.Background(), home)
+	evidence, err := loadCodexV2RequestEvidence(context.Background(), home, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -506,6 +731,35 @@ func writeV2JSONL(t *testing.T, path string, rows ...map[string]any) {
 	}
 	if err := os.WriteFile(path, []byte(body.String()), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func writeV2RequestLog(t *testing.T, home string, turns map[string]string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(home, ".codex", "logs_2.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec(`CREATE TABLE logs (id INTEGER PRIMARY KEY, ts INTEGER, ts_nanos INTEGER, thread_id TEXT, target TEXT, feedback_log_body TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	index := 0
+	for identity, turnID := range turns {
+		index++
+		parts := strings.SplitN(identity, "/", 2)
+		threadID := parts[0]
+		requestID := "request-" + strings.TrimPrefix(threadID, "thread-")
+		if len(parts) == 2 {
+			requestID = parts[1]
+		}
+		body := `turn{thread.id=` + threadID + ` turn.id=` + turnID + `}: Request completed method=POST api.path="responses" status=200 OK headers={"x-client-request-id":"` + requestID + `"}`
+		if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(?, ?, 0, ?, ?, ?)`, index, time.Now().UTC().Unix(), threadID, codexResponsesHTTPClientTarget, body); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

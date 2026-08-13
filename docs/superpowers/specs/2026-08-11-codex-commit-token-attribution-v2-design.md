@@ -140,6 +140,30 @@ Failed delivery remains in a durable local outbox. Hooks never block commit or
 push. A runner that receives new work while draining must consume it or
 reliably start a successor; it may not require another Git event.
 
+One runner pass performs one 90-day-bounded Codex Request-evidence query and
+one discovery of active `sessions` plus `archived_sessions`. File modification
+time and the indexed SQLite timestamp predicate apply the window before JSONL
+or log contents are read. Every discovered source is streamed once for all
+pending commit triggers in that pass. Durable, digest-only `source × trigger`
+completion units are saved after the corresponding claim candidates are saved,
+so timeout, process exit, or backend failure resumes the exact remaining units.
+A later trigger adds only its own units; it does not invalidate completed work
+for older triggers. For each source, progress also retains digest-only turn keys
+and the digest of trusted SQLite Request evidence relevant to those turns. Late
+Request evidence invalidates completed units only for the affected source;
+unrelated Requests do not restart completed sources or older triggers. Raw
+Request, thread, and turn identifiers are not persisted in scan progress.
+Successful delivery removes the transient progress file.
+
+When reporter-authenticated Repository resolution returns `not_found`, the
+same hook may narrowly ensure the minimum Repository identity from the
+canonical Git remote and continue the exact triggering event. This path is
+idempotent through the Repository identity constraint. It does not create or
+change SCM credentials, provider binding, webhook configuration, or unrelated
+Repository settings. An unbound Repository remains eligible for commit Token
+reporting. Whether Codex evidence exists controls claim creation only: a manual
+commit can register the Repository but creates no claim, pool, or Token.
+
 The client deletes only data covered by explicit server ACKs:
 
 - a Request ID only after `persisted` or `duplicate_identical`;
@@ -148,6 +172,11 @@ The client deletes only data covered by explicit server ACKs:
 
 The local unresolved and audit-minimal state is retained for at most 90 days
 and cleaned lazily on later hook, sync, or CLI activity.
+
+Local status and doctor output distinguish an idle claim ledger from a pending
+or failed sync task. Failure diagnostics contain only the stage, a fixed safe
+reason, the first failure time, and the remaining trigger count; raw Request
+identifiers are never printed.
 
 The backend owns one cutover protocol contract and returns it from installation
 enrollment and every v2 batch acknowledgement:
@@ -514,6 +543,11 @@ management, repo init, sync, and diagnostics are advanced/recovery paths. v2
 does not require Codex OTel. Upgrade removes only AE-managed Codex OTel config
 and never touches user-managed OTel.
 
+Per-Repository `ae-cli init` is not a prerequisite. A managed hook first
+resolves the canonical remote and, only for reporter-authenticated `not_found`,
+uses the minimum Repository ensure path described in Section 6 before
+continuing the same event.
+
 Both a successful new or already-valid login and a successful non-dry-run
 discover that persisted at least one supported tool configuration run the same
 idempotent, best-effort v2 activation path. Activation preserves a valid
@@ -576,6 +610,9 @@ Implementation is not complete until tests and readbacks cover:
 - provider switching, multi-Request turns, duplicate/conflict, response loss,
   partial reconciliation, expiry, shared, late claims, rewrite, orphan, and
   cherry-pick;
+- large active/archive homes, multiple commit triggers sharing one source read,
+  timeout/backend-failure resume, and automatic missing-Repository registration
+  without claim creation for a manual commit;
 - single global pool counting across commit/Repository/PR/team projections;
 - 7/30/90/custom, URL restoration, UTC, Asia/Shanghai, a DST zone, and a
   quarter-hour zone;
