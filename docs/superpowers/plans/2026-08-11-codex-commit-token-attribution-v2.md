@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** T01-T12 and T14/T15 are implemented and released. `ae-cli/v0.2.0-preview.6` and platform `v0.1.0-preview.84` shipped T14/T15, and production runs Helm revision `84`; the CLI-only wrapper-proof follow-up shipped as `ae-cli/v0.2.0-preview.7`. T16 verified automatic Repository registration, bounded/resumable fail-closed recovery, and a three-commit HTTP qualification branch. T17 implements the approved Responses WebSocket path with Codex-local 15-minute Token aggregates while keeping HTTP on Relay-official Request reconciliation; #269 now reflects that contract, and code, full ae-cli/backend suites, diff checks, and two-axis review are complete, but commit/PR, separate releases, production deployment, and a real WebSocket canary remain pending. The earlier qualification and recovery actions do not satisfy the two-subsequent-ordinary-commit or T13 adoption gates. The seven-day stability clock must restart from the first qualifying ordinary pool and aggregate Activity readback; #252 cleanup remains blocked and no cleanup has run.
+**Status:** T01-T12 and T14/T15 are implemented and released. `ae-cli/v0.2.0-preview.6` and platform `v0.1.0-preview.84` shipped T14/T15, and production runs Helm revision `84`; the CLI-only wrapper-proof follow-up shipped as `ae-cli/v0.2.0-preview.7`. T16 verified automatic Repository registration, bounded/resumable fail-closed recovery, and a three-commit HTTP qualification branch. T17 implements the approved Responses WebSocket path with Codex-local 15-minute Token aggregates while keeping HTTP on Relay-official Request reconciliation; #269 now reflects that contract, commit `48fa20ef` is published in PR #287, and code, full ae-cli/backend suites, diff checks, and two-axis review are complete. PR CI/merge, separate releases, production deployment, and a real WebSocket canary remain pending. The earlier qualification and recovery actions do not satisfy the two-subsequent-ordinary-commit or T13 adoption gates. The seven-day stability clock must restart from the first qualifying ordinary pool and aggregate Activity readback; #252 cleanup remains blocked and no cleanup has run.
 **T13 baseline (Day 0 not established):** The production baseline had one formal pool, one direct relation, `4,395` formal Token, and one formal Request. The excluded qualification canary increased the current readback to two formal pools, two direct relations, `173,357` formal Token, and seven formal Requests; its exact delta is one pool, one relation, `168,962` Token, and six Requests. Shadow remains isolated at `19,607` Token and v1 bucket/revision tables remain zero. The additional ordinary-workflow pool and final-at-execution SCM freshness gates remain unsatisfied; the current SCM recovery readback is green but expires under the 24-hour freshness contract.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
@@ -310,8 +310,10 @@ T01 contract publication (#253)
   every actionable finding before publication.
 - [x] Refresh #269 to the implemented contract without the obsolete sub2api
   dependency or Relay turn-discovery design.
-- [ ] Separately authorize and perform commit/PR, CLI/platform releases,
-  production deployment, and one real WebSocket commit-to-Activity
+- [x] Publish reviewed implementation commit `48fa20ef` in PR #287 without a
+  release, deployment, or production mutation.
+- [ ] Complete PR CI/merge, then separately authorize and perform CLI/platform
+  releases, production deployment, and one real WebSocket commit-to-Activity
   conservation canary.
 
 ## Cross-Ticket Invariants
