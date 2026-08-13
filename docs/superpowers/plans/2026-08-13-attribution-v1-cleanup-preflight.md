@@ -21,8 +21,8 @@ test transaction. It does not authorize any of the following:
 
 Cleanup cannot start until all of these are true in the same execution window:
 
-- #278 has observed at least two genuine subsequent ordinary Agent Infra
-  commits through hooks without manual sync;
+- #278 has observed at least two genuine subsequent ordinary commits from any
+  eligible Repository through hooks without manual sync;
 - at least one of those workflows has produced a new ordinary
   `formal_v2` direct/shared pool and aggregate Activity has confirmed it;
 - seven continuous days have elapsed from that qualifying pool without a
