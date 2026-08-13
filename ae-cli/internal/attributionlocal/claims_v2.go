@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +29,7 @@ var (
 	v2ThreadIDPattern          = regexp.MustCompile(`thread\.id=([^ }]+)`)
 	v2TurnIDPattern            = regexp.MustCompile(`turn\.id=([^ }]+)`)
 	v2SuccessfulResponseStatus = regexp.MustCompile(` status=2[0-9]{2} `)
+	v2WrappedPatchPattern      = regexp.MustCompile(`(?s)^\s*const\s+patch\s*=\s*("(?:\\.|[^"\\])*")\s*;\s*text\s*\(\s*await\s+tools\.apply_patch\s*\(\s*patch\s*\)\s*\)\s*;\s*$`)
 )
 
 type V2ClaimScanOptions struct {
@@ -452,9 +454,9 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 						current.transportIDs[transportID] = struct{}{}
 					}
 				}
-				if compactIsPatchTool(row.Payload.Name) {
+				if patch := v2StructuredPatchInput(row.Payload.Name, row.Payload.Input, row.Payload.Arguments); patch != "" {
 					opts := options[index]
-					current.mutations = append(current.mutations, v2PatchMutations(ctx, row.Payload.Input+"\n"+row.Payload.Arguments, opts.RepoRoot, opts.CommitSHA, current.replayFiles)...)
+					current.mutations = append(current.mutations, v2PatchMutations(ctx, patch, opts.RepoRoot, opts.CommitSHA, current.replayFiles)...)
 				}
 			}
 		case "event_msg":
@@ -556,6 +558,26 @@ func buildCodexV2ClaimCandidates(ctx context.Context, path, sessionID string, op
 		result = append(result, candidate)
 	}
 	return result
+}
+
+func v2StructuredPatchInput(toolName, input, arguments string) string {
+	payload := input + "\n" + arguments
+	if compactIsPatchTool(toolName) {
+		return payload
+	}
+	match := v2WrappedPatchPattern.FindStringSubmatch(payload)
+	if len(match) != 2 {
+		return ""
+	}
+	patch, err := strconv.Unquote(match[1])
+	if err != nil {
+		return ""
+	}
+	patch = strings.TrimSpace(patch)
+	if !strings.HasPrefix(patch, "*** Begin Patch\n") || !strings.HasSuffix(patch, "\n*** End Patch") {
+		return ""
+	}
+	return patch
 }
 
 func v2PatchMutations(ctx context.Context, patch, repoRoot, commitSHA string, replayFiles map[string]v2ReplayFile) []v2Mutation {
