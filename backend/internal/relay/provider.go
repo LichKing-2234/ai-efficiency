@@ -69,6 +69,11 @@ type PlatformChatCompleter interface {
 	ChatCompletionForPlatform(ctx context.Context, platform string, req ChatCompletionRequest) (*ChatCompletionResponse, error)
 }
 
+// ProtocolCompleter sends a probe through one explicitly selected client protocol.
+type ProtocolCompleter interface {
+	CompletionForProtocol(ctx context.Context, platform, protocol string, req ChatCompletionRequest) (*ChatCompletionResponse, error)
+}
+
 // PlatformModelLister is an optional extension for relay implementations that
 // expose platform-native model-list endpoints.
 type PlatformModelLister interface {

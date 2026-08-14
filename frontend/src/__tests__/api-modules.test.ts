@@ -261,8 +261,8 @@ describe('user API aggregate smoke', () => {
     await getUserProviderModels(7, '42', 'openai')
     expect(mockClient.get).toHaveBeenCalledWith('/user/providers/7/groups/42/models', { params: { platform: 'openai' } })
 
-    await testUserProvider(7, { platform: 'openai', group_id: '42', model: 'gpt-5.4', prompt: 'Hi' })
-    expect(mockClient.post).toHaveBeenCalledWith('/user/providers/7/test', { platform: 'openai', group_id: '42', model: 'gpt-5.4', prompt: 'Hi' })
+    await testUserProvider(7, { platform: 'openai', group_id: '42', model: 'gpt-5.4', protocol: 'responses' })
+    expect(mockClient.post).toHaveBeenCalledWith('/user/providers/7/test', { platform: 'openai', group_id: '42', model: 'gpt-5.4', protocol: 'responses' })
   })
 })
 

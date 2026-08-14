@@ -9,6 +9,7 @@ import { authSourceLabel, userRoleLabel } from '@/utils/displayLabels'
 import type {
   UserProviderTestResult,
   UserProviderModel,
+  UserProviderProtocol,
   UserProviderSummary,
 } from '@/types'
 import {
@@ -41,9 +42,10 @@ const providerModelOptions = ref<UserProviderModel[]>([])
 const providerModelsLoading = ref(false)
 const providerModelsMessage = ref('')
 const providerModelsRequestId = ref(0)
-const providerTestPrompt = ref('Hi')
+const providerTestProtocol = ref<UserProviderProtocol | ''>('')
 const providerTestLoading = ref(false)
 const providerTestResult = ref<UserProviderTestResult | null>(null)
+const providerTestRequestId = ref(0)
 const copiedCommandKey = ref('')
 const credentialMutationLoading = ref(false)
 const selectedConfigMethod = ref<'manual' | 'automatic' | 'ccswitch' | null>(null)
@@ -167,7 +169,7 @@ const selectedSecretKey = computed(() => {
 const selectedSecret = computed(() => (selectedSecretKey.value ? sessionSecrets[selectedSecretKey.value] ?? '' : ''))
 const selectedKeyValue = computed(() => selectedSecret.value || selectedGroup.value?.credential.key || '')
 const canReveal = computed(() => !!selectedKeyValue.value)
-const canTestProvider = computed(() => !!selectedKeyValue.value && !!providerTestModel.value.trim())
+const canTestProvider = computed(() => !!selectedKeyValue.value && !!providerTestModel.value.trim() && !!providerTestProtocol.value)
 const isSecretRevealed = computed(() => !!selectedSecretKey.value && !!revealedSecretKeys[selectedSecretKey.value])
 const displayedSecret = computed(() => {
   if (!selectedKeyValue.value) return ''
@@ -191,6 +193,21 @@ function providerModelLabel(model: UserProviderModel) {
   return `${displayName} (${model.id})`
 }
 
+const protocolNames: Record<UserProviderProtocol, string> = {
+  responses: 'Responses',
+  chat_completions: 'Chat Completions',
+  messages: 'Messages',
+  generate_content: 'GenerateContent',
+  antigravity_generate_content: 'Antigravity GenerateContent',
+}
+
+function providerProtocolLabel(protocol: UserProviderProtocol) {
+  const kind = protocol === selectedGroup.value?.recommended_protocol
+    ? t('user.protocolRecommended')
+    : t('user.protocolCompatibility')
+  return `${protocolNames[protocol]} - ${kind}`
+}
+
 function selectDefaultGroup(provider: UserProviderSummary | null) {
   selectedGroupId.value = provider?.groups[0]?.group_id ?? null
 }
@@ -211,8 +228,14 @@ function preferredConfigMethod(): 'manual' | 'ccswitch' {
   return ccSwitchImports.value.length > 0 ? 'ccswitch' : 'manual'
 }
 
-function resetPostKeyFlow() {
+function invalidateProviderTest() {
+  providerTestRequestId.value += 1
   providerTestResult.value = null
+  providerTestLoading.value = false
+}
+
+function resetPostKeyFlow() {
+  invalidateProviderTest()
   selectedConfigMethod.value = preferredConfigMethod()
 }
 
@@ -512,6 +535,8 @@ async function handleTestProvider() {
     providerTestResult.value = { success: false, message: t('user.modelRequired') }
     return
   }
+  const requestId = providerTestRequestId.value + 1
+  providerTestRequestId.value = requestId
   providerTestLoading.value = true
   providerTestResult.value = null
   try {
@@ -519,22 +544,53 @@ async function handleTestProvider() {
       platform: selectedGroup.value.platform,
       group_id: selectedGroup.value.group_id,
       model,
-      prompt: providerTestPrompt.value.trim() || 'Hi',
+      protocol: providerTestProtocol.value || undefined,
     })
+    if (providerTestRequestId.value !== requestId) return
     providerTestResult.value = res.data.data ?? { success: false, message: t('user.requestFailed') }
   } catch (err: any) {
+    if (providerTestRequestId.value !== requestId) return
     providerTestResult.value = {
       success: false,
       message: err.response?.data?.message || err.message || t('user.requestFailed'),
     }
   } finally {
-    providerTestLoading.value = false
+    if (providerTestRequestId.value === requestId) {
+      providerTestLoading.value = false
+    }
   }
 }
 
 watch(onboardingActiveStep, (step) => {
   if (step === 0) onboardingVisibleStep.value = 0
 }, { immediate: true })
+
+watch(
+  () => [
+    selectedProvider.value?.id,
+    selectedGroup.value?.group_id,
+    selectedKeyValue.value,
+    providerTestModel.value,
+    providerTestProtocol.value,
+  ],
+  () => {
+    invalidateProviderTest()
+  }
+)
+
+watch(
+  () => [
+    selectedProvider.value?.id,
+    selectedGroup.value?.group_id,
+    selectedGroup.value?.recommended_protocol,
+    selectedGroup.value?.supported_protocols?.join(','),
+  ],
+  () => {
+    const group = selectedGroup.value
+    providerTestProtocol.value = group?.recommended_protocol || group?.supported_protocols?.[0] || ''
+  },
+  { immediate: true }
+)
 
 watch(
   () => [
@@ -871,7 +927,7 @@ onBeforeUnmount(() => {
                     <p class="mt-1 text-xs text-gray-500">
                       {{ t('user.testHelp') }}
                     </p>
-                    <div class="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                    <div class="mt-3 grid gap-3 sm:grid-cols-3">
                       <div>
                         <label class="block text-xs font-medium uppercase tracking-wide text-gray-500">{{ t('user.platform') }}</label>
                         <ElInput
@@ -879,6 +935,23 @@ onBeforeUnmount(() => {
                           disabled
                           class="mt-1 w-full"
                         />
+                      </div>
+                      <div>
+                        <label class="block text-xs font-medium uppercase tracking-wide text-gray-500">{{ t('user.protocol') }}</label>
+                        <ElSelect
+                          v-model="providerTestProtocol"
+                          data-testid="user-provider-test-protocol"
+                          :teleported="false"
+                          :aria-label="t('user.protocol')"
+                          class="mt-1 w-full"
+                        >
+                          <ElOption
+                            v-for="protocol in selectedGroup.supported_protocols || []"
+                            :key="protocol"
+                            :label="providerProtocolLabel(protocol)"
+                            :value="protocol"
+                          />
+                        </ElSelect>
                       </div>
                       <div>
                         <label class="block text-xs font-medium uppercase tracking-wide text-gray-500">{{ t('user.model') }}</label>
@@ -909,23 +982,22 @@ onBeforeUnmount(() => {
                         <p v-else-if="providerModelsMessage" class="mt-1 text-xs text-gray-500">{{ providerModelsMessage }}</p>
                       </div>
                     </div>
-                    <div class="mt-3">
-                      <label class="block text-xs font-medium uppercase tracking-wide text-gray-500">{{ t('user.prompt') }}</label>
-                      <ElInput
-                        v-model="providerTestPrompt"
-                        data-testid="user-provider-test-prompt"
-                        type="text"
-                        placeholder="Hi"
-                        class="mt-1 w-full"
-                      />
-                    </div>
                     <div class="mt-3 flex flex-wrap items-center gap-3">
                       <ElAlert
                         v-if="providerTestResult"
+                        class="min-w-0 max-w-full"
                         :type="providerTestResult.success ? 'success' : 'error'"
                         :closable="false"
-                        :title="providerTestResult.message"
-                      />
+                      >
+                        <template #title>
+                          <div
+                            data-testid="user-provider-test-message"
+                            :class="providerTestResult.success ? '' : 'max-h-64 overflow-y-auto break-all whitespace-pre-wrap'"
+                          >
+                            {{ providerTestResult.message }}
+                          </div>
+                        </template>
+                      </ElAlert>
                     </div>
                     <div v-if="providerTestResult?.response" class="mt-3 rounded-md bg-gray-50 p-3 text-sm text-gray-700">
                       {{ providerTestResult.response }}

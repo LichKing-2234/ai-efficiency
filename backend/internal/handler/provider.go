@@ -185,8 +185,10 @@ type userProviderTestRequest struct {
 	Platform string `json:"platform"`
 	GroupID  string `json:"group_id"`
 	Model    string `json:"model"`
-	Prompt   string `json:"prompt"`
+	Protocol string `json:"protocol"`
 }
+
+const userProviderTestPrompt = "Reply with OK"
 
 func toAdminProviderResponse(p *ent.RelayProvider) adminProviderResponse {
 	return adminProviderResponse{
@@ -411,10 +413,6 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 		}
 	}
 
-	prompt := strings.TrimSpace(req.Prompt)
-	if prompt == "" {
-		prompt = "Hi"
-	}
 	platform := strings.TrimSpace(req.Platform)
 	if platform == "" {
 		pkg.Error(c, http.StatusBadRequest, "platform is required")
@@ -441,8 +439,22 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 		pkg.Success(c, gin.H{"success": false, "message": fmt.Sprintf("list current allowed groups: %v", err)})
 		return
 	}
-	if !containsAllowedGroup(allowedGroups, groupID, platform) {
+	selectedGroup := findAllowedGroup(allowedGroups, groupID, platform)
+	if selectedGroup == nil {
 		pkg.Success(c, gin.H{"success": false, "message": fmt.Sprintf("group %s is not currently allowed for platform %s", groupID, platform)})
+		return
+	}
+	capabilities := relay.StableProtocolCapabilities(*selectedGroup)
+	if capabilities.Recommended == "" || len(capabilities.Supported) == 0 {
+		pkg.Error(c, http.StatusBadRequest, fmt.Sprintf("group %s does not expose a stable test protocol", groupID))
+		return
+	}
+	protocol := strings.TrimSpace(req.Protocol)
+	if protocol == "" {
+		protocol = capabilities.Recommended
+	}
+	if protocol != "" && !containsString(capabilities.Supported, protocol) {
+		pkg.Error(c, http.StatusBadRequest, fmt.Sprintf("protocol %s is not supported for group %s", protocol, groupID))
 		return
 	}
 	keys, err := rp.ListUserAPIKeys(ctx, int64(*user.RelayUserID))
@@ -476,20 +488,30 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 	testReq := relay.ChatCompletionRequest{
 		Model: model,
 		Messages: []relay.ChatMessage{
-			{Role: "user", Content: prompt},
+			{Role: "user", Content: userProviderTestPrompt},
 		},
 		MaxTokens: &maxTokens,
 	}
-	var resp *relay.ChatCompletionResponse
-	if platformCompleter, ok := testProvider.(relay.PlatformChatCompleter); ok {
-		resp, err = platformCompleter.ChatCompletionForPlatform(ctx, platform, testReq)
-	} else {
-		resp, err = testProvider.ChatCompletion(ctx, testReq)
+	protocolCompleter, ok := testProvider.(relay.ProtocolCompleter)
+	if !ok {
+		pkg.Success(c, gin.H{
+			"success": false,
+			"message": "relay provider does not support protocol compatibility probes",
+		})
+		return
 	}
+	resp, err := protocolCompleter.CompletionForProtocol(ctx, platform, protocol, testReq)
 	if err != nil {
 		pkg.Success(c, gin.H{
 			"success": false,
 			"message": err.Error(),
+		})
+		return
+	}
+	if resp == nil || strings.TrimSpace(resp.Content) == "" {
+		pkg.Success(c, gin.H{
+			"success": false,
+			"message": fmt.Sprintf("relay: %s returned empty assistant text", protocol),
 		})
 		return
 	}
@@ -498,9 +520,7 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 		"success": true,
 		"message": "Connection successful",
 	}
-	if content := strings.TrimSpace(resp.Content); content != "" {
-		data["response"] = content
-	}
+	data["response"] = strings.TrimSpace(resp.Content)
 	pkg.Success(c, data)
 }
 
@@ -617,8 +637,22 @@ func (h *ProviderHandler) Models(c *gin.Context) {
 }
 
 func containsAllowedGroup(groups []relay.Group, groupID, platform string) bool {
+	return findAllowedGroup(groups, groupID, platform) != nil
+}
+
+func findAllowedGroup(groups []relay.Group, groupID, platform string) *relay.Group {
 	for _, group := range groups {
 		if strconv.FormatInt(group.ID, 10) == strings.TrimSpace(groupID) && strings.EqualFold(strings.TrimSpace(group.Platform), strings.TrimSpace(platform)) {
+			matched := group
+			return &matched
+		}
+	}
+	return nil
+}
+
+func containsString(values []string, value string) bool {
+	for _, candidate := range values {
+		if candidate == value {
 			return true
 		}
 	}

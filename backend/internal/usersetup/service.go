@@ -65,10 +65,12 @@ type GroupCredentialState struct {
 }
 
 type GroupCredentialSummary struct {
-	GroupID    string               `json:"group_id"`
-	GroupName  string               `json:"group_name"`
-	Platform   string               `json:"platform"`
-	Credential GroupCredentialState `json:"credential"`
+	GroupID             string               `json:"group_id"`
+	GroupName           string               `json:"group_name"`
+	Platform            string               `json:"platform"`
+	SupportedProtocols  []string             `json:"supported_protocols"`
+	RecommendedProtocol string               `json:"recommended_protocol"`
+	Credential          GroupCredentialState `json:"credential"`
 }
 
 type ProviderSummary struct {
@@ -278,10 +280,13 @@ func (s *Service) summarizeGroups(ctx context.Context, provider *ent.RelayProvid
 		if strings.TrimSpace(groupID) == "" || strings.TrimSpace(group.Platform) == "" {
 			continue
 		}
+		capabilities := relay.StableProtocolCapabilities(group)
 		groupMap[groupID] = GroupCredentialSummary{
-			GroupID:   groupID,
-			GroupName: firstNonEmptyString(strings.TrimSpace(group.Name), groupID),
-			Platform:  strings.TrimSpace(group.Platform),
+			GroupID:             groupID,
+			GroupName:           firstNonEmptyString(strings.TrimSpace(group.Name), groupID),
+			Platform:            strings.TrimSpace(group.Platform),
+			SupportedProtocols:  capabilities.Supported,
+			RecommendedProtocol: capabilities.Recommended,
 			Credential: GroupCredentialState{
 				State: "missing",
 			},

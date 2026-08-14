@@ -331,10 +331,19 @@ export interface UserGroupCredentialState {
   last_used_at?: string | null
 }
 
+export type UserProviderProtocol =
+  | 'responses'
+  | 'chat_completions'
+  | 'messages'
+  | 'generate_content'
+  | 'antigravity_generate_content'
+
 export interface UserGroupCredentialSummary {
   group_id: string
   group_name: string
   platform: string
+  supported_protocols: UserProviderProtocol[]
+  recommended_protocol: UserProviderProtocol
   credential: UserGroupCredentialState
 }
 
@@ -374,7 +383,7 @@ export interface UserProviderTestRequest {
   platform: string
   group_id: string
   model: string
-  prompt?: string
+  protocol?: UserProviderProtocol
 }
 
 export interface UserProviderTestResult {

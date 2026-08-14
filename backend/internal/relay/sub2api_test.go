@@ -92,6 +92,181 @@ func TestNewSub2apiProviderNormalizesInferenceBaseURL(t *testing.T) {
 	}
 }
 
+func TestProtocolProbeReturnsCompleteUpstreamError(t *testing.T) {
+	const upstreamBody = `{"error":{"message":"upstream failed","code":"terminal_event_missing","details":{"reason":"response.completed was not received"}}}`
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/responses", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(upstreamBody))
+	})
+
+	p := newTestProvider(t, mux).(relay.ProtocolCompleter)
+	_, err := p.CompletionForProtocol(context.Background(), "openai", relay.ProtocolResponses, relay.ChatCompletionRequest{
+		Model:    "gpt-5.4",
+		Messages: []relay.ChatMessage{{Role: "user", Content: "Reply with OK"}},
+	})
+	if err == nil {
+		t.Fatal("CompletionForProtocol() error = nil, want upstream error")
+	}
+	if !strings.Contains(err.Error(), upstreamBody) {
+		t.Fatalf("CompletionForProtocol() error = %q, want complete upstream body %q", err, upstreamBody)
+	}
+}
+
+func TestProtocolCompleterUsesStableRoutes(t *testing.T) {
+	tests := []struct {
+		name     string
+		platform string
+		protocol string
+		path     string
+	}{
+		{name: "openai responses", platform: "openai", protocol: relay.ProtocolResponses, path: "/v1/responses"},
+		{name: "openai chat", platform: "openai", protocol: relay.ProtocolChatCompletions, path: "/v1/chat/completions"},
+		{name: "openai messages", platform: "openai", protocol: relay.ProtocolMessages, path: "/v1/messages"},
+		{name: "anthropic messages", platform: "anthropic", protocol: relay.ProtocolMessages, path: "/v1/messages"},
+		{name: "anthropic responses", platform: "anthropic", protocol: relay.ProtocolResponses, path: "/v1/responses"},
+		{name: "anthropic chat", platform: "anthropic", protocol: relay.ProtocolChatCompletions, path: "/v1/chat/completions"},
+		{name: "gemini native", platform: "gemini", protocol: relay.ProtocolGenerateContent, path: "/v1beta/models/test-model:generateContent"},
+		{name: "gemini chat", platform: "gemini", protocol: relay.ProtocolChatCompletions, path: "/v1/chat/completions"},
+		{name: "antigravity messages", platform: "antigravity", protocol: relay.ProtocolMessages, path: "/antigravity/v1/messages"},
+		{name: "antigravity native", platform: "antigravity", protocol: relay.ProtocolAntigravityGenerateContent, path: "/antigravity/v1beta/models/test-model:generateContent"},
+		{name: "grok responses", platform: "grok", protocol: relay.ProtocolResponses, path: "/v1/responses"},
+		{name: "grok chat", platform: "grok", protocol: relay.ProtocolChatCompletions, path: "/v1/chat/completions"},
+		{name: "grok messages", platform: "grok", protocol: relay.ProtocolMessages, path: "/v1/messages"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc(tt.path, func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Authorization") != "Bearer test-admin-key" {
+					t.Fatalf("authorization = %q, want configured API key", r.Header.Get("Authorization"))
+				}
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Fatalf("decode request: %v", err)
+				}
+				if tt.protocol != relay.ProtocolGenerateContent && tt.protocol != relay.ProtocolAntigravityGenerateContent && body["model"] != "test-model" {
+					t.Fatalf("model = %v, want test-model", body["model"])
+				}
+				switch tt.protocol {
+				case relay.ProtocolResponses:
+					if body["stream"] != false || body["max_output_tokens"] != float64(16) || len(body["input"].([]any)) != 1 {
+						t.Fatalf("responses payload = %#v", body)
+					}
+				case relay.ProtocolChatCompletions:
+					if body["stream"] != false || body["max_tokens"] != float64(16) || len(body["messages"].([]any)) != 1 {
+						t.Fatalf("chat payload = %#v", body)
+					}
+				case relay.ProtocolMessages:
+					if body["stream"] != false || body["max_tokens"] != float64(16) || len(body["messages"].([]any)) != 1 {
+						t.Fatalf("messages payload = %#v", body)
+					}
+					if r.Header.Get("x-api-key") != "test-admin-key" || r.Header.Get("anthropic-version") != "2023-06-01" {
+						t.Fatalf("messages headers = %#v", r.Header)
+					}
+				case relay.ProtocolGenerateContent, relay.ProtocolAntigravityGenerateContent:
+					config, ok := body["generationConfig"].(map[string]any)
+					if !ok || config["maxOutputTokens"] != float64(16) || len(body["contents"].([]any)) != 1 {
+						t.Fatalf("generate content payload = %#v", body)
+					}
+					if r.Header.Get("x-goog-api-key") != "test-admin-key" {
+						t.Fatalf("x-goog-api-key = %q, want configured API key", r.Header.Get("x-goog-api-key"))
+					}
+				}
+				w.Header().Set("Content-Type", "application/json")
+				switch tt.protocol {
+				case relay.ProtocolResponses:
+					_, _ = io.WriteString(w, `{"id":"resp_test","object":"response","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"OK"}]}],"usage":{"total_tokens":3}}`)
+				case relay.ProtocolChatCompletions:
+					_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}`)
+				case relay.ProtocolMessages:
+					_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"OK"}],"stop_reason":"end_turn","usage":{"input_tokens":2,"output_tokens":1}}`)
+				case relay.ProtocolGenerateContent, relay.ProtocolAntigravityGenerateContent:
+					_, _ = io.WriteString(w, `{"candidates":[{"content":{"parts":[{"text":"OK"}]},"finishReason":"STOP"}],"usageMetadata":{"totalTokenCount":3}}`)
+				}
+			})
+
+			maxTokens := 16
+			p := newTestProvider(t, mux).(relay.ProtocolCompleter)
+			response, err := p.CompletionForProtocol(context.Background(), tt.platform, tt.protocol, relay.ChatCompletionRequest{
+				Model:     "requested-model",
+				Messages:  []relay.ChatMessage{{Role: "user", Content: "Reply with OK"}},
+				MaxTokens: &maxTokens,
+			})
+			if err != nil {
+				t.Fatalf("CompletionForProtocol() error = %v", err)
+			}
+			if response.Content != "OK" {
+				t.Fatalf("CompletionForProtocol() content = %q, want OK", response.Content)
+			}
+		})
+	}
+}
+
+func TestProtocolCompleterRejectsMissingTerminalResponse(t *testing.T) {
+	tests := []struct {
+		name     string
+		platform string
+		protocol string
+		path     string
+		body     string
+		want     string
+	}{
+		{
+			name: "chat", platform: "openai", protocol: relay.ProtocolChatCompletions,
+			path: "/v1/chat/completions", body: `{"choices":[{"message":{"content":"partial"}}]}`,
+			want: "missing terminal finish_reason",
+		},
+		{
+			name: "messages", platform: "anthropic", protocol: relay.ProtocolMessages,
+			path: "/v1/messages", body: `{"content":[{"type":"text","text":"partial"}]}`,
+			want: "missing terminal stop_reason",
+		},
+		{
+			name: "gemini", platform: "gemini", protocol: relay.ProtocolGenerateContent,
+			path: "/v1beta/models/test-model:generateContent", body: `{"candidates":[{"content":{"parts":[{"text":"partial"}]}}]}`,
+			want: "missing terminal finishReason",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc(tt.path, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, tt.body)
+			})
+			p := newTestProvider(t, mux).(relay.ProtocolCompleter)
+			_, err := p.CompletionForProtocol(context.Background(), tt.platform, tt.protocol, relay.ChatCompletionRequest{
+				Messages: []relay.ChatMessage{{Role: "user", Content: "Reply with OK"}},
+			})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("CompletionForProtocol() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestProtocolCompleterIgnoresNonTextMessagesContent(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/messages", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"content":[{"type":"tool_use","text":"not assistant text"}],"stop_reason":"tool_use"}`)
+	})
+	p := newTestProvider(t, mux).(relay.ProtocolCompleter)
+	response, err := p.CompletionForProtocol(context.Background(), "anthropic", relay.ProtocolMessages, relay.ChatCompletionRequest{
+		Messages: []relay.ChatMessage{{Role: "user", Content: "Reply with OK"}},
+	})
+	if err != nil {
+		t.Fatalf("CompletionForProtocol() error = %v", err)
+	}
+	if response.Content != "" {
+		t.Fatalf("CompletionForProtocol() content = %q, want empty for non-text block", response.Content)
+	}
+}
+
 func TestPing(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -369,7 +544,7 @@ func TestGetUserIncludesSubscribedGroups(t *testing.T) {
 						"user_id":  1,
 						"group_id": 6,
 						"status":   "active",
-						"group":    map[string]any{"id": 6, "name": "Group Alpha", "platform": "openai"},
+						"group":    map[string]any{"id": 6, "name": "Group Alpha", "platform": "openai", "allow_messages_dispatch": true},
 					},
 					map[string]any{
 						"id":       102,
@@ -389,7 +564,7 @@ func TestGetUserIncludesSubscribedGroups(t *testing.T) {
 		t.Fatalf("GetUser() unexpected error: %v", err)
 	}
 	if diff := cmp.Diff([]relay.Group{
-		{ID: 6, Name: "Group Alpha", Platform: "openai"},
+		{ID: 6, Name: "Group Alpha", Platform: "openai", AllowMessagesDispatch: true},
 		{ID: 10, Name: "Group Delta", Platform: "gemini"},
 	}, user.AllowedGroups); diff != "" {
 		t.Fatalf("subscribed groups mismatch (-want +got):\n%s", diff)
@@ -571,10 +746,11 @@ func TestListAllowedGroupsForUserUsesUserFactsAndGroupDetails(t *testing.T) {
 						"group_id": 5,
 						"status":   "active",
 						"group": map[string]any{
-							"id":                5,
-							"name":              "Group Gamma",
-							"platform":          "anthropic",
-							"subscription_type": "subscription",
+							"id":                      5,
+							"name":                    "Group Gamma",
+							"platform":                "anthropic",
+							"subscription_type":       "subscription",
+							"allow_messages_dispatch": true,
 						},
 					},
 					map[string]any{
@@ -622,7 +798,7 @@ func TestListAllowedGroupsForUserUsesUserFactsAndGroupDetails(t *testing.T) {
 		t.Fatalf("ListAllowedGroupsForUser() unexpected error: %v", err)
 	}
 	if diff := cmp.Diff([]relay.Group{
-		{ID: 5, Name: "Group Gamma", Platform: "anthropic", SubscriptionType: "subscription"},
+		{ID: 5, Name: "Group Gamma", Platform: "anthropic", SubscriptionType: "subscription", AllowMessagesDispatch: true},
 		{ID: 6, Name: "Group Alpha", Platform: "openai", IsExclusive: true, SubscriptionType: "standard"},
 	}, groups); diff != "" {
 		t.Fatalf("allowed groups mismatch (-want +got):\n%s", diff)
@@ -3224,7 +3400,7 @@ func TestListPlatformGroupsReturnsActivePlatformSummaries(t *testing.T) {
 			"data": map[string]any{
 				"items": []any{
 					map[string]any{"id": 5, "name": "Group Gamma", "platform": "anthropic", "status": "active", "account_count": 4, "active_account_count": 3},
-					map[string]any{"id": 6, "name": "Group Alpha", "platform": "openai", "status": "active", "account_count": 14, "active_account_count": 13},
+					map[string]any{"id": 6, "name": "Group Alpha", "platform": "openai", "status": "active", "allow_messages_dispatch": true, "account_count": 14, "active_account_count": 13},
 					map[string]any{"id": 7, "name": "Disabled", "platform": "gemini", "status": "disabled", "account_count": 1, "active_account_count": 1},
 				},
 				"page":  1,
@@ -3246,7 +3422,7 @@ func TestListPlatformGroupsReturnsActivePlatformSummaries(t *testing.T) {
 	}
 	if diff := cmp.Diff([]relay.Group{
 		{ID: 5, Name: "Group Gamma", Platform: "anthropic"},
-		{ID: 6, Name: "Group Alpha", Platform: "openai"},
+		{ID: 6, Name: "Group Alpha", Platform: "openai", AllowMessagesDispatch: true},
 	}, groups); diff != "" {
 		t.Fatalf("groups mismatch (-want +got):\n%s", diff)
 	}
