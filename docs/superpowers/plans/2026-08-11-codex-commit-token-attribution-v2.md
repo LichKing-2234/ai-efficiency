@@ -1,8 +1,8 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** T01-T12 and T14/T15 are implemented and released. `ae-cli/v0.2.0-preview.6` and platform `v0.1.0-preview.84` shipped T14/T15, and production runs Helm revision `84`; the CLI-only wrapper-proof follow-up shipped as `ae-cli/v0.2.0-preview.7`. T16 verified automatic Repository registration, bounded/resumable fail-closed recovery, and a three-commit HTTP qualification branch. T17 implements the approved Responses WebSocket path with Codex-local 15-minute Token aggregates while keeping HTTP on Relay-official Request reconciliation. PR #287 merged as `39a4c88b`; exact merge-SHA main CI run `31712698968` passed backend, frontend, ae-cli, and deploy-static after both follow-up P1 scanner findings were fixed with RED/GREEN regressions. #269 is now blocked only on separately authorized CLI/platform releases, production deployment, and a real WebSocket canary. The earlier qualification and recovery actions do not satisfy the two-subsequent-ordinary-commit or T13 adoption gates. The seven-day stability clock must restart from the first qualifying ordinary pool and aggregate Activity readback; #252 cleanup remains blocked and no cleanup has run.
-**T13 baseline (Day 0 not established):** The production baseline had one formal pool, one direct relation, `4,395` formal Token, and one formal Request. The excluded qualification canary increased the current readback to two formal pools, two direct relations, `173,357` formal Token, and seven formal Requests; its exact delta is one pool, one relation, `168,962` Token, and six Requests. Shadow remains isolated at `19,607` Token and v1 bucket/revision tables remain zero. The additional ordinary-workflow pool and final-at-execution SCM freshness gates remain unsatisfied; the current SCM recovery readback is green but expires under the 24-hour freshness contract.
+**Status:** T01-T12 and T14/T15 are implemented and released. T16 verified automatic Repository registration, bounded/resumable fail-closed recovery, and a three-commit HTTP qualification branch. T17 shipped in `ae-cli/v0.2.0-preview.8` and platform `v0.1.0-preview.85`; production runs Helm revision `85`. Two authorized real Codex 0.147 WebSocket canary commits correctly failed closed because the released scanner expected a raw `response.completed` row that current Codex no longer persists. The exact affected commits added no claim, pool, relation, Request, or Token. PR #290 repairs the current trusted-log shape by joining literal non-warmup WebSocket transport and successful sampling rows only by exact thread/turn identity. Focused RED/GREEN coverage, the full ae-cli suite, two-axis review, real TUI read-only replay as one gap-free `codex_local` claim with `294,210` Token, and the first hosted CI run `31721565534` all passed. The repair still requires merge, a newly authorized CLI release, and a successful production canary. The earlier qualification, repair, and canary actions do not satisfy the two-subsequent-ordinary-commit or T13 adoption gates. The seven-day stability clock must restart from the first qualifying ordinary pool and aggregate Activity readback; #252 cleanup remains blocked and no cleanup has run.
+**T13 baseline (Day 0 not established):** The production baseline had one formal pool, one direct relation, `4,395` formal Token, and one formal Request. The latest pre-WebSocket-canary readback had three formal pools, three direct relations, `1,146,707` formal Token, and 12 formal Request claims. Both failed WebSocket canary commits contributed zero, so that readback was unchanged by them. Shadow remains isolated and v1 bucket/revision tables remain zero. The additional ordinary-workflow pool and final-at-execution SCM freshness gates remain unsatisfied; SCM freshness must be read at the final gate rather than inferred from an older recovery.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -316,8 +316,24 @@ T01 contract publication (#253)
 - [x] Merge PR #287 as `39a4c88b` and verify exact merge-SHA main CI run
   `31712698968` passes backend, frontend, ae-cli, and deploy-static without a
   release, deployment, or production mutation.
-- [ ] Separately authorize and perform CLI/platform releases, production
-  deployment, and one real WebSocket commit-to-Activity conservation canary.
+- [x] Release `ae-cli/v0.2.0-preview.8` and platform
+  `v0.1.0-preview.85`, then deploy production Helm revision `85` with live and
+  ready checks green.
+- [x] Run two real Codex 0.147 WebSocket commit canaries through ordinary
+  post-commit hooks. Both failed closed on the missing raw completion-log
+  shape, and exact production readback proved zero claim, pool, relation,
+  Request, or Token rows for either commit.
+- [x] Reproduce that released-scanner failure with a focused regression, join
+  the trusted transport and successful-sampling rows by exact thread/turn,
+  keep older raw completion compatibility, pass the full ae-cli suite, and
+  replay the real TUI fixture locally as one gap-free `codex_local` claim with
+  `294,210` Token and one deterministic commit allocation.
+- [x] Complete final two-axis code review and the first PR #290 hosted CI run;
+  both review axes have zero findings and run `31721565534` passed all four
+  jobs.
+- [ ] Merge the scanner repair, then separately
+  authorize a new CLI release and run one successful real WebSocket
+  commit-to-Activity conservation canary while retaining its production data.
 
 ## Cross-Ticket Invariants
 
