@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** T01-T12 and T14/T15 are implemented and released. T16 verified automatic Repository registration, bounded/resumable fail-closed recovery, and a three-commit HTTP qualification branch. T17 shipped in `ae-cli/v0.2.0-preview.8` and platform `v0.1.0-preview.85`; production runs Helm revision `85`. Two authorized real Codex 0.147 WebSocket canary commits correctly failed closed because the released scanner expected a raw `response.completed` row that current Codex no longer persists. The exact affected commits added no claim, pool, relation, Request, or Token. PR #290 repairs the current trusted-log shape by joining literal non-warmup WebSocket transport and successful sampling rows only by exact thread/turn identity. Focused RED/GREEN coverage, the full ae-cli suite, two-axis review, real TUI read-only replay as one gap-free `codex_local` claim with `294,210` Token, and the first hosted CI run `31721565534` all passed. The repair still requires merge, a newly authorized CLI release, and a successful production canary. The earlier qualification, repair, and canary actions do not satisfy the two-subsequent-ordinary-commit or T13 adoption gates. The seven-day stability clock must restart from the first qualifying ordinary pool and aggregate Activity readback; #252 cleanup remains blocked and no cleanup has run.
+**Status:** T01-T12 and T14/T15 are implemented and released. T16 verified automatic Repository registration, bounded/resumable fail-closed recovery, and a three-commit HTTP qualification branch. T17 shipped in `ae-cli/v0.2.0-preview.8` and platform `v0.1.0-preview.85`; production runs Helm revision `85`. PR #290 merged as `aecc7754`, main CI `31766333707` and CLI release run `31766681211` passed, and `ae-cli/v0.2.0-preview.9` shipped without a new platform release or Helm rollout. A real TUI first-turn canary then produced one acknowledged `codex_local` group, two authoritative 15-minute pools, 11 response increments, exactly `348,018` Token, zero coverage gaps, and zero Request claims. A same-session second-turn canary correctly failed closed with no production row but exposed that preview.9 unconditionally resets `total_token_usage` even though current Codex 0.147 keeps it session-cumulative. The minimal dual-baseline scanner repair is now under test and still requires merge, a new CLI release, and a successful retained multi-turn canary. These canaries do not satisfy the two-subsequent-ordinary-commit or T13 adoption gates. The seven-day stability clock must restart from the first qualifying ordinary pool and aggregate Activity readback; #252 cleanup remains blocked and no cleanup has run.
 **T13 baseline (Day 0 not established):** The production baseline had one formal pool, one direct relation, `4,395` formal Token, and one formal Request. The latest pre-WebSocket-canary readback had three formal pools, three direct relations, `1,146,707` formal Token, and 12 formal Request claims. Both failed WebSocket canary commits contributed zero, so that readback was unchanged by them. Shadow remains isolated and v1 bucket/revision tables remain zero. The additional ordinary-workflow pool and final-at-execution SCM freshness gates remain unsatisfied; SCM freshness must be read at the final gate rather than inferred from an older recovery.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
@@ -308,9 +308,10 @@ T01 contract publication (#253)
   finalization, and cleanup with focused tests.
 - [x] Run final full ae-cli/backend suites, diff checks, and code review; close
   every actionable finding before publication.
-- [x] Resolve the follow-up PR P1 findings by resetting per-turn cumulative
-  Token baselines and preserving `codex_local` across failed-scan recovery,
-  with focused RED/GREEN regressions and the full ae-cli suite.
+- [x] Resolve the follow-up PR P1 findings as then understood by resetting the
+  cumulative baseline at each turn and preserving `codex_local` across
+  failed-scan recovery, with focused RED/GREEN regressions and the full ae-cli
+  suite. The later real multi-turn canary superseded the reset-only assumption.
 - [x] Refresh #269 to the implemented contract without the obsolete sub2api
   dependency or Relay turn-discovery design.
 - [x] Merge PR #287 as `39a4c88b` and verify exact merge-SHA main CI run
@@ -331,9 +332,18 @@ T01 contract publication (#253)
 - [x] Complete final two-axis code review and the first PR #290 hosted CI run;
   both review axes have zero findings and run `31721565534` passed all four
   jobs.
-- [ ] Merge the scanner repair, then separately
-  authorize a new CLI release and run one successful real WebSocket
-  commit-to-Activity conservation canary while retaining its production data.
+- [x] Merge PR #290 as `aecc7754`, verify merge-SHA main CI run `31766333707`,
+  release `ae-cli/v0.2.0-preview.9` with run `31766681211`, and keep production
+  on platform `v0.1.0-preview.85` / Helm revision `85` because the repair is
+  CLI-only.
+- [x] Run a retained real TUI first-turn canary through the ordinary
+  post-commit hook. Its 11 increments materialized as two direct pools solely
+  because the turn crossed a 15-minute boundary; the pools conserve exactly
+  `348,018` Token with zero gaps and zero Request claims.
+- [ ] Replace unconditional per-turn cumulative reset with an exact first-row
+  choice between the prior session baseline and zero, keep both modes strict
+  thereafter, merge and release the reviewed CLI repair, and rerun the retained
+  same-session multi-turn commit as one gap-free single-pool Activity canary.
 
 ## Cross-Ticket Invariants
 

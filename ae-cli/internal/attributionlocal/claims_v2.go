@@ -438,6 +438,7 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 	currentTurnID := ""
 	var previousCumulativeUsage v2TokenUsage
 	var previousIncrementalUsage v2TokenUsage
+	firstTokenInTurn := false
 	err := forEachCodexJSONLLine(ctx, path, func(_ int, raw []byte) error {
 		var row struct {
 			Type      string `json:"type"`
@@ -482,8 +483,7 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 				return nil
 			}
 			if turnID != currentTurnID {
-				previousCumulativeUsage = v2TokenUsage{}
-				previousIncrementalUsage = v2TokenUsage{}
+				firstTokenInTurn = true
 			}
 			currentTurnID = turnID
 			for _, turns := range turnSets {
@@ -513,13 +513,15 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 			if strings.TrimSpace(row.Payload.Type) == "token_count" && row.Payload.Info != nil {
 				var cumulativeUsage v2TokenUsage
 				tokenUsage, cumulativeUsage = parseV2TokenUsage(row.Payload.Info)
-				if tokenUsage.valid && cumulativeUsage.valid && v2TokenUsageEqual(cumulativeUsage, previousCumulativeUsage) {
+				isFirstTokenInTurn := firstTokenInTurn
+				firstTokenInTurn = false
+				if !isFirstTokenInTurn && tokenUsage.valid && cumulativeUsage.valid && v2TokenUsageEqual(cumulativeUsage, previousCumulativeUsage) {
 					if v2TokenUsageEqual(tokenUsage, previousIncrementalUsage) {
 						tokenUsage = v2TokenUsage{}
 					} else {
 						invalidLocalUsage = true
 					}
-				} else if !tokenUsage.valid || !cumulativeUsage.valid || !v2TokenUsageDeltaMatches(previousCumulativeUsage, cumulativeUsage, tokenUsage) {
+				} else if !tokenUsage.valid || !cumulativeUsage.valid || (!v2TokenUsageDeltaMatches(previousCumulativeUsage, cumulativeUsage, tokenUsage) && (!isFirstTokenInTurn || !v2TokenUsageDeltaMatches(v2TokenUsage{}, cumulativeUsage, tokenUsage))) {
 					invalidLocalUsage = true
 				} else {
 					previousCumulativeUsage = cumulativeUsage
