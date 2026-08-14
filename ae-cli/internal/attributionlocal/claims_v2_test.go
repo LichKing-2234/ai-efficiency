@@ -578,9 +578,52 @@ func TestScanCodexV2ClaimsResetsLocalTokenBaselineForEachTurn(t *testing.T) {
 	if len(claims) != 2 {
 		t.Fatalf("WebSocket claims = %+v, want two turns", claims)
 	}
+	wantTotal := map[string]int64{"turn-first": 120, "turn-second": 12}
 	for _, claim := range claims {
 		if claim.GapReason != "" || claim.Group.TokenSource != client.AttributionV2TokenSourceCodexLocal || len(claim.Group.LocalUsage) != 1 {
 			t.Fatalf("WebSocket turn %q = %+v", claim.Group.TurnID, claim)
+		}
+		if got := claim.Group.LocalUsage[0].TotalTokens; got != wantTotal[claim.Group.TurnID] {
+			t.Fatalf("WebSocket turn %q total = %d, want %d", claim.Group.TurnID, got, wantTotal[claim.Group.TurnID])
+		}
+	}
+}
+
+func TestScanCodexV2ClaimsContinuesSessionTokenBaselineAcrossTurns(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	writeV2JSONL(t, path,
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "thread-websocket"}},
+		map[string]any{"type": "turn_context", "timestamp": "2026-08-13T12:13:00Z", "payload": map[string]any{"turn_id": "turn-first", "model": "gpt-test"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: feature.go\n+package feature\n*** End Patch"}},
+		map[string]any{"type": "event_msg", "timestamp": "2026-08-13T12:14:00Z", "payload": map[string]any{"type": "token_count", "info": map[string]any{
+			"last_token_usage": map[string]any{"input_tokens": 100, "output_tokens": 20, "total_tokens": 120}, "total_token_usage": map[string]any{"input_tokens": 100, "output_tokens": 20, "total_tokens": 120},
+		}}},
+		map[string]any{"type": "turn_context", "timestamp": "2026-08-13T12:16:00Z", "payload": map[string]any{"turn_id": "turn-second", "model": "gpt-test"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: feature.go\n+package feature\n*** End Patch"}},
+		map[string]any{"type": "event_msg", "timestamp": "2026-08-13T12:17:00Z", "payload": map[string]any{"type": "token_count", "info": map[string]any{
+			"last_token_usage": map[string]any{"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}, "total_token_usage": map[string]any{"input_tokens": 110, "output_tokens": 22, "total_tokens": 132},
+		}}},
+	)
+	claims, err := scanCodexV2ClaimsWithEvidence(context.Background(), []string{path}, V2ClaimScanOptions{
+		RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8, WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-websocket",
+	}, []v2RequestEvidence{
+		{threadID: "thread-websocket", turnID: "turn-first", webSocket: true},
+		{threadID: "thread-websocket", turnID: "turn-second", webSocket: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 2 {
+		t.Fatalf("WebSocket claims = %+v, want two turns", claims)
+	}
+	wantTotal := map[string]int64{"turn-first": 120, "turn-second": 12}
+	for _, claim := range claims {
+		if claim.GapReason != "" || claim.Group.TokenSource != client.AttributionV2TokenSourceCodexLocal || len(claim.Group.LocalUsage) != 1 {
+			t.Fatalf("WebSocket turn %q = %+v", claim.Group.TurnID, claim)
+		}
+		if got := claim.Group.LocalUsage[0].TotalTokens; got != wantTotal[claim.Group.TurnID] {
+			t.Fatalf("WebSocket turn %q total = %d, want %d", claim.Group.TurnID, got, wantTotal[claim.Group.TurnID])
 		}
 	}
 }

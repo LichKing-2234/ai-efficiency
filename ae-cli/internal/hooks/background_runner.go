@@ -171,8 +171,8 @@ func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionCon
 		if err != nil {
 			return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim progress could not be loaded", err)
 		}
-		if progress == nil || progress.ContextID != contextID {
-			progress = &V2ClaimScanProgress{Version: 1, WorkspaceID: execCtx.WorkspaceID, ContextID: contextID, StartedAt: time.Now().UTC()}
+		if progress == nil || progress.Version != v2ClaimScanProgressVersion || progress.ContextID != contextID {
+			progress = &V2ClaimScanProgress{Version: v2ClaimScanProgressVersion, WorkspaceID: execCtx.WorkspaceID, ContextID: contextID, StartedAt: time.Now().UTC()}
 		}
 		if progress.SourceTurnKeys == nil {
 			progress.SourceTurnKeys = map[string][]string{}

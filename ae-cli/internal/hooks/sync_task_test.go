@@ -192,7 +192,7 @@ func TestMarkSyncTaskFailureRecordsSafeStageAndExactRemainingTriggers(t *testing
 func TestV2ClaimScanProgressPersistsCompletedSourceUnits(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	progress := &V2ClaimScanProgress{
-		Version: 1, WorkspaceID: "ws-progress", ContextID: "context-1",
+		Version: v2ClaimScanProgressVersion, WorkspaceID: "ws-progress", ContextID: "context-1",
 		SourceKeys: []string{"source-a", "source-b"}, CompletedUnits: []string{"source-a"},
 		StartedAt: time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC),
 	}
@@ -233,6 +233,65 @@ func TestV2ClaimScanContextIDIgnoresTriggerCommit(t *testing.T) {
 	}
 	if first != second {
 		t.Fatal("new commit trigger reset the shared scan context")
+	}
+}
+
+func TestRunV2ClaimSyncRescansOldProgressVersion(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path := filepath.Join(home, ".codex", "sessions", "session.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	execCtx := ExecutionContext{WorkspaceID: "ws-old-progress", RepoRoot: t.TempDir(), RepoConfigID: 9, RepoKey: "repo-host.example.com/org/repo"}
+	now := time.Now().UTC()
+	task := &SyncTask{WorkspaceID: execCtx.WorkspaceID, V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: "event-a", CommitSHA: "commit-a", CapturedAt: now}}}
+	option := attributionlocal.V2ClaimScanOptions{
+		RepoRoot: execCtx.RepoRoot, CommitSHA: "commit-a", RelayProviderID: 7,
+		RepoConfigID: execCtx.RepoConfigID, RepoKey: execCtx.RepoKey, WorkspaceID: execCtx.WorkspaceID,
+		CheckpointEventID: "event-a",
+	}
+	scan, err := attributionlocal.PrepareCodexV2ClaimScan(context.Background(), "", now.Add(-90*24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceKeys := scan.SourceKeys()
+	if len(sourceKeys) != 1 {
+		t.Fatalf("source keys = %v, want one", sourceKeys)
+	}
+	contextID, err := v2ClaimScanContextID(option)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unitID, err := v2ClaimScanUnitID(sourceKeys[0], option)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveV2ClaimScanProgress(&V2ClaimScanProgress{
+		Version: v2ClaimScanProgressVersion - 1, WorkspaceID: execCtx.WorkspaceID, ContextID: contextID,
+		SourceKeys: sourceKeys, CompletedUnits: []string{unitID}, StartedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	original := scanCodexV2ClaimSource
+	calls := 0
+	scanCodexV2ClaimSource = func(scan *attributionlocal.CodexV2ClaimScan, ctx context.Context, sourceKey string, options []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
+		calls++
+		return nil, nil
+	}
+	t.Cleanup(func() { scanCodexV2ClaimSource = original })
+	uploader := countingV2Uploader{fakeUploader: &fakeUploader{}, client: &countingV2ClaimClient{}}
+	protocol := client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept}
+	if err := runV2ClaimSync(context.Background(), uploader, execCtx, task, protocol); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("source scans = %d, want old progress version to rescan once", calls)
 	}
 }
 

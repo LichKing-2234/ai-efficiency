@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Design
 
 **Date:** 2026-08-11
-**Status:** Active production contract since the verified 2026-08-12 cutover; the approved Responses WebSocket extension uses Codex-local Token and shipped in `ae-cli/v0.2.0-preview.8` plus platform `v0.1.0-preview.85`, but its first real Codex 0.147 canary failed closed on a changed trusted-log shape and remains pending a scanner repair release plus a successful canary; #252 stable-window legacy cleanup remains pending
+**Status:** Active production contract since the verified 2026-08-12 cutover; the Responses WebSocket extension uses Codex-local Token and shipped in `ae-cli/v0.2.0-preview.8` plus platform `v0.1.0-preview.85`. `ae-cli/v0.2.0-preview.9` repaired the current Codex 0.147 trusted-log shape, and a real first-turn canary materialized exactly `348,018` Token across its two authoritative 15-minute buckets. A same-session second-turn canary then failed closed because preview.9 unconditionally reset a cumulative counter that current Codex keeps session-wide; the dual-baseline scanner and scan-progress invalidation repair plus a successful retained multi-turn canary remain pending. #252 stable-window legacy cleanup also remains pending
 **Scope:** `ae-cli`, backend attribution/reconciliation/read models, frontend Activity, repository administration
 **Supersedes for active behavior:** [Codex Token Attribution Ledger POC](./2026-08-05-codex-token-attribution-ledger-poc-design.md)
 **Related:**
@@ -126,9 +126,12 @@ Rules:
   Relay Request identity nor uploaded or persisted by AE;
 - WebSocket Token comes from JSONL `last_token_usage`, which is an incremental
   response total. A matching cumulative `total_token_usage` snapshot is
-  required to suppress repeated terminal rows. Missing model, usage timestamp,
-  cumulative snapshot, invalid cache decomposition, inconsistent totals, or
-  overflow fails the local source closed;
+  required to suppress repeated terminal rows. At the first Token row of a new
+  turn, the cumulative counter may either continue the prior session baseline
+  or restart from zero; the row must match one of those exact deltas, after
+  which the selected cumulative sequence remains strict for that turn. Missing
+  model, usage timestamp, cumulative snapshot, invalid cache decomposition,
+  inconsistent totals, or overflow fails the local source closed;
 - WebSocket Token is normalized and aggregated locally by requested model and
   15-minute UTC usage bucket. The aggregate `request_count` counts accepted
   incremental response rows; it does not preserve their identities;
@@ -187,7 +190,10 @@ and the digest of trusted SQLite HTTP Request or WebSocket transport/success evi
 relevant to those turns. Late transport evidence invalidates completed units
 only for the affected source; unrelated events do not restart completed
 sources or older triggers. Raw Request, response, thread, and turn identifiers
-are not persisted in scan progress.
+are not persisted in scan progress. Any scanner-semantics change that can alter
+claim classification increments the scan-progress version. An older version is
+rebuilt before completed units are consulted, so a previously failed-closed
+turn can recover without new transport evidence or a new Git trigger.
 Successful delivery removes the transient progress file.
 
 When reporter-authenticated Repository resolution returns `not_found`, the
