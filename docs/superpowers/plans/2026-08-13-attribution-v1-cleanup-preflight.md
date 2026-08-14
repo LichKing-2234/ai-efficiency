@@ -1,7 +1,7 @@
 # Attribution v1 and AE OTel Cleanup Preflight
 
 **Date:** 2026-08-13
-**Status:** Preflight implementation, verification, and review merged through [PR #284](https://github.com/LichKing-2234/ai-efficiency/pull/284) as `f6c9de84`; hosted CI `31685184654` passed backend, ae-cli, frontend, and deploy/static validation. Local PowerShell runtime testing was unavailable because `pwsh` is not installed, while the hosted PowerShell installer validation passed. Production cleanup remains blocked by #278, a new seven-day stable window, and separate release/deployment/data-mutation authority.
+**Status:** Preflight implementation, verification, and review merged through [PR #284](https://github.com/LichKing-2234/ai-efficiency/pull/284) as `f6c9de84`; hosted CI `31685184654` passed backend, ae-cli, frontend, and deploy/static validation. Local PowerShell runtime testing was unavailable because `pwsh` is not installed, while the hosted PowerShell installer validation passed. #278 completed its ordinary-workflow qualification and established Day 0 at `2026-08-14T07:22:18.199843Z`. Production cleanup remains blocked until at least `2026-08-21T07:22:18.199843Z`, every continuous-window gate remains green, and separate implementation/release/deployment/data-mutation authority is granted.
 **Parent:** [Codex Commit Token Attribution v2 Implementation Plan](./2026-08-11-codex-commit-token-attribution-v2.md)
 **Issue:** [#252](https://github.com/LichKing-2234/ai-efficiency/issues/252)
 
@@ -32,8 +32,9 @@ Cleanup cannot start until all of these are true in the same execution window:
 - the operator has separately authorized implementation, releases,
   deployment, and destructive migration.
 
-The earlier cutover-based date ending on 2026-08-19 is superseded. There is no
-current cleanup date.
+The earlier cutover-based date ending on 2026-08-19 is superseded. The current
+Day 0 is `2026-08-14T07:22:18.199843Z`, so cleanup cannot begin before
+`2026-08-21T07:22:18.199843Z`; any failed gate restarts that clock.
 
 ## Protection Seams
 
