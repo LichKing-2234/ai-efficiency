@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Design
 
 **Date:** 2026-08-11
-**Status:** Active production contract since the verified 2026-08-12 cutover; the Responses WebSocket extension uses Codex-local Token and shipped in `ae-cli/v0.2.0-preview.8` plus platform `v0.1.0-preview.85`. `ae-cli/v0.2.0-preview.9` repaired the current Codex 0.147 trusted-log shape, and a real first-turn canary materialized exactly `348,018` Token across its two authoritative 15-minute buckets. A same-session second-turn canary then failed closed because preview.9 unconditionally reset a cumulative counter that current Codex keeps session-wide; the dual-baseline scanner and scan-progress invalidation repair plus a successful retained multi-turn canary remain pending. #252 stable-window legacy cleanup also remains pending
+**Status:** Active production contract since the verified 2026-08-12 cutover. The Responses WebSocket extension uses Codex-local Token and shipped in `ae-cli/v0.2.0-preview.8` plus platform `v0.1.0-preview.85`; the trusted-log repair shipped in CLI-only preview.9. CLI-only `ae-cli/v0.2.0-preview.10` completed the exact dual-baseline and scan-progress repair for current Codex 0.147. Its retained same-session canary was recovered through a managed hook as one direct formal pool with 8 response increments, exactly `284,666` Token, zero coverage gaps, and zero Request claims. Production remains on platform `v0.1.0-preview.85` and Helm revision `85`. #252 stable-window legacy cleanup remains pending
 **Scope:** `ae-cli`, backend attribution/reconciliation/read models, frontend Activity, repository administration
 **Supersedes for active behavior:** [Codex Token Attribution Ledger POC](./2026-08-05-codex-token-attribution-ledger-poc-design.md)
 **Related:**
