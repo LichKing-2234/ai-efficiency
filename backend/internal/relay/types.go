@@ -120,6 +120,11 @@ func StableProtocolCapabilities(group Group) ProtocolCapabilities {
 			Supported:   []string{ProtocolResponses, ProtocolChatCompletions, ProtocolMessages},
 			Recommended: ProtocolResponses,
 		}
+	case "composite":
+		return ProtocolCapabilities{
+			Supported:   []string{ProtocolChatCompletions, ProtocolResponses, ProtocolMessages, ProtocolGenerateContent},
+			Recommended: ProtocolChatCompletions,
+		}
 	default:
 		return ProtocolCapabilities{}
 	}

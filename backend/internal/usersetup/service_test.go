@@ -244,6 +244,7 @@ func TestListProvidersReturnsOnlyAllowedGroups(t *testing.T) {
 				{ID: 8, Name: "Group Antigravity", Platform: "antigravity"},
 				{ID: 9, Name: "Group Grok", Platform: "grok"},
 				{ID: 10, Name: "Group OpenAI Strict", Platform: "openai"},
+				{ID: 11, Name: "Group Composite", Platform: "composite"},
 			}, nil
 		},
 	}
@@ -263,7 +264,7 @@ func TestListProvidersReturnsOnlyAllowedGroups(t *testing.T) {
 		t.Fatalf("providers len = %d, want 1", len(resp.Providers))
 	}
 	got := resp.Providers[0]
-	if diff := cmp.Diff([]string{"5", "8", "7", "9", "10", "6"}, groupIDs(got.Groups)); diff != "" {
+	if diff := cmp.Diff([]string{"5", "8", "11", "7", "9", "10", "6"}, groupIDs(got.Groups)); diff != "" {
 		t.Fatalf("group mismatch (-want +got):\n%s", diff)
 	}
 	groupsByID := make(map[string]usersetup.GroupCredentialSummary, len(got.Groups))
@@ -276,6 +277,7 @@ func TestListProvidersReturnsOnlyAllowedGroups(t *testing.T) {
 	antigravityGroup := groupsByID["8"]
 	grokGroup := groupsByID["9"]
 	strictOpenAIGroup := groupsByID["10"]
+	compositeGroup := groupsByID["11"]
 	if anthropicGroup.GroupName != "Group Gamma" || anthropicGroup.Platform != "anthropic" {
 		t.Fatalf("unexpected anthropic group: %+v", anthropicGroup)
 	}
@@ -290,6 +292,12 @@ func TestListProvidersReturnsOnlyAllowedGroups(t *testing.T) {
 	}
 	if openAIGroup.RecommendedProtocol != "responses" {
 		t.Fatalf("openai recommended protocol = %q, want responses", openAIGroup.RecommendedProtocol)
+	}
+	if diff := cmp.Diff([]string{"chat_completions", "responses", "messages", "generate_content"}, compositeGroup.SupportedProtocols); diff != "" {
+		t.Fatalf("composite protocols mismatch (-want +got):\n%s", diff)
+	}
+	if compositeGroup.RecommendedProtocol != "chat_completions" {
+		t.Fatalf("composite recommended protocol = %q, want chat_completions", compositeGroup.RecommendedProtocol)
 	}
 	if diff := cmp.Diff([]string{"generate_content", "chat_completions"}, geminiGroup.SupportedProtocols); diff != "" {
 		t.Fatalf("gemini protocols mismatch (-want +got):\n%s", diff)

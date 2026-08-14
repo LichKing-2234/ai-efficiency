@@ -54,6 +54,9 @@ sub2api 管理端的账号测试与这里也不是同一个证明：前者以账
 | Gemini | GenerateContent | Chat Completions | Responses、Messages |
 | Antigravity | Messages | Antigravity GenerateContent | Responses、Chat Completions |
 | Grok | Responses | Chat Completions、Messages | Gemini native |
+| Composite | Chat Completions | Responses、Messages、GenerateContent | Antigravity dedicated route |
+
+Composite group 会由 sub2api 按请求模型选择实际平台，因此暴露其通用入口支持的全部稳定协议。`antigravity_generate_content` 不属于通用入口：该协议会强制进入 Antigravity 专用路由，绕过 Composite 的按模型选择，因此不对 Composite group 声明。
 
 `allow_messages_dispatch` 必须从 sub2api group response 经 relay types、shared metadata cache 和 user setup DTO 原样保留。该字段加入时 metadata envelope schema 从 1 升到 2；schema 1 payload 必须视为 miss 并刷新，不能把历史缺失字段解释为 `false`。
 
@@ -111,10 +114,10 @@ provider + group + current personal key + model + protocol
 
 ## Acceptance Criteria
 
-1. 五类 group platform 只暴露 capability matrix 中的稳定协议，且 recommendation 唯一。
+1. 六类 group platform 只暴露 capability matrix 中的稳定协议，且 recommendation 唯一。
 2. OpenAI Messages 由 `allow_messages_dispatch` 精确控制，旧 metadata cache 会刷新。
 3. 省略 protocol 时按 group recommendation 测试；显式传入未声明协议返回 `400`。
-4. 所有 13 条支持的 platform/protocol 路由使用所选个人 group key 和模型。
+4. 所有 17 条支持的 platform/protocol 路由使用所选个人 group key 和模型。
 5. 固定短 prompt、non-streaming、bounded output、无 retry、无 fallback。
 6. success 同时要求 HTTP success、合法 terminal response 和非空 assistant text。
 7. provider、group、key、model、protocol 任一变化都会清除结果，旧异步请求不能覆盖新状态。
