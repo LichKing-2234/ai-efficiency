@@ -10,6 +10,8 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 )
 
+const v2ClaimScanProgressVersion = 2
+
 type V2ClaimScanProgress struct {
 	Version            int                 `json:"version"`
 	WorkspaceID        string              `json:"workspace_id"`
@@ -53,7 +55,7 @@ func SaveV2ClaimScanProgress(progress *V2ClaimScanProgress) error {
 		return fmt.Errorf("resolve v2 claim scan progress path: %w", err)
 	}
 	if progress.Version == 0 {
-		progress.Version = 1
+		progress.Version = v2ClaimScanProgressVersion
 	}
 	if err := attributionlocal.SaveJSON(path, progress); err != nil {
 		return fmt.Errorf("save v2 claim scan progress: %w", err)
