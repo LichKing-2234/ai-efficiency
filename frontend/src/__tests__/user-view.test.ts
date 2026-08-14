@@ -27,6 +27,14 @@ Object.assign(navigator, {
   },
 })
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
 function decodeCCSwitchConfig(link: string) {
   const url = new URL(link)
   const config = url.searchParams.get('config')
@@ -62,6 +70,8 @@ async function mountUserView(reportingCapabilities?: { setup_available: boolean;
           group_id: '42',
           group_name: 'OpenAI-Staging',
           platform: 'openai',
+          supported_protocols: ['responses', 'chat_completions'],
+          recommended_protocol: 'responses',
           credential: { state: 'missing' },
         },
       ],
@@ -78,43 +88,73 @@ async function mountUserView(reportingCapabilities?: { setup_available: boolean;
           group_id: '43',
           group_name: 'Group Beta',
           platform: 'anthropic',
+          supported_protocols: ['messages', 'responses', 'chat_completions'],
+          recommended_protocol: 'messages',
           credential: { state: 'existing_hidden', api_key_id: 22, name: 'alice', status: 'active', key: 'sk-existing-claude-123456' },
         },
         {
           group_id: '42',
           group_name: 'Group Alpha',
           platform: 'openai',
+          supported_protocols: ['responses', 'chat_completions'],
+          recommended_protocol: 'responses',
           credential: { state: 'missing' },
         },
         {
           group_id: '44',
           group_name: 'Group Gamma',
           platform: 'openai',
+          supported_protocols: ['responses', 'chat_completions', 'messages'],
+          recommended_protocol: 'responses',
           credential: { state: 'existing_hidden', api_key_id: 23, name: 'alice', status: 'active', key: 'sk-existing-openai-123456' },
         },
         {
           group_id: '45',
           group_name: 'Group Delta',
           platform: 'gemini',
+          supported_protocols: ['generate_content', 'chat_completions'],
+          recommended_protocol: 'generate_content',
           credential: { state: 'existing_hidden', api_key_id: 24, name: 'alice', status: 'active', key: 'sk-existing-gemini-123456' },
         },
         {
           group_id: '46',
           group_name: 'Agentopenai',
           platform: 'openai',
+          supported_protocols: ['responses', 'chat_completions'],
+          recommended_protocol: 'responses',
           credential: { state: 'existing_hidden', api_key_id: 25, name: 'alice', status: 'active', key: 'sk-existing-agent-openai-123456' },
         },
         {
           group_id: '47',
           group_name: 'Agentanthropic',
           platform: 'anthropic',
+          supported_protocols: ['messages', 'responses', 'chat_completions'],
+          recommended_protocol: 'messages',
           credential: { state: 'existing_hidden', api_key_id: 26, name: 'alice', status: 'active', key: 'sk-existing-agent-anthropic-123456' },
         },
         {
           group_id: '48',
           group_name: 'Agentgemini',
           platform: 'gemini',
+          supported_protocols: ['generate_content', 'chat_completions'],
+          recommended_protocol: 'generate_content',
           credential: { state: 'existing_hidden', api_key_id: 27, name: 'alice', status: 'active', key: 'sk-existing-agent-gemini-123456' },
+        },
+        {
+          group_id: '49',
+          group_name: 'Group Antigravity',
+          platform: 'antigravity',
+          supported_protocols: ['messages', 'antigravity_generate_content'],
+          recommended_protocol: 'messages',
+          credential: { state: 'existing_hidden', api_key_id: 28, name: 'alice', status: 'active', key: 'sk-existing-antigravity-123456' },
+        },
+        {
+          group_id: '50',
+          group_name: 'Group Grok',
+          platform: 'grok',
+          supported_protocols: ['responses', 'chat_completions', 'messages'],
+          recommended_protocol: 'responses',
+          credential: { state: 'existing_hidden', api_key_id: 29, name: 'alice', status: 'active', key: 'sk-existing-grok-123456' },
         },
       ],
     },
@@ -365,7 +405,7 @@ describe('UserView', () => {
 
     const groupOptions = wrapper.findAllComponents({ name: 'ElRadioButton' })
       .filter((component) => component.attributes('data-testid')?.startsWith('group-'))
-    expect(groupOptions).toHaveLength(7)
+    expect(groupOptions).toHaveLength(9)
 
     const accessGroup = wrapper.findAllComponents({ name: 'ElRadioGroup' })
       .find((component) => component.props('fill') === 'var(--el-color-primary-light-9)')
@@ -985,7 +1025,7 @@ describe('UserView', () => {
     const { wrapper } = await mountUserView()
     await openOnboardingStep(wrapper, 1)
     await selectProviderModel(wrapper, 'Claude Sonnet 4.6', 'claude-sonnet-4-6')
-    await wrapper.get('[data-testid="user-provider-test-prompt"]').setValue('Say hello')
+    expect(wrapper.find('[data-testid="user-provider-test-prompt"]').exists()).toBe(false)
     await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
     await flushPromises()
 
@@ -993,10 +1033,108 @@ describe('UserView', () => {
       platform: 'anthropic',
       group_id: '43',
       model: 'claude-sonnet-4-6',
-      prompt: 'Say hello',
+      protocol: 'messages',
     })
     expect(wrapper.text()).toContain('Connection successful')
     expect(wrapper.text()).toContain('pong')
+  })
+
+  it('keeps long upstream diagnostics readable inside the result alert', async () => {
+    const { testUserProvider } = await import('@/api/user')
+    const diagnostic = `relay: ${'x'.repeat(1024)}`
+    ;(testUserProvider as any).mockRejectedValue({ response: { data: { message: diagnostic } } })
+
+    const { wrapper } = await mountUserView()
+    await openOnboardingStep(wrapper, 1)
+    await selectProviderModel(wrapper, 'Claude Sonnet 4.6', 'claude-sonnet-4-6')
+    await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
+    await flushPromises()
+
+    const message = wrapper.get('[data-testid="user-provider-test-message"]')
+    expect(message.text()).toBe(diagnostic)
+    expect(message.classes()).toEqual(expect.arrayContaining(['max-h-64', 'overflow-y-auto', 'break-all', 'whitespace-pre-wrap']))
+  })
+
+  it('defaults OpenAI compatibility tests to the recommended protocol', async () => {
+    const { testUserProvider } = await import('@/api/user')
+    ;(testUserProvider as any).mockResolvedValue({
+      data: { data: { success: true, message: 'Connection successful', response: 'pong' } },
+    })
+
+    const { wrapper } = await mountUserView()
+    await selectAccessGroup(wrapper, '44')
+    await openOnboardingStep(wrapper, 1)
+
+    const protocolSelect = wrapper.get('[data-testid="user-provider-test-protocol"]')
+    expect(protocolSelect.text()).toContain('Responses')
+    expect(protocolSelect.text()).toContain('Recommended')
+    expect(protocolSelect.text()).toContain('Chat Completions')
+    expect(protocolSelect.text()).toContain('Messages')
+
+    await selectProviderModel(wrapper, 'GPT-5.4', 'gpt-5.4')
+    await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
+    await flushPromises()
+
+    expect(testUserProvider).toHaveBeenCalledWith(2, {
+      platform: 'openai',
+      group_id: '44',
+      model: 'gpt-5.4',
+      protocol: 'responses',
+    })
+  })
+
+  it('renders only the stable protocol matrix declared for each platform', async () => {
+    const { wrapper } = await mountUserView()
+    const cases = [
+      { groupID: '43', expected: ['Messages - Recommended', 'Responses - Compatibility conversion', 'Chat Completions - Compatibility conversion'], excluded: ['GenerateContent'] },
+      { groupID: '45', expected: ['GenerateContent - Recommended', 'Chat Completions - Compatibility conversion'], excluded: ['Responses', 'Messages'] },
+      { groupID: '49', expected: ['Messages - Recommended', 'Antigravity GenerateContent - Compatibility conversion'], excluded: ['Responses', 'Chat Completions'] },
+      { groupID: '50', expected: ['Responses - Recommended', 'Chat Completions - Compatibility conversion', 'Messages - Compatibility conversion'], excluded: ['GenerateContent'] },
+    ]
+
+    for (const testCase of cases) {
+      await selectAccessGroup(wrapper, testCase.groupID)
+      await openOnboardingStep(wrapper, 1)
+      const text = wrapper.get('[data-testid="user-provider-test-protocol"]').text()
+      for (const expected of testCase.expected) expect(text).toContain(expected)
+      for (const excluded of testCase.excluded) expect(text).not.toContain(excluded)
+    }
+  })
+
+  it('invalidates changed test context and ignores out-of-order results', async () => {
+    const { testUserProvider } = await import('@/api/user')
+    const older = deferred<any>()
+    const current = deferred<any>()
+    ;(testUserProvider as any)
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(current.promise)
+
+    const { wrapper } = await mountUserView()
+    await selectAccessGroup(wrapper, '44')
+    await openOnboardingStep(wrapper, 1)
+    await selectProviderModel(wrapper, 'GPT-5.4', 'gpt-5.4')
+    await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
+    await flushPromises()
+
+    const protocolSelect = wrapper.findAllComponents({ name: 'ElSelect' })
+      .find((candidate: any) => candidate.attributes('data-testid') === 'user-provider-test-protocol')
+    expect(protocolSelect).toBeTruthy()
+    protocolSelect!.vm.$emit('update:modelValue', 'chat_completions')
+    protocolSelect!.vm.$emit('change', 'chat_completions')
+    await flushPromises()
+    await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
+
+    current.resolve({ data: { data: { success: true, message: 'Current Chat result', response: 'chat ok' } } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('Current Chat result')
+
+    older.resolve({ data: { data: { success: true, message: 'Stale Responses result', response: 'stale' } } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('Current Chat result')
+    expect(wrapper.text()).not.toContain('Stale Responses result')
+
+    await selectProviderModel(wrapper, 'GPT-5.5', 'gpt-5.5')
+    expect(wrapper.text()).not.toContain('Current Chat result')
   })
 
   it('loads model choices for the selected group platform', async () => {

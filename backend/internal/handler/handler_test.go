@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -278,9 +279,13 @@ func TestAdminRelayProviderTestRouteRemoved(t *testing.T) {
 }
 
 func TestUserRelayProviderTestAllowsRegularUserOwnAPIKey(t *testing.T) {
-	var chatAuth string
-	var chatModel string
-	var chatPrompt string
+	var responsesAuth string
+	var responsesModel string
+	var responsesPrompt string
+	var responsesStream bool
+	var responsesMaxOutputTokens int
+	responsesStatus := "completed"
+	responsesText := "pong"
 
 	relayServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -320,28 +325,44 @@ func TestUserRelayProviderTestAllowsRegularUserOwnAPIKey(t *testing.T) {
 					"pages": 1,
 				},
 			})
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/chat/completions":
-			chatAuth = r.Header.Get("Authorization")
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/responses":
+			responsesAuth = r.Header.Get("Authorization")
 			var body struct {
-				Model    string `json:"model"`
-				Messages []struct {
+				Model           string `json:"model"`
+				Stream          bool   `json:"stream"`
+				MaxOutputTokens int    `json:"max_output_tokens"`
+				Input           []struct {
 					Role    string `json:"role"`
-					Content string `json:"content"`
-				} `json:"messages"`
+					Content []struct {
+						Type string `json:"type"`
+						Text string `json:"text"`
+					} `json:"content"`
+				} `json:"input"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Fatalf("decode chat body: %v", err)
+				t.Fatalf("decode responses body: %v", err)
 			}
-			chatModel = body.Model
-			if len(body.Messages) > 0 {
-				chatPrompt = body.Messages[0].Content
+			responsesModel = body.Model
+			responsesStream = body.Stream
+			responsesMaxOutputTokens = body.MaxOutputTokens
+			if len(body.Input) > 0 && len(body.Input[0].Content) > 0 {
+				responsesPrompt = body.Input[0].Content[0].Text
 			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{
-				"choices": []any{
-					map[string]any{"message": map[string]any{"content": "pong"}},
+				"id":     "resp_test",
+				"object": "response",
+				"status": responsesStatus,
+				"output": []any{
+					map[string]any{
+						"type": "message",
+						"role": "assistant",
+						"content": []any{
+							map[string]any{"type": "output_text", "text": responsesText},
+						},
+					},
 				},
-				"usage": map[string]any{"total_tokens": 3},
+				"usage": map[string]any{"input_tokens": 1, "output_tokens": 2, "total_tokens": 3},
 			})
 		default:
 			t.Fatalf("unexpected relay request: %s %s", r.Method, r.URL.String())
@@ -377,7 +398,6 @@ func TestUserRelayProviderTestAllowsRegularUserOwnAPIKey(t *testing.T) {
 		"platform": "openai",
 		"group_id": "5",
 		"model":    "gpt-5.4",
-		"prompt":   "Say hello",
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
@@ -387,11 +407,47 @@ func TestUserRelayProviderTestAllowsRegularUserOwnAPIKey(t *testing.T) {
 	if data["success"] != true || data["response"] != "pong" {
 		t.Fatalf("unexpected response data: %#v", data)
 	}
-	if chatAuth != "Bearer sk-user-openai" {
-		t.Fatalf("chat auth = %q, want user api key", chatAuth)
+	if responsesAuth != "Bearer sk-user-openai" {
+		t.Fatalf("responses auth = %q, want user api key", responsesAuth)
 	}
-	if chatModel != "gpt-5.4" || chatPrompt != "Say hello" {
-		t.Fatalf("chat request = (%q, %q), want model and prompt", chatModel, chatPrompt)
+	if responsesModel != "gpt-5.4" || responsesPrompt != "Reply with OK" {
+		t.Fatalf("responses request = (%q, %q), want model and prompt", responsesModel, responsesPrompt)
+	}
+	if responsesStream || responsesMaxOutputTokens != 64 {
+		t.Fatalf("responses request stream/max = (%v, %d), want false/64", responsesStream, responsesMaxOutputTokens)
+	}
+
+	responsesText = ""
+	w = doRequest(env, http.MethodPost, fmt.Sprintf("/api/v1/user/providers/%d/test", provider.ID), map[string]any{
+		"platform": "openai",
+		"group_id": "5",
+		"model":    "gpt-5.4",
+	})
+	data = parseResponse(t, w)["data"].(map[string]any)
+	if data["success"] != false || !strings.Contains(fmt.Sprint(data["message"]), "empty assistant text") {
+		t.Fatalf("empty response data = %#v", data)
+	}
+
+	responsesStatus = "incomplete"
+	responsesText = "partial"
+	w = doRequest(env, http.MethodPost, fmt.Sprintf("/api/v1/user/providers/%d/test", provider.ID), map[string]any{
+		"platform": "openai",
+		"group_id": "5",
+		"model":    "gpt-5.4",
+	})
+	data = parseResponse(t, w)["data"].(map[string]any)
+	if data["success"] != false || !strings.Contains(fmt.Sprint(data["message"]), "terminal status") {
+		t.Fatalf("incomplete response data = %#v", data)
+	}
+
+	w = doRequest(env, http.MethodPost, fmt.Sprintf("/api/v1/user/providers/%d/test", provider.ID), map[string]any{
+		"platform": "openai",
+		"group_id": "5",
+		"model":    "gpt-5.4",
+		"protocol": "messages",
+	})
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "protocol messages is not supported") {
+		t.Fatalf("unsupported protocol status=%d body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -401,6 +457,8 @@ func TestUserRelayProviderTestUsesAnthropicMessagesEndpoint(t *testing.T) {
 	var messagesVersion string
 	var messagesModel string
 	var messagesPrompt string
+	var messagesStream bool
+	var messagesMaxTokens int
 
 	relayServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -445,8 +503,10 @@ func TestUserRelayProviderTestUsesAnthropicMessagesEndpoint(t *testing.T) {
 			messagesAPIKey = r.Header.Get("x-api-key")
 			messagesVersion = r.Header.Get("anthropic-version")
 			var body struct {
-				Model    string `json:"model"`
-				Messages []struct {
+				Model     string `json:"model"`
+				Stream    bool   `json:"stream"`
+				MaxTokens int    `json:"max_tokens"`
+				Messages  []struct {
 					Role    string `json:"role"`
 					Content string `json:"content"`
 				} `json:"messages"`
@@ -455,6 +515,8 @@ func TestUserRelayProviderTestUsesAnthropicMessagesEndpoint(t *testing.T) {
 				t.Fatalf("decode messages body: %v", err)
 			}
 			messagesModel = body.Model
+			messagesStream = body.Stream
+			messagesMaxTokens = body.MaxTokens
 			if len(body.Messages) > 0 {
 				messagesPrompt = body.Messages[0].Content
 			}
@@ -463,6 +525,7 @@ func TestUserRelayProviderTestUsesAnthropicMessagesEndpoint(t *testing.T) {
 				"content": []any{
 					map[string]any{"type": "text", "text": "pong"},
 				},
+				"stop_reason": "end_turn",
 				"usage": map[string]any{
 					"input_tokens":  2,
 					"output_tokens": 1,
@@ -502,7 +565,6 @@ func TestUserRelayProviderTestUsesAnthropicMessagesEndpoint(t *testing.T) {
 		"platform": "anthropic",
 		"group_id": "5",
 		"model":    "claude-sonnet-4-6",
-		"prompt":   "Say hello",
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
@@ -521,8 +583,11 @@ func TestUserRelayProviderTestUsesAnthropicMessagesEndpoint(t *testing.T) {
 	if messagesVersion != "2023-06-01" {
 		t.Fatalf("anthropic-version = %q, want 2023-06-01", messagesVersion)
 	}
-	if messagesModel != "claude-sonnet-4-6" || messagesPrompt != "Say hello" {
+	if messagesModel != "claude-sonnet-4-6" || messagesPrompt != "Reply with OK" {
 		t.Fatalf("messages request = (%q, %q), want model and prompt", messagesModel, messagesPrompt)
+	}
+	if messagesStream || messagesMaxTokens != 64 {
+		t.Fatalf("messages request stream/max = (%v, %d), want false/64", messagesStream, messagesMaxTokens)
 	}
 }
 

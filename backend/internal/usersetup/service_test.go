@@ -239,7 +239,12 @@ func TestListProvidersReturnsOnlyAllowedGroups(t *testing.T) {
 			}
 			return []relay.Group{
 				{ID: 5, Name: "Group Gamma", Platform: "anthropic"},
-				{ID: 6, Name: "Group Alpha", Platform: "openai"},
+				{ID: 6, Name: "Group Alpha", Platform: "openai", AllowMessagesDispatch: true},
+				{ID: 7, Name: "Group Gemini", Platform: "gemini"},
+				{ID: 8, Name: "Group Antigravity", Platform: "antigravity"},
+				{ID: 9, Name: "Group Grok", Platform: "grok"},
+				{ID: 10, Name: "Group OpenAI Strict", Platform: "openai"},
+				{ID: 11, Name: "Group Composite", Platform: "composite"},
 			}, nil
 		},
 	}
@@ -259,17 +264,67 @@ func TestListProvidersReturnsOnlyAllowedGroups(t *testing.T) {
 		t.Fatalf("providers len = %d, want 1", len(resp.Providers))
 	}
 	got := resp.Providers[0]
-	if diff := cmp.Diff([]string{"5", "6"}, groupIDs(got.Groups)); diff != "" {
+	if diff := cmp.Diff([]string{"5", "8", "11", "7", "9", "10", "6"}, groupIDs(got.Groups)); diff != "" {
 		t.Fatalf("group mismatch (-want +got):\n%s", diff)
 	}
-	if got.Groups[0].GroupName != "Group Gamma" || got.Groups[0].Platform != "anthropic" {
-		t.Fatalf("unexpected first group: %+v", got.Groups[0])
+	groupsByID := make(map[string]usersetup.GroupCredentialSummary, len(got.Groups))
+	for _, group := range got.Groups {
+		groupsByID[group.GroupID] = group
 	}
-	if got.Groups[1].Credential.APIKeyID != 20 {
-		t.Fatalf("group credential api key id = %d, want 20", got.Groups[1].Credential.APIKeyID)
+	anthropicGroup := groupsByID["5"]
+	openAIGroup := groupsByID["6"]
+	geminiGroup := groupsByID["7"]
+	antigravityGroup := groupsByID["8"]
+	grokGroup := groupsByID["9"]
+	strictOpenAIGroup := groupsByID["10"]
+	compositeGroup := groupsByID["11"]
+	if anthropicGroup.GroupName != "Group Gamma" || anthropicGroup.Platform != "anthropic" {
+		t.Fatalf("unexpected anthropic group: %+v", anthropicGroup)
 	}
-	if got.Groups[1].Credential.Key != "sk-existing-openai-123456" {
-		t.Fatalf("group credential key = %q, want full API key", got.Groups[1].Credential.Key)
+	if diff := cmp.Diff([]string{"messages", "responses", "chat_completions"}, anthropicGroup.SupportedProtocols); diff != "" {
+		t.Fatalf("anthropic protocols mismatch (-want +got):\n%s", diff)
+	}
+	if anthropicGroup.RecommendedProtocol != "messages" {
+		t.Fatalf("anthropic recommended protocol = %q, want messages", anthropicGroup.RecommendedProtocol)
+	}
+	if diff := cmp.Diff([]string{"responses", "chat_completions", "messages"}, openAIGroup.SupportedProtocols); diff != "" {
+		t.Fatalf("openai protocols mismatch (-want +got):\n%s", diff)
+	}
+	if openAIGroup.RecommendedProtocol != "responses" {
+		t.Fatalf("openai recommended protocol = %q, want responses", openAIGroup.RecommendedProtocol)
+	}
+	if diff := cmp.Diff([]string{"chat_completions", "responses", "messages", "generate_content"}, compositeGroup.SupportedProtocols); diff != "" {
+		t.Fatalf("composite protocols mismatch (-want +got):\n%s", diff)
+	}
+	if compositeGroup.RecommendedProtocol != "chat_completions" {
+		t.Fatalf("composite recommended protocol = %q, want chat_completions", compositeGroup.RecommendedProtocol)
+	}
+	if diff := cmp.Diff([]string{"generate_content", "chat_completions"}, geminiGroup.SupportedProtocols); diff != "" {
+		t.Fatalf("gemini protocols mismatch (-want +got):\n%s", diff)
+	}
+	if geminiGroup.RecommendedProtocol != "generate_content" {
+		t.Fatalf("gemini recommended protocol = %q, want generate_content", geminiGroup.RecommendedProtocol)
+	}
+	if diff := cmp.Diff([]string{"messages", "antigravity_generate_content"}, antigravityGroup.SupportedProtocols); diff != "" {
+		t.Fatalf("antigravity protocols mismatch (-want +got):\n%s", diff)
+	}
+	if antigravityGroup.RecommendedProtocol != "messages" {
+		t.Fatalf("antigravity recommended protocol = %q, want messages", antigravityGroup.RecommendedProtocol)
+	}
+	if diff := cmp.Diff([]string{"responses", "chat_completions", "messages"}, grokGroup.SupportedProtocols); diff != "" {
+		t.Fatalf("grok protocols mismatch (-want +got):\n%s", diff)
+	}
+	if grokGroup.RecommendedProtocol != "responses" {
+		t.Fatalf("grok recommended protocol = %q, want responses", grokGroup.RecommendedProtocol)
+	}
+	if diff := cmp.Diff([]string{"responses", "chat_completions"}, strictOpenAIGroup.SupportedProtocols); diff != "" {
+		t.Fatalf("strict openai protocols mismatch (-want +got):\n%s", diff)
+	}
+	if openAIGroup.Credential.APIKeyID != 20 {
+		t.Fatalf("group credential api key id = %d, want 20", openAIGroup.Credential.APIKeyID)
+	}
+	if openAIGroup.Credential.Key != "sk-existing-openai-123456" {
+		t.Fatalf("group credential key = %q, want full API key", openAIGroup.Credential.Key)
 	}
 }
 

@@ -139,7 +139,7 @@ func TestProviderMetadataCachesGroupsAcrossManagersButReadsMembershipFresh(t *te
 		allowedGroupIDs: []int64{5},
 		platformGroups: []relay.Group{{
 			ID: 5, Name: "Group Alpha", Platform: "openai",
-			DailyLimitUSD: &dailyLimit, RateMultiplier: &rateMultiplier,
+			AllowMessagesDispatch: true, DailyLimitUSD: &dailyLimit, RateMultiplier: &rateMultiplier,
 		}},
 	}
 	rightProvider := &metadataRelayProvider{
@@ -153,7 +153,7 @@ func TestProviderMetadataCachesGroupsAcrossManagersButReadsMembershipFresh(t *te
 	if err != nil {
 		t.Fatalf("left groups: %v", err)
 	}
-	if len(first) != 1 || first[0].Name != "Group Alpha" || first[0].DailyLimitUSD != nil || first[0].RateMultiplier != nil {
+	if len(first) != 1 || first[0].Name != "Group Alpha" || !first[0].AllowMessagesDispatch || first[0].DailyLimitUSD != nil || first[0].RateMultiplier != nil {
 		t.Fatalf("sanitized groups = %#v", first)
 	}
 	first[0].Name = "mutated"
@@ -161,7 +161,7 @@ func TestProviderMetadataCachesGroupsAcrossManagersButReadsMembershipFresh(t *te
 	if err != nil {
 		t.Fatalf("right groups: %v", err)
 	}
-	if len(second) != 1 || second[0].Name != "Group Alpha" {
+	if len(second) != 1 || second[0].Name != "Group Alpha" || !second[0].AllowMessagesDispatch {
 		t.Fatalf("cached groups = %#v", second)
 	}
 	leftUsers, leftGroups := leftProvider.callCounts()
@@ -194,6 +194,37 @@ func TestProviderMetadataCachesGroupsAcrossManagersButReadsMembershipFresh(t *te
 				t.Fatalf("Redis entry contains %q: %s", forbidden, combined)
 			}
 		}
+	}
+}
+
+func TestProviderMetadataRefreshesLegacyGroupEnvelope(t *testing.T) {
+	client := testdbClient(t)
+	row := createProviderRow(t, client)
+	store := &metadataFaultStore{value: []byte(`{"schema_version":1,"items":[{"id":5,"name":"Legacy Group","platform":"openai"}]}`)}
+	provider := &metadataRelayProvider{
+		allowedGroupIDs: []int64{5},
+		platformGroups: []relay.Group{{
+			ID: 5, Name: "Group Alpha", Platform: "openai", AllowMessagesDispatch: true,
+		}},
+	}
+	manager := metadataManager(t, client, store, provider)
+
+	groups, err := manager.ListAllowedGroupsForUser(context.Background(), row.ID, row.ConfigurationVersion, 42)
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if len(groups) != 1 || groups[0].Name != "Group Alpha" || !groups[0].AllowMessagesDispatch {
+		t.Fatalf("refreshed groups = %#v", groups)
+	}
+	_, groupCalls := provider.callCounts()
+	if groupCalls != 1 {
+		t.Fatalf("platform group loads = %d, want 1", groupCalls)
+	}
+	store.mu.Lock()
+	repaired := append([]byte(nil), store.value...)
+	store.mu.Unlock()
+	if !validGroupEnvelope(repaired) {
+		t.Fatalf("legacy group cache value was not repaired: %s", repaired)
 	}
 }
 

@@ -19,7 +19,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/relay"
 )
 
-const metadataSchemaVersion = 1
+const metadataSchemaVersion = 2
 
 type metadataEnvelope[T any] struct {
 	SchemaVersion int `json:"schema_version"`
@@ -408,11 +408,12 @@ func sanitizeAndSortGroups(groups []relay.Group) []relay.Group {
 
 func sanitizeGroup(group relay.Group) relay.Group {
 	return relay.Group{
-		ID:               group.ID,
-		Name:             strings.TrimSpace(group.Name),
-		Platform:         strings.TrimSpace(group.Platform),
-		IsExclusive:      group.IsExclusive,
-		SubscriptionType: strings.TrimSpace(group.SubscriptionType),
+		ID:                    group.ID,
+		Name:                  strings.TrimSpace(group.Name),
+		Platform:              strings.TrimSpace(group.Platform),
+		IsExclusive:           group.IsExclusive,
+		SubscriptionType:      strings.TrimSpace(group.SubscriptionType),
+		AllowMessagesDispatch: group.AllowMessagesDispatch,
 	}
 }
 
@@ -436,6 +437,9 @@ func mergeGroup(groups map[int64]relay.Group, incoming relay.Group) {
 	}
 	if existing.SubscriptionType == "" {
 		existing.SubscriptionType = incoming.SubscriptionType
+	}
+	if !existing.AllowMessagesDispatch {
+		existing.AllowMessagesDispatch = incoming.AllowMessagesDispatch
 	}
 	groups[incoming.ID] = existing
 }

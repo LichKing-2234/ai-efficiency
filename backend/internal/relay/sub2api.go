@@ -311,11 +311,12 @@ func decodeUserWithFacts(data json.RawMessage) (User, error) {
 			continue
 		}
 		addGroupByID(groupsByID, Group{
-			ID:               subscription.Group.ID,
-			Name:             strings.TrimSpace(subscription.Group.Name),
-			Platform:         strings.TrimSpace(subscription.Group.Platform),
-			IsExclusive:      subscription.Group.IsExclusive,
-			SubscriptionType: strings.TrimSpace(subscription.Group.SubscriptionType),
+			ID:                    subscription.Group.ID,
+			Name:                  strings.TrimSpace(subscription.Group.Name),
+			Platform:              strings.TrimSpace(subscription.Group.Platform),
+			IsExclusive:           subscription.Group.IsExclusive,
+			SubscriptionType:      strings.TrimSpace(subscription.Group.SubscriptionType),
+			AllowMessagesDispatch: subscription.Group.AllowMessagesDispatch,
 		})
 	}
 	user.AllowedGroups = sortedGroups(groupsByID)
@@ -461,6 +462,9 @@ func addGroupByID(groups map[int64]Group, group Group) {
 	}
 	if strings.TrimSpace(existing.SubscriptionType) == "" {
 		existing.SubscriptionType = group.SubscriptionType
+	}
+	if !existing.AllowMessagesDispatch {
+		existing.AllowMessagesDispatch = group.AllowMessagesDispatch
 	}
 	groups[group.ID] = existing
 }
@@ -1118,6 +1122,10 @@ func (s *sub2apiRelay) DisableUser(ctx context.Context, userID int64) error {
 }
 
 func (s *sub2apiRelay) ChatCompletion(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
+	return s.chatCompletion(ctx, req, relayErrorMessageSuffix, false)
+}
+
+func (s *sub2apiRelay) chatCompletion(ctx context.Context, req ChatCompletionRequest, errorSuffix func(io.Reader) string, requireTerminal bool) (*ChatCompletionResponse, error) {
 	req.Model = s.inferenceModel()
 
 	body, err := json.Marshal(req)
@@ -1139,12 +1147,15 @@ func (s *sub2apiRelay) ChatCompletion(ctx context.Context, req ChatCompletionReq
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("relay: chat completion: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+		return nil, fmt.Errorf("relay: chat completion: unexpected status %d%s", resp.StatusCode, errorSuffix(resp.Body))
 	}
 
 	var openAIResp openAIChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&openAIResp); err != nil {
 		return nil, fmt.Errorf("relay: chat completion: decode: %w", err)
+	}
+	if requireTerminal && (len(openAIResp.Choices) == 0 || strings.TrimSpace(openAIResp.Choices[0].FinishReason) == "") {
+		return nil, fmt.Errorf("relay: chat completion: missing terminal finish_reason")
 	}
 
 	var content string
@@ -1175,6 +1186,80 @@ func (s *sub2apiRelay) ChatCompletionForPlatform(ctx context.Context, platform s
 	default:
 		return s.ChatCompletion(ctx, req)
 	}
+}
+
+func (s *sub2apiRelay) CompletionForProtocol(ctx context.Context, platform, protocol string, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
+	stream := false
+	req.Stream = &stream
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case ProtocolResponses:
+		return s.openAIResponses(ctx, req)
+	case ProtocolChatCompletions:
+		return s.chatCompletion(ctx, req, relayProbeErrorMessageSuffix, true)
+	case ProtocolMessages:
+		routePrefix := ""
+		if strings.EqualFold(strings.TrimSpace(platform), "antigravity") {
+			routePrefix = "/antigravity"
+		}
+		return s.anthropicMessages(ctx, req, routePrefix)
+	case ProtocolGenerateContent:
+		return s.geminiGenerateContent(ctx, req, "")
+	case ProtocolAntigravityGenerateContent:
+		return s.geminiGenerateContent(ctx, req, "/antigravity")
+	default:
+		return nil, fmt.Errorf("relay: unsupported completion protocol %q", protocol)
+	}
+}
+
+func (s *sub2apiRelay) openAIResponses(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
+	prompt := firstUserMessage(req.Messages)
+	if prompt == "" {
+		prompt = "Hi"
+	}
+	payload := openAIResponsesRequest{
+		Model: s.completionModel(req.Model),
+		Input: []openAIResponsesInput{{
+			Role: "user",
+			Content: []openAIResponsesContent{{
+				Type: "input_text",
+				Text: prompt,
+			}},
+		}},
+		MaxOutputTokens: req.MaxTokens,
+		Stream:          false,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("relay: responses: marshal: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, s.baseURL+"/responses", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("relay: responses: %w", err)
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+s.inferenceAPIKey())
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("relay: responses: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: responses: unexpected status %d%s", resp.StatusCode, relayProbeErrorMessageSuffix(resp.Body))
+	}
+
+	var responsesResp openAIResponsesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&responsesResp); err != nil {
+		return nil, fmt.Errorf("relay: responses: decode: %w", err)
+	}
+	if responsesResp.Status != "completed" {
+		return nil, fmt.Errorf("relay: responses: expected terminal status completed, got %q", responsesResp.Status)
+	}
+	return &ChatCompletionResponse{
+		Content:    responsesResp.contentText(),
+		TokensUsed: responsesResp.Usage.TotalTokens,
+	}, nil
 }
 
 func (s *sub2apiRelay) ListModelsForPlatform(ctx context.Context, platform string) ([]ModelOption, error) {
@@ -1290,12 +1375,15 @@ func (s *sub2apiRelay) anthropicMessages(ctx context.Context, req ChatCompletion
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("relay: messages: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+		return nil, fmt.Errorf("relay: messages: unexpected status %d%s", resp.StatusCode, relayProbeErrorMessageSuffix(resp.Body))
 	}
 
 	var messagesResp anthropicMessagesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&messagesResp); err != nil {
 		return nil, fmt.Errorf("relay: messages: decode: %w", err)
+	}
+	if strings.TrimSpace(messagesResp.StopReason) == "" {
+		return nil, fmt.Errorf("relay: messages: missing terminal stop_reason")
 	}
 
 	return &ChatCompletionResponse{
@@ -1345,12 +1433,15 @@ func (s *sub2apiRelay) geminiGenerateContent(ctx context.Context, req ChatComple
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("relay: gemini generate content: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+		return nil, fmt.Errorf("relay: gemini generate content: unexpected status %d%s", resp.StatusCode, relayProbeErrorMessageSuffix(resp.Body))
 	}
 
 	var geminiResp geminiGenerateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&geminiResp); err != nil {
 		return nil, fmt.Errorf("relay: gemini generate content: decode: %w", err)
+	}
+	if !geminiResp.hasTerminalCandidate() {
+		return nil, fmt.Errorf("relay: gemini generate content: missing terminal finishReason")
 	}
 
 	return &ChatCompletionResponse{
@@ -1406,6 +1497,21 @@ func relayErrorMessageSuffix(body io.Reader) string {
 		return ""
 	}
 	return relayErrorMessageSuffixFromData(data)
+}
+
+func relayProbeErrorMessageSuffix(body io.Reader) string {
+	if body == nil {
+		return ""
+	}
+	data, err := io.ReadAll(io.LimitReader(body, 64<<10))
+	if err != nil {
+		return ""
+	}
+	message := strings.TrimSpace(string(data))
+	if message == "" {
+		return ""
+	}
+	return ": " + message
 }
 
 func relayErrorMessageSuffixFromData(data []byte) string {
@@ -1740,12 +1846,13 @@ func (s *sub2apiRelay) ResolveDefaultGroupIDForPlatform(ctx context.Context, pla
 
 func (s *sub2apiRelay) ListPlatformGroups(ctx context.Context) ([]Group, error) {
 	type groupItem struct {
-		ID               int64  `json:"id"`
-		Name             string `json:"name"`
-		Platform         string `json:"platform"`
-		Status           string `json:"status"`
-		IsExclusive      bool   `json:"is_exclusive"`
-		SubscriptionType string `json:"subscription_type"`
+		ID                    int64  `json:"id"`
+		Name                  string `json:"name"`
+		Platform              string `json:"platform"`
+		Status                string `json:"status"`
+		IsExclusive           bool   `json:"is_exclusive"`
+		SubscriptionType      string `json:"subscription_type"`
+		AllowMessagesDispatch bool   `json:"allow_messages_dispatch"`
 	}
 	type pageData struct {
 		Items []groupItem `json:"items"`
@@ -1785,11 +1892,12 @@ func (s *sub2apiRelay) ListPlatformGroups(ctx context.Context) ([]Group, error) 
 				continue
 			}
 			groups = append(groups, Group{
-				ID:               item.ID,
-				Name:             strings.TrimSpace(item.Name),
-				Platform:         strings.TrimSpace(item.Platform),
-				IsExclusive:      item.IsExclusive,
-				SubscriptionType: strings.TrimSpace(item.SubscriptionType),
+				ID:                    item.ID,
+				Name:                  strings.TrimSpace(item.Name),
+				Platform:              strings.TrimSpace(item.Platform),
+				IsExclusive:           item.IsExclusive,
+				SubscriptionType:      strings.TrimSpace(item.SubscriptionType),
+				AllowMessagesDispatch: item.AllowMessagesDispatch,
 			})
 		}
 
@@ -2385,10 +2493,57 @@ type openAIChatResponse struct {
 			Content   string     `json:"content"`
 			ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Usage struct {
 		TotalTokens int `json:"total_tokens"`
 	} `json:"usage"`
+}
+
+type openAIResponsesRequest struct {
+	Model           string                 `json:"model"`
+	Input           []openAIResponsesInput `json:"input"`
+	MaxOutputTokens *int                   `json:"max_output_tokens,omitempty"`
+	Stream          bool                   `json:"stream"`
+}
+
+type openAIResponsesInput struct {
+	Role    string                   `json:"role"`
+	Content []openAIResponsesContent `json:"content"`
+}
+
+type openAIResponsesContent struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type openAIResponsesResponse struct {
+	Status string `json:"status"`
+	Output []struct {
+		Type    string `json:"type"`
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	} `json:"output"`
+	Usage struct {
+		TotalTokens int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+func (r openAIResponsesResponse) contentText() string {
+	var parts []string
+	for _, output := range r.Output {
+		if output.Type != "message" {
+			continue
+		}
+		for _, content := range output.Content {
+			if content.Type == "output_text" && strings.TrimSpace(content.Text) != "" {
+				parts = append(parts, strings.TrimSpace(content.Text))
+			}
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 type anthropicMessagesResponse struct {
@@ -2396,7 +2551,8 @@ type anthropicMessagesResponse struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
-	Usage struct {
+	StopReason string `json:"stop_reason"`
+	Usage      struct {
 		InputTokens  int `json:"input_tokens"`
 		OutputTokens int `json:"output_tokens"`
 	} `json:"usage"`
@@ -2405,6 +2561,9 @@ type anthropicMessagesResponse struct {
 func (r anthropicMessagesResponse) contentText() string {
 	parts := make([]string, 0, len(r.Content))
 	for _, item := range r.Content {
+		if item.Type != "text" {
+			continue
+		}
 		if text := strings.TrimSpace(item.Text); text != "" {
 			parts = append(parts, text)
 		}
@@ -2435,10 +2594,20 @@ type geminiGenerateResponse struct {
 		Content struct {
 			Parts []geminiPart `json:"parts"`
 		} `json:"content"`
+		FinishReason string `json:"finishReason"`
 	} `json:"candidates"`
 	UsageMetadata struct {
 		TotalTokenCount int `json:"totalTokenCount"`
 	} `json:"usageMetadata"`
+}
+
+func (r geminiGenerateResponse) hasTerminalCandidate() bool {
+	for _, candidate := range r.Candidates {
+		if strings.TrimSpace(candidate.FinishReason) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (r geminiGenerateResponse) contentText() string {

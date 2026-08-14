@@ -67,15 +67,67 @@ type APIKey struct {
 }
 
 type Group struct {
-	ID               int64    `json:"id"`
-	Name             string   `json:"name"`
-	Platform         string   `json:"platform"`
-	IsExclusive      bool     `json:"is_exclusive,omitempty"`
-	SubscriptionType string   `json:"subscription_type,omitempty"`
-	RateMultiplier   *float64 `json:"rate_multiplier,omitempty"`
-	DailyLimitUSD    *float64 `json:"daily_limit_usd,omitempty"`
-	WeeklyLimitUSD   *float64 `json:"weekly_limit_usd,omitempty"`
-	MonthlyLimitUSD  *float64 `json:"monthly_limit_usd,omitempty"`
+	ID                    int64    `json:"id"`
+	Name                  string   `json:"name"`
+	Platform              string   `json:"platform"`
+	IsExclusive           bool     `json:"is_exclusive,omitempty"`
+	SubscriptionType      string   `json:"subscription_type,omitempty"`
+	AllowMessagesDispatch bool     `json:"allow_messages_dispatch,omitempty"`
+	RateMultiplier        *float64 `json:"rate_multiplier,omitempty"`
+	DailyLimitUSD         *float64 `json:"daily_limit_usd,omitempty"`
+	WeeklyLimitUSD        *float64 `json:"weekly_limit_usd,omitempty"`
+	MonthlyLimitUSD       *float64 `json:"monthly_limit_usd,omitempty"`
+}
+
+const (
+	ProtocolResponses                  = "responses"
+	ProtocolChatCompletions            = "chat_completions"
+	ProtocolMessages                   = "messages"
+	ProtocolGenerateContent            = "generate_content"
+	ProtocolAntigravityGenerateContent = "antigravity_generate_content"
+)
+
+type ProtocolCapabilities struct {
+	Supported   []string
+	Recommended string
+}
+
+func StableProtocolCapabilities(group Group) ProtocolCapabilities {
+	switch strings.ToLower(strings.TrimSpace(group.Platform)) {
+	case "openai":
+		supported := []string{ProtocolResponses, ProtocolChatCompletions}
+		if group.AllowMessagesDispatch {
+			supported = append(supported, ProtocolMessages)
+		}
+		return ProtocolCapabilities{Supported: supported, Recommended: ProtocolResponses}
+	case "anthropic", "claude":
+		return ProtocolCapabilities{
+			Supported:   []string{ProtocolMessages, ProtocolResponses, ProtocolChatCompletions},
+			Recommended: ProtocolMessages,
+		}
+	case "gemini":
+		return ProtocolCapabilities{
+			Supported:   []string{ProtocolGenerateContent, ProtocolChatCompletions},
+			Recommended: ProtocolGenerateContent,
+		}
+	case "antigravity":
+		return ProtocolCapabilities{
+			Supported:   []string{ProtocolMessages, ProtocolAntigravityGenerateContent},
+			Recommended: ProtocolMessages,
+		}
+	case "grok":
+		return ProtocolCapabilities{
+			Supported:   []string{ProtocolResponses, ProtocolChatCompletions, ProtocolMessages},
+			Recommended: ProtocolResponses,
+		}
+	case "composite":
+		return ProtocolCapabilities{
+			Supported:   []string{ProtocolChatCompletions, ProtocolResponses, ProtocolMessages, ProtocolGenerateContent},
+			Recommended: ProtocolChatCompletions,
+		}
+	default:
+		return ProtocolCapabilities{}
+	}
 }
 
 type UserSubscription struct {
@@ -183,6 +235,7 @@ type ChatCompletionRequest struct {
 	Messages    []ChatMessage `json:"messages"`
 	Temperature *float64      `json:"temperature,omitempty"`
 	MaxTokens   *int          `json:"max_tokens,omitempty"`
+	Stream      *bool         `json:"stream,omitempty"`
 }
 
 type ChatMessage struct {
