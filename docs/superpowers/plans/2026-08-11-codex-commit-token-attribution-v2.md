@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** T01-T12 and T14/T15 are implemented and released. T16 verified automatic Repository registration, bounded/resumable fail-closed recovery, and a three-commit HTTP qualification branch. T17 shipped in `ae-cli/v0.2.0-preview.8` and platform `v0.1.0-preview.85`; production runs Helm revision `85`. PR #290 merged as `aecc7754`, main CI `31766333707` and CLI release run `31766681211` passed, and `ae-cli/v0.2.0-preview.9` shipped without a new platform release or Helm rollout. A real TUI first-turn canary then produced one acknowledged `codex_local` group, two authoritative 15-minute pools, 11 response increments, exactly `348,018` Token, zero coverage gaps, and zero Request claims. A same-session second-turn canary correctly failed closed with no production row but exposed that preview.9 unconditionally resets `total_token_usage` even though current Codex 0.147 keeps it session-cumulative. The minimal dual-baseline scanner and scan-progress invalidation repair is locally implemented and verified; merge, a new CLI release, and a successful retained multi-turn canary remain. These canaries do not satisfy the two-subsequent-ordinary-commit or T13 adoption gates. The seven-day stability clock must restart from the first qualifying ordinary pool and aggregate Activity readback; #252 cleanup remains blocked and no cleanup has run.
+**Status:** T01-T12, T14/T15, and T17 are implemented, released, and production-qualified. T16 verified automatic Repository registration, bounded/resumable fail-closed recovery, and a three-commit HTTP qualification branch. T17 shipped its platform support in `v0.1.0-preview.85` / Helm revision `85`, then completed the current Codex 0.147 scanner repairs through CLI-only previews 9 and 10. PR #294 merged as `72746a1f`; merge-SHA main CI `31772012834` and CLI release run `31772332839` passed. The installed preview.10 recovered the retained same-session commit through an ordinary managed pre-push wake without manual sync. Production readback proved one acknowledged `codex_local` hot group, one direct relation to one formal pool, 8 response increments, exactly `284,666` Token, zero coverage gaps, and zero Request claims. The three local status conflicts are unrelated historical HTTP groups. These operator canaries do not satisfy the two-subsequent-ordinary-commit or T13 adoption gates. The seven-day stability clock must restart from the first qualifying ordinary pool and aggregate Activity readback; #252 cleanup remains blocked and no cleanup has run.
 **T13 baseline (Day 0 not established):** The production baseline had one formal pool, one direct relation, `4,395` formal Token, and one formal Request. The latest pre-WebSocket-canary readback had three formal pools, three direct relations, `1,146,707` formal Token, and 12 formal Request claims. Both failed WebSocket canary commits contributed zero, so that readback was unchanged by them. Shadow remains isolated and v1 bucket/revision tables remain zero. The additional ordinary-workflow pool and final-at-execution SCM freshness gates remain unsatisfied; SCM freshness must be read at the final gate rather than inferred from an older recovery.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
@@ -345,8 +345,15 @@ T01 contract publication (#253)
   thereafter, invalidate older completed scan progress once, pass the full CLI
   suite and two-axis review, and replay the retained fixture as one uploadable
   group with 8 responses and exactly `284,666` Token.
-- [ ] Merge and release the reviewed CLI repair, then rerun the retained
-  same-session multi-turn commit as one gap-free single-pool Activity canary.
+- [x] Merge PR #294 as `72746a1f`, verify merge-SHA main CI `31772012834`, and
+  release CLI-only `ae-cli/v0.2.0-preview.10` through run `31772332839` without
+  a platform release or Helm rollout. Install the released binary, run its
+  post-install and managed-hook refresh paths, and wake the retained
+  same-session commit through the ordinary managed pre-push hook without
+  manual sync or a remote canary branch. The backend acknowledged one
+  `codex_local` group, and exact production readback proved one hot group, one
+  direct relation to one formal pool, 8 responses, exactly `284,666` Token,
+  zero coverage gaps, and zero Request claims.
 
 ## Cross-Ticket Invariants
 
