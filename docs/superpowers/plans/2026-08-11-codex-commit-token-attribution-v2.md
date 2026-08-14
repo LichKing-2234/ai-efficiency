@@ -1,8 +1,8 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** T01-T12, T14/T15, and T17 are implemented, released, and production-qualified. T16 has now observed two genuine Agent Infra commits through ordinary `post-commit` hooks: `6c8bd9c8` produced 5 reconciled Requests and `973,350` Token, while `1ed61c8f` produced 24 reconciled Requests and `2,337,635` Token. Both are formal pools visible in Activity, so the ordinary-commit and new-pool evidence is satisfied. The installed preview.10 runner still cannot close its ten retained triggers: an exact rescan wrapped the evidence digest of an already acknowledged single allocation, and terminal conflicts then poisoned later unrelated work. A minimal CLI repair is in progress; release, ordinary managed-hook replay, final status/doctor/conservation/SCM readback, and Day 0 recording remain incomplete. #252 cleanup remains blocked and no cleanup has run.
-**T13 candidate baseline (Day 0 not established):** Production Activity for 2026-08-13 through 2026-08-14 reads `4,112,631` committed Token, including `3,479,947` direct Token for Agent Infra, with complete claim coverage, an exact Usage ratio, and zero failed, partial, unsynced, or stale SCM coverage. This does not start Day 0 yet: the retained-trigger runner repair must first be released and exercised by an ordinary managed hook, after which status/doctor, formal pool/relation/Token conservation, v1/shadow isolation, and fresh SCM coverage must be read again.
+**Status:** T01-T12 and T14-T17 are implemented, released, and production-qualified. PR #297 merged as `b3349ba7`, main CI `31777217422` passed all four jobs, and CLI-only `ae-cli/v0.2.0-preview.11` published six verified assets through release run `31778152726`. The released binary resumed the ten retained Agent Infra triggers through ordinary managed `pre-push` hooks without `ae-cli sync`; the durable task and scan progress cleared, status/doctor now report `Sync Task: none`, and delivery is `pending=0 conflict=1 upgrade_required=0`. The one unchanged terminal conflict remains quarantined and did not block later work. T16 is complete. #252 cleanup has not run and remains blocked only on the new seven-day stable window plus its final gates and separate execution authority.
+**T13 Day 0 baseline:** Day 0 is `2026-08-14T07:22:18.199843Z`; the seven-day gate cannot complete before `2026-08-21T07:22:18.199843Z` and restarts after any failed gate. The all-time formal baseline is 7 pools, 7 direct relations across 6 commits, `6,890,621` Token, 71 source requests/responses, and zero gaps. Production Activity for 2026-08-13 through 2026-08-14 reads `6,886,226` committed Token: Agent Infra contributes `6,253,542` direct Token and AI Efficiency contributes `632,684`. Claim coverage is complete, readiness is active, the Usage-backed ratio is exact against `35,272,145,109` total Token, and SCM failed/partial/unsynced/stale coverage is zero. Formal duplicate pool/relation/provider-scoped Request identities are zero, formal near-expiry and finalization errors are zero, v1 remains `0/0`, and the one `shadow_v2` pool remains isolated.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -173,11 +173,10 @@ T01 contract publication (#253)
 
 ### T13 — Stable-window legacy cleanup ([#252](https://github.com/LichKing-2234/ai-efficiency/issues/252))
 
-- [ ] Observe seven continuous stable days from the first qualifying ordinary
-  pool confirmed by aggregate Activity readback. The earlier cutover-based
-  clock ending on `2026-08-19T12:59:09Z` is superseded; restart the new clock
-  after any failed gate.
-- [ ] From the Day 0 baseline of one formal pool, read back at least one
+- [ ] Observe seven continuous stable days from Day 0
+  `2026-08-14T07:22:18.199843Z`. The gate cannot complete before
+  `2026-08-21T07:22:18.199843Z`; restart the clock after any failed gate.
+- [ ] From the recorded Day 0 baseline, read back at least one
   additional non-canary ordinary-workflow `formal_v2` direct/shared pool.
 - [ ] Keep live/ready, structured v1 `upgrade_required`, reconciliation/error,
   near-expiry, pending-boundary, Activity/readiness/ratio, final SCM freshness,
@@ -281,26 +280,32 @@ T01 contract publication (#253)
   category at zero, while formal committed Token remained `173,357`. Because
   freshness expires after 24 hours, this proves the recovery path but does not
   check the final T13 freshness gate in advance.
-- [ ] Observe at least two subsequent genuine ordinary commits from any eligible
+- [x] Observe at least two subsequent genuine ordinary commits from any eligible
   Repository through hooks without manual sync. They may come from the same or
   different Repositories; at least one workflow must produce a new ordinary
   formal pool visible in Activity. Automatic Repository registration or reuse,
   status/doctor, and the formal pool/relation/Token delta must all read back
-  correctly and conserve exactly. The commit/pool portion is satisfied by
-  Agent Infra commits `6c8bd9c8` (5 Requests, `973,350` Token) and `1ed61c8f`
-  (24 Requests, `2,337,635` Token), both captured as ordinary `post-commit`
-  work and visible in formal Activity. Final status/doctor and exact
-  conservation remain open because ten retained triggers are blocked behind
-  three local conflicts.
-- [ ] Release the single-allocation evidence-digest and terminal-conflict
+  correctly and conserve exactly. Agent Infra commits `6c8bd9c8` and
+  `1ed61c8f` were both captured as ordinary `post-commit` work and remain
+  visible in formal Activity. The final replay recovered late official usage:
+  `6c8bd9c8` grew from 5 Requests / `973,350` Token to 15 Requests /
+  `3,069,557` Token, while `1ed61c8f` grew from 24 Requests / `2,337,635`
+  Token to 30 Requests / `3,015,023` Token. The exact combined increase is
+  16 Requests and `2,773,595` Token without a new pool or relation identity.
+- [x] Release the single-allocation evidence-digest and terminal-conflict
   quarantine repair, then use an ordinary managed hook rather than
   `ae-cli sync` to drain the ten retained triggers. Preserve terminal conflict
   audit state while proving that it is not retransmitted and does not block a
   later trigger; `upgrade_required` and unknown acknowledgements must remain
-  fail-closed.
-- [ ] Complete the T13 adoption and final SCM-freshness readbacks, then restart
+  fail-closed. PR #297 merged as `b3349ba7`; `ae-cli/v0.2.0-preview.11`
+  release run `31778152726` published six assets. Two ordinary managed
+  `pre-push` wakes resumed the bounded scan, cleared all ten triggers, retained
+  exactly one terminal conflict, and ended at `pending=0 conflict=1
+  upgrade_required=0` with no task or scan progress.
+- [x] Complete the T13 adoption and final SCM-freshness readbacks, then restart
   the seven-day stability clock from the first qualifying ordinary pool and
-  aggregate Activity readback.
+  aggregate Activity readback. Day 0 is `2026-08-14T07:22:18.199843Z`; the
+  exact baseline and earliest possible completion time are recorded above.
 
 ### T17 — Responses WebSocket Codex-local Token expansion ([#269](https://github.com/LichKing-2234/ai-efficiency/issues/269))
 

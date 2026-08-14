@@ -7,9 +7,11 @@
 
 This runbook records the reversible evidence and exact operator sequence used
 for the completed #251 cutover. The earlier cutover-based cleanup date ending
-on `2026-08-19T12:59:09Z` is superseded. #252 remains blocked until #278
-establishes a new Day 0 from a qualifying ordinary-workflow pool and every gate
-then stays green for seven continuous days.
+on `2026-08-19T12:59:09Z` is superseded. #278 completed the ordinary-workflow
+qualification and all final readbacks, establishing #252 Day 0 at
+`2026-08-14T07:22:18.199843Z`. Cleanup cannot begin before
+`2026-08-21T07:22:18.199843Z`, restarts after any failed gate, and still
+requires separate execution authority.
 
 ## Execution Status
 
