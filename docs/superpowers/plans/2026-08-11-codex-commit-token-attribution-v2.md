@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** T01-T12 and T14/T15 are implemented and released. T16 verified automatic Repository registration, bounded/resumable fail-closed recovery, and a three-commit HTTP qualification branch. T17 shipped in `ae-cli/v0.2.0-preview.8` and platform `v0.1.0-preview.85`; production runs Helm revision `85`. PR #290 merged as `aecc7754`, main CI `31766333707` and CLI release run `31766681211` passed, and `ae-cli/v0.2.0-preview.9` shipped without a new platform release or Helm rollout. A real TUI first-turn canary then produced one acknowledged `codex_local` group, two authoritative 15-minute pools, 11 response increments, exactly `348,018` Token, zero coverage gaps, and zero Request claims. A same-session second-turn canary correctly failed closed with no production row but exposed that preview.9 unconditionally resets `total_token_usage` even though current Codex 0.147 keeps it session-cumulative. The minimal dual-baseline scanner and scan-progress invalidation repair is now under test and still requires merge, a new CLI release, and a successful retained multi-turn canary. These canaries do not satisfy the two-subsequent-ordinary-commit or T13 adoption gates. The seven-day stability clock must restart from the first qualifying ordinary pool and aggregate Activity readback; #252 cleanup remains blocked and no cleanup has run.
+**Status:** T01-T12 and T14/T15 are implemented and released. T16 verified automatic Repository registration, bounded/resumable fail-closed recovery, and a three-commit HTTP qualification branch. T17 shipped in `ae-cli/v0.2.0-preview.8` and platform `v0.1.0-preview.85`; production runs Helm revision `85`. PR #290 merged as `aecc7754`, main CI `31766333707` and CLI release run `31766681211` passed, and `ae-cli/v0.2.0-preview.9` shipped without a new platform release or Helm rollout. A real TUI first-turn canary then produced one acknowledged `codex_local` group, two authoritative 15-minute pools, 11 response increments, exactly `348,018` Token, zero coverage gaps, and zero Request claims. A same-session second-turn canary correctly failed closed with no production row but exposed that preview.9 unconditionally resets `total_token_usage` even though current Codex 0.147 keeps it session-cumulative. The minimal dual-baseline scanner and scan-progress invalidation repair is locally implemented and verified; merge, a new CLI release, and a successful retained multi-turn canary remain. These canaries do not satisfy the two-subsequent-ordinary-commit or T13 adoption gates. The seven-day stability clock must restart from the first qualifying ordinary pool and aggregate Activity readback; #252 cleanup remains blocked and no cleanup has run.
 **T13 baseline (Day 0 not established):** The production baseline had one formal pool, one direct relation, `4,395` formal Token, and one formal Request. The latest pre-WebSocket-canary readback had three formal pools, three direct relations, `1,146,707` formal Token, and 12 formal Request claims. Both failed WebSocket canary commits contributed zero, so that readback was unchanged by them. Shadow remains isolated and v1 bucket/revision tables remain zero. The additional ordinary-workflow pool and final-at-execution SCM freshness gates remain unsatisfied; SCM freshness must be read at the final gate rather than inferred from an older recovery.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
@@ -340,11 +340,13 @@ T01 contract publication (#253)
   post-commit hook. Its 11 increments materialized as two direct pools solely
   because the turn crossed a 15-minute boundary; the pools conserve exactly
   `348,018` Token with zero gaps and zero Request claims.
-- [ ] Replace unconditional per-turn cumulative reset with an exact first-row
+- [x] Replace unconditional per-turn cumulative reset with an exact first-row
   choice between the prior session baseline and zero, keep both modes strict
-  thereafter, invalidate older completed scan progress once, merge and release
-  the reviewed CLI repair, and rerun the retained same-session multi-turn commit
-  as one gap-free single-pool Activity canary.
+  thereafter, invalidate older completed scan progress once, pass the full CLI
+  suite and two-axis review, and replay the retained fixture as one uploadable
+  group with 8 responses and exactly `284,666` Token.
+- [ ] Merge and release the reviewed CLI repair, then rerun the retained
+  same-session multi-turn commit as one gap-free single-pool Activity canary.
 
 ## Cross-Ticket Invariants
 
