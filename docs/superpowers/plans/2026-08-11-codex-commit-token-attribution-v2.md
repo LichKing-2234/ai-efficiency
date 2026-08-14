@@ -1,8 +1,8 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** T01-T12, T14/T15, and T17 are implemented, released, and production-qualified. T16 verified automatic Repository registration, bounded/resumable fail-closed recovery, and a three-commit HTTP qualification branch. T17 shipped its platform support in `v0.1.0-preview.85` / Helm revision `85`, then completed the current Codex 0.147 scanner repairs through CLI-only previews 9 and 10. PR #294 merged as `72746a1f`; merge-SHA main CI `31772012834` and CLI release run `31772332839` passed. The installed preview.10 recovered the retained same-session commit through an ordinary managed pre-push wake without manual sync. Production readback proved one acknowledged `codex_local` hot group, one direct relation to one formal pool, 8 response increments, exactly `284,666` Token, zero coverage gaps, and zero Request claims. The three local status conflicts are unrelated historical HTTP groups. These operator canaries do not satisfy the two-subsequent-ordinary-commit or T13 adoption gates. The seven-day stability clock must restart from the first qualifying ordinary pool and aggregate Activity readback; #252 cleanup remains blocked and no cleanup has run.
-**T13 baseline (Day 0 not established):** The production baseline had one formal pool, one direct relation, `4,395` formal Token, and one formal Request. The latest pre-WebSocket-canary readback had three formal pools, three direct relations, `1,146,707` formal Token, and 12 formal Request claims. Both failed WebSocket canary commits contributed zero, so that readback was unchanged by them. Shadow remains isolated and v1 bucket/revision tables remain zero. The additional ordinary-workflow pool and final-at-execution SCM freshness gates remain unsatisfied; SCM freshness must be read at the final gate rather than inferred from an older recovery.
+**Status:** T01-T12, T14/T15, and T17 are implemented, released, and production-qualified. T16 has now observed two genuine Agent Infra commits through ordinary `post-commit` hooks: `6c8bd9c8` produced 5 reconciled Requests and `973,350` Token, while `1ed61c8f` produced 24 reconciled Requests and `2,337,635` Token. Both are formal pools visible in Activity, so the ordinary-commit and new-pool evidence is satisfied. The installed preview.10 runner still cannot close its ten retained triggers: an exact rescan wrapped the evidence digest of an already acknowledged single allocation, and terminal conflicts then poisoned later unrelated work. A minimal CLI repair is in progress; release, ordinary managed-hook replay, final status/doctor/conservation/SCM readback, and Day 0 recording remain incomplete. #252 cleanup remains blocked and no cleanup has run.
+**T13 candidate baseline (Day 0 not established):** Production Activity for 2026-08-13 through 2026-08-14 reads `4,112,631` committed Token, including `3,479,947` direct Token for Agent Infra, with complete claim coverage, an exact Usage ratio, and zero failed, partial, unsynced, or stale SCM coverage. This does not start Day 0 yet: the retained-trigger runner repair must first be released and exercised by an ordinary managed hook, after which status/doctor, formal pool/relation/Token conservation, v1/shadow isolation, and fresh SCM coverage must be read again.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -286,7 +286,18 @@ T01 contract publication (#253)
   different Repositories; at least one workflow must produce a new ordinary
   formal pool visible in Activity. Automatic Repository registration or reuse,
   status/doctor, and the formal pool/relation/Token delta must all read back
-  correctly and conserve exactly.
+  correctly and conserve exactly. The commit/pool portion is satisfied by
+  Agent Infra commits `6c8bd9c8` (5 Requests, `973,350` Token) and `1ed61c8f`
+  (24 Requests, `2,337,635` Token), both captured as ordinary `post-commit`
+  work and visible in formal Activity. Final status/doctor and exact
+  conservation remain open because ten retained triggers are blocked behind
+  three local conflicts.
+- [ ] Release the single-allocation evidence-digest and terminal-conflict
+  quarantine repair, then use an ordinary managed hook rather than
+  `ae-cli sync` to drain the ten retained triggers. Preserve terminal conflict
+  audit state while proving that it is not retransmitted and does not block a
+  later trigger; `upgrade_required` and unknown acknowledgements must remain
+  fail-closed.
 - [ ] Complete the T13 adoption and final SCM-freshness readbacks, then restart
   the seven-day stability clock from the first qualifying ordinary pool and
   aggregate Activity readback.
