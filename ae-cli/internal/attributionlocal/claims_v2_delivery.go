@@ -56,6 +56,9 @@ func SummarizeV2ClaimDelivery(state *V2ClaimState) V2DeliverySummary {
 }
 
 func v2ClaimUploadable(claim V2ClaimCandidate) bool {
+	if claim.DeliveryStatus == V2DeliveryConflict {
+		return false
+	}
 	return claim.GapReason == "" && (len(claim.Group.RequestIDs) > 0 || claim.Group.Calibration != nil || !claim.GroupAcknowledged)
 }
 

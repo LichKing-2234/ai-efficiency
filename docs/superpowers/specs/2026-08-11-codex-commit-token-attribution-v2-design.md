@@ -156,6 +156,11 @@ Formal commit association accepts only:
 - deterministic comparison with Git index/tree/commit content;
 - explicit Git rewrite or lineage evidence.
 
+For one commit allocation, the claim-group evidence digest is exactly that
+allocation's evidence digest. The ordered composite digest is introduced only
+after a second allocation is appended. An exact rescan of a single allocation
+must not change an already acknowledged group envelope.
+
 It rejects cwd, timing, path proximity, text similarity, ordinary command
 workdir, and "the next commit probably owns it" heuristics.
 
@@ -212,6 +217,14 @@ The client deletes only data covered by explicit server ACKs:
 - a WebSocket group envelope only after the acknowledged source, allocation,
   and complete `local_usage[]` aggregate still match local state;
 - conflicts, unknown responses, and unacknowledged items remain local.
+
+A `conflict`, `rejected`, or `rolled_back` acknowledgement is terminal for the
+unchanged local claim snapshot. It remains in the 90-day local state and in
+status/doctor diagnostics, but is excluded from automatic retransmission and
+does not keep its completed trigger or later unrelated triggers pending. A
+runner pass that leaves only terminal conflicts completes normally. Pending
+uploadable claims, `upgrade_required`, and malformed, unknown, missing, or
+protocol-mismatched acknowledgements continue to fail closed.
 
 If later JSONL rows monotonically increase an acknowledged WebSocket aggregate,
 the group is reopened and redelivered. The client never sends a decreasing or

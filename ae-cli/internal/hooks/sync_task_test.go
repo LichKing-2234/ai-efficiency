@@ -457,6 +457,23 @@ type countingV2Uploader struct {
 func (u countingV2Uploader) V2ClaimClient() attributionlocal.V2ClaimBackendClient { return u.client }
 func (u countingV2Uploader) RelayProviderID() int                                 { return 7 }
 
+type conflictV2ClaimClient struct{}
+
+func (conflictV2ClaimClient) SendAttributionV2Claims(_ context.Context, groups []client.AttributionV2ClaimGroup) (*client.AttributionV2ClaimBatchResult, error) {
+	results := make([]client.AttributionV2ClaimResult, 0, len(groups))
+	for _, group := range groups {
+		results = append(results, client.AttributionV2ClaimResult{Group: client.AttributionV2ItemStatus{ID: group.GroupID, Status: "conflict", Error: "claim conflict"}})
+	}
+	return &client.AttributionV2ClaimBatchResult{LedgerEpoch: "shadow_v2", V1WritePolicy: "accept", Results: results}, nil
+}
+
+type conflictV2Uploader struct{ *fakeUploader }
+
+func (u conflictV2Uploader) V2ClaimClient() attributionlocal.V2ClaimBackendClient {
+	return conflictV2ClaimClient{}
+}
+func (u conflictV2Uploader) RelayProviderID() int { return 7 }
+
 func TestRunV2ClaimSyncDoesNotUploadManualCommitWithoutCodexEvidence(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	backend := &countingV2ClaimClient{}
@@ -475,6 +492,63 @@ func TestRunV2ClaimSyncDoesNotUploadManualCommitWithoutCodexEvidence(t *testing.
 	progress, err := LoadV2ClaimScanProgress("ws-manual")
 	if err != nil || progress != nil {
 		t.Fatalf("completed scan progress = %+v, err=%v, want removed", progress, err)
+	}
+}
+
+func TestRunV2ClaimSyncQuarantinesTerminalConflictWithoutBlockingTrigger(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	now := time.Now().UTC()
+	if err := attributionlocal.SaveV2ClaimState(&attributionlocal.V2ClaimState{
+		Version: 1, Claims: []attributionlocal.V2ClaimCandidate{{
+			LocalKey: "local-conflict", FirstSeenAt: now, DeliveryStatus: attributionlocal.V2DeliveryConflict,
+			LastDeliveryError: "checkpoint allocation conflict",
+			Group: client.AttributionV2ClaimGroup{GroupID: "group-conflict", RelayProviderID: 7, RequestIDs: []string{"req-conflict"}},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	backend := &countingV2ClaimClient{}
+	execCtx := ExecutionContext{WorkspaceID: "ws-conflict", RepoRoot: t.TempDir(), RepoConfigID: 9, RepoKey: "repo-host.example.com/org/repo"}
+	task := &SyncTask{WorkspaceID: execCtx.WorkspaceID, V2Triggers: []V2SyncTrigger{{
+		Kind: "post-commit", EventID: "event-conflict", CommitSHA: "commit-conflict", CapturedAt: now,
+	}}}
+	protocol := client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept}
+	if err := runV2ClaimSync(context.Background(), countingV2Uploader{fakeUploader: &fakeUploader{}, client: backend}, execCtx, task, protocol); err != nil {
+		t.Fatal(err)
+	}
+	if backend.calls != 0 {
+		t.Fatalf("terminal conflict uploads = %d, want 0", backend.calls)
+	}
+	if progress, err := LoadV2ClaimScanProgress(execCtx.WorkspaceID); err != nil || progress != nil {
+		t.Fatalf("completed conflict scan progress = %+v, err=%v, want removed", progress, err)
+	}
+}
+
+func TestRunV2ClaimSyncFinishesTriggerWhenBackendReturnsTerminalConflict(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	now := time.Now().UTC()
+	if err := attributionlocal.SaveV2ClaimState(&attributionlocal.V2ClaimState{
+		Version: 1, Claims: []attributionlocal.V2ClaimCandidate{{
+			LocalKey: "local-conflict", FirstSeenAt: now,
+			Group: client.AttributionV2ClaimGroup{GroupID: "group-conflict", RelayProviderID: 7, RequestIDs: []string{"req-conflict"}},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	execCtx := ExecutionContext{WorkspaceID: "ws-new-conflict", RepoRoot: t.TempDir(), RepoConfigID: 9, RepoKey: "repo-host.example.com/org/repo"}
+	task := &SyncTask{WorkspaceID: execCtx.WorkspaceID, V2Triggers: []V2SyncTrigger{{
+		Kind: "post-commit", EventID: "event-conflict", CommitSHA: "commit-conflict", CapturedAt: now,
+	}}}
+	protocol := client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept}
+	if err := runV2ClaimSync(context.Background(), conflictV2Uploader{fakeUploader: &fakeUploader{}}, execCtx, task, protocol); err != nil {
+		t.Fatal(err)
+	}
+	state, err := attributionlocal.LoadV2ClaimState()
+	if err != nil || len(state.Claims) != 1 || state.Claims[0].DeliveryStatus != attributionlocal.V2DeliveryConflict || len(state.Claims[0].Group.RequestIDs) != 1 {
+		t.Fatalf("quarantined conflict state = %+v, err=%v", state, err)
+	}
+	if progress, err := LoadV2ClaimScanProgress(execCtx.WorkspaceID); err != nil || progress != nil {
+		t.Fatalf("completed conflict scan progress = %+v, err=%v, want removed", progress, err)
 	}
 }
 

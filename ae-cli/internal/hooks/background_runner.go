@@ -249,8 +249,8 @@ func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionCon
 		return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim state could not be loaded", err)
 	}
 	if len(groups) == 0 {
-		if summary.Conflict > 0 || summary.UpgradeRequired > 0 {
-			return syncTaskFailure(SyncTaskFailureStageAcknowledgement, "backend acknowledgement requires recovery", fmt.Errorf("v2 claim delivery requires recovery: conflicts=%d upgrade_required=%d", summary.Conflict, summary.UpgradeRequired))
+		if summary.UpgradeRequired > 0 {
+			return syncTaskFailure(SyncTaskFailureStageAcknowledgement, "backend acknowledgement requires recovery", fmt.Errorf("v2 claim delivery requires recovery: upgrade_required=%d", summary.UpgradeRequired))
 		}
 		return finishV2ClaimScan(execCtx.WorkspaceID, len(options) > 0)
 	}
@@ -261,11 +261,15 @@ func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionCon
 	var ackErr error
 	if err := attributionlocal.UpdateV2ClaimState(ctx, func(state *attributionlocal.V2ClaimState) error {
 		ackErr = attributionlocal.ApplyV2ClaimAcknowledgements(state, groups, result, protocol, time.Now().UTC())
+		summary = attributionlocal.SummarizeV2ClaimDelivery(state)
 		return nil
 	}); err != nil {
 		return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim acknowledgement could not be saved", err)
 	}
-	if ackErr != nil {
+	if summary.Pending > 0 || summary.UpgradeRequired > 0 {
+		if ackErr == nil {
+			ackErr = fmt.Errorf("v2 claim delivery requires recovery: pending=%d upgrade_required=%d", summary.Pending, summary.UpgradeRequired)
+		}
 		return syncTaskFailure(SyncTaskFailureStageAcknowledgement, "backend acknowledgement requires recovery", ackErr)
 	}
 	return finishV2ClaimScan(execCtx.WorkspaceID, len(options) > 0)

@@ -33,6 +33,84 @@ func TestMergeV2ClaimStateFreezesProviderAndAppendsLateRequests(t *testing.T) {
 	}
 }
 
+func TestMergeV2ClaimStateRepairsAcknowledgedHTTPEvidenceOnExactAllocationRescan(t *testing.T) {
+	now := time.Date(2026, 8, 14, 6, 0, 0, 0, time.UTC)
+	allocation := client.AttributionV2CommitAllocation{
+		Sequence: 1, CheckpointEventID: "checkpoint-1", EvidenceDigest: "allocation-evidence",
+	}
+	state := &V2ClaimState{Claims: []V2ClaimCandidate{{
+		LocalKey: "thread-turn", FirstSeenAt: now.Add(-time.Hour), GroupAcknowledged: true,
+		AcknowledgedRequestDigests: []string{claimDigest("req-old")},
+		Group: client.AttributionV2ClaimGroup{
+			GroupID: "group", RelayProviderID: 7, EvidenceDigest: "stale-wrapped-evidence",
+			RequestIDs: []string{}, CommitAllocations: []client.AttributionV2CommitAllocation{allocation},
+		},
+	}}}
+	MergeV2ClaimState(state, []V2ClaimCandidate{{
+		LocalKey: "thread-turn", FirstSeenAt: now.Add(-time.Hour),
+		Group: client.AttributionV2ClaimGroup{
+			GroupID: "group", RelayProviderID: 7, EvidenceDigest: "allocation-evidence",
+			RequestIDs: []string{"req-old", "req-new"}, CommitAllocations: []client.AttributionV2CommitAllocation{allocation},
+		},
+	}}, now)
+
+	got := state.Claims[0]
+	if got.Group.EvidenceDigest != "allocation-evidence" || !got.GroupAcknowledged || got.DeliveryStatus != V2DeliveryPending || strings.Join(got.Group.RequestIDs, ",") != "req-new" {
+		t.Fatalf("rescanned acknowledged HTTP claim = %+v", got)
+	}
+}
+
+func TestMergeV2ClaimStateKeepsTerminalConflictOnExactRescan(t *testing.T) {
+	now := time.Date(2026, 8, 14, 6, 0, 0, 0, time.UTC)
+	allocation := client.AttributionV2CommitAllocation{
+		Sequence: 1, CheckpointEventID: "checkpoint-1", EvidenceDigest: "allocation-evidence",
+	}
+	state := &V2ClaimState{Claims: []V2ClaimCandidate{{
+		LocalKey: "thread-turn", FirstSeenAt: now.Add(-time.Hour), DeliveryStatus: V2DeliveryConflict,
+		LastDeliveryError: "claim conflict", Group: client.AttributionV2ClaimGroup{
+			GroupID: "group", RelayProviderID: 7, EvidenceDigest: "allocation-evidence",
+			RequestIDs: []string{"req-unresolved"}, CommitAllocations: []client.AttributionV2CommitAllocation{allocation},
+		},
+	}}}
+	MergeV2ClaimState(state, []V2ClaimCandidate{{
+		LocalKey: "thread-turn", FirstSeenAt: now.Add(-time.Hour), Group: client.AttributionV2ClaimGroup{
+			GroupID: "group", RelayProviderID: 7, EvidenceDigest: "allocation-evidence",
+			RequestIDs: []string{"req-unresolved"}, CommitAllocations: []client.AttributionV2CommitAllocation{allocation},
+		},
+	}}, now)
+
+	got := state.Claims[0]
+	if got.DeliveryStatus != V2DeliveryConflict || got.LastDeliveryError != "claim conflict" || len(UploadableV2ClaimGroups(state.Claims)) != 0 {
+		t.Fatalf("exactly rescanned terminal conflict = %+v", got)
+	}
+}
+
+func TestMergeV2ClaimStateReopensConflictForRepairedEvidenceDigest(t *testing.T) {
+	now := time.Date(2026, 8, 14, 6, 0, 0, 0, time.UTC)
+	allocation := client.AttributionV2CommitAllocation{
+		Sequence: 1, CheckpointEventID: "checkpoint-1", EvidenceDigest: "allocation-evidence",
+	}
+	state := &V2ClaimState{Claims: []V2ClaimCandidate{{
+		LocalKey: "thread-turn", FirstSeenAt: now.Add(-time.Hour), DeliveryStatus: V2DeliveryConflict,
+		LastDeliveryError: "claim group evidence conflict", GroupAcknowledged: true,
+		Group: client.AttributionV2ClaimGroup{
+			GroupID: "group", RelayProviderID: 7, EvidenceDigest: "stale-wrapped-evidence",
+			RequestIDs: []string{"req-unresolved"}, CommitAllocations: []client.AttributionV2CommitAllocation{allocation},
+		},
+	}}}
+	MergeV2ClaimState(state, []V2ClaimCandidate{{
+		LocalKey: "thread-turn", FirstSeenAt: now.Add(-time.Hour), Group: client.AttributionV2ClaimGroup{
+			GroupID: "group", RelayProviderID: 7, EvidenceDigest: "allocation-evidence",
+			RequestIDs: []string{"req-unresolved"}, CommitAllocations: []client.AttributionV2CommitAllocation{allocation},
+		},
+	}}, now)
+
+	got := state.Claims[0]
+	if got.Group.EvidenceDigest != "allocation-evidence" || got.DeliveryStatus != V2DeliveryPending || got.LastDeliveryError != "" || len(UploadableV2ClaimGroups(state.Claims)) != 1 {
+		t.Fatalf("repaired terminal conflict = %+v", got)
+	}
+}
+
 func TestMergeV2ClaimStateDoesNotRenewExpiredSource(t *testing.T) {
 	now := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
 	expired := V2ClaimCandidate{LocalKey: "old", FirstSeenAt: now.Add(-91 * 24 * time.Hour), UpdatedAt: now.Add(-time.Hour)}

@@ -285,12 +285,15 @@ func MergeV2ClaimState(state *V2ClaimState, scanned []V2ClaimCandidate, now time
 			continue
 		}
 		candidate.Group.RequestIDs = filterAcknowledgedV2Requests(candidate.Group.RequestIDs, existing.AcknowledgedRequestDigests)
-		newRequestCount := len(candidate.Group.RequestIDs)
+		requestCount := len(existing.Group.RequestIDs)
 		existing.Group.RequestIDs = uniqueSorted(append(existing.Group.RequestIDs, candidate.Group.RequestIDs...))
+		newRequestCount := len(existing.Group.RequestIDs) - requestCount
 		allocationCount := len(existing.Group.CommitAllocations)
 		existing.Group.CommitAllocations = mergeV2Allocations(existing.Group.CommitAllocations, candidate.Group.CommitAllocations)
 		allocationChanged := len(existing.Group.CommitAllocations) > allocationCount
+		evidenceDigest := existing.Group.EvidenceDigest
 		existing.Group.EvidenceDigest = v2AllocationEvidenceDigest(existing.Group.CommitAllocations)
+		evidenceChanged := existing.Group.EvidenceDigest != evidenceDigest
 		if existing.Group.TokenSource == "" {
 			existing.Group.TokenSource = candidate.Group.TokenSource
 		}
@@ -308,7 +311,7 @@ func MergeV2ClaimState(state *V2ClaimState, scanned []V2ClaimCandidate, now time
 		if allocationChanged || localUsageChanged {
 			existing.GroupAcknowledged = false
 		}
-		if newRequestCount > 0 || calibrationChanged || allocationChanged || localUsageChanged {
+		if newRequestCount > 0 || calibrationChanged || allocationChanged || evidenceChanged || localUsageChanged {
 			existing.DeliveryStatus = V2DeliveryPending
 			existing.LastDeliveryError = ""
 		}
@@ -1324,6 +1327,9 @@ func mergeV2Allocations(existing, incoming []client.AttributionV2CommitAllocatio
 }
 
 func v2AllocationEvidenceDigest(allocations []client.AttributionV2CommitAllocation) string {
+	if len(allocations) == 1 {
+		return allocations[0].EvidenceDigest
+	}
 	parts := make([]string, 0, len(allocations))
 	for _, allocation := range allocations {
 		parts = append(parts, fmt.Sprintf("%d", allocation.Sequence)+"\x00"+allocation.EvidenceDigest)
