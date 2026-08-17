@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
@@ -17,6 +19,7 @@ import (
 var syncTaskLeaseTTL = time.Hour
 var syncTaskSpawnCooldown = 30 * time.Second
 var syncTaskRunTimeout = 5 * time.Minute
+var v2ClaimProgressBatchSize = 64
 var scanCodexV2ClaimSource = func(scan *attributionlocal.CodexV2ClaimScan, ctx context.Context, sourceKey string, options []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
 	return scan.ScanSource(ctx, sourceKey, options)
 }
@@ -51,6 +54,46 @@ func RunPendingSyncTask(ctx context.Context, execCtx ExecutionContext, uploader 
 	if !execCtx.hasStableReplayBinding() {
 		return nil
 	}
+	return withMachineSyncRunLock(ctx, func() error {
+		return drainPendingSyncTasks(ctx, execCtx, uploader)
+	})
+}
+
+func drainPendingSyncTasks(ctx context.Context, execCtx ExecutionContext, uploader Uploader) error {
+	blocked := map[string]int{}
+	var firstErr error
+	for {
+		tasks, err := ListSyncTasks()
+		if err != nil {
+			return err
+		}
+		pending := matchingMachineSyncTasks(tasks, execCtx)
+		if len(pending) == 0 {
+			return firstErr
+		}
+		progressed := false
+		for _, queued := range pending {
+			if generation, failed := blocked[queued.WorkspaceID]; failed && generation >= queued.RequestGeneration {
+				continue
+			}
+			workspaceCtx := executionContextFromSyncTask(queued)
+			if err := runPendingSyncWorkspace(ctx, workspaceCtx, uploader); err != nil {
+				blocked[queued.WorkspaceID] = queued.RequestGeneration
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
+			}
+			progressed = true
+		}
+		if !progressed {
+			return firstErr
+		}
+	}
+}
+
+func runPendingSyncWorkspace(ctx context.Context, execCtx ExecutionContext, uploader Uploader) error {
+	parentCtx := ctx
 	if syncTaskRunTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, syncTaskRunTimeout)
@@ -73,6 +116,15 @@ func RunPendingSyncTask(ctx context.Context, execCtx ExecutionContext, uploader 
 	for {
 		passGeneration := task.RequestGeneration
 		if err := runPendingSyncPass(ctx, execCtx, uploader, task); err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
+				if yieldErr := MarkSyncTaskYielded(task, time.Now().UTC()); yieldErr != nil {
+					return yieldErr
+				}
+				if parentCtx.Err() != nil {
+					return parentCtx.Err()
+				}
+				return nil
+			}
 			_ = MarkSyncTaskFailure(task, time.Now().UTC(), err)
 			return err
 		}
@@ -83,6 +135,36 @@ func RunPendingSyncTask(ctx context.Context, execCtx ExecutionContext, uploader 
 		if idle {
 			return nil
 		}
+	}
+}
+
+func matchingMachineSyncTasks(tasks []SyncTask, seed ExecutionContext) []SyncTask {
+	matched := make([]SyncTask, 0, len(tasks))
+	for _, task := range tasks {
+		if normalizeHookServerURL(task.ServerURL) != normalizeHookServerURL(seed.ServerURL) || strings.TrimSpace(task.AuthSubject) != strings.TrimSpace(seed.AuthSubject) {
+			continue
+		}
+		if !executionContextFromSyncTask(task).hasStableReplayBinding() {
+			continue
+		}
+		matched = append(matched, task)
+	}
+	sort.SliceStable(matched, func(i, j int) bool {
+		leftSeed := matched[i].WorkspaceID == seed.WorkspaceID
+		rightSeed := matched[j].WorkspaceID == seed.WorkspaceID
+		if leftSeed != rightSeed {
+			return leftSeed
+		}
+		return false
+	})
+	return matched
+}
+
+func executionContextFromSyncTask(task SyncTask) ExecutionContext {
+	return ExecutionContext{
+		ServerURL: task.ServerURL, AuthSubject: task.AuthSubject, RepoConfigID: task.RepoConfigID,
+		RepoKey: task.RepoKey, RepoFullName: task.RepoKey, WorkspaceID: task.WorkspaceID,
+		RepoRoot: task.RepoRoot, DurableReplay: true,
 	}
 }
 
@@ -186,6 +268,56 @@ func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionCon
 			return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim progress could not be saved", err)
 		}
 		completed := v2CompletedSourceSet(progress.CompletedUnits)
+		type scannedSource struct {
+			sourceKey    string
+			pendingUnits []string
+			candidates   []attributionlocal.V2ClaimCandidate
+		}
+		var batch []scannedSource
+		flushBatch := func() error {
+			if len(batch) == 0 {
+				return nil
+			}
+			hasCandidates := false
+			for _, source := range batch {
+				hasCandidates = hasCandidates || len(source.candidates) > 0
+			}
+			if hasCandidates {
+				if err := attributionlocal.UpdateV2ClaimState(ctx, func(state *attributionlocal.V2ClaimState) error {
+					for _, source := range batch {
+						attributionlocal.MergeV2ClaimState(state, source.candidates, time.Now().UTC())
+					}
+					return nil
+				}); err != nil {
+					return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim progress could not be saved", err)
+				}
+			}
+			for _, source := range batch {
+				turnKeys := attributionlocal.MergeV2ClaimTurnKeys(progress.SourceTurnKeys[source.sourceKey], attributionlocal.V2ClaimTurnKeys(source.candidates))
+				progress.SourceTurnKeys[source.sourceKey] = turnKeys
+				progress.SourceEvidenceKeys[source.sourceKey] = scan.SourceEvidenceKey(turnKeys)
+				pendingSet := v2CompletedSourceSet(source.pendingUnits)
+				keptUnits := progress.CompletedUnits[:0]
+				for _, unitID := range progress.CompletedUnits {
+					if _, replace := pendingSet[unitID]; !replace {
+						keptUnits = append(keptUnits, unitID)
+					}
+				}
+				progress.CompletedUnits = append(keptUnits, source.pendingUnits...)
+				for _, unitID := range source.pendingUnits {
+					completed[unitID] = struct{}{}
+				}
+			}
+			if err := SaveV2ClaimScanProgress(progress); err != nil {
+				return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim progress could not be saved", err)
+			}
+			batch = batch[:0]
+			if hasCandidates {
+				_, err := deliverV2ClaimState(ctx, v2.V2ClaimClient(), protocol)
+				return err
+			}
+			return nil
+		}
 		for _, sourceKey := range progress.SourceKeys {
 			evidenceChanged := len(progress.SourceTurnKeys[sourceKey]) > 0 && progress.SourceEvidenceKeys[sourceKey] != scan.SourceEvidenceKey(progress.SourceTurnKeys[sourceKey])
 			pendingOptions := make([]attributionlocal.V2ClaimScanOptions, 0, len(options))
@@ -206,38 +338,33 @@ func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionCon
 			}
 			candidates, err := scanCodexV2ClaimSource(scan, ctx, sourceKey, pendingOptions)
 			if err != nil {
+				if flushErr := flushBatch(); flushErr != nil {
+					return flushErr
+				}
 				return syncTaskFailure(SyncTaskFailureStageSourceScan, "local Codex evidence scan failed", err)
 			}
-			if err := attributionlocal.UpdateV2ClaimState(ctx, func(state *attributionlocal.V2ClaimState) error {
-				attributionlocal.MergeV2ClaimState(state, candidates, time.Now().UTC())
-				return nil
-			}); err != nil {
-				return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim progress could not be saved", err)
-			}
-			turnKeys := attributionlocal.MergeV2ClaimTurnKeys(progress.SourceTurnKeys[sourceKey], attributionlocal.V2ClaimTurnKeys(candidates))
-			progress.SourceTurnKeys[sourceKey] = turnKeys
-			progress.SourceEvidenceKeys[sourceKey] = scan.SourceEvidenceKey(turnKeys)
-			pendingSet := v2CompletedSourceSet(pendingUnits)
-			keptUnits := progress.CompletedUnits[:0]
-			for _, unitID := range progress.CompletedUnits {
-				if _, replace := pendingSet[unitID]; !replace {
-					keptUnits = append(keptUnits, unitID)
+			batch = append(batch, scannedSource{sourceKey: sourceKey, pendingUnits: pendingUnits, candidates: candidates})
+			if len(candidates) > 0 || len(batch) >= max(1, v2ClaimProgressBatchSize) {
+				if err := flushBatch(); err != nil {
+					return err
 				}
 			}
-			progress.CompletedUnits = keptUnits
-			progress.CompletedUnits = append(progress.CompletedUnits, pendingUnits...)
-			for _, unitID := range pendingUnits {
-				completed[unitID] = struct{}{}
-			}
-			if err := SaveV2ClaimScanProgress(progress); err != nil {
-				return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim progress could not be saved", err)
-			}
+		}
+		if err := flushBatch(); err != nil {
+			return err
 		}
 		progress.Complete = true
 		if err := SaveV2ClaimScanProgress(progress); err != nil {
 			return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim progress could not be saved", err)
 		}
 	}
+	if _, err := deliverV2ClaimState(ctx, v2.V2ClaimClient(), protocol); err != nil {
+		return err
+	}
+	return finishV2ClaimScan(execCtx.WorkspaceID, len(options) > 0)
+}
+
+func deliverV2ClaimState(ctx context.Context, backend attributionlocal.V2ClaimBackendClient, protocol client.AttributionProtocol) (attributionlocal.V2DeliverySummary, error) {
 	var groups []client.AttributionV2ClaimGroup
 	var summary attributionlocal.V2DeliverySummary
 	err := attributionlocal.UpdateV2ClaimState(ctx, func(state *attributionlocal.V2ClaimState) error {
@@ -246,17 +373,17 @@ func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionCon
 		return nil
 	})
 	if err != nil {
-		return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim state could not be loaded", err)
+		return summary, syncTaskFailure(SyncTaskFailureStageLocalState, "local claim state could not be loaded", err)
 	}
 	if len(groups) == 0 {
 		if summary.UpgradeRequired > 0 {
-			return syncTaskFailure(SyncTaskFailureStageAcknowledgement, "backend acknowledgement requires recovery", fmt.Errorf("v2 claim delivery requires recovery: upgrade_required=%d", summary.UpgradeRequired))
+			return summary, syncTaskFailure(SyncTaskFailureStageAcknowledgement, "backend acknowledgement requires recovery", fmt.Errorf("v2 claim delivery requires recovery: upgrade_required=%d", summary.UpgradeRequired))
 		}
-		return finishV2ClaimScan(execCtx.WorkspaceID, len(options) > 0)
+		return summary, nil
 	}
-	result, err := v2.V2ClaimClient().SendAttributionV2Claims(ctx, groups)
+	result, err := backend.SendAttributionV2Claims(ctx, groups)
 	if err != nil {
-		return syncTaskFailure(SyncTaskFailureStageBackendDelivery, "backend claim delivery failed", err)
+		return summary, syncTaskFailure(SyncTaskFailureStageBackendDelivery, "backend claim delivery failed", err)
 	}
 	var ackErr error
 	if err := attributionlocal.UpdateV2ClaimState(ctx, func(state *attributionlocal.V2ClaimState) error {
@@ -264,15 +391,15 @@ func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionCon
 		summary = attributionlocal.SummarizeV2ClaimDelivery(state)
 		return nil
 	}); err != nil {
-		return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim acknowledgement could not be saved", err)
+		return summary, syncTaskFailure(SyncTaskFailureStageLocalState, "local claim acknowledgement could not be saved", err)
 	}
 	if summary.Pending > 0 || summary.UpgradeRequired > 0 {
 		if ackErr == nil {
 			ackErr = fmt.Errorf("v2 claim delivery requires recovery: pending=%d upgrade_required=%d", summary.Pending, summary.UpgradeRequired)
 		}
-		return syncTaskFailure(SyncTaskFailureStageAcknowledgement, "backend acknowledgement requires recovery", ackErr)
+		return summary, syncTaskFailure(SyncTaskFailureStageAcknowledgement, "backend acknowledgement requires recovery", ackErr)
 	}
-	return finishV2ClaimScan(execCtx.WorkspaceID, len(options) > 0)
+	return summary, nil
 }
 
 func v2ClaimScanContextID(option attributionlocal.V2ClaimScanOptions) (string, error) {

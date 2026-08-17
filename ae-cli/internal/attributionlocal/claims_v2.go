@@ -442,6 +442,7 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 	var previousCumulativeUsage v2TokenUsage
 	var previousIncrementalUsage v2TokenUsage
 	firstTokenInTurn := false
+	compactedTurnID := ""
 	err := forEachCodexJSONLLine(ctx, path, func(_ int, raw []byte) error {
 		var row struct {
 			Type      string `json:"type"`
@@ -494,6 +495,10 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 					turns[turnID] = &v2Turn{threadID: firstNonEmptyCompact(strings.TrimSpace(row.Payload.ThreadID), threadID, sessionID), turnID: turnID, model: strings.TrimSpace(row.Payload.Model), requests: map[string]struct{}{}, transportIDs: map[string]struct{}{}, replayFiles: map[string]v2ReplayFile{}, localUsage: map[string]*client.AttributionV2LocalUsageBucket{}, startedAt: observedAt}
 				}
 			}
+		case "compacted":
+			if currentTurnID != "" && previousCumulativeUsage.valid {
+				compactedTurnID = currentTurnID
+			}
 		case "response_item":
 			for index, turns := range turnSets {
 				current := turns[currentTurnID]
@@ -519,7 +524,10 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 				isFirstTokenInTurn := firstTokenInTurn
 				firstTokenInTurn = false
 				if !isFirstTokenInTurn && tokenUsage.valid && cumulativeUsage.valid && v2TokenUsageEqual(cumulativeUsage, previousCumulativeUsage) {
-					if v2TokenUsageEqual(tokenUsage, previousIncrementalUsage) {
+					if compactedTurnID == currentTurnID {
+						previousIncrementalUsage = tokenUsage
+						tokenUsage = v2TokenUsage{}
+					} else if v2TokenUsageEqual(tokenUsage, previousIncrementalUsage) {
 						tokenUsage = v2TokenUsage{}
 					} else {
 						invalidLocalUsage = true
@@ -530,6 +538,7 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 					previousCumulativeUsage = cumulativeUsage
 					previousIncrementalUsage = tokenUsage
 				}
+				compactedTurnID = ""
 			}
 			for index, turns := range turnSets {
 				current := turns[currentTurnID]

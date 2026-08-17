@@ -375,6 +375,36 @@ func TestPrintSyncTaskStatusShowsSafeV2FailureWithoutRawIdentifiers(t *testing.T
 	}
 }
 
+func TestPrintMachineSyncTaskStatusAggregatesWithoutIdentifiers(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	now := time.Now().UTC()
+	tasks := []hooks.SyncTask{
+		{WorkspaceID: "workspace-queued", Status: hooks.SyncTaskStatusPending, LastRequestedAt: now},
+		{WorkspaceID: "workspace-running", Status: hooks.SyncTaskStatusRunning, LastRequestedAt: now, RunnerPID: os.Getpid(), LeaseExpiresAt: ptrCmdTime(now.Add(time.Minute))},
+		{WorkspaceID: "workspace-yielded", Status: hooks.SyncTaskStatusYielded, LastRequestedAt: now},
+		{WorkspaceID: "workspace-failed", Status: hooks.SyncTaskStatusPending, LastRequestedAt: now, LastError: "backend rejected request-synthetic"},
+	}
+	for _, task := range tasks {
+		if err := hooks.SaveSyncTask(task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var output bytes.Buffer
+	if err := printMachineSyncTaskStatus(&output); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(output.String()); got != "Machine Sync Tasks: queued=1 running=1 yielded=1 failed=1" {
+		t.Fatalf("machine sync status = %q", got)
+	}
+	for _, hidden := range []string{"workspace-queued", "workspace-running", "workspace-yielded", "workspace-failed", "request-synthetic"} {
+		if strings.Contains(output.String(), hidden) {
+			t.Fatalf("machine sync status leaked %q: %s", hidden, output.String())
+		}
+	}
+}
+
+func ptrCmdTime(value time.Time) *time.Time { return &value }
+
 func TestSyncStatusShowsUnresolvedAndDeadLetterCounts(t *testing.T) {
 	repo := initRepoWithCommitForCmdTests(t)
 	home := t.TempDir()
