@@ -27,6 +27,308 @@ func stubSyncTaskRunnerAlive(t *testing.T, alive func(int) bool) {
 	t.Cleanup(func() { syncTaskRunnerAlive = orig })
 }
 
+func TestMigrateMachineSyncBacklogUpgradesLegacyTasksIdempotently(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	now := time.Date(2026, 8, 17, 8, 0, 0, 0, time.UTC)
+	task := SyncTask{
+		Version: 1, WorkspaceID: "workspace-legacy", RepoRoot: "/gone",
+		ServerURL: "https://ae.example.com/", AuthSubject: "user:1",
+		RepoConfigID: 23, RepoKey: "github.com/acme/repo",
+		TriggerKind: "post-commit", TriggerEventID: "event-legacy",
+		TriggerCommitSHA: strings.Repeat("a", 40), LastRequestedAt: now.Add(-time.Hour),
+		LastError: "legacy raw error",
+	}
+	if err := attributionlocal.SaveJSON(mustSyncTaskPath(t, task.WorkspaceID), task); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveV2ClaimScanProgress(&V2ClaimScanProgress{
+		Version: 2, WorkspaceID: task.WorkspaceID, ContextID: "legacy-context",
+		SourceKeys: []string{"source-a"}, CompletedUnits: []string{"unit-a"},
+		StartedAt: now.Add(-time.Hour), Complete: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	binding := SyncTaskMigrationBinding{ServerURL: "https://ae.example.com", AuthSubject: "user:1", RelayProviderID: 17}
+	first, err := MigrateMachineSyncBacklog(binding, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Scanned != 1 || first.Migrated != 1 || first.Deferred != 0 {
+		t.Fatalf("first migration = %+v", first)
+	}
+	got, err := LoadSyncTask(task.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != syncTaskVersion || got.RequestGeneration != 1 || got.Status != SyncTaskStatusPending || len(got.V2Triggers) != 1 || got.V2Triggers[0].RelayProviderID != 17 {
+		t.Fatalf("migrated task = %+v", got)
+	}
+	if got.LastFailureStage != SyncTaskFailureStageLocalState || got.LastFailureReason != "legacy attribution state requires recovery" || got.FirstFailureAt == nil || got.RemainingTriggerCount != 1 {
+		t.Fatalf("migrated diagnostics = %+v", got)
+	}
+	progress, err := LoadV2ClaimScanProgress(task.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progress.Version != v2ClaimScanProgressVersion || len(progress.SourceKeys) != 0 || len(progress.CompletedUnits) != 0 || progress.Complete {
+		t.Fatalf("rebuilt progress = %+v", progress)
+	}
+	second, err := MigrateMachineSyncBacklog(binding, now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Scanned != 1 || second.Migrated != 0 || second.Deferred != 0 {
+		t.Fatalf("second migration = %+v", second)
+	}
+}
+
+func TestMigrateMachineSyncBacklogPreservesFailureStagesAndDistinctIdentities(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	now := time.Date(2026, 8, 17, 8, 0, 0, 0, time.UTC)
+	for index, stage := range []SyncTaskFailureStage{
+		SyncTaskFailureStageSourceScan, SyncTaskFailureStageLocalState, SyncTaskFailureStageAcknowledgement,
+	} {
+		workspaceID := fmt.Sprintf("workspace-stage-%d", index)
+		task := SyncTask{
+			Version: 1, WorkspaceID: workspaceID, ServerURL: "https://ae.example.com", AuthSubject: "user:1",
+			RepoConfigID: 23, RepoKey: "github.com/acme/repo", Status: SyncTaskStatusPending, LastRequestedAt: now,
+			LastError: "legacy failure", LastFailureStage: stage, LastFailureReason: "existing safe reason",
+			V2Triggers: []V2SyncTrigger{
+				{Kind: "post-commit", EventID: "event-a", CommitSHA: strings.Repeat("a", 40), CapturedAt: now},
+				{Kind: "post-commit", EventID: "event-a", CommitSHA: strings.Repeat("a", 40), CapturedAt: now},
+				{Kind: "post-commit", EventID: "event-b", CommitSHA: strings.Repeat("b", 40), CapturedAt: now, RelayProviderID: 29},
+			},
+		}
+		if err := attributionlocal.SaveJSON(mustSyncTaskPath(t, workspaceID), task); err != nil {
+			t.Fatal(err)
+		}
+		if index == 0 {
+			if err := SaveV2ClaimScanProgress(&V2ClaimScanProgress{
+				Version: v2ClaimScanProgressVersion, WorkspaceID: workspaceID, SourceKeys: []string{"source-b", "source-a", "source-a"},
+				CompletedUnits: []string{"unit-b", "unit-a", "unit-a"}, SourceTurnKeys: map[string][]string{"source-a": {"turn-b", "turn-a", "turn-a"}},
+				StartedAt: now.Add(-time.Hour),
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	summary, err := MigrateMachineSyncBacklog(SyncTaskMigrationBinding{ServerURL: "https://ae.example.com", AuthSubject: "user:1", RelayProviderID: 17}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Scanned != 3 || summary.Migrated != 3 || summary.Deferred != 0 {
+		t.Fatalf("migration summary = %+v", summary)
+	}
+	for index, stage := range []SyncTaskFailureStage{
+		SyncTaskFailureStageSourceScan, SyncTaskFailureStageLocalState, SyncTaskFailureStageAcknowledgement,
+	} {
+		task, err := LoadSyncTask(fmt.Sprintf("workspace-stage-%d", index))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if task.LastFailureStage != stage || task.LastFailureReason != "existing safe reason" {
+			t.Fatalf("failure diagnostics changed: %+v", task)
+		}
+		if len(task.V2Triggers) != 2 || task.V2Triggers[0].EventID != "event-a" || task.V2Triggers[0].RelayProviderID != 17 || task.V2Triggers[1].EventID != "event-b" || task.V2Triggers[1].RelayProviderID != 29 {
+			t.Fatalf("migrated identities = %+v", task.V2Triggers)
+		}
+	}
+	progress, err := LoadV2ClaimScanProgress("workspace-stage-0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(progress.SourceKeys, ",") != "source-a,source-b" || strings.Join(progress.CompletedUnits, ",") != "unit-a,unit-b" || strings.Join(progress.SourceTurnKeys["source-a"], ",") != "turn-a,turn-b" {
+		t.Fatalf("deduplicated progress = %+v", progress)
+	}
+}
+
+func TestMigrateMachineSyncBacklogLeavesOtherOwnersAndFutureVersionsUnchanged(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	now := time.Now().UTC()
+	tasks := []SyncTask{
+		{Version: 1, WorkspaceID: "other-owner", ServerURL: "https://ae.example.com", AuthSubject: "user:2", RepoConfigID: 1, RepoKey: "github.com/acme/repo", LastRequestedAt: now, V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: "event-other", CommitSHA: strings.Repeat("a", 40), CapturedAt: now}}},
+		{Version: syncTaskVersion + 1, WorkspaceID: "future", ServerURL: "https://ae.example.com", AuthSubject: "user:1", RepoConfigID: 1, RepoKey: "github.com/acme/repo", LastRequestedAt: now, V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: "event-future", CommitSHA: strings.Repeat("b", 40), CapturedAt: now}}},
+	}
+	for _, task := range tasks {
+		if err := attributionlocal.SaveJSON(mustSyncTaskPath(t, task.WorkspaceID), task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	summary, err := MigrateMachineSyncBacklog(SyncTaskMigrationBinding{ServerURL: "https://ae.example.com", AuthSubject: "user:1", RelayProviderID: 17}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Scanned != 1 || summary.Migrated != 0 {
+		t.Fatalf("migration summary = %+v", summary)
+	}
+	for _, task := range tasks {
+		got, err := LoadSyncTask(task.WorkspaceID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Version != task.Version || got.V2Triggers[0].RelayProviderID != 0 {
+			t.Fatalf("task changed = %+v", got)
+		}
+	}
+}
+
+func TestMigrateMachineSyncBacklogDefersActiveRunner(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	now := time.Now().UTC()
+	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == 42 })
+	task := SyncTask{
+		Version: 1, WorkspaceID: "active-runner", ServerURL: "https://ae.example.com", AuthSubject: "user:1",
+		RepoConfigID: 1, RepoKey: "github.com/acme/repo", Status: SyncTaskStatusRunning, LastRequestedAt: now,
+		RunnerPID: 42, LeaseExpiresAt: ptrTime(now.Add(time.Minute)), LastError: "legacy failure",
+		V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: "event-active", CommitSHA: strings.Repeat("a", 40), CapturedAt: now}},
+	}
+	if err := attributionlocal.SaveJSON(mustSyncTaskPath(t, task.WorkspaceID), task); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := MigrateMachineSyncBacklog(SyncTaskMigrationBinding{ServerURL: task.ServerURL, AuthSubject: task.AuthSubject, RelayProviderID: 17}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Scanned != 1 || summary.Migrated != 0 || summary.Deferred != 1 {
+		t.Fatalf("migration summary = %+v", summary)
+	}
+	got, err := LoadSyncTask(task.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != 1 || got.V2Triggers[0].RelayProviderID != 0 {
+		t.Fatalf("active task changed = %+v", got)
+	}
+	machine, err := SummarizeMachineSyncTasks(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if machine.Running != 1 || machine.Recoverable != 0 {
+		t.Fatalf("machine summary = %+v", machine)
+	}
+}
+
+func TestMigrateMachineSyncBacklogContinuesAcrossLargeBacklogFailures(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	now := time.Date(2026, 8, 17, 8, 0, 0, 0, time.UTC)
+	const taskCount = 300
+	for index := 0; index < taskCount; index++ {
+		workspaceID := fmt.Sprintf("workspace-%03d", index)
+		task := SyncTask{
+			Version: 1, WorkspaceID: workspaceID, RepoRoot: filepath.Join(t.TempDir(), "deleted"),
+			ServerURL: "https://ae.example.com", AuthSubject: "user:1", RepoConfigID: 23, RepoKey: "github.com/acme/repo",
+			Status: SyncTaskStatusPending, LastRequestedAt: now.Add(-time.Duration(index) * time.Minute),
+			V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: "event-" + workspaceID, CommitSHA: strings.Repeat("a", 40), CapturedAt: now.Add(-time.Duration(index) * time.Minute)}},
+		}
+		if err := attributionlocal.SaveJSON(mustSyncTaskPath(t, workspaceID), task); err != nil {
+			t.Fatal(err)
+		}
+		if err := SaveV2ClaimScanProgress(&V2ClaimScanProgress{
+			Version: 2, WorkspaceID: workspaceID, SourceKeys: []string{"source", "source"},
+			CompletedUnits: []string{"unit", "unit"}, StartedAt: now.Add(-time.Hour),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lockedWorkspace := "workspace-150"
+	lockPath, err := syncTaskLockPath(lockedWorkspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lockPath, []byte("busy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	conflictingWorkspace := "workspace-200"
+	conflicting, err := LoadSyncTask(conflictingWorkspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conflicting.V2Triggers = append(conflicting.V2Triggers, V2SyncTrigger{
+		Kind: "post-commit", EventID: conflicting.V2Triggers[0].EventID,
+		CommitSHA: strings.Repeat("b", 40), CapturedAt: now,
+	})
+	if err := attributionlocal.SaveJSON(mustSyncTaskPath(t, conflictingWorkspace), conflicting); err != nil {
+		t.Fatal(err)
+	}
+
+	binding := SyncTaskMigrationBinding{ServerURL: "https://ae.example.com", AuthSubject: "user:1", RelayProviderID: 17}
+	first, err := MigrateMachineSyncBacklog(binding, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Scanned != taskCount || first.Migrated != taskCount-2 || first.Deferred != 2 {
+		t.Fatalf("first migration = %+v", first)
+	}
+	if err := os.Remove(lockPath); err != nil {
+		t.Fatal(err)
+	}
+	second, err := MigrateMachineSyncBacklog(binding, now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Scanned != taskCount || second.Migrated != 1 || second.Deferred != 1 {
+		t.Fatalf("second migration = %+v", second)
+	}
+	conflicting, err = LoadSyncTask(conflictingWorkspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conflicting.Version != 1 || len(conflicting.V2Triggers) != 2 || conflicting.LastFailureStage != SyncTaskFailureStageLocalState || conflicting.LastFailureReason != "legacy trigger migration requires recovery" {
+		t.Fatalf("conflicting task diagnostics = %+v", conflicting)
+	}
+	for index := 0; index < taskCount; index++ {
+		workspaceID := fmt.Sprintf("workspace-%03d", index)
+		if workspaceID == conflictingWorkspace {
+			continue
+		}
+		task, err := LoadSyncTask(workspaceID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		progress, err := LoadV2ClaimScanProgress(workspaceID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if task.Version != syncTaskVersion || task.V2Triggers[0].RelayProviderID != 17 || progress.Version != v2ClaimScanProgressVersion || len(progress.CompletedUnits) != 0 {
+			t.Fatalf("workspace %s was not migrated: task=%+v progress=%+v", workspaceID, task, progress)
+		}
+	}
+}
+
+func TestSummarizeMachineSyncTasksReportsRecoveryTerminalAndExpiry(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	now := time.Date(2026, 8, 17, 8, 0, 0, 0, time.UTC)
+	for _, task := range []SyncTask{
+		{WorkspaceID: "queued", Status: SyncTaskStatusPending, LastRequestedAt: now},
+		{WorkspaceID: "recoverable", Status: SyncTaskStatusPending, LastRequestedAt: now, V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: "event-recovery", CommitSHA: strings.Repeat("a", 40), CapturedAt: now.Add(-89 * 24 * time.Hour)}}},
+		{Version: 1, WorkspaceID: "legacy", Status: SyncTaskStatusPending, LastRequestedAt: now.Add(-89 * 24 * time.Hour), TriggerKind: "post-commit", TriggerEventID: "event-legacy", TriggerCommitSHA: strings.Repeat("b", 40)},
+	} {
+		if err := SaveSyncTask(task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := attributionlocal.SaveV2ClaimState(&attributionlocal.V2ClaimState{Version: 1, Claims: []attributionlocal.V2ClaimCandidate{{DeliveryStatus: attributionlocal.V2DeliveryConflict}}}); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := SummarizeMachineSyncTasks(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Queued != 1 || summary.Recoverable != 2 || summary.Terminal != 1 || summary.Expiring != 2 {
+		t.Fatalf("machine summary = %+v", summary)
+	}
+}
+
+func mustSyncTaskPath(t *testing.T, workspaceID string) string {
+	t.Helper()
+	path, err := SyncTaskPath(workspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func TestUpsertPendingSyncTaskRecoversCorruptTaskFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -701,7 +1003,7 @@ func (u recoveringV2Uploader) AttributionProtocol() client.AttributionProtocol {
 
 func (u recoveringV2Uploader) RelayProviderID() int { return u.providerID }
 
-func TestRunPendingSyncTaskRecoversDeletedWorktreeFromSameRepository(t *testing.T) {
+func TestRunPendingSyncTaskMigratesAndRecoversDeletedLegacyWorktree(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == os.Getpid() })
@@ -728,9 +1030,10 @@ func TestRunPendingSyncTaskRecoversDeletedWorktreeFromSameRepository(t *testing.
 		t.Fatal(err)
 	}
 	task := SyncTask{
+		Version:     1,
 		WorkspaceID: temporaryContext.WorkspaceID, RepoRoot: temporaryRoot, ServerURL: "https://ae.example.com", AuthSubject: "user:1",
 		RepoConfigID: 23, RepoKey: temporaryContext.RepoKey, Status: SyncTaskStatusPending, LastRequestedAt: now,
-		V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: eventID, CommitSHA: commitSHA, CapturedAt: now, RelayProviderID: 17}},
+		V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: eventID, CommitSHA: commitSHA, CapturedAt: now}},
 	}
 	if err := UpsertPendingSyncTask(task); err != nil {
 		t.Fatal(err)
@@ -758,7 +1061,7 @@ func TestRunPendingSyncTaskRecoversDeletedWorktreeFromSameRepository(t *testing.
 			return nil, fmt.Errorf("scan options = %d, want 1", len(options))
 		}
 		option := options[0]
-		if option.RepoRoot != repo || option.RepoConfigID != 23 || option.RepoKey != temporaryContext.RepoKey || option.WorkspaceID != temporaryContext.WorkspaceID || option.CheckpointEventID != eventID || option.CommitSHA != commitSHA || option.RelayProviderID != 17 {
+		if option.RepoRoot != repo || option.RepoConfigID != 23 || option.RepoKey != temporaryContext.RepoKey || option.WorkspaceID != temporaryContext.WorkspaceID || option.CheckpointEventID != eventID || option.CommitSHA != commitSHA || option.RelayProviderID != 99 {
 			return nil, fmt.Errorf("recovered option = %+v", option)
 		}
 		return []attributionlocal.V2ClaimCandidate{{
@@ -799,7 +1102,7 @@ func TestRunPendingSyncTaskRecoversDeletedWorktreeFromSameRepository(t *testing.
 	if backend.calls != 1 || len(backend.groups) != 1 || len(backend.groups[0].CommitAllocations) != 1 {
 		t.Fatalf("accepted recovery groups = %+v, calls=%d", backend.groups, backend.calls)
 	}
-	if backend.groups[0].RelayProviderID != 17 || backend.groups[0].CommitAllocations[0].WorkspaceID != temporaryContext.WorkspaceID {
+	if backend.groups[0].RelayProviderID != 99 || backend.groups[0].CommitAllocations[0].WorkspaceID != temporaryContext.WorkspaceID {
 		t.Fatalf("recovered identities = %+v", backend.groups[0])
 	}
 	if remaining, err := LoadSyncTask(temporaryContext.WorkspaceID); err != nil || remaining != nil {

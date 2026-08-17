@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -72,4 +73,71 @@ func DeleteV2ClaimScanProgress(workspaceID string) error {
 		return fmt.Errorf("delete v2 claim scan progress: %w", err)
 	}
 	return nil
+}
+
+func migrateV2ClaimScanProgress(workspaceID string, now time.Time) (bool, error) {
+	progress, err := LoadV2ClaimScanProgress(workspaceID)
+	if err != nil || progress == nil {
+		return false, err
+	}
+	if progress.Version > v2ClaimScanProgressVersion {
+		return false, nil
+	}
+	if progress.Version < v2ClaimScanProgressVersion {
+		progress.Version = v2ClaimScanProgressVersion
+		progress.SourceKeys = nil
+		progress.CompletedUnits = nil
+		progress.SourceTurnKeys = map[string][]string{}
+		progress.SourceEvidenceKeys = map[string]string{}
+		progress.StartedAt = now.UTC()
+		progress.Complete = false
+		if err := SaveV2ClaimScanProgress(progress); err != nil {
+			return false, fmt.Errorf("rebuild stale v2 claim scan progress: %w", err)
+		}
+		return true, nil
+	}
+	changed := deduplicateStrings(&progress.SourceKeys)
+	if deduplicateStrings(&progress.CompletedUnits) {
+		changed = true
+	}
+	for sourceKey, turnKeys := range progress.SourceTurnKeys {
+		if deduplicateStrings(&turnKeys) {
+			progress.SourceTurnKeys[sourceKey] = turnKeys
+			changed = true
+		}
+	}
+	if changed {
+		if err := SaveV2ClaimScanProgress(progress); err != nil {
+			return false, fmt.Errorf("save deduplicated v2 claim scan progress: %w", err)
+		}
+	}
+	return changed, nil
+}
+
+func deduplicateStrings(values *[]string) bool {
+	if values == nil || len(*values) < 2 {
+		return false
+	}
+	original := append([]string(nil), (*values)...)
+	sort.Strings(*values)
+	kept := (*values)[:0]
+	for _, value := range *values {
+		if len(kept) == 0 || kept[len(kept)-1] != value {
+			kept = append(kept, value)
+		}
+	}
+	*values = kept
+	return len(original) != len(kept) || !equalStrings(original, kept)
+}
+
+func equalStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }

@@ -393,7 +393,7 @@ func TestPrintMachineSyncTaskStatusAggregatesWithoutIdentifiers(t *testing.T) {
 	if err := printMachineSyncTaskStatus(&output); err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.TrimSpace(output.String()); got != "Machine Sync Tasks: queued=1 running=1 yielded=1 failed=1" {
+	if got := strings.TrimSpace(output.String()); got != "Machine Sync Tasks: queued=1 running=1 yielded=1 recoverable=1 terminal=0 expiring=0" {
 		t.Fatalf("machine sync status = %q", got)
 	}
 	for _, hidden := range []string{"workspace-queued", "workspace-running", "workspace-yielded", "workspace-failed", "request-synthetic"} {

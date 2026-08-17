@@ -37,7 +37,11 @@ var syncTaskRunnerAlive = syncTaskProcessAlive
 
 var machineSyncLockPollInterval = 25 * time.Millisecond
 
-const v2SyncTriggerRetention = 90 * 24 * time.Hour
+const (
+	syncTaskVersion        = 2
+	v2SyncTriggerRetention = 90 * 24 * time.Hour
+	v2SyncTriggerExpiring  = 7 * 24 * time.Hour
+)
 
 type SyncTask struct {
 	Version               int                  `json:"version"`
@@ -69,10 +73,24 @@ type SyncTask struct {
 }
 
 type MachineSyncTaskSummary struct {
-	Queued  int
-	Running int
-	Yielded int
-	Failed  int
+	Queued      int
+	Running     int
+	Yielded     int
+	Recoverable int
+	Terminal    int
+	Expiring    int
+}
+
+type SyncTaskMigrationBinding struct {
+	ServerURL       string
+	AuthSubject     string
+	RelayProviderID int
+}
+
+type MachineSyncTaskMigrationSummary struct {
+	Scanned  int
+	Migrated int
+	Deferred int
 }
 
 type syncTaskStageError struct {
@@ -173,17 +191,180 @@ func SummarizeMachineSyncTasks(now time.Time) (MachineSyncTaskSummary, error) {
 	for index := range tasks {
 		task := &tasks[index]
 		switch {
-		case strings.TrimSpace(task.LastError) != "":
-			summary.Failed++
 		case task.HasActiveLease(now):
 			summary.Running++
+		case syncTaskRequiresRecovery(*task):
+			summary.Recoverable++
 		case task.Status == SyncTaskStatusYielded:
 			summary.Yielded++
 		default:
 			summary.Queued++
 		}
+		if syncTaskExpiresSoon(*task, now) {
+			summary.Expiring++
+		}
+	}
+	state, err := attributionlocal.LoadV2ClaimState()
+	if err != nil {
+		return MachineSyncTaskSummary{}, fmt.Errorf("load v2 claim state for machine summary: %w", err)
+	}
+	summary.Terminal = attributionlocal.SummarizeV2ClaimDelivery(state).Conflict
+	return summary, nil
+}
+
+func MigrateMachineSyncBacklog(binding SyncTaskMigrationBinding, now time.Time) (MachineSyncTaskMigrationSummary, error) {
+	var summary MachineSyncTaskMigrationSummary
+	if strings.TrimSpace(binding.ServerURL) == "" || strings.TrimSpace(binding.AuthSubject) == "" || binding.RelayProviderID <= 0 {
+		return summary, nil
+	}
+	tasks, err := ListSyncTasks()
+	if err != nil {
+		return summary, err
+	}
+	for _, task := range tasks {
+		if normalizeHookServerURL(task.ServerURL) != normalizeHookServerURL(binding.ServerURL) || strings.TrimSpace(task.AuthSubject) != strings.TrimSpace(binding.AuthSubject) {
+			continue
+		}
+		summary.Scanned++
+		changed, err := migrateSyncTask(task.WorkspaceID, binding.RelayProviderID, now)
+		if err != nil {
+			summary.Deferred++
+			continue
+		}
+		if changed {
+			summary.Migrated++
+		}
 	}
 	return summary, nil
+}
+
+func migrateSyncTask(workspaceID string, relayProviderID int, now time.Time) (bool, error) {
+	changed := false
+	err := withSyncTaskLock(workspaceID, now, func() error {
+		task, err := LoadSyncTask(workspaceID)
+		if err != nil || task == nil {
+			return err
+		}
+		if task.HasActiveLease(now) {
+			return ErrSyncTaskAlreadyRunning
+		}
+		if task.Version > syncTaskVersion {
+			return nil
+		}
+		triggers := append([]V2SyncTrigger(nil), task.V2Triggers...)
+		if len(triggers) == 0 && strings.TrimSpace(task.TriggerEventID) != "" {
+			triggers = append(triggers, V2SyncTrigger{
+				Kind: task.TriggerKind, EventID: task.TriggerEventID, CommitSHA: task.TriggerCommitSHA,
+				Branch: task.TriggerBranch, CapturedAt: task.LastRequestedAt,
+			})
+		}
+		for index := range triggers {
+			if triggers[index].RelayProviderID == 0 {
+				triggers[index].RelayProviderID = relayProviderID
+			}
+		}
+		triggers, err = mergeV2SyncTriggers(nil, triggers)
+		if err != nil {
+			if diagnosticErr := markSyncTaskMigrationRecovery(task, now); diagnosticErr != nil {
+				return fmt.Errorf("save legacy trigger migration diagnostic: %w", diagnosticErr)
+			}
+			return fmt.Errorf("deduplicate migrated triggers: %w", err)
+		}
+		if task.Version != syncTaskVersion || !sameV2SyncTriggerList(task.V2Triggers, triggers) {
+			task.Version = syncTaskVersion
+			task.V2Triggers = triggers
+			changed = true
+		}
+		if task.RequestGeneration == 0 {
+			task.RequestGeneration = 1
+			changed = true
+		}
+		if task.Status == "" {
+			task.Status = SyncTaskStatusPending
+			changed = true
+		}
+		if strings.TrimSpace(task.LastError) != "" && task.LastFailureStage == "" {
+			task.LastFailureStage = SyncTaskFailureStageLocalState
+			task.LastFailureReason = "legacy attribution state requires recovery"
+			if task.FirstFailureAt == nil {
+				failedAt := task.LastRequestedAt.UTC()
+				task.FirstFailureAt = &failedAt
+			}
+			task.RemainingTriggerCount = len(task.V2Triggers)
+			changed = true
+		}
+		progressChanged, err := migrateV2ClaimScanProgress(workspaceID, now)
+		if err != nil {
+			return err
+		}
+		changed = changed || progressChanged
+		if changed {
+			if err := SaveSyncTask(*task); err != nil {
+				return fmt.Errorf("save migrated sync task: %w", err)
+			}
+		}
+		return nil
+	})
+	return changed, err
+}
+
+func markSyncTaskMigrationRecovery(task *SyncTask, now time.Time) error {
+	if task == nil || task.LastFailureStage != "" || strings.TrimSpace(task.LastFailureReason) != "" {
+		return nil
+	}
+	task.LastFailureStage = SyncTaskFailureStageLocalState
+	task.LastFailureReason = "legacy trigger migration requires recovery"
+	if task.FirstFailureAt == nil {
+		failedAt := now.UTC()
+		task.FirstFailureAt = &failedAt
+	}
+	task.RemainingTriggerCount = len(task.V2Triggers)
+	return SaveSyncTask(*task)
+}
+
+func sameV2SyncTriggerList(left, right []V2SyncTrigger) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if !sameV2SyncTrigger(left[index], right[index]) || !left[index].CapturedAt.Equal(right[index].CapturedAt) {
+			return false
+		}
+	}
+	return true
+}
+
+func syncTaskExpiresSoon(task SyncTask, now time.Time) bool {
+	cutoff := now.UTC().Add(-v2SyncTriggerRetention)
+	warning := cutoff.Add(v2SyncTriggerExpiring)
+	for _, trigger := range syncTaskDiagnosticTriggers(task) {
+		if !trigger.CapturedAt.IsZero() && trigger.CapturedAt.After(cutoff) && !trigger.CapturedAt.After(warning) {
+			return true
+		}
+	}
+	return false
+}
+
+func syncTaskRequiresRecovery(task SyncTask) bool {
+	if strings.TrimSpace(task.LastError) != "" {
+		return true
+	}
+	for _, trigger := range syncTaskCommitTriggers(syncTaskDiagnosticTriggers(task)) {
+		if trigger.RelayProviderID <= 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func syncTaskDiagnosticTriggers(task SyncTask) []V2SyncTrigger {
+	if len(task.V2Triggers) > 0 || strings.TrimSpace(task.TriggerEventID) == "" {
+		return task.V2Triggers
+	}
+	return []V2SyncTrigger{{
+		Kind: task.TriggerKind, EventID: task.TriggerEventID, CommitSHA: task.TriggerCommitSHA,
+		Branch: task.TriggerBranch, CapturedAt: task.LastRequestedAt,
+	}}
 }
 
 func LoadSyncTaskRecovering(workspaceID string) (*SyncTask, bool, error) {
@@ -206,7 +387,7 @@ func SaveSyncTask(task SyncTask) error {
 		return err
 	}
 	if task.Version == 0 {
-		task.Version = 1
+		task.Version = syncTaskVersion
 	}
 	return attributionlocal.SaveJSON(path, task)
 }

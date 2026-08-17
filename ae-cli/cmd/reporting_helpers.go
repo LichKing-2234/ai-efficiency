@@ -151,3 +151,14 @@ func loadEnabledReportingConfig() (*reporting.Config, bool) {
 	}
 	return config, true
 }
+
+func migrateMachineSyncBacklog(now time.Time) error {
+	config, ok := loadEnabledReportingConfig()
+	if !ok || config.RelayProviderID <= 0 {
+		return nil
+	}
+	_, err := hooks.MigrateMachineSyncBacklog(hooks.SyncTaskMigrationBinding{
+		ServerURL: config.ServerURL, AuthSubject: config.AuthSubject, RelayProviderID: config.RelayProviderID,
+	}, now)
+	return err
+}

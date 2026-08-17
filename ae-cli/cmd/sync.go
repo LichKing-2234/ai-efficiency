@@ -123,6 +123,10 @@ var syncStatusCmd = &cobra.Command{
 			return err
 		}
 		printHookStatus(cmd.OutOrStdout(), status)
+		now := time.Now().UTC()
+		if err := migrateMachineSyncBacklog(now); err != nil {
+			return fmt.Errorf("migrate machine sync backlog: %w", err)
+		}
 		task, recovered, err := hooks.LoadSyncTaskRecovering(attrCtx.workspaceID)
 		if err != nil {
 			return fmt.Errorf("load sync task: %w", err)
@@ -132,7 +136,7 @@ var syncStatusCmd = &cobra.Command{
 		}
 		if task != nil {
 			var runnerRecovered bool
-			task, runnerRecovered, err = hooks.RecoverInactiveSyncTaskRunner(attrCtx.workspaceID, time.Now().UTC())
+			task, runnerRecovered, err = hooks.RecoverInactiveSyncTaskRunner(attrCtx.workspaceID, now)
 			if err != nil {
 				return fmt.Errorf("recover inactive sync runner: %w", err)
 			}
@@ -141,7 +145,7 @@ var syncStatusCmd = &cobra.Command{
 			}
 		}
 		printSyncTaskStatus(cmd.OutOrStdout(), task)
-		if err := printMachineSyncTaskStatus(cmd.OutOrStdout()); err != nil {
+		if err := printMachineSyncTaskStatusAt(cmd.OutOrStdout(), now); err != nil {
 			return fmt.Errorf("load machine sync tasks: %w", err)
 		}
 		if err := printV2ClaimDeliveryStatus(cmd.OutOrStdout()); err != nil {

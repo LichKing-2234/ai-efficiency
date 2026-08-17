@@ -78,6 +78,10 @@ var doctorCmd = &cobra.Command{
 		if status, err := hooks.StatusForRepo(hooks.StatusOptions{CWD: ctx.repoRoot, Uploads: true, Binding: currentHookBinding()}); err == nil {
 			printHookStatus(out, status)
 		}
+		now := time.Now().UTC()
+		if err := migrateMachineSyncBacklog(now); err != nil {
+			return fmt.Errorf("migrate machine sync backlog: %w", err)
+		}
 		task, recovered, err := hooks.LoadSyncTaskRecovering(ctx.workspaceID)
 		if err != nil {
 			return fmt.Errorf("load sync task: %w", err)
@@ -87,7 +91,7 @@ var doctorCmd = &cobra.Command{
 		}
 		if task != nil {
 			var runnerRecovered bool
-			task, runnerRecovered, err = hooks.RecoverInactiveSyncTaskRunner(ctx.workspaceID, time.Now().UTC())
+			task, runnerRecovered, err = hooks.RecoverInactiveSyncTaskRunner(ctx.workspaceID, now)
 			if err != nil {
 				return fmt.Errorf("recover inactive sync runner: %w", err)
 			}
@@ -96,7 +100,7 @@ var doctorCmd = &cobra.Command{
 			}
 		}
 		printSyncTaskStatus(out, task)
-		if err := printMachineSyncTaskStatus(out); err != nil {
+		if err := printMachineSyncTaskStatusAt(out, now); err != nil {
 			fmt.Fprintf(out, "Machine Sync Tasks: unavailable (%v)\n", err)
 		}
 		if err := printV2ClaimDeliveryStatus(out); err != nil {
@@ -664,11 +668,20 @@ func printSyncTaskStatus(out io.Writer, task *hooks.SyncTask) {
 }
 
 func printMachineSyncTaskStatus(out io.Writer) error {
-	summary, err := hooks.SummarizeMachineSyncTasks(time.Now().UTC())
+	now := time.Now().UTC()
+	if err := migrateMachineSyncBacklog(now); err != nil {
+		return fmt.Errorf("migrate machine sync backlog: %w", err)
+	}
+	return printMachineSyncTaskStatusAt(out, now)
+}
+
+func printMachineSyncTaskStatusAt(out io.Writer, now time.Time) error {
+	summary, err := hooks.SummarizeMachineSyncTasks(now)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "Machine Sync Tasks: queued=%d running=%d yielded=%d failed=%d\n", summary.Queued, summary.Running, summary.Yielded, summary.Failed)
+	fmt.Fprintf(out, "Machine Sync Tasks: queued=%d running=%d yielded=%d recoverable=%d terminal=%d expiring=%d\n",
+		summary.Queued, summary.Running, summary.Yielded, summary.Recoverable, summary.Terminal, summary.Expiring)
 	return nil
 }
 
