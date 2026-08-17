@@ -199,6 +199,21 @@ same event-started owner. The process exits when its matching queue is empty;
 this is neither a daemon nor a periodic synchronizer. A dead owner lock is
 recoverable from the persisted tasks and process liveness evidence.
 
+Every newly captured v2 commit trigger freezes the selected Relay provider ID
+alongside its original Repository, workspace, checkpoint event, commit, and
+capture time. If the original worktree directory or Git worktree metadata no
+longer exists, another checkout can lend its Git root to that retained task
+only when the normalized server and reporting owner already match, the exact
+Repository ID and canonical remote identity match, and every full commit object
+is reachable from that checkout's `HEAD` or a Git ref. Recovery changes only
+the runtime Git root: workspace, checkpoint, commit, provider, and evidence
+identity remain the original values. A missing provider, missing or unreachable
+commit, cross-Repository checkout, different owner, or mismatched checkpoint
+stays retained with a safe local-state failure. No cwd, timestamp, branch name,
+patch similarity, or code-content heuristic can rebind a trigger. `pre-push`
+and `ae-cli sync` wake this path through the same transient owner; neither adds
+a daemon or periodic scan.
+
 One runner pass performs one 90-day-bounded Codex transport-evidence query and
 one discovery of active `sessions` plus `archived_sessions`. File modification
 time and the indexed SQLite timestamp predicate apply the window before JSONL

@@ -656,10 +656,14 @@ func (c *countingV2ClaimClient) SendAttributionV2Claims(context.Context, []clien
 	return nil, nil
 }
 
-type acknowledgingV2ClaimClient struct{ calls int }
+type acknowledgingV2ClaimClient struct {
+	calls  int
+	groups []client.AttributionV2ClaimGroup
+}
 
 func (c *acknowledgingV2ClaimClient) SendAttributionV2Claims(_ context.Context, groups []client.AttributionV2ClaimGroup) (*client.AttributionV2ClaimBatchResult, error) {
 	c.calls++
+	c.groups = append(c.groups, groups...)
 	results := make([]client.AttributionV2ClaimResult, 0, len(groups))
 	for _, group := range groups {
 		requests := make([]client.AttributionV2ItemStatus, 0, len(group.RequestIDs))
@@ -681,6 +685,260 @@ func (u acknowledgingV2Uploader) V2ClaimClient() attributionlocal.V2ClaimBackend
 }
 
 func (u acknowledgingV2Uploader) RelayProviderID() int { return 7 }
+
+type recoveringV2Uploader struct {
+	acknowledgingV2Uploader
+	providerID int
+}
+
+func (u recoveringV2Uploader) CompactUsageClient() attributionlocal.CompactBackendClient {
+	return noopCompactBackendClient{}
+}
+
+func (u recoveringV2Uploader) AttributionProtocol() client.AttributionProtocol {
+	return client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept}
+}
+
+func (u recoveringV2Uploader) RelayProviderID() int { return u.providerID }
+
+func TestRunPendingSyncTaskRecoversDeletedWorktreeFromSameRepository(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == os.Getpid() })
+	repo := initRepoWithCommit2(t)
+	temporaryRoot := filepath.Join(t.TempDir(), "temporary-worktree")
+	git2(t, repo, "worktree", "add", "-b", "temporary-recovery", temporaryRoot)
+	if err := os.WriteFile(filepath.Join(temporaryRoot, "recovered.txt"), []byte("recovered\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git2(t, temporaryRoot, "add", "recovered.txt")
+	git2(t, temporaryRoot, "commit", "-m", "test: retained trigger")
+	commitSHA := git2(t, temporaryRoot, "rev-parse", "HEAD")
+	temporaryContext, err := DetectGitContext(temporaryRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentContext, err := DetectGitContext(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	eventID, err := CheckpointEventID("repo_config_id:23\x1fuser:1\x1f"+temporaryContext.WorkspaceID, commitSHA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := SyncTask{
+		WorkspaceID: temporaryContext.WorkspaceID, RepoRoot: temporaryRoot, ServerURL: "https://ae.example.com", AuthSubject: "user:1",
+		RepoConfigID: 23, RepoKey: temporaryContext.RepoKey, Status: SyncTaskStatusPending, LastRequestedAt: now,
+		V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: eventID, CommitSHA: commitSHA, CapturedAt: now, RelayProviderID: 17}},
+	}
+	if err := UpsertPendingSyncTask(task); err != nil {
+		t.Fatal(err)
+	}
+	if err := attributionlocal.SaveJSON(attributionlocal.CompactStatePath(), attributionlocal.CompactState{
+		Version: 2, EnabledAt: now.Add(-time.Hour), SeenAtoms: map[string]bool{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sourcePath := filepath.Join(home, ".codex", "sessions", "recovery.jsonl")
+	if err := os.MkdirAll(filepath.Dir(sourcePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sourcePath, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git2(t, repo, "worktree", "remove", temporaryRoot)
+	if _, err := os.Stat(temporaryRoot); !os.IsNotExist(err) {
+		t.Fatalf("temporary worktree still exists: %v", err)
+	}
+
+	originalScan := scanCodexV2ClaimSource
+	scanCodexV2ClaimSource = func(_ *attributionlocal.CodexV2ClaimScan, _ context.Context, sourceKey string, options []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
+		if len(options) != 1 {
+			return nil, fmt.Errorf("scan options = %d, want 1", len(options))
+		}
+		option := options[0]
+		if option.RepoRoot != repo || option.RepoConfigID != 23 || option.RepoKey != temporaryContext.RepoKey || option.WorkspaceID != temporaryContext.WorkspaceID || option.CheckpointEventID != eventID || option.CommitSHA != commitSHA || option.RelayProviderID != 17 {
+			return nil, fmt.Errorf("recovered option = %+v", option)
+		}
+		return []attributionlocal.V2ClaimCandidate{{
+			LocalKey: sourceKey, FirstSeenAt: now,
+			Group: client.AttributionV2ClaimGroup{
+				SchemaVersion: 2, GroupID: "group-recovery", RelayProviderID: option.RelayProviderID,
+				TokenSource: client.AttributionV2TokenSourceRelayOfficial, RequestIDs: []string{"request-synthetic"}, EvidenceDigest: "evidence-recovery",
+				CommitAllocations: []client.AttributionV2CommitAllocation{{Sequence: 1, RepoConfigID: option.RepoConfigID, RepoKey: option.RepoKey, WorkspaceID: option.WorkspaceID, CheckpointEventID: option.CheckpointEventID, CommitSHA: option.CommitSHA, EvidenceDigest: "evidence-recovery"}},
+			},
+		}}, nil
+	}
+	t.Cleanup(func() { scanCodexV2ClaimSource = originalScan })
+	backend := &acknowledgingV2ClaimClient{}
+	uploader := recoveringV2Uploader{acknowledgingV2Uploader: acknowledgingV2Uploader{fakeUploader: &fakeUploader{}, client: backend}, providerID: 99}
+	seed := ExecutionContext{
+		ServerURL: task.ServerURL, AuthSubject: task.AuthSubject, RepoConfigID: task.RepoConfigID, RepoKey: task.RepoKey,
+		WorkspaceID: currentContext.WorkspaceID, RepoRoot: repo, DurableReplay: true,
+	}
+	originalSpawn := spawnBackgroundSyncRunner
+	spawned := 0
+	spawnBackgroundSyncRunner = func(root string) error {
+		if root != repo {
+			return fmt.Errorf("spawn root = %q, want %q", root, repo)
+		}
+		spawned++
+		return nil
+	}
+	t.Cleanup(func() { spawnBackgroundSyncRunner = originalSpawn })
+	if err := NewHandler(uploader).PrePushResolved(seed); err != nil {
+		t.Fatal(err)
+	}
+	if spawned != 1 {
+		t.Fatalf("pre-push recovery runners = %d, want 1", spawned)
+	}
+	if err := RunPendingSyncTask(context.Background(), seed, uploader); err != nil {
+		t.Fatal(err)
+	}
+	if backend.calls != 1 || len(backend.groups) != 1 || len(backend.groups[0].CommitAllocations) != 1 {
+		t.Fatalf("accepted recovery groups = %+v, calls=%d", backend.groups, backend.calls)
+	}
+	if backend.groups[0].RelayProviderID != 17 || backend.groups[0].CommitAllocations[0].WorkspaceID != temporaryContext.WorkspaceID {
+		t.Fatalf("recovered identities = %+v", backend.groups[0])
+	}
+	if remaining, err := LoadSyncTask(temporaryContext.WorkspaceID); err != nil || remaining != nil {
+		t.Fatalf("recovered task = %+v, %v, want drained", remaining, err)
+	}
+}
+
+func TestRunPendingSyncTaskRetainsUnreachableRecoveryCommit(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == os.Getpid() })
+	repo := initRepoWithCommit2(t)
+	gitCtx, err := DetectGitContext(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unreachableCommit := strings.Repeat("f", 40)
+	unreachableEvent, err := CheckpointEventID(eventIDRepoHint(ExecutionContext{RepoConfigID: 23, AuthSubject: "user:1", WorkspaceID: gitCtx.WorkspaceID}), unreachableCommit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := SyncTask{
+		WorkspaceID: gitCtx.WorkspaceID, RepoRoot: repo, ServerURL: "https://ae.example.com", AuthSubject: "user:1",
+		RepoConfigID: 23, RepoKey: gitCtx.RepoKey, Status: SyncTaskStatusPending, LastRequestedAt: time.Now().UTC(),
+		V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: unreachableEvent, CommitSHA: unreachableCommit, CapturedAt: time.Now().UTC(), RelayProviderID: 17}},
+	}
+	if err := UpsertPendingSyncTask(task); err != nil {
+		t.Fatal(err)
+	}
+	seed := ExecutionContext{
+		ServerURL: task.ServerURL, AuthSubject: task.AuthSubject, RepoConfigID: task.RepoConfigID, RepoKey: task.RepoKey,
+		WorkspaceID: gitCtx.WorkspaceID, RepoRoot: repo, DurableReplay: true,
+	}
+	if err := RunPendingSyncTask(context.Background(), seed, syncCapableFakeUploader{fakeUploader: &fakeUploader{}}); err == nil {
+		t.Fatal("unreachable recovery error = nil")
+	}
+	retained, err := LoadSyncTask(task.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retained == nil || retained.LastFailureStage != SyncTaskFailureStageLocalState || retained.LastFailureReason != "commit unavailable in recovery checkout" || len(retained.V2Triggers) != 1 {
+		t.Fatalf("retained unreachable task = %+v", retained)
+	}
+}
+
+func TestExecutionContextForSyncTaskRejectsMismatchedCheckpointRecovery(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	seedGit, err := DetectGitContext(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := SyncTask{
+		WorkspaceID: "removed-workspace", RepoRoot: filepath.Join(t.TempDir(), "gone"), ServerURL: "https://ae.example.com", AuthSubject: "user:1",
+		RepoConfigID: 23, RepoKey: seedGit.RepoKey,
+		V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: "mismatched-event", CommitSHA: git2(t, repo, "rev-parse", "HEAD"), RelayProviderID: 17}},
+	}
+	seed := ExecutionContext{RepoConfigID: 23, RepoKey: seedGit.RepoKey, WorkspaceID: seedGit.WorkspaceID, RepoRoot: repo}
+	_, err = executionContextForSyncTask(task, seed)
+	var stageErr *syncTaskStageError
+	if !errors.As(err, &stageErr) || stageErr.stage != SyncTaskFailureStageLocalState || stageErr.reason != "checkpoint identity does not match" {
+		t.Fatalf("mismatched-checkpoint recovery error = %v", err)
+	}
+}
+
+func TestPruneExpiredV2SyncTriggersUsesNinetyDayBoundary(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	now := time.Date(2026, 8, 17, 8, 0, 0, 0, time.UTC)
+	firstFailure := now.Add(-time.Hour)
+	task := SyncTask{
+		WorkspaceID: "workspace-prune", Status: SyncTaskStatusPending, FirstFailureAt: &firstFailure, RemainingTriggerCount: 2,
+		V2Triggers: []V2SyncTrigger{
+			{Kind: "post-commit", EventID: "event-expired", CapturedAt: now.Add(-v2SyncTriggerRetention)},
+			{Kind: "post-commit", EventID: "event-kept", CapturedAt: now.Add(-v2SyncTriggerRetention).Add(time.Nanosecond)},
+		},
+	}
+	if err := SaveSyncTask(task); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := pruneExpiredV2SyncTriggers(&task, now, v2SyncTriggerRetention)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted || len(task.V2Triggers) != 1 || task.V2Triggers[0].EventID != "event-kept" || task.RemainingTriggerCount != 1 {
+		t.Fatalf("pruned task = %+v, deleted=%t", task, deleted)
+	}
+
+	task.V2Triggers[0].CapturedAt = now.Add(-v2SyncTriggerRetention)
+	if err := SaveSyncTask(task); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveV2ClaimScanProgress(&V2ClaimScanProgress{WorkspaceID: task.WorkspaceID}); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err = pruneExpiredV2SyncTriggers(&task, now, v2SyncTriggerRetention)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remaining, loadErr := LoadSyncTask(task.WorkspaceID)
+	progress, progressErr := LoadV2ClaimScanProgress(task.WorkspaceID)
+	if !deleted || loadErr != nil || remaining != nil || progressErr != nil || progress != nil {
+		t.Fatalf("expired task=%+v loadErr=%v progress=%+v progressErr=%v deleted=%t", remaining, loadErr, progress, progressErr, deleted)
+	}
+}
+
+func TestExecutionContextForSyncTaskRejectsCrossRepositoryRecovery(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	git2(t, repo, "remote", "set-url", "origin", "https://github.com/acme/other.git")
+	seedGit, err := DetectGitContext(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := SyncTask{
+		WorkspaceID: "removed-workspace", RepoRoot: filepath.Join(t.TempDir(), "gone"), RepoConfigID: 23, RepoKey: "github.com/acme/repo",
+		V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: "event-cross-repo", CommitSHA: git2(t, repo, "rev-parse", "HEAD"), RelayProviderID: 17}},
+	}
+	seed := ExecutionContext{RepoConfigID: 23, RepoKey: seedGit.RepoKey, WorkspaceID: seedGit.WorkspaceID, RepoRoot: repo}
+	_, err = executionContextForSyncTask(task, seed)
+	var stageErr *syncTaskStageError
+	if !errors.As(err, &stageErr) || stageErr.stage != SyncTaskFailureStageLocalState || stageErr.reason != "repository checkout unavailable" {
+		t.Fatalf("cross-repository recovery error = %v", err)
+	}
+}
+
+func TestExecutionContextForSyncTaskRequiresFrozenProviderForRecovery(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	seedGit, err := DetectGitContext(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := SyncTask{
+		WorkspaceID: "removed-workspace", RepoRoot: filepath.Join(t.TempDir(), "gone"), RepoConfigID: 23, RepoKey: seedGit.RepoKey,
+		V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: "event-no-provider", CommitSHA: git2(t, repo, "rev-parse", "HEAD")}},
+	}
+	seed := ExecutionContext{RepoConfigID: 23, RepoKey: seedGit.RepoKey, WorkspaceID: seedGit.WorkspaceID, RepoRoot: repo}
+	_, err = executionContextForSyncTask(task, seed)
+	var stageErr *syncTaskStageError
+	if !errors.As(err, &stageErr) || stageErr.stage != SyncTaskFailureStageLocalState || stageErr.reason != "provider identity unavailable for recovery" {
+		t.Fatalf("missing-provider recovery error = %v", err)
+	}
+}
 
 type countingV2Uploader struct {
 	*fakeUploader

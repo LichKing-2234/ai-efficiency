@@ -3,6 +3,7 @@ package hooks
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +24,10 @@ var v2ClaimProgressBatchSize = 64
 var scanCodexV2ClaimSource = func(scan *attributionlocal.CodexV2ClaimScan, ctx context.Context, sourceKey string, options []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
 	return scan.ScanSource(ctx, sourceKey, options)
 }
+
+var errSyncTaskRecoveryRepository = errors.New("recovery repository is unavailable")
+var errSyncTaskRecoveryCommit = errors.New("recovery commit is unavailable")
+var errSyncTaskRecoveryCheckpoint = errors.New("recovery checkpoint identity does not match")
 
 var spawnBackgroundSyncRunner = func(repoRoot string) error {
 	aeCLI, err := os.Executable()
@@ -76,7 +81,29 @@ func drainPendingSyncTasks(ctx context.Context, execCtx ExecutionContext, upload
 			if generation, failed := blocked[queued.WorkspaceID]; failed && generation >= queued.RequestGeneration {
 				continue
 			}
-			workspaceCtx := executionContextFromSyncTask(queued)
+			expired, pruneErr := pruneExpiredV2SyncTriggers(&queued, time.Now().UTC(), v2SyncTriggerRetention)
+			if pruneErr != nil {
+				pruneErr = syncTaskFailure(SyncTaskFailureStageLocalState, "expired local trigger cleanup failed", pruneErr)
+				_ = MarkSyncTaskFailure(&queued, time.Now().UTC(), pruneErr)
+				blocked[queued.WorkspaceID] = queued.RequestGeneration
+				if firstErr == nil {
+					firstErr = pruneErr
+				}
+				continue
+			}
+			if expired {
+				progressed = true
+				continue
+			}
+			workspaceCtx, recoveryErr := executionContextForSyncTask(queued, execCtx)
+			if recoveryErr != nil {
+				_ = MarkSyncTaskFailure(&queued, time.Now().UTC(), recoveryErr)
+				blocked[queued.WorkspaceID] = queued.RequestGeneration
+				if firstErr == nil {
+					firstErr = recoveryErr
+				}
+				continue
+			}
 			if err := runPendingSyncWorkspace(ctx, workspaceCtx, uploader); err != nil {
 				blocked[queued.WorkspaceID] = queued.RequestGeneration
 				if firstErr == nil {
@@ -168,6 +195,95 @@ func executionContextFromSyncTask(task SyncTask) ExecutionContext {
 	}
 }
 
+func executionContextForSyncTask(task SyncTask, seed ExecutionContext) (ExecutionContext, error) {
+	execCtx := executionContextFromSyncTask(task)
+	commitTriggers := syncTaskCommitTriggers(task.V2Triggers)
+	if len(commitTriggers) == 0 {
+		if _, err := os.Stat(execCtx.RepoRoot); err == nil {
+			return execCtx, nil
+		} else {
+			return execCtx, syncTaskFailure(SyncTaskFailureStageLocalState, "repository checkout unavailable", err)
+		}
+	}
+	if err := validateSyncTaskCheckout(task, execCtx.RepoRoot, task.WorkspaceID, commitTriggers); err == nil {
+		return execCtx, nil
+	}
+	if task.RepoConfigID != seed.RepoConfigID || strings.TrimSpace(task.RepoKey) != strings.TrimSpace(seed.RepoKey) {
+		return execCtx, syncTaskFailure(SyncTaskFailureStageLocalState, "repository checkout unavailable", fmt.Errorf("recovery repository identity does not match"))
+	}
+	for _, trigger := range commitTriggers {
+		if trigger.RelayProviderID <= 0 {
+			return execCtx, syncTaskFailure(SyncTaskFailureStageLocalState, "provider identity unavailable for recovery", fmt.Errorf("trigger provider identity is missing"))
+		}
+	}
+	if err := validateSyncTaskCheckout(task, seed.RepoRoot, seed.WorkspaceID, commitTriggers); err != nil {
+		if errors.Is(err, errSyncTaskRecoveryCommit) {
+			return execCtx, syncTaskFailure(SyncTaskFailureStageLocalState, "commit unavailable in recovery checkout", err)
+		}
+		if errors.Is(err, errSyncTaskRecoveryCheckpoint) {
+			return execCtx, syncTaskFailure(SyncTaskFailureStageLocalState, "checkpoint identity does not match", err)
+		}
+		return execCtx, syncTaskFailure(SyncTaskFailureStageLocalState, "repository checkout unavailable", err)
+	}
+	execCtx.RepoRoot = seed.RepoRoot
+	return execCtx, nil
+}
+
+func syncTaskCommitTriggers(triggers []V2SyncTrigger) []V2SyncTrigger {
+	result := make([]V2SyncTrigger, 0, len(triggers))
+	for _, trigger := range triggers {
+		if strings.TrimSpace(trigger.Kind) == "post-commit" && strings.TrimSpace(trigger.CommitSHA) != "" {
+			result = append(result, trigger)
+		}
+	}
+	return result
+}
+
+func validateSyncTaskCheckout(task SyncTask, repoRoot, workspaceID string, triggers []V2SyncTrigger) error {
+	gitCtx, err := DetectGitContext(repoRoot)
+	if err != nil {
+		return fmt.Errorf("%w: %w", errSyncTaskRecoveryRepository, err)
+	}
+	if strings.TrimSpace(gitCtx.RepoKey) != strings.TrimSpace(task.RepoKey) || strings.TrimSpace(gitCtx.WorkspaceID) != strings.TrimSpace(workspaceID) {
+		return fmt.Errorf("%w: Git identity does not match", errSyncTaskRecoveryRepository)
+	}
+	taskContext := executionContextFromSyncTask(task)
+	for _, trigger := range triggers {
+		expectedEventID, err := CheckpointEventID(eventIDRepoHint(taskContext), trigger.CommitSHA)
+		if err != nil {
+			return fmt.Errorf("%w: derive expected event ID: %w", errSyncTaskRecoveryCheckpoint, err)
+		}
+		if strings.TrimSpace(trigger.EventID) != expectedEventID {
+			return errSyncTaskRecoveryCheckpoint
+		}
+		if !syncTaskCommitReachable(repoRoot, trigger.CommitSHA) {
+			return fmt.Errorf("%w: trigger commit is not reachable", errSyncTaskRecoveryCommit)
+		}
+	}
+	return nil
+}
+
+func syncTaskCommitReachable(repoRoot, commitSHA string) bool {
+	commitSHA = strings.TrimSpace(commitSHA)
+	if (len(commitSHA) != 40 && len(commitSHA) != 64) || !validHexObjectID(commitSHA) {
+		return false
+	}
+	resolved, err := gitOutput(repoRoot, "rev-parse", "--verify", commitSHA+"^{commit}")
+	if err != nil || !strings.EqualFold(strings.TrimSpace(resolved), commitSHA) {
+		return false
+	}
+	if _, err := gitOutput(repoRoot, "merge-base", "--is-ancestor", commitSHA, "HEAD"); err == nil {
+		return true
+	}
+	refs, err := gitOutput(repoRoot, "for-each-ref", "--format=%(refname)", "--contains="+commitSHA)
+	return err == nil && strings.TrimSpace(refs) != ""
+}
+
+func validHexObjectID(value string) bool {
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
 func runPendingSyncPass(ctx context.Context, execCtx ExecutionContext, uploader Uploader, task *SyncTask) error {
 	h := NewHandler(uploader)
 	if err := h.FlushUnresolvedResolved(ctx, execCtx); err != nil {
@@ -234,8 +350,12 @@ func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionCon
 		if trigger.Kind != "post-commit" || trigger.EventID == "" || trigger.CommitSHA == "" {
 			continue
 		}
+		providerID := trigger.RelayProviderID
+		if providerID <= 0 {
+			providerID = v2.RelayProviderID()
+		}
 		options = append(options, attributionlocal.V2ClaimScanOptions{
-			RepoRoot: execCtx.RepoRoot, CommitSHA: trigger.CommitSHA, RelayProviderID: v2.RelayProviderID(),
+			RepoRoot: execCtx.RepoRoot, CommitSHA: trigger.CommitSHA, RelayProviderID: providerID,
 			RepoConfigID: execCtx.RepoConfigID, RepoKey: execCtx.RepoKey, WorkspaceID: execCtx.WorkspaceID,
 			CheckpointEventID: trigger.EventID,
 		})
