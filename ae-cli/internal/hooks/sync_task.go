@@ -35,7 +35,7 @@ var ErrSyncTaskAlreadyRunning = errors.New("sync task already running")
 
 var syncTaskRunnerAlive = syncTaskProcessAlive
 
-var machineSyncLockWait = 30 * time.Second
+var machineSyncLockPollInterval = 25 * time.Millisecond
 
 type SyncTask struct {
 	Version               int                  `json:"version"`
@@ -645,7 +645,6 @@ func withMachineSyncRunLock(ctx context.Context, fn func() error) error {
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
 		return fmt.Errorf("create machine sync lock dir: %w", err)
 	}
-	deadline := time.Now().Add(machineSyncLockWait)
 	for {
 		file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err == nil {
@@ -661,13 +660,10 @@ func withMachineSyncRunLock(ctx context.Context, fn func() error) error {
 			_ = os.Remove(lockPath)
 			continue
 		}
-		if machineSyncLockWait <= 0 || time.Now().After(deadline) {
-			return ErrSyncTaskAlreadyRunning
-		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(25 * time.Millisecond):
+		case <-time.After(machineSyncLockPollInterval):
 		}
 	}
 }

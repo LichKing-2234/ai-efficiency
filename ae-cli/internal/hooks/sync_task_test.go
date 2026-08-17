@@ -523,6 +523,62 @@ func TestRunPendingSyncTaskSerializesMachineWorkspaces(t *testing.T) {
 	}
 }
 
+func TestRunPendingSyncTaskWaiterDrainsTaskAfterOwnerFailure(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == os.Getpid() })
+	originalPollInterval := machineSyncLockPollInterval
+	machineSyncLockPollInterval = time.Millisecond
+	t.Cleanup(func() { machineSyncLockPollInterval = originalPollInterval })
+	now := time.Now().UTC()
+	ownerTask := SyncTask{WorkspaceID: "ws-owner-failure", RepoRoot: t.TempDir(), ServerURL: "https://ae.example.com", AuthSubject: "user:1", RepoConfigID: 2, RepoKey: "github.com/acme/repo-a", Status: SyncTaskStatusPending, LastRequestedAt: now}
+	waiterTask := SyncTask{WorkspaceID: "ws-waiter-successor", RepoRoot: t.TempDir(), ServerURL: ownerTask.ServerURL, AuthSubject: ownerTask.AuthSubject, RepoConfigID: 3, RepoKey: "github.com/acme/repo-b", Status: SyncTaskStatusPending, LastRequestedAt: now.Add(time.Second)}
+	if err := UpsertPendingSyncTask(ownerTask); err != nil {
+		t.Fatal(err)
+	}
+
+	ownerStarted := make(chan struct{})
+	releaseOwner := make(chan struct{})
+	original := runAttributionSync
+	runAttributionSync = func(_ context.Context, opts attributionlocal.RunOptions, _ attributionlocal.BackendClient) error {
+		if opts.WorkspaceID == ownerTask.WorkspaceID {
+			select {
+			case <-ownerStarted:
+			default:
+				close(ownerStarted)
+			}
+			<-releaseOwner
+			return errors.New("owner sync failed")
+		}
+		return nil
+	}
+	t.Cleanup(func() { runAttributionSync = original })
+
+	uploader := syncCapableFakeUploader{fakeUploader: &fakeUploader{}}
+	ownerCtx := ExecutionContext{ServerURL: ownerTask.ServerURL, AuthSubject: ownerTask.AuthSubject, RepoConfigID: ownerTask.RepoConfigID, RepoKey: ownerTask.RepoKey, WorkspaceID: ownerTask.WorkspaceID, RepoRoot: ownerTask.RepoRoot, DurableReplay: true}
+	waiterCtx := ExecutionContext{ServerURL: waiterTask.ServerURL, AuthSubject: waiterTask.AuthSubject, RepoConfigID: waiterTask.RepoConfigID, RepoKey: waiterTask.RepoKey, WorkspaceID: waiterTask.WorkspaceID, RepoRoot: waiterTask.RepoRoot, DurableReplay: true}
+	ownerDone := make(chan error, 1)
+	go func() { ownerDone <- RunPendingSyncTask(context.Background(), ownerCtx, uploader) }()
+	<-ownerStarted
+	if err := UpsertPendingSyncTask(waiterTask); err != nil {
+		t.Fatal(err)
+	}
+	waiterDone := make(chan error, 1)
+	go func() { waiterDone <- RunPendingSyncTask(context.Background(), waiterCtx, uploader) }()
+	time.Sleep(50 * time.Millisecond)
+	close(releaseOwner)
+
+	for name, done := range map[string]<-chan error{"owner": ownerDone, "waiter": waiterDone} {
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatalf("%s runner did not finish", name)
+		}
+	}
+	if got, err := LoadSyncTask(waiterTask.WorkspaceID); err != nil || got != nil {
+		t.Fatalf("waiter task = %+v, %v, want drained without another event", got, err)
+	}
+}
+
 func TestRunPendingSyncTaskRecoversDeadMachineOwner(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == os.Getpid() })
