@@ -214,6 +214,17 @@ patch similarity, or code-content heuristic can rebind a trigger. `pre-push`
 and `ae-cli sync` wake this path through the same transient owner; neither adds
 a daemon or periodic scan.
 
+On first runner, status, or doctor activity after upgrade, the same reporting
+installation scans the existing workspace tasks for its normalized server and
+reporting owner. Legacy single-trigger fields are promoted into the retained
+trigger list, exact duplicates are collapsed, and a missing historical provider
+is frozen to that installation's persisted Relay provider. Already-frozen
+providers and every Repository, workspace, checkpoint, commit, and capture time
+remain unchanged. Stale scanner versions discard only local digest progress so
+the current scanner rebuilds them; current progress deduplicates exact source,
+unit, and turn keys. A busy or conflicting workspace is deferred without
+blocking unrelated migration, and future task/progress versions are left alone.
+
 One runner pass performs one 90-day-bounded Codex transport-evidence query and
 one discovery of active `sessions` plus `archived_sessions`. File modification
 time and the indexed SQLite timestamp predicate apply the window before JSONL
@@ -273,10 +284,12 @@ The local unresolved and audit-minimal state is retained for at most 90 days
 and cleaned lazily on later hook, sync, or CLI activity.
 
 Local status and doctor output distinguish the current Repository task from
-machine-wide `queued`, `running`, `yielded`, and `failed` totals. Failure
-diagnostics contain only the stage, a fixed safe reason, the first failure
-time, and the remaining trigger count; raw Request or response identifiers are
-never printed.
+machine-wide `queued`, `running`, `yielded`, and `recoverable` task totals, plus
+terminal-conflict and seven-day-expiry-warning counts. Failure diagnostics
+contain only the stage, a fixed safe reason, the first failure time, and the
+remaining trigger count; raw Request or response identifiers are never printed.
+Migration and lazy 90-day cleanup mutate only local recovery detail. They never
+delete acknowledged formal pools, relations, or any server data.
 
 The backend owns one cutover protocol contract and returns it from installation
 enrollment and every v2 batch acknowledgement:

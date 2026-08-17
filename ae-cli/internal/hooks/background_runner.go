@@ -60,6 +60,13 @@ func RunPendingSyncTask(ctx context.Context, execCtx ExecutionContext, uploader 
 		return nil
 	}
 	return withMachineSyncRunLock(ctx, func() error {
+		if provider, ok := uploader.(interface{ RelayProviderID() int }); ok && provider.RelayProviderID() > 0 {
+			if _, err := MigrateMachineSyncBacklog(SyncTaskMigrationBinding{
+				ServerURL: execCtx.ServerURL, AuthSubject: execCtx.AuthSubject, RelayProviderID: provider.RelayProviderID(),
+			}, time.Now().UTC()); err != nil {
+				return fmt.Errorf("migrate machine sync backlog: %w", err)
+			}
+		}
 		return drainPendingSyncTasks(ctx, execCtx, uploader)
 	})
 }

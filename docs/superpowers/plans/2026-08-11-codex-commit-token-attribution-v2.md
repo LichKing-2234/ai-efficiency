@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** T01-T12 and T14-T17 are implemented, released, and production-qualified. T18/T19 merged through PR #306 as `b56419d6`; all four PR checks passed, but they are not released, installed, or production-verified. T20 is implemented, covered by the full ae-cli suite, and passed final Standards and Spec review with no findings; commits `45b68fad` and `6005f563` remain local and are not published, released, installed, or production-verified. T21/T22 remain blocked and unimplemented. PR #299 merged as `1c9e6801`, merge-SHA CI `31993165255` passed all four jobs, release run `31996590619` published platform `v0.1.0-preview.87`, and production Helm revision 87 serves that exact SHA. Exact selected-window production readback established the replacement #252 Day 0 at `2026-08-17T05:32:57.925948Z`. #252 cleanup has not run; it still requires seven continuous stable days, a later qualifying ordinary-workflow pool delta, every final execution-time gate, and separate implementation/release/deployment/destructive-migration authority.
+**Status:** T01-T12 and T14-T17 are implemented, released, and production-qualified. T18/T19 merged through PR #306 as `b56419d6`; T20 merged through PR #307 as `2d5b5574`; all checks passed, but T18-T20 are not released, installed, or production-verified. T21 is implemented and committed locally for #304, covered by the full ae-cli suite, and passed Standards and requirement-by-requirement Spec review with no findings; publication, release, installation, and production verification remain incomplete. T22 remains blocked and unimplemented. PR #299 merged as `1c9e6801`, merge-SHA CI `31993165255` passed all four jobs, release run `31996590619` published platform `v0.1.0-preview.87`, and production Helm revision 87 serves that exact SHA. Exact selected-window production readback established the replacement #252 Day 0 at `2026-08-17T05:32:57.925948Z`. #252 cleanup has not run; it still requires seven continuous stable days, a later qualifying ordinary-workflow pool delta, every final execution-time gate, and separate implementation/release/deployment/destructive-migration authority.
 **T13 invalidated baseline:** The provisional Day 0 at `2026-08-14T07:22:18.199843Z` is retained only as historical evidence. Its formal-pool facts remain 7 pools, 7 direct relations across 6 commits, `6,890,621` Token, 71 source requests/responses, and zero gaps, but the recorded `35,272,145,109` denominator was cumulative personal Usage rather than the selected 2026-08-13 through 2026-08-14 window. A later production reproduction showed the same cumulative `35,312,542,273` denominator for 2-day, 7-day, and 30-day selections while their Usage trend totals differed. The earlier `2026-08-21T07:22:18.199843Z` cleanup eligibility is void. Its replacement requirements were satisfied by the release, deployment, and readback recorded below; the old clock remains permanently invalid.
 **T13 replacement Day 0:** The complete production readback at `2026-08-17T05:32:57.925948Z` is the active baseline. Personal Activity and Usage used the same `Asia/Shanghai` local-day windows: 2-day `2026-08-16..17` returned true-zero committed Token over `96,556,726` Usage Token; 7-day `2026-08-11..17` returned exact `6,890,621 / 3,564,608,255 = 0.19330654330204933%`; and 30-day `2026-07-19..08-17` returned exact `6,890,621 / 15,156,957,118 = 0.04546177010566904%`. Every Activity denominator equaled the corresponding Usage trend sum while the cumulative Usage stats value was independently `35,085,487,404`. Claim coverage was complete, readiness was active, and focused PR sync jobs 31/32 restored complete SCM coverage with zero failed, partial, unsynced, or stale Repository. The conserved formal baseline is 7 pools, 7 direct relations across 6 commits, `6,890,621` Token, 71 source requests/responses, zero gaps, and zero duplicate pool/relation/provider-scoped Request identities; the v1 tables remain `0/0`, the one shadow pool remains isolated, formal near-expiry/finalization errors are `0/0`, and v1 writes return structured `409 upgrade_required`. The earliest possible cleanup time is `2026-08-24T05:32:57.925948Z`, only if every continuous and final gate remains green and a later qualifying ordinary pool exists.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
@@ -425,7 +425,20 @@ T01 contract publication (#253)
 
 ### T21-T22 — Migration and production qualification ([#304](https://github.com/LichKing-2234/ai-efficiency/issues/304), [#305](https://github.com/LichKing-2234/ai-efficiency/issues/305))
 
-- [ ] Migrate and expose the existing machine backlog after T18-T20 are merged.
+- [x] Promote legacy single-trigger tasks and freeze missing providers only for
+  the same persisted reporting installation, without changing existing trigger
+  identities or future-version state.
+- [x] Rebuild stale scanner progress, deduplicate exact trigger/progress units,
+  and defer busy or conflicting workspaces without blocking unrelated tasks.
+- [x] Expose current-repository state separately from machine-wide queued,
+  running, yielded, recoverable, terminal, and expiring counts.
+- [x] Keep terminal conflicts quarantined and preserve the local-only 90-day
+  cleanup boundary without changing accepted formal pools or server data.
+- [x] Cover 300 legacy workspaces with deleted roots, lock contention, and a
+  conflicting task, plus existing timeout-resume and real deleted-worktree
+  drain integration.
+- [x] Run the full ae-cli suite and final two-axis review, address every finding,
+  and commit the clean implementation branch.
 - [ ] Obtain separate release/install/production-write authority and run the
   real Helm commit-to-Activity canary only after T21 completes.
 
