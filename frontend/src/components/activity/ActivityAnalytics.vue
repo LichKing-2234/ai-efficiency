@@ -73,7 +73,12 @@ const trendData = computed<ChartData<'line'>>(() => {
 const trendOptions: ChartOptions<'line'> = { responsive: true, maintainAspectRatio: false, interaction: { intersect: false, mode: 'index' }, plugins: { legend: { display: Boolean(selectedRepoID.value) } }, scales: { y: { beginAtZero: true } } }
 
 function token(value: number) { return new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(value) }
-function percent(value?: number) { return value == null ? '—' : `${value.toFixed(1)}%` }
+function percent(value?: number) {
+  if (value == null) return '—'
+  if (value === 0) return '0%'
+  if (value > 0 && value < 0.01) return '<0.01%'
+  return `${value.toFixed(value < 1 ? 2 : 1)}%`
+}
 function tokenChange(value?: number) { return value == null ? '' : `${value > 0 ? '+' : ''}${token(value)}` }
 function barWidth(value: number, max: number) { return `${Math.max(3, value / max * 100)}%` }
 

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -92,7 +93,14 @@ func (r *activityDenominatorResolver) ResolveDenominator(ctx context.Context, re
 	if !result.Configured || result.Stats == nil || result.Stats.TotalTokens < 0 || result.UsageFreshness == nil || result.UsageFreshness.AsOf.IsZero() || result.UsageFreshness.SourceStatus != "ok" || result.Range.StartDate != request.FromDate || result.Range.EndDate != request.ToDate || result.Range.Timezone != request.Timezone || result.Range.Granularity != "day" {
 		return activity.V2Denominator{}, nil
 	}
-	denominator := activity.V2Denominator{TotalTokens: result.Stats.TotalTokens, AsOf: result.UsageFreshness.AsOf, FreshUntil: result.UsageFreshness.FreshUntil, Fresh: r.currentTime().Before(result.UsageFreshness.FreshUntil), Complete: true, ProviderSet: providerSet}
+	var totalTokens int64
+	for _, point := range result.Trend {
+		if point.TotalTokens < 0 || totalTokens > math.MaxInt64-point.TotalTokens {
+			return activity.V2Denominator{}, nil
+		}
+		totalTokens += point.TotalTokens
+	}
+	denominator := activity.V2Denominator{TotalTokens: totalTokens, AsOf: result.UsageFreshness.AsOf, FreshUntil: result.UsageFreshness.FreshUntil, Fresh: r.currentTime().Before(result.UsageFreshness.FreshUntil), Complete: true, ProviderSet: providerSet}
 	if request.Scope == activity.V2ScopeMember && r.cache != nil && memberKey.SubjectUserID > 0 {
 		r.cache.WriteMemberDenominator(ctx, memberKey, denominator)
 	}

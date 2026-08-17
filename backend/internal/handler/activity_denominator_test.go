@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -102,7 +103,15 @@ func (f *fakeTeamMetrics) DepartmentSummary(context.Context, int, string, teamus
 
 func TestActivityDenominatorUsesExactFreshPersonalUsage(t *testing.T) {
 	now := time.Date(2026, 8, 12, 1, 0, 0, 0, time.UTC)
-	usage := &fakePersonalMetrics{snapshot: &personalusage.Snapshot{Configured: true, Range: relay.UserUsageDashboardRange{StartDate: "2026-08-01", EndDate: "2026-08-07", Granularity: "day", Timezone: "Asia/Shanghai"}, Stats: &relay.UserUsageDashboardStats{TotalTokens: 900}, UsageFreshness: &personalusage.UsageFreshness{AsOf: now.Add(-time.Second), FreshUntil: now.Add(time.Minute), SourceStatus: "ok"}}}
+	usage := &fakePersonalMetrics{snapshot: &personalusage.Snapshot{
+		Configured: true,
+		Range:      relay.UserUsageDashboardRange{StartDate: "2026-08-01", EndDate: "2026-08-07", Granularity: "day", Timezone: "Asia/Shanghai"},
+		Stats:      &relay.UserUsageDashboardStats{TotalTokens: 9000},
+		Trend:      []relay.UserUsageTrendPoint{{Date: "2026-08-01", TotalTokens: 400}, {Date: "2026-08-02", TotalTokens: 500}},
+		UsageFreshness: &personalusage.UsageFreshness{
+			AsOf: now.Add(-time.Second), FreshUntil: now.Add(time.Minute), SourceStatus: "ok",
+		},
+	}}
 	resolver := &activityDenominatorResolver{personal: usage, now: func() time.Time { return now }}
 	result, err := resolver.ResolveDenominator(context.Background(), activity.V2DenominatorRequest{ActorUserID: 1, Scope: activity.V2ScopeMember, SubjectUserID: 2, FromDate: "2026-08-01", ToDate: "2026-08-07", Timezone: "Asia/Shanghai"})
 	if err != nil {
@@ -110,6 +119,36 @@ func TestActivityDenominatorUsesExactFreshPersonalUsage(t *testing.T) {
 	}
 	if result.TotalTokens != 900 || !result.Fresh || !result.Complete || usage.request.UserID != 2 || usage.request.IncludeGroupQuotas {
 		t.Fatalf("result/request = %+v/%+v", result, usage.request)
+	}
+}
+
+func TestActivityDenominatorRejectsInvalidPersonalRangeTotals(t *testing.T) {
+	now := time.Date(2026, 8, 12, 1, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		name  string
+		trend []relay.UserUsageTrendPoint
+	}{
+		{name: "negative", trend: []relay.UserUsageTrendPoint{{TotalTokens: -1}}},
+		{name: "overflow", trend: []relay.UserUsageTrendPoint{{TotalTokens: math.MaxInt64}, {TotalTokens: 1}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			usage := &fakePersonalMetrics{snapshot: &personalusage.Snapshot{
+				Configured: true,
+				Range:      relay.UserUsageDashboardRange{StartDate: "2026-08-01", EndDate: "2026-08-07", Granularity: "day", Timezone: "UTC"},
+				Stats:      &relay.UserUsageDashboardStats{},
+				Trend:      test.trend,
+				UsageFreshness: &personalusage.UsageFreshness{
+					AsOf: now, FreshUntil: now.Add(time.Minute), SourceStatus: "ok",
+				},
+			}}
+			result, err := (&activityDenominatorResolver{personal: usage, now: func() time.Time { return now }}).ResolveDenominator(context.Background(), activity.V2DenominatorRequest{ActorUserID: 1, Scope: activity.V2ScopePersonal, FromDate: "2026-08-01", ToDate: "2026-08-07", Timezone: "UTC"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Complete || result.Fresh {
+				t.Fatalf("invalid trend denominator = %+v", result)
+			}
+		})
 	}
 }
 
@@ -191,6 +230,7 @@ func TestActivityDenominatorResolverStaysWithinScaleBudgets(t *testing.T) {
 		Configured: true,
 		Range:      relay.UserUsageDashboardRange{StartDate: "2026-08-01", EndDate: "2026-08-07", Granularity: "day", Timezone: "UTC"},
 		Stats:      &relay.UserUsageDashboardStats{TotalTokens: 900},
+		Trend:      []relay.UserUsageTrendPoint{{Date: "2026-08-01", TotalTokens: 900}},
 		UsageFreshness: &personalusage.UsageFreshness{
 			AsOf: now.Add(-time.Second), FreshUntil: now.Add(time.Minute), SourceStatus: "ok",
 		},

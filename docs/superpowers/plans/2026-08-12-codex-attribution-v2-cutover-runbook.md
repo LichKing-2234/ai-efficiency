@@ -8,10 +8,12 @@
 This runbook records the reversible evidence and exact operator sequence used
 for the completed #251 cutover. The earlier cutover-based cleanup date ending
 on `2026-08-19T12:59:09Z` is superseded. #278 completed the ordinary-workflow
-qualification and all final readbacks, establishing #252 Day 0 at
-`2026-08-14T07:22:18.199843Z`. Cleanup cannot begin before
-`2026-08-21T07:22:18.199843Z`, restarts after any failed gate, and still
-requires separate execution authority.
+qualification and established a provisional #252 Day 0 at
+`2026-08-14T07:22:18.199843Z`. A later production read found that the personal
+Activity denominator used cumulative Usage stats instead of the selected
+window, invalidating that downstream cleanup clock without changing the
+completed cutover evidence. Replacement Day 0 and cleanup eligibility remain
+unscheduled and still require separate execution authority.
 
 ## Execution Status
 
