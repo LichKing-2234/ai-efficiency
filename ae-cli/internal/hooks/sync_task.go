@@ -90,14 +90,15 @@ func syncTaskFailure(stage SyncTaskFailureStage, reason string, err error) error
 }
 
 type V2SyncTrigger struct {
-	Kind         string    `json:"kind"`
-	EventID      string    `json:"event_id"`
-	CommitSHA    string    `json:"commit_sha,omitempty"`
-	Branch       string    `json:"branch,omitempty"`
-	RewriteType  string    `json:"rewrite_type,omitempty"`
-	OldCommitSHA string    `json:"old_commit_sha,omitempty"`
-	NewCommitSHA string    `json:"new_commit_sha,omitempty"`
-	CapturedAt   time.Time `json:"captured_at"`
+	Kind            string    `json:"kind"`
+	EventID         string    `json:"event_id"`
+	CommitSHA       string    `json:"commit_sha,omitempty"`
+	Branch          string    `json:"branch,omitempty"`
+	RewriteType     string    `json:"rewrite_type,omitempty"`
+	OldCommitSHA    string    `json:"old_commit_sha,omitempty"`
+	NewCommitSHA    string    `json:"new_commit_sha,omitempty"`
+	CapturedAt      time.Time `json:"captured_at"`
+	RelayProviderID int       `json:"relay_provider_id,omitempty"`
 }
 
 func SyncTaskPath(workspaceID string) (string, error) {
@@ -366,7 +367,8 @@ func sameV2SyncTrigger(left, right V2SyncTrigger) bool {
 		strings.TrimSpace(left.Branch) == strings.TrimSpace(right.Branch) &&
 		strings.TrimSpace(left.RewriteType) == strings.TrimSpace(right.RewriteType) &&
 		strings.TrimSpace(left.OldCommitSHA) == strings.TrimSpace(right.OldCommitSHA) &&
-		strings.TrimSpace(left.NewCommitSHA) == strings.TrimSpace(right.NewCommitSHA)
+		strings.TrimSpace(left.NewCommitSHA) == strings.TrimSpace(right.NewCommitSHA) &&
+		left.RelayProviderID == right.RelayProviderID
 }
 
 func TryClaimSyncTaskSpawn(workspaceID string, now time.Time, cooldown time.Duration) (bool, *SyncTask, error) {

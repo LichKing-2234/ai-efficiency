@@ -186,7 +186,9 @@ func (h *Handler) schedulePendingSync(execCtx ExecutionContext, trigger *HookEve
 		if capturedAt, err := time.Parse(time.RFC3339, trigger.CapturedAt); err == nil {
 			task.LastRequestedAt = capturedAt.UTC()
 		}
-		task.V2Triggers = []V2SyncTrigger{v2SyncTriggerFromHookEvent(*trigger)}
+		v2Trigger := v2SyncTriggerFromHookEvent(*trigger)
+		v2Trigger.RelayProviderID = h.relayProviderID()
+		task.V2Triggers = []V2SyncTrigger{v2Trigger}
 	}
 	currentTask := &task
 	canRunSync := h.attributionSyncClient() != nil || h.compactAttributionSyncClient() != nil
@@ -213,6 +215,17 @@ func (h *Handler) schedulePendingSync(execCtx ExecutionContext, trigger *HookEve
 	} else {
 		fmt.Fprintln(hookStderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
 	}
+}
+
+func (h *Handler) relayProviderID() int {
+	if h == nil || h.uploader == nil {
+		return 0
+	}
+	provider, ok := h.uploader.(interface{ RelayProviderID() int })
+	if !ok {
+		return 0
+	}
+	return provider.RelayProviderID()
 }
 
 func (h *Handler) PostRewriteResolved(ctx context.Context, execCtx ExecutionContext, rewriteType string, stdin io.Reader) error {

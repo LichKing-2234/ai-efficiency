@@ -68,6 +68,13 @@ func (s compactSyncCapableFakeUploader) AttributionProtocol() client.Attribution
 	return client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept}
 }
 
+type providerCompactSyncCapableFakeUploader struct {
+	compactSyncCapableFakeUploader
+	providerID int
+}
+
+func (s providerCompactSyncCapableFakeUploader) RelayProviderID() int { return s.providerID }
+
 type recordingBackendHookClient struct {
 	checkpoints []client.CommitCheckpointRequest
 	toolUsage   []client.ToolUsageEventRequest
@@ -349,6 +356,35 @@ func TestCompactPostCommitSkipsLegacySnapshotAndStartsBackgroundSync(t *testing.
 	cachePath := filepath.Join(attributionlocal.AttributionRootDir(), "workspaces", execCtx.WorkspaceID, "collectors", "latest.json")
 	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
 		t.Fatalf("compact hook wrote legacy collector cache: %v", err)
+	}
+}
+
+func TestCompactPostCommitPersistsRelayProviderOnV2Trigger(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	t.Setenv("HOME", t.TempDir())
+	execCtx := resolvedContextForRepo(t, repo)
+	if err := attributionlocal.SaveJSON(attributionlocal.CompactStatePath(), attributionlocal.CompactState{
+		Version: 2, EnabledAt: time.Now().UTC(), SeenAtoms: map[string]bool{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	originalSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(string) error { return nil }
+	t.Cleanup(func() { spawnBackgroundSyncRunner = originalSpawn })
+
+	uploader := providerCompactSyncCapableFakeUploader{
+		compactSyncCapableFakeUploader: compactSyncCapableFakeUploader{fakeUploader: &fakeUploader{}},
+		providerID:                     17,
+	}
+	if err := NewHandler(uploader).PostCommitResolved(context.Background(), execCtx); err != nil {
+		t.Fatal(err)
+	}
+	task, err := LoadSyncTask(execCtx.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task == nil || len(task.V2Triggers) != 1 || task.V2Triggers[0].RelayProviderID != 17 {
+		t.Fatalf("persisted trigger = %+v, want relay_provider_id=17", task)
 	}
 }
 
