@@ -12,8 +12,12 @@ qualification and established a provisional #252 Day 0 at
 `2026-08-14T07:22:18.199843Z`. A later production read found that the personal
 Activity denominator used cumulative Usage stats instead of the selected
 window, invalidating that downstream cleanup clock without changing the
-completed cutover evidence. Replacement Day 0 and cleanup eligibility remain
-unscheduled and still require separate execution authority.
+completed cutover evidence. PR #299's repair is deployed as platform
+`v0.1.0-preview.87` at production Helm revision 87. Exact production readback
+established the replacement #252 Day 0 at
+`2026-08-17T05:32:57.925948Z`; the earliest possible cleanup time is
+`2026-08-24T05:32:57.925948Z`, subject to a later qualifying ordinary pool,
+every continuous/final gate, and separate cleanup authority.
 
 ## Execution Status
 
