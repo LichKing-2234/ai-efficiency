@@ -150,6 +150,17 @@ describe('ActivityView v2', () => {
     expect(wrapper.find('[data-testid="activity-trend-chart"]').exists()).toBe(true)
   })
 
+  it('does not render a non-zero committed ratio as zero', async () => {
+    const api = await import('@/api/activity')
+    vi.mocked(api.getActivityV2Overview).mockResolvedValue({
+      data: { data: { ...overview, ratio: { state: 'exact', committed_tokens: 6_890_621, total_tokens: 18_175_641_094, percent: 0.037912413 } } },
+    } as any)
+    const { wrapper } = await mountView('/activity?from=2026-07-16&to=2026-08-14&timezone=Asia%2FShanghai')
+    const ratioCard = wrapper.get('[aria-labelledby="activity-ratio-heading"]')
+    expect(ratioCard.text()).toContain('0.04%')
+    expect(ratioCard.text()).not.toContain('0.0%')
+  })
+
   it('keeps overall rankings while a repository filters overview and PR list', async () => {
     const api = await import('@/api/activity')
     const { wrapper, router } = await mountView('/activity?from=2026-07-14&to=2026-08-12&timezone=UTC')
@@ -253,7 +264,7 @@ describe('ActivityView v2', () => {
 
   it.each([
     ['complete_zero_usage', { committed_tokens: 0, total_tokens: 0 }, 'No AI Token this period', false],
-    ['true_zero_committed', { committed_tokens: 0, total_tokens: 1000, percent: 0 }, '0.0%', true],
+    ['true_zero_committed', { committed_tokens: 0, total_tokens: 1000, percent: 0 }, '0%', true],
     ['denominator_unavailable', { committed_tokens: 400 }, 'Complete Usage data is required', false],
     ['lower_bound', { committed_tokens: 400, total_tokens: 1000, percent: 40 }, '≥40.0%', true],
   ])('renders the %s ratio state exactly', async (state, ratio, expected, chart) => {

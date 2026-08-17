@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Design
 
 **Date:** 2026-08-11
-**Status:** Active production contract since the verified 2026-08-12 cutover. The Responses WebSocket extension uses Codex-local Token and shipped in `ae-cli/v0.2.0-preview.8` plus platform `v0.1.0-preview.85`; the trusted-log repair shipped in CLI-only preview.9, and preview.10 completed the exact dual-baseline and scan-progress repair for current Codex 0.147. CLI-only `ae-cli/v0.2.0-preview.11` now preserves the original single-allocation evidence digest and quarantines unchanged terminal conflicts without retransmission or later-trigger blockage. Its released runner drained the retained ten-trigger production task through ordinary managed hooks, kept exactly one terminal conflict visible, and established #252 Day 0 at `2026-08-14T07:22:18.199843Z`. Production currently serves platform `v0.1.0-preview.86`; #252 cleanup remains pending the continuous seven-day window and separate authority.
+**Status:** Active production contract since the verified 2026-08-12 cutover. The Responses WebSocket extension uses Codex-local Token and shipped in `ae-cli/v0.2.0-preview.8` plus platform `v0.1.0-preview.85`; the trusted-log repair shipped in CLI-only preview.9, and preview.10 completed the exact dual-baseline and scan-progress repair for current Codex 0.147. CLI-only `ae-cli/v0.2.0-preview.11` preserves the original single-allocation evidence digest and quarantines unchanged terminal conflicts without retransmission or later-trigger blockage. A 2026-08-14 production read found that personal Activity used cumulative Usage stats instead of the selected-window trend total, invalidating the previously recorded #252 Day 0. The code and regression tests now repair that denominator and non-zero percentage display; a separately authorized platform release, deployment, production readback, and replacement Day 0 remain pending.
 **Scope:** `ae-cli`, backend attribution/reconciliation/read models, frontend Activity, repository administration
 **Supersedes for active behavior:** [Codex Token Attribution Ledger POC](./2026-08-05-codex-token-attribution-ledger-poc-design.md)
 **Related:**
@@ -465,6 +465,12 @@ fan-out:
 - a single denominator resolver returns total, exact range/timezone coverage,
   provider-set coverage, `as_of`, freshness, and `complete`.
 
+For personal and member reads, the selected-window denominator is the
+overflow-checked sum of the Usage trend points returned for that exact range.
+The cumulative `/usage/dashboard/stats` total is never a range denominator.
+Negative or overflowing trend totals make the ratio unavailable. This matches
+the Personal Usage Center's selected-range Token cards.
+
 The ratio is calculated only when the denominator is fresh, complete, and
 matches the exact requested coverage. The committed numerator is cut off at
 the same `as_of`.
@@ -480,6 +486,8 @@ the numerator appear comparable.
 - incomplete/missing denominator displays no percentage;
 - complete zero denominator displays `No AI Token use in this period`;
 - a true complete zero numerator with non-zero denominator displays `0%`;
+- a non-zero percentage uses enough precision to remain non-zero, with values
+  below `0.01%` displayed as `<0.01%`;
 - stale/error Usage never produces an estimate.
 
 A transient Usage resolver error is represented as a retryable local ratio

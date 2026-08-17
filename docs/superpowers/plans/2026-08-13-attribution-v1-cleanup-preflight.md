@@ -1,7 +1,7 @@
 # Attribution v1 and AE OTel Cleanup Preflight
 
 **Date:** 2026-08-13
-**Status:** Preflight implementation, verification, and review merged through [PR #284](https://github.com/LichKing-2234/ai-efficiency/pull/284) as `f6c9de84`; hosted CI `31685184654` passed backend, ae-cli, frontend, and deploy/static validation. Local PowerShell runtime testing was unavailable because `pwsh` is not installed, while the hosted PowerShell installer validation passed. #278 completed its ordinary-workflow qualification and established Day 0 at `2026-08-14T07:22:18.199843Z`. Production cleanup remains blocked until at least `2026-08-21T07:22:18.199843Z`, every continuous-window gate remains green, and separate implementation/release/deployment/data-mutation authority is granted.
+**Status:** Preflight implementation, verification, and review merged through [PR #284](https://github.com/LichKing-2234/ai-efficiency/pull/284) as `f6c9de84`; hosted CI `31685184654` passed backend, ae-cli, frontend, and deploy/static validation. Local PowerShell runtime testing was unavailable because `pwsh` is not installed, while the hosted PowerShell installer validation passed. #278 completed its ordinary-workflow qualification, but the provisional Day 0 at `2026-08-14T07:22:18.199843Z` was invalidated by a cumulative personal Usage denominator. Production cleanup remains blocked on the repaired platform release/deployment/readback, replacement Day 0, every continuous-window gate, and separate implementation/release/deployment/data-mutation authority.
 **Parent:** [Codex Commit Token Attribution v2 Implementation Plan](./2026-08-11-codex-commit-token-attribution-v2.md)
 **Issue:** [#252](https://github.com/LichKing-2234/ai-efficiency/issues/252)
 
@@ -32,9 +32,10 @@ Cleanup cannot start until all of these are true in the same execution window:
 - the operator has separately authorized implementation, releases,
   deployment, and destructive migration.
 
-The earlier cutover-based date ending on 2026-08-19 is superseded. The current
-Day 0 is `2026-08-14T07:22:18.199843Z`, so cleanup cannot begin before
-`2026-08-21T07:22:18.199843Z`; any failed gate restarts that clock.
+The earlier cutover-based date ending on 2026-08-19 and the provisional date
+ending on 2026-08-21 are both superseded. No cleanup date is scheduled until
+the repaired selected-window ratio is deployed, read back, and establishes a
+replacement Day 0; any later failed gate restarts that clock.
 
 ## Protection Seams
 

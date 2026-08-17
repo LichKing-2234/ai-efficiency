@@ -1,8 +1,8 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** T01-T12 and T14-T17 are implemented, released, and production-qualified. PR #297 merged as `b3349ba7`, main CI `31777217422` passed all four jobs, and CLI-only `ae-cli/v0.2.0-preview.11` published six verified assets through release run `31778152726`. The released binary resumed the ten retained Agent Infra triggers through ordinary managed `pre-push` hooks without `ae-cli sync`; the durable task and scan progress cleared, status/doctor now report `Sync Task: none`, and delivery is `pending=0 conflict=1 upgrade_required=0`. The one unchanged terminal conflict remains quarantined and did not block later work. T16 is complete. #252 cleanup has not run and remains blocked only on the new seven-day stable window plus its final gates and separate execution authority.
-**T13 Day 0 baseline:** Day 0 is `2026-08-14T07:22:18.199843Z`; the seven-day gate cannot complete before `2026-08-21T07:22:18.199843Z` and restarts after any failed gate. The all-time formal baseline is 7 pools, 7 direct relations across 6 commits, `6,890,621` Token, 71 source requests/responses, and zero gaps. Production Activity for 2026-08-13 through 2026-08-14 reads `6,886,226` committed Token: Agent Infra contributes `6,253,542` direct Token and AI Efficiency contributes `632,684`. Claim coverage is complete, readiness is active, the Usage-backed ratio is exact against `35,272,145,109` total Token, and SCM failed/partial/unsynced/stale coverage is zero. Formal duplicate pool/relation/provider-scoped Request identities are zero, formal near-expiry and finalization errors are zero, v1 remains `0/0`, and the one `shadow_v2` pool remains isolated.
+**Status:** T01-T12 and T14-T17 are implemented, released, and production-qualified. PR #297 merged as `b3349ba7`, main CI `31777217422` passed all four jobs, and CLI-only `ae-cli/v0.2.0-preview.11` published six verified assets through release run `31778152726`. The released binary resumed the ten retained Agent Infra triggers through ordinary managed `pre-push` hooks without `ae-cli sync`; the one unchanged terminal conflict remains quarantined. A 2026-08-14 production check found that personal Activity used cumulative Usage stats for every selected range. The regression-tested code repair now uses the selected-window trend total and preserves non-zero percentage precision, but it is not yet released or deployed. #252 cleanup has not run; its previous Day 0 is invalid and no replacement clock is active.
+**T13 invalidated baseline:** The provisional Day 0 at `2026-08-14T07:22:18.199843Z` is retained only as historical evidence. Its formal-pool facts remain 7 pools, 7 direct relations across 6 commits, `6,890,621` Token, 71 source requests/responses, and zero gaps, but the recorded `35,272,145,109` denominator was cumulative personal Usage rather than the selected 2026-08-13 through 2026-08-14 window. A later production reproduction showed the same cumulative `35,312,542,273` denominator for 2-day, 7-day, and 30-day selections while their Usage trend totals differed. The earlier `2026-08-21T07:22:18.199843Z` cleanup eligibility is void. A replacement Day 0 requires the repaired platform release, deployment, exact production ratio readback, all other gates, and a newly recorded baseline.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
 
 ## Delivery Rules
@@ -173,10 +173,11 @@ T01 contract publication (#253)
 
 ### T13 — Stable-window legacy cleanup ([#252](https://github.com/LichKing-2234/ai-efficiency/issues/252))
 
-- [ ] Observe seven continuous stable days from Day 0
-  `2026-08-14T07:22:18.199843Z`. The gate cannot complete before
-  `2026-08-21T07:22:18.199843Z`; restart the clock after any failed gate.
-- [ ] From the recorded Day 0 baseline, read back at least one
+- [ ] Release and deploy the selected-window personal denominator repair with
+  separate authority, verify the production ratio, and record replacement Day 0.
+- [ ] Observe seven continuous stable days from replacement Day 0; no earliest
+  cleanup time is scheduled until that baseline exists.
+- [ ] From the replacement Day 0 baseline, read back at least one
   additional non-canary ordinary-workflow `formal_v2` direct/shared pool.
 - [ ] Keep live/ready, structured v1 `upgrade_required`, reconciliation/error,
   near-expiry, pending-boundary, Activity/readiness/ratio, final SCM freshness,
@@ -187,6 +188,8 @@ T01 contract publication (#253)
   separate platform/CLI releases, and production health.
 - [x] Verify #232-#234 were completed by merged PR #235 and closed before the
   cleanup window; do not defer their closure to T13 execution.
+- [x] Reproduce the cumulative personal-denominator defect and add red/green
+  backend and frontend coverage for exact range totals and visible non-zero ratios.
 
 #### T13 preflight record — 2026-08-13
 
@@ -302,10 +305,9 @@ T01 contract publication (#253)
   `pre-push` wakes resumed the bounded scan, cleared all ten triggers, retained
   exactly one terminal conflict, and ended at `pending=0 conflict=1
   upgrade_required=0` with no task or scan progress.
-- [x] Complete the T13 adoption and final SCM-freshness readbacks, then restart
-  the seven-day stability clock from the first qualifying ordinary pool and
-  aggregate Activity readback. Day 0 is `2026-08-14T07:22:18.199843Z`; the
-  exact baseline and earliest possible completion time are recorded above.
+- [x] Complete the T13 adoption and final SCM-freshness readbacks. These created
+  the provisional `2026-08-14T07:22:18.199843Z` baseline, which the later
+  personal-denominator defect invalidated for cleanup timing.
 
 ### T17 — Responses WebSocket Codex-local Token expansion ([#269](https://github.com/LichKing-2234/ai-efficiency/issues/269))
 
