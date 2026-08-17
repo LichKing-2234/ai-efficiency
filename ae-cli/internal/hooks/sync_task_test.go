@@ -815,10 +815,15 @@ func TestRunPendingSyncTaskRetainsUnreachableRecoveryCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	unreachableCommit := strings.Repeat("f", 40)
+	unreachableEvent, err := CheckpointEventID(eventIDRepoHint(ExecutionContext{RepoConfigID: 23, AuthSubject: "user:1", WorkspaceID: gitCtx.WorkspaceID}), unreachableCommit)
+	if err != nil {
+		t.Fatal(err)
+	}
 	task := SyncTask{
 		WorkspaceID: gitCtx.WorkspaceID, RepoRoot: repo, ServerURL: "https://ae.example.com", AuthSubject: "user:1",
 		RepoConfigID: 23, RepoKey: gitCtx.RepoKey, Status: SyncTaskStatusPending, LastRequestedAt: time.Now().UTC(),
-		V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: "event-unreachable", CommitSHA: strings.Repeat("f", 40), CapturedAt: time.Now().UTC(), RelayProviderID: 17}},
+		V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: unreachableEvent, CommitSHA: unreachableCommit, CapturedAt: time.Now().UTC(), RelayProviderID: 17}},
 	}
 	if err := UpsertPendingSyncTask(task); err != nil {
 		t.Fatal(err)
@@ -836,6 +841,65 @@ func TestRunPendingSyncTaskRetainsUnreachableRecoveryCommit(t *testing.T) {
 	}
 	if retained == nil || retained.LastFailureStage != SyncTaskFailureStageLocalState || retained.LastFailureReason != "commit unavailable in recovery checkout" || len(retained.V2Triggers) != 1 {
 		t.Fatalf("retained unreachable task = %+v", retained)
+	}
+}
+
+func TestExecutionContextForSyncTaskRejectsMismatchedCheckpointRecovery(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	seedGit, err := DetectGitContext(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := SyncTask{
+		WorkspaceID: "removed-workspace", RepoRoot: filepath.Join(t.TempDir(), "gone"), ServerURL: "https://ae.example.com", AuthSubject: "user:1",
+		RepoConfigID: 23, RepoKey: seedGit.RepoKey,
+		V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: "mismatched-event", CommitSHA: git2(t, repo, "rev-parse", "HEAD"), RelayProviderID: 17}},
+	}
+	seed := ExecutionContext{RepoConfigID: 23, RepoKey: seedGit.RepoKey, WorkspaceID: seedGit.WorkspaceID, RepoRoot: repo}
+	_, err = executionContextForSyncTask(task, seed)
+	var stageErr *syncTaskStageError
+	if !errors.As(err, &stageErr) || stageErr.stage != SyncTaskFailureStageLocalState || stageErr.reason != "checkpoint identity does not match" {
+		t.Fatalf("mismatched-checkpoint recovery error = %v", err)
+	}
+}
+
+func TestPruneExpiredV2SyncTriggersUsesNinetyDayBoundary(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	now := time.Date(2026, 8, 17, 8, 0, 0, 0, time.UTC)
+	firstFailure := now.Add(-time.Hour)
+	task := SyncTask{
+		WorkspaceID: "workspace-prune", Status: SyncTaskStatusPending, FirstFailureAt: &firstFailure, RemainingTriggerCount: 2,
+		V2Triggers: []V2SyncTrigger{
+			{Kind: "post-commit", EventID: "event-expired", CapturedAt: now.Add(-v2SyncTriggerRetention)},
+			{Kind: "post-commit", EventID: "event-kept", CapturedAt: now.Add(-v2SyncTriggerRetention).Add(time.Nanosecond)},
+		},
+	}
+	if err := SaveSyncTask(task); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := pruneExpiredV2SyncTriggers(&task, now, v2SyncTriggerRetention)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted || len(task.V2Triggers) != 1 || task.V2Triggers[0].EventID != "event-kept" || task.RemainingTriggerCount != 1 {
+		t.Fatalf("pruned task = %+v, deleted=%t", task, deleted)
+	}
+
+	task.V2Triggers[0].CapturedAt = now.Add(-v2SyncTriggerRetention)
+	if err := SaveSyncTask(task); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveV2ClaimScanProgress(&V2ClaimScanProgress{WorkspaceID: task.WorkspaceID}); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err = pruneExpiredV2SyncTriggers(&task, now, v2SyncTriggerRetention)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remaining, loadErr := LoadSyncTask(task.WorkspaceID)
+	progress, progressErr := LoadV2ClaimScanProgress(task.WorkspaceID)
+	if !deleted || loadErr != nil || remaining != nil || progressErr != nil || progress != nil {
+		t.Fatalf("expired task=%+v loadErr=%v progress=%+v progressErr=%v deleted=%t", remaining, loadErr, progress, progressErr, deleted)
 	}
 }
 

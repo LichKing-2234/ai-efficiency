@@ -37,6 +37,8 @@ var syncTaskRunnerAlive = syncTaskProcessAlive
 
 var machineSyncLockPollInterval = 25 * time.Millisecond
 
+const v2SyncTriggerRetention = 90 * 24 * time.Hour
+
 type SyncTask struct {
 	Version               int                  `json:"version"`
 	WorkspaceID           string               `json:"workspace_id"`
@@ -218,6 +220,54 @@ func DeleteSyncTask(workspaceID string) error {
 		return err
 	}
 	return nil
+}
+
+func pruneExpiredV2SyncTriggers(task *SyncTask, now time.Time, retention time.Duration) (bool, error) {
+	if task == nil {
+		return false, fmt.Errorf("task is nil")
+	}
+	deleted := false
+	err := withSyncTaskLock(task.WorkspaceID, now, func() error {
+		current, err := LoadSyncTask(task.WorkspaceID)
+		if err != nil {
+			return fmt.Errorf("load sync task for trigger cleanup: %w", err)
+		}
+		if current == nil {
+			deleted = true
+			return nil
+		}
+		cutoff := now.UTC().Add(-retention)
+		kept := make([]V2SyncTrigger, 0, len(current.V2Triggers))
+		for _, trigger := range current.V2Triggers {
+			if trigger.CapturedAt.IsZero() || trigger.CapturedAt.After(cutoff) {
+				kept = append(kept, trigger)
+			}
+		}
+		if len(kept) == len(current.V2Triggers) {
+			*task = *current
+			return nil
+		}
+		if len(kept) == 0 {
+			if err := DeleteV2ClaimScanProgress(current.WorkspaceID); err != nil {
+				return fmt.Errorf("delete expired v2 scan progress: %w", err)
+			}
+			if err := DeleteSyncTask(current.WorkspaceID); err != nil {
+				return fmt.Errorf("delete expired sync task: %w", err)
+			}
+			deleted = true
+			return nil
+		}
+		current.V2Triggers = kept
+		if current.FirstFailureAt != nil {
+			current.RemainingTriggerCount = len(kept)
+		}
+		if err := SaveSyncTask(*current); err != nil {
+			return fmt.Errorf("save pruned sync task: %w", err)
+		}
+		*task = *current
+		return nil
+	})
+	return deleted, err
 }
 
 func (t *SyncTask) HasActiveLease(now time.Time) bool {

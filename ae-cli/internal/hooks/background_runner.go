@@ -27,6 +27,7 @@ var scanCodexV2ClaimSource = func(scan *attributionlocal.CodexV2ClaimScan, ctx c
 
 var errSyncTaskRecoveryRepository = errors.New("recovery repository is unavailable")
 var errSyncTaskRecoveryCommit = errors.New("recovery commit is unavailable")
+var errSyncTaskRecoveryCheckpoint = errors.New("recovery checkpoint identity does not match")
 
 var spawnBackgroundSyncRunner = func(repoRoot string) error {
 	aeCLI, err := os.Executable()
@@ -78,6 +79,20 @@ func drainPendingSyncTasks(ctx context.Context, execCtx ExecutionContext, upload
 		progressed := false
 		for _, queued := range pending {
 			if generation, failed := blocked[queued.WorkspaceID]; failed && generation >= queued.RequestGeneration {
+				continue
+			}
+			expired, pruneErr := pruneExpiredV2SyncTriggers(&queued, time.Now().UTC(), v2SyncTriggerRetention)
+			if pruneErr != nil {
+				pruneErr = syncTaskFailure(SyncTaskFailureStageLocalState, "expired local trigger cleanup failed", pruneErr)
+				_ = MarkSyncTaskFailure(&queued, time.Now().UTC(), pruneErr)
+				blocked[queued.WorkspaceID] = queued.RequestGeneration
+				if firstErr == nil {
+					firstErr = pruneErr
+				}
+				continue
+			}
+			if expired {
+				progressed = true
 				continue
 			}
 			workspaceCtx, recoveryErr := executionContextForSyncTask(queued, execCtx)
@@ -205,6 +220,9 @@ func executionContextForSyncTask(task SyncTask, seed ExecutionContext) (Executio
 		if errors.Is(err, errSyncTaskRecoveryCommit) {
 			return execCtx, syncTaskFailure(SyncTaskFailureStageLocalState, "commit unavailable in recovery checkout", err)
 		}
+		if errors.Is(err, errSyncTaskRecoveryCheckpoint) {
+			return execCtx, syncTaskFailure(SyncTaskFailureStageLocalState, "checkpoint identity does not match", err)
+		}
 		return execCtx, syncTaskFailure(SyncTaskFailureStageLocalState, "repository checkout unavailable", err)
 	}
 	execCtx.RepoRoot = seed.RepoRoot
@@ -224,12 +242,20 @@ func syncTaskCommitTriggers(triggers []V2SyncTrigger) []V2SyncTrigger {
 func validateSyncTaskCheckout(task SyncTask, repoRoot, workspaceID string, triggers []V2SyncTrigger) error {
 	gitCtx, err := DetectGitContext(repoRoot)
 	if err != nil {
-		return fmt.Errorf("%w: %v", errSyncTaskRecoveryRepository, err)
+		return fmt.Errorf("%w: %w", errSyncTaskRecoveryRepository, err)
 	}
 	if strings.TrimSpace(gitCtx.RepoKey) != strings.TrimSpace(task.RepoKey) || strings.TrimSpace(gitCtx.WorkspaceID) != strings.TrimSpace(workspaceID) {
 		return fmt.Errorf("%w: Git identity does not match", errSyncTaskRecoveryRepository)
 	}
+	taskContext := executionContextFromSyncTask(task)
 	for _, trigger := range triggers {
+		expectedEventID, err := CheckpointEventID(eventIDRepoHint(taskContext), trigger.CommitSHA)
+		if err != nil {
+			return fmt.Errorf("%w: derive expected event ID: %w", errSyncTaskRecoveryCheckpoint, err)
+		}
+		if strings.TrimSpace(trigger.EventID) != expectedEventID {
+			return errSyncTaskRecoveryCheckpoint
+		}
 		if !syncTaskCommitReachable(repoRoot, trigger.CommitSHA) {
 			return fmt.Errorf("%w: trigger commit is not reachable", errSyncTaskRecoveryCommit)
 		}
