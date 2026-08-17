@@ -706,6 +706,43 @@ func TestScanCodexV2ClaimsContinuesSessionTokenBaselineAcrossTurns(t *testing.T)
 	}
 }
 
+func TestScanCodexV2ClaimsTreatsExplicitCompactionSnapshotAsZeroUsage(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	writeV2JSONL(t, path,
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "thread-websocket"}},
+		map[string]any{"type": "turn_context", "timestamp": "2026-08-13T12:13:00Z", "payload": map[string]any{"turn_id": "turn-websocket", "model": "gpt-test"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: feature.go\n+package feature\n*** End Patch"}},
+		map[string]any{"type": "event_msg", "timestamp": "2026-08-13T12:14:00Z", "payload": map[string]any{"type": "token_count", "info": map[string]any{
+			"last_token_usage":  map[string]any{"input_tokens": 100, "cached_input_tokens": 20, "output_tokens": 20, "total_tokens": 120},
+			"total_token_usage": map[string]any{"input_tokens": 100, "cached_input_tokens": 20, "output_tokens": 20, "total_tokens": 120},
+		}}},
+		map[string]any{"type": "compacted", "timestamp": "2026-08-13T12:14:01Z", "payload": map[string]any{"window_number": 2}},
+		map[string]any{"type": "turn_context", "timestamp": "2026-08-13T12:14:01Z", "payload": map[string]any{"turn_id": "turn-websocket", "model": "gpt-test"}},
+		map[string]any{"type": "event_msg", "timestamp": "2026-08-13T12:14:01Z", "payload": map[string]any{"type": "token_count", "info": map[string]any{
+			"last_token_usage":  map[string]any{"input_tokens": 10, "output_tokens": 2, "total_tokens": 12},
+			"total_token_usage": map[string]any{"input_tokens": 100, "cached_input_tokens": 20, "output_tokens": 20, "total_tokens": 120},
+		}}},
+		map[string]any{"type": "event_msg", "timestamp": "2026-08-13T12:14:02Z", "payload": map[string]any{"type": "token_count", "info": map[string]any{
+			"last_token_usage":  map[string]any{"input_tokens": 5, "cached_input_tokens": 1, "output_tokens": 1, "total_tokens": 6},
+			"total_token_usage": map[string]any{"input_tokens": 105, "cached_input_tokens": 21, "output_tokens": 21, "total_tokens": 126},
+		}}},
+	)
+	claims, err := scanCodexV2ClaimsWithEvidence(context.Background(), []string{path}, V2ClaimScanOptions{
+		RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8, WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-websocket",
+	}, []v2RequestEvidence{{threadID: "thread-websocket", turnID: "turn-websocket", webSocket: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 1 || claims[0].GapReason != "" || len(UploadableV2ClaimGroups(claims)) != 1 {
+		t.Fatalf("compacted WebSocket claim = %+v", claims)
+	}
+	usage := claims[0].Group.LocalUsage
+	if len(usage) != 1 || usage[0].InputTokens != 84 || usage[0].CacheReadTokens != 21 || usage[0].OutputTokens != 21 || usage[0].TotalTokens != 126 || usage[0].RequestCount != 2 {
+		t.Fatalf("compacted WebSocket usage = %+v", usage)
+	}
+}
+
 func TestMergeV2ClaimStateRecoversFailedWebSocketScan(t *testing.T) {
 	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
 	path := filepath.Join(t.TempDir(), "session.jsonl")

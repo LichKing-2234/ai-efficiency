@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** T01-T12 and T14-T17 are implemented, released, and production-qualified. PR #299 merged as `1c9e6801`, merge-SHA CI `31993165255` passed all four jobs, release run `31996590619` published platform `v0.1.0-preview.87`, and production Helm revision 87 serves that exact SHA. Exact selected-window production readback established the replacement #252 Day 0 at `2026-08-17T05:32:57.925948Z`. #252 cleanup has not run; it still requires seven continuous stable days, a later qualifying ordinary-workflow pool delta, every final execution-time gate, and separate implementation/release/deployment/destructive-migration authority.
+**Status:** T01-T12 and T14-T17 are implemented, released, and production-qualified. T18/T19 are implemented, reviewed, and committed locally for #301/#302; their focused and full ae-cli suites are green and the final Standards/Spec reviews have no findings. They are not published, released, installed, or production-verified. T20-T22 remain blocked and unimplemented. PR #299 merged as `1c9e6801`, merge-SHA CI `31993165255` passed all four jobs, release run `31996590619` published platform `v0.1.0-preview.87`, and production Helm revision 87 serves that exact SHA. Exact selected-window production readback established the replacement #252 Day 0 at `2026-08-17T05:32:57.925948Z`. #252 cleanup has not run; it still requires seven continuous stable days, a later qualifying ordinary-workflow pool delta, every final execution-time gate, and separate implementation/release/deployment/destructive-migration authority.
 **T13 invalidated baseline:** The provisional Day 0 at `2026-08-14T07:22:18.199843Z` is retained only as historical evidence. Its formal-pool facts remain 7 pools, 7 direct relations across 6 commits, `6,890,621` Token, 71 source requests/responses, and zero gaps, but the recorded `35,272,145,109` denominator was cumulative personal Usage rather than the selected 2026-08-13 through 2026-08-14 window. A later production reproduction showed the same cumulative `35,312,542,273` denominator for 2-day, 7-day, and 30-day selections while their Usage trend totals differed. The earlier `2026-08-21T07:22:18.199843Z` cleanup eligibility is void. Its replacement requirements were satisfied by the release, deployment, and readback recorded below; the old clock remains permanently invalid.
 **T13 replacement Day 0:** The complete production readback at `2026-08-17T05:32:57.925948Z` is the active baseline. Personal Activity and Usage used the same `Asia/Shanghai` local-day windows: 2-day `2026-08-16..17` returned true-zero committed Token over `96,556,726` Usage Token; 7-day `2026-08-11..17` returned exact `6,890,621 / 3,564,608,255 = 0.19330654330204933%`; and 30-day `2026-07-19..08-17` returned exact `6,890,621 / 15,156,957,118 = 0.04546177010566904%`. Every Activity denominator equaled the corresponding Usage trend sum while the cumulative Usage stats value was independently `35,085,487,404`. Claim coverage was complete, readiness was active, and focused PR sync jobs 31/32 restored complete SCM coverage with zero failed, partial, unsynced, or stale Repository. The conserved formal baseline is 7 pools, 7 direct relations across 6 commits, `6,890,621` Token, 71 source requests/responses, zero gaps, and zero duplicate pool/relation/provider-scoped Request identities; the v1 tables remain `0/0`, the one shadow pool remains isolated, formal near-expiry/finalization errors are `0/0`, and v1 writes return structured `409 upgrade_required`. The earliest possible cleanup time is `2026-08-24T05:32:57.925948Z`, only if every continuous and final gate remains green and a later qualifying ordinary pool exists.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
@@ -30,6 +30,9 @@ T01 contract publication (#253)
   -> T05 + T06 + T08 + T09 + T10 -> T11 qualification -> T12 cutover -> T13 cleanup
   -> T14 bounded delivery + T15 automatic Repository registration -> T16 sustained qualification -> T13 adoption gate
   -> T17 WebSocket local Token expansion -> separately authorized release/canary
+  -> T18 machine coordinator (#301) + T19 compaction recovery (#302)
+     -> T20 deleted-worktree recovery (#303) -> T21 backlog migration (#304)
+     -> T22 Helm release canary (#305)
 ```
 
 ## Execution Ledger
@@ -374,6 +377,46 @@ T01 contract publication (#253)
   `codex_local` group, and exact production readback proved one hot group, one
   direct relation to one formal pool, 8 responses, exactly `284,666` Token,
   zero coverage gaps, and zero Request claims.
+
+### T18 — Machine-wide attribution coordinator and incremental drain ([#301](https://github.com/LichKing-2234/ai-efficiency/issues/301))
+
+- [x] Serialize matching Repository/worktree tasks behind one transient
+  machine-wide owner while retaining per-workspace durable task identity.
+- [x] Treat an exhausted five-minute workspace quantum as a resumable yield and
+  immediately continue it without another commit, push, or manual sync.
+- [x] Persist no-candidate source progress in bounded batches and deliver each
+  claim-producing batch before unrelated source units finish.
+- [x] Preserve response-loss replay, item-level ACK, terminal-conflict
+  quarantine, process-owner recovery, and deterministic at-least-once state.
+- [x] Show current-Repository task detail separately from machine-wide
+  queued/running/yielded/failed totals without Request or response identifiers.
+- [x] Drain a synthetic 1,800-source × 83-trigger fixture across six 300-source
+  budgets with strictly increasing progress and final cleanup.
+- [x] Run the full ae-cli suite and final two-axis review, address every finding,
+  and commit the clean implementation branch.
+
+### T19 — Compaction-safe WebSocket Token scanning ([#302](https://github.com/LichKing-2234/ai-efficiency/issues/302))
+
+- [x] Accept one explicit same-turn top-level `compacted` boundary followed by
+  unchanged cumulative components and a different valid last-response snapshot
+  as a zero-Token, zero-request baseline restatement.
+- [x] Preserve strict fail-closed behavior for the same contradiction without
+  the exact compaction boundary and for invalid/decreasing/overflowing/mixed
+  usage.
+- [x] Accept later monotonic growth exactly once and prove the compacted turn
+  still reaches one uploadable deterministic commit allocation.
+- [x] Increment the scan-progress semantics version so older classifications
+  rebuild and rescan once.
+- [x] Run the full ae-cli suite and final two-axis review, address every finding,
+  and commit the clean implementation branch.
+
+### T20-T22 — Recovery, migration, and production qualification ([#303](https://github.com/LichKing-2234/ai-efficiency/issues/303), [#304](https://github.com/LichKing-2234/ai-efficiency/issues/304), [#305](https://github.com/LichKing-2234/ai-efficiency/issues/305))
+
+- [ ] Recover retained triggers after temporary worktree deletion once T18 is
+  merged.
+- [ ] Migrate and expose the existing machine backlog after T18-T20 are merged.
+- [ ] Obtain separate release/install/production-write authority and run the
+  real Helm commit-to-Activity canary only after T21 completes.
 
 ## Cross-Ticket Invariants
 

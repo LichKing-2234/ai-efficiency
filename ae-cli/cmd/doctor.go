@@ -96,6 +96,9 @@ var doctorCmd = &cobra.Command{
 			}
 		}
 		printSyncTaskStatus(out, task)
+		if err := printMachineSyncTaskStatus(out); err != nil {
+			fmt.Fprintf(out, "Machine Sync Tasks: unavailable (%v)\n", err)
+		}
 		if err := printV2ClaimDeliveryStatus(out); err != nil {
 			fmt.Fprintf(out, "V2 Claim Delivery: unavailable (%v)\n", err)
 		}
@@ -658,6 +661,15 @@ func printSyncTaskStatus(out io.Writer, task *hooks.SyncTask) {
 	if task.FirstFailureAt != nil {
 		fmt.Fprintf(out, "  first_failure_at: %s\n", task.FirstFailureAt.UTC().Format(time.RFC3339))
 	}
+}
+
+func printMachineSyncTaskStatus(out io.Writer) error {
+	summary, err := hooks.SummarizeMachineSyncTasks(time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Machine Sync Tasks: queued=%d running=%d yielded=%d failed=%d\n", summary.Queued, summary.Running, summary.Yielded, summary.Failed)
+	return nil
 }
 
 func enabledStatus(enabled bool) string {

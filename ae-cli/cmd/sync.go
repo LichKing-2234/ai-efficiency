@@ -66,6 +66,9 @@ var syncCmd = &cobra.Command{
 				return fmt.Errorf("load sync task: %w", loadErr)
 			}
 			printSyncTaskStatus(cmd.OutOrStdout(), task)
+			if statusErr := printMachineSyncTaskStatus(cmd.OutOrStdout()); statusErr != nil {
+				return fmt.Errorf("load machine sync tasks: %w", statusErr)
+			}
 			return nil
 		} else if err != nil {
 			return fmt.Errorf("run pending sync task: %w", err)
@@ -138,6 +141,9 @@ var syncStatusCmd = &cobra.Command{
 			}
 		}
 		printSyncTaskStatus(cmd.OutOrStdout(), task)
+		if err := printMachineSyncTaskStatus(cmd.OutOrStdout()); err != nil {
+			return fmt.Errorf("load machine sync tasks: %w", err)
+		}
 		if err := printV2ClaimDeliveryStatus(cmd.OutOrStdout()); err != nil {
 			return err
 		}

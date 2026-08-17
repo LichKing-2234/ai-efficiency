@@ -3,6 +3,7 @@ package hooks
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -428,6 +429,212 @@ func TestRunPendingSyncTaskDrainsWorkArrivingDuringRun(t *testing.T) {
 	}
 }
 
+func TestRunPendingSyncTaskDrainsOtherMachineWorkspace(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == os.Getpid() })
+	now := time.Now().UTC()
+	tasks := []SyncTask{
+		{WorkspaceID: "ws-machine-a", RepoRoot: t.TempDir(), ServerURL: "https://ae.example.com", AuthSubject: "user:1", RepoConfigID: 2, RepoKey: "github.com/acme/repo-a", Status: SyncTaskStatusPending, LastRequestedAt: now},
+		{WorkspaceID: "ws-machine-b", RepoRoot: t.TempDir(), ServerURL: "https://ae.example.com", AuthSubject: "user:1", RepoConfigID: 3, RepoKey: "github.com/acme/repo-b", Status: SyncTaskStatusPending, LastRequestedAt: now.Add(time.Second)},
+	}
+	for _, task := range tasks {
+		if err := UpsertPendingSyncTask(task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	original := runAttributionSync
+	seen := map[string]int{}
+	runAttributionSync = func(_ context.Context, opts attributionlocal.RunOptions, _ attributionlocal.BackendClient) error {
+		seen[opts.WorkspaceID]++
+		return nil
+	}
+	t.Cleanup(func() { runAttributionSync = original })
+	execCtx := ExecutionContext{ServerURL: tasks[0].ServerURL, AuthSubject: tasks[0].AuthSubject, RepoConfigID: tasks[0].RepoConfigID, RepoKey: tasks[0].RepoKey, WorkspaceID: tasks[0].WorkspaceID, RepoRoot: tasks[0].RepoRoot, DurableReplay: true}
+	if err := RunPendingSyncTask(context.Background(), execCtx, syncCapableFakeUploader{fakeUploader: &fakeUploader{}}); err != nil {
+		t.Fatal(err)
+	}
+	if seen["ws-machine-a"] != 1 || seen["ws-machine-b"] != 1 {
+		t.Fatalf("machine workspace passes = %+v, want each workspace once", seen)
+	}
+	for _, task := range tasks {
+		if got, err := LoadSyncTask(task.WorkspaceID); err != nil || got != nil {
+			t.Fatalf("completed task %s = %+v, %v, want deleted", task.WorkspaceID, got, err)
+		}
+	}
+}
+
+func TestRunPendingSyncTaskSerializesMachineWorkspaces(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == os.Getpid() })
+	now := time.Now().UTC()
+	tasks := []SyncTask{
+		{WorkspaceID: "ws-serial-a", RepoRoot: t.TempDir(), ServerURL: "https://ae.example.com", AuthSubject: "user:1", RepoConfigID: 2, RepoKey: "github.com/acme/repo-a", Status: SyncTaskStatusPending, LastRequestedAt: now},
+		{WorkspaceID: "ws-serial-b", RepoRoot: t.TempDir(), ServerURL: "https://ae.example.com", AuthSubject: "user:1", RepoConfigID: 3, RepoKey: "github.com/acme/repo-b", Status: SyncTaskStatusPending, LastRequestedAt: now.Add(time.Second)},
+	}
+	for _, task := range tasks {
+		if err := UpsertPendingSyncTask(task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	original := runAttributionSync
+	var active int32
+	var maximum int32
+	runAttributionSync = func(_ context.Context, _ attributionlocal.RunOptions, _ attributionlocal.BackendClient) error {
+		current := atomic.AddInt32(&active, 1)
+		for {
+			observed := atomic.LoadInt32(&maximum)
+			if current <= observed || atomic.CompareAndSwapInt32(&maximum, observed, current) {
+				break
+			}
+		}
+		time.Sleep(30 * time.Millisecond)
+		atomic.AddInt32(&active, -1)
+		return nil
+	}
+	t.Cleanup(func() { runAttributionSync = original })
+	start := make(chan struct{})
+	errs := make(chan error, len(tasks))
+	var wg sync.WaitGroup
+	for _, task := range tasks {
+		task := task
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			execCtx := ExecutionContext{ServerURL: task.ServerURL, AuthSubject: task.AuthSubject, RepoConfigID: task.RepoConfigID, RepoKey: task.RepoKey, WorkspaceID: task.WorkspaceID, RepoRoot: task.RepoRoot, DurableReplay: true}
+			errs <- RunPendingSyncTask(context.Background(), execCtx, syncCapableFakeUploader{fakeUploader: &fakeUploader{}})
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil && !errors.Is(err, ErrSyncTaskAlreadyRunning) {
+			t.Fatal(err)
+		}
+	}
+	if maximum != 1 {
+		t.Fatalf("concurrent machine sync passes = %d, want one owner", maximum)
+	}
+	for _, task := range tasks {
+		if got, err := LoadSyncTask(task.WorkspaceID); err != nil || got != nil {
+			t.Fatalf("serialized task %s = %+v, %v, want deleted", task.WorkspaceID, got, err)
+		}
+	}
+}
+
+func TestRunPendingSyncTaskWaiterDrainsTaskAfterOwnerFailure(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == os.Getpid() })
+	originalPollInterval := machineSyncLockPollInterval
+	machineSyncLockPollInterval = time.Millisecond
+	t.Cleanup(func() { machineSyncLockPollInterval = originalPollInterval })
+	now := time.Now().UTC()
+	ownerTask := SyncTask{WorkspaceID: "ws-owner-failure", RepoRoot: t.TempDir(), ServerURL: "https://ae.example.com", AuthSubject: "user:1", RepoConfigID: 2, RepoKey: "github.com/acme/repo-a", Status: SyncTaskStatusPending, LastRequestedAt: now}
+	waiterTask := SyncTask{WorkspaceID: "ws-waiter-successor", RepoRoot: t.TempDir(), ServerURL: ownerTask.ServerURL, AuthSubject: ownerTask.AuthSubject, RepoConfigID: 3, RepoKey: "github.com/acme/repo-b", Status: SyncTaskStatusPending, LastRequestedAt: now.Add(time.Second)}
+	if err := UpsertPendingSyncTask(ownerTask); err != nil {
+		t.Fatal(err)
+	}
+
+	ownerStarted := make(chan struct{})
+	releaseOwner := make(chan struct{})
+	original := runAttributionSync
+	runAttributionSync = func(_ context.Context, opts attributionlocal.RunOptions, _ attributionlocal.BackendClient) error {
+		if opts.WorkspaceID == ownerTask.WorkspaceID {
+			select {
+			case <-ownerStarted:
+			default:
+				close(ownerStarted)
+			}
+			<-releaseOwner
+			return errors.New("owner sync failed")
+		}
+		return nil
+	}
+	t.Cleanup(func() { runAttributionSync = original })
+
+	uploader := syncCapableFakeUploader{fakeUploader: &fakeUploader{}}
+	ownerCtx := ExecutionContext{ServerURL: ownerTask.ServerURL, AuthSubject: ownerTask.AuthSubject, RepoConfigID: ownerTask.RepoConfigID, RepoKey: ownerTask.RepoKey, WorkspaceID: ownerTask.WorkspaceID, RepoRoot: ownerTask.RepoRoot, DurableReplay: true}
+	waiterCtx := ExecutionContext{ServerURL: waiterTask.ServerURL, AuthSubject: waiterTask.AuthSubject, RepoConfigID: waiterTask.RepoConfigID, RepoKey: waiterTask.RepoKey, WorkspaceID: waiterTask.WorkspaceID, RepoRoot: waiterTask.RepoRoot, DurableReplay: true}
+	ownerDone := make(chan error, 1)
+	go func() { ownerDone <- RunPendingSyncTask(context.Background(), ownerCtx, uploader) }()
+	<-ownerStarted
+	if err := UpsertPendingSyncTask(waiterTask); err != nil {
+		t.Fatal(err)
+	}
+	waiterDone := make(chan error, 1)
+	go func() { waiterDone <- RunPendingSyncTask(context.Background(), waiterCtx, uploader) }()
+	time.Sleep(50 * time.Millisecond)
+	close(releaseOwner)
+
+	for name, done := range map[string]<-chan error{"owner": ownerDone, "waiter": waiterDone} {
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatalf("%s runner did not finish", name)
+		}
+	}
+	if got, err := LoadSyncTask(waiterTask.WorkspaceID); err != nil || got != nil {
+		t.Fatalf("waiter task = %+v, %v, want drained without another event", got, err)
+	}
+}
+
+func TestRunPendingSyncTaskRecoversDeadMachineOwner(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == os.Getpid() })
+	task := SyncTask{WorkspaceID: "ws-dead-owner", RepoRoot: t.TempDir(), ServerURL: "https://ae.example.com", AuthSubject: "user:1", RepoConfigID: 2, RepoKey: "github.com/acme/repo", Status: SyncTaskStatusPending, LastRequestedAt: time.Now().UTC()}
+	if err := UpsertPendingSyncTask(task); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(attributionlocal.AttributionRootDir(), "machine-sync.run.lock")
+	if err := os.WriteFile(lockPath, []byte("2147483647\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	original := runAttributionSync
+	runAttributionSync = func(context.Context, attributionlocal.RunOptions, attributionlocal.BackendClient) error { return nil }
+	t.Cleanup(func() { runAttributionSync = original })
+	execCtx := ExecutionContext{ServerURL: task.ServerURL, AuthSubject: task.AuthSubject, RepoConfigID: task.RepoConfigID, RepoKey: task.RepoKey, WorkspaceID: task.WorkspaceID, RepoRoot: task.RepoRoot, DurableReplay: true}
+	if err := RunPendingSyncTask(context.Background(), execCtx, syncCapableFakeUploader{fakeUploader: &fakeUploader{}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := LoadSyncTask(task.WorkspaceID); err != nil || got != nil {
+		t.Fatalf("dead-owner task = %+v, %v, want drained", got, err)
+	}
+}
+
+func TestRunPendingSyncTaskContinuesAfterBoundedYield(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == os.Getpid() })
+	originalTimeout := syncTaskRunTimeout
+	syncTaskRunTimeout = 10 * time.Millisecond
+	t.Cleanup(func() { syncTaskRunTimeout = originalTimeout })
+	task := SyncTask{WorkspaceID: "ws-yield", RepoRoot: t.TempDir(), ServerURL: "https://ae.example.com", AuthSubject: "user:1", RepoConfigID: 2, RepoKey: "github.com/acme/repo", Status: SyncTaskStatusPending, LastRequestedAt: time.Now().UTC()}
+	if err := UpsertPendingSyncTask(task); err != nil {
+		t.Fatal(err)
+	}
+	original := runAttributionSync
+	calls := 0
+	runAttributionSync = func(ctx context.Context, _ attributionlocal.RunOptions, _ attributionlocal.BackendClient) error {
+		calls++
+		if calls == 1 {
+			<-ctx.Done()
+			return ctx.Err()
+		}
+		return nil
+	}
+	t.Cleanup(func() { runAttributionSync = original })
+	execCtx := ExecutionContext{ServerURL: task.ServerURL, AuthSubject: task.AuthSubject, RepoConfigID: task.RepoConfigID, RepoKey: task.RepoKey, WorkspaceID: task.WorkspaceID, RepoRoot: task.RepoRoot, DurableReplay: true}
+	if err := RunPendingSyncTask(context.Background(), execCtx, syncCapableFakeUploader{fakeUploader: &fakeUploader{}}); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatalf("bounded sync passes = %d, want automatic successor", calls)
+	}
+	if got, err := LoadSyncTask(task.WorkspaceID); err != nil || got != nil {
+		t.Fatalf("completed yielded task = %+v, %v, want deleted", got, err)
+	}
+}
+
 type failingV2ClaimClient struct{ err error }
 
 func (f failingV2ClaimClient) SendAttributionV2Claims(context.Context, []client.AttributionV2ClaimGroup) (*client.AttributionV2ClaimBatchResult, error) {
@@ -448,6 +655,32 @@ func (c *countingV2ClaimClient) SendAttributionV2Claims(context.Context, []clien
 	c.calls++
 	return nil, nil
 }
+
+type acknowledgingV2ClaimClient struct{ calls int }
+
+func (c *acknowledgingV2ClaimClient) SendAttributionV2Claims(_ context.Context, groups []client.AttributionV2ClaimGroup) (*client.AttributionV2ClaimBatchResult, error) {
+	c.calls++
+	results := make([]client.AttributionV2ClaimResult, 0, len(groups))
+	for _, group := range groups {
+		requests := make([]client.AttributionV2ItemStatus, 0, len(group.RequestIDs))
+		for _, requestID := range group.RequestIDs {
+			requests = append(requests, client.AttributionV2ItemStatus{ID: requestID, Status: "persisted"})
+		}
+		results = append(results, client.AttributionV2ClaimResult{Group: client.AttributionV2ItemStatus{ID: group.GroupID, Status: "persisted"}, Requests: requests})
+	}
+	return &client.AttributionV2ClaimBatchResult{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept, Results: results}, nil
+}
+
+type acknowledgingV2Uploader struct {
+	*fakeUploader
+	client *acknowledgingV2ClaimClient
+}
+
+func (u acknowledgingV2Uploader) V2ClaimClient() attributionlocal.V2ClaimBackendClient {
+	return u.client
+}
+
+func (u acknowledgingV2Uploader) RelayProviderID() int { return 7 }
 
 type countingV2Uploader struct {
 	*fakeUploader
@@ -502,7 +735,7 @@ func TestRunV2ClaimSyncQuarantinesTerminalConflictWithoutBlockingTrigger(t *test
 		Version: 1, Claims: []attributionlocal.V2ClaimCandidate{{
 			LocalKey: "local-conflict", FirstSeenAt: now, DeliveryStatus: attributionlocal.V2DeliveryConflict,
 			LastDeliveryError: "checkpoint allocation conflict",
-			Group: client.AttributionV2ClaimGroup{GroupID: "group-conflict", RelayProviderID: 7, RequestIDs: []string{"req-conflict"}},
+			Group:             client.AttributionV2ClaimGroup{GroupID: "group-conflict", RelayProviderID: 7, RequestIDs: []string{"req-conflict"}},
 		}},
 	}); err != nil {
 		t.Fatal(err)
@@ -648,6 +881,45 @@ func TestRunV2ClaimSyncAddsOnlyNewTriggerUnitsAfterBackendFailure(t *testing.T) 
 	}
 }
 
+func TestRunV2ClaimSyncDeliversCompletedSourceBeforeLaterSourceStops(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	for _, name := range []string{"one.jsonl", "two.jsonl"} {
+		path := filepath.Join(home, ".codex", "sessions", name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now().UTC()
+	execCtx := ExecutionContext{WorkspaceID: "ws-incremental-delivery", RepoRoot: t.TempDir(), RepoConfigID: 9, RepoKey: "repo-host.example.com/org/repo"}
+	task := &SyncTask{WorkspaceID: execCtx.WorkspaceID, V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: "event-a", CommitSHA: "commit-a", CapturedAt: now}}}
+	protocol := client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept}
+	backend := &acknowledgingV2ClaimClient{}
+	original := scanCodexV2ClaimSource
+	calls := 0
+	scanCodexV2ClaimSource = func(_ *attributionlocal.CodexV2ClaimScan, _ context.Context, sourceKey string, _ []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
+		calls++
+		if calls == 2 {
+			return nil, context.Canceled
+		}
+		return []attributionlocal.V2ClaimCandidate{{
+			LocalKey: sourceKey, FirstSeenAt: now,
+			Group: client.AttributionV2ClaimGroup{SchemaVersion: 2, GroupID: "group-incremental", RelayProviderID: 7, TokenSource: client.AttributionV2TokenSourceRelayOfficial, RequestIDs: []string{"request-synthetic"}, EvidenceDigest: "evidence-synthetic", CommitAllocations: []client.AttributionV2CommitAllocation{{Sequence: 1, RepoConfigID: 9, WorkspaceID: execCtx.WorkspaceID, CheckpointEventID: "event-a", CommitSHA: "commit-a", EvidenceDigest: "evidence-synthetic"}}},
+		}}, nil
+	}
+	t.Cleanup(func() { scanCodexV2ClaimSource = original })
+	incrementalUploader := acknowledgingV2Uploader{fakeUploader: &fakeUploader{}, client: backend}
+	if err := runV2ClaimSync(context.Background(), incrementalUploader, execCtx, task, protocol); !errors.Is(err, context.Canceled) {
+		t.Fatalf("interrupted incremental run = %v, want context.Canceled", err)
+	}
+	if backend.calls != 1 {
+		t.Fatalf("incremental backend calls = %d, want first completed source delivered", backend.calls)
+	}
+}
+
 func TestRunV2ClaimSyncResumesRemainingUnitsAfterSourceInterruption(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -697,6 +969,77 @@ func TestRunV2ClaimSyncResumesRemainingUnitsAfterSourceInterruption(t *testing.T
 	}
 	if progress, err := LoadV2ClaimScanProgress(execCtx.WorkspaceID); err != nil || progress != nil {
 		t.Fatalf("completed progress = %+v, err=%v, want removed", progress, err)
+	}
+}
+
+func TestRunV2ClaimSyncDrainsLargeHomeAcrossSmallBudgets(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	sessions := filepath.Join(home, ".codex", "sessions")
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const sourceCount = 1800
+	const triggerCount = 83
+	for index := 0; index < sourceCount; index++ {
+		path := filepath.Join(sessions, fmt.Sprintf("source-%04d.jsonl", index))
+		if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now().UTC()
+	execCtx := ExecutionContext{WorkspaceID: "ws-large-home", RepoRoot: t.TempDir(), RepoConfigID: 9, RepoKey: "repo-host.example.com/org/repo"}
+	task := &SyncTask{WorkspaceID: execCtx.WorkspaceID, V2Triggers: make([]V2SyncTrigger, 0, triggerCount)}
+	for index := 0; index < triggerCount; index++ {
+		task.V2Triggers = append(task.V2Triggers, V2SyncTrigger{Kind: "post-commit", EventID: fmt.Sprintf("event-%02d", index), CommitSHA: fmt.Sprintf("commit-%02d", index), CapturedAt: now})
+	}
+	protocol := client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept}
+	uploader := countingV2Uploader{fakeUploader: &fakeUploader{}, client: &countingV2ClaimClient{}}
+	originalScan := scanCodexV2ClaimSource
+	originalBatchSize := v2ClaimProgressBatchSize
+	v2ClaimProgressBatchSize = 100
+	budget := 0
+	scanned := 0
+	scanCodexV2ClaimSource = func(_ *attributionlocal.CodexV2ClaimScan, _ context.Context, _ string, _ []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
+		if budget == 0 {
+			return nil, context.DeadlineExceeded
+		}
+		budget--
+		scanned++
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		scanCodexV2ClaimSource = originalScan
+		v2ClaimProgressBatchSize = originalBatchSize
+	})
+
+	completed := 0
+	for attempt := 1; ; attempt++ {
+		budget = 300
+		err := runV2ClaimSync(context.Background(), uploader, execCtx, task, protocol)
+		if err == nil {
+			if attempt != 6 {
+				t.Fatalf("large-home attempts = %d, want six bounded passes", attempt)
+			}
+			break
+		}
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("large-home pass %d = %v", attempt, err)
+		}
+		progress, loadErr := LoadV2ClaimScanProgress(execCtx.WorkspaceID)
+		if loadErr != nil || progress == nil {
+			t.Fatalf("large-home progress after pass %d = %+v, %v", attempt, progress, loadErr)
+		}
+		if len(progress.CompletedUnits) <= completed {
+			t.Fatalf("large-home progress stalled at %d units after pass %d", len(progress.CompletedUnits), attempt)
+		}
+		completed = len(progress.CompletedUnits)
+	}
+	if progress, err := LoadV2ClaimScanProgress(execCtx.WorkspaceID); err != nil || progress != nil {
+		t.Fatalf("large-home final progress = %+v, %v, want removed after %d units", progress, err, sourceCount*triggerCount)
+	}
+	if scanned != sourceCount {
+		t.Fatalf("large-home scanned sources = %d, want %d (%d completed units)", scanned, sourceCount, sourceCount*triggerCount)
 	}
 }
 

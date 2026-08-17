@@ -129,9 +129,16 @@ Rules:
   required to suppress repeated terminal rows. At the first Token row of a new
   turn, the cumulative counter may either continue the prior session baseline
   or restart from zero; the row must match one of those exact deltas, after
-  which the selected cumulative sequence remains strict for that turn. Missing
-  model, usage timestamp, cumulative snapshot, invalid cache decomposition,
-  inconsistent totals, or overflow fails the local source closed;
+  which the selected cumulative sequence remains strict for that turn. One
+  explicit top-level `compacted` row for that same turn permits the next
+  `token_count` row to repeat the exact prior cumulative components with a
+  different valid `last_token_usage` snapshot. That row is a compaction
+  baseline restatement: it contributes zero Token and zero `request_count`,
+  then becomes the repeated-terminal comparison snapshot for later rows. The
+  same unchanged-cumulative/different-last pattern without that exact boundary
+  remains invalid. Missing model, usage timestamp, cumulative snapshot,
+  invalid cache decomposition, inconsistent totals, or overflow fails the
+  local source closed;
 - WebSocket Token is normalized and aggregated locally by requested model and
   15-minute UTC usage bucket. The aggregate `request_count` counts accepted
   incremental response rows; it does not preserve their identities;
@@ -182,6 +189,16 @@ Failed delivery remains in a durable local outbox. Hooks never block commit or
 push. A runner that receives new work while draining must consume it or
 reliably start a successor; it may not require another Git event.
 
+All reporting work on one machine is serialized by one transient drain owner.
+Per-workspace tasks remain the durable queue and evidence boundary, but a
+detached owner drains every runnable task for the active server and reporting
+owner rather than competing for the machine-scoped claim ledger. A bounded
+five-minute workspace quantum that exhausts its context becomes `yielded`,
+releases its lease, and is immediately selected for another quantum by the
+same event-started owner. The process exits when its matching queue is empty;
+this is neither a daemon nor a periodic synchronizer. A dead owner lock is
+recoverable from the persisted tasks and process liveness evidence.
+
 One runner pass performs one 90-day-bounded Codex transport-evidence query and
 one discovery of active `sessions` plus `archived_sessions`. File modification
 time and the indexed SQLite timestamp predicate apply the window before JSONL
@@ -189,6 +206,13 @@ or log contents are read. Every discovered source is streamed once for all
 pending commit triggers in that pass. Durable, digest-only `source × trigger`
 completion units are saved after the corresponding claim candidates are saved,
 so timeout, process exit, or backend failure resumes the exact remaining units.
+A completed source batch with no candidates may persist several sources in one
+atomic progress update to avoid quadratic state-file rewrites. A batch that
+does produce a claim persists the claim and its completion units immediately,
+then attempts backend delivery before scanning unrelated sources. Response
+loss therefore replays the already-persisted claim without rescanning its
+completed units, while deterministic server ACKs still prevent duplicate pools,
+relations, or Token.
 A later trigger adds only its own units; it does not invalidate completed work
 for older triggers. For each source, progress also retains digest-only turn keys
 and the digest of trusted SQLite HTTP Request or WebSocket transport/success evidence
@@ -233,10 +257,11 @@ source-switched replacement.
 The local unresolved and audit-minimal state is retained for at most 90 days
 and cleaned lazily on later hook, sync, or CLI activity.
 
-Local status and doctor output distinguish an idle claim ledger from a pending
-or failed sync task. Failure diagnostics contain only the stage, a fixed safe
-reason, the first failure time, and the remaining trigger count; raw Request
-identifiers are never printed.
+Local status and doctor output distinguish the current Repository task from
+machine-wide `queued`, `running`, `yielded`, and `failed` totals. Failure
+diagnostics contain only the stage, a fixed safe reason, the first failure
+time, and the remaining trigger count; raw Request or response identifiers are
+never printed.
 
 The backend owns one cutover protocol contract and returns it from installation
 enrollment and every v2 batch acknowledgement:

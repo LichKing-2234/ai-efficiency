@@ -82,6 +82,9 @@ var attributionStatusCmd = &cobra.Command{
 				printSyncTaskStatus(cmd.OutOrStdout(), task)
 			}
 		}
+		if err := printMachineSyncTaskStatus(cmd.OutOrStdout()); err != nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "Machine Sync Tasks: unavailable (%v)\n", err)
+		}
 		if err := printV2ClaimDeliveryStatus(cmd.OutOrStdout()); err != nil {
 			fmt.Fprintf(cmd.OutOrStdout(), "V2 Claim Delivery: unavailable (%v)\n", err)
 		}

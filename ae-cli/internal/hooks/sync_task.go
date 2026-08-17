@@ -1,10 +1,13 @@
 package hooks
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +20,7 @@ type SyncTaskFailureStage string
 const (
 	SyncTaskStatusPending SyncTaskStatus = "pending"
 	SyncTaskStatusRunning SyncTaskStatus = "running"
+	SyncTaskStatusYielded SyncTaskStatus = "yielded"
 
 	SyncTaskFailureStageSync            SyncTaskFailureStage = "sync"
 	SyncTaskFailureStageRunner          SyncTaskFailureStage = "runner"
@@ -30,6 +34,8 @@ const (
 var ErrSyncTaskAlreadyRunning = errors.New("sync task already running")
 
 var syncTaskRunnerAlive = syncTaskProcessAlive
+
+var machineSyncLockPollInterval = 25 * time.Millisecond
 
 type SyncTask struct {
 	Version               int                  `json:"version"`
@@ -58,6 +64,13 @@ type SyncTask struct {
 	LastSpawnAttemptAt    *time.Time           `json:"last_spawn_attempt_at,omitempty"`
 	V2Triggers            []V2SyncTrigger      `json:"v2_triggers,omitempty"`
 	RequestGeneration     int                  `json:"request_generation,omitempty"`
+}
+
+type MachineSyncTaskSummary struct {
+	Queued  int
+	Running int
+	Yielded int
+	Failed  int
 }
 
 type syncTaskStageError struct {
@@ -115,6 +128,59 @@ func LoadSyncTask(workspaceID string) (*SyncTask, error) {
 		return nil, err
 	}
 	return &task, nil
+}
+
+func ListSyncTasks() ([]SyncTask, error) {
+	root := filepath.Join(attributionlocal.AttributionRootDir(), "workspaces")
+	entries, err := os.ReadDir(root)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list sync task workspaces: %w", err)
+	}
+	tasks := make([]SyncTask, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		task, _, err := LoadSyncTaskRecovering(entry.Name())
+		if err != nil {
+			return nil, fmt.Errorf("load sync task %s: %w", entry.Name(), err)
+		}
+		if task != nil {
+			tasks = append(tasks, *task)
+		}
+	}
+	sort.Slice(tasks, func(i, j int) bool {
+		if tasks[i].LastRequestedAt.Equal(tasks[j].LastRequestedAt) {
+			return tasks[i].WorkspaceID < tasks[j].WorkspaceID
+		}
+		return tasks[i].LastRequestedAt.Before(tasks[j].LastRequestedAt)
+	})
+	return tasks, nil
+}
+
+func SummarizeMachineSyncTasks(now time.Time) (MachineSyncTaskSummary, error) {
+	tasks, err := ListSyncTasks()
+	if err != nil {
+		return MachineSyncTaskSummary{}, err
+	}
+	var summary MachineSyncTaskSummary
+	for index := range tasks {
+		task := &tasks[index]
+		switch {
+		case strings.TrimSpace(task.LastError) != "":
+			summary.Failed++
+		case task.HasActiveLease(now):
+			summary.Running++
+		case task.Status == SyncTaskStatusYielded:
+			summary.Yielded++
+		default:
+			summary.Queued++
+		}
+	}
+	return summary, nil
 }
 
 func LoadSyncTaskRecovering(workspaceID string) (*SyncTask, bool, error) {
@@ -427,6 +493,39 @@ func MarkSyncTaskFailure(task *SyncTask, now time.Time, err error) error {
 	})
 }
 
+func MarkSyncTaskYielded(task *SyncTask, now time.Time) error {
+	if task == nil {
+		return fmt.Errorf("task is nil")
+	}
+	return withSyncTaskLock(task.WorkspaceID, now, func() error {
+		latest := task
+		current, err := LoadSyncTask(task.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		if current != nil {
+			latest = current
+		}
+		if latest.RunnerPID != 0 && task.RunnerPID != 0 && latest.RunnerPID != task.RunnerPID && latest.HasActiveLease(now) {
+			return nil
+		}
+		latest.Status = SyncTaskStatusYielded
+		latest.AttemptCount++
+		latest.LastError = ""
+		latest.LastFailureStage = ""
+		latest.LastFailureReason = ""
+		latest.FirstFailureAt = nil
+		latest.RemainingTriggerCount = len(latest.V2Triggers)
+		latest.RunnerPID = 0
+		latest.LeaseExpiresAt = nil
+		if err := SaveSyncTask(*latest); err != nil {
+			return err
+		}
+		*task = *latest
+		return nil
+	})
+}
+
 func MarkSyncTaskSuccess(task *SyncTask, now time.Time) error {
 	if task == nil {
 		return fmt.Errorf("task is nil")
@@ -539,6 +638,46 @@ func withSyncTaskLock(workspaceID string, now time.Time, fn func() error) error 
 		time.Sleep(5 * time.Millisecond)
 	}
 	return ErrSyncTaskAlreadyRunning
+}
+
+func withMachineSyncRunLock(ctx context.Context, fn func() error) error {
+	lockPath := filepath.Join(attributionlocal.AttributionRootDir(), "machine-sync.run.lock")
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
+		return fmt.Errorf("create machine sync lock dir: %w", err)
+	}
+	for {
+		file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			_, _ = fmt.Fprintf(file, "%d\n", os.Getpid())
+			_ = file.Close()
+			defer func() { _ = os.Remove(lockPath) }()
+			return fn()
+		}
+		if !os.IsExist(err) {
+			return fmt.Errorf("create machine sync lock: %w", err)
+		}
+		if machineSyncRunLockIsStale(lockPath) {
+			_ = os.Remove(lockPath)
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(machineSyncLockPollInterval):
+		}
+	}
+}
+
+func machineSyncRunLockIsStale(path string) bool {
+	payload, err := os.ReadFile(path)
+	if err == nil {
+		pid, parseErr := strconv.Atoi(strings.TrimSpace(string(payload)))
+		if parseErr == nil && pid > 0 {
+			return !syncTaskRunnerAlive(pid)
+		}
+	}
+	info, statErr := os.Stat(path)
+	return statErr == nil && time.Since(info.ModTime()) > syncTaskLeaseTTL
 }
 
 func syncTaskLockIsStale(lockPath string, now time.Time) bool {
