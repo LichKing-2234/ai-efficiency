@@ -11,6 +11,7 @@ import {
   previewRelayPlan,
   previewRelayReplan,
   rebindRelayGroupMapping,
+  type RelayPlanningRequest,
   type RelayPlanningMapping,
   type RelayPlanningPlan,
 } from '@/api/relayPlanning'
@@ -40,6 +41,17 @@ const groups = computed(() => (provider.value?.groups ?? []).filter((group) => !
 const platforms = computed(() => Array.from(new Set((provider.value?.groups ?? []).map((group) => group.platform).filter(Boolean))))
 const eligibleCandidates = computed(() => plan.value?.candidates.filter((candidate) => candidate.eligible) ?? [])
 
+function planningRequest(): RelayPlanningRequest {
+  return {
+    provider_id: Number(form.provider_id),
+    department_id: String(form.department_id || ''),
+    platform: String(form.platform || ''),
+    source_group_id: Number(form.source_group_id),
+    weekly_cost_target: Number(form.weekly_cost_target || 0),
+    group_count: Number(form.group_count || 0),
+  }
+}
+
 async function loadOptions() {
   const [departmentResponse, providerResponse] = await Promise.all([
     listAdminUserDepartmentOptions({ page: 1, page_size: 200 }),
@@ -56,14 +68,15 @@ async function loadMappings() {
 }
 
 async function preview() {
-  if (!form.provider_id || !form.department_id || !form.platform || !form.source_group_id) {
+  const request = planningRequest()
+  if (!request.provider_id || !request.department_id || !request.platform || !request.source_group_id) {
     ElMessage.warning('Provider, department, platform, and source group are required')
     return
   }
   loading.value = true
   error.value = ''
   try {
-    const response = await previewRelayPlan({ ...form })
+    const response = await previewRelayPlan(request)
     plan.value = response.data.data ?? null
     activeMappingID.value = null
     operationKey.value = crypto.randomUUID()
