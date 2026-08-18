@@ -47,14 +47,14 @@ func NewService(client *ent.Client, resolver ProviderResolver) *Service {
 }
 
 type PreviewRequest struct {
-	ProviderID        int
-	DepartmentID      string
-	Platform          string
-	SourceGroupID     int64
-	WeeklyCostTarget  float64
-	GroupCount        int
-	SelectedUserIDs   []int
-	ExistingMappingID int
+	ProviderID        int     `json:"provider_id"`
+	DepartmentID      string  `json:"department_id"`
+	Platform          string  `json:"platform"`
+	SourceGroupID     int64   `json:"source_group_id"`
+	WeeklyCostTarget  float64 `json:"weekly_cost_target"`
+	GroupCount        int     `json:"group_count"`
+	SelectedUserIDs   []int   `json:"selected_user_ids"`
+	ExistingMappingID int     `json:"existing_mapping_id"`
 }
 
 type Candidate struct {

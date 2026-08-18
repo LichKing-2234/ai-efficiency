@@ -1,6 +1,19 @@
 package relayplanning
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
+
+func TestPreviewRequestJSONUsesSnakeCase(t *testing.T) {
+	var got PreviewRequest
+	if err := json.Unmarshal([]byte(`{"provider_id":7,"department_id":"dept-alpha","platform":"openai","source_group_id":42,"weekly_cost_target":12.5,"group_count":2,"selected_user_ids":[1,2],"existing_mapping_id":9}`), &got); err != nil {
+		t.Fatalf("unmarshal preview request: %v", err)
+	}
+	if got.ProviderID != 7 || got.DepartmentID != "dept-alpha" || got.Platform != "openai" || got.SourceGroupID != 42 || got.WeeklyCostTarget != 12.5 || got.GroupCount != 2 || len(got.SelectedUserIDs) != 2 || got.ExistingMappingID != 9 {
+		t.Fatalf("decoded preview request = %#v", got)
+	}
+}
 
 func TestAllocatePlacesNextMemberInLowestCostGroup(t *testing.T) {
 	candidates := []Candidate{
