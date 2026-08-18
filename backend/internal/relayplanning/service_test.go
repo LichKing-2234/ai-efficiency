@@ -1,6 +1,7 @@
 package relayplanning
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -73,6 +74,38 @@ func TestMergeTrendUsageFillsMissingRangeTokens(t *testing.T) {
 	}
 	if *stats[102].RangeTotalTokens != 9 {
 		t.Fatalf("existing range tokens overwritten: %d", *stats[102].RangeTotalTokens)
+	}
+}
+
+type usageStatsTestProvider struct {
+	relay.Provider
+	trend map[int64][]relay.UsageTrendPoint
+}
+
+func (p usageStatsTestProvider) GetBatchUserUsageStats(_ context.Context, ids []int64, _ relay.TeamUsageSummaryParams) (map[int64]relay.TeamUserUsageStats, error) {
+	stats := make(map[int64]relay.TeamUserUsageStats, len(ids))
+	for _, id := range ids {
+		cost := 7.5
+		stats[id] = relay.TeamUserUsageStats{UserID: id, RangeActualCost: &cost}
+	}
+	return stats, nil
+}
+
+func (p usageStatsTestProvider) GetUsageTrendForUsers(_ context.Context, _ []int64, _ relay.TeamMemberTrendParams) (map[int64][]relay.UsageTrendPoint, error) {
+	return p.trend, nil
+}
+
+func TestUsageStatsUsesTrendTokensWhenBatchSummaryOmitsThem(t *testing.T) {
+	first, second := int64(120), int64(80)
+	provider := usageStatsTestProvider{trend: map[int64][]relay.UsageTrendPoint{
+		101: {{TotalTokens: &first}, {TotalTokens: &second}},
+	}}
+	got, err := usageStats(context.Background(), provider, []int64{101})
+	if err != nil {
+		t.Fatalf("usageStats() error = %v", err)
+	}
+	if got[101].RangeTotalTokens == nil || *got[101].RangeTotalTokens != 200 {
+		t.Fatalf("range tokens = %#v, want 200", got[101].RangeTotalTokens)
 	}
 }
 
