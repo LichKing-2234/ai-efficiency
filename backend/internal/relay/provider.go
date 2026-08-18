@@ -86,6 +86,23 @@ type PlatformGroupLister interface {
 	ListPlatformGroups(ctx context.Context) ([]Group, error)
 }
 
+// GroupDuplicator creates an inactive copy of a source group. The operation
+// key is passed through to the upstream idempotency contract.
+type GroupDuplicator interface {
+	DuplicateGroup(ctx context.Context, sourceGroupID int64, operationKey string) (*Group, error)
+}
+
+// GroupStatusUpdater activates or deactivates an existing group. It is kept as
+// an optional capability because read-only relay implementations do not need it.
+type GroupStatusUpdater interface {
+	UpdateGroupStatus(ctx context.Context, groupID int64, status string) error
+}
+
+// APIKeyGroupBinder moves one admin-managed API key to a target group.
+type APIKeyGroupBinder interface {
+	BindAPIKeyToGroup(ctx context.Context, keyID, groupID int64) error
+}
+
 // UserDisabler is an optional extension for relay implementations that can
 // disable upstream users without exposing provider-specific request details to
 // admin/offboarding handlers.

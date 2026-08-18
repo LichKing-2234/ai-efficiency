@@ -1134,6 +1134,39 @@ var (
 			},
 		},
 	}
+	// RelayGroupMappingsColumns holds the columns for the "relay_group_mappings" table.
+	RelayGroupMappingsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "provider_id", Type: field.TypeInt},
+		{Name: "department_external_id", Type: field.TypeString},
+		{Name: "department_name", Type: field.TypeString, Default: ""},
+		{Name: "platform", Type: field.TypeString},
+		{Name: "source_group_id", Type: field.TypeInt64},
+		{Name: "source_group_name", Type: field.TypeString, Default: ""},
+		{Name: "group_ids", Type: field.TypeJSON},
+		{Name: "status", Type: field.TypeString, Default: "active"},
+		{Name: "weekly_cost_target", Type: field.TypeFloat64, Default: 0},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// RelayGroupMappingsTable holds the schema information for the "relay_group_mappings" table.
+	RelayGroupMappingsTable = &schema.Table{
+		Name:       "relay_group_mappings",
+		Columns:    RelayGroupMappingsColumns,
+		PrimaryKey: []*schema.Column{RelayGroupMappingsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "relaygroupmapping_provider_id_department_external_id_platform",
+				Unique:  true,
+				Columns: []*schema.Column{RelayGroupMappingsColumns[1], RelayGroupMappingsColumns[2], RelayGroupMappingsColumns[4]},
+			},
+			{
+				Name:    "relaygroupmapping_provider_id_source_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{RelayGroupMappingsColumns[1], RelayGroupMappingsColumns[5]},
+			},
+		},
+	}
 	// RelayProvidersColumns holds the columns for the "relay_providers" table.
 	RelayProvidersColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -1537,6 +1570,7 @@ var (
 		QuotaResetNotificationSettingsTable,
 		QuotaResetRequestsTable,
 		QuotaResetRequestEventsTable,
+		RelayGroupMappingsTable,
 		RelayProvidersTable,
 		RepoConfigsTable,
 		ReportingInstallationsTable,

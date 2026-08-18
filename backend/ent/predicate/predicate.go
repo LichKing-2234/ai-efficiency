@@ -78,6 +78,9 @@ type QuotaResetRequest func(*sql.Selector)
 // QuotaResetRequestEvent is the predicate function for quotaresetrequestevent builders.
 type QuotaResetRequestEvent func(*sql.Selector)
 
+// RelayGroupMapping is the predicate function for relaygroupmapping builders.
+type RelayGroupMapping func(*sql.Selector)
+
 // RelayProvider is the predicate function for relayprovider builders.
 type RelayProvider func(*sql.Selector)
 

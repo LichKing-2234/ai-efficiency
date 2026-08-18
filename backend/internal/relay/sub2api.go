@@ -1908,6 +1908,99 @@ func (s *sub2apiRelay) ListPlatformGroups(ctx context.Context) ([]Group, error) 
 	return groups, nil
 }
 
+// DuplicateGroup creates an inactive copy of a group through sub2api's
+// idempotent admin endpoint. The operation key is supplied by the caller so a
+// retried planning execution cannot create a second copy.
+func (s *sub2apiRelay) DuplicateGroup(ctx context.Context, sourceGroupID int64, operationKey string) (*Group, error) {
+	if sourceGroupID <= 0 {
+		return nil, fmt.Errorf("relay: duplicate group: source group id is required")
+	}
+	if strings.TrimSpace(operationKey) == "" {
+		return nil, fmt.Errorf("relay: duplicate group: operation key is required")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.adminURL+fmt.Sprintf("/api/v1/admin/groups/%d/duplicate", sourceGroupID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("relay: duplicate group: %w", err)
+	}
+	req.Header.Set("X-API-Key", s.adminAPIKey())
+	req.Header.Set("Idempotency-Key", strings.TrimSpace(operationKey))
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("relay: duplicate group: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: duplicate group: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+	}
+	var result struct {
+		envelopeStatus
+		Data Group `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("relay: duplicate group: decode: %w", err)
+	}
+	if !result.ok() || result.Data.ID <= 0 {
+		return nil, fmt.Errorf("relay: duplicate group: request failed")
+	}
+	return &result.Data, nil
+}
+
+func (s *sub2apiRelay) UpdateGroupStatus(ctx context.Context, groupID int64, status string) error {
+	if groupID <= 0 {
+		return fmt.Errorf("relay: update group status: group id is required")
+	}
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status != "active" && status != "inactive" {
+		return fmt.Errorf("relay: update group status: unsupported status %q", status)
+	}
+	payload, err := json.Marshal(map[string]string{"status": status})
+	if err != nil {
+		return fmt.Errorf("relay: update group status: marshal: %w", err)
+	}
+	resp, err := s.doAdminRequest(ctx, http.MethodPut, fmt.Sprintf("/api/v1/admin/groups/%d", groupID), bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("relay: update group status: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("relay: update group status: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+	}
+	var result envelopeStatus
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("relay: update group status: decode: %w", err)
+	}
+	if !result.ok() {
+		return fmt.Errorf("relay: update group status: request failed")
+	}
+	return nil
+}
+
+func (s *sub2apiRelay) BindAPIKeyToGroup(ctx context.Context, keyID, groupID int64) error {
+	if keyID <= 0 || groupID <= 0 {
+		return fmt.Errorf("relay: bind api key: key and group ids are required")
+	}
+	payload, err := json.Marshal(map[string]int64{"group_id": groupID})
+	if err != nil {
+		return fmt.Errorf("relay: bind api key: marshal: %w", err)
+	}
+	resp, err := s.doAdminRequest(ctx, http.MethodPut, fmt.Sprintf("/api/v1/admin/api-keys/%d", keyID), bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("relay: bind api key: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("relay: bind api key: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+	}
+	var result envelopeStatus
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("relay: bind api key: decode: %w", err)
+	}
+	if !result.ok() {
+		return fmt.Errorf("relay: bind api key: request failed")
+	}
+	return nil
+}
+
 type defaultSubscriptionSetting struct {
 	GroupID      int64 `json:"group_id"`
 	ValidityDays int   `json:"validity_days"`

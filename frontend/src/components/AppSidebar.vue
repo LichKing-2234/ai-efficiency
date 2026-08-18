@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from '@/i18n'
 import {
   Bell,
+  Connection,
   DataLine,
   Document,
   House,
@@ -156,6 +157,16 @@ function handleNavigate() {
         >
           <el-icon class="mr-3"><Bell /></el-icon>
           {{ t('nav.directoryOffboarding') }}
+        </RouterLink>
+
+        <RouterLink
+          to="/admin/relay-planning"
+          class="mt-1 flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
+          :active-class="activeNavigationClass"
+          @click="handleNavigate"
+        >
+          <el-icon class="mr-3"><Connection /></el-icon>
+          Relay Planning
         </RouterLink>
 
         <RouterLink

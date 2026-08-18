@@ -297,6 +297,18 @@ func (f QuotaResetRequestEventFunc) Mutate(ctx context.Context, m ent.Mutation) 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.QuotaResetRequestEventMutation", m)
 }
 
+// The RelayGroupMappingFunc type is an adapter to allow the use of ordinary
+// function as RelayGroupMapping mutator.
+type RelayGroupMappingFunc func(context.Context, *ent.RelayGroupMappingMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RelayGroupMappingFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RelayGroupMappingMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RelayGroupMappingMutation", m)
+}
+
 // The RelayProviderFunc type is an adapter to allow the use of ordinary
 // function as RelayProvider mutator.
 type RelayProviderFunc func(context.Context, *ent.RelayProviderMutation) (ent.Value, error)

@@ -56,6 +56,7 @@ type UpdateUserRequest struct {
 type APIKey struct {
 	ID         int64      `json:"id"`
 	UserID     int64      `json:"user_id"`
+	GroupID    int64      `json:"group_id,omitempty"`
 	Key        string     `json:"key"`
 	Name       string     `json:"name"`
 	Status     string     `json:"status"`

@@ -103,6 +103,12 @@ const router = createRouter({
       meta: { requireAdmin: true },
     },
     {
+      path: '/admin/relay-planning',
+      name: 'AdminRelayPlanning',
+      component: () => import('@/views/admin/RelayPlanningView.vue'),
+      meta: { requireAdmin: true },
+    },
+    {
       path: '/admin/directory/offboarding',
       name: 'DirectoryOffboarding',
       component: () => import('@/views/admin/DirectoryOffboardingView.vue'),
