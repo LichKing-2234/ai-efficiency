@@ -6,6 +6,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -21,6 +22,7 @@ import (
 
 const (
 	maxPlanningUsers    = 5000
+	maxCandidateWorkers = 8
 	defaultValidityDays = 30
 )
 
@@ -635,56 +637,81 @@ func (s *Service) buildCandidates(ctx context.Context, p relay.Provider, users [
 	for i, id := range rankIDs {
 		ranks[id] = i + 1
 	}
-	out := make([]Candidate, 0, len(users))
-	for _, u := range users {
-		candidate := Candidate{UserID: u.ID, Username: u.Username, Email: u.Email, Eligible: false, Selected: true}
-		if u.RelayUserID == nil || *u.RelayUserID <= 0 {
-			candidate.Warnings = append(candidate.Warnings, fmt.Sprintf("user %d has no relay mapping", u.ID))
-			out = append(out, candidate)
-			continue
-		}
-		candidate.RelayUserID = int64(*u.RelayUserID)
-		stat := globalStats[candidate.RelayUserID]
-		candidate.RangeCost = usageCost(stat)
-		candidate.RangeTokens = usageTokens(stat)
-		candidate.GlobalTokenRank = ranks[candidate.RelayUserID]
-		allowed, groupErr := p.ListAllowedGroupsForUser(ctx, candidate.RelayUserID)
-		if groupErr != nil {
-			candidate.Warnings = append(candidate.Warnings, fmt.Sprintf("relay groups unavailable: %v", groupErr))
-			out = append(out, candidate)
-			continue
-		}
-		for _, group := range allowed {
-			if group.ID == source.ID {
-				candidate.Eligible = strings.EqualFold(strings.TrimSpace(group.Platform), strings.TrimSpace(platform))
-			}
-			if group.ID != source.ID && group.ID > 0 {
-				candidate.CurrentGroupIDs = append(candidate.CurrentGroupIDs, group.ID)
-			}
-		}
-		keys, keyErr := p.ListUserAPIKeys(ctx, candidate.RelayUserID)
-		if keyErr == nil {
-			for _, key := range keys {
-				if apiKeyGroupID(key) == source.ID {
-					candidate.MigratableKeyCount++
-				}
-			}
-		}
-		if !candidate.Eligible {
-			candidate.Warnings = append(candidate.Warnings, "user is not a member of the selected source group")
-		} else if candidate.MigratableKeyCount == 0 {
-			candidate.Warnings = append(candidate.Warnings, "no migratable AE-managed API key")
-		}
-		if conflict, conflictErr := s.hasDepartmentConflict(ctx, u, departmentID); conflictErr == nil && conflict {
-			candidate.Warnings = append(candidate.Warnings, "user belongs to multiple departments")
-		}
-		candidate.Selected = candidate.Eligible
-		out = append(out, candidate)
+	out := make([]Candidate, len(users))
+	jobs := make(chan struct {
+		index int
+		user  *ent.User
+	}, len(users))
+	for index, u := range users {
+		jobs <- struct {
+			index int
+			user  *ent.User
+		}{index: index, user: u}
 	}
+	close(jobs)
+	workerCount := maxCandidateWorkers
+	if len(users) < workerCount {
+		workerCount = len(users)
+	}
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	for worker := 0; worker < workerCount; worker++ {
+		go func() {
+			defer workers.Done()
+			for job := range jobs {
+				out[job.index] = s.buildCandidate(ctx, p, job.user, source, platform, departmentID, globalStats, ranks)
+			}
+		}()
+	}
+	workers.Wait()
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].RangeCost > out[j].RangeCost || (out[i].RangeCost == out[j].RangeCost && out[i].UserID < out[j].UserID)
 	})
 	return out, nil
+}
+
+func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, u *ent.User, source relay.Group, platform, departmentID string, globalStats map[int64]relay.TeamUserUsageStats, ranks map[int64]int) Candidate {
+	candidate := Candidate{UserID: u.ID, Username: u.Username, Email: u.Email, Eligible: false, Selected: true}
+	if u.RelayUserID == nil || *u.RelayUserID <= 0 {
+		candidate.Warnings = append(candidate.Warnings, fmt.Sprintf("user %d has no relay mapping", u.ID))
+		return candidate
+	}
+	candidate.RelayUserID = int64(*u.RelayUserID)
+	stat := globalStats[candidate.RelayUserID]
+	candidate.RangeCost = usageCost(stat)
+	candidate.RangeTokens = usageTokens(stat)
+	candidate.GlobalTokenRank = ranks[candidate.RelayUserID]
+	allowed, groupErr := p.ListAllowedGroupsForUser(ctx, candidate.RelayUserID)
+	if groupErr != nil {
+		candidate.Warnings = append(candidate.Warnings, fmt.Sprintf("relay groups unavailable: %v", groupErr))
+		return candidate
+	}
+	for _, group := range allowed {
+		if group.ID == source.ID {
+			candidate.Eligible = strings.EqualFold(strings.TrimSpace(group.Platform), strings.TrimSpace(platform))
+		}
+		if group.ID != source.ID && group.ID > 0 {
+			candidate.CurrentGroupIDs = append(candidate.CurrentGroupIDs, group.ID)
+		}
+	}
+	keys, keyErr := p.ListUserAPIKeys(ctx, candidate.RelayUserID)
+	if keyErr == nil {
+		for _, key := range keys {
+			if apiKeyGroupID(key) == source.ID {
+				candidate.MigratableKeyCount++
+			}
+		}
+	}
+	if !candidate.Eligible {
+		candidate.Warnings = append(candidate.Warnings, "user is not a member of the selected source group")
+	} else if candidate.MigratableKeyCount == 0 {
+		candidate.Warnings = append(candidate.Warnings, "no migratable AE-managed API key")
+	}
+	if conflict, conflictErr := s.hasDepartmentConflict(ctx, u, departmentID); conflictErr == nil && conflict {
+		candidate.Warnings = append(candidate.Warnings, "user belongs to multiple departments")
+	}
+	candidate.Selected = candidate.Eligible
+	return candidate
 }
 
 func (s *Service) hasDepartmentConflict(ctx context.Context, u *ent.User, selectedDepartment string) (bool, error) {
@@ -729,6 +756,19 @@ func usageStats(ctx context.Context, p relay.Provider, ids []int64) (map[int64]r
 	now := time.Now().UTC()
 	params := relay.TeamUsageSummaryParams{StartDate: now.AddDate(0, 0, -30).Format("2006-01-02"), EndDate: now.Format("2006-01-02"), Granularity: "day", Timezone: "UTC"}
 	if batch, ok := p.(relay.TeamUsageSummaryProvider); ok {
+		var trend map[int64][]relay.UsageTrendPoint
+		var trendErr error
+		trendDone := make(chan struct{})
+		if trendProvider, trendOK := p.(relay.TeamMemberTrendProvider); trendOK {
+			go func() {
+				trend, trendErr = trendProvider.GetUsageTrendForUsers(ctx, ids, relay.TeamMemberTrendParams{
+					StartDate: params.StartDate, EndDate: params.EndDate, Granularity: params.Granularity, Timezone: params.Timezone,
+				})
+				close(trendDone)
+			}()
+		} else {
+			close(trendDone)
+		}
 		for start := 0; start < len(ids); start += 500 {
 			end := start + 500
 			if end > len(ids) {
@@ -742,6 +782,10 @@ func usageStats(ctx context.Context, p relay.Provider, ids []int64) (map[int64]r
 				result[id] = stat
 			}
 		}
+		<-trendDone
+		if trendErr == nil {
+			mergeTrendUsage(result, trend)
+		}
 		return result, nil
 	}
 	for _, id := range ids {
@@ -754,6 +798,32 @@ func usageStats(ctx context.Context, p relay.Provider, ids []int64) (map[int64]r
 		result[id] = relay.TeamUserUsageStats{UserID: id, RangeActualCost: &cost, RangeTotalTokens: &tokens, TotalActualCost: cost, TotalTokens: &tokens}
 	}
 	return result, nil
+}
+
+func mergeTrendUsage(stats map[int64]relay.TeamUserUsageStats, trends map[int64][]relay.UsageTrendPoint) {
+	for userID, points := range trends {
+		var tokens int64
+		var actualCost float64
+		for _, point := range points {
+			if point.TotalTokens != nil {
+				tokens += *point.TotalTokens
+			}
+			actualCost += point.ActualCost
+		}
+		stat := stats[userID]
+		if stat.UserID == 0 {
+			stat.UserID = userID
+		}
+		if stat.RangeTotalTokens == nil {
+			value := tokens
+			stat.RangeTotalTokens = &value
+		}
+		if stat.RangeActualCost == nil {
+			value := actualCost
+			stat.RangeActualCost = &value
+		}
+		stats[userID] = stat
+	}
 }
 
 func usageTokens(stat relay.TeamUserUsageStats) int64 {

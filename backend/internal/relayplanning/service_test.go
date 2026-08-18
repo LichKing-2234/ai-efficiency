@@ -3,6 +3,8 @@ package relayplanning
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/ai-efficiency/backend/internal/relay"
 )
 
 func TestPreviewRequestJSONUsesSnakeCase(t *testing.T) {
@@ -49,4 +51,31 @@ func TestAllocateSerializesEmptyGroupsAsEmptyUserLists(t *testing.T) {
 	if string(got) != `[{"index":0,"total_cost":0,"user_ids":[]},{"index":1,"total_cost":0,"user_ids":[]}]` {
 		t.Fatalf("assignments JSON = %s, want empty user arrays", got)
 	}
+}
+
+func TestMergeTrendUsageFillsMissingRangeTokens(t *testing.T) {
+	stats := map[int64]relay.TeamUserUsageStats{
+		101: {UserID: 101},
+		102: {UserID: 102, RangeTotalTokens: int64Pointer(9)},
+	}
+	firstTokens, secondTokens := int64(120), int64(80)
+	mergeTrendUsage(stats, map[int64][]relay.UsageTrendPoint{
+		101: {
+			{Date: "2026-08-01", TotalTokens: &firstTokens, ActualCost: 1.25},
+			{Date: "2026-08-02", TotalTokens: &secondTokens, ActualCost: 2.75},
+		},
+	})
+	if stats[101].RangeTotalTokens == nil || *stats[101].RangeTotalTokens != 200 {
+		t.Fatalf("range tokens = %#v, want 200", stats[101].RangeTotalTokens)
+	}
+	if stats[101].RangeActualCost == nil || *stats[101].RangeActualCost != 4 {
+		t.Fatalf("range cost = %#v, want 4", stats[101].RangeActualCost)
+	}
+	if *stats[102].RangeTotalTokens != 9 {
+		t.Fatalf("existing range tokens overwritten: %d", *stats[102].RangeTotalTokens)
+	}
+}
+
+func int64Pointer(value int64) *int64 {
+	return &value
 }
