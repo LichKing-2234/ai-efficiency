@@ -40,3 +40,13 @@ func TestAllocateUsesStableGroupTieBreak(t *testing.T) {
 		t.Fatalf("tie break assignments = %#v, want insertion order across empty groups", got)
 	}
 }
+
+func TestAllocateSerializesEmptyGroupsAsEmptyUserLists(t *testing.T) {
+	got, err := json.Marshal(allocate(nil, 2))
+	if err != nil {
+		t.Fatalf("marshal assignments: %v", err)
+	}
+	if string(got) != `[{"index":0,"total_cost":0,"user_ids":[]},{"index":1,"total_cost":0,"user_ids":[]}]` {
+		t.Fatalf("assignments JSON = %s, want empty user arrays", got)
+	}
+}

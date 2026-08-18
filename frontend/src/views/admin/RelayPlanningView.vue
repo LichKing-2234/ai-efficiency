@@ -237,7 +237,7 @@ onMounted(async () => {
         <div class="rounded-lg border border-slate-200 bg-white p-4">
           <div class="mb-3 text-sm font-semibold text-slate-900">Proposed groups</div>
           <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            <div v-for="assignment in plan.assignments" :key="assignment.index" class="rounded-md border border-slate-200 p-3"><div class="flex justify-between text-sm font-medium"><span>Group {{ assignment.index + 1 }}</span><span>${{ assignment.total_cost.toFixed(2) }}</span></div><div class="mt-2 text-xs text-slate-500">{{ assignment.user_ids.length }} member(s)</div></div>
+            <div v-for="assignment in plan.assignments" :key="assignment.index" class="rounded-md border border-slate-200 p-3"><div class="flex justify-between text-sm font-medium"><span>Group {{ assignment.index + 1 }}</span><span>${{ assignment.total_cost.toFixed(2) }}</span></div><div class="mt-2 text-xs text-slate-500">{{ assignment.user_ids?.length ?? 0 }} member(s)</div></div>
           </div>
         </div>
       </section>

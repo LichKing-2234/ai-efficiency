@@ -817,6 +817,7 @@ func allocate(candidates []Candidate, count int) []Assignment {
 	assignments := make([]Assignment, count)
 	for i := range assignments {
 		assignments[i].Index = i
+		assignments[i].UserIDs = make([]int, 0)
 	}
 	for _, candidate := range candidates {
 		best := 0
