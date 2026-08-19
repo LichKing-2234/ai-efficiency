@@ -166,7 +166,7 @@ function handleNavigate() {
           @click="handleNavigate"
         >
           <el-icon class="mr-3"><Connection /></el-icon>
-          Relay Planning
+          {{ t('nav.relayPlanning') }}
         </RouterLink>
 
         <RouterLink

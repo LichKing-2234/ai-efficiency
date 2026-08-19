@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { Check, Connection, Refresh, Setting } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppLayout from '@/components/AppLayout.vue'
+import { useI18n } from '@/i18n'
 import { listAdminUserDepartmentOptions, listAdminUserSubscriptionOptions } from '@/api/adminUsers'
 import {
   executeRelayPlan,
@@ -15,6 +16,8 @@ import {
   type RelayPlanningMapping,
   type RelayPlanningPlan,
 } from '@/api/relayPlanning'
+
+const { t, locale } = useI18n()
 
 const loading = ref(false)
 const confirming = ref(false)
@@ -42,6 +45,19 @@ const provider = computed(() => providers.value.find((item) => item.id === form.
 const groups = computed(() => (provider.value?.groups ?? []).filter((group) => !form.platform || group.platform === form.platform))
 const platforms = computed(() => Array.from(new Set((provider.value?.groups ?? []).map((group) => group.platform).filter(Boolean))))
 const eligibleCandidates = computed(() => plan.value?.candidates.filter((candidate) => candidate.eligible) ?? [])
+
+function translateWarning(warning: string): string {
+  void locale.value
+  if (warning === 'no eligible member has a valid relay mapping and source-group membership') return t('relayPlanning.warningNoEligible')
+  if (warning === 'user is not a member of the selected source group') return t('relayPlanning.warningNotSourceMember')
+  if (warning === 'no migratable AE-managed API key') return t('relayPlanning.warningNoMigratableKey')
+  if (warning === 'user belongs to multiple departments') return t('relayPlanning.warningMultipleDepartments')
+  if (warning.includes(' has no relay mapping')) return t('relayPlanning.warningNoRelayMapping', { user: warning.replace(/ has no relay mapping$/, '') })
+  if (warning.startsWith('relay groups unavailable: ')) return `${t('relayPlanning.warningRelayGroupsUnavailable')}: ${warning.slice('relay groups unavailable: '.length)}`
+  const targetMatch = warning.match(/^(.*) exceeds the planning target$/)
+  if (targetMatch) return t('relayPlanning.warningExceedsTarget', { group: targetMatch[1] })
+  return warning
+}
 
 function planningRequest(): RelayPlanningRequest {
   const request: RelayPlanningRequest = {
@@ -73,7 +89,7 @@ async function loadMappings() {
 async function preview() {
   const request = planningRequest()
   if (!request.provider_id || !request.department_id || !request.platform || !request.source_group_id) {
-    ElMessage.warning('Provider, department, platform, and source group are required')
+    ElMessage.warning(t('relayPlanning.requiredFields'))
     return
   }
   loading.value = true
@@ -85,7 +101,7 @@ async function preview() {
     operationKey.value = crypto.randomUUID()
     selectedUserIDs.value = new Set((plan.value?.candidates ?? []).filter((candidate) => candidate.eligible).map((candidate) => candidate.user_id))
   } catch (err: any) {
-    error.value = err.response?.data?.message || err.message || 'Preview failed'
+    error.value = err.response?.data?.message || err.message || t('relayPlanning.previewFailed')
   } finally {
     loading.value = false
   }
@@ -109,7 +125,7 @@ async function requestExecution() {
     plan.value = response.data.data ?? plan.value
     confirmDialogOpen.value = true
   } catch (err: any) {
-    ElMessage.error(err.response?.data?.message || err.message || 'Failed to refresh the plan')
+    ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.refreshPlanFailed'))
   } finally {
     confirming.value = false
   }
@@ -136,9 +152,9 @@ async function executeConfirmed() {
     operationKey.value = request.operation_key
     await loadMappings()
     confirmDialogOpen.value = false
-    ElMessage.success('Execution finished; review per-item results below')
+    ElMessage.success(t('relayPlanning.executionFinished'))
   } catch (err: any) {
-    ElMessage.error(err.response?.data?.message || err.message || 'Execution failed')
+    ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.executionFailed'))
   } finally {
     executing.value = false
   }
@@ -158,7 +174,7 @@ async function replan(mapping: RelayPlanningMapping) {
     form.weekly_cost_target = mapping.weekly_cost_target
     form.group_count = mapping.group_ids.length
   } catch (err: any) {
-    ElMessage.error(err.response?.data?.message || err.message || 'Replan failed')
+    ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.replanFailed'))
   }
 }
 
@@ -181,13 +197,13 @@ function toggleCandidate(userID: number, checked: boolean) {
 
 async function rebind(mapping: RelayPlanningMapping) {
   try {
-    const source = await ElMessageBox.prompt('Enter the source Group ID', 'Rebind source Group', { inputValue: String(mapping.source_group_id), inputPattern: /^[1-9][0-9]*$/, inputErrorMessage: 'A positive Group ID is required' })
-    const groups = await ElMessageBox.prompt('Enter managed Group IDs separated by commas', 'Rebind managed Groups', { inputValue: mapping.group_ids.join(', '), inputPattern: /^[0-9 ,]+$/, inputErrorMessage: 'Use numeric Group IDs separated by commas' })
+    const source = await ElMessageBox.prompt(t('relayPlanning.sourceGroupIdPrompt'), t('relayPlanning.rebindSourceGroup'), { inputValue: String(mapping.source_group_id), inputPattern: /^[1-9][0-9]*$/, inputErrorMessage: t('relayPlanning.positiveGroupIdRequired') })
+    const groups = await ElMessageBox.prompt(t('relayPlanning.managedGroupIdsPrompt'), t('relayPlanning.rebindManagedGroups'), { inputValue: mapping.group_ids.join(', '), inputPattern: /^[0-9 ,]+$/, inputErrorMessage: t('relayPlanning.numericGroupIdsRequired') })
     await rebindRelayGroupMapping(mapping.id, { source_group_id: Number(source.value), group_ids: groups.value.split(',').map((value) => Number(value.trim())).filter((value) => value > 0) })
     await loadMappings()
-    ElMessage.success('Mapping rebound; no relay members were changed')
+    ElMessage.success(t('relayPlanning.mappingRebound'))
   } catch (err: any) {
-    if (err !== 'cancel' && err !== 'close') ElMessage.error(err.response?.data?.message || err.message || 'Rebind failed')
+    if (err !== 'cancel' && err !== 'close') ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.rebindFailed'))
   }
 }
 
@@ -196,7 +212,7 @@ onMounted(async () => {
     await loadOptions()
     await loadMappings()
   } catch (err: any) {
-    error.value = err.response?.data?.message || err.message || 'Failed to load planning options'
+    error.value = err.response?.data?.message || err.message || t('relayPlanning.loadFailed')
   }
 })
 </script>
@@ -208,115 +224,115 @@ onMounted(async () => {
         <div>
           <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-blue-600">
             <el-icon><Connection /></el-icon>
-            Relay planning
+            {{ t('relayPlanning.eyebrow') }}
           </div>
-          <h1 class="mt-1 text-2xl font-semibold text-slate-900">Department Group Allocation</h1>
-          <p class="mt-1 text-sm text-slate-500">Preview a 30-day usage allocation, then explicitly confirm relay changes.</p>
+          <h1 class="mt-1 text-2xl font-semibold text-slate-900">{{ t('relayPlanning.title') }}</h1>
+          <p class="mt-1 text-sm text-slate-500">{{ t('relayPlanning.subtitle') }}</p>
         </div>
-        <el-button :icon="Refresh" :loading="loading" @click="loadMappings">Refresh mappings</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="loadMappings">{{ t('relayPlanning.refreshMappings') }}</el-button>
       </header>
 
       <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <div class="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900"><el-icon><Setting /></el-icon> Planning inputs</div>
+        <div class="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900"><el-icon><Setting /></el-icon> {{ t('relayPlanning.inputs') }}</div>
         <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <el-form-item label="Relay provider" class="!mb-0">
-            <el-select v-model="form.provider_id" data-testid="provider-select" class="w-full" placeholder="Select provider" @change="resetPlan">
+          <el-form-item :label="t('relayPlanning.provider')" class="!mb-0">
+            <el-select v-model="form.provider_id" data-testid="provider-select" class="w-full" :placeholder="t('relayPlanning.selectProvider')" @change="resetPlan">
               <el-option v-for="item in providers" :key="item.id" :label="item.display_name || item.name" :value="item.id" />
             </el-select>
           </el-form-item>
-          <el-form-item label="Department" class="!mb-0">
-            <el-select v-model="form.department_id" data-testid="department-select" class="w-full" filterable placeholder="Select department" @change="resetPlan">
+          <el-form-item :label="t('relayPlanning.department')" class="!mb-0">
+            <el-select v-model="form.department_id" data-testid="department-select" class="w-full" filterable :placeholder="t('relayPlanning.selectDepartment')" @change="resetPlan">
               <el-option v-for="item in departments" :key="item.external_id" :label="item.display_path || item.name" :value="item.external_id" />
             </el-select>
           </el-form-item>
-          <el-form-item label="Platform" class="!mb-0">
-            <el-select v-model="form.platform" data-testid="platform-select" class="w-full" placeholder="Select platform" @change="form.source_group_id = 0; resetPlan()">
+          <el-form-item :label="t('relayPlanning.platform')" class="!mb-0">
+            <el-select v-model="form.platform" data-testid="platform-select" class="w-full" :placeholder="t('relayPlanning.selectPlatform')" @change="form.source_group_id = 0; resetPlan()">
               <el-option v-for="item in platforms" :key="item" :label="item" :value="item" />
             </el-select>
           </el-form-item>
-          <el-form-item label="Source group" class="!mb-0">
-            <el-select v-model="form.source_group_id" data-testid="source-group-select" class="w-full" filterable placeholder="Select source group" @change="resetPlan">
+          <el-form-item :label="t('relayPlanning.sourceGroup')" class="!mb-0">
+            <el-select v-model="form.source_group_id" data-testid="source-group-select" class="w-full" filterable :placeholder="t('relayPlanning.selectSourceGroup')" @change="resetPlan">
               <el-option v-for="item in groups" :key="item.group_id" :label="`${item.group_name} (#${item.group_id})`" :value="Number(item.group_id)" />
             </el-select>
           </el-form-item>
-          <el-form-item label="30-day cost target per group (USD)" class="!mb-0">
+          <el-form-item :label="t('relayPlanning.costTarget')" class="!mb-0">
             <el-input-number v-model="form.weekly_cost_target" data-testid="cost-target-input" class="!w-full" :min="0" :precision="2" controls-position="right" />
           </el-form-item>
-          <el-form-item v-if="activeMappingID !== null" label="Managed group count" class="!mb-0">
+          <el-form-item v-if="activeMappingID !== null" :label="t('relayPlanning.managedGroupCount')" class="!mb-0">
             <el-input-number v-model="form.group_count" data-testid="replan-group-count" class="!w-full" :min="1" controls-position="right" />
           </el-form-item>
         </div>
         <div class="mt-4 flex flex-wrap gap-2">
-          <el-button data-testid="preview-allocation" type="primary" :loading="loading" @click="preview">Preview allocation</el-button>
-          <el-button v-if="plan" data-testid="open-execution-confirmation" :icon="Check" type="success" :loading="confirming" :disabled="plan.group_count === 0 || selectedUserIDs.size === 0" @click="requestExecution">Confirm and execute</el-button>
+          <el-button data-testid="preview-allocation" type="primary" :loading="loading" @click="preview">{{ t('relayPlanning.preview') }}</el-button>
+          <el-button v-if="plan" data-testid="open-execution-confirmation" :icon="Check" type="success" :loading="confirming" :disabled="plan.group_count === 0 || selectedUserIDs.size === 0" @click="requestExecution">{{ t('relayPlanning.confirmExecute') }}</el-button>
         </div>
         <el-alert v-if="error" class="mt-4" type="error" :closable="false" :title="error" />
       </section>
 
       <section v-if="plan" class="space-y-4">
         <div class="grid gap-4 sm:grid-cols-3">
-          <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-xs text-slate-500">Planned groups</div><div class="mt-1 text-2xl font-semibold">{{ plan.group_count }}</div><div v-if="plan.group_count !== plan.recommended_group_count" class="mt-1 text-xs text-slate-500">Recommended: {{ plan.recommended_group_count }}</div></div>
-          <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-xs text-slate-500">Selected eligible members</div><div class="mt-1 text-2xl font-semibold">{{ eligibleCandidates.length }}</div></div>
-          <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-xs text-slate-500">Planning target</div><div class="mt-1 text-2xl font-semibold">${{ plan.weekly_cost_target.toFixed(2) }}</div></div>
+          <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-xs text-slate-500">{{ t('relayPlanning.plannedGroups') }}</div><div class="mt-1 text-2xl font-semibold">{{ plan.group_count }}</div><div v-if="plan.group_count !== plan.recommended_group_count" class="mt-1 text-xs text-slate-500">{{ t('relayPlanning.recommended') }}: {{ plan.recommended_group_count }}</div></div>
+          <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-xs text-slate-500">{{ t('relayPlanning.selectedEligibleMembers') }}</div><div class="mt-1 text-2xl font-semibold">{{ eligibleCandidates.length }}</div></div>
+          <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-xs text-slate-500">{{ t('relayPlanning.planningTarget') }}</div><div class="mt-1 text-2xl font-semibold">${{ plan.weekly_cost_target.toFixed(2) }}</div></div>
         </div>
-        <el-alert v-if="plan.warnings?.length" type="warning" :closable="false" title="Review planning warnings" class="whitespace-pre-line">
-          <template #default>{{ plan.warnings.join('\n') }}</template>
+        <el-alert v-if="plan.warnings?.length" type="warning" :closable="false" :title="t('relayPlanning.reviewWarnings')" class="whitespace-pre-line">
+          <template #default>{{ plan.warnings.map(translateWarning).join('\n') }}</template>
         </el-alert>
         <div class="rounded-lg border border-slate-200 bg-white p-4">
-          <div class="mb-3 text-sm font-semibold text-slate-900">Candidates and global token rank</div>
+          <div class="mb-3 text-sm font-semibold text-slate-900">{{ t('relayPlanning.candidatesRank') }}</div>
           <el-table :data="plan.candidates" stripe>
-            <el-table-column label="Select" width="70"><template #default="scope"><el-checkbox :model-value="selectedUserIDs.has(scope.row.user_id)" :disabled="!scope.row.eligible" @change="(value) => toggleCandidate(scope.row.user_id, value === true)" /></template></el-table-column>
-            <el-table-column prop="username" label="User" min-width="140" />
-            <el-table-column prop="email" label="Email" min-width="190" />
-            <el-table-column prop="range_cost" label="30-day cost" width="120"><template #default="scope">${{ scope.row.range_cost.toFixed(2) }}</template></el-table-column>
-            <el-table-column prop="range_tokens" label="30-day tokens" width="130" />
-            <el-table-column prop="global_token_rank" label="Global rank" width="110" />
-            <el-table-column prop="migratable_key_count" label="Keys" width="80" />
-            <el-table-column label="Status" min-width="180"><template #default="scope"><el-tag :type="scope.row.eligible ? 'success' : 'info'">{{ scope.row.eligible ? 'Eligible' : 'Excluded' }}</el-tag><div v-if="scope.row.warnings?.length" class="mt-1 text-xs text-amber-700">{{ scope.row.warnings.join('; ') }}</div></template></el-table-column>
+            <el-table-column :label="t('relayPlanning.select')" width="70"><template #default="scope"><el-checkbox :model-value="selectedUserIDs.has(scope.row.user_id)" :disabled="!scope.row.eligible" @change="(value) => toggleCandidate(scope.row.user_id, value === true)" /></template></el-table-column>
+            <el-table-column prop="username" :label="t('relayPlanning.user')" min-width="140" />
+            <el-table-column prop="email" :label="t('relayPlanning.email')" min-width="190" />
+            <el-table-column prop="range_cost" :label="t('relayPlanning.cost30d')" width="120"><template #default="scope">${{ scope.row.range_cost.toFixed(2) }}</template></el-table-column>
+            <el-table-column prop="range_tokens" :label="t('relayPlanning.tokens30d')" width="130" />
+            <el-table-column prop="global_token_rank" :label="t('relayPlanning.globalRank')" width="110" />
+            <el-table-column prop="migratable_key_count" :label="t('relayPlanning.keys')" width="80" />
+            <el-table-column :label="t('relayPlanning.status')" min-width="180"><template #default="scope"><el-tag :type="scope.row.eligible ? 'success' : 'info'">{{ scope.row.eligible ? t('relayPlanning.eligible') : t('relayPlanning.excluded') }}</el-tag><div v-if="scope.row.warnings?.length" class="mt-1 text-xs text-amber-700">{{ scope.row.warnings.map(translateWarning).join('; ') }}</div></template></el-table-column>
           </el-table>
         </div>
         <div class="rounded-lg border border-slate-200 bg-white p-4">
-          <div class="mb-3 text-sm font-semibold text-slate-900">Proposed groups</div>
+          <div class="mb-3 text-sm font-semibold text-slate-900">{{ t('relayPlanning.proposedGroups') }}</div>
           <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            <div v-for="assignment in plan.assignments" :key="assignment.index" class="rounded-md border border-slate-200 p-3"><div class="flex justify-between gap-3 text-sm font-medium"><span class="min-w-0 break-words">{{ assignment.target_group_name || `Group ${assignment.index + 1}` }}<span v-if="assignment.target_group_id" class="text-slate-500"> (#{{ assignment.target_group_id }})</span></span><span class="shrink-0">${{ assignment.total_cost.toFixed(2) }}</span></div><div class="mt-2 text-xs text-slate-500">{{ assignment.user_ids?.length ?? 0 }} member(s)</div></div>
+            <div v-for="assignment in plan.assignments" :key="assignment.index" class="rounded-md border border-slate-200 p-3"><div class="flex justify-between gap-3 text-sm font-medium"><span class="min-w-0 break-words">{{ assignment.target_group_name || `${t('relayPlanning.group')} ${assignment.index + 1}` }}<span v-if="assignment.target_group_id" class="text-slate-500"> (#{{ assignment.target_group_id }})</span></span><span class="shrink-0">${{ assignment.total_cost.toFixed(2) }}</span></div><div class="mt-2 text-xs text-slate-500">{{ t('relayPlanning.memberCount', { count: assignment.user_ids?.length ?? 0 }) }}</div></div>
           </div>
         </div>
       </section>
 
       <section class="rounded-lg border border-slate-200 bg-white p-4">
-        <div class="mb-3 flex items-center justify-between"><div class="text-sm font-semibold text-slate-900">Managed mappings</div><span class="text-xs text-slate-500">Group IDs are authoritative</span></div>
-        <el-empty v-if="!mappings.length" description="No department mappings yet" />
+        <div class="mb-3 flex items-center justify-between"><div class="text-sm font-semibold text-slate-900">{{ t('relayPlanning.managedMappings') }}</div><span class="text-xs text-slate-500">{{ t('relayPlanning.groupIdsAuthoritative') }}</span></div>
+        <el-empty v-if="!mappings.length" :description="t('relayPlanning.noMappings')" />
         <el-table v-else :data="mappings" stripe>
-          <el-table-column prop="department_name" label="Department" min-width="150" />
-          <el-table-column prop="platform" label="Platform" width="110" />
-          <el-table-column label="Source" min-width="150"><template #default="scope">{{ scope.row.source_group_name }} (#{{ scope.row.source_group_id }})</template></el-table-column>
-          <el-table-column label="Managed groups" min-width="180"><template #default="scope">{{ scope.row.group_ids.join(', ') }}</template></el-table-column>
-          <el-table-column prop="status" label="Status" width="100" />
-          <el-table-column label="Actions" width="170"><template #default="scope"><el-button link type="primary" @click="replan(scope.row as RelayPlanningMapping)">Replan</el-button><el-button link type="primary" @click="rebind(scope.row as RelayPlanningMapping)">Rebind</el-button></template></el-table-column>
+          <el-table-column prop="department_name" :label="t('relayPlanning.department')" min-width="150" />
+          <el-table-column prop="platform" :label="t('relayPlanning.platform')" width="110" />
+          <el-table-column :label="t('relayPlanning.source')" min-width="150"><template #default="scope">{{ scope.row.source_group_name }} (#{{ scope.row.source_group_id }})</template></el-table-column>
+          <el-table-column :label="t('relayPlanning.managedGroups')" min-width="180"><template #default="scope">{{ scope.row.group_ids.join(', ') }}</template></el-table-column>
+          <el-table-column prop="status" :label="t('relayPlanning.status')" width="100" />
+          <el-table-column :label="t('relayPlanning.actions')" width="170"><template #default="scope"><el-button link type="primary" @click="replan(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.replan') }}</el-button><el-button link type="primary" @click="rebind(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.rebind') }}</el-button></template></el-table-column>
         </el-table>
       </section>
 
       <el-dialog
         v-model="confirmDialogOpen"
-        title="Confirm group plan"
+        :title="t('relayPlanning.confirmPlan')"
         append-to-body
         align-center
         width="min(100%, 32rem)"
         :close-on-click-modal="!executing"
         :close-on-press-escape="!executing"
       >
-        <el-alert type="warning" :closable="false" show-icon title="This creates relay groups and migrates the selected members." />
+        <el-alert type="warning" :closable="false" show-icon :title="t('relayPlanning.executeWarning')" />
         <dl v-if="plan" class="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-          <dt class="text-slate-500">Source</dt><dd class="min-w-0 break-words font-medium text-slate-900">{{ plan.source_group_name }} (#{{ plan.source_group_id }})</dd>
-          <dt class="text-slate-500">Members</dt><dd class="font-medium text-slate-900">{{ selectedUserIDs.size }}</dd>
-          <dt class="text-slate-500">Target groups</dt>
+          <dt class="text-slate-500">{{ t('relayPlanning.source') }}</dt><dd class="min-w-0 break-words font-medium text-slate-900">{{ plan.source_group_name }} (#{{ plan.source_group_id }})</dd>
+          <dt class="text-slate-500">{{ t('relayPlanning.members') }}</dt><dd class="font-medium text-slate-900">{{ selectedUserIDs.size }}</dd>
+          <dt class="text-slate-500">{{ t('relayPlanning.targetGroups') }}</dt>
           <dd class="max-h-48 space-y-1 overflow-y-auto font-medium text-slate-900">
             <div v-for="assignment in plan.assignments" :key="assignment.index" class="break-words">{{ assignment.target_group_name || `Group ${assignment.index + 1}` }}</div>
           </dd>
         </dl>
         <template #footer>
-          <el-button :disabled="executing" @click="confirmDialogOpen = false">Cancel</el-button>
-          <el-button data-testid="confirm-execution" type="danger" :loading="executing" @click="executeConfirmed">Create groups and migrate</el-button>
+          <el-button :disabled="executing" @click="confirmDialogOpen = false">{{ t('relayPlanning.cancel') }}</el-button>
+          <el-button data-testid="confirm-execution" type="danger" :loading="executing" @click="executeConfirmed">{{ t('relayPlanning.createAndMigrate') }}</el-button>
         </template>
       </el-dialog>
     </div>
