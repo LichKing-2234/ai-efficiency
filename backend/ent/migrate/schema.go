@@ -1141,9 +1141,13 @@ var (
 		{Name: "department_external_id", Type: field.TypeString},
 		{Name: "department_name", Type: field.TypeString, Default: ""},
 		{Name: "platform", Type: field.TypeString},
+		{Name: "template_group_id", Type: field.TypeInt64, Default: 0},
+		{Name: "template_group_name", Type: field.TypeString, Default: ""},
 		{Name: "source_group_id", Type: field.TypeInt64},
 		{Name: "source_group_name", Type: field.TypeString, Default: ""},
 		{Name: "group_ids", Type: field.TypeJSON},
+		{Name: "member_assignments", Type: field.TypeJSON},
+		{Name: "member_sources", Type: field.TypeJSON},
 		{Name: "status", Type: field.TypeString, Default: "active"},
 		{Name: "weekly_cost_target", Type: field.TypeFloat64, Default: 0},
 		{Name: "created_at", Type: field.TypeTime},
@@ -1163,7 +1167,7 @@ var (
 			{
 				Name:    "relaygroupmapping_provider_id_source_group_id",
 				Unique:  false,
-				Columns: []*schema.Column{RelayGroupMappingsColumns[1], RelayGroupMappingsColumns[5]},
+				Columns: []*schema.Column{RelayGroupMappingsColumns[1], RelayGroupMappingsColumns[7]},
 			},
 		},
 	}

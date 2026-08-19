@@ -92,6 +92,41 @@ func (rgmu *RelayGroupMappingUpdate) SetNillablePlatform(s *string) *RelayGroupM
 	return rgmu
 }
 
+// SetTemplateGroupID sets the "template_group_id" field.
+func (rgmu *RelayGroupMappingUpdate) SetTemplateGroupID(i int64) *RelayGroupMappingUpdate {
+	rgmu.mutation.ResetTemplateGroupID()
+	rgmu.mutation.SetTemplateGroupID(i)
+	return rgmu
+}
+
+// SetNillableTemplateGroupID sets the "template_group_id" field if the given value is not nil.
+func (rgmu *RelayGroupMappingUpdate) SetNillableTemplateGroupID(i *int64) *RelayGroupMappingUpdate {
+	if i != nil {
+		rgmu.SetTemplateGroupID(*i)
+	}
+	return rgmu
+}
+
+// AddTemplateGroupID adds i to the "template_group_id" field.
+func (rgmu *RelayGroupMappingUpdate) AddTemplateGroupID(i int64) *RelayGroupMappingUpdate {
+	rgmu.mutation.AddTemplateGroupID(i)
+	return rgmu
+}
+
+// SetTemplateGroupName sets the "template_group_name" field.
+func (rgmu *RelayGroupMappingUpdate) SetTemplateGroupName(s string) *RelayGroupMappingUpdate {
+	rgmu.mutation.SetTemplateGroupName(s)
+	return rgmu
+}
+
+// SetNillableTemplateGroupName sets the "template_group_name" field if the given value is not nil.
+func (rgmu *RelayGroupMappingUpdate) SetNillableTemplateGroupName(s *string) *RelayGroupMappingUpdate {
+	if s != nil {
+		rgmu.SetTemplateGroupName(*s)
+	}
+	return rgmu
+}
+
 // SetSourceGroupID sets the "source_group_id" field.
 func (rgmu *RelayGroupMappingUpdate) SetSourceGroupID(i int64) *RelayGroupMappingUpdate {
 	rgmu.mutation.ResetSourceGroupID()
@@ -136,6 +171,18 @@ func (rgmu *RelayGroupMappingUpdate) SetGroupIds(i []int64) *RelayGroupMappingUp
 // AppendGroupIds appends i to the "group_ids" field.
 func (rgmu *RelayGroupMappingUpdate) AppendGroupIds(i []int64) *RelayGroupMappingUpdate {
 	rgmu.mutation.AppendGroupIds(i)
+	return rgmu
+}
+
+// SetMemberAssignments sets the "member_assignments" field.
+func (rgmu *RelayGroupMappingUpdate) SetMemberAssignments(m map[string]int64) *RelayGroupMappingUpdate {
+	rgmu.mutation.SetMemberAssignments(m)
+	return rgmu
+}
+
+// SetMemberSources sets the "member_sources" field.
+func (rgmu *RelayGroupMappingUpdate) SetMemberSources(m map[string]int64) *RelayGroupMappingUpdate {
+	rgmu.mutation.SetMemberSources(m)
 	return rgmu
 }
 
@@ -268,6 +315,15 @@ func (rgmu *RelayGroupMappingUpdate) sqlSave(ctx context.Context) (n int, err er
 	if value, ok := rgmu.mutation.Platform(); ok {
 		_spec.SetField(relaygroupmapping.FieldPlatform, field.TypeString, value)
 	}
+	if value, ok := rgmu.mutation.TemplateGroupID(); ok {
+		_spec.SetField(relaygroupmapping.FieldTemplateGroupID, field.TypeInt64, value)
+	}
+	if value, ok := rgmu.mutation.AddedTemplateGroupID(); ok {
+		_spec.AddField(relaygroupmapping.FieldTemplateGroupID, field.TypeInt64, value)
+	}
+	if value, ok := rgmu.mutation.TemplateGroupName(); ok {
+		_spec.SetField(relaygroupmapping.FieldTemplateGroupName, field.TypeString, value)
+	}
 	if value, ok := rgmu.mutation.SourceGroupID(); ok {
 		_spec.SetField(relaygroupmapping.FieldSourceGroupID, field.TypeInt64, value)
 	}
@@ -284,6 +340,12 @@ func (rgmu *RelayGroupMappingUpdate) sqlSave(ctx context.Context) (n int, err er
 		_spec.AddModifier(func(u *sql.UpdateBuilder) {
 			sqljson.Append(u, relaygroupmapping.FieldGroupIds, value)
 		})
+	}
+	if value, ok := rgmu.mutation.MemberAssignments(); ok {
+		_spec.SetField(relaygroupmapping.FieldMemberAssignments, field.TypeJSON, value)
+	}
+	if value, ok := rgmu.mutation.MemberSources(); ok {
+		_spec.SetField(relaygroupmapping.FieldMemberSources, field.TypeJSON, value)
 	}
 	if value, ok := rgmu.mutation.Status(); ok {
 		_spec.SetField(relaygroupmapping.FieldStatus, field.TypeString, value)
@@ -380,6 +442,41 @@ func (rgmuo *RelayGroupMappingUpdateOne) SetNillablePlatform(s *string) *RelayGr
 	return rgmuo
 }
 
+// SetTemplateGroupID sets the "template_group_id" field.
+func (rgmuo *RelayGroupMappingUpdateOne) SetTemplateGroupID(i int64) *RelayGroupMappingUpdateOne {
+	rgmuo.mutation.ResetTemplateGroupID()
+	rgmuo.mutation.SetTemplateGroupID(i)
+	return rgmuo
+}
+
+// SetNillableTemplateGroupID sets the "template_group_id" field if the given value is not nil.
+func (rgmuo *RelayGroupMappingUpdateOne) SetNillableTemplateGroupID(i *int64) *RelayGroupMappingUpdateOne {
+	if i != nil {
+		rgmuo.SetTemplateGroupID(*i)
+	}
+	return rgmuo
+}
+
+// AddTemplateGroupID adds i to the "template_group_id" field.
+func (rgmuo *RelayGroupMappingUpdateOne) AddTemplateGroupID(i int64) *RelayGroupMappingUpdateOne {
+	rgmuo.mutation.AddTemplateGroupID(i)
+	return rgmuo
+}
+
+// SetTemplateGroupName sets the "template_group_name" field.
+func (rgmuo *RelayGroupMappingUpdateOne) SetTemplateGroupName(s string) *RelayGroupMappingUpdateOne {
+	rgmuo.mutation.SetTemplateGroupName(s)
+	return rgmuo
+}
+
+// SetNillableTemplateGroupName sets the "template_group_name" field if the given value is not nil.
+func (rgmuo *RelayGroupMappingUpdateOne) SetNillableTemplateGroupName(s *string) *RelayGroupMappingUpdateOne {
+	if s != nil {
+		rgmuo.SetTemplateGroupName(*s)
+	}
+	return rgmuo
+}
+
 // SetSourceGroupID sets the "source_group_id" field.
 func (rgmuo *RelayGroupMappingUpdateOne) SetSourceGroupID(i int64) *RelayGroupMappingUpdateOne {
 	rgmuo.mutation.ResetSourceGroupID()
@@ -424,6 +521,18 @@ func (rgmuo *RelayGroupMappingUpdateOne) SetGroupIds(i []int64) *RelayGroupMappi
 // AppendGroupIds appends i to the "group_ids" field.
 func (rgmuo *RelayGroupMappingUpdateOne) AppendGroupIds(i []int64) *RelayGroupMappingUpdateOne {
 	rgmuo.mutation.AppendGroupIds(i)
+	return rgmuo
+}
+
+// SetMemberAssignments sets the "member_assignments" field.
+func (rgmuo *RelayGroupMappingUpdateOne) SetMemberAssignments(m map[string]int64) *RelayGroupMappingUpdateOne {
+	rgmuo.mutation.SetMemberAssignments(m)
+	return rgmuo
+}
+
+// SetMemberSources sets the "member_sources" field.
+func (rgmuo *RelayGroupMappingUpdateOne) SetMemberSources(m map[string]int64) *RelayGroupMappingUpdateOne {
+	rgmuo.mutation.SetMemberSources(m)
 	return rgmuo
 }
 
@@ -586,6 +695,15 @@ func (rgmuo *RelayGroupMappingUpdateOne) sqlSave(ctx context.Context) (_node *Re
 	if value, ok := rgmuo.mutation.Platform(); ok {
 		_spec.SetField(relaygroupmapping.FieldPlatform, field.TypeString, value)
 	}
+	if value, ok := rgmuo.mutation.TemplateGroupID(); ok {
+		_spec.SetField(relaygroupmapping.FieldTemplateGroupID, field.TypeInt64, value)
+	}
+	if value, ok := rgmuo.mutation.AddedTemplateGroupID(); ok {
+		_spec.AddField(relaygroupmapping.FieldTemplateGroupID, field.TypeInt64, value)
+	}
+	if value, ok := rgmuo.mutation.TemplateGroupName(); ok {
+		_spec.SetField(relaygroupmapping.FieldTemplateGroupName, field.TypeString, value)
+	}
 	if value, ok := rgmuo.mutation.SourceGroupID(); ok {
 		_spec.SetField(relaygroupmapping.FieldSourceGroupID, field.TypeInt64, value)
 	}
@@ -602,6 +720,12 @@ func (rgmuo *RelayGroupMappingUpdateOne) sqlSave(ctx context.Context) (_node *Re
 		_spec.AddModifier(func(u *sql.UpdateBuilder) {
 			sqljson.Append(u, relaygroupmapping.FieldGroupIds, value)
 		})
+	}
+	if value, ok := rgmuo.mutation.MemberAssignments(); ok {
+		_spec.SetField(relaygroupmapping.FieldMemberAssignments, field.TypeJSON, value)
+	}
+	if value, ok := rgmuo.mutation.MemberSources(); ok {
+		_spec.SetField(relaygroupmapping.FieldMemberSources, field.TypeJSON, value)
 	}
 	if value, ok := rgmuo.mutation.Status(); ok {
 		_spec.SetField(relaygroupmapping.FieldStatus, field.TypeString, value)

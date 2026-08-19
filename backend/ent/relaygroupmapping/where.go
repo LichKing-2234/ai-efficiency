@@ -74,6 +74,16 @@ func Platform(v string) predicate.RelayGroupMapping {
 	return predicate.RelayGroupMapping(sql.FieldEQ(FieldPlatform, v))
 }
 
+// TemplateGroupID applies equality check predicate on the "template_group_id" field. It's identical to TemplateGroupIDEQ.
+func TemplateGroupID(v int64) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldEQ(FieldTemplateGroupID, v))
+}
+
+// TemplateGroupName applies equality check predicate on the "template_group_name" field. It's identical to TemplateGroupNameEQ.
+func TemplateGroupName(v string) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldEQ(FieldTemplateGroupName, v))
+}
+
 // SourceGroupID applies equality check predicate on the "source_group_id" field. It's identical to SourceGroupIDEQ.
 func SourceGroupID(v int64) predicate.RelayGroupMapping {
 	return predicate.RelayGroupMapping(sql.FieldEQ(FieldSourceGroupID, v))
@@ -337,6 +347,111 @@ func PlatformEqualFold(v string) predicate.RelayGroupMapping {
 // PlatformContainsFold applies the ContainsFold predicate on the "platform" field.
 func PlatformContainsFold(v string) predicate.RelayGroupMapping {
 	return predicate.RelayGroupMapping(sql.FieldContainsFold(FieldPlatform, v))
+}
+
+// TemplateGroupIDEQ applies the EQ predicate on the "template_group_id" field.
+func TemplateGroupIDEQ(v int64) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldEQ(FieldTemplateGroupID, v))
+}
+
+// TemplateGroupIDNEQ applies the NEQ predicate on the "template_group_id" field.
+func TemplateGroupIDNEQ(v int64) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldNEQ(FieldTemplateGroupID, v))
+}
+
+// TemplateGroupIDIn applies the In predicate on the "template_group_id" field.
+func TemplateGroupIDIn(vs ...int64) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldIn(FieldTemplateGroupID, vs...))
+}
+
+// TemplateGroupIDNotIn applies the NotIn predicate on the "template_group_id" field.
+func TemplateGroupIDNotIn(vs ...int64) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldNotIn(FieldTemplateGroupID, vs...))
+}
+
+// TemplateGroupIDGT applies the GT predicate on the "template_group_id" field.
+func TemplateGroupIDGT(v int64) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldGT(FieldTemplateGroupID, v))
+}
+
+// TemplateGroupIDGTE applies the GTE predicate on the "template_group_id" field.
+func TemplateGroupIDGTE(v int64) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldGTE(FieldTemplateGroupID, v))
+}
+
+// TemplateGroupIDLT applies the LT predicate on the "template_group_id" field.
+func TemplateGroupIDLT(v int64) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldLT(FieldTemplateGroupID, v))
+}
+
+// TemplateGroupIDLTE applies the LTE predicate on the "template_group_id" field.
+func TemplateGroupIDLTE(v int64) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldLTE(FieldTemplateGroupID, v))
+}
+
+// TemplateGroupNameEQ applies the EQ predicate on the "template_group_name" field.
+func TemplateGroupNameEQ(v string) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldEQ(FieldTemplateGroupName, v))
+}
+
+// TemplateGroupNameNEQ applies the NEQ predicate on the "template_group_name" field.
+func TemplateGroupNameNEQ(v string) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldNEQ(FieldTemplateGroupName, v))
+}
+
+// TemplateGroupNameIn applies the In predicate on the "template_group_name" field.
+func TemplateGroupNameIn(vs ...string) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldIn(FieldTemplateGroupName, vs...))
+}
+
+// TemplateGroupNameNotIn applies the NotIn predicate on the "template_group_name" field.
+func TemplateGroupNameNotIn(vs ...string) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldNotIn(FieldTemplateGroupName, vs...))
+}
+
+// TemplateGroupNameGT applies the GT predicate on the "template_group_name" field.
+func TemplateGroupNameGT(v string) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldGT(FieldTemplateGroupName, v))
+}
+
+// TemplateGroupNameGTE applies the GTE predicate on the "template_group_name" field.
+func TemplateGroupNameGTE(v string) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldGTE(FieldTemplateGroupName, v))
+}
+
+// TemplateGroupNameLT applies the LT predicate on the "template_group_name" field.
+func TemplateGroupNameLT(v string) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldLT(FieldTemplateGroupName, v))
+}
+
+// TemplateGroupNameLTE applies the LTE predicate on the "template_group_name" field.
+func TemplateGroupNameLTE(v string) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldLTE(FieldTemplateGroupName, v))
+}
+
+// TemplateGroupNameContains applies the Contains predicate on the "template_group_name" field.
+func TemplateGroupNameContains(v string) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldContains(FieldTemplateGroupName, v))
+}
+
+// TemplateGroupNameHasPrefix applies the HasPrefix predicate on the "template_group_name" field.
+func TemplateGroupNameHasPrefix(v string) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldHasPrefix(FieldTemplateGroupName, v))
+}
+
+// TemplateGroupNameHasSuffix applies the HasSuffix predicate on the "template_group_name" field.
+func TemplateGroupNameHasSuffix(v string) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldHasSuffix(FieldTemplateGroupName, v))
+}
+
+// TemplateGroupNameEqualFold applies the EqualFold predicate on the "template_group_name" field.
+func TemplateGroupNameEqualFold(v string) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldEqualFold(FieldTemplateGroupName, v))
+}
+
+// TemplateGroupNameContainsFold applies the ContainsFold predicate on the "template_group_name" field.
+func TemplateGroupNameContainsFold(v string) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldContainsFold(FieldTemplateGroupName, v))
 }
 
 // SourceGroupIDEQ applies the EQ predicate on the "source_group_id" field.

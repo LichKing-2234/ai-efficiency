@@ -52,6 +52,34 @@ func (rgmc *RelayGroupMappingCreate) SetPlatform(s string) *RelayGroupMappingCre
 	return rgmc
 }
 
+// SetTemplateGroupID sets the "template_group_id" field.
+func (rgmc *RelayGroupMappingCreate) SetTemplateGroupID(i int64) *RelayGroupMappingCreate {
+	rgmc.mutation.SetTemplateGroupID(i)
+	return rgmc
+}
+
+// SetNillableTemplateGroupID sets the "template_group_id" field if the given value is not nil.
+func (rgmc *RelayGroupMappingCreate) SetNillableTemplateGroupID(i *int64) *RelayGroupMappingCreate {
+	if i != nil {
+		rgmc.SetTemplateGroupID(*i)
+	}
+	return rgmc
+}
+
+// SetTemplateGroupName sets the "template_group_name" field.
+func (rgmc *RelayGroupMappingCreate) SetTemplateGroupName(s string) *RelayGroupMappingCreate {
+	rgmc.mutation.SetTemplateGroupName(s)
+	return rgmc
+}
+
+// SetNillableTemplateGroupName sets the "template_group_name" field if the given value is not nil.
+func (rgmc *RelayGroupMappingCreate) SetNillableTemplateGroupName(s *string) *RelayGroupMappingCreate {
+	if s != nil {
+		rgmc.SetTemplateGroupName(*s)
+	}
+	return rgmc
+}
+
 // SetSourceGroupID sets the "source_group_id" field.
 func (rgmc *RelayGroupMappingCreate) SetSourceGroupID(i int64) *RelayGroupMappingCreate {
 	rgmc.mutation.SetSourceGroupID(i)
@@ -75,6 +103,18 @@ func (rgmc *RelayGroupMappingCreate) SetNillableSourceGroupName(s *string) *Rela
 // SetGroupIds sets the "group_ids" field.
 func (rgmc *RelayGroupMappingCreate) SetGroupIds(i []int64) *RelayGroupMappingCreate {
 	rgmc.mutation.SetGroupIds(i)
+	return rgmc
+}
+
+// SetMemberAssignments sets the "member_assignments" field.
+func (rgmc *RelayGroupMappingCreate) SetMemberAssignments(m map[string]int64) *RelayGroupMappingCreate {
+	rgmc.mutation.SetMemberAssignments(m)
+	return rgmc
+}
+
+// SetMemberSources sets the "member_sources" field.
+func (rgmc *RelayGroupMappingCreate) SetMemberSources(m map[string]int64) *RelayGroupMappingCreate {
+	rgmc.mutation.SetMemberSources(m)
 	return rgmc
 }
 
@@ -173,9 +213,25 @@ func (rgmc *RelayGroupMappingCreate) defaults() {
 		v := relaygroupmapping.DefaultDepartmentName
 		rgmc.mutation.SetDepartmentName(v)
 	}
+	if _, ok := rgmc.mutation.TemplateGroupID(); !ok {
+		v := relaygroupmapping.DefaultTemplateGroupID
+		rgmc.mutation.SetTemplateGroupID(v)
+	}
+	if _, ok := rgmc.mutation.TemplateGroupName(); !ok {
+		v := relaygroupmapping.DefaultTemplateGroupName
+		rgmc.mutation.SetTemplateGroupName(v)
+	}
 	if _, ok := rgmc.mutation.SourceGroupName(); !ok {
 		v := relaygroupmapping.DefaultSourceGroupName
 		rgmc.mutation.SetSourceGroupName(v)
+	}
+	if _, ok := rgmc.mutation.MemberAssignments(); !ok {
+		v := relaygroupmapping.DefaultMemberAssignments
+		rgmc.mutation.SetMemberAssignments(v)
+	}
+	if _, ok := rgmc.mutation.MemberSources(); !ok {
+		v := relaygroupmapping.DefaultMemberSources
+		rgmc.mutation.SetMemberSources(v)
 	}
 	if _, ok := rgmc.mutation.Status(); !ok {
 		v := relaygroupmapping.DefaultStatus
@@ -219,6 +275,12 @@ func (rgmc *RelayGroupMappingCreate) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "RelayGroupMapping.platform": %w`, err)}
 		}
 	}
+	if _, ok := rgmc.mutation.TemplateGroupID(); !ok {
+		return &ValidationError{Name: "template_group_id", err: errors.New(`ent: missing required field "RelayGroupMapping.template_group_id"`)}
+	}
+	if _, ok := rgmc.mutation.TemplateGroupName(); !ok {
+		return &ValidationError{Name: "template_group_name", err: errors.New(`ent: missing required field "RelayGroupMapping.template_group_name"`)}
+	}
 	if _, ok := rgmc.mutation.SourceGroupID(); !ok {
 		return &ValidationError{Name: "source_group_id", err: errors.New(`ent: missing required field "RelayGroupMapping.source_group_id"`)}
 	}
@@ -232,6 +294,12 @@ func (rgmc *RelayGroupMappingCreate) check() error {
 	}
 	if _, ok := rgmc.mutation.GroupIds(); !ok {
 		return &ValidationError{Name: "group_ids", err: errors.New(`ent: missing required field "RelayGroupMapping.group_ids"`)}
+	}
+	if _, ok := rgmc.mutation.MemberAssignments(); !ok {
+		return &ValidationError{Name: "member_assignments", err: errors.New(`ent: missing required field "RelayGroupMapping.member_assignments"`)}
+	}
+	if _, ok := rgmc.mutation.MemberSources(); !ok {
+		return &ValidationError{Name: "member_sources", err: errors.New(`ent: missing required field "RelayGroupMapping.member_sources"`)}
 	}
 	if _, ok := rgmc.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "RelayGroupMapping.status"`)}
@@ -287,6 +355,14 @@ func (rgmc *RelayGroupMappingCreate) createSpec() (*RelayGroupMapping, *sqlgraph
 		_spec.SetField(relaygroupmapping.FieldPlatform, field.TypeString, value)
 		_node.Platform = value
 	}
+	if value, ok := rgmc.mutation.TemplateGroupID(); ok {
+		_spec.SetField(relaygroupmapping.FieldTemplateGroupID, field.TypeInt64, value)
+		_node.TemplateGroupID = value
+	}
+	if value, ok := rgmc.mutation.TemplateGroupName(); ok {
+		_spec.SetField(relaygroupmapping.FieldTemplateGroupName, field.TypeString, value)
+		_node.TemplateGroupName = value
+	}
 	if value, ok := rgmc.mutation.SourceGroupID(); ok {
 		_spec.SetField(relaygroupmapping.FieldSourceGroupID, field.TypeInt64, value)
 		_node.SourceGroupID = value
@@ -298,6 +374,14 @@ func (rgmc *RelayGroupMappingCreate) createSpec() (*RelayGroupMapping, *sqlgraph
 	if value, ok := rgmc.mutation.GroupIds(); ok {
 		_spec.SetField(relaygroupmapping.FieldGroupIds, field.TypeJSON, value)
 		_node.GroupIds = value
+	}
+	if value, ok := rgmc.mutation.MemberAssignments(); ok {
+		_spec.SetField(relaygroupmapping.FieldMemberAssignments, field.TypeJSON, value)
+		_node.MemberAssignments = value
+	}
+	if value, ok := rgmc.mutation.MemberSources(); ok {
+		_spec.SetField(relaygroupmapping.FieldMemberSources, field.TypeJSON, value)
+		_node.MemberSources = value
 	}
 	if value, ok := rgmc.mutation.Status(); ok {
 		_spec.SetField(relaygroupmapping.FieldStatus, field.TypeString, value)

@@ -26,12 +26,20 @@ type RelayGroupMapping struct {
 	DepartmentName string `json:"department_name,omitempty"`
 	// Platform holds the value of the "platform" field.
 	Platform string `json:"platform,omitempty"`
+	// TemplateGroupID holds the value of the "template_group_id" field.
+	TemplateGroupID int64 `json:"template_group_id,omitempty"`
+	// TemplateGroupName holds the value of the "template_group_name" field.
+	TemplateGroupName string `json:"template_group_name,omitempty"`
 	// SourceGroupID holds the value of the "source_group_id" field.
 	SourceGroupID int64 `json:"source_group_id,omitempty"`
 	// SourceGroupName holds the value of the "source_group_name" field.
 	SourceGroupName string `json:"source_group_name,omitempty"`
 	// GroupIds holds the value of the "group_ids" field.
 	GroupIds []int64 `json:"group_ids,omitempty"`
+	// MemberAssignments holds the value of the "member_assignments" field.
+	MemberAssignments map[string]int64 `json:"member_assignments,omitempty"`
+	// MemberSources holds the value of the "member_sources" field.
+	MemberSources map[string]int64 `json:"member_sources,omitempty"`
 	// Status holds the value of the "status" field.
 	Status string `json:"status,omitempty"`
 	// WeeklyCostTarget holds the value of the "weekly_cost_target" field.
@@ -48,13 +56,13 @@ func (*RelayGroupMapping) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case relaygroupmapping.FieldGroupIds:
+		case relaygroupmapping.FieldGroupIds, relaygroupmapping.FieldMemberAssignments, relaygroupmapping.FieldMemberSources:
 			values[i] = new([]byte)
 		case relaygroupmapping.FieldWeeklyCostTarget:
 			values[i] = new(sql.NullFloat64)
-		case relaygroupmapping.FieldID, relaygroupmapping.FieldProviderID, relaygroupmapping.FieldSourceGroupID:
+		case relaygroupmapping.FieldID, relaygroupmapping.FieldProviderID, relaygroupmapping.FieldTemplateGroupID, relaygroupmapping.FieldSourceGroupID:
 			values[i] = new(sql.NullInt64)
-		case relaygroupmapping.FieldDepartmentExternalID, relaygroupmapping.FieldDepartmentName, relaygroupmapping.FieldPlatform, relaygroupmapping.FieldSourceGroupName, relaygroupmapping.FieldStatus:
+		case relaygroupmapping.FieldDepartmentExternalID, relaygroupmapping.FieldDepartmentName, relaygroupmapping.FieldPlatform, relaygroupmapping.FieldTemplateGroupName, relaygroupmapping.FieldSourceGroupName, relaygroupmapping.FieldStatus:
 			values[i] = new(sql.NullString)
 		case relaygroupmapping.FieldCreatedAt, relaygroupmapping.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -103,6 +111,18 @@ func (rgm *RelayGroupMapping) assignValues(columns []string, values []any) error
 			} else if value.Valid {
 				rgm.Platform = value.String
 			}
+		case relaygroupmapping.FieldTemplateGroupID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field template_group_id", values[i])
+			} else if value.Valid {
+				rgm.TemplateGroupID = value.Int64
+			}
+		case relaygroupmapping.FieldTemplateGroupName:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field template_group_name", values[i])
+			} else if value.Valid {
+				rgm.TemplateGroupName = value.String
+			}
 		case relaygroupmapping.FieldSourceGroupID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field source_group_id", values[i])
@@ -121,6 +141,22 @@ func (rgm *RelayGroupMapping) assignValues(columns []string, values []any) error
 			} else if value != nil && len(*value) > 0 {
 				if err := json.Unmarshal(*value, &rgm.GroupIds); err != nil {
 					return fmt.Errorf("unmarshal field group_ids: %w", err)
+				}
+			}
+		case relaygroupmapping.FieldMemberAssignments:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field member_assignments", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &rgm.MemberAssignments); err != nil {
+					return fmt.Errorf("unmarshal field member_assignments: %w", err)
+				}
+			}
+		case relaygroupmapping.FieldMemberSources:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field member_sources", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &rgm.MemberSources); err != nil {
+					return fmt.Errorf("unmarshal field member_sources: %w", err)
 				}
 			}
 		case relaygroupmapping.FieldStatus:
@@ -195,6 +231,12 @@ func (rgm *RelayGroupMapping) String() string {
 	builder.WriteString("platform=")
 	builder.WriteString(rgm.Platform)
 	builder.WriteString(", ")
+	builder.WriteString("template_group_id=")
+	builder.WriteString(fmt.Sprintf("%v", rgm.TemplateGroupID))
+	builder.WriteString(", ")
+	builder.WriteString("template_group_name=")
+	builder.WriteString(rgm.TemplateGroupName)
+	builder.WriteString(", ")
 	builder.WriteString("source_group_id=")
 	builder.WriteString(fmt.Sprintf("%v", rgm.SourceGroupID))
 	builder.WriteString(", ")
@@ -203,6 +245,12 @@ func (rgm *RelayGroupMapping) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("group_ids=")
 	builder.WriteString(fmt.Sprintf("%v", rgm.GroupIds))
+	builder.WriteString(", ")
+	builder.WriteString("member_assignments=")
+	builder.WriteString(fmt.Sprintf("%v", rgm.MemberAssignments))
+	builder.WriteString(", ")
+	builder.WriteString("member_sources=")
+	builder.WriteString(fmt.Sprintf("%v", rgm.MemberSources))
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(rgm.Status)

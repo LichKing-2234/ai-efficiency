@@ -896,28 +896,44 @@ func init() {
 	relaygroupmappingDescPlatform := relaygroupmappingFields[3].Descriptor()
 	// relaygroupmapping.PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
 	relaygroupmapping.PlatformValidator = relaygroupmappingDescPlatform.Validators[0].(func(string) error)
+	// relaygroupmappingDescTemplateGroupID is the schema descriptor for template_group_id field.
+	relaygroupmappingDescTemplateGroupID := relaygroupmappingFields[4].Descriptor()
+	// relaygroupmapping.DefaultTemplateGroupID holds the default value on creation for the template_group_id field.
+	relaygroupmapping.DefaultTemplateGroupID = relaygroupmappingDescTemplateGroupID.Default.(int64)
+	// relaygroupmappingDescTemplateGroupName is the schema descriptor for template_group_name field.
+	relaygroupmappingDescTemplateGroupName := relaygroupmappingFields[5].Descriptor()
+	// relaygroupmapping.DefaultTemplateGroupName holds the default value on creation for the template_group_name field.
+	relaygroupmapping.DefaultTemplateGroupName = relaygroupmappingDescTemplateGroupName.Default.(string)
 	// relaygroupmappingDescSourceGroupID is the schema descriptor for source_group_id field.
-	relaygroupmappingDescSourceGroupID := relaygroupmappingFields[4].Descriptor()
+	relaygroupmappingDescSourceGroupID := relaygroupmappingFields[6].Descriptor()
 	// relaygroupmapping.SourceGroupIDValidator is a validator for the "source_group_id" field. It is called by the builders before save.
 	relaygroupmapping.SourceGroupIDValidator = relaygroupmappingDescSourceGroupID.Validators[0].(func(int64) error)
 	// relaygroupmappingDescSourceGroupName is the schema descriptor for source_group_name field.
-	relaygroupmappingDescSourceGroupName := relaygroupmappingFields[5].Descriptor()
+	relaygroupmappingDescSourceGroupName := relaygroupmappingFields[7].Descriptor()
 	// relaygroupmapping.DefaultSourceGroupName holds the default value on creation for the source_group_name field.
 	relaygroupmapping.DefaultSourceGroupName = relaygroupmappingDescSourceGroupName.Default.(string)
+	// relaygroupmappingDescMemberAssignments is the schema descriptor for member_assignments field.
+	relaygroupmappingDescMemberAssignments := relaygroupmappingFields[9].Descriptor()
+	// relaygroupmapping.DefaultMemberAssignments holds the default value on creation for the member_assignments field.
+	relaygroupmapping.DefaultMemberAssignments = relaygroupmappingDescMemberAssignments.Default.(map[string]int64)
+	// relaygroupmappingDescMemberSources is the schema descriptor for member_sources field.
+	relaygroupmappingDescMemberSources := relaygroupmappingFields[10].Descriptor()
+	// relaygroupmapping.DefaultMemberSources holds the default value on creation for the member_sources field.
+	relaygroupmapping.DefaultMemberSources = relaygroupmappingDescMemberSources.Default.(map[string]int64)
 	// relaygroupmappingDescStatus is the schema descriptor for status field.
-	relaygroupmappingDescStatus := relaygroupmappingFields[7].Descriptor()
+	relaygroupmappingDescStatus := relaygroupmappingFields[11].Descriptor()
 	// relaygroupmapping.DefaultStatus holds the default value on creation for the status field.
 	relaygroupmapping.DefaultStatus = relaygroupmappingDescStatus.Default.(string)
 	// relaygroupmappingDescWeeklyCostTarget is the schema descriptor for weekly_cost_target field.
-	relaygroupmappingDescWeeklyCostTarget := relaygroupmappingFields[8].Descriptor()
+	relaygroupmappingDescWeeklyCostTarget := relaygroupmappingFields[12].Descriptor()
 	// relaygroupmapping.DefaultWeeklyCostTarget holds the default value on creation for the weekly_cost_target field.
 	relaygroupmapping.DefaultWeeklyCostTarget = relaygroupmappingDescWeeklyCostTarget.Default.(float64)
 	// relaygroupmappingDescCreatedAt is the schema descriptor for created_at field.
-	relaygroupmappingDescCreatedAt := relaygroupmappingFields[9].Descriptor()
+	relaygroupmappingDescCreatedAt := relaygroupmappingFields[13].Descriptor()
 	// relaygroupmapping.DefaultCreatedAt holds the default value on creation for the created_at field.
 	relaygroupmapping.DefaultCreatedAt = relaygroupmappingDescCreatedAt.Default.(func() time.Time)
 	// relaygroupmappingDescUpdatedAt is the schema descriptor for updated_at field.
-	relaygroupmappingDescUpdatedAt := relaygroupmappingFields[10].Descriptor()
+	relaygroupmappingDescUpdatedAt := relaygroupmappingFields[14].Descriptor()
 	// relaygroupmapping.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	relaygroupmapping.DefaultUpdatedAt = relaygroupmappingDescUpdatedAt.Default.(func() time.Time)
 	// relaygroupmapping.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

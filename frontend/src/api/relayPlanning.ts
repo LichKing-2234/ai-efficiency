@@ -11,6 +11,8 @@ export interface RelayPlanningCandidate {
   global_token_rank: number
   current_group_ids?: number[]
   migratable_key_count: number
+  source_member: boolean
+  can_add: boolean
   selected: boolean
   eligible: boolean
   warnings?: string[]
@@ -29,6 +31,8 @@ export interface RelayPlanningPlan {
   department_id: string
   department_name: string
   platform: string
+  template_group_id: number
+  template_group_name: string
   source_group_id: number
   source_group_name: string
   weekly_cost_target: number
@@ -47,11 +51,16 @@ export interface RelayPlanningMapping {
   department_id: string
   department_name: string
   platform: string
+  template_group_id: number
+  template_group_name: string
   source_group_id: number
   source_group_name: string
   group_ids: number[]
   status: string
   weekly_cost_target: number
+  member_assignments?: Record<string, number>
+  member_sources?: Record<string, number>
+  warnings?: string[]
   updated_at: string
 }
 
@@ -67,11 +76,13 @@ export interface RelayPlanningRequest {
   provider_id: number
   department_id: string
   platform: string
+  template_group_id: number
   source_group_id: number
   weekly_cost_target: number
   group_count?: number
   selected_user_ids?: number[]
   existing_mapping_id?: number
+  assignments?: RelayPlanningAssignment[]
 }
 
 export function previewRelayPlan(data: RelayPlanningRequest) {
@@ -88,11 +99,11 @@ export function listRelayGroupMappings(providerId?: number) {
   })
 }
 
-export function rebindRelayGroupMapping(id: number, data: { source_group_id: number; group_ids: number[]; status?: string }) {
+export function rebindRelayGroupMapping(id: number, data: { department_id?: string; template_group_id?: number; source_group_id?: number; group_ids: number[]; status?: string }) {
   return client.put<ApiResponse<RelayPlanningMapping>>(`/admin/relay-planning/mappings/${id}/rebind`, data)
 }
 
-export function previewRelayReplan(id: number, data: { selected_user_ids?: number[]; group_count?: number }) {
+export function previewRelayReplan(id: number, data: { selected_user_ids?: number[]; assignments?: RelayPlanningAssignment[] }) {
   return client.post<ApiResponse<RelayPlanningPlan>>(`/admin/relay-planning/mappings/${id}/replan`, data)
 }
 

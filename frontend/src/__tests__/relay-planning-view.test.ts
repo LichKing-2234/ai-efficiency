@@ -22,6 +22,8 @@ const plan = {
   department_id: 'dept-alpha',
   department_name: 'SDK Framework',
   platform: 'openai',
+  template_group_id: 42,
+  template_group_name: 'Group Alpha',
   source_group_id: 42,
   source_group_name: 'Group Alpha',
   weekly_cost_target: 2500,
@@ -36,6 +38,8 @@ const plan = {
     range_tokens: 100,
     global_token_rank: 1,
     migratable_key_count: 1,
+    source_member: true,
+    can_add: true,
     selected: true,
     eligible: true,
   }],
@@ -88,6 +92,7 @@ async function fillAndPreview(wrapper: ReturnType<typeof mount>) {
   await wrapper.get('[data-testid="department-select"]').setValue('dept-alpha')
   await wrapper.get('[data-testid="platform-select"]').setValue('openai')
   await flushPromises()
+  await wrapper.get('[data-testid="template-group-select"]').setValue('42')
   await wrapper.get('[data-testid="source-group-select"]').setValue('42')
   await wrapper.get('[data-testid="cost-target-input"]').setValue(2500)
   await flushPromises()

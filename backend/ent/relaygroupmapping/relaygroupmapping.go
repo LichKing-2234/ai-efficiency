@@ -21,12 +21,20 @@ const (
 	FieldDepartmentName = "department_name"
 	// FieldPlatform holds the string denoting the platform field in the database.
 	FieldPlatform = "platform"
+	// FieldTemplateGroupID holds the string denoting the template_group_id field in the database.
+	FieldTemplateGroupID = "template_group_id"
+	// FieldTemplateGroupName holds the string denoting the template_group_name field in the database.
+	FieldTemplateGroupName = "template_group_name"
 	// FieldSourceGroupID holds the string denoting the source_group_id field in the database.
 	FieldSourceGroupID = "source_group_id"
 	// FieldSourceGroupName holds the string denoting the source_group_name field in the database.
 	FieldSourceGroupName = "source_group_name"
 	// FieldGroupIds holds the string denoting the group_ids field in the database.
 	FieldGroupIds = "group_ids"
+	// FieldMemberAssignments holds the string denoting the member_assignments field in the database.
+	FieldMemberAssignments = "member_assignments"
+	// FieldMemberSources holds the string denoting the member_sources field in the database.
+	FieldMemberSources = "member_sources"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
 	// FieldWeeklyCostTarget holds the string denoting the weekly_cost_target field in the database.
@@ -46,9 +54,13 @@ var Columns = []string{
 	FieldDepartmentExternalID,
 	FieldDepartmentName,
 	FieldPlatform,
+	FieldTemplateGroupID,
+	FieldTemplateGroupName,
 	FieldSourceGroupID,
 	FieldSourceGroupName,
 	FieldGroupIds,
+	FieldMemberAssignments,
+	FieldMemberSources,
 	FieldStatus,
 	FieldWeeklyCostTarget,
 	FieldCreatedAt,
@@ -72,10 +84,18 @@ var (
 	DefaultDepartmentName string
 	// PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
 	PlatformValidator func(string) error
+	// DefaultTemplateGroupID holds the default value on creation for the "template_group_id" field.
+	DefaultTemplateGroupID int64
+	// DefaultTemplateGroupName holds the default value on creation for the "template_group_name" field.
+	DefaultTemplateGroupName string
 	// SourceGroupIDValidator is a validator for the "source_group_id" field. It is called by the builders before save.
 	SourceGroupIDValidator func(int64) error
 	// DefaultSourceGroupName holds the default value on creation for the "source_group_name" field.
 	DefaultSourceGroupName string
+	// DefaultMemberAssignments holds the default value on creation for the "member_assignments" field.
+	DefaultMemberAssignments map[string]int64
+	// DefaultMemberSources holds the default value on creation for the "member_sources" field.
+	DefaultMemberSources map[string]int64
 	// DefaultStatus holds the default value on creation for the "status" field.
 	DefaultStatus string
 	// DefaultWeeklyCostTarget holds the default value on creation for the "weekly_cost_target" field.
@@ -114,6 +134,16 @@ func ByDepartmentName(opts ...sql.OrderTermOption) OrderOption {
 // ByPlatform orders the results by the platform field.
 func ByPlatform(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPlatform, opts...).ToFunc()
+}
+
+// ByTemplateGroupID orders the results by the template_group_id field.
+func ByTemplateGroupID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTemplateGroupID, opts...).ToFunc()
+}
+
+// ByTemplateGroupName orders the results by the template_group_name field.
+func ByTemplateGroupName(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTemplateGroupName, opts...).ToFunc()
 }
 
 // BySourceGroupID orders the results by the source_group_id field.

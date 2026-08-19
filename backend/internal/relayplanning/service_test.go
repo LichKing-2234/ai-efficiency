@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,11 +14,53 @@ import (
 
 func TestPreviewRequestJSONUsesSnakeCase(t *testing.T) {
 	var got PreviewRequest
-	if err := json.Unmarshal([]byte(`{"provider_id":7,"department_id":"dept-alpha","platform":"openai","source_group_id":42,"weekly_cost_target":12.5,"group_count":2,"selected_user_ids":[1,2],"existing_mapping_id":9}`), &got); err != nil {
+	if err := json.Unmarshal([]byte(`{"provider_id":7,"department_id":"dept-alpha","platform":"openai","template_group_id":84,"source_group_id":42,"weekly_cost_target":12.5,"group_count":2,"selected_user_ids":[1,2],"existing_mapping_id":9}`), &got); err != nil {
 		t.Fatalf("unmarshal preview request: %v", err)
 	}
-	if got.ProviderID != 7 || got.DepartmentID != "dept-alpha" || got.Platform != "openai" || got.SourceGroupID != 42 || got.WeeklyCostTarget != 12.5 || got.GroupCount != 2 || len(got.SelectedUserIDs) != 2 || got.ExistingMappingID != 9 {
+	if got.ProviderID != 7 || got.DepartmentID != "dept-alpha" || got.Platform != "openai" || got.TemplateGroupID != 84 || got.SourceGroupID != 42 || got.WeeklyCostTarget != 12.5 || got.GroupCount != 2 || len(got.SelectedUserIDs) != 2 || got.ExistingMappingID != 9 {
 		t.Fatalf("decoded preview request = %#v", got)
+	}
+}
+
+func TestNormalizeRequestKeepsTemplateAndSourceIndependent(t *testing.T) {
+	got := normalizeRequest(PreviewRequest{DepartmentID: " dept-alpha ", Platform: " openai ", TemplateGroupID: 84, SourceGroupID: 42})
+	if got.TemplateGroupID != 84 || got.SourceGroupID != 42 || got.DepartmentID != "dept-alpha" || got.Platform != "openai" {
+		t.Fatalf("normalized request = %#v", got)
+	}
+	got = normalizeRequest(PreviewRequest{TemplateGroupID: 84})
+	if got.TemplateGroupID != 84 || got.SourceGroupID != 84 {
+		t.Fatalf("single-group request did not preserve compatibility fallback: %#v", got)
+	}
+}
+
+func TestValidateAssignmentsAllowsExplicitNonSourceMemberOnce(t *testing.T) {
+	assignments, err := validateAssignments([]Assignment{{Index: 0, UserIDs: []int{2}}}, []Candidate{
+		{UserID: 1, RangeCost: 10, SourceMember: true, CanAdd: true},
+		{UserID: 2, RangeCost: 3, SourceMember: false, CanAdd: true},
+	}, 1)
+	if err != nil {
+		t.Fatalf("validateAssignments() error = %v", err)
+	}
+	if assignments[0].TotalCost != 3 || len(assignments[0].UserIDs) != 1 || assignments[0].UserIDs[0] != 2 {
+		t.Fatalf("validated assignments = %#v", assignments)
+	}
+}
+
+func TestValidateAssignmentsRejectsDuplicateMember(t *testing.T) {
+	_, err := validateAssignments([]Assignment{{Index: 0, UserIDs: []int{1}}, {Index: 1, UserIDs: []int{1}}}, []Candidate{{UserID: 1, CanAdd: true}}, 2)
+	if err == nil || !strings.Contains(err.Error(), "assigned more than once") {
+		t.Fatalf("validateAssignments() error = %v, want duplicate-member error", err)
+	}
+}
+
+func TestMappingAvailabilityWarningsArePlatformScoped(t *testing.T) {
+	warnings := mappingAvailabilityWarnings(Mapping{Platform: "openai", TemplateGroupID: 11, SourceGroupID: 12, GroupIDs: []int64{13}}, []relay.Group{
+		{ID: 11, Platform: "openai"},
+		{ID: 12, Platform: "anthropic"},
+		{ID: 13, Platform: "openai"},
+	})
+	if len(warnings) != 1 || warnings[0] != "migration source group 12 is unavailable" {
+		t.Fatalf("mapping availability warnings = %#v", warnings)
 	}
 }
 

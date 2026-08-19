@@ -67,15 +67,17 @@ func (h *RelayPlanningHandler) Rebind(c *gin.Context) {
 		return
 	}
 	var req struct {
-		SourceGroupID int64   `json:"source_group_id"`
-		GroupIDs      []int64 `json:"group_ids"`
-		Status        string  `json:"status"`
+		DepartmentID    string  `json:"department_id"`
+		TemplateGroupID int64   `json:"template_group_id"`
+		SourceGroupID   int64   `json:"source_group_id"`
+		GroupIDs        []int64 `json:"group_ids"`
+		Status          string  `json:"status"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		pkg.Error(c, http.StatusBadRequest, "invalid rebind request")
 		return
 	}
-	mapping, err := h.service.Rebind(c.Request.Context(), id, req.SourceGroupID, req.GroupIDs, req.Status)
+	mapping, err := h.service.Rebind(c.Request.Context(), id, req.DepartmentID, req.TemplateGroupID, req.SourceGroupID, req.GroupIDs, req.Status)
 	if err != nil {
 		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 		return
@@ -90,14 +92,14 @@ func (h *RelayPlanningHandler) Replan(c *gin.Context) {
 		return
 	}
 	var req struct {
-		SelectedUserIDs []int `json:"selected_user_ids"`
-		GroupCount      int   `json:"group_count"`
+		SelectedUserIDs []int                      `json:"selected_user_ids"`
+		Assignments     []relayplanning.Assignment `json:"assignments"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil && err != io.EOF {
 		pkg.Error(c, http.StatusBadRequest, "invalid replan request")
 		return
 	}
-	plan, err := h.service.Replan(c.Request.Context(), id, req.SelectedUserIDs, req.GroupCount)
+	plan, err := h.service.Replan(c.Request.Context(), id, req.SelectedUserIDs, req.Assignments)
 	if err != nil {
 		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 		return
