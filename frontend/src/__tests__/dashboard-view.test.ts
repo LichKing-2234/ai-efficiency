@@ -258,8 +258,10 @@ describe('DashboardView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('30 Days Requests')
-    expect(wrapper.text()).toContain('Group quotas are temporarily unavailable.')
-    expect(wrapper.text()).not.toContain('Usage dashboard is temporarily unavailable')
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Group quotas are temporarily unavailable.')
+      expect(wrapper.text()).not.toContain('Usage dashboard is temporarily unavailable')
+    })
   })
 
   it('renders a localized marker only for stale usage', async () => {
@@ -1294,9 +1296,13 @@ describe('DashboardView', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="usage-subscription-reset-42"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="usage-pool-42"]').text()).toContain('37.5%')
-    expect(wrapper.find('[data-testid="usage-pool-42"]').text()).toContain('3 / 4')
-    expect(wrapper.find('[data-testid="usage-pool-42"]').text()).toContain('not your personal Used / Quota')
+    await vi.waitFor(() => {
+      const pool = wrapper.find('[data-testid="usage-pool-42"]')
+      expect(pool.exists()).toBe(true)
+      expect(pool.text()).toContain('37.5%')
+      expect(pool.text()).toContain('3 / 4')
+      expect(pool.text()).toContain('not your personal Used / Quota')
+    })
   })
 
   it('constrains a single quota card to an intentional readable width', async () => {

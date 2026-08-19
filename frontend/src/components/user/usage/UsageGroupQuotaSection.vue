@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from '@/i18n'
 import type { UserUsageGroupPoolUsageState, UserUsageGroupQuotaState } from '@/types'
+
+const UsagePoolSnapshot = defineAsyncComponent(() => import('./UsagePoolSnapshot.vue'))
 
 const props = defineProps<{
   quotas?: UserUsageGroupQuotaState | null
   poolUsage?: UserUsageGroupPoolUsageState | null
-  poolLoading?: boolean
   loading?: boolean
   rangeLabel?: string
   showResetRequest?: boolean
@@ -95,17 +96,6 @@ function poolItem(groupID: string) {
   return props.poolUsage?.groups?.find((item) => item.group_id === groupID) ?? null
 }
 
-function poolUtilization(item: NonNullable<ReturnType<typeof poolItem>>) {
-  return `${item.average_weekly_utilization.toFixed(1)}%`
-}
-
-function poolAsOfLabel(value?: string | null) {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
-}
-
 onMounted(() => {
   resetTimer = setInterval(() => {
     now.value = Date.now()
@@ -188,33 +178,17 @@ onBeforeUnmount(() => {
           <time class="ml-1" :datetime="group.reset_at ?? undefined">{{ resetDateLabel(group.reset_at) }}</time>
           <span class="ml-1">({{ resetCountdown(group.reset_at) }})</span>
         </div>
-        <div
-          v-if="props.poolLoading && !poolItem(group.group_id)"
-          class="mt-3 rounded-md border border-dashed border-slate-200 bg-white px-3 py-2 text-xs text-slate-500"
-          :data-testid="`usage-pool-loading-${group.group_id}`"
-        >
-          {{ t('usageDashboard.poolUsageLoading') }}
-        </div>
-        <div
-          v-else-if="poolItem(group.group_id)"
-          class="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600"
-          :data-testid="`usage-pool-${group.group_id}`"
-        >
-          <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-            <span class="font-medium text-slate-700">{{ t('usageDashboard.poolUsageTitle') }}</span>
-            <span class="text-sm font-semibold text-slate-900">{{ poolUtilization(poolItem(group.group_id)!) }}</span>
-          </div>
-          <p class="mt-1">{{ t('usageDashboard.poolUsageCoverage', { valid: poolItem(group.group_id)!.valid_oauth_accounts, total: poolItem(group.group_id)!.total_active_oauth_accounts }) }}</p>
-          <p class="mt-1 text-slate-500">{{ t('usageDashboard.poolUsageHelp') }}</p>
-          <p v-if="poolItem(group.group_id)!.next_reset_at" class="mt-1">
-            {{ t('usageDashboard.poolUsageReset') }}
-            <time class="ml-1" :datetime="poolItem(group.group_id)!.next_reset_at ?? undefined">{{ resetDateLabel(poolItem(group.group_id)!.next_reset_at) }}</time>
-            <span class="ml-1">({{ resetCountdown(poolItem(group.group_id)!.next_reset_at) }})</span>
-          </p>
-          <p v-if="poolItem(group.group_id)!.as_of" class="mt-1 text-slate-400">
-            {{ t('usageDashboard.poolUsageAsOf', { value: poolAsOfLabel(poolItem(group.group_id)!.as_of) }) }}
-          </p>
-        </div>
+        <Suspense v-if="poolItem(group.group_id)">
+          <UsagePoolSnapshot :item="poolItem(group.group_id)!" />
+          <template #fallback>
+            <div
+              class="mt-3 rounded-md border border-dashed border-slate-200 bg-white px-3 py-2 text-xs text-slate-500"
+              :data-testid="`usage-pool-loading-${group.group_id}`"
+            >
+              {{ t('usageDashboard.poolUsageLoading') }}
+            </div>
+          </template>
+        </Suspense>
       </article>
     </div>
   </section>

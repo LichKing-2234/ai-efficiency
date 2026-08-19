@@ -84,16 +84,22 @@
           </div>
         </template>
       </Suspense>
-      <UsageGroupQuotaSection
-        :quotas="currentGroupQuotas"
-        :pool-usage="props.memberRoute ? null : personalPoolUsage"
-        :pool-loading="!props.memberRoute && poolLoading"
-        :loading="quotaLoading && !currentGroupQuotas"
-        :range-label="selectedRangeLabel"
-        :show-reset-request="canRequestQuotaReset"
-        :reset-request-loading="quotaResetOptionsLoading"
-        @request-reset="openQuotaResetModal"
-      />
+      <Suspense>
+        <UsageGroupQuotaSection
+          :quotas="currentGroupQuotas"
+          :pool-usage="props.memberRoute ? null : personalPoolUsage"
+          :loading="quotaLoading && !currentGroupQuotas"
+          :range-label="selectedRangeLabel"
+          :show-reset-request="canRequestQuotaReset"
+          :reset-request-loading="quotaResetOptionsLoading"
+          @request-reset="openQuotaResetModal"
+        />
+        <template #fallback>
+          <div class="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-500" data-testid="usage-group-quotas-loading">
+            {{ t('usageDashboard.loading') }}
+          </div>
+        </template>
+      </Suspense>
       <UsageStatsCards
         :stats="currentSnapshot?.stats ?? null"
         :trend="currentSnapshot?.trend ?? []"
@@ -136,10 +142,10 @@ import type {
   UserUsageGroupQuotaState,
 } from '@/types'
 import UsageStatsCards from '@/components/user/usage/UsageStatsCards.vue'
-import UsageGroupQuotaSection from '@/components/user/usage/UsageGroupQuotaSection.vue'
 
 const UsageTrendChart = defineAsyncComponent(() => import('@/components/user/usage/UsageTrendChart.vue'))
 const UsageModelChart = defineAsyncComponent(() => import('@/components/user/usage/UsageModelChart.vue'))
+const UsageGroupQuotaSection = defineAsyncComponent(() => import('@/components/user/usage/UsageGroupQuotaSection.vue'))
 const SelectedSubjectSubscriptionRows = defineAsyncComponent(() => import('@/components/user/usage/SelectedSubjectSubscriptionRows.vue'))
 const loadQuotaResetRequestModal = () => import('@/components/quota-reset/QuotaResetRequestModal.vue')
 const QuotaResetRequestModal = defineAsyncComponent(loadQuotaResetRequestModal)
@@ -167,7 +173,6 @@ const memberRouteSubject = ref<TeamUsageSubject | null>(null)
 const selectedSubjectSubscriptions = ref<SubjectSubscriptionGroup[]>([])
 const usageLoading = ref(!props.initialSnapshot)
 const quotaLoading = ref(false)
-const poolLoading = ref(false)
 const usageErrorMessage = ref('')
 const credentialError = ref(false)
 const quotaResetModalOpen = ref(false)
@@ -289,7 +294,6 @@ async function loadPersonalDashboard(generation: number, requestedRange: RangeOp
   poolController = nextPoolController
   usageLoading.value = true
   quotaLoading.value = true
-  poolLoading.value = true
   personalQuotas.value = null
   personalPoolUsage.value = null
   usageErrorMessage.value = ''
@@ -339,9 +343,6 @@ async function loadPersonalDashboard(generation: number, requestedRange: RangeOp
     .catch((error: any) => {
       if (generation !== requestGeneration || isCanceled(error, nextPoolController.signal)) return
       personalPoolUsage.value = null
-    })
-    .finally(() => {
-      if (generation === requestGeneration) poolLoading.value = false
     })
 
   await Promise.allSettled([usageTask, quotaTask, poolTask])
