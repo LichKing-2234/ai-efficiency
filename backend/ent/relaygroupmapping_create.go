@@ -118,6 +118,12 @@ func (rgmc *RelayGroupMappingCreate) SetMemberSources(m map[string]int64) *Relay
 	return rgmc
 }
 
+// SetOperationState sets the "operation_state" field.
+func (rgmc *RelayGroupMappingCreate) SetOperationState(m map[string]map[string]string) *RelayGroupMappingCreate {
+	rgmc.mutation.SetOperationState(m)
+	return rgmc
+}
+
 // SetStatus sets the "status" field.
 func (rgmc *RelayGroupMappingCreate) SetStatus(s string) *RelayGroupMappingCreate {
 	rgmc.mutation.SetStatus(s)
@@ -233,6 +239,10 @@ func (rgmc *RelayGroupMappingCreate) defaults() {
 		v := relaygroupmapping.DefaultMemberSources
 		rgmc.mutation.SetMemberSources(v)
 	}
+	if _, ok := rgmc.mutation.OperationState(); !ok {
+		v := relaygroupmapping.DefaultOperationState
+		rgmc.mutation.SetOperationState(v)
+	}
 	if _, ok := rgmc.mutation.Status(); !ok {
 		v := relaygroupmapping.DefaultStatus
 		rgmc.mutation.SetStatus(v)
@@ -300,6 +310,9 @@ func (rgmc *RelayGroupMappingCreate) check() error {
 	}
 	if _, ok := rgmc.mutation.MemberSources(); !ok {
 		return &ValidationError{Name: "member_sources", err: errors.New(`ent: missing required field "RelayGroupMapping.member_sources"`)}
+	}
+	if _, ok := rgmc.mutation.OperationState(); !ok {
+		return &ValidationError{Name: "operation_state", err: errors.New(`ent: missing required field "RelayGroupMapping.operation_state"`)}
 	}
 	if _, ok := rgmc.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "RelayGroupMapping.status"`)}
@@ -382,6 +395,10 @@ func (rgmc *RelayGroupMappingCreate) createSpec() (*RelayGroupMapping, *sqlgraph
 	if value, ok := rgmc.mutation.MemberSources(); ok {
 		_spec.SetField(relaygroupmapping.FieldMemberSources, field.TypeJSON, value)
 		_node.MemberSources = value
+	}
+	if value, ok := rgmc.mutation.OperationState(); ok {
+		_spec.SetField(relaygroupmapping.FieldOperationState, field.TypeJSON, value)
+		_node.OperationState = value
 	}
 	if value, ok := rgmc.mutation.Status(); ok {
 		_spec.SetField(relaygroupmapping.FieldStatus, field.TypeString, value)

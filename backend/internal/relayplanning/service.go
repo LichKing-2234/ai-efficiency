@@ -66,6 +66,7 @@ type PreviewRequest struct {
 	GroupCount        int          `json:"group_count"`
 	SelectedUserIDs   []int        `json:"selected_user_ids"`
 	Assignments       []Assignment `json:"assignments,omitempty"`
+	AdoptRelayUserIDs []int64      `json:"adopt_relay_user_ids,omitempty"`
 	ExistingMappingID int          `json:"existing_mapping_id"`
 }
 
@@ -95,41 +96,58 @@ type Assignment struct {
 }
 
 type Plan struct {
-	ProviderID        int          `json:"provider_id"`
-	DepartmentID      string       `json:"department_id"`
-	DepartmentName    string       `json:"department_name"`
-	Platform          string       `json:"platform"`
-	TemplateGroupID   int64        `json:"template_group_id"`
-	TemplateGroupName string       `json:"template_group_name"`
-	SourceGroupID     int64        `json:"source_group_id"`
-	SourceGroupName   string       `json:"source_group_name"`
-	WeeklyCostTarget  float64      `json:"weekly_cost_target"`
-	RecommendedCount  int          `json:"recommended_group_count"`
-	GroupCount        int          `json:"group_count"`
-	Candidates        []Candidate  `json:"candidates"`
-	Assignments       []Assignment `json:"assignments"`
-	Warnings          []string     `json:"warnings,omitempty"`
-	GeneratedAt       time.Time    `json:"generated_at"`
-	MappingID         int          `json:"mapping_id,omitempty"`
+	ProviderID        int               `json:"provider_id"`
+	DepartmentID      string            `json:"department_id"`
+	DepartmentName    string            `json:"department_name"`
+	Platform          string            `json:"platform"`
+	TemplateGroupID   int64             `json:"template_group_id"`
+	TemplateGroupName string            `json:"template_group_name"`
+	SourceGroupID     int64             `json:"source_group_id"`
+	SourceGroupName   string            `json:"source_group_name"`
+	WeeklyCostTarget  float64           `json:"weekly_cost_target"`
+	RecommendedCount  int               `json:"recommended_group_count"`
+	GroupCount        int               `json:"group_count"`
+	Candidates        []Candidate       `json:"candidates"`
+	Assignments       []Assignment      `json:"assignments"`
+	UnmanagedMembers  []UnmanagedMember `json:"unmanaged_members,omitempty"`
+	Warnings          []string          `json:"warnings,omitempty"`
+	GeneratedAt       time.Time         `json:"generated_at"`
+	MappingID         int               `json:"mapping_id,omitempty"`
+}
+
+type UnmanagedMember struct {
+	RelayUserID    int64   `json:"relay_user_id"`
+	Username       string  `json:"username"`
+	Email          string  `json:"email"`
+	TargetGroupIDs []int64 `json:"target_group_ids"`
+	RangeCost      float64 `json:"range_cost"`
 }
 
 type Mapping struct {
-	ID                int              `json:"id"`
-	ProviderID        int              `json:"provider_id"`
-	DepartmentID      string           `json:"department_id"`
-	DepartmentName    string           `json:"department_name"`
-	Platform          string           `json:"platform"`
-	TemplateGroupID   int64            `json:"template_group_id"`
-	TemplateGroupName string           `json:"template_group_name"`
-	SourceGroupID     int64            `json:"source_group_id"`
-	SourceGroupName   string           `json:"source_group_name"`
-	GroupIDs          []int64          `json:"group_ids"`
-	Status            string           `json:"status"`
-	WeeklyCostTarget  float64          `json:"weekly_cost_target"`
-	MemberAssignments map[string]int64 `json:"member_assignments,omitempty"`
-	MemberSources     map[string]int64 `json:"member_sources,omitempty"`
-	Warnings          []string         `json:"warnings,omitempty"`
-	UpdatedAt         time.Time        `json:"updated_at"`
+	ID                    int                          `json:"id"`
+	ProviderID            int                          `json:"provider_id"`
+	DepartmentID          string                       `json:"department_id"`
+	DepartmentName        string                       `json:"department_name"`
+	Platform              string                       `json:"platform"`
+	TemplateGroupID       int64                        `json:"template_group_id"`
+	TemplateGroupName     string                       `json:"template_group_name"`
+	SourceGroupID         int64                        `json:"source_group_id"`
+	SourceGroupName       string                       `json:"source_group_name"`
+	GroupIDs              []int64                      `json:"group_ids"`
+	Status                string                       `json:"status"`
+	WeeklyCostTarget      float64                      `json:"weekly_cost_target"`
+	MemberAssignments     map[string]int64             `json:"member_assignments,omitempty"`
+	MemberSources         map[string]int64             `json:"member_sources,omitempty"`
+	OperationState        map[string]map[string]string `json:"operation_state,omitempty"`
+	UnmanagedMembers      []UnmanagedMember            `json:"unmanaged_members,omitempty"`
+	DepartmentSuggestions []DepartmentSuggestion       `json:"department_suggestions,omitempty"`
+	Warnings              []string                     `json:"warnings,omitempty"`
+	UpdatedAt             time.Time                    `json:"updated_at"`
+}
+
+type DepartmentSuggestion struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type ExecuteRequest struct {
@@ -147,6 +165,7 @@ type GroupResult struct {
 
 type MemberResult struct {
 	UserID        int      `json:"user_id"`
+	RelayUserID   int64    `json:"relay_user_id,omitempty"`
 	TargetGroupID int64    `json:"target_group_id,omitempty"`
 	Subscription  string   `json:"subscription"`
 	SourceRemoval string   `json:"source_removal"`
@@ -185,11 +204,11 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	}
 	template, err := findSourceGroup(groups, req.TemplateGroupID, req.Platform)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve template group: %w", err)
 	}
 	source, err := findSourceGroup(groups, req.SourceGroupID, req.Platform)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve migration source group: %w", err)
 	}
 	users, err := s.users.Targets(ctx, adminusers.Filters{DepartmentID: req.DepartmentID}, maxPlanningUsers)
 	if err != nil {
@@ -207,7 +226,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	}
 	candidates, err := s.buildCandidates(ctx, p, req.ProviderID, providerConfig.ConfigurationVersion, users, source, req.Platform, req.DepartmentID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build relay planning candidates: %w", err)
 	}
 	eligible := make([]Candidate, 0, len(candidates))
 	selectedProvided := len(selected) > 0
@@ -221,33 +240,33 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		}
 	}
 	recommended, count := resolveGroupCount(req, eligible)
-	if count == 0 {
-		for _, candidate := range candidates {
-			if candidate.CanAdd && (!selectedProvided || candidate.Selected) {
-				recommended, count = 1, 1
-				break
-			}
-		}
-	}
 	if count == 0 && len(req.Assignments) > 0 {
 		count = assignmentCount(req.Assignments)
 	}
 	assignments := allocate(eligible, count)
-	if req.ExistingMappingID > 0 && len(req.Assignments) == 0 {
+	var unmanagedMembers []UnmanagedMember
+	if req.ExistingMappingID > 0 {
 		mapping, mappingErr := s.client.RelayGroupMapping.Get(ctx, req.ExistingMappingID)
 		if mappingErr != nil {
 			return nil, fmt.Errorf("load relay group mapping assignments: %w", mappingErr)
 		}
-		assignments = stableMappingAssignments(mapping, candidates, selected, count, mapping.WeeklyCostTarget)
+		unmanagedMembers, err = s.loadUnmanagedMembers(ctx, p, mapping)
+		if err != nil {
+			return nil, fmt.Errorf("load unmanaged relay members: %w", err)
+		}
+		if len(req.Assignments) == 0 {
+			assignments = stableMappingAssignments(mapping, candidates, unmanagedMembers, selected, count, mapping.WeeklyCostTarget)
+		}
 	}
 	if len(req.Assignments) > 0 {
 		assignments, err = validateAssignments(req.Assignments, candidates, count)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("validate relay planning assignments: %w", err)
 		}
+		addUnmanagedCapacity(assignments, unmanagedMembers)
 	}
 	if err := s.assignTargets(ctx, req, groups, template.Name, assignments); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("assign relay planning targets: %w", err)
 	}
 	warnings := make([]string, 0)
 	if len(eligible) == 0 {
@@ -285,7 +304,8 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		TemplateGroupID: template.ID, TemplateGroupName: template.Name,
 		SourceGroupID: source.ID, SourceGroupName: source.Name, WeeklyCostTarget: req.WeeklyCostTarget,
 		RecommendedCount: recommended, GroupCount: count, Candidates: candidates, Assignments: assignments,
-		Warnings: uniqueStrings(warnings), GeneratedAt: time.Now().UTC(),
+		UnmanagedMembers: unmanagedMembers,
+		Warnings:         uniqueStrings(warnings), GeneratedAt: time.Now().UTC(),
 	}
 	assigned := make(map[int]struct{})
 	for _, assignment := range assignments {
@@ -307,7 +327,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	return plan, nil
 }
 
-func stableMappingAssignments(mapping *ent.RelayGroupMapping, candidates []Candidate, selected map[int]struct{}, count int, target float64) []Assignment {
+func stableMappingAssignments(mapping *ent.RelayGroupMapping, candidates []Candidate, unmanaged []UnmanagedMember, selected map[int]struct{}, count int, target float64) []Assignment {
 	if count <= 0 {
 		return nil
 	}
@@ -323,6 +343,7 @@ func stableMappingAssignments(mapping *ent.RelayGroupMapping, candidates []Candi
 	for _, candidate := range candidates {
 		byUser[candidate.UserID] = candidate
 	}
+	addUnmanagedCapacity(assignments, unmanaged)
 	for rawUserID, groupID := range mapping.MemberAssignments {
 		userID, err := strconv.Atoi(rawUserID)
 		if err != nil || groupID <= 0 {
@@ -393,13 +414,26 @@ func stableMappingAssignments(mapping *ent.RelayGroupMapping, candidates []Candi
 	return assignments
 }
 
+func addUnmanagedCapacity(assignments []Assignment, unmanaged []UnmanagedMember) {
+	for _, member := range unmanaged {
+		for _, targetGroupID := range member.TargetGroupIDs {
+			for index := range assignments {
+				if assignments[index].TargetGroupID == targetGroupID {
+					assignments[index].TotalCost += member.RangeCost
+					break
+				}
+			}
+		}
+	}
+}
+
 func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionResult, error) {
 	if strings.TrimSpace(req.OperationKey) == "" {
 		return nil, fmt.Errorf("operation_key is required")
 	}
 	plan, err := s.Preview(ctx, req.PreviewRequest)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("preview relay plan for execution: %w", err)
 	}
 	p, err := s.resolver.Resolve(ctx, req.ProviderID)
 	if err != nil {
@@ -467,18 +501,38 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 			memberResults = append(memberResults, member)
 		}
 	}
-	var mapping *Mapping
-	if len(targetIDs) > 0 {
-		groupIDList := make([]int64, 0, len(targetIDs))
-		for index := 0; index < plan.GroupCount; index++ {
-			if targetIDs[index] > 0 {
-				groupIDList = append(groupIDList, targetIDs[index])
+	if len(req.AdoptRelayUserIDs) > 0 {
+		adopted := make(map[int64]struct{}, len(req.AdoptRelayUserIDs))
+		for _, relayUserID := range req.AdoptRelayUserIDs {
+			if relayUserID > 0 {
+				adopted[relayUserID] = struct{}{}
 			}
 		}
-		mapping, err = s.saveMapping(ctx, plan, groupIDList)
-		if err != nil {
-			return nil, fmt.Errorf("save group mapping: %w", err)
+		for _, unmanaged := range plan.UnmanagedMembers {
+			if _, requested := adopted[unmanaged.RelayUserID]; !requested {
+				continue
+			}
+			for _, targetID := range unmanaged.TargetGroupIDs {
+				member := MemberResult{RelayUserID: unmanaged.RelayUserID, TargetGroupID: targetID, Subscription: "failed", SourceRemoval: "skipped"}
+				if assigner == nil {
+					member.Error = "relay provider does not support subscription assignment"
+				} else if assignErr := assigner.AssignSubscriptionForUser(ctx, unmanaged.RelayUserID, targetID, defaultValidityDays); assignErr != nil && !isAlreadyAssignedError(assignErr) {
+					member.Error = assignErr.Error()
+				} else {
+					member.Subscription = "succeeded"
+				}
+				memberResults = append(memberResults, member)
+			}
 		}
+	}
+	groupIDList := make([]int64, plan.GroupCount)
+	for index := 0; index < plan.GroupCount; index++ {
+		groupIDList[index] = targetIDs[index]
+	}
+	state := executionState(req.OperationKey, groupResults, memberResults)
+	mapping, err := s.saveMapping(ctx, plan, groupIDList, state)
+	if err != nil {
+		return nil, fmt.Errorf("save group mapping: %w", err)
 	}
 	return &ExecutionResult{Plan: plan, Groups: groupResults, Members: memberResults, Mapping: mapping}, nil
 }
@@ -514,6 +568,10 @@ func (s *Service) ListMappings(ctx context.Context, providerID int) ([]Mapping, 
 		}
 		mapping.Warnings = append(mapping.Warnings, mappingAvailabilityWarnings(mapping, groupCache[mapping.ProviderID])...)
 		mapping.Warnings = append(mapping.Warnings, mappingRelationshipWarnings(ctx, s.client, providerCache[mapping.ProviderID], mapping)...)
+		if departmentErr := s.validateDepartment(ctx, mapping.DepartmentID); departmentErr != nil {
+			mapping.Warnings = append(mapping.Warnings, fmt.Sprintf("department %s is unavailable", mapping.DepartmentID))
+			mapping.DepartmentSuggestions = s.departmentSuggestions(ctx, mapping.ProviderID, mapping.Platform, mapping.DepartmentID)
+		}
 		if len(mapping.GroupIDs) == 0 {
 			mapping.Warnings = append(mapping.Warnings, "mapping has no target groups")
 		}
@@ -555,15 +613,14 @@ func (s *Service) GetMapping(ctx context.Context, id int) (*Mapping, error) {
 		return nil, fmt.Errorf("get relay group mapping: %w", err)
 	}
 	mapping := mappingFromEnt(row)
-	if s.resolver != nil {
-		if provider, resolveErr := s.resolver.Resolve(ctx, mapping.ProviderID); resolveErr == nil {
-			if lister, ok := provider.(relay.PlatformGroupLister); ok {
-				if groups, listErr := lister.ListPlatformGroups(ctx); listErr == nil {
-					mapping.Warnings = mappingAvailabilityWarnings(mapping, groups)
-				}
-			}
-		}
+	if groups, groupsErr := s.listPlatformGroups(ctx, mapping.ProviderID); groupsErr == nil {
+		mapping.Warnings = mappingAvailabilityWarnings(mapping, groups)
 	}
+	if departmentErr := s.validateDepartment(ctx, mapping.DepartmentID); departmentErr != nil {
+		mapping.Warnings = append(mapping.Warnings, fmt.Sprintf("department %s is unavailable", mapping.DepartmentID))
+		mapping.DepartmentSuggestions = s.departmentSuggestions(ctx, mapping.ProviderID, mapping.Platform, mapping.DepartmentID)
+	}
+	mapping.Warnings = uniqueStrings(mapping.Warnings)
 	return &mapping, nil
 }
 
@@ -589,7 +646,7 @@ func (s *Service) Rebind(ctx context.Context, id int, departmentID string, templ
 	if departmentID != row.DepartmentExternalID {
 		name, nameErr := s.departmentName(ctx, departmentID)
 		if nameErr != nil {
-			return nil, fmt.Errorf("department %s is unavailable", departmentID)
+			return nil, fmt.Errorf("department %s is unavailable: %w", departmentID, nameErr)
 		}
 		departmentName = name
 	}
@@ -599,30 +656,38 @@ func (s *Service) Rebind(ctx context.Context, id int, departmentID string, templ
 	if status == "" {
 		status = "active"
 	}
-	templateName, sourceName := row.TemplateGroupName, row.SourceGroupName
-	if s.resolver != nil {
-		if provider, resolveErr := s.resolver.Resolve(ctx, row.ProviderID); resolveErr == nil {
-			if lister, ok := provider.(relay.PlatformGroupLister); ok {
-				if groups, listErr := lister.ListPlatformGroups(ctx); listErr == nil {
-					for _, group := range groups {
-						if group.ID == templateGroupID {
-							templateName = group.Name
-						}
-						if group.ID == sourceGroupID {
-							sourceName = group.Name
-						}
-					}
-				}
-			}
+	groups, groupsErr := s.listPlatformGroups(ctx, row.ProviderID)
+	if groupsErr != nil {
+		return nil, fmt.Errorf("validate relay group mapping groups: %w", groupsErr)
+	}
+	template, groupErr := findGroupForPlatform(groups, templateGroupID, row.Platform, "template")
+	if groupErr != nil {
+		return nil, groupErr
+	}
+	source, groupErr := findGroupForPlatform(groups, sourceGroupID, row.Platform, "migration source")
+	if groupErr != nil {
+		return nil, groupErr
+	}
+	seenGroups := make(map[int64]struct{}, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if groupID <= 0 {
+			return nil, fmt.Errorf("target group IDs must be positive")
+		}
+		if _, exists := seenGroups[groupID]; exists {
+			return nil, fmt.Errorf("target group %d is duplicated", groupID)
+		}
+		seenGroups[groupID] = struct{}{}
+		if _, targetErr := findGroupForPlatform(groups, groupID, row.Platform, "target"); targetErr != nil {
+			return nil, targetErr
 		}
 	}
 	row, err = s.client.RelayGroupMapping.UpdateOneID(id).
 		SetDepartmentExternalID(departmentID).
 		SetDepartmentName(departmentName).
 		SetTemplateGroupID(templateGroupID).
-		SetTemplateGroupName(templateName).
+		SetTemplateGroupName(template.Name).
 		SetSourceGroupID(sourceGroupID).
-		SetSourceGroupName(sourceName).
+		SetSourceGroupName(source.Name).
 		SetGroupIds(append([]int64(nil), groupIDs...)).
 		SetStatus(status).
 		Save(ctx)
@@ -630,15 +695,89 @@ func (s *Service) Rebind(ctx context.Context, id int, departmentID string, templ
 		return nil, fmt.Errorf("rebind relay group mapping: %w", err)
 	}
 	mapping := mappingFromEnt(row)
+	if nameErr := s.validateDepartment(ctx, mapping.DepartmentID); nameErr != nil {
+		mapping.Warnings = append(mapping.Warnings, fmt.Sprintf("department %s is unavailable", mapping.DepartmentID))
+		mapping.DepartmentSuggestions = s.departmentSuggestions(ctx, mapping.ProviderID, mapping.Platform, mapping.DepartmentID)
+	}
 	return &mapping, nil
 }
 
-func (s *Service) Replan(ctx context.Context, mappingID int, selected []int, assignments []Assignment) (*Plan, error) {
+func (s *Service) listPlatformGroups(ctx context.Context, providerID int) ([]relay.Group, error) {
+	if s.resolver == nil {
+		return nil, fmt.Errorf("relay provider resolver is unavailable")
+	}
+	p, err := s.resolver.Resolve(ctx, providerID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve relay provider: %w", err)
+	}
+	lister, ok := p.(relay.PlatformGroupLister)
+	if !ok {
+		return nil, fmt.Errorf("relay provider does not support group listing")
+	}
+	groups, err := lister.ListPlatformGroups(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list relay groups: %w", err)
+	}
+	return groups, nil
+}
+
+func findGroupForPlatform(groups []relay.Group, id int64, platform, role string) (relay.Group, error) {
+	for _, group := range groups {
+		if group.ID != id {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(group.Platform), strings.TrimSpace(platform)) {
+			return relay.Group{}, fmt.Errorf("%s group %d does not belong to platform %s", role, id, platform)
+		}
+		return group, nil
+	}
+	return relay.Group{}, fmt.Errorf("%s group %d is unavailable", role, id)
+}
+
+func (s *Service) validateDepartment(ctx context.Context, externalID string) error {
+	_, err := s.departmentName(ctx, externalID)
+	return err
+}
+
+func (s *Service) departmentSuggestions(ctx context.Context, providerID int, platform, currentID string) []DepartmentSuggestion {
+	snapshot, found, err := directorysync.CurrentSnapshot(ctx, s.client)
+	if err != nil || !found {
+		return nil
+	}
+	mappings, err := s.client.RelayGroupMapping.Query().Where(
+		relaygroupmapping.ProviderIDEQ(providerID),
+		relaygroupmapping.PlatformEQ(platform),
+	).All(ctx)
+	if err != nil {
+		return nil
+	}
+	bound := make(map[string]struct{}, len(mappings))
+	for _, mapping := range mappings {
+		bound[mapping.DepartmentExternalID] = struct{}{}
+	}
+	departments, err := s.client.DirectoryDepartment.Query().Where(directorydepartment.SourceIDEQ(snapshot.SourceID)).Order(ent.Asc(directorydepartment.FieldName)).Limit(50).All(ctx)
+	if err != nil {
+		return nil
+	}
+	suggestions := make([]DepartmentSuggestion, 0, len(departments))
+	for _, department := range departments {
+		if department.ExternalID == currentID {
+			continue
+		}
+		if _, exists := bound[department.ExternalID]; exists {
+			continue
+		}
+		suggestions = append(suggestions, DepartmentSuggestion{ID: department.ExternalID, Name: department.Name})
+	}
+	return suggestions
+}
+
+func (s *Service) Replan(ctx context.Context, mappingID int, selected []int, assignments []Assignment, adoptRelayUserIDs []int64) (*Plan, error) {
 	row, err := s.client.RelayGroupMapping.Get(ctx, mappingID)
 	if err != nil {
 		return nil, fmt.Errorf("load relay group mapping: %w", err)
 	}
-	return s.Preview(ctx, PreviewRequest{ProviderID: row.ProviderID, DepartmentID: row.DepartmentExternalID, Platform: row.Platform, TemplateGroupID: row.TemplateGroupID, SourceGroupID: row.SourceGroupID, WeeklyCostTarget: row.WeeklyCostTarget, GroupCount: len(row.GroupIds), SelectedUserIDs: selected, Assignments: assignments, ExistingMappingID: mappingID})
+	return s.Preview(ctx, PreviewRequest{ProviderID: row.ProviderID, DepartmentID: row.DepartmentExternalID, Platform: row.Platform, TemplateGroupID: row.TemplateGroupID, SourceGroupID: row.SourceGroupID, WeeklyCostTarget: row.WeeklyCostTarget, GroupCount: len(row.GroupIds), SelectedUserIDs: selected, Assignments: assignments, AdoptRelayUserIDs: adoptRelayUserIDs, ExistingMappingID: mappingID})
 }
 
 // ExecuteReplan applies only the final member-to-target assignment matrix. The
@@ -647,7 +786,7 @@ func (s *Service) Replan(ctx context.Context, mappingID int, selected []int, ass
 func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteRequest) (*ExecutionResult, error) {
 	mapping, err := s.GetMapping(ctx, mappingID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load mapping for replan execution: %w", err)
 	}
 	if strings.TrimSpace(req.OperationKey) == "" {
 		return nil, fmt.Errorf("operation_key is required")
@@ -674,11 +813,11 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	req.ExistingMappingID = mappingID
 	plan, err := s.Preview(ctx, req.PreviewRequest)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("preview relay replan for execution: %w", err)
 	}
 	p, err := s.resolver.Resolve(ctx, mapping.ProviderID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve relay provider for replan: %w", err)
 	}
 	assigner, _ := p.(subscriptionAssigner)
 	remover, _ := p.(subscriptionRemover)
@@ -702,34 +841,118 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 			continue
 		}
 		targetID := mapping.GroupIDs[assignment.Index]
+		if targetID <= 0 {
+			continue
+		}
 		for _, userID := range assignment.UserIDs {
 			candidate := candidateByUserID(plan.Candidates, userID)
 			if candidate == nil {
 				continue
 			}
 			key := strconv.Itoa(userID)
-			fromGroupID := oldAssignments[key]
-			if fromGroupID <= 0 {
+			retry := operationStateNeedsRetry(mapping.OperationState, "member:"+key)
+			fromGroupID := int64(0)
+			if retry {
 				fromGroupID = oldSources[key]
-			}
-			if fromGroupID <= 0 && candidate.SourceMember {
-				fromGroupID = mapping.SourceGroupID
+				if fromGroupID <= 0 && candidate.SourceMember {
+					fromGroupID = mapping.SourceGroupID
+				}
+			} else {
+				fromGroupID = oldAssignments[key]
+				if fromGroupID <= 0 && candidate.SourceMember {
+					fromGroupID = mapping.SourceGroupID
+				}
 			}
 			member := MemberResult{UserID: userID, TargetGroupID: targetID, Subscription: "skipped", SourceRemoval: "skipped"}
-			if fromGroupID == targetID {
+			if !retry && fromGroupID == targetID {
 				member.Subscription = "unchanged"
 				member.SourceRemoval = "skipped"
-			} else {
+			} else if candidate.SourceMember {
 				member = executeMemberMigration(ctx, p, assigner, remover, binder, candidate, targetID, fromGroupID, member)
+			} else {
+				member = executeMemberMigration(ctx, p, assigner, nil, nil, candidate, targetID, 0, member)
 			}
 			memberResults = append(memberResults, member)
 		}
 	}
-	resultMapping, err := s.saveMapping(ctx, plan, append([]int64(nil), mapping.GroupIDs...))
+	if len(req.AdoptRelayUserIDs) > 0 {
+		adopted := make(map[int64]struct{}, len(req.AdoptRelayUserIDs))
+		for _, relayUserID := range req.AdoptRelayUserIDs {
+			if relayUserID > 0 {
+				adopted[relayUserID] = struct{}{}
+			}
+		}
+		for _, unmanaged := range plan.UnmanagedMembers {
+			if _, requested := adopted[unmanaged.RelayUserID]; !requested {
+				continue
+			}
+			for _, targetID := range unmanaged.TargetGroupIDs {
+				member := MemberResult{RelayUserID: unmanaged.RelayUserID, TargetGroupID: targetID, Subscription: "failed", SourceRemoval: "skipped"}
+				if assigner == nil {
+					member.Error = "relay provider does not support subscription assignment"
+				} else if assignErr := assigner.AssignSubscriptionForUser(ctx, unmanaged.RelayUserID, targetID, defaultValidityDays); assignErr != nil && !isAlreadyAssignedError(assignErr) {
+					member.Error = assignErr.Error()
+				} else {
+					member.Subscription = "succeeded"
+				}
+				memberResults = append(memberResults, member)
+			}
+		}
+	}
+	state := executionState(req.OperationKey, groupResults, memberResults)
+	resultMapping, err := s.saveMapping(ctx, plan, append([]int64(nil), mapping.GroupIDs...), state)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("save relay replan mapping: %w", err)
 	}
 	return &ExecutionResult{Plan: plan, Groups: groupResults, Members: memberResults, Mapping: resultMapping}, nil
+}
+
+func executionState(operationKey string, groups []GroupResult, members []MemberResult) map[string]map[string]string {
+	state := map[string]map[string]string{
+		"operation": {"key": operationKey, "status": "succeeded"},
+	}
+	for _, group := range groups {
+		entry := map[string]string{"status": group.Status}
+		if group.ID > 0 {
+			entry["target_group_id"] = strconv.FormatInt(group.ID, 10)
+		}
+		if group.Name != "" {
+			entry["target_group_name"] = group.Name
+		}
+		if group.Error != "" {
+			entry["error"] = group.Error
+			state["operation"]["status"] = "needs_retry"
+		}
+		state[fmt.Sprintf("group:%d", group.Index)] = entry
+	}
+	for _, member := range members {
+		entry := map[string]string{
+			"subscription":   member.Subscription,
+			"source_removal": member.SourceRemoval,
+		}
+		if member.RelayUserID > 0 && member.Error == "" && member.Subscription == "succeeded" {
+			entry["status"] = "adopted"
+		}
+		if member.TargetGroupID > 0 {
+			entry["target_group_id"] = strconv.FormatInt(member.TargetGroupID, 10)
+		}
+		if len(member.APIKeys) > 0 {
+			entry["api_keys"] = strings.Join(member.APIKeys, ",")
+		}
+		if member.Error != "" {
+			entry["error"] = member.Error
+			state["operation"]["status"] = "needs_retry"
+		}
+		if member.Subscription == "failed" || member.SourceRemoval == "failed" {
+			state["operation"]["status"] = "needs_retry"
+		}
+		if member.RelayUserID > 0 {
+			state[fmt.Sprintf("relay:%d:%d", member.RelayUserID, member.TargetGroupID)] = entry
+		} else {
+			state[fmt.Sprintf("member:%d", member.UserID)] = entry
+		}
+	}
+	return state
 }
 
 func executeMemberMigration(ctx context.Context, p relay.Provider, assigner subscriptionAssigner, remover subscriptionRemover, binder relay.APIKeyGroupBinder, candidate *Candidate, targetGroupID, fromGroupID int64, member MemberResult) MemberResult {
@@ -751,15 +974,21 @@ func executeMemberMigration(ctx context.Context, p relay.Provider, assigner subs
 		return member
 	}
 	if binder != nil {
+		apiKeyError := false
 		for _, key := range keys {
 			if apiKeyGroupID(key) != fromGroupID {
 				continue
 			}
 			if bindErr := binder.BindAPIKeyToGroup(ctx, key.ID, targetGroupID); bindErr != nil {
 				member.APIKeys = append(member.APIKeys, fmt.Sprintf("%d:failed:%s", key.ID, bindErr))
+				apiKeyError = true
 			} else {
 				member.APIKeys = append(member.APIKeys, fmt.Sprintf("%d:succeeded", key.ID))
 			}
+		}
+		if apiKeyError {
+			member.Error = "one or more API keys could not be moved"
+			return member
 		}
 	}
 	if remover == nil {
@@ -1243,7 +1472,7 @@ func (s *Service) departmentName(ctx context.Context, externalID string) (string
 	return row.Name, nil
 }
 
-func (s *Service) saveMapping(ctx context.Context, plan *Plan, groupIDs []int64) (*Mapping, error) {
+func (s *Service) saveMapping(ctx context.Context, plan *Plan, groupIDs []int64, state map[string]map[string]string) (*Mapping, error) {
 	memberAssignments := make(map[string]int64)
 	memberSources := make(map[string]int64)
 	for _, assignment := range plan.Assignments {
@@ -1264,30 +1493,21 @@ func (s *Service) saveMapping(ctx context.Context, plan *Plan, groupIDs []int64)
 		relaygroupmapping.PlatformEQ(plan.Platform),
 	).Only(ctx)
 	if ent.IsNotFound(err) {
-		row, err = s.client.RelayGroupMapping.Create().SetProviderID(plan.ProviderID).SetDepartmentExternalID(plan.DepartmentID).SetDepartmentName(plan.DepartmentName).SetPlatform(plan.Platform).SetTemplateGroupID(plan.TemplateGroupID).SetTemplateGroupName(plan.TemplateGroupName).SetSourceGroupID(plan.SourceGroupID).SetSourceGroupName(plan.SourceGroupName).SetGroupIds(groupIDs).SetMemberAssignments(memberAssignments).SetMemberSources(memberSources).SetWeeklyCostTarget(plan.WeeklyCostTarget).Save(ctx)
+		row, err = s.client.RelayGroupMapping.Create().SetProviderID(plan.ProviderID).SetDepartmentExternalID(plan.DepartmentID).SetDepartmentName(plan.DepartmentName).SetPlatform(plan.Platform).SetTemplateGroupID(plan.TemplateGroupID).SetTemplateGroupName(plan.TemplateGroupName).SetSourceGroupID(plan.SourceGroupID).SetSourceGroupName(plan.SourceGroupName).SetGroupIds(groupIDs).SetMemberAssignments(memberAssignments).SetMemberSources(memberSources).SetOperationState(cloneOperationState(state)).SetWeeklyCostTarget(plan.WeeklyCostTarget).SetStatus(operationStatus(state)).Save(ctx)
 	} else if err == nil {
-		for key, groupID := range row.MemberAssignments {
-			if _, exists := memberAssignments[key]; !exists && groupID > 0 {
-				memberAssignments[key] = groupID
-			}
-		}
-		for key, sourceID := range row.MemberSources {
-			if _, exists := memberSources[key]; !exists && sourceID > 0 {
-				memberSources[key] = sourceID
-			}
-		}
-		update := row.Update().SetDepartmentName(plan.DepartmentName).SetTemplateGroupID(plan.TemplateGroupID).SetTemplateGroupName(plan.TemplateGroupName).SetSourceGroupID(plan.SourceGroupID).SetSourceGroupName(plan.SourceGroupName).SetGroupIds(groupIDs).SetMemberAssignments(memberAssignments).SetMemberSources(memberSources).SetWeeklyCostTarget(plan.WeeklyCostTarget).SetStatus("active")
+		mergedState := mergeOperationState(row.OperationState, state)
+		update := row.Update().SetDepartmentName(plan.DepartmentName).SetTemplateGroupID(plan.TemplateGroupID).SetTemplateGroupName(plan.TemplateGroupName).SetSourceGroupID(plan.SourceGroupID).SetSourceGroupName(plan.SourceGroupName).SetGroupIds(groupIDs).SetMemberAssignments(memberAssignments).SetMemberSources(memberSources).SetOperationState(mergedState).SetWeeklyCostTarget(plan.WeeklyCostTarget).SetStatus(operationStatus(mergedState))
 		row, err = update.Save(ctx)
 	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("persist relay group mapping: %w", err)
 	}
 	mapping := mappingFromEnt(row)
 	return &mapping, nil
 }
 
 func mappingFromEnt(row *ent.RelayGroupMapping) Mapping {
-	return Mapping{ID: row.ID, ProviderID: row.ProviderID, DepartmentID: row.DepartmentExternalID, DepartmentName: row.DepartmentName, Platform: row.Platform, TemplateGroupID: row.TemplateGroupID, TemplateGroupName: row.TemplateGroupName, SourceGroupID: row.SourceGroupID, SourceGroupName: row.SourceGroupName, GroupIDs: append([]int64(nil), row.GroupIds...), Status: row.Status, WeeklyCostTarget: row.WeeklyCostTarget, MemberAssignments: cloneInt64Map(row.MemberAssignments), MemberSources: cloneInt64Map(row.MemberSources), UpdatedAt: row.UpdatedAt}
+	return Mapping{ID: row.ID, ProviderID: row.ProviderID, DepartmentID: row.DepartmentExternalID, DepartmentName: row.DepartmentName, Platform: row.Platform, TemplateGroupID: row.TemplateGroupID, TemplateGroupName: row.TemplateGroupName, SourceGroupID: row.SourceGroupID, SourceGroupName: row.SourceGroupName, GroupIDs: append([]int64(nil), row.GroupIds...), Status: row.Status, WeeklyCostTarget: row.WeeklyCostTarget, MemberAssignments: cloneInt64Map(row.MemberAssignments), MemberSources: cloneInt64Map(row.MemberSources), OperationState: cloneOperationState(row.OperationState), UpdatedAt: row.UpdatedAt}
 }
 
 func mappingAvailabilityWarnings(mapping Mapping, groups []relay.Group) []string {
@@ -1408,6 +1628,9 @@ func mappingRelationshipWarnings(ctx context.Context, client *ent.Client, provid
 		localID, known := localByRelay[result.relayUserID]
 		if !known {
 			for _, groupID := range result.groups {
+				if relayGroupAdopted(mapping.OperationState, result.relayUserID, groupID) {
+					continue
+				}
 				warnings = append(warnings, fmt.Sprintf("unmanaged relay member %d in target group %d", result.relayUserID, groupID))
 			}
 			continue
@@ -1430,6 +1653,89 @@ func mappingRelationshipWarnings(ctx context.Context, client *ent.Client, provid
 	return uniqueStrings(warnings)
 }
 
+func (s *Service) loadUnmanagedMembers(ctx context.Context, provider relay.Provider, mapping *ent.RelayGroupMapping) ([]UnmanagedMember, error) {
+	directory, directoryOK := provider.(relay.UserDirectoryProvider)
+	subsLister, subsOK := provider.(relay.UserSubscriptionLister)
+	if !directoryOK || !subsOK {
+		return nil, nil
+	}
+	remoteUsers, err := directory.ListUsers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list relay users: %w", err)
+	}
+	localUsers, err := s.client.User.Query().Where(user.RelayUserIDNotNil()).All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load local relay mappings: %w", err)
+	}
+	localByRelay := make(map[int64]struct{}, len(localUsers))
+	for _, localUser := range localUsers {
+		if localUser.RelayUserID != nil && *localUser.RelayUserID > 0 {
+			localByRelay[int64(*localUser.RelayUserID)] = struct{}{}
+		}
+	}
+	managedTargets := make(map[int64]struct{}, len(mapping.GroupIds))
+	for _, groupID := range mapping.GroupIds {
+		if groupID > 0 {
+			managedTargets[groupID] = struct{}{}
+		}
+	}
+	out := make([]UnmanagedMember, 0)
+	relayIDs := make([]int64, 0)
+	for _, remoteUser := range remoteUsers {
+		if remoteUser.ID <= 0 {
+			continue
+		}
+		if _, managed := localByRelay[remoteUser.ID]; managed {
+			continue
+		}
+		subscriptions, listErr := subsLister.ListUserSubscriptions(ctx, remoteUser.ID)
+		if listErr != nil {
+			return nil, fmt.Errorf("list subscriptions for relay user %d: %w", remoteUser.ID, listErr)
+		}
+		targetIDs := make([]int64, 0)
+		seen := make(map[int64]struct{})
+		for _, subscription := range subscriptions {
+			if !strings.EqualFold(strings.TrimSpace(subscription.Status), "active") {
+				continue
+			}
+			groupID := subscription.GroupID
+			if groupID <= 0 && subscription.Group != nil {
+				groupID = subscription.Group.ID
+			}
+			if _, managed := managedTargets[groupID]; !managed {
+				continue
+			}
+			if _, exists := seen[groupID]; exists {
+				continue
+			}
+			seen[groupID] = struct{}{}
+			targetIDs = append(targetIDs, groupID)
+		}
+		adoptedTargetIDs := targetIDs[:0]
+		for _, groupID := range targetIDs {
+			if !relayGroupAdopted(mapping.OperationState, remoteUser.ID, groupID) {
+				adoptedTargetIDs = append(adoptedTargetIDs, groupID)
+			}
+		}
+		targetIDs = adoptedTargetIDs
+		if len(targetIDs) == 0 {
+			continue
+		}
+		sort.Slice(targetIDs, func(i, j int) bool { return targetIDs[i] < targetIDs[j] })
+		out = append(out, UnmanagedMember{RelayUserID: remoteUser.ID, Username: remoteUser.Username, Email: remoteUser.Email, TargetGroupIDs: targetIDs})
+		relayIDs = append(relayIDs, remoteUser.ID)
+	}
+	stats, statsErr := usageStats(ctx, provider, relayIDs)
+	if statsErr != nil {
+		return nil, fmt.Errorf("load unmanaged member usage: %w", statsErr)
+	}
+	for index := range out {
+		out[index].RangeCost = usageCost(stats[out[index].RelayUserID])
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].RelayUserID < out[j].RelayUserID })
+	return out, nil
+}
+
 func cloneInt64Map(input map[string]int64) map[string]int64 {
 	if len(input) == 0 {
 		return map[string]int64{}
@@ -1439,6 +1745,62 @@ func cloneInt64Map(input map[string]int64) map[string]int64 {
 		out[key] = value
 	}
 	return out
+}
+
+func cloneOperationState(input map[string]map[string]string) map[string]map[string]string {
+	if len(input) == 0 {
+		return map[string]map[string]string{}
+	}
+	out := make(map[string]map[string]string, len(input))
+	for key, values := range input {
+		out[key] = make(map[string]string, len(values))
+		for field, value := range values {
+			out[key][field] = value
+		}
+	}
+	return out
+}
+
+func operationStatus(state map[string]map[string]string) string {
+	if operation := state["operation"]; operation != nil && operation["status"] == "needs_retry" {
+		return "needs_retry"
+	}
+	for key, entry := range state {
+		if key == "operation" {
+			continue
+		}
+		if entry["error"] != "" || entry["status"] == "failed" || entry["subscription"] == "failed" || entry["source_removal"] == "failed" {
+			return "needs_retry"
+		}
+	}
+	return "active"
+}
+
+func mergeOperationState(previous, current map[string]map[string]string) map[string]map[string]string {
+	merged := cloneOperationState(previous)
+	for key, values := range current {
+		merged[key] = make(map[string]string, len(values))
+		for field, value := range values {
+			merged[key][field] = value
+		}
+	}
+	if operation := merged["operation"]; operation != nil {
+		operation["status"] = operationStatus(merged)
+	}
+	return merged
+}
+
+func operationStateNeedsRetry(state map[string]map[string]string, key string) bool {
+	entry := state[key]
+	if entry == nil {
+		return false
+	}
+	return entry["error"] != "" || entry["status"] == "failed" || entry["subscription"] == "failed" || entry["source_removal"] == "failed" || strings.Contains(entry["api_keys"], ":failed:")
+}
+
+func relayGroupAdopted(state map[string]map[string]string, relayUserID, groupID int64) bool {
+	entry := state[fmt.Sprintf("relay:%d:%d", relayUserID, groupID)]
+	return entry != nil && entry["status"] == "adopted"
 }
 
 func allocate(candidates []Candidate, count int) []Assignment {

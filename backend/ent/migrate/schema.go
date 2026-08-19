@@ -1148,6 +1148,7 @@ var (
 		{Name: "group_ids", Type: field.TypeJSON},
 		{Name: "member_assignments", Type: field.TypeJSON},
 		{Name: "member_sources", Type: field.TypeJSON},
+		{Name: "operation_state", Type: field.TypeJSON},
 		{Name: "status", Type: field.TypeString, Default: "active"},
 		{Name: "weekly_cost_target", Type: field.TypeFloat64, Default: 0},
 		{Name: "created_at", Type: field.TypeTime},

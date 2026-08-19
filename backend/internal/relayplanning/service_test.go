@@ -64,6 +64,42 @@ func TestMappingAvailabilityWarningsArePlatformScoped(t *testing.T) {
 	}
 }
 
+func TestFindGroupForPlatformRejectsCrossPlatformAndMissingGroups(t *testing.T) {
+	groups := []relay.Group{{ID: 11, Name: "Group Alpha", Platform: "openai"}, {ID: 12, Platform: "anthropic"}}
+	if _, err := findGroupForPlatform(groups, 12, "openai", "template"); err == nil || !strings.Contains(err.Error(), "does not belong to platform") {
+		t.Fatalf("cross-platform group error = %v", err)
+	}
+	if _, err := findGroupForPlatform(groups, 99, "openai", "target"); err == nil || !strings.Contains(err.Error(), "is unavailable") {
+		t.Fatalf("missing group error = %v", err)
+	}
+}
+
+func TestExecutionStateRetainsRetryableStepErrors(t *testing.T) {
+	state := executionState("op-1", []GroupResult{{Index: 0, ID: 41, Status: "succeeded"}, {Index: 1, Status: "failed", Error: "upstream timeout"}}, []MemberResult{{UserID: 7, TargetGroupID: 41, Subscription: "succeeded", SourceRemoval: "failed", Error: "remove failed"}, {UserID: 8, TargetGroupID: 41, Subscription: "succeeded", SourceRemoval: "skipped", APIKeys: []string{"9:failed:bind timeout"}}})
+	if state["operation"]["status"] != "needs_retry" || state["group:1"]["error"] != "upstream timeout" || state["member:7"]["source_removal"] != "failed" {
+		t.Fatalf("execution state = %#v", state)
+	}
+	if !operationStateNeedsRetry(state, "member:7") || !operationStateNeedsRetry(state, "member:8") || operationStateNeedsRetry(state, "member:9") {
+		t.Fatalf("retry lookup = member7:%v member8:%v member9:%v", operationStateNeedsRetry(state, "member:7"), operationStateNeedsRetry(state, "member:8"), operationStateNeedsRetry(state, "member:9"))
+	}
+}
+
+func TestOperationStateRetryPrefersOriginalSourceForFailedMigration(t *testing.T) {
+	state := map[string]map[string]string{
+		"member:7": {"subscription": "succeeded", "source_removal": "failed"},
+	}
+	if !operationStateNeedsRetry(state, "member:7") {
+		t.Fatal("failed source removal must remain retryable")
+	}
+}
+
+func TestPreviewDoesNotCreateDefaultGroupForNonSourceOnlyCandidates(t *testing.T) {
+	recommended, count := resolveGroupCount(PreviewRequest{WeeklyCostTarget: 2500}, nil)
+	if recommended != 0 || count != 0 {
+		t.Fatalf("empty eligible recommendation = %d/%d, want 0/0", recommended, count)
+	}
+}
+
 func TestAllocatePlacesNextMemberInLowestCostGroup(t *testing.T) {
 	candidates := []Candidate{
 		{UserID: 1, RangeCost: 8, Eligible: true},

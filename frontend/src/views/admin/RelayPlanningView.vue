@@ -27,6 +27,7 @@ const error = ref('')
 const plan = ref<RelayPlanningPlan | null>(null)
 const activeMappingID = ref<number | null>(null)
 const selectedUserIDs = ref<Set<number>>(new Set())
+const selectedUnmanagedRelayIDs = ref<Set<number>>(new Set())
 const operationKey = ref('')
 const mappings = ref<RelayPlanningMapping[]>([])
 const departments = ref<Array<{ external_id: string; name: string; display_path: string }>>([])
@@ -61,6 +62,8 @@ function translateWarning(warning: string): string {
   if (conflict) return t('relayPlanning.warningMappingConflict', { user: conflict[1] })
   if (warning === 'mapping has no target groups') return t('relayPlanning.warningNoTargetGroups')
   if (warning === 'mapping contains an invalid target group') return t('relayPlanning.warningInvalidTargetGroup')
+  const invalidDepartment = warning.match(/^department (.+) is unavailable$/)
+  if (invalidDepartment) return t('relayPlanning.warningUnavailableDepartment', { department: invalidDepartment[1] })
   const capacity = warning.match(/^user (\d+) exceeds remaining planning capacity$/)
   if (capacity) return t('relayPlanning.warningRemainingCapacity', { user: capacity[1] })
   const unmanagedRelay = warning.match(/^unmanaged relay member (\d+) in target group (\d+)$/)
@@ -74,6 +77,12 @@ function translateWarning(warning: string): string {
   const targetMatch = warning.match(/^(.*) exceeds the planning target$/)
   if (targetMatch) return t('relayPlanning.warningExceedsTarget', { group: targetMatch[1] })
   return warning
+}
+
+function translateMappingStatus(status: string): string {
+  if (status === 'needs_retry') return t('relayPlanning.needsRetry')
+  if (status === 'active') return t('relayPlanning.active')
+  return status
 }
 
 function planningRequest(): RelayPlanningRequest {
@@ -101,9 +110,15 @@ function assignmentPayload() {
 function recalculateAssignments() {
   if (!plan.value) return
   const costs = new Map(plan.value.candidates.map((candidate) => [candidate.user_id, candidate.range_cost]))
+  const unmanagedCosts = new Map<number, number>()
+  for (const member of plan.value.unmanaged_members ?? []) {
+    for (const groupID of member.target_group_ids ?? []) {
+      unmanagedCosts.set(groupID, (unmanagedCosts.get(groupID) ?? 0) + member.range_cost)
+    }
+  }
   for (const assignment of plan.value.assignments) {
     assignment.user_ids = [...new Set(assignment.user_ids ?? [])]
-    assignment.total_cost = assignment.user_ids.reduce((total, userID) => total + (costs.get(userID) ?? 0), 0)
+    assignment.total_cost = assignment.user_ids.reduce((total, userID) => total + (costs.get(userID) ?? 0), 0) + (unmanagedCosts.get(assignment.target_group_id ?? 0) ?? 0)
   }
   selectedUserIDs.value = new Set(plan.value.assignments.flatMap((assignment) => assignment.user_ids))
 }
@@ -123,6 +138,17 @@ function candidateAssignmentIndex(userID: number): number | null {
 function candidateLabel(userID: number): string {
   const candidate = plan.value?.candidates.find((item) => item.user_id === userID)
   return candidate?.username || candidate?.email || `User ${userID}`
+}
+
+function toggleUnmanagedRelayUser(relayUserID: number, checked: boolean) {
+  const next = new Set(selectedUnmanagedRelayIDs.value)
+  if (checked) next.add(relayUserID)
+  else next.delete(relayUserID)
+  selectedUnmanagedRelayIDs.value = next
+}
+
+function departmentSuggestionLabel(item: { name: string; id: string }): string {
+  return `${item.name} (${item.id})`
 }
 
 async function loadOptions() {
@@ -152,6 +178,7 @@ async function preview() {
     const response = await previewRelayPlan(request)
     plan.value = response.data.data ?? null
     activeMappingID.value = null
+    selectedUnmanagedRelayIDs.value = new Set()
     operationKey.value = crypto.randomUUID()
     recalculateAssignments()
   } catch (err: any) {
@@ -167,7 +194,7 @@ async function requestExecution() {
   try {
     const selected_user_ids = Array.from(selectedUserIDs.value)
     const response = activeMappingID.value
-      ? await previewRelayReplan(activeMappingID.value, { selected_user_ids, assignments: assignmentPayload() })
+      ? await previewRelayReplan(activeMappingID.value, { selected_user_ids, assignments: assignmentPayload(), adopt_relay_user_ids: Array.from(selectedUnmanagedRelayIDs.value) })
       : await previewRelayPlan({
           provider_id: plan.value.provider_id,
           department_id: plan.value.department_id,
@@ -177,6 +204,7 @@ async function requestExecution() {
           weekly_cost_target: plan.value.weekly_cost_target,
           selected_user_ids,
           assignments: assignmentPayload(),
+          adopt_relay_user_ids: Array.from(selectedUnmanagedRelayIDs.value),
         })
     plan.value = response.data.data ?? plan.value
     confirmDialogOpen.value = true
@@ -200,6 +228,7 @@ async function executeConfirmed() {
       weekly_cost_target: plan.value.weekly_cost_target,
       selected_user_ids: Array.from(selectedUserIDs.value),
       assignments: assignmentPayload(),
+      adopt_relay_user_ids: Array.from(selectedUnmanagedRelayIDs.value),
       operation_key: operationKey.value || crypto.randomUUID(),
     }
     const response = activeMappingID.value
@@ -222,6 +251,7 @@ async function replan(mapping: RelayPlanningMapping) {
     const response = await previewRelayReplan(mapping.id, {})
     plan.value = response.data.data ?? null
     activeMappingID.value = mapping.id
+    selectedUnmanagedRelayIDs.value = new Set()
     operationKey.value = crypto.randomUUID()
     recalculateAssignments()
     form.provider_id = mapping.provider_id
@@ -239,6 +269,7 @@ function resetPlan() {
   plan.value = null
   activeMappingID.value = null
   selectedUserIDs.value = new Set()
+  selectedUnmanagedRelayIDs.value = new Set()
   operationKey.value = ''
   error.value = ''
   confirming.value = false
@@ -261,7 +292,9 @@ async function rebind(mapping: RelayPlanningMapping) {
     const template = await ElMessageBox.prompt(t('relayPlanning.templateGroupIdPrompt'), t('relayPlanning.rebindTemplateGroup'), { inputValue: String(mapping.template_group_id || mapping.source_group_id), inputPattern: /^[1-9][0-9]*$/, inputErrorMessage: t('relayPlanning.positiveGroupIdRequired') })
     const source = await ElMessageBox.prompt(t('relayPlanning.sourceGroupIdPrompt'), t('relayPlanning.rebindSourceGroup'), { inputValue: String(mapping.source_group_id), inputPattern: /^[1-9][0-9]*$/, inputErrorMessage: t('relayPlanning.positiveGroupIdRequired') })
     const groups = await ElMessageBox.prompt(t('relayPlanning.managedGroupIdsPrompt'), t('relayPlanning.rebindManagedGroups'), { inputValue: mapping.group_ids.join(', '), inputPattern: /^[0-9 ,]+$/, inputErrorMessage: t('relayPlanning.numericGroupIdsRequired') })
-    await rebindRelayGroupMapping(mapping.id, { department_id: department.value.trim(), template_group_id: Number(template.value), source_group_id: Number(source.value), group_ids: groups.value.split(',').map((value) => Number(value.trim())).filter((value) => value > 0) })
+    const payload = { department_id: department.value.trim(), template_group_id: Number(template.value), source_group_id: Number(source.value), group_ids: groups.value.split(',').map((value) => Number(value.trim())).filter((value) => value > 0) }
+    await ElMessageBox.confirm(t('relayPlanning.confirmRebindMessage'), t('relayPlanning.confirmRebind'), { type: 'warning', confirmButtonText: t('relayPlanning.confirm'), cancelButtonText: t('relayPlanning.cancel'), closeOnClickModal: false })
+    await rebindRelayGroupMapping(mapping.id, payload)
     await loadMappings()
     ElMessage.success(t('relayPlanning.mappingRebound'))
   } catch (err: any) {
@@ -328,7 +361,7 @@ onMounted(async () => {
         </div>
         <div class="mt-4 flex flex-wrap gap-2">
           <el-button data-testid="preview-allocation" type="primary" :loading="loading" @click="preview">{{ t('relayPlanning.preview') }}</el-button>
-          <el-button v-if="plan" data-testid="open-execution-confirmation" :icon="Check" type="success" :loading="confirming" :disabled="plan.group_count === 0 || selectedUserIDs.size === 0" @click="requestExecution">{{ t('relayPlanning.confirmExecute') }}</el-button>
+          <el-button v-if="plan" data-testid="open-execution-confirmation" :icon="Check" type="success" :loading="confirming" :disabled="plan.group_count === 0 || (!activeMappingID && selectedUserIDs.size === 0 && selectedUnmanagedRelayIDs.size === 0)" @click="requestExecution">{{ t('relayPlanning.confirmExecute') }}</el-button>
         </div>
         <el-alert v-if="error" class="mt-4" type="error" :closable="false" :title="error" />
       </section>
@@ -344,7 +377,18 @@ onMounted(async () => {
         </el-alert>
         <div class="rounded-lg border border-slate-200 bg-white p-4">
           <div class="mb-3 text-sm font-semibold text-slate-900">{{ t('relayPlanning.candidatesRank') }}</div>
-          <el-table :data="plan.candidates" stripe>
+          <div class="space-y-3 md:hidden">
+            <article v-for="candidate in plan.candidates" :key="candidate.user_id" class="rounded-md border border-slate-200 p-3">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0"><div class="break-words font-medium text-slate-900">{{ candidate.username || candidate.email }}</div><div class="break-words text-xs text-slate-500">{{ candidate.email }}</div></div>
+                <el-checkbox :model-value="selectedUserIDs.has(candidate.user_id)" :disabled="!candidate.can_add" @change="(value) => toggleCandidate(candidate.user_id, value === true)" />
+              </div>
+              <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs"><div><dt class="text-slate-500">{{ t('relayPlanning.cost30d') }}</dt><dd class="font-medium">${{ candidate.range_cost.toFixed(2) }}</dd></div><div><dt class="text-slate-500">{{ t('relayPlanning.tokens30d') }}</dt><dd class="font-medium">{{ candidate.range_tokens }}</dd></div><div><dt class="text-slate-500">{{ t('relayPlanning.globalRank') }}</dt><dd class="font-medium">{{ candidate.global_token_rank || '-' }}</dd></div><div><dt class="text-slate-500">{{ t('relayPlanning.keys') }}</dt><dd class="font-medium">{{ candidate.migratable_key_count }}</dd></div></dl>
+              <div class="mt-3"><el-select v-if="candidate.can_add" :model-value="candidateAssignmentIndex(candidate.user_id)" class="w-full" clearable :placeholder="t('relayPlanning.unassigned')" @change="(value) => moveCandidate(candidate.user_id, value === null || value === undefined || value === '' ? null : Number(value))"><el-option v-for="assignment in plan.assignments" :key="assignment.index" :label="assignment.target_group_name || `${t('relayPlanning.group')} ${assignment.index + 1}`" :value="assignment.index" /></el-select><span v-else class="text-xs text-slate-400">{{ t('relayPlanning.notAvailable') }}</span></div>
+              <div class="mt-2"><el-tag :type="candidate.eligible ? 'success' : candidate.can_add ? 'warning' : 'info'">{{ candidate.eligible ? t('relayPlanning.eligible') : candidate.can_add ? t('relayPlanning.addOnly') : t('relayPlanning.excluded') }}</el-tag><div v-if="candidate.warnings?.length" class="mt-1 text-xs text-amber-700">{{ candidate.warnings.map(translateWarning).join('; ') }}</div></div>
+            </article>
+          </div>
+          <el-table class="hidden md:block" :data="plan.candidates" stripe>
             <el-table-column :label="t('relayPlanning.select')" width="70"><template #default="scope"><el-checkbox :model-value="selectedUserIDs.has(scope.row.user_id)" :disabled="!scope.row.can_add" @change="(value) => toggleCandidate(scope.row.user_id, value === true)" /></template></el-table-column>
             <el-table-column prop="username" :label="t('relayPlanning.user')" min-width="140" />
             <el-table-column prop="email" :label="t('relayPlanning.email')" min-width="190" />
@@ -367,18 +411,37 @@ onMounted(async () => {
           <div v-if="unassignedCandidates.length" class="flex flex-wrap gap-2"><el-tag v-for="candidate in unassignedCandidates" :key="candidate.user_id" type="warning">{{ candidate.username || candidate.email }}</el-tag></div>
           <div v-else class="text-sm text-slate-500">{{ t('relayPlanning.noUnassigned') }}</div>
         </div>
+        <div v-if="plan.unmanaged_members?.length" class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <div class="mb-2 text-sm font-semibold text-slate-900">{{ t('relayPlanning.unmanagedMembers') }}</div>
+          <p class="mb-3 text-xs text-slate-600">{{ t('relayPlanning.unmanagedMembersHelp') }}</p>
+          <div class="space-y-2">
+            <label v-for="member in plan.unmanaged_members" :key="member.relay_user_id" class="flex items-start gap-3 rounded-md border border-amber-200 bg-white p-3 text-sm">
+              <el-checkbox :model-value="selectedUnmanagedRelayIDs.has(member.relay_user_id)" @change="(value) => toggleUnmanagedRelayUser(member.relay_user_id, value === true)" />
+              <span class="min-w-0"><span class="block break-words font-medium">{{ member.username || member.email || `Relay #${member.relay_user_id}` }}</span><span class="block break-words text-xs text-slate-500">{{ member.email }} · ${{ member.range_cost.toFixed(2) }} · {{ t('relayPlanning.targetGroups') }}: {{ member.target_group_ids.join(', ') }}</span></span>
+            </label>
+          </div>
+        </div>
       </section>
 
       <section class="rounded-lg border border-slate-200 bg-white p-4">
         <div class="mb-3 flex items-center justify-between"><div class="text-sm font-semibold text-slate-900">{{ t('relayPlanning.managedMappings') }}</div><span class="text-xs text-slate-500">{{ t('relayPlanning.groupIdsAuthoritative') }}</span></div>
         <el-empty v-if="!mappings.length" :description="t('relayPlanning.noMappings')" />
-        <el-table v-else :data="mappings" stripe>
+        <div v-if="mappings.length" class="space-y-3 md:hidden">
+          <article v-for="mapping in mappings" :key="mapping.id" class="rounded-md border border-slate-200 p-3">
+            <div class="flex items-start justify-between gap-3"><div class="min-w-0"><div class="break-words font-medium text-slate-900">{{ mapping.department_name || mapping.department_id }}</div><div class="text-xs text-slate-500">{{ mapping.platform }}</div></div><el-tag :type="mapping.warnings?.length || mapping.status === 'needs_retry' ? 'warning' : 'success'">{{ mapping.warnings?.length ? t('relayPlanning.reviewNeeded') : translateMappingStatus(mapping.status) }}</el-tag></div>
+            <dl class="mt-3 space-y-2 text-sm"><div><dt class="text-xs text-slate-500">{{ t('relayPlanning.templateGroup') }}</dt><dd class="break-words">{{ mapping.template_group_name || '-' }} (#{{ mapping.template_group_id }})</dd></div><div><dt class="text-xs text-slate-500">{{ t('relayPlanning.migrationSource') }}</dt><dd class="break-words">{{ mapping.source_group_name }} (#{{ mapping.source_group_id }})</dd></div><div><dt class="text-xs text-slate-500">{{ t('relayPlanning.managedGroups') }}</dt><dd class="break-words">{{ mapping.group_ids.join(', ') || '-' }}</dd></div></dl>
+            <div v-if="mapping.warnings?.length" class="mt-2 text-xs text-amber-700">{{ mapping.warnings.map(translateWarning).join('; ') }}</div>
+            <div v-if="mapping.department_suggestions?.length" class="mt-2 text-xs text-slate-500">{{ t('relayPlanning.departmentSuggestions') }}: {{ mapping.department_suggestions.map(departmentSuggestionLabel).join(', ') }}</div>
+            <div class="mt-3 flex flex-wrap gap-2"><el-button size="small" type="primary" @click="replan(mapping)">{{ t('relayPlanning.replan') }}</el-button><el-button size="small" @click="rebind(mapping)">{{ t('relayPlanning.rebind') }}</el-button></div>
+          </article>
+        </div>
+        <el-table v-if="mappings.length" class="hidden md:block" :data="mappings" stripe>
           <el-table-column prop="department_name" :label="t('relayPlanning.department')" min-width="150" />
           <el-table-column prop="platform" :label="t('relayPlanning.platform')" width="110" />
           <el-table-column :label="t('relayPlanning.templateGroup')" min-width="160"><template #default="scope">{{ scope.row.template_group_name || '-' }} (#{{ scope.row.template_group_id }})</template></el-table-column>
           <el-table-column :label="t('relayPlanning.migrationSource')" min-width="160"><template #default="scope">{{ scope.row.source_group_name }} (#{{ scope.row.source_group_id }})</template></el-table-column>
           <el-table-column :label="t('relayPlanning.managedGroups')" min-width="180"><template #default="scope">{{ scope.row.group_ids.join(', ') }}</template></el-table-column>
-          <el-table-column :label="t('relayPlanning.status')" min-width="150"><template #default="scope"><el-tag :type="scope.row.warnings?.length ? 'warning' : 'success'">{{ scope.row.warnings?.length ? t('relayPlanning.reviewNeeded') : scope.row.status }}</el-tag><div v-if="scope.row.warnings?.length" class="mt-1 text-xs text-amber-700">{{ scope.row.warnings.map(translateWarning).join('; ') }}</div></template></el-table-column>
+          <el-table-column :label="t('relayPlanning.status')" min-width="150"><template #default="scope"><el-tag :type="scope.row.warnings?.length || scope.row.status === 'needs_retry' ? 'warning' : 'success'">{{ scope.row.warnings?.length ? t('relayPlanning.reviewNeeded') : translateMappingStatus(scope.row.status) }}</el-tag><div v-if="scope.row.warnings?.length" class="mt-1 text-xs text-amber-700">{{ scope.row.warnings.map(translateWarning).join('; ') }}</div><div v-if="scope.row.department_suggestions?.length" class="mt-1 text-xs text-slate-500">{{ t('relayPlanning.departmentSuggestions') }}: {{ scope.row.department_suggestions.map(departmentSuggestionLabel).join(', ') }}</div></template></el-table-column>
           <el-table-column :label="t('relayPlanning.actions')" width="170"><template #default="scope"><el-button link type="primary" @click="replan(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.replan') }}</el-button><el-button link type="primary" @click="rebind(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.rebind') }}</el-button></template></el-table-column>
         </el-table>
       </section>

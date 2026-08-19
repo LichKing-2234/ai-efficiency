@@ -40,6 +40,8 @@ type RelayGroupMapping struct {
 	MemberAssignments map[string]int64 `json:"member_assignments,omitempty"`
 	// MemberSources holds the value of the "member_sources" field.
 	MemberSources map[string]int64 `json:"member_sources,omitempty"`
+	// OperationState holds the value of the "operation_state" field.
+	OperationState map[string]map[string]string `json:"operation_state,omitempty"`
 	// Status holds the value of the "status" field.
 	Status string `json:"status,omitempty"`
 	// WeeklyCostTarget holds the value of the "weekly_cost_target" field.
@@ -56,7 +58,7 @@ func (*RelayGroupMapping) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case relaygroupmapping.FieldGroupIds, relaygroupmapping.FieldMemberAssignments, relaygroupmapping.FieldMemberSources:
+		case relaygroupmapping.FieldGroupIds, relaygroupmapping.FieldMemberAssignments, relaygroupmapping.FieldMemberSources, relaygroupmapping.FieldOperationState:
 			values[i] = new([]byte)
 		case relaygroupmapping.FieldWeeklyCostTarget:
 			values[i] = new(sql.NullFloat64)
@@ -159,6 +161,14 @@ func (rgm *RelayGroupMapping) assignValues(columns []string, values []any) error
 					return fmt.Errorf("unmarshal field member_sources: %w", err)
 				}
 			}
+		case relaygroupmapping.FieldOperationState:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field operation_state", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &rgm.OperationState); err != nil {
+					return fmt.Errorf("unmarshal field operation_state: %w", err)
+				}
+			}
 		case relaygroupmapping.FieldStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field status", values[i])
@@ -251,6 +261,9 @@ func (rgm *RelayGroupMapping) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("member_sources=")
 	builder.WriteString(fmt.Sprintf("%v", rgm.MemberSources))
+	builder.WriteString(", ")
+	builder.WriteString("operation_state=")
+	builder.WriteString(fmt.Sprintf("%v", rgm.OperationState))
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(rgm.Status)

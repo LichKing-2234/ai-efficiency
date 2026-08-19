@@ -186,6 +186,12 @@ func (rgmu *RelayGroupMappingUpdate) SetMemberSources(m map[string]int64) *Relay
 	return rgmu
 }
 
+// SetOperationState sets the "operation_state" field.
+func (rgmu *RelayGroupMappingUpdate) SetOperationState(m map[string]map[string]string) *RelayGroupMappingUpdate {
+	rgmu.mutation.SetOperationState(m)
+	return rgmu
+}
+
 // SetStatus sets the "status" field.
 func (rgmu *RelayGroupMappingUpdate) SetStatus(s string) *RelayGroupMappingUpdate {
 	rgmu.mutation.SetStatus(s)
@@ -346,6 +352,9 @@ func (rgmu *RelayGroupMappingUpdate) sqlSave(ctx context.Context) (n int, err er
 	}
 	if value, ok := rgmu.mutation.MemberSources(); ok {
 		_spec.SetField(relaygroupmapping.FieldMemberSources, field.TypeJSON, value)
+	}
+	if value, ok := rgmu.mutation.OperationState(); ok {
+		_spec.SetField(relaygroupmapping.FieldOperationState, field.TypeJSON, value)
 	}
 	if value, ok := rgmu.mutation.Status(); ok {
 		_spec.SetField(relaygroupmapping.FieldStatus, field.TypeString, value)
@@ -533,6 +542,12 @@ func (rgmuo *RelayGroupMappingUpdateOne) SetMemberAssignments(m map[string]int64
 // SetMemberSources sets the "member_sources" field.
 func (rgmuo *RelayGroupMappingUpdateOne) SetMemberSources(m map[string]int64) *RelayGroupMappingUpdateOne {
 	rgmuo.mutation.SetMemberSources(m)
+	return rgmuo
+}
+
+// SetOperationState sets the "operation_state" field.
+func (rgmuo *RelayGroupMappingUpdateOne) SetOperationState(m map[string]map[string]string) *RelayGroupMappingUpdateOne {
+	rgmuo.mutation.SetOperationState(m)
 	return rgmuo
 }
 
@@ -726,6 +741,9 @@ func (rgmuo *RelayGroupMappingUpdateOne) sqlSave(ctx context.Context) (_node *Re
 	}
 	if value, ok := rgmuo.mutation.MemberSources(); ok {
 		_spec.SetField(relaygroupmapping.FieldMemberSources, field.TypeJSON, value)
+	}
+	if value, ok := rgmuo.mutation.OperationState(); ok {
+		_spec.SetField(relaygroupmapping.FieldOperationState, field.TypeJSON, value)
 	}
 	if value, ok := rgmuo.mutation.Status(); ok {
 		_spec.SetField(relaygroupmapping.FieldStatus, field.TypeString, value)

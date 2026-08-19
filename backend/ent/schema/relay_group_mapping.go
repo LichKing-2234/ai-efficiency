@@ -26,6 +26,7 @@ func (RelayGroupMapping) Fields() []ent.Field {
 		field.JSON("group_ids", []int64{}),
 		field.JSON("member_assignments", map[string]int64{}).Default(map[string]int64{}),
 		field.JSON("member_sources", map[string]int64{}).Default(map[string]int64{}),
+		field.JSON("operation_state", map[string]map[string]string{}).Default(map[string]map[string]string{}),
 		field.String("status").Default("active"),
 		field.Float("weekly_cost_target").Default(0),
 		field.Time("created_at").Immutable().Default(timeNow),

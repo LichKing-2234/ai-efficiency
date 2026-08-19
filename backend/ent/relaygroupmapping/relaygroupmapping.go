@@ -35,6 +35,8 @@ const (
 	FieldMemberAssignments = "member_assignments"
 	// FieldMemberSources holds the string denoting the member_sources field in the database.
 	FieldMemberSources = "member_sources"
+	// FieldOperationState holds the string denoting the operation_state field in the database.
+	FieldOperationState = "operation_state"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
 	// FieldWeeklyCostTarget holds the string denoting the weekly_cost_target field in the database.
@@ -61,6 +63,7 @@ var Columns = []string{
 	FieldGroupIds,
 	FieldMemberAssignments,
 	FieldMemberSources,
+	FieldOperationState,
 	FieldStatus,
 	FieldWeeklyCostTarget,
 	FieldCreatedAt,
@@ -96,6 +99,8 @@ var (
 	DefaultMemberAssignments map[string]int64
 	// DefaultMemberSources holds the default value on creation for the "member_sources" field.
 	DefaultMemberSources map[string]int64
+	// DefaultOperationState holds the default value on creation for the "operation_state" field.
+	DefaultOperationState map[string]map[string]string
 	// DefaultStatus holds the default value on creation for the "status" field.
 	DefaultStatus string
 	// DefaultWeeklyCostTarget holds the default value on creation for the "weekly_cost_target" field.

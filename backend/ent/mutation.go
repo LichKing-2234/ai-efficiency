@@ -33850,6 +33850,7 @@ type RelayGroupMappingMutation struct {
 	appendgroup_ids        []int64
 	member_assignments     *map[string]int64
 	member_sources         *map[string]int64
+	operation_state        *map[string]map[string]string
 	status                 *string
 	weekly_cost_target     *float64
 	addweekly_cost_target  *float64
@@ -34430,6 +34431,42 @@ func (m *RelayGroupMappingMutation) ResetMemberSources() {
 	m.member_sources = nil
 }
 
+// SetOperationState sets the "operation_state" field.
+func (m *RelayGroupMappingMutation) SetOperationState(value map[string]map[string]string) {
+	m.operation_state = &value
+}
+
+// OperationState returns the value of the "operation_state" field in the mutation.
+func (m *RelayGroupMappingMutation) OperationState() (r map[string]map[string]string, exists bool) {
+	v := m.operation_state
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOperationState returns the old "operation_state" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldOperationState(ctx context.Context) (v map[string]map[string]string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOperationState is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOperationState requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOperationState: %w", err)
+	}
+	return oldValue.OperationState, nil
+}
+
+// ResetOperationState resets all changes to the "operation_state" field.
+func (m *RelayGroupMappingMutation) ResetOperationState() {
+	m.operation_state = nil
+}
+
 // SetStatus sets the "status" field.
 func (m *RelayGroupMappingMutation) SetStatus(s string) {
 	m.status = &s
@@ -34628,7 +34665,7 @@ func (m *RelayGroupMappingMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RelayGroupMappingMutation) Fields() []string {
-	fields := make([]string, 0, 15)
+	fields := make([]string, 0, 16)
 	if m.provider_id != nil {
 		fields = append(fields, relaygroupmapping.FieldProviderID)
 	}
@@ -34661,6 +34698,9 @@ func (m *RelayGroupMappingMutation) Fields() []string {
 	}
 	if m.member_sources != nil {
 		fields = append(fields, relaygroupmapping.FieldMemberSources)
+	}
+	if m.operation_state != nil {
+		fields = append(fields, relaygroupmapping.FieldOperationState)
 	}
 	if m.status != nil {
 		fields = append(fields, relaygroupmapping.FieldStatus)
@@ -34704,6 +34744,8 @@ func (m *RelayGroupMappingMutation) Field(name string) (ent.Value, bool) {
 		return m.MemberAssignments()
 	case relaygroupmapping.FieldMemberSources:
 		return m.MemberSources()
+	case relaygroupmapping.FieldOperationState:
+		return m.OperationState()
 	case relaygroupmapping.FieldStatus:
 		return m.Status()
 	case relaygroupmapping.FieldWeeklyCostTarget:
@@ -34743,6 +34785,8 @@ func (m *RelayGroupMappingMutation) OldField(ctx context.Context, name string) (
 		return m.OldMemberAssignments(ctx)
 	case relaygroupmapping.FieldMemberSources:
 		return m.OldMemberSources(ctx)
+	case relaygroupmapping.FieldOperationState:
+		return m.OldOperationState(ctx)
 	case relaygroupmapping.FieldStatus:
 		return m.OldStatus(ctx)
 	case relaygroupmapping.FieldWeeklyCostTarget:
@@ -34836,6 +34880,13 @@ func (m *RelayGroupMappingMutation) SetField(name string, value ent.Value) error
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetMemberSources(v)
+		return nil
+	case relaygroupmapping.FieldOperationState:
+		v, ok := value.(map[string]map[string]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOperationState(v)
 		return nil
 	case relaygroupmapping.FieldStatus:
 		v, ok := value.(string)
@@ -34997,6 +35048,9 @@ func (m *RelayGroupMappingMutation) ResetField(name string) error {
 		return nil
 	case relaygroupmapping.FieldMemberSources:
 		m.ResetMemberSources()
+		return nil
+	case relaygroupmapping.FieldOperationState:
+		m.ResetOperationState()
 		return nil
 	case relaygroupmapping.FieldStatus:
 		m.ResetStatus()

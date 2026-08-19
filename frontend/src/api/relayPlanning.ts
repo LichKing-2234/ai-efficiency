@@ -26,6 +26,14 @@ export interface RelayPlanningAssignment {
   target_group_name?: string
 }
 
+export interface RelayPlanningUnmanagedMember {
+  relay_user_id: number
+  username: string
+  email: string
+  target_group_ids: number[]
+  range_cost: number
+}
+
 export interface RelayPlanningPlan {
   provider_id: number
   department_id: string
@@ -40,6 +48,7 @@ export interface RelayPlanningPlan {
   group_count: number
   candidates: RelayPlanningCandidate[]
   assignments: RelayPlanningAssignment[]
+  unmanaged_members?: RelayPlanningUnmanagedMember[]
   warnings?: string[]
   generated_at: string
   mapping_id?: number
@@ -60,6 +69,8 @@ export interface RelayPlanningMapping {
   weekly_cost_target: number
   member_assignments?: Record<string, number>
   member_sources?: Record<string, number>
+  operation_state?: Record<string, Record<string, string>>
+  department_suggestions?: Array<{ id: string; name: string }>
   warnings?: string[]
   updated_at: string
 }
@@ -67,7 +78,7 @@ export interface RelayPlanningMapping {
 export interface RelayPlanningExecution {
   plan: RelayPlanningPlan
   groups: Array<{ index: number; id?: number; name?: string; status: string; error?: string }>
-  members: Array<{ user_id: number; target_group_id?: number; subscription: string; source_removal: string; api_keys?: string[]; error?: string }>
+  members: Array<{ user_id?: number; relay_user_id?: number; target_group_id?: number; subscription: string; source_removal: string; api_keys?: string[]; error?: string }>
   mapping?: RelayPlanningMapping
   warnings?: string[]
 }
@@ -83,6 +94,7 @@ export interface RelayPlanningRequest {
   selected_user_ids?: number[]
   existing_mapping_id?: number
   assignments?: RelayPlanningAssignment[]
+  adopt_relay_user_ids?: number[]
 }
 
 export function previewRelayPlan(data: RelayPlanningRequest) {
@@ -103,7 +115,7 @@ export function rebindRelayGroupMapping(id: number, data: { department_id?: stri
   return client.put<ApiResponse<RelayPlanningMapping>>(`/admin/relay-planning/mappings/${id}/rebind`, data)
 }
 
-export function previewRelayReplan(id: number, data: { selected_user_ids?: number[]; assignments?: RelayPlanningAssignment[] }) {
+export function previewRelayReplan(id: number, data: { selected_user_ids?: number[]; assignments?: RelayPlanningAssignment[]; adopt_relay_user_ids?: number[] }) {
   return client.post<ApiResponse<RelayPlanningPlan>>(`/admin/relay-planning/mappings/${id}/replan`, data)
 }
 
