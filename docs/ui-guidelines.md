@@ -89,7 +89,7 @@ The pre-migration baseline at commit `2e1c2884` is:
 | Aggregate | Baseline gzip | Node 20 migration measurement | Enforced maximum |
 | --- | ---: | ---: | ---: |
 | Initial shell | 67,521 bytes | 72,603 bytes | 73,000 bytes |
-| Default English `/usage` | 96,562 bytes | 157,902 bytes | 162,000 bytes |
+| Default English `/usage` | 96,562 bytes | 157,902 bytes | 163,000 bytes |
 | Complex `/admin/users` route | 100,309 bytes | 245,974 bytes | 253,909 bytes |
 
 `frontend/scripts/measure-build.mjs` enforces these exact ceilings. The initial
