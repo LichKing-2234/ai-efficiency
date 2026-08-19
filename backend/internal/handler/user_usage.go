@@ -79,32 +79,6 @@ func (h *UserUsageHandler) GroupQuotas(c *gin.Context) {
 	pkg.Success(c, response)
 }
 
-func (h *UserUsageHandler) GroupPoolUsage(c *gin.Context) {
-	userContext := auth.GetUserContext(c)
-	if userContext == nil {
-		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-	params, ok := parseUserUsageDashboardParams(c)
-	if !ok {
-		return
-	}
-	if h == nil || h.service == nil {
-		pkg.Error(c, http.StatusUnprocessableEntity, "personal usage service is unavailable")
-		return
-	}
-
-	response, err := h.service.GroupPoolUsage(c.Request.Context(), personalusage.Request{
-		UserID: userContext.UserID,
-		Params: params,
-	})
-	if err != nil {
-		writeUserUsageError(c, "get usage group pool usage", err)
-		return
-	}
-	pkg.Success(c, response)
-}
-
 func parseIncludeGroupQuotas(c *gin.Context) (bool, bool) {
 	raw, exists := c.GetQuery("include_group_quotas")
 	if !exists {

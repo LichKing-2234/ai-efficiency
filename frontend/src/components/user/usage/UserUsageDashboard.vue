@@ -86,8 +86,6 @@
       </Suspense>
       <UsageGroupQuotaSection
         :quotas="currentGroupQuotas"
-        :pool-usage="props.memberRoute ? null : personalPoolUsage"
-        :pool-loading="!props.memberRoute && poolLoading"
         :loading="quotaLoading && !currentGroupQuotas"
         :range-label="selectedRangeLabel"
         :show-reset-request="canRequestQuotaReset"
@@ -122,7 +120,7 @@
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { createQuotaResetRequest, getQuotaResetOptions } from '@/api/quotaReset'
-import { getUserUsageDashboard, getUserUsageGroupPoolUsage, getUserUsageGroupQuotas } from '@/api/userUsage'
+import { getUserUsageDashboard, getUserUsageGroupQuotas } from '@/api/userUsage'
 import { getTeamUsageSubjectDashboard, updateTeamUsageRateMultiplier } from '@/api/teamUsage'
 import { useI18n } from '@/i18n'
 import type {
@@ -132,7 +130,6 @@ import type {
   UpdateTeamUsageRateMultiplierRequest,
   UserUsageDashboardParams,
   UserUsageDashboardSnapshot,
-  UserUsageGroupPoolUsageState,
   UserUsageGroupQuotaState,
 } from '@/types'
 import UsageStatsCards from '@/components/user/usage/UsageStatsCards.vue'
@@ -162,12 +159,10 @@ const selectedRange = ref<RangeOption>('30d')
 const snapshotRange = ref<RangeOption>('30d')
 const snapshot = ref<UserUsageDashboardSnapshot | null>(props.initialSnapshot)
 const personalQuotas = ref<UserUsageGroupQuotaState | null>(props.initialSnapshot?.group_quotas ?? null)
-const personalPoolUsage = ref<UserUsageGroupPoolUsageState | null>(null)
 const memberRouteSubject = ref<TeamUsageSubject | null>(null)
 const selectedSubjectSubscriptions = ref<SubjectSubscriptionGroup[]>([])
 const usageLoading = ref(!props.initialSnapshot)
 const quotaLoading = ref(false)
-const poolLoading = ref(false)
 const usageErrorMessage = ref('')
 const credentialError = ref(false)
 const quotaResetModalOpen = ref(false)
@@ -179,7 +174,6 @@ const route = useRoute()
 let requestGeneration = 0
 let usageController: AbortController | null = null
 let quotaController: AbortController | null = null
-let poolController: AbortController | null = null
 
 const currentSnapshot = computed(() => snapshot.value)
 const currentGroupQuotas = computed(() => props.memberRoute ? currentSnapshot.value?.group_quotas ?? null : personalQuotas.value)
@@ -234,10 +228,8 @@ function routeSubjectUserID() {
 function abortPersonalRequests() {
   usageController?.abort()
   quotaController?.abort()
-  poolController?.abort()
   usageController = null
   quotaController = null
-  poolController = null
 }
 
 function isCanceled(error: any, signal: AbortSignal) {
@@ -283,15 +275,11 @@ async function loadPersonalDashboard(generation: number, requestedRange: RangeOp
   const params = buildParams(requestedRange)
   const nextUsageController = new AbortController()
   const nextQuotaController = new AbortController()
-  const nextPoolController = new AbortController()
   usageController = nextUsageController
   quotaController = nextQuotaController
-  poolController = nextPoolController
   usageLoading.value = true
   quotaLoading.value = true
-  poolLoading.value = true
   personalQuotas.value = null
-  personalPoolUsage.value = null
   usageErrorMessage.value = ''
   credentialError.value = false
   selectedSubjectSubscriptions.value = []
@@ -330,21 +318,7 @@ async function loadPersonalDashboard(generation: number, requestedRange: RangeOp
       if (generation === requestGeneration) quotaLoading.value = false
     })
 
-  const poolTask = getUserUsageGroupPoolUsage(params, nextPoolController.signal)
-    .then((response) => {
-      if (generation !== requestGeneration || nextPoolController.signal.aborted) return
-      const pool = response.data.data?.group_pool_usage
-      personalPoolUsage.value = pool?.status === 'ok' && (pool.groups?.length ?? 0) > 0 ? pool : null
-    })
-    .catch((error: any) => {
-      if (generation !== requestGeneration || isCanceled(error, nextPoolController.signal)) return
-      personalPoolUsage.value = null
-    })
-    .finally(() => {
-      if (generation === requestGeneration) poolLoading.value = false
-    })
-
-  await Promise.allSettled([usageTask, quotaTask, poolTask])
+  await Promise.allSettled([usageTask, quotaTask])
 }
 
 function selectRange(range: RangeOption) {

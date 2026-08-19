@@ -120,12 +120,6 @@ type UserUsageOriginReader interface {
 	ReadUserUsageOrigin(ctx context.Context, request UserUsageOriginRequest) (*UserUsageOriginResult, error)
 }
 
-// GroupOAuthPoolUsageReader exposes privacy-safe OAuth account-pool snapshots
-// for the effective access groups of one relay user.
-type GroupOAuthPoolUsageReader interface {
-	ReadGroupOAuthPoolUsage(ctx context.Context, groupIDs []int64) (UserUsageGroupPoolUsageState, error)
-}
-
 // RequestUsageReader reads exact provider-scoped usage rows for one Request ID.
 // Callers deliberately request at most two rows so duplicates are detected,
 // never summed.

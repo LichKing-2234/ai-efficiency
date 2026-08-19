@@ -24,17 +24,6 @@ func emptyGroupQuotas() relay.UserUsageGroupQuotaState {
 	}
 }
 
-func resetAtForWindow(subscription relay.UserSubscription, selectedWindow string) *time.Time {
-	switch selectedWindow {
-	case "daily":
-		return subscription.DailyResetAt
-	case "weekly":
-		return subscription.WeeklyResetAt
-	default:
-		return subscription.MonthlyResetAt
-	}
-}
-
 func mergeGroupQuotas(keys []relay.APIKey, subscriptions []relay.UserSubscription, selectedWindow string) relay.UserUsageGroupQuotaState {
 	subscriptionsByGroup := make(map[string]relay.UserSubscription, len(subscriptions))
 	for _, subscription := range subscriptions {
@@ -55,7 +44,6 @@ func mergeGroupQuotas(keys []relay.APIKey, subscriptions []relay.UserSubscriptio
 		quota     *float64
 		unlimited bool
 		source    string
-		resetAt   *time.Time
 	}
 	byGroup := make(map[string]quotaCard)
 	for _, key := range keys {
@@ -64,10 +52,6 @@ func mergeGroupQuotas(keys []relay.APIKey, subscriptions []relay.UserSubscriptio
 		}
 		groupID := strconv.FormatInt(key.Group.ID, 10)
 		used, quota, source, unlimited := selectQuotaPresentation(&key, subscriptionsByGroup[groupID], selectedWindow)
-		var resetAt *time.Time
-		if isSubscriptionQuotaSource(source) {
-			resetAt = resetAtForWindow(subscriptionsByGroup[groupID], selectedWindow)
-		}
 		byGroup[groupID] = quotaCard{
 			groupID:   groupID,
 			groupName: firstNonEmpty(strings.TrimSpace(key.Group.Name), groupID),
@@ -76,7 +60,6 @@ func mergeGroupQuotas(keys []relay.APIKey, subscriptions []relay.UserSubscriptio
 			quota:     quota,
 			unlimited: unlimited,
 			source:    source,
-			resetAt:   resetAt,
 		}
 	}
 	if len(byGroup) == 0 {
@@ -97,14 +80,10 @@ func mergeGroupQuotas(keys []relay.APIKey, subscriptions []relay.UserSubscriptio
 		item := byGroup[groupID]
 		out.Groups = append(out.Groups, relay.UserUsageGroupQuotaGroupItem{
 			GroupID: item.groupID, GroupName: item.groupName, Platform: item.platform,
-			UsedAmount: item.used, QuotaAmount: item.quota, IsUnlimited: item.unlimited, QuotaSource: item.source, ResetAt: item.resetAt,
+			UsedAmount: item.used, QuotaAmount: item.quota, IsUnlimited: item.unlimited, QuotaSource: item.source,
 		})
 	}
 	return out
-}
-
-func isSubscriptionQuotaSource(source string) bool {
-	return strings.HasPrefix(source, "group_") && strings.Contains(source, "_subscription")
 }
 
 func selectQuotaPresentation(key *relay.APIKey, subscription relay.UserSubscription, selectedWindow string) (*float64, *float64, string, bool) {

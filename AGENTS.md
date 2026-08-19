@@ -15,7 +15,6 @@ AI Efficiency Platform（AI 效能平台）是一个独立于 `sub2api` 的系�
 1. 当前代码
 2. 最新且最贴近问题域的 spec：
    - `docs/superpowers/specs/2026-08-11-codex-commit-token-attribution-v2-design.md`
-   - `docs/superpowers/specs/2026-08-19-personal-usage-reset-and-oauth-pool-design.md`
    - `docs/superpowers/specs/2026-08-05-codex-token-attribution-ledger-poc-design.md`
    - `docs/superpowers/specs/2026-07-25-stateless-team-usage-prewarm-worker-design.md`
    - `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md`

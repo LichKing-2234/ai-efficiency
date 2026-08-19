@@ -799,7 +799,6 @@ export interface UserUsageGroupQuotaItem {
   quota_amount?: number | null
   is_unlimited: boolean
   quota_source?: string
-  reset_at?: string | null
 }
 
 export interface UserUsageGroupQuotaState {
@@ -826,33 +825,6 @@ export interface UserQuotaFreshness {
 export interface UserUsageGroupQuotaResponse {
   group_quotas: UserUsageGroupQuotaState
   quota_freshness: UserQuotaFreshness
-}
-
-export interface UserUsageGroupPoolUsageItem {
-  group_id: string
-  status: 'ok' | 'partial' | string
-  average_weekly_utilization: number
-  valid_oauth_accounts: number
-  total_active_oauth_accounts: number
-  next_reset_at?: string | null
-  as_of?: string | null
-}
-
-export interface UserUsageGroupPoolUsageState {
-  status: 'ok' | 'empty' | 'unavailable' | string
-  message?: string
-  groups: UserUsageGroupPoolUsageItem[]
-}
-
-export interface UserPoolUsageFreshness {
-  as_of: string | null
-  cache_status: 'uncached' | string
-  source_status: 'ok' | 'error' | string
-}
-
-export interface UserUsageGroupPoolUsageResponse {
-  group_pool_usage: UserUsageGroupPoolUsageState
-  pool_usage_freshness: UserPoolUsageFreshness
 }
 
 export interface UserUsageDashboardSnapshot {

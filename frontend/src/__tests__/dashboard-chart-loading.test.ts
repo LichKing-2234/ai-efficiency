@@ -20,14 +20,6 @@ vi.mock('@/api/userUsage', () => ({
       },
     },
   })),
-  getUserUsageGroupPoolUsage: vi.fn(() => Promise.resolve({
-    data: {
-      data: {
-        group_pool_usage: { status: 'empty', groups: [] },
-        pool_usage_freshness: { as_of: null, cache_status: 'uncached', source_status: 'ok' },
-      },
-    },
-  })),
 }))
 
 vi.mock('@/api/teamUsage', () => ({
