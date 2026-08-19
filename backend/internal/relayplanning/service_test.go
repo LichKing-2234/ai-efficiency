@@ -54,6 +54,45 @@ func TestAllocateSerializesEmptyGroupsAsEmptyUserLists(t *testing.T) {
 	}
 }
 
+func TestResolveGroupCountCapsRecommendationAtEligibleMembers(t *testing.T) {
+	candidates := []Candidate{
+		{UserID: 1, RangeCost: 10000},
+		{UserID: 2, RangeCost: 10000},
+		{UserID: 3, RangeCost: 10000},
+		{UserID: 4, RangeCost: 10000},
+	}
+	recommended, count := resolveGroupCount(PreviewRequest{WeeklyCostTarget: 2500, GroupCount: 2}, candidates)
+	if recommended != 4 || count != 4 {
+		t.Fatalf("group counts = recommended %d / planned %d, want 4 / 4", recommended, count)
+	}
+}
+
+func TestResolveGroupCountAllowsExplicitReplanResize(t *testing.T) {
+	candidates := []Candidate{{UserID: 1, RangeCost: 10000}, {UserID: 2, RangeCost: 10000}}
+	recommended, count := resolveGroupCount(PreviewRequest{WeeklyCostTarget: 2500, GroupCount: 1, ExistingMappingID: 9}, candidates)
+	if recommended != 2 || count != 1 {
+		t.Fatalf("group counts = recommended %d / planned %d, want 2 / 1", recommended, count)
+	}
+}
+
+func TestProposedGroupNamesFollowRelayCopySequence(t *testing.T) {
+	groups := []relay.Group{
+		{Name: "Group Alpha"},
+		{Name: "Group Alpha (Copy)"},
+		{Name: "Group Alpha (Copy 3)"},
+	}
+	got := proposedGroupNames("Group Alpha", groups, 3)
+	want := []string{"Group Alpha (Copy 2)", "Group Alpha (Copy 4)", "Group Alpha (Copy 5)"}
+	if len(got) != len(want) {
+		t.Fatalf("proposed names = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("proposed names = %#v, want %#v", got, want)
+		}
+	}
+}
+
 func TestMergeTrendUsageFillsMissingRangeTokens(t *testing.T) {
 	stats := map[int64]relay.TeamUserUsageStats{
 		101: {UserID: 101},

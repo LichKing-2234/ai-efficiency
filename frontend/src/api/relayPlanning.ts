@@ -21,6 +21,7 @@ export interface RelayPlanningAssignment {
   total_cost: number
   user_ids: number[]
   target_group_id?: number
+  target_group_name?: string
 }
 
 export interface RelayPlanningPlan {
@@ -56,7 +57,7 @@ export interface RelayPlanningMapping {
 
 export interface RelayPlanningExecution {
   plan: RelayPlanningPlan
-  groups: Array<{ index: number; id?: number; status: string; error?: string }>
+  groups: Array<{ index: number; id?: number; name?: string; status: string; error?: string }>
   members: Array<{ user_id: number; target_group_id?: number; subscription: string; source_removal: string; api_keys?: string[]; error?: string }>
   mapping?: RelayPlanningMapping
   warnings?: string[]

@@ -17,7 +17,9 @@ import {
 } from '@/api/relayPlanning'
 
 const loading = ref(false)
+const confirming = ref(false)
 const executing = ref(false)
+const confirmDialogOpen = ref(false)
 const error = ref('')
 const plan = ref<RelayPlanningPlan | null>(null)
 const activeMappingID = ref<number | null>(null)
@@ -42,14 +44,15 @@ const platforms = computed(() => Array.from(new Set((provider.value?.groups ?? [
 const eligibleCandidates = computed(() => plan.value?.candidates.filter((candidate) => candidate.eligible) ?? [])
 
 function planningRequest(): RelayPlanningRequest {
-  return {
+  const request: RelayPlanningRequest = {
     provider_id: Number(form.provider_id),
     department_id: String(form.department_id || ''),
     platform: String(form.platform || ''),
     source_group_id: Number(form.source_group_id),
     weekly_cost_target: Number(form.weekly_cost_target || 0),
-    group_count: Number(form.group_count || 0),
   }
+  if (activeMappingID.value !== null) request.group_count = Number(form.group_count || 0)
+  return request
 }
 
 async function loadOptions() {
@@ -88,9 +91,32 @@ async function preview() {
   }
 }
 
-async function execute() {
+async function requestExecution() {
   if (!plan.value) return
-  await ElMessageBox.confirm('Create the groups and migrate the selected members now?', 'Confirm group plan', { type: 'warning' })
+  confirming.value = true
+  try {
+    const selected_user_ids = Array.from(selectedUserIDs.value)
+    const response = activeMappingID.value
+      ? await previewRelayReplan(activeMappingID.value, { selected_user_ids, group_count: plan.value.group_count })
+      : await previewRelayPlan({
+          provider_id: plan.value.provider_id,
+          department_id: plan.value.department_id,
+          platform: plan.value.platform,
+          source_group_id: plan.value.source_group_id,
+          weekly_cost_target: plan.value.weekly_cost_target,
+          selected_user_ids,
+        })
+    plan.value = response.data.data ?? plan.value
+    confirmDialogOpen.value = true
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.message || err.message || 'Failed to refresh the plan')
+  } finally {
+    confirming.value = false
+  }
+}
+
+async function executeConfirmed() {
+  if (!plan.value) return
   executing.value = true
   try {
     const request = {
@@ -109,6 +135,7 @@ async function execute() {
     plan.value = response.data.data?.plan ?? plan.value
     operationKey.value = request.operation_key
     await loadMappings()
+    confirmDialogOpen.value = false
     ElMessage.success('Execution finished; review per-item results below')
   } catch (err: any) {
     ElMessage.error(err.response?.data?.message || err.message || 'Execution failed')
@@ -141,6 +168,8 @@ function resetPlan() {
   selectedUserIDs.value = new Set()
   operationKey.value = ''
   error.value = ''
+  confirming.value = false
+  confirmDialogOpen.value = false
 }
 
 function toggleCandidate(userID: number, checked: boolean) {
@@ -190,31 +219,43 @@ onMounted(async () => {
       <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div class="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900"><el-icon><Setting /></el-icon> Planning inputs</div>
         <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <el-select v-model="form.provider_id" placeholder="Relay provider" @change="resetPlan">
-            <el-option v-for="item in providers" :key="item.id" :label="item.display_name || item.name" :value="item.id" />
-          </el-select>
-          <el-select v-model="form.department_id" filterable placeholder="Department" @change="resetPlan">
-            <el-option v-for="item in departments" :key="item.external_id" :label="item.display_path || item.name" :value="item.external_id" />
-          </el-select>
-          <el-select v-model="form.platform" placeholder="Platform" @change="form.source_group_id = 0; resetPlan()">
-            <el-option v-for="item in platforms" :key="item" :label="item" :value="item" />
-          </el-select>
-          <el-select v-model="form.source_group_id" filterable placeholder="Source group" @change="resetPlan">
-            <el-option v-for="item in groups" :key="item.group_id" :label="`${item.group_name} (#${item.group_id})`" :value="Number(item.group_id)" />
-          </el-select>
-          <el-input-number v-model="form.weekly_cost_target" :min="0" :precision="2" controls-position="right" placeholder="Single-group 30-day cost target" />
-          <el-input-number v-model="form.group_count" :min="0" controls-position="right" placeholder="Group count (0 = recommend)" />
+          <el-form-item label="Relay provider" class="!mb-0">
+            <el-select v-model="form.provider_id" data-testid="provider-select" class="w-full" placeholder="Select provider" @change="resetPlan">
+              <el-option v-for="item in providers" :key="item.id" :label="item.display_name || item.name" :value="item.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="Department" class="!mb-0">
+            <el-select v-model="form.department_id" data-testid="department-select" class="w-full" filterable placeholder="Select department" @change="resetPlan">
+              <el-option v-for="item in departments" :key="item.external_id" :label="item.display_path || item.name" :value="item.external_id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="Platform" class="!mb-0">
+            <el-select v-model="form.platform" data-testid="platform-select" class="w-full" placeholder="Select platform" @change="form.source_group_id = 0; resetPlan()">
+              <el-option v-for="item in platforms" :key="item" :label="item" :value="item" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="Source group" class="!mb-0">
+            <el-select v-model="form.source_group_id" data-testid="source-group-select" class="w-full" filterable placeholder="Select source group" @change="resetPlan">
+              <el-option v-for="item in groups" :key="item.group_id" :label="`${item.group_name} (#${item.group_id})`" :value="Number(item.group_id)" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="30-day cost target per group (USD)" class="!mb-0">
+            <el-input-number v-model="form.weekly_cost_target" data-testid="cost-target-input" class="!w-full" :min="0" :precision="2" controls-position="right" />
+          </el-form-item>
+          <el-form-item v-if="activeMappingID !== null" label="Managed group count" class="!mb-0">
+            <el-input-number v-model="form.group_count" data-testid="replan-group-count" class="!w-full" :min="1" controls-position="right" />
+          </el-form-item>
         </div>
         <div class="mt-4 flex flex-wrap gap-2">
-          <el-button type="primary" :loading="loading" @click="preview">Preview allocation</el-button>
-          <el-button v-if="plan" :icon="Check" type="success" :loading="executing" @click="execute">Confirm and execute</el-button>
+          <el-button data-testid="preview-allocation" type="primary" :loading="loading" @click="preview">Preview allocation</el-button>
+          <el-button v-if="plan" data-testid="open-execution-confirmation" :icon="Check" type="success" :loading="confirming" :disabled="plan.group_count === 0 || selectedUserIDs.size === 0" @click="requestExecution">Confirm and execute</el-button>
         </div>
         <el-alert v-if="error" class="mt-4" type="error" :closable="false" :title="error" />
       </section>
 
       <section v-if="plan" class="space-y-4">
         <div class="grid gap-4 sm:grid-cols-3">
-          <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-xs text-slate-500">Recommended groups</div><div class="mt-1 text-2xl font-semibold">{{ plan.recommended_group_count }}</div></div>
+          <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-xs text-slate-500">Planned groups</div><div class="mt-1 text-2xl font-semibold">{{ plan.group_count }}</div><div v-if="plan.group_count !== plan.recommended_group_count" class="mt-1 text-xs text-slate-500">Recommended: {{ plan.recommended_group_count }}</div></div>
           <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-xs text-slate-500">Selected eligible members</div><div class="mt-1 text-2xl font-semibold">{{ eligibleCandidates.length }}</div></div>
           <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-xs text-slate-500">Planning target</div><div class="mt-1 text-2xl font-semibold">${{ plan.weekly_cost_target.toFixed(2) }}</div></div>
         </div>
@@ -237,7 +278,7 @@ onMounted(async () => {
         <div class="rounded-lg border border-slate-200 bg-white p-4">
           <div class="mb-3 text-sm font-semibold text-slate-900">Proposed groups</div>
           <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            <div v-for="assignment in plan.assignments" :key="assignment.index" class="rounded-md border border-slate-200 p-3"><div class="flex justify-between text-sm font-medium"><span>Group {{ assignment.index + 1 }}</span><span>${{ assignment.total_cost.toFixed(2) }}</span></div><div class="mt-2 text-xs text-slate-500">{{ assignment.user_ids?.length ?? 0 }} member(s)</div></div>
+            <div v-for="assignment in plan.assignments" :key="assignment.index" class="rounded-md border border-slate-200 p-3"><div class="flex justify-between gap-3 text-sm font-medium"><span class="min-w-0 break-words">{{ assignment.target_group_name || `Group ${assignment.index + 1}` }}<span v-if="assignment.target_group_id" class="text-slate-500"> (#{{ assignment.target_group_id }})</span></span><span class="shrink-0">${{ assignment.total_cost.toFixed(2) }}</span></div><div class="mt-2 text-xs text-slate-500">{{ assignment.user_ids?.length ?? 0 }} member(s)</div></div>
           </div>
         </div>
       </section>
@@ -254,6 +295,30 @@ onMounted(async () => {
           <el-table-column label="Actions" width="170"><template #default="scope"><el-button link type="primary" @click="replan(scope.row as RelayPlanningMapping)">Replan</el-button><el-button link type="primary" @click="rebind(scope.row as RelayPlanningMapping)">Rebind</el-button></template></el-table-column>
         </el-table>
       </section>
+
+      <el-dialog
+        v-model="confirmDialogOpen"
+        title="Confirm group plan"
+        append-to-body
+        align-center
+        width="min(100%, 32rem)"
+        :close-on-click-modal="!executing"
+        :close-on-press-escape="!executing"
+      >
+        <el-alert type="warning" :closable="false" show-icon title="This creates relay groups and migrates the selected members." />
+        <dl v-if="plan" class="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+          <dt class="text-slate-500">Source</dt><dd class="min-w-0 break-words font-medium text-slate-900">{{ plan.source_group_name }} (#{{ plan.source_group_id }})</dd>
+          <dt class="text-slate-500">Members</dt><dd class="font-medium text-slate-900">{{ selectedUserIDs.size }}</dd>
+          <dt class="text-slate-500">Target groups</dt>
+          <dd class="max-h-48 space-y-1 overflow-y-auto font-medium text-slate-900">
+            <div v-for="assignment in plan.assignments" :key="assignment.index" class="break-words">{{ assignment.target_group_name || `Group ${assignment.index + 1}` }}</div>
+          </dd>
+        </dl>
+        <template #footer>
+          <el-button :disabled="executing" @click="confirmDialogOpen = false">Cancel</el-button>
+          <el-button data-testid="confirm-execution" type="danger" :loading="executing" @click="executeConfirmed">Create groups and migrate</el-button>
+        </template>
+      </el-dialog>
     </div>
   </AppLayout>
 </template>

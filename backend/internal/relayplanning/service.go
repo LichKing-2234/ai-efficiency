@@ -24,6 +24,7 @@ const (
 	maxPlanningUsers    = 5000
 	maxCandidateWorkers = 8
 	defaultValidityDays = 30
+	maxGroupNameRunes   = 100
 )
 
 type ProviderResolver interface {
@@ -75,10 +76,11 @@ type Candidate struct {
 }
 
 type Assignment struct {
-	Index         int     `json:"index"`
-	TotalCost     float64 `json:"total_cost"`
-	UserIDs       []int   `json:"user_ids"`
-	TargetGroupID int64   `json:"target_group_id,omitempty"`
+	Index           int     `json:"index"`
+	TotalCost       float64 `json:"total_cost"`
+	UserIDs         []int   `json:"user_ids"`
+	TargetGroupID   int64   `json:"target_group_id,omitempty"`
+	TargetGroupName string  `json:"target_group_name,omitempty"`
 }
 
 type Plan struct {
@@ -120,6 +122,7 @@ type ExecuteRequest struct {
 type GroupResult struct {
 	Index  int    `json:"index"`
 	ID     int64  `json:"id,omitempty"`
+	Name   string `json:"name,omitempty"`
 	Status string `json:"status"`
 	Error  string `json:"error,omitempty"`
 }
@@ -185,25 +188,11 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 			eligible = append(eligible, candidate)
 		}
 	}
-	count := req.GroupCount
-	total := 0.0
-	for _, candidate := range eligible {
-		total += candidate.RangeCost
-	}
-	recommended := 1
-	if req.WeeklyCostTarget > 0 && total > 0 {
-		recommended = int(math.Ceil(total / req.WeeklyCostTarget))
-		if recommended < 1 {
-			recommended = 1
-		}
-	}
-	if count <= 0 {
-		count = recommended
-	}
-	if count < 1 {
-		count = 1
-	}
+	recommended, count := resolveGroupCount(req, eligible)
 	assignments := allocate(eligible, count)
+	if err := s.assignTargets(ctx, req, groups, source.Name, assignments); err != nil {
+		return nil, err
+	}
 	warnings := make([]string, 0)
 	if len(eligible) == 0 {
 		warnings = append(warnings, "no eligible member has a valid relay mapping and source-group membership")
@@ -211,7 +200,11 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	if req.WeeklyCostTarget > 0 {
 		for _, assignment := range assignments {
 			if assignment.TotalCost > req.WeeklyCostTarget {
-				warnings = append(warnings, fmt.Sprintf("group %d exceeds the planning target", assignment.Index+1))
+				name := assignment.TargetGroupName
+				if name == "" {
+					name = fmt.Sprintf("group %d", assignment.Index+1)
+				}
+				warnings = append(warnings, fmt.Sprintf("%s exceeds the planning target", name))
 			}
 		}
 	}
@@ -261,6 +254,9 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 			continue
 		}
 		result.ID = group.ID
+		result.Name = group.Name
+		plan.Assignments[index].TargetGroupID = group.ID
+		plan.Assignments[index].TargetGroupName = group.Name
 		if statusUpdater != nil {
 			if activateErr := statusUpdater.UpdateGroupStatus(ctx, group.ID, "active"); activateErr != nil {
 				result.Error = activateErr.Error()
@@ -443,6 +439,9 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 			break
 		}
 		result.ID = group.ID
+		result.Name = group.Name
+		plan.Assignments[result.Index].TargetGroupID = group.ID
+		plan.Assignments[result.Index].TargetGroupName = group.Name
 		if statusUpdater != nil {
 			if activateErr := statusUpdater.UpdateGroupStatus(ctx, group.ID, "active"); activateErr != nil {
 				result.Error = activateErr.Error()
@@ -882,7 +881,7 @@ func mappingFromEnt(row *ent.RelayGroupMapping) Mapping {
 
 func allocate(candidates []Candidate, count int) []Assignment {
 	if count < 1 {
-		count = 1
+		return make([]Assignment, 0)
 	}
 	assignments := make([]Assignment, count)
 	for i := range assignments {
@@ -900,6 +899,95 @@ func allocate(candidates []Candidate, count int) []Assignment {
 		assignments[best].UserIDs = append(assignments[best].UserIDs, candidate.UserID)
 	}
 	return assignments
+}
+
+func resolveGroupCount(req PreviewRequest, candidates []Candidate) (int, int) {
+	if len(candidates) == 0 {
+		if req.ExistingMappingID > 0 && req.GroupCount > 0 {
+			return 0, req.GroupCount
+		}
+		return 0, 0
+	}
+	total := 0.0
+	for _, candidate := range candidates {
+		total += candidate.RangeCost
+	}
+	recommended := 1
+	if req.WeeklyCostTarget > 0 && total > 0 {
+		recommended = int(math.Ceil(total / req.WeeklyCostTarget))
+	}
+	if recommended > len(candidates) {
+		recommended = len(candidates)
+	}
+	count := recommended
+	if req.ExistingMappingID > 0 && req.GroupCount > 0 {
+		count = req.GroupCount
+	}
+	return recommended, count
+}
+
+func (s *Service) assignTargets(ctx context.Context, req PreviewRequest, groups []relay.Group, sourceName string, assignments []Assignment) error {
+	existingIDs := make([]int64, 0)
+	if req.ExistingMappingID > 0 {
+		mapping, err := s.client.RelayGroupMapping.Get(ctx, req.ExistingMappingID)
+		if err != nil {
+			return fmt.Errorf("load relay group mapping targets: %w", err)
+		}
+		existingIDs = mapping.GroupIds
+	}
+	groupByID := make(map[int64]relay.Group, len(groups))
+	for _, group := range groups {
+		groupByID[group.ID] = group
+	}
+	existingCount := len(existingIDs)
+	if existingCount > len(assignments) {
+		existingCount = len(assignments)
+	}
+	proposedNames := proposedGroupNames(sourceName, groups, len(assignments)-existingCount)
+	for i := range assignments {
+		if i < existingCount {
+			assignments[i].TargetGroupID = existingIDs[i]
+			assignments[i].TargetGroupName = groupByID[existingIDs[i]].Name
+			continue
+		}
+		assignments[i].TargetGroupName = proposedNames[i-existingCount]
+	}
+	return nil
+}
+
+func proposedGroupNames(sourceName string, groups []relay.Group, count int) []string {
+	used := make(map[string]struct{}, len(groups)+count)
+	for _, group := range groups {
+		used[group.Name] = struct{}{}
+	}
+	names := make([]string, 0, count)
+	copyNumber := 1
+	for len(names) < count {
+		for {
+			name := proposedGroupName(sourceName, copyNumber)
+			copyNumber++
+			if _, exists := used[name]; exists {
+				continue
+			}
+			used[name] = struct{}{}
+			names = append(names, name)
+			break
+		}
+	}
+	return names
+}
+
+func proposedGroupName(sourceName string, copyNumber int) string {
+	suffix := " (Copy)"
+	if copyNumber > 1 {
+		suffix = fmt.Sprintf(" (Copy %d)", copyNumber)
+	}
+	base := []rune(strings.TrimSpace(sourceName))
+	maxBase := maxGroupNameRunes - len([]rune(suffix))
+	if len(base) > maxBase {
+		base = base[:maxBase]
+	}
+	return string(base) + suffix
 }
 
 func candidateByUserID(candidates []Candidate, id int) *Candidate {
