@@ -2013,14 +2013,50 @@ type subscriptionAssignment struct {
 }
 
 type sub2apiUserSubscription struct {
-	ID              int64   `json:"id"`
-	UserID          int64   `json:"user_id"`
-	GroupID         int64   `json:"group_id"`
-	Status          string  `json:"status"`
-	DailyUsageUSD   float64 `json:"daily_usage_usd"`
-	WeeklyUsageUSD  float64 `json:"weekly_usage_usd"`
-	MonthlyUsageUSD float64 `json:"monthly_usage_usd"`
-	Group           *Group  `json:"group"`
+	ID              int64      `json:"id"`
+	UserID          int64      `json:"user_id"`
+	GroupID         int64      `json:"group_id"`
+	Status          string     `json:"status"`
+	DailyUsageUSD   float64    `json:"daily_usage_usd"`
+	WeeklyUsageUSD  float64    `json:"weekly_usage_usd"`
+	MonthlyUsageUSD float64    `json:"monthly_usage_usd"`
+	DailyResetAt    *time.Time `json:"daily_reset_at,omitempty"`
+	WeeklyResetAt   *time.Time `json:"weekly_reset_at,omitempty"`
+	MonthlyResetAt  *time.Time `json:"monthly_reset_at,omitempty"`
+	Group           *Group     `json:"group"`
+}
+
+type sub2apiUsageWindowProgress struct {
+	ResetsAt *time.Time `json:"resets_at"`
+}
+
+type sub2apiSubscriptionProgress struct {
+	Subscription sub2apiUserSubscription `json:"subscription"`
+	Progress     *struct {
+		Daily   *sub2apiUsageWindowProgress `json:"daily"`
+		Weekly  *sub2apiUsageWindowProgress `json:"weekly"`
+		Monthly *sub2apiUsageWindowProgress `json:"monthly"`
+	} `json:"progress"`
+}
+
+type sub2apiAccountSummary struct {
+	ID            int64   `json:"id"`
+	Type          string  `json:"type"`
+	Status        string  `json:"status"`
+	GroupIDs      []int64 `json:"group_ids"`
+	AccountGroups []struct {
+		GroupID int64 `json:"group_id"`
+	} `json:"account_groups"`
+}
+
+type sub2apiUsageProgress struct {
+	Utilization float64    `json:"utilization"`
+	ResetsAt    *time.Time `json:"resets_at"`
+}
+
+type sub2apiUsageInfo struct {
+	UpdatedAt *time.Time            `json:"updated_at"`
+	SevenDay  *sub2apiUsageProgress `json:"seven_day"`
 }
 
 func (s *sub2apiRelay) ListUserSubscriptions(ctx context.Context, userID int64) ([]UserSubscription, error) {
@@ -2030,18 +2066,253 @@ func (s *sub2apiRelay) ListUserSubscriptions(ctx context.Context, userID int64) 
 	}
 	out := make([]UserSubscription, 0, len(items))
 	for _, item := range items {
-		out = append(out, UserSubscription{
-			ID:              item.ID,
-			UserID:          item.UserID,
-			GroupID:         item.GroupID,
-			Status:          item.Status,
-			DailyUsageUSD:   item.DailyUsageUSD,
-			WeeklyUsageUSD:  item.WeeklyUsageUSD,
-			MonthlyUsageUSD: item.MonthlyUsageUSD,
-			Group:           item.Group,
-		})
+		out = append(out, userSubscriptionFromSub2API(item))
 	}
 	return out, nil
+}
+
+func userSubscriptionFromSub2API(item sub2apiUserSubscription) UserSubscription {
+	return UserSubscription{
+		ID:              item.ID,
+		UserID:          item.UserID,
+		GroupID:         item.GroupID,
+		Status:          item.Status,
+		DailyUsageUSD:   item.DailyUsageUSD,
+		WeeklyUsageUSD:  item.WeeklyUsageUSD,
+		MonthlyUsageUSD: item.MonthlyUsageUSD,
+		DailyResetAt:    item.DailyResetAt,
+		WeeklyResetAt:   item.WeeklyResetAt,
+		MonthlyResetAt:  item.MonthlyResetAt,
+		Group:           item.Group,
+	}
+}
+
+func (s *sub2apiRelay) listUserSubscriptionsWithProgress(ctx context.Context, login, password string, userID int64) ([]UserSubscription, error) {
+	token, authenticatedUser, err := s.loginSessionToken(ctx, login, password)
+	if err != nil {
+		return nil, err
+	}
+	if authenticatedUser == nil || authenticatedUser.ID != userID {
+		return nil, fmt.Errorf("relay: subscription progress user mismatch")
+	}
+	return s.listUserSubscriptionsWithProgressToken(ctx, token)
+}
+
+func (s *sub2apiRelay) listUserSubscriptionsWithProgressToken(ctx context.Context, token string) ([]UserSubscription, error) {
+	var items []sub2apiSubscriptionProgress
+	if err := s.getUserDashboardJSON(ctx, token, "/api/v1/subscriptions/progress", nil, &items); err != nil {
+		return nil, fmt.Errorf("relay: list user subscriptions with progress: %w", err)
+	}
+
+	out := make([]UserSubscription, 0, len(items))
+	for _, item := range items {
+		subscription := userSubscriptionFromSub2API(item.Subscription)
+		if item.Progress != nil {
+			if item.Progress.Daily != nil {
+				subscription.DailyResetAt = item.Progress.Daily.ResetsAt
+			}
+			if item.Progress.Weekly != nil {
+				subscription.WeeklyResetAt = item.Progress.Weekly.ResetsAt
+			}
+			if item.Progress.Monthly != nil {
+				subscription.MonthlyResetAt = item.Progress.Monthly.ResetsAt
+			}
+		}
+		out = append(out, subscription)
+	}
+	return out, nil
+}
+
+func (s *sub2apiRelay) ReadGroupOAuthPoolUsage(ctx context.Context, groupIDs []int64) (UserUsageGroupPoolUsageState, error) {
+	uniqueGroupIDs := make(map[int64]struct{}, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if groupID > 0 {
+			uniqueGroupIDs[groupID] = struct{}{}
+		}
+	}
+	if len(uniqueGroupIDs) == 0 {
+		return UserUsageGroupPoolUsageState{Status: "empty", Groups: []UserUsageGroupPoolUsageGroupItem{}}, nil
+	}
+
+	accountIDsByGroup := make(map[int64]map[int64]struct{}, len(uniqueGroupIDs))
+	allAccountIDs := make(map[int64]struct{})
+	orderedGroupIDs := make([]int64, 0, len(uniqueGroupIDs))
+	for groupID := range uniqueGroupIDs {
+		orderedGroupIDs = append(orderedGroupIDs, groupID)
+	}
+	sort.Slice(orderedGroupIDs, func(i, j int) bool { return orderedGroupIDs[i] < orderedGroupIDs[j] })
+	for _, groupID := range orderedGroupIDs {
+		accounts, err := s.listActiveOAuthAccountsByGroup(ctx, groupID)
+		if err != nil {
+			return UserUsageGroupPoolUsageState{}, err
+		}
+		ids := make(map[int64]struct{}, len(accounts))
+		for _, account := range accounts {
+			if account.ID <= 0 || !strings.EqualFold(strings.TrimSpace(account.Type), "oauth") || !strings.EqualFold(strings.TrimSpace(account.Status), "active") {
+				continue
+			}
+			ids[account.ID] = struct{}{}
+			allAccountIDs[account.ID] = struct{}{}
+		}
+		accountIDsByGroup[groupID] = ids
+	}
+	if len(allAccountIDs) == 0 {
+		return UserUsageGroupPoolUsageState{Status: "empty", Groups: []UserUsageGroupPoolUsageGroupItem{}}, nil
+	}
+
+	orderedAccountIDs := make([]int64, 0, len(allAccountIDs))
+	for accountID := range allAccountIDs {
+		orderedAccountIDs = append(orderedAccountIDs, accountID)
+	}
+	sort.Slice(orderedAccountIDs, func(i, j int) bool { return orderedAccountIDs[i] < orderedAccountIDs[j] })
+	usageByAccount, err := s.getBatchAccountUsage(ctx, orderedAccountIDs)
+	if err != nil {
+		return UserUsageGroupPoolUsageState{}, err
+	}
+
+	now := time.Now().UTC()
+	result := UserUsageGroupPoolUsageState{Status: "ok", Groups: make([]UserUsageGroupPoolUsageGroupItem, 0, len(orderedGroupIDs))}
+	for _, groupID := range orderedGroupIDs {
+		accountIDs := accountIDsByGroup[groupID]
+		if len(accountIDs) == 0 {
+			continue
+		}
+		var totalUtilization float64
+		validCount := 0
+		var nextResetAt *time.Time
+		var asOf *time.Time
+		for accountID := range accountIDs {
+			usage := usageByAccount[strconv.FormatInt(accountID, 10)]
+			if usage == nil || usage.SevenDay == nil {
+				continue
+			}
+			validCount++
+			totalUtilization += usage.SevenDay.Utilization
+			if usage.UpdatedAt != nil && (asOf == nil || usage.UpdatedAt.After(*asOf)) {
+				value := usage.UpdatedAt.UTC()
+				asOf = &value
+			}
+			if usage.SevenDay.ResetsAt != nil && usage.SevenDay.ResetsAt.After(now) && (nextResetAt == nil || usage.SevenDay.ResetsAt.Before(*nextResetAt)) {
+				value := usage.SevenDay.ResetsAt.UTC()
+				nextResetAt = &value
+			}
+		}
+		if validCount == 0 {
+			continue
+		}
+		status := "ok"
+		if validCount < len(accountIDs) {
+			status = "partial"
+		}
+		result.Groups = append(result.Groups, UserUsageGroupPoolUsageGroupItem{
+			GroupID:                  strconv.FormatInt(groupID, 10),
+			Status:                   status,
+			AverageWeeklyUtilization: totalUtilization / float64(validCount),
+			ValidOAuthAccounts:       validCount,
+			TotalActiveOAuthAccounts: len(accountIDs),
+			NextResetAt:              nextResetAt,
+			AsOf:                     asOf,
+		})
+	}
+	if len(result.Groups) == 0 {
+		result.Status = "empty"
+	}
+	return result, nil
+}
+
+func (s *sub2apiRelay) listActiveOAuthAccountsByGroup(ctx context.Context, groupID int64) ([]sub2apiAccountSummary, error) {
+	var all []sub2apiAccountSummary
+	for page := 1; ; page++ {
+		query := url.Values{}
+		query.Set("page", strconv.Itoa(page))
+		query.Set("page_size", "1000")
+		query.Set("type", "oauth")
+		query.Set("group", strconv.FormatInt(groupID, 10))
+		resp, err := s.doAdminRequest(ctx, http.MethodGet, "/api/v1/admin/accounts?"+query.Encode(), nil)
+		if err != nil {
+			return nil, fmt.Errorf("relay: list OAuth accounts for group %d: %w", groupID, err)
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("relay: list OAuth accounts for group %d: read body: %w", groupID, readErr)
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("relay: list OAuth accounts for group %d: unexpected status %d%s", groupID, resp.StatusCode, relayErrorMessageSuffixFromData(body))
+		}
+		var envelope struct {
+			envelopeStatus
+			Data json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(body, &envelope); err != nil {
+			return nil, fmt.Errorf("relay: list OAuth accounts for group %d: decode: %w", groupID, err)
+		}
+		if !envelope.ok() {
+			return nil, fmt.Errorf("relay: list OAuth accounts for group %d: request failed%s", groupID, envelope.messageSuffix())
+		}
+		items, pages, err := decodeAccountPage(envelope.Data)
+		if err != nil {
+			return nil, fmt.Errorf("relay: list OAuth accounts for group %d: decode page: %w", groupID, err)
+		}
+		all = append(all, items...)
+		if pages <= 1 || page >= pages {
+			return all, nil
+		}
+	}
+}
+
+func decodeAccountPage(data json.RawMessage) ([]sub2apiAccountSummary, int, error) {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
+		return nil, 1, nil
+	}
+	if data[0] == '[' {
+		var items []sub2apiAccountSummary
+		if err := json.Unmarshal(data, &items); err != nil {
+			return nil, 0, err
+		}
+		return items, 1, nil
+	}
+	var page struct {
+		Items []sub2apiAccountSummary `json:"items"`
+		Pages int                     `json:"pages"`
+	}
+	if err := json.Unmarshal(data, &page); err != nil {
+		return nil, 0, err
+	}
+	if page.Pages <= 0 {
+		page.Pages = 1
+	}
+	return page.Items, page.Pages, nil
+}
+
+func (s *sub2apiRelay) getBatchAccountUsage(ctx context.Context, accountIDs []int64) (map[string]*sub2apiUsageInfo, error) {
+	payload, err := json.Marshal(map[string]any{"account_ids": accountIDs, "force": false})
+	if err != nil {
+		return nil, fmt.Errorf("relay: batch OAuth usage: marshal: %w", err)
+	}
+	resp, err := s.doAdminRequest(ctx, http.MethodPost, "/api/v1/admin/accounts/usage/batch", bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("relay: batch OAuth usage: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: batch OAuth usage: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+	}
+	var result struct {
+		envelopeStatus
+		Data struct {
+			Usage  map[string]*sub2apiUsageInfo `json:"usage"`
+			Errors map[string]string            `json:"errors"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("relay: batch OAuth usage: decode: %w", err)
+	}
+	if !result.ok() {
+		return nil, fmt.Errorf("relay: batch OAuth usage: request failed%s", result.messageSuffix())
+	}
+	return result.Data.Usage, nil
 }
 
 func (s *sub2apiRelay) assignDefaultSubscriptionsForUser(ctx context.Context, userID int64) error {
@@ -3026,6 +3297,20 @@ func (s *sub2apiRelay) ReadUserUsageOrigin(ctx context.Context, request UserUsag
 				return s.ListUserAPIKeys(originCtx, request.RelayUserID)
 			}},
 			branchTask{kind: usageSubscriptionsBranch, run: func() (any, error) {
+				if strings.TrimSpace(request.Login) != "" && strings.TrimSpace(request.Password) != "" {
+					var subscriptions []UserSubscription
+					var err error
+					if token != "" {
+						subscriptions, err = s.listUserSubscriptionsWithProgressToken(originCtx, token)
+					} else {
+						subscriptions, err = s.listUserSubscriptionsWithProgress(originCtx, request.Login, request.Password, request.RelayUserID)
+					}
+					if err == nil {
+						return subscriptions, nil
+					}
+					// Progress is an enrichment endpoint. Keep the existing quota projection
+					// available when it is missing or temporarily unavailable.
+				}
 				return s.ListUserSubscriptions(originCtx, request.RelayUserID)
 			}},
 		)

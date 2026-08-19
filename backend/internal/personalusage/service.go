@@ -29,6 +29,7 @@ type resolvedSubject struct {
 	password        string
 	providerID      int
 	providerVersion int64
+	provider        relay.Provider
 	origin          relay.UserUsageOriginReader
 }
 
@@ -120,8 +121,59 @@ func (s *Service) GroupQuotas(ctx context.Context, request Request) (*GroupQuota
 	return &GroupQuotaResponse{GroupQuotas: quota, QuotaFreshness: freshness}, nil
 }
 
+func (s *Service) GroupPoolUsage(ctx context.Context, request Request) (*GroupPoolUsageResponse, error) {
+	if err := validateRequest(request); err != nil {
+		return nil, err
+	}
+	subject, err := s.resolveSubject(ctx, request.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if !subject.configured {
+		return &GroupPoolUsageResponse{
+			PoolUsage:          emptyGroupPoolUsage(),
+			PoolUsageFreshness: PoolUsageFreshness{CacheStatus: "uncached", SourceStatus: "error"},
+		}, nil
+	}
+	reader, ok := subject.provider.(relay.GroupOAuthPoolUsageReader)
+	if !ok {
+		return unavailablePoolUsageResponse(), nil
+	}
+	groups, err := subject.provider.ListAllowedGroupsForUser(ctx, subject.relayUserID)
+	if err != nil {
+		return unavailablePoolUsageResponse(), nil
+	}
+	groupIDs := make([]int64, 0, len(groups))
+	for _, group := range groups {
+		if group.ID > 0 {
+			groupIDs = append(groupIDs, group.ID)
+		}
+	}
+	pool, err := reader.ReadGroupOAuthPoolUsage(ctx, groupIDs)
+	if err != nil {
+		return unavailablePoolUsageResponse(), nil
+	}
+	return &GroupPoolUsageResponse{
+		PoolUsage: pool,
+		PoolUsageFreshness: PoolUsageFreshness{
+			AsOf:         latestPoolAsOf(pool),
+			CacheStatus:  "uncached",
+			SourceStatus: "ok",
+		},
+	}, nil
+}
+
+func unavailablePoolUsageResponse() *GroupPoolUsageResponse {
+	return &GroupPoolUsageResponse{
+		PoolUsage:          unavailableGroupPoolUsage(),
+		PoolUsageFreshness: PoolUsageFreshness{CacheStatus: "uncached", SourceStatus: "error"},
+	}
+}
+
 func (s *Service) loadQuota(ctx context.Context, subject *resolvedSubject, params relay.UserUsageDashboardParams) (relay.UserUsageGroupQuotaState, QuotaFreshness, error) {
 	result, err := subject.origin.ReadUserUsageOrigin(ctx, relay.UserUsageOriginRequest{
+		Login:       subject.login,
+		Password:    subject.password,
 		RelayUserID: subject.relayUserID,
 		Params:      params,
 		Branches:    relay.UserUsageOriginBranches{Quota: true},
@@ -190,7 +242,7 @@ func (s *Service) resolveSubject(ctx context.Context, userID int) (*resolvedSubj
 	return &resolvedSubject{
 		configured: true, actorID: user.ID, relayUserID: int64(*user.RelayUserID),
 		bindingVersion: bindingVersion, login: login, password: password,
-		providerID: providerRow.ID, providerVersion: providerRow.ConfigurationVersion, origin: origin,
+		providerID: providerRow.ID, providerVersion: providerRow.ConfigurationVersion, provider: provider, origin: origin,
 	}, nil
 }
 
