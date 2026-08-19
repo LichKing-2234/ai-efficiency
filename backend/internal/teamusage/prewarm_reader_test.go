@@ -118,6 +118,26 @@ func TestPrewarmReaderFullHitFiltersAuthorizedRosterAndUsesSparseZero(t *testing
 	}
 }
 
+func TestPrewarmReaderReturnsAuthorizedStatsForReuse(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
+	seedAuthorizedPrewarmManifest(t, cache, testPrewarmIdentity(), now, []int64{101})
+	reader := mustPrewarmReader(t, cache, PrewarmReaderOptions{Now: func() time.Time { return now }})
+
+	stats, outcome, err := reader.ReadAuthorizedStats(context.Background(), PrewarmReadRequest{
+		ProviderID: 7, ProviderVersion: 11,
+		Params:                 OverviewParams{StartDate: "2026-06-22", EndDate: "2026-07-21", Granularity: "day", Timezone: "UTC"},
+		AuthorizedRelayUserIDs: []int64{101},
+	})
+	if err != nil || outcome != PrewarmReadFullHit {
+		t.Fatalf("ReadAuthorizedStats() outcome/error = %q/%v, want full hit", outcome, err)
+	}
+	stat, ok := stats[101]
+	if !ok || stat.RangeActualCost == nil || stat.RangeTotalTokens == nil {
+		t.Fatalf("ReadAuthorizedStats() stat = %#v/%v, want complete 30-day values", stat, ok)
+	}
+}
+
 func TestPrewarmReaderWindowSelectionUsesExactCacheReferences(t *testing.T) {
 	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	tests := []struct {

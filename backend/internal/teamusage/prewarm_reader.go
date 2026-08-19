@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/ai-efficiency/backend/internal/relay"
 )
 
 type PrewarmReadRequest struct {
@@ -93,4 +95,15 @@ func (r *PrewarmReader) ReadAuthorizedOrigin(
 		return nil, PrewarmReadFallback, nil
 	}
 	return origin, PrewarmReadFullHit, nil
+}
+
+func (r *PrewarmReader) ReadAuthorizedStats(
+	ctx context.Context,
+	request PrewarmReadRequest,
+) (map[int64]relay.TeamUserUsageStats, PrewarmReadOutcome, error) {
+	origin, outcome, err := r.ReadAuthorizedOrigin(ctx, request)
+	if origin == nil {
+		return nil, outcome, err
+	}
+	return origin.StatsByRelayUserID, outcome, err
 }

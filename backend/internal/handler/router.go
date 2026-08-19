@@ -293,7 +293,7 @@ func setupRouter(
 	if providerHandler != nil {
 		adminUsersHandler = NewAdminUsersHandler(entClient, encryptionKey, providerHandler)
 		adminUsersHandler.logger = providerHandler.logger
-		relayPlanningHandler = NewRelayPlanningHandler(relayplanning.NewService(entClient, providerHandler))
+		relayPlanningHandler = NewRelayPlanningHandler(relayplanning.NewService(entClient, providerHandler, options.TeamUsagePrewarmReader))
 		quotaResetService := quotareset.NewService(
 			entClient,
 			providerHandler,

@@ -18,6 +18,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/adminusers"
 	"github.com/ai-efficiency/backend/internal/directorysync"
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/ai-efficiency/backend/internal/teamusage"
 )
 
 const (
@@ -31,6 +32,10 @@ type ProviderResolver interface {
 	Resolve(context.Context, int) (relay.Provider, error)
 }
 
+type prewarmUsageReader interface {
+	ReadAuthorizedStats(context.Context, teamusage.PrewarmReadRequest) (map[int64]relay.TeamUserUsageStats, teamusage.PrewarmReadOutcome, error)
+}
+
 type subscriptionAssigner interface {
 	AssignSubscriptionForUser(context.Context, int64, int64, int) error
 }
@@ -40,13 +45,14 @@ type subscriptionRemover interface {
 }
 
 type Service struct {
-	client   *ent.Client
-	resolver ProviderResolver
-	users    *adminusers.Service
+	client        *ent.Client
+	resolver      ProviderResolver
+	users         *adminusers.Service
+	prewarmReader prewarmUsageReader
 }
 
-func NewService(client *ent.Client, resolver ProviderResolver) *Service {
-	return &Service{client: client, resolver: resolver, users: adminusers.NewService(client)}
+func NewService(client *ent.Client, resolver ProviderResolver, prewarmReader *teamusage.PrewarmReader) *Service {
+	return &Service{client: client, resolver: resolver, users: adminusers.NewService(client), prewarmReader: prewarmReader}
 }
 
 type PreviewRequest struct {
@@ -148,6 +154,10 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	if err := validateRequest(req); err != nil {
 		return nil, err
 	}
+	providerConfig, err := s.client.RelayProvider.Get(ctx, req.ProviderID)
+	if err != nil {
+		return nil, fmt.Errorf("load relay provider configuration: %w", err)
+	}
 	p, err := s.resolver.Resolve(ctx, req.ProviderID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve relay provider: %w", err)
@@ -178,7 +188,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		}
 		users = filtered
 	}
-	candidates, err := s.buildCandidates(ctx, p, users, source, req.Platform, req.DepartmentID)
+	candidates, err := s.buildCandidates(ctx, p, req.ProviderID, providerConfig.ConfigurationVersion, users, source, req.Platform, req.DepartmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -608,7 +618,7 @@ func findSourceGroup(groups []relay.Group, id int64, platform string) (relay.Gro
 	return relay.Group{}, fmt.Errorf("source group %d is unavailable", id)
 }
 
-func (s *Service) buildCandidates(ctx context.Context, p relay.Provider, users []*ent.User, source relay.Group, platform, departmentID string) ([]Candidate, error) {
+func (s *Service) buildCandidates(ctx context.Context, p relay.Provider, providerID int, providerVersion int64, users []*ent.User, source relay.Group, platform, departmentID string) ([]Candidate, error) {
 	allUsers, err := s.client.User.Query().Where(user.RelayUserIDNotNil()).Order(ent.Asc(user.FieldID)).Limit(maxPlanningUsers).All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load users for global token ranking: %w", err)
@@ -619,7 +629,7 @@ func (s *Service) buildCandidates(ctx context.Context, p relay.Provider, users [
 			ids = append(ids, int64(*u.RelayUserID))
 		}
 	}
-	stats, err := usageStats(ctx, p, ids)
+	stats, err := s.loadUsageStats(ctx, p, providerID, providerVersion, ids)
 	if err != nil {
 		return nil, fmt.Errorf("load 30-day usage: %w", err)
 	}
@@ -680,27 +690,14 @@ func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, u *ent.U
 	candidate.RangeCost = usageCost(stat)
 	candidate.RangeTokens = usageTokens(stat)
 	candidate.GlobalTokenRank = ranks[candidate.RelayUserID]
-	allowed, groupErr := p.ListAllowedGroupsForUser(ctx, candidate.RelayUserID)
-	if groupErr != nil {
-		candidate.Warnings = append(candidate.Warnings, fmt.Sprintf("relay groups unavailable: %v", groupErr))
+	facts := loadCandidateRelayFacts(ctx, p, candidate.RelayUserID, source, platform)
+	if facts.groupErr != nil {
+		candidate.Warnings = append(candidate.Warnings, fmt.Sprintf("relay groups unavailable: %v", facts.groupErr))
 		return candidate
 	}
-	for _, group := range allowed {
-		if group.ID == source.ID {
-			candidate.Eligible = strings.EqualFold(strings.TrimSpace(group.Platform), strings.TrimSpace(platform))
-		}
-		if group.ID != source.ID && group.ID > 0 {
-			candidate.CurrentGroupIDs = append(candidate.CurrentGroupIDs, group.ID)
-		}
-	}
-	keys, keyErr := p.ListUserAPIKeys(ctx, candidate.RelayUserID)
-	if keyErr == nil {
-		for _, key := range keys {
-			if apiKeyGroupID(key) == source.ID {
-				candidate.MigratableKeyCount++
-			}
-		}
-	}
+	candidate.Eligible = facts.eligible
+	candidate.CurrentGroupIDs = facts.currentGroupIDs
+	candidate.MigratableKeyCount = facts.migratableKeyCount
 	if !candidate.Eligible {
 		candidate.Warnings = append(candidate.Warnings, "user is not a member of the selected source group")
 	} else if candidate.MigratableKeyCount == 0 {
@@ -711,6 +708,78 @@ func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, u *ent.U
 	}
 	candidate.Selected = candidate.Eligible
 	return candidate
+}
+
+type candidateRelayFacts struct {
+	eligible           bool
+	currentGroupIDs    []int64
+	migratableKeyCount int
+	groupErr, keyErr   error
+}
+
+func loadCandidateRelayFacts(ctx context.Context, p relay.Provider, userID int64, source relay.Group, platform string) candidateRelayFacts {
+	var facts candidateRelayFacts
+	var workers sync.WaitGroup
+	workers.Add(2)
+	go func() {
+		defer workers.Done()
+		groupIDs := make(map[int64]struct{})
+		usedSubscriptions := false
+		if lister, ok := p.(relay.UserSubscriptionLister); ok {
+			subscriptions, err := lister.ListUserSubscriptions(ctx, userID)
+			if err == nil {
+				usedSubscriptions = true
+				for _, subscription := range subscriptions {
+					groupID := subscription.GroupID
+					if groupID <= 0 && subscription.Group != nil {
+						groupID = subscription.Group.ID
+					}
+					if !strings.EqualFold(strings.TrimSpace(subscription.Status), "active") || groupID <= 0 {
+						continue
+					}
+					if groupID == source.ID {
+						facts.eligible = strings.EqualFold(strings.TrimSpace(source.Platform), strings.TrimSpace(platform))
+					} else {
+						groupIDs[groupID] = struct{}{}
+					}
+				}
+			}
+		}
+		if !usedSubscriptions {
+			allowed, err := p.ListAllowedGroupsForUser(ctx, userID)
+			facts.groupErr = err
+			if err != nil {
+				return
+			}
+			for _, group := range allowed {
+				if group.ID == source.ID {
+					facts.eligible = strings.EqualFold(strings.TrimSpace(group.Platform), strings.TrimSpace(platform))
+				} else if group.ID > 0 {
+					groupIDs[group.ID] = struct{}{}
+				}
+			}
+		}
+		facts.currentGroupIDs = make([]int64, 0, len(groupIDs))
+		for groupID := range groupIDs {
+			facts.currentGroupIDs = append(facts.currentGroupIDs, groupID)
+		}
+		sort.Slice(facts.currentGroupIDs, func(i, j int) bool { return facts.currentGroupIDs[i] < facts.currentGroupIDs[j] })
+	}()
+	go func() {
+		defer workers.Done()
+		keys, err := p.ListUserAPIKeys(ctx, userID)
+		facts.keyErr = err
+		if err != nil {
+			return
+		}
+		for _, key := range keys {
+			if apiKeyGroupID(key) == source.ID {
+				facts.migratableKeyCount++
+			}
+		}
+	}()
+	workers.Wait()
+	return facts
 }
 
 func (s *Service) hasDepartmentConflict(ctx context.Context, u *ent.User, selectedDepartment string) (bool, error) {
@@ -747,13 +816,35 @@ func (s *Service) hasDepartmentConflict(ctx context.Context, u *ent.User, select
 	return len(departments) > 0, nil
 }
 
+func (s *Service) loadUsageStats(ctx context.Context, p relay.Provider, providerID int, providerVersion int64, ids []int64) (map[int64]relay.TeamUserUsageStats, error) {
+	now := time.Now().UTC()
+	params := thirtyDayUsageParams(now)
+	if s.prewarmReader != nil && providerID > 0 && providerVersion > 0 {
+		stats, outcome, err := s.prewarmReader.ReadAuthorizedStats(ctx, teamusage.PrewarmReadRequest{
+			ProviderID: providerID, ProviderVersion: providerVersion,
+			Params: teamusage.OverviewParams{
+				StartDate: params.StartDate, EndDate: params.EndDate,
+				Granularity: params.Granularity, Timezone: params.Timezone,
+			},
+			AuthorizedRelayUserIDs: ids,
+		})
+		if err == nil && outcome == teamusage.PrewarmReadFullHit && stats != nil {
+			return stats, nil
+		}
+	}
+	return usageStatsAt(ctx, p, ids, now)
+}
+
 func usageStats(ctx context.Context, p relay.Provider, ids []int64) (map[int64]relay.TeamUserUsageStats, error) {
+	return usageStatsAt(ctx, p, ids, time.Now().UTC())
+}
+
+func usageStatsAt(ctx context.Context, p relay.Provider, ids []int64, now time.Time) (map[int64]relay.TeamUserUsageStats, error) {
 	result := make(map[int64]relay.TeamUserUsageStats, len(ids))
 	if len(ids) == 0 {
 		return result, nil
 	}
-	now := time.Now().UTC()
-	params := relay.TeamUsageSummaryParams{StartDate: now.AddDate(0, 0, -30).Format("2006-01-02"), EndDate: now.Format("2006-01-02"), Granularity: "day", Timezone: "UTC"}
+	params := thirtyDayUsageParams(now)
 	if batch, ok := p.(relay.TeamUsageSummaryProvider); ok {
 		var trend map[int64][]relay.UsageTrendPoint
 		var trendErr error
@@ -797,6 +888,14 @@ func usageStats(ctx context.Context, p relay.Provider, ids []int64) (map[int64]r
 		result[id] = relay.TeamUserUsageStats{UserID: id, RangeActualCost: &cost, RangeTotalTokens: &tokens, TotalActualCost: cost, TotalTokens: &tokens}
 	}
 	return result, nil
+}
+
+func thirtyDayUsageParams(now time.Time) relay.TeamUsageSummaryParams {
+	now = now.UTC()
+	return relay.TeamUsageSummaryParams{
+		StartDate: now.AddDate(0, 0, -29).Format(time.DateOnly),
+		EndDate:   now.Format(time.DateOnly), Granularity: "day", Timezone: "UTC",
+	}
 }
 
 func mergeTrendUsage(stats map[int64]relay.TeamUserUsageStats, trends map[int64][]relay.UsageTrendPoint) {

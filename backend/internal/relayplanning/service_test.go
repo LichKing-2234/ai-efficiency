@@ -3,9 +3,12 @@ package relayplanning
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/ai-efficiency/backend/internal/teamusage"
 )
 
 func TestPreviewRequestJSONUsesSnakeCase(t *testing.T) {
@@ -145,6 +148,131 @@ func TestUsageStatsUsesTrendTokensWhenBatchSummaryOmitsThem(t *testing.T) {
 	}
 	if got[101].RangeTotalTokens == nil || *got[101].RangeTotalTokens != 200 {
 		t.Fatalf("range tokens = %#v, want 200", got[101].RangeTotalTokens)
+	}
+}
+
+type prewarmStatsReaderStub struct {
+	stats   map[int64]relay.TeamUserUsageStats
+	outcome teamusage.PrewarmReadOutcome
+	err     error
+	calls   int
+}
+
+func (r *prewarmStatsReaderStub) ReadAuthorizedStats(context.Context, teamusage.PrewarmReadRequest) (map[int64]relay.TeamUserUsageStats, teamusage.PrewarmReadOutcome, error) {
+	r.calls++
+	return r.stats, r.outcome, r.err
+}
+
+func TestLoadUsageStatsUsesPrewarmFullHitWithoutRelayFallback(t *testing.T) {
+	tokens := int64(321)
+	cost := 12.5
+	reader := &prewarmStatsReaderStub{outcome: teamusage.PrewarmReadFullHit, stats: map[int64]relay.TeamUserUsageStats{
+		101: {UserID: 101, RangeActualCost: &cost, RangeTotalTokens: &tokens},
+	}}
+	service := &Service{prewarmReader: reader}
+
+	got, err := service.loadUsageStats(context.Background(), nil, 7, 11, []int64{101})
+	if err != nil {
+		t.Fatalf("loadUsageStats() error = %v", err)
+	}
+	if reader.calls != 1 || got[101].RangeTotalTokens == nil || *got[101].RangeTotalTokens != 321 {
+		t.Fatalf("loadUsageStats() = %#v after %d cache calls, want prewarm values", got, reader.calls)
+	}
+}
+
+func TestLoadUsageStatsFallsBackWhenPrewarmMisses(t *testing.T) {
+	first, second := int64(120), int64(80)
+	provider := usageStatsTestProvider{trend: map[int64][]relay.UsageTrendPoint{
+		101: {{TotalTokens: &first}, {TotalTokens: &second}},
+	}}
+	reader := &prewarmStatsReaderStub{outcome: teamusage.PrewarmReadMiss}
+	service := &Service{prewarmReader: reader}
+
+	got, err := service.loadUsageStats(context.Background(), provider, 7, 11, []int64{101})
+	if err != nil {
+		t.Fatalf("loadUsageStats() fallback error = %v", err)
+	}
+	if reader.calls != 1 || got[101].RangeTotalTokens == nil || *got[101].RangeTotalTokens != 200 {
+		t.Fatalf("loadUsageStats() fallback = %#v after %d cache calls, want exact trend values", got, reader.calls)
+	}
+}
+
+type concurrentCandidateFactsProvider struct {
+	relay.Provider
+	started chan string
+	release chan struct{}
+}
+
+func (p concurrentCandidateFactsProvider) ListUserSubscriptions(context.Context, int64) ([]relay.UserSubscription, error) {
+	p.started <- "subscriptions"
+	<-p.release
+	return []relay.UserSubscription{
+		{GroupID: 42, Status: "active"},
+		{GroupID: 84, Status: "active"},
+	}, nil
+}
+
+func (p concurrentCandidateFactsProvider) ListUserAPIKeys(context.Context, int64) ([]relay.APIKey, error) {
+	p.started <- "api_keys"
+	<-p.release
+	return []relay.APIKey{{ID: 7, GroupID: 42}}, nil
+}
+
+func (p concurrentCandidateFactsProvider) ListAllowedGroupsForUser(context.Context, int64) ([]relay.Group, error) {
+	return nil, errors.New("slow allowed-group fallback should not run")
+}
+
+func TestLoadCandidateRelayFactsUsesSubscriptionsAndRunsIndependentReadsConcurrently(t *testing.T) {
+	provider := concurrentCandidateFactsProvider{
+		started: make(chan string, 2),
+		release: make(chan struct{}),
+	}
+	done := make(chan candidateRelayFacts, 1)
+	go func() {
+		done <- loadCandidateRelayFacts(context.Background(), provider, 101, relay.Group{ID: 42, Platform: "openai"}, "openai")
+	}()
+
+	started := map[string]bool{}
+	for len(started) < 2 {
+		select {
+		case operation := <-provider.started:
+			started[operation] = true
+		case <-time.After(250 * time.Millisecond):
+			close(provider.release)
+			t.Fatalf("candidate Relay reads started sequentially: %#v", started)
+		}
+	}
+	close(provider.release)
+	facts := <-done
+	if facts.groupErr != nil || facts.keyErr != nil {
+		t.Fatalf("candidate facts errors = %v / %v", facts.groupErr, facts.keyErr)
+	}
+	if !facts.eligible || facts.migratableKeyCount != 1 {
+		t.Fatalf("candidate facts = %#v, want eligible with one migratable key", facts)
+	}
+	if len(facts.currentGroupIDs) != 1 || facts.currentGroupIDs[0] != 84 {
+		t.Fatalf("current group IDs = %#v, want [84]", facts.currentGroupIDs)
+	}
+}
+
+type candidateFactsFallbackProvider struct{ relay.Provider }
+
+func (candidateFactsFallbackProvider) ListUserSubscriptions(context.Context, int64) ([]relay.UserSubscription, error) {
+	return nil, errors.New("synthetic subscription failure")
+}
+
+func (candidateFactsFallbackProvider) ListAllowedGroupsForUser(context.Context, int64) ([]relay.Group, error) {
+	return []relay.Group{{ID: 42, Platform: "openai"}}, nil
+}
+
+func (candidateFactsFallbackProvider) ListUserAPIKeys(context.Context, int64) ([]relay.APIKey, error) {
+	return nil, nil
+}
+
+func TestLoadCandidateRelayFactsFallsBackWhenSubscriptionReadFails(t *testing.T) {
+	facts := loadCandidateRelayFacts(context.Background(), candidateFactsFallbackProvider{}, 101, relay.Group{ID: 42, Platform: "openai"}, "openai")
+	if facts.groupErr != nil || !facts.eligible {
+		t.Fatalf("candidate fallback facts = %#v, want eligible allowed-group result", facts)
 	}
 }
 
