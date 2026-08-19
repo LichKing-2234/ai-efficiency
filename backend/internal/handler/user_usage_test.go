@@ -36,6 +36,9 @@ type userUsageRelayStub struct {
 	response      *relay.UserUsageDashboardResponse
 	apiKeys       []relay.APIKey
 	subscriptions []relay.UserSubscription
+	groups        []relay.Group
+	pool          relay.UserUsageGroupPoolUsageState
+	poolErr       error
 	topErr        error
 	usageErr      error
 	quotaErr      error
@@ -65,6 +68,18 @@ func (s *userUsageRelayStub) ReadUserUsageOrigin(_ context.Context, request rela
 		result.QuotaErr = quotaErr
 	}
 	return result, nil
+}
+
+func (s *userUsageRelayStub) ListAllowedGroupsForUser(_ context.Context, _ int64) ([]relay.Group, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]relay.Group(nil), s.groups...), nil
+}
+
+func (s *userUsageRelayStub) ReadGroupOAuthPoolUsage(_ context.Context, _ []int64) (relay.UserUsageGroupPoolUsageState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pool, s.poolErr
 }
 
 func (s *userUsageRelayStub) setErrors(topErr, usageErr, quotaErr error) {
@@ -129,6 +144,7 @@ func newUserUsageHTTPFixture(t *testing.T, configured bool) *userUsageHTTPFixtur
 			Group: &relay.Group{ID: 42, Name: "Group Alpha", Platform: "example", SubscriptionType: "subscription", MonthlyLimitUSD: &monthlyLimit},
 		}},
 		subscriptions: []relay.UserSubscription{{ID: 12, UserID: 7, GroupID: 42, Status: "active", MonthlyUsageUSD: 25}},
+		groups:        []relay.Group{{ID: 42, Name: "Group Alpha", Platform: "example"}},
 	}
 	resolver := userUsageResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
 		if providerID != provider.ID {
@@ -157,6 +173,7 @@ func newUserUsageHTTPFixture(t *testing.T, configured bool) *userUsageHTTPFixtur
 	userGroup := router.Group("/api/v1/user", authpkg.RequireAuth(env.authSvc))
 	userGroup.GET("/usage/dashboard", handler.Dashboard)
 	userGroup.GET("/usage/group-quotas", handler.GroupQuotas)
+	userGroup.GET("/usage/group-pool-usage", handler.GroupPoolUsage)
 	fixture.router = router
 	return fixture
 }
@@ -236,6 +253,42 @@ func TestUserUsageGroupQuotasReturnsOnlyFreshQuotaProjection(t *testing.T) {
 	data := raw["data"].(map[string]any)
 	if _, exists := data["stats"]; exists {
 		t.Fatalf("quota response contains usage fields: %s", recorder.Body.String())
+	}
+}
+
+func TestUserUsageGroupPoolUsageReturnsPrivacySafeProjection(t *testing.T) {
+	fixture := newUserUsageHTTPFixture(t, true)
+	fixture.stub.pool = relay.UserUsageGroupPoolUsageState{
+		Status: "ok",
+		Groups: []relay.UserUsageGroupPoolUsageGroupItem{{
+			GroupID: "42", Status: "partial", AverageWeeklyUtilization: 37.5,
+			ValidOAuthAccounts: 3, TotalActiveOAuthAccounts: 4,
+		}},
+	}
+	recorder := fixture.get("/api/v1/user/usage/group-pool-usage?start_date=2026-07-01&end_date=2026-07-15")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	response := decodeUserUsageData[personalusage.GroupPoolUsageResponse](t, recorder)
+	if response.PoolUsage.Status != "ok" || len(response.PoolUsage.Groups) != 1 || response.PoolUsage.Groups[0].AverageWeeklyUtilization != 37.5 {
+		t.Fatalf("pool response = %+v", response)
+	}
+}
+
+func TestUserUsageGroupPoolUsageFailureIsSectionLocal(t *testing.T) {
+	fixture := newUserUsageHTTPFixture(t, true)
+	fixture.stub.poolErr = errors.New("synthetic pool outage")
+	recorder := fixture.get("/api/v1/user/usage/group-pool-usage?start_date=2026-07-01&end_date=2026-07-15")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	response := decodeUserUsageData[personalusage.GroupPoolUsageResponse](t, recorder)
+	if response.PoolUsage.Status != "unavailable" || response.PoolUsageFreshness.SourceStatus != "error" {
+		t.Fatalf("pool failure response = %+v", response)
+	}
+	quota := fixture.get("/api/v1/user/usage/group-quotas?start_date=2026-07-01&end_date=2026-07-15")
+	if quota.Code != http.StatusOK {
+		t.Fatalf("quota status after pool failure = %d; body=%s", quota.Code, quota.Body.String())
 	}
 }
 
@@ -331,7 +384,7 @@ func TestUserUsageRoutesAreRegisteredAndAuthProtected(t *testing.T) {
 	for _, route := range env.router.Routes() {
 		routes[route.Method+" "+route.Path] = true
 	}
-	for _, target := range []string{"/api/v1/user/usage/dashboard", "/api/v1/user/usage/group-quotas"} {
+	for _, target := range []string{"/api/v1/user/usage/dashboard", "/api/v1/user/usage/group-quotas", "/api/v1/user/usage/group-pool-usage"} {
 		if !routes[http.MethodGet+" "+target] {
 			t.Fatalf("route %s is not registered", target)
 		}

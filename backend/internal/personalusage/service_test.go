@@ -19,6 +19,8 @@ type originProviderStub struct {
 	mu       sync.Mutex
 	requests []relay.UserUsageOriginRequest
 	read     func(relay.UserUsageOriginRequest) (*relay.UserUsageOriginResult, error)
+	pool     relay.UserUsageGroupPoolUsageState
+	poolErr  error
 }
 
 func (s *originProviderStub) ReadUserUsageOrigin(_ context.Context, request relay.UserUsageOriginRequest) (*relay.UserUsageOriginResult, error) {
@@ -32,6 +34,26 @@ func (s *originProviderStub) requestSnapshot() []relay.UserUsageOriginRequest {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]relay.UserUsageOriginRequest(nil), s.requests...)
+}
+
+func (s *originProviderStub) ListAllowedGroupsForUser(context.Context, int64) ([]relay.Group, error) {
+	return []relay.Group{{ID: 42, Name: "Group Alpha", Platform: "openai"}}, nil
+}
+
+func (s *originProviderStub) ReadGroupOAuthPoolUsage(context.Context, []int64) (relay.UserUsageGroupPoolUsageState, error) {
+	return s.pool, s.poolErr
+}
+
+type poolOnlyProviderStub struct {
+	relay.Provider
+}
+
+func (s *poolOnlyProviderStub) ListAllowedGroupsForUser(context.Context, int64) ([]relay.Group, error) {
+	return []relay.Group{{ID: 42, Name: "Group Alpha", Platform: "openai"}}, nil
+}
+
+func (s *poolOnlyProviderStub) ReadGroupOAuthPoolUsage(context.Context, []int64) (relay.UserUsageGroupPoolUsageState, error) {
+	return relay.UserUsageGroupPoolUsageState{Status: "ok"}, nil
 }
 
 type providerResolverStub struct {
@@ -95,6 +117,9 @@ func createPersonalUsageFixture(t *testing.T, withPassword bool) (*Service, *ori
 			}}
 			result.Subscriptions = []relay.UserSubscription{{
 				ID: 12, UserID: 7, GroupID: 42, Status: "active", MonthlyUsageUSD: 25,
+				DailyResetAt:   timePtr(time.Date(2026, 7, 16, 0, 0, 0, 0, time.UTC)),
+				WeeklyResetAt:  timePtr(time.Date(2026, 7, 22, 0, 0, 0, 0, time.UTC)),
+				MonthlyResetAt: timePtr(time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)),
 			}}
 		}
 		return result, nil
@@ -107,6 +132,10 @@ func createPersonalUsageFixture(t *testing.T, withPassword bool) (*Service, *ori
 		t.Fatalf("provider configuration version = %d", providerRow.ConfigurationVersion)
 	}
 	return service, origin, user.ID, func() time.Time { return now }
+}
+
+func timePtr(value time.Time) *time.Time {
+	return &value
 }
 
 func TestServiceCombinedColdReadThenWarmReadFetchesQuotaFreshOnly(t *testing.T) {
@@ -177,6 +206,129 @@ func TestServiceUsageOnlyProjectionNeverReadsQuota(t *testing.T) {
 	requests := origin.requestSnapshot()
 	if len(requests) != 1 || !requests[0].Branches.Usage || requests[0].Branches.Quota {
 		t.Fatalf("origin requests = %+v", requests)
+	}
+}
+
+func TestGroupQuotasMapsSelectedSubscriptionResetTime(t *testing.T) {
+	service, _, userID, _ := createPersonalUsageFixture(t, true)
+	response, err := service.GroupQuotas(context.Background(), Request{
+		UserID: userID,
+		Params: relay.UserUsageDashboardParams{StartDate: "2026-07-01", EndDate: "2026-07-15", Granularity: "day"},
+	})
+	if err != nil {
+		t.Fatalf("GroupQuotas() error = %v", err)
+	}
+	if len(response.GroupQuotas.Groups) != 1 || response.GroupQuotas.Groups[0].ResetAt == nil {
+		t.Fatalf("group quota reset = %+v, want one reset timestamp", response.GroupQuotas.Groups)
+	}
+	if got, want := response.GroupQuotas.Groups[0].ResetAt.UTC(), time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC); !got.Equal(want) {
+		t.Fatalf("reset at = %s, want %s", got, want)
+	}
+}
+
+func TestGroupQuotasMapsDailyAndWeeklySubscriptionResetTimes(t *testing.T) {
+	service, _, userID, _ := createPersonalUsageFixture(t, true)
+	tests := []struct {
+		name   string
+		params relay.UserUsageDashboardParams
+		want   time.Time
+	}{
+		{
+			name:   "daily",
+			params: relay.UserUsageDashboardParams{StartDate: "2026-07-15", EndDate: "2026-07-15", Granularity: "hour"},
+			want:   time.Date(2026, 7, 16, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:   "weekly",
+			params: relay.UserUsageDashboardParams{StartDate: "2026-07-09", EndDate: "2026-07-15", Granularity: "day"},
+			want:   time.Date(2026, 7, 22, 0, 0, 0, 0, time.UTC),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response, err := service.GroupQuotas(context.Background(), Request{UserID: userID, Params: test.params})
+			if err != nil {
+				t.Fatalf("GroupQuotas() error = %v", err)
+			}
+			if len(response.GroupQuotas.Groups) != 1 || response.GroupQuotas.Groups[0].ResetAt == nil {
+				t.Fatalf("group quota reset = %+v", response.GroupQuotas.Groups)
+			}
+			if got := response.GroupQuotas.Groups[0].ResetAt.UTC(); !got.Equal(test.want) {
+				t.Fatalf("reset at = %s, want %s", got, test.want)
+			}
+		})
+	}
+}
+
+func TestGroupQuotasDoesNotMarkAPIKeyQuotaAsSubscriptionReset(t *testing.T) {
+	service, origin, userID, _ := createPersonalUsageFixture(t, true)
+	origin.read = func(request relay.UserUsageOriginRequest) (*relay.UserUsageOriginResult, error) {
+		result := &relay.UserUsageOriginResult{}
+		if request.Branches.Quota {
+			apiKeyQuota := 20.0
+			result.APIKeys = []relay.APIKey{{
+				ID: 11, UserID: 7, Status: "active", Quota: apiKeyQuota,
+				Group: &relay.Group{ID: 42, Name: "Group Alpha", Platform: "openai", SubscriptionType: "subscription"},
+			}}
+			result.Subscriptions = []relay.UserSubscription{{
+				ID: 12, UserID: 7, GroupID: 42, Status: "active",
+				MonthlyResetAt: timePtr(time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)),
+			}}
+		}
+		return result, nil
+	}
+	response, err := service.GroupQuotas(context.Background(), Request{
+		UserID: userID,
+		Params: relay.UserUsageDashboardParams{StartDate: "2026-07-01", EndDate: "2026-07-15", Granularity: "day"},
+	})
+	if err != nil {
+		t.Fatalf("GroupQuotas() error = %v", err)
+	}
+	if len(response.GroupQuotas.Groups) != 1 || response.GroupQuotas.Groups[0].ResetAt != nil {
+		t.Fatalf("API key quota reset = %+v, want nil", response.GroupQuotas.Groups)
+	}
+}
+
+func TestGroupPoolUsageReturnsAggregateWithoutBlockingPersonalQuota(t *testing.T) {
+	service, origin, userID, _ := createPersonalUsageFixture(t, true)
+	origin.pool = relay.UserUsageGroupPoolUsageState{
+		Status: "ok",
+		Groups: []relay.UserUsageGroupPoolUsageGroupItem{{
+			GroupID:                  "42",
+			Status:                   "partial",
+			AverageWeeklyUtilization: 52,
+			ValidOAuthAccounts:       1,
+			TotalActiveOAuthAccounts: 2,
+		}},
+	}
+	response, err := service.GroupPoolUsage(context.Background(), Request{
+		UserID: userID,
+		Params: relay.UserUsageDashboardParams{StartDate: "2026-07-01", EndDate: "2026-07-15", Granularity: "day"},
+	})
+	if err != nil {
+		t.Fatalf("GroupPoolUsage() error = %v", err)
+	}
+	if response.PoolUsage.Status != "ok" || len(response.PoolUsage.Groups) != 1 {
+		t.Fatalf("pool usage = %+v", response.PoolUsage)
+	}
+	if got := response.PoolUsage.Groups[0].AverageWeeklyUtilization; got != 52 {
+		t.Fatalf("average utilization = %v, want 52", got)
+	}
+}
+
+func TestGroupPoolUsageWorksWithoutUsageOriginCapability(t *testing.T) {
+	service, _, userID, _ := createPersonalUsageFixture(t, true)
+	service.resolver.(*providerResolverStub).provider = &poolOnlyProviderStub{}
+
+	response, err := service.GroupPoolUsage(context.Background(), Request{
+		UserID: userID,
+		Params: relay.UserUsageDashboardParams{StartDate: "2026-07-01", EndDate: "2026-07-15", Granularity: "day"},
+	})
+	if err != nil {
+		t.Fatalf("GroupPoolUsage() error = %v", err)
+	}
+	if response.PoolUsage.Status != "ok" || response.PoolUsageFreshness.SourceStatus != "ok" {
+		t.Fatalf("pool usage = %+v, freshness = %+v", response.PoolUsage, response.PoolUsageFreshness)
 	}
 }
 

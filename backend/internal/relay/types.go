@@ -131,14 +131,17 @@ func StableProtocolCapabilities(group Group) ProtocolCapabilities {
 }
 
 type UserSubscription struct {
-	ID              int64   `json:"id"`
-	UserID          int64   `json:"user_id"`
-	GroupID         int64   `json:"group_id"`
-	Status          string  `json:"status"`
-	DailyUsageUSD   float64 `json:"daily_usage_usd"`
-	WeeklyUsageUSD  float64 `json:"weekly_usage_usd"`
-	MonthlyUsageUSD float64 `json:"monthly_usage_usd"`
-	Group           *Group  `json:"group,omitempty"`
+	ID              int64      `json:"id"`
+	UserID          int64      `json:"user_id"`
+	GroupID         int64      `json:"group_id"`
+	Status          string     `json:"status"`
+	DailyUsageUSD   float64    `json:"daily_usage_usd"`
+	WeeklyUsageUSD  float64    `json:"weekly_usage_usd"`
+	MonthlyUsageUSD float64    `json:"monthly_usage_usd"`
+	DailyResetAt    *time.Time `json:"daily_reset_at,omitempty"`
+	WeeklyResetAt   *time.Time `json:"weekly_reset_at,omitempty"`
+	MonthlyResetAt  *time.Time `json:"monthly_reset_at,omitempty"`
+	Group           *Group     `json:"group,omitempty"`
 }
 
 func (u *User) UnmarshalJSON(data []byte) error {
@@ -377,13 +380,30 @@ type UserUsageGroupQuotaState struct {
 }
 
 type UserUsageGroupQuotaGroupItem struct {
-	GroupID     string   `json:"group_id"`
-	GroupName   string   `json:"group_name"`
-	Platform    string   `json:"platform"`
-	UsedAmount  *float64 `json:"used_amount,omitempty"`
-	QuotaAmount *float64 `json:"quota_amount,omitempty"`
-	IsUnlimited bool     `json:"is_unlimited"`
-	QuotaSource string   `json:"quota_source,omitempty"`
+	GroupID     string     `json:"group_id"`
+	GroupName   string     `json:"group_name"`
+	Platform    string     `json:"platform"`
+	UsedAmount  *float64   `json:"used_amount,omitempty"`
+	QuotaAmount *float64   `json:"quota_amount,omitempty"`
+	IsUnlimited bool       `json:"is_unlimited"`
+	QuotaSource string     `json:"quota_source,omitempty"`
+	ResetAt     *time.Time `json:"reset_at,omitempty"`
+}
+
+type UserUsageGroupPoolUsageState struct {
+	Status  string                             `json:"status"`
+	Message string                             `json:"message,omitempty"`
+	Groups  []UserUsageGroupPoolUsageGroupItem `json:"groups"`
+}
+
+type UserUsageGroupPoolUsageGroupItem struct {
+	GroupID                  string     `json:"group_id"`
+	Status                   string     `json:"status"`
+	AverageWeeklyUtilization float64    `json:"average_weekly_utilization"`
+	ValidOAuthAccounts       int        `json:"valid_oauth_accounts"`
+	TotalActiveOAuthAccounts int        `json:"total_active_oauth_accounts"`
+	NextResetAt              *time.Time `json:"next_reset_at,omitempty"`
+	AsOf                     *time.Time `json:"as_of,omitempty"`
 }
 
 type TeamUserUsageStats struct {

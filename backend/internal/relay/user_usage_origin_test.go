@@ -129,6 +129,146 @@ func TestReadUserUsageOriginHonorsBranchSelection(t *testing.T) {
 	}
 }
 
+func TestReadUserUsageOriginUsesSubscriptionProgressForResetTimes(t *testing.T) {
+	var mu sync.Mutex
+	counts := map[string]int{}
+	mux := http.NewServeMux()
+	registerUsageOriginLoginHandlers(mux, &mu, counts)
+	mux.HandleFunc("/api/v1/subscriptions/progress", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-user-token" {
+			t.Fatalf("progress authorization = %q", r.Header.Get("Authorization"))
+		}
+		writeOriginEnvelope(w, []any{
+			map[string]any{
+				"subscription": map[string]any{
+					"id": 12, "user_id": 7, "group_id": 42, "status": "active",
+					"monthly_usage_usd": 25,
+				},
+				"progress": map[string]any{
+					"daily":   map[string]any{"resets_at": "2099-07-16T00:00:00Z"},
+					"weekly":  map[string]any{"resets_at": "2099-07-22T00:00:00Z"},
+					"monthly": map[string]any{"resets_at": "2099-08-01T00:00:00Z"},
+				},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/admin/users/7/api-keys", func(w http.ResponseWriter, r *http.Request) {
+		writeOriginEnvelope(w, []any{})
+	})
+	mux.HandleFunc("/api/v1/admin/users/7/subscriptions", func(w http.ResponseWriter, r *http.Request) {
+		writeOriginEnvelope(w, []any{map[string]any{
+			"id": 12, "user_id": 7, "group_id": 42, "status": "active",
+			"monthly_usage_usd": 25,
+		}})
+	})
+
+	reader := newTestProvider(t, mux).(relay.UserUsageOriginReader)
+	result, err := reader.ReadUserUsageOrigin(context.Background(), relay.UserUsageOriginRequest{
+		Login: "alice@example.com", Password: "test-password", RelayUserID: 7,
+		Branches: relay.UserUsageOriginBranches{Quota: true},
+	})
+	if err != nil || result == nil || result.QuotaErr != nil {
+		t.Fatalf("origin result=%+v err=%v", result, err)
+	}
+	if len(result.Subscriptions) != 1 {
+		t.Fatalf("subscriptions = %+v", result.Subscriptions)
+	}
+	subscription := result.Subscriptions[0]
+	for label, item := range map[string]struct {
+		got  *time.Time
+		want time.Time
+	}{
+		"daily":   {subscription.DailyResetAt, time.Date(2099, 7, 16, 0, 0, 0, 0, time.UTC)},
+		"weekly":  {subscription.WeeklyResetAt, time.Date(2099, 7, 22, 0, 0, 0, 0, time.UTC)},
+		"monthly": {subscription.MonthlyResetAt, time.Date(2099, 8, 1, 0, 0, 0, 0, time.UTC)},
+	} {
+		if item.got == nil || !item.got.UTC().Equal(item.want) {
+			t.Errorf("%s reset = %v, want %s", label, item.got, item.want)
+		}
+	}
+}
+
+func TestReadUserUsageOriginRetainsSubscriptionsOmittedByPartialProgress(t *testing.T) {
+	var mu sync.Mutex
+	counts := map[string]int{}
+	mux := http.NewServeMux()
+	registerUsageOriginLoginHandlers(mux, &mu, counts)
+	mux.HandleFunc("/api/v1/subscriptions/progress", func(w http.ResponseWriter, r *http.Request) {
+		writeOriginEnvelope(w, []any{map[string]any{
+			"subscription": map[string]any{
+				"id": 12, "user_id": 7, "group_id": 42, "status": "active",
+				"monthly_usage_usd": 25,
+			},
+			"progress": map[string]any{
+				"monthly": map[string]any{"resets_at": "2099-08-01T00:00:00Z"},
+			},
+		}})
+	})
+	mux.HandleFunc("/api/v1/admin/users/7/api-keys", func(w http.ResponseWriter, r *http.Request) {
+		writeOriginEnvelope(w, []any{})
+	})
+	mux.HandleFunc("/api/v1/admin/users/7/subscriptions", func(w http.ResponseWriter, r *http.Request) {
+		writeOriginEnvelope(w, []any{
+			map[string]any{"id": 12, "user_id": 7, "group_id": 42, "status": "active", "monthly_usage_usd": 25},
+			map[string]any{"id": 13, "user_id": 7, "group_id": 43, "status": "active", "monthly_usage_usd": 7},
+		})
+	})
+
+	reader := newTestProvider(t, mux).(relay.UserUsageOriginReader)
+	result, err := reader.ReadUserUsageOrigin(context.Background(), relay.UserUsageOriginRequest{
+		Login: "alice@example.com", Password: "test-password", RelayUserID: 7,
+		Branches: relay.UserUsageOriginBranches{Quota: true},
+	})
+	if err != nil || result == nil || result.QuotaErr != nil {
+		t.Fatalf("origin result=%+v err=%v", result, err)
+	}
+	if len(result.Subscriptions) != 2 {
+		t.Fatalf("subscriptions = %+v, want omitted subscription retained", result.Subscriptions)
+	}
+	byID := make(map[int64]relay.UserSubscription, len(result.Subscriptions))
+	for _, subscription := range result.Subscriptions {
+		byID[subscription.ID] = subscription
+	}
+	if got := byID[13].MonthlyUsageUSD; got != 7 {
+		t.Fatalf("omitted subscription monthly usage = %v, want 7", got)
+	}
+	if byID[12].MonthlyResetAt == nil || !byID[12].MonthlyResetAt.UTC().Equal(time.Date(2099, 8, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("progress reset = %v, want 2099-08-01T00:00:00Z", byID[12].MonthlyResetAt)
+	}
+}
+
+func TestReadUserUsageOriginFallsBackWhenSubscriptionProgressFails(t *testing.T) {
+	var mu sync.Mutex
+	counts := map[string]int{}
+	mux := http.NewServeMux()
+	registerUsageOriginLoginHandlers(mux, &mu, counts)
+	mux.HandleFunc("/api/v1/subscriptions/progress", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": http.StatusBadGateway, "message": "synthetic progress outage"})
+	})
+	mux.HandleFunc("/api/v1/admin/users/7/api-keys", func(w http.ResponseWriter, r *http.Request) {
+		writeOriginEnvelope(w, []any{})
+	})
+	mux.HandleFunc("/api/v1/admin/users/7/subscriptions", func(w http.ResponseWriter, r *http.Request) {
+		writeOriginEnvelope(w, []any{map[string]any{
+			"id": 12, "user_id": 7, "group_id": 42, "status": "active",
+			"monthly_usage_usd": 25,
+		}})
+	})
+
+	reader := newTestProvider(t, mux).(relay.UserUsageOriginReader)
+	result, err := reader.ReadUserUsageOrigin(context.Background(), relay.UserUsageOriginRequest{
+		Login: "alice@example.com", Password: "test-password", RelayUserID: 7,
+		Branches: relay.UserUsageOriginBranches{Quota: true},
+	})
+	if err != nil || result == nil || result.QuotaErr != nil {
+		t.Fatalf("origin result=%+v err=%v", result, err)
+	}
+	if len(result.Subscriptions) != 1 || result.Subscriptions[0].MonthlyUsageUSD != 25 {
+		t.Fatalf("fallback subscriptions = %+v", result.Subscriptions)
+	}
+}
+
 func TestReadUserUsageOriginSeparatesUsageAndQuotaErrors(t *testing.T) {
 	t.Run("usage error preserves current quota facts", func(t *testing.T) {
 		var mu sync.Mutex
