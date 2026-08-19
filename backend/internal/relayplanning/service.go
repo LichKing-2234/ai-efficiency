@@ -836,6 +836,7 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	}
 	oldAssignments := mapping.MemberAssignments
 	oldSources := mapping.MemberSources
+	memberFromGroups := make(map[string]int64)
 	for _, assignment := range plan.Assignments {
 		if assignment.Index >= len(mapping.GroupIDs) {
 			continue
@@ -854,6 +855,11 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 			fromGroupID := int64(0)
 			if retry {
 				fromGroupID = oldSources[key]
+				if previous := mapping.OperationState["member:"+key]; previous != nil {
+					if previousFromGroupID, parseErr := strconv.ParseInt(previous["from_group_id"], 10, 64); parseErr == nil && previousFromGroupID > 0 {
+						fromGroupID = previousFromGroupID
+					}
+				}
 				if fromGroupID <= 0 && candidate.SourceMember {
 					fromGroupID = mapping.SourceGroupID
 				}
@@ -872,6 +878,7 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 			} else {
 				member = executeMemberMigration(ctx, p, assigner, nil, nil, candidate, targetID, 0, member)
 			}
+			memberFromGroups[key] = fromGroupID
 			memberResults = append(memberResults, member)
 		}
 	}
@@ -900,6 +907,14 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 		}
 	}
 	state := executionState(req.OperationKey, groupResults, memberResults)
+	for key, fromGroupID := range memberFromGroups {
+		if fromGroupID <= 0 {
+			continue
+		}
+		if entry := state["member:"+key]; entry != nil {
+			entry["from_group_id"] = strconv.FormatInt(fromGroupID, 10)
+		}
+	}
 	resultMapping, err := s.saveMapping(ctx, plan, append([]int64(nil), mapping.GroupIDs...), state)
 	if err != nil {
 		return nil, fmt.Errorf("save relay replan mapping: %w", err)

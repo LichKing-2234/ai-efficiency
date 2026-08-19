@@ -4,12 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/directorysource"
+	"github.com/ai-efficiency/backend/ent/directorysyncrun"
+	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/teamusage"
+	"github.com/ai-efficiency/backend/internal/testdb"
 )
 
 func TestPreviewRequestJSONUsesSnakeCase(t *testing.T) {
@@ -357,4 +364,230 @@ func TestLoadCandidateRelayFactsFallsBackWhenSubscriptionReadFails(t *testing.T)
 
 func int64Pointer(value int64) *int64 {
 	return &value
+}
+
+func TestExecuteReplanRetriesFailedAPIKeyMoveFromPreviousTarget(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerRow, err := client.RelayProvider.Create().
+		SetName("relay-planning-test").
+		SetDisplayName("Relay Planning Test").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetRelayType("sub2api").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create relay provider: %v", err)
+	}
+
+	departmentID := "dept-alpha"
+	source, run := createRelayPlanningDirectorySnapshot(t, ctx, client, departmentID)
+	user := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource(entuser.AuthSourceLdap).
+		SetRelayUserID(1001).
+		SaveX(ctx)
+	member := client.DirectoryMember.Create().
+		SetSourceID(source.ID).
+		SetExternalID("member-alice").
+		SetEmailNormalized(user.Email).
+		SetDisplayName(user.Username).
+		SetDepartmentExternalID(departmentID).
+		SetMatchedUserID(user.ID).
+		SetLastSeenRunID(run.ID).
+		SaveX(ctx)
+	client.DirectoryMemberDepartment.Create().
+		SetSourceID(source.ID).
+		SetDirectoryMemberID(member.ID).
+		SetMemberExternalID(member.ExternalID).
+		SetMemberEmailNormalized(member.EmailNormalized).
+		SetDepartmentExternalID(departmentID).
+		SetLastSeenRunID(run.ID).
+		SaveX(ctx)
+
+	fake := &replanRetryProvider{
+		groups: []relay.Group{
+			{ID: 10, Name: "Template", Platform: "openai"},
+			{ID: 20, Name: "Source", Platform: "openai"},
+			{ID: 101, Name: "Target A", Platform: "openai"},
+			{ID: 102, Name: "Target B", Platform: "openai"},
+		},
+		subscriptions: []relay.UserSubscription{
+			{UserID: 1001, GroupID: 20, Status: "active"},
+			{UserID: 1001, GroupID: 101, Status: "active"},
+		},
+		keys:         []relay.APIKey{{ID: 501, UserID: 1001, GroupID: 101, Status: "active"}},
+		bindFailures: 1,
+	}
+	resolver := relayPlanningProviderResolver(func(_ context.Context, providerID int) (relay.Provider, error) {
+		if providerID != providerRow.ID {
+			return nil, fmt.Errorf("provider id = %d, want %d", providerID, providerRow.ID)
+		}
+		return fake, nil
+	})
+	service := NewService(client, resolver, nil)
+	mappingRow := client.RelayGroupMapping.Create().
+		SetProviderID(providerRow.ID).
+		SetDepartmentExternalID(departmentID).
+		SetDepartmentName("Department Alpha").
+		SetPlatform("openai").
+		SetTemplateGroupID(10).
+		SetTemplateGroupName("Template").
+		SetSourceGroupID(20).
+		SetSourceGroupName("Source").
+		SetGroupIds([]int64{101, 102}).
+		SetMemberAssignments(map[string]int64{fmt.Sprint(user.ID): 101}).
+		SetMemberSources(map[string]int64{fmt.Sprint(user.ID): 20}).
+		SetStatus("active").
+		SetWeeklyCostTarget(2500).
+		SaveX(ctx)
+
+	replanRequest := ExecuteRequest{
+		PreviewRequest: PreviewRequest{Assignments: []Assignment{
+			{Index: 0, UserIDs: []int{}},
+			{Index: 1, UserIDs: []int{user.ID}},
+		}},
+		OperationKey: "replan-op-1",
+	}
+	first, err := service.ExecuteReplan(ctx, mappingRow.ID, replanRequest)
+	if err != nil {
+		t.Fatalf("first ExecuteReplan() error = %v", err)
+	}
+	if len(first.Members) != 1 || first.Members[0].Error == "" {
+		t.Fatalf("first replan members = %#v, want API key failure", first.Members)
+	}
+	if len(first.Members[0].APIKeys) != 1 || !strings.Contains(first.Members[0].APIKeys[0], "failed") {
+		t.Fatalf("first replan API keys = %#v, want failed move", first.Members[0].APIKeys)
+	}
+
+	fake.mu.Lock()
+	fake.bindFailures = 0
+	fake.mu.Unlock()
+	second, err := service.ExecuteReplan(ctx, mappingRow.ID, ExecuteRequest{
+		PreviewRequest: PreviewRequest{Assignments: []Assignment{
+			{Index: 0, UserIDs: []int{}},
+			{Index: 1, UserIDs: []int{user.ID}},
+		}},
+		OperationKey: "replan-op-2",
+	})
+	if err != nil {
+		t.Fatalf("retry ExecuteReplan() error = %v", err)
+	}
+	if len(second.Members) != 1 || second.Members[0].Error != "" {
+		t.Fatalf("retry replan members = %#v, want success", second.Members)
+	}
+	if len(second.Members[0].APIKeys) != 1 || !strings.Contains(second.Members[0].APIKeys[0], "succeeded") {
+		t.Fatalf("retry replan API keys = %#v, want successful move from previous target", second.Members[0].APIKeys)
+	}
+	if len(fake.bound) != 1 || fake.bound[0] != "501:102" {
+		t.Fatalf("bound API keys = %#v, want [501:102]", fake.bound)
+	}
+}
+
+func createRelayPlanningDirectorySnapshot(t *testing.T, ctx context.Context, client *ent.Client, departmentID string) (*ent.DirectorySource, *ent.DirectorySyncRun) {
+	t.Helper()
+	now := time.Now().UTC()
+	source := client.DirectorySource.Create().
+		SetName("relay-planning-source").
+		SetDescription("Synthetic directory source").
+		SetScope(directorysource.ScopeFullCompany).
+		SetEnabled(true).
+		SetDsl("version: 1\nscope: full_company\nsteps: []\n").
+		SaveX(ctx)
+	run := client.DirectorySyncRun.Create().
+		SetSourceID(source.ID).
+		SetMode(directorysyncrun.ModeApply).
+		SetStatus(directorysyncrun.StatusCompleted).
+		SetPhase(directorysyncrun.PhaseCompleted).
+		SetCompletedAt(now).
+		SaveX(ctx)
+	client.DirectorySource.UpdateOneID(source.ID).
+		SetLastRunID(run.ID).
+		SetLastSuccessfulRunID(run.ID).
+		SaveX(ctx)
+	client.DirectoryDepartment.Create().
+		SetSourceID(source.ID).
+		SetExternalID(departmentID).
+		SetName("Department Alpha").
+		SetPath("synthetic/" + departmentID).
+		SetLastSeenRunID(run.ID).
+		SaveX(ctx)
+	return source, run
+}
+
+type replanRetryProvider struct {
+	relay.Provider
+	mu            sync.Mutex
+	groups        []relay.Group
+	subscriptions []relay.UserSubscription
+	keys          []relay.APIKey
+	bindFailures  int
+	bound         []string
+}
+
+type relayPlanningProviderResolver func(context.Context, int) (relay.Provider, error)
+
+func (f relayPlanningProviderResolver) Resolve(ctx context.Context, providerID int) (relay.Provider, error) {
+	return f(ctx, providerID)
+}
+
+func (p *replanRetryProvider) ListPlatformGroups(context.Context) ([]relay.Group, error) {
+	return append([]relay.Group(nil), p.groups...), nil
+}
+
+func (p *replanRetryProvider) ListUserSubscriptions(_ context.Context, userID int64) ([]relay.UserSubscription, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	items := make([]relay.UserSubscription, 0, len(p.subscriptions))
+	for _, item := range p.subscriptions {
+		if item.UserID == 0 || item.UserID == userID {
+			items = append(items, item)
+		}
+	}
+	return items, nil
+}
+
+func (p *replanRetryProvider) ListUserAPIKeys(context.Context, int64) ([]relay.APIKey, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]relay.APIKey(nil), p.keys...), nil
+}
+
+func (p *replanRetryProvider) GetUsageStats(context.Context, int64, time.Time, time.Time) (*relay.UsageStats, error) {
+	return &relay.UsageStats{TotalTokens: 100, TotalCost: 10}, nil
+}
+
+func (p *replanRetryProvider) AssignSubscriptionForUser(context.Context, int64, int64, int) error {
+	return nil
+}
+
+func (p *replanRetryProvider) RemoveSubscriptionForUser(_ context.Context, userID, groupID int64) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	filtered := p.subscriptions[:0]
+	for _, item := range p.subscriptions {
+		if item.UserID == userID && item.GroupID == groupID {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	p.subscriptions = filtered
+	return nil
+}
+
+func (p *replanRetryProvider) BindAPIKeyToGroup(_ context.Context, keyID, groupID int64) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.bindFailures > 0 {
+		p.bindFailures--
+		return errors.New("synthetic key move failure")
+	}
+	for index := range p.keys {
+		if p.keys[index].ID == keyID {
+			p.keys[index].GroupID = groupID
+		}
+	}
+	p.bound = append(p.bound, fmt.Sprintf("%d:%d", keyID, groupID))
+	return nil
 }

@@ -44,6 +44,9 @@ explicitly adopted Relay-only member, including status and error text. A
 partial execution is returned as `needs_retry`; a later Confirm/replan replaces
 successful step entries while retaining unresolved failed entries. No audit
 event stream is implied by this field.
+When a Replan moves a member between managed target Groups, the retry state also
+retains the actual previous target Group ID so a failed API-Key move can be
+retried from that Group instead of falling back to the original source Group.
 
 Relay members that exist in a managed target Group but have no local mapping are
 shown as unmanaged. Their observed 30-day cost contributes to remaining target
