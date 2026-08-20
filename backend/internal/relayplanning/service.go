@@ -548,7 +548,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		}
 	}
 	recommended, count := resolveGroupCount(req, eligible)
-	if count == 0 && len(req.Assignments) > 0 {
+	if req.ExistingMappingID == 0 && req.Assignments != nil {
 		count = assignmentCount(req.Assignments)
 	}
 	assignments := allocate(eligible, count)
@@ -588,7 +588,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 			}
 		}
 	}
-	if len(req.Assignments) > 0 {
+	if req.Assignments != nil {
 		assignments, err = validateAssignments(req.Assignments, candidates, count)
 		if err != nil {
 			return nil, fmt.Errorf("validate relay planning assignments: %w", err)
@@ -648,7 +648,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		}
 	}
 	for index := range plan.Candidates {
-		if len(req.Assignments) > 0 {
+		if req.Assignments != nil {
 			_, plan.Candidates[index].Selected = assigned[plan.Candidates[index].UserID]
 		}
 	}
@@ -2895,7 +2895,10 @@ func assignmentsReviewAccounts(assignments []Assignment) bool {
 }
 
 func validateAssignments(assignments []Assignment, candidates []Candidate, count int) ([]Assignment, error) {
-	if count <= 0 || len(assignments) != count {
+	if count <= 0 {
+		return nil, fmt.Errorf("assignments must contain at least one target group")
+	}
+	if len(assignments) != count {
 		return nil, fmt.Errorf("assignments must contain exactly %d target groups", count)
 	}
 	byUser := make(map[int]Candidate, len(candidates))

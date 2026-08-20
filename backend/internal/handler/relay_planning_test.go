@@ -328,6 +328,21 @@ func TestRelayPlanningPreviewAllowsTargetOnlyExternalUserAndKeepsMissingUsageUnk
 	if containsRelayPlanningWarning(body.Data.Warnings, "user is not a member of the selected source group") {
 		t.Fatalf("warnings = %v, source membership must not be required without a source", body.Data.Warnings)
 	}
+
+	editedPayload := fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"source_group_id":0,"weekly_cost_target":2500,"selected_user_ids":[%d,%d],"assignments":[{"index":0,"user_ids":[%d,%d]},{"index":1,"user_ids":[]},{"index":2,"user_ids":[]},{"index":3,"user_ids":[]}]}`, providerConfig.ID, alice.ID, carol.ID, alice.ID, carol.ID)
+	request = httptest.NewRequest(http.MethodPost, "/admin/relay-planning/preview", strings.NewReader(editedPayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("edited target count status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode edited target count response: %v", err)
+	}
+	if body.Data.GroupCount != 4 || len(body.Data.Assignments) != 4 {
+		t.Fatalf("edited target count = %d/%d, want 4/4", body.Data.GroupCount, len(body.Data.Assignments))
+	}
 }
 
 func TestRelayPlanningExecuteUsesOnlyEachUsersExplicitSource(t *testing.T) {

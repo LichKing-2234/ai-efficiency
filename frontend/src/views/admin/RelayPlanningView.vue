@@ -54,6 +54,7 @@ const searchDelayMS = 300
 const targetSearchTimers = new Map<number, ReturnType<typeof setTimeout>>()
 const targetSearchRequestIDs = new Map<number, number>()
 const operationKey = ref('')
+const suggestedGroupAccountDefaults = ref<RelayPlanningAccount[]>([])
 const mappings = ref<RelayPlanningMapping[]>([])
 const rebindPendingID = ref<number | null>(null)
 const accountMappingID = ref<number | null>(null)
@@ -235,6 +236,35 @@ function recalculateAssignments() {
     assignment.total_cost = assignment.user_ids.reduce((total, userID) => total + (costs.get(userID) ?? 0), 0) + (unmanagedCosts.get(assignment.target_group_id ?? 0) ?? 0)
   }
   selectedUserIDs.value = new Set(plan.value.assignments.flatMap((assignment) => assignment.user_ids))
+}
+
+function addSuggestedGroup() {
+  if (!plan.value || activeMappingID.value) return
+  const index = plan.value.assignments.length
+  const accounts = suggestedGroupAccountDefaults.value.map((account) => ({ ...account }))
+  plan.value.assignments.push({
+    index,
+    total_cost: 0,
+    user_ids: [],
+    target_group_name: '',
+    desired_accounts: accounts.map((account, accountIndex) => ({ account_id: account.id, priority: Number(account.priority || accountIndex + 1) })),
+    accounts,
+  })
+  plan.value.group_count = plan.value.assignments.length
+}
+
+function removeSuggestedGroup(targetIndex: number) {
+  if (!plan.value || activeMappingID.value || plan.value.assignments.length <= 1) return
+  clearSearchState()
+  plan.value.assignments = plan.value.assignments
+    .filter((assignment) => assignment.index !== targetIndex)
+    .map((assignment, index) => ({
+      ...assignment,
+      index,
+      target_group_name: assignment.index === index ? assignment.target_group_name : '',
+    }))
+  plan.value.group_count = plan.value.assignments.length
+  recalculateAssignments()
 }
 
 function moveCandidate(userID: number, targetIndex: number | null) {
@@ -480,7 +510,9 @@ async function preview() {
   error.value = ''
   try {
     const response = await previewRelayPlan(request)
-    applyPlan(response.data.data ?? null)
+    const nextPlan = response.data.data ?? null
+    suggestedGroupAccountDefaults.value = (nextPlan?.assignments[0]?.accounts ?? []).map((account) => ({ ...account }))
+    applyPlan(nextPlan)
     activeMappingID.value = null
     selectedUnmanagedRelayIDs.value = new Set()
     operationKey.value = crypto.randomUUID()
@@ -693,6 +725,7 @@ function resetPlan() {
 	managedAssignmentsByUser.value = {}
   memberSources.value = {}
   operationKey.value = ''
+  suggestedGroupAccountDefaults.value = []
   error.value = ''
   confirming.value = false
   confirmDialogOpen.value = false
@@ -813,7 +846,7 @@ onBeforeUnmount(clearSearchState)
               </div>
               <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs"><div><dt class="text-slate-500">{{ t('relayPlanning.cost30d') }}</dt><dd class="font-medium">{{ candidate.usage_known === false ? t('relayPlanning.unknown') : `$${candidate.range_cost.toFixed(2)}` }}</dd></div><div><dt class="text-slate-500">{{ t('relayPlanning.tokens30d') }}</dt><dd class="font-medium">{{ candidate.usage_known === false ? t('relayPlanning.unknown') : candidate.range_tokens }}</dd></div><div><dt class="text-slate-500">{{ t('relayPlanning.globalRank') }}</dt><dd class="font-medium">{{ candidate.global_token_rank || '-' }}</dd></div><div><dt class="text-slate-500">{{ t('relayPlanning.keys') }}</dt><dd class="font-medium">{{ candidate.migratable_key_count }}</dd></div></dl>
               <div v-if="selectedUserIDs.has(candidate.user_id)" class="mt-3"><el-select v-model="memberSources[String(candidate.user_id)]" class="w-full"><el-option :label="t('relayPlanning.targetOnly')" :value="0" /><el-option v-for="item in groups" :key="item.group_id" :label="`${item.group_name} (#${item.group_id})`" :value="Number(item.group_id)" /></el-select></div>
-              <div class="mt-3"><el-select v-if="candidate.can_add" :model-value="candidateAssignmentIndex(candidate.user_id)" class="w-full" clearable :placeholder="t('relayPlanning.unassigned')" @change="(value) => moveCandidate(candidate.user_id, value === null || value === undefined || value === '' ? null : Number(value))"><el-option v-for="assignment in plan.assignments" :key="assignment.index" :label="assignment.target_group_name || `${t('relayPlanning.group')} ${assignment.index + 1}`" :value="assignment.index" /></el-select><span v-else class="text-xs text-slate-400">{{ t('relayPlanning.notAvailable') }}</span></div>
+              <div class="mt-3"><el-select v-if="candidate.can_add" :data-testid="`candidate-target-${candidate.user_id}`" :model-value="candidateAssignmentIndex(candidate.user_id)" class="w-full" clearable :placeholder="t('relayPlanning.unassigned')" @change="(value) => moveCandidate(candidate.user_id, value === null || value === undefined || value === '' ? null : Number(value))"><el-option v-for="assignment in plan.assignments" :key="assignment.index" :label="assignment.target_group_name || `${t('relayPlanning.group')} ${assignment.index + 1}`" :value="assignment.index" /></el-select><span v-else class="text-xs text-slate-400">{{ t('relayPlanning.notAvailable') }}</span></div>
               <div class="mt-2"><el-tag :type="candidate.eligible ? 'success' : candidate.can_add ? 'warning' : 'info'">{{ candidate.eligible ? t('relayPlanning.eligible') : candidate.can_add ? t('relayPlanning.addOnly') : t('relayPlanning.excluded') }}</el-tag><div v-if="candidate.warnings?.length" class="mt-1 text-xs text-amber-700">{{ candidate.warnings.map(translateWarning).join('; ') }}</div></div>
             </article>
           </div>
@@ -825,16 +858,16 @@ onBeforeUnmount(clearSearchState)
             <el-table-column prop="range_tokens" :label="t('relayPlanning.tokens30d')" width="130"><template #default="scope">{{ scope.row.usage_known === false ? t('relayPlanning.unknown') : scope.row.range_tokens }}</template></el-table-column>
             <el-table-column prop="global_token_rank" :label="t('relayPlanning.globalRank')" width="110" />
             <el-table-column prop="migratable_key_count" :label="t('relayPlanning.keys')" width="80" />
-            <el-table-column :label="t('relayPlanning.target')" min-width="170"><template #default="scope"><el-select v-if="scope.row.can_add" :model-value="candidateAssignmentIndex(scope.row.user_id)" clearable :placeholder="t('relayPlanning.unassigned')" @change="(value) => moveCandidate(scope.row.user_id, value === null || value === undefined || value === '' ? null : Number(value))"><el-option v-for="assignment in plan.assignments" :key="assignment.index" :label="assignment.target_group_name || `${t('relayPlanning.group')} ${assignment.index + 1}`" :value="assignment.index" /></el-select><span v-else class="text-xs text-slate-400">{{ t('relayPlanning.notAvailable') }}</span></template></el-table-column>
+            <el-table-column :label="t('relayPlanning.target')" min-width="170"><template #default="scope"><el-select v-if="scope.row.can_add" :data-testid="`candidate-target-${scope.row.user_id}`" :model-value="candidateAssignmentIndex(scope.row.user_id)" clearable :placeholder="t('relayPlanning.unassigned')" @change="(value) => moveCandidate(scope.row.user_id, value === null || value === undefined || value === '' ? null : Number(value))"><el-option v-for="assignment in plan.assignments" :key="assignment.index" :label="assignment.target_group_name || `${t('relayPlanning.group')} ${assignment.index + 1}`" :value="assignment.index" /></el-select><span v-else class="text-xs text-slate-400">{{ t('relayPlanning.notAvailable') }}</span></template></el-table-column>
             <el-table-column :label="t('relayPlanning.sourceGroup')" min-width="180"><template #default="scope"><el-select v-if="selectedUserIDs.has(scope.row.user_id)" v-model="memberSources[String(scope.row.user_id)]"><el-option :label="t('relayPlanning.targetOnly')" :value="0" /><el-option v-for="item in groups" :key="item.group_id" :label="`${item.group_name} (#${item.group_id})`" :value="Number(item.group_id)" /></el-select><span v-else>-</span></template></el-table-column>
             <el-table-column :label="t('relayPlanning.status')" min-width="180"><template #default="scope"><el-tag :type="scope.row.eligible ? 'success' : scope.row.can_add ? 'warning' : 'info'">{{ scope.row.eligible ? t('relayPlanning.eligible') : scope.row.can_add ? t('relayPlanning.addOnly') : t('relayPlanning.excluded') }}</el-tag><div v-if="scope.row.warnings?.length" class="mt-1 text-xs text-amber-700">{{ scope.row.warnings.map(translateWarning).join('; ') }}</div></template></el-table-column>
           </el-table>
         </div>
         <div class="rounded-lg border border-slate-200 bg-white p-4">
-          <div class="mb-2 text-sm font-semibold text-slate-900">{{ t('relayPlanning.proposedGroups') }}</div>
+          <div class="mb-2 flex items-center justify-between gap-3"><div class="text-sm font-semibold text-slate-900">{{ t('relayPlanning.proposedGroups') }}</div><el-button v-if="!activeMappingID" data-testid="add-suggested-group" size="small" type="primary" plain :icon="Plus" @click="addSuggestedGroup">{{ t('relayPlanning.addSuggestedGroup') }}</el-button></div>
           <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            <div v-for="assignment in plan.assignments" :key="assignment.index" class="rounded-md border border-slate-200 p-3">
-              <div class="flex justify-between gap-3 text-sm font-medium"><span class="min-w-0 break-words">{{ assignment.target_group_name || `${t('relayPlanning.group')} ${assignment.index + 1}` }}<span v-if="assignment.target_group_id" class="text-slate-500"> (#{{ assignment.target_group_id }})</span></span><span class="shrink-0">${{ assignment.total_cost.toFixed(2) }}</span></div>
+            <div v-for="assignment in plan.assignments" :key="assignment.index" :data-testid="`suggested-group-${assignment.index}`" class="rounded-md border border-slate-200 p-3">
+              <div class="flex justify-between gap-3 text-sm font-medium"><span class="min-w-0 break-words">{{ assignment.target_group_name || `${t('relayPlanning.group')} ${assignment.index + 1}` }}<span v-if="assignment.target_group_id" class="text-slate-500"> (#{{ assignment.target_group_id }})</span></span><span class="flex shrink-0 items-center gap-2"><span>${{ assignment.total_cost.toFixed(2) }}</span><el-tooltip v-if="!activeMappingID && plan.assignments.length > 1" :content="t('relayPlanning.removeSuggestedGroup')"><el-button :data-testid="`remove-suggested-group-${assignment.index}`" circle size="small" type="danger" plain :icon="Delete" :aria-label="t('relayPlanning.removeSuggestedGroup')" @click="removeSuggestedGroup(assignment.index)" /></el-tooltip></span></div>
               <div class="mt-2 text-xs text-slate-500">{{ t('relayPlanning.memberCount', { count: assignment.user_ids?.length ?? 0 }) }}</div>
 				<div class="mt-3 border-t border-slate-200 pt-3">
 					<div class="text-xs font-semibold text-slate-500">{{ t('relayPlanning.desiredAccounts') }}</div>

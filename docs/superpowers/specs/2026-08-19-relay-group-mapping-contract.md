@@ -37,6 +37,13 @@ production release.
 - User and Account text search waits for a short typing pause before querying.
   Pagination remains immediate, and a response for an older query cannot
   replace the newest query's results.
+- The initial Preview recommends a target count, then treats the administrator's
+  reviewed assignment list as authoritative. The administrator may add empty
+  proposed Targets or remove proposed Targets while retaining at least one;
+  indexes are normalized before the next Preview. Removing a Target leaves its
+  users unassigned, and a newly added Target inherits the Template Account
+  defaults. Existing-mapping Replan still preserves its fixed target IDs and
+  does not expose this resize control.
 - Preview is read-only. Group creation, membership changes, source removal,
   API-Key binding, and adoption require the final Confirm action.
 

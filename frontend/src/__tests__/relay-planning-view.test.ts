@@ -195,6 +195,32 @@ describe('RelayPlanningView', () => {
     expect(wrapper.text()).toContain('Group Alpha (Copy)')
   })
 
+  it('adds and removes suggested groups before confirmation', async () => {
+    const { wrapper, relayPlanning } = await mountView()
+    await fillAndPreview(wrapper)
+
+    await wrapper.get('[data-testid="add-suggested-group"]').trigger('click')
+    await wrapper.get('[data-testid="add-suggested-group"]').trigger('click')
+    expect(wrapper.findAll('[data-testid^="suggested-group-"]')).toHaveLength(3)
+    expect(wrapper.get('[data-testid="suggested-group-2"]').text()).toContain('Account Alpha')
+
+    await wrapper.get('[data-testid="remove-suggested-group-0"]').trigger('click')
+    expect(wrapper.findAll('[data-testid^="suggested-group-"]')).toHaveLength(2)
+    const target = wrapper.get('[data-testid="candidate-target-1"]')
+    expect((target.element as HTMLSelectElement).value).toBe('')
+    await target.setValue('0')
+    await wrapper.get('[data-testid="open-execution-confirmation"]').trigger('click')
+    await flushPromises()
+
+    expect(relayPlanning.previewRelayPlan).toHaveBeenLastCalledWith(expect.objectContaining({
+      selected_user_ids: [1],
+      assignments: [
+        expect.objectContaining({ index: 0, user_ids: [1], desired_accounts: [{ account_id: 11, priority: 1 }] }),
+        expect.objectContaining({ index: 1, user_ids: [], desired_accounts: [{ account_id: 11, priority: 1 }] }),
+      ],
+    }))
+  })
+
   it('opens a centered in-page confirmation without executing', async () => {
     const { wrapper, relayPlanning } = await mountView()
     await fillAndPreview(wrapper)
