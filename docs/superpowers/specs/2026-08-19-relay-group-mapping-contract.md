@@ -50,6 +50,11 @@ priorities without treating an absent desired state as an instruction to remove
 Accounts. `Adopt Current` saves those IDs and priorities locally and performs no
 Relay write. Account search covers every Account type on the selected Platform;
 status and schedulability are warnings rather than filters.
+Mappings also warn when one reviewed target uses multiple Accounts or one
+Account is reused across reviewed targets. Group-configuration compatibility
+is shown only when the Provider exposes a privacy-safe compatibility field;
+the current sub2api Account summary does not, so AI Efficiency does not infer
+compatibility from credentials or provider-private configuration.
 
 After initialization, the saved desired Account order is applied only through
 Confirm. Reconciliation adds, removes, or changes only the selected target
@@ -73,6 +78,9 @@ subscription. Department changes never trigger either action automatically.
 ## Relationship-Bound Confirmation
 
 Every Preview returns an opaque versioned SHA-256 relationship fingerprint.
+Version 2 carries separate canonical hashes for Group, Account, mapping and
+retry state, local-to-Relay identity, subscription, and API-Key relationships
+so a stale response can name the safe relationship category that changed.
 Its canonical input contains the selected Provider and Platform, relevant Group
 IDs and Platforms, saved and actual target Account IDs and priorities, affected
 local-to-Relay user IDs, relevant subscription Group/status facts, and eligible
@@ -105,6 +113,9 @@ An explicit removal updates the desired member state immediately. If an
 upstream step fails, the operation state retains its Target and saved Source so
 the same removal can be Previewed and retried without restoring the deleted
 desired assignment.
+Failed `Move Here` operation state likewise retains the source mapping and
+actual previous target. Reopening Replan restores that action in the UI and the
+backend independently restores it when a client omits the retry action.
 When a Replan moves a member between managed target Groups, the retry state also
 retains the actual previous target Group ID so a failed API-Key move can be
 retried from that Group instead of falling back to the original source Group.
@@ -112,6 +123,11 @@ Once a matching relationship preflight has completed, later upstream failures
 are recorded as normal per-step retry state rather than relabeled as a stale
 Preview. A retry obtains a fresh Preview fingerprint while retaining the saved
 operation state and actual previous target Group needed by unfinished steps.
+Destination and source mapping changes are committed in one local transaction.
+The execution response reports one persistence result per affected mapping; a
+failure rolls back every local mapping change and returns structured retryable
+`failed`, `rolled_back`, and `skipped` results instead of leaving a half-saved
+transfer.
 
 Relay members that exist in a managed target Group but have no local mapping are
 shown as unmanaged. Their observed 30-day cost contributes to remaining target

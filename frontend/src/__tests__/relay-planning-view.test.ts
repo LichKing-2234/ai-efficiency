@@ -155,6 +155,31 @@ describe('RelayPlanningView', () => {
 		expect(wrapper.find('[data-testid="candidate-card-layout"]').exists()).toBe(false)
 	})
 
+	it('localizes multi-Account and reused-Account mapping warnings', async () => {
+		const { wrapper } = await mountView([{
+			id: 9,
+			provider_id: 7,
+			department_id: 'dept-alpha',
+			department_name: 'SDK Framework',
+			platform: 'openai',
+			template_group_id: 42,
+			template_group_name: 'Group Alpha',
+			source_group_id: 0,
+			source_group_name: '',
+			group_ids: [101, 102],
+			status: 'active',
+			weekly_cost_target: 2500,
+			account_management_initialized: true,
+			desired_accounts: {},
+			account_pools: [],
+			warnings: ['target group 101 has multiple Accounts', 'account 11 is reused across target groups 101, 102'],
+			updated_at: '2026-08-20T00:00:00Z',
+		}])
+
+		expect(wrapper.text()).toContain('Target Group #101 has multiple Accounts')
+		expect(wrapper.text()).toContain('Account #11 is reused across Target Groups #101, #102')
+	})
+
   it('uses the automatic group recommendation and shows expected relay names', async () => {
     const { wrapper, relayPlanning } = await mountView()
 
@@ -508,5 +533,41 @@ describe('RelayPlanningView', () => {
 		await flushPromises()
 
 		expect(relayPlanning.previewRelayReplan).toHaveBeenCalledWith(9, { removed_user_ids: [1] })
+	})
+
+	it('restores a failed Move Here action when reopening Replan', async () => {
+		const mapping = {
+			id: 9,
+			provider_id: 7,
+			department_id: 'dept-alpha',
+			department_name: 'SDK Framework',
+			platform: 'openai',
+			template_group_id: 42,
+			template_group_name: 'Group Alpha',
+			source_group_id: 0,
+			source_group_name: '',
+			group_ids: [202],
+			status: 'needs_retry',
+			weekly_cost_target: 2500,
+			member_assignments: { '1': 202 },
+			member_sources: {},
+			account_management_initialized: true,
+			desired_accounts: { '202': [{ account_id: 11, priority: 1 }] },
+			account_pools: [],
+			operation_state: {
+				'member:1': { action: 'move_here', from_mapping_id: '8', from_group_id: '101', source_removal: 'failed', error: 'synthetic failure' },
+			},
+			updated_at: '2026-08-20T00:00:00Z',
+		}
+		const replan = structuredClone({ ...plan, mapping_id: 9, source_group_id: 0, source_group_name: '', assignments: [{ ...plan.assignments[0], user_ids: [1], target_group_id: 202 }] })
+		const { wrapper, relayPlanning } = await mountView([mapping])
+		relayPlanning.previewRelayReplan.mockResolvedValue({ data: { data: replan } })
+
+		await wrapper.get('[data-testid="replan-mapping-9"]').trigger('click')
+		await flushPromises()
+
+		expect(relayPlanning.previewRelayReplan).toHaveBeenCalledWith(9, { member_actions: { '1': { mode: 'move_here', from_mapping_id: 8 } } })
+		expect(wrapper.text()).toContain('Move here')
+		expect(wrapper.text()).toContain('Add additionally')
 	})
 })

@@ -91,6 +91,10 @@ function translateWarning(warning: string): string {
   if (unavailable) return t(`relayPlanning.warningUnavailable${unavailable[1] === 'template' ? 'Template' : unavailable[1] === 'migration source' ? 'Source' : 'Target'}`, { id: unavailable[2] })
   const conflict = warning.match(/^user (\d+) is assigned in multiple mappings$/)
   if (conflict) return t('relayPlanning.warningMappingConflict', { user: conflict[1] })
+  const multipleAccounts = warning.match(/^target group (\d+) has multiple Accounts$/)
+  if (multipleAccounts) return t('relayPlanning.warningMultipleTargetAccounts', { group: multipleAccounts[1] })
+  const reusedAccount = warning.match(/^account (\d+) is reused across target groups ([0-9, ]+)$/)
+  if (reusedAccount) return t('relayPlanning.warningReusedAccount', { account: reusedAccount[1], groups: reusedAccount[2].split(',').map((id) => `#${id.trim()}`).join(', ') })
   if (warning === 'mapping has no target groups') return t('relayPlanning.warningNoTargetGroups')
   if (warning === 'mapping contains an invalid target group') return t('relayPlanning.warningInvalidTargetGroup')
   const invalidDepartment = warning.match(/^department (.+) is unavailable$/)
@@ -238,13 +242,25 @@ function departmentSuggestionLabel(item: { name: string; id: string }): string {
   return `${item.name} (${item.id})`
 }
 
+function operationEntryNeedsRetry(entry: Record<string, string>): boolean {
+  return Boolean(entry.error || entry.status === 'failed' || entry.subscription === 'failed' || entry.source_removal === 'failed' || entry.api_keys?.includes(':failed:'))
+}
+
 function retryRemovalUserIDs(mapping: RelayPlanningMapping): number[] {
   return Object.entries(mapping.operation_state ?? {}).flatMap(([key, entry]) => {
-    const needsRetry = entry.error || entry.status === 'failed' || entry.subscription === 'failed' || entry.source_removal === 'failed' || entry.api_keys?.includes(':failed:')
-    if (!key.startsWith('member:') || entry.action !== 'remove' || !needsRetry) return []
+    if (!key.startsWith('member:') || entry.action !== 'remove' || !operationEntryNeedsRetry(entry)) return []
     const userID = Number(key.slice('member:'.length))
     return userID > 0 ? [userID] : []
   })
+}
+
+function retryMemberActions(mapping: RelayPlanningMapping): Record<string, RelayPlanningMemberAction> {
+  return Object.fromEntries(Object.entries(mapping.operation_state ?? {}).flatMap(([key, entry]) => {
+    const userID = Number(key.slice('member:'.length))
+    const fromMappingID = Number(entry.from_mapping_id)
+    if (!key.startsWith('member:') || entry.action !== 'move_here' || !operationEntryNeedsRetry(entry) || userID <= 0 || fromMappingID <= 0) return []
+    return [[String(userID), { mode: 'move_here' as const, from_mapping_id: fromMappingID }]]
+  }))
 }
 
 async function loadOptions() {
@@ -536,12 +552,17 @@ async function executeConfirmed() {
 async function replan(mapping: RelayPlanningMapping) {
   try {
     const retryRemovedUserIDs = retryRemovalUserIDs(mapping)
-    const response = await previewRelayReplan(mapping.id, retryRemovedUserIDs.length ? { removed_user_ids: retryRemovedUserIDs } : {})
+    const retryActions = retryMemberActions(mapping)
+    const retryRequest = {
+      ...(retryRemovedUserIDs.length ? { removed_user_ids: retryRemovedUserIDs } : {}),
+      ...(Object.keys(retryActions).length ? { member_actions: retryActions } : {}),
+    }
+    const response = await previewRelayReplan(mapping.id, retryRequest)
     applyPlan(response.data.data ?? null)
     activeMappingID.value = mapping.id
     selectedUnmanagedRelayIDs.value = new Set()
     removedUserIDs.value = new Set(retryRemovedUserIDs)
-    memberActions.value = {}
+    memberActions.value = retryActions
     managedAssignmentsByUser.value = {}
     operationKey.value = crypto.randomUUID()
     form.provider_id = mapping.provider_id

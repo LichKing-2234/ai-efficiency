@@ -200,6 +200,15 @@ func (h *RelayPlanningHandler) ReplanExecute(c *gin.Context) {
 }
 
 func writeRelayPlanningExecutionError(c *gin.Context, err error) {
+	var persistence *relayplanning.MappingPersistenceError
+	if errors.As(err, &persistence) {
+		pkg.ErrorWithDetails(c, http.StatusUnprocessableEntity, persistence.Error(), gin.H{
+			"error_code": "mapping_persistence_failed",
+			"retryable":  true,
+			"mappings":   persistence.Results,
+		})
+		return
+	}
 	var stale *relayplanning.StalePlanError
 	if errors.As(err, &stale) {
 		pkg.ErrorWithDetails(c, http.StatusConflict, stale.Error(), gin.H{
