@@ -979,7 +979,6 @@ func normalizePreviewAccountIntents(intents []AccountIntent, available map[int64
 	sort.SliceStable(normalized, func(i, j int) bool { return normalized[i].Priority < normalized[j].Priority })
 	selected := make([]TargetAccount, 0, len(normalized))
 	seenAccounts := make(map[int64]struct{}, len(normalized))
-	seenPriorities := make(map[int]struct{}, len(normalized))
 	for _, intent := range normalized {
 		account, ok := available[intent.AccountID]
 		if !ok {
@@ -991,11 +990,7 @@ func normalizePreviewAccountIntents(intents []AccountIntent, available map[int64
 		if intent.Priority <= 0 {
 			return nil, nil, fmt.Errorf("account priority must be positive")
 		}
-		if _, duplicate := seenPriorities[intent.Priority]; duplicate {
-			return nil, nil, fmt.Errorf("account priority %d is duplicated", intent.Priority)
-		}
 		seenAccounts[intent.AccountID] = struct{}{}
-		seenPriorities[intent.Priority] = struct{}{}
 		selected = append(selected, TargetAccount{ID: account.ID, Name: account.Name, Platform: account.Platform, Type: account.Type, Status: account.Status, Schedulable: account.Schedulable, Priority: intent.Priority})
 	}
 	if normalized == nil {

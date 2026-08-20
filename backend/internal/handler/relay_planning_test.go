@@ -441,7 +441,7 @@ func TestRelayPlanningCreateInheritsTemplateAccountsAndAppliesReviewedOverride(t
 		groups: []relay.Group{{ID: 10, Name: "Group Alpha", Platform: "openai"}, {ID: 20, Name: "Group Source", Platform: "openai"}},
 		accounts: []relay.Account{
 			{ID: 11, Name: "Account Alpha", Platform: "openai", Type: "oauth", Status: "active", Schedulable: true, GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 10, Priority: 1}}},
-			{ID: 12, Name: "Account Beta", Platform: "openai", Type: "apikey", Status: "error", Schedulable: false, GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 999, Priority: 1}, {GroupID: 10, Priority: 2}}},
+			{ID: 12, Name: "Account Beta", Platform: "openai", Type: "apikey", Status: "error", Schedulable: false, GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 999, Priority: 1}, {GroupID: 10, Priority: 1}}},
 		},
 		subscriptions: map[int64][]relay.UserSubscription{42: {{UserID: 42, GroupID: 20, Status: "active"}}},
 		keys:          map[int64][]relay.APIKey{42: {{ID: 501, UserID: 42, GroupID: 20, Status: "active"}}},
@@ -473,6 +473,9 @@ func TestRelayPlanningCreateInheritsTemplateAccountsAndAppliesReviewedOverride(t
 	}
 	if len(previewBody.Data.Assignments) != 1 || len(previewBody.Data.Assignments[0].DesiredAccounts) != 2 || len(previewBody.Data.Assignments[0].Accounts) != 2 {
 		t.Fatalf("default preview Accounts = %+v, want both inherited Template Accounts", previewBody.Data.Assignments)
+	}
+	if previewBody.Data.Assignments[0].DesiredAccounts[0].Priority != 1 || previewBody.Data.Assignments[0].DesiredAccounts[1].Priority != 1 {
+		t.Fatalf("default preview priorities = %+v, want duplicate Relay priority 1 preserved", previewBody.Data.Assignments[0].DesiredAccounts)
 	}
 
 	reviewedPreviewPayload := fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"source_group_id":20,"weekly_cost_target":2500,"group_count":1,"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d],"desired_accounts":[{"account_id":12,"priority":1}]}]}`, providerConfig.ID, alice.ID, alice.ID)

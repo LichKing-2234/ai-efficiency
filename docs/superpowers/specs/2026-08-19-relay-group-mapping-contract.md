@@ -30,8 +30,10 @@ production release.
   Target defaults to its saved desired state, or its current Relay state when
   Account management has not been initialized. The administrator may search
   all same-Platform Account types and add, remove, or reorder them before
-  Confirm. An explicit empty Account list keeps that Target inactive and blocks
-  member migration for only that Target.
+  Confirm. Existing Relay priorities are preserved even when multiple Accounts
+  share one priority; an administrator edit rewrites the displayed order to
+  consecutive priorities. An explicit empty Account list keeps that Target
+  inactive and blocks member migration for only that Target.
 - User and Account text search waits for a short typing pause before querying.
   Pagination remains immediate, and a response for an older query cannot
   replace the newest query's results.
