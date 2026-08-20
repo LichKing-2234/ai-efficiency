@@ -2364,7 +2364,7 @@ func (s *sub2apiRelay) SetAccountGroupRelationship(ctx context.Context, accountI
 	}
 	current, err := s.getAccountRelationshipSnapshot(ctx, accountID)
 	if err != nil {
-		return err
+		return fmt.Errorf("relay: set account group relationship: load reviewed snapshot: %w", err)
 	}
 	if !sameAccountRelationships(current.GroupRelationships, expected) {
 		return fmt.Errorf("%w: account %d no longer matches the reviewed snapshot", ErrAccountRelationshipsChanged, accountID)
@@ -2412,7 +2412,7 @@ func (s *sub2apiRelay) SetAccountGroupRelationship(ctx context.Context, accountI
 	}
 	verified, err := s.getAccountRelationshipSnapshot(ctx, accountID)
 	if err != nil {
-		return err
+		return fmt.Errorf("relay: set account group relationship: verify update: %w", err)
 	}
 	desired := make([]AccountGroupRelationship, len(groupIDs))
 	for index, desiredGroupID := range groupIDs {

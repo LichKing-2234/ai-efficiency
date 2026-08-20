@@ -21,6 +21,10 @@ production release.
 - A non-source addition receives only a target subscription. It does not remove
   an old subscription and does not move API Keys. Source members retain the
   source-subscription removal and API-Key migration steps.
+- Per-target user search is server-paginated across all local users. Search and
+  Preview both revalidate the local-to-Relay identity against the selected
+  Provider; a stale or cross-Provider Relay ID cannot be assigned by bypassing
+  the frontend.
 - Preview is read-only. Group creation, membership changes, source removal,
   API-Key binding, and adoption require the final Confirm action.
 
@@ -53,6 +57,10 @@ Group relationship while preserving every unrelated Account-to-Group binding.
 A newly duplicated target inherits the Template Account IDs and priorities,
 verifies those relationships, and becomes active before member migration. An
 Account failure blocks only its target; other targets continue.
+Account reconciliation re-reads the latest Account relationships for each
+target before mutation so one Account can be reused safely across targets. An
+existing target whose reviewed desired Account pool is empty has its remaining
+Account bindings removed, is made inactive, and receives no member migration.
 
 An administrator may explicitly remove a managed member. A saved Source is
 restored, eligible API Keys still bound to the target are moved back, and the
@@ -93,6 +101,10 @@ explicitly adopted Relay-only member, including status and error text. A
 partial execution is returned as `needs_retry`; a later Confirm/replan replaces
 successful step entries while retaining unresolved failed entries. No audit
 event stream is implied by this field.
+An explicit removal updates the desired member state immediately. If an
+upstream step fails, the operation state retains its Target and saved Source so
+the same removal can be Previewed and retried without restoring the deleted
+desired assignment.
 When a Replan moves a member between managed target Groups, the retry state also
 retains the actual previous target Group ID so a failed API-Key move can be
 retried from that Group instead of falling back to the original source Group.

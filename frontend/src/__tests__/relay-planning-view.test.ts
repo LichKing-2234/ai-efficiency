@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { ElDialog } from 'element-plus'
+import { ElDialog, ElMessageBox } from 'element-plus'
 import RelayPlanningView from '@/views/admin/RelayPlanningView.vue'
 
 vi.mock('@/api/adminUsers', () => ({
@@ -73,7 +73,17 @@ const plan = {
 	generated_at: '2026-08-19T00:00:00Z',
 }
 
-async function mountView(initialMappings: any[] = []) {
+async function mountView(initialMappings: any[] = [], wide = false) {
+	const mediaQuery = {
+		matches: wide,
+		media: '(min-width: 1280px)',
+		addEventListener: vi.fn(),
+		removeEventListener: vi.fn(),
+		addListener: vi.fn(),
+		removeListener: vi.fn(),
+	}
+	const matchMedia = vi.fn(() => mediaQuery)
+	Object.defineProperty(window, 'matchMedia', { configurable: true, value: matchMedia })
   const adminUsers = await import('@/api/adminUsers') as any
   const relayPlanning = await import('@/api/relayPlanning') as any
   adminUsers.listAdminUserDepartmentOptions.mockResolvedValue({
@@ -106,11 +116,16 @@ async function mountView(initialMappings: any[] = []) {
           emits: ['update:modelValue'],
           template: '<input type="number" :value="modelValue" @input="$emit(\'update:modelValue\', Number($event.target.value))">',
         },
+				ElPagination: {
+					props: ['currentPage', 'pageSize', 'total'],
+					emits: ['current-change'],
+					template: '<button v-bind="$attrs" @click="$emit(\'current-change\', currentPage + 1)"></button>',
+				},
       },
     },
   })
   await flushPromises()
-  return { wrapper, relayPlanning }
+  return { wrapper, relayPlanning, matchMedia }
 }
 
 async function fillAndPreview(wrapper: ReturnType<typeof mount>) {
@@ -126,7 +141,19 @@ async function fillAndPreview(wrapper: ReturnType<typeof mount>) {
 }
 
 describe('RelayPlanningView', () => {
-  beforeEach(() => vi.resetAllMocks())
+  beforeEach(() => {
+		vi.restoreAllMocks()
+		vi.resetAllMocks()
+	})
+
+	it('uses the shared wide-content breakpoint for mutually exclusive table layouts', async () => {
+		const { wrapper, matchMedia } = await mountView([], true)
+		await fillAndPreview(wrapper)
+
+		expect(matchMedia).toHaveBeenCalledWith('(min-width: 1280px)')
+		expect(wrapper.find('[data-testid="candidate-table-layout"]').exists()).toBe(true)
+		expect(wrapper.find('[data-testid="candidate-card-layout"]').exists()).toBe(false)
+	})
 
   it('uses the automatic group recommendation and shows expected relay names', async () => {
     const { wrapper, relayPlanning } = await mountView()
@@ -196,7 +223,7 @@ describe('RelayPlanningView', () => {
 
 	it('previews without a migration source and adds a searched user to one target', async () => {
     const { wrapper, relayPlanning } = await mountView()
-    relayPlanning.searchRelayPlanningUsers.mockResolvedValue({
+	    relayPlanning.searchRelayPlanningUsers.mockResolvedValue({
       data: { data: { items: [{
         user_id: 2,
         relay_user_id: 102,
@@ -204,7 +231,7 @@ describe('RelayPlanningView', () => {
         email: 'bob@example.org',
         department: { external_id: 'dept-beta', name: 'SDK Runtime', display_path: 'Engineering / SDK Runtime' },
         selectable: true,
-      }], total: 1, page: 1, page_size: 20 } },
+	      }], total: 45, page: 1, page_size: 20 } },
     })
     relayPlanning.previewRelayPlan
       .mockResolvedValueOnce({ data: { data: structuredClone({ ...plan, source_group_id: 0, source_group_name: '' }) } })
@@ -229,8 +256,11 @@ describe('RelayPlanningView', () => {
     const search = wrapper.get('[data-testid="target-user-search-0"]')
     await search.setValue('bob')
     await flushPromises()
-    expect(relayPlanning.searchRelayPlanningUsers).toHaveBeenCalledWith(expect.objectContaining({ provider_id: 7, platform: 'openai', q: 'bob' }))
-    expect(wrapper.text()).toContain('Engineering / SDK Runtime')
+	    expect(relayPlanning.searchRelayPlanningUsers).toHaveBeenCalledWith(expect.objectContaining({ provider_id: 7, platform: 'openai', q: 'bob' }))
+	    expect(wrapper.text()).toContain('Engineering / SDK Runtime')
+		await wrapper.get('[data-testid="target-user-pagination-0"]').trigger('click')
+		await flushPromises()
+		expect(relayPlanning.searchRelayPlanningUsers).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, page_size: 20 }))
 
     await wrapper.get('[data-testid="add-searched-user-0-2"]').trigger('click')
     await flushPromises()
@@ -404,5 +434,79 @@ describe('RelayPlanningView', () => {
 		}))
 		expect(wrapper.text()).toContain('Move here')
 		expect(wrapper.text()).toContain('Add additionally')
+	})
+
+	it('prevents duplicate Rebind submissions while one request is in flight', async () => {
+		const mapping = {
+			id: 9,
+			provider_id: 7,
+			department_id: 'dept-alpha',
+			department_name: 'SDK Framework',
+			platform: 'openai',
+			template_group_id: 42,
+			template_group_name: 'Group Alpha',
+			source_group_id: 42,
+			source_group_name: 'Group Alpha',
+			group_ids: [101],
+			status: 'active',
+			weekly_cost_target: 2500,
+			account_management_initialized: false,
+			desired_accounts: {},
+			account_pools: [],
+			updated_at: '2026-08-20T00:00:00Z',
+		}
+		let resolveRebind!: (value: unknown) => void
+		const pending = new Promise((resolve) => { resolveRebind = resolve })
+		const { wrapper, relayPlanning } = await mountView([mapping])
+		vi.spyOn(ElMessageBox, 'prompt')
+			.mockResolvedValueOnce({ value: 'dept-alpha', action: 'confirm' } as any)
+			.mockResolvedValueOnce({ value: '42', action: 'confirm' } as any)
+			.mockResolvedValueOnce({ value: '42', action: 'confirm' } as any)
+			.mockResolvedValueOnce({ value: '101', action: 'confirm' } as any)
+		vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as any)
+		relayPlanning.rebindRelayGroupMapping.mockReturnValue(pending)
+
+		await wrapper.get('[data-testid="rebind-mapping-9"]').trigger('click')
+		await flushPromises()
+		expect(relayPlanning.rebindRelayGroupMapping).toHaveBeenCalledTimes(1)
+		await wrapper.get('[data-testid="rebind-mapping-9"]').trigger('click')
+		expect(relayPlanning.rebindRelayGroupMapping).toHaveBeenCalledTimes(1)
+
+		resolveRebind({ data: { data: mapping } })
+		await flushPromises()
+	})
+
+	it('restores a failed explicit removal when reopening Replan', async () => {
+		const mapping = {
+			id: 9,
+			provider_id: 7,
+			department_id: 'dept-alpha',
+			department_name: 'SDK Framework',
+			platform: 'openai',
+			template_group_id: 42,
+			template_group_name: 'Group Alpha',
+			source_group_id: 42,
+			source_group_name: 'Group Alpha',
+			group_ids: [101],
+			status: 'needs_retry',
+			weekly_cost_target: 2500,
+			member_assignments: {},
+			member_sources: {},
+			account_management_initialized: true,
+			desired_accounts: { '101': [{ account_id: 11, priority: 1 }] },
+			account_pools: [],
+			operation_state: {
+				'member:1': { action: 'remove', target_group_id: '101', source_removal: 'failed', error: 'synthetic failure' },
+			},
+			updated_at: '2026-08-20T00:00:00Z',
+		}
+		const replan = structuredClone({ ...plan, mapping_id: 9, assignments: [{ ...plan.assignments[0], user_ids: [], target_group_id: 101 }] })
+		const { wrapper, relayPlanning } = await mountView([mapping])
+		relayPlanning.previewRelayReplan.mockResolvedValue({ data: { data: replan } })
+
+		await wrapper.get('[data-testid="replan-mapping-9"]').trigger('click')
+		await flushPromises()
+
+		expect(relayPlanning.previewRelayReplan).toHaveBeenCalledWith(9, { removed_user_ids: [1] })
 	})
 })

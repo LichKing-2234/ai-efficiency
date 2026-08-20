@@ -450,7 +450,7 @@ func TestExecuteReplanRetriesFailedAPIKeyMoveFromPreviousTarget(t *testing.T) {
 		}},
 		OperationKey: "replan-op-1",
 	}
-	preview, err := service.Replan(ctx, mappingRow.ID, nil, replanRequest.Assignments, nil, nil, nil)
+	preview, err := service.Replan(ctx, mappingRow.ID, nil, replanRequest.Assignments, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("first Replan() error = %v", err)
 	}
@@ -476,7 +476,7 @@ func TestExecuteReplanRetriesFailedAPIKeyMoveFromPreviousTarget(t *testing.T) {
 		}},
 		OperationKey: "replan-op-2",
 	}
-	preview, err = service.Replan(ctx, mappingRow.ID, nil, retryRequest.Assignments, nil, nil, nil)
+	preview, err = service.Replan(ctx, mappingRow.ID, nil, retryRequest.Assignments, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("retry Replan() error = %v", err)
 	}
@@ -545,6 +545,10 @@ func (f relayPlanningProviderResolver) Resolve(ctx context.Context, providerID i
 
 func (p *replanRetryProvider) ListPlatformGroups(context.Context) ([]relay.Group, error) {
 	return append([]relay.Group(nil), p.groups...), nil
+}
+
+func (p *replanRetryProvider) GetUser(_ context.Context, userID int64) (*relay.User, error) {
+	return &relay.User{ID: userID, Username: "alice", Email: "alice@example.com"}, nil
 }
 
 func (p *replanRetryProvider) ListUserSubscriptions(_ context.Context, userID int64) ([]relay.UserSubscription, error) {

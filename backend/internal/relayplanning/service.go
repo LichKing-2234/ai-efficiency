@@ -432,7 +432,7 @@ func sameRelayIdentity(username, email string, relayUserID int64, remote *relay.
 func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error) {
 	req = normalizeRequest(req)
 	if err := validateRequest(req); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("validate relay planning request: %w", err)
 	}
 	providerConfig, err := s.client.RelayProvider.Get(ctx, req.ProviderID)
 	if err != nil {
@@ -462,7 +462,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		}
 	}
 	if err := validateMemberSourceGroups(req.MemberSources, groups, req.Platform); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("validate member source groups: %w", err)
 	}
 	users, err := s.users.Targets(ctx, adminusers.Filters{DepartmentID: req.DepartmentID}, maxPlanningUsers)
 	if err != nil {
@@ -534,7 +534,11 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		if len(req.RemovedUserIDs) > 0 {
 			removed := selectedSet(req.RemovedUserIDs)
 			for userID := range removed {
-				if _, managed := mapping.MemberAssignments[strconv.Itoa(userID)]; !managed {
+				key := strconv.Itoa(userID)
+				_, managed := mapping.MemberAssignments[key]
+				entry := mapping.OperationState["member:"+key]
+				retryingRemoval := entry != nil && entry["action"] == "remove" && entry["target_group_id"] != "" && operationStateNeedsRetry(mapping.OperationState, "member:"+key)
+				if !managed && !retryingRemoval {
 					return nil, fmt.Errorf("user %d is not managed by this mapping", userID)
 				}
 			}
@@ -735,7 +739,7 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 		return nil, fmt.Errorf("preview relay plan for execution: %w", err)
 	}
 	if err := validateRelationshipFingerprint(req.ExpectedRelationshipFingerprint, plan); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("validate relay plan relationship fingerprint: %w", err)
 	}
 	p, err := s.resolver.Resolve(ctx, req.ProviderID)
 	if err != nil {
@@ -917,12 +921,13 @@ type relationshipAccountFact struct {
 }
 
 type relationshipMappingFact struct {
-	ID              int                              `json:"id"`
-	ProviderID      int                              `json:"provider_id"`
-	Platform        string                           `json:"platform"`
-	GroupIDs        []int64                          `json:"group_ids"`
-	DesiredAccounts []relationshipDesiredAccountFact `json:"desired_accounts"`
-	Members         []relationshipMappingMemberFact  `json:"members"`
+	ID                           int                              `json:"id"`
+	ProviderID                   int                              `json:"provider_id"`
+	Platform                     string                           `json:"platform"`
+	GroupIDs                     []int64                          `json:"group_ids"`
+	AccountManagementInitialized bool                             `json:"account_management_initialized"`
+	DesiredAccounts              []relationshipDesiredAccountFact `json:"desired_accounts"`
+	Members                      []relationshipMappingMemberFact  `json:"members"`
 }
 
 type relationshipDesiredAccountFact struct {
@@ -1013,7 +1018,7 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 		if mapping.ProviderID != req.ProviderID || !strings.EqualFold(strings.TrimSpace(mapping.Platform), strings.TrimSpace(req.Platform)) {
 			return "", fmt.Errorf("mapping %d does not belong to the selected provider and platform", mappingID)
 		}
-		fact := relationshipMappingFact{ID: mapping.ID, ProviderID: mapping.ProviderID, Platform: strings.ToLower(strings.TrimSpace(mapping.Platform)), GroupIDs: append([]int64(nil), mapping.GroupIds...)}
+		fact := relationshipMappingFact{ID: mapping.ID, ProviderID: mapping.ProviderID, Platform: strings.ToLower(strings.TrimSpace(mapping.Platform)), GroupIDs: append([]int64(nil), mapping.GroupIds...), AccountManagementInitialized: mapping.AccountManagementInitialized}
 		sort.Slice(fact.GroupIDs, func(i, j int) bool { return fact.GroupIDs[i] < fact.GroupIDs[j] })
 		for _, groupID := range mapping.GroupIds {
 			if groupID > 0 {
@@ -1272,6 +1277,9 @@ func buildTargetChangeSummaries(req PreviewRequest, plan *Plan) []TargetChangeSu
 	}
 
 	for index := range summaries {
+		if currentMapping != nil && !currentMapping.AccountManagementInitialized {
+			continue
+		}
 		current := make(map[int64]int)
 		desired := make(map[int64]int)
 		targetGroupID := summaries[index].TargetGroupID
@@ -1285,7 +1293,7 @@ func buildTargetChangeSummaries(req PreviewRequest, plan *Plan) []TargetChangeSu
 				}
 			}
 		}
-		if currentMapping != nil {
+		if currentMapping != nil && currentMapping.AccountManagementInitialized {
 			for _, intent := range currentMapping.DesiredAccounts {
 				if intent.TargetGroupID == targetGroupID {
 					desired[intent.AccountID] = intent.Priority
@@ -1869,7 +1877,10 @@ func findGroupForPlatform(groups []relay.Group, id int64, platform, role string)
 
 func (s *Service) validateDepartment(ctx context.Context, externalID string) error {
 	_, err := s.departmentName(ctx, externalID)
-	return err
+	if err != nil {
+		return fmt.Errorf("validate department %q: %w", externalID, err)
+	}
+	return nil
 }
 
 func (s *Service) departmentSuggestions(ctx context.Context, providerID int, platform, currentID string) []DepartmentSuggestion {
@@ -1905,12 +1916,27 @@ func (s *Service) departmentSuggestions(ctx context.Context, providerID int, pla
 	return suggestions
 }
 
-func (s *Service) Replan(ctx context.Context, mappingID int, selected []int, assignments []Assignment, removedUserIDs []int, memberActions map[string]MemberAction, adoptRelayUserIDs []int64) (*Plan, error) {
+func (s *Service) Replan(ctx context.Context, mappingID int, selected []int, assignments []Assignment, memberSources map[string]int64, removedUserIDs []int, memberActions map[string]MemberAction, adoptRelayUserIDs []int64) (*Plan, error) {
 	row, err := s.client.RelayGroupMapping.Get(ctx, mappingID)
 	if err != nil {
 		return nil, fmt.Errorf("load relay group mapping: %w", err)
 	}
-	return s.Preview(ctx, PreviewRequest{ProviderID: row.ProviderID, DepartmentID: row.DepartmentExternalID, Platform: row.Platform, TemplateGroupID: row.TemplateGroupID, SourceGroupID: row.SourceGroupID, WeeklyCostTarget: row.WeeklyCostTarget, GroupCount: len(row.GroupIds), SelectedUserIDs: selected, Assignments: assignments, RemovedUserIDs: removedUserIDs, MemberActions: memberActions, AdoptRelayUserIDs: adoptRelayUserIDs, ExistingMappingID: mappingID})
+	memberSources = memberSourcesWithRemovalRetries(row.OperationState, memberSources, removedUserIDs)
+	return s.Preview(ctx, PreviewRequest{ProviderID: row.ProviderID, DepartmentID: row.DepartmentExternalID, Platform: row.Platform, TemplateGroupID: row.TemplateGroupID, SourceGroupID: row.SourceGroupID, WeeklyCostTarget: row.WeeklyCostTarget, GroupCount: len(row.GroupIds), SelectedUserIDs: selected, Assignments: assignments, MemberSources: memberSources, RemovedUserIDs: removedUserIDs, MemberActions: memberActions, AdoptRelayUserIDs: adoptRelayUserIDs, ExistingMappingID: mappingID})
+}
+
+func memberSourcesWithRemovalRetries(operationState map[string]map[string]string, memberSources map[string]int64, removedUserIDs []int) map[string]int64 {
+	memberSources = cloneInt64Map(memberSources)
+	for _, userID := range removedUserIDs {
+		key := strconv.Itoa(userID)
+		if memberSources[key] > 0 {
+			continue
+		}
+		if entry := operationState["member:"+key]; entry != nil && entry["action"] == "remove" && operationStateNeedsRetry(operationState, "member:"+key) {
+			memberSources[key], _ = strconv.ParseInt(entry["source_group_id"], 10, 64)
+		}
+	}
+	return memberSources
 }
 
 // ExecuteReplan applies only the final member-to-target assignment matrix. The
@@ -1944,6 +1970,7 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	}
 	req.GroupCount = len(mapping.GroupIDs)
 	req.ExistingMappingID = mappingID
+	req.MemberSources = memberSourcesWithRemovalRetries(mapping.OperationState, req.MemberSources, req.RemovedUserIDs)
 	plan, err := s.Preview(ctx, req.PreviewRequest)
 	if err != nil {
 		if stale := stalePlanFromPreviewError(req.ExpectedRelationshipFingerprint, err); stale != nil {
@@ -1952,7 +1979,7 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 		return nil, fmt.Errorf("preview relay replan for execution: %w", err)
 	}
 	if err := validateRelationshipFingerprint(req.ExpectedRelationshipFingerprint, plan); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("validate relay replan relationship fingerprint: %w", err)
 	}
 	p, err := s.resolver.Resolve(ctx, mapping.ProviderID)
 	if err != nil {
@@ -1986,6 +2013,13 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	for _, userID := range req.RemovedUserIDs {
 		key := strconv.Itoa(userID)
 		targetGroupID := oldAssignments[key]
+		sourceGroupID := oldSources[key]
+		if targetGroupID <= 0 {
+			if previous := mapping.OperationState["member:"+key]; previous != nil && previous["action"] == "remove" && operationStateNeedsRetry(mapping.OperationState, "member:"+key) {
+				targetGroupID, _ = strconv.ParseInt(previous["target_group_id"], 10, 64)
+				sourceGroupID, _ = strconv.ParseInt(previous["source_group_id"], 10, 64)
+			}
+		}
 		if targetGroupID <= 0 {
 			continue
 		}
@@ -1997,7 +2031,6 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 			continue
 		}
 		candidate := &Candidate{UserID: userID, RelayUserID: int64(*local.RelayUserID)}
-		sourceGroupID := oldSources[key]
 		if sourceGroupID > 0 {
 			member = executeMemberMigration(ctx, p, assigner, remover, binder, candidate, sourceGroupID, targetGroupID, member)
 		} else if remover == nil {
@@ -2105,6 +2138,23 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	}
 	state := executionState(req.OperationKey, groupResults, memberResults)
 	mergeAccountResultsIntoState(state, accountResults)
+	for _, member := range memberResults {
+		if member.Action != "remove" || member.UserID <= 0 {
+			continue
+		}
+		key := strconv.Itoa(member.UserID)
+		if entry := state["member:"+key]; entry != nil {
+			sourceGroupID := oldSources[key]
+			if sourceGroupID <= 0 {
+				if previous := mapping.OperationState["member:"+key]; previous != nil {
+					sourceGroupID, _ = strconv.ParseInt(previous["source_group_id"], 10, 64)
+				}
+			}
+			if sourceGroupID > 0 {
+				entry["source_group_id"] = strconv.FormatInt(sourceGroupID, 10)
+			}
+		}
+	}
 	for key, fromGroupID := range memberFromGroups {
 		if fromGroupID <= 0 {
 			continue
@@ -2173,28 +2223,30 @@ func (s *Service) applyDesiredAccountRelationships(ctx context.Context, provider
 	}
 	reader, readerOK := provider.(relay.AccountRelationshipReader)
 	updater, updaterOK := provider.(relay.AccountRelationshipUpdater)
+	statusUpdater, statusUpdaterOK := provider.(relay.GroupStatusUpdater)
 	if !readerOK || !updaterOK {
 		for _, targetGroupID := range mapping.GroupIDs {
 			blocked[targetGroupID] = "relay provider does not support account relationship updates"
 		}
 		return []AccountResult{{Status: "failed", Error: "relay provider does not support account relationship updates"}}, blocked
 	}
-	accounts, err := reader.ListAccountsForPlatform(ctx, mapping.Platform)
-	if err != nil {
-		for _, targetGroupID := range mapping.GroupIDs {
-			blocked[targetGroupID] = fmt.Sprintf("list account relationships: %v", err)
-		}
-		return []AccountResult{{Status: "failed", Error: fmt.Sprintf("list account relationships: %v", err)}}, blocked
-	}
-	accountsByID := make(map[int64]relay.Account, len(accounts))
-	for _, account := range accounts {
-		if strings.EqualFold(strings.TrimSpace(account.Platform), strings.TrimSpace(mapping.Platform)) {
-			accountsByID[account.ID] = account
-		}
-	}
 	results := make([]AccountResult, 0)
 	for _, targetGroupID := range mapping.GroupIDs {
+		accounts, err := reader.ListAccountsForPlatform(ctx, mapping.Platform)
+		if err != nil {
+			reason := fmt.Sprintf("list account relationships for target group %d: %v", targetGroupID, err)
+			blocked[targetGroupID] = reason
+			results = append(results, AccountResult{TargetGroupID: targetGroupID, Status: "failed", Error: reason})
+			continue
+		}
+		accountsByID := make(map[int64]relay.Account, len(accounts))
+		for _, account := range accounts {
+			if strings.EqualFold(strings.TrimSpace(account.Platform), strings.TrimSpace(mapping.Platform)) {
+				accountsByID[account.ID] = account
+			}
+		}
 		desired := mapping.DesiredAccounts[strconv.FormatInt(targetGroupID, 10)]
+		targetFailed := false
 		if len(desired) == 0 {
 			reason := "target group has no desired account relationship"
 			blocked[targetGroupID] = reason
@@ -2206,8 +2258,12 @@ func (s *Service) applyDesiredAccountRelationships(ctx context.Context, provider
 			if _, ok := accountsByID[intent.AccountID]; !ok {
 				reason := fmt.Sprintf("desired account %d is unavailable on platform %s", intent.AccountID, mapping.Platform)
 				blocked[targetGroupID] = reason
+				targetFailed = true
 				results = append(results, AccountResult{TargetGroupID: targetGroupID, AccountID: intent.AccountID, DesiredPriority: intPointer(intent.Priority), Status: "failed", Error: reason})
 			}
+		}
+		if targetFailed {
+			continue
 		}
 		accountIDs := make(map[int64]struct{}, len(desired))
 		for accountID := range desiredByID {
@@ -2243,11 +2299,25 @@ func (s *Service) applyDesiredAccountRelationships(ctx context.Context, provider
 			if updateErr := updater.SetAccountGroupRelationship(ctx, accountID, targetGroupID, account.GroupRelationships, desiredPointer); updateErr != nil {
 				result.Status = "failed"
 				result.Error = updateErr.Error()
+				targetFailed = true
 				blocked[targetGroupID] = fmt.Sprintf("account relationships for target group %d need retry", targetGroupID)
 			} else {
 				result.Status = "succeeded"
 			}
 			results = append(results, result)
+		}
+		if len(desired) == 0 && !targetFailed {
+			if !statusUpdaterOK {
+				reason := "relay provider does not support target group deactivation"
+				blocked[targetGroupID] = reason
+				results = append(results, AccountResult{TargetGroupID: targetGroupID, Status: "failed", Error: reason})
+			} else if updateErr := statusUpdater.UpdateGroupStatus(ctx, targetGroupID, "inactive"); updateErr != nil {
+				reason := fmt.Sprintf("deactivate target group %d: %v", targetGroupID, updateErr)
+				blocked[targetGroupID] = reason
+				results = append(results, AccountResult{TargetGroupID: targetGroupID, Status: "failed", Error: reason})
+			} else {
+				results = append(results, AccountResult{TargetGroupID: targetGroupID, Status: "deactivated"})
+			}
 		}
 	}
 	return results, blocked
@@ -2604,12 +2674,28 @@ func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, u *ent.U
 		return candidate
 	}
 	candidate.RelayUserID = int64(*u.RelayUserID)
+	var remote *relay.User
+	var identityErr error
+	identityDone := make(chan struct{})
+	go func() {
+		remote, identityErr = p.GetUser(ctx, candidate.RelayUserID)
+		close(identityDone)
+	}()
+	facts := loadCandidateRelayFacts(ctx, p, candidate.RelayUserID, source, platform)
+	<-identityDone
+	if identityErr != nil {
+		candidate.Warnings = append(candidate.Warnings, "relay mapping could not be verified for the selected provider")
+		return candidate
+	}
+	if !sameRelayIdentity(u.Username, u.Email, candidate.RelayUserID, remote) {
+		candidate.Warnings = append(candidate.Warnings, "relay mapping is not valid for the selected provider")
+		return candidate
+	}
 	stat, usageKnown := globalStats[candidate.RelayUserID]
 	candidate.UsageKnown = usageKnown
 	candidate.RangeCost = usageCost(stat)
 	candidate.RangeTokens = usageTokens(stat)
 	candidate.GlobalTokenRank = ranks[candidate.RelayUserID]
-	facts := loadCandidateRelayFacts(ctx, p, candidate.RelayUserID, source, platform)
 	candidate.relationshipSubscriptions = facts.relationshipSubscriptions
 	candidate.relationshipAPIKeys = facts.relationshipAPIKeys
 	candidate.relationshipGroupErr = facts.groupErr
@@ -2741,8 +2827,11 @@ func loadCandidateRelayFacts(ctx context.Context, p relay.Provider, userID int64
 
 func (s *Service) hasDepartmentConflict(ctx context.Context, u *ent.User, selectedDepartment string) (bool, error) {
 	snapshot, found, err := directorysync.CurrentSnapshot(ctx, s.client)
-	if err != nil || !found || u == nil {
-		return false, err
+	if err != nil {
+		return false, fmt.Errorf("load directory snapshot for department conflict: %w", err)
+	}
+	if !found || u == nil {
+		return false, nil
 	}
 	memberQuery := s.client.DirectoryMember.Query().Where(directorymember.SourceIDEQ(snapshot.SourceID))
 	if u.RelayUserID != nil {
@@ -2752,7 +2841,7 @@ func (s *Service) hasDepartmentConflict(ctx context.Context, u *ent.User, select
 	}
 	members, err := memberQuery.All(ctx)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("load directory members for department conflict: %w", err)
 	}
 	departments := make(map[string]struct{})
 	for _, member := range members {
@@ -2761,7 +2850,7 @@ func (s *Service) hasDepartmentConflict(ctx context.Context, u *ent.User, select
 		}
 		membershipRows, membershipErr := s.client.DirectoryMemberDepartment.Query().Where(directorymemberdepartment.DirectoryMemberIDEQ(member.ID), directorymemberdepartment.SourceIDEQ(snapshot.SourceID)).All(ctx)
 		if membershipErr != nil {
-			return false, membershipErr
+			return false, fmt.Errorf("load directory memberships for department conflict: %w", membershipErr)
 		}
 		for _, row := range membershipRows {
 			departments[row.DepartmentExternalID] = struct{}{}
@@ -2823,7 +2912,7 @@ func usageStatsAt(ctx context.Context, p relay.Provider, ids []int64, now time.T
 			}
 			stats, err := batch.GetBatchUserUsageStats(ctx, ids[start:end], params)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("load batch user usage stats: %w", err)
 			}
 			for id, stat := range stats {
 				result[id] = stat
@@ -2838,7 +2927,7 @@ func usageStatsAt(ctx context.Context, p relay.Provider, ids []int64, now time.T
 	for _, id := range ids {
 		stat, err := p.GetUsageStats(ctx, id, now.Add(-30*24*time.Hour), now)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("load usage stats for relay user %d: %w", id, err)
 		}
 		cost := stat.TotalCost
 		tokens := stat.TotalTokens
@@ -2900,15 +2989,18 @@ func usageCost(stat relay.TeamUserUsageStats) float64 {
 
 func (s *Service) departmentName(ctx context.Context, externalID string) (string, error) {
 	snapshot, found, err := directorysync.CurrentSnapshot(ctx, s.client)
-	if err != nil || !found {
-		return "", err
+	if err != nil {
+		return "", fmt.Errorf("load current directory snapshot: %w", err)
+	}
+	if !found {
+		return "", fmt.Errorf("current directory snapshot is unavailable")
 	}
 	row, err := s.client.DirectoryDepartment.Query().Where(
 		directorydepartment.SourceIDEQ(snapshot.SourceID),
 		directorydepartment.ExternalIDEQ(strings.TrimSpace(externalID)),
 	).Only(ctx)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("load department %q: %w", externalID, err)
 	}
 	return row.Name, nil
 }
