@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Design
 
 **Date:** 2026-08-11
-**Status:** Active production contract since the verified 2026-08-12 cutover. The Responses WebSocket extension uses Codex-local Token and shipped in `ae-cli/v0.2.0-preview.8` plus platform `v0.1.0-preview.85`; the trusted-log repair shipped in CLI-only preview.9, and preview.10 completed the exact dual-baseline and scan-progress repair for current Codex 0.147. CLI-only `ae-cli/v0.2.0-preview.11` preserves the original single-allocation evidence digest and quarantines unchanged terminal conflicts without retransmission or later-trigger blockage. CLI-only preview.12 added coordinated drain, deleted-worktree recovery, and backlog migration; preview.13 then shipped the exact current-runtime inline-wrapper parser repair and scanner-progress invalidation. The authorized #305 Helm operator canary at commit `c35758f5` produced one `relay_official` group whose 112 official Requests materialized exactly once into four direct pools and `21,668,159` Token; a later managed-hook replay left the group, pools, relations, Request identities, and Token unchanged. This controlled canary does not satisfy #252's ordinary-workflow gate. A 2026-08-14 production read found that personal Activity used cumulative Usage stats instead of the selected-window trend total, invalidating the previously recorded #252 Day 0. PR #299 repaired the denominator and non-zero percentage display; the repair first shipped in platform `v0.1.0-preview.87`, exact production readback established the replacement #252 Day 0 at `2026-08-17T05:32:57.925948Z`, and production now runs platform `v0.1.0-preview.88` at Helm revision 88. AI Efficiency PR #319 later satisfied the ordinary-workflow gate with five direct pools and `23,210,615` Token. The 2026-08-20 evidence snapshot passed every non-destructive execution-time gate. Cleanup has not run and still requires a fresh same-window readback plus separate destructive authority; no fixed elapsed-time wait applies.
+**Status:** Active production contract since the verified 2026-08-12 cutover. The Responses WebSocket extension uses Codex-local Token and shipped in `ae-cli/v0.2.0-preview.8` plus platform `v0.1.0-preview.85`; the trusted-log repair shipped in CLI-only preview.9, and preview.10 completed the exact dual-baseline and scan-progress repair for current Codex 0.147. CLI-only `ae-cli/v0.2.0-preview.11` preserves the original single-allocation evidence digest and quarantines unchanged terminal conflicts without retransmission or later-trigger blockage. CLI-only preview.12 added coordinated drain, deleted-worktree recovery, and backlog migration; preview.13 then shipped the exact current-runtime inline-wrapper parser repair and scanner-progress invalidation. The authorized #305 Helm operator canary at commit `c35758f5` produced one `relay_official` group whose 112 official Requests materialized exactly once into four direct pools and `21,668,159` Token; a later managed-hook replay left the group, pools, relations, Request identities, and Token unchanged. This controlled canary does not satisfy #252's ordinary-workflow gate. A 2026-08-14 production read found that personal Activity used cumulative Usage stats instead of the selected-window trend total, invalidating the previously recorded #252 Day 0. PR #299 repaired the denominator and non-zero percentage display; the repair first shipped in platform `v0.1.0-preview.87`, exact production readback established the replacement #252 Day 0 at `2026-08-17T05:32:57.925948Z`, and production now runs platform `v0.1.0-preview.88` at Helm revision 88. AI Efficiency PR #319 later satisfied the ordinary-workflow gate with five direct pools and `23,210,615` Token. The 2026-08-20 evidence snapshot passed every non-destructive execution-time gate and the operator authorized implementation, separate releases, deployment, and destructive migration. Phase 2 source cleanup is implemented but not yet released or deployed; production mutation still requires a fresh same-window readback. No fixed elapsed-time wait applies.
 **Scope:** `ae-cli`, backend attribution/reconciliation/read models, frontend Activity, repository administration
 **Supersedes for active behavior:** [Codex Token Attribution Ledger POC](./2026-08-05-codex-token-attribution-ledger-poc-design.md)
 **Related:**
@@ -651,6 +651,15 @@ availability, and the authorized detail action. They do not show or rank
 personal Token, code ratio, cost, PR count, commit count, Repository count,
 subscription, quota, multiplier, or Relay-specific state.
 
+The organization and member collections come from the Team Usage organization
+contract, which returns immediate child departments and direct members with
+independent cursors. Activity requests
+`GET /api/v1/activity/v2/teams/:team_id/member-availability` only for positive
+user IDs on the current direct-member page. The availability result includes a
+user only when the selected date range contains a `formal_v2` direct/shared
+commit relation in that authorized team scope. Usage Token, local user identity,
+member selectability, and shadow/v1 data never imply availability.
+
 ### 12.6 Loading, Empty, Error, And Responsive States
 
 Ratio, trend, Repository, and PR sections load independently. A section error
@@ -762,10 +771,21 @@ be true in the same execution window:
   recounted, and both reset v1 tables remain zero.
 
 Any failed gate blocks cleanup until it is corrected and read back again; it
-does not start or restart a fixed elapsed-time clock. Only then may a separately
-authorized cleanup remove v1 ingest/read code, v1 frontend
-Bucket/Request UI, AE OTLP ingest, `aeo_*` credentials, and fields used only by
-the POC. It must preserve user-managed OTel and every formal pool and commit
+does not start or restart a fixed elapsed-time clock. The authorized cleanup is
+staged so a rolling application deployment never overlaps a binary that needs
+the removed schema:
+
+1. Phase 2 removes v1 bucket/revision/report and legacy Activity code, AE OTLP
+   ingest/authentication, active `aeo_*` issuance, and frontend Bucket/Request
+   UI. It keeps the two v1 tables plus `reporting_installations.otlp_token_hash`
+   and `otel_enabled` only for non-destructive rollback. New installation rows
+   use an internal retired sentinel for the still-required legacy hash; no
+   credential is returned or accepted.
+2. After every serving replica is proven on Phase 2, Phase 3 exports the exact
+   legacy schema, repeats formal conservation in the DDL transaction, and drops
+   only those tables/columns with explicit no-`CASCADE` statements.
+
+Both phases preserve user-managed OTel and every formal pool and commit
 relation. Platform and CLI releases remain separate release units.
 
 ## 15. Acceptance Matrix

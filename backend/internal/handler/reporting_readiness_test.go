@@ -260,7 +260,7 @@ func TestAttributionStatusInstallationFailureIsLocalAndRetryable(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/attribution/status", nil)
 	c.Set(platformauth.ContextKeyUser, &platformauth.UserContext{UserID: 1})
 	protocol := attributionledger.DefaultProtocolContract()
-	handler := NewAttributionHandler(attributionledger.NewInstallationService(nil, protocol), nil, nil, nil, protocol, nil)
+	handler := NewAttributionHandler(attributionledger.NewInstallationService(nil, protocol), nil, nil)
 	handler.Status(c)
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, body=%s", response.Code, response.Body.String())

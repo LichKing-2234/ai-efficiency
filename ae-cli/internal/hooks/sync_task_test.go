@@ -993,10 +993,6 @@ type recoveringV2Uploader struct {
 	providerID int
 }
 
-func (u recoveringV2Uploader) CompactUsageClient() attributionlocal.CompactBackendClient {
-	return noopCompactBackendClient{}
-}
-
 func (u recoveringV2Uploader) AttributionProtocol() client.AttributionProtocol {
 	return client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept}
 }
@@ -1036,11 +1032,6 @@ func TestRunPendingSyncTaskMigratesAndRecoversDeletedLegacyWorktree(t *testing.T
 		V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: eventID, CommitSHA: commitSHA, CapturedAt: now}},
 	}
 	if err := UpsertPendingSyncTask(task); err != nil {
-		t.Fatal(err)
-	}
-	if err := attributionlocal.SaveJSON(attributionlocal.CompactStatePath(), attributionlocal.CompactState{
-		Version: 2, EnabledAt: now.Add(-time.Hour), SeenAtoms: map[string]bool{},
-	}); err != nil {
 		t.Fatal(err)
 	}
 	sourcePath := filepath.Join(home, ".codex", "sessions", "recovery.jsonl")
@@ -1346,39 +1337,6 @@ func TestRunV2ClaimSyncFinishesTriggerWhenBackendReturnsTerminalConflict(t *test
 	}
 }
 
-type failingV1Client struct {
-	err     error
-	v2Calls int
-}
-
-func (f *failingV1Client) SendAttributionBuckets(context.Context, []client.AttributionBucket) error {
-	return f.err
-}
-
-func (f *failingV1Client) SendAttributionRevision(context.Context, string, client.AttributionRevision) error {
-	return f.err
-}
-
-func (f *failingV1Client) SendAttributionV2Claims(context.Context, []client.AttributionV2ClaimGroup) (*client.AttributionV2ClaimBatchResult, error) {
-	f.v2Calls++
-	return nil, nil
-}
-
-type failingV1Uploader struct {
-	*fakeUploader
-	client *failingV1Client
-}
-
-func (f failingV1Uploader) CompactUsageClient() attributionlocal.CompactBackendClient {
-	return f.client
-}
-func (f failingV1Uploader) AttributionProtocol() client.AttributionProtocol {
-	return client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept}
-}
-func (f failingV1Uploader) V2ClaimClient() attributionlocal.V2ClaimBackendClient { return f.client }
-func (f failingV1Uploader) RelayProviderID() int                                 { return 7 }
-func (f failingV1Uploader) InstallationID() string                               { return "installation-1" }
-
 func TestRunV2ClaimSyncPreservesLocalStateOnResponseLoss(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	now := time.Now().UTC()
@@ -1601,44 +1559,6 @@ func TestRunV2ClaimSyncDrainsLargeHomeAcrossSmallBudgets(t *testing.T) {
 	}
 	if scanned != sourceCount {
 		t.Fatalf("large-home scanned sources = %d, want %d (%d completed units)", scanned, sourceCount, sourceCount*triggerCount)
-	}
-}
-
-func TestRunPendingSyncTaskStopsBeforeV2OnUnrelatedV1Failure(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	now := time.Now().UTC().Add(-time.Hour)
-	if err := attributionlocal.SaveJSON(attributionlocal.CompactStatePath(), attributionlocal.CompactState{
-		Version: 2, EnabledAt: now, SeenAtoms: map[string]bool{},
-		Pending: []attributionlocal.CompactPending{{Bucket: client.AttributionBucket{BucketID: "v1-bucket-1"}, AtomIDs: []string{"atom-1"}}},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	task := SyncTask{
-		WorkspaceID: "ws-v1-failure", RepoRoot: t.TempDir(), ServerURL: "https://ae.example.com", AuthSubject: "user:1",
-		RepoConfigID: 2, RepoKey: "github.com/acme/repo", Status: SyncTaskStatusPending, LastRequestedAt: time.Now().UTC(),
-	}
-	if err := UpsertPendingSyncTask(task); err != nil {
-		t.Fatal(err)
-	}
-	backend := &failingV1Client{err: errors.New("backend unavailable")}
-	uploader := failingV1Uploader{fakeUploader: &fakeUploader{}, client: backend}
-	execCtx := ExecutionContext{
-		ServerURL: task.ServerURL, AuthSubject: task.AuthSubject, RepoConfigID: task.RepoConfigID, RepoKey: task.RepoKey,
-		WorkspaceID: task.WorkspaceID, RepoRoot: task.RepoRoot, DurableReplay: true,
-	}
-	err := RunPendingSyncTask(context.Background(), execCtx, uploader)
-	if err == nil || !strings.Contains(err.Error(), "backend unavailable") {
-		t.Fatalf("RunPendingSyncTask error = %v", err)
-	}
-	if backend.v2Calls != 0 {
-		t.Fatalf("v2 calls = %d, want 0 after unrelated v1 failure", backend.v2Calls)
-	}
-	state, err := attributionlocal.LoadCompactState()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(state.Pending) != 1 || state.SeenAtoms["atom-1"] {
-		t.Fatalf("unrelated v1 failure mutated pending state: %+v", state)
 	}
 }
 

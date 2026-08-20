@@ -480,7 +480,7 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 		switch strings.TrimSpace(row.Type) {
 		case "session_meta":
 			sessionID = strings.TrimSpace(row.Payload.ID)
-			threadID = firstNonEmptyCompact(strings.TrimSpace(row.Payload.ThreadID), sessionID)
+			threadID = firstNonEmpty(strings.TrimSpace(row.Payload.ThreadID), sessionID)
 		case "turn_context":
 			turnID := strings.TrimSpace(row.Payload.TurnID)
 			if turnID == "" {
@@ -493,7 +493,7 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 			currentTurnID = turnID
 			for _, turns := range turnSets {
 				if turns[turnID] == nil {
-					turns[turnID] = &v2Turn{threadID: firstNonEmptyCompact(strings.TrimSpace(row.Payload.ThreadID), threadID, sessionID), turnID: turnID, model: strings.TrimSpace(row.Payload.Model), requests: map[string]struct{}{}, transportIDs: map[string]struct{}{}, replayFiles: map[string]v2ReplayFile{}, localUsage: map[string]*client.AttributionV2LocalUsageBucket{}, startedAt: observedAt}
+					turns[turnID] = &v2Turn{threadID: firstNonEmpty(strings.TrimSpace(row.Payload.ThreadID), threadID, sessionID), turnID: turnID, model: strings.TrimSpace(row.Payload.Model), requests: map[string]struct{}{}, transportIDs: map[string]struct{}{}, replayFiles: map[string]v2ReplayFile{}, localUsage: map[string]*client.AttributionV2LocalUsageBucket{}, startedAt: observedAt}
 				}
 			}
 		case "compacted":
@@ -548,7 +548,7 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 				}
 				if strings.TrimSpace(row.Payload.Type) == "patch_apply_end" {
 					for path, change := range row.Payload.Changes {
-						hash := firstNonEmptyCompact(strings.TrimSpace(change.ContentSHA256), strings.TrimSpace(change.SHA256))
+						hash := firstNonEmpty(strings.TrimSpace(change.ContentSHA256), strings.TrimSpace(change.SHA256))
 						if hash == "" && change.Content != "" {
 							hash = claimDigest(change.Content)
 						}
@@ -664,7 +664,7 @@ func buildCodexV2ClaimCandidates(ctx context.Context, path, sessionID string, op
 
 func v2StructuredPatchInput(toolName, input, arguments string) string {
 	payload := input + "\n" + arguments
-	if compactIsPatchTool(toolName) {
+	if isPatchTool(toolName) {
 		return payload
 	}
 	encodedPatch := ""
@@ -999,7 +999,7 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string, cutoff time
 		}
 		requestID := normalizeV2RequestID(firstSubmatch(reFailHdrClientReqID, body))
 		turnID := firstSubmatch(v2TurnIDPattern, body)
-		thread := firstNonEmptyCompact(firstSubmatch(v2ThreadIDPattern, body), threadID.String)
+		thread := firstNonEmpty(firstSubmatch(v2ThreadIDPattern, body), threadID.String)
 		if requestID == "" || thread == "" || turnID == "" || !v2SuccessfulResponseStatus.MatchString(body) {
 			continue
 		}
@@ -1146,7 +1146,7 @@ func parseCodexV2WebSocketTurnEvidence(fallbackThreadID, body string) (string, s
 }
 
 func parseCodexV2TurnSpan(fallbackThreadID, body string) (string, string, bool) {
-	threadID := firstNonEmptyCompact(firstSubmatch(v2ThreadIDPattern, body), strings.TrimSpace(fallbackThreadID))
+	threadID := firstNonEmpty(firstSubmatch(v2ThreadIDPattern, body), strings.TrimSpace(fallbackThreadID))
 	turnID := firstSubmatch(v2TurnIDPattern, body)
 	return threadID, turnID, threadID != "" && turnID != ""
 }

@@ -7,9 +7,8 @@ import (
 	"entgo.io/ent/schema/index"
 )
 
-// ReportingInstallation is a machine-scoped identity with two narrow,
-// independently revocable credentials: compact ledger reporting and Codex
-// OTLP ingestion. Only token hashes are persisted.
+// ReportingInstallation is a machine-scoped reporting identity. Legacy OTLP
+// columns remain during the rolling Phase 2 deployment and are removed later.
 type ReportingInstallation struct {
 	ent.Schema
 }

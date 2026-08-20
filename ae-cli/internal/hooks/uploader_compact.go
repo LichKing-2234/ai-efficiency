@@ -3,7 +3,6 @@ package hooks
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
@@ -13,24 +12,16 @@ import (
 type compactCheckpointSender interface {
 	SendAttributionCommitCheckpoint(context.Context, client.CommitCheckpointRequest) error
 	SendAttributionCommitRewrite(context.Context, client.CommitRewriteRequest) error
-	attributionlocal.CompactBackendClient
 }
 
 type CompactBackendUploader struct {
 	client          compactCheckpointSender
-	installationID  string
 	relayProviderID int
 	protocol        client.AttributionProtocol
 }
 
-func NewCompactBackendUploader(client compactCheckpointSender, installationID string, relayProviderID int, protocol client.AttributionProtocol) CompactBackendUploader {
-	return CompactBackendUploader{client: client, installationID: strings.TrimSpace(installationID), relayProviderID: relayProviderID, protocol: protocol}
-}
-
-func (u CompactBackendUploader) InstallationID() string { return u.installationID }
-
-func (u CompactBackendUploader) CompactUsageClient() attributionlocal.CompactBackendClient {
-	return u.client
+func NewCompactBackendUploader(client compactCheckpointSender, relayProviderID int, protocol client.AttributionProtocol) CompactBackendUploader {
+	return CompactBackendUploader{client: client, relayProviderID: relayProviderID, protocol: protocol}
 }
 
 func (u CompactBackendUploader) V2ClaimClient() attributionlocal.V2ClaimBackendClient {

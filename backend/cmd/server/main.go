@@ -545,7 +545,6 @@ func main() {
 			RequestLogger:            logger,
 			RequestObserver:          metrics.RequestObserver(),
 			WebVitalsHandler:         webVitalsHandler,
-			AttributionCorrelation:   attributionledger.NewCorrelationStore(redisStore, cfg.Redis.Namespace),
 			AttributionProtocol: attributionledger.ProtocolContract{
 				LedgerEpoch: cfg.Attribution.LedgerEpoch, V1WritePolicy: cfg.Attribution.V1WritePolicy, MinimumCLIVersion: cfg.Attribution.MinimumCLIVersion,
 			},

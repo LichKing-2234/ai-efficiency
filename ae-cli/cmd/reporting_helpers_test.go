@@ -50,7 +50,7 @@ func TestEnsureReportingEnrollmentRotatesWhenLocalCredentialsAreMissing(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ensureCalls != 1 || rotateCalls != 1 || config.ReporterToken != "test-reporter-token" || config.OTLPToken != "test-otlp-token" {
+	if ensureCalls != 1 || rotateCalls != 1 || config.ReporterToken != "test-reporter-token" || config.OTLPToken != "" {
 		t.Fatalf("ensure=%d rotate=%d config=%+v", ensureCalls, rotateCalls, config)
 	}
 	path, err := os.Stat(filepath.Join(home, ".ae-cli", "reporting.json"))
@@ -119,7 +119,7 @@ func TestEnsureReportingEnrollmentReusesStableInstallationAndRotatesAfterCredent
 	if err != nil {
 		t.Fatal(err)
 	}
-	if recovered.InstallationID != installationID || recovered.ReporterToken != "rotated-reporter-token" || recovered.OTLPToken != "rotated-otlp-token" {
+	if recovered.InstallationID != installationID || recovered.ReporterToken != "rotated-reporter-token" || recovered.OTLPToken != "" {
 		t.Fatalf("recovered config = %+v", recovered)
 	}
 	if ensureCalls != 3 || rotateCalls != 1 {
@@ -127,12 +127,12 @@ func TestEnsureReportingEnrollmentReusesStableInstallationAndRotatesAfterCredent
 	}
 }
 
-func TestEnsureReportingEnrollmentDoesNotRotateWhenOnlyLegacyOTLPTokenIsMissing(t *testing.T) {
+func TestEnsureReportingEnrollmentPreservesLocalLegacyOTLPState(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	installationID := uuid.NewString()
 	if err := reporting.Save("", &reporting.Config{
 		Version: 1, InstallationID: installationID, ServerURL: "https://ae.example.com", AuthSubject: "user:123",
-		ReporterToken: "existing-reporter-token",
+		ReporterToken: "existing-reporter-token", OTLPToken: "legacy-otlp-token", OTelEnabled: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestEnsureReportingEnrollmentDoesNotRotateWhenOnlyLegacyOTLPTokenIsMissing(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rotateCalls != 0 || got.ReporterToken != "existing-reporter-token" || got.OTLPToken != "" {
+	if rotateCalls != 0 || got.ReporterToken != "existing-reporter-token" || got.OTLPToken != "legacy-otlp-token" || !got.OTelEnabled {
 		t.Fatalf("rotate_calls=%d config=%+v", rotateCalls, got)
 	}
 }

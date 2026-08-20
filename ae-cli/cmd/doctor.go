@@ -119,78 +119,28 @@ func printCompactReportingStatus(out io.Writer) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			if identity, identityErr := reporting.LoadInstallationIdentity(""); identityErr == nil {
-				fmt.Fprintf(out, "Compact reporting\n")
+				fmt.Fprintf(out, "V2 reporting\n")
 				fmt.Fprintf(out, "  Installation: %s\n", identity.InstallationID)
 				fmt.Fprintf(out, "  Reporter credential: missing %s\n", style.badge(doctorcheck.StatusFailed))
-				fmt.Fprintf(out, "  Legacy OTLP credential: unknown %s\n", style.badge("warn"))
-				fmt.Fprintf(out, "  Buckets:      unknown %s\n", style.badge("warn"))
-				fmt.Fprintf(out, "  Codex OTLP:   unknown %s\n", style.badge("warn"))
+				fmt.Fprintf(out, "  Delivery:     unknown %s\n", style.badge("warn"))
 				fmt.Fprintf(out, "  Recovery:     login again to recover credentials for this installation\n")
 				return
 			}
-			fmt.Fprintf(out, "Compact reporting: not enrolled %s (login again or run 'ae-cli attribution enable')\n", style.badge("warn"))
+			fmt.Fprintf(out, "V2 reporting: not enrolled %s (login again or run 'ae-cli attribution enable')\n", style.badge("warn"))
 			return
 		}
-		fmt.Fprintf(out, "Compact reporting: unavailable %s (%v)\n", style.badge(doctorcheck.StatusFailed), err)
+		fmt.Fprintf(out, "V2 reporting: unavailable %s (%v)\n", style.badge(doctorcheck.StatusFailed), err)
 		return
 	}
 	reporterCredentialAvailable := strings.TrimSpace(config.ReporterToken) != ""
-	otlpCredentialAvailable := strings.TrimSpace(config.OTLPToken) != ""
 	reportingStatus := "disabled"
 	if config.ReportingEnabled {
 		reportingStatus = "enabled"
 	}
-	otelStatus := "disabled (not required)"
-	otelBadge := doctorcheck.StatusOK
-	if config.OTelEnabled {
-		otelStatus = "legacy enabled"
-		otelBadge = "warn"
-	}
-	fmt.Fprintf(out, "Compact reporting\n")
+	fmt.Fprintf(out, "V2 reporting\n")
 	fmt.Fprintf(out, "  Installation: %s\n", config.InstallationID)
 	fmt.Fprintf(out, "  Reporter credential: %s %s\n", availableLabel(reporterCredentialAvailable), style.badge(availableStatus(reporterCredentialAvailable)))
-	legacyCredentialStatus := doctorcheck.StatusOK
-	if otlpCredentialAvailable {
-		legacyCredentialStatus = "warn"
-	}
-	fmt.Fprintf(out, "  Legacy OTLP credential: %s %s\n", availableLabel(otlpCredentialAvailable), style.badge(legacyCredentialStatus))
-	fmt.Fprintf(out, "  Buckets:      %s %s\n", reportingStatus, style.badge(enabledStatus(config.ReportingEnabled)))
-	fmt.Fprintf(out, "  Codex OTLP:   %s %s\n", otelStatus, style.badge(otelBadge))
-	homeDir, homeErr := os.UserHomeDir()
-	if homeErr != nil {
-		fmt.Fprintf(out, "  Codex OTLP config: unavailable %s (%v)\n", style.badge(doctorcheck.StatusFailed), homeErr)
-	} else {
-		endpoint := codexOTLPEndpoint(config.ServerURL)
-		inspection, inspectErr := toolconfig.InspectCodexOTLP(homeDir, endpoint, config.OTLPToken)
-		if inspectErr != nil {
-			fmt.Fprintf(out, "  Codex OTLP config: unavailable %s (%v)\n", style.badge(doctorcheck.StatusFailed), inspectErr)
-		} else {
-			label := "not configured"
-			status := doctorcheck.StatusOK
-			managed := inspection.Configured && inspection.EndpointMatches && inspection.CredentialMatches
-			if managed {
-				label = "legacy AE-managed"
-				status = "warn"
-			} else if inspection.Configured {
-				label = "user-managed (preserved)"
-			}
-			fmt.Fprintf(out, "  Codex OTLP config: %s %s (endpoint=%s credential=%s protocol=%s prompt_logging=%s trace_only=%t)\n",
-				label,
-				style.badge(status),
-				matchLabel(inspection.EndpointMatches),
-				credentialMatchLabel(inspection),
-				jsonProtocolLabel(inspection.ProtocolJSON),
-				promptLoggingLabel(inspection.PromptLoggingDisabled),
-				inspection.TraceOnly,
-			)
-			if managed || config.OTelEnabled {
-				fmt.Fprintln(out, "  Recovery: run 'ae-cli attribution enable' to disable the legacy AE-managed exporter")
-			}
-		}
-	}
-	if state, stateErr := attributionlocal.LoadCompactState(); stateErr == nil {
-		fmt.Fprintf(out, "  Pending:      buckets=%d triggers=%d\n", len(state.Pending), len(state.Triggers))
-	}
+	fmt.Fprintf(out, "  Delivery:     %s %s\n", reportingStatus, style.badge(enabledStatus(config.ReportingEnabled)))
 }
 
 func availableLabel(available bool) string {
@@ -205,34 +155,6 @@ func availableStatus(available bool) string {
 		return doctorcheck.StatusOK
 	}
 	return doctorcheck.StatusFailed
-}
-
-func matchLabel(matches bool) string {
-	if matches {
-		return "match"
-	}
-	return "mismatch"
-}
-
-func credentialMatchLabel(inspection toolconfig.CodexOTLPInspection) string {
-	if !inspection.CredentialAvailable {
-		return "missing"
-	}
-	return matchLabel(inspection.CredentialMatches)
-}
-
-func jsonProtocolLabel(matches bool) string {
-	if matches {
-		return "json"
-	}
-	return "mismatch"
-}
-
-func promptLoggingLabel(disabled bool) string {
-	if disabled {
-		return "disabled"
-	}
-	return "enabled"
 }
 
 // printRecentFailures renders the most recent non-2xx Codex Responses requests

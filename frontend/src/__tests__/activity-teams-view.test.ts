@@ -4,11 +4,27 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import ActivityTeamsView from '@/views/activity/ActivityTeamsView.vue'
 import { setLocale } from '@/i18n'
 
-vi.mock('@/api/activity', () => ({
-  getActivityScope: vi.fn(),
-  listActivityMembers: vi.fn(),
-  normalizeScope: (value: any) => ({ ...value, teams: value.teams ?? [] }),
-}))
+vi.mock('@/api/teamUsage', () => ({ getTeamUsageOrganization: vi.fn() }))
+
+function department(id: string, name: string, parent?: string, memberCount = 5, hasChildren = false) {
+  return {
+    department_external_id: id,
+    parent_external_id: parent,
+    name,
+    display_path: parent ? `Engineering / ${name}` : name,
+    depth: parent ? 1 : 0,
+    child_count: hasChildren ? 2 : 0,
+    has_children: hasChildren,
+    direct_member_count: memberCount,
+    aggregate_member_count: memberCount,
+    connected_member_count: memberCount,
+    range_actual_cost: 0,
+  }
+}
+
+function organizationPage(departments: ReturnType<typeof department>[]) {
+  return { data: { data: { departments, members: [] } } } as any
+}
 
 async function mountView() {
   const router = createRouter({
@@ -37,21 +53,10 @@ describe('ActivityTeamsView', () => {
   })
 
   it('uses an Element Plus error alert and retry button without changing reload behavior', async () => {
-    const api = await import('@/api/activity')
-    vi.mocked(api.getActivityScope)
+    const api = await import('@/api/teamUsage')
+    vi.mocked(api.getTeamUsageOrganization)
       .mockRejectedValueOnce(new Error('teams unavailable'))
-      .mockResolvedValueOnce({
-        data: {
-          data: {
-            contract_version: 'activity-v1',
-            scope_version: 'scope-1',
-            can_view_teams: true,
-            admin: false,
-            representative: true,
-            teams: [{ external_id: 'team-alpha', name: 'Team Alpha', display_path: 'Engineering / Team Alpha', member_count: 8 }],
-          },
-        },
-      } as any)
+      .mockResolvedValueOnce(organizationPage([department('team-alpha', 'Team Alpha', undefined, 8)]))
     const { wrapper } = await mountView()
 
     const alert = wrapper.get('[role="alert"]')
@@ -61,71 +66,47 @@ describe('ActivityTeamsView', () => {
 
     await retry!.trigger('click')
     await flushPromises()
-    expect(api.getActivityScope).toHaveBeenCalledTimes(2)
+    expect(api.getTeamUsageOrganization).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('Team Alpha')
   })
 
-  it('renders only teams returned by the authorized scope without loading members', async () => {
-    const api = await import('@/api/activity')
-    vi.mocked(api.getActivityScope).mockResolvedValue({
-      data: {
-        data: {
-          contract_version: 'activity-v1',
-          scope_version: 'scope-1',
-          can_view_teams: true,
-          admin: false,
-          representative: true,
-          teams: [
-            { external_id: 'team-alpha', name: 'Team Alpha', display_path: 'Engineering / Team Alpha', member_count: 8 },
-            { external_id: 'team-beta', name: 'Team Beta', display_path: 'Engineering / Team Beta', member_count: 5 },
-          ],
-        },
-      },
-    } as any)
+  it('renders only departments returned by Team Usage organization', async () => {
+    const api = await import('@/api/teamUsage')
+    vi.mocked(api.getTeamUsageOrganization).mockResolvedValue(organizationPage([
+      department('team-alpha', 'Team Alpha', undefined, 8),
+      department('team-beta', 'Team Beta', undefined, 5),
+    ]))
 
     const { wrapper, router } = await mountView()
 
-    expect(api.getActivityScope).toHaveBeenCalledOnce()
-    expect(api.listActivityMembers).not.toHaveBeenCalled()
+    expect(api.getTeamUsageOrganization).toHaveBeenCalledOnce()
     expect(wrapper.get('[data-testid="activity-team-team-alpha"]').text()).toContain('Team Alpha')
     expect(wrapper.get('[data-testid="activity-team-team-alpha"]').text()).toContain('8 members')
     expect(wrapper.get('[data-testid="activity-team-team-beta"]').attributes('href')).toBe('/activity/teams/team-beta')
     expect(wrapper.text()).not.toContain('Token')
     expect(wrapper.text()).not.toContain('Rank')
-    expect(wrapper.text()).not.toContain('Score')
 
     await wrapper.get('[data-testid="activity-team-team-beta"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/activity/teams/team-beta')
   })
 
-  it('keeps child teams collapsed until the shared department toggle expands their parent', async () => {
-    const api = await import('@/api/activity')
-    vi.mocked(api.getActivityScope).mockResolvedValue({
-      data: {
-        data: {
-          contract_version: 'activity-v1',
-          scope_version: 'scope-1',
-          can_view_teams: true,
-          admin: false,
-          representative: true,
-          teams: [
-            { external_id: 'engineering', name: 'Engineering', display_path: 'Engineering', member_count: 13 },
-            { external_id: 'team-alpha', parent_external_id: 'engineering', name: 'Team Alpha', display_path: 'Engineering / Team Alpha', member_count: 8 },
-            { external_id: 'team-beta', parent_external_id: 'engineering', name: 'Team Beta', display_path: 'Engineering / Team Beta', member_count: 5 },
-          ],
-        },
-      },
-    } as any)
+  it('loads child departments only after their parent expands', async () => {
+    const api = await import('@/api/teamUsage')
+    vi.mocked(api.getTeamUsageOrganization)
+      .mockResolvedValueOnce(organizationPage([department('engineering', 'Engineering', undefined, 13, true)]))
+      .mockResolvedValueOnce(organizationPage([
+        department('team-alpha', 'Team Alpha', 'engineering', 8),
+        department('team-beta', 'Team Beta', 'engineering', 5),
+      ]))
 
     const { wrapper } = await mountView()
 
-    expect(wrapper.get('[data-testid="activity-team-engineering"]').text()).toContain('Engineering')
     expect(wrapper.find('[data-testid="activity-team-team-alpha"]').exists()).toBe(false)
     await wrapper.get('[data-testid="activity-team-toggle-engineering"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-testid="activity-team-team-alpha"]').attributes('href')).toBe('/activity/teams/team-alpha')
     expect(wrapper.get('[data-testid="activity-team-team-beta"]').attributes('href')).toBe('/activity/teams/team-beta')
-    expect(api.listActivityMembers).not.toHaveBeenCalled()
+    expect(api.getTeamUsageOrganization).toHaveBeenNthCalledWith(2, expect.objectContaining({ parent_department_external_id: 'engineering' }))
   })
 })

@@ -1,7 +1,7 @@
 # Attribution v1 and AE OTel Cleanup Preflight
 
 **Date:** 2026-08-13
-**Status:** Preflight implementation, verification, and review merged through [PR #284](https://github.com/LichKing-2234/ai-efficiency/pull/284) as `f6c9de84`; hosted CI `31685184654` passed backend, ae-cli, frontend, and deploy/static validation. Local PowerShell runtime testing was unavailable because `pwsh` is not installed, while the hosted PowerShell installer validation passed. #278 completed its earlier ordinary-workflow qualification. PR #299's deployed denominator repair established replacement Day 0 at `2026-08-17T05:32:57.925948Z`; ordinary AI Efficiency PR #319 and the complete 2026-08-20 evidence snapshot now satisfy the non-destructive gate. Production cleanup remains blocked on an immediate final re-read plus separate implementation/release/deployment/data-mutation authority; no fixed elapsed-time wait applies.
+**Status:** Preflight implementation, verification, and review merged through [PR #284](https://github.com/LichKing-2234/ai-efficiency/pull/284) as `f6c9de84`; hosted CI `31685184654` passed backend, ae-cli, frontend, and deploy/static validation. Local PowerShell runtime testing was unavailable because `pwsh` is not installed, while the hosted PowerShell installer validation passed. #278 completed its earlier ordinary-workflow qualification. PR #299's deployed denominator repair established replacement Day 0 at `2026-08-17T05:32:57.925948Z`; ordinary AI Efficiency PR #319 and the complete 2026-08-20 evidence snapshot now satisfy the non-destructive gate. The operator authorized implementation, separate platform/CLI releases, deployment, and destructive migration on 2026-08-20. Phase 2 implementation, local verification, and code review are complete; the PR is pending. Production mutation remains gated on an immediate final same-window re-read. No fixed elapsed-time wait applies.
 **Parent:** [Codex Commit Token Attribution v2 Implementation Plan](./2026-08-11-codex-commit-token-attribution-v2.md)
 **Issue:** [#252](https://github.com/LichKing-2234/ai-efficiency/issues/252)
 
@@ -205,4 +205,38 @@ two phases because a rolling deployment can overlap replicas.
   126/126.
 - [x] Complete code review and close every accepted finding.
 - [x] Open and merge the preflight PR.
-- [ ] Obtain authority for any later release, deployment, or cleanup.
+- [x] Obtain authority for any later release, deployment, or cleanup.
+
+## Cleanup Execution Ledger
+
+### Phase 2 — application contract release
+
+- [x] Remove backend v1 bucket/revision/report, legacy Activity reads, AE OTLP,
+  and active `aeo_*` credential issuance/authentication while retaining the
+  legacy tables and columns.
+- [x] Remove ae-cli v1 bucket/revision delivery and baseline/status branches
+  while retaining v2 claims, checkpoints, non-Codex collection, the strict
+  update-time OTel scrubber, and local legacy credential fields.
+- [x] Move Activity team navigation to Team Usage organization reads plus a
+  formal-v2-only member availability read.
+- [x] Run backend, ae-cli, frontend, release-contract, role E2E, build, and
+  focused schema-safety verification. Backend and ae-cli full suites, frontend
+  `777/777`, build measurement, release contract, and focused schema tests
+  passed. Role E2E first found one cold `/usage` timeout plus five stale
+  Activity team mocks; after replacing the v1 mocks with Team Usage and
+  formal-v2 availability fixtures, the full rerun passed `126/126`.
+- [x] Complete code review and close every accepted finding.
+- [ ] Open and merge the Phase 2 PR.
+- [ ] Repeat every volatile production gate in one window immediately before
+  mutation.
+- [ ] Publish the separate CLI and platform release units, deploy every Phase 2
+  backend replica, and prove no old binary remains serving.
+- [ ] Re-read v2 ingest, Activity, readiness, health, SCM coverage, formal
+  conservation, and absence of the removed v1/OTLP routes.
+
+### Phase 3 — schema contraction
+
+- [ ] Export the exact legacy schema-only rollback artifact and formal digest.
+- [ ] Prove every serving replica is on Phase 2 and repeat the volatile gates.
+- [ ] Run explicit no-`CASCADE` DDL with in-transaction formal conservation.
+- [ ] Deploy schema-contracted code and repeat every production readback.

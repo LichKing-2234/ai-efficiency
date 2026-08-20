@@ -1,51 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/api/client', () => ({
-  default: { get: vi.fn() },
-}))
+vi.mock('@/api/client', () => ({ default: { get: vi.fn() } }))
 
 import client from '@/api/client'
 import {
-  getActivityBucket,
-  getActivityMember,
-  getActivityRepository,
-  getActivityScope,
-  getActivitySummary,
-  getActivityTeam,
-  listActivityMembers,
-  normalizeMemberActivity,
+  getActivityV2Overview,
+  getActivityV2TeamMemberAvailability,
+  listActivityV2PullRequests,
+  listActivityV2Repositories,
 } from '@/api/activity'
 
 describe('Activity API', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('uses separate bounded Activity endpoints', async () => {
+  it('uses only formal-v2 Activity endpoints', async () => {
     vi.mocked(client.get).mockResolvedValue({ data: { data: {} } } as any)
-    await getActivityScope()
-    await getActivitySummary({ from: '2026-08-01T00:00:00Z', to: '2026-08-31T00:00:00Z' })
-    await listActivityMembers({ limit: 25, cursor: 'member-cursor' })
-    await getActivityMember(7, { pr_limit: 10, pr_cursor: 'pr-cursor' })
-    await getActivityTeam('team alpha', { limit: 20 })
-    await getActivityRepository(9, { commit_limit: 10 })
-    await getActivityBucket('bucket/a')
+    const query = { scope: 'team' as const, team_id: 'team alpha', from: '2026-08-01', to: '2026-08-31', timezone: 'UTC' }
+    await getActivityV2Overview(query)
+    await listActivityV2Repositories({ ...query, sort: 'tokens' })
+    await listActivityV2PullRequests({ ...query, sort: 'name' })
+    await getActivityV2TeamMemberAvailability('team alpha', { from: query.from, to: query.to, timezone: query.timezone, user_ids: [7, 8] })
 
-    expect(client.get).toHaveBeenNthCalledWith(1, '/activity/scope')
-    expect(client.get).toHaveBeenNthCalledWith(2, '/activity/summary', { params: { from: '2026-08-01T00:00:00Z', to: '2026-08-31T00:00:00Z' } })
-    expect(client.get).toHaveBeenNthCalledWith(3, '/activity/members', { params: { limit: 25, cursor: 'member-cursor' } })
-    expect(client.get).toHaveBeenNthCalledWith(4, '/activity/members/7', { params: { pr_limit: 10, pr_cursor: 'pr-cursor' } })
-    expect(client.get).toHaveBeenNthCalledWith(5, '/activity/teams/team%20alpha', { params: { limit: 20 } })
-    expect(client.get).toHaveBeenNthCalledWith(6, '/activity/repos/9', { params: { commit_limit: 10 } })
-    expect(client.get).toHaveBeenNthCalledWith(7, '/activity/buckets/bucket%2Fa')
-  })
-
-  it('normalizes all member detail collections to arrays', () => {
-    const normalized = normalizeMemberActivity({
-      prs: { items: null },
-      commits: { items: undefined },
-      buckets: null,
-    } as any)
-    expect(normalized.prs.items).toEqual([])
-    expect(normalized.commits.items).toEqual([])
-    expect(normalized.buckets.items).toEqual([])
+    expect(client.get).toHaveBeenNthCalledWith(1, '/activity/v2/overview', { params: query })
+    expect(client.get).toHaveBeenNthCalledWith(2, '/activity/v2/repositories', { params: { ...query, sort: 'tokens' } })
+    expect(client.get).toHaveBeenNthCalledWith(3, '/activity/v2/pull-requests', { params: { ...query, sort: 'name' } })
+    expect(client.get).toHaveBeenNthCalledWith(4, '/activity/v2/teams/team%20alpha/member-availability', {
+      params: { from: '2026-08-01', to: '2026-08-31', timezone: 'UTC', user_ids: '7,8' },
+    })
   })
 })

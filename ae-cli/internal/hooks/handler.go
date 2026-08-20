@@ -27,9 +27,9 @@ type syncCapableUploader interface {
 	ToolUsageClient() attributionlocal.BackendClient
 }
 
-type compactSyncCapableUploader interface {
+type v2ClaimCapableUploader interface {
 	Uploader
-	CompactUsageClient() attributionlocal.CompactBackendClient
+	V2ClaimClient() attributionlocal.V2ClaimBackendClient
 }
 
 type Handler struct {
@@ -78,15 +78,15 @@ func (h *Handler) attributionSyncClient() attributionlocal.BackendClient {
 	return u.ToolUsageClient()
 }
 
-func (h *Handler) compactAttributionSyncClient() attributionlocal.CompactBackendClient {
+func (h *Handler) v2ClaimClient() attributionlocal.V2ClaimBackendClient {
 	if h == nil || h.uploader == nil {
 		return nil
 	}
-	u, ok := h.uploader.(compactSyncCapableUploader)
+	u, ok := h.uploader.(v2ClaimCapableUploader)
 	if !ok {
 		return nil
 	}
-	return u.CompactUsageClient()
+	return u.V2ClaimClient()
 }
 
 func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionContext) error {
@@ -103,7 +103,7 @@ func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionConte
 		return nil
 	}
 	var snapshot *collector.Snapshot
-	if h.compactAttributionSyncClient() == nil {
+	if h.v2ClaimClient() == nil {
 		snapshot = collectSnapshotForHook(repoRoot)
 		persistSnapshotCache(workspaceID, snapshot)
 	}
@@ -140,18 +140,6 @@ func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionConte
 			lineageKind, sourceCommitSHA = "", ""
 		}
 	}
-	h.queueCompactTrigger(ctx, attributionlocal.CompactTrigger{
-		ID:              ev.EventID,
-		Kind:            ev.Kind,
-		RepoConfigID:    ev.RepoConfigID,
-		RepoKey:         ev.RepoKey,
-		WorkspaceID:     ev.WorkspaceID,
-		CommitSHA:       ev.CommitSHA,
-		Branch:          ev.BranchSnapshot,
-		LineageKind:     lineageKind,
-		SourceCommitSHA: sourceCommitSHA,
-		CapturedAt:      parseCompactTriggerTime(ev.CapturedAt),
-	})
 	if h == nil || h.uploader == nil {
 		queueForReplayOrWarn(execCtx, ev)
 	} else if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
@@ -191,7 +179,7 @@ func (h *Handler) schedulePendingSync(execCtx ExecutionContext, trigger *HookEve
 		task.V2Triggers = []V2SyncTrigger{v2Trigger}
 	}
 	currentTask := &task
-	canRunSync := h.attributionSyncClient() != nil || h.compactAttributionSyncClient() != nil
+	canRunSync := h.attributionSyncClient() != nil || h.v2ClaimClient() != nil
 	if err := UpsertPendingSyncTask(task); err == nil {
 		if loadedTask, loadErr := LoadSyncTask(workspaceID); loadErr == nil && loadedTask != nil {
 			currentTask = loadedTask
@@ -263,17 +251,6 @@ func (h *Handler) PostRewriteResolved(ctx context.Context, execCtx ExecutionCont
 			NewCommitSHA:  newSHA,
 			CapturedAt:    time.Now().UTC().Format(time.RFC3339Nano),
 		}
-		h.queueCompactTrigger(ctx, attributionlocal.CompactTrigger{
-			ID:           ev.EventID,
-			Kind:         ev.Kind,
-			RepoConfigID: ev.RepoConfigID,
-			RepoKey:      ev.RepoKey,
-			WorkspaceID:  ev.WorkspaceID,
-			OldCommitSHA: ev.OldCommitSHA,
-			NewCommitSHA: ev.NewCommitSHA,
-			RewriteType:  ev.RewriteType,
-			CapturedAt:   parseCompactTriggerTime(ev.CapturedAt),
-		})
 		if h == nil || h.uploader == nil {
 			queueForReplayOrWarn(execCtx, ev)
 			continue
@@ -293,16 +270,7 @@ func (h *Handler) PrePushResolved(execCtx ExecutionContext) error {
 	return nil
 }
 
-func (h *Handler) queueCompactTrigger(ctx context.Context, trigger attributionlocal.CompactTrigger) {
-	if h == nil || h.compactAttributionSyncClient() == nil {
-		return
-	}
-	if err := attributionlocal.QueueCompactTrigger(ctx, trigger); err != nil {
-		fmt.Fprintf(hookStderr, "ae-cli: compact attribution trigger could not be persisted; run 'ae-cli sync' after repairing local state: %v\n", err)
-	}
-}
-
-func parseCompactTriggerTime(raw string) time.Time {
+func parseTriggerTime(raw string) time.Time {
 	parsed, _ := time.Parse(time.RFC3339, strings.TrimSpace(raw))
 	return parsed.UTC()
 }
@@ -419,9 +387,7 @@ func (h *Handler) FlushUnresolvedResolved(ctx context.Context, execCtx Execution
 		if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
 			continue
 		}
-		compactTrigger := compactTriggerFromHookEvent(ev)
-		h.queueCompactTrigger(ctx, compactTrigger)
-		if h.compactAttributionSyncClient() != nil {
+		if h.v2ClaimClient() != nil {
 			if err := AppendV2SyncTrigger(execCtx.WorkspaceID, v2SyncTriggerFromHookEvent(ev)); err != nil {
 				continue
 			}
@@ -451,15 +417,7 @@ func v2SyncTriggerFromHookEvent(ev HookEvent) V2SyncTrigger {
 		Kind: strings.TrimSpace(ev.Kind), EventID: strings.TrimSpace(ev.EventID), CommitSHA: strings.TrimSpace(ev.CommitSHA),
 		Branch: strings.TrimSpace(ev.BranchSnapshot), RewriteType: strings.TrimSpace(ev.RewriteType),
 		OldCommitSHA: strings.TrimSpace(ev.OldCommitSHA), NewCommitSHA: strings.TrimSpace(ev.NewCommitSHA),
-		CapturedAt: parseCompactTriggerTime(ev.CapturedAt),
-	}
-}
-
-func compactTriggerFromHookEvent(ev HookEvent) attributionlocal.CompactTrigger {
-	return attributionlocal.CompactTrigger{
-		ID: ev.EventID, Kind: ev.Kind, RepoConfigID: ev.RepoConfigID, RepoKey: ev.RepoKey, WorkspaceID: ev.WorkspaceID,
-		CommitSHA: ev.CommitSHA, Branch: ev.BranchSnapshot, RewriteType: ev.RewriteType,
-		OldCommitSHA: ev.OldCommitSHA, NewCommitSHA: ev.NewCommitSHA, CapturedAt: parseCompactTriggerTime(ev.CapturedAt),
+		CapturedAt: parseTriggerTime(ev.CapturedAt),
 	}
 }
 
