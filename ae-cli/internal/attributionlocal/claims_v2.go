@@ -35,6 +35,7 @@ var (
 	v2TurnIDPattern            = regexp.MustCompile(`turn\.id=([^ }]+)`)
 	v2SuccessfulResponseStatus = regexp.MustCompile(` status=2[0-9]{2} `)
 	v2WrappedPatchPattern      = regexp.MustCompile(`(?s)^\s*const\s+patch\s*=\s*("(?:\\.|[^"\\])*")\s*;\s*text\s*\(\s*await\s+tools\.apply_patch\s*\(\s*patch\s*\)\s*\)\s*;\s*$`)
+	v2InlinePatchPattern       = regexp.MustCompile(`(?s)^\s*const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*await\s+tools\.apply_patch\s*\(\s*("(?:\\.|[^"\\])*")\s*\)\s*;\s*text\s*\(\s*JSON\.stringify\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*\)\s*;\s*$`)
 )
 
 type V2ClaimScanOptions struct {
@@ -666,11 +667,17 @@ func v2StructuredPatchInput(toolName, input, arguments string) string {
 	if compactIsPatchTool(toolName) {
 		return payload
 	}
+	encodedPatch := ""
 	match := v2WrappedPatchPattern.FindStringSubmatch(payload)
-	if len(match) != 2 {
+	if len(match) == 2 {
+		encodedPatch = match[1]
+	} else if match = v2InlinePatchPattern.FindStringSubmatch(payload); len(match) == 4 && match[1] == match[3] {
+		encodedPatch = match[2]
+	}
+	if encodedPatch == "" {
 		return ""
 	}
-	patch, err := strconv.Unquote(match[1])
+	patch, err := strconv.Unquote(encodedPatch)
 	if err != nil {
 		return ""
 	}
