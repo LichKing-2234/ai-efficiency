@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { Bottom, Check, Connection, Delete, Plus, Refresh, Setting, Top } from '@element-plus/icons-vue'
+import { CaretBottom, CaretTop, Check, Delete, Plus, Refresh, Setting, Switch } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppLayout from '@/components/AppLayout.vue'
 import { useI18n } from '@/i18n'
@@ -637,7 +637,7 @@ onMounted(async () => {
       <header class="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-blue-700">
-            <el-icon><Connection /></el-icon>
+            <el-icon><Switch /></el-icon>
             {{ t('relayPlanning.eyebrow') }}
           </div>
           <h1 class="mt-1 text-2xl font-semibold text-slate-900">{{ t('relayPlanning.title') }}</h1>
@@ -802,8 +802,8 @@ onMounted(async () => {
 						<div v-for="(account, accountIndex) in accountDrafts[accountMapping.id][String(pool.target_group_id)]" :key="account.id" class="flex items-center justify-between gap-3 border-t border-slate-100 pt-2 text-sm first:border-0 first:pt-0">
 							<span class="min-w-0"><span class="block break-words font-medium">{{ account.name }} (#{{ account.id }})</span><span class="block text-xs" :class="account.status !== 'active' || !account.schedulable ? 'text-amber-700' : 'text-slate-500'">{{ account.type }} · {{ account.status }} · {{ account.schedulable ? t('relayPlanning.schedulable') : t('relayPlanning.notSchedulable') }}</span></span>
 							<span class="flex shrink-0 gap-1">
-								<el-tooltip :content="t('relayPlanning.moveUp')"><el-button :data-testid="`move-account-up-${accountMapping.id}-${pool.target_group_id}-${account.id}`" circle size="small" :icon="Top" :disabled="accountIndex === 0" :aria-label="t('relayPlanning.moveUp')" @click="reorderAccounts(accountMapping.id, pool.target_group_id, account.id, -1)" /></el-tooltip>
-								<el-tooltip :content="t('relayPlanning.moveDown')"><el-button circle size="small" :icon="Bottom" :disabled="accountIndex === accountDrafts[accountMapping.id][String(pool.target_group_id)].length - 1" :aria-label="t('relayPlanning.moveDown')" @click="reorderAccounts(accountMapping.id, pool.target_group_id, account.id, 1)" /></el-tooltip>
+								<el-tooltip :content="t('relayPlanning.moveUp')"><el-button :data-testid="`move-account-up-${accountMapping.id}-${pool.target_group_id}-${account.id}`" circle size="small" :icon="CaretTop" :disabled="accountIndex === 0" :aria-label="t('relayPlanning.moveUp')" @click="reorderAccounts(accountMapping.id, pool.target_group_id, account.id, -1)" /></el-tooltip>
+								<el-tooltip :content="t('relayPlanning.moveDown')"><el-button circle size="small" :icon="CaretBottom" :disabled="accountIndex === accountDrafts[accountMapping.id][String(pool.target_group_id)].length - 1" :aria-label="t('relayPlanning.moveDown')" @click="reorderAccounts(accountMapping.id, pool.target_group_id, account.id, 1)" /></el-tooltip>
 								<el-tooltip :content="t('relayPlanning.remove')"><el-button circle size="small" type="danger" plain :icon="Delete" :aria-label="t('relayPlanning.remove')" @click="removeAccountFromTarget(accountMapping.id, pool.target_group_id, account.id)" /></el-tooltip>
 							</span>
 						</div>

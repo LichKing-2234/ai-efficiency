@@ -6,7 +6,6 @@ import { useRouter } from 'vue-router'
 import { useI18n } from '@/i18n'
 import {
   Bell,
-  Connection,
   DataLine,
   Document,
   House,
@@ -165,7 +164,7 @@ function handleNavigate() {
           :active-class="activeNavigationClass"
           @click="handleNavigate"
         >
-          <el-icon class="mr-3"><Connection /></el-icon>
+          <el-icon class="mr-3"><Switch /></el-icon>
           {{ t('nav.relayPlanning') }}
         </RouterLink>
 
