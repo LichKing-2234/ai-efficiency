@@ -483,6 +483,7 @@ func setupRouter(
 			userUsageHandler := NewUserUsageHandler(personalUsageService)
 			userGroup.GET("/usage/dashboard", userUsageHandler.Dashboard)
 			userGroup.GET("/usage/group-quotas", userUsageHandler.GroupQuotas)
+			userGroup.GET("/usage/group-pool-usage", userUsageHandler.GroupPoolUsage)
 		}
 		userGroup.POST("/providers/:id/groups/:group_id/credential", userSetupHandler.CreateGroupCredential)
 		userGroup.POST("/providers/:id/groups/:group_id/credential/regenerate", userSetupHandler.RegenerateGroupCredential)

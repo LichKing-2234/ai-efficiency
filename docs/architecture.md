@@ -13,6 +13,7 @@ This document is the project-level architecture overview for `ai-efficiency`.
 
 1. Topic-specific current specs:
    - `docs/superpowers/specs/2026-08-14-user-protocol-compatibility-test-design.md`
+   - `docs/superpowers/specs/2026-08-19-personal-usage-reset-and-oauth-pool-design.md`
    - `docs/superpowers/specs/2026-08-11-codex-commit-token-attribution-v2-design.md`
    - `docs/superpowers/specs/2026-07-25-stateless-team-usage-prewarm-worker-design.md`
    - `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md`
@@ -424,7 +425,20 @@ mapping.
 - The default `GET /api/v1/user/usage/dashboard` remains a combined compatibility
   response. `include_group_quotas=false` returns usage plus `usage_freshness` and
   omits quota fields. `GET /api/v1/user/usage/group-quotas` returns only
-  `group_quotas` and `quota_freshness`.
+  `group_quotas` and `quota_freshness`; `GET /api/v1/user/usage/group-pool-usage`
+  returns the privacy-safe OAuth pool projection and its freshness metadata.
+- Group quota rows map the selected dashboard range to the matching subscription
+  window (`today`/hour -> daily, `7d` -> weekly, `30d` -> monthly). A reset row is
+  rendered only when that subscription window has a valid reset timestamp. API
+  key-only rows and subscriptions without a timestamp retain `Used / Quota` but
+  do not claim a subscription reset.
+- The optional `relay.GroupOAuthPoolUsageReader` lists only the current user's
+  effective groups and active OAuth accounts, then reads cached `seven_day`
+  snapshots through the Relay API. The result is the average utilization across
+  valid snapshots, with valid/active coverage, snapshot time, and the next pool
+  reset. It is explicitly not a personal `Used / Quota` or a strict
+  `sum(used) / sum(quota)` calculation; API keys, inactive accounts, and accounts
+  outside the filtered group are excluded. Missing snapshots hide that pool row.
 - The optional `relay.UserUsageOriginReader` selects explicit usage and quota
   branches. A combined cold read logs in once for usage, starts at most five
   stats/trend/models/key/subscription child calls concurrently, and bounds the
@@ -460,15 +474,16 @@ mapping.
 
 ### Browser Lifecycle
 
-The personal usage component starts usage and quota requests together with one
-AbortController per branch and one shared generation number. A range or refresh
-change aborts both older personal requests; only the current generation may
-update usage, quota, errors, or loading state. Previous usage remains visible
-during refresh, stale usage shows one localized marker, quota failure stays in
-the quota section, and representative-scope discovery controls only Team-tab
-visibility. Trend and model chart modules load asynchronously only after a
-configured usage snapshot with stats exists. The scoped-member route continues
-to use only its independently authorized team endpoint.
+The personal usage component starts usage, quota, and OAuth pool requests together
+with one AbortController per branch and one shared generation number. A range or
+refresh change aborts all older personal requests; only the current generation
+may update usage, quota, pool, errors, or loading state. Previous usage remains
+visible during refresh, stale usage shows one localized marker, quota failure
+stays in the quota section, and pool failure or missing snapshots hides only the
+pool row. Representative-scope discovery controls only Team-tab visibility.
+Trend and model chart modules load asynchronously only after a configured usage
+snapshot with stats exists. The scoped-member route continues to use only its
+independently authorized team endpoint and never loads personal OAuth pool data.
 
 ## Representative Scope Read Model
 

@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from '@/i18n'
-import type { UserUsageGroupQuotaState } from '@/types'
+import type { UserUsageGroupPoolUsageState, UserUsageGroupQuotaState } from '@/types'
+
+const UsagePoolSnapshot = defineAsyncComponent(() => import('./UsagePoolSnapshot.vue'))
 
 const props = defineProps<{
   quotas?: UserUsageGroupQuotaState | null
+  poolUsage?: UserUsageGroupPoolUsageState | null
   loading?: boolean
   rangeLabel?: string
   showResetRequest?: boolean
@@ -16,6 +19,8 @@ defineEmits<{
 }>()
 
 const { t } = useI18n()
+const now = ref(Date.now())
+let resetTimer: ReturnType<typeof setInterval> | null = null
 
 const shouldHide = computed(() => {
   if (props.loading) return false
@@ -66,6 +71,41 @@ function quotaTitle(rangeLabel?: string) {
   if (rangeLabel === t('usageDashboard.sevenDays')) return t('usageDashboard.weeklyQuotaTitle')
   return t('usageDashboard.monthlyQuotaTitle')
 }
+
+function resetDateLabel(value?: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+}
+
+function resetCountdown(value?: string | null) {
+  if (!value) return ''
+  const timestamp = Date.parse(value)
+  if (!Number.isFinite(timestamp)) return ''
+  const remaining = timestamp - now.value
+  if (remaining <= 0) return t('usageDashboard.resetDue')
+  const minutes = Math.max(1, Math.ceil(remaining / 60_000))
+  if (minutes < 60) return t('usageDashboard.resetInMinutes', { count: minutes })
+  const hours = Math.ceil(minutes / 60)
+  if (hours < 24) return t('usageDashboard.resetInHours', { count: hours })
+  return t('usageDashboard.resetInDays', { count: Math.ceil(hours / 24) })
+}
+
+function poolItem(groupID: string) {
+  return props.poolUsage?.groups?.find((item) => item.group_id === groupID) ?? null
+}
+
+onMounted(() => {
+  resetTimer = setInterval(() => {
+    now.value = Date.now()
+  }, 60_000)
+})
+
+onBeforeUnmount(() => {
+  if (resetTimer) clearInterval(resetTimer)
+  resetTimer = null
+})
 </script>
 
 <template>
@@ -129,6 +169,26 @@ function quotaTitle(rangeLabel?: string) {
           {{ formatCurrency(group.used_amount, props.quotas?.unit_label) }} /
           {{ displayQuotaValue(group, props.quotas?.unit_label) }}
         </p>
+        <div
+          v-if="resetDateLabel(group.reset_at)"
+          class="mt-2 text-xs text-gray-500"
+          :data-testid="`usage-subscription-reset-${group.group_id}`"
+        >
+          <span class="font-medium text-gray-600">{{ t('usageDashboard.subscriptionReset') }}</span>
+          <time class="ml-1" :datetime="group.reset_at ?? undefined">{{ resetDateLabel(group.reset_at) }}</time>
+          <span class="ml-1">({{ resetCountdown(group.reset_at) }})</span>
+        </div>
+        <Suspense v-if="poolItem(group.group_id)">
+          <UsagePoolSnapshot :item="poolItem(group.group_id)!" />
+          <template #fallback>
+            <div
+              class="mt-3 rounded-md border border-dashed border-slate-200 bg-white px-3 py-2 text-xs text-slate-500"
+              :data-testid="`usage-pool-loading-${group.group_id}`"
+            >
+              {{ t('usageDashboard.poolUsageLoading') }}
+            </div>
+          </template>
+        </Suspense>
       </article>
     </div>
   </section>
