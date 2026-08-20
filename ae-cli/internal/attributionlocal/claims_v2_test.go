@@ -919,14 +919,41 @@ func TestScanCodexV2ClaimsAcceptsExecWrappedApplyPatch(t *testing.T) {
 	}
 }
 
+func TestScanCodexV2ClaimsAcceptsInlineExecWrappedApplyPatch(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	home := t.TempDir()
+	writeV2JSONL(t, filepath.Join(home, ".codex", "sessions", "session.jsonl"),
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "thread-inline-wrapped"}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-inline-wrapped"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{
+			"type": "custom_tool_call", "name": "exec",
+			"input": "const r = await tools.apply_patch(\"*** Begin Patch\\n*** Add File: feature.go\\n+package feature\\n*** End Patch\"); text(JSON.stringify(r));",
+		}},
+	)
+	writeV2RequestLog(t, home, map[string]string{"thread-inline-wrapped/request-inline-wrapped": "turn-inline-wrapped"})
+
+	claims, err := ScanCodexV2ClaimsFromHome(context.Background(), home, V2ClaimScanOptions{
+		RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
+		WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-inline-wrapped",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 1 || claims[0].GapReason != "" || len(UploadableV2ClaimGroups(claims)) != 1 {
+		t.Fatalf("inline wrapped apply_patch claim = %+v, want one uploadable deterministic claim", claims)
+	}
+}
+
 func TestScanCodexV2ClaimsRejectsAmbiguousExecWrappedPatches(t *testing.T) {
 	patch := `"*** Begin Patch\n*** Add File: feature.go\n+package feature\n*** End Patch"`
 	cases := map[string]string{
-		"comment marker":        "// tools.apply_patch(patch)\nconst patch = " + patch + ";",
-		"unrelated variable":    "const patch = " + patch + ";\ntext(await tools.apply_patch(other));",
-		"malformed call":        "const patch = " + patch + ";\ntools.apply_patch(patch",
-		"multiple calls":        "const patch = " + patch + ";\ntext(await tools.apply_patch(patch));\ntext(await tools.apply_patch(patch));",
-		"patch outside binding": "const other = " + patch + ";\ntext(await tools.apply_patch(patch));",
+		"comment marker":         "// tools.apply_patch(patch)\nconst patch = " + patch + ";",
+		"unrelated variable":     "const patch = " + patch + ";\ntext(await tools.apply_patch(other));",
+		"malformed call":         "const patch = " + patch + ";\ntools.apply_patch(patch",
+		"multiple calls":         "const patch = " + patch + ";\ntext(await tools.apply_patch(patch));\ntext(await tools.apply_patch(patch));",
+		"patch outside binding":  "const other = " + patch + ";\ntext(await tools.apply_patch(patch));",
+		"inline result mismatch": "const r = await tools.apply_patch(" + patch + "); text(JSON.stringify(other));",
+		"multiple inline calls":  "const r = await tools.apply_patch(" + patch + "); text(JSON.stringify(r));\nconst s = await tools.apply_patch(" + patch + "); text(JSON.stringify(s));",
 	}
 	for name, input := range cases {
 		t.Run(name, func(t *testing.T) {
