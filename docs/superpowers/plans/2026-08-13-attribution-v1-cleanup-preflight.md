@@ -1,7 +1,7 @@
 # Attribution v1 and AE OTel Cleanup Preflight
 
 **Date:** 2026-08-13
-**Status:** Preflight implementation, verification, and review merged through [PR #284](https://github.com/LichKing-2234/ai-efficiency/pull/284) as `f6c9de84`; hosted CI `31685184654` passed backend, ae-cli, frontend, and deploy/static validation. Local PowerShell runtime testing was unavailable because `pwsh` is not installed, while the hosted PowerShell installer validation passed. #278 completed its ordinary-workflow qualification. The cumulative personal Usage denominator invalidated the provisional 2026-08-14 clock; PR #299's repair is now deployed as platform `v0.1.0-preview.87`, and exact production readback established replacement Day 0 at `2026-08-17T05:32:57.925948Z`. Production cleanup remains blocked on seven continuous stable days, a later qualifying ordinary pool, every final execution-time gate, and separate implementation/release/deployment/data-mutation authority.
+**Status:** Preflight implementation, verification, and review merged through [PR #284](https://github.com/LichKing-2234/ai-efficiency/pull/284) as `f6c9de84`; hosted CI `31685184654` passed backend, ae-cli, frontend, and deploy/static validation. Local PowerShell runtime testing was unavailable because `pwsh` is not installed, while the hosted PowerShell installer validation passed. #278 completed its ordinary-workflow qualification. The cumulative personal Usage denominator invalidated the provisional 2026-08-14 clock; PR #299's repair is now deployed as platform `v0.1.0-preview.87`, and exact production readback established replacement Day 0 at `2026-08-17T05:32:57.925948Z`. Production cleanup remains blocked on a later qualifying ordinary pool, every final execution-time gate, and separate implementation/release/deployment/data-mutation authority; no fixed elapsed-time wait applies.
 **Parent:** [Codex Commit Token Attribution v2 Implementation Plan](./2026-08-11-codex-commit-token-attribution-v2.md)
 **Issue:** [#252](https://github.com/LichKing-2234/ai-efficiency/issues/252)
 
@@ -21,23 +21,23 @@ test transaction. It does not authorize any of the following:
 
 Cleanup cannot start until all of these are true in the same execution window:
 
-- #278 has observed at least two genuine subsequent ordinary commits from any
-  eligible Repository through hooks without manual sync;
-- at least one of those workflows has produced a new ordinary
-  `formal_v2` direct/shared pool and aggregate Activity has confirmed it;
-- seven continuous days have elapsed from that qualifying pool without a
-  failed stability gate;
-- the final health, claim coverage, exact Usage ratio, SCM freshness,
-  conservation, and zero-v1-table readbacks are green;
+- at least one independently classified ordinary developer workflow after the
+  replacement baseline has produced a new `formal_v2` direct/shared pool
+  visible in aggregate Activity;
+- the final SCM coverage read has no failed, partial, unsynced, or stale
+  Repository;
+- the final live/ready, structured v1 rejection, reconciliation/error,
+  near-expiry, pending-boundary, claim coverage, exact Usage ratio,
+  conservation, duplicate/gap, and zero-v1-table readbacks are green;
 - the operator has separately authorized implementation, releases,
   deployment, and destructive migration.
 
 The earlier cutover-based date ending on 2026-08-19 and the provisional date
-ending on 2026-08-21 are both superseded. The replacement Day 0 is
-`2026-08-17T05:32:57.925948Z`; `2026-08-24T05:32:57.925948Z` is only the
-earliest possible cleanup time. Any failed continuous gate restarts that clock,
-and final adoption, SCM freshness, conservation, zero-v1, and authority gates
-still apply at execution time.
+ending on 2026-08-21 are both superseded. The replacement Day 0 at
+`2026-08-17T05:32:57.925948Z` is retained only as a historical and conservation
+baseline. It is not a waiting clock and imposes no earliest cleanup time. Any
+failed gate blocks cleanup until it is corrected and read back again; it does
+not start or restart a fixed elapsed-time clock.
 
 ## Protection Seams
 
