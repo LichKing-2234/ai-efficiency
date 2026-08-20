@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Implementation Plan
 
 **Date:** 2026-08-11
-**Status:** T01-T12 and T14-T17 are implemented, released, and production-qualified. T18/T19 merged through PR #306 as `b56419d6`, T20 merged through PR #307 as `2d5b5574`, and T21 merged through PR #308 as `403f9854`; CLI-only `ae-cli/v0.2.0-preview.12` contains all three recovery stages and was installed through the approved proxy path. T22 is partially executed: backlog migration, retained-work classification, managed-hook capture, and no-duplicate conservation checks passed, but controlled commits `450d3ed` and `1ea8281` produced no qualifying claim. Post-hoc source inspection found an unrecognized current-runtime inline `apply_patch` wrapper, but corrected replay shows the local `c489898` simulation's actual patch turn failed earlier at `missing_request_id`; it is not successful canary evidence. The exact parser repair and scanner-progress invalidation merged through PR #325 as `c757fbd5` from implementation commit `37bce887`; the full local ae-cli suite, PR-head CI run `32359847423`, and merge-SHA main CI run `32362180500` passed, and final code review found no issue. Release, reinstallation, and a successful production commit-to-Activity canary remain incomplete. PR #299 merged as `1c9e6801`, merge-SHA CI `31993165255` passed all four jobs, release run `31996590619` published platform `v0.1.0-preview.87`, and production Helm revision 87 serves that exact SHA. Exact selected-window production readback established the replacement #252 Day 0 at `2026-08-17T05:32:57.925948Z`. #252 cleanup has not run; it still requires seven continuous stable days, a later qualifying ordinary-workflow pool delta, every final execution-time gate, and separate implementation/release/deployment/destructive-migration authority.
+**Status:** T01-T12 and T14-T22 are implemented, released where applicable, and production-qualified. T18/T19 merged through PR #306 as `b56419d6`, T20 merged through PR #307 as `2d5b5574`, and T21 merged through PR #308 as `403f9854`; CLI-only `ae-cli/v0.2.0-preview.12` contains all three recovery stages. The exact current-runtime inline-wrapper parser repair and scanner-progress invalidation merged through PR #325 as `c757fbd5` from implementation commit `37bce887`, with the full local ae-cli suite, PR-head CI `32359847423`, merge-SHA main CI `32362180500`, and final review green. CLI-only `ae-cli/v0.2.0-preview.13` was then published from `f54184a6` by release run `32364192912`, installed through the approved proxy path, and qualified by Helm commit `c35758f5`: one `relay_official` group, 112 reconciled and materialized Requests, four direct pools, exact four-component conservation, and `21,668,159` Token visible on the repo 72 Activity row. Managed-hook replay changed none of those identities or totals. T22/#305 is complete, but this operator canary remains excluded from T13's ordinary-workflow gate. The selected-window denominator repair first shipped in platform `v0.1.0-preview.87`; exact readback established replacement #252 Day 0 at `2026-08-17T05:32:57.925948Z`, and production now runs `v0.1.0-preview.88` at Helm revision 88 with live/ready green. #252 cleanup has not run; it still requires the continuous window through no earlier than `2026-08-24T05:32:57.925948Z`, separately qualified ordinary evidence, complete final SCM coverage, every other execution-time gate, and separate implementation/release/deployment/destructive-migration authority.
 **T13 invalidated baseline:** The provisional Day 0 at `2026-08-14T07:22:18.199843Z` is retained only as historical evidence. Its formal-pool facts remain 7 pools, 7 direct relations across 6 commits, `6,890,621` Token, 71 source requests/responses, and zero gaps, but the recorded `35,272,145,109` denominator was cumulative personal Usage rather than the selected 2026-08-13 through 2026-08-14 window. A later production reproduction showed the same cumulative `35,312,542,273` denominator for 2-day, 7-day, and 30-day selections while their Usage trend totals differed. The earlier `2026-08-21T07:22:18.199843Z` cleanup eligibility is void. Its replacement requirements were satisfied by the release, deployment, and readback recorded below; the old clock remains permanently invalid.
 **T13 replacement Day 0:** The complete production readback at `2026-08-17T05:32:57.925948Z` is the active baseline. Personal Activity and Usage used the same `Asia/Shanghai` local-day windows: 2-day `2026-08-16..17` returned true-zero committed Token over `96,556,726` Usage Token; 7-day `2026-08-11..17` returned exact `6,890,621 / 3,564,608,255 = 0.19330654330204933%`; and 30-day `2026-07-19..08-17` returned exact `6,890,621 / 15,156,957,118 = 0.04546177010566904%`. Every Activity denominator equaled the corresponding Usage trend sum while the cumulative Usage stats value was independently `35,085,487,404`. Claim coverage was complete, readiness was active, and focused PR sync jobs 31/32 restored complete SCM coverage with zero failed, partial, unsynced, or stale Repository. The conserved formal baseline is 7 pools, 7 direct relations across 6 commits, `6,890,621` Token, 71 source requests/responses, zero gaps, and zero duplicate pool/relation/provider-scoped Request identities; the v1 tables remain `0/0`, the one shadow pool remains isolated, formal near-expiry/finalization errors are `0/0`, and v1 writes return structured `409 upgrade_required`. The earliest possible cleanup time is `2026-08-24T05:32:57.925948Z`, only if every continuous and final gate remains green and a later qualifying ordinary pool exists.
 **Design:** [Codex Commit Token Attribution v2](../specs/2026-08-11-codex-commit-token-attribution-v2-design.md)
@@ -449,9 +449,31 @@ T01 contract publication (#253)
 - [x] Merge the repair through PR #325 as `c757fbd5` from implementation
   commit `37bce887`; verify PR-head CI run `32359847423` and merge-SHA main CI
   run `32362180500` pass backend, frontend, ae-cli, and deploy-static.
-- [ ] Obtain separate authority to publish and install the follow-up CLI-only
-  repair, rerun the real Helm commit-to-Activity canary, and complete exact
-  formal-pool, relation, Token, duplicate, Activity, and v1-zero readbacks.
+- [x] Publish only `ae-cli/v0.2.0-preview.13` from `f54184a6` through release
+  run `32364192912`, install it through the approved proxy, and verify the exact
+  binary version, managed-hook template 3, `formal_v2 + upgrade_required`
+  protocol, and Helm eligibility as `repo_config_id=72`. No platform tag or
+  Helm rollout was created for this CLI-only release.
+- [x] Establish the pre-canary baseline at 23 formal pools, 23 direct
+  relations, `74,564,942` Token, 536 Requests, zero gaps, no repo 72 relation,
+  zero duplicate pool/relation/provider-Request identity, and v1 tables `0/0`.
+  Managed post-commit/pre-push then captured the single authorized Helm commit
+  `c35758f5` and cleared its current-Repository task without manual claim
+  fabrication. A later manual recovery process exited on an unrelated deleted
+  AI Efficiency worktree, after the Helm task and claim were already complete;
+  it is not canary failure evidence.
+- [x] Read back the exact canary as one acknowledged `relay_official` group
+  with 112/112 Requests reconciled and materialized into four direct pools.
+  Request rows and pools both conserve input `200,342`, output `31,401`, cache
+  creation `0`, cache read `21,436,416`, total `21,668,159`, and Request count
+  112, with zero gaps. The repo 72 Activity row returned the same `21,668,159`
+  direct Token with complete claim coverage, exact ratio, and active readiness.
+  One later managed pre-push wake left the local ACK count, group, four pools,
+  four relations, provider-scoped Request identities, and every Token component
+  unchanged; duplicate counts and v1 tables remained zero. Concurrent pools
+  from other Repositories were excluded from this exact-commit conservation
+  proof. Repo 72 remains intentionally eligible but SCM-unbound, and the final
+  #252 SCM gate remains incomplete rather than being changed by this canary.
 
 ## Cross-Ticket Invariants
 
