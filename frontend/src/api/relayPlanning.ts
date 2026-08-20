@@ -26,6 +26,8 @@ export interface RelayPlanningAssignment {
   user_ids: number[]
   target_group_id?: number
   target_group_name?: string
+	desired_accounts: RelayPlanningAccountIntent[]
+	accounts: RelayPlanningAccount[]
 }
 
 export interface RelayPlanningUnmanagedMember {
@@ -54,6 +56,7 @@ export interface RelayPlanningPlan {
 	target_summaries: RelayPlanningTargetSummary[]
 	warnings?: string[]
 	relationship_fingerprint: string
+	accounts_reviewed: boolean
 	generated_at: string
   mapping_id?: number
 }

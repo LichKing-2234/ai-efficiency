@@ -145,11 +145,13 @@ type Candidate struct {
 }
 
 type Assignment struct {
-	Index           int     `json:"index"`
-	TotalCost       float64 `json:"total_cost"`
-	UserIDs         []int   `json:"user_ids"`
-	TargetGroupID   int64   `json:"target_group_id,omitempty"`
-	TargetGroupName string  `json:"target_group_name,omitempty"`
+	Index           int             `json:"index"`
+	TotalCost       float64         `json:"total_cost"`
+	UserIDs         []int           `json:"user_ids"`
+	TargetGroupID   int64           `json:"target_group_id,omitempty"`
+	TargetGroupName string          `json:"target_group_name,omitempty"`
+	DesiredAccounts []AccountIntent `json:"desired_accounts,omitempty"`
+	Accounts        []TargetAccount `json:"accounts,omitempty"`
 }
 
 type Plan struct {
@@ -172,6 +174,7 @@ type Plan struct {
 	GeneratedAt             time.Time             `json:"generated_at"`
 	MappingID               int                   `json:"mapping_id,omitempty"`
 	RelationshipFingerprint string                `json:"relationship_fingerprint"`
+	AccountsReviewed        bool                  `json:"accounts_reviewed"`
 	relationshipSnapshot    relationshipSnapshot
 }
 
@@ -549,11 +552,12 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		count = assignmentCount(req.Assignments)
 	}
 	assignments := allocate(eligible, count)
+	var mapping *ent.RelayGroupMapping
 	var unmanagedMembers []UnmanagedMember
 	if req.ExistingMappingID > 0 {
-		mapping, mappingErr := s.client.RelayGroupMapping.Get(ctx, req.ExistingMappingID)
-		if mappingErr != nil {
-			return nil, fmt.Errorf("load relay group mapping assignments: %w", mappingErr)
+		mapping, err = s.client.RelayGroupMapping.Get(ctx, req.ExistingMappingID)
+		if err != nil {
+			return nil, fmt.Errorf("load relay group mapping assignments: %w", err)
 		}
 		unmanagedMembers, err = s.loadUnmanagedMembers(ctx, p, mapping)
 		if err != nil {
@@ -594,6 +598,9 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	if err := s.assignTargets(ctx, req, groups, template.Name, assignments); err != nil {
 		return nil, fmt.Errorf("assign relay planning targets: %w", err)
 	}
+	if err := assignPreviewAccounts(ctx, p, req.Platform, template.ID, mapping, assignments); err != nil {
+		return nil, fmt.Errorf("assign relay planning Accounts: %w", err)
+	}
 	warnings := make([]string, 0)
 	if len(eligible) == 0 {
 		warnings = append(warnings, "no eligible member has a valid relay mapping and source-group membership")
@@ -632,6 +639,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		RecommendedCount: recommended, GroupCount: count, Candidates: candidates, Assignments: assignments,
 		UnmanagedMembers: unmanagedMembers,
 		Warnings:         uniqueStrings(warnings), GeneratedAt: time.Now().UTC(),
+		AccountsReviewed: mapping == nil || mapping.AccountManagementInitialized || assignmentsReviewAccounts(req.Assignments),
 	}
 	assigned := make(map[int]struct{})
 	for _, assignment := range assignments {
@@ -785,11 +793,10 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 	if !ok {
 		return nil, fmt.Errorf("relay provider does not support account relationship reading")
 	}
-	templateAccounts, err := accountReader.ListAccountsForPlatform(ctx, plan.Platform)
+	availableAccounts, err := accountReader.ListAccountsForPlatform(ctx, plan.Platform)
 	if err != nil {
-		return nil, fmt.Errorf("list template account relationships: %w", err)
+		return nil, fmt.Errorf("list account relationships: %w", err)
 	}
-	templateIntents := accountIntentsForGroup(templateAccounts, plan.Platform, plan.TemplateGroupID)
 	groupResults := make([]GroupResult, 0, plan.GroupCount)
 	targetIDs := make(map[int]int64, plan.GroupCount)
 	createdIDs := make(map[int]int64, plan.GroupCount)
@@ -806,10 +813,10 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 		result.ID = group.ID
 		result.Name = group.Name
 		createdIDs[index] = group.ID
-		desiredAccounts[strconv.FormatInt(group.ID, 10)] = append([]AccountIntent(nil), templateIntents...)
 		if index < len(plan.Assignments) {
 			plan.Assignments[index].TargetGroupID = group.ID
 			plan.Assignments[index].TargetGroupName = group.Name
+			desiredAccounts[strconv.FormatInt(group.ID, 10)] = append([]AccountIntent(nil), plan.Assignments[index].DesiredAccounts...)
 		}
 		accountMapping := Mapping{ProviderID: plan.ProviderID, Platform: plan.Platform, GroupIDs: []int64{group.ID}, AccountManagementInitialized: true, DesiredAccounts: desiredAccounts}
 		groupAccountResults, blocked := s.applyDesiredAccountRelationships(ctx, p, accountMapping)
@@ -894,18 +901,11 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 	if err != nil {
 		return nil, fmt.Errorf("save group mapping: %w", err)
 	}
-	row, err := s.client.RelayGroupMapping.UpdateOneID(mapping.ID).
-		SetAccountManagementInitialized(true).
-		SetDesiredAccounts(accountIntentsToStorage(desiredAccounts)).
-		Save(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("save inherited account relationships: %w", err)
-	}
-	updatedMapping := mappingFromEnt(row)
+	updatedMapping := *mapping
 	currentAccounts, readbackErr := accountReader.ListAccountsForPlatform(ctx, plan.Platform)
 	warnings := make([]string, 0, 1)
 	if readbackErr != nil {
-		currentAccounts = templateAccounts
+		currentAccounts = availableAccounts
 		warnings = append(warnings, "new Target Account relationships could not be refreshed")
 	}
 	updatedMapping.AccountPools = accountPools(updatedMapping, currentAccounts)
@@ -932,13 +932,86 @@ func accountIntentsForGroup(accounts []relay.Account, platform string, groupID i
 	return intents
 }
 
+func assignPreviewAccounts(ctx context.Context, provider relay.Provider, platform string, templateGroupID int64, mapping *ent.RelayGroupMapping, assignments []Assignment) error {
+	reader, ok := provider.(relay.AccountRelationshipReader)
+	if !ok {
+		return fmt.Errorf("relay provider does not support account relationship reading")
+	}
+	accounts, err := reader.ListAccountsForPlatform(ctx, platform)
+	if err != nil {
+		return fmt.Errorf("list relay accounts: %w", err)
+	}
+	available := make(map[int64]relay.Account, len(accounts))
+	for _, account := range accounts {
+		if strings.EqualFold(strings.TrimSpace(account.Platform), strings.TrimSpace(platform)) {
+			available[account.ID] = account
+		}
+	}
+	templateAccounts := accountIntentsForGroup(accounts, platform, templateGroupID)
+	var savedAccounts map[string][]AccountIntent
+	if mapping != nil {
+		savedAccounts = accountIntentsFromStorage(mapping.DesiredAccounts)
+	}
+	for index := range assignments {
+		intents := assignments[index].DesiredAccounts
+		if intents == nil {
+			switch {
+			case mapping != nil && mapping.AccountManagementInitialized:
+				intents = savedAccounts[strconv.FormatInt(assignments[index].TargetGroupID, 10)]
+			case mapping != nil && assignments[index].TargetGroupID > 0:
+				intents = accountIntentsForGroup(accounts, platform, assignments[index].TargetGroupID)
+			default:
+				intents = templateAccounts
+			}
+		}
+		normalized, selected, err := normalizePreviewAccountIntents(intents, available, platform)
+		if err != nil {
+			return fmt.Errorf("target %d: %w", assignments[index].Index+1, err)
+		}
+		assignments[index].DesiredAccounts = normalized
+		assignments[index].Accounts = selected
+	}
+	return nil
+}
+
+func normalizePreviewAccountIntents(intents []AccountIntent, available map[int64]relay.Account, platform string) ([]AccountIntent, []TargetAccount, error) {
+	normalized := append([]AccountIntent(nil), intents...)
+	sort.SliceStable(normalized, func(i, j int) bool { return normalized[i].Priority < normalized[j].Priority })
+	selected := make([]TargetAccount, 0, len(normalized))
+	seenAccounts := make(map[int64]struct{}, len(normalized))
+	seenPriorities := make(map[int]struct{}, len(normalized))
+	for _, intent := range normalized {
+		account, ok := available[intent.AccountID]
+		if !ok {
+			return nil, nil, fmt.Errorf("account %d is unavailable on platform %s", intent.AccountID, platform)
+		}
+		if _, duplicate := seenAccounts[intent.AccountID]; duplicate {
+			return nil, nil, fmt.Errorf("account %d is duplicated", intent.AccountID)
+		}
+		if intent.Priority <= 0 {
+			return nil, nil, fmt.Errorf("account priority must be positive")
+		}
+		if _, duplicate := seenPriorities[intent.Priority]; duplicate {
+			return nil, nil, fmt.Errorf("account priority %d is duplicated", intent.Priority)
+		}
+		seenAccounts[intent.AccountID] = struct{}{}
+		seenPriorities[intent.Priority] = struct{}{}
+		selected = append(selected, TargetAccount{ID: account.ID, Name: account.Name, Platform: account.Platform, Type: account.Type, Status: account.Status, Schedulable: account.Schedulable, Priority: intent.Priority})
+	}
+	if normalized == nil {
+		normalized = []AccountIntent{}
+	}
+	return normalized, selected, nil
+}
+
 type relationshipSnapshot struct {
-	ProviderID int                       `json:"provider_id"`
-	Platform   string                    `json:"platform"`
-	Groups     []relationshipGroupFact   `json:"groups"`
-	Accounts   []relationshipAccountFact `json:"accounts"`
-	Mappings   []relationshipMappingFact `json:"mappings"`
-	Users      []relationshipUserFact    `json:"users"`
+	ProviderID      int                              `json:"provider_id"`
+	Platform        string                           `json:"platform"`
+	Groups          []relationshipGroupFact          `json:"groups"`
+	Accounts        []relationshipAccountFact        `json:"accounts"`
+	PlannedAccounts []relationshipPlannedAccountFact `json:"planned_accounts"`
+	Mappings        []relationshipMappingFact        `json:"mappings"`
+	Users           []relationshipUserFact           `json:"users"`
 }
 
 type relationshipGroupFact struct {
@@ -966,6 +1039,13 @@ type relationshipMappingFact struct {
 
 type relationshipDesiredAccountFact struct {
 	TargetGroupID int64 `json:"target_group_id"`
+	AccountID     int64 `json:"account_id"`
+	Priority      int   `json:"priority"`
+}
+
+type relationshipPlannedAccountFact struct {
+	TargetIndex   int   `json:"target_index"`
+	TargetGroupID int64 `json:"target_group_id,omitempty"`
 	AccountID     int64 `json:"account_id"`
 	Priority      int   `json:"priority"`
 }
@@ -1007,6 +1087,8 @@ type relationshipAPIKeyFact struct {
 
 func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Provider, req PreviewRequest, plan *Plan, groups []relay.Group) (string, error) {
 	affectedUserIDs := make(map[int]struct{})
+	desiredAccountIDs := make(map[int64]struct{})
+	plannedAccounts := make([]relationshipPlannedAccountFact, 0)
 	relevantGroupIDs := map[int64]struct{}{plan.TemplateGroupID: {}}
 	if plan.SourceGroupID > 0 {
 		relevantGroupIDs[plan.SourceGroupID] = struct{}{}
@@ -1023,7 +1105,17 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 		for _, userID := range assignment.UserIDs {
 			affectedUserIDs[userID] = struct{}{}
 		}
+		if plan.AccountsReviewed {
+			for _, intent := range assignment.DesiredAccounts {
+				desiredAccountIDs[intent.AccountID] = struct{}{}
+				plannedAccounts = append(plannedAccounts, relationshipPlannedAccountFact{TargetIndex: assignment.Index, TargetGroupID: assignment.TargetGroupID, AccountID: intent.AccountID, Priority: intent.Priority})
+			}
+		}
 	}
+	sort.Slice(plannedAccounts, func(i, j int) bool {
+		left, right := plannedAccounts[i], plannedAccounts[j]
+		return left.TargetIndex < right.TargetIndex || (left.TargetIndex == right.TargetIndex && (left.Priority < right.Priority || (left.Priority == right.Priority && left.AccountID < right.AccountID)))
+	})
 	for _, userID := range req.RemovedUserIDs {
 		affectedUserIDs[userID] = struct{}{}
 	}
@@ -1050,7 +1142,7 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 		}
 	}
 
-	snapshot := relationshipSnapshot{ProviderID: req.ProviderID, Platform: strings.ToLower(strings.TrimSpace(req.Platform))}
+	snapshot := relationshipSnapshot{ProviderID: req.ProviderID, Platform: strings.ToLower(strings.TrimSpace(req.Platform)), PlannedAccounts: plannedAccounts}
 	mappingIDList := make([]int, 0, len(mappingIDs))
 	for mappingID := range mappingIDs {
 		mappingIDList = append(mappingIDList, mappingID)
@@ -1141,7 +1233,6 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 	if err != nil {
 		return "", fmt.Errorf("list account relationships: %w", err)
 	}
-	desiredAccountIDs := make(map[int64]struct{})
 	for _, mapping := range snapshot.Mappings {
 		for _, desired := range mapping.DesiredAccounts {
 			desiredAccountIDs[desired.AccountID] = struct{}{}
@@ -1297,7 +1388,10 @@ func encodeRelationshipFingerprint(snapshot relationshipSnapshot) (string, error
 			Platform   string                  `json:"platform"`
 			Groups     []relationshipGroupFact `json:"groups"`
 		}{snapshot.ProviderID, snapshot.Platform, snapshot.Groups},
-		snapshot.Accounts,
+		struct {
+			Accounts        []relationshipAccountFact        `json:"accounts"`
+			PlannedAccounts []relationshipPlannedAccountFact `json:"planned_accounts"`
+		}{snapshot.Accounts, snapshot.PlannedAccounts},
 		snapshot.Mappings,
 		identities,
 		subscriptions,
@@ -1379,6 +1473,8 @@ func stalePlanFromPreviewError(expected string, previewErr error) *StalePlanErro
 			difference = "Template Group changed or is no longer available"
 		case strings.Contains(message, "target group"):
 			difference = "a Target Group changed or is no longer available"
+		case strings.Contains(message, "account"):
+			difference = "Account relationships changed or are no longer available"
 		}
 	}
 	return &StalePlanError{ExpectedFingerprint: expected, Differences: []string{difference}}
@@ -1415,7 +1511,7 @@ func buildTargetChangeSummaries(req PreviewRequest, plan *Plan) []TargetChangeSu
 	}
 
 	for index := range summaries {
-		if currentMapping != nil && !currentMapping.AccountManagementInitialized {
+		if currentMapping != nil && !plan.AccountsReviewed {
 			continue
 		}
 		current := make(map[int64]int)
@@ -1426,17 +1522,10 @@ func buildTargetChangeSummaries(req PreviewRequest, plan *Plan) []TargetChangeSu
 				if relationship.GroupID == targetGroupID && targetGroupID > 0 {
 					current[account.ID] = relationship.Priority
 				}
-				if currentMapping == nil && relationship.GroupID == plan.TemplateGroupID {
-					desired[account.ID] = relationship.Priority
-				}
 			}
 		}
-		if currentMapping != nil && currentMapping.AccountManagementInitialized {
-			for _, intent := range currentMapping.DesiredAccounts {
-				if intent.TargetGroupID == targetGroupID {
-					desired[intent.AccountID] = intent.Priority
-				}
-			}
+		for _, intent := range plan.Assignments[index].DesiredAccounts {
+			desired[intent.AccountID] = intent.Priority
 		}
 		accountIDs := make(map[int64]struct{}, len(current)+len(desired))
 		for accountID := range current {
@@ -2185,6 +2274,10 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	assigner, _ := p.(subscriptionAssigner)
 	remover, _ := p.(subscriptionRemover)
 	binder, _ := p.(relay.APIKeyGroupBinder)
+	if plan.AccountsReviewed {
+		mapping.AccountManagementInitialized = true
+		mapping.DesiredAccounts = desiredAccountsForGroupIDs(plan.Assignments, mapping.GroupIDs)
+	}
 	accountResults, blockedTargets := s.applyDesiredAccountRelationships(ctx, p, *mapping)
 	memberResults := make([]MemberResult, 0, len(plan.Candidates))
 	groupResults := make([]GroupResult, 0, len(mapping.GroupIDs))
@@ -2797,6 +2890,15 @@ func assignmentCount(assignments []Assignment) int {
 	return count
 }
 
+func assignmentsReviewAccounts(assignments []Assignment) bool {
+	for _, assignment := range assignments {
+		if assignment.DesiredAccounts != nil {
+			return true
+		}
+	}
+	return false
+}
+
 func validateAssignments(assignments []Assignment, candidates []Candidate, count int) ([]Assignment, error) {
 	if count <= 0 || len(assignments) != count {
 		return nil, fmt.Errorf("assignments must contain exactly %d target groups", count)
@@ -2816,7 +2918,11 @@ func validateAssignments(assignments []Assignment, candidates []Candidate, count
 			return nil, fmt.Errorf("assignment index %d is duplicated", assignment.Index)
 		}
 		seenIndexes[assignment.Index] = struct{}{}
-		validated[assignment.Index] = Assignment{Index: assignment.Index, TargetGroupID: assignment.TargetGroupID, TargetGroupName: strings.TrimSpace(assignment.TargetGroupName), UserIDs: make([]int, 0, len(assignment.UserIDs))}
+		var desiredAccounts []AccountIntent
+		if assignment.DesiredAccounts != nil {
+			desiredAccounts = append([]AccountIntent(nil), assignment.DesiredAccounts...)
+		}
+		validated[assignment.Index] = Assignment{Index: assignment.Index, TargetGroupID: assignment.TargetGroupID, TargetGroupName: strings.TrimSpace(assignment.TargetGroupName), UserIDs: make([]int, 0, len(assignment.UserIDs)), DesiredAccounts: desiredAccounts}
 		for _, userID := range assignment.UserIDs {
 			candidate, ok := byUser[userID]
 			if !ok {
@@ -3294,6 +3400,7 @@ func (s *Service) saveMapping(ctx context.Context, plan *Plan, groupIDs []int64,
 func saveMappingWithClient(ctx context.Context, client *ent.Client, plan *Plan, groupIDs []int64, state map[string]map[string]string) (*Mapping, error) {
 	memberAssignments := make(map[string]int64)
 	memberSources := make(map[string]int64)
+	desiredAccounts := desiredAccountsForGroupIDs(plan.Assignments, groupIDs)
 	for _, assignment := range plan.Assignments {
 		if assignment.Index >= len(groupIDs) || groupIDs[assignment.Index] <= 0 {
 			continue
@@ -3312,10 +3419,17 @@ func saveMappingWithClient(ctx context.Context, client *ent.Client, plan *Plan, 
 		relaygroupmapping.PlatformEQ(plan.Platform),
 	).Only(ctx)
 	if ent.IsNotFound(err) {
-		row, err = client.RelayGroupMapping.Create().SetProviderID(plan.ProviderID).SetDepartmentExternalID(plan.DepartmentID).SetDepartmentName(plan.DepartmentName).SetPlatform(plan.Platform).SetTemplateGroupID(plan.TemplateGroupID).SetTemplateGroupName(plan.TemplateGroupName).SetSourceGroupID(plan.SourceGroupID).SetSourceGroupName(plan.SourceGroupName).SetGroupIds(groupIDs).SetMemberAssignments(memberAssignments).SetMemberSources(memberSources).SetOperationState(cloneOperationState(state)).SetWeeklyCostTarget(plan.WeeklyCostTarget).SetStatus(operationStatus(state)).Save(ctx)
+		create := client.RelayGroupMapping.Create().SetProviderID(plan.ProviderID).SetDepartmentExternalID(plan.DepartmentID).SetDepartmentName(plan.DepartmentName).SetPlatform(plan.Platform).SetTemplateGroupID(plan.TemplateGroupID).SetTemplateGroupName(plan.TemplateGroupName).SetSourceGroupID(plan.SourceGroupID).SetSourceGroupName(plan.SourceGroupName).SetGroupIds(groupIDs).SetMemberAssignments(memberAssignments).SetMemberSources(memberSources).SetOperationState(cloneOperationState(state)).SetWeeklyCostTarget(plan.WeeklyCostTarget).SetStatus(operationStatus(state))
+		if plan.AccountsReviewed {
+			create.SetAccountManagementInitialized(true).SetDesiredAccounts(accountIntentsToStorage(desiredAccounts))
+		}
+		row, err = create.Save(ctx)
 	} else if err == nil {
 		mergedState := mergeOperationState(row.OperationState, state)
 		update := row.Update().SetDepartmentName(plan.DepartmentName).SetTemplateGroupID(plan.TemplateGroupID).SetTemplateGroupName(plan.TemplateGroupName).SetSourceGroupID(plan.SourceGroupID).SetSourceGroupName(plan.SourceGroupName).SetGroupIds(groupIDs).SetMemberAssignments(memberAssignments).SetMemberSources(memberSources).SetOperationState(mergedState).SetWeeklyCostTarget(plan.WeeklyCostTarget).SetStatus(operationStatus(mergedState))
+		if plan.AccountsReviewed {
+			update.SetAccountManagementInitialized(true).SetDesiredAccounts(accountIntentsToStorage(desiredAccounts))
+		}
 		row, err = update.Save(ctx)
 	}
 	if err != nil {
@@ -3323,6 +3437,17 @@ func saveMappingWithClient(ctx context.Context, client *ent.Client, plan *Plan, 
 	}
 	mapping := mappingFromEnt(row)
 	return &mapping, nil
+}
+
+func desiredAccountsForGroupIDs(assignments []Assignment, groupIDs []int64) map[string][]AccountIntent {
+	desired := make(map[string][]AccountIntent, len(groupIDs))
+	for _, assignment := range assignments {
+		if assignment.Index < 0 || assignment.Index >= len(groupIDs) || groupIDs[assignment.Index] <= 0 {
+			continue
+		}
+		desired[strconv.FormatInt(groupIDs[assignment.Index], 10)] = append([]AccountIntent(nil), assignment.DesiredAccounts...)
+	}
+	return desired
 }
 
 func mappingFromEnt(row *ent.RelayGroupMapping) Mapping {

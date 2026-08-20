@@ -52,6 +52,8 @@ const plan = {
     total_cost: 1200,
     user_ids: [1],
     target_group_name: 'Group Alpha (Copy)',
+		desired_accounts: [{ account_id: 11, priority: 1 }],
+		accounts: [{ id: 11, name: 'Account Alpha', platform: 'openai', type: 'oauth', status: 'active', schedulable: true, priority: 1 }],
 	}],
 	target_summaries: [{
 		index: 0,
@@ -70,6 +72,7 @@ const plan = {
 		api_keys: [{ user_id: 1, relay_user_id: 101, action: 'move', count: 1, from_group_id: 42, to_group_id: 101 }],
 	}],
 	relationship_fingerprint: 'v1:preview-fingerprint',
+	accounts_reviewed: true,
 	generated_at: '2026-08-19T00:00:00Z',
 }
 
@@ -93,7 +96,7 @@ async function mountView(initialMappings: any[] = [], wide = false) {
     data: { data: { providers: [{ id: 7, name: 'relay', display_name: 'Relay', groups: [{ group_id: '42', group_name: 'Group Alpha', platform: 'openai' }] }] } },
   })
 	relayPlanning.listRelayGroupMappings.mockResolvedValue({ data: { data: { items: initialMappings } } })
-  relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: plan } })
+  relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: structuredClone(plan) } })
 	relayPlanning.searchRelayPlanningUsers.mockResolvedValue({
     data: { data: { items: [], total: 0, page: 1, page_size: 20 } },
 	})
@@ -280,8 +283,7 @@ describe('RelayPlanningView', () => {
 
     const search = wrapper.get('[data-testid="target-user-search-0"]')
     await search.setValue('bob')
-    await flushPromises()
-	    expect(relayPlanning.searchRelayPlanningUsers).toHaveBeenCalledWith(expect.objectContaining({ provider_id: 7, platform: 'openai', q: 'bob' }))
+	await vi.waitFor(() => expect(relayPlanning.searchRelayPlanningUsers).toHaveBeenCalledWith(expect.objectContaining({ provider_id: 7, platform: 'openai', q: 'bob' })))
 	    expect(wrapper.text()).toContain('Engineering / SDK Runtime')
 		await wrapper.get('[data-testid="target-user-pagination-0"]').trigger('click')
 		await flushPromises()
@@ -294,6 +296,83 @@ describe('RelayPlanningView', () => {
       member_sources: expect.objectContaining({ '2': 0 }),
       assignments: [expect.objectContaining({ index: 0, user_ids: [1, 2] })],
     }))
+	})
+
+	it('debounces target user search until typing pauses', async () => {
+		vi.useFakeTimers()
+		try {
+			const { wrapper, relayPlanning } = await mountView()
+			await fillAndPreview(wrapper)
+			relayPlanning.searchRelayPlanningUsers.mockClear()
+
+			const search = wrapper.get('[data-testid="target-user-search-0"]')
+			await search.setValue('b')
+			await search.setValue('bo')
+			await search.setValue('bob')
+
+			expect(relayPlanning.searchRelayPlanningUsers).not.toHaveBeenCalled()
+			await vi.advanceTimersByTimeAsync(300)
+			await flushPromises()
+			expect(relayPlanning.searchRelayPlanningUsers).toHaveBeenCalledTimes(1)
+			expect(relayPlanning.searchRelayPlanningUsers).toHaveBeenCalledWith(expect.objectContaining({ q: 'bob' }))
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
+	it('keeps a stale user search response from replacing the latest query', async () => {
+		vi.useFakeTimers()
+		try {
+			const { wrapper, relayPlanning } = await mountView()
+			await fillAndPreview(wrapper)
+			let resolveAlice!: (value: any) => void
+			let resolveBob!: (value: any) => void
+			const aliceResponse = new Promise((resolve) => { resolveAlice = resolve })
+			const bobResponse = new Promise((resolve) => { resolveBob = resolve })
+			relayPlanning.searchRelayPlanningUsers.mockImplementation(({ q }: { q: string }) => q === 'alice' ? aliceResponse : bobResponse)
+
+			const search = wrapper.get('[data-testid="target-user-search-0"]')
+			await search.setValue('alice')
+			await vi.advanceTimersByTimeAsync(300)
+			await search.setValue('bob')
+			await vi.advanceTimersByTimeAsync(300)
+			expect(relayPlanning.searchRelayPlanningUsers).toHaveBeenCalledTimes(2)
+
+			resolveBob({ data: { data: { items: [{ user_id: 2, relay_user_id: 102, username: 'latest-bob', email: 'bob@example.org', selectable: true }], total: 1, page: 1, page_size: 20 } } })
+			await flushPromises()
+			expect(wrapper.text()).toContain('latest-bob')
+
+			resolveAlice({ data: { data: { items: [{ user_id: 3, relay_user_id: 103, username: 'stale-alice', email: 'stale@example.com', selectable: true }], total: 1, page: 1, page_size: 20 } } })
+			await flushPromises()
+			expect(wrapper.text()).not.toContain('stale@example.com')
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
+	it('edits Account assignments in the Preview target before confirmation', async () => {
+		vi.useFakeTimers()
+		try {
+			const { wrapper, relayPlanning } = await mountView()
+			relayPlanning.searchRelayPlanningAccounts.mockResolvedValue({ data: { data: { items: [{ id: 12, name: 'Account Beta', platform: 'openai', type: 'apikey', status: 'active', schedulable: true, group_relationships: [] }], total: 1, page: 1, page_size: 20 } } })
+			await fillAndPreview(wrapper)
+
+			expect(wrapper.text()).toContain('Account Alpha')
+			const search = wrapper.get('[data-testid="target-account-search-0"]')
+			await search.setValue('Beta')
+			await vi.advanceTimersByTimeAsync(300)
+			await flushPromises()
+			await wrapper.get('[data-testid="add-target-account-0-12"]').trigger('click')
+			await wrapper.get('[data-testid="remove-target-account-0-11"]').trigger('click')
+			await wrapper.get('[data-testid="open-execution-confirmation"]').trigger('click')
+			await flushPromises()
+
+			expect(relayPlanning.previewRelayPlan).toHaveBeenLastCalledWith(expect.objectContaining({
+				assignments: [expect.objectContaining({ desired_accounts: [{ account_id: 12, priority: 1 }] })],
+			}))
+		} finally {
+			vi.useRealTimers()
+		}
 	})
 
 	it('shows current Account relationships and adopts them without applying Relay changes', async () => {
@@ -363,8 +442,7 @@ describe('RelayPlanningView', () => {
 
 		await wrapper.get('[data-testid="manage-accounts-9"]').trigger('click')
 		await wrapper.get('[data-testid="account-search-9-101"]').setValue('Beta')
-		await flushPromises()
-		expect(relayPlanning.searchRelayPlanningAccounts).toHaveBeenCalledWith(expect.objectContaining({ provider_id: 7, platform: 'openai', q: 'Beta' }))
+		await vi.waitFor(() => expect(relayPlanning.searchRelayPlanningAccounts).toHaveBeenCalledWith(expect.objectContaining({ provider_id: 7, platform: 'openai', q: 'Beta' })))
 
 		await wrapper.get('[data-testid="add-account-9-101-12"]').trigger('click')
 		await wrapper.get('[data-testid="move-account-up-9-101-12"]').trigger('click')
@@ -450,7 +528,7 @@ describe('RelayPlanningView', () => {
 		await wrapper.get('[data-testid="replan-mapping-9"]').trigger('click')
 		await flushPromises()
 		await wrapper.get('[data-testid="target-user-search-0"]').setValue('bob')
-		await flushPromises()
+		await vi.waitFor(() => expect(relayPlanning.searchRelayPlanningUsers).toHaveBeenCalledWith(expect.objectContaining({ q: 'bob' })))
 		await wrapper.get('[data-testid="add-searched-user-0-2"]').trigger('click')
 		await flushPromises()
 

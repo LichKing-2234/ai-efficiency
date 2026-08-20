@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { CaretBottom, CaretTop, Check, Delete, Plus, Refresh, Setting, Switch } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppLayout from '@/components/AppLayout.vue'
@@ -50,6 +50,9 @@ const targetSearchQueries = reactive<Record<number, string>>({})
 const targetSearchResults = reactive<Record<number, RelayPlanningUserSearchItem[]>>({})
 const targetSearchLoading = reactive<Record<number, boolean>>({})
 const targetSearchPages = reactive<Record<number, { total: number; page: number; page_size: number }>>({})
+const searchDelayMS = 300
+const targetSearchTimers = new Map<number, ReturnType<typeof setTimeout>>()
+const targetSearchRequestIDs = new Map<number, number>()
 const operationKey = ref('')
 const mappings = ref<RelayPlanningMapping[]>([])
 const rebindPendingID = ref<number | null>(null)
@@ -59,6 +62,8 @@ const accountDrafts = reactive<Record<number, Record<string, RelayPlanningAccoun
 const accountSearchQueries = reactive<Record<string, string>>({})
 const accountSearchResults = reactive<Record<string, RelayPlanningAccount[]>>({})
 const accountSearchLoading = reactive<Record<string, boolean>>({})
+const accountSearchTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const accountSearchRequestIDs = new Map<string, number>()
 const departments = ref<Array<{ external_id: string; name: string; display_path: string }>>([])
 const providers = ref<Array<{ id: number; name: string; display_name: string; groups: Array<{ group_id: string; group_name: string; platform: string }> }>>([])
 
@@ -177,6 +182,8 @@ function assignmentPayload() {
     user_ids: [...(assignment.user_ids ?? [])],
     target_group_id: assignment.target_group_id,
     target_group_name: assignment.target_group_name,
+		desired_accounts: (assignment.accounts ?? []).map((account, index) => ({ account_id: account.id, priority: Number(account.priority || index + 1) })),
+		accounts: [],
   }))
 }
 
@@ -184,9 +191,30 @@ function memberSourcesPayload(userIDs = selectedUserIDs.value): Record<string, n
   return Object.fromEntries(Array.from(userIDs).map((userID) => [String(userID), Number(memberSources.value[String(userID)] || 0)]))
 }
 
+function clearSearchState() {
+	for (const timer of targetSearchTimers.values()) clearTimeout(timer)
+	for (const timer of accountSearchTimers.values()) clearTimeout(timer)
+	targetSearchTimers.clear()
+	accountSearchTimers.clear()
+	targetSearchRequestIDs.clear()
+	accountSearchRequestIDs.clear()
+	for (const key of Object.keys(targetSearchQueries)) delete targetSearchQueries[Number(key)]
+	for (const key of Object.keys(targetSearchResults)) delete targetSearchResults[Number(key)]
+	for (const key of Object.keys(targetSearchLoading)) delete targetSearchLoading[Number(key)]
+	for (const key of Object.keys(targetSearchPages)) delete targetSearchPages[Number(key)]
+	for (const key of Object.keys(accountSearchQueries)) delete accountSearchQueries[key]
+	for (const key of Object.keys(accountSearchResults)) delete accountSearchResults[key]
+	for (const key of Object.keys(accountSearchLoading)) delete accountSearchLoading[key]
+}
+
 function applyPlan(next: RelayPlanningPlan | null) {
+	clearSearchState()
   plan.value = next
   if (!next) return
+	for (const assignment of next.assignments) {
+		assignment.accounts ??= []
+		assignment.desired_accounts = assignment.accounts.map((account, index) => ({ account_id: account.id, priority: Number(account.priority || index + 1) }))
+	}
   const nextSources: Record<string, number> = {}
   for (const candidate of next.candidates) nextSources[String(candidate.user_id)] = Number(candidate.source_group_id || 0)
   memberSources.value = nextSources
@@ -323,23 +351,79 @@ function accountSearchKey(mappingID: number, targetGroupID: number) {
 	return `${mappingID}:${targetGroupID}`
 }
 
-async function searchAccountsForTarget(mapping: RelayPlanningMapping, targetGroupID: number, value: string | number) {
-	const key = accountSearchKey(mapping.id, targetGroupID)
+function previewAccountSearchKey(targetIndex: number) {
+	return `preview:${targetIndex}`
+}
+
+function scheduleAccountSearch(key: string, providerID: number, platform: string, value: string | number) {
 	const query = String(value || '').trim()
 	accountSearchQueries[key] = query
+	const previous = accountSearchTimers.get(key)
+	if (previous) clearTimeout(previous)
+	const requestID = (accountSearchRequestIDs.get(key) ?? 0) + 1
+	accountSearchRequestIDs.set(key, requestID)
 	if (!query) {
 		accountSearchResults[key] = []
+		accountSearchLoading[key] = false
 		return
 	}
+	accountSearchTimers.set(key, setTimeout(() => void runAccountSearch(key, providerID, platform, query, requestID), searchDelayMS))
+}
+
+function schedulePreviewAccountSearch(targetIndex: number, value: string | number) {
+	if (!plan.value) return
+	scheduleAccountSearch(previewAccountSearchKey(targetIndex), plan.value.provider_id, plan.value.platform, value)
+}
+
+function scheduleManagedAccountSearch(mapping: RelayPlanningMapping | null, targetGroupID: number, value: string | number) {
+	if (!mapping) return
+	scheduleAccountSearch(accountSearchKey(mapping.id, targetGroupID), mapping.provider_id, mapping.platform, value)
+}
+
+async function runAccountSearch(key: string, providerID: number, platform: string, query: string, requestID: number) {
 	accountSearchLoading[key] = true
 	try {
-		const response = await searchRelayPlanningAccounts({ provider_id: mapping.provider_id, platform: mapping.platform, q: query, page: 1, page_size: 20 })
-		accountSearchResults[key] = response.data.data?.items ?? []
+		const response = await searchRelayPlanningAccounts({ provider_id: providerID, platform, q: query, page: 1, page_size: 20 })
+		if (accountSearchRequestIDs.get(key) === requestID) accountSearchResults[key] = response.data.data?.items ?? []
 	} catch (err: any) {
-		ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.accountSearchFailed'))
+		if (accountSearchRequestIDs.get(key) === requestID) ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.accountSearchFailed'))
 	} finally {
-		accountSearchLoading[key] = false
+		if (accountSearchRequestIDs.get(key) === requestID) accountSearchLoading[key] = false
 	}
+}
+
+function syncPreviewAccountPriorities(targetIndex: number) {
+	const assignment = plan.value?.assignments.find((item) => item.index === targetIndex)
+	if (!assignment) return
+	assignment.accounts.forEach((account, index) => { account.priority = index + 1 })
+	assignment.desired_accounts = assignment.accounts.map((account, index) => ({ account_id: account.id, priority: index + 1 }))
+}
+
+function addAccountToPreviewTarget(targetIndex: number, account: RelayPlanningAccount) {
+	const assignment = plan.value?.assignments.find((item) => item.index === targetIndex)
+	if (!assignment || assignment.accounts.some((item) => item.id === account.id)) return
+	assignment.accounts.push({ ...account, priority: assignment.accounts.length + 1 })
+	syncPreviewAccountPriorities(targetIndex)
+	const key = previewAccountSearchKey(targetIndex)
+	accountSearchQueries[key] = ''
+	accountSearchResults[key] = []
+}
+
+function reorderPreviewAccounts(targetIndex: number, accountID: number, offset: number) {
+	const assignment = plan.value?.assignments.find((item) => item.index === targetIndex)
+	if (!assignment) return
+	const index = assignment.accounts.findIndex((account) => account.id === accountID)
+	const nextIndex = index + offset
+	if (index < 0 || nextIndex < 0 || nextIndex >= assignment.accounts.length) return
+	;[assignment.accounts[index], assignment.accounts[nextIndex]] = [assignment.accounts[nextIndex], assignment.accounts[index]]
+	syncPreviewAccountPriorities(targetIndex)
+}
+
+function removeAccountFromPreviewTarget(targetIndex: number, accountID: number) {
+	const assignment = plan.value?.assignments.find((item) => item.index === targetIndex)
+	if (!assignment) return
+	assignment.accounts = assignment.accounts.filter((account) => account.id !== accountID)
+	syncPreviewAccountPriorities(targetIndex)
 }
 
 function addAccountToTarget(mappingID: number, targetGroupID: number, account: RelayPlanningAccount) {
@@ -407,15 +491,35 @@ async function preview() {
   }
 }
 
-async function searchUsersForTarget(targetIndex: number, value: string | number, page = 1) {
+function scheduleUserSearch(targetIndex: number, value: string | number) {
   if (!plan.value) return
   const query = String(value || '').trim()
   targetSearchQueries[targetIndex] = query
+	const previous = targetSearchTimers.get(targetIndex)
+	if (previous) clearTimeout(previous)
+	const requestID = (targetSearchRequestIDs.get(targetIndex) ?? 0) + 1
+	targetSearchRequestIDs.set(targetIndex, requestID)
   if (!query) {
     targetSearchResults[targetIndex] = []
     delete targetSearchPages[targetIndex]
+		targetSearchLoading[targetIndex] = false
     return
   }
+	targetSearchTimers.set(targetIndex, setTimeout(() => void runUserSearch(targetIndex, query, 1, requestID), searchDelayMS))
+}
+
+function searchUserPage(targetIndex: number, page: number) {
+	const query = String(targetSearchQueries[targetIndex] || '').trim()
+	if (!query) return
+	const previous = targetSearchTimers.get(targetIndex)
+	if (previous) clearTimeout(previous)
+	const requestID = (targetSearchRequestIDs.get(targetIndex) ?? 0) + 1
+	targetSearchRequestIDs.set(targetIndex, requestID)
+	void runUserSearch(targetIndex, query, page, requestID)
+}
+
+async function runUserSearch(targetIndex: number, query: string, page: number, requestID: number) {
+	if (!plan.value) return
   targetSearchLoading[targetIndex] = true
   try {
     const response = await searchRelayPlanningUsers({
@@ -426,12 +530,14 @@ async function searchUsersForTarget(targetIndex: number, value: string | number,
       page_size: 20,
     })
     const result = response.data.data
-    targetSearchResults[targetIndex] = result?.items ?? []
-    targetSearchPages[targetIndex] = { total: result?.total ?? 0, page: result?.page ?? page, page_size: result?.page_size ?? 20 }
+		if (targetSearchRequestIDs.get(targetIndex) === requestID) {
+			targetSearchResults[targetIndex] = result?.items ?? []
+			targetSearchPages[targetIndex] = { total: result?.total ?? 0, page: result?.page ?? page, page_size: result?.page_size ?? 20 }
+		}
   } catch (err: any) {
-    ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.searchFailed'))
+		if (targetSearchRequestIDs.get(targetIndex) === requestID) ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.searchFailed'))
   } finally {
-    targetSearchLoading[targetIndex] = false
+		if (targetSearchRequestIDs.get(targetIndex) === requestID) targetSearchLoading[targetIndex] = false
   }
 }
 
@@ -577,6 +683,7 @@ async function replan(mapping: RelayPlanningMapping) {
 }
 
 function resetPlan() {
+	clearSearchState()
   plan.value = null
   activeMappingID.value = null
   selectedUserIDs.value = new Set()
@@ -629,6 +736,8 @@ onMounted(async () => {
     error.value = err.response?.data?.message || err.message || t('relayPlanning.loadFailed')
   }
 })
+
+onBeforeUnmount(clearSearchState)
 </script>
 
 <template>
@@ -727,14 +836,35 @@ onMounted(async () => {
             <div v-for="assignment in plan.assignments" :key="assignment.index" class="rounded-md border border-slate-200 p-3">
               <div class="flex justify-between gap-3 text-sm font-medium"><span class="min-w-0 break-words">{{ assignment.target_group_name || `${t('relayPlanning.group')} ${assignment.index + 1}` }}<span v-if="assignment.target_group_id" class="text-slate-500"> (#{{ assignment.target_group_id }})</span></span><span class="shrink-0">${{ assignment.total_cost.toFixed(2) }}</span></div>
               <div class="mt-2 text-xs text-slate-500">{{ t('relayPlanning.memberCount', { count: assignment.user_ids?.length ?? 0 }) }}</div>
+				<div class="mt-3 border-t border-slate-200 pt-3">
+					<div class="text-xs font-semibold text-slate-500">{{ t('relayPlanning.desiredAccounts') }}</div>
+					<div v-if="assignment.accounts.length" class="mt-2 space-y-2">
+						<div v-for="(account, accountIndex) in assignment.accounts" :key="account.id" class="flex items-center justify-between gap-3 text-sm">
+							<span class="min-w-0"><span class="block break-words font-medium">{{ account.name }} (#{{ account.id }})</span><span class="block text-xs" :class="account.status !== 'active' || !account.schedulable ? 'text-amber-700' : 'text-slate-500'">{{ account.type }} · {{ account.status }} · {{ account.schedulable ? t('relayPlanning.schedulable') : t('relayPlanning.notSchedulable') }}</span></span>
+							<span class="flex shrink-0 gap-1">
+								<el-tooltip :content="t('relayPlanning.moveUp')"><el-button circle size="small" :icon="CaretTop" :disabled="accountIndex === 0" :aria-label="t('relayPlanning.moveUp')" @click="reorderPreviewAccounts(assignment.index, account.id, -1)" /></el-tooltip>
+								<el-tooltip :content="t('relayPlanning.moveDown')"><el-button circle size="small" :icon="CaretBottom" :disabled="accountIndex === assignment.accounts.length - 1" :aria-label="t('relayPlanning.moveDown')" @click="reorderPreviewAccounts(assignment.index, account.id, 1)" /></el-tooltip>
+								<el-tooltip :content="t('relayPlanning.remove')"><el-button :data-testid="`remove-target-account-${assignment.index}-${account.id}`" circle size="small" type="danger" plain :icon="Delete" :aria-label="t('relayPlanning.remove')" @click="removeAccountFromPreviewTarget(assignment.index, account.id)" /></el-tooltip>
+							</span>
+						</div>
+					</div>
+					<el-empty v-else :description="t('relayPlanning.noDesiredAccounts')" :image-size="48" />
+					<el-input :data-testid="`target-account-search-${assignment.index}`" :model-value="accountSearchQueries[previewAccountSearchKey(assignment.index)] || ''" :loading="accountSearchLoading[previewAccountSearchKey(assignment.index)]" clearable class="mt-3" :placeholder="t('relayPlanning.searchAccounts')" @input="(value) => schedulePreviewAccountSearch(assignment.index, value)" />
+					<div v-if="accountSearchResults[previewAccountSearchKey(assignment.index)]?.length" class="mt-2 divide-y divide-slate-100 border-y border-slate-100">
+						<div v-for="account in accountSearchResults[previewAccountSearchKey(assignment.index)]" :key="account.id" class="flex items-center justify-between gap-3 py-2 text-sm">
+							<span class="min-w-0"><span class="block truncate font-medium">{{ account.name }} (#{{ account.id }})</span><span class="block truncate text-xs" :class="account.status !== 'active' || !account.schedulable ? 'text-amber-700' : 'text-slate-500'">{{ account.type }} · {{ account.status }} · {{ account.schedulable ? t('relayPlanning.schedulable') : t('relayPlanning.notSchedulable') }}</span></span>
+							<el-tooltip :content="t('relayPlanning.add')"><el-button :data-testid="`add-target-account-${assignment.index}-${account.id}`" circle size="small" type="primary" :icon="Plus" :disabled="assignment.accounts.some((item) => item.id === account.id)" :aria-label="t('relayPlanning.add')" @click="addAccountToPreviewTarget(assignment.index, account)" /></el-tooltip>
+						</div>
+					</div>
+				</div>
 					<div v-if="assignment.user_ids?.length" class="mt-2 space-y-2 text-sm text-slate-700"><div v-for="userID in assignment.user_ids" :key="userID"><div class="flex items-center justify-between gap-2"><span class="min-w-0 break-words">{{ candidateLabel(userID) }}</span><el-tooltip v-if="activeMappingID" :content="t('relayPlanning.removeMember')"><el-button :data-testid="`remove-member-${userID}`" circle size="small" type="danger" plain :icon="Delete" :aria-label="t('relayPlanning.removeMember')" @click="moveCandidate(userID, null)" /></el-tooltip></div><div v-if="memberActions[String(userID)]" class="mt-1"><el-radio-group v-model="memberActions[String(userID)].mode" size="small"><el-radio-button value="move_here">{{ t('relayPlanning.moveHere') }}</el-radio-button><el-radio-button value="add_additionally">{{ t('relayPlanning.addAdditionally') }}</el-radio-button></el-radio-group><div class="mt-1 text-xs text-amber-700">{{ managedAssignmentsByUser[String(userID)]?.map((item) => `${item.department_name || item.department_id} · #${item.target_group_id}`).join(', ') }}</div><div v-if="memberActions[String(userID)].mode === 'add_additionally'" class="mt-1 text-xs text-amber-700">{{ t('relayPlanning.addAdditionallyWarning') }}</div></div></div></div>
-              <el-input :data-testid="`target-user-search-${assignment.index}`" :model-value="targetSearchQueries[assignment.index] || ''" :loading="targetSearchLoading[assignment.index]" clearable class="mt-3" :placeholder="t('relayPlanning.searchUsers')" @input="(value) => searchUsersForTarget(assignment.index, value)" />
+              <el-input :data-testid="`target-user-search-${assignment.index}`" :model-value="targetSearchQueries[assignment.index] || ''" :loading="targetSearchLoading[assignment.index]" clearable class="mt-3" :placeholder="t('relayPlanning.searchUsers')" @input="(value) => scheduleUserSearch(assignment.index, value)" />
               <div v-if="targetSearchResults[assignment.index]?.length" class="mt-2 divide-y divide-slate-100 border-y border-slate-100">
                 <div v-for="item in targetSearchResults[assignment.index]" :key="item.user_id" class="flex items-center justify-between gap-3 py-2 text-sm">
                   <span class="min-w-0"><span class="block truncate font-medium">{{ item.username || item.email }}</span><span class="block truncate text-xs text-slate-500">{{ item.department?.display_path || item.department?.name || '-' }}</span><span v-if="item.disabled_reason" class="block text-xs text-amber-700">{{ item.disabled_reason }}</span></span>
                   <el-button :data-testid="`add-searched-user-${assignment.index}-${item.user_id}`" size="small" type="primary" :disabled="!item.selectable" @click="addSearchedUser(assignment.index, item)">{{ t('relayPlanning.add') }}</el-button>
                 </div>
-                <el-pagination v-if="targetSearchPages[assignment.index]?.total > targetSearchPages[assignment.index]?.page_size" :data-testid="`target-user-pagination-${assignment.index}`" class="mt-2 justify-end" small background layout="prev, pager, next" :current-page="targetSearchPages[assignment.index].page" :page-size="targetSearchPages[assignment.index].page_size" :total="targetSearchPages[assignment.index].total" @current-change="(page) => searchUsersForTarget(assignment.index, targetSearchQueries[assignment.index] || '', page)" />
+                <el-pagination v-if="targetSearchPages[assignment.index]?.total > targetSearchPages[assignment.index]?.page_size" :data-testid="`target-user-pagination-${assignment.index}`" class="mt-2 justify-end" small background layout="prev, pager, next" :current-page="targetSearchPages[assignment.index].page" :page-size="targetSearchPages[assignment.index].page_size" :total="targetSearchPages[assignment.index].total" @current-change="(page) => searchUserPage(assignment.index, page)" />
               </div>
             </div>
           </div>
@@ -809,7 +939,7 @@ onMounted(async () => {
 						</div>
 					</div>
 					<el-empty v-else :description="t('relayPlanning.noDesiredAccounts')" :image-size="48" />
-					<el-input :data-testid="`account-search-${accountMapping.id}-${pool.target_group_id}`" :model-value="accountSearchQueries[accountSearchKey(accountMapping.id, pool.target_group_id)] || ''" :loading="accountSearchLoading[accountSearchKey(accountMapping.id, pool.target_group_id)]" clearable class="mt-3" :placeholder="t('relayPlanning.searchAccounts')" @input="(value) => searchAccountsForTarget(accountMapping as RelayPlanningMapping, pool.target_group_id, value)" />
+					<el-input :data-testid="`account-search-${accountMapping.id}-${pool.target_group_id}`" :model-value="accountSearchQueries[accountSearchKey(accountMapping.id, pool.target_group_id)] || ''" :loading="accountSearchLoading[accountSearchKey(accountMapping.id, pool.target_group_id)]" clearable class="mt-3" :placeholder="t('relayPlanning.searchAccounts')" @input="(value) => scheduleManagedAccountSearch(accountMapping, pool.target_group_id, value)" />
 					<div v-if="accountSearchResults[accountSearchKey(accountMapping.id, pool.target_group_id)]?.length" class="mt-2 divide-y divide-slate-100 border-y border-slate-100">
 						<div v-for="account in accountSearchResults[accountSearchKey(accountMapping.id, pool.target_group_id)]" :key="account.id" class="flex items-center justify-between gap-3 py-2 text-sm">
 							<span class="min-w-0"><span class="block truncate font-medium">{{ account.name }} (#{{ account.id }})</span><span class="block truncate text-xs" :class="account.status !== 'active' || !account.schedulable ? 'text-amber-700' : 'text-slate-500'">{{ account.type }} · {{ account.status }} · {{ account.schedulable ? t('relayPlanning.schedulable') : t('relayPlanning.notSchedulable') }}</span></span>

@@ -420,7 +420,7 @@ func TestRelayPlanningExecuteUsesOnlyEachUsersExplicitSource(t *testing.T) {
 	}
 }
 
-func TestRelayPlanningCreateInheritsTemplateAccountsBeforeActivationAndMigration(t *testing.T) {
+func TestRelayPlanningCreateInheritsTemplateAccountsAndAppliesReviewedOverride(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	providerConfig := client.RelayProvider.Create().
@@ -453,16 +453,48 @@ func TestRelayPlanningCreateInheritsTemplateAccountsBeforeActivationAndMigration
 	router.POST("/admin/relay-planning/preview", handler.Preview)
 	router.POST("/admin/relay-planning/execute", handler.Execute)
 	previewPayload := fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"source_group_id":20,"weekly_cost_target":2500,"group_count":1,"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d]}]}`, providerConfig.ID, alice.ID, alice.ID)
-	fingerprint := previewRelayPlanningFingerprint(t, router, "/admin/relay-planning/preview", previewPayload)
-	payload := fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"source_group_id":20,"weekly_cost_target":2500,"group_count":1,"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d]}],"expected_relationship_fingerprint":%q,"operation_key":"create-accounts-1"}`, providerConfig.ID, alice.ID, alice.ID, fingerprint)
-	request := httptest.NewRequest(http.MethodPost, "/admin/relay-planning/execute", strings.NewReader(payload))
+	request := httptest.NewRequest(http.MethodPost, "/admin/relay-planning/preview", strings.NewReader(previewPayload))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
+		t.Fatalf("default preview status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	var previewBody struct {
+		Data struct {
+			Assignments []struct {
+				DesiredAccounts []relayplanning.AccountIntent `json:"desired_accounts"`
+				Accounts        []relayplanning.TargetAccount `json:"accounts"`
+			} `json:"assignments"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &previewBody); err != nil {
+		t.Fatalf("decode default preview response: %v", err)
+	}
+	if len(previewBody.Data.Assignments) != 1 || len(previewBody.Data.Assignments[0].DesiredAccounts) != 2 || len(previewBody.Data.Assignments[0].Accounts) != 2 {
+		t.Fatalf("default preview Accounts = %+v, want both inherited Template Accounts", previewBody.Data.Assignments)
+	}
+
+	reviewedPreviewPayload := fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"source_group_id":20,"weekly_cost_target":2500,"group_count":1,"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d],"desired_accounts":[{"account_id":12,"priority":1}]}]}`, providerConfig.ID, alice.ID, alice.ID)
+	fingerprint := previewRelayPlanningFingerprint(t, router, "/admin/relay-planning/preview", reviewedPreviewPayload)
+	stalePayload := fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"source_group_id":20,"weekly_cost_target":2500,"group_count":1,"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d],"desired_accounts":[{"account_id":11,"priority":1}]}],"expected_relationship_fingerprint":%q,"operation_key":"create-accounts-stale"}`, providerConfig.ID, alice.ID, alice.ID, fingerprint)
+	request = httptest.NewRequest(http.MethodPost, "/admin/relay-planning/execute", strings.NewReader(stalePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict || len(provider.events) != 0 {
+		t.Fatalf("stale reviewed Accounts status/events = %d/%v, want 409 and no Relay writes, body=%s", response.Code, provider.events, response.Body.String())
+	}
+
+	payload := fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"source_group_id":20,"weekly_cost_target":2500,"group_count":1,"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d],"desired_accounts":[{"account_id":12,"priority":1}]}],"expected_relationship_fingerprint":%q,"operation_key":"create-accounts-1"}`, providerConfig.ID, alice.ID, alice.ID, fingerprint)
+	request = httptest.NewRequest(http.MethodPost, "/admin/relay-planning/execute", strings.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
 		t.Fatalf("create status = %d, want 200, body=%s", response.Code, response.Body.String())
 	}
-	wantPrefix := []string{"duplicate:100", "account:11:100:1", "account:12:100:2", "group-status:100:active", "subscription-add:42:100"}
+	wantPrefix := []string{"duplicate:100", "account:12:100:1", "group-status:100:active", "subscription-add:42:100"}
 	if len(provider.events) < len(wantPrefix) || fmt.Sprint(provider.events[:len(wantPrefix)]) != fmt.Sprint(wantPrefix) {
 		t.Fatalf("creation events = %v, want prefix %v", provider.events, wantPrefix)
 	}
@@ -474,16 +506,16 @@ func TestRelayPlanningCreateInheritsTemplateAccountsBeforeActivationAndMigration
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode creation response: %v", err)
 	}
-	if body.Data.Mapping == nil || len(body.Data.Mapping.AccountPools) != 1 || len(body.Data.Mapping.AccountPools[0].Current) != 2 {
-		t.Fatalf("creation Account readback = %+v, want two Accounts bound to the new Target", body.Data.Mapping)
+	if body.Data.Mapping == nil || len(body.Data.Mapping.AccountPools) != 1 || len(body.Data.Mapping.AccountPools[0].Current) != 1 || body.Data.Mapping.AccountPools[0].Current[0].ID != 12 {
+		t.Fatalf("creation Account readback = %+v, want only reviewed Account 12 bound to the new Target", body.Data.Mapping)
 	}
 	persisted := client.RelayGroupMapping.Query().OnlyX(ctx)
 	if !persisted.AccountManagementInitialized {
 		t.Fatal("new mapping did not initialize Account management")
 	}
 	gotDesired := persisted.DesiredAccounts["100"]
-	if len(gotDesired) != 2 || gotDesired[0]["account_id"] != 11 || gotDesired[0]["priority"] != 1 || gotDesired[1]["account_id"] != 12 || gotDesired[1]["priority"] != 2 {
-		t.Fatalf("new mapping desired accounts = %+v, want Account 11/1 and 12/2", gotDesired)
+	if len(gotDesired) != 1 || gotDesired[0]["account_id"] != 12 || gotDesired[0]["priority"] != 1 {
+		t.Fatalf("new mapping desired accounts = %+v, want reviewed Account 12/1", gotDesired)
 	}
 }
 

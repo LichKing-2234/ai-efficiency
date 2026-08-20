@@ -25,6 +25,16 @@ production release.
   Preview both revalidate the local-to-Relay identity against the selected
   Provider; a stale or cross-Provider Relay ID cannot be assigned by bypassing
   the frontend.
+- Each Preview Target exposes its reviewed Account order. A new Target defaults
+  to the Template Group's same-Platform Account IDs and priorities; an existing
+  Target defaults to its saved desired state, or its current Relay state when
+  Account management has not been initialized. The administrator may search
+  all same-Platform Account types and add, remove, or reorder them before
+  Confirm. An explicit empty Account list keeps that Target inactive and blocks
+  member migration for only that Target.
+- User and Account text search waits for a short typing pause before querying.
+  Pagination remains immediate, and a response for an older query cannot
+  replace the newest query's results.
 - Preview is read-only. Group creation, membership changes, source removal,
   API-Key binding, and adoption require the final Confirm action.
 
@@ -57,11 +67,13 @@ the current sub2api Account summary does not, so AI Efficiency does not infer
 compatibility from credentials or provider-private configuration.
 
 After initialization, the saved desired Account order is applied only through
-Confirm. Reconciliation adds, removes, or changes only the selected target
-Group relationship while preserving every unrelated Account-to-Group binding.
-A newly duplicated target inherits the Template Account IDs and priorities,
-verifies those relationships, and becomes active before member migration. An
-Account failure blocks only its target; other targets continue.
+Confirm. A Preview edit becomes the reviewed desired state for that Confirm;
+it is not written to Relay or persisted separately. Reconciliation adds,
+removes, or changes only the selected target Group relationship while
+preserving every unrelated Account-to-Group binding. A newly duplicated target
+uses the reviewed Account order, which defaults to the Template Account IDs and
+priorities, verifies those relationships, and becomes active before member
+migration. An Account failure blocks only its target; other targets continue.
 Account reconciliation re-reads the latest Account relationships for each
 target before mutation so one Account can be reused safely across targets. An
 existing target whose reviewed desired Account pool is empty has its remaining
