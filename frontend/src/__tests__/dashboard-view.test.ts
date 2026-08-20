@@ -1292,17 +1292,28 @@ describe('DashboardView', () => {
     const router = createTestRouter()
     await router.push('/usage')
     await router.isReady()
-    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    const wrapper = withTeleportedContent(mount(DashboardView, { global: { plugins: [createPinia(), router] } }))
     await flushPromises()
 
     expect(wrapper.find('[data-testid="usage-subscription-reset-42"]').exists()).toBe(true)
     await vi.waitFor(() => {
       const pool = wrapper.find('[data-testid="usage-pool-42"]')
       expect(pool.exists()).toBe(true)
+      expect(pool.text()).toContain('OAuth pool')
       expect(pool.text()).toContain('37.5%')
-      expect(pool.text()).toContain('3 / 4')
-      expect(pool.text()).toContain('not your personal Used / Quota')
+      expect(pool.text()).not.toContain('3 / 4')
     })
+
+    await wrapper.get('[data-testid="usage-pool-42"]').trigger('focus')
+    await vi.waitFor(() => {
+      const details = wrapper.get('[data-testid="usage-pool-details-42"]')
+      expect(details.isVisible()).toBe(true)
+      expect(details.text()).toContain('3 / 4')
+      expect(details.text()).toContain('not your personal Used / Quota')
+      expect(details.text()).toContain('Next pool reset')
+      expect(details.text()).toContain('Snapshot as of')
+    })
+    wrapper.unmount()
   })
 
   it('constrains a single quota card to an intentional readable width', async () => {

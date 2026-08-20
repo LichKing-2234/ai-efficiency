@@ -383,6 +383,7 @@ const zhCN = {
   'usageDashboard.resetInMinutes': '{count} 分钟后',
   'usageDashboard.resetInHours': '{count} 小时后',
   'usageDashboard.resetInDays': '{count} 天后',
+  'usageDashboard.poolUsageBadge': 'OAuth 号池',
   'usageDashboard.poolUsageTitle': '7 天滚动窗口平均使用率',
   'usageDashboard.poolUsageCoverage': '有效 OAuth 账号 {valid} / {total}（active OAuth 账号）',
   'usageDashboard.poolUsageHelp': '这是号池快照的平均使用率，不代表个人“已使用 / 配额”。',

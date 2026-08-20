@@ -526,6 +526,25 @@ def mock_matrix_api(route, role):
                 "source_status": "ok",
             },
         },
+        "/api/v1/user/usage/group-pool-usage": {
+            "group_pool_usage": {
+                "status": "ok",
+                "groups": [{
+                    "group_id": "group-1",
+                    "status": "ok",
+                    "average_weekly_utilization": 37.5,
+                    "valid_oauth_accounts": 3,
+                    "total_active_oauth_accounts": 4,
+                    "next_reset_at": "2026-08-23T08:00:00Z",
+                    "as_of": "2026-08-20T08:00:00Z",
+                }],
+            },
+            "pool_usage_freshness": {
+                "as_of": "2026-08-20T08:00:00Z",
+                "cache_status": "uncached",
+                "source_status": "ok",
+            },
+        },
         "/api/v1/user/quota-reset/options": {
             "provider_id": 2,
             "groups": [{
@@ -1258,7 +1277,18 @@ def exercise_route_control(page, exercise):
             "Member Activity exposed personal reporting guidance"
         )
     if exercise == "usage-personal":
+        pool = page.locator("[data-testid='usage-pool-group-1']")
+        mobile = page.evaluate("window.innerWidth < 768")
+        pool.click() if mobile else pool.hover()
+        details = page.locator("[data-testid='usage-pool-details-group-1']")
+        details.wait_for(state="visible")
+        pool_details_visible = "not your personal Used / Quota" in details.inner_text()
+        if not mobile:
+            page.mouse.move(0, 0)
+            details.wait_for(state="hidden")
         page.locator("[data-testid='open-quota-reset-request']").click()
+        if mobile:
+            details.wait_for(state="hidden")
         group_select = page.locator("[data-testid='quota-reset-group-select']")
         group_select.wait_for(state="visible")
         starts_empty = page.locator("[data-testid='quota-reset-current-usage']").count() == 0
@@ -1272,7 +1302,9 @@ def exercise_route_control(page, exercise):
             and page.locator("[data-testid='quota-reset-current-usage']").is_visible()
         )
         page.keyboard.press("Escape")
-        return starts_empty and selected, "Quota reset request did not require an explicit access group"
+        return starts_empty and selected and pool_details_visible, (
+            "Quota reset selection or OAuth pool details interaction failed"
+        )
     if exercise == "team-views":
         page.locator("[data-testid='team-overview-organization-view']").click()
         organization = page.locator("[data-testid='team-overview-organization-tree']")

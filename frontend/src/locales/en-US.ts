@@ -381,6 +381,7 @@ const enUS = {
   'usageDashboard.resetInMinutes': 'in {count} min',
   'usageDashboard.resetInHours': 'in {count} hr',
   'usageDashboard.resetInDays': 'in {count} days',
+  'usageDashboard.poolUsageBadge': 'OAuth pool',
   'usageDashboard.poolUsageTitle': '7-day rolling average utilization',
   'usageDashboard.poolUsageCoverage': 'Valid OAuth accounts {valid} / {total} active OAuth accounts',
   'usageDashboard.poolUsageHelp': 'This is the account-pool snapshot average, not your personal Used / Quota.',
