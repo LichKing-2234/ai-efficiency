@@ -4,6 +4,7 @@ import { Check, Connection, Refresh, Setting } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppLayout from '@/components/AppLayout.vue'
 import { useI18n } from '@/i18n'
+import { relayPlanningMessages } from '@/locales/relayPlanning'
 import { listAdminUserDepartmentOptions, listAdminUserSubscriptionOptions } from '@/api/adminUsers'
 import {
   executeRelayPlan,
@@ -16,8 +17,10 @@ import {
   type RelayPlanningMapping,
   type RelayPlanningPlan,
 } from '@/api/relayPlanning'
+import { createFeatureTranslator } from '@/utils/featureI18n'
 
-const { t, locale } = useI18n()
+const { t: baseT, locale } = useI18n()
+const t = createFeatureTranslator(locale, baseT, 'relayPlanning.', relayPlanningMessages)
 
 const loading = ref(false)
 const confirming = ref(false)
@@ -317,7 +320,7 @@ onMounted(async () => {
     <div class="mx-auto max-w-7xl space-y-6">
       <header class="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-blue-600">
+          <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-blue-700">
             <el-icon><Connection /></el-icon>
             {{ t('relayPlanning.eyebrow') }}
           </div>
@@ -376,7 +379,7 @@ onMounted(async () => {
           <template #default>{{ plan.warnings.map(translateWarning).join('\n') }}</template>
         </el-alert>
         <div class="rounded-lg border border-slate-200 bg-white p-4">
-          <div class="mb-3 text-sm font-semibold text-slate-900">{{ t('relayPlanning.candidatesRank') }}</div>
+          <div class="mb-2 text-sm font-semibold text-slate-900">{{ t('relayPlanning.candidatesRank') }}</div>
           <div class="space-y-3 md:hidden">
             <article v-for="candidate in plan.candidates" :key="candidate.user_id" class="rounded-md border border-slate-200 p-3">
               <div class="flex items-start justify-between gap-3">
@@ -401,7 +404,7 @@ onMounted(async () => {
           </el-table>
         </div>
         <div class="rounded-lg border border-slate-200 bg-white p-4">
-          <div class="mb-3 text-sm font-semibold text-slate-900">{{ t('relayPlanning.proposedGroups') }}</div>
+          <div class="mb-2 text-sm font-semibold text-slate-900">{{ t('relayPlanning.proposedGroups') }}</div>
           <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             <div v-for="assignment in plan.assignments" :key="assignment.index" class="rounded-md border border-slate-200 p-3"><div class="flex justify-between gap-3 text-sm font-medium"><span class="min-w-0 break-words">{{ assignment.target_group_name || `${t('relayPlanning.group')} ${assignment.index + 1}` }}<span v-if="assignment.target_group_id" class="text-slate-500"> (#{{ assignment.target_group_id }})</span></span><span class="shrink-0">${{ assignment.total_cost.toFixed(2) }}</span></div><div class="mt-2 text-xs text-slate-500">{{ t('relayPlanning.memberCount', { count: assignment.user_ids?.length ?? 0 }) }}</div><div v-if="assignment.user_ids?.length" class="mt-2 space-y-1 text-sm text-slate-700"><div v-for="userID in assignment.user_ids" :key="userID" class="break-words">{{ candidateLabel(userID) }}</div></div></div>
           </div>
@@ -424,7 +427,7 @@ onMounted(async () => {
       </section>
 
       <section class="rounded-lg border border-slate-200 bg-white p-4">
-        <div class="mb-3 flex items-center justify-between"><div class="text-sm font-semibold text-slate-900">{{ t('relayPlanning.managedMappings') }}</div><span class="text-xs text-slate-500">{{ t('relayPlanning.groupIdsAuthoritative') }}</span></div>
+        <div class="mb-2 flex items-center justify-between"><div class="text-sm font-semibold text-slate-900">{{ t('relayPlanning.managedMappings') }}</div><span class="text-xs text-slate-500">{{ t('relayPlanning.groupIdsAuthoritative') }}</span></div>
         <el-empty v-if="!mappings.length" :description="t('relayPlanning.noMappings')" />
         <div v-if="mappings.length" class="space-y-3 md:hidden">
           <article v-for="mapping in mappings" :key="mapping.id" class="rounded-md border border-slate-200 p-3">

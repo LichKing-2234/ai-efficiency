@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import enUS from '@/locales/en-US'
 import zhCN from '@/locales/zh-CN'
+import { relayPlanningMessages } from '@/locales/relayPlanning'
+import { directoryOffboardingMessages } from '@/locales/directoryOffboarding'
 import { createI18nControllerForTest, type Locale } from '@/i18n'
 import type { Messages } from '@/locales/en-US'
 
@@ -213,8 +215,16 @@ describe('i18n locale loading', () => {
   })
 
   it('keeps both real dictionaries at the same complete key contract', () => {
-    const englishKeys = Object.keys(enUS).sort()
-    const chineseKeys = Object.keys(zhCN).sort()
+    const englishKeys = [
+      ...Object.keys(enUS),
+      ...Object.keys(relayPlanningMessages['en-US']),
+      ...Object.keys(directoryOffboardingMessages['en-US']),
+    ].sort()
+    const chineseKeys = [
+      ...Object.keys(zhCN),
+      ...Object.keys(relayPlanningMessages['zh-CN']),
+      ...Object.keys(directoryOffboardingMessages['zh-CN']),
+    ].sort()
 
     expect(englishKeys).toHaveLength(1137)
     expect(chineseKeys).toHaveLength(1137)

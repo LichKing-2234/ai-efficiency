@@ -105,7 +105,7 @@ const router = createRouter({
     {
       path: '/admin/relay-planning',
       name: 'AdminRelayPlanning',
-      component: () => import('@/views/admin/RelayPlanningView.vue'),
+      component: () => import('@/router/relayPlanningRoute').then(({ loadRelayPlanningView }) => loadRelayPlanningView()),
       meta: { requireAdmin: true },
     },
     {

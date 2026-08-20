@@ -88,18 +88,13 @@ The pre-migration baseline at commit `2e1c2884` is:
 
 | Aggregate | Baseline gzip | Node 20 migration measurement | Enforced maximum |
 | --- | ---: | ---: | ---: |
-| Initial shell | 67,521 bytes | 72,603 bytes | 73,000 bytes |
-| Default English `/usage` | 96,562 bytes | 157,902 bytes | 163,000 bytes |
+| Initial shell | 67,521 bytes | 72,603 bytes | 72,800 bytes |
+| Default English `/usage` | 96,562 bytes | 157,902 bytes | 159,500 bytes |
 | Complex `/admin/users` route | 100,309 bytes | 245,974 bytes | 253,909 bytes |
 
-`frontend/scripts/measure-build.mjs` enforces these exact ceilings. The initial
-shell ceiling includes the authenticated admin navigation and its route table;
-the current 73,000-byte ceiling accounts for the Relay Planning admin entry
-while keeping route views lazy-loaded. The `/usage` ceiling accounts for the
-Relay Planning bilingual messages that are part of the existing language
-dictionary closure. A hosted-runtime measurement that exceeds a ceiling
-remains an application bundle regression to remove, not a reason to expand the
-contract.
+`frontend/scripts/measure-build.mjs` enforces these exact ceilings. A
+hosted-runtime measurement that exceeds them is an application bundle
+regression to remove, not a reason to expand the contract.
 Measured production builds must also prove that Element Plus remains on demand,
 locale dictionaries remain route-safe, and Chart.js stays outside the initial
 dashboard closure until chart data is ready.
