@@ -1359,6 +1359,8 @@ func stalePlanFromPreviewError(expected string, previewErr error) *StalePlanErro
 	difference := "reviewed Relay relationship facts changed or are no longer available"
 	message := strings.ToLower(previewErr.Error())
 	switch {
+	case strings.Contains(message, "cannot be added to a target group"):
+		difference = "Relay user mappings changed"
 	case strings.Contains(message, "migration source") || strings.Contains(message, "source group"):
 		difference = "migration source Group changed or is no longer available"
 	case strings.Contains(message, "template group"):
@@ -2205,7 +2207,7 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 		if targetGroupID <= 0 {
 			continue
 		}
-		member := MemberResult{Action: "remove", UserID: userID, TargetGroupID: targetGroupID, Subscription: "skipped", SourceRemoval: "skipped"}
+		member := completedSubscriptionFromState(mapping.OperationState, "member:"+key, MemberResult{Action: "remove", UserID: userID, TargetGroupID: targetGroupID, Subscription: "skipped", SourceRemoval: "skipped"})
 		local, userErr := s.client.User.Get(ctx, userID)
 		if userErr != nil || local.RelayUserID == nil || *local.RelayUserID <= 0 {
 			member.Error = "managed user has no valid Relay mapping"
@@ -2259,6 +2261,9 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 				}
 			}
 			member := MemberResult{UserID: userID, TargetGroupID: targetID, Subscription: "skipped", SourceRemoval: "skipped"}
+			if retry {
+				member = completedSubscriptionFromState(mapping.OperationState, "member:"+key, member)
+			}
 			if reason := blockedTargets[targetID]; reason != "" {
 				member.Error = reason
 				memberResults = append(memberResults, member)
@@ -2650,16 +2655,25 @@ func executionState(operationKey string, groups []GroupResult, members []MemberR
 	return state
 }
 
+func completedSubscriptionFromState(state map[string]map[string]string, key string, member MemberResult) MemberResult {
+	if state[key]["subscription"] == "succeeded" {
+		member.Subscription = "succeeded"
+	}
+	return member
+}
+
 func executeMemberMigration(ctx context.Context, p relay.Provider, assigner subscriptionAssigner, remover subscriptionRemover, binder relay.APIKeyGroupBinder, candidate *Candidate, targetGroupID, fromGroupID int64, member MemberResult) MemberResult {
-	if assigner == nil {
-		member.Error = "relay provider does not support subscription assignment"
-		return member
+	if member.Subscription != "succeeded" {
+		if assigner == nil {
+			member.Error = "relay provider does not support subscription assignment"
+			return member
+		}
+		if err := assigner.AssignSubscriptionForUser(ctx, candidate.RelayUserID, targetGroupID, defaultValidityDays); err != nil && !isAlreadyAssignedError(err) {
+			member.Error = err.Error()
+			return member
+		}
+		member.Subscription = "succeeded"
 	}
-	if err := assigner.AssignSubscriptionForUser(ctx, candidate.RelayUserID, targetGroupID, defaultValidityDays); err != nil && !isAlreadyAssignedError(err) {
-		member.Error = err.Error()
-		return member
-	}
-	member.Subscription = "succeeded"
 	if fromGroupID <= 0 || fromGroupID == targetGroupID {
 		return member
 	}

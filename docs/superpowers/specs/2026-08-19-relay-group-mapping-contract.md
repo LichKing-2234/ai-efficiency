@@ -73,7 +73,8 @@ target subscription is removed. Without a saved Source, only the target
 subscription is removed. `Move Here` transfers one member from one explicit
 same-Provider, same-Platform mapping. `Add Additionally` preserves the old
 mapping, subscription, and API-Key bindings and adds only the new target
-subscription. Department changes never trigger either action automatically.
+subscription. The UI warns that this leaves the user in multiple managed
+Account pools. Department changes never trigger either action automatically.
 
 ## Relationship-Bound Confirmation
 
@@ -123,6 +124,7 @@ Once a matching relationship preflight has completed, later upstream failures
 are recorded as normal per-step retry state rather than relabeled as a stale
 Preview. A retry obtains a fresh Preview fingerprint while retaining the saved
 operation state and actual previous target Group needed by unfinished steps.
+Completed subscription steps are not submitted again during that retry.
 Destination and source mapping changes are committed in one local transaction.
 The execution response reports one persistence result per affected mapping; a
 failure rolls back every local mapping change and returns structured retryable

@@ -454,12 +454,18 @@ describe('RelayPlanningView', () => {
 		await wrapper.get('[data-testid="add-searched-user-0-2"]').trigger('click')
 		await flushPromises()
 
-		expect(relayPlanning.previewRelayReplan).toHaveBeenLastCalledWith(9, expect.objectContaining({
-			member_actions: { '2': { mode: 'move_here', from_mapping_id: 8 } },
-		}))
-		expect(wrapper.text()).toContain('Move here')
-		expect(wrapper.text()).toContain('Add additionally')
-	})
+			expect(relayPlanning.previewRelayReplan).toHaveBeenLastCalledWith(9, expect.objectContaining({
+				member_actions: { '2': { mode: 'move_here', from_mapping_id: 8 } },
+			}))
+			expect(wrapper.text()).toContain('Move here')
+			expect(wrapper.text()).toContain('Add additionally')
+			expect(wrapper.text()).not.toContain('multiple managed Account pools')
+			const addAdditionally = wrapper.findAll('.el-radio-button').find((item) => item.text().includes('Add additionally'))
+			expect(addAdditionally).toBeDefined()
+			await addAdditionally!.get('input').setValue(true)
+			await flushPromises()
+			expect(wrapper.text()).toContain('This user will remain in multiple managed Account pools')
+		})
 
 	it('prevents duplicate Rebind submissions while one request is in flight', async () => {
 		const mapping = {

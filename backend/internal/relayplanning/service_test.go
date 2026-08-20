@@ -465,6 +465,9 @@ func TestExecuteReplanRetriesFailedAPIKeyMoveFromPreviousTarget(t *testing.T) {
 	if len(first.Members[0].APIKeys) != 1 || !strings.Contains(first.Members[0].APIKeys[0], "failed") {
 		t.Fatalf("first replan API keys = %#v, want failed move", first.Members[0].APIKeys)
 	}
+	if fake.assignmentCalls != 1 {
+		t.Fatalf("subscription assignments after first attempt = %d, want 1", fake.assignmentCalls)
+	}
 
 	fake.mu.Lock()
 	fake.bindFailures = 0
@@ -493,6 +496,9 @@ func TestExecuteReplanRetriesFailedAPIKeyMoveFromPreviousTarget(t *testing.T) {
 	}
 	if len(fake.bound) != 1 || fake.bound[0] != "501:102" {
 		t.Fatalf("bound API keys = %#v, want [501:102]", fake.bound)
+	}
+	if fake.assignmentCalls != 1 {
+		t.Fatalf("subscription assignments after retry = %d, want successful step not repeated", fake.assignmentCalls)
 	}
 }
 
@@ -529,12 +535,13 @@ func createRelayPlanningDirectorySnapshot(t *testing.T, ctx context.Context, cli
 
 type replanRetryProvider struct {
 	relay.Provider
-	mu            sync.Mutex
-	groups        []relay.Group
-	subscriptions []relay.UserSubscription
-	keys          []relay.APIKey
-	bindFailures  int
-	bound         []string
+	mu              sync.Mutex
+	groups          []relay.Group
+	subscriptions   []relay.UserSubscription
+	keys            []relay.APIKey
+	bindFailures    int
+	bound           []string
+	assignmentCalls int
 }
 
 type relayPlanningProviderResolver func(context.Context, int) (relay.Provider, error)
@@ -578,6 +585,9 @@ func (p *replanRetryProvider) GetUsageStats(context.Context, int64, time.Time, t
 }
 
 func (p *replanRetryProvider) AssignSubscriptionForUser(context.Context, int64, int64, int) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.assignmentCalls++
 	return nil
 }
 

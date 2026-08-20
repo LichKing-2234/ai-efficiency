@@ -1255,6 +1255,19 @@ func TestRelayPlanningConfirmRejectsChangedRelationshipsBeforeRelayWrites(t *tes
 	}
 
 	provider.subscriptions[42] = []relay.UserSubscription{{UserID: 42, GroupID: 20, Status: "active"}}
+	provider.users[42] = &relay.User{ID: 42, Username: "other", Email: "other@example.org"}
+	request = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/relay-planning/mappings/%d/replan/execute", mapping.ID), strings.NewReader(executePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "Relay user mappings changed") {
+		t.Fatalf("identity-invalid confirm status = %d, want categorized 409, body=%s", response.Code, response.Body.String())
+	}
+	if len(provider.events) != 0 || provider.accountUpdates != 0 {
+		t.Fatalf("Relay writes after identity change = events:%v account_updates:%d, want none", provider.events, provider.accountUpdates)
+	}
+
+	provider.users[42] = &relay.User{ID: 42, Username: "alice", Email: alice.Email}
 	provider.groups = []relay.Group{{ID: 10, Name: "Template", Platform: "openai"}, {ID: 101, Name: "Target", Platform: "openai"}}
 	request = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/relay-planning/mappings/%d/replan/execute", mapping.ID), strings.NewReader(executePayload))
 	request.Header.Set("Content-Type", "application/json")
