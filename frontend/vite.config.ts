@@ -52,7 +52,7 @@ function moduleEvidencePlugin(): Plugin {
   }
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
   const measuring = mode === 'measure'
 
   return {
@@ -71,6 +71,9 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
+        ...(command === 'build'
+          ? { 'vue-router': fileURLToPath(new URL('./node_modules/vue-router/dist/vue-router.esm-browser.prod.js', import.meta.url)) }
+          : {}),
       },
     },
     build: {
