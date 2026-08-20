@@ -124,7 +124,8 @@ Once a matching relationship preflight has completed, later upstream failures
 are recorded as normal per-step retry state rather than relabeled as a stale
 Preview. A retry obtains a fresh Preview fingerprint while retaining the saved
 operation state and actual previous target Group needed by unfinished steps.
-Completed subscription steps are not submitted again during that retry.
+Completed subscription steps for the same reviewed Target are not submitted
+again during that retry; choosing a different Target requires a new step.
 Destination and source mapping changes are committed in one local transaction.
 The execution response reports one persistence result per affected mapping; a
 failure rolls back every local mapping change and returns structured retryable

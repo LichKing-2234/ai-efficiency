@@ -35,6 +35,8 @@ type relayPlanningSearchProvider struct {
 	subscriptions          map[int64][]relay.UserSubscription
 	keys                   map[int64][]relay.APIKey
 	usage                  map[int64]relay.TeamUserUsageStats
+	subscriptionError      error
+	allowedGroupsError     error
 	assigned               []string
 	removed                []string
 	removeFailures         map[int64]error
@@ -59,7 +61,17 @@ func (p *relayPlanningSearchProvider) ListPlatformGroups(context.Context) ([]rel
 
 func (p *relayPlanningSearchProvider) ListUserSubscriptions(_ context.Context, userID int64) ([]relay.UserSubscription, error) {
 	p.subscriptionReads.Add(1)
+	if p.subscriptionError != nil {
+		return nil, p.subscriptionError
+	}
 	return append([]relay.UserSubscription(nil), p.subscriptions[userID]...), nil
+}
+
+func (p *relayPlanningSearchProvider) ListAllowedGroupsForUser(context.Context, int64) ([]relay.Group, error) {
+	if p.allowedGroupsError != nil {
+		return nil, p.allowedGroupsError
+	}
+	return nil, nil
 }
 
 func (p *relayPlanningSearchProvider) ListUserAPIKeys(_ context.Context, userID int64) ([]relay.APIKey, error) {
@@ -1268,6 +1280,21 @@ func TestRelayPlanningConfirmRejectsChangedRelationshipsBeforeRelayWrites(t *tes
 	}
 
 	provider.users[42] = &relay.User{ID: 42, Username: "alice", Email: alice.Email}
+	provider.subscriptionError = errors.New("synthetic subscription read failure")
+	provider.allowedGroupsError = errors.New("synthetic allowed-group read failure")
+	request = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/relay-planning/mappings/%d/replan/execute", mapping.ID), strings.NewReader(executePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "subscription relationships changed") {
+		t.Fatalf("subscription-unavailable confirm status = %d, want categorized 409, body=%s", response.Code, response.Body.String())
+	}
+	if len(provider.events) != 0 || provider.accountUpdates != 0 {
+		t.Fatalf("Relay writes after subscription read failure = events:%v account_updates:%d, want none", provider.events, provider.accountUpdates)
+	}
+
+	provider.subscriptionError = nil
+	provider.allowedGroupsError = nil
 	provider.groups = []relay.Group{{ID: 10, Name: "Template", Platform: "openai"}, {ID: 101, Name: "Target", Platform: "openai"}}
 	request = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/relay-planning/mappings/%d/replan/execute", mapping.ID), strings.NewReader(executePayload))
 	request.Header.Set("Content-Type", "application/json")

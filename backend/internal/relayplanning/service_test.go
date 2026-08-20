@@ -500,6 +500,38 @@ func TestExecuteReplanRetriesFailedAPIKeyMoveFromPreviousTarget(t *testing.T) {
 	if fake.assignmentCalls != 1 {
 		t.Fatalf("subscription assignments after retry = %d, want successful step not repeated", fake.assignmentCalls)
 	}
+
+	updated := client.RelayGroupMapping.GetX(ctx, mappingRow.ID)
+	retryState := updated.OperationState
+	retryState["operation"]["status"] = "needs_retry"
+	retryEntry := retryState[fmt.Sprintf("member:%d", user.ID)]
+	retryEntry["subscription"] = "succeeded"
+	retryEntry["source_removal"] = "failed"
+	retryEntry["error"] = "synthetic source removal failure"
+	retryEntry["from_group_id"] = "102"
+	retryEntry["target_group_id"] = "102"
+	client.RelayGroupMapping.UpdateOneID(mappingRow.ID).SetOperationState(retryState).SetStatus("needs_retry").SaveX(ctx)
+	fake.mu.Lock()
+	fake.subscriptions = []relay.UserSubscription{{UserID: 1001, GroupID: 20, Status: "active"}, {UserID: 1001, GroupID: 102, Status: "active"}}
+	fake.mu.Unlock()
+	changedTargetRequest := ExecuteRequest{
+		PreviewRequest: PreviewRequest{Assignments: []Assignment{
+			{Index: 0, UserIDs: []int{user.ID}},
+			{Index: 1, UserIDs: []int{}},
+		}},
+		OperationKey: "replan-op-3",
+	}
+	preview, err = service.Replan(ctx, mappingRow.ID, nil, changedTargetRequest.Assignments, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("changed-target Replan() error = %v", err)
+	}
+	changedTargetRequest.ExpectedRelationshipFingerprint = preview.RelationshipFingerprint
+	if _, err := service.ExecuteReplan(ctx, mappingRow.ID, changedTargetRequest); err != nil {
+		t.Fatalf("changed-target ExecuteReplan() error = %v", err)
+	}
+	if fake.assignmentCalls != 2 {
+		t.Fatalf("subscription assignments after changed-target retry = %d, want new Target assigned", fake.assignmentCalls)
+	}
 }
 
 func createRelayPlanningDirectorySnapshot(t *testing.T, ctx context.Context, client *ent.Client, departmentID string) (*ent.DirectorySource, *ent.DirectorySyncRun) {

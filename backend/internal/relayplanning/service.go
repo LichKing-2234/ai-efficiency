@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -301,6 +302,15 @@ type StalePlanError struct {
 	CurrentFingerprint  string
 	RefreshedPlan       *Plan
 	Differences         []string
+}
+
+type assignmentCandidateError struct {
+	UserID     int
+	Difference string
+}
+
+func (e *assignmentCandidateError) Error() string {
+	return fmt.Sprintf("user %d cannot be added to a target group", e.UserID)
 }
 
 func (e *StalePlanError) Error() string {
@@ -1357,16 +1367,19 @@ func stalePlanFromPreviewError(expected string, previewErr error) *StalePlanErro
 		return nil
 	}
 	difference := "reviewed Relay relationship facts changed or are no longer available"
-	message := strings.ToLower(previewErr.Error())
-	switch {
-	case strings.Contains(message, "cannot be added to a target group"):
-		difference = "Relay user mappings changed"
-	case strings.Contains(message, "migration source") || strings.Contains(message, "source group"):
-		difference = "migration source Group changed or is no longer available"
-	case strings.Contains(message, "template group"):
-		difference = "Template Group changed or is no longer available"
-	case strings.Contains(message, "target group"):
-		difference = "a Target Group changed or is no longer available"
+	var candidateErr *assignmentCandidateError
+	if errors.As(previewErr, &candidateErr) {
+		difference = candidateErr.Difference
+	} else {
+		message := strings.ToLower(previewErr.Error())
+		switch {
+		case strings.Contains(message, "migration source") || strings.Contains(message, "source group"):
+			difference = "migration source Group changed or is no longer available"
+		case strings.Contains(message, "template group"):
+			difference = "Template Group changed or is no longer available"
+		case strings.Contains(message, "target group"):
+			difference = "a Target Group changed or is no longer available"
+		}
 	}
 	return &StalePlanError{ExpectedFingerprint: expected, Differences: []string{difference}}
 }
@@ -2656,7 +2669,9 @@ func executionState(operationKey string, groups []GroupResult, members []MemberR
 }
 
 func completedSubscriptionFromState(state map[string]map[string]string, key string, member MemberResult) MemberResult {
-	if state[key]["subscription"] == "succeeded" {
+	entry := state[key]
+	targetGroupID, err := strconv.ParseInt(entry["target_group_id"], 10, 64)
+	if err == nil && targetGroupID == member.TargetGroupID && entry["subscription"] == "succeeded" {
 		member.Subscription = "succeeded"
 	}
 	return member
@@ -2804,8 +2819,15 @@ func validateAssignments(assignments []Assignment, candidates []Candidate, count
 		validated[assignment.Index] = Assignment{Index: assignment.Index, TargetGroupID: assignment.TargetGroupID, TargetGroupName: strings.TrimSpace(assignment.TargetGroupName), UserIDs: make([]int, 0, len(assignment.UserIDs))}
 		for _, userID := range assignment.UserIDs {
 			candidate, ok := byUser[userID]
-			if !ok || !candidate.CanAdd {
-				return nil, fmt.Errorf("user %d cannot be added to a target group", userID)
+			if !ok {
+				return nil, &assignmentCandidateError{UserID: userID, Difference: "Relay user mappings changed"}
+			}
+			if !candidate.CanAdd {
+				difference := "Relay user mappings changed"
+				if candidate.relationshipGroupErr != nil {
+					difference = "subscription relationships changed"
+				}
+				return nil, &assignmentCandidateError{UserID: userID, Difference: difference}
 			}
 			if _, exists := seenUsers[userID]; exists {
 				return nil, fmt.Errorf("user %d is assigned more than once", userID)
