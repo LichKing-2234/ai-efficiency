@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Design
 
 **Date:** 2026-08-11
-**Status:** Active production contract since the verified 2026-08-12 cutover. The Responses WebSocket extension uses Codex-local Token and shipped in `ae-cli/v0.2.0-preview.8` plus platform `v0.1.0-preview.85`; the trusted-log repair shipped in CLI-only preview.9, and preview.10 completed the exact dual-baseline and scan-progress repair for current Codex 0.147. CLI-only `ae-cli/v0.2.0-preview.11` preserves the original single-allocation evidence digest and quarantines unchanged terminal conflicts without retransmission or later-trigger blockage. CLI-only preview.12 added coordinated drain, deleted-worktree recovery, and backlog migration; preview.13 then shipped the exact current-runtime inline-wrapper parser repair and scanner-progress invalidation. The authorized #305 Helm operator canary at commit `c35758f5` produced one `relay_official` group whose 112 official Requests materialized exactly once into four direct pools and `21,668,159` Token; a later managed-hook replay left the group, pools, relations, Request identities, and Token unchanged. This controlled canary does not satisfy #252's ordinary-workflow gate. A 2026-08-14 production read found that personal Activity used cumulative Usage stats instead of the selected-window trend total, invalidating the previously recorded #252 Day 0. PR #299 repaired the denominator and non-zero percentage display; the repair first shipped in platform `v0.1.0-preview.87`, exact production readback established the replacement #252 Day 0 at `2026-08-17T05:32:57.925948Z`, and production now runs platform `v0.1.0-preview.88` at Helm revision 88. Cleanup has not run and remains gated by seven continuous stable days, a later ordinary-workflow pool delta, final readbacks, and separate destructive authority.
+**Status:** Active production contract since the verified 2026-08-12 cutover. The Responses WebSocket extension uses Codex-local Token and shipped in `ae-cli/v0.2.0-preview.8` plus platform `v0.1.0-preview.85`; the trusted-log repair shipped in CLI-only preview.9, and preview.10 completed the exact dual-baseline and scan-progress repair for current Codex 0.147. CLI-only `ae-cli/v0.2.0-preview.11` preserves the original single-allocation evidence digest and quarantines unchanged terminal conflicts without retransmission or later-trigger blockage. CLI-only preview.12 added coordinated drain, deleted-worktree recovery, and backlog migration; preview.13 then shipped the exact current-runtime inline-wrapper parser repair and scanner-progress invalidation. The authorized #305 Helm operator canary at commit `c35758f5` produced one `relay_official` group whose 112 official Requests materialized exactly once into four direct pools and `21,668,159` Token; a later managed-hook replay left the group, pools, relations, Request identities, and Token unchanged. This controlled canary does not satisfy #252's ordinary-workflow gate. A 2026-08-14 production read found that personal Activity used cumulative Usage stats instead of the selected-window trend total, invalidating the previously recorded #252 Day 0. PR #299 repaired the denominator and non-zero percentage display; the repair first shipped in platform `v0.1.0-preview.87`, exact production readback established the replacement #252 Day 0 at `2026-08-17T05:32:57.925948Z`, and production now runs platform `v0.1.0-preview.88` at Helm revision 88. Cleanup has not run and remains gated by a later ordinary-workflow pool delta, complete execution-time readbacks, and separate destructive authority; no fixed elapsed-time wait applies.
 **Scope:** `ae-cli`, backend attribution/reconciliation/read models, frontend Activity, repository administration
 **Supersedes for active behavior:** [Codex Token Attribution Ledger POC](./2026-08-05-codex-token-attribution-ledger-poc-design.md)
 **Related:**
@@ -742,8 +742,9 @@ No historical data is backfilled. Rollback may pause or hide v2, but known
 incorrect v1 totals never become formal again. Data deletion, release, and
 deployment each require explicit authority in the execution turn.
 
-The stable window starts only after every cutover readback is green. After at
-least seven continuous stable days, legacy cleanup requires all of these gates:
+The replacement Day 0 readback is retained as a historical and conservation
+baseline, not as a waiting clock. Legacy cleanup requires all of these gates to
+be true in the same execution window:
 
 - adoption is a pool delta, not a Token-volume threshold: relative to the
   recorded Day 0 baseline, at least one additional `formal_v2` direct/shared
@@ -760,8 +761,9 @@ least seven continuous stable days, legacy cleanup requires all of these gates:
 - formal pool and commit-relation counts and totals have not decreased or been
   recounted, and both reset v1 tables remain zero.
 
-Any failed gate restarts the seven-day clock after correction. Only then may a
-separately authorized cleanup remove v1 ingest/read code, v1 frontend
+Any failed gate blocks cleanup until it is corrected and read back again; it
+does not start or restart a fixed elapsed-time clock. Only then may a separately
+authorized cleanup remove v1 ingest/read code, v1 frontend
 Bucket/Request UI, AE OTLP ingest, `aeo_*` credentials, and fields used only by
 the POC. It must preserve user-managed OTel and every formal pool and commit
 relation. Platform and CLI releases remain separate release units.
