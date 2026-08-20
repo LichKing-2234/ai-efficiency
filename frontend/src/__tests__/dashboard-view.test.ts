@@ -4,7 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import DashboardView from '@/views/DashboardView.vue'
 import { setLocale } from '@/i18n'
-import { getUserUsageDashboard, getUserUsageGroupQuotas } from '@/api/userUsage'
+import { getUserUsageDashboard, getUserUsageGroupPoolUsage, getUserUsageGroupQuotas } from '@/api/userUsage'
 import { getTeamUsageScope } from '@/api/teamUsage'
 import { withTeleportedContent } from './helpers/teleport'
 
@@ -29,6 +29,14 @@ vi.mock('@/api/userUsage', () => ({
       data: {
         group_quotas: { status: 'empty', unit_label: 'USD', groups: [] },
         quota_freshness: { as_of: '2026-07-15T08:00:00Z', cache_status: 'uncached', source_status: 'ok' },
+      },
+    },
+  })),
+  getUserUsageGroupPoolUsage: vi.fn(() => Promise.resolve({
+    data: {
+      data: {
+        group_pool_usage: { status: 'empty', groups: [] },
+        pool_usage_freshness: { as_of: null, cache_status: 'uncached', source_status: 'ok' },
       },
     },
   })),
@@ -192,6 +200,14 @@ describe('DashboardView', () => {
         },
       },
     })
+    ;(getUserUsageGroupPoolUsage as any).mockReset().mockResolvedValue({
+      data: {
+        data: {
+          group_pool_usage: { status: 'empty', groups: [] },
+          pool_usage_freshness: { as_of: null, cache_status: 'uncached', source_status: 'ok' },
+        },
+      },
+    })
     ;(getTeamUsageScope as any).mockReset().mockResolvedValue({
       data: { data: { is_representative: true, departments: [] } },
     })
@@ -242,8 +258,10 @@ describe('DashboardView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('30 Days Requests')
-    expect(wrapper.text()).toContain('Group quotas are temporarily unavailable.')
-    expect(wrapper.text()).not.toContain('Usage dashboard is temporarily unavailable')
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Group quotas are temporarily unavailable.')
+      expect(wrapper.text()).not.toContain('Usage dashboard is temporarily unavailable')
+    })
   })
 
   it('renders a localized marker only for stale usage', async () => {
@@ -1227,6 +1245,75 @@ describe('DashboardView', () => {
     expect(wrapper.text()).toContain('Group Alpha')
     expect(wrapper.text()).toContain('$32.40 / $100.00')
     expect(wrapper.text()).toContain('$18.20 / ∞')
+  })
+
+  it('renders the selected subscription reset and OAuth pool snapshot per group', async () => {
+    const { getUserProviders } = await import('@/api/user')
+    ;(getUserProviders as any).mockResolvedValue({
+      data: {
+        data: {
+          providers: [{
+            id: 1,
+            name: 'prod',
+            display_name: 'Production',
+            base_url: 'https://relay.example.com',
+            default_model: 'gpt-5.4',
+            is_primary: true,
+            groups: [{ group_id: '42', group_name: 'Group Alpha', platform: 'openai', credential: { state: 'existing_hidden' } }],
+          }],
+        },
+      },
+    })
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshotWithQuotas } })
+    ;(getUserUsageGroupQuotas as any).mockResolvedValue(quotaResponse({
+      ...usageSnapshotWithQuotas.group_quotas,
+      groups: [{ ...usageSnapshotWithQuotas.group_quotas.groups[0], reset_at: '2099-07-22T00:00:00Z' }],
+    }))
+    ;(getUserUsageGroupPoolUsage as any).mockResolvedValue({
+      data: {
+        data: {
+          group_pool_usage: {
+            status: 'ok',
+            groups: [{
+              group_id: '42',
+              status: 'partial',
+              average_weekly_utilization: 37.5,
+              valid_oauth_accounts: 3,
+              total_active_oauth_accounts: 4,
+              next_reset_at: '2099-07-23T00:00:00Z',
+              as_of: '2099-07-15T00:00:00Z',
+            }],
+          },
+          pool_usage_freshness: { as_of: '2099-07-15T00:00:00Z', cache_status: 'uncached', source_status: 'ok' },
+        },
+      },
+    })
+
+    const router = createTestRouter()
+    await router.push('/usage')
+    await router.isReady()
+    const wrapper = withTeleportedContent(mount(DashboardView, { global: { plugins: [createPinia(), router] } }))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="usage-subscription-reset-42"]').exists()).toBe(true)
+    await vi.waitFor(() => {
+      const pool = wrapper.find('[data-testid="usage-pool-42"]')
+      expect(pool.exists()).toBe(true)
+      expect(pool.text()).toContain('OAuth pool')
+      expect(pool.text()).toContain('37.5%')
+      expect(pool.text()).not.toContain('3 / 4')
+    })
+
+    await wrapper.get('[data-testid="usage-pool-42"]').trigger('focus')
+    await vi.waitFor(() => {
+      const details = wrapper.get('[data-testid="usage-pool-details-42"]')
+      expect(details.isVisible()).toBe(true)
+      expect(details.text()).toContain('3 / 4')
+      expect(details.text()).toContain('not your personal Used / Quota')
+      expect(details.text()).toContain('Next pool reset')
+      expect(details.text()).toContain('Snapshot as of')
+    })
+    wrapper.unmount()
   })
 
   it('constrains a single quota card to an intentional readable width', async () => {

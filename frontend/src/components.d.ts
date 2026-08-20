@@ -85,6 +85,7 @@ declare module 'vue' {
     UsageCenterTabs: typeof import('./components/user/usage/UsageCenterTabs.vue')['default']
     UsageGroupQuotaSection: typeof import('./components/user/usage/UsageGroupQuotaSection.vue')['default']
     UsageModelChart: typeof import('./components/user/usage/UsageModelChart.vue')['default']
+    UsagePoolSnapshot: typeof import('./components/user/usage/UsagePoolSnapshot.vue')['default']
     UsageStatsCards: typeof import('./components/user/usage/UsageStatsCards.vue')['default']
     UsageTrendChart: typeof import('./components/user/usage/UsageTrendChart.vue')['default']
     UserUsageDashboard: typeof import('./components/user/usage/UserUsageDashboard.vue')['default']

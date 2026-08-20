@@ -25,6 +25,12 @@ type QuotaFreshness struct {
 	SourceStatus string     `json:"source_status"`
 }
 
+type PoolUsageFreshness struct {
+	AsOf         *time.Time `json:"as_of"`
+	CacheStatus  string     `json:"cache_status"`
+	SourceStatus string     `json:"source_status"`
+}
+
 type Snapshot struct {
 	Configured     bool                            `json:"configured"`
 	Range          relay.UserUsageDashboardRange   `json:"range"`
@@ -39,6 +45,11 @@ type Snapshot struct {
 type GroupQuotaResponse struct {
 	GroupQuotas    relay.UserUsageGroupQuotaState `json:"group_quotas"`
 	QuotaFreshness QuotaFreshness                 `json:"quota_freshness"`
+}
+
+type GroupPoolUsageResponse struct {
+	PoolUsage          relay.UserUsageGroupPoolUsageState `json:"group_pool_usage"`
+	PoolUsageFreshness PoolUsageFreshness                 `json:"pool_usage_freshness"`
 }
 
 type Request struct {
