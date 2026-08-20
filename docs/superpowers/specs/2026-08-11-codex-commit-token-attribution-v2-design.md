@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Design
 
 **Date:** 2026-08-11
-**Status:** Active production contract since the verified 2026-08-12 cutover. The Responses WebSocket extension uses Codex-local Token and shipped in `ae-cli/v0.2.0-preview.8` plus platform `v0.1.0-preview.85`; the trusted-log repair shipped in CLI-only preview.9, and preview.10 completed the exact dual-baseline and scan-progress repair for current Codex 0.147. CLI-only `ae-cli/v0.2.0-preview.11` preserves the original single-allocation evidence digest and quarantines unchanged terminal conflicts without retransmission or later-trigger blockage. A 2026-08-14 production read found that personal Activity used cumulative Usage stats instead of the selected-window trend total, invalidating the previously recorded #252 Day 0. PR #299 repaired the denominator and non-zero percentage display; platform `v0.1.0-preview.87` is deployed at Helm revision 87, and exact production readback established the replacement #252 Day 0 at `2026-08-17T05:32:57.925948Z`. Cleanup has not run and remains gated by seven continuous stable days, a later ordinary-workflow pool delta, final readbacks, and separate destructive authority.
+**Status:** Active production contract since the verified 2026-08-12 cutover. The Responses WebSocket extension uses Codex-local Token and shipped in `ae-cli/v0.2.0-preview.8` plus platform `v0.1.0-preview.85`; the trusted-log repair shipped in CLI-only preview.9, and preview.10 completed the exact dual-baseline and scan-progress repair for current Codex 0.147. CLI-only `ae-cli/v0.2.0-preview.11` preserves the original single-allocation evidence digest and quarantines unchanged terminal conflicts without retransmission or later-trigger blockage. CLI-only `ae-cli/v0.2.0-preview.12` adds coordinated drain, deleted-worktree recovery, and backlog migration and is installed, but #305 remains open because its first Helm qualification attempt produced no qualifying commit-to-Activity claim. A 2026-08-14 production read found that personal Activity used cumulative Usage stats instead of the selected-window trend total, invalidating the previously recorded #252 Day 0. PR #299 repaired the denominator and non-zero percentage display; platform `v0.1.0-preview.87` is deployed at Helm revision 87, and exact production readback established the replacement #252 Day 0 at `2026-08-17T05:32:57.925948Z`. Cleanup has not run and remains gated by seven continuous stable days, a later ordinary-workflow pool delta, final readbacks, and separate destructive authority.
 **Scope:** `ae-cli`, backend attribution/reconciliation/read models, frontend Activity, repository administration
 **Supersedes for active behavior:** [Codex Token Attribution Ledger POC](./2026-08-05-codex-token-attribution-ledger-poc-design.md)
 **Related:**
@@ -162,6 +162,15 @@ Formal commit association accepts only:
 - structured Codex mutation evidence;
 - deterministic comparison with Git index/tree/commit content;
 - explicit Git rewrite or lineage evidence.
+
+Structured patch evidence may arrive as a direct `apply_patch` payload or as
+one of the exact generated `exec` wrappers recognized by the scanner. The
+inline wrapper must contain one JSON string patch literal, bind the tool result
+to one JavaScript identifier, and pass that same identifier to
+`text(JSON.stringify(...))`. Comments, template literals, multiple calls,
+malformed calls, and mismatched result identifiers remain unrecognized and
+fail closed. A wrapper match never replaces the deterministic Git-content
+proof below.
 
 For one commit allocation, the claim-group evidence digest is exactly that
 allocation's evidence digest. The ordered composite digest is introduced only
