@@ -80,6 +80,24 @@ type Group struct {
 	MonthlyLimitUSD       *float64 `json:"monthly_limit_usd,omitempty"`
 }
 
+// Account is the privacy-safe account relationship projection used by Relay
+// planning. Provider credentials and private configuration are intentionally
+// not represented.
+type Account struct {
+	ID                 int64                      `json:"id"`
+	Name               string                     `json:"name"`
+	Platform           string                     `json:"platform"`
+	Type               string                     `json:"type"`
+	Status             string                     `json:"status"`
+	Schedulable        bool                       `json:"schedulable"`
+	GroupRelationships []AccountGroupRelationship `json:"group_relationships"`
+}
+
+type AccountGroupRelationship struct {
+	GroupID  int64 `json:"group_id"`
+	Priority int   `json:"priority"`
+}
+
 const (
 	ProtocolResponses                  = "responses"
 	ProtocolChatCompletions            = "chat_completions"

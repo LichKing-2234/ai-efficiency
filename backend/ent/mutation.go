@@ -33832,34 +33832,36 @@ func (m *QuotaResetRequestEventMutation) ResetEdge(name string) error {
 // RelayGroupMappingMutation represents an operation that mutates the RelayGroupMapping nodes in the graph.
 type RelayGroupMappingMutation struct {
 	config
-	op                     Op
-	typ                    string
-	id                     *int
-	provider_id            *int
-	addprovider_id         *int
-	department_external_id *string
-	department_name        *string
-	platform               *string
-	template_group_id      *int64
-	addtemplate_group_id   *int64
-	template_group_name    *string
-	source_group_id        *int64
-	addsource_group_id     *int64
-	source_group_name      *string
-	group_ids              *[]int64
-	appendgroup_ids        []int64
-	member_assignments     *map[string]int64
-	member_sources         *map[string]int64
-	operation_state        *map[string]map[string]string
-	status                 *string
-	weekly_cost_target     *float64
-	addweekly_cost_target  *float64
-	created_at             *time.Time
-	updated_at             *time.Time
-	clearedFields          map[string]struct{}
-	done                   bool
-	oldValue               func(context.Context) (*RelayGroupMapping, error)
-	predicates             []predicate.RelayGroupMapping
+	op                             Op
+	typ                            string
+	id                             *int
+	provider_id                    *int
+	addprovider_id                 *int
+	department_external_id         *string
+	department_name                *string
+	platform                       *string
+	template_group_id              *int64
+	addtemplate_group_id           *int64
+	template_group_name            *string
+	source_group_id                *int64
+	addsource_group_id             *int64
+	source_group_name              *string
+	group_ids                      *[]int64
+	appendgroup_ids                []int64
+	member_assignments             *map[string]int64
+	member_sources                 *map[string]int64
+	account_management_initialized *bool
+	desired_accounts               *map[string][]map[string]int64
+	operation_state                *map[string]map[string]string
+	status                         *string
+	weekly_cost_target             *float64
+	addweekly_cost_target          *float64
+	created_at                     *time.Time
+	updated_at                     *time.Time
+	clearedFields                  map[string]struct{}
+	done                           bool
+	oldValue                       func(context.Context) (*RelayGroupMapping, error)
+	predicates                     []predicate.RelayGroupMapping
 }
 
 var _ ent.Mutation = (*RelayGroupMappingMutation)(nil)
@@ -34431,6 +34433,78 @@ func (m *RelayGroupMappingMutation) ResetMemberSources() {
 	m.member_sources = nil
 }
 
+// SetAccountManagementInitialized sets the "account_management_initialized" field.
+func (m *RelayGroupMappingMutation) SetAccountManagementInitialized(b bool) {
+	m.account_management_initialized = &b
+}
+
+// AccountManagementInitialized returns the value of the "account_management_initialized" field in the mutation.
+func (m *RelayGroupMappingMutation) AccountManagementInitialized() (r bool, exists bool) {
+	v := m.account_management_initialized
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAccountManagementInitialized returns the old "account_management_initialized" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldAccountManagementInitialized(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAccountManagementInitialized is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAccountManagementInitialized requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAccountManagementInitialized: %w", err)
+	}
+	return oldValue.AccountManagementInitialized, nil
+}
+
+// ResetAccountManagementInitialized resets all changes to the "account_management_initialized" field.
+func (m *RelayGroupMappingMutation) ResetAccountManagementInitialized() {
+	m.account_management_initialized = nil
+}
+
+// SetDesiredAccounts sets the "desired_accounts" field.
+func (m *RelayGroupMappingMutation) SetDesiredAccounts(value map[string][]map[string]int64) {
+	m.desired_accounts = &value
+}
+
+// DesiredAccounts returns the value of the "desired_accounts" field in the mutation.
+func (m *RelayGroupMappingMutation) DesiredAccounts() (r map[string][]map[string]int64, exists bool) {
+	v := m.desired_accounts
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDesiredAccounts returns the old "desired_accounts" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldDesiredAccounts(ctx context.Context) (v map[string][]map[string]int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDesiredAccounts is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDesiredAccounts requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDesiredAccounts: %w", err)
+	}
+	return oldValue.DesiredAccounts, nil
+}
+
+// ResetDesiredAccounts resets all changes to the "desired_accounts" field.
+func (m *RelayGroupMappingMutation) ResetDesiredAccounts() {
+	m.desired_accounts = nil
+}
+
 // SetOperationState sets the "operation_state" field.
 func (m *RelayGroupMappingMutation) SetOperationState(value map[string]map[string]string) {
 	m.operation_state = &value
@@ -34665,7 +34739,7 @@ func (m *RelayGroupMappingMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RelayGroupMappingMutation) Fields() []string {
-	fields := make([]string, 0, 16)
+	fields := make([]string, 0, 18)
 	if m.provider_id != nil {
 		fields = append(fields, relaygroupmapping.FieldProviderID)
 	}
@@ -34698,6 +34772,12 @@ func (m *RelayGroupMappingMutation) Fields() []string {
 	}
 	if m.member_sources != nil {
 		fields = append(fields, relaygroupmapping.FieldMemberSources)
+	}
+	if m.account_management_initialized != nil {
+		fields = append(fields, relaygroupmapping.FieldAccountManagementInitialized)
+	}
+	if m.desired_accounts != nil {
+		fields = append(fields, relaygroupmapping.FieldDesiredAccounts)
 	}
 	if m.operation_state != nil {
 		fields = append(fields, relaygroupmapping.FieldOperationState)
@@ -34744,6 +34824,10 @@ func (m *RelayGroupMappingMutation) Field(name string) (ent.Value, bool) {
 		return m.MemberAssignments()
 	case relaygroupmapping.FieldMemberSources:
 		return m.MemberSources()
+	case relaygroupmapping.FieldAccountManagementInitialized:
+		return m.AccountManagementInitialized()
+	case relaygroupmapping.FieldDesiredAccounts:
+		return m.DesiredAccounts()
 	case relaygroupmapping.FieldOperationState:
 		return m.OperationState()
 	case relaygroupmapping.FieldStatus:
@@ -34785,6 +34869,10 @@ func (m *RelayGroupMappingMutation) OldField(ctx context.Context, name string) (
 		return m.OldMemberAssignments(ctx)
 	case relaygroupmapping.FieldMemberSources:
 		return m.OldMemberSources(ctx)
+	case relaygroupmapping.FieldAccountManagementInitialized:
+		return m.OldAccountManagementInitialized(ctx)
+	case relaygroupmapping.FieldDesiredAccounts:
+		return m.OldDesiredAccounts(ctx)
 	case relaygroupmapping.FieldOperationState:
 		return m.OldOperationState(ctx)
 	case relaygroupmapping.FieldStatus:
@@ -34880,6 +34968,20 @@ func (m *RelayGroupMappingMutation) SetField(name string, value ent.Value) error
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetMemberSources(v)
+		return nil
+	case relaygroupmapping.FieldAccountManagementInitialized:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccountManagementInitialized(v)
+		return nil
+	case relaygroupmapping.FieldDesiredAccounts:
+		v, ok := value.(map[string][]map[string]int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDesiredAccounts(v)
 		return nil
 	case relaygroupmapping.FieldOperationState:
 		v, ok := value.(map[string]map[string]string)
@@ -35048,6 +35150,12 @@ func (m *RelayGroupMappingMutation) ResetField(name string) error {
 		return nil
 	case relaygroupmapping.FieldMemberSources:
 		m.ResetMemberSources()
+		return nil
+	case relaygroupmapping.FieldAccountManagementInitialized:
+		m.ResetAccountManagementInitialized()
+		return nil
+	case relaygroupmapping.FieldDesiredAccounts:
+		m.ResetDesiredAccounts()
 		return nil
 	case relaygroupmapping.FieldOperationState:
 		m.ResetOperationState()

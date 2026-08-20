@@ -35,6 +35,10 @@ const (
 	FieldMemberAssignments = "member_assignments"
 	// FieldMemberSources holds the string denoting the member_sources field in the database.
 	FieldMemberSources = "member_sources"
+	// FieldAccountManagementInitialized holds the string denoting the account_management_initialized field in the database.
+	FieldAccountManagementInitialized = "account_management_initialized"
+	// FieldDesiredAccounts holds the string denoting the desired_accounts field in the database.
+	FieldDesiredAccounts = "desired_accounts"
 	// FieldOperationState holds the string denoting the operation_state field in the database.
 	FieldOperationState = "operation_state"
 	// FieldStatus holds the string denoting the status field in the database.
@@ -63,6 +67,8 @@ var Columns = []string{
 	FieldGroupIds,
 	FieldMemberAssignments,
 	FieldMemberSources,
+	FieldAccountManagementInitialized,
+	FieldDesiredAccounts,
 	FieldOperationState,
 	FieldStatus,
 	FieldWeeklyCostTarget,
@@ -91,14 +97,18 @@ var (
 	DefaultTemplateGroupID int64
 	// DefaultTemplateGroupName holds the default value on creation for the "template_group_name" field.
 	DefaultTemplateGroupName string
-	// SourceGroupIDValidator is a validator for the "source_group_id" field. It is called by the builders before save.
-	SourceGroupIDValidator func(int64) error
+	// DefaultSourceGroupID holds the default value on creation for the "source_group_id" field.
+	DefaultSourceGroupID int64
 	// DefaultSourceGroupName holds the default value on creation for the "source_group_name" field.
 	DefaultSourceGroupName string
 	// DefaultMemberAssignments holds the default value on creation for the "member_assignments" field.
 	DefaultMemberAssignments map[string]int64
 	// DefaultMemberSources holds the default value on creation for the "member_sources" field.
 	DefaultMemberSources map[string]int64
+	// DefaultAccountManagementInitialized holds the default value on creation for the "account_management_initialized" field.
+	DefaultAccountManagementInitialized bool
+	// DefaultDesiredAccounts holds the default value on creation for the "desired_accounts" field.
+	DefaultDesiredAccounts map[string][]map[string]int64
 	// DefaultOperationState holds the default value on creation for the "operation_state" field.
 	DefaultOperationState map[string]map[string]string
 	// DefaultStatus holds the default value on creation for the "status" field.
@@ -159,6 +169,11 @@ func BySourceGroupID(opts ...sql.OrderTermOption) OrderOption {
 // BySourceGroupName orders the results by the source_group_name field.
 func BySourceGroupName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSourceGroupName, opts...).ToFunc()
+}
+
+// ByAccountManagementInitialized orders the results by the account_management_initialized field.
+func ByAccountManagementInitialized(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAccountManagementInitialized, opts...).ToFunc()
 }
 
 // ByStatus orders the results by the status field.

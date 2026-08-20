@@ -86,6 +86,14 @@ func (rgmc *RelayGroupMappingCreate) SetSourceGroupID(i int64) *RelayGroupMappin
 	return rgmc
 }
 
+// SetNillableSourceGroupID sets the "source_group_id" field if the given value is not nil.
+func (rgmc *RelayGroupMappingCreate) SetNillableSourceGroupID(i *int64) *RelayGroupMappingCreate {
+	if i != nil {
+		rgmc.SetSourceGroupID(*i)
+	}
+	return rgmc
+}
+
 // SetSourceGroupName sets the "source_group_name" field.
 func (rgmc *RelayGroupMappingCreate) SetSourceGroupName(s string) *RelayGroupMappingCreate {
 	rgmc.mutation.SetSourceGroupName(s)
@@ -115,6 +123,26 @@ func (rgmc *RelayGroupMappingCreate) SetMemberAssignments(m map[string]int64) *R
 // SetMemberSources sets the "member_sources" field.
 func (rgmc *RelayGroupMappingCreate) SetMemberSources(m map[string]int64) *RelayGroupMappingCreate {
 	rgmc.mutation.SetMemberSources(m)
+	return rgmc
+}
+
+// SetAccountManagementInitialized sets the "account_management_initialized" field.
+func (rgmc *RelayGroupMappingCreate) SetAccountManagementInitialized(b bool) *RelayGroupMappingCreate {
+	rgmc.mutation.SetAccountManagementInitialized(b)
+	return rgmc
+}
+
+// SetNillableAccountManagementInitialized sets the "account_management_initialized" field if the given value is not nil.
+func (rgmc *RelayGroupMappingCreate) SetNillableAccountManagementInitialized(b *bool) *RelayGroupMappingCreate {
+	if b != nil {
+		rgmc.SetAccountManagementInitialized(*b)
+	}
+	return rgmc
+}
+
+// SetDesiredAccounts sets the "desired_accounts" field.
+func (rgmc *RelayGroupMappingCreate) SetDesiredAccounts(m map[string][]map[string]int64) *RelayGroupMappingCreate {
+	rgmc.mutation.SetDesiredAccounts(m)
 	return rgmc
 }
 
@@ -227,6 +255,10 @@ func (rgmc *RelayGroupMappingCreate) defaults() {
 		v := relaygroupmapping.DefaultTemplateGroupName
 		rgmc.mutation.SetTemplateGroupName(v)
 	}
+	if _, ok := rgmc.mutation.SourceGroupID(); !ok {
+		v := relaygroupmapping.DefaultSourceGroupID
+		rgmc.mutation.SetSourceGroupID(v)
+	}
 	if _, ok := rgmc.mutation.SourceGroupName(); !ok {
 		v := relaygroupmapping.DefaultSourceGroupName
 		rgmc.mutation.SetSourceGroupName(v)
@@ -238,6 +270,14 @@ func (rgmc *RelayGroupMappingCreate) defaults() {
 	if _, ok := rgmc.mutation.MemberSources(); !ok {
 		v := relaygroupmapping.DefaultMemberSources
 		rgmc.mutation.SetMemberSources(v)
+	}
+	if _, ok := rgmc.mutation.AccountManagementInitialized(); !ok {
+		v := relaygroupmapping.DefaultAccountManagementInitialized
+		rgmc.mutation.SetAccountManagementInitialized(v)
+	}
+	if _, ok := rgmc.mutation.DesiredAccounts(); !ok {
+		v := relaygroupmapping.DefaultDesiredAccounts
+		rgmc.mutation.SetDesiredAccounts(v)
 	}
 	if _, ok := rgmc.mutation.OperationState(); !ok {
 		v := relaygroupmapping.DefaultOperationState
@@ -294,11 +334,6 @@ func (rgmc *RelayGroupMappingCreate) check() error {
 	if _, ok := rgmc.mutation.SourceGroupID(); !ok {
 		return &ValidationError{Name: "source_group_id", err: errors.New(`ent: missing required field "RelayGroupMapping.source_group_id"`)}
 	}
-	if v, ok := rgmc.mutation.SourceGroupID(); ok {
-		if err := relaygroupmapping.SourceGroupIDValidator(v); err != nil {
-			return &ValidationError{Name: "source_group_id", err: fmt.Errorf(`ent: validator failed for field "RelayGroupMapping.source_group_id": %w`, err)}
-		}
-	}
 	if _, ok := rgmc.mutation.SourceGroupName(); !ok {
 		return &ValidationError{Name: "source_group_name", err: errors.New(`ent: missing required field "RelayGroupMapping.source_group_name"`)}
 	}
@@ -310,6 +345,12 @@ func (rgmc *RelayGroupMappingCreate) check() error {
 	}
 	if _, ok := rgmc.mutation.MemberSources(); !ok {
 		return &ValidationError{Name: "member_sources", err: errors.New(`ent: missing required field "RelayGroupMapping.member_sources"`)}
+	}
+	if _, ok := rgmc.mutation.AccountManagementInitialized(); !ok {
+		return &ValidationError{Name: "account_management_initialized", err: errors.New(`ent: missing required field "RelayGroupMapping.account_management_initialized"`)}
+	}
+	if _, ok := rgmc.mutation.DesiredAccounts(); !ok {
+		return &ValidationError{Name: "desired_accounts", err: errors.New(`ent: missing required field "RelayGroupMapping.desired_accounts"`)}
 	}
 	if _, ok := rgmc.mutation.OperationState(); !ok {
 		return &ValidationError{Name: "operation_state", err: errors.New(`ent: missing required field "RelayGroupMapping.operation_state"`)}
@@ -395,6 +436,14 @@ func (rgmc *RelayGroupMappingCreate) createSpec() (*RelayGroupMapping, *sqlgraph
 	if value, ok := rgmc.mutation.MemberSources(); ok {
 		_spec.SetField(relaygroupmapping.FieldMemberSources, field.TypeJSON, value)
 		_node.MemberSources = value
+	}
+	if value, ok := rgmc.mutation.AccountManagementInitialized(); ok {
+		_spec.SetField(relaygroupmapping.FieldAccountManagementInitialized, field.TypeBool, value)
+		_node.AccountManagementInitialized = value
+	}
+	if value, ok := rgmc.mutation.DesiredAccounts(); ok {
+		_spec.SetField(relaygroupmapping.FieldDesiredAccounts, field.TypeJSON, value)
+		_node.DesiredAccounts = value
 	}
 	if value, ok := rgmc.mutation.OperationState(); ok {
 		_spec.SetField(relaygroupmapping.FieldOperationState, field.TypeJSON, value)

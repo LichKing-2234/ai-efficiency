@@ -186,6 +186,26 @@ func (rgmu *RelayGroupMappingUpdate) SetMemberSources(m map[string]int64) *Relay
 	return rgmu
 }
 
+// SetAccountManagementInitialized sets the "account_management_initialized" field.
+func (rgmu *RelayGroupMappingUpdate) SetAccountManagementInitialized(b bool) *RelayGroupMappingUpdate {
+	rgmu.mutation.SetAccountManagementInitialized(b)
+	return rgmu
+}
+
+// SetNillableAccountManagementInitialized sets the "account_management_initialized" field if the given value is not nil.
+func (rgmu *RelayGroupMappingUpdate) SetNillableAccountManagementInitialized(b *bool) *RelayGroupMappingUpdate {
+	if b != nil {
+		rgmu.SetAccountManagementInitialized(*b)
+	}
+	return rgmu
+}
+
+// SetDesiredAccounts sets the "desired_accounts" field.
+func (rgmu *RelayGroupMappingUpdate) SetDesiredAccounts(m map[string][]map[string]int64) *RelayGroupMappingUpdate {
+	rgmu.mutation.SetDesiredAccounts(m)
+	return rgmu
+}
+
 // SetOperationState sets the "operation_state" field.
 func (rgmu *RelayGroupMappingUpdate) SetOperationState(m map[string]map[string]string) *RelayGroupMappingUpdate {
 	rgmu.mutation.SetOperationState(m)
@@ -286,11 +306,6 @@ func (rgmu *RelayGroupMappingUpdate) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "RelayGroupMapping.platform": %w`, err)}
 		}
 	}
-	if v, ok := rgmu.mutation.SourceGroupID(); ok {
-		if err := relaygroupmapping.SourceGroupIDValidator(v); err != nil {
-			return &ValidationError{Name: "source_group_id", err: fmt.Errorf(`ent: validator failed for field "RelayGroupMapping.source_group_id": %w`, err)}
-		}
-	}
 	return nil
 }
 
@@ -352,6 +367,12 @@ func (rgmu *RelayGroupMappingUpdate) sqlSave(ctx context.Context) (n int, err er
 	}
 	if value, ok := rgmu.mutation.MemberSources(); ok {
 		_spec.SetField(relaygroupmapping.FieldMemberSources, field.TypeJSON, value)
+	}
+	if value, ok := rgmu.mutation.AccountManagementInitialized(); ok {
+		_spec.SetField(relaygroupmapping.FieldAccountManagementInitialized, field.TypeBool, value)
+	}
+	if value, ok := rgmu.mutation.DesiredAccounts(); ok {
+		_spec.SetField(relaygroupmapping.FieldDesiredAccounts, field.TypeJSON, value)
 	}
 	if value, ok := rgmu.mutation.OperationState(); ok {
 		_spec.SetField(relaygroupmapping.FieldOperationState, field.TypeJSON, value)
@@ -545,6 +566,26 @@ func (rgmuo *RelayGroupMappingUpdateOne) SetMemberSources(m map[string]int64) *R
 	return rgmuo
 }
 
+// SetAccountManagementInitialized sets the "account_management_initialized" field.
+func (rgmuo *RelayGroupMappingUpdateOne) SetAccountManagementInitialized(b bool) *RelayGroupMappingUpdateOne {
+	rgmuo.mutation.SetAccountManagementInitialized(b)
+	return rgmuo
+}
+
+// SetNillableAccountManagementInitialized sets the "account_management_initialized" field if the given value is not nil.
+func (rgmuo *RelayGroupMappingUpdateOne) SetNillableAccountManagementInitialized(b *bool) *RelayGroupMappingUpdateOne {
+	if b != nil {
+		rgmuo.SetAccountManagementInitialized(*b)
+	}
+	return rgmuo
+}
+
+// SetDesiredAccounts sets the "desired_accounts" field.
+func (rgmuo *RelayGroupMappingUpdateOne) SetDesiredAccounts(m map[string][]map[string]int64) *RelayGroupMappingUpdateOne {
+	rgmuo.mutation.SetDesiredAccounts(m)
+	return rgmuo
+}
+
 // SetOperationState sets the "operation_state" field.
 func (rgmuo *RelayGroupMappingUpdateOne) SetOperationState(m map[string]map[string]string) *RelayGroupMappingUpdateOne {
 	rgmuo.mutation.SetOperationState(m)
@@ -658,11 +699,6 @@ func (rgmuo *RelayGroupMappingUpdateOne) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "RelayGroupMapping.platform": %w`, err)}
 		}
 	}
-	if v, ok := rgmuo.mutation.SourceGroupID(); ok {
-		if err := relaygroupmapping.SourceGroupIDValidator(v); err != nil {
-			return &ValidationError{Name: "source_group_id", err: fmt.Errorf(`ent: validator failed for field "RelayGroupMapping.source_group_id": %w`, err)}
-		}
-	}
 	return nil
 }
 
@@ -741,6 +777,12 @@ func (rgmuo *RelayGroupMappingUpdateOne) sqlSave(ctx context.Context) (_node *Re
 	}
 	if value, ok := rgmuo.mutation.MemberSources(); ok {
 		_spec.SetField(relaygroupmapping.FieldMemberSources, field.TypeJSON, value)
+	}
+	if value, ok := rgmuo.mutation.AccountManagementInitialized(); ok {
+		_spec.SetField(relaygroupmapping.FieldAccountManagementInitialized, field.TypeBool, value)
+	}
+	if value, ok := rgmuo.mutation.DesiredAccounts(); ok {
+		_spec.SetField(relaygroupmapping.FieldDesiredAccounts, field.TypeJSON, value)
 	}
 	if value, ok := rgmuo.mutation.OperationState(); ok {
 		_spec.SetField(relaygroupmapping.FieldOperationState, field.TypeJSON, value)

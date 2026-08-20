@@ -226,13 +226,15 @@ describe('i18n locale loading', () => {
       ...Object.keys(directoryOffboardingMessages['zh-CN']),
     ].sort()
 
-    expect(englishKeys).toHaveLength(1149)
-    expect(chineseKeys).toHaveLength(1149)
+    expect(englishKeys).toHaveLength(1197)
+    expect(chineseKeys).toHaveLength(1197)
     expect(englishKeys).toContain('activity.title')
     expect(englishKeys).toContain('activity.teamsTitle')
     expect(englishKeys).toContain('activity.repositoryActivity')
     expect(englishKeys).toContain('directoryOffboarding.effectNotice')
     expect(englishKeys).toContain('relayPlanning.confirmPlan')
+    expect(englishKeys).toContain('relayPlanning.stalePlan')
+    expect(englishKeys).toContain('relayPlanning.accountChanges')
     expect(chineseKeys).toEqual(englishKeys)
   })
 

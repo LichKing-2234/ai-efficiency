@@ -534,10 +534,14 @@ func setupRouter(
 		relayPlanningGroup := protected.Group("/admin/relay-planning")
 		relayPlanningGroup.Use(auth.RequireAdmin())
 		{
+			relayPlanningGroup.GET("/users", relayPlanningHandler.SearchUsers)
+			relayPlanningGroup.GET("/accounts", relayPlanningHandler.SearchAccounts)
 			relayPlanningGroup.POST("/preview", relayPlanningHandler.Preview)
 			relayPlanningGroup.POST("/execute", relayPlanningHandler.Execute)
 			relayPlanningGroup.GET("/mappings", relayPlanningHandler.ListMappings)
 			relayPlanningGroup.PUT("/mappings/:id/rebind", relayPlanningHandler.Rebind)
+			relayPlanningGroup.POST("/mappings/:id/accounts/adopt", relayPlanningHandler.AdoptCurrentAccounts)
+			relayPlanningGroup.PUT("/mappings/:id/accounts", relayPlanningHandler.SaveDesiredAccounts)
 			relayPlanningGroup.POST("/mappings/:id/replan", relayPlanningHandler.Replan)
 			relayPlanningGroup.POST("/mappings/:id/replan/execute", relayPlanningHandler.ReplanExecute)
 		}

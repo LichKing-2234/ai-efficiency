@@ -35,8 +35,8 @@ func TestNormalizeRequestKeepsTemplateAndSourceIndependent(t *testing.T) {
 		t.Fatalf("normalized request = %#v", got)
 	}
 	got = normalizeRequest(PreviewRequest{TemplateGroupID: 84})
-	if got.TemplateGroupID != 84 || got.SourceGroupID != 84 {
-		t.Fatalf("single-group request did not preserve compatibility fallback: %#v", got)
+	if got.TemplateGroupID != 84 || got.SourceGroupID != 0 {
+		t.Fatalf("source-free request did not remain target-only: %#v", got)
 	}
 }
 
@@ -450,6 +450,11 @@ func TestExecuteReplanRetriesFailedAPIKeyMoveFromPreviousTarget(t *testing.T) {
 		}},
 		OperationKey: "replan-op-1",
 	}
+	preview, err := service.Replan(ctx, mappingRow.ID, nil, replanRequest.Assignments, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("first Replan() error = %v", err)
+	}
+	replanRequest.ExpectedRelationshipFingerprint = preview.RelationshipFingerprint
 	first, err := service.ExecuteReplan(ctx, mappingRow.ID, replanRequest)
 	if err != nil {
 		t.Fatalf("first ExecuteReplan() error = %v", err)
@@ -464,13 +469,19 @@ func TestExecuteReplanRetriesFailedAPIKeyMoveFromPreviousTarget(t *testing.T) {
 	fake.mu.Lock()
 	fake.bindFailures = 0
 	fake.mu.Unlock()
-	second, err := service.ExecuteReplan(ctx, mappingRow.ID, ExecuteRequest{
+	retryRequest := ExecuteRequest{
 		PreviewRequest: PreviewRequest{Assignments: []Assignment{
 			{Index: 0, UserIDs: []int{}},
 			{Index: 1, UserIDs: []int{user.ID}},
 		}},
 		OperationKey: "replan-op-2",
-	})
+	}
+	preview, err = service.Replan(ctx, mappingRow.ID, nil, retryRequest.Assignments, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("retry Replan() error = %v", err)
+	}
+	retryRequest.ExpectedRelationshipFingerprint = preview.RelationshipFingerprint
+	second, err := service.ExecuteReplan(ctx, mappingRow.ID, retryRequest)
 	if err != nil {
 		t.Fatalf("retry ExecuteReplan() error = %v", err)
 	}
@@ -552,6 +563,10 @@ func (p *replanRetryProvider) ListUserAPIKeys(context.Context, int64) ([]relay.A
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return append([]relay.APIKey(nil), p.keys...), nil
+}
+
+func (p *replanRetryProvider) ListAccountsForPlatform(context.Context, string) ([]relay.Account, error) {
+	return nil, nil
 }
 
 func (p *replanRetryProvider) GetUsageStats(context.Context, int64, time.Time, time.Time) (*relay.UsageStats, error) {

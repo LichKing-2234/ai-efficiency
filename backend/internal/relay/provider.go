@@ -8,8 +8,9 @@ import (
 
 // Sentinel errors for authentication outcomes.
 var (
-	ErrInvalidCredentials        = errors.New("relay: invalid credentials")
-	ErrExtraVerificationRequired = errors.New("relay: extra verification required")
+	ErrInvalidCredentials          = errors.New("relay: invalid credentials")
+	ErrExtraVerificationRequired   = errors.New("relay: extra verification required")
+	ErrAccountRelationshipsChanged = errors.New("relay: account relationships changed")
 )
 
 type userCredentialContextKey struct{}
@@ -84,6 +85,18 @@ type PlatformModelLister interface {
 // must still resolve current user membership and entitlement separately.
 type PlatformGroupLister interface {
 	ListPlatformGroups(ctx context.Context) ([]Group, error)
+}
+
+// AccountRelationshipReader exposes only the safe account metadata needed to
+// inspect group relationships for one platform.
+type AccountRelationshipReader interface {
+	ListAccountsForPlatform(ctx context.Context, platform string) ([]Account, error)
+}
+
+// AccountRelationshipUpdater changes one group relationship while protecting
+// every unrelated binding with an expected full-account snapshot.
+type AccountRelationshipUpdater interface {
+	SetAccountGroupRelationship(ctx context.Context, accountID, groupID int64, expected []AccountGroupRelationship, desiredPriority *int) error
 }
 
 // GroupDuplicator creates an inactive copy of a source group. The operation

@@ -40,6 +40,10 @@ type RelayGroupMapping struct {
 	MemberAssignments map[string]int64 `json:"member_assignments,omitempty"`
 	// MemberSources holds the value of the "member_sources" field.
 	MemberSources map[string]int64 `json:"member_sources,omitempty"`
+	// AccountManagementInitialized holds the value of the "account_management_initialized" field.
+	AccountManagementInitialized bool `json:"account_management_initialized,omitempty"`
+	// DesiredAccounts holds the value of the "desired_accounts" field.
+	DesiredAccounts map[string][]map[string]int64 `json:"desired_accounts,omitempty"`
 	// OperationState holds the value of the "operation_state" field.
 	OperationState map[string]map[string]string `json:"operation_state,omitempty"`
 	// Status holds the value of the "status" field.
@@ -58,8 +62,10 @@ func (*RelayGroupMapping) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case relaygroupmapping.FieldGroupIds, relaygroupmapping.FieldMemberAssignments, relaygroupmapping.FieldMemberSources, relaygroupmapping.FieldOperationState:
+		case relaygroupmapping.FieldGroupIds, relaygroupmapping.FieldMemberAssignments, relaygroupmapping.FieldMemberSources, relaygroupmapping.FieldDesiredAccounts, relaygroupmapping.FieldOperationState:
 			values[i] = new([]byte)
+		case relaygroupmapping.FieldAccountManagementInitialized:
+			values[i] = new(sql.NullBool)
 		case relaygroupmapping.FieldWeeklyCostTarget:
 			values[i] = new(sql.NullFloat64)
 		case relaygroupmapping.FieldID, relaygroupmapping.FieldProviderID, relaygroupmapping.FieldTemplateGroupID, relaygroupmapping.FieldSourceGroupID:
@@ -159,6 +165,20 @@ func (rgm *RelayGroupMapping) assignValues(columns []string, values []any) error
 			} else if value != nil && len(*value) > 0 {
 				if err := json.Unmarshal(*value, &rgm.MemberSources); err != nil {
 					return fmt.Errorf("unmarshal field member_sources: %w", err)
+				}
+			}
+		case relaygroupmapping.FieldAccountManagementInitialized:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field account_management_initialized", values[i])
+			} else if value.Valid {
+				rgm.AccountManagementInitialized = value.Bool
+			}
+		case relaygroupmapping.FieldDesiredAccounts:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field desired_accounts", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &rgm.DesiredAccounts); err != nil {
+					return fmt.Errorf("unmarshal field desired_accounts: %w", err)
 				}
 			}
 		case relaygroupmapping.FieldOperationState:
@@ -261,6 +281,12 @@ func (rgm *RelayGroupMapping) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("member_sources=")
 	builder.WriteString(fmt.Sprintf("%v", rgm.MemberSources))
+	builder.WriteString(", ")
+	builder.WriteString("account_management_initialized=")
+	builder.WriteString(fmt.Sprintf("%v", rgm.AccountManagementInitialized))
+	builder.WriteString(", ")
+	builder.WriteString("desired_accounts=")
+	builder.WriteString(fmt.Sprintf("%v", rgm.DesiredAccounts))
 	builder.WriteString(", ")
 	builder.WriteString("operation_state=")
 	builder.WriteString(fmt.Sprintf("%v", rgm.OperationState))

@@ -94,6 +94,11 @@ func SourceGroupName(v string) predicate.RelayGroupMapping {
 	return predicate.RelayGroupMapping(sql.FieldEQ(FieldSourceGroupName, v))
 }
 
+// AccountManagementInitialized applies equality check predicate on the "account_management_initialized" field. It's identical to AccountManagementInitializedEQ.
+func AccountManagementInitialized(v bool) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldEQ(FieldAccountManagementInitialized, v))
+}
+
 // Status applies equality check predicate on the "status" field. It's identical to StatusEQ.
 func Status(v string) predicate.RelayGroupMapping {
 	return predicate.RelayGroupMapping(sql.FieldEQ(FieldStatus, v))
@@ -557,6 +562,16 @@ func SourceGroupNameEqualFold(v string) predicate.RelayGroupMapping {
 // SourceGroupNameContainsFold applies the ContainsFold predicate on the "source_group_name" field.
 func SourceGroupNameContainsFold(v string) predicate.RelayGroupMapping {
 	return predicate.RelayGroupMapping(sql.FieldContainsFold(FieldSourceGroupName, v))
+}
+
+// AccountManagementInitializedEQ applies the EQ predicate on the "account_management_initialized" field.
+func AccountManagementInitializedEQ(v bool) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldEQ(FieldAccountManagementInitialized, v))
+}
+
+// AccountManagementInitializedNEQ applies the NEQ predicate on the "account_management_initialized" field.
+func AccountManagementInitializedNEQ(v bool) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldNEQ(FieldAccountManagementInitialized, v))
 }
 
 // StatusEQ applies the EQ predicate on the "status" field.
