@@ -1278,11 +1278,14 @@ def exercise_route_control(page, exercise):
         )
     if exercise == "usage-personal":
         pool = page.locator("[data-testid='usage-pool-group-1']")
-        mobile = page.evaluate("window.innerWidth < 768")
+        width = page.evaluate("window.innerWidth")
+        mobile = width < 768
         pool.click() if mobile else pool.hover()
         details = page.locator("[data-testid='usage-pool-details-group-1']")
         details.wait_for(state="visible")
         pool_details_visible = "not your personal Used / Quota" in details.inner_text()
+        if CAPTURE_MATRIX and width in (390, 1440):
+            screenshot(page, f"usage_pool_details_{width}")
         if not mobile:
             page.mouse.move(0, 0)
             details.wait_for(state="hidden")
