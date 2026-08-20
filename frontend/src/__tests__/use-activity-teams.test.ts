@@ -3,31 +3,32 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useActivityTeams } from '@/composables/useActivityTeams'
 
-vi.mock('@/api/activity', () => ({
-  getActivityScope: vi.fn(),
-  normalizeScope: (value: any) => ({ ...value, teams: value.teams ?? [] }),
-}))
+vi.mock('@/api/teamUsage', () => ({ getTeamUsageOrganization: vi.fn() }))
+
+function department(id: string, name: string, parent?: string, hasChildren = false) {
+  return {
+    department_external_id: id,
+    parent_external_id: parent,
+    name,
+    display_path: parent ? `Engineering / ${name}` : name,
+    depth: parent ? 1 : 0,
+    child_count: hasChildren ? 1 : 0,
+    has_children: hasChildren,
+    direct_member_count: 0,
+    aggregate_member_count: hasChildren ? 8 : 5,
+    connected_member_count: 0,
+    range_actual_cost: 0,
+  }
+}
 
 describe('useActivityTeams', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('exposes authorized teams through branch-on-demand organization state', async () => {
-    const api = await import('@/api/activity')
-    vi.mocked(api.getActivityScope).mockResolvedValue({
-      data: {
-        data: {
-          contract_version: 'activity-v1',
-          scope_version: 'scope-1',
-          can_view_teams: true,
-          admin: false,
-          representative: true,
-          teams: [
-            { external_id: 'engineering', name: 'Engineering', display_path: 'Engineering', member_count: 8 },
-            { external_id: 'team-alpha', parent_external_id: 'engineering', name: 'Team Alpha', display_path: 'Engineering / Team Alpha', member_count: 5 },
-          ],
-        },
-      },
-    } as any)
+  it('loads authorized Team Usage organization branches on demand', async () => {
+    const api = await import('@/api/teamUsage')
+    vi.mocked(api.getTeamUsageOrganization)
+      .mockResolvedValueOnce({ data: { data: { departments: [department('engineering', 'Engineering', undefined, true)], members: [] } } } as any)
+      .mockResolvedValueOnce({ data: { data: { departments: [department('team-alpha', 'Team Alpha', 'engineering')], members: [] } } } as any)
 
     let activityTeams!: ReturnType<typeof useActivityTeams>
     const wrapper = mount(defineComponent({
@@ -38,15 +39,15 @@ describe('useActivityTeams', () => {
     }))
     await flushPromises()
 
-    expect(activityTeams.rootBranch.value?.departments.map((team) => team.external_id)).toEqual(['engineering'])
+    expect(activityTeams.rootBranch.value?.departments.map((team) => team.department_external_id)).toEqual(['engineering'])
     expect(activityTeams.branchFor('engineering')).toBeUndefined()
 
     activityTeams.ensureBranch('engineering')
     await flushPromises()
     await nextTick()
 
-    expect(activityTeams.branchFor('engineering')?.departments.map((team) => team.external_id)).toEqual(['team-alpha'])
-    expect(api.getActivityScope).toHaveBeenCalledOnce()
+    expect(activityTeams.branchFor('engineering')?.departments.map((team) => team.department_external_id)).toEqual(['team-alpha'])
+    expect(api.getTeamUsageOrganization).toHaveBeenNthCalledWith(2, expect.objectContaining({ parent_department_external_id: 'engineering' }))
     wrapper.unmount()
   })
 })

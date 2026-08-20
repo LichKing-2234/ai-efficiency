@@ -50,7 +50,7 @@ func TestV2OverviewCountsPoolsOnceAndClampsRatioToUsageAsOf(t *testing.T) {
 	client.AttributionUsagePoolCommit.Create().SetPoolID(second.ID).SetRepoConfigID(repoA.ID).SetCommitSha("three").SetRelationKind(attributionusagepoolcommit.RelationKindDirect).SaveX(ctx)
 	client.AttributionUsagePoolCommit.Create().SetPoolID(shadow.ID).SetRepoConfigID(repoA.ID).SetCommitSha("shadow").SetRelationKind(attributionusagepoolcommit.RelationKindDirect).SaveX(ctx)
 	asOf := time.Date(2026, 3, 8, 7, 0, 0, 0, time.UTC)
-	service := NewService(client, nil, ServiceOptions{CursorSecret: "secret", V2LedgerEpoch: "formal_v2", V2DB: db, V2Denominator: fixedV2Denominator{V2Denominator{TotalTokens: 120, AsOf: asOf, Fresh: true, Complete: true}}})
+	service := NewService(client, ServiceOptions{CursorSecret: "secret", V2LedgerEpoch: "formal_v2", V2DB: db, V2Denominator: fixedV2Denominator{V2Denominator{TotalTokens: 120, AsOf: asOf, Fresh: true, Complete: true}}})
 	result, err := service.V2Overview(ctx, actor.ID, V2Query{Scope: V2ScopePersonal, FromDate: "2026-03-08", ToDate: "2026-03-08", Timezone: "America/New_York"})
 	if err != nil {
 		t.Fatal(err)
@@ -113,7 +113,7 @@ func TestV2RepositoryAndPRPagesKeepSharedValuesNonAdditive(t *testing.T) {
 	client.PRCommitUsageSnapshot.Create().SetPrRecordID(pr.ID).SetCommitSha("shared").SaveX(ctx)
 	secondPR := client.PrRecord.Create().SetRepoConfigID(firstRepo.ID).SetScmPrID(8).SetTitle("Also shared").SetScmPrURL("https://example.com/pr/8").SaveX(ctx)
 	client.PRCommitUsageSnapshot.Create().SetPrRecordID(secondPR.ID).SetCommitSha("shared").SaveX(ctx)
-	service := NewService(client, nil, ServiceOptions{CursorSecret: "secret", V2LedgerEpoch: "formal_v2", V2DB: db})
+	service := NewService(client, ServiceOptions{CursorSecret: "secret", V2LedgerEpoch: "formal_v2", V2DB: db})
 	query := V2PageQuery{V2Query: V2Query{Scope: V2ScopePersonal, FromDate: "2026-08-01", ToDate: "2026-08-01", Timezone: "Asia/Kathmandu"}}
 	page, err := service.V2Repositories(ctx, actor.ID, query)
 	if err != nil {
@@ -196,7 +196,7 @@ func TestV2OverviewKeepsActivityWhenDenominatorErrors(t *testing.T) {
 	ctx := context.Background()
 	actor := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource("ldap").SaveX(ctx)
 	client.RelayProvider.Create().SetName("activity-test").SetDisplayName("Activity Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("encrypted-test-key").SetDefaultModel("example-model").SetIsPrimary(true).SetEnabled(true).SaveX(ctx)
-	service := NewService(client, nil, ServiceOptions{V2LedgerEpoch: "formal_v2", V2DB: db, V2Denominator: errorV2Denominator{err: fmt.Errorf("Usage failed")}})
+	service := NewService(client, ServiceOptions{V2LedgerEpoch: "formal_v2", V2DB: db, V2Denominator: errorV2Denominator{err: fmt.Errorf("Usage failed")}})
 	result, err := service.V2Overview(ctx, actor.ID, V2Query{Scope: V2ScopePersonal, FromDate: "2026-08-01", ToDate: "2026-08-01", Timezone: "UTC"})
 	if err != nil || result.Ratio.State != "denominator_unavailable" || !result.Ratio.Retryable || len(result.Trend) != 1 {
 		t.Fatalf("overview=%+v error=%v", result, err)
@@ -281,7 +281,7 @@ func TestV2OverviewReturnsExactAdjacentPercentagePointChange(t *testing.T) {
 	for index, pool := range []*ent.AttributionUsagePool{seed, previous, current} {
 		client.AttributionUsagePoolCommit.Create().SetPoolID(pool.ID).SetRepoConfigID(repo.ID).SetCommitSha(fmt.Sprintf("sha-%d", index)).SetRelationKind(attributionusagepoolcommit.RelationKindDirect).SaveX(ctx)
 	}
-	service := NewService(client, nil, ServiceOptions{
+	service := NewService(client, ServiceOptions{
 		V2LedgerEpoch: "formal_v2",
 		V2CutoverAt:   time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC),
 		V2DB:          db,
@@ -308,7 +308,7 @@ func TestV2RepositoryComparisonUsesFrozenCutoverWithZeroDataPreviousPeriod(t *te
 	repo := client.RepoConfig.Create().SetName("repo").SetFullName("example/repo").SetCloneURL("https://example.com/example/repo.git").SaveX(ctx)
 	current := createV2Pool(t, client, actor.ID, "formal_v2", "2026-08-08T00:00:00Z", 100, 0)
 	client.AttributionUsagePoolCommit.Create().SetPoolID(current.ID).SetRepoConfigID(repo.ID).SetCommitSha("current").SetRelationKind(attributionusagepoolcommit.RelationKindDirect).SaveX(ctx)
-	service := NewService(client, nil, ServiceOptions{
+	service := NewService(client, ServiceOptions{
 		CursorSecret:  "secret",
 		V2LedgerEpoch: "formal_v2",
 		V2CutoverAt:   time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC),
@@ -323,7 +323,7 @@ func TestV2RepositoryComparisonUsesFrozenCutoverWithZeroDataPreviousPeriod(t *te
 	if len(page.Items) != 1 || page.Items[0].TokenChange == nil || *page.Items[0].TokenChange != 100 {
 		t.Fatalf("repositories = %+v, want zero-to-100 comparison after cutover", page.Items)
 	}
-	crossing := NewService(client, nil, ServiceOptions{
+	crossing := NewService(client, ServiceOptions{
 		CursorSecret:  "secret",
 		V2LedgerEpoch: "formal_v2",
 		V2CutoverAt:   time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC),
@@ -349,7 +349,7 @@ func TestV2ScopeAuthorizationIsRevalidatedForMemberAndTeam(t *testing.T) {
 	representative, member, ordinary, outside, admin := makeUser("representative"), makeUser("member"), makeUser("ordinary"), makeUser("outside"), makeUser("admin")
 	client.User.UpdateOne(admin).SetRole(entuser.RoleAdmin).ExecX(ctx)
 	createActivityDirectoryScope(t, client, representative, member, ordinary, outside, admin)
-	service := NewService(client, nil, ServiceOptions{CursorSecret: "secret"})
+	service := NewService(client, ServiceOptions{CursorSecret: "secret"})
 	base := V2Query{FromDate: "2026-08-01", ToDate: "2026-08-07", Timezone: "Asia/Shanghai"}
 	allowed := base
 	allowed.Scope = V2ScopeMember
@@ -367,6 +367,55 @@ func TestV2ScopeAuthorizationIsRevalidatedForMemberAndTeam(t *testing.T) {
 	team.TeamID = "team-child"
 	if _, err := service.V2Overview(ctx, representative.ID, team); err != nil {
 		t.Fatalf("authorized team: %v", err)
+	}
+}
+
+func TestV2TeamMemberAvailabilityUsesOnlyFormalDirectSharedPoolsInRange(t *testing.T) {
+	client, dsn := testdb.OpenWithDSN(t)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	makeUser := func(name string) *ent.User {
+		return client.User.Create().SetUsername(name).SetEmail(name + "@example.com").SetAuthSource("ldap").SaveX(ctx)
+	}
+	representative, member, ordinary, outside, admin := makeUser("representative"), makeUser("member"), makeUser("ordinary"), makeUser("outside"), makeUser("admin")
+	client.User.UpdateOne(admin).SetRole(entuser.RoleAdmin).ExecX(ctx)
+	createActivityDirectoryScope(t, client, representative, member, ordinary, outside, admin)
+	repo := client.RepoConfig.Create().SetName("repo").SetFullName("example/repo").SetCloneURL("https://example.com/example/repo.git").SaveX(ctx)
+	formal := createV2Pool(t, client, member.ID, "formal_v2", "2026-08-03T00:00:00Z", 10, 0)
+	shadow := createV2Pool(t, client, ordinary.ID, "shadow_v2", "2026-08-03T00:00:00Z", 20, 0)
+	outOfRange := createV2Pool(t, client, ordinary.ID, "formal_v2", "2026-07-31T00:00:00Z", 30, 0)
+	inherited := createV2Pool(t, client, ordinary.ID, "formal_v2", "2026-08-03T00:15:00Z", 40, 0)
+	for index, item := range []struct {
+		pool *ent.AttributionUsagePool
+		kind attributionusagepoolcommit.RelationKind
+	}{
+		{formal, attributionusagepoolcommit.RelationKindDirect},
+		{shadow, attributionusagepoolcommit.RelationKindShared},
+		{outOfRange, attributionusagepoolcommit.RelationKindDirect},
+		{inherited, attributionusagepoolcommit.RelationKindInheritedNonCounting},
+	} {
+		client.AttributionUsagePoolCommit.Create().SetPoolID(item.pool.ID).SetRepoConfigID(repo.ID).
+			SetCommitSha(fmt.Sprintf("availability-%d", index)).SetRelationKind(item.kind).SaveX(ctx)
+	}
+	service := NewService(client, ServiceOptions{V2LedgerEpoch: "formal_v2", V2DB: db})
+	query := V2TeamMemberAvailabilityQuery{
+		TeamID: "team-child", FromDate: "2026-08-01", ToDate: "2026-08-07", Timezone: "UTC",
+		UserIDs: []int{member.ID, ordinary.ID},
+	}
+	result, err := service.V2TeamMemberAvailability(ctx, representative.ID, query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.AvailableUserIDs) != 1 || result.AvailableUserIDs[0] != member.ID {
+		t.Fatalf("available user ids = %v, want [%d]", result.AvailableUserIDs, member.ID)
+	}
+	query.UserIDs = []int{outside.ID}
+	if _, err := service.V2TeamMemberAvailability(ctx, representative.ID, query); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("outside member error = %v", err)
 	}
 }
 

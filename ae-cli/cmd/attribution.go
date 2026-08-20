@@ -6,11 +6,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
-	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/auth"
-	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
 	"github.com/ai-efficiency/ae-cli/internal/reporting"
 	"github.com/ai-efficiency/ae-cli/internal/toolconfig"
@@ -43,11 +40,7 @@ var attributionEnableCmd = &cobra.Command{
 			return fmt.Errorf("activate reporting: %w", err)
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Compact Codex attribution enabled for installation %s.\n", reportingConfig.InstallationID)
-		if reportingConfig.Protocol.V1WritePolicy == client.AttributionV1WritePolicyAccept {
-			fmt.Fprintln(cmd.OutOrStdout(), "Baseline recorded; existing Token atoms will not be backfilled.")
-		} else {
-			fmt.Fprintln(cmd.OutOrStdout(), "Formal v2 delivery active; a v1 baseline is not required.")
-		}
+		fmt.Fprintln(cmd.OutOrStdout(), "V2 delivery active; a v1 baseline is not required.")
 		fmt.Fprintf(cmd.OutOrStdout(), "Global Git hooks: %s\n", globalHookSummary())
 		fmt.Fprintln(cmd.OutOrStdout(), "Codex Request ID source: local Codex logs")
 		return nil
@@ -67,14 +60,7 @@ var attributionStatusCmd = &cobra.Command{
 			return err
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Installation: %s\n", config.InstallationID)
-		fmt.Fprintf(cmd.OutOrStdout(), "Compact reporting: %t\n", config.ReportingEnabled)
-		fmt.Fprintf(cmd.OutOrStdout(), "Legacy AE Codex OTLP: %t\n", config.OTelEnabled)
-		state, stateErr := attributionlocal.LoadCompactState()
-		if stateErr == nil {
-			fmt.Fprintf(cmd.OutOrStdout(), "Tracking started: %s\n", state.EnabledAt.Format(time.RFC3339))
-			fmt.Fprintf(cmd.OutOrStdout(), "Seen Token atoms: %d\n", len(state.SeenAtoms))
-			fmt.Fprintf(cmd.OutOrStdout(), "Pending compact buckets: %d\n", len(state.Pending))
-		}
+		fmt.Fprintf(cmd.OutOrStdout(), "V2 reporting: %t\n", config.ReportingEnabled)
 		fmt.Fprintf(cmd.OutOrStdout(), "Global Git hooks: %s\n", globalHookSummary())
 		if attrCtx, detectErr := detectAttributionContext(); detectErr == nil {
 			task, loadErr := hooks.LoadSyncTask(attrCtx.workspaceID)

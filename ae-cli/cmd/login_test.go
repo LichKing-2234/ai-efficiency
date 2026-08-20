@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/config"
-	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/auth"
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/reporting"
@@ -182,9 +181,6 @@ func TestLoginCommandActivatesReportingWhenValidTokenExists(t *testing.T) {
 	if !reportingConfig.ReportingEnabled || reportingConfig.ReporterToken != "reporter-secret" || reportingConfig.EnabledAt == nil {
 		t.Fatalf("reporting config = %+v, want enabled reporter config with baseline time", reportingConfig)
 	}
-	if _, err := attributionlocal.LoadCompactState(); err != nil {
-		t.Fatalf("load compact baseline: %v", err)
-	}
 	if _, err := os.Stat(filepath.Join(home, ".ae-cli", "git-hooks", "post-commit")); err != nil {
 		t.Fatalf("global managed hook not installed: %v", err)
 	}
@@ -320,9 +316,6 @@ func TestLoginCommandPersistsFormalProtocolWithoutCreatingV1Baseline(t *testing.
 		if !bytes.Contains(payload, []byte(want)) {
 			t.Fatalf("reporting config missing %s:\n%s", want, payload)
 		}
-	}
-	if _, err := attributionlocal.LoadCompactState(); !os.IsNotExist(err) {
-		t.Fatalf("formal activation created or loaded a v1 baseline: %v", err)
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -26,10 +25,7 @@ const (
 
 type AttributionHandler struct {
 	installations *attributionledger.InstallationService
-	ledger        *attributionledger.Service
-	correlation   *attributionledger.CorrelationStore
 	claims        *attributionclaim.Service
-	protocol      attributionledger.ProtocolContract
 	readiness     attributionReadinessService
 }
 
@@ -37,13 +33,10 @@ type attributionReadinessService interface {
 	V2PersonalReadiness(context.Context, int) (activity.V2Readiness, error)
 }
 
-func NewAttributionHandler(installations *attributionledger.InstallationService, ledger *attributionledger.Service, correlation *attributionledger.CorrelationStore, claims *attributionclaim.Service, protocol attributionledger.ProtocolContract, readiness attributionReadinessService) *AttributionHandler {
+func NewAttributionHandler(installations *attributionledger.InstallationService, claims *attributionclaim.Service, readiness attributionReadinessService) *AttributionHandler {
 	return &AttributionHandler{
 		installations: installations,
-		ledger:        ledger,
-		correlation:   correlation,
 		claims:        claims,
-		protocol:      protocol,
 		readiness:     readiness,
 	}
 }
@@ -56,7 +49,8 @@ type ensureInstallationRequest struct {
 
 type setInstallationEnabledRequest struct {
 	ReportingEnabled *bool `json:"reporting_enabled,omitempty"`
-	OTelEnabled      *bool `json:"otel_enabled,omitempty"`
+	// Accepted only so pre-cleanup clients can disable their retired exporter.
+	OTelEnabled *bool `json:"otel_enabled,omitempty"`
 }
 
 type attributionStatusResponse struct {
@@ -130,11 +124,15 @@ func (h *AttributionHandler) SetInstallationEnabled(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.ReportingEnabled == nil && req.OTelEnabled == nil {
-		pkg.Error(c, http.StatusBadRequest, "at least one enabled flag is required")
+	if req.ReportingEnabled == nil {
+		pkg.Error(c, http.StatusBadRequest, "reporting_enabled is required")
 		return
 	}
-	result, err := h.installations.SetEnabled(c.Request.Context(), uc.UserID, c.Param("installation_id"), req.ReportingEnabled, req.OTelEnabled)
+	if req.OTelEnabled != nil && *req.OTelEnabled {
+		pkg.Error(c, http.StatusBadRequest, "otel_enabled is retired")
+		return
+	}
+	result, err := h.installations.SetEnabled(c.Request.Context(), uc.UserID, c.Param("installation_id"), req.ReportingEnabled)
 	if err != nil {
 		if errors.Is(err, attributionledger.ErrInstallationForbidden) {
 			pkg.Error(c, http.StatusForbidden, err.Error())
@@ -164,25 +162,6 @@ func (h *AttributionHandler) RotateInstallationCredentials(c *gin.Context) {
 	pkg.Success(c, result)
 }
 
-func (h *AttributionHandler) CreateBuckets(c *gin.Context) {
-	principal := getInstallationPrincipal(c)
-	if principal == nil {
-		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-	var req attributionledger.BatchRequest
-	if err := decodeStrictJSON(c, &req); err != nil {
-		pkg.Error(c, http.StatusBadRequest, err.Error())
-		return
-	}
-	result, err := h.ledger.CreateBuckets(c.Request.Context(), *principal, req)
-	if err != nil {
-		writeAttributionMutationError(c, err, h.protocol)
-		return
-	}
-	pkg.Created(c, result)
-}
-
 func (h *AttributionHandler) CreateV2Claims(c *gin.Context) {
 	principal := getInstallationPrincipal(c)
 	if principal == nil {
@@ -206,111 +185,10 @@ func (h *AttributionHandler) CreateV2Claims(c *gin.Context) {
 	pkg.Created(c, result)
 }
 
-func (h *AttributionHandler) CreateRevision(c *gin.Context) {
-	principal := getInstallationPrincipal(c)
-	if principal == nil {
-		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-	var req attributionledger.RevisionRequest
-	if err := decodeStrictJSON(c, &req); err != nil {
-		pkg.Error(c, http.StatusBadRequest, err.Error())
-		return
-	}
-	created, err := h.ledger.CreateRevision(c.Request.Context(), *principal, c.Param("bucket_id"), req)
-	if err != nil {
-		writeAttributionMutationError(c, err, h.protocol)
-		return
-	}
-	pkg.Success(c, gin.H{"created": created, "revision_id": req.RevisionID})
-}
-
-func (h *AttributionHandler) Report(c *gin.Context) {
-	uc := auth.GetUserContext(c)
-	if uc == nil {
-		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-	to := time.Now().UTC()
-	from := to.Add(-7 * 24 * time.Hour)
-	var err error
-	if raw := strings.TrimSpace(c.Query("from")); raw != "" {
-		from, err = time.Parse(time.RFC3339, raw)
-		if err != nil {
-			pkg.Error(c, http.StatusBadRequest, "invalid from")
-			return
-		}
-	}
-	if raw := strings.TrimSpace(c.Query("to")); raw != "" {
-		to, err = time.Parse(time.RFC3339, raw)
-		if err != nil {
-			pkg.Error(c, http.StatusBadRequest, "invalid to")
-			return
-		}
-	}
-	if !to.After(from) || to.Sub(from) > 366*24*time.Hour {
-		pkg.Error(c, http.StatusBadRequest, "invalid report window")
-		return
-	}
-	userID := uc.UserID
-	if uc.Role == "admin" && strings.TrimSpace(c.Query("user_id")) != "" {
-		userID, err = strconv.Atoi(c.Query("user_id"))
-		if err != nil || userID <= 0 {
-			pkg.Error(c, http.StatusBadRequest, "invalid user_id")
-			return
-		}
-	}
-	report, err := h.ledger.Report(c.Request.Context(), userID, from, to)
-	if err != nil {
-		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-	pkg.Success(c, report)
-}
-
-func (h *AttributionHandler) IngestOTLP(c *gin.Context) {
-	principal := getInstallationPrincipal(c)
-	if principal == nil {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-		return
-	}
-	payload, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, maxAttributionBody))
-	if err != nil {
-		c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{"error": "OTLP payload too large"})
-		return
-	}
-	var root any
-	if err := json.Unmarshal(payload, &root); err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid OTLP JSON"})
-		return
-	}
-	evidence := attributionledger.ExtractCodexRequestEvidence(root)
-	if h.correlation == nil {
-		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "correlation store unavailable"})
-		return
-	}
-	if err := h.correlation.Put(c.Request.Context(), principal.InstallationID, evidence); err != nil {
-		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "correlation store unavailable"})
-		return
-	}
-	updated, err := h.ledger.RefreshCorrelation(c.Request.Context(), *principal, evidence)
-	if err != nil {
-		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "correlation metadata refresh unavailable"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"partialSuccess": gin.H{}, "accepted": len(evidence), "updated_buckets": updated})
-}
-
-func requireInstallationToken(service *attributionledger.InstallationService, otlp bool) gin.HandlerFunc {
+func requireInstallationToken(service *attributionledger.InstallationService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := bearerToken(c.GetHeader("Authorization"))
-		var principal attributionledger.InstallationPrincipal
-		var err error
-		if otlp {
-			principal, err = service.AuthenticateOTLP(c.Request.Context(), token)
-		} else {
-			principal, err = service.AuthenticateReporter(c.Request.Context(), token)
-		}
+		principal, err := service.AuthenticateReporter(c.Request.Context(), token)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"code": http.StatusUnauthorized, "message": err.Error()})
 			return
@@ -350,17 +228,4 @@ func decodeStrictJSON(c *gin.Context, target any) error {
 		return fmt.Errorf("decode trailing request JSON: %w", err)
 	}
 	return nil
-}
-
-func writeAttributionMutationError(c *gin.Context, err error, protocol attributionledger.ProtocolContract) {
-	switch {
-	case errors.Is(err, attributionledger.ErrUpgradeRequired):
-		pkg.ErrorWithDetails(c, http.StatusConflict, err.Error(), gin.H{"error_code": attributionledger.V1WritePolicyUpgradeNeeded, "minimum_cli_version": protocol.MinimumCLIVersion})
-	case errors.Is(err, attributionledger.ErrImmutableBucketConflict), errors.Is(err, attributionledger.ErrRevisionConflict):
-		pkg.Error(c, http.StatusConflict, err.Error())
-	case errors.Is(err, attributionledger.ErrInstallationForbidden), errors.Is(err, attributionledger.ErrAllocationForbidden):
-		pkg.Error(c, http.StatusForbidden, err.Error())
-	default:
-		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
-	}
 }

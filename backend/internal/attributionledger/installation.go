@@ -19,7 +19,6 @@ import (
 var (
 	ErrInstallationForbidden = errors.New("reporting installation does not belong to authenticated user")
 	ErrReporterDisabled      = errors.New("compact reporting is not enabled for this installation")
-	ErrOTLPDisabled          = errors.New("Codex OTLP is not enabled for this installation")
 )
 
 type InstallationService struct {
@@ -89,7 +88,6 @@ func (s *InstallationService) Ensure(ctx context.Context, userID int, installati
 		return InstallationCredentials{
 			InstallationID:   installationID,
 			ReportingEnabled: existing.ReportingEnabled,
-			OTelEnabled:      existing.OtelEnabled,
 			Protocol:         s.protocol,
 		}, nil
 	}
@@ -101,10 +99,6 @@ func (s *InstallationService) Ensure(ctx context.Context, userID int, installati
 	if err != nil {
 		return result, fmt.Errorf("ensure reporting installation: create reporter credential: %w", err)
 	}
-	otlpToken, err := newScopedToken("aeo_")
-	if err != nil {
-		return result, fmt.Errorf("ensure reporting installation: create OTLP credential: %w", err)
-	}
 	now := time.Now().UTC()
 	_, err = s.client.ReportingInstallation.Create().
 		SetInstallationID(installationID).
@@ -112,7 +106,7 @@ func (s *InstallationService) Ensure(ctx context.Context, userID int, installati
 		SetLabel(strings.TrimSpace(label)).
 		SetClientVersion(strings.TrimSpace(clientVersion)).
 		SetReporterTokenHash(hashToken(reporterToken)).
-		SetOtlpTokenHash(hashToken(otlpToken)).
+		SetOtlpTokenHash(retiredOTLPHash(installationID)).
 		SetLastSeenAt(now).
 		Save(ctx)
 	if err != nil {
@@ -121,13 +115,12 @@ func (s *InstallationService) Ensure(ctx context.Context, userID int, installati
 	return InstallationCredentials{
 		InstallationID: installationID,
 		ReporterToken:  reporterToken,
-		OTLPToken:      otlpToken,
 		Created:        true,
 		Protocol:       s.protocol,
 	}, nil
 }
 
-func (s *InstallationService) SetEnabled(ctx context.Context, userID int, installationID string, reportingEnabled, otelEnabled *bool) (InstallationCredentials, error) {
+func (s *InstallationService) SetEnabled(ctx context.Context, userID int, installationID string, reportingEnabled *bool) (InstallationCredentials, error) {
 	row, err := s.client.ReportingInstallation.Query().
 		Where(reportinginstallation.InstallationIDEQ(strings.TrimSpace(installationID))).
 		Only(ctx)
@@ -140,14 +133,10 @@ func (s *InstallationService) SetEnabled(ctx context.Context, userID int, instal
 	if row.Status != reportinginstallation.StatusActive {
 		return InstallationCredentials{}, fmt.Errorf("reporting installation is revoked")
 	}
-	update := row.Update().SetLastSeenAt(time.Now().UTC())
+	update := row.Update().SetLastSeenAt(time.Now().UTC()).SetOtelEnabled(false)
 	if reportingEnabled != nil {
 		update.SetReportingEnabled(*reportingEnabled)
 		row.ReportingEnabled = *reportingEnabled
-	}
-	if otelEnabled != nil {
-		update.SetOtelEnabled(*otelEnabled)
-		row.OtelEnabled = *otelEnabled
 	}
 	if err := update.Exec(ctx); err != nil {
 		return InstallationCredentials{}, fmt.Errorf("update reporting installation: %w", err)
@@ -155,7 +144,6 @@ func (s *InstallationService) SetEnabled(ctx context.Context, userID int, instal
 	return InstallationCredentials{
 		InstallationID:   row.InstallationID,
 		ReportingEnabled: row.ReportingEnabled,
-		OTelEnabled:      row.OtelEnabled,
 		Protocol:         s.protocol,
 	}, nil
 }
@@ -179,13 +167,9 @@ func (s *InstallationService) Rotate(ctx context.Context, userID int, installati
 	if err != nil {
 		return InstallationCredentials{}, fmt.Errorf("rotate reporting installation credentials: create reporter credential: %w", err)
 	}
-	otlpToken, err := newScopedToken("aeo_")
-	if err != nil {
-		return InstallationCredentials{}, fmt.Errorf("rotate reporting installation credentials: create OTLP credential: %w", err)
-	}
 	if err := row.Update().
 		SetReporterTokenHash(hashToken(reporterToken)).
-		SetOtlpTokenHash(hashToken(otlpToken)).
+		SetOtelEnabled(false).
 		SetLastSeenAt(time.Now().UTC()).
 		Exec(ctx); err != nil {
 		return InstallationCredentials{}, fmt.Errorf("rotate reporting installation credentials: %w", err)
@@ -193,45 +177,30 @@ func (s *InstallationService) Rotate(ctx context.Context, userID int, installati
 	return InstallationCredentials{
 		InstallationID:   row.InstallationID,
 		ReporterToken:    reporterToken,
-		OTLPToken:        otlpToken,
 		ReportingEnabled: row.ReportingEnabled,
-		OTelEnabled:      row.OtelEnabled,
 		Protocol:         s.protocol,
 	}, nil
 }
 
 func (s *InstallationService) AuthenticateReporter(ctx context.Context, token string) (InstallationPrincipal, error) {
-	return s.authenticate(ctx, token, false)
-}
-
-func (s *InstallationService) AuthenticateOTLP(ctx context.Context, token string) (InstallationPrincipal, error) {
-	return s.authenticate(ctx, token, true)
-}
-
-func (s *InstallationService) authenticate(ctx context.Context, token string, otlp bool) (InstallationPrincipal, error) {
 	var principal InstallationPrincipal
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return principal, errors.New("missing installation token")
 	}
-	query := s.client.ReportingInstallation.Query()
-	if otlp {
-		query = query.Where(reportinginstallation.OtlpTokenHashEQ(hashToken(token)))
-	} else {
-		query = query.Where(reportinginstallation.ReporterTokenHashEQ(hashToken(token)))
-	}
-	row, err := query.Only(ctx)
+	row, err := s.client.ReportingInstallation.Query().Where(reportinginstallation.ReporterTokenHashEQ(hashToken(token))).Only(ctx)
 	if err != nil || row.Status != reportinginstallation.StatusActive {
 		return principal, errors.New("invalid installation token")
 	}
-	if otlp && !row.OtelEnabled {
-		return principal, ErrOTLPDisabled
-	}
-	if !otlp && !row.ReportingEnabled {
+	if !row.ReportingEnabled {
 		return principal, ErrReporterDisabled
 	}
 	_ = row.Update().SetLastSeenAt(time.Now().UTC()).Exec(ctx)
 	return InstallationPrincipal{DatabaseID: row.ID, InstallationID: row.InstallationID, UserID: row.UserID}, nil
+}
+
+func retiredOTLPHash(installationID string) string {
+	return hashToken("retired-otlp:" + strings.TrimSpace(installationID))
 }
 
 func newScopedToken(prefix string) (string, error) {

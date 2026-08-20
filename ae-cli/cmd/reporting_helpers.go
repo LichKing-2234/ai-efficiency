@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/buildinfo"
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
@@ -50,13 +49,9 @@ func ensureReportingEnrollment(ctx context.Context, userClient *client.Client, s
 	config.ServerURL = strings.TrimRight(strings.TrimSpace(serverURL), "/")
 	config.AuthSubject = strings.TrimSpace(authSubject)
 	config.ReportingEnabled = credentials.ReportingEnabled
-	config.OTelEnabled = credentials.OTelEnabled
 	config.Protocol = credentials.Protocol
 	if credentials.ReporterToken != "" {
 		config.ReporterToken = credentials.ReporterToken
-	}
-	if credentials.OTLPToken != "" {
-		config.OTLPToken = credentials.OTLPToken
 	}
 	if config.ReporterToken == "" {
 		credentials, err = userClient.RotateAttributionInstallationCredentials(ctx, config.InstallationID)
@@ -70,9 +65,7 @@ func ensureReportingEnrollment(ctx context.Context, userClient *client.Client, s
 			return nil, fmt.Errorf("attribution protocol changed during credential recovery")
 		}
 		config.ReporterToken = credentials.ReporterToken
-		config.OTLPToken = credentials.OTLPToken
 		config.ReportingEnabled = credentials.ReportingEnabled
-		config.OTelEnabled = credentials.OTelEnabled
 		if config.ReporterToken == "" {
 			return nil, fmt.Errorf("rotated installation credentials are unavailable")
 		}
@@ -90,16 +83,6 @@ func activateV2Reporting(ctx context.Context, userClient *client.Client, serverU
 	}
 
 	now := time.Now().UTC()
-	if config.Protocol.V1WritePolicy == client.AttributionV1WritePolicyAccept {
-		if _, err := attributionlocal.LoadCompactState(); os.IsNotExist(err) {
-			if err := attributionlocal.InitializeCompactBaseline(ctx, now); err != nil {
-				return config, fmt.Errorf("initialize Codex attribution baseline: %w", err)
-			}
-		} else if err != nil {
-			return config, fmt.Errorf("load Codex attribution baseline: %w", err)
-		}
-	}
-
 	enabled := true
 	disabled := false
 	response, err := userClient.SetAttributionInstallationEnabled(ctx, config.InstallationID, client.SetInstallationEnabledRequest{
@@ -116,7 +99,6 @@ func activateV2Reporting(ctx context.Context, userClient *client.Client, serverU
 		return config, fmt.Errorf("attribution protocol changed during activation")
 	}
 	config.ReportingEnabled = response.ReportingEnabled
-	config.OTelEnabled = response.OTelEnabled
 	if config.EnabledAt == nil {
 		config.EnabledAt = &now
 	}
@@ -127,8 +109,8 @@ func activateV2Reporting(ctx context.Context, userClient *client.Client, serverU
 	if err := reporting.Save(path, config); err != nil {
 		return config, err
 	}
-	if !config.ReportingEnabled || config.OTelEnabled {
-		return config, fmt.Errorf("server did not activate compact reporting with legacy Codex OTLP disabled")
+	if !config.ReportingEnabled {
+		return config, fmt.Errorf("server did not activate v2 reporting")
 	}
 
 	home, err := os.UserHomeDir()

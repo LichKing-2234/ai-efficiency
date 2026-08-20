@@ -6,12 +6,12 @@ import ActivityTeamView from '@/views/activity/ActivityTeamView.vue'
 import { setLocale } from '@/i18n'
 
 vi.mock('@/api/activity', () => ({
-  getActivityTeam: vi.fn(),
+  getActivityV2TeamMemberAvailability: vi.fn(),
   getActivityV2Overview: vi.fn(),
   listActivityV2Repositories: vi.fn(),
   listActivityV2PullRequests: vi.fn(),
-  normalizeTeam: (value: any) => ({ ...value, members: { items: value.members?.items ?? [], next_cursor: value.members?.next_cursor } }),
 }))
+vi.mock('@/api/teamUsage', () => ({ getTeamUsageOrganization: vi.fn() }))
 vi.mock('@/api/workItems', () => ({
   getWorkItemCounts: vi.fn().mockResolvedValue({ data: { data: { total_count: 0 } } }),
 }))
@@ -26,26 +26,25 @@ const overview = {
 describe('ActivityTeamView privacy contract', () => {
   beforeEach(async () => {
     setLocale('en-US')
-    const api = await import('@/api/activity')
-    vi.mocked(api.getActivityTeam).mockResolvedValue({ data: { data: {
-      contract_version: 'activity-v1', scope_version: 'scope-1',
-      window: { from: '2026-07-14', to: '2026-08-12' },
-      team: { external_id: 'team-alpha', name: 'Team Alpha', display_path: 'Engineering / Team Alpha', member_count: 1 },
-      active_members: 1,
-      metrics: { participating_prs: { value: 7, lower_bound: false }, active_repositories: 3, commit_count: 9 },
-      sync_coverage: { complete: true, affected_repositories: 0 },
-      members: { items: [{
-        member: { user_id: 7, display_name: 'Alice', email: 'alice@example.com', department_external_ids: ['team-alpha'] },
-        available: true,
-        metrics: { participating_prs: { value: 7, lower_bound: false }, active_repositories: 3, commit_count: 9 },
-      }] },
+    const activity = await import('@/api/activity')
+    const teamUsage = await import('@/api/teamUsage')
+    vi.mocked(teamUsage.getTeamUsageOrganization).mockResolvedValue({ data: { data: {
+      members: [{
+        user_id: 7, display_name: 'Alice', email: 'alice@example.com', department_external_ids: ['team-alpha'],
+        department_display_path: 'Engineering / Team Alpha', range_actual_cost: 0, today_actual_cost: 0, total_actual_cost: 0, selectable: true,
+      }],
     } } } as any)
-    vi.mocked(api.getActivityV2Overview).mockResolvedValue({ data: { data: overview } } as any)
-    vi.mocked(api.listActivityV2Repositories).mockResolvedValue({ data: { data: { items: [] } } } as any)
-    vi.mocked(api.listActivityV2PullRequests).mockResolvedValue({ data: { data: { items: [] } } } as any)
+    vi.mocked(activity.getActivityV2TeamMemberAvailability).mockResolvedValue({ data: { data: {
+      contract_version: 'activity-v2', scope_version: 'scope-1',
+      team: { external_id: 'team-alpha', name: 'Team Alpha', display_path: 'Engineering / Team Alpha', member_count: 1 },
+      available_user_ids: [7],
+    } } } as any)
+    vi.mocked(activity.getActivityV2Overview).mockResolvedValue({ data: { data: overview } } as any)
+    vi.mocked(activity.listActivityV2Repositories).mockResolvedValue({ data: { data: { items: [] } } } as any)
+    vi.mocked(activity.listActivityV2PullRequests).mockResolvedValue({ data: { data: { items: [] } } } as any)
   })
 
-  it('renders team analytics but only identity, department, and availability for each member', async () => {
+  it('renders team analytics but only identity, department, and formal-v2 availability for each member', async () => {
     const router = createRouter({ history: createMemoryHistory(), routes: [
       { path: '/activity/teams/:team_id', component: ActivityTeamView },
       { path: '/activity/members/:user_id', component: { template: '<div />' } },
@@ -65,5 +64,9 @@ describe('ActivityTeamView privacy contract', () => {
     expect(member.text()).toContain('team-alpha')
     expect(member.text()).toContain('Available')
     expect(member.text()).not.toMatch(/Token|PR|commit|Repository|7|3|9/)
+    const activity = await import('@/api/activity')
+    expect(activity.getActivityV2TeamMemberAvailability).toHaveBeenCalledWith('team-alpha', {
+      from: '2026-07-14', to: '2026-08-12', timezone: 'UTC', user_ids: [7],
+    })
   })
 })

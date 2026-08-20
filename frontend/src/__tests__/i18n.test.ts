@@ -216,11 +216,10 @@ describe('i18n locale loading', () => {
     const englishKeys = Object.keys(enUS).sort()
     const chineseKeys = Object.keys(zhCN).sort()
 
-    expect(englishKeys).toHaveLength(1041)
-    expect(chineseKeys).toHaveLength(1041)
+    expect(englishKeys).toHaveLength(995)
+    expect(chineseKeys).toHaveLength(995)
     expect(englishKeys).toContain('activity.title')
     expect(englishKeys).toContain('activity.teamsTitle')
-    expect(englishKeys).toContain('activity.repositoryActivity')
     expect(englishKeys).toContain('directoryOffboarding.effectNotice')
     expect(chineseKeys).toEqual(englishKeys)
   })

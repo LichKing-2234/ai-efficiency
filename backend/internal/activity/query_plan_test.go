@@ -10,9 +10,7 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
 	"github.com/ai-efficiency/backend/ent/attributionusagepoolcommit"
-	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	_ "github.com/lib/pq"
 )
@@ -215,7 +213,7 @@ func TestV2ReadPathsStayWithinScaleLatencyBudget(t *testing.T) {
 	if _, err := db.ExecContext(ctx, "ANALYZE attribution_usage_pools; ANALYZE attribution_usage_pool_commits; ANALYZE pr_commit_usage_snapshots; ANALYZE pr_records"); err != nil {
 		t.Fatal(err)
 	}
-	service := NewService(client, nil, ServiceOptions{
+	service := NewService(client, ServiceOptions{
 		CursorSecret: "scale-secret", V2LedgerEpoch: "formal_v2", V2DB: recordedDB,
 		V2Denominator: fixedV2Denominator{V2Denominator{TotalTokens: poolCount * 2, AsOf: time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC), Fresh: true, Complete: true}},
 	})
@@ -282,56 +280,4 @@ func TestV2ReadPathsStayWithinScaleLatencyBudget(t *testing.T) {
 		_, err := service.V2PullRequests(ctx, user.ID, V2PageQuery{V2Query: query, Cursor: pullRequestPage.NextCursor})
 		return err
 	}, "WITH pool_pr AS")
-}
-
-func TestTeamProjectionQueryCountDoesNotGrowWithMemberCount(t *testing.T) {
-	seed, dsn := testdb.OpenWithDSN(t)
-	ctx := context.Background()
-	representative := seed.User.Create().SetUsername("representative").SetEmail("representative@example.com").SetAuthSource("ldap").SaveX(ctx)
-	source := seed.DirectorySource.Create().SetName("company").SetEnabled(true).SetDsl("version: 1").SaveX(ctx)
-	run := seed.DirectorySyncRun.Create().SetSourceID(source.ID).SetMode("apply").SetStatus("completed").SetPhase("completed").SetCompletedAt(time.Now().UTC()).SaveX(ctx)
-	seed.DirectorySource.UpdateOne(source).SetLastSuccessfulRunID(run.ID).SetLastRunID(run.ID).ExecX(ctx)
-	seed.DirectoryDepartment.Create().SetSourceID(source.ID).SetExternalID("team-scale").SetName("Scale Team").SetPath("Scale Team").SetLastSeenRunID(run.ID).
-		SetMetadata(map[string]any{"representative_external_ids": []string{"member-representative"}}).SaveX(ctx)
-	representativeMember := seed.DirectoryMember.Create().SetSourceID(source.ID).SetExternalID("member-representative").SetEmailNormalized(representative.Email).
-		SetDisplayName(representative.Username).SetDepartmentExternalID("team-scale").SetStatus("active").SetMatchedUserID(representative.ID).SetLastSeenRunID(run.ID).SaveX(ctx)
-	seed.DirectoryMemberDepartment.Create().SetSourceID(source.ID).SetDirectoryMemberID(representativeMember.ID).SetMemberExternalID(representativeMember.ExternalID).
-		SetMemberEmailNormalized(representative.Email).SetDepartmentExternalID("team-scale").SetLastSeenRunID(run.ID).SaveX(ctx)
-	repo := seed.RepoConfig.Create().SetName("repo-scale").SetFullName("acme/repo-scale").SetCloneURL("https://example.com/acme/repo-scale.git").SaveX(ctx)
-	observedAt := time.Now().UTC().Add(-time.Hour)
-	for index := 0; index < 40; index++ {
-		member := seed.User.Create().SetUsername(fmt.Sprintf("member-%02d", index)).SetEmail(fmt.Sprintf("member-%02d@example.com", index)).SetAuthSource("ldap").SaveX(ctx)
-		directoryMember := seed.DirectoryMember.Create().SetSourceID(source.ID).SetExternalID(fmt.Sprintf("member-%02d", index)).SetEmailNormalized(member.Email).
-			SetDisplayName(member.Username).SetDepartmentExternalID("team-scale").SetStatus("active").SetMatchedUserID(member.ID).SetLastSeenRunID(run.ID).SaveX(ctx)
-		seed.DirectoryMemberDepartment.Create().SetSourceID(source.ID).SetDirectoryMemberID(directoryMember.ID).SetMemberExternalID(directoryMember.ExternalID).
-			SetMemberEmailNormalized(member.Email).SetDepartmentExternalID("team-scale").SetLastSeenRunID(run.ID).SaveX(ctx)
-		installation := seed.ReportingInstallation.Create().SetInstallationID(fmt.Sprintf("scale-installation-%02d", index)).SetUserID(member.ID).
-			SetReporterTokenHash(fmt.Sprintf("scale-reporter-%02d", index)).SetOtlpTokenHash(fmt.Sprintf("scale-otlp-%02d", index)).SaveX(ctx)
-		createActivityBucket(t, seed, installation.ID, member.ID, fmt.Sprintf("scale-bucket-%02d", index), observedAt.Add(time.Duration(index)*time.Second), attributionusagebucket.TokenQualityMeasured, 0, testAllocations(repo.ID, "scale-shared-commit", "bound_auto"))
-	}
-	pr := seed.PrRecord.Create().SetRepoConfigID(repo.ID).SetScmPrID(9100).SetTitle("Scale shared PR").SetStatus(prrecord.StatusMerged).SetMergedAt(observedAt.Add(time.Hour)).SaveX(ctx)
-	seed.PRCommitUsageSnapshot.Create().SetPrRecordID(pr.ID).SetCommitSha("scale-shared-commit").SaveX(ctx)
-	seed.PRSyncJob.Create().SetRepoConfigID(repo.ID).SetStatus("completed").SetPhase("completed").SetCompletedAt(time.Now().UTC()).SaveX(ctx)
-
-	queryCount := 0
-	var debugLines []string
-	client, err := ent.Open("postgres", dsn, ent.Debug(), ent.Log(func(args ...any) {
-		queryCount++
-		debugLines = append(debugLines, fmt.Sprint(args...))
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
-	service := NewService(client, nil, ServiceOptions{})
-	result, err := service.Team(ctx, representative.ID, "team-scale", Window{From: observedAt.Add(-time.Hour), To: time.Now().UTC().Add(time.Hour)}, PageOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.ActiveMembers != 41 || result.Metrics.ParticipatingPRs.Value != 1 {
-		t.Fatalf("scale result members=%d metrics=%+v", result.ActiveMembers, result.Metrics)
-	}
-	if queryCount > 24 {
-		t.Fatalf("team projection issued %d SQL operations for 41 members, want bounded set queries:\n%s", queryCount, strings.Join(debugLines, "\n"))
-	}
 }

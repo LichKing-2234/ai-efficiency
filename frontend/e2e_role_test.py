@@ -168,48 +168,6 @@ def fulfill_json(route, data, status=200):
     )
 
 
-def activity_metrics():
-    return {
-        "participating_prs": {"value": 2, "lower_bound": False},
-        "merged_prs": {"value": 1, "lower_bound": False},
-        "active_repositories": 1,
-        "commit_count": 1,
-        "latest_activity": "2026-08-05T12:00:00Z",
-    }
-
-
-def activity_sync_coverage():
-    return {
-        "complete": True,
-        "affected_repositories": 0,
-        "unsynced_repositories": 0,
-        "stale_repositories": 0,
-        "partially_synced_repositories": 0,
-        "failed_repositories": 0,
-    }
-
-
-def activity_member_row():
-    return {
-        "member": {
-            "user_id": 7,
-            "display_name": "Alice",
-            "email": "alice@example.com",
-            "department_external_ids": ["team-alpha"],
-        },
-        "available": True,
-        "metrics": activity_metrics(),
-        "quality": {
-            "measured_buckets": 1,
-            "unbound_buckets": 0,
-            "multi_repo_shared_buckets": 0,
-            "invalid_token_facts": 0,
-            "historical_advisory_facts": 0,
-            "coverage_gap_count": 0,
-        },
-    }
-
-
 def team_usage_member():
     return {
         "rank": 1,
@@ -434,6 +392,14 @@ def mock_matrix_api(route, role):
     mine_request = quota_reset_request(1, "Alice", "alice@example.com")
     approval_request = quota_reset_request(2, "Bob", "bob@example.org")
     usage_snapshot = user_usage_snapshot()
+    if path == "/api/v1/user/team-usage/organization" and parse_qs(urlparse(route.request.url).query).get("parent_department_external_id") == ["team-alpha"]:
+        fulfill_json(route, {
+            **snapshot,
+            "parent_department_external_id": "team-alpha",
+            "departments": [],
+            "members": [member],
+        })
+        return
     responses = {
         "/api/v1/telemetry/web-vitals": {},
         "/api/v1/user/team-usage/scope": {
@@ -635,35 +601,11 @@ def mock_matrix_api(route, role):
             },
         },
         "/api/v1/repos/9/pr-sync-job/latest": None,
-        "/api/v1/activity/scope": {
-            "contract_version": "activity-v1",
+        "/api/v1/activity/v2/teams/team-alpha/member-availability": {
+            "contract_version": "activity-v2",
             "scope_version": "scope-e2e",
-            "can_view_teams": True,
-            "admin": role == "admin",
-            "representative": True,
-            "teams": [team_identity],
-        },
-        "/api/v1/activity/teams/team-alpha": {
-            "contract_version": "activity-v1",
-            "scope_version": "scope-e2e",
-            "window": {"from": "2026-07-09T00:00:00Z", "to": "2026-08-08T00:00:00Z"},
             "team": team_identity,
-            "active_members": 1,
-            "metrics": activity_metrics(),
-            "sync_coverage": activity_sync_coverage(),
-            "members": {"items": [activity_member_row()]},
-        },
-        "/api/v1/activity/repos/9": {
-            "contract_version": "activity-v1",
-            "scope_version": "scope-e2e",
-            "window": {"from": "2026-07-09T00:00:00Z", "to": "2026-08-08T00:00:00Z"},
-            "repository": {"repo_config_id": 9, "name": "example-org/repo-a"},
-            "participating_members": 1,
-            "metrics": activity_metrics(),
-            "sync_coverage": activity_sync_coverage(),
-            "members": {"items": [activity_member_row()]},
-            "prs": {"items": []},
-            "commits": {"items": []},
+            "available_user_ids": [7],
         },
         "/api/v1/activity/v2/overview": {
             "contract_version": "activity-v2",
@@ -753,10 +695,6 @@ def clear_auth_routes(page):
         "**/api/v1/efficiency/dashboard",
         "**/api/v1/user/providers",
         "**/api/v1/work-items/counts",
-        "**/api/v1/attribution/report**",
-        "**/api/v1/activity/summary**",
-        "**/api/v1/activity/members/**",
-        "**/api/v1/activity/buckets/**",
         "**/api/v1/scm-providers**",
         "**/api/v1/admin/providers**",
         "**/api/v1/admin/credentials**",
@@ -876,129 +814,6 @@ def mock_auth_endpoints(page, role="admin"):
                 "ai_access_setup_count": 0,
                 "offboarding_count": 0,
                 "total_count": 1,
-            },
-        }),
-    ))
-    activity_member = {
-        "contract_version": "activity-v1",
-        "window": {"from": "2026-07-09T00:00:00Z", "to": "2026-08-08T00:00:00Z"},
-        "member": {
-            "user_id": 7,
-            "display_name": "Alice",
-            "email": "alice@example.com",
-            "department_external_ids": ["team-alpha"],
-        },
-        "available": True,
-        "metrics": {
-            "participating_prs": {"value": 2, "lower_bound": True},
-            "merged_prs": {"value": 1, "lower_bound": True},
-            "active_repositories": 1,
-            "commit_count": 1,
-            "latest_activity": "2026-08-05T12:00:00Z",
-        },
-        "quality": {
-            "measured_buckets": 1,
-            "unbound_buckets": 0,
-            "multi_repo_shared_buckets": 0,
-            "invalid_token_facts": 0,
-            "historical_advisory_facts": 0,
-            "coverage_gap_count": 0,
-        },
-        "sync_coverage": {
-            "complete": False,
-            "affected_repositories": 1,
-            "unsynced_repositories": 1,
-            "stale_repositories": 0,
-            "partially_synced_repositories": 0,
-            "failed_repositories": 0,
-        },
-        "prs": {
-            "items": [{
-                "repo_config_id": 9,
-                "repo_name": "example-org/repo-a",
-                "pr_record_id": 21,
-                "scm_pr_id": 88,
-                "title": "Improve activity",
-                "url": "https://example.com/pull/88",
-                "status": "merged",
-                "commits": [{"repo_config_id": 9, "commit_sha": "abcdef123456"}],
-            }],
-        },
-        "commits": {
-            "items": [{
-                "repo_config_id": 9,
-                "repo_name": "example-org/repo-a",
-                "commit_sha": "abcdef123456",
-                "latest_activity": "2026-08-05T12:00:00Z",
-                "processed_tokens": 1234,
-                "prs": [{"repo_config_id": 9, "pr_record_id": 21, "scm_pr_id": 88}],
-            }],
-        },
-        "buckets": {
-            "items": [{
-                "bucket_id": "bucket-e2e",
-                "observed_end_at": "2026-08-05T12:00:00Z",
-                "processed_tokens": 1234,
-                "allocation_status": "bound_auto",
-            }],
-        },
-        "bucket_access": role == "admin",
-    }
-    page.route("**/api/v1/activity/summary**", lambda route: route.fulfill(
-        status=200,
-        content_type="application/json",
-        body=json.dumps({"code": 0, "data": activity_member}),
-    ))
-    page.route("**/api/v1/activity/members/**", lambda route: route.fulfill(
-        status=200,
-        content_type="application/json",
-        body=json.dumps({"code": 0, "data": activity_member}),
-    ))
-    page.route("**/api/v1/activity/buckets/**", lambda route: route.fulfill(
-        status=200,
-        content_type="application/json",
-        body=json.dumps({
-            "code": 0,
-            "data": {
-                "contract_version": "activity-v1",
-                "bucket_id": "bucket-e2e",
-                "owner_user_id": 7,
-                "tool": "codex",
-                "model": "gpt-5",
-                "observed_start_at": "2026-08-05T11:00:00Z",
-                "observed_end_at": "2026-08-05T12:00:00Z",
-                "tokens": {
-                    "fresh_input_tokens": 100,
-                    "cache_read_tokens": 200,
-                    "cache_write_tokens": 300,
-                    "output_tokens": 400,
-                    "reasoning_tokens": 50,
-                    "provider_total_tokens": 1000,
-                    "processed_total_tokens": 1000,
-                },
-                "token_quality": "complete",
-                "coverage_gap_count": 0,
-                "extractor_version": "codex-v2",
-                "normalization_version": 3,
-                "correlation_quality": "request_id",
-                "revision": {
-                    "revision_id": "revision-e2e",
-                    "sequence": 2,
-                    "reason": "commit_evidence",
-                    "evidence_version": "v2",
-                    "restated_at": "2026-08-05T12:01:00Z",
-                    "allocations": [],
-                },
-                "request_ids": {
-                    "state": "retained",
-                    "count": 1,
-                    "evidence": [{
-                        "request_id": "req_e2e",
-                        "observed_at": "2026-08-05T11:30:00Z",
-                        "transport": "responses",
-                        "failed": False,
-                    }],
-                },
             },
         }),
     ))
@@ -1969,33 +1784,6 @@ def test_mobile_navigation_drawer(page):
     page.set_viewport_size({"width": 1440, "height": 900})
     page.evaluate("localStorage.clear()")
     clear_auth_routes(page)
-
-
-def test_activity_member_bucket_authorization(page):
-    """Representative member views omit Bucket data while Admin can load it lazily."""
-    print("\n🧪 Activity — Member Bucket Authorization")
-
-    do_dev_login(page, role="user")
-    page.goto(f"{BASE}/activity/members/7")
-    page.wait_for_load_state("networkidle")
-    report("Representative member view renders the authorized member",
-           page.locator("h1:has-text('Alice')").count() == 1)
-    report("Representative member view does not render Bucket rows",
-           page.locator("[data-testid='activity-buckets']").count() == 0)
-    do_logout(page)
-
-    do_dev_login(page, role="admin")
-    page.goto(f"{BASE}/activity/members/7")
-    page.wait_for_load_state("networkidle")
-    bucket = page.locator("[data-testid='activity-bucket-bucket-e2e']")
-    report("Admin member view renders restricted Bucket rows",
-           bucket.count() == 1 and bucket.is_visible())
-    bucket.click()
-    page.wait_for_timeout(300)
-    detail = page.locator("[data-testid='activity-bucket-detail-bucket-e2e']")
-    report("Admin loads retained Request ID evidence only after expansion",
-           detail.count() == 1 and "req_e2e" in detail.inner_text())
-    do_logout(page)
 
 
 def run_all():

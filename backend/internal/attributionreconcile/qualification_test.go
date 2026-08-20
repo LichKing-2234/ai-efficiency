@@ -94,12 +94,12 @@ func TestSyntheticRequestToActivityKeepsShadowEpochIsolated(t *testing.T) {
 	}
 
 	query := activity.V2Query{Scope: activity.V2ScopePersonal, FromDate: "2026-08-11", ToDate: "2026-08-11", Timezone: "UTC"}
-	formal := activity.NewService(client, nil, activity.ServiceOptions{V2LedgerEpoch: "formal_v2", V2DB: db, V2Denominator: qualificationDenominator{}})
+	formal := activity.NewService(client, activity.ServiceOptions{V2LedgerEpoch: "formal_v2", V2DB: db, V2Denominator: qualificationDenominator{}})
 	formalOverview, err := formal.V2Overview(ctx, user.ID, query)
 	if err != nil || formalOverview.CommittedTokens != 0 || formalOverview.Readiness.State != "waiting_for_data" {
 		t.Fatalf("formal Activity consumed shadow data: overview=%+v err=%v", formalOverview, err)
 	}
-	shadow := activity.NewService(client, nil, activity.ServiceOptions{V2LedgerEpoch: attributionledger.LedgerEpochShadowV2, V2DB: db, V2Denominator: qualificationDenominator{}})
+	shadow := activity.NewService(client, activity.ServiceOptions{V2LedgerEpoch: attributionledger.LedgerEpochShadowV2, V2DB: db, V2Denominator: qualificationDenominator{}})
 	shadowOverview, err := shadow.V2Overview(ctx, user.ID, query)
 	if err != nil || shadowOverview.CommittedTokens != 19 || shadowOverview.Readiness.State != "active" || shadowOverview.Ratio.Percent == nil || *shadowOverview.Ratio.Percent != 19 {
 		t.Fatalf("shadow Activity readback = %+v, %v", shadowOverview, err)

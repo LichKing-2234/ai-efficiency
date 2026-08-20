@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/user"
@@ -23,6 +22,9 @@ func TestV2ClaimHTTPReplayAuthorizationAndEpochIsolation(t *testing.T) {
 		t.Fatalf("enrollment protocol = %+v", protocol)
 	}
 	reporterToken := credentials["reporter_token"].(string)
+	if retired := doFullRequest(env, http.MethodPut, "/api/v1/attribution/installations/"+installationID, map[string]any{"reporting_enabled": true, "otel_enabled": true}); retired.Code != http.StatusBadRequest {
+		t.Fatalf("retired OTel enable = %d: %s", retired.Code, retired.Body.String())
+	}
 	if enable := doFullRequest(env, http.MethodPut, "/api/v1/attribution/installations/"+installationID, map[string]any{"reporting_enabled": true}); enable.Code != http.StatusOK {
 		t.Fatalf("enable = %d: %s", enable.Code, enable.Body.String())
 	}
@@ -65,7 +67,7 @@ func TestV2ClaimHTTPReplayAuthorizationAndEpochIsolation(t *testing.T) {
 	}
 }
 
-func TestAttributionHTTPFormalProtocolRejectsEveryV1WriteAndAcceptsV2(t *testing.T) {
+func TestAttributionHTTPFormalProtocolRemovesEveryV1WriteAndAcceptsV2(t *testing.T) {
 	protocol := attributionledger.ProtocolContract{
 		LedgerEpoch:       attributionledger.LedgerEpochFormalV2,
 		V1WritePolicy:     attributionledger.V1WritePolicyUpgradeNeeded,
@@ -84,23 +86,29 @@ func TestAttributionHTTPFormalProtocolRejectsEveryV1WriteAndAcceptsV2(t *testing
 		t.Fatalf("enable = %d: %s", enable.Code, enable.Body.String())
 	}
 
-	v1Writes := []struct {
-		path string
-		body map[string]any
-	}{
-		{path: "/api/v1/attribution/usage-buckets/batch", body: map[string]any{"buckets": []any{}}},
-		{path: "/api/v1/attribution/usage-buckets/missing-bucket/revisions", body: map[string]any{
-			"schema_version": 1, "revision_id": "revision-formal", "sequence": 2, "reason": "checkpoint", "evidence_version": "test", "allocations": []any{}, "restated_at": time.Now().UTC(),
-		}},
-	}
-	for _, write := range v1Writes {
-		response := doFullRequestWithToken(env, http.MethodPost, write.path, write.body, reporterToken)
-		if response.Code != http.StatusConflict {
-			t.Fatalf("v1 write %s status = %d: %s", write.path, response.Code, response.Body.String())
+	for _, path := range []string{
+		"/api/v1/attribution/usage-buckets/batch",
+		"/api/v1/attribution/usage-buckets/missing-bucket/revisions",
+		"/api/v1/attribution/otel/v1/traces",
+	} {
+		response := doFullRequestWithToken(env, http.MethodPost, path, map[string]any{}, reporterToken)
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("removed route %s status = %d: %s", path, response.Code, response.Body.String())
 		}
-		details := parseFullResponse(t, response)["details"].(map[string]any)
-		if details["error_code"] != "upgrade_required" || details["minimum_cli_version"] != "0.2.0-preview.5" {
-			t.Fatalf("v1 write details = %+v", details)
+	}
+	for _, path := range []string{
+		"/api/v1/attribution/report",
+		"/api/v1/activity/scope",
+		"/api/v1/activity/summary",
+		"/api/v1/activity/members",
+		"/api/v1/activity/members/1",
+		"/api/v1/activity/teams/team-alpha",
+		"/api/v1/activity/repos/1",
+		"/api/v1/activity/buckets/legacy",
+	} {
+		response := doFullRequest(env, http.MethodGet, path, nil)
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("removed route %s status = %d: %s", path, response.Code, response.Body.String())
 		}
 	}
 	if env.client.AttributionUsageBucket.Query().CountX(ctx) != 0 {

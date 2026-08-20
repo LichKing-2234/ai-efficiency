@@ -5,7 +5,7 @@ import { useActivityTeams } from '@/composables/useActivityTeams'
 import { useI18n } from '@/i18n'
 
 const { t } = useI18n()
-const { scope, loading, error, load, rootBranch, branchFor, ensureBranch, hasChildren } = useActivityTeams()
+const { loading, error, load, rootBranch, branchFor, ensureBranch, loadMoreDepartments } = useActivityTeams()
 </script>
 
 <template>
@@ -17,7 +17,7 @@ const { scope, loading, error, load, rootBranch, branchFor, ensureBranch, hasChi
         <p class="mt-1 max-w-3xl text-sm text-slate-600">{{ t('activity.teamsSubtitle') }}</p>
       </header>
 
-      <div v-if="loading && !scope" role="status" class="border-y border-slate-200 bg-white px-5 py-12 text-center text-sm text-slate-500">
+      <div v-if="loading" role="status" class="border-y border-slate-200 bg-white px-5 py-12 text-center text-sm text-slate-500">
         {{ t('activity.loadingTeams') }}
       </div>
       <ElAlert v-else-if="error" type="error" :closable="false">
@@ -26,23 +26,25 @@ const { scope, loading, error, load, rootBranch, branchFor, ensureBranch, hasChi
           <ElButton class="!ml-2" type="primary" link @click="load">{{ t('activity.retry') }}</ElButton>
         </template>
       </ElAlert>
-      <div v-else-if="scope && !scope.can_view_teams" data-testid="activity-teams-forbidden" class="border-y border-slate-200 bg-white px-5 py-10 text-sm text-slate-600">
-        {{ t('activity.teamsForbidden') }}
-      </div>
-      <div v-else-if="scope && scope.teams.length === 0" class="border-y border-slate-200 bg-white px-5 py-10 text-sm text-slate-600">
+      <div v-else-if="rootBranch?.loaded && rootBranch.departments.length === 0" class="border-y border-slate-200 bg-white px-5 py-10 text-sm text-slate-600">
         {{ t('activity.noTeams') }}
       </div>
-      <section v-else-if="scope" class="min-w-0 border-y border-slate-200 bg-white" :aria-label="t('activity.teamsTitle')">
+      <section v-else-if="rootBranch?.loaded" class="min-w-0 border-y border-slate-200 bg-white" :aria-label="t('activity.teamsTitle')">
         <ul>
           <ActivityTeamTreeNode
             v-for="team in rootBranch?.departments ?? []"
-            :key="team.external_id"
+            :key="team.department_external_id"
             :team="team"
             :branch-for="branchFor"
             :ensure-branch="ensureBranch"
-            :has-children="hasChildren"
+            :load-more-departments="loadMoreDepartments"
           />
         </ul>
+        <div v-if="rootBranch.nextDepartmentCursor" class="border-t border-slate-100 px-4 py-3">
+          <ElButton :disabled="rootBranch.departmentLoading" @click="loadMoreDepartments(null)">
+            {{ t('teamUsage.loadMoreDepartments') }}
+          </ElButton>
+        </div>
       </section>
     </div>
   </AppLayout>

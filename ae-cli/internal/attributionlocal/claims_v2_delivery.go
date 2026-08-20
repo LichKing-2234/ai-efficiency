@@ -23,7 +23,7 @@ type V2DeliverySummary struct {
 }
 
 func UpdateV2ClaimState(ctx context.Context, fn func(*V2ClaimState) error) error {
-	return withCompactFileLock(ctx, V2ClaimStatePath()+".lock", "v2 claim state is busy", func() error {
+	return withStateFileLock(ctx, V2ClaimStatePath()+".lock", "v2 claim state is busy", func() error {
 		state, err := LoadV2ClaimState()
 		if err != nil {
 			return err

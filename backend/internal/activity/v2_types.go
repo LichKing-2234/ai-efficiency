@@ -109,6 +109,21 @@ type V2Page[T any] struct {
 	SCMCoverage *SyncCoverage `json:"scm_coverage,omitempty"`
 }
 
+type V2TeamMemberAvailabilityQuery struct {
+	TeamID   string
+	FromDate string
+	ToDate   string
+	Timezone string
+	UserIDs  []int
+}
+
+type V2TeamMemberAvailability struct {
+	ContractVersion  string `json:"contract_version"`
+	ScopeVersion     string `json:"scope_version"`
+	Team             Team   `json:"team"`
+	AvailableUserIDs []int  `json:"available_user_ids"`
+}
+
 type V2DenominatorRequest struct {
 	ActorUserID   int
 	Scope         V2ScopeKind
