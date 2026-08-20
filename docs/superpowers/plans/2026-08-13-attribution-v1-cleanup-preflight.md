@@ -1,7 +1,7 @@
 # Attribution v1 and AE OTel Cleanup Preflight
 
 **Date:** 2026-08-13
-**Status:** Preflight implementation, verification, and review merged through [PR #284](https://github.com/LichKing-2234/ai-efficiency/pull/284) as `f6c9de84`; hosted CI `31685184654` passed backend, ae-cli, frontend, and deploy/static validation. Local PowerShell runtime testing was unavailable because `pwsh` is not installed, while the hosted PowerShell installer validation passed. #278 completed its ordinary-workflow qualification. The cumulative personal Usage denominator invalidated the provisional 2026-08-14 clock; PR #299's repair is now deployed as platform `v0.1.0-preview.87`, and exact production readback established replacement Day 0 at `2026-08-17T05:32:57.925948Z`. Production cleanup remains blocked on a later qualifying ordinary pool, every final execution-time gate, and separate implementation/release/deployment/data-mutation authority; no fixed elapsed-time wait applies.
+**Status:** Preflight implementation, verification, and review merged through [PR #284](https://github.com/LichKing-2234/ai-efficiency/pull/284) as `f6c9de84`; hosted CI `31685184654` passed backend, ae-cli, frontend, and deploy/static validation. Local PowerShell runtime testing was unavailable because `pwsh` is not installed, while the hosted PowerShell installer validation passed. #278 completed its earlier ordinary-workflow qualification. PR #299's deployed denominator repair established replacement Day 0 at `2026-08-17T05:32:57.925948Z`; ordinary AI Efficiency PR #319 and the complete 2026-08-20 evidence snapshot now satisfy the non-destructive gate. Production cleanup remains blocked on an immediate final re-read plus separate implementation/release/deployment/data-mutation authority; no fixed elapsed-time wait applies.
 **Parent:** [Codex Commit Token Attribution v2 Implementation Plan](./2026-08-11-codex-commit-token-attribution-v2.md)
 **Issue:** [#252](https://github.com/LichKing-2234/ai-efficiency/issues/252)
 
@@ -38,6 +38,24 @@ ending on 2026-08-21 are both superseded. The replacement Day 0 at
 baseline. It is not a waiting clock and imposes no earliest cleanup time. Any
 failed gate blocks cleanup until it is corrected and read back again; it does
 not start or restart a fixed elapsed-time clock.
+
+## Evidence Snapshot — 2026-08-20
+
+Ordinary AI Efficiency PR #319 was created and merged after replacement Day 0.
+Commit `429c6f00e25b21425b0d87fb9e34bdd960e661a3` produced five direct formal
+pools and `23,210,615` conserved Token. Focused SCM jobs 33/34/35 completed with
+zero failed usage refreshes, leaving claim and SCM coverage complete, readiness
+active, and the selected-window Activity ratio exact and fresh.
+
+The `2026-08-20T13:31:51.123751Z` repeatable-read snapshot conserved 37 formal
+pools, 37 direct relations across 11 commits, 946 Requests, and `142,330,988`
+Token with zero coverage gaps, duplicates, conservation errors, terminal
+Request errors, near-boundary pending Requests, finalization errors, or expired
+unfinalized groups. All 41 pending Requests remained before the final-attempt
+boundary; v1 stayed `0/0`, the shadow pool remained isolated, structured v1
+rejection returned `409 upgrade_required`, and live/ready dependencies were up.
+Because Activity, SCM freshness, lifecycle, and pending state are volatile, the
+authorized cleanup turn must repeat them immediately before any mutation.
 
 ## Protection Seams
 
