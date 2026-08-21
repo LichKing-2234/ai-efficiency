@@ -2022,6 +2022,69 @@ func TestRelayPlanningReplanPreservesPerUserSourceOverride(t *testing.T) {
 	}
 }
 
+func TestRelayPlanningReplanIncludesSavedExternalMember(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().SetName("relay-planning-external-member-test").SetDisplayName("Relay Planning External Member Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-admin-key").SetEnabled(true).SaveX(ctx)
+	source, run := createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
+	alice := createRelayPlanningDirectoryUser(t, ctx, client, source, run, "dept-alpha", "alice", "alice@example.com", 42)
+	bob := client.User.Create().SetUsername("bob").SetEmail("bob@example.org").SetAuthSource("ldap").SetRelayUserID(43).SaveX(ctx)
+	mapping := client.RelayGroupMapping.Create().
+		SetProviderID(providerConfig.ID).SetDepartmentExternalID("dept-alpha").SetDepartmentName("Department Alpha").SetPlatform("openai").
+		SetTemplateGroupID(10).SetSourceGroupID(20).SetGroupIds([]int64{101}).
+		SetMemberAssignments(map[string]int64{fmt.Sprint(bob.ID): 101}).SetMemberSources(map[string]int64{fmt.Sprint(bob.ID): 30}).SetWeeklyCostTarget(2500).SaveX(ctx)
+	provider := &relayPlanningSearchProvider{
+		users: map[int64]*relay.User{
+			42: {ID: 42, Username: "alice", Email: alice.Email},
+			43: {ID: 43, Username: "bob", Email: bob.Email},
+		},
+		groups:        []relay.Group{{ID: 10, Name: "Group Alpha", Platform: "openai"}, {ID: 20, Name: "Group Beta", Platform: "openai"}, {ID: 30, Name: "Group Gamma", Platform: "openai"}, {ID: 101, Name: "Group Target", Platform: "openai"}},
+		subscriptions: map[int64][]relay.UserSubscription{42: {}, 43: {{UserID: 43, GroupID: 30, Status: "active"}, {UserID: 43, GroupID: 101, Status: "active"}}},
+		keys:          map[int64][]relay.APIKey{42: {}, 43: {}},
+	}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	router := gin.New()
+	router.POST("/admin/relay-planning/mappings/:id/replan", NewRelayPlanningHandler(service).Replan)
+
+	replan := func(payload string) relayplanning.Plan {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID), strings.NewReader(payload))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200, body=%s", response.Code, response.Body.String())
+		}
+		var body struct {
+			Data relayplanning.Plan `json:"data"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode replan response: %v", err)
+		}
+		return body.Data
+	}
+	plan := replan(`{}`)
+	candidates := make(map[int]relayplanning.Candidate, len(plan.Candidates))
+	for _, candidate := range plan.Candidates {
+		candidates[candidate.UserID] = candidate
+	}
+	if _, ok := candidates[alice.ID]; !ok {
+		t.Fatalf("current department candidate missing from Replan: %+v", plan.Candidates)
+	}
+	if candidate, ok := candidates[bob.ID]; !ok || candidate.SourceGroupID != 30 {
+		t.Fatalf("saved external member = %+v, want Source Group 30 among candidates %+v", candidate, plan.Candidates)
+	}
+	if len(plan.Assignments) != 1 || plan.Assignments[0].TargetGroupID != 101 || len(plan.Assignments[0].UserIDs) != 1 || plan.Assignments[0].UserIDs[0] != bob.ID {
+		t.Fatalf("assignments = %+v, want only saved external user %d in Target Group 101", plan.Assignments, bob.ID)
+	}
+	if len(plan.TargetSummaries) != 1 || len(plan.TargetSummaries[0].Members) > 0 || len(plan.TargetSummaries[0].Subscriptions) > 0 || len(plan.TargetSummaries[0].APIKeys) > 0 {
+		t.Fatalf("unchanged external member produced effects: %+v", plan.TargetSummaries)
+	}
+	if len(provider.events) > 0 {
+		t.Fatalf("Replan wrote Relay state before confirmation: %v", provider.events)
+	}
+}
+
 func TestRelayPlanningPreviewRejectsStaleProviderIdentity(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
