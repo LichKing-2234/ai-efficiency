@@ -1,7 +1,7 @@
 # Attribution v1 and AE OTel Cleanup Preflight
 
 **Date:** 2026-08-13
-**Status:** Preflight implementation, verification, and review merged through [PR #284](https://github.com/LichKing-2234/ai-efficiency/pull/284) as `f6c9de84`; hosted CI `31685184654` passed backend, ae-cli, frontend, and deploy/static validation. Local PowerShell runtime testing was unavailable because `pwsh` is not installed, while the hosted PowerShell installer validation passed. #278 completed its earlier ordinary-workflow qualification. PR #299's deployed denominator repair established replacement Day 0 at `2026-08-17T05:32:57.925948Z`; ordinary AI Efficiency PR #319 and the complete 2026-08-20 evidence snapshot now satisfy the non-destructive gate. The operator authorized implementation, separate platform/CLI releases, deployment, and destructive migration on 2026-08-20. Phase 2 implementation, local verification, and code review are complete; the PR is pending. Production mutation remains gated on an immediate final same-window re-read. No fixed elapsed-time wait applies.
+**Status:** Preflight implementation, verification, and review merged through [PR #284](https://github.com/LichKing-2234/ai-efficiency/pull/284) as `f6c9de84`; hosted CI `31685184654` passed backend, ae-cli, frontend, and deploy/static validation. Local PowerShell runtime testing was unavailable because `pwsh` is not installed, while the hosted PowerShell installer validation passed. #278 completed its earlier ordinary-workflow qualification. PR #299's deployed denominator repair established replacement Day 0 at `2026-08-17T05:32:57.925948Z`; ordinary AI Efficiency PR #319 and the complete 2026-08-20 evidence snapshot satisfied the non-destructive gate. The operator authorized implementation, separate platform/CLI releases, deployment, and destructive migration on 2026-08-20. Phase 2 merged through [PR #330](https://github.com/LichKing-2234/ai-efficiency/pull/330) as `319735ac`; hosted CI `32387230667` passed. CLI `ae-cli/v0.2.0-preview.14` and platform `v0.1.0-preview.89` were published by successful workflows `32389268066` and `32389679261`, then platform preview.89 was deployed as Helm revision 89 with chart `0.1.75`. The immediate gates and post-deploy readbacks passed, including exact formal conservation and absence of every removed route. Phase 2 is complete; Phase 3 remains separately gated and unchecked. No fixed elapsed-time wait applies.
 **Parent:** [Codex Commit Token Attribution v2 Implementation Plan](./2026-08-11-codex-commit-token-attribution-v2.md)
 **Issue:** [#252](https://github.com/LichKing-2234/ai-efficiency/issues/252)
 
@@ -26,8 +26,9 @@ Cleanup cannot start until all of these are true in the same execution window:
   visible in aggregate Activity;
 - the final SCM coverage read has no failed, partial, unsynced, or stale
   Repository;
-- the final live/ready, structured v1 rejection, reconciliation/error,
-  near-expiry, pending-boundary, claim coverage, exact Usage ratio,
+- the final live/ready, structured v1 rejection before Phase 2 or route absence
+  thereafter, reconciliation/error, near-expiry, pending-boundary, claim
+  coverage, exact Usage ratio,
   conservation, duplicate/gap, and zero-v1-table readbacks are green;
 - the operator has separately authorized implementation, releases,
   deployment, and destructive migration.
@@ -56,6 +57,33 @@ boundary; v1 stayed `0/0`, the shadow pool remained isolated, structured v1
 rejection returned `409 upgrade_required`, and live/ready dependencies were up.
 Because Activity, SCM freshness, lifecycle, and pending state are volatile, the
 authorized cleanup turn must repeat them immediately before any mutation.
+
+## Phase 2 Production Closeout — 2026-08-21
+
+The final same-window gate conserved 46 formal pools and 46 direct relations
+across 11 commits, `189,117,509` Token, and 1,272 formal Request/response
+observations. It found zero claim or SCM coverage gaps, duplicate accounting,
+terminal claims, near-expiry groups, lifecycle errors, or v1 rows. All four
+pending claims remained before their final-attempt boundary. The two
+`codex_local` groups and 1,253 reconciled Relay Requests conserved exactly to
+the same pools.
+
+CLI release workflow `32389268066` published `ae-cli/v0.2.0-preview.14` from
+`319735ac` as five OS/architecture archives plus `checksums.txt` without
+replacing the platform-owned repository latest release. Platform workflow `32389679261`
+published `v0.1.0-preview.89` from the same commit, including linux/amd64 and
+linux/arm64 GHCR manifests. The Helm repository recorded chart `0.1.75` and
+application version `v0.1.0-preview.89` in commit `17d695a`.
+
+Production rollout `ai-efficiency-prod` in `la3-ai-efficiency-prod` completed
+as Helm revision 89. The backend and prewarmer were Ready with zero restarts
+and the same preview.89 image digest, proving that no older application binary
+remained in either role. Live/readiness reported PostgreSQL, Redis, and Relay
+healthy. The removed v1 batch/revision, AE OTLP, and legacy Activity summary
+routes returned 404. Authenticated attribution readiness remained `active`;
+Activity v2 retained an exact Usage ratio with complete claim and SCM coverage,
+Repository and PR reads returned three and five rows respectively, formal
+conservation was unchanged, and the v1 tables remained `0/0`.
 
 ## Protection Seams
 
@@ -182,8 +210,8 @@ two phases because a rolling deployment can overlap replicas.
 - After Phase 3 commits, restore only the captured legacy schema before rolling
   back to a binary that references it. Never restore or replace v2 pool or
   commit-relation data.
-- Any conservation mismatch rolls back the DDL transaction and restarts the
-  stability clock after diagnosis.
+- Any conservation mismatch rolls back the DDL transaction and blocks another
+  attempt until the cause is corrected and every volatile gate is read again.
 - Redis OTLP correlation entries require no restoration; they are bounded
   compatibility cache data, not accounting truth.
 
@@ -226,13 +254,19 @@ two phases because a rolling deployment can overlap replicas.
   Activity team mocks; after replacing the v1 mocks with Team Usage and
   formal-v2 availability fixtures, the full rerun passed `126/126`.
 - [x] Complete code review and close every accepted finding.
-- [ ] Open and merge the Phase 2 PR.
-- [ ] Repeat every volatile production gate in one window immediately before
-  mutation.
-- [ ] Publish the separate CLI and platform release units, deploy every Phase 2
-  backend replica, and prove no old binary remains serving.
-- [ ] Re-read v2 ingest, Activity, readiness, health, SCM coverage, formal
-  conservation, and absence of the removed v1/OTLP routes.
+- [x] Open and merge the Phase 2 PR.
+- [x] Repeat every volatile production gate in one window immediately before
+  mutation. The final snapshot conserved 46 formal pools, 46 direct relations,
+  11 commits, `189,117,509` Token, and 1,272 formal Request/response
+  observations with every gate green.
+- [x] Publish the separate CLI and platform release units, deploy every Phase 2
+  backend replica, and prove no old binary remains serving. CLI preview.14 and
+  platform preview.89 workflows passed; Helm revision 89 ran Ready backend and
+  prewarmer roles from the same preview.89 digest with zero restarts.
+- [x] Re-read v2 ingest, Activity, readiness, health, SCM coverage, formal
+  conservation, and absence of the removed v1/OTLP routes. All removed routes
+  returned 404, readiness remained `active`, v2 coverage and ratio were exact,
+  formal conservation was unchanged, and v1 remained `0/0`.
 
 ### Phase 3 — schema contraction
 
