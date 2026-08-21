@@ -28,7 +28,6 @@ interface I18nControllerOptions {
 interface I18nController {
   locale: Ref<Locale>
   initializeI18n(): Promise<void>
-  preloadLocales(locales: readonly Locale[]): Promise<void>
   setLocale(next: Locale): Promise<void>
   t(key: MessageKey, params?: Record<string, string | number>): string
   useI18n(): {
@@ -115,12 +114,8 @@ function createI18nController(options: I18nControllerOptions): I18nController {
     return setLocale(initialLocale())
   }
 
-  async function preloadLocales(locales: readonly Locale[]): Promise<void> {
-    await Promise.all(locales.map((next) => loadLocale(next)))
-  }
-
   function t(key: MessageKey, params?: Record<string, string | number>) {
-    let value: string = activeMessages.value?.[key] ?? key
+    let value: string = activeMessages.value?.[key as keyof Messages] ?? key
     if (!params) return value
     for (const [paramKey, paramValue] of Object.entries(params)) {
       value = value.split(`{${paramKey}}`).join(String(paramValue))
@@ -147,7 +142,6 @@ function createI18nController(options: I18nControllerOptions): I18nController {
   return {
     locale,
     initializeI18n,
-    preloadLocales,
     setLocale,
     t,
     useI18n,
@@ -187,6 +181,6 @@ export function useI18n() {
 }
 
 export async function preloadI18nForTest() {
-  await controller.preloadLocales(['en-US', 'zh-CN'])
+  await Promise.all([controller.setLocale('en-US'), controller.setLocale('zh-CN')])
   await controller.setLocale('en-US')
 }

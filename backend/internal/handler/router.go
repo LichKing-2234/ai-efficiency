@@ -17,6 +17,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/personalusage"
 	"github.com/ai-efficiency/backend/internal/quotareset"
+	"github.com/ai-efficiency/backend/internal/relayplanning"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/representativescope"
 	"github.com/ai-efficiency/backend/internal/teamusage"
@@ -273,6 +274,7 @@ func setupRouter(
 	userSetupService := usersetup.NewService(entClient, providerHandler, encryptionKey)
 	userSetupHandler := NewUserSetupHandler(userSetupService)
 	adminUsersHandler := NewAdminUsersHandler(entClient, encryptionKey)
+	var relayPlanningHandler *RelayPlanningHandler
 	var offboardingCounter interface {
 		CountOffboardingCandidates(context.Context, int) (int, error)
 	}
@@ -289,6 +291,7 @@ func setupRouter(
 	if providerHandler != nil {
 		adminUsersHandler = NewAdminUsersHandler(entClient, encryptionKey, providerHandler)
 		adminUsersHandler.logger = providerHandler.logger
+		relayPlanningHandler = NewRelayPlanningHandler(relayplanning.NewService(entClient, providerHandler, options.TeamUsagePrewarmReader))
 		quotaResetService := quotareset.NewService(
 			entClient,
 			providerHandler,
@@ -515,6 +518,22 @@ func setupRouter(
 		adminUsersGroup.POST("/:id/disable-access", adminUsersHandler.DisableAccess)
 		adminUsersGroup.POST("/:id/relay-password/reveal", adminUsersHandler.RevealRelayPassword)
 		adminUsersGroup.POST("/:id/subscriptions", adminUsersHandler.AssignSubscription)
+	}
+	if relayPlanningHandler != nil {
+		relayPlanningGroup := protected.Group("/admin/relay-planning")
+		relayPlanningGroup.Use(auth.RequireAdmin())
+		{
+			relayPlanningGroup.GET("/users", relayPlanningHandler.SearchUsers)
+			relayPlanningGroup.GET("/accounts", relayPlanningHandler.SearchAccounts)
+			relayPlanningGroup.POST("/preview", relayPlanningHandler.Preview)
+			relayPlanningGroup.POST("/execute", relayPlanningHandler.Execute)
+			relayPlanningGroup.GET("/mappings", relayPlanningHandler.ListMappings)
+			relayPlanningGroup.PUT("/mappings/:id/rebind", relayPlanningHandler.Rebind)
+			relayPlanningGroup.POST("/mappings/:id/accounts/adopt", relayPlanningHandler.AdoptCurrentAccounts)
+			relayPlanningGroup.PUT("/mappings/:id/accounts", relayPlanningHandler.SaveDesiredAccounts)
+			relayPlanningGroup.POST("/mappings/:id/replan", relayPlanningHandler.Replan)
+			relayPlanningGroup.POST("/mappings/:id/replan/execute", relayPlanningHandler.ReplanExecute)
+		}
 	}
 
 	adminTeamUsageGroup := protected.Group("/admin/team-usage")

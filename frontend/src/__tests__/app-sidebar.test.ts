@@ -33,6 +33,7 @@ function createTestRouter(initialPath = '/') {
       { path: '/sessions', component: { template: '<div>Sessions</div>' } },
       { path: '/admin/users', component: { template: '<div>Admin Users</div>' } },
       { path: '/admin/directory/offboarding', component: { template: '<div>Offboarding</div>' } },
+      { path: '/admin/relay-planning', component: { template: '<div>Relay Planning</div>' } },
       { path: '/settings', component: { template: '<div>Settings</div>' } },
       { path: '/login', component: { template: '<div>Login</div>' } },
     ],
@@ -292,7 +293,7 @@ describe('AppSidebar', () => {
     expect(linkTexts).toContain('Users & Access')
   })
 
-  it('renders Offboarding Review link for admin users', async () => {
+  it('renders maintenance links for admin users', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
@@ -310,7 +311,9 @@ describe('AppSidebar', () => {
 
     const links = wrapper.findAll('a')
     const offboardingLink = links.find((l) => l.text() === 'Offboarding Review')
+    const relayPlanningLink = links.find((l) => l.text() === 'Relay Planning')
     expect(offboardingLink?.attributes('href')).toBe('/admin/directory/offboarding')
+    expect(relayPlanningLink?.attributes('href')).toBe('/admin/relay-planning')
   })
 
   it('hides Users & Access link for regular users', async () => {
@@ -332,6 +335,7 @@ describe('AppSidebar', () => {
     const linkTexts = wrapper.findAll('a').map((l) => l.text())
     expect(linkTexts).not.toContain('Users & Access')
     expect(linkTexts).not.toContain('Offboarding Review')
+    expect(linkTexts).not.toContain('Relay Planning')
   })
 
   it('applies active class to current route link', async () => {

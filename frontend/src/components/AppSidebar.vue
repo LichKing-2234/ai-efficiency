@@ -159,6 +159,16 @@ function handleNavigate() {
         </RouterLink>
 
         <RouterLink
+          to="/admin/relay-planning"
+          class="mt-1 flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
+          :active-class="activeNavigationClass"
+          @click="handleNavigate"
+        >
+          <el-icon class="mr-3"><Switch /></el-icon>
+          {{ t('nav.relayPlanning') }}
+        </RouterLink>
+
+        <RouterLink
           to="/repos"
           class="mt-1 flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
           :active-class="activeNavigationClass"

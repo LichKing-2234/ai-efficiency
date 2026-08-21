@@ -533,11 +533,19 @@ func (s *sub2apiRelay) FindUserByUsername(ctx context.Context, username string) 
 }
 
 func (s *sub2apiRelay) ListUsers(ctx context.Context) ([]User, error) {
-	users, err := s.listUsersFromAdminList(ctx)
+	users, _, err := s.listUsersFromAdminList(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("relay: list users: %w", err)
 	}
 	return users, nil
+}
+
+func (s *sub2apiRelay) ListUsersWithActiveSubscriptions(ctx context.Context) ([]User, map[int64][]int64, error) {
+	users, activeGroups, err := s.listUsersFromAdminList(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("relay: list users with active subscriptions: %w", err)
+	}
+	return users, activeGroups, nil
 }
 
 type providerDirectoryItem struct {
@@ -862,20 +870,25 @@ func (s *sub2apiRelay) findUsersBySearch(ctx context.Context, search string) ([]
 	return users, ok, nil
 }
 
-func (s *sub2apiRelay) listUsersFromAdminList(ctx context.Context) ([]User, error) {
+func (s *sub2apiRelay) listUsersFromAdminList(ctx context.Context) ([]User, map[int64][]int64, error) {
 	var users []User
+	activeGroups := make(map[int64][]int64)
 	for page := 1; ; page++ {
-		resp, err := s.doAdminRequest(ctx, http.MethodGet, fmt.Sprintf("/api/v1/admin/users?page=%d&page_size=200", page), nil)
+		query := url.Values{}
+		query.Set("page", strconv.Itoa(page))
+		query.Set("page_size", "200")
+		query.Set("include_subscriptions", "true")
+		resp, err := s.doAdminRequest(ctx, http.MethodGet, "/api/v1/admin/users?"+query.Encode(), nil)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
+			return nil, nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 		}
 
 		var result struct {
@@ -883,27 +896,64 @@ func (s *sub2apiRelay) listUsersFromAdminList(ctx context.Context) ([]User, erro
 			Data json.RawMessage `json:"data"`
 		}
 		if err := json.Unmarshal(body, &result); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if !result.ok() {
-			return nil, fmt.Errorf("request failed")
+			return nil, nil, fmt.Errorf("request failed")
 		}
 
 		items, pages, err := decodeUserListItems(result.Data)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for _, item := range items {
 			user, err := decodeUserWithFacts(item)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			users = append(users, user)
+			groupIDs, err := decodeActiveSubscriptionGroupIDs(item)
+			if err != nil {
+				return nil, nil, err
+			}
+			activeGroups[user.ID] = groupIDs
 		}
 		if pages <= 1 || page >= pages {
-			return users, nil
+			return users, activeGroups, nil
 		}
 	}
+}
+
+func decodeActiveSubscriptionGroupIDs(data json.RawMessage) ([]int64, error) {
+	var facts struct {
+		Subscriptions []struct {
+			Status  string `json:"status"`
+			GroupID int64  `json:"group_id"`
+			Group   *Group `json:"group"`
+		} `json:"subscriptions"`
+	}
+	if err := json.Unmarshal(data, &facts); err != nil {
+		return nil, err
+	}
+	seen := make(map[int64]struct{}, len(facts.Subscriptions))
+	for _, subscription := range facts.Subscriptions {
+		if !strings.EqualFold(strings.TrimSpace(subscription.Status), "active") {
+			continue
+		}
+		groupID := subscription.GroupID
+		if groupID <= 0 && subscription.Group != nil {
+			groupID = subscription.Group.ID
+		}
+		if groupID > 0 {
+			seen[groupID] = struct{}{}
+		}
+	}
+	groupIDs := make([]int64, 0, len(seen))
+	for groupID := range seen {
+		groupIDs = append(groupIDs, groupID)
+	}
+	sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
+	return groupIDs, nil
 }
 
 func (s *sub2apiRelay) findUserInAdminList(ctx context.Context, match func(User) bool) (*User, error) {
@@ -1908,6 +1958,99 @@ func (s *sub2apiRelay) ListPlatformGroups(ctx context.Context) ([]Group, error) 
 	return groups, nil
 }
 
+// DuplicateGroup creates an inactive copy of a group through sub2api's
+// idempotent admin endpoint. The operation key is supplied by the caller so a
+// retried planning execution cannot create a second copy.
+func (s *sub2apiRelay) DuplicateGroup(ctx context.Context, sourceGroupID int64, operationKey string) (*Group, error) {
+	if sourceGroupID <= 0 {
+		return nil, fmt.Errorf("relay: duplicate group: source group id is required")
+	}
+	if strings.TrimSpace(operationKey) == "" {
+		return nil, fmt.Errorf("relay: duplicate group: operation key is required")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.adminURL+fmt.Sprintf("/api/v1/admin/groups/%d/duplicate", sourceGroupID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("relay: duplicate group: %w", err)
+	}
+	req.Header.Set("X-API-Key", s.adminAPIKey())
+	req.Header.Set("Idempotency-Key", strings.TrimSpace(operationKey))
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("relay: duplicate group: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: duplicate group: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+	}
+	var result struct {
+		envelopeStatus
+		Data Group `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("relay: duplicate group: decode: %w", err)
+	}
+	if !result.ok() || result.Data.ID <= 0 {
+		return nil, fmt.Errorf("relay: duplicate group: request failed")
+	}
+	return &result.Data, nil
+}
+
+func (s *sub2apiRelay) UpdateGroupStatus(ctx context.Context, groupID int64, status string) error {
+	if groupID <= 0 {
+		return fmt.Errorf("relay: update group status: group id is required")
+	}
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status != "active" && status != "inactive" {
+		return fmt.Errorf("relay: update group status: unsupported status %q", status)
+	}
+	payload, err := json.Marshal(map[string]string{"status": status})
+	if err != nil {
+		return fmt.Errorf("relay: update group status: marshal: %w", err)
+	}
+	resp, err := s.doAdminRequest(ctx, http.MethodPut, fmt.Sprintf("/api/v1/admin/groups/%d", groupID), bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("relay: update group status: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("relay: update group status: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+	}
+	var result envelopeStatus
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("relay: update group status: decode: %w", err)
+	}
+	if !result.ok() {
+		return fmt.Errorf("relay: update group status: request failed")
+	}
+	return nil
+}
+
+func (s *sub2apiRelay) BindAPIKeyToGroup(ctx context.Context, keyID, groupID int64) error {
+	if keyID <= 0 || groupID <= 0 {
+		return fmt.Errorf("relay: bind api key: key and group ids are required")
+	}
+	payload, err := json.Marshal(map[string]int64{"group_id": groupID})
+	if err != nil {
+		return fmt.Errorf("relay: bind api key: marshal: %w", err)
+	}
+	resp, err := s.doAdminRequest(ctx, http.MethodPut, fmt.Sprintf("/api/v1/admin/api-keys/%d", keyID), bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("relay: bind api key: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("relay: bind api key: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+	}
+	var result envelopeStatus
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("relay: bind api key: decode: %w", err)
+	}
+	if !result.ok() {
+		return fmt.Errorf("relay: bind api key: request failed")
+	}
+	return nil
+}
+
 type defaultSubscriptionSetting struct {
 	GroupID      int64 `json:"group_id"`
 	ValidityDays int   `json:"validity_days"`
@@ -1948,11 +2091,15 @@ type sub2apiSubscriptionProgress struct {
 
 type sub2apiAccountSummary struct {
 	ID            int64   `json:"id"`
+	Name          string  `json:"name"`
+	Platform      string  `json:"platform"`
 	Type          string  `json:"type"`
 	Status        string  `json:"status"`
+	Schedulable   bool    `json:"schedulable"`
 	GroupIDs      []int64 `json:"group_ids"`
 	AccountGroups []struct {
-		GroupID int64 `json:"group_id"`
+		GroupID  int64 `json:"group_id"`
+		Priority int   `json:"priority"`
 	} `json:"account_groups"`
 }
 
@@ -2212,6 +2359,176 @@ func (s *sub2apiRelay) listActiveOAuthAccountsByGroup(ctx context.Context, group
 			return all, nil
 		}
 	}
+}
+
+func (s *sub2apiRelay) ListAccountsForPlatform(ctx context.Context, platform string) ([]Account, error) {
+	platform = strings.TrimSpace(platform)
+	if platform == "" {
+		return nil, fmt.Errorf("relay: list accounts: platform is required")
+	}
+	var out []Account
+	for page := 1; ; page++ {
+		query := url.Values{}
+		query.Set("page", strconv.Itoa(page))
+		query.Set("page_size", "1000")
+		query.Set("platform", platform)
+		resp, err := s.doAdminRequest(ctx, http.MethodGet, "/api/v1/admin/accounts?"+query.Encode(), nil)
+		if err != nil {
+			return nil, fmt.Errorf("relay: list accounts for platform %s: %w", platform, err)
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("relay: list accounts for platform %s: read body: %w", platform, readErr)
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("relay: list accounts for platform %s: unexpected status %d%s", platform, resp.StatusCode, relayErrorMessageSuffixFromData(body))
+		}
+		var envelope struct {
+			envelopeStatus
+			Data json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(body, &envelope); err != nil {
+			return nil, fmt.Errorf("relay: list accounts for platform %s: decode: %w", platform, err)
+		}
+		if !envelope.ok() {
+			return nil, fmt.Errorf("relay: list accounts for platform %s: request failed%s", platform, envelope.messageSuffix())
+		}
+		items, pages, err := decodeAccountPage(envelope.Data)
+		if err != nil {
+			return nil, fmt.Errorf("relay: list accounts for platform %s: decode page: %w", platform, err)
+		}
+		for _, item := range items {
+			account := safeAccountFromSub2API(item)
+			out = append(out, account)
+		}
+		if pages <= 1 || page >= pages {
+			return out, nil
+		}
+	}
+}
+
+func (s *sub2apiRelay) SetAccountGroupRelationship(ctx context.Context, accountID, groupID int64, expected []AccountGroupRelationship, desiredPriority *int) error {
+	if accountID <= 0 || groupID <= 0 {
+		return fmt.Errorf("relay: set account group relationship: account and group ids are required")
+	}
+	current, err := s.getAccountRelationshipSnapshot(ctx, accountID)
+	if err != nil {
+		return fmt.Errorf("relay: set account group relationship: load reviewed snapshot: %w", err)
+	}
+	if !sameAccountRelationships(current.GroupRelationships, expected) {
+		return fmt.Errorf("%w: account %d no longer matches the reviewed snapshot", ErrAccountRelationshipsChanged, accountID)
+	}
+
+	ordered := append([]AccountGroupRelationship(nil), current.GroupRelationships...)
+	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Priority < ordered[j].Priority })
+	groupIDs := make([]int64, 0, len(ordered)+1)
+	for _, relationship := range ordered {
+		if relationship.GroupID > 0 && relationship.GroupID != groupID {
+			groupIDs = append(groupIDs, relationship.GroupID)
+		}
+	}
+	if desiredPriority != nil {
+		if *desiredPriority <= 0 || *desiredPriority > len(groupIDs)+1 {
+			return fmt.Errorf("relay: set account group relationship: priority must be between 1 and %d", len(groupIDs)+1)
+		}
+		index := *desiredPriority - 1
+		groupIDs = append(groupIDs, 0)
+		copy(groupIDs[index+1:], groupIDs[index:])
+		groupIDs[index] = groupID
+	}
+	payload, err := json.Marshal(map[string][]int64{"group_ids": groupIDs})
+	if err != nil {
+		return fmt.Errorf("relay: set account group relationship: marshal: %w", err)
+	}
+	resp, err := s.doAdminRequest(ctx, http.MethodPut, fmt.Sprintf("/api/v1/admin/accounts/%d", accountID), bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("relay: set account group relationship: %w", err)
+	}
+	body, readErr := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if readErr != nil {
+		return fmt.Errorf("relay: set account group relationship: read response: %w", readErr)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("relay: set account group relationship: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffixFromData(body))
+	}
+	var envelope envelopeStatus
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return fmt.Errorf("relay: set account group relationship: decode response: %w", err)
+	}
+	if !envelope.ok() {
+		return fmt.Errorf("relay: set account group relationship: request failed%s", envelope.messageSuffix())
+	}
+	verified, err := s.getAccountRelationshipSnapshot(ctx, accountID)
+	if err != nil {
+		return fmt.Errorf("relay: set account group relationship: verify update: %w", err)
+	}
+	desired := make([]AccountGroupRelationship, len(groupIDs))
+	for index, desiredGroupID := range groupIDs {
+		desired[index] = AccountGroupRelationship{GroupID: desiredGroupID, Priority: index + 1}
+	}
+	if !sameAccountRelationships(verified.GroupRelationships, desired) {
+		return fmt.Errorf("%w: account %d update verification failed", ErrAccountRelationshipsChanged, accountID)
+	}
+	return nil
+}
+
+func (s *sub2apiRelay) getAccountRelationshipSnapshot(ctx context.Context, accountID int64) (Account, error) {
+	resp, err := s.doAdminRequest(ctx, http.MethodGet, fmt.Sprintf("/api/v1/admin/accounts/%d", accountID), nil)
+	if err != nil {
+		return Account{}, fmt.Errorf("relay: get account %d relationships: %w", accountID, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return Account{}, fmt.Errorf("relay: get account %d relationships: unexpected status %d%s", accountID, resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+	}
+	var envelope struct {
+		envelopeStatus
+		Data sub2apiAccountSummary `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return Account{}, fmt.Errorf("relay: get account %d relationships: decode: %w", accountID, err)
+	}
+	if !envelope.ok() {
+		return Account{}, fmt.Errorf("relay: get account %d relationships: request failed%s", accountID, envelope.messageSuffix())
+	}
+	return safeAccountFromSub2API(envelope.Data), nil
+}
+
+func safeAccountFromSub2API(item sub2apiAccountSummary) Account {
+	account := Account{ID: item.ID, Name: item.Name, Platform: item.Platform, Type: item.Type, Status: item.Status, Schedulable: item.Schedulable, GroupRelationships: make([]AccountGroupRelationship, 0, len(item.AccountGroups))}
+	for _, relationship := range item.AccountGroups {
+		account.GroupRelationships = append(account.GroupRelationships, AccountGroupRelationship{GroupID: relationship.GroupID, Priority: relationship.Priority})
+	}
+	if len(account.GroupRelationships) == 0 {
+		for index, groupID := range item.GroupIDs {
+			account.GroupRelationships = append(account.GroupRelationships, AccountGroupRelationship{GroupID: groupID, Priority: index + 1})
+		}
+	}
+	return account
+}
+
+func sameAccountRelationships(left, right []AccountGroupRelationship) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	want := make(map[int64]int, len(right))
+	for _, relationship := range right {
+		if relationship.GroupID <= 0 || relationship.Priority <= 0 {
+			return false
+		}
+		want[relationship.GroupID] = relationship.Priority
+	}
+	if len(want) != len(right) {
+		return false
+	}
+	for _, relationship := range left {
+		if want[relationship.GroupID] != relationship.Priority {
+			return false
+		}
+	}
+	return true
 }
 
 func decodeAccountPage(data json.RawMessage) ([]sub2apiAccountSummary, int, error) {

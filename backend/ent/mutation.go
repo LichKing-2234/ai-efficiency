@@ -34,6 +34,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestevent"
+	"github.com/ai-efficiency/backend/ent/relaygroupmapping"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/reportinginstallation"
@@ -76,6 +77,7 @@ const (
 	TypeQuotaResetNotificationSetting = "QuotaResetNotificationSetting"
 	TypeQuotaResetRequest             = "QuotaResetRequest"
 	TypeQuotaResetRequestEvent        = "QuotaResetRequestEvent"
+	TypeRelayGroupMapping             = "RelayGroupMapping"
 	TypeRelayProvider                 = "RelayProvider"
 	TypeRepoConfig                    = "RepoConfig"
 	TypeReportingInstallation         = "ReportingInstallation"
@@ -30407,6 +30409,1401 @@ func (m *QuotaResetRequestEventMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *QuotaResetRequestEventMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown QuotaResetRequestEvent edge %s", name)
+}
+
+// RelayGroupMappingMutation represents an operation that mutates the RelayGroupMapping nodes in the graph.
+type RelayGroupMappingMutation struct {
+	config
+	op                             Op
+	typ                            string
+	id                             *int
+	provider_id                    *int
+	addprovider_id                 *int
+	department_external_id         *string
+	department_name                *string
+	platform                       *string
+	template_group_id              *int64
+	addtemplate_group_id           *int64
+	template_group_name            *string
+	source_group_id                *int64
+	addsource_group_id             *int64
+	source_group_name              *string
+	group_ids                      *[]int64
+	appendgroup_ids                []int64
+	member_assignments             *map[string]int64
+	member_sources                 *map[string]int64
+	account_management_initialized *bool
+	desired_accounts               *map[string][]map[string]int64
+	operation_state                *map[string]map[string]string
+	status                         *string
+	weekly_cost_target             *float64
+	addweekly_cost_target          *float64
+	created_at                     *time.Time
+	updated_at                     *time.Time
+	clearedFields                  map[string]struct{}
+	done                           bool
+	oldValue                       func(context.Context) (*RelayGroupMapping, error)
+	predicates                     []predicate.RelayGroupMapping
+}
+
+var _ ent.Mutation = (*RelayGroupMappingMutation)(nil)
+
+// relaygroupmappingOption allows management of the mutation configuration using functional options.
+type relaygroupmappingOption func(*RelayGroupMappingMutation)
+
+// newRelayGroupMappingMutation creates new mutation for the RelayGroupMapping entity.
+func newRelayGroupMappingMutation(c config, op Op, opts ...relaygroupmappingOption) *RelayGroupMappingMutation {
+	m := &RelayGroupMappingMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeRelayGroupMapping,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withRelayGroupMappingID sets the ID field of the mutation.
+func withRelayGroupMappingID(id int) relaygroupmappingOption {
+	return func(m *RelayGroupMappingMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *RelayGroupMapping
+		)
+		m.oldValue = func(ctx context.Context) (*RelayGroupMapping, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().RelayGroupMapping.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withRelayGroupMapping sets the old RelayGroupMapping of the mutation.
+func withRelayGroupMapping(node *RelayGroupMapping) relaygroupmappingOption {
+	return func(m *RelayGroupMappingMutation) {
+		m.oldValue = func(context.Context) (*RelayGroupMapping, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m RelayGroupMappingMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m RelayGroupMappingMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *RelayGroupMappingMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *RelayGroupMappingMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().RelayGroupMapping.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetProviderID sets the "provider_id" field.
+func (m *RelayGroupMappingMutation) SetProviderID(i int) {
+	m.provider_id = &i
+	m.addprovider_id = nil
+}
+
+// ProviderID returns the value of the "provider_id" field in the mutation.
+func (m *RelayGroupMappingMutation) ProviderID() (r int, exists bool) {
+	v := m.provider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderID returns the old "provider_id" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldProviderID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderID: %w", err)
+	}
+	return oldValue.ProviderID, nil
+}
+
+// AddProviderID adds i to the "provider_id" field.
+func (m *RelayGroupMappingMutation) AddProviderID(i int) {
+	if m.addprovider_id != nil {
+		*m.addprovider_id += i
+	} else {
+		m.addprovider_id = &i
+	}
+}
+
+// AddedProviderID returns the value that was added to the "provider_id" field in this mutation.
+func (m *RelayGroupMappingMutation) AddedProviderID() (r int, exists bool) {
+	v := m.addprovider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetProviderID resets all changes to the "provider_id" field.
+func (m *RelayGroupMappingMutation) ResetProviderID() {
+	m.provider_id = nil
+	m.addprovider_id = nil
+}
+
+// SetDepartmentExternalID sets the "department_external_id" field.
+func (m *RelayGroupMappingMutation) SetDepartmentExternalID(s string) {
+	m.department_external_id = &s
+}
+
+// DepartmentExternalID returns the value of the "department_external_id" field in the mutation.
+func (m *RelayGroupMappingMutation) DepartmentExternalID() (r string, exists bool) {
+	v := m.department_external_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDepartmentExternalID returns the old "department_external_id" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldDepartmentExternalID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDepartmentExternalID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDepartmentExternalID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDepartmentExternalID: %w", err)
+	}
+	return oldValue.DepartmentExternalID, nil
+}
+
+// ResetDepartmentExternalID resets all changes to the "department_external_id" field.
+func (m *RelayGroupMappingMutation) ResetDepartmentExternalID() {
+	m.department_external_id = nil
+}
+
+// SetDepartmentName sets the "department_name" field.
+func (m *RelayGroupMappingMutation) SetDepartmentName(s string) {
+	m.department_name = &s
+}
+
+// DepartmentName returns the value of the "department_name" field in the mutation.
+func (m *RelayGroupMappingMutation) DepartmentName() (r string, exists bool) {
+	v := m.department_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDepartmentName returns the old "department_name" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldDepartmentName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDepartmentName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDepartmentName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDepartmentName: %w", err)
+	}
+	return oldValue.DepartmentName, nil
+}
+
+// ResetDepartmentName resets all changes to the "department_name" field.
+func (m *RelayGroupMappingMutation) ResetDepartmentName() {
+	m.department_name = nil
+}
+
+// SetPlatform sets the "platform" field.
+func (m *RelayGroupMappingMutation) SetPlatform(s string) {
+	m.platform = &s
+}
+
+// Platform returns the value of the "platform" field in the mutation.
+func (m *RelayGroupMappingMutation) Platform() (r string, exists bool) {
+	v := m.platform
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPlatform returns the old "platform" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldPlatform(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPlatform is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPlatform requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPlatform: %w", err)
+	}
+	return oldValue.Platform, nil
+}
+
+// ResetPlatform resets all changes to the "platform" field.
+func (m *RelayGroupMappingMutation) ResetPlatform() {
+	m.platform = nil
+}
+
+// SetTemplateGroupID sets the "template_group_id" field.
+func (m *RelayGroupMappingMutation) SetTemplateGroupID(i int64) {
+	m.template_group_id = &i
+	m.addtemplate_group_id = nil
+}
+
+// TemplateGroupID returns the value of the "template_group_id" field in the mutation.
+func (m *RelayGroupMappingMutation) TemplateGroupID() (r int64, exists bool) {
+	v := m.template_group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTemplateGroupID returns the old "template_group_id" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldTemplateGroupID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTemplateGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTemplateGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTemplateGroupID: %w", err)
+	}
+	return oldValue.TemplateGroupID, nil
+}
+
+// AddTemplateGroupID adds i to the "template_group_id" field.
+func (m *RelayGroupMappingMutation) AddTemplateGroupID(i int64) {
+	if m.addtemplate_group_id != nil {
+		*m.addtemplate_group_id += i
+	} else {
+		m.addtemplate_group_id = &i
+	}
+}
+
+// AddedTemplateGroupID returns the value that was added to the "template_group_id" field in this mutation.
+func (m *RelayGroupMappingMutation) AddedTemplateGroupID() (r int64, exists bool) {
+	v := m.addtemplate_group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTemplateGroupID resets all changes to the "template_group_id" field.
+func (m *RelayGroupMappingMutation) ResetTemplateGroupID() {
+	m.template_group_id = nil
+	m.addtemplate_group_id = nil
+}
+
+// SetTemplateGroupName sets the "template_group_name" field.
+func (m *RelayGroupMappingMutation) SetTemplateGroupName(s string) {
+	m.template_group_name = &s
+}
+
+// TemplateGroupName returns the value of the "template_group_name" field in the mutation.
+func (m *RelayGroupMappingMutation) TemplateGroupName() (r string, exists bool) {
+	v := m.template_group_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTemplateGroupName returns the old "template_group_name" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldTemplateGroupName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTemplateGroupName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTemplateGroupName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTemplateGroupName: %w", err)
+	}
+	return oldValue.TemplateGroupName, nil
+}
+
+// ResetTemplateGroupName resets all changes to the "template_group_name" field.
+func (m *RelayGroupMappingMutation) ResetTemplateGroupName() {
+	m.template_group_name = nil
+}
+
+// SetSourceGroupID sets the "source_group_id" field.
+func (m *RelayGroupMappingMutation) SetSourceGroupID(i int64) {
+	m.source_group_id = &i
+	m.addsource_group_id = nil
+}
+
+// SourceGroupID returns the value of the "source_group_id" field in the mutation.
+func (m *RelayGroupMappingMutation) SourceGroupID() (r int64, exists bool) {
+	v := m.source_group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourceGroupID returns the old "source_group_id" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldSourceGroupID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourceGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourceGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourceGroupID: %w", err)
+	}
+	return oldValue.SourceGroupID, nil
+}
+
+// AddSourceGroupID adds i to the "source_group_id" field.
+func (m *RelayGroupMappingMutation) AddSourceGroupID(i int64) {
+	if m.addsource_group_id != nil {
+		*m.addsource_group_id += i
+	} else {
+		m.addsource_group_id = &i
+	}
+}
+
+// AddedSourceGroupID returns the value that was added to the "source_group_id" field in this mutation.
+func (m *RelayGroupMappingMutation) AddedSourceGroupID() (r int64, exists bool) {
+	v := m.addsource_group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSourceGroupID resets all changes to the "source_group_id" field.
+func (m *RelayGroupMappingMutation) ResetSourceGroupID() {
+	m.source_group_id = nil
+	m.addsource_group_id = nil
+}
+
+// SetSourceGroupName sets the "source_group_name" field.
+func (m *RelayGroupMappingMutation) SetSourceGroupName(s string) {
+	m.source_group_name = &s
+}
+
+// SourceGroupName returns the value of the "source_group_name" field in the mutation.
+func (m *RelayGroupMappingMutation) SourceGroupName() (r string, exists bool) {
+	v := m.source_group_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourceGroupName returns the old "source_group_name" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldSourceGroupName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourceGroupName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourceGroupName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourceGroupName: %w", err)
+	}
+	return oldValue.SourceGroupName, nil
+}
+
+// ResetSourceGroupName resets all changes to the "source_group_name" field.
+func (m *RelayGroupMappingMutation) ResetSourceGroupName() {
+	m.source_group_name = nil
+}
+
+// SetGroupIds sets the "group_ids" field.
+func (m *RelayGroupMappingMutation) SetGroupIds(i []int64) {
+	m.group_ids = &i
+	m.appendgroup_ids = nil
+}
+
+// GroupIds returns the value of the "group_ids" field in the mutation.
+func (m *RelayGroupMappingMutation) GroupIds() (r []int64, exists bool) {
+	v := m.group_ids
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupIds returns the old "group_ids" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldGroupIds(ctx context.Context) (v []int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupIds is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupIds requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupIds: %w", err)
+	}
+	return oldValue.GroupIds, nil
+}
+
+// AppendGroupIds adds i to the "group_ids" field.
+func (m *RelayGroupMappingMutation) AppendGroupIds(i []int64) {
+	m.appendgroup_ids = append(m.appendgroup_ids, i...)
+}
+
+// AppendedGroupIds returns the list of values that were appended to the "group_ids" field in this mutation.
+func (m *RelayGroupMappingMutation) AppendedGroupIds() ([]int64, bool) {
+	if len(m.appendgroup_ids) == 0 {
+		return nil, false
+	}
+	return m.appendgroup_ids, true
+}
+
+// ResetGroupIds resets all changes to the "group_ids" field.
+func (m *RelayGroupMappingMutation) ResetGroupIds() {
+	m.group_ids = nil
+	m.appendgroup_ids = nil
+}
+
+// SetMemberAssignments sets the "member_assignments" field.
+func (m *RelayGroupMappingMutation) SetMemberAssignments(value map[string]int64) {
+	m.member_assignments = &value
+}
+
+// MemberAssignments returns the value of the "member_assignments" field in the mutation.
+func (m *RelayGroupMappingMutation) MemberAssignments() (r map[string]int64, exists bool) {
+	v := m.member_assignments
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMemberAssignments returns the old "member_assignments" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldMemberAssignments(ctx context.Context) (v map[string]int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMemberAssignments is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMemberAssignments requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMemberAssignments: %w", err)
+	}
+	return oldValue.MemberAssignments, nil
+}
+
+// ResetMemberAssignments resets all changes to the "member_assignments" field.
+func (m *RelayGroupMappingMutation) ResetMemberAssignments() {
+	m.member_assignments = nil
+}
+
+// SetMemberSources sets the "member_sources" field.
+func (m *RelayGroupMappingMutation) SetMemberSources(value map[string]int64) {
+	m.member_sources = &value
+}
+
+// MemberSources returns the value of the "member_sources" field in the mutation.
+func (m *RelayGroupMappingMutation) MemberSources() (r map[string]int64, exists bool) {
+	v := m.member_sources
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMemberSources returns the old "member_sources" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldMemberSources(ctx context.Context) (v map[string]int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMemberSources is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMemberSources requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMemberSources: %w", err)
+	}
+	return oldValue.MemberSources, nil
+}
+
+// ResetMemberSources resets all changes to the "member_sources" field.
+func (m *RelayGroupMappingMutation) ResetMemberSources() {
+	m.member_sources = nil
+}
+
+// SetAccountManagementInitialized sets the "account_management_initialized" field.
+func (m *RelayGroupMappingMutation) SetAccountManagementInitialized(b bool) {
+	m.account_management_initialized = &b
+}
+
+// AccountManagementInitialized returns the value of the "account_management_initialized" field in the mutation.
+func (m *RelayGroupMappingMutation) AccountManagementInitialized() (r bool, exists bool) {
+	v := m.account_management_initialized
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAccountManagementInitialized returns the old "account_management_initialized" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldAccountManagementInitialized(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAccountManagementInitialized is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAccountManagementInitialized requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAccountManagementInitialized: %w", err)
+	}
+	return oldValue.AccountManagementInitialized, nil
+}
+
+// ResetAccountManagementInitialized resets all changes to the "account_management_initialized" field.
+func (m *RelayGroupMappingMutation) ResetAccountManagementInitialized() {
+	m.account_management_initialized = nil
+}
+
+// SetDesiredAccounts sets the "desired_accounts" field.
+func (m *RelayGroupMappingMutation) SetDesiredAccounts(value map[string][]map[string]int64) {
+	m.desired_accounts = &value
+}
+
+// DesiredAccounts returns the value of the "desired_accounts" field in the mutation.
+func (m *RelayGroupMappingMutation) DesiredAccounts() (r map[string][]map[string]int64, exists bool) {
+	v := m.desired_accounts
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDesiredAccounts returns the old "desired_accounts" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldDesiredAccounts(ctx context.Context) (v map[string][]map[string]int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDesiredAccounts is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDesiredAccounts requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDesiredAccounts: %w", err)
+	}
+	return oldValue.DesiredAccounts, nil
+}
+
+// ResetDesiredAccounts resets all changes to the "desired_accounts" field.
+func (m *RelayGroupMappingMutation) ResetDesiredAccounts() {
+	m.desired_accounts = nil
+}
+
+// SetOperationState sets the "operation_state" field.
+func (m *RelayGroupMappingMutation) SetOperationState(value map[string]map[string]string) {
+	m.operation_state = &value
+}
+
+// OperationState returns the value of the "operation_state" field in the mutation.
+func (m *RelayGroupMappingMutation) OperationState() (r map[string]map[string]string, exists bool) {
+	v := m.operation_state
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOperationState returns the old "operation_state" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldOperationState(ctx context.Context) (v map[string]map[string]string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOperationState is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOperationState requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOperationState: %w", err)
+	}
+	return oldValue.OperationState, nil
+}
+
+// ResetOperationState resets all changes to the "operation_state" field.
+func (m *RelayGroupMappingMutation) ResetOperationState() {
+	m.operation_state = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *RelayGroupMappingMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *RelayGroupMappingMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *RelayGroupMappingMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetWeeklyCostTarget sets the "weekly_cost_target" field.
+func (m *RelayGroupMappingMutation) SetWeeklyCostTarget(f float64) {
+	m.weekly_cost_target = &f
+	m.addweekly_cost_target = nil
+}
+
+// WeeklyCostTarget returns the value of the "weekly_cost_target" field in the mutation.
+func (m *RelayGroupMappingMutation) WeeklyCostTarget() (r float64, exists bool) {
+	v := m.weekly_cost_target
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWeeklyCostTarget returns the old "weekly_cost_target" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldWeeklyCostTarget(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWeeklyCostTarget is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWeeklyCostTarget requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWeeklyCostTarget: %w", err)
+	}
+	return oldValue.WeeklyCostTarget, nil
+}
+
+// AddWeeklyCostTarget adds f to the "weekly_cost_target" field.
+func (m *RelayGroupMappingMutation) AddWeeklyCostTarget(f float64) {
+	if m.addweekly_cost_target != nil {
+		*m.addweekly_cost_target += f
+	} else {
+		m.addweekly_cost_target = &f
+	}
+}
+
+// AddedWeeklyCostTarget returns the value that was added to the "weekly_cost_target" field in this mutation.
+func (m *RelayGroupMappingMutation) AddedWeeklyCostTarget() (r float64, exists bool) {
+	v := m.addweekly_cost_target
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetWeeklyCostTarget resets all changes to the "weekly_cost_target" field.
+func (m *RelayGroupMappingMutation) ResetWeeklyCostTarget() {
+	m.weekly_cost_target = nil
+	m.addweekly_cost_target = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *RelayGroupMappingMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *RelayGroupMappingMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *RelayGroupMappingMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *RelayGroupMappingMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *RelayGroupMappingMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *RelayGroupMappingMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the RelayGroupMappingMutation builder.
+func (m *RelayGroupMappingMutation) Where(ps ...predicate.RelayGroupMapping) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the RelayGroupMappingMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *RelayGroupMappingMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.RelayGroupMapping, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *RelayGroupMappingMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *RelayGroupMappingMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (RelayGroupMapping).
+func (m *RelayGroupMappingMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *RelayGroupMappingMutation) Fields() []string {
+	fields := make([]string, 0, 18)
+	if m.provider_id != nil {
+		fields = append(fields, relaygroupmapping.FieldProviderID)
+	}
+	if m.department_external_id != nil {
+		fields = append(fields, relaygroupmapping.FieldDepartmentExternalID)
+	}
+	if m.department_name != nil {
+		fields = append(fields, relaygroupmapping.FieldDepartmentName)
+	}
+	if m.platform != nil {
+		fields = append(fields, relaygroupmapping.FieldPlatform)
+	}
+	if m.template_group_id != nil {
+		fields = append(fields, relaygroupmapping.FieldTemplateGroupID)
+	}
+	if m.template_group_name != nil {
+		fields = append(fields, relaygroupmapping.FieldTemplateGroupName)
+	}
+	if m.source_group_id != nil {
+		fields = append(fields, relaygroupmapping.FieldSourceGroupID)
+	}
+	if m.source_group_name != nil {
+		fields = append(fields, relaygroupmapping.FieldSourceGroupName)
+	}
+	if m.group_ids != nil {
+		fields = append(fields, relaygroupmapping.FieldGroupIds)
+	}
+	if m.member_assignments != nil {
+		fields = append(fields, relaygroupmapping.FieldMemberAssignments)
+	}
+	if m.member_sources != nil {
+		fields = append(fields, relaygroupmapping.FieldMemberSources)
+	}
+	if m.account_management_initialized != nil {
+		fields = append(fields, relaygroupmapping.FieldAccountManagementInitialized)
+	}
+	if m.desired_accounts != nil {
+		fields = append(fields, relaygroupmapping.FieldDesiredAccounts)
+	}
+	if m.operation_state != nil {
+		fields = append(fields, relaygroupmapping.FieldOperationState)
+	}
+	if m.status != nil {
+		fields = append(fields, relaygroupmapping.FieldStatus)
+	}
+	if m.weekly_cost_target != nil {
+		fields = append(fields, relaygroupmapping.FieldWeeklyCostTarget)
+	}
+	if m.created_at != nil {
+		fields = append(fields, relaygroupmapping.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, relaygroupmapping.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *RelayGroupMappingMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case relaygroupmapping.FieldProviderID:
+		return m.ProviderID()
+	case relaygroupmapping.FieldDepartmentExternalID:
+		return m.DepartmentExternalID()
+	case relaygroupmapping.FieldDepartmentName:
+		return m.DepartmentName()
+	case relaygroupmapping.FieldPlatform:
+		return m.Platform()
+	case relaygroupmapping.FieldTemplateGroupID:
+		return m.TemplateGroupID()
+	case relaygroupmapping.FieldTemplateGroupName:
+		return m.TemplateGroupName()
+	case relaygroupmapping.FieldSourceGroupID:
+		return m.SourceGroupID()
+	case relaygroupmapping.FieldSourceGroupName:
+		return m.SourceGroupName()
+	case relaygroupmapping.FieldGroupIds:
+		return m.GroupIds()
+	case relaygroupmapping.FieldMemberAssignments:
+		return m.MemberAssignments()
+	case relaygroupmapping.FieldMemberSources:
+		return m.MemberSources()
+	case relaygroupmapping.FieldAccountManagementInitialized:
+		return m.AccountManagementInitialized()
+	case relaygroupmapping.FieldDesiredAccounts:
+		return m.DesiredAccounts()
+	case relaygroupmapping.FieldOperationState:
+		return m.OperationState()
+	case relaygroupmapping.FieldStatus:
+		return m.Status()
+	case relaygroupmapping.FieldWeeklyCostTarget:
+		return m.WeeklyCostTarget()
+	case relaygroupmapping.FieldCreatedAt:
+		return m.CreatedAt()
+	case relaygroupmapping.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *RelayGroupMappingMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case relaygroupmapping.FieldProviderID:
+		return m.OldProviderID(ctx)
+	case relaygroupmapping.FieldDepartmentExternalID:
+		return m.OldDepartmentExternalID(ctx)
+	case relaygroupmapping.FieldDepartmentName:
+		return m.OldDepartmentName(ctx)
+	case relaygroupmapping.FieldPlatform:
+		return m.OldPlatform(ctx)
+	case relaygroupmapping.FieldTemplateGroupID:
+		return m.OldTemplateGroupID(ctx)
+	case relaygroupmapping.FieldTemplateGroupName:
+		return m.OldTemplateGroupName(ctx)
+	case relaygroupmapping.FieldSourceGroupID:
+		return m.OldSourceGroupID(ctx)
+	case relaygroupmapping.FieldSourceGroupName:
+		return m.OldSourceGroupName(ctx)
+	case relaygroupmapping.FieldGroupIds:
+		return m.OldGroupIds(ctx)
+	case relaygroupmapping.FieldMemberAssignments:
+		return m.OldMemberAssignments(ctx)
+	case relaygroupmapping.FieldMemberSources:
+		return m.OldMemberSources(ctx)
+	case relaygroupmapping.FieldAccountManagementInitialized:
+		return m.OldAccountManagementInitialized(ctx)
+	case relaygroupmapping.FieldDesiredAccounts:
+		return m.OldDesiredAccounts(ctx)
+	case relaygroupmapping.FieldOperationState:
+		return m.OldOperationState(ctx)
+	case relaygroupmapping.FieldStatus:
+		return m.OldStatus(ctx)
+	case relaygroupmapping.FieldWeeklyCostTarget:
+		return m.OldWeeklyCostTarget(ctx)
+	case relaygroupmapping.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case relaygroupmapping.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown RelayGroupMapping field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RelayGroupMappingMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case relaygroupmapping.FieldProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderID(v)
+		return nil
+	case relaygroupmapping.FieldDepartmentExternalID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDepartmentExternalID(v)
+		return nil
+	case relaygroupmapping.FieldDepartmentName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDepartmentName(v)
+		return nil
+	case relaygroupmapping.FieldPlatform:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPlatform(v)
+		return nil
+	case relaygroupmapping.FieldTemplateGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTemplateGroupID(v)
+		return nil
+	case relaygroupmapping.FieldTemplateGroupName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTemplateGroupName(v)
+		return nil
+	case relaygroupmapping.FieldSourceGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourceGroupID(v)
+		return nil
+	case relaygroupmapping.FieldSourceGroupName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourceGroupName(v)
+		return nil
+	case relaygroupmapping.FieldGroupIds:
+		v, ok := value.([]int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupIds(v)
+		return nil
+	case relaygroupmapping.FieldMemberAssignments:
+		v, ok := value.(map[string]int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMemberAssignments(v)
+		return nil
+	case relaygroupmapping.FieldMemberSources:
+		v, ok := value.(map[string]int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMemberSources(v)
+		return nil
+	case relaygroupmapping.FieldAccountManagementInitialized:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccountManagementInitialized(v)
+		return nil
+	case relaygroupmapping.FieldDesiredAccounts:
+		v, ok := value.(map[string][]map[string]int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDesiredAccounts(v)
+		return nil
+	case relaygroupmapping.FieldOperationState:
+		v, ok := value.(map[string]map[string]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOperationState(v)
+		return nil
+	case relaygroupmapping.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case relaygroupmapping.FieldWeeklyCostTarget:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWeeklyCostTarget(v)
+		return nil
+	case relaygroupmapping.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case relaygroupmapping.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RelayGroupMapping field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *RelayGroupMappingMutation) AddedFields() []string {
+	var fields []string
+	if m.addprovider_id != nil {
+		fields = append(fields, relaygroupmapping.FieldProviderID)
+	}
+	if m.addtemplate_group_id != nil {
+		fields = append(fields, relaygroupmapping.FieldTemplateGroupID)
+	}
+	if m.addsource_group_id != nil {
+		fields = append(fields, relaygroupmapping.FieldSourceGroupID)
+	}
+	if m.addweekly_cost_target != nil {
+		fields = append(fields, relaygroupmapping.FieldWeeklyCostTarget)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *RelayGroupMappingMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case relaygroupmapping.FieldProviderID:
+		return m.AddedProviderID()
+	case relaygroupmapping.FieldTemplateGroupID:
+		return m.AddedTemplateGroupID()
+	case relaygroupmapping.FieldSourceGroupID:
+		return m.AddedSourceGroupID()
+	case relaygroupmapping.FieldWeeklyCostTarget:
+		return m.AddedWeeklyCostTarget()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RelayGroupMappingMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case relaygroupmapping.FieldProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProviderID(v)
+		return nil
+	case relaygroupmapping.FieldTemplateGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTemplateGroupID(v)
+		return nil
+	case relaygroupmapping.FieldSourceGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSourceGroupID(v)
+		return nil
+	case relaygroupmapping.FieldWeeklyCostTarget:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddWeeklyCostTarget(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RelayGroupMapping numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *RelayGroupMappingMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *RelayGroupMappingMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *RelayGroupMappingMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown RelayGroupMapping nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *RelayGroupMappingMutation) ResetField(name string) error {
+	switch name {
+	case relaygroupmapping.FieldProviderID:
+		m.ResetProviderID()
+		return nil
+	case relaygroupmapping.FieldDepartmentExternalID:
+		m.ResetDepartmentExternalID()
+		return nil
+	case relaygroupmapping.FieldDepartmentName:
+		m.ResetDepartmentName()
+		return nil
+	case relaygroupmapping.FieldPlatform:
+		m.ResetPlatform()
+		return nil
+	case relaygroupmapping.FieldTemplateGroupID:
+		m.ResetTemplateGroupID()
+		return nil
+	case relaygroupmapping.FieldTemplateGroupName:
+		m.ResetTemplateGroupName()
+		return nil
+	case relaygroupmapping.FieldSourceGroupID:
+		m.ResetSourceGroupID()
+		return nil
+	case relaygroupmapping.FieldSourceGroupName:
+		m.ResetSourceGroupName()
+		return nil
+	case relaygroupmapping.FieldGroupIds:
+		m.ResetGroupIds()
+		return nil
+	case relaygroupmapping.FieldMemberAssignments:
+		m.ResetMemberAssignments()
+		return nil
+	case relaygroupmapping.FieldMemberSources:
+		m.ResetMemberSources()
+		return nil
+	case relaygroupmapping.FieldAccountManagementInitialized:
+		m.ResetAccountManagementInitialized()
+		return nil
+	case relaygroupmapping.FieldDesiredAccounts:
+		m.ResetDesiredAccounts()
+		return nil
+	case relaygroupmapping.FieldOperationState:
+		m.ResetOperationState()
+		return nil
+	case relaygroupmapping.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case relaygroupmapping.FieldWeeklyCostTarget:
+		m.ResetWeeklyCostTarget()
+		return nil
+	case relaygroupmapping.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case relaygroupmapping.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown RelayGroupMapping field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *RelayGroupMappingMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *RelayGroupMappingMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *RelayGroupMappingMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *RelayGroupMappingMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *RelayGroupMappingMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *RelayGroupMappingMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *RelayGroupMappingMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown RelayGroupMapping unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *RelayGroupMappingMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown RelayGroupMapping edge %s", name)
 }
 
 // RelayProviderMutation represents an operation that mutates the RelayProvider nodes in the graph.

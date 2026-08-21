@@ -95,6 +95,8 @@ The pre-migration baseline at commit `2e1c2884` is:
 `frontend/scripts/measure-build.mjs` enforces these exact ceilings. A
 hosted-runtime measurement that exceeds them is an application bundle
 regression to remove, not a reason to expand the contract.
+Production and measured builds resolve Vue Router to its official browser
+production entry; development and tests retain the standard diagnostic entry.
 Measured production builds must also prove that Element Plus remains on demand,
 locale dictionaries remain route-safe, and Chart.js stays outside the initial
 dashboard closure until chart data is ready.

@@ -56,6 +56,7 @@ type UpdateUserRequest struct {
 type APIKey struct {
 	ID         int64      `json:"id"`
 	UserID     int64      `json:"user_id"`
+	GroupID    int64      `json:"group_id,omitempty"`
 	Key        string     `json:"key"`
 	Name       string     `json:"name"`
 	Status     string     `json:"status"`
@@ -77,6 +78,24 @@ type Group struct {
 	DailyLimitUSD         *float64 `json:"daily_limit_usd,omitempty"`
 	WeeklyLimitUSD        *float64 `json:"weekly_limit_usd,omitempty"`
 	MonthlyLimitUSD       *float64 `json:"monthly_limit_usd,omitempty"`
+}
+
+// Account is the privacy-safe account relationship projection used by Relay
+// planning. Provider credentials and private configuration are intentionally
+// not represented.
+type Account struct {
+	ID                 int64                      `json:"id"`
+	Name               string                     `json:"name"`
+	Platform           string                     `json:"platform"`
+	Type               string                     `json:"type"`
+	Status             string                     `json:"status"`
+	Schedulable        bool                       `json:"schedulable"`
+	GroupRelationships []AccountGroupRelationship `json:"group_relationships"`
+}
+
+type AccountGroupRelationship struct {
+	GroupID  int64 `json:"group_id"`
+	Priority int   `json:"priority"`
 }
 
 const (

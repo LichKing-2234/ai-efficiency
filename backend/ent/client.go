@@ -37,6 +37,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestevent"
+	"github.com/ai-efficiency/backend/ent/relaygroupmapping"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/reportinginstallation"
@@ -97,6 +98,8 @@ type Client struct {
 	QuotaResetRequest *QuotaResetRequestClient
 	// QuotaResetRequestEvent is the client for interacting with the QuotaResetRequestEvent builders.
 	QuotaResetRequestEvent *QuotaResetRequestEventClient
+	// RelayGroupMapping is the client for interacting with the RelayGroupMapping builders.
+	RelayGroupMapping *RelayGroupMappingClient
 	// RelayProvider is the client for interacting with the RelayProvider builders.
 	RelayProvider *RelayProviderClient
 	// RepoConfig is the client for interacting with the RepoConfig builders.
@@ -148,6 +151,7 @@ func (c *Client) init() {
 	c.QuotaResetNotificationSetting = NewQuotaResetNotificationSettingClient(c.config)
 	c.QuotaResetRequest = NewQuotaResetRequestClient(c.config)
 	c.QuotaResetRequestEvent = NewQuotaResetRequestEventClient(c.config)
+	c.RelayGroupMapping = NewRelayGroupMappingClient(c.config)
 	c.RelayProvider = NewRelayProviderClient(c.config)
 	c.RepoConfig = NewRepoConfigClient(c.config)
 	c.ReportingInstallation = NewReportingInstallationClient(c.config)
@@ -271,6 +275,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		QuotaResetNotificationSetting: NewQuotaResetNotificationSettingClient(cfg),
 		QuotaResetRequest:             NewQuotaResetRequestClient(cfg),
 		QuotaResetRequestEvent:        NewQuotaResetRequestEventClient(cfg),
+		RelayGroupMapping:             NewRelayGroupMappingClient(cfg),
 		RelayProvider:                 NewRelayProviderClient(cfg),
 		RepoConfig:                    NewRepoConfigClient(cfg),
 		ReportingInstallation:         NewReportingInstallationClient(cfg),
@@ -321,6 +326,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		QuotaResetNotificationSetting: NewQuotaResetNotificationSettingClient(cfg),
 		QuotaResetRequest:             NewQuotaResetRequestClient(cfg),
 		QuotaResetRequestEvent:        NewQuotaResetRequestEventClient(cfg),
+		RelayGroupMapping:             NewRelayGroupMappingClient(cfg),
 		RelayProvider:                 NewRelayProviderClient(cfg),
 		RepoConfig:                    NewRepoConfigClient(cfg),
 		ReportingInstallation:         NewReportingInstallationClient(cfg),
@@ -365,9 +371,10 @@ func (c *Client) Use(hooks ...Hook) {
 		c.DirectoryMemberDepartment, c.DirectoryOffboardingAction, c.DirectorySource,
 		c.DirectorySyncRun, c.PRCommitUsageSnapshot, c.PRSyncJob, c.PrAttributionRun,
 		c.PrRecord, c.QuotaResetApproverConfig, c.QuotaResetNotificationSetting,
-		c.QuotaResetRequest, c.QuotaResetRequestEvent, c.RelayProvider, c.RepoConfig,
-		c.ReportingInstallation, c.ScmProvider, c.SystemSetting,
-		c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
+		c.QuotaResetRequest, c.QuotaResetRequestEvent, c.RelayGroupMapping,
+		c.RelayProvider, c.RepoConfig, c.ReportingInstallation, c.ScmProvider,
+		c.SystemSetting, c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User,
+		c.WebhookDeadLetter,
 	} {
 		n.Use(hooks...)
 	}
@@ -383,9 +390,10 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.DirectoryMemberDepartment, c.DirectoryOffboardingAction, c.DirectorySource,
 		c.DirectorySyncRun, c.PRCommitUsageSnapshot, c.PRSyncJob, c.PrAttributionRun,
 		c.PrRecord, c.QuotaResetApproverConfig, c.QuotaResetNotificationSetting,
-		c.QuotaResetRequest, c.QuotaResetRequestEvent, c.RelayProvider, c.RepoConfig,
-		c.ReportingInstallation, c.ScmProvider, c.SystemSetting,
-		c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
+		c.QuotaResetRequest, c.QuotaResetRequestEvent, c.RelayGroupMapping,
+		c.RelayProvider, c.RepoConfig, c.ReportingInstallation, c.ScmProvider,
+		c.SystemSetting, c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User,
+		c.WebhookDeadLetter,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -438,6 +446,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.QuotaResetRequest.mutate(ctx, m)
 	case *QuotaResetRequestEventMutation:
 		return c.QuotaResetRequestEvent.mutate(ctx, m)
+	case *RelayGroupMappingMutation:
+		return c.RelayGroupMapping.mutate(ctx, m)
 	case *RelayProviderMutation:
 		return c.RelayProvider.mutate(ctx, m)
 	case *RepoConfigMutation:
@@ -3645,6 +3655,139 @@ func (c *QuotaResetRequestEventClient) mutate(ctx context.Context, m *QuotaReset
 	}
 }
 
+// RelayGroupMappingClient is a client for the RelayGroupMapping schema.
+type RelayGroupMappingClient struct {
+	config
+}
+
+// NewRelayGroupMappingClient returns a client for the RelayGroupMapping from the given config.
+func NewRelayGroupMappingClient(c config) *RelayGroupMappingClient {
+	return &RelayGroupMappingClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `relaygroupmapping.Hooks(f(g(h())))`.
+func (c *RelayGroupMappingClient) Use(hooks ...Hook) {
+	c.hooks.RelayGroupMapping = append(c.hooks.RelayGroupMapping, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `relaygroupmapping.Intercept(f(g(h())))`.
+func (c *RelayGroupMappingClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RelayGroupMapping = append(c.inters.RelayGroupMapping, interceptors...)
+}
+
+// Create returns a builder for creating a RelayGroupMapping entity.
+func (c *RelayGroupMappingClient) Create() *RelayGroupMappingCreate {
+	mutation := newRelayGroupMappingMutation(c.config, OpCreate)
+	return &RelayGroupMappingCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RelayGroupMapping entities.
+func (c *RelayGroupMappingClient) CreateBulk(builders ...*RelayGroupMappingCreate) *RelayGroupMappingCreateBulk {
+	return &RelayGroupMappingCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RelayGroupMappingClient) MapCreateBulk(slice any, setFunc func(*RelayGroupMappingCreate, int)) *RelayGroupMappingCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RelayGroupMappingCreateBulk{err: fmt.Errorf("calling to RelayGroupMappingClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RelayGroupMappingCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RelayGroupMappingCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RelayGroupMapping.
+func (c *RelayGroupMappingClient) Update() *RelayGroupMappingUpdate {
+	mutation := newRelayGroupMappingMutation(c.config, OpUpdate)
+	return &RelayGroupMappingUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RelayGroupMappingClient) UpdateOne(rgm *RelayGroupMapping) *RelayGroupMappingUpdateOne {
+	mutation := newRelayGroupMappingMutation(c.config, OpUpdateOne, withRelayGroupMapping(rgm))
+	return &RelayGroupMappingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RelayGroupMappingClient) UpdateOneID(id int) *RelayGroupMappingUpdateOne {
+	mutation := newRelayGroupMappingMutation(c.config, OpUpdateOne, withRelayGroupMappingID(id))
+	return &RelayGroupMappingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RelayGroupMapping.
+func (c *RelayGroupMappingClient) Delete() *RelayGroupMappingDelete {
+	mutation := newRelayGroupMappingMutation(c.config, OpDelete)
+	return &RelayGroupMappingDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RelayGroupMappingClient) DeleteOne(rgm *RelayGroupMapping) *RelayGroupMappingDeleteOne {
+	return c.DeleteOneID(rgm.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RelayGroupMappingClient) DeleteOneID(id int) *RelayGroupMappingDeleteOne {
+	builder := c.Delete().Where(relaygroupmapping.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RelayGroupMappingDeleteOne{builder}
+}
+
+// Query returns a query builder for RelayGroupMapping.
+func (c *RelayGroupMappingClient) Query() *RelayGroupMappingQuery {
+	return &RelayGroupMappingQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRelayGroupMapping},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RelayGroupMapping entity by its id.
+func (c *RelayGroupMappingClient) Get(ctx context.Context, id int) (*RelayGroupMapping, error) {
+	return c.Query().Where(relaygroupmapping.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RelayGroupMappingClient) GetX(ctx context.Context, id int) *RelayGroupMapping {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *RelayGroupMappingClient) Hooks() []Hook {
+	return c.hooks.RelayGroupMapping
+}
+
+// Interceptors returns the client interceptors.
+func (c *RelayGroupMappingClient) Interceptors() []Interceptor {
+	return c.inters.RelayGroupMapping
+}
+
+func (c *RelayGroupMappingClient) mutate(ctx context.Context, m *RelayGroupMappingMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RelayGroupMappingCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RelayGroupMappingUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RelayGroupMappingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RelayGroupMappingDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RelayGroupMapping mutation op: %q", m.Op())
+	}
+}
+
 // RelayProviderClient is a client for the RelayProvider schema.
 type RelayProviderClient struct {
 	config
@@ -5156,8 +5299,9 @@ type (
 		DirectoryMemberDepartment, DirectoryOffboardingAction, DirectorySource,
 		DirectorySyncRun, PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord,
 		QuotaResetApproverConfig, QuotaResetNotificationSetting, QuotaResetRequest,
-		QuotaResetRequestEvent, RelayProvider, RepoConfig, ReportingInstallation,
-		ScmProvider, SystemSetting, TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
+		QuotaResetRequestEvent, RelayGroupMapping, RelayProvider, RepoConfig,
+		ReportingInstallation, ScmProvider, SystemSetting,
+		TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
 		WebhookDeadLetter []ent.Hook
 	}
 	inters struct {
@@ -5167,8 +5311,9 @@ type (
 		DirectoryMemberDepartment, DirectoryOffboardingAction, DirectorySource,
 		DirectorySyncRun, PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord,
 		QuotaResetApproverConfig, QuotaResetNotificationSetting, QuotaResetRequest,
-		QuotaResetRequestEvent, RelayProvider, RepoConfig, ReportingInstallation,
-		ScmProvider, SystemSetting, TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
+		QuotaResetRequestEvent, RelayGroupMapping, RelayProvider, RepoConfig,
+		ReportingInstallation, ScmProvider, SystemSetting,
+		TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
 		WebhookDeadLetter []ent.Interceptor
 	}
 )

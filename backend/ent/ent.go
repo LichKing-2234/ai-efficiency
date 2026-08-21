@@ -34,6 +34,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestevent"
+	"github.com/ai-efficiency/backend/ent/relaygroupmapping"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/reportinginstallation"
@@ -125,6 +126,7 @@ func checkColumn(table, column string) error {
 			quotaresetnotificationsetting.Table: quotaresetnotificationsetting.ValidColumn,
 			quotaresetrequest.Table:             quotaresetrequest.ValidColumn,
 			quotaresetrequestevent.Table:        quotaresetrequestevent.ValidColumn,
+			relaygroupmapping.Table:             relaygroupmapping.ValidColumn,
 			relayprovider.Table:                 relayprovider.ValidColumn,
 			repoconfig.Table:                    repoconfig.ValidColumn,
 			reportinginstallation.Table:         reportinginstallation.ValidColumn,

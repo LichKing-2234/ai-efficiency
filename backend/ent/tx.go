@@ -56,6 +56,8 @@ type Tx struct {
 	QuotaResetRequest *QuotaResetRequestClient
 	// QuotaResetRequestEvent is the client for interacting with the QuotaResetRequestEvent builders.
 	QuotaResetRequestEvent *QuotaResetRequestEventClient
+	// RelayGroupMapping is the client for interacting with the RelayGroupMapping builders.
+	RelayGroupMapping *RelayGroupMappingClient
 	// RelayProvider is the client for interacting with the RelayProvider builders.
 	RelayProvider *RelayProviderClient
 	// RepoConfig is the client for interacting with the RepoConfig builders.
@@ -227,6 +229,7 @@ func (tx *Tx) init() {
 	tx.QuotaResetNotificationSetting = NewQuotaResetNotificationSettingClient(tx.config)
 	tx.QuotaResetRequest = NewQuotaResetRequestClient(tx.config)
 	tx.QuotaResetRequestEvent = NewQuotaResetRequestEventClient(tx.config)
+	tx.RelayGroupMapping = NewRelayGroupMappingClient(tx.config)
 	tx.RelayProvider = NewRelayProviderClient(tx.config)
 	tx.RepoConfig = NewRepoConfigClient(tx.config)
 	tx.ReportingInstallation = NewReportingInstallationClient(tx.config)

@@ -4,12 +4,15 @@ import { useRoute } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { disableDirectoryRelayUser, listDirectoryOffboardingCandidates } from '@/api/directory'
 import { useI18n } from '@/i18n'
+import { directoryOffboardingMessages } from '@/locales/directoryOffboarding'
 import { useWorkItemsStore } from '@/stores/workItems'
 import type { DirectoryOffboardingCandidate } from '@/types'
 import { authSourceLabel, offboardingReasonLabel, offboardingStatusLabel } from '@/utils/displayLabels'
+import { createFeatureTranslator } from '@/utils/featureI18n'
 
 const route = useRoute()
-const { locale, t } = useI18n()
+const { locale, t: baseT } = useI18n()
+const t = createFeatureTranslator(locale, baseT, 'directoryOffboarding.', directoryOffboardingMessages)
 const workItems = useWorkItemsStore()
 const candidates = ref<DirectoryOffboardingCandidate[]>([])
 const q = ref(typeof route.query.q === 'string' ? route.query.q : '')

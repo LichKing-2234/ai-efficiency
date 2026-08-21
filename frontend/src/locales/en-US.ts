@@ -1,3 +1,6 @@
+import type { RelayPlanningMessageKey } from './relayPlanning'
+import type { DirectoryOffboardingMessageKey } from './directoryOffboarding'
+
 const enUS = {
   'app.title': 'AI Efficiency',
   'app.fullTitle': 'AI Efficiency Platform',
@@ -42,6 +45,7 @@ const enUS = {
   'nav.codeRepositories': 'Code Repositories',
   'nav.userManagement': 'Users & Access',
   'nav.directoryOffboarding': 'Offboarding Review',
+  'nav.relayPlanning': 'Relay Planning',
   'nav.adminConsole': 'Admin Console',
   'nav.adminSection': 'Administration',
   'nav.languageToggle': '中文',
@@ -969,34 +973,9 @@ const enUS = {
   'directorySync.noDocsPagination': 'Pagination or cursor behavior',
   'directorySync.noDocsAuth': 'Auth header name and credential reference',
   'directorySync.noDocsSamples': 'Synthetic sample responses with email and department fields',
-  'directoryOffboarding.title': 'Directory Offboarding',
-  'directoryOffboarding.subtitle': 'Review users missing from the latest full-company directory snapshot.',
-  'directoryOffboarding.sourceId': 'Source ID',
-  'directoryOffboarding.searchPlaceholder': 'Search users',
-  'directoryOffboarding.warning': 'After disabling, this user will no longer be able to access AI services. Confirm the user identity before continuing.',
-  'directoryOffboarding.effectNotice': 'This disables upstream AI access and revokes local AI Efficiency tokens. Existing subscriptions are not removed automatically.',
-  'directoryOffboarding.relay': 'Relay user ID',
-  'directoryOffboarding.reason': 'Reason',
-  'directoryOffboarding.reasonMissingFromDirectory': 'Missing from the latest company directory',
-  'directoryOffboarding.latestRun': 'Latest directory run',
-  'directoryOffboarding.runSummary': 'Run #{id}',
-  'directoryOffboarding.actionStatus': 'Disable status',
-  'directoryOffboarding.statusPending': 'Pending review',
-  'directoryOffboarding.statusRunning': 'In progress',
-  'directoryOffboarding.statusSucceeded': 'Completed',
-  'directoryOffboarding.statusFailed': 'Failed',
-  'directoryOffboarding.statusPartialFailed': 'Needs attention',
-  'directoryOffboarding.tokenAccess': 'Local token access',
-  'directoryOffboarding.tokenRevoked': 'Revoked {time}',
-  'directoryOffboarding.tokenNotRevoked': 'Not revoked',
-  'directoryOffboarding.empty': 'No offboarding candidates',
-  'directoryOffboarding.disableRelayUser': 'Disable AI access',
-  'directoryOffboarding.loadFailed': 'Failed to load offboarding candidates',
-  'directoryOffboarding.disabled': 'AI access disabled for {email}',
-  'directoryOffboarding.disableFailed': 'Failed to disable AI access',
 } as const
 
-export type MessageKey = keyof typeof enUS
-export type Messages = { readonly [Key in MessageKey]: string }
+export type MessageKey = keyof typeof enUS | RelayPlanningMessageKey | DirectoryOffboardingMessageKey
+export type Messages = { readonly [Key in keyof typeof enUS]: string }
 
 export default enUS
