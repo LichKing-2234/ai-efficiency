@@ -4,13 +4,11 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/config"
-	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/auth"
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/reporting"
@@ -97,8 +95,5 @@ func TestAttributionEnableFormalProtocolDoesNotClaimV1Baseline(t *testing.T) {
 	}
 	if strings.Contains(output.String(), "Baseline recorded") {
 		t.Fatalf("formal enable claimed a v1 baseline:\n%s", output.String())
-	}
-	if _, err := os.Stat(attributionlocal.CompactStatePath()); !os.IsNotExist(err) {
-		t.Fatalf("formal enable created a v1 baseline: %v", err)
 	}
 }

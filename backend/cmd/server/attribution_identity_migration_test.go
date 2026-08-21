@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
@@ -85,15 +86,30 @@ func TestLegacyAttributionCleanupDDLConservesFormalPoolsAndCommitRelations(t *te
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = tx.Rollback() })
-
-	before := readFormalAttributionSnapshot(t, ctx, tx)
 	for _, statement := range []string{
-		`DROP TABLE attribution_allocation_revisions`,
-		`DROP TABLE attribution_usage_buckets`,
-		`ALTER TABLE reporting_installations DROP COLUMN otlp_token_hash, DROP COLUMN otel_enabled`,
+		`CREATE TABLE attribution_usage_buckets (id bigint PRIMARY KEY)`,
+		`CREATE TABLE attribution_allocation_revisions (id bigint PRIMARY KEY, usage_bucket_id bigint NOT NULL REFERENCES attribution_usage_buckets(id))`,
+		`ALTER TABLE reporting_installations ADD COLUMN otlp_token_hash text NOT NULL DEFAULT 'retired-otlp-test', ADD COLUMN otel_enabled boolean NOT NULL DEFAULT false`,
 	} {
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
-			t.Fatalf("rehearse %q: %v", statement, err)
+			t.Fatalf("prepare legacy schema %q: %v", statement, err)
+		}
+	}
+
+	before := readFormalAttributionSnapshot(t, ctx, tx)
+	cleanupStatements := []string{
+		`DROP TABLE IF EXISTS attribution_allocation_revisions`,
+		`DROP TABLE IF EXISTS attribution_usage_buckets`,
+		`ALTER TABLE reporting_installations DROP COLUMN IF EXISTS otlp_token_hash, DROP COLUMN IF EXISTS otel_enabled`,
+	}
+	for pass := 1; pass <= 2; pass++ {
+		for _, statement := range cleanupStatements {
+			if strings.Contains(strings.ToUpper(statement), "CASCADE") {
+				t.Fatalf("cleanup statement uses CASCADE: %q", statement)
+			}
+			if _, err := tx.ExecContext(ctx, statement); err != nil {
+				t.Fatalf("rehearse cleanup pass %d %q: %v", pass, statement, err)
+			}
 		}
 	}
 	after := readFormalAttributionSnapshot(t, ctx, tx)

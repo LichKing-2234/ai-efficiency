@@ -50,7 +50,6 @@ type RouterOptions struct {
 	RequestLogger                 *zap.Logger
 	RequestObserver               telemetry.RequestObserver
 	WebVitalsHandler              *WebVitalsHandler
-	AttributionCorrelation        *attributionledger.CorrelationStore
 	AttributionProtocol           attributionledger.ProtocolContract
 	AttributionCutoverAt          time.Time
 	AttributionSetupAvailable     bool
@@ -262,17 +261,16 @@ func setupRouter(
 	if protocol.LedgerEpoch == attributionledger.LedgerEpochFormalV2 {
 		activityLedgerEpoch = protocol.LedgerEpoch
 	}
-	activityService := activity.NewService(entClient, options.AttributionCorrelation, activity.ServiceOptions{
+	activityService := activity.NewService(entClient, activity.ServiceOptions{
 		ScopeResolver: representativescope.NewWithCache(entClient, options.RepresentativeScopeCache),
 		CursorSecret:  options.TeamUsageCursorSecret,
-		Cache:         options.ActivityCache,
 		V2LedgerEpoch: activityLedgerEpoch,
 		V2CutoverAt:   options.AttributionCutoverAt,
 		V2Denominator: &activityDenominatorResolver{personal: personalUsageService, team: teamUsageService, client: entClient, cache: options.ActivityCache},
 		V2DB:          sqlDB,
 	})
 	activityHandler := NewActivityHandler(activityService)
-	attributionHandler := NewAttributionHandler(installationService, attributionledger.NewService(entClient, options.AttributionCorrelation, protocol), options.AttributionCorrelation, attributionclaim.NewService(entClient, protocol), protocol, activityService)
+	attributionHandler := NewAttributionHandler(installationService, attributionclaim.NewService(entClient, protocol), activityService)
 	userSetupService := usersetup.NewService(entClient, providerHandler, encryptionKey)
 	userSetupHandler := NewUserSetupHandler(userSetupService)
 	adminUsersHandler := NewAdminUsersHandler(entClient, encryptionKey)
@@ -426,27 +424,18 @@ func setupRouter(
 		attributionReadGroup.POST("/installations", attributionHandler.EnsureInstallation)
 		attributionReadGroup.PUT("/installations/:installation_id", attributionHandler.SetInstallationEnabled)
 		attributionReadGroup.POST("/installations/:installation_id/credentials/rotate", attributionHandler.RotateInstallationCredentials)
-		attributionReadGroup.GET("/report", attributionHandler.Report)
 	}
 
 	attributionReporterGroup := api.Group("/attribution")
-	attributionReporterGroup.Use(requireInstallationToken(installationService, false))
+	attributionReporterGroup.Use(requireInstallationToken(installationService))
 	{
 		attributionReporterGroup.POST("/v2/claim-groups/batch", attributionHandler.CreateV2Claims)
 		attributionReporterGroup.POST("/repos/resolve-remote", repoHandler.ResolveRemote)
 		attributionReporterGroup.POST("/repos/ensure-remote", repoHandler.EnsureReportingRemote)
-		attributionReporterGroup.POST("/usage-buckets/batch", attributionHandler.CreateBuckets)
-		attributionReporterGroup.POST("/usage-buckets/:bucket_id/revisions", attributionHandler.CreateRevision)
 		if checkpointHandler != nil {
 			attributionReporterGroup.POST("/checkpoints/commit", checkpointHandler.CompactCommit)
 			attributionReporterGroup.POST("/checkpoints/rewrite", checkpointHandler.CompactRewrite)
 		}
-	}
-
-	attributionOTLPGroup := api.Group("/attribution/otel")
-	attributionOTLPGroup.Use(requireInstallationToken(installationService, true))
-	{
-		attributionOTLPGroup.POST("/v1/traces", attributionHandler.IngestOTLP)
 	}
 
 	RegisterActivityRoutes(protected.Group("/activity"), activityHandler)

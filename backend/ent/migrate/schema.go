@@ -54,39 +54,6 @@ var (
 			},
 		},
 	}
-	// AttributionAllocationRevisionsColumns holds the columns for the "attribution_allocation_revisions" table.
-	AttributionAllocationRevisionsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "revision_id", Type: field.TypeString, Unique: true},
-		{Name: "sequence", Type: field.TypeInt},
-		{Name: "reason", Type: field.TypeString},
-		{Name: "evidence_version", Type: field.TypeString},
-		{Name: "allocations", Type: field.TypeJSON},
-		{Name: "restated_at", Type: field.TypeTime},
-		{Name: "created_at", Type: field.TypeTime},
-		{Name: "usage_bucket_id", Type: field.TypeInt},
-	}
-	// AttributionAllocationRevisionsTable holds the schema information for the "attribution_allocation_revisions" table.
-	AttributionAllocationRevisionsTable = &schema.Table{
-		Name:       "attribution_allocation_revisions",
-		Columns:    AttributionAllocationRevisionsColumns,
-		PrimaryKey: []*schema.Column{AttributionAllocationRevisionsColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "attribution_allocation_revisions_attribution_usage_buckets_allocation_revisions",
-				Columns:    []*schema.Column{AttributionAllocationRevisionsColumns[8]},
-				RefColumns: []*schema.Column{AttributionUsageBucketsColumns[0]},
-				OnDelete:   schema.NoAction,
-			},
-		},
-		Indexes: []*schema.Index{
-			{
-				Name:    "attributionallocationrevision_usage_bucket_id_sequence",
-				Unique:  true,
-				Columns: []*schema.Column{AttributionAllocationRevisionsColumns[8], AttributionAllocationRevisionsColumns[2]},
-			},
-		},
-	}
 	// AttributionClaimGroupsColumns holds the columns for the "attribution_claim_groups" table.
 	AttributionClaimGroupsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -191,79 +158,6 @@ var (
 				Name:    "attributionrequestclaim_materialized_pool_id",
 				Unique:  false,
 				Columns: []*schema.Column{AttributionRequestClaimsColumns[19]},
-			},
-		},
-	}
-	// AttributionUsageBucketsColumns holds the columns for the "attribution_usage_buckets" table.
-	AttributionUsageBucketsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "bucket_id", Type: field.TypeString, Unique: true},
-		{Name: "schema_version", Type: field.TypeInt, Default: 1},
-		{Name: "tool", Type: field.TypeString},
-		{Name: "model", Type: field.TypeString, Nullable: true},
-		{Name: "change_set_id", Type: field.TypeString, Nullable: true},
-		{Name: "session_slices", Type: field.TypeJSON},
-		{Name: "observed_start_at", Type: field.TypeTime},
-		{Name: "observed_end_at", Type: field.TypeTime},
-		{Name: "fresh_input_tokens", Type: field.TypeInt64, Default: 0},
-		{Name: "cache_read_tokens", Type: field.TypeInt64, Default: 0},
-		{Name: "cache_write_tokens", Type: field.TypeInt64, Default: 0},
-		{Name: "output_tokens", Type: field.TypeInt64, Default: 0},
-		{Name: "reasoning_tokens", Type: field.TypeInt64, Default: 0},
-		{Name: "provider_total_tokens", Type: field.TypeInt64, Default: 0},
-		{Name: "processed_total_tokens", Type: field.TypeInt64, Default: 0},
-		{Name: "request_count", Type: field.TypeInt, Default: 0},
-		{Name: "source_event_count", Type: field.TypeInt, Default: 0},
-		{Name: "source_digest", Type: field.TypeString},
-		{Name: "immutable_digest", Type: field.TypeString},
-		{Name: "extractor_version", Type: field.TypeString},
-		{Name: "normalization_version", Type: field.TypeInt, Default: 1},
-		{Name: "token_quality", Type: field.TypeEnum, Enums: []string{"measured", "historical_advisory", "invalid"}},
-		{Name: "request_correlation_quality", Type: field.TypeEnum, Enums: []string{"exact", "advisory", "unlinked"}, Default: "unlinked"},
-		{Name: "request_id_coverage_count", Type: field.TypeInt, Default: 0},
-		{Name: "request_set_digest", Type: field.TypeString, Nullable: true},
-		{Name: "coverage_gap_count", Type: field.TypeInt, Default: 0},
-		{Name: "created_at", Type: field.TypeTime},
-		{Name: "correlation_updated_at", Type: field.TypeTime, Nullable: true},
-		{Name: "reporting_installation_id", Type: field.TypeInt},
-		{Name: "user_id", Type: field.TypeInt},
-	}
-	// AttributionUsageBucketsTable holds the schema information for the "attribution_usage_buckets" table.
-	AttributionUsageBucketsTable = &schema.Table{
-		Name:       "attribution_usage_buckets",
-		Columns:    AttributionUsageBucketsColumns,
-		PrimaryKey: []*schema.Column{AttributionUsageBucketsColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "attribution_usage_buckets_reporting_installations_usage_buckets",
-				Columns:    []*schema.Column{AttributionUsageBucketsColumns[29]},
-				RefColumns: []*schema.Column{ReportingInstallationsColumns[0]},
-				OnDelete:   schema.NoAction,
-			},
-			{
-				Symbol:     "attribution_usage_buckets_users_attribution_usage_buckets",
-				Columns:    []*schema.Column{AttributionUsageBucketsColumns[30]},
-				RefColumns: []*schema.Column{UsersColumns[0]},
-				OnDelete:   schema.NoAction,
-			},
-		},
-		Indexes: []*schema.Index{
-			{
-				Name:    "attributionusagebucket_user_id_observed_end_at_id",
-				Unique:  false,
-				Columns: []*schema.Column{AttributionUsageBucketsColumns[30], AttributionUsageBucketsColumns[8], AttributionUsageBucketsColumns[0]},
-				Annotation: &entsql.IndexAnnotation{
-					DescColumns: map[string]bool{
-						AttributionUsageBucketsColumns[0].Name: true,
-
-						AttributionUsageBucketsColumns[8].Name: true,
-					},
-				},
-			},
-			{
-				Name:    "attributionusagebucket_reporting_installation_id_observed_end_at",
-				Unique:  false,
-				Columns: []*schema.Column{AttributionUsageBucketsColumns[29], AttributionUsageBucketsColumns[8]},
 			},
 		},
 	}
@@ -1246,9 +1140,7 @@ var (
 		{Name: "label", Type: field.TypeString, Nullable: true},
 		{Name: "client_version", Type: field.TypeString, Nullable: true},
 		{Name: "reporter_token_hash", Type: field.TypeString, Unique: true},
-		{Name: "otlp_token_hash", Type: field.TypeString, Unique: true},
 		{Name: "reporting_enabled", Type: field.TypeBool, Default: false},
-		{Name: "otel_enabled", Type: field.TypeBool, Default: false},
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "revoked"}, Default: "active"},
 		{Name: "last_seen_at", Type: field.TypeTime, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
@@ -1263,7 +1155,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "reporting_installations_users_reporting_installations",
-				Columns:    []*schema.Column{ReportingInstallationsColumns[12]},
+				Columns:    []*schema.Column{ReportingInstallationsColumns[10]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -1272,7 +1164,7 @@ var (
 			{
 				Name:    "reportinginstallation_user_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{ReportingInstallationsColumns[12], ReportingInstallationsColumns[8]},
+				Columns: []*schema.Column{ReportingInstallationsColumns[10], ReportingInstallationsColumns[6]},
 			},
 		},
 	}
@@ -1554,10 +1446,8 @@ var (
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		AdminSubscriptionJobsTable,
-		AttributionAllocationRevisionsTable,
 		AttributionClaimGroupsTable,
 		AttributionRequestClaimsTable,
-		AttributionUsageBucketsTable,
 		AttributionUsagePoolsTable,
 		AttributionUsagePoolCommitsTable,
 		CommitCheckpointsTable,
@@ -1591,9 +1481,6 @@ var (
 )
 
 func init() {
-	AttributionAllocationRevisionsTable.ForeignKeys[0].RefTable = AttributionUsageBucketsTable
-	AttributionUsageBucketsTable.ForeignKeys[0].RefTable = ReportingInstallationsTable
-	AttributionUsageBucketsTable.ForeignKeys[1].RefTable = UsersTable
 	CommitCheckpointsTable.ForeignKeys[0].RefTable = RepoConfigsTable
 	CommitCheckpointsTable.ForeignKeys[1].RefTable = UsersTable
 	CommitRewritesTable.ForeignKeys[0].RefTable = RepoConfigsTable

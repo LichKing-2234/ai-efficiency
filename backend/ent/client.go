@@ -16,10 +16,8 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
-	"github.com/ai-efficiency/backend/ent/attributionallocationrevision"
 	"github.com/ai-efficiency/backend/ent/attributionclaimgroup"
 	"github.com/ai-efficiency/backend/ent/attributionrequestclaim"
-	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
 	"github.com/ai-efficiency/backend/ent/attributionusagepool"
 	"github.com/ai-efficiency/backend/ent/attributionusagepoolcommit"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
@@ -58,14 +56,10 @@ type Client struct {
 	Schema *migrate.Schema
 	// AdminSubscriptionJob is the client for interacting with the AdminSubscriptionJob builders.
 	AdminSubscriptionJob *AdminSubscriptionJobClient
-	// AttributionAllocationRevision is the client for interacting with the AttributionAllocationRevision builders.
-	AttributionAllocationRevision *AttributionAllocationRevisionClient
 	// AttributionClaimGroup is the client for interacting with the AttributionClaimGroup builders.
 	AttributionClaimGroup *AttributionClaimGroupClient
 	// AttributionRequestClaim is the client for interacting with the AttributionRequestClaim builders.
 	AttributionRequestClaim *AttributionRequestClaimClient
-	// AttributionUsageBucket is the client for interacting with the AttributionUsageBucket builders.
-	AttributionUsageBucket *AttributionUsageBucketClient
 	// AttributionUsagePool is the client for interacting with the AttributionUsagePool builders.
 	AttributionUsagePool *AttributionUsagePoolClient
 	// AttributionUsagePoolCommit is the client for interacting with the AttributionUsagePoolCommit builders.
@@ -136,10 +130,8 @@ func NewClient(opts ...Option) *Client {
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.AdminSubscriptionJob = NewAdminSubscriptionJobClient(c.config)
-	c.AttributionAllocationRevision = NewAttributionAllocationRevisionClient(c.config)
 	c.AttributionClaimGroup = NewAttributionClaimGroupClient(c.config)
 	c.AttributionRequestClaim = NewAttributionRequestClaimClient(c.config)
-	c.AttributionUsageBucket = NewAttributionUsageBucketClient(c.config)
 	c.AttributionUsagePool = NewAttributionUsagePoolClient(c.config)
 	c.AttributionUsagePoolCommit = NewAttributionUsagePoolCommitClient(c.config)
 	c.CommitCheckpoint = NewCommitCheckpointClient(c.config)
@@ -262,10 +254,8 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ctx:                           ctx,
 		config:                        cfg,
 		AdminSubscriptionJob:          NewAdminSubscriptionJobClient(cfg),
-		AttributionAllocationRevision: NewAttributionAllocationRevisionClient(cfg),
 		AttributionClaimGroup:         NewAttributionClaimGroupClient(cfg),
 		AttributionRequestClaim:       NewAttributionRequestClaimClient(cfg),
-		AttributionUsageBucket:        NewAttributionUsageBucketClient(cfg),
 		AttributionUsagePool:          NewAttributionUsagePoolClient(cfg),
 		AttributionUsagePoolCommit:    NewAttributionUsagePoolCommitClient(cfg),
 		CommitCheckpoint:              NewCommitCheckpointClient(cfg),
@@ -315,10 +305,8 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ctx:                           ctx,
 		config:                        cfg,
 		AdminSubscriptionJob:          NewAdminSubscriptionJobClient(cfg),
-		AttributionAllocationRevision: NewAttributionAllocationRevisionClient(cfg),
 		AttributionClaimGroup:         NewAttributionClaimGroupClient(cfg),
 		AttributionRequestClaim:       NewAttributionRequestClaimClient(cfg),
-		AttributionUsageBucket:        NewAttributionUsageBucketClient(cfg),
 		AttributionUsagePool:          NewAttributionUsagePoolClient(cfg),
 		AttributionUsagePoolCommit:    NewAttributionUsagePoolCommitClient(cfg),
 		CommitCheckpoint:              NewCommitCheckpointClient(cfg),
@@ -377,8 +365,7 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.AdminSubscriptionJob, c.AttributionAllocationRevision,
-		c.AttributionClaimGroup, c.AttributionRequestClaim, c.AttributionUsageBucket,
+		c.AdminSubscriptionJob, c.AttributionClaimGroup, c.AttributionRequestClaim,
 		c.AttributionUsagePool, c.AttributionUsagePoolCommit, c.CommitCheckpoint,
 		c.CommitRewrite, c.Credential, c.DirectoryDepartment, c.DirectoryMember,
 		c.DirectoryMemberDepartment, c.DirectoryOffboardingAction, c.DirectorySource,
@@ -397,8 +384,7 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.AdminSubscriptionJob, c.AttributionAllocationRevision,
-		c.AttributionClaimGroup, c.AttributionRequestClaim, c.AttributionUsageBucket,
+		c.AdminSubscriptionJob, c.AttributionClaimGroup, c.AttributionRequestClaim,
 		c.AttributionUsagePool, c.AttributionUsagePoolCommit, c.CommitCheckpoint,
 		c.CommitRewrite, c.Credential, c.DirectoryDepartment, c.DirectoryMember,
 		c.DirectoryMemberDepartment, c.DirectoryOffboardingAction, c.DirectorySource,
@@ -418,14 +404,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
 	case *AdminSubscriptionJobMutation:
 		return c.AdminSubscriptionJob.mutate(ctx, m)
-	case *AttributionAllocationRevisionMutation:
-		return c.AttributionAllocationRevision.mutate(ctx, m)
 	case *AttributionClaimGroupMutation:
 		return c.AttributionClaimGroup.mutate(ctx, m)
 	case *AttributionRequestClaimMutation:
 		return c.AttributionRequestClaim.mutate(ctx, m)
-	case *AttributionUsageBucketMutation:
-		return c.AttributionUsageBucket.mutate(ctx, m)
 	case *AttributionUsagePoolMutation:
 		return c.AttributionUsagePool.mutate(ctx, m)
 	case *AttributionUsagePoolCommitMutation:
@@ -619,155 +601,6 @@ func (c *AdminSubscriptionJobClient) mutate(ctx context.Context, m *AdminSubscri
 		return (&AdminSubscriptionJobDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AdminSubscriptionJob mutation op: %q", m.Op())
-	}
-}
-
-// AttributionAllocationRevisionClient is a client for the AttributionAllocationRevision schema.
-type AttributionAllocationRevisionClient struct {
-	config
-}
-
-// NewAttributionAllocationRevisionClient returns a client for the AttributionAllocationRevision from the given config.
-func NewAttributionAllocationRevisionClient(c config) *AttributionAllocationRevisionClient {
-	return &AttributionAllocationRevisionClient{config: c}
-}
-
-// Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `attributionallocationrevision.Hooks(f(g(h())))`.
-func (c *AttributionAllocationRevisionClient) Use(hooks ...Hook) {
-	c.hooks.AttributionAllocationRevision = append(c.hooks.AttributionAllocationRevision, hooks...)
-}
-
-// Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `attributionallocationrevision.Intercept(f(g(h())))`.
-func (c *AttributionAllocationRevisionClient) Intercept(interceptors ...Interceptor) {
-	c.inters.AttributionAllocationRevision = append(c.inters.AttributionAllocationRevision, interceptors...)
-}
-
-// Create returns a builder for creating a AttributionAllocationRevision entity.
-func (c *AttributionAllocationRevisionClient) Create() *AttributionAllocationRevisionCreate {
-	mutation := newAttributionAllocationRevisionMutation(c.config, OpCreate)
-	return &AttributionAllocationRevisionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// CreateBulk returns a builder for creating a bulk of AttributionAllocationRevision entities.
-func (c *AttributionAllocationRevisionClient) CreateBulk(builders ...*AttributionAllocationRevisionCreate) *AttributionAllocationRevisionCreateBulk {
-	return &AttributionAllocationRevisionCreateBulk{config: c.config, builders: builders}
-}
-
-// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
-// a builder and applies setFunc on it.
-func (c *AttributionAllocationRevisionClient) MapCreateBulk(slice any, setFunc func(*AttributionAllocationRevisionCreate, int)) *AttributionAllocationRevisionCreateBulk {
-	rv := reflect.ValueOf(slice)
-	if rv.Kind() != reflect.Slice {
-		return &AttributionAllocationRevisionCreateBulk{err: fmt.Errorf("calling to AttributionAllocationRevisionClient.MapCreateBulk with wrong type %T, need slice", slice)}
-	}
-	builders := make([]*AttributionAllocationRevisionCreate, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		builders[i] = c.Create()
-		setFunc(builders[i], i)
-	}
-	return &AttributionAllocationRevisionCreateBulk{config: c.config, builders: builders}
-}
-
-// Update returns an update builder for AttributionAllocationRevision.
-func (c *AttributionAllocationRevisionClient) Update() *AttributionAllocationRevisionUpdate {
-	mutation := newAttributionAllocationRevisionMutation(c.config, OpUpdate)
-	return &AttributionAllocationRevisionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOne returns an update builder for the given entity.
-func (c *AttributionAllocationRevisionClient) UpdateOne(aar *AttributionAllocationRevision) *AttributionAllocationRevisionUpdateOne {
-	mutation := newAttributionAllocationRevisionMutation(c.config, OpUpdateOne, withAttributionAllocationRevision(aar))
-	return &AttributionAllocationRevisionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOneID returns an update builder for the given id.
-func (c *AttributionAllocationRevisionClient) UpdateOneID(id int) *AttributionAllocationRevisionUpdateOne {
-	mutation := newAttributionAllocationRevisionMutation(c.config, OpUpdateOne, withAttributionAllocationRevisionID(id))
-	return &AttributionAllocationRevisionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// Delete returns a delete builder for AttributionAllocationRevision.
-func (c *AttributionAllocationRevisionClient) Delete() *AttributionAllocationRevisionDelete {
-	mutation := newAttributionAllocationRevisionMutation(c.config, OpDelete)
-	return &AttributionAllocationRevisionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// DeleteOne returns a builder for deleting the given entity.
-func (c *AttributionAllocationRevisionClient) DeleteOne(aar *AttributionAllocationRevision) *AttributionAllocationRevisionDeleteOne {
-	return c.DeleteOneID(aar.ID)
-}
-
-// DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *AttributionAllocationRevisionClient) DeleteOneID(id int) *AttributionAllocationRevisionDeleteOne {
-	builder := c.Delete().Where(attributionallocationrevision.ID(id))
-	builder.mutation.id = &id
-	builder.mutation.op = OpDeleteOne
-	return &AttributionAllocationRevisionDeleteOne{builder}
-}
-
-// Query returns a query builder for AttributionAllocationRevision.
-func (c *AttributionAllocationRevisionClient) Query() *AttributionAllocationRevisionQuery {
-	return &AttributionAllocationRevisionQuery{
-		config: c.config,
-		ctx:    &QueryContext{Type: TypeAttributionAllocationRevision},
-		inters: c.Interceptors(),
-	}
-}
-
-// Get returns a AttributionAllocationRevision entity by its id.
-func (c *AttributionAllocationRevisionClient) Get(ctx context.Context, id int) (*AttributionAllocationRevision, error) {
-	return c.Query().Where(attributionallocationrevision.ID(id)).Only(ctx)
-}
-
-// GetX is like Get, but panics if an error occurs.
-func (c *AttributionAllocationRevisionClient) GetX(ctx context.Context, id int) *AttributionAllocationRevision {
-	obj, err := c.Get(ctx, id)
-	if err != nil {
-		panic(err)
-	}
-	return obj
-}
-
-// QueryUsageBucket queries the usage_bucket edge of a AttributionAllocationRevision.
-func (c *AttributionAllocationRevisionClient) QueryUsageBucket(aar *AttributionAllocationRevision) *AttributionUsageBucketQuery {
-	query := (&AttributionUsageBucketClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := aar.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(attributionallocationrevision.Table, attributionallocationrevision.FieldID, id),
-			sqlgraph.To(attributionusagebucket.Table, attributionusagebucket.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, attributionallocationrevision.UsageBucketTable, attributionallocationrevision.UsageBucketColumn),
-		)
-		fromV = sqlgraph.Neighbors(aar.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// Hooks returns the client hooks.
-func (c *AttributionAllocationRevisionClient) Hooks() []Hook {
-	return c.hooks.AttributionAllocationRevision
-}
-
-// Interceptors returns the client interceptors.
-func (c *AttributionAllocationRevisionClient) Interceptors() []Interceptor {
-	return c.inters.AttributionAllocationRevision
-}
-
-func (c *AttributionAllocationRevisionClient) mutate(ctx context.Context, m *AttributionAllocationRevisionMutation) (Value, error) {
-	switch m.Op() {
-	case OpCreate:
-		return (&AttributionAllocationRevisionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdate:
-		return (&AttributionAllocationRevisionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdateOne:
-		return (&AttributionAllocationRevisionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpDelete, OpDeleteOne:
-		return (&AttributionAllocationRevisionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
-	default:
-		return nil, fmt.Errorf("ent: unknown AttributionAllocationRevision mutation op: %q", m.Op())
 	}
 }
 
@@ -1034,187 +867,6 @@ func (c *AttributionRequestClaimClient) mutate(ctx context.Context, m *Attributi
 		return (&AttributionRequestClaimDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AttributionRequestClaim mutation op: %q", m.Op())
-	}
-}
-
-// AttributionUsageBucketClient is a client for the AttributionUsageBucket schema.
-type AttributionUsageBucketClient struct {
-	config
-}
-
-// NewAttributionUsageBucketClient returns a client for the AttributionUsageBucket from the given config.
-func NewAttributionUsageBucketClient(c config) *AttributionUsageBucketClient {
-	return &AttributionUsageBucketClient{config: c}
-}
-
-// Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `attributionusagebucket.Hooks(f(g(h())))`.
-func (c *AttributionUsageBucketClient) Use(hooks ...Hook) {
-	c.hooks.AttributionUsageBucket = append(c.hooks.AttributionUsageBucket, hooks...)
-}
-
-// Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `attributionusagebucket.Intercept(f(g(h())))`.
-func (c *AttributionUsageBucketClient) Intercept(interceptors ...Interceptor) {
-	c.inters.AttributionUsageBucket = append(c.inters.AttributionUsageBucket, interceptors...)
-}
-
-// Create returns a builder for creating a AttributionUsageBucket entity.
-func (c *AttributionUsageBucketClient) Create() *AttributionUsageBucketCreate {
-	mutation := newAttributionUsageBucketMutation(c.config, OpCreate)
-	return &AttributionUsageBucketCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// CreateBulk returns a builder for creating a bulk of AttributionUsageBucket entities.
-func (c *AttributionUsageBucketClient) CreateBulk(builders ...*AttributionUsageBucketCreate) *AttributionUsageBucketCreateBulk {
-	return &AttributionUsageBucketCreateBulk{config: c.config, builders: builders}
-}
-
-// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
-// a builder and applies setFunc on it.
-func (c *AttributionUsageBucketClient) MapCreateBulk(slice any, setFunc func(*AttributionUsageBucketCreate, int)) *AttributionUsageBucketCreateBulk {
-	rv := reflect.ValueOf(slice)
-	if rv.Kind() != reflect.Slice {
-		return &AttributionUsageBucketCreateBulk{err: fmt.Errorf("calling to AttributionUsageBucketClient.MapCreateBulk with wrong type %T, need slice", slice)}
-	}
-	builders := make([]*AttributionUsageBucketCreate, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		builders[i] = c.Create()
-		setFunc(builders[i], i)
-	}
-	return &AttributionUsageBucketCreateBulk{config: c.config, builders: builders}
-}
-
-// Update returns an update builder for AttributionUsageBucket.
-func (c *AttributionUsageBucketClient) Update() *AttributionUsageBucketUpdate {
-	mutation := newAttributionUsageBucketMutation(c.config, OpUpdate)
-	return &AttributionUsageBucketUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOne returns an update builder for the given entity.
-func (c *AttributionUsageBucketClient) UpdateOne(aub *AttributionUsageBucket) *AttributionUsageBucketUpdateOne {
-	mutation := newAttributionUsageBucketMutation(c.config, OpUpdateOne, withAttributionUsageBucket(aub))
-	return &AttributionUsageBucketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOneID returns an update builder for the given id.
-func (c *AttributionUsageBucketClient) UpdateOneID(id int) *AttributionUsageBucketUpdateOne {
-	mutation := newAttributionUsageBucketMutation(c.config, OpUpdateOne, withAttributionUsageBucketID(id))
-	return &AttributionUsageBucketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// Delete returns a delete builder for AttributionUsageBucket.
-func (c *AttributionUsageBucketClient) Delete() *AttributionUsageBucketDelete {
-	mutation := newAttributionUsageBucketMutation(c.config, OpDelete)
-	return &AttributionUsageBucketDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// DeleteOne returns a builder for deleting the given entity.
-func (c *AttributionUsageBucketClient) DeleteOne(aub *AttributionUsageBucket) *AttributionUsageBucketDeleteOne {
-	return c.DeleteOneID(aub.ID)
-}
-
-// DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *AttributionUsageBucketClient) DeleteOneID(id int) *AttributionUsageBucketDeleteOne {
-	builder := c.Delete().Where(attributionusagebucket.ID(id))
-	builder.mutation.id = &id
-	builder.mutation.op = OpDeleteOne
-	return &AttributionUsageBucketDeleteOne{builder}
-}
-
-// Query returns a query builder for AttributionUsageBucket.
-func (c *AttributionUsageBucketClient) Query() *AttributionUsageBucketQuery {
-	return &AttributionUsageBucketQuery{
-		config: c.config,
-		ctx:    &QueryContext{Type: TypeAttributionUsageBucket},
-		inters: c.Interceptors(),
-	}
-}
-
-// Get returns a AttributionUsageBucket entity by its id.
-func (c *AttributionUsageBucketClient) Get(ctx context.Context, id int) (*AttributionUsageBucket, error) {
-	return c.Query().Where(attributionusagebucket.ID(id)).Only(ctx)
-}
-
-// GetX is like Get, but panics if an error occurs.
-func (c *AttributionUsageBucketClient) GetX(ctx context.Context, id int) *AttributionUsageBucket {
-	obj, err := c.Get(ctx, id)
-	if err != nil {
-		panic(err)
-	}
-	return obj
-}
-
-// QueryReportingInstallation queries the reporting_installation edge of a AttributionUsageBucket.
-func (c *AttributionUsageBucketClient) QueryReportingInstallation(aub *AttributionUsageBucket) *ReportingInstallationQuery {
-	query := (&ReportingInstallationClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := aub.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(attributionusagebucket.Table, attributionusagebucket.FieldID, id),
-			sqlgraph.To(reportinginstallation.Table, reportinginstallation.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, attributionusagebucket.ReportingInstallationTable, attributionusagebucket.ReportingInstallationColumn),
-		)
-		fromV = sqlgraph.Neighbors(aub.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// QueryUser queries the user edge of a AttributionUsageBucket.
-func (c *AttributionUsageBucketClient) QueryUser(aub *AttributionUsageBucket) *UserQuery {
-	query := (&UserClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := aub.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(attributionusagebucket.Table, attributionusagebucket.FieldID, id),
-			sqlgraph.To(user.Table, user.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, attributionusagebucket.UserTable, attributionusagebucket.UserColumn),
-		)
-		fromV = sqlgraph.Neighbors(aub.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// QueryAllocationRevisions queries the allocation_revisions edge of a AttributionUsageBucket.
-func (c *AttributionUsageBucketClient) QueryAllocationRevisions(aub *AttributionUsageBucket) *AttributionAllocationRevisionQuery {
-	query := (&AttributionAllocationRevisionClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := aub.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(attributionusagebucket.Table, attributionusagebucket.FieldID, id),
-			sqlgraph.To(attributionallocationrevision.Table, attributionallocationrevision.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, attributionusagebucket.AllocationRevisionsTable, attributionusagebucket.AllocationRevisionsColumn),
-		)
-		fromV = sqlgraph.Neighbors(aub.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// Hooks returns the client hooks.
-func (c *AttributionUsageBucketClient) Hooks() []Hook {
-	return c.hooks.AttributionUsageBucket
-}
-
-// Interceptors returns the client interceptors.
-func (c *AttributionUsageBucketClient) Interceptors() []Interceptor {
-	return c.inters.AttributionUsageBucket
-}
-
-func (c *AttributionUsageBucketClient) mutate(ctx context.Context, m *AttributionUsageBucketMutation) (Value, error) {
-	switch m.Op() {
-	case OpCreate:
-		return (&AttributionUsageBucketCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdate:
-		return (&AttributionUsageBucketUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdateOne:
-		return (&AttributionUsageBucketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpDelete, OpDeleteOne:
-		return (&AttributionUsageBucketDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
-	default:
-		return nil, fmt.Errorf("ent: unknown AttributionUsageBucket mutation op: %q", m.Op())
 	}
 }
 
@@ -4639,22 +4291,6 @@ func (c *ReportingInstallationClient) QueryUser(ri *ReportingInstallation) *User
 	return query
 }
 
-// QueryUsageBuckets queries the usage_buckets edge of a ReportingInstallation.
-func (c *ReportingInstallationClient) QueryUsageBuckets(ri *ReportingInstallation) *AttributionUsageBucketQuery {
-	query := (&AttributionUsageBucketClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := ri.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(reportinginstallation.Table, reportinginstallation.FieldID, id),
-			sqlgraph.To(attributionusagebucket.Table, attributionusagebucket.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, reportinginstallation.UsageBucketsTable, reportinginstallation.UsageBucketsColumn),
-		)
-		fromV = sqlgraph.Neighbors(ri.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
 // Hooks returns the client hooks.
 func (c *ReportingInstallationClient) Hooks() []Hook {
 	return c.hooks.ReportingInstallation
@@ -5480,22 +5116,6 @@ func (c *UserClient) QueryReportingInstallations(u *User) *ReportingInstallation
 	return query
 }
 
-// QueryAttributionUsageBuckets queries the attribution_usage_buckets edge of a User.
-func (c *UserClient) QueryAttributionUsageBuckets(u *User) *AttributionUsageBucketQuery {
-	query := (&AttributionUsageBucketClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := u.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(user.Table, user.FieldID, id),
-			sqlgraph.To(attributionusagebucket.Table, attributionusagebucket.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, user.AttributionUsageBucketsTable, user.AttributionUsageBucketsColumn),
-		)
-		fromV = sqlgraph.Neighbors(u.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
 // Hooks returns the client hooks.
 func (c *UserClient) Hooks() []Hook {
 	return c.hooks.User
@@ -5673,12 +5293,11 @@ func (c *WebhookDeadLetterClient) mutate(ctx context.Context, m *WebhookDeadLett
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		AdminSubscriptionJob, AttributionAllocationRevision, AttributionClaimGroup,
-		AttributionRequestClaim, AttributionUsageBucket, AttributionUsagePool,
-		AttributionUsagePoolCommit, CommitCheckpoint, CommitRewrite, Credential,
-		DirectoryDepartment, DirectoryMember, DirectoryMemberDepartment,
-		DirectoryOffboardingAction, DirectorySource, DirectorySyncRun,
-		PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord,
+		AdminSubscriptionJob, AttributionClaimGroup, AttributionRequestClaim,
+		AttributionUsagePool, AttributionUsagePoolCommit, CommitCheckpoint,
+		CommitRewrite, Credential, DirectoryDepartment, DirectoryMember,
+		DirectoryMemberDepartment, DirectoryOffboardingAction, DirectorySource,
+		DirectorySyncRun, PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord,
 		QuotaResetApproverConfig, QuotaResetNotificationSetting, QuotaResetRequest,
 		QuotaResetRequestEvent, RelayGroupMapping, RelayProvider, RepoConfig,
 		ReportingInstallation, ScmProvider, SystemSetting,
@@ -5686,12 +5305,11 @@ type (
 		WebhookDeadLetter []ent.Hook
 	}
 	inters struct {
-		AdminSubscriptionJob, AttributionAllocationRevision, AttributionClaimGroup,
-		AttributionRequestClaim, AttributionUsageBucket, AttributionUsagePool,
-		AttributionUsagePoolCommit, CommitCheckpoint, CommitRewrite, Credential,
-		DirectoryDepartment, DirectoryMember, DirectoryMemberDepartment,
-		DirectoryOffboardingAction, DirectorySource, DirectorySyncRun,
-		PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord,
+		AdminSubscriptionJob, AttributionClaimGroup, AttributionRequestClaim,
+		AttributionUsagePool, AttributionUsagePoolCommit, CommitCheckpoint,
+		CommitRewrite, Credential, DirectoryDepartment, DirectoryMember,
+		DirectoryMemberDepartment, DirectoryOffboardingAction, DirectorySource,
+		DirectorySyncRun, PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord,
 		QuotaResetApproverConfig, QuotaResetNotificationSetting, QuotaResetRequest,
 		QuotaResetRequestEvent, RelayGroupMapping, RelayProvider, RepoConfig,
 		ReportingInstallation, ScmProvider, SystemSetting,

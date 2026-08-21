@@ -13,8 +13,6 @@ declare module 'vue' {
   export interface GlobalComponents {
     ActivityAnalytics: typeof import('./components/activity/ActivityAnalytics.vue')['default']
     ActivityDateRange: typeof import('./components/activity/ActivityDateRange.vue')['default']
-    ActivityDetails: typeof import('./components/activity/ActivityDetails.vue')['default']
-    ActivityHero: typeof import('./components/activity/ActivityHero.vue')['default']
     ActivityTeamTreeNode: typeof import('./components/activity/ActivityTeamTreeNode.vue')['default']
     AdminDepartmentPicker: typeof import('./components/admin/AdminDepartmentPicker.vue')['default']
     AdvancedCredentialSettings: typeof import('./components/settings/AdvancedCredentialSettings.vue')['default']
@@ -74,7 +72,6 @@ declare module 'vue' {
     QuotaResetRequestModal: typeof import('./components/quota-reset/QuotaResetRequestModal.vue')['default']
     QuotaResetWorkflowTimeline: typeof import('./components/quota-reset/QuotaResetWorkflowTimeline.vue')['default']
     ReportingReadinessGuide: typeof import('./components/activity/ReportingReadinessGuide.vue')['default']
-    RepositoryActivitySection: typeof import('./components/activity/RepositoryActivitySection.vue')['default']
     RepositoryOperationsSection: typeof import('./components/repos/RepositoryOperationsSection.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']

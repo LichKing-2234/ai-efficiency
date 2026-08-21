@@ -77,6 +77,44 @@ func (s *Service) V2PersonalReadiness(ctx context.Context, userID int) (V2Readin
 	return s.v2ReadinessSQL(ctx, &v2Scope{userIDs: map[int]struct{}{userID: {}}})
 }
 
+func (s *Service) V2TeamMemberAvailability(ctx context.Context, actorUserID int, query V2TeamMemberAvailabilityQuery) (*V2TeamMemberAvailability, error) {
+	if len(query.UserIDs) > 100 {
+		return nil, fmt.Errorf("%w: user_ids", ErrInvalidQuery)
+	}
+	scope, from, to, _, err := s.resolveV2Query(ctx, actorUserID, V2Query{
+		Scope: V2ScopeTeam, TeamID: strings.TrimSpace(query.TeamID),
+		FromDate: query.FromDate, ToDate: query.ToDate, Timezone: query.Timezone,
+	})
+	if err != nil {
+		return nil, err
+	}
+	requested := map[int]struct{}{}
+	for _, userID := range query.UserIDs {
+		if userID <= 0 {
+			return nil, fmt.Errorf("%w: user_ids", ErrInvalidQuery)
+		}
+		if _, allowed := scope.userIDs[userID]; !allowed {
+			return nil, ErrForbidden
+		}
+		requested[userID] = struct{}{}
+	}
+	result := &V2TeamMemberAvailability{
+		ContractVersion: V2MetricContractVersion, ScopeVersion: scope.authorization.Version,
+		Team: scope.authorization.Teams[strings.TrimSpace(query.TeamID)], AvailableUserIDs: []int{},
+	}
+	if len(requested) == 0 || s.v2LedgerEpoch == "" {
+		return result, nil
+	}
+	if s.v2DB == nil {
+		return nil, fmt.Errorf("Activity v2 database is not configured")
+	}
+	result.AvailableUserIDs, err = s.queryV2AvailableUserIDsSQL(ctx, requested, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("load v2 team member availability: %w", err)
+	}
+	return result, nil
+}
+
 func (s *Service) V2Repositories(ctx context.Context, actorUserID int, query V2PageQuery) (*V2Page[V2RepositoryRow], error) {
 	if err := validateV2PageQuery(query); err != nil {
 		return nil, err

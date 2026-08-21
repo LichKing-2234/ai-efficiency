@@ -11,7 +11,6 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/reportinginstallation"
 	"github.com/ai-efficiency/backend/ent/user"
@@ -112,20 +111,6 @@ func (riu *ReportingInstallationUpdate) SetNillableReporterTokenHash(s *string) 
 	return riu
 }
 
-// SetOtlpTokenHash sets the "otlp_token_hash" field.
-func (riu *ReportingInstallationUpdate) SetOtlpTokenHash(s string) *ReportingInstallationUpdate {
-	riu.mutation.SetOtlpTokenHash(s)
-	return riu
-}
-
-// SetNillableOtlpTokenHash sets the "otlp_token_hash" field if the given value is not nil.
-func (riu *ReportingInstallationUpdate) SetNillableOtlpTokenHash(s *string) *ReportingInstallationUpdate {
-	if s != nil {
-		riu.SetOtlpTokenHash(*s)
-	}
-	return riu
-}
-
 // SetReportingEnabled sets the "reporting_enabled" field.
 func (riu *ReportingInstallationUpdate) SetReportingEnabled(b bool) *ReportingInstallationUpdate {
 	riu.mutation.SetReportingEnabled(b)
@@ -136,20 +121,6 @@ func (riu *ReportingInstallationUpdate) SetReportingEnabled(b bool) *ReportingIn
 func (riu *ReportingInstallationUpdate) SetNillableReportingEnabled(b *bool) *ReportingInstallationUpdate {
 	if b != nil {
 		riu.SetReportingEnabled(*b)
-	}
-	return riu
-}
-
-// SetOtelEnabled sets the "otel_enabled" field.
-func (riu *ReportingInstallationUpdate) SetOtelEnabled(b bool) *ReportingInstallationUpdate {
-	riu.mutation.SetOtelEnabled(b)
-	return riu
-}
-
-// SetNillableOtelEnabled sets the "otel_enabled" field if the given value is not nil.
-func (riu *ReportingInstallationUpdate) SetNillableOtelEnabled(b *bool) *ReportingInstallationUpdate {
-	if b != nil {
-		riu.SetOtelEnabled(*b)
 	}
 	return riu
 }
@@ -199,21 +170,6 @@ func (riu *ReportingInstallationUpdate) SetUser(u *User) *ReportingInstallationU
 	return riu.SetUserID(u.ID)
 }
 
-// AddUsageBucketIDs adds the "usage_buckets" edge to the AttributionUsageBucket entity by IDs.
-func (riu *ReportingInstallationUpdate) AddUsageBucketIDs(ids ...int) *ReportingInstallationUpdate {
-	riu.mutation.AddUsageBucketIDs(ids...)
-	return riu
-}
-
-// AddUsageBuckets adds the "usage_buckets" edges to the AttributionUsageBucket entity.
-func (riu *ReportingInstallationUpdate) AddUsageBuckets(a ...*AttributionUsageBucket) *ReportingInstallationUpdate {
-	ids := make([]int, len(a))
-	for i := range a {
-		ids[i] = a[i].ID
-	}
-	return riu.AddUsageBucketIDs(ids...)
-}
-
 // Mutation returns the ReportingInstallationMutation object of the builder.
 func (riu *ReportingInstallationUpdate) Mutation() *ReportingInstallationMutation {
 	return riu.mutation
@@ -223,27 +179,6 @@ func (riu *ReportingInstallationUpdate) Mutation() *ReportingInstallationMutatio
 func (riu *ReportingInstallationUpdate) ClearUser() *ReportingInstallationUpdate {
 	riu.mutation.ClearUser()
 	return riu
-}
-
-// ClearUsageBuckets clears all "usage_buckets" edges to the AttributionUsageBucket entity.
-func (riu *ReportingInstallationUpdate) ClearUsageBuckets() *ReportingInstallationUpdate {
-	riu.mutation.ClearUsageBuckets()
-	return riu
-}
-
-// RemoveUsageBucketIDs removes the "usage_buckets" edge to AttributionUsageBucket entities by IDs.
-func (riu *ReportingInstallationUpdate) RemoveUsageBucketIDs(ids ...int) *ReportingInstallationUpdate {
-	riu.mutation.RemoveUsageBucketIDs(ids...)
-	return riu
-}
-
-// RemoveUsageBuckets removes "usage_buckets" edges to AttributionUsageBucket entities.
-func (riu *ReportingInstallationUpdate) RemoveUsageBuckets(a ...*AttributionUsageBucket) *ReportingInstallationUpdate {
-	ids := make([]int, len(a))
-	for i := range a {
-		ids[i] = a[i].ID
-	}
-	return riu.RemoveUsageBucketIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -294,11 +229,6 @@ func (riu *ReportingInstallationUpdate) check() error {
 			return &ValidationError{Name: "reporter_token_hash", err: fmt.Errorf(`ent: validator failed for field "ReportingInstallation.reporter_token_hash": %w`, err)}
 		}
 	}
-	if v, ok := riu.mutation.OtlpTokenHash(); ok {
-		if err := reportinginstallation.OtlpTokenHashValidator(v); err != nil {
-			return &ValidationError{Name: "otlp_token_hash", err: fmt.Errorf(`ent: validator failed for field "ReportingInstallation.otlp_token_hash": %w`, err)}
-		}
-	}
 	if v, ok := riu.mutation.Status(); ok {
 		if err := reportinginstallation.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "ReportingInstallation.status": %w`, err)}
@@ -340,14 +270,8 @@ func (riu *ReportingInstallationUpdate) sqlSave(ctx context.Context) (n int, err
 	if value, ok := riu.mutation.ReporterTokenHash(); ok {
 		_spec.SetField(reportinginstallation.FieldReporterTokenHash, field.TypeString, value)
 	}
-	if value, ok := riu.mutation.OtlpTokenHash(); ok {
-		_spec.SetField(reportinginstallation.FieldOtlpTokenHash, field.TypeString, value)
-	}
 	if value, ok := riu.mutation.ReportingEnabled(); ok {
 		_spec.SetField(reportinginstallation.FieldReportingEnabled, field.TypeBool, value)
-	}
-	if value, ok := riu.mutation.OtelEnabled(); ok {
-		_spec.SetField(reportinginstallation.FieldOtelEnabled, field.TypeBool, value)
 	}
 	if value, ok := riu.mutation.Status(); ok {
 		_spec.SetField(reportinginstallation.FieldStatus, field.TypeEnum, value)
@@ -383,51 +307,6 @@ func (riu *ReportingInstallationUpdate) sqlSave(ctx context.Context) (n int, err
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if riu.mutation.UsageBucketsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   reportinginstallation.UsageBucketsTable,
-			Columns: []string{reportinginstallation.UsageBucketsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(attributionusagebucket.FieldID, field.TypeInt),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := riu.mutation.RemovedUsageBucketsIDs(); len(nodes) > 0 && !riu.mutation.UsageBucketsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   reportinginstallation.UsageBucketsTable,
-			Columns: []string{reportinginstallation.UsageBucketsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(attributionusagebucket.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := riu.mutation.UsageBucketsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   reportinginstallation.UsageBucketsTable,
-			Columns: []string{reportinginstallation.UsageBucketsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(attributionusagebucket.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -537,20 +416,6 @@ func (riuo *ReportingInstallationUpdateOne) SetNillableReporterTokenHash(s *stri
 	return riuo
 }
 
-// SetOtlpTokenHash sets the "otlp_token_hash" field.
-func (riuo *ReportingInstallationUpdateOne) SetOtlpTokenHash(s string) *ReportingInstallationUpdateOne {
-	riuo.mutation.SetOtlpTokenHash(s)
-	return riuo
-}
-
-// SetNillableOtlpTokenHash sets the "otlp_token_hash" field if the given value is not nil.
-func (riuo *ReportingInstallationUpdateOne) SetNillableOtlpTokenHash(s *string) *ReportingInstallationUpdateOne {
-	if s != nil {
-		riuo.SetOtlpTokenHash(*s)
-	}
-	return riuo
-}
-
 // SetReportingEnabled sets the "reporting_enabled" field.
 func (riuo *ReportingInstallationUpdateOne) SetReportingEnabled(b bool) *ReportingInstallationUpdateOne {
 	riuo.mutation.SetReportingEnabled(b)
@@ -561,20 +426,6 @@ func (riuo *ReportingInstallationUpdateOne) SetReportingEnabled(b bool) *Reporti
 func (riuo *ReportingInstallationUpdateOne) SetNillableReportingEnabled(b *bool) *ReportingInstallationUpdateOne {
 	if b != nil {
 		riuo.SetReportingEnabled(*b)
-	}
-	return riuo
-}
-
-// SetOtelEnabled sets the "otel_enabled" field.
-func (riuo *ReportingInstallationUpdateOne) SetOtelEnabled(b bool) *ReportingInstallationUpdateOne {
-	riuo.mutation.SetOtelEnabled(b)
-	return riuo
-}
-
-// SetNillableOtelEnabled sets the "otel_enabled" field if the given value is not nil.
-func (riuo *ReportingInstallationUpdateOne) SetNillableOtelEnabled(b *bool) *ReportingInstallationUpdateOne {
-	if b != nil {
-		riuo.SetOtelEnabled(*b)
 	}
 	return riuo
 }
@@ -624,21 +475,6 @@ func (riuo *ReportingInstallationUpdateOne) SetUser(u *User) *ReportingInstallat
 	return riuo.SetUserID(u.ID)
 }
 
-// AddUsageBucketIDs adds the "usage_buckets" edge to the AttributionUsageBucket entity by IDs.
-func (riuo *ReportingInstallationUpdateOne) AddUsageBucketIDs(ids ...int) *ReportingInstallationUpdateOne {
-	riuo.mutation.AddUsageBucketIDs(ids...)
-	return riuo
-}
-
-// AddUsageBuckets adds the "usage_buckets" edges to the AttributionUsageBucket entity.
-func (riuo *ReportingInstallationUpdateOne) AddUsageBuckets(a ...*AttributionUsageBucket) *ReportingInstallationUpdateOne {
-	ids := make([]int, len(a))
-	for i := range a {
-		ids[i] = a[i].ID
-	}
-	return riuo.AddUsageBucketIDs(ids...)
-}
-
 // Mutation returns the ReportingInstallationMutation object of the builder.
 func (riuo *ReportingInstallationUpdateOne) Mutation() *ReportingInstallationMutation {
 	return riuo.mutation
@@ -648,27 +484,6 @@ func (riuo *ReportingInstallationUpdateOne) Mutation() *ReportingInstallationMut
 func (riuo *ReportingInstallationUpdateOne) ClearUser() *ReportingInstallationUpdateOne {
 	riuo.mutation.ClearUser()
 	return riuo
-}
-
-// ClearUsageBuckets clears all "usage_buckets" edges to the AttributionUsageBucket entity.
-func (riuo *ReportingInstallationUpdateOne) ClearUsageBuckets() *ReportingInstallationUpdateOne {
-	riuo.mutation.ClearUsageBuckets()
-	return riuo
-}
-
-// RemoveUsageBucketIDs removes the "usage_buckets" edge to AttributionUsageBucket entities by IDs.
-func (riuo *ReportingInstallationUpdateOne) RemoveUsageBucketIDs(ids ...int) *ReportingInstallationUpdateOne {
-	riuo.mutation.RemoveUsageBucketIDs(ids...)
-	return riuo
-}
-
-// RemoveUsageBuckets removes "usage_buckets" edges to AttributionUsageBucket entities.
-func (riuo *ReportingInstallationUpdateOne) RemoveUsageBuckets(a ...*AttributionUsageBucket) *ReportingInstallationUpdateOne {
-	ids := make([]int, len(a))
-	for i := range a {
-		ids[i] = a[i].ID
-	}
-	return riuo.RemoveUsageBucketIDs(ids...)
 }
 
 // Where appends a list predicates to the ReportingInstallationUpdate builder.
@@ -732,11 +547,6 @@ func (riuo *ReportingInstallationUpdateOne) check() error {
 			return &ValidationError{Name: "reporter_token_hash", err: fmt.Errorf(`ent: validator failed for field "ReportingInstallation.reporter_token_hash": %w`, err)}
 		}
 	}
-	if v, ok := riuo.mutation.OtlpTokenHash(); ok {
-		if err := reportinginstallation.OtlpTokenHashValidator(v); err != nil {
-			return &ValidationError{Name: "otlp_token_hash", err: fmt.Errorf(`ent: validator failed for field "ReportingInstallation.otlp_token_hash": %w`, err)}
-		}
-	}
 	if v, ok := riuo.mutation.Status(); ok {
 		if err := reportinginstallation.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "ReportingInstallation.status": %w`, err)}
@@ -795,14 +605,8 @@ func (riuo *ReportingInstallationUpdateOne) sqlSave(ctx context.Context) (_node 
 	if value, ok := riuo.mutation.ReporterTokenHash(); ok {
 		_spec.SetField(reportinginstallation.FieldReporterTokenHash, field.TypeString, value)
 	}
-	if value, ok := riuo.mutation.OtlpTokenHash(); ok {
-		_spec.SetField(reportinginstallation.FieldOtlpTokenHash, field.TypeString, value)
-	}
 	if value, ok := riuo.mutation.ReportingEnabled(); ok {
 		_spec.SetField(reportinginstallation.FieldReportingEnabled, field.TypeBool, value)
-	}
-	if value, ok := riuo.mutation.OtelEnabled(); ok {
-		_spec.SetField(reportinginstallation.FieldOtelEnabled, field.TypeBool, value)
 	}
 	if value, ok := riuo.mutation.Status(); ok {
 		_spec.SetField(reportinginstallation.FieldStatus, field.TypeEnum, value)
@@ -838,51 +642,6 @@ func (riuo *ReportingInstallationUpdateOne) sqlSave(ctx context.Context) (_node 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if riuo.mutation.UsageBucketsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   reportinginstallation.UsageBucketsTable,
-			Columns: []string{reportinginstallation.UsageBucketsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(attributionusagebucket.FieldID, field.TypeInt),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := riuo.mutation.RemovedUsageBucketsIDs(); len(nodes) > 0 && !riuo.mutation.UsageBucketsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   reportinginstallation.UsageBucketsTable,
-			Columns: []string{reportinginstallation.UsageBucketsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(attributionusagebucket.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := riuo.mutation.UsageBucketsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   reportinginstallation.UsageBucketsTable,
-			Columns: []string{reportinginstallation.UsageBucketsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(attributionusagebucket.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

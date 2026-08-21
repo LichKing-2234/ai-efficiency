@@ -1,7 +1,7 @@
 # Codex Attribution v2 Cutover Runbook
 
 **Date:** 2026-08-12  
-**Status:** #251 execution complete. The immutable candidate, separate CLI and platform releases, staging rehearsal/reset, production two-phase deployment, verified export, formal Request-to-Activity canary, exact failed-canary cleanup, production v1 reset, and all final readbacks are green. The seven-day legacy-code cleanup remains exclusively tracked by #252 and was not executed.
+**Status:** #251 execution complete. The immutable candidate, separate CLI and platform releases, staging rehearsal/reset, production two-phase deployment, verified export, formal Request-to-Activity canary, exact failed-canary cleanup, production v1 reset, and all final readbacks are green. Evidence-gated legacy-code cleanup remains exclusively tracked by #252 and was not executed.
 **Owner ticket:** [#250](https://github.com/LichKing-2234/ai-efficiency/issues/250)  
 **Execution ticket:** [#251](https://github.com/LichKing-2234/ai-efficiency/issues/251)
 
@@ -15,9 +15,9 @@ window, invalidating that downstream cleanup clock without changing the
 completed cutover evidence. PR #299's repair is deployed as platform
 `v0.1.0-preview.87` at production Helm revision 87. Exact production readback
 established the replacement #252 Day 0 at
-`2026-08-17T05:32:57.925948Z`; the earliest possible cleanup time is
-`2026-08-24T05:32:57.925948Z`, subject to a later qualifying ordinary pool,
-every continuous/final gate, and separate cleanup authority.
+`2026-08-17T05:32:57.925948Z`. #252 retains that readback as a historical and
+conservation baseline, not a waiting clock; cleanup requires a later qualifying
+ordinary pool, every final gate, and separate cleanup authority.
 
 ## Execution Status
 
@@ -202,8 +202,9 @@ epoch.
 7. Execute the exact v1 reset transaction above.
 8. Read back: v1 rejection, v2 acceptance, formal-only Activity/readiness,
    ratio omission across the boundary, zero v1 totals, and all dashboard gates.
-9. Keep the evidence export and rollback window. Start the seven-day stable
-   observation clock only after every readback is green.
+9. Keep the evidence export and rollback window. Retain the green readback as
+   the downstream conservation baseline; cleanup uses execution-time evidence
+   rather than a fixed observation clock.
 
 ## 6. Rollback
 

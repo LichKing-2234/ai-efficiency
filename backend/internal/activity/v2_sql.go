@@ -387,6 +387,26 @@ func (s *Service) v2ReadinessSQL(ctx context.Context, scope *v2Scope) (V2Readine
 	return V2Readiness{State: "active", FirstAcceptedAt: &firstValue, LatestAcceptedAt: &latestValue}, nil
 }
 
+func (s *Service) queryV2AvailableUserIDsSQL(ctx context.Context, userIDs map[int]struct{}, from, to time.Time) ([]int, error) {
+	args := []any{s.v2LedgerEpoch, from, to}
+	users := appendSQLInts(&args, sortedIntKeys(userIDs))
+	statement := fmt.Sprintf(`SELECT DISTINCT p.user_id FROM attribution_usage_pools p WHERE p.ledger_epoch=$1 AND p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3 AND p.user_id IN (%s) AND p.relay_provider_id > 0 AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits c WHERE c.pool_id=p.id AND c.relation_kind IN ('direct','shared')) ORDER BY p.user_id`, users)
+	rows, err := s.v2DB.QueryContext(ctx, statement, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []int{}
+	for rows.Next() {
+		var userID int
+		if err := rows.Scan(&userID); err != nil {
+			return nil, err
+		}
+		result = append(result, userID)
+	}
+	return result, rows.Err()
+}
+
 func (s *Service) v2ComparisonInsideEpoch(previousFrom time.Time) (bool, error) {
 	if s.v2LedgerEpoch == "" || s.v2CutoverAt.IsZero() {
 		return false, nil

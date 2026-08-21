@@ -46,34 +46,30 @@ func (s syncCapableFakeUploader) ToolUsageClient() attributionlocal.BackendClien
 	return noopToolUsageClient{}
 }
 
-type noopCompactBackendClient struct{}
+type noopV2ClaimBackendClient struct{}
 
-func (noopCompactBackendClient) SendAttributionBuckets(context.Context, []client.AttributionBucket) error {
-	return nil
+func (noopV2ClaimBackendClient) SendAttributionV2Claims(context.Context, []client.AttributionV2ClaimGroup) (*client.AttributionV2ClaimBatchResult, error) {
+	return nil, nil
 }
 
-func (noopCompactBackendClient) SendAttributionRevision(context.Context, string, client.AttributionRevision) error {
-	return nil
-}
-
-type compactSyncCapableFakeUploader struct {
+type v2SyncCapableFakeUploader struct {
 	*fakeUploader
 }
 
-func (s compactSyncCapableFakeUploader) CompactUsageClient() attributionlocal.CompactBackendClient {
-	return noopCompactBackendClient{}
+func (s v2SyncCapableFakeUploader) V2ClaimClient() attributionlocal.V2ClaimBackendClient {
+	return noopV2ClaimBackendClient{}
 }
 
-func (s compactSyncCapableFakeUploader) AttributionProtocol() client.AttributionProtocol {
+func (s v2SyncCapableFakeUploader) AttributionProtocol() client.AttributionProtocol {
 	return client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept}
 }
 
-type providerCompactSyncCapableFakeUploader struct {
-	compactSyncCapableFakeUploader
+type providerV2SyncCapableFakeUploader struct {
+	v2SyncCapableFakeUploader
 	providerID int
 }
 
-func (s providerCompactSyncCapableFakeUploader) RelayProviderID() int { return s.providerID }
+func (s providerV2SyncCapableFakeUploader) RelayProviderID() int { return s.providerID }
 
 type recordingBackendHookClient struct {
 	checkpoints []client.CommitCheckpointRequest
@@ -305,16 +301,11 @@ func TestPostCommitResolvedPreservesSubsecondCaptureTime(t *testing.T) {
 	}
 }
 
-func TestCompactPostCommitSkipsLegacySnapshotAndStartsBackgroundSync(t *testing.T) {
+func TestV2PostCommitSkipsLegacySnapshotAndStartsBackgroundSync(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	execCtx := resolvedContextForRepo(t, repo)
-	if err := attributionlocal.SaveJSON(attributionlocal.CompactStatePath(), attributionlocal.CompactState{
-		Version: 2, EnabledAt: time.Now().UTC(), SeenAtoms: map[string]bool{},
-	}); err != nil {
-		t.Fatal(err)
-	}
 	workspaceRoot := git2(t, repo, "rev-parse", "--show-toplevel")
 	codex, claude, kiro := writeCollectorFixtures(t, workspaceRoot)
 	t.Setenv("AE_CODEX_SESSION_FILES", codex)
@@ -329,29 +320,22 @@ func TestCompactPostCommitSkipsLegacySnapshotAndStartsBackgroundSync(t *testing.
 	}
 	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
 
-	uploader := compactSyncCapableFakeUploader{fakeUploader: &fakeUploader{}}
+	uploader := v2SyncCapableFakeUploader{fakeUploader: &fakeUploader{}}
 	if err := NewHandler(uploader).PostCommitResolved(context.Background(), execCtx); err != nil {
 		t.Fatal(err)
 	}
 	if !spawned {
-		t.Fatal("compact post-commit did not start the detached sync runner")
+		t.Fatal("v2 post-commit did not start the detached sync runner")
 	}
 	if len(uploader.events) != 1 || len(uploader.events[0].AgentSnapshot) != 0 {
-		t.Fatalf("compact checkpoint retained legacy agent snapshot: %+v", uploader.events)
-	}
-	state, err := attributionlocal.LoadCompactState()
-	if err != nil {
-		t.Fatalf("LoadCompactState: %v", err)
-	}
-	if len(state.Triggers) != 1 || state.Triggers[0].CapturedAt.Nanosecond() == 0 {
-		t.Fatalf("compact trigger lost subsecond capture time: %+v", state.Triggers)
+		t.Fatalf("v2 checkpoint retained legacy agent snapshot: %+v", uploader.events)
 	}
 	task, err := LoadSyncTask(execCtx.WorkspaceID)
 	if err != nil {
 		t.Fatalf("LoadSyncTask: %v", err)
 	}
-	if task == nil || !task.LastRequestedAt.Equal(state.Triggers[0].CapturedAt) {
-		t.Fatalf("detached sync task capture time = %+v, trigger = %+v", task, state.Triggers[0])
+	if task == nil || len(task.V2Triggers) != 1 || task.V2Triggers[0].CapturedAt.Nanosecond() == 0 || !task.LastRequestedAt.Equal(task.V2Triggers[0].CapturedAt) {
+		t.Fatalf("detached v2 sync task lost capture time: %+v", task)
 	}
 	cachePath := filepath.Join(attributionlocal.AttributionRootDir(), "workspaces", execCtx.WorkspaceID, "collectors", "latest.json")
 	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
@@ -359,22 +343,17 @@ func TestCompactPostCommitSkipsLegacySnapshotAndStartsBackgroundSync(t *testing.
 	}
 }
 
-func TestCompactPostCommitPersistsRelayProviderOnV2Trigger(t *testing.T) {
+func TestV2PostCommitPersistsRelayProviderOnTrigger(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	t.Setenv("HOME", t.TempDir())
 	execCtx := resolvedContextForRepo(t, repo)
-	if err := attributionlocal.SaveJSON(attributionlocal.CompactStatePath(), attributionlocal.CompactState{
-		Version: 2, EnabledAt: time.Now().UTC(), SeenAtoms: map[string]bool{},
-	}); err != nil {
-		t.Fatal(err)
-	}
 	originalSpawn := spawnBackgroundSyncRunner
 	spawnBackgroundSyncRunner = func(string) error { return nil }
 	t.Cleanup(func() { spawnBackgroundSyncRunner = originalSpawn })
 
-	uploader := providerCompactSyncCapableFakeUploader{
-		compactSyncCapableFakeUploader: compactSyncCapableFakeUploader{fakeUploader: &fakeUploader{}},
-		providerID:                     17,
+	uploader := providerV2SyncCapableFakeUploader{
+		v2SyncCapableFakeUploader: v2SyncCapableFakeUploader{fakeUploader: &fakeUploader{}},
+		providerID:                17,
 	}
 	if err := NewHandler(uploader).PostCommitResolved(context.Background(), execCtx); err != nil {
 		t.Fatal(err)
@@ -617,7 +596,7 @@ func TestFlushUnresolvedResolvedQueuesEveryIntermediateV2Commit(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	uploader := compactSyncCapableFakeUploader{fakeUploader: &fakeUploader{}}
+	uploader := v2SyncCapableFakeUploader{fakeUploader: &fakeUploader{}}
 	if err := NewHandler(uploader).FlushUnresolvedResolved(context.Background(), execCtx); err != nil {
 		t.Fatal(err)
 	}

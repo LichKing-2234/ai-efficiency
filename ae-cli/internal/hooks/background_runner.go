@@ -300,31 +300,16 @@ func runPendingSyncPass(ctx context.Context, execCtx ExecutionContext, uploader 
 		return err
 	}
 	syncClient := h.attributionSyncClient()
-	compactClient := h.compactAttributionSyncClient()
-	if compactClient != nil {
+	if h.v2ClaimClient() != nil {
 		protocolSource, ok := uploader.(interface {
 			AttributionProtocol() client.AttributionProtocol
 		})
 		if !ok {
-			return fmt.Errorf("compact uploader does not expose attribution protocol")
+			return fmt.Errorf("v2 uploader does not expose attribution protocol")
 		}
 		protocol := protocolSource.AttributionProtocol()
 		if err := protocol.Validate(); err != nil {
 			return err
-		}
-		if protocol.V1WritePolicy == client.AttributionV1WritePolicyAccept {
-			if err := (&attributionlocal.CompactSyncEngine{Client: compactClient}).Run(ctx, attributionlocal.CompactRunOptions{
-				InstallationID: compactInstallationID(uploader), RepoRoot: execCtx.RepoRoot, RepoConfigID: execCtx.RepoConfigID,
-				RepoKey: execCtx.RepoKey, WorkspaceID: execCtx.WorkspaceID, CommitSHA: task.TriggerCommitSHA,
-				Branch: task.TriggerBranch, TriggerKind: task.TriggerKind, Cutoff: task.LastRequestedAt,
-			}); err != nil {
-				var upgrade *client.AttributionUpgradeRequiredError
-				if !errors.As(err, &upgrade) {
-					return err
-				}
-				protocol.V1WritePolicy = client.AttributionV1WritePolicyUpgradeNeeded
-				protocol.MinimumCLIVersion = upgrade.MinimumCLIVersion
-			}
 		}
 		return runV2ClaimSync(ctx, uploader, execCtx, task, protocol)
 	}
@@ -567,15 +552,4 @@ func finishV2ClaimScan(workspaceID string, scanned bool) error {
 		return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim progress could not be cleared", err)
 	}
 	return nil
-}
-
-type compactInstallationIdentity interface {
-	InstallationID() string
-}
-
-func compactInstallationID(uploader Uploader) string {
-	if identified, ok := uploader.(compactInstallationIdentity); ok {
-		return identified.InstallationID()
-	}
-	return ""
 }

@@ -37,8 +37,6 @@ type cacheDimensions struct {
 	Admin          bool   `json:"admin"`
 	Representative bool   `json:"representative"`
 	Subject        string `json:"subject"`
-	FromUnixNano   int64  `json:"from_unix_nano"`
-	ToUnixNano     int64  `json:"to_unix_nano"`
 	PageOptions    any    `json:"page_options"`
 }
 
@@ -82,16 +80,6 @@ func (c *Cache) write(ctx context.Context, dimensions cacheDimensions, value any
 		return
 	}
 	_ = c.store.Set(ctx, c.key(dimensions), payload, c.ttl)
-}
-
-func activityCacheDimensions(kind string, authorization *authorizationScope, actorUserID int, subject string, window Window, pages any) cacheDimensions {
-	return cacheDimensions{
-		SchemaVersion: activityCacheSchemaVersion,
-		Contract:      MetricContractVersion,
-		Kind:          kind, ScopeVersion: authorization.Version, ActorUserID: actorUserID,
-		Admin: authorization.Admin, Representative: authorization.Representative,
-		Subject: subject, FromUnixNano: window.From.UnixNano(), ToUnixNano: window.To.UnixNano(), PageOptions: pages,
-	}
 }
 
 func (c *Cache) ReadMemberDenominator(ctx context.Context, key V2MemberDenominatorCacheKey, target *V2Denominator) bool {

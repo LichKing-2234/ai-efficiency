@@ -10,7 +10,6 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
 	"github.com/ai-efficiency/backend/ent/reportinginstallation"
 	"github.com/ai-efficiency/backend/ent/user"
 )
@@ -68,12 +67,6 @@ func (ric *ReportingInstallationCreate) SetReporterTokenHash(s string) *Reportin
 	return ric
 }
 
-// SetOtlpTokenHash sets the "otlp_token_hash" field.
-func (ric *ReportingInstallationCreate) SetOtlpTokenHash(s string) *ReportingInstallationCreate {
-	ric.mutation.SetOtlpTokenHash(s)
-	return ric
-}
-
 // SetReportingEnabled sets the "reporting_enabled" field.
 func (ric *ReportingInstallationCreate) SetReportingEnabled(b bool) *ReportingInstallationCreate {
 	ric.mutation.SetReportingEnabled(b)
@@ -84,20 +77,6 @@ func (ric *ReportingInstallationCreate) SetReportingEnabled(b bool) *ReportingIn
 func (ric *ReportingInstallationCreate) SetNillableReportingEnabled(b *bool) *ReportingInstallationCreate {
 	if b != nil {
 		ric.SetReportingEnabled(*b)
-	}
-	return ric
-}
-
-// SetOtelEnabled sets the "otel_enabled" field.
-func (ric *ReportingInstallationCreate) SetOtelEnabled(b bool) *ReportingInstallationCreate {
-	ric.mutation.SetOtelEnabled(b)
-	return ric
-}
-
-// SetNillableOtelEnabled sets the "otel_enabled" field if the given value is not nil.
-func (ric *ReportingInstallationCreate) SetNillableOtelEnabled(b *bool) *ReportingInstallationCreate {
-	if b != nil {
-		ric.SetOtelEnabled(*b)
 	}
 	return ric
 }
@@ -163,21 +142,6 @@ func (ric *ReportingInstallationCreate) SetUser(u *User) *ReportingInstallationC
 	return ric.SetUserID(u.ID)
 }
 
-// AddUsageBucketIDs adds the "usage_buckets" edge to the AttributionUsageBucket entity by IDs.
-func (ric *ReportingInstallationCreate) AddUsageBucketIDs(ids ...int) *ReportingInstallationCreate {
-	ric.mutation.AddUsageBucketIDs(ids...)
-	return ric
-}
-
-// AddUsageBuckets adds the "usage_buckets" edges to the AttributionUsageBucket entity.
-func (ric *ReportingInstallationCreate) AddUsageBuckets(a ...*AttributionUsageBucket) *ReportingInstallationCreate {
-	ids := make([]int, len(a))
-	for i := range a {
-		ids[i] = a[i].ID
-	}
-	return ric.AddUsageBucketIDs(ids...)
-}
-
 // Mutation returns the ReportingInstallationMutation object of the builder.
 func (ric *ReportingInstallationCreate) Mutation() *ReportingInstallationMutation {
 	return ric.mutation
@@ -217,10 +181,6 @@ func (ric *ReportingInstallationCreate) defaults() {
 		v := reportinginstallation.DefaultReportingEnabled
 		ric.mutation.SetReportingEnabled(v)
 	}
-	if _, ok := ric.mutation.OtelEnabled(); !ok {
-		v := reportinginstallation.DefaultOtelEnabled
-		ric.mutation.SetOtelEnabled(v)
-	}
 	if _, ok := ric.mutation.Status(); !ok {
 		v := reportinginstallation.DefaultStatus
 		ric.mutation.SetStatus(v)
@@ -256,19 +216,8 @@ func (ric *ReportingInstallationCreate) check() error {
 			return &ValidationError{Name: "reporter_token_hash", err: fmt.Errorf(`ent: validator failed for field "ReportingInstallation.reporter_token_hash": %w`, err)}
 		}
 	}
-	if _, ok := ric.mutation.OtlpTokenHash(); !ok {
-		return &ValidationError{Name: "otlp_token_hash", err: errors.New(`ent: missing required field "ReportingInstallation.otlp_token_hash"`)}
-	}
-	if v, ok := ric.mutation.OtlpTokenHash(); ok {
-		if err := reportinginstallation.OtlpTokenHashValidator(v); err != nil {
-			return &ValidationError{Name: "otlp_token_hash", err: fmt.Errorf(`ent: validator failed for field "ReportingInstallation.otlp_token_hash": %w`, err)}
-		}
-	}
 	if _, ok := ric.mutation.ReportingEnabled(); !ok {
 		return &ValidationError{Name: "reporting_enabled", err: errors.New(`ent: missing required field "ReportingInstallation.reporting_enabled"`)}
-	}
-	if _, ok := ric.mutation.OtelEnabled(); !ok {
-		return &ValidationError{Name: "otel_enabled", err: errors.New(`ent: missing required field "ReportingInstallation.otel_enabled"`)}
 	}
 	if _, ok := ric.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "ReportingInstallation.status"`)}
@@ -329,17 +278,9 @@ func (ric *ReportingInstallationCreate) createSpec() (*ReportingInstallation, *s
 		_spec.SetField(reportinginstallation.FieldReporterTokenHash, field.TypeString, value)
 		_node.ReporterTokenHash = value
 	}
-	if value, ok := ric.mutation.OtlpTokenHash(); ok {
-		_spec.SetField(reportinginstallation.FieldOtlpTokenHash, field.TypeString, value)
-		_node.OtlpTokenHash = value
-	}
 	if value, ok := ric.mutation.ReportingEnabled(); ok {
 		_spec.SetField(reportinginstallation.FieldReportingEnabled, field.TypeBool, value)
 		_node.ReportingEnabled = value
-	}
-	if value, ok := ric.mutation.OtelEnabled(); ok {
-		_spec.SetField(reportinginstallation.FieldOtelEnabled, field.TypeBool, value)
-		_node.OtelEnabled = value
 	}
 	if value, ok := ric.mutation.Status(); ok {
 		_spec.SetField(reportinginstallation.FieldStatus, field.TypeEnum, value)
@@ -372,22 +313,6 @@ func (ric *ReportingInstallationCreate) createSpec() (*ReportingInstallation, *s
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.UserID = nodes[0]
-		_spec.Edges = append(_spec.Edges, edge)
-	}
-	if nodes := ric.mutation.UsageBucketsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   reportinginstallation.UsageBucketsTable,
-			Columns: []string{reportinginstallation.UsageBucketsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(attributionusagebucket.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

@@ -2,134 +2,40 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/ai-efficiency/backend/internal/activity"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/gin-gonic/gin"
 )
 
-type fakeActivityService struct {
-	memberWindow activity.Window
-	memberErr    error
-}
-
 type fakeActivityV2Service struct {
-	*fakeActivityService
-	query activity.V2Query
+	query             activity.V2Query
+	availabilityQuery activity.V2TeamMemberAvailabilityQuery
 }
 
 func (f *fakeActivityV2Service) V2Overview(_ context.Context, _ int, query activity.V2Query) (*activity.V2Overview, error) {
 	f.query = query
 	return &activity.V2Overview{ContractVersion: activity.V2MetricContractVersion, Trend: []activity.V2TrendPoint{}}, nil
 }
+
 func (f *fakeActivityV2Service) V2Repositories(context.Context, int, activity.V2PageQuery) (*activity.V2Page[activity.V2RepositoryRow], error) {
 	return &activity.V2Page[activity.V2RepositoryRow]{Items: []activity.V2RepositoryRow{}}, nil
 }
+
 func (f *fakeActivityV2Service) V2PullRequests(context.Context, int, activity.V2PageQuery) (*activity.V2Page[activity.V2PullRequestRow], error) {
 	return &activity.V2Page[activity.V2PullRequestRow]{Items: []activity.V2PullRequestRow{}}, nil
 }
 
-func (f *fakeActivityService) Scope(context.Context, int) (*activity.ScopeResponse, error) {
-	return &activity.ScopeResponse{Teams: []activity.Team{}}, nil
-}
-
-func (f *fakeActivityService) Members(context.Context, int, activity.Window, activity.PageOptions) (*activity.MembersActivity, error) {
-	return &activity.MembersActivity{Members: activity.Page[activity.MemberRow]{Items: []activity.MemberRow{}}}, nil
-}
-
-func (f *fakeActivityService) Member(_ context.Context, _, _ int, window activity.Window, _ activity.DetailPageOptions) (*activity.MemberActivity, error) {
-	f.memberWindow = window
-	if f.memberErr != nil {
-		return nil, f.memberErr
-	}
-	return &activity.MemberActivity{
-		Window: window, PRs: activity.Page[activity.PullRequest]{Items: []activity.PullRequest{}},
-		Commits: activity.Page[activity.Commit]{Items: []activity.Commit{}}, Buckets: activity.Page[activity.BucketSummary]{Items: []activity.BucketSummary{}},
-	}, nil
-}
-
-func (f *fakeActivityService) Team(context.Context, int, string, activity.Window, activity.PageOptions) (*activity.TeamActivity, error) {
-	return &activity.TeamActivity{Members: activity.Page[activity.MemberRow]{Items: []activity.MemberRow{}}}, nil
-}
-
-func (f *fakeActivityService) Repository(context.Context, int, int, activity.Window, activity.RepositoryPageOptions) (*activity.RepositoryActivity, error) {
-	return &activity.RepositoryActivity{
-		Members: activity.Page[activity.MemberRow]{Items: []activity.MemberRow{}}, PRs: activity.Page[activity.PullRequest]{Items: []activity.PullRequest{}}, Commits: activity.Page[activity.Commit]{Items: []activity.Commit{}},
-	}, nil
-}
-
-func (f *fakeActivityService) Bucket(context.Context, int, string) (*activity.BucketDetail, error) {
-	return &activity.BucketDetail{RequestIDs: activity.RequestIDDetail{State: "unlinked", Evidence: []activity.RequestIDEvidence{}}}, nil
-}
-
-func TestActivitySummaryDefaultsToThirtyDaysAndReturnsEmptyArrays(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	service := &fakeActivityService{}
-	router := gin.New()
-	router.Use(func(c *gin.Context) {
-		c.Set(auth.ContextKeyUser, &auth.UserContext{UserID: 42, Username: "alice", Role: "user"})
-	})
-	group := router.Group("/api/v1/activity")
-	RegisterActivityRoutes(group, NewActivityHandler(service))
-
-	before := time.Now().UTC()
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/activity/summary", nil))
-	after := time.Now().UTC()
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
-	}
-	if service.memberWindow.To.Before(before) || service.memberWindow.To.After(after) || service.memberWindow.To.Sub(service.memberWindow.From) != 30*24*time.Hour {
-		t.Fatalf("default activity window = %+v", service.memberWindow)
-	}
-	var response struct {
-		Data struct {
-			PRs     activity.Page[activity.PullRequest]   `json:"prs"`
-			Commits activity.Page[activity.Commit]        `json:"commits"`
-			Buckets activity.Page[activity.BucketSummary] `json:"buckets"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatal(err)
-	}
-	if response.Data.PRs.Items == nil || response.Data.Commits.Items == nil || response.Data.Buckets.Items == nil {
-		t.Fatalf("empty collections were not arrays: %s", recorder.Body.String())
-	}
-}
-
-func TestActivityHandlerReturnsSnapshotExpiredConflict(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	service := &fakeActivityService{memberErr: activity.ErrSnapshotExpired}
-	router := gin.New()
-	router.Use(func(c *gin.Context) {
-		c.Set(auth.ContextKeyUser, &auth.UserContext{UserID: 42})
-	})
-	RegisterActivityRoutes(router.Group("/api/v1/activity"), NewActivityHandler(service))
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/activity/members/7?pr_cursor=stale", nil))
-	if recorder.Code != http.StatusConflict {
-		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
-	}
-	var response struct {
-		Message string `json:"message"`
-	}
-	_ = json.Unmarshal(recorder.Body.Bytes(), &response)
-	if response.Message != "snapshot_expired" {
-		t.Fatalf("message = %q", response.Message)
-	}
+func (f *fakeActivityV2Service) V2TeamMemberAvailability(_ context.Context, _ int, query activity.V2TeamMemberAvailabilityQuery) (*activity.V2TeamMemberAvailability, error) {
+	f.availabilityQuery = query
+	return &activity.V2TeamMemberAvailability{ContractVersion: activity.V2MetricContractVersion, AvailableUserIDs: []int{}}, nil
 }
 
 func TestActivityV2HandlerRequiresExactLocalDateQuery(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	service := &fakeActivityV2Service{fakeActivityService: &fakeActivityService{}}
-	router := gin.New()
-	router.Use(func(c *gin.Context) { c.Set(auth.ContextKeyUser, &auth.UserContext{UserID: 42}) })
-	RegisterActivityRoutes(router.Group("/api/v1/activity"), NewActivityHandler(service))
+	service, router := newActivityHandlerTestRouter()
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/activity/v2/overview?scope=member&subject_user_id=7&from=2026-08-01&to=2026-08-07&timezone=Asia%2FShanghai", nil))
 	if recorder.Code != http.StatusOK {
@@ -143,4 +49,30 @@ func TestActivityV2HandlerRequiresExactLocalDateQuery(t *testing.T) {
 	if invalid.Code != http.StatusBadRequest {
 		t.Fatalf("invalid status=%d body=%s", invalid.Code, invalid.Body.String())
 	}
+}
+
+func TestActivityV2TeamAvailabilityParsesBoundedUserIDs(t *testing.T) {
+	service, router := newActivityHandlerTestRouter()
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/activity/v2/teams/team-a/member-availability?from=2026-08-01&to=2026-08-07&timezone=UTC&user_ids=7,8,7", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if query := service.availabilityQuery; query.TeamID != "team-a" || len(query.UserIDs) != 2 || query.UserIDs[0] != 7 || query.UserIDs[1] != 8 {
+		t.Fatalf("query=%+v", service.availabilityQuery)
+	}
+	invalid := httptest.NewRecorder()
+	router.ServeHTTP(invalid, httptest.NewRequest(http.MethodGet, "/api/v1/activity/v2/teams/team-a/member-availability?user_ids=bad", nil))
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid status=%d body=%s", invalid.Code, invalid.Body.String())
+	}
+}
+
+func newActivityHandlerTestRouter() (*fakeActivityV2Service, *gin.Engine) {
+	gin.SetMode(gin.TestMode)
+	service := &fakeActivityV2Service{}
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set(auth.ContextKeyUser, &auth.UserContext{UserID: 42}) })
+	RegisterActivityRoutes(router.Group("/api/v1/activity"), NewActivityHandler(service))
+	return service, router
 }

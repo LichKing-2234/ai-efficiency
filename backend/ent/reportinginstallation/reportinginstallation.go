@@ -25,12 +25,8 @@ const (
 	FieldClientVersion = "client_version"
 	// FieldReporterTokenHash holds the string denoting the reporter_token_hash field in the database.
 	FieldReporterTokenHash = "reporter_token_hash"
-	// FieldOtlpTokenHash holds the string denoting the otlp_token_hash field in the database.
-	FieldOtlpTokenHash = "otlp_token_hash"
 	// FieldReportingEnabled holds the string denoting the reporting_enabled field in the database.
 	FieldReportingEnabled = "reporting_enabled"
-	// FieldOtelEnabled holds the string denoting the otel_enabled field in the database.
-	FieldOtelEnabled = "otel_enabled"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
 	// FieldLastSeenAt holds the string denoting the last_seen_at field in the database.
@@ -41,8 +37,6 @@ const (
 	FieldUpdatedAt = "updated_at"
 	// EdgeUser holds the string denoting the user edge name in mutations.
 	EdgeUser = "user"
-	// EdgeUsageBuckets holds the string denoting the usage_buckets edge name in mutations.
-	EdgeUsageBuckets = "usage_buckets"
 	// Table holds the table name of the reportinginstallation in the database.
 	Table = "reporting_installations"
 	// UserTable is the table that holds the user relation/edge.
@@ -52,13 +46,6 @@ const (
 	UserInverseTable = "users"
 	// UserColumn is the table column denoting the user relation/edge.
 	UserColumn = "user_id"
-	// UsageBucketsTable is the table that holds the usage_buckets relation/edge.
-	UsageBucketsTable = "attribution_usage_buckets"
-	// UsageBucketsInverseTable is the table name for the AttributionUsageBucket entity.
-	// It exists in this package in order to avoid circular dependency with the "attributionusagebucket" package.
-	UsageBucketsInverseTable = "attribution_usage_buckets"
-	// UsageBucketsColumn is the table column denoting the usage_buckets relation/edge.
-	UsageBucketsColumn = "reporting_installation_id"
 )
 
 // Columns holds all SQL columns for reportinginstallation fields.
@@ -69,9 +56,7 @@ var Columns = []string{
 	FieldLabel,
 	FieldClientVersion,
 	FieldReporterTokenHash,
-	FieldOtlpTokenHash,
 	FieldReportingEnabled,
-	FieldOtelEnabled,
 	FieldStatus,
 	FieldLastSeenAt,
 	FieldCreatedAt,
@@ -93,12 +78,8 @@ var (
 	InstallationIDValidator func(string) error
 	// ReporterTokenHashValidator is a validator for the "reporter_token_hash" field. It is called by the builders before save.
 	ReporterTokenHashValidator func(string) error
-	// OtlpTokenHashValidator is a validator for the "otlp_token_hash" field. It is called by the builders before save.
-	OtlpTokenHashValidator func(string) error
 	// DefaultReportingEnabled holds the default value on creation for the "reporting_enabled" field.
 	DefaultReportingEnabled bool
-	// DefaultOtelEnabled holds the default value on creation for the "otel_enabled" field.
-	DefaultOtelEnabled bool
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -166,19 +147,9 @@ func ByReporterTokenHash(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldReporterTokenHash, opts...).ToFunc()
 }
 
-// ByOtlpTokenHash orders the results by the otlp_token_hash field.
-func ByOtlpTokenHash(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldOtlpTokenHash, opts...).ToFunc()
-}
-
 // ByReportingEnabled orders the results by the reporting_enabled field.
 func ByReportingEnabled(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldReportingEnabled, opts...).ToFunc()
-}
-
-// ByOtelEnabled orders the results by the otel_enabled field.
-func ByOtelEnabled(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldOtelEnabled, opts...).ToFunc()
 }
 
 // ByStatus orders the results by the status field.
@@ -207,31 +178,10 @@ func ByUserField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newUserStep(), sql.OrderByField(field, opts...))
 	}
 }
-
-// ByUsageBucketsCount orders the results by usage_buckets count.
-func ByUsageBucketsCount(opts ...sql.OrderTermOption) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborsCount(s, newUsageBucketsStep(), opts...)
-	}
-}
-
-// ByUsageBuckets orders the results by usage_buckets terms.
-func ByUsageBuckets(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newUsageBucketsStep(), append([]sql.OrderTerm{term}, terms...)...)
-	}
-}
 func newUserStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(UserInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, UserTable, UserColumn),
-	)
-}
-func newUsageBucketsStep() *sqlgraph.Step {
-	return sqlgraph.NewStep(
-		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(UsageBucketsInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.O2M, false, UsageBucketsTable, UsageBucketsColumn),
 	)
 }

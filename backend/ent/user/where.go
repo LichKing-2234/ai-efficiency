@@ -742,29 +742,6 @@ func HasReportingInstallationsWith(preds ...predicate.ReportingInstallation) pre
 	})
 }
 
-// HasAttributionUsageBuckets applies the HasEdge predicate on the "attribution_usage_buckets" edge.
-func HasAttributionUsageBuckets() predicate.User {
-	return predicate.User(func(s *sql.Selector) {
-		step := sqlgraph.NewStep(
-			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, AttributionUsageBucketsTable, AttributionUsageBucketsColumn),
-		)
-		sqlgraph.HasNeighbors(s, step)
-	})
-}
-
-// HasAttributionUsageBucketsWith applies the HasEdge predicate on the "attribution_usage_buckets" edge with a given conditions (other predicates).
-func HasAttributionUsageBucketsWith(preds ...predicate.AttributionUsageBucket) predicate.User {
-	return predicate.User(func(s *sql.Selector) {
-		step := newAttributionUsageBucketsStep()
-		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
-			for _, p := range preds {
-				p(s)
-			}
-		})
-	})
-}
-
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.User) predicate.User {
 	return predicate.User(sql.AndPredicates(predicates...))
