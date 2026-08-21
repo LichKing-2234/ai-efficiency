@@ -1,7 +1,7 @@
 # Codex Commit Token Attribution v2 Design
 
 **Date:** 2026-08-11
-**Status:** Active production contract since the verified 2026-08-12 cutover. The Responses WebSocket extension uses Codex-local Token and shipped in `ae-cli/v0.2.0-preview.8` plus platform `v0.1.0-preview.85`; the trusted-log repair shipped in CLI-only preview.9, and preview.10 completed the exact dual-baseline and scan-progress repair for current Codex 0.147. CLI-only `ae-cli/v0.2.0-preview.11` preserves the original single-allocation evidence digest and quarantines unchanged terminal conflicts without retransmission or later-trigger blockage. CLI-only preview.12 added coordinated drain, deleted-worktree recovery, and backlog migration; preview.13 then shipped the exact current-runtime inline-wrapper parser repair and scanner-progress invalidation. The authorized #305 Helm operator canary at commit `c35758f5` produced one `relay_official` group whose 112 official Requests materialized exactly once into four direct pools and `21,668,159` Token; a later managed-hook replay left the group, pools, relations, Request identities, and Token unchanged. This controlled canary does not satisfy #252's ordinary-workflow gate. A 2026-08-14 production read found that personal Activity used cumulative Usage stats instead of the selected-window trend total, invalidating the previously recorded #252 Day 0. PR #299 repaired the denominator and non-zero percentage display; the repair first shipped in platform `v0.1.0-preview.87`, exact production readback established the replacement #252 Day 0 at `2026-08-17T05:32:57.925948Z`, and platform preview.88 then ran at Helm revision 88. AI Efficiency PR #319 later satisfied the ordinary-workflow gate with five direct pools and `23,210,615` Token. The 2026-08-20 evidence snapshot passed every non-destructive execution-time gate and the operator authorized implementation, separate releases, deployment, and destructive migration. Phase 2 merged as `319735ac`, shipped in CLI `ae-cli/v0.2.0-preview.14` and platform `v0.1.0-preview.89`, and now runs in production as Helm revision 89. Its immediate gates and post-deploy readbacks passed with exact formal conservation and every removed route returning 404. Phase 3 schema contraction remains separately gated. No fixed elapsed-time wait applies.
+**Status:** Active production contract since the verified 2026-08-12 cutover. The Responses WebSocket extension uses Codex-local Token and shipped in `ae-cli/v0.2.0-preview.8` plus platform `v0.1.0-preview.85`; the trusted-log repair shipped in CLI-only preview.9, and preview.10 completed the exact dual-baseline and scan-progress repair for current Codex 0.147. CLI-only `ae-cli/v0.2.0-preview.11` preserves the original single-allocation evidence digest and quarantines unchanged terminal conflicts without retransmission or later-trigger blockage. CLI-only preview.12 added coordinated drain, deleted-worktree recovery, and backlog migration; preview.13 then shipped the exact current-runtime inline-wrapper parser repair and scanner-progress invalidation. The authorized #305 Helm operator canary at commit `c35758f5` produced one `relay_official` group whose 112 official Requests materialized exactly once into four direct pools and `21,668,159` Token; a later managed-hook replay left the group, pools, relations, Request identities, and Token unchanged. This controlled canary does not satisfy #252's ordinary-workflow gate. A 2026-08-14 production read found that personal Activity used cumulative Usage stats instead of the selected-window trend total, invalidating the previously recorded #252 Day 0. PR #299 repaired the denominator and non-zero percentage display; the repair first shipped in platform `v0.1.0-preview.87`, exact production readback established the replacement #252 Day 0 at `2026-08-17T05:32:57.925948Z`, and platform preview.88 then ran at Helm revision 88. AI Efficiency PR #319 later satisfied the ordinary-workflow gate with five direct pools and `23,210,615` Token. The 2026-08-20 evidence snapshot passed every non-destructive execution-time gate and the operator authorized implementation, separate releases, deployment, and destructive migration. Phase 2 merged as `319735ac`, shipped in CLI `ae-cli/v0.2.0-preview.14` and platform `v0.1.0-preview.89`, and completed at Helm revision 89. Phase 3 source contraction merged as `996c23ea`, shipped in platform `v0.1.0-preview.90`, and now runs as Helm revision 90/chart `0.1.76`. The legacy tables and installation columns are absent; exact formal conservation and every health, Activity, SCM, and removed-route readback passed. No fixed elapsed-time wait applied.
 **Scope:** `ae-cli`, backend attribution/reconciliation/read models, frontend Activity, repository administration
 **Supersedes for active behavior:** [Codex Token Attribution Ledger POC](./2026-08-05-codex-token-attribution-ledger-poc-design.md)
 **Related:**
@@ -807,8 +807,23 @@ lifecycle, expiry, or v1-row errors; all four pending claims remained before
 their final-attempt boundary. The removed v1 batch/revision, AE OTLP, and legacy
 Activity summary routes returned 404, authenticated readiness remained
 `active`, and Activity v2 retained exact Usage ratio plus complete claim and
-SCM coverage. Phase 3 must repeat the volatile gates against this Phase 2
-deployment before any schema mutation.
+SCM coverage.
+
+Phase 3 completed from commit `996c23ea`. Hosted CI `32442883145` passed all
+four jobs and release workflow `32443741864` published platform
+`v0.1.0-preview.90` for linux/amd64 and linux/arm64; no CLI release was needed.
+The final gate conserved 48 formal pools, 48 direct relations, 1,313 Requests,
+and `192,289,908` Token. All five pending claims remained before their
+final-attempt boundary, while terminal, lifecycle, expiry, duplicate,
+component, coverage, and v1-row failures stayed zero. Both Phase 2 application
+roles were drained and proven absent before explicit idempotent no-`CASCADE`
+DDL committed with identical in-transaction pool and relation digests. Helm
+revision 90/chart `0.1.76` then deployed preview.90 to Ready backend and
+prewarmer roles with zero restarts and one shared runtime image digest.
+Post-deploy readback proved the two legacy tables and two installation columns
+absent, the formal digests unchanged, live/ready dependencies healthy,
+readiness active, Activity ratio exact, claim and SCM coverage complete, and
+all removed routes still returning 404.
 
 ## 15. Acceptance Matrix
 

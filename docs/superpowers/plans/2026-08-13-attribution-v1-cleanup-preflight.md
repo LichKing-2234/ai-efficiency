@@ -1,7 +1,7 @@
 # Attribution v1 and AE OTel Cleanup Preflight
 
 **Date:** 2026-08-13
-**Status:** Preflight implementation, verification, and review merged through [PR #284](https://github.com/LichKing-2234/ai-efficiency/pull/284) as `f6c9de84`; hosted CI `31685184654` passed backend, ae-cli, frontend, and deploy/static validation. Local PowerShell runtime testing was unavailable because `pwsh` is not installed, while the hosted PowerShell installer validation passed. #278 completed its earlier ordinary-workflow qualification. PR #299's deployed denominator repair established replacement Day 0 at `2026-08-17T05:32:57.925948Z`; ordinary AI Efficiency PR #319 and the complete 2026-08-20 evidence snapshot satisfied the non-destructive gate. The operator authorized implementation, separate platform/CLI releases, deployment, and destructive migration on 2026-08-20. Phase 2 merged through [PR #330](https://github.com/LichKing-2234/ai-efficiency/pull/330) as `319735ac`; hosted CI `32387230667` passed. CLI `ae-cli/v0.2.0-preview.14` and platform `v0.1.0-preview.89` were published by successful workflows `32389268066` and `32389679261`, then platform preview.89 was deployed as Helm revision 89 with chart `0.1.75`. The immediate gates and post-deploy readbacks passed, including exact formal conservation and absence of every removed route. Phase 2 is complete; Phase 3 remains separately gated and unchecked. No fixed elapsed-time wait applies.
+**Status:** Complete. Preflight merged through [PR #284](https://github.com/LichKing-2234/ai-efficiency/pull/284), the evidence gate was satisfied by ordinary AI Efficiency PR #319 plus the 2026-08-20 snapshot, and the operator authorized the staged cleanup. Phase 2 merged through [PR #330](https://github.com/LichKing-2234/ai-efficiency/pull/330) as `319735ac`, shipped in CLI `ae-cli/v0.2.0-preview.14` and platform `v0.1.0-preview.89`, and completed at Helm revision 89. Phase 3 source contraction merged through [PR #332](https://github.com/LichKing-2234/ai-efficiency/pull/332) as `996c23ea`; hosted CI `32442883145` passed and release workflow `32443741864` published platform `v0.1.0-preview.90`. The exact legacy schema was exported, the final volatile gate passed, the old application roles were drained before transactional no-`CASCADE` DDL, and preview.90 was deployed as Helm revision 90 with chart `0.1.76`. Post-deploy schema, formal conservation, health, Activity, SCM, and removed-route readbacks all passed. No fixed elapsed-time wait applied.
 **Parent:** [Codex Commit Token Attribution v2 Implementation Plan](./2026-08-11-codex-commit-token-attribution-v2.md)
 **Issue:** [#252](https://github.com/LichKing-2234/ai-efficiency/issues/252)
 
@@ -84,6 +84,43 @@ routes returned 404. Authenticated attribution readiness remained `active`;
 Activity v2 retained an exact Usage ratio with complete claim and SCM coverage,
 Repository and PR reads returned three and five rows respectively, formal
 conservation was unchanged, and the v1 tables remained `0/0`.
+
+## Phase 3 Production Closeout — 2026-08-21
+
+PR #332 removed the legacy Ent schemas and installation columns, strengthened
+the idempotent no-`CASCADE` conservation test, and regenerated Ent output.
+Hosted CI `32442883145` passed all four jobs. Release workflow `32443741864`
+published platform `v0.1.0-preview.90` from `996c23ea` with linux/amd64 and
+linux/arm64 support; this schema-only application change required no CLI
+release. Helm commit `a43b0ee` recorded chart `0.1.76` and preview.90.
+
+The protected operator evidence bundle contains the exact schema-only exports,
+formal before digest, executable DDL contract, final gate, post-deploy schema
+and digest readback, and runtime/API summary. Its `SHA256SUMS` manifest hashes
+to `872f0d51b501694d070a78a9e7d0d96bca368531ebc58a33bc4ce2d26cb55098`;
+the directory was mode `0700`, every file was mode `0600`, and the temporary
+credential-bearing PostgreSQL helper pod was deleted after verification.
+
+The final `2026-08-21T03:53:54.469201Z` gate conserved 48 formal pools, 48
+direct relations, 1,313 Requests, and `192,289,908` Token with identical pool
+and relation digests. Five pending claims all remained before their
+final-attempt boundary. Terminal claims, reconciled claims without pools,
+near-expiry and hard-expired groups, finalization errors, duplicate identities,
+component mismatches, coverage gaps, and v1 rows were all zero. Activity was
+`active` with an exact Usage ratio and complete claim and SCM coverage;
+Repository and PR reads returned three and five rows.
+
+Both preview.89 application deployments were then scaled to zero and their
+pods were proven absent before DDL. The transaction committed at
+`2026-08-21T03:55:47.242887Z` after dropping only the two legacy tables and two
+installation columns and comparing the same formal snapshot inside the
+transaction. Production rollout `ai-efficiency-prod` completed as Helm
+revision 90. The Ready backend and prewarmer run preview.90 from `996c23ea`
+with zero restarts and the same runtime image digest. Post-deploy readback
+proved the legacy schema absent and the 48-pool/48-relation digests unchanged;
+live/ready dependencies were up, attribution remained `active`, Activity ratio
+and both coverage dimensions remained exact/complete, and all eleven removed
+v1, AE OTLP, and legacy Activity routes returned 404.
 
 ## Protection Seams
 
@@ -270,7 +307,20 @@ two phases because a rolling deployment can overlap replicas.
 
 ### Phase 3 — schema contraction
 
-- [ ] Export the exact legacy schema-only rollback artifact and formal digest.
-- [ ] Prove every serving replica is on Phase 2 and repeat the volatile gates.
-- [ ] Run explicit no-`CASCADE` DDL with in-transaction formal conservation.
-- [ ] Deploy schema-contracted code and repeat every production readback.
+- [x] Export the exact legacy schema-only rollback artifact and formal digest.
+  The protected evidence bundle includes both schema exports, the original and
+  final-before formal snapshots, executable SQL, post-deploy readbacks, and a
+  verified SHA-256 manifest.
+- [x] Prove every serving replica is on Phase 2 and repeat the volatile gates.
+  Both preview.89 roles were Ready with zero restarts before the final gate;
+  the same-window snapshot conserved 48 pools, 48 direct relations, 1,313
+  Requests, and `192,289,908` Token with every lifecycle, integrity, coverage,
+  SCM, Activity, and v1-row gate green.
+- [x] Run explicit no-`CASCADE` DDL with in-transaction formal conservation.
+  Both application deployments were drained to zero first. The transaction
+  committed only after the before/after pool and relation digests matched.
+- [x] Deploy schema-contracted code and repeat every production readback.
+  Platform preview.90 runs as Helm revision 90/chart `0.1.76`; backend and
+  prewarmer are Ready with zero restarts and the same digest, the legacy schema
+  is absent, formal conservation is exact, and health, Activity, SCM,
+  Repository/PR, readiness, and removed-route readbacks passed.
