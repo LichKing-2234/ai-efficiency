@@ -533,11 +533,19 @@ func (s *sub2apiRelay) FindUserByUsername(ctx context.Context, username string) 
 }
 
 func (s *sub2apiRelay) ListUsers(ctx context.Context) ([]User, error) {
-	users, err := s.listUsersFromAdminList(ctx)
+	users, _, err := s.listUsersFromAdminList(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("relay: list users: %w", err)
 	}
 	return users, nil
+}
+
+func (s *sub2apiRelay) ListUsersWithActiveSubscriptions(ctx context.Context) ([]User, map[int64][]int64, error) {
+	users, activeGroups, err := s.listUsersFromAdminList(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("relay: list users with active subscriptions: %w", err)
+	}
+	return users, activeGroups, nil
 }
 
 type providerDirectoryItem struct {
@@ -862,20 +870,25 @@ func (s *sub2apiRelay) findUsersBySearch(ctx context.Context, search string) ([]
 	return users, ok, nil
 }
 
-func (s *sub2apiRelay) listUsersFromAdminList(ctx context.Context) ([]User, error) {
+func (s *sub2apiRelay) listUsersFromAdminList(ctx context.Context) ([]User, map[int64][]int64, error) {
 	var users []User
+	activeGroups := make(map[int64][]int64)
 	for page := 1; ; page++ {
-		resp, err := s.doAdminRequest(ctx, http.MethodGet, fmt.Sprintf("/api/v1/admin/users?page=%d&page_size=200", page), nil)
+		query := url.Values{}
+		query.Set("page", strconv.Itoa(page))
+		query.Set("page_size", "200")
+		query.Set("include_subscriptions", "true")
+		resp, err := s.doAdminRequest(ctx, http.MethodGet, "/api/v1/admin/users?"+query.Encode(), nil)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
+			return nil, nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 		}
 
 		var result struct {
@@ -883,27 +896,64 @@ func (s *sub2apiRelay) listUsersFromAdminList(ctx context.Context) ([]User, erro
 			Data json.RawMessage `json:"data"`
 		}
 		if err := json.Unmarshal(body, &result); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if !result.ok() {
-			return nil, fmt.Errorf("request failed")
+			return nil, nil, fmt.Errorf("request failed")
 		}
 
 		items, pages, err := decodeUserListItems(result.Data)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for _, item := range items {
 			user, err := decodeUserWithFacts(item)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			users = append(users, user)
+			groupIDs, err := decodeActiveSubscriptionGroupIDs(item)
+			if err != nil {
+				return nil, nil, err
+			}
+			activeGroups[user.ID] = groupIDs
 		}
 		if pages <= 1 || page >= pages {
-			return users, nil
+			return users, activeGroups, nil
 		}
 	}
+}
+
+func decodeActiveSubscriptionGroupIDs(data json.RawMessage) ([]int64, error) {
+	var facts struct {
+		Subscriptions []struct {
+			Status  string `json:"status"`
+			GroupID int64  `json:"group_id"`
+			Group   *Group `json:"group"`
+		} `json:"subscriptions"`
+	}
+	if err := json.Unmarshal(data, &facts); err != nil {
+		return nil, err
+	}
+	seen := make(map[int64]struct{}, len(facts.Subscriptions))
+	for _, subscription := range facts.Subscriptions {
+		if !strings.EqualFold(strings.TrimSpace(subscription.Status), "active") {
+			continue
+		}
+		groupID := subscription.GroupID
+		if groupID <= 0 && subscription.Group != nil {
+			groupID = subscription.Group.ID
+		}
+		if groupID > 0 {
+			seen[groupID] = struct{}{}
+		}
+	}
+	groupIDs := make([]int64, 0, len(seen))
+	for groupID := range seen {
+		groupIDs = append(groupIDs, groupID)
+	}
+	sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
+	return groupIDs, nil
 }
 
 func (s *sub2apiRelay) findUserInAdminList(ctx context.Context, match func(User) bool) (*User, error) {

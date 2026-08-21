@@ -1010,6 +1010,47 @@ func TestListUsersFetchesAllAdminPages(t *testing.T) {
 	}
 }
 
+func TestListUsersWithActiveSubscriptionsUsesBatchDirectoryFacts(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("include_subscriptions"); got != "true" {
+			t.Fatalf("include_subscriptions = %q, want true", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"items": []any{
+					map[string]any{
+						"id": 11, "email": "alice@example.com", "username": "alice", "role": "user",
+						"subscriptions": []any{
+							map[string]any{"status": "active", "group_id": 101, "group": map[string]any{"id": 101, "name": "Group Alpha", "platform": "openai"}},
+							map[string]any{"status": "expired", "group_id": 102, "group": map[string]any{"id": 102, "name": "Group Beta", "platform": "openai"}},
+						},
+					},
+				},
+				"page": 1, "page_size": 200, "pages": 1, "total": 1,
+			},
+		})
+	})
+
+	provider := newTestProvider(t, mux)
+	directory, ok := provider.(relay.UserSubscriptionDirectoryProvider)
+	if !ok {
+		t.Fatal("provider does not implement UserSubscriptionDirectoryProvider")
+	}
+	users, activeGroups, err := directory.ListUsersWithActiveSubscriptions(context.Background())
+	if err != nil {
+		t.Fatalf("ListUsersWithActiveSubscriptions() error = %v", err)
+	}
+	if len(users) != 1 || users[0].ID != 11 {
+		t.Fatalf("users = %#v, want user 11", users)
+	}
+	if got, want := activeGroups[11], []int64{101}; !cmp.Equal(got, want) {
+		t.Fatalf("active subscription groups = %#v, want %#v", got, want)
+	}
+}
+
 func TestProviderWideDirectoryContractUsesFixedQueryAndAuthoritativePages(t *testing.T) {
 	pageBodies := map[string][]byte{
 		"1": []byte(`{"success":true,"data":{"items":[{"id":11},{"id":12}],"page":1,"page_size":1000,"pages":2,"total":3}}`),

@@ -1754,6 +1754,13 @@ func (s *Service) ListMappings(ctx context.Context, providerID int) ([]Mapping, 
 	out := make([]Mapping, 0, len(rows))
 	groupCache := make(map[int][]relay.Group)
 	providerCache := make(map[int]relay.Provider)
+	relationshipCache := make(map[int]*mappingRelationshipFacts)
+	relationshipLoaded := make(map[int]bool)
+	type accountListResult struct {
+		accounts []relay.Account
+		err      error
+	}
+	accountCache := make(map[string]accountListResult)
 	for _, row := range rows {
 		mapping := mappingFromEnt(row)
 		if _, loaded := groupCache[mapping.ProviderID]; !loaded {
@@ -1772,10 +1779,23 @@ func (s *Service) ListMappings(ctx context.Context, providerID int) ([]Mapping, 
 			}
 		}
 		mapping.Warnings = append(mapping.Warnings, mappingAvailabilityWarnings(mapping, groupCache[mapping.ProviderID])...)
-		mapping.Warnings = append(mapping.Warnings, mappingRelationshipWarnings(ctx, s.client, providerCache[mapping.ProviderID], mapping)...)
+		if !relationshipLoaded[mapping.ProviderID] {
+			relationshipLoaded[mapping.ProviderID] = true
+			if facts, factsErr := loadMappingRelationshipFacts(ctx, s.client, providerCache[mapping.ProviderID]); factsErr == nil {
+				relationshipCache[mapping.ProviderID] = facts
+			}
+		}
+		mapping.Warnings = append(mapping.Warnings, mappingRelationshipWarnings(relationshipCache[mapping.ProviderID], mapping)...)
 		if provider := providerCache[mapping.ProviderID]; provider != nil {
 			if reader, ok := provider.(relay.AccountRelationshipReader); ok {
-				if accounts, accountErr := reader.ListAccountsForPlatform(ctx, mapping.Platform); accountErr == nil {
+				cacheKey := fmt.Sprintf("%d:%s", mapping.ProviderID, strings.ToLower(strings.TrimSpace(mapping.Platform)))
+				result, loaded := accountCache[cacheKey]
+				if !loaded {
+					result.accounts, result.err = reader.ListAccountsForPlatform(ctx, mapping.Platform)
+					accountCache[cacheKey] = result
+				}
+				if result.err == nil {
+					accounts := result.accounts
 					mapping.AccountPools = accountPools(mapping, accounts)
 					mapping.Warnings = append(mapping.Warnings, accountPoolWarnings(mapping.AccountPools, mapping.AccountManagementInitialized)...)
 					for _, pool := range mapping.AccountPools {
@@ -1784,7 +1804,7 @@ func (s *Service) ListMappings(ctx context.Context, providerID int) ([]Mapping, 
 						}
 					}
 				} else {
-					mapping.Warnings = append(mapping.Warnings, fmt.Sprintf("account relationships are unavailable: %v", accountErr))
+					mapping.Warnings = append(mapping.Warnings, fmt.Sprintf("account relationships are unavailable: %v", result.err))
 				}
 			}
 		}
@@ -3599,25 +3619,38 @@ func mappingAvailabilityWarnings(mapping Mapping, groups []relay.Group) []string
 	return uniqueStrings(warnings)
 }
 
-func mappingRelationshipWarnings(ctx context.Context, client *ent.Client, provider relay.Provider, mapping Mapping) []string {
+type mappingRelationshipFacts struct {
+	users                []relay.User
+	localByRelay         map[int64]int
+	activeGroupsByUserID map[int64][]int64
+}
+
+func loadMappingRelationshipFacts(ctx context.Context, client *ent.Client, provider relay.Provider) (*mappingRelationshipFacts, error) {
 	if provider == nil || client == nil {
-		return nil
+		return nil, nil
 	}
 	subsLister, ok := provider.(relay.UserSubscriptionLister)
 	directory, directoryOK := provider.(relay.UserDirectoryProvider)
-	if !ok || !directoryOK {
-		return nil
+	batchDirectory, batchOK := provider.(relay.UserSubscriptionDirectoryProvider)
+	if !batchOK && (!ok || !directoryOK) {
+		return nil, nil
 	}
-	users, err := directory.ListUsers(ctx)
+	var (
+		users                []relay.User
+		activeGroupsByUserID map[int64][]int64
+		err                  error
+	)
+	if batchOK {
+		users, activeGroupsByUserID, err = batchDirectory.ListUsersWithActiveSubscriptions(ctx)
+	} else {
+		users, err = directory.ListUsers(ctx)
+	}
 	if err != nil {
-		return nil
-	}
-	if len(users) == 0 {
-		return nil
+		return nil, err
 	}
 	localUsers, err := client.User.Query().Where(user.RelayUserIDNotNil()).All(ctx)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	localByRelay := make(map[int64]int, len(localUsers))
 	for _, localUser := range localUsers {
@@ -3625,52 +3658,65 @@ func mappingRelationshipWarnings(ctx context.Context, client *ent.Client, provid
 			localByRelay[int64(*localUser.RelayUserID)] = localUser.ID
 		}
 	}
+	if !batchOK {
+		type membershipResult struct {
+			relayUserID int64
+			groups      []int64
+		}
+		results := make([]membershipResult, len(users))
+		jobs := make(chan int)
+		workerCount := maxCandidateWorkers
+		if len(users) < workerCount {
+			workerCount = len(users)
+		}
+		var workers sync.WaitGroup
+		workers.Add(workerCount)
+		for worker := 0; worker < workerCount; worker++ {
+			go func() {
+				defer workers.Done()
+				for index := range jobs {
+					relayUser := users[index]
+					subscriptions, listErr := subsLister.ListUserSubscriptions(ctx, relayUser.ID)
+					if listErr != nil {
+						continue
+					}
+					groups := make([]int64, 0)
+					for _, subscription := range subscriptions {
+						if strings.EqualFold(strings.TrimSpace(subscription.Status), "active") {
+							groupID := subscription.GroupID
+							if groupID <= 0 && subscription.Group != nil {
+								groupID = subscription.Group.ID
+							}
+							if groupID > 0 {
+								groups = append(groups, groupID)
+							}
+						}
+					}
+					results[index] = membershipResult{relayUserID: relayUser.ID, groups: groups}
+				}
+			}()
+		}
+		for index := range users {
+			jobs <- index
+		}
+		close(jobs)
+		workers.Wait()
+		activeGroupsByUserID = make(map[int64][]int64, len(results))
+		for _, result := range results {
+			activeGroupsByUserID[result.relayUserID] = result.groups
+		}
+	}
+	return &mappingRelationshipFacts{users: users, localByRelay: localByRelay, activeGroupsByUserID: activeGroupsByUserID}, nil
+}
+
+func mappingRelationshipWarnings(facts *mappingRelationshipFacts, mapping Mapping) []string {
+	if facts == nil {
+		return nil
+	}
 	activeGroups := make(map[int64]struct{}, len(mapping.GroupIDs))
 	for _, groupID := range mapping.GroupIDs {
 		activeGroups[groupID] = struct{}{}
 	}
-	type membershipResult struct {
-		relayUserID int64
-		groups      []int64
-	}
-	results := make([]membershipResult, len(users))
-	jobs := make(chan int)
-	workerCount := maxCandidateWorkers
-	if len(users) < workerCount {
-		workerCount = len(users)
-	}
-	var workers sync.WaitGroup
-	workers.Add(workerCount)
-	for worker := 0; worker < workerCount; worker++ {
-		go func() {
-			defer workers.Done()
-			for index := range jobs {
-				relayUser := users[index]
-				subscriptions, listErr := subsLister.ListUserSubscriptions(ctx, relayUser.ID)
-				if listErr != nil {
-					continue
-				}
-				groups := make([]int64, 0)
-				for _, subscription := range subscriptions {
-					if strings.EqualFold(strings.TrimSpace(subscription.Status), "active") {
-						groupID := subscription.GroupID
-						if groupID <= 0 && subscription.Group != nil {
-							groupID = subscription.Group.ID
-						}
-						if _, managed := activeGroups[groupID]; managed {
-							groups = append(groups, groupID)
-						}
-					}
-				}
-				results[index] = membershipResult{relayUserID: relayUser.ID, groups: groups}
-			}
-		}()
-	}
-	for index := range users {
-		jobs <- index
-	}
-	close(jobs)
-	workers.Wait()
 	expected := make(map[int]int64, len(mapping.MemberAssignments))
 	for rawUserID, groupID := range mapping.MemberAssignments {
 		if userID, parseErr := strconv.Atoi(rawUserID); parseErr == nil {
@@ -3679,22 +3725,28 @@ func mappingRelationshipWarnings(ctx context.Context, client *ent.Client, provid
 	}
 	actual := make(map[int]map[int64]struct{})
 	warnings := make([]string, 0)
-	for _, result := range results {
-		if len(result.groups) == 0 {
+	for _, relayUser := range facts.users {
+		groups := make([]int64, 0)
+		for _, groupID := range facts.activeGroupsByUserID[relayUser.ID] {
+			if _, managed := activeGroups[groupID]; managed {
+				groups = append(groups, groupID)
+			}
+		}
+		if len(groups) == 0 {
 			continue
 		}
-		localID, known := localByRelay[result.relayUserID]
+		localID, known := facts.localByRelay[relayUser.ID]
 		if !known {
-			for _, groupID := range result.groups {
-				if relayGroupAdopted(mapping.OperationState, result.relayUserID, groupID) {
+			for _, groupID := range groups {
+				if relayGroupAdopted(mapping.OperationState, relayUser.ID, groupID) {
 					continue
 				}
-				warnings = append(warnings, fmt.Sprintf("unmanaged relay member %d in target group %d", result.relayUserID, groupID))
+				warnings = append(warnings, fmt.Sprintf("unmanaged relay member %d in target group %d", relayUser.ID, groupID))
 			}
 			continue
 		}
 		actual[localID] = make(map[int64]struct{})
-		for _, groupID := range result.groups {
+		for _, groupID := range groups {
 			actual[localID][groupID] = struct{}{}
 			if expectedGroup, expectedOK := expected[localID]; !expectedOK {
 				warnings = append(warnings, fmt.Sprintf("unmanaged member %d in target group %d", localID, groupID))
@@ -3714,10 +3766,20 @@ func mappingRelationshipWarnings(ctx context.Context, client *ent.Client, provid
 func (s *Service) loadUnmanagedMembers(ctx context.Context, provider relay.Provider, mapping *ent.RelayGroupMapping) ([]UnmanagedMember, error) {
 	directory, directoryOK := provider.(relay.UserDirectoryProvider)
 	subsLister, subsOK := provider.(relay.UserSubscriptionLister)
-	if !directoryOK || !subsOK {
+	batchDirectory, batchOK := provider.(relay.UserSubscriptionDirectoryProvider)
+	if !batchOK && (!directoryOK || !subsOK) {
 		return nil, nil
 	}
-	remoteUsers, err := directory.ListUsers(ctx)
+	var (
+		remoteUsers        []relay.User
+		activeGroupsByUser map[int64][]int64
+		err                error
+	)
+	if batchOK {
+		remoteUsers, activeGroupsByUser, err = batchDirectory.ListUsersWithActiveSubscriptions(ctx)
+	} else {
+		remoteUsers, err = directory.ListUsers(ctx)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("list relay users: %w", err)
 	}
@@ -3746,20 +3808,27 @@ func (s *Service) loadUnmanagedMembers(ctx context.Context, provider relay.Provi
 		if _, managed := localByRelay[remoteUser.ID]; managed {
 			continue
 		}
-		subscriptions, listErr := subsLister.ListUserSubscriptions(ctx, remoteUser.ID)
-		if listErr != nil {
-			return nil, fmt.Errorf("list subscriptions for relay user %d: %w", remoteUser.ID, listErr)
-		}
 		targetIDs := make([]int64, 0)
 		seen := make(map[int64]struct{})
-		for _, subscription := range subscriptions {
-			if !strings.EqualFold(strings.TrimSpace(subscription.Status), "active") {
-				continue
+		activeGroupIDs := activeGroupsByUser[remoteUser.ID]
+		if !batchOK {
+			subscriptions, listErr := subsLister.ListUserSubscriptions(ctx, remoteUser.ID)
+			if listErr != nil {
+				return nil, fmt.Errorf("list subscriptions for relay user %d: %w", remoteUser.ID, listErr)
 			}
-			groupID := subscription.GroupID
-			if groupID <= 0 && subscription.Group != nil {
-				groupID = subscription.Group.ID
+			activeGroupIDs = make([]int64, 0, len(subscriptions))
+			for _, subscription := range subscriptions {
+				if !strings.EqualFold(strings.TrimSpace(subscription.Status), "active") {
+					continue
+				}
+				groupID := subscription.GroupID
+				if groupID <= 0 && subscription.Group != nil {
+					groupID = subscription.Group.ID
+				}
+				activeGroupIDs = append(activeGroupIDs, groupID)
 			}
+		}
+		for _, groupID := range activeGroupIDs {
 			if _, managed := managedTargets[groupID]; !managed {
 				continue
 			}

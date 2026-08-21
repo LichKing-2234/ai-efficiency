@@ -31,6 +31,8 @@ func (f relayPlanningResolverFunc) Resolve(ctx context.Context, providerID int) 
 type relayPlanningSearchProvider struct {
 	relay.Provider
 	users                  map[int64]*relay.User
+	directoryUsers         []relay.User
+	activeSubscriptionIDs  map[int64][]int64
 	groups                 []relay.Group
 	subscriptions          map[int64][]relay.UserSubscription
 	keys                   map[int64][]relay.APIKey
@@ -49,6 +51,7 @@ type relayPlanningSearchProvider struct {
 	events                 []string
 	subscriptionReads      atomic.Int64
 	keyReads               atomic.Int64
+	directoryReads         atomic.Int64
 }
 
 func (p *relayPlanningSearchProvider) GetUser(_ context.Context, userID int64) (*relay.User, error) {
@@ -57,6 +60,21 @@ func (p *relayPlanningSearchProvider) GetUser(_ context.Context, userID int64) (
 
 func (p *relayPlanningSearchProvider) ListPlatformGroups(context.Context) ([]relay.Group, error) {
 	return append([]relay.Group(nil), p.groups...), nil
+}
+
+func (p *relayPlanningSearchProvider) ListUsers(context.Context) ([]relay.User, error) {
+	p.directoryReads.Add(1)
+	return append([]relay.User(nil), p.directoryUsers...), nil
+}
+
+func (p *relayPlanningSearchProvider) ListUsersWithActiveSubscriptions(context.Context) ([]relay.User, map[int64][]int64, error) {
+	p.directoryReads.Add(1)
+	users := append([]relay.User(nil), p.directoryUsers...)
+	groups := make(map[int64][]int64, len(p.activeSubscriptionIDs))
+	for userID, groupIDs := range p.activeSubscriptionIDs {
+		groups[userID] = append([]int64(nil), groupIDs...)
+	}
+	return users, groups, nil
 }
 
 func (p *relayPlanningSearchProvider) ListUserSubscriptions(_ context.Context, userID int64) ([]relay.UserSubscription, error) {
@@ -625,6 +643,137 @@ func TestRelayPlanningAdoptCurrentAccountsInitializesDesiredStateWithoutRelayWri
 	persisted := client.RelayGroupMapping.GetX(ctx, mapping.ID)
 	if !persisted.AccountManagementInitialized {
 		t.Fatal("adopted account state was not persisted")
+	}
+}
+
+func TestRelayPlanningListMappingsUsesBatchSubscriptionDirectory(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().
+		SetName("relay-planning-mapping-list-test").
+		SetDisplayName("Relay Planning Mapping List Test").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetEnabled(true).
+		SaveX(ctx)
+	createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
+	client.RelayGroupMapping.Create().
+		SetProviderID(providerConfig.ID).
+		SetDepartmentExternalID("dept-alpha").
+		SetDepartmentName("Department Alpha").
+		SetPlatform("openai").
+		SetTemplateGroupID(10).
+		SetSourceGroupID(20).
+		SetGroupIds([]int64{101}).
+		SaveX(ctx)
+	client.RelayGroupMapping.Create().
+		SetProviderID(providerConfig.ID).
+		SetDepartmentExternalID("dept-beta").
+		SetDepartmentName("Department Beta").
+		SetPlatform("openai").
+		SetTemplateGroupID(10).
+		SetSourceGroupID(20).
+		SetGroupIds([]int64{102}).
+		SaveX(ctx)
+	provider := &relayPlanningSearchProvider{
+		directoryUsers:        []relay.User{{ID: 900, Username: "external-user", Email: "external@example.com"}},
+		activeSubscriptionIDs: map[int64][]int64{900: {101}},
+		groups: []relay.Group{
+			{ID: 10, Name: "Group Alpha", Platform: "openai"},
+			{ID: 20, Name: "Group Beta", Platform: "openai"},
+			{ID: 101, Name: "Group Gamma", Platform: "openai"},
+			{ID: 102, Name: "Group Delta", Platform: "openai"},
+		},
+	}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	router := gin.New()
+	router.GET("/admin/relay-planning/mappings", NewRelayPlanningHandler(service).ListMappings)
+
+	request := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/admin/relay-planning/mappings?provider_id=%d", providerConfig.ID), nil)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Data struct {
+			Items []relayplanning.Mapping `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode mapping list: %v", err)
+	}
+	if len(body.Data.Items) != 2 || !containsRelayPlanningWarning(body.Data.Items[0].Warnings, "unmanaged relay member 900 in target group 101") {
+		t.Fatalf("mapping warnings = %+v, want batch-derived unmanaged member warning", body.Data.Items)
+	}
+	if got := provider.directoryReads.Load(); got != 1 {
+		t.Fatalf("directory reads = %d, want 1", got)
+	}
+	if got := provider.subscriptionReads.Load(); got != 0 {
+		t.Fatalf("per-user subscription reads = %d, want 0", got)
+	}
+	if got := provider.accountReads; got != 1 {
+		t.Fatalf("same-platform Account reads = %d, want 1", got)
+	}
+}
+
+func TestRelayPlanningReplanUsesBatchSubscriptionDirectory(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().
+		SetName("relay-planning-replan-directory-test").
+		SetDisplayName("Relay Planning Replan Directory Test").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetEnabled(true).
+		SaveX(ctx)
+	createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
+	mapping := client.RelayGroupMapping.Create().
+		SetProviderID(providerConfig.ID).
+		SetDepartmentExternalID("dept-alpha").
+		SetDepartmentName("Department Alpha").
+		SetPlatform("openai").
+		SetTemplateGroupID(10).
+		SetTemplateGroupName("Group Alpha").
+		SetSourceGroupID(20).
+		SetSourceGroupName("Group Beta").
+		SetGroupIds([]int64{101}).
+		SetWeeklyCostTarget(2500).
+		SaveX(ctx)
+	provider := &relayPlanningSearchProvider{
+		directoryUsers:        []relay.User{{ID: 900, Username: "external-user", Email: "external@example.com"}},
+		activeSubscriptionIDs: map[int64][]int64{900: {101}},
+		groups: []relay.Group{
+			{ID: 10, Name: "Group Alpha", Platform: "openai"},
+			{ID: 20, Name: "Group Beta", Platform: "openai"},
+			{ID: 101, Name: "Group Gamma", Platform: "openai"},
+		},
+	}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	router := gin.New()
+	router.POST("/admin/relay-planning/mappings/:id/replan", NewRelayPlanningHandler(service).Replan)
+
+	request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID), strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("replan status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Data relayplanning.Plan `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode replan response: %v", err)
+	}
+	if len(body.Data.UnmanagedMembers) != 1 || body.Data.UnmanagedMembers[0].RelayUserID != 900 || fmt.Sprint(body.Data.UnmanagedMembers[0].TargetGroupIDs) != "[101]" {
+		t.Fatalf("unmanaged members = %+v, want Relay user 900 in target Group 101", body.Data.UnmanagedMembers)
+	}
+	if got := provider.directoryReads.Load(); got != 1 {
+		t.Fatalf("directory reads = %d, want 1", got)
+	}
+	if got := provider.subscriptionReads.Load(); got != 0 {
+		t.Fatalf("per-user subscription reads = %d, want 0", got)
 	}
 }
 

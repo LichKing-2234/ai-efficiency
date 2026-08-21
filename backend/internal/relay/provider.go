@@ -171,6 +171,12 @@ type UserDirectoryProvider interface {
 	ListUsers(ctx context.Context) ([]User, error)
 }
 
+// UserSubscriptionDirectoryProvider returns the provider directory together
+// with each user's complete active subscription Group IDs in one bounded read.
+type UserSubscriptionDirectoryProvider interface {
+	ListUsersWithActiveSubscriptions(ctx context.Context) ([]User, map[int64][]int64, error)
+}
+
 type UserSubscriptionLister interface {
 	ListUserSubscriptions(ctx context.Context, relayUserID int64) ([]UserSubscription, error)
 }

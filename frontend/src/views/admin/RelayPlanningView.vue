@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { CaretBottom, CaretTop, Check, Delete, Plus, Refresh, Setting, Switch } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import AppLayout from '@/components/AppLayout.vue'
 import { useI18n } from '@/i18n'
 import { relayPlanningMessages } from '@/locales/relayPlanning'
@@ -57,6 +57,10 @@ const operationKey = ref('')
 const suggestedGroupAccountDefaults = ref<RelayPlanningAccount[]>([])
 const mappings = ref<RelayPlanningMapping[]>([])
 const rebindPendingID = ref<number | null>(null)
+const rebindDialogOpen = ref(false)
+const rebindMappingID = ref<number | null>(null)
+const rebindContext = reactive({ provider_id: 0, platform: '' })
+const rebindForm = reactive({ department_id: '', template_group_id: 0, source_group_id: 0, group_ids: [] as number[] })
 const accountMappingID = ref<number | null>(null)
 const accountSaving = ref(false)
 const accountDrafts = reactive<Record<number, Record<string, RelayPlanningAccount[]>>>({})
@@ -83,6 +87,8 @@ const platforms = computed(() => Array.from(new Set((provider.value?.groups ?? [
 const eligibleCandidates = computed(() => plan.value?.candidates.filter((candidate) => candidate.eligible) ?? [])
 const unassignedCandidates = computed(() => plan.value?.candidates.filter((candidate) => candidate.can_add && !selectedUserIDs.value.has(candidate.user_id)) ?? [])
 const accountMapping = computed(() => mappings.value.find((mapping) => mapping.id === accountMappingID.value) ?? null)
+const rebindGroups = computed(() => (providers.value.find((item) => item.id === rebindContext.provider_id)?.groups ?? [])
+  .filter((group) => group.platform === rebindContext.platform))
 
 function translateWarning(warning: string): string {
   void locale.value
@@ -741,24 +747,49 @@ function toggleCandidate(userID: number, checked: boolean) {
   moveCandidate(userID, target)
 }
 
-async function rebind(mapping: RelayPlanningMapping) {
-  if (rebindPendingID.value !== null) return
-  rebindPendingID.value = mapping.id
-  try {
-    const department = await ElMessageBox.prompt(t('relayPlanning.departmentIdPrompt'), t('relayPlanning.rebindDepartment'), { inputValue: mapping.department_id, inputPattern: /^[^\s]+$/, inputErrorMessage: t('relayPlanning.departmentIdRequired') })
-    const template = await ElMessageBox.prompt(t('relayPlanning.templateGroupIdPrompt'), t('relayPlanning.rebindTemplateGroup'), { inputValue: String(mapping.template_group_id || mapping.source_group_id), inputPattern: /^[1-9][0-9]*$/, inputErrorMessage: t('relayPlanning.positiveGroupIdRequired') })
-    const source = await ElMessageBox.prompt(t('relayPlanning.sourceGroupIdPrompt'), t('relayPlanning.rebindSourceGroup'), { inputValue: String(mapping.source_group_id), inputPattern: /^[1-9][0-9]*$/, inputErrorMessage: t('relayPlanning.positiveGroupIdRequired') })
-    const groups = await ElMessageBox.prompt(t('relayPlanning.managedGroupIdsPrompt'), t('relayPlanning.rebindManagedGroups'), { inputValue: mapping.group_ids.join(', '), inputPattern: /^[0-9 ,]+$/, inputErrorMessage: t('relayPlanning.numericGroupIdsRequired') })
-    const payload = { department_id: department.value.trim(), template_group_id: Number(template.value), source_group_id: Number(source.value), group_ids: groups.value.split(',').map((value) => Number(value.trim())).filter((value) => value > 0) }
-    await ElMessageBox.confirm(t('relayPlanning.confirmRebindMessage'), t('relayPlanning.confirmRebind'), { type: 'warning', confirmButtonText: t('relayPlanning.confirm'), cancelButtonText: t('relayPlanning.cancel'), closeOnClickModal: false })
-    await rebindRelayGroupMapping(mapping.id, payload)
-    await loadMappings()
-    ElMessage.success(t('relayPlanning.mappingRebound'))
-  } catch (err: any) {
-    if (err !== 'cancel' && err !== 'close') ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.rebindFailed'))
-  } finally {
-    rebindPendingID.value = null
-  }
+function rebind(mapping: RelayPlanningMapping) {
+	if (rebindPendingID.value !== null) return
+	rebindMappingID.value = mapping.id
+	rebindContext.provider_id = mapping.provider_id
+	rebindContext.platform = mapping.platform
+	rebindForm.department_id = mapping.department_id
+	rebindForm.template_group_id = mapping.template_group_id || mapping.source_group_id
+	rebindForm.source_group_id = mapping.source_group_id
+	rebindForm.group_ids = [...mapping.group_ids]
+	rebindDialogOpen.value = true
+}
+
+async function submitRebind() {
+	if (rebindMappingID.value === null || rebindPendingID.value !== null) return
+	if (!rebindForm.department_id.trim()) {
+		ElMessage.error(t('relayPlanning.departmentIdRequired'))
+		return
+	}
+	if (rebindForm.template_group_id <= 0 || rebindForm.source_group_id <= 0) {
+		ElMessage.error(t('relayPlanning.positiveGroupIdRequired'))
+		return
+	}
+	if (rebindForm.group_ids.length === 0) {
+		ElMessage.error(t('relayPlanning.numericGroupIdsRequired'))
+		return
+	}
+	const mappingID = rebindMappingID.value
+	rebindPendingID.value = mappingID
+	try {
+		await rebindRelayGroupMapping(mappingID, {
+			department_id: rebindForm.department_id.trim(),
+			template_group_id: rebindForm.template_group_id,
+			source_group_id: rebindForm.source_group_id,
+			group_ids: [...rebindForm.group_ids],
+		})
+		await loadMappings()
+		rebindDialogOpen.value = false
+		ElMessage.success(t('relayPlanning.mappingRebound'))
+	} catch (err: any) {
+		ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.rebindFailed'))
+	} finally {
+		rebindPendingID.value = null
+	}
 }
 
 onMounted(async () => {
@@ -1029,8 +1060,48 @@ onBeforeUnmount(clearSearchState)
 			<template #footer>
           <el-button :disabled="executing" @click="confirmDialogOpen = false">{{ t('relayPlanning.cancel') }}</el-button>
           <el-button data-testid="confirm-execution" type="danger" :loading="executing" @click="executeConfirmed">{{ t('relayPlanning.createAndMigrate') }}</el-button>
-        </template>
-      </el-dialog>
-    </div>
+			</template>
+		</el-dialog>
+
+		<el-dialog
+			v-model="rebindDialogOpen"
+			data-testid="rebind-dialog"
+			:title="t('relayPlanning.confirmRebind')"
+			append-to-body
+			align-center
+			width="min(100%, 34rem)"
+			:show-close="rebindPendingID === null"
+			:close-on-click-modal="rebindPendingID === null"
+			:close-on-press-escape="rebindPendingID === null"
+		>
+			<el-alert type="warning" :closable="false" show-icon :title="t('relayPlanning.confirmRebindMessage')" />
+			<div class="mt-5 grid gap-4">
+				<el-form-item :label="t('relayPlanning.department')" class="!mb-0">
+					<el-select v-model="rebindForm.department_id" data-testid="rebind-department-select" class="w-full" filterable :placeholder="t('relayPlanning.selectDepartment')">
+						<el-option v-for="item in departments" :key="item.external_id" :label="item.display_path || item.name" :value="item.external_id" />
+					</el-select>
+				</el-form-item>
+				<el-form-item :label="t('relayPlanning.templateGroup')" class="!mb-0">
+					<el-select v-model="rebindForm.template_group_id" data-testid="rebind-template-select" class="w-full" filterable :placeholder="t('relayPlanning.selectTemplateGroup')">
+						<el-option v-for="item in rebindGroups" :key="item.group_id" :label="`${item.group_name} (#${item.group_id})`" :value="Number(item.group_id)" />
+					</el-select>
+				</el-form-item>
+				<el-form-item :label="t('relayPlanning.migrationSource')" class="!mb-0">
+					<el-select v-model="rebindForm.source_group_id" data-testid="rebind-source-select" class="w-full" filterable :placeholder="t('relayPlanning.selectMigrationSource')">
+						<el-option v-for="item in rebindGroups" :key="item.group_id" :label="`${item.group_name} (#${item.group_id})`" :value="Number(item.group_id)" />
+					</el-select>
+				</el-form-item>
+				<el-form-item :label="t('relayPlanning.managedGroups')" class="!mb-0">
+					<el-select v-model="rebindForm.group_ids" data-testid="rebind-targets-select" class="w-full" multiple filterable :placeholder="t('relayPlanning.managedGroups')">
+						<el-option v-for="item in rebindGroups" :key="item.group_id" :label="`${item.group_name} (#${item.group_id})`" :value="Number(item.group_id)" />
+					</el-select>
+				</el-form-item>
+			</div>
+			<template #footer>
+				<el-button :disabled="rebindPendingID !== null" @click="rebindDialogOpen = false">{{ t('relayPlanning.cancel') }}</el-button>
+				<el-button data-testid="confirm-rebind" type="primary" :loading="rebindPendingID !== null" @click="submitRebind">{{ t('relayPlanning.confirm') }}</el-button>
+			</template>
+		</el-dialog>
+	</div>
   </AppLayout>
 </template>

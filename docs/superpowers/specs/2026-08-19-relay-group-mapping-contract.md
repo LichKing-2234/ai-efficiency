@@ -61,6 +61,14 @@ department disappears from the current directory snapshot, mapping reads keep
 the relationship, mark it unavailable, and return same-Platform departments
 that are not already mapped as suggestions.
 
+The mapping list reads the Provider's user directory together with active
+subscription Group IDs in one paginated operation per Provider and reuses one
+Account relationship read per Provider and Platform for the lifetime of the
+HTTP request. Replan uses the same batch directory contract when detecting
+Relay-only members in managed target Groups. Neither path fans out one
+subscription request per Provider user; relationship freshness remains
+request-bound and is not stored in a cross-request cache.
+
 ## Account and Member Maintenance
 
 Existing mappings start with Account management uninitialized. They display

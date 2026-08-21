@@ -571,7 +571,7 @@ describe('RelayPlanningView', () => {
 			expect(wrapper.text()).toContain('This user will remain in multiple managed Account pools')
 		})
 
-	it('prevents duplicate Rebind submissions while one request is in flight', async () => {
+	it('opens one centered Rebind form and locks the final submission', async () => {
 		const mapping = {
 			id: 9,
 			provider_id: 7,
@@ -593,18 +593,29 @@ describe('RelayPlanningView', () => {
 		let resolveRebind!: (value: unknown) => void
 		const pending = new Promise((resolve) => { resolveRebind = resolve })
 		const { wrapper, relayPlanning } = await mountView([mapping])
-		vi.spyOn(ElMessageBox, 'prompt')
-			.mockResolvedValueOnce({ value: 'dept-alpha', action: 'confirm' } as any)
-			.mockResolvedValueOnce({ value: '42', action: 'confirm' } as any)
-			.mockResolvedValueOnce({ value: '42', action: 'confirm' } as any)
-			.mockResolvedValueOnce({ value: '101', action: 'confirm' } as any)
-		vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as any)
+		const prompt = vi.spyOn(ElMessageBox, 'prompt').mockRejectedValue('cancel')
 		relayPlanning.rebindRelayGroupMapping.mockReturnValue(pending)
 
 		await wrapper.get('[data-testid="rebind-mapping-9"]').trigger('click')
-		await flushPromises()
+		const dialog = wrapper.findAllComponents(ElDialog).find((item) => item.props('modelValue') === true)
+		expect(prompt).not.toHaveBeenCalled()
+		expect(dialog?.props('appendToBody')).toBe(true)
+		expect(dialog?.props('alignCenter')).toBe(true)
+		expect(wrapper.find('[data-testid="rebind-department-select"]').exists()).toBe(true)
+		expect(wrapper.find('[data-testid="rebind-template-select"]').exists()).toBe(true)
+		expect(wrapper.find('[data-testid="rebind-source-select"]').exists()).toBe(true)
+		expect(wrapper.find('[data-testid="rebind-targets-select"]').exists()).toBe(true)
+		expect(relayPlanning.rebindRelayGroupMapping).not.toHaveBeenCalled()
+
+		await wrapper.get('[data-testid="confirm-rebind"]').trigger('click')
 		expect(relayPlanning.rebindRelayGroupMapping).toHaveBeenCalledTimes(1)
-		await wrapper.get('[data-testid="rebind-mapping-9"]').trigger('click')
+		expect(relayPlanning.rebindRelayGroupMapping).toHaveBeenCalledWith(9, {
+			department_id: 'dept-alpha',
+			template_group_id: 42,
+			source_group_id: 42,
+			group_ids: [101],
+		})
+		await wrapper.get('[data-testid="confirm-rebind"]').trigger('click')
 		expect(relayPlanning.rebindRelayGroupMapping).toHaveBeenCalledTimes(1)
 
 		resolveRebind({ data: { data: mapping } })
