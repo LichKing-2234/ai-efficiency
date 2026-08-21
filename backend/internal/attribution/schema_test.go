@@ -5,10 +5,31 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ai-efficiency/backend/ent/migrate"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/internal/testdb"
 )
+
+func TestLegacyAttributionSchemaIsContracted(t *testing.T) {
+	foundReportingInstallations := false
+	for _, table := range migrate.Tables {
+		switch table.Name {
+		case "attribution_allocation_revisions", "attribution_usage_buckets":
+			t.Fatalf("legacy table remains in generated schema: %s", table.Name)
+		case "reporting_installations":
+			foundReportingInstallations = true
+			for _, column := range table.Columns {
+				if column.Name == "otlp_token_hash" || column.Name == "otel_enabled" {
+					t.Fatalf("legacy reporting installation column remains: %s", column.Name)
+				}
+			}
+		}
+	}
+	if !foundReportingInstallations {
+		t.Fatal("reporting_installations missing from generated schema")
+	}
+}
 
 func TestAttributionSchemasCreateAndQuery(t *testing.T) {
 	client := testdb.Open(t)

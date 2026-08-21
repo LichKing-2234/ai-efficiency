@@ -7,8 +7,7 @@ import (
 	"entgo.io/ent/schema/index"
 )
 
-// ReportingInstallation is a machine-scoped reporting identity. Legacy OTLP
-// columns remain during the rolling Phase 2 deployment and are removed later.
+// ReportingInstallation is a machine-scoped reporting identity.
 type ReportingInstallation struct {
 	ent.Schema
 }
@@ -20,9 +19,7 @@ func (ReportingInstallation) Fields() []ent.Field {
 		field.String("label").Optional(),
 		field.String("client_version").Optional(),
 		field.String("reporter_token_hash").NotEmpty().Unique().Sensitive(),
-		field.String("otlp_token_hash").NotEmpty().Unique().Sensitive(),
 		field.Bool("reporting_enabled").Default(false),
-		field.Bool("otel_enabled").Default(false),
 		field.Enum("status").Values("active", "revoked").Default("active"),
 		field.Time("last_seen_at").Optional().Nillable(),
 		field.Time("created_at").Immutable().Default(timeNow),
@@ -37,7 +34,6 @@ func (ReportingInstallation) Edges() []ent.Edge {
 			Field("user_id").
 			Unique().
 			Required(),
-		edge.To("usage_buckets", AttributionUsageBucket.Type),
 	}
 }
 

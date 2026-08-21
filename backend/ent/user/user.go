@@ -45,8 +45,6 @@ const (
 	EdgeToolUsageEvents = "tool_usage_events"
 	// EdgeReportingInstallations holds the string denoting the reporting_installations edge name in mutations.
 	EdgeReportingInstallations = "reporting_installations"
-	// EdgeAttributionUsageBuckets holds the string denoting the attribution_usage_buckets edge name in mutations.
-	EdgeAttributionUsageBuckets = "attribution_usage_buckets"
 	// Table holds the table name of the user in the database.
 	Table = "users"
 	// CommitCheckpointsTable is the table that holds the commit_checkpoints relation/edge.
@@ -77,13 +75,6 @@ const (
 	ReportingInstallationsInverseTable = "reporting_installations"
 	// ReportingInstallationsColumn is the table column denoting the reporting_installations relation/edge.
 	ReportingInstallationsColumn = "user_id"
-	// AttributionUsageBucketsTable is the table that holds the attribution_usage_buckets relation/edge.
-	AttributionUsageBucketsTable = "attribution_usage_buckets"
-	// AttributionUsageBucketsInverseTable is the table name for the AttributionUsageBucket entity.
-	// It exists in this package in order to avoid circular dependency with the "attributionusagebucket" package.
-	AttributionUsageBucketsInverseTable = "attribution_usage_buckets"
-	// AttributionUsageBucketsColumn is the table column denoting the attribution_usage_buckets relation/edge.
-	AttributionUsageBucketsColumn = "user_id"
 )
 
 // Columns holds all SQL columns for user fields.
@@ -293,20 +284,6 @@ func ByReportingInstallations(term sql.OrderTerm, terms ...sql.OrderTerm) OrderO
 		sqlgraph.OrderByNeighborTerms(s, newReportingInstallationsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
-
-// ByAttributionUsageBucketsCount orders the results by attribution_usage_buckets count.
-func ByAttributionUsageBucketsCount(opts ...sql.OrderTermOption) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborsCount(s, newAttributionUsageBucketsStep(), opts...)
-	}
-}
-
-// ByAttributionUsageBuckets orders the results by attribution_usage_buckets terms.
-func ByAttributionUsageBuckets(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newAttributionUsageBucketsStep(), append([]sql.OrderTerm{term}, terms...)...)
-	}
-}
 func newCommitCheckpointsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -333,12 +310,5 @@ func newReportingInstallationsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(ReportingInstallationsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, ReportingInstallationsTable, ReportingInstallationsColumn),
-	)
-}
-func newAttributionUsageBucketsStep() *sqlgraph.Step {
-	return sqlgraph.NewStep(
-		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(AttributionUsageBucketsInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.O2M, false, AttributionUsageBucketsTable, AttributionUsageBucketsColumn),
 	)
 }

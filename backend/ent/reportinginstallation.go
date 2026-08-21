@@ -28,12 +28,8 @@ type ReportingInstallation struct {
 	ClientVersion string `json:"client_version,omitempty"`
 	// ReporterTokenHash holds the value of the "reporter_token_hash" field.
 	ReporterTokenHash string `json:"-"`
-	// OtlpTokenHash holds the value of the "otlp_token_hash" field.
-	OtlpTokenHash string `json:"-"`
 	// ReportingEnabled holds the value of the "reporting_enabled" field.
 	ReportingEnabled bool `json:"reporting_enabled,omitempty"`
-	// OtelEnabled holds the value of the "otel_enabled" field.
-	OtelEnabled bool `json:"otel_enabled,omitempty"`
 	// Status holds the value of the "status" field.
 	Status reportinginstallation.Status `json:"status,omitempty"`
 	// LastSeenAt holds the value of the "last_seen_at" field.
@@ -52,11 +48,9 @@ type ReportingInstallation struct {
 type ReportingInstallationEdges struct {
 	// User holds the value of the user edge.
 	User *User `json:"user,omitempty"`
-	// UsageBuckets holds the value of the usage_buckets edge.
-	UsageBuckets []*AttributionUsageBucket `json:"usage_buckets,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
+	loadedTypes [1]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -70,25 +64,16 @@ func (e ReportingInstallationEdges) UserOrErr() (*User, error) {
 	return nil, &NotLoadedError{edge: "user"}
 }
 
-// UsageBucketsOrErr returns the UsageBuckets value or an error if the edge
-// was not loaded in eager-loading.
-func (e ReportingInstallationEdges) UsageBucketsOrErr() ([]*AttributionUsageBucket, error) {
-	if e.loadedTypes[1] {
-		return e.UsageBuckets, nil
-	}
-	return nil, &NotLoadedError{edge: "usage_buckets"}
-}
-
 // scanValues returns the types for scanning values from sql.Rows.
 func (*ReportingInstallation) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case reportinginstallation.FieldReportingEnabled, reportinginstallation.FieldOtelEnabled:
+		case reportinginstallation.FieldReportingEnabled:
 			values[i] = new(sql.NullBool)
 		case reportinginstallation.FieldID, reportinginstallation.FieldUserID:
 			values[i] = new(sql.NullInt64)
-		case reportinginstallation.FieldInstallationID, reportinginstallation.FieldLabel, reportinginstallation.FieldClientVersion, reportinginstallation.FieldReporterTokenHash, reportinginstallation.FieldOtlpTokenHash, reportinginstallation.FieldStatus:
+		case reportinginstallation.FieldInstallationID, reportinginstallation.FieldLabel, reportinginstallation.FieldClientVersion, reportinginstallation.FieldReporterTokenHash, reportinginstallation.FieldStatus:
 			values[i] = new(sql.NullString)
 		case reportinginstallation.FieldLastSeenAt, reportinginstallation.FieldCreatedAt, reportinginstallation.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -143,23 +128,11 @@ func (ri *ReportingInstallation) assignValues(columns []string, values []any) er
 			} else if value.Valid {
 				ri.ReporterTokenHash = value.String
 			}
-		case reportinginstallation.FieldOtlpTokenHash:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field otlp_token_hash", values[i])
-			} else if value.Valid {
-				ri.OtlpTokenHash = value.String
-			}
 		case reportinginstallation.FieldReportingEnabled:
 			if value, ok := values[i].(*sql.NullBool); !ok {
 				return fmt.Errorf("unexpected type %T for field reporting_enabled", values[i])
 			} else if value.Valid {
 				ri.ReportingEnabled = value.Bool
-			}
-		case reportinginstallation.FieldOtelEnabled:
-			if value, ok := values[i].(*sql.NullBool); !ok {
-				return fmt.Errorf("unexpected type %T for field otel_enabled", values[i])
-			} else if value.Valid {
-				ri.OtelEnabled = value.Bool
 			}
 		case reportinginstallation.FieldStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -204,11 +177,6 @@ func (ri *ReportingInstallation) QueryUser() *UserQuery {
 	return NewReportingInstallationClient(ri.config).QueryUser(ri)
 }
 
-// QueryUsageBuckets queries the "usage_buckets" edge of the ReportingInstallation entity.
-func (ri *ReportingInstallation) QueryUsageBuckets() *AttributionUsageBucketQuery {
-	return NewReportingInstallationClient(ri.config).QueryUsageBuckets(ri)
-}
-
 // Update returns a builder for updating this ReportingInstallation.
 // Note that you need to call ReportingInstallation.Unwrap() before calling this method if this ReportingInstallation
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -246,13 +214,8 @@ func (ri *ReportingInstallation) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("reporter_token_hash=<sensitive>")
 	builder.WriteString(", ")
-	builder.WriteString("otlp_token_hash=<sensitive>")
-	builder.WriteString(", ")
 	builder.WriteString("reporting_enabled=")
 	builder.WriteString(fmt.Sprintf("%v", ri.ReportingEnabled))
-	builder.WriteString(", ")
-	builder.WriteString("otel_enabled=")
-	builder.WriteString(fmt.Sprintf("%v", ri.OtelEnabled))
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(fmt.Sprintf("%v", ri.Status))

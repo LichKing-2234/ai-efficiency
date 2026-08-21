@@ -58,8 +58,8 @@ func TestV2ClaimHTTPReplayAuthorizationAndEpochIsolation(t *testing.T) {
 	if replayResult["results"].([]any)[0].(map[string]any)["group"].(map[string]any)["status"] != "duplicate_identical" {
 		t.Fatalf("replay result = %+v", replayResult)
 	}
-	if env.client.AttributionClaimGroup.Query().CountX(ctx) != 1 || env.client.AttributionRequestClaim.Query().CountX(ctx) != 1 || env.client.AttributionUsageBucket.Query().CountX(ctx) != 0 {
-		t.Fatal("v2 replay duplicated hot claims or changed the formal v1 ledger")
+	if env.client.AttributionClaimGroup.Query().CountX(ctx) != 1 || env.client.AttributionRequestClaim.Query().CountX(ctx) != 1 {
+		t.Fatal("v2 replay duplicated hot claims")
 	}
 	invalid := doFullRequestWithToken(env, http.MethodPost, "/api/v1/attribution/v2/claim-groups/batch", map[string]any{"groups": []any{}}, reporterToken)
 	if invalid.Code != http.StatusUnprocessableEntity {
@@ -111,10 +111,6 @@ func TestAttributionHTTPFormalProtocolRemovesEveryV1WriteAndAcceptsV2(t *testing
 			t.Fatalf("removed route %s status = %d: %s", path, response.Code, response.Body.String())
 		}
 	}
-	if env.client.AttributionUsageBucket.Query().CountX(ctx) != 0 {
-		t.Fatal("formal protocol persisted a v1 usage bucket")
-	}
-
 	owner := env.client.User.Query().Where(user.UsernameEQ("fulladmin")).OnlyX(ctx)
 	provider := env.client.RelayProvider.Create().SetName("relay-formal").SetDisplayName("Relay Formal").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-key").SaveX(ctx)
 	repoID := createFullTestRepo(t, env.client)

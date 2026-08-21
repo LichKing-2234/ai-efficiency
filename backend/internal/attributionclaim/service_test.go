@@ -31,7 +31,7 @@ func newFixture(t *testing.T) fixture {
 	client := testdb.Open(t)
 	user := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource("ldap").SaveX(ctx)
 	installation := client.ReportingInstallation.Create().SetInstallationID(uuid.NewString()).SetUserID(user.ID).
-		SetReporterTokenHash(uuid.NewString()).SetOtlpTokenHash(uuid.NewString()).SetReportingEnabled(true).SaveX(ctx)
+		SetReporterTokenHash(uuid.NewString()).SetReportingEnabled(true).SaveX(ctx)
 	provider := client.RelayProvider.Create().SetName("relay-alpha").SetDisplayName("Relay Alpha").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-key").SaveX(ctx)
 	repo := client.RepoConfig.Create().SetName("repo").SetFullName("org/repo").SetCloneURL("https://example.com/org/repo.git").SaveX(ctx)
 	checkpoint := client.CommitCheckpoint.Create().SetEventID("checkpoint-1").SetUserID(user.ID).SetWorkspaceID("workspace-1").
@@ -245,7 +245,7 @@ func TestIngestConflictRollsBackIndependentGroup(t *testing.T) {
 	}
 }
 
-func TestIngestFailsClosedAndDoesNotTouchV1Ledger(t *testing.T) {
+func TestIngestFailsClosedWithoutPersistingClaims(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	f.client.RelayProvider.UpdateOneID(f.providerID).SetEnabled(false).ExecX(ctx)
@@ -256,8 +256,8 @@ func TestIngestFailsClosedAndDoesNotTouchV1Ledger(t *testing.T) {
 	if result.Epoch != attributionledger.LedgerEpochShadowV2 || result.Results[0].Group.Status != "rejected" {
 		t.Fatalf("disabled provider result = %+v", result)
 	}
-	if f.client.AttributionClaimGroup.Query().CountX(ctx) != 0 || f.client.AttributionUsageBucket.Query().CountX(ctx) != 0 {
-		t.Fatal("rejected shadow ingest changed claim or v1 formal ledger")
+	if f.client.AttributionClaimGroup.Query().CountX(ctx) != 0 {
+		t.Fatal("rejected shadow ingest persisted a claim")
 	}
 }
 
