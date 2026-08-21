@@ -9,17 +9,11 @@ import (
 // AdminSubscriptionJob is the predicate function for adminsubscriptionjob builders.
 type AdminSubscriptionJob func(*sql.Selector)
 
-// AttributionAllocationRevision is the predicate function for attributionallocationrevision builders.
-type AttributionAllocationRevision func(*sql.Selector)
-
 // AttributionClaimGroup is the predicate function for attributionclaimgroup builders.
 type AttributionClaimGroup func(*sql.Selector)
 
 // AttributionRequestClaim is the predicate function for attributionrequestclaim builders.
 type AttributionRequestClaim func(*sql.Selector)
-
-// AttributionUsageBucket is the predicate function for attributionusagebucket builders.
-type AttributionUsageBucket func(*sql.Selector)
 
 // AttributionUsagePool is the predicate function for attributionusagepool builders.
 type AttributionUsagePool func(*sql.Selector)

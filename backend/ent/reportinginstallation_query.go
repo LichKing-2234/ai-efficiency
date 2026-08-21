@@ -4,7 +4,6 @@ package ent
 
 import (
 	"context"
-	"database/sql/driver"
 	"fmt"
 	"math"
 
@@ -12,7 +11,6 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/ai-efficiency/backend/ent/attributionusagebucket"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/reportinginstallation"
 	"github.com/ai-efficiency/backend/ent/user"
@@ -21,12 +19,11 @@ import (
 // ReportingInstallationQuery is the builder for querying ReportingInstallation entities.
 type ReportingInstallationQuery struct {
 	config
-	ctx              *QueryContext
-	order            []reportinginstallation.OrderOption
-	inters           []Interceptor
-	predicates       []predicate.ReportingInstallation
-	withUser         *UserQuery
-	withUsageBuckets *AttributionUsageBucketQuery
+	ctx        *QueryContext
+	order      []reportinginstallation.OrderOption
+	inters     []Interceptor
+	predicates []predicate.ReportingInstallation
+	withUser   *UserQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -78,28 +75,6 @@ func (riq *ReportingInstallationQuery) QueryUser() *UserQuery {
 			sqlgraph.From(reportinginstallation.Table, reportinginstallation.FieldID, selector),
 			sqlgraph.To(user.Table, user.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, reportinginstallation.UserTable, reportinginstallation.UserColumn),
-		)
-		fromU = sqlgraph.SetNeighbors(riq.driver.Dialect(), step)
-		return fromU, nil
-	}
-	return query
-}
-
-// QueryUsageBuckets chains the current query on the "usage_buckets" edge.
-func (riq *ReportingInstallationQuery) QueryUsageBuckets() *AttributionUsageBucketQuery {
-	query := (&AttributionUsageBucketClient{config: riq.config}).Query()
-	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
-		if err := riq.prepareQuery(ctx); err != nil {
-			return nil, err
-		}
-		selector := riq.sqlQuery(ctx)
-		if err := selector.Err(); err != nil {
-			return nil, err
-		}
-		step := sqlgraph.NewStep(
-			sqlgraph.From(reportinginstallation.Table, reportinginstallation.FieldID, selector),
-			sqlgraph.To(attributionusagebucket.Table, attributionusagebucket.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, reportinginstallation.UsageBucketsTable, reportinginstallation.UsageBucketsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(riq.driver.Dialect(), step)
 		return fromU, nil
@@ -294,13 +269,12 @@ func (riq *ReportingInstallationQuery) Clone() *ReportingInstallationQuery {
 		return nil
 	}
 	return &ReportingInstallationQuery{
-		config:           riq.config,
-		ctx:              riq.ctx.Clone(),
-		order:            append([]reportinginstallation.OrderOption{}, riq.order...),
-		inters:           append([]Interceptor{}, riq.inters...),
-		predicates:       append([]predicate.ReportingInstallation{}, riq.predicates...),
-		withUser:         riq.withUser.Clone(),
-		withUsageBuckets: riq.withUsageBuckets.Clone(),
+		config:     riq.config,
+		ctx:        riq.ctx.Clone(),
+		order:      append([]reportinginstallation.OrderOption{}, riq.order...),
+		inters:     append([]Interceptor{}, riq.inters...),
+		predicates: append([]predicate.ReportingInstallation{}, riq.predicates...),
+		withUser:   riq.withUser.Clone(),
 		// clone intermediate query.
 		sql:  riq.sql.Clone(),
 		path: riq.path,
@@ -315,17 +289,6 @@ func (riq *ReportingInstallationQuery) WithUser(opts ...func(*UserQuery)) *Repor
 		opt(query)
 	}
 	riq.withUser = query
-	return riq
-}
-
-// WithUsageBuckets tells the query-builder to eager-load the nodes that are connected to
-// the "usage_buckets" edge. The optional arguments are used to configure the query builder of the edge.
-func (riq *ReportingInstallationQuery) WithUsageBuckets(opts ...func(*AttributionUsageBucketQuery)) *ReportingInstallationQuery {
-	query := (&AttributionUsageBucketClient{config: riq.config}).Query()
-	for _, opt := range opts {
-		opt(query)
-	}
-	riq.withUsageBuckets = query
 	return riq
 }
 
@@ -407,9 +370,8 @@ func (riq *ReportingInstallationQuery) sqlAll(ctx context.Context, hooks ...quer
 	var (
 		nodes       = []*ReportingInstallation{}
 		_spec       = riq.querySpec()
-		loadedTypes = [2]bool{
+		loadedTypes = [1]bool{
 			riq.withUser != nil,
-			riq.withUsageBuckets != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -433,15 +395,6 @@ func (riq *ReportingInstallationQuery) sqlAll(ctx context.Context, hooks ...quer
 	if query := riq.withUser; query != nil {
 		if err := riq.loadUser(ctx, query, nodes, nil,
 			func(n *ReportingInstallation, e *User) { n.Edges.User = e }); err != nil {
-			return nil, err
-		}
-	}
-	if query := riq.withUsageBuckets; query != nil {
-		if err := riq.loadUsageBuckets(ctx, query, nodes,
-			func(n *ReportingInstallation) { n.Edges.UsageBuckets = []*AttributionUsageBucket{} },
-			func(n *ReportingInstallation, e *AttributionUsageBucket) {
-				n.Edges.UsageBuckets = append(n.Edges.UsageBuckets, e)
-			}); err != nil {
 			return nil, err
 		}
 	}
@@ -474,36 +427,6 @@ func (riq *ReportingInstallationQuery) loadUser(ctx context.Context, query *User
 		for i := range nodes {
 			assign(nodes[i], n)
 		}
-	}
-	return nil
-}
-func (riq *ReportingInstallationQuery) loadUsageBuckets(ctx context.Context, query *AttributionUsageBucketQuery, nodes []*ReportingInstallation, init func(*ReportingInstallation), assign func(*ReportingInstallation, *AttributionUsageBucket)) error {
-	fks := make([]driver.Value, 0, len(nodes))
-	nodeids := make(map[int]*ReportingInstallation)
-	for i := range nodes {
-		fks = append(fks, nodes[i].ID)
-		nodeids[nodes[i].ID] = nodes[i]
-		if init != nil {
-			init(nodes[i])
-		}
-	}
-	if len(query.ctx.Fields) > 0 {
-		query.ctx.AppendFieldOnce(attributionusagebucket.FieldReportingInstallationID)
-	}
-	query.Where(predicate.AttributionUsageBucket(func(s *sql.Selector) {
-		s.Where(sql.InValues(s.C(reportinginstallation.UsageBucketsColumn), fks...))
-	}))
-	neighbors, err := query.All(ctx)
-	if err != nil {
-		return err
-	}
-	for _, n := range neighbors {
-		fk := n.ReportingInstallationID
-		node, ok := nodeids[fk]
-		if !ok {
-			return fmt.Errorf(`unexpected referenced foreign-key "reporting_installation_id" returned %v for node %v`, fk, n.ID)
-		}
-		assign(node, n)
 	}
 	return nil
 }

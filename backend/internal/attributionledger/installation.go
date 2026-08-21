@@ -106,7 +106,6 @@ func (s *InstallationService) Ensure(ctx context.Context, userID int, installati
 		SetLabel(strings.TrimSpace(label)).
 		SetClientVersion(strings.TrimSpace(clientVersion)).
 		SetReporterTokenHash(hashToken(reporterToken)).
-		SetOtlpTokenHash(retiredOTLPHash(installationID)).
 		SetLastSeenAt(now).
 		Save(ctx)
 	if err != nil {
@@ -133,7 +132,7 @@ func (s *InstallationService) SetEnabled(ctx context.Context, userID int, instal
 	if row.Status != reportinginstallation.StatusActive {
 		return InstallationCredentials{}, fmt.Errorf("reporting installation is revoked")
 	}
-	update := row.Update().SetLastSeenAt(time.Now().UTC()).SetOtelEnabled(false)
+	update := row.Update().SetLastSeenAt(time.Now().UTC())
 	if reportingEnabled != nil {
 		update.SetReportingEnabled(*reportingEnabled)
 		row.ReportingEnabled = *reportingEnabled
@@ -169,7 +168,6 @@ func (s *InstallationService) Rotate(ctx context.Context, userID int, installati
 	}
 	if err := row.Update().
 		SetReporterTokenHash(hashToken(reporterToken)).
-		SetOtelEnabled(false).
 		SetLastSeenAt(time.Now().UTC()).
 		Exec(ctx); err != nil {
 		return InstallationCredentials{}, fmt.Errorf("rotate reporting installation credentials: %w", err)
@@ -197,10 +195,6 @@ func (s *InstallationService) AuthenticateReporter(ctx context.Context, token st
 	}
 	_ = row.Update().SetLastSeenAt(time.Now().UTC()).Exec(ctx)
 	return InstallationPrincipal{DatabaseID: row.ID, InstallationID: row.InstallationID, UserID: row.UserID}, nil
-}
-
-func retiredOTLPHash(installationID string) string {
-	return hashToken("retired-otlp:" + strings.TrimSpace(installationID))
 }
 
 func newScopedToken(prefix string) (string, error) {

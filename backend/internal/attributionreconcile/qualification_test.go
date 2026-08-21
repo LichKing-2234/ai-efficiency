@@ -40,7 +40,7 @@ func TestSyntheticRequestToActivityKeepsShadowEpochIsolated(t *testing.T) {
 	now := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
 	user := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource("ldap").SetRelayUserID(42).SaveX(ctx)
 	installation := client.ReportingInstallation.Create().SetInstallationID(uuid.NewString()).SetUserID(user.ID).
-		SetReporterTokenHash(uuid.NewString()).SetOtlpTokenHash(uuid.NewString()).SetReportingEnabled(true).SaveX(ctx)
+		SetReporterTokenHash(uuid.NewString()).SetReportingEnabled(true).SaveX(ctx)
 	provider := client.RelayProvider.Create().SetName("relay-alpha").SetDisplayName("Relay Alpha").SetBaseURL("https://relay.example.com").
 		SetAdminAPIKey("test-key").SetEnabled(true).SaveX(ctx)
 	repo := client.RepoConfig.Create().SetName("repo").SetFullName("example/repo").SetCloneURL("https://example.com/example/repo.git").SaveX(ctx)
@@ -60,9 +60,6 @@ func TestSyntheticRequestToActivityKeepsShadowEpochIsolated(t *testing.T) {
 	result, err := attributionclaim.NewService(client, attributionledger.DefaultProtocolContract()).Ingest(ctx, principal, attributionclaim.BatchRequest{Groups: []attributionclaim.Request{claim}})
 	if err != nil || result.Epoch != attributionledger.LedgerEpochShadowV2 || result.Results[0].Requests[0].Status != "persisted" {
 		t.Fatalf("claim ingest = %+v, %v", result, err)
-	}
-	if client.AttributionUsageBucket.Query().CountX(ctx) != 0 {
-		t.Fatal("v2 claim ingest wrote the v1 usage bucket table")
 	}
 	requestClaim := client.AttributionRequestClaim.Query().OnlyX(ctx)
 	client.AttributionRequestClaim.UpdateOne(requestClaim).SetNextAttemptAt(now).ExecX(ctx)
@@ -89,10 +86,6 @@ func TestSyntheticRequestToActivityKeepsShadowEpochIsolated(t *testing.T) {
 	if pool.LedgerEpoch != attributionledger.LedgerEpochShadowV2 || pool.TotalTokens != 19 || pool.RequestCount != 1 {
 		t.Fatalf("shadow pool = %+v", pool)
 	}
-	if client.AttributionUsageBucket.Query().CountX(ctx) != 0 {
-		t.Fatal("v2 reconciliation wrote the v1 usage bucket table")
-	}
-
 	query := activity.V2Query{Scope: activity.V2ScopePersonal, FromDate: "2026-08-11", ToDate: "2026-08-11", Timezone: "UTC"}
 	formal := activity.NewService(client, activity.ServiceOptions{V2LedgerEpoch: "formal_v2", V2DB: db, V2Denominator: qualificationDenominator{}})
 	formalOverview, err := formal.V2Overview(ctx, user.ID, query)

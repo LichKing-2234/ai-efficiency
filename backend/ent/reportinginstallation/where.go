@@ -75,19 +75,9 @@ func ReporterTokenHash(v string) predicate.ReportingInstallation {
 	return predicate.ReportingInstallation(sql.FieldEQ(FieldReporterTokenHash, v))
 }
 
-// OtlpTokenHash applies equality check predicate on the "otlp_token_hash" field. It's identical to OtlpTokenHashEQ.
-func OtlpTokenHash(v string) predicate.ReportingInstallation {
-	return predicate.ReportingInstallation(sql.FieldEQ(FieldOtlpTokenHash, v))
-}
-
 // ReportingEnabled applies equality check predicate on the "reporting_enabled" field. It's identical to ReportingEnabledEQ.
 func ReportingEnabled(v bool) predicate.ReportingInstallation {
 	return predicate.ReportingInstallation(sql.FieldEQ(FieldReportingEnabled, v))
-}
-
-// OtelEnabled applies equality check predicate on the "otel_enabled" field. It's identical to OtelEnabledEQ.
-func OtelEnabled(v bool) predicate.ReportingInstallation {
-	return predicate.ReportingInstallation(sql.FieldEQ(FieldOtelEnabled, v))
 }
 
 // LastSeenAt applies equality check predicate on the "last_seen_at" field. It's identical to LastSeenAtEQ.
@@ -405,71 +395,6 @@ func ReporterTokenHashContainsFold(v string) predicate.ReportingInstallation {
 	return predicate.ReportingInstallation(sql.FieldContainsFold(FieldReporterTokenHash, v))
 }
 
-// OtlpTokenHashEQ applies the EQ predicate on the "otlp_token_hash" field.
-func OtlpTokenHashEQ(v string) predicate.ReportingInstallation {
-	return predicate.ReportingInstallation(sql.FieldEQ(FieldOtlpTokenHash, v))
-}
-
-// OtlpTokenHashNEQ applies the NEQ predicate on the "otlp_token_hash" field.
-func OtlpTokenHashNEQ(v string) predicate.ReportingInstallation {
-	return predicate.ReportingInstallation(sql.FieldNEQ(FieldOtlpTokenHash, v))
-}
-
-// OtlpTokenHashIn applies the In predicate on the "otlp_token_hash" field.
-func OtlpTokenHashIn(vs ...string) predicate.ReportingInstallation {
-	return predicate.ReportingInstallation(sql.FieldIn(FieldOtlpTokenHash, vs...))
-}
-
-// OtlpTokenHashNotIn applies the NotIn predicate on the "otlp_token_hash" field.
-func OtlpTokenHashNotIn(vs ...string) predicate.ReportingInstallation {
-	return predicate.ReportingInstallation(sql.FieldNotIn(FieldOtlpTokenHash, vs...))
-}
-
-// OtlpTokenHashGT applies the GT predicate on the "otlp_token_hash" field.
-func OtlpTokenHashGT(v string) predicate.ReportingInstallation {
-	return predicate.ReportingInstallation(sql.FieldGT(FieldOtlpTokenHash, v))
-}
-
-// OtlpTokenHashGTE applies the GTE predicate on the "otlp_token_hash" field.
-func OtlpTokenHashGTE(v string) predicate.ReportingInstallation {
-	return predicate.ReportingInstallation(sql.FieldGTE(FieldOtlpTokenHash, v))
-}
-
-// OtlpTokenHashLT applies the LT predicate on the "otlp_token_hash" field.
-func OtlpTokenHashLT(v string) predicate.ReportingInstallation {
-	return predicate.ReportingInstallation(sql.FieldLT(FieldOtlpTokenHash, v))
-}
-
-// OtlpTokenHashLTE applies the LTE predicate on the "otlp_token_hash" field.
-func OtlpTokenHashLTE(v string) predicate.ReportingInstallation {
-	return predicate.ReportingInstallation(sql.FieldLTE(FieldOtlpTokenHash, v))
-}
-
-// OtlpTokenHashContains applies the Contains predicate on the "otlp_token_hash" field.
-func OtlpTokenHashContains(v string) predicate.ReportingInstallation {
-	return predicate.ReportingInstallation(sql.FieldContains(FieldOtlpTokenHash, v))
-}
-
-// OtlpTokenHashHasPrefix applies the HasPrefix predicate on the "otlp_token_hash" field.
-func OtlpTokenHashHasPrefix(v string) predicate.ReportingInstallation {
-	return predicate.ReportingInstallation(sql.FieldHasPrefix(FieldOtlpTokenHash, v))
-}
-
-// OtlpTokenHashHasSuffix applies the HasSuffix predicate on the "otlp_token_hash" field.
-func OtlpTokenHashHasSuffix(v string) predicate.ReportingInstallation {
-	return predicate.ReportingInstallation(sql.FieldHasSuffix(FieldOtlpTokenHash, v))
-}
-
-// OtlpTokenHashEqualFold applies the EqualFold predicate on the "otlp_token_hash" field.
-func OtlpTokenHashEqualFold(v string) predicate.ReportingInstallation {
-	return predicate.ReportingInstallation(sql.FieldEqualFold(FieldOtlpTokenHash, v))
-}
-
-// OtlpTokenHashContainsFold applies the ContainsFold predicate on the "otlp_token_hash" field.
-func OtlpTokenHashContainsFold(v string) predicate.ReportingInstallation {
-	return predicate.ReportingInstallation(sql.FieldContainsFold(FieldOtlpTokenHash, v))
-}
-
 // ReportingEnabledEQ applies the EQ predicate on the "reporting_enabled" field.
 func ReportingEnabledEQ(v bool) predicate.ReportingInstallation {
 	return predicate.ReportingInstallation(sql.FieldEQ(FieldReportingEnabled, v))
@@ -478,16 +403,6 @@ func ReportingEnabledEQ(v bool) predicate.ReportingInstallation {
 // ReportingEnabledNEQ applies the NEQ predicate on the "reporting_enabled" field.
 func ReportingEnabledNEQ(v bool) predicate.ReportingInstallation {
 	return predicate.ReportingInstallation(sql.FieldNEQ(FieldReportingEnabled, v))
-}
-
-// OtelEnabledEQ applies the EQ predicate on the "otel_enabled" field.
-func OtelEnabledEQ(v bool) predicate.ReportingInstallation {
-	return predicate.ReportingInstallation(sql.FieldEQ(FieldOtelEnabled, v))
-}
-
-// OtelEnabledNEQ applies the NEQ predicate on the "otel_enabled" field.
-func OtelEnabledNEQ(v bool) predicate.ReportingInstallation {
-	return predicate.ReportingInstallation(sql.FieldNEQ(FieldOtelEnabled, v))
 }
 
 // StatusEQ applies the EQ predicate on the "status" field.
@@ -655,29 +570,6 @@ func HasUser() predicate.ReportingInstallation {
 func HasUserWith(preds ...predicate.User) predicate.ReportingInstallation {
 	return predicate.ReportingInstallation(func(s *sql.Selector) {
 		step := newUserStep()
-		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
-			for _, p := range preds {
-				p(s)
-			}
-		})
-	})
-}
-
-// HasUsageBuckets applies the HasEdge predicate on the "usage_buckets" edge.
-func HasUsageBuckets() predicate.ReportingInstallation {
-	return predicate.ReportingInstallation(func(s *sql.Selector) {
-		step := sqlgraph.NewStep(
-			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, UsageBucketsTable, UsageBucketsColumn),
-		)
-		sqlgraph.HasNeighbors(s, step)
-	})
-}
-
-// HasUsageBucketsWith applies the HasEdge predicate on the "usage_buckets" edge with a given conditions (other predicates).
-func HasUsageBucketsWith(preds ...predicate.AttributionUsageBucket) predicate.ReportingInstallation {
-	return predicate.ReportingInstallation(func(s *sql.Selector) {
-		step := newUsageBucketsStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

@@ -55,11 +55,9 @@ type UserEdges struct {
 	ToolUsageEvents []*ToolUsageEvent `json:"tool_usage_events,omitempty"`
 	// ReportingInstallations holds the value of the reporting_installations edge.
 	ReportingInstallations []*ReportingInstallation `json:"reporting_installations,omitempty"`
-	// AttributionUsageBuckets holds the value of the attribution_usage_buckets edge.
-	AttributionUsageBuckets []*AttributionUsageBucket `json:"attribution_usage_buckets,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [5]bool
+	loadedTypes [4]bool
 }
 
 // CommitCheckpointsOrErr returns the CommitCheckpoints value or an error if the edge
@@ -96,15 +94,6 @@ func (e UserEdges) ReportingInstallationsOrErr() ([]*ReportingInstallation, erro
 		return e.ReportingInstallations, nil
 	}
 	return nil, &NotLoadedError{edge: "reporting_installations"}
-}
-
-// AttributionUsageBucketsOrErr returns the AttributionUsageBuckets value or an error if the edge
-// was not loaded in eager-loading.
-func (e UserEdges) AttributionUsageBucketsOrErr() ([]*AttributionUsageBucket, error) {
-	if e.loadedTypes[4] {
-		return e.AttributionUsageBuckets, nil
-	}
-	return nil, &NotLoadedError{edge: "attribution_usage_buckets"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -241,11 +230,6 @@ func (u *User) QueryToolUsageEvents() *ToolUsageEventQuery {
 // QueryReportingInstallations queries the "reporting_installations" edge of the User entity.
 func (u *User) QueryReportingInstallations() *ReportingInstallationQuery {
 	return NewUserClient(u.config).QueryReportingInstallations(u)
-}
-
-// QueryAttributionUsageBuckets queries the "attribution_usage_buckets" edge of the User entity.
-func (u *User) QueryAttributionUsageBuckets() *AttributionUsageBucketQuery {
-	return NewUserClient(u.config).QueryAttributionUsageBuckets(u)
 }
 
 // Update returns a builder for updating this User.

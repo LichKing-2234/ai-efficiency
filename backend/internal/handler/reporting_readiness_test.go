@@ -161,7 +161,7 @@ func TestAttributionStatusUsesFormalActivityReadinessAndLatestAcceptance(t *test
 	}
 }
 
-func TestAttributionStatusRejectsNonFormalNonCountingAndLegacyEvidence(t *testing.T) {
+func TestAttributionStatusRejectsNonFormalAndNonCountingEvidence(t *testing.T) {
 	env := setupFullTestEnvWithOptions(t, formalReadinessRouterOptions())
 	installationID := "55555555-5555-4555-8555-555555555555"
 	if response := doFullRequest(env, http.MethodPost, "/api/v1/attribution/installations", map[string]any{"installation_id": installationID}); response.Code != http.StatusOK {
@@ -188,25 +188,9 @@ func TestAttributionStatusRejectsNonFormalNonCountingAndLegacyEvidence(t *testin
 
 	ctx := context.Background()
 	actor := env.client.User.Query().Where(entuser.UsernameEQ("fulladmin")).OnlyX(ctx)
-	installation := env.client.ReportingInstallation.Query().Where(reportinginstallation.InstallationIDEQ(installationID)).OnlyX(ctx)
 	provider := env.client.RelayProvider.Create().SetName("negative-readiness-provider").SetDisplayName("Negative Readiness Provider").SetBaseURL("https://negative-relay.example.com").SetAdminAPIKey("encrypted-test-key").SetDefaultModel("example-model").SetEnabled(true).SaveX(ctx)
 	repo := env.client.RepoConfig.Create().SetName("negative-readiness").SetFullName("example/negative-readiness").SetCloneURL("https://example.com/example/negative-readiness.git").SaveX(ctx)
 	observed := time.Date(2026, 8, 4, 1, 0, 0, 0, time.UTC)
-	env.client.AttributionUsageBucket.Create().
-		SetBucketID("legacy-v1-bucket").
-		SetReportingInstallationID(installation.ID).
-		SetUserID(actor.ID).
-		SetTool("codex").
-		SetSessionSlices([]map[string]any{}).
-		SetObservedStartAt(observed).
-		SetObservedEndAt(observed.Add(time.Minute)).
-		SetSourceDigest("legacy-source").
-		SetImmutableDigest("legacy-immutable").
-		SetExtractorVersion("test").
-		SetTokenQuality("measured").
-		SaveX(ctx)
-	assertWaiting()
-
 	env.client.AttributionUsagePool.Create().
 		SetCanonicalPoolKey("formal-uncommitted").
 		SetLedgerEpoch("formal_v2").
