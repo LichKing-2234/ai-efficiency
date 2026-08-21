@@ -3687,6 +3687,42 @@ func TestGetUserUsageDashboardFailsFastOnSub2APIError(t *testing.T) {
 	}
 }
 
+func TestSub2APIRenameGroupUpdatesOnlyName(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups/42", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Fatalf("method = %q, want PUT", r.Method)
+		}
+		if r.Header.Get("X-API-Key") != "test-admin-key" {
+			t.Fatalf("X-API-Key = %q, want configured API key", r.Header.Get("X-API-Key"))
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if diff := cmp.Diff(map[string]any{"name": "Department Alpha-openai-01"}, body); diff != "" {
+			t.Fatalf("request mismatch (-want +got):\n%s", diff)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"id":       42,
+				"name":     "Department Alpha-openai-01",
+				"platform": "openai",
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux).(relay.GroupRenamer)
+	got, err := p.RenameGroup(context.Background(), 42, "Department Alpha-openai-01")
+	if err != nil {
+		t.Fatalf("RenameGroup() error = %v", err)
+	}
+	if got.ID != 42 || got.Name != "Department Alpha-openai-01" || got.Platform != "openai" {
+		t.Fatalf("RenameGroup() = %+v", got)
+	}
+}
+
 func TestSub2APIListGroupRateMultipliersDecodesRateAndRPM(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/groups/42/rate-multipliers", func(w http.ResponseWriter, r *http.Request) {

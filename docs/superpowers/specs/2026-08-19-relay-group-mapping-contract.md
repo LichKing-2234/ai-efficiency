@@ -44,6 +44,19 @@ production release.
   users unassigned, and a newly added Target inherits the Template Account
   defaults. Existing-mapping Replan still preserves its fixed target IDs and
   does not expose this resize control.
+- A new Target name is suggested from the current Directory department leaf,
+  normalized Platform, and a two-digit-or-longer sequence, for example
+  `Department Alpha-openai-01`. Surrounding whitespace and control characters
+  are removed while ordinary Unicode and internal spaces are preserved. The
+  Platform and sequence suffix is retained when the department portion is
+  truncated to the Relay 100-character limit. Provider Group names are reserved
+  when assigning sequence numbers. Adding or removing an uncreated Target
+  recomputes suggestions in current Preview order; an administrator may edit
+  every reviewed name before Confirm.
+- Empty, over-length, duplicate, and provider-conflicting reviewed names block
+  Confirm. Preview edits and suggestion recalculation are local and read-only.
+  Confirm revalidates the reviewed names before the first Relay mutation and
+  returns the structured stale-plan response if a name has since been claimed.
 - Preview is read-only. Group creation, membership changes, source removal,
   API-Key binding, and adoption require the final Confirm action.
 
@@ -53,6 +66,16 @@ The mapping is keyed by provider, department external ID, and Platform. Group
 IDs are authoritative; display names are snapshots. Replan preserves target
 Group IDs and only produces a new member assignment matrix. It does not create,
 deactivate, resize, or automatically reshuffle target Groups.
+
+Replan shows the current Relay name and department-based suggestion for every
+managed Target. Suggestions are assigned in stable ascending Target Group ID
+order, so member moves and usage changes do not renumber them. A department
+rename or explicit rebind recalculates suggestions but performs no Relay write.
+Existing Target rename is unselected by default; an administrator may select
+and edit Targets individually or explicitly apply all suggestions in the
+mapping. Template and Migration Source Groups are never part of that rename
+set. Rename-only plans use the same final Confirm gate, which summarizes each
+selected `current name -> reviewed name` transition.
 
 Rebind changes only the saved relationship. The UI requires a final Confirm,
 and the backend validates the department input and all Template, Source, and
@@ -139,6 +162,14 @@ explicitly adopted Relay-only member, including status and error text. A
 partial execution is returned as `needs_retry`; a later Confirm/replan replaces
 successful step entries while retaining unresolved failed entries. No audit
 event stream is implied by this field.
+New Target execution records whether creation is still pending or completed.
+It duplicates the inactive Template Group, applies the reviewed name,
+reconciles Accounts, activates the Group, and only then migrates members. A
+rename or activation failure blocks later work only for that new Target.
+Replan restores a pending creation by Target Group ID, retries it without
+duplicating another Group, and marks creation complete only after activation.
+For an existing Target, a rename failure remains an independent retryable step
+and does not block reviewed Account or member operations.
 An explicit removal updates the desired member state immediately. If an
 upstream step fails, the operation state retains its Target and saved Source so
 the same removal can be Previewed and retried without restoring the deleted

@@ -1995,6 +1995,39 @@ func (s *sub2apiRelay) DuplicateGroup(ctx context.Context, sourceGroupID int64, 
 	return &result.Data, nil
 }
 
+func (s *sub2apiRelay) RenameGroup(ctx context.Context, groupID int64, name string) (*Group, error) {
+	if groupID <= 0 {
+		return nil, fmt.Errorf("relay: rename group: group id is required")
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, fmt.Errorf("relay: rename group: name is required")
+	}
+	payload, err := json.Marshal(map[string]string{"name": name})
+	if err != nil {
+		return nil, fmt.Errorf("relay: rename group: marshal: %w", err)
+	}
+	resp, err := s.doAdminRequest(ctx, http.MethodPut, fmt.Sprintf("/api/v1/admin/groups/%d", groupID), bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("relay: rename group: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: rename group: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+	}
+	var result struct {
+		envelopeStatus
+		Data Group `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("relay: rename group: decode: %w", err)
+	}
+	if !result.ok() || result.Data.ID <= 0 {
+		return nil, fmt.Errorf("relay: rename group: request failed")
+	}
+	return &result.Data, nil
+}
+
 func (s *sub2apiRelay) UpdateGroupStatus(ctx context.Context, groupID int64, status string) error {
 	if groupID <= 0 {
 		return fmt.Errorf("relay: update group status: group id is required")

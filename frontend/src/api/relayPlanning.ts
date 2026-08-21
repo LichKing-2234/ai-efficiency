@@ -26,6 +26,9 @@ export interface RelayPlanningAssignment {
   user_ids: number[]
   target_group_id?: number
   target_group_name?: string
+	current_target_group_name?: string
+	suggested_target_group_name?: string
+	rename_selected?: boolean
 	desired_accounts: RelayPlanningAccountIntent[]
 	accounts: RelayPlanningAccount[]
 }
@@ -65,6 +68,7 @@ export interface RelayPlanningTargetSummary {
 	index: number
 	target_group_id?: number
 	target_group_name: string
+	rename?: { from_name: string; to_name: string }
 	accounts: Array<{ account_id: number; action: 'add' | 'remove' | 'reorder'; old_priority?: number; new_priority?: number }>
 	members: Array<{ user_id?: number; relay_user_id?: number; action: 'add' | 'move' | 'remove'; from_group_id?: number; to_group_id?: number }>
 	subscriptions: Array<{ user_id?: number; relay_user_id: number; action: 'add' | 'remove'; group_id?: number }>
@@ -127,7 +131,7 @@ export interface RelayPlanningAccountSearchPage {
 
 export interface RelayPlanningExecution {
   plan: RelayPlanningPlan
-  groups: Array<{ index: number; id?: number; name?: string; status: string; error?: string }>
+  groups: Array<{ index: number; id?: number; name?: string; current_name?: string; status: string; rename?: string; error?: string }>
 	accounts: Array<{ target_group_id: number; account_id?: number; desired_priority?: number; status: string; error?: string }>
   members: Array<{ user_id?: number; relay_user_id?: number; target_group_id?: number; subscription: string; source_removal: string; api_keys?: string[]; error?: string }>
   mappings?: Array<{ mapping_id: number; role: 'destination' | 'source'; status: string; error?: string }>

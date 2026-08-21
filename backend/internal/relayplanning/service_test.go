@@ -164,14 +164,14 @@ func TestResolveGroupCountAllowsExplicitReplanResize(t *testing.T) {
 	}
 }
 
-func TestProposedGroupNamesFollowRelayCopySequence(t *testing.T) {
+func TestProposedGroupNamesSkipOccupiedDepartmentSequence(t *testing.T) {
 	groups := []relay.Group{
 		{Name: "Group Alpha"},
-		{Name: "Group Alpha (Copy)"},
-		{Name: "Group Alpha (Copy 3)"},
+		{Name: "Department Alpha-openai-01"},
+		{Name: "Department Alpha-openai-03"},
 	}
-	got := proposedGroupNames("Group Alpha", groups, 3)
-	want := []string{"Group Alpha (Copy 2)", "Group Alpha (Copy 4)", "Group Alpha (Copy 5)"}
+	got := proposedGroupNames("Department Alpha", "openai", groups, 3)
+	want := []string{"Department Alpha-openai-02", "Department Alpha-openai-04", "Department Alpha-openai-05"}
 	if len(got) != len(want) {
 		t.Fatalf("proposed names = %#v, want %#v", got, want)
 	}

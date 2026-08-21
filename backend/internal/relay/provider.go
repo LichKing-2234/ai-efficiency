@@ -105,6 +105,11 @@ type GroupDuplicator interface {
 	DuplicateGroup(ctx context.Context, sourceGroupID int64, operationKey string) (*Group, error)
 }
 
+// GroupRenamer changes only the display name of an existing group.
+type GroupRenamer interface {
+	RenameGroup(ctx context.Context, groupID int64, name string) (*Group, error)
+}
+
 // GroupStatusUpdater activates or deactivates an existing group. It is kept as
 // an optional capability because read-only relay implementations do not need it.
 type GroupStatusUpdater interface {
