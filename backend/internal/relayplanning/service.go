@@ -495,6 +495,20 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 			return nil, fmt.Errorf("resolve migration source group: %w", err)
 		}
 	}
+	var mapping *ent.RelayGroupMapping
+	if req.ExistingMappingID > 0 {
+		mapping, err = s.client.RelayGroupMapping.Get(ctx, req.ExistingMappingID)
+		if err != nil {
+			return nil, fmt.Errorf("load relay group mapping assignments: %w", err)
+		}
+		reviewedSources := cloneInt64Map(req.MemberSources)
+		for userID, groupID := range mapping.MemberSources {
+			if _, overridden := reviewedSources[userID]; !overridden {
+				reviewedSources[userID] = groupID
+			}
+		}
+		req.MemberSources = reviewedSources
+	}
 	if err := validateMemberSourceGroups(req.MemberSources, groups, req.Platform); err != nil {
 		return nil, fmt.Errorf("validate member source groups: %w", err)
 	}
@@ -503,13 +517,23 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		return nil, fmt.Errorf("load department users: %w", err)
 	}
 	selected := selectedSet(req.SelectedUserIDs)
-	if len(selected) > 0 {
+	required := selected
+	restrictToSelected := len(selected) > 0
+	if !restrictToSelected && mapping != nil {
+		required = make(map[int]struct{}, len(mapping.MemberAssignments))
+		for rawUserID := range mapping.MemberAssignments {
+			if userID, parseErr := strconv.Atoi(rawUserID); parseErr == nil && userID > 0 {
+				required[userID] = struct{}{}
+			}
+		}
+	}
+	if len(required) > 0 {
 		byID := make(map[int]*ent.User, len(users))
 		for _, u := range users {
 			byID[u.ID] = u
 		}
 		missing := make([]int, 0)
-		for userID := range selected {
+		for userID := range required {
 			if byID[userID] == nil {
 				missing = append(missing, userID)
 			}
@@ -522,15 +546,20 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 			for _, u := range extra {
 				byID[u.ID] = u
 			}
-		}
-		filtered := make([]*ent.User, 0, len(selected))
-		for userID := range selected {
-			if u := byID[userID]; u != nil {
-				filtered = append(filtered, u)
+			if !restrictToSelected {
+				users = append(users, extra...)
 			}
 		}
-		sort.Slice(filtered, func(i, j int) bool { return filtered[i].ID < filtered[j].ID })
-		users = filtered
+		if restrictToSelected {
+			filtered := make([]*ent.User, 0, len(selected))
+			for userID := range selected {
+				if u := byID[userID]; u != nil {
+					filtered = append(filtered, u)
+				}
+			}
+			sort.Slice(filtered, func(i, j int) bool { return filtered[i].ID < filtered[j].ID })
+			users = filtered
+		}
 	}
 	candidates, err := s.buildCandidates(ctx, p, req.ProviderID, providerConfig.ConfigurationVersion, users, source, groups, req.MemberSources, req.Platform, req.DepartmentID)
 	if err != nil {
@@ -552,13 +581,8 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		count = assignmentCount(req.Assignments)
 	}
 	assignments := allocate(eligible, count)
-	var mapping *ent.RelayGroupMapping
 	var unmanagedMembers []UnmanagedMember
-	if req.ExistingMappingID > 0 {
-		mapping, err = s.client.RelayGroupMapping.Get(ctx, req.ExistingMappingID)
-		if err != nil {
-			return nil, fmt.Errorf("load relay group mapping assignments: %w", err)
-		}
+	if mapping != nil {
 		unmanagedMembers, err = s.loadUnmanagedMembers(ctx, p, mapping)
 		if err != nil {
 			return nil, fmt.Errorf("load unmanaged relay members: %w", err)
