@@ -3469,6 +3469,28 @@ func TestListPlatformGroupsReturnsActivePlatformSummaries(t *testing.T) {
 	}
 }
 
+func TestSub2APIGetGroupReturnsInactiveGroup(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups/42", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %q, want GET", r.Method)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"id": 42, "name": "Department Alpha-openai-01", "platform": "openai", "status": "inactive"},
+		})
+	})
+
+	p := newTestProvider(t, mux).(relay.GroupReader)
+	got, err := p.GetGroup(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("GetGroup() error = %v", err)
+	}
+	if got.ID != 42 || got.Name != "Department Alpha-openai-01" || got.Platform != "openai" {
+		t.Fatalf("GetGroup() = %+v", got)
+	}
+}
+
 func TestGetUserUsageDashboard(t *testing.T) {
 	var loginCount int
 	var meCount int

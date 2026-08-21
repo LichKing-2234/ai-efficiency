@@ -572,6 +572,10 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		if err != nil {
 			return nil, fmt.Errorf("load relay group mapping assignments: %w", err)
 		}
+		groups, err = includePendingCreationGroups(ctx, p, groups, mapping.OperationState, req.Platform)
+		if err != nil {
+			return nil, fmt.Errorf("load pending relay planning targets: %w", err)
+		}
 		unmanagedMembers, err = s.loadUnmanagedMembers(ctx, p, mapping)
 		if err != nil {
 			return nil, fmt.Errorf("load unmanaged relay members: %w", err)
@@ -707,6 +711,55 @@ func restoreRenameRetries(operationState map[string]map[string]string, assignmen
 			}
 		}
 	}
+}
+
+func includePendingCreationGroups(ctx context.Context, provider relay.Provider, groups []relay.Group, operationState map[string]map[string]string, platform string) ([]relay.Group, error) {
+	pending := pendingCreationTargetIDs(operationState)
+	if len(pending) == 0 {
+		return groups, nil
+	}
+	for _, group := range groups {
+		delete(pending, group.ID)
+	}
+	if len(pending) == 0 {
+		return groups, nil
+	}
+	reader, ok := provider.(relay.GroupReader)
+	if !ok {
+		return nil, fmt.Errorf("relay provider does not support pending group reading")
+	}
+	groupIDs := make([]int64, 0, len(pending))
+	for groupID := range pending {
+		groupIDs = append(groupIDs, groupID)
+	}
+	sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
+	for _, groupID := range groupIDs {
+		group, err := reader.GetGroup(ctx, groupID)
+		if err != nil {
+			return nil, fmt.Errorf("get pending group %d: %w", groupID, err)
+		}
+		if group == nil || group.ID != groupID {
+			return nil, fmt.Errorf("get pending group %d: relay returned an unexpected group", groupID)
+		}
+		if !strings.EqualFold(strings.TrimSpace(group.Platform), strings.TrimSpace(platform)) {
+			return nil, fmt.Errorf("pending group %d does not belong to platform %s", groupID, platform)
+		}
+		groups = append(groups, *group)
+	}
+	return groups, nil
+}
+
+func pendingCreationTargetIDs(operationState map[string]map[string]string) map[int64]struct{} {
+	pending := make(map[int64]struct{})
+	for key, entry := range operationState {
+		if !strings.HasPrefix(key, "group:") || entry["creation"] != "pending" {
+			continue
+		}
+		if targetGroupID, err := strconv.ParseInt(entry["target_group_id"], 10, 64); err == nil && targetGroupID > 0 {
+			pending[targetGroupID] = struct{}{}
+		}
+	}
+	return pending
 }
 
 func stableMappingAssignments(mapping *ent.RelayGroupMapping, candidates []Candidate, unmanaged []UnmanagedMember, selected map[int]struct{}, count int, target float64) []Assignment {
@@ -2382,20 +2435,12 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	remover, _ := p.(subscriptionRemover)
 	binder, _ := p.(relay.APIKeyGroupBinder)
 	renamer, supportsRename := p.(relay.GroupRenamer)
-	pendingCreation := make(map[int64]bool)
-	for key, entry := range mapping.OperationState {
-		if !strings.HasPrefix(key, "group:") || entry["creation"] != "pending" {
-			continue
-		}
-		if targetGroupID, parseErr := strconv.ParseInt(entry["target_group_id"], 10, 64); parseErr == nil && targetGroupID > 0 {
-			pendingCreation[targetGroupID] = true
-		}
-	}
+	pendingCreation := pendingCreationTargetIDs(mapping.OperationState)
 	preblockedTargets := make(map[int64]string)
 	groupResults := make([]GroupResult, 0, len(mapping.GroupIDs))
 	for _, assignment := range plan.Assignments {
 		result := GroupResult{Index: assignment.Index, ID: assignment.TargetGroupID, Name: assignment.CurrentTargetGroupName, CurrentName: assignment.CurrentTargetGroupName, Status: "unchanged", Rename: "skipped"}
-		if pendingCreation[assignment.TargetGroupID] {
+		if _, pending := pendingCreation[assignment.TargetGroupID]; pending {
 			result.Creation = "pending"
 		}
 		if assignment.RenameSelected && assignment.TargetGroupName != assignment.CurrentTargetGroupName {
@@ -4183,15 +4228,9 @@ func (s *Service) assignTargets(ctx context.Context, req PreviewRequest, groups 
 }
 
 func proposedExistingGroupNames(departmentName, platform string, groups []relay.Group, existingIDs []int64) map[int64]string {
-	managed := make(map[int64]struct{}, len(existingIDs))
-	for _, groupID := range existingIDs {
-		managed[groupID] = struct{}{}
-	}
-	used := make(map[string]struct{}, len(groups)+len(existingIDs))
+	used := make(map[string]int64, len(groups)+len(existingIDs))
 	for _, group := range groups {
-		if _, owned := managed[group.ID]; !owned {
-			used[group.Name] = struct{}{}
-		}
+		used[group.Name] = group.ID
 	}
 	orderedIDs := append([]int64(nil), existingIDs...)
 	sort.Slice(orderedIDs, func(i, j int) bool { return orderedIDs[i] < orderedIDs[j] })
@@ -4201,10 +4240,10 @@ func proposedExistingGroupNames(departmentName, platform string, groups []relay.
 		for {
 			name := proposedGroupName(departmentName, platform, sequence)
 			sequence++
-			if _, exists := used[name]; exists {
+			if ownerID, exists := used[name]; exists && ownerID != groupID {
 				continue
 			}
-			used[name] = struct{}{}
+			used[name] = groupID
 			result[groupID] = name
 			break
 		}

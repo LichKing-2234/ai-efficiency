@@ -48,6 +48,7 @@ type relayPlanningSearchProvider struct {
 	accountUpdates         int
 	accountFailures        map[int64]error
 	renameFailures         map[int64]error
+	inactiveGroupIDs       map[int64]bool
 	enforceAccountSnapshot bool
 	events                 []string
 	subscriptionReads      atomic.Int64
@@ -60,7 +61,23 @@ func (p *relayPlanningSearchProvider) GetUser(_ context.Context, userID int64) (
 }
 
 func (p *relayPlanningSearchProvider) ListPlatformGroups(context.Context) ([]relay.Group, error) {
-	return append([]relay.Group(nil), p.groups...), nil
+	groups := make([]relay.Group, 0, len(p.groups))
+	for _, group := range p.groups {
+		if !p.inactiveGroupIDs[group.ID] {
+			groups = append(groups, group)
+		}
+	}
+	return groups, nil
+}
+
+func (p *relayPlanningSearchProvider) GetGroup(_ context.Context, groupID int64) (*relay.Group, error) {
+	for index := range p.groups {
+		if p.groups[index].ID == groupID {
+			group := p.groups[index]
+			return &group, nil
+		}
+	}
+	return nil, fmt.Errorf("group %d not found", groupID)
 }
 
 func (p *relayPlanningSearchProvider) ListUsers(context.Context) ([]relay.User, error) {
@@ -110,6 +127,10 @@ func (p *relayPlanningSearchProvider) GetBatchUserUsageStats(_ context.Context, 
 
 func (p *relayPlanningSearchProvider) DuplicateGroup(context.Context, int64, string) (*relay.Group, error) {
 	p.events = append(p.events, "duplicate:100")
+	if p.inactiveGroupIDs == nil {
+		p.inactiveGroupIDs = make(map[int64]bool)
+	}
+	p.inactiveGroupIDs[100] = true
 	for index := range p.groups {
 		if p.groups[index].ID == 100 {
 			return &p.groups[index], nil
@@ -136,6 +157,14 @@ func (p *relayPlanningSearchProvider) RenameGroup(_ context.Context, groupID int
 
 func (p *relayPlanningSearchProvider) UpdateGroupStatus(_ context.Context, groupID int64, status string) error {
 	p.events = append(p.events, fmt.Sprintf("group-status:%d:%s", groupID, status))
+	if p.inactiveGroupIDs == nil {
+		p.inactiveGroupIDs = make(map[int64]bool)
+	}
+	if status == "active" {
+		delete(p.inactiveGroupIDs, groupID)
+	} else {
+		p.inactiveGroupIDs[groupID] = true
+	}
 	return nil
 }
 
@@ -1675,7 +1704,7 @@ func TestRelayPlanningReplanSuggestsStableOptInTargetRenames(t *testing.T) {
 			{ID: 10, Name: "Group Alpha", Platform: "openai"},
 			{ID: 99, Name: "Department Alpha-openai-01", Platform: "openai"},
 			{ID: 101, Name: "Legacy A", Platform: "openai"},
-			{ID: 102, Name: "Legacy B", Platform: "openai"},
+			{ID: 102, Name: "Department Alpha-openai-02", Platform: "openai"},
 		},
 	}
 	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
@@ -1700,11 +1729,11 @@ func TestRelayPlanningReplanSuggestsStableOptInTargetRenames(t *testing.T) {
 		t.Fatalf("assignments = %+v, want two managed Targets", body.Data.Assignments)
 	}
 	first, second := body.Data.Assignments[0], body.Data.Assignments[1]
-	if first.TargetGroupID != 102 || first.CurrentTargetGroupName != "Legacy B" || first.SuggestedTargetGroupName != "Department Alpha-openai-03" || first.TargetGroupName != "Legacy B" || first.RenameSelected {
-		t.Fatalf("first assignment = %+v, want ID 102 stable suggestion 03 and rename unselected", first)
+	if first.TargetGroupID != 102 || first.CurrentTargetGroupName != "Department Alpha-openai-02" || first.SuggestedTargetGroupName != "Department Alpha-openai-04" || first.TargetGroupName != "Department Alpha-openai-02" || first.RenameSelected {
+		t.Fatalf("first assignment = %+v, want ID 102 stable suggestion 04 and rename unselected", first)
 	}
-	if second.TargetGroupID != 101 || second.CurrentTargetGroupName != "Legacy A" || second.SuggestedTargetGroupName != "Department Alpha-openai-02" || second.TargetGroupName != "Legacy A" || second.RenameSelected {
-		t.Fatalf("second assignment = %+v, want ID 101 stable suggestion 02 and rename unselected", second)
+	if second.TargetGroupID != 101 || second.CurrentTargetGroupName != "Legacy A" || second.SuggestedTargetGroupName != "Department Alpha-openai-03" || second.TargetGroupName != "Legacy A" || second.RenameSelected {
+		t.Fatalf("second assignment = %+v, want ID 101 stable suggestion 03 and rename unselected", second)
 	}
 
 	reviewedAssignments := `[{"index":0,"target_group_name":"Custom B","rename_selected":true,"user_ids":[]},{"index":1,"target_group_name":"Ignored A","rename_selected":false,"user_ids":[]}]`
@@ -1723,8 +1752,8 @@ func TestRelayPlanningReplanSuggestsStableOptInTargetRenames(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &reviewedBody); err != nil {
 		t.Fatalf("decode reviewed preview: %v", err)
 	}
-	if len(reviewedBody.Data.TargetSummaries) != 2 || reviewedBody.Data.TargetSummaries[0].Rename == nil || reviewedBody.Data.TargetSummaries[0].Rename.FromName != "Legacy B" || reviewedBody.Data.TargetSummaries[0].Rename.ToName != "Custom B" || reviewedBody.Data.TargetSummaries[1].Rename != nil {
-		t.Fatalf("rename summaries = %+v, want only Legacy B -> Custom B", reviewedBody.Data.TargetSummaries)
+	if len(reviewedBody.Data.TargetSummaries) != 2 || reviewedBody.Data.TargetSummaries[0].Rename == nil || reviewedBody.Data.TargetSummaries[0].Rename.FromName != "Department Alpha-openai-02" || reviewedBody.Data.TargetSummaries[0].Rename.ToName != "Custom B" || reviewedBody.Data.TargetSummaries[1].Rename != nil {
+		t.Fatalf("rename summaries = %+v, want only Department Alpha-openai-02 -> Custom B", reviewedBody.Data.TargetSummaries)
 	}
 	fingerprint := reviewedBody.Data.RelationshipFingerprint
 	executePayload := fmt.Sprintf(`{"assignments":%s,"expected_relationship_fingerprint":%q,"operation_key":"rename-only-1"}`, reviewedAssignments, fingerprint)
@@ -1736,7 +1765,7 @@ func TestRelayPlanningReplanSuggestsStableOptInTargetRenames(t *testing.T) {
 	if response.Code != http.StatusConflict || len(provider.events) != 0 {
 		t.Fatalf("stale current name status/events = %d/%v, want 409 and no Relay writes, body=%s", response.Code, provider.events, response.Body.String())
 	}
-	provider.groups[3].Name = "Legacy B"
+	provider.groups[3].Name = "Department Alpha-openai-02"
 	changedReviewedAssignments := `[{"index":0,"target_group_name":"Other B","rename_selected":true,"user_ids":[]},{"index":1,"rename_selected":false,"user_ids":[]}]`
 	changedReviewedPayload := fmt.Sprintf(`{"assignments":%s,"expected_relationship_fingerprint":%q,"operation_key":"rename-only-changed-review"}`, changedReviewedAssignments, fingerprint)
 	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(changedReviewedPayload))
@@ -1909,6 +1938,7 @@ func TestRelayPlanningRetriesNewTargetAfterRenameWithoutDuplicatingAgain(t *test
 		t.Fatalf("decode retry preview: %v", err)
 	}
 	delete(provider.renameFailures, int64(100))
+	provider.accountFailures = map[int64]error{100: errors.New("synthetic create account failure")}
 	provider.events = nil
 	retryAssignments := `[{"index":0,"target_group_name":"Reviewed Target","rename_selected":true,"user_ids":[]}]`
 	retryPayload := fmt.Sprintf(`{"assignments":%s,"expected_relationship_fingerprint":%q,"operation_key":"create-rename-retry-2"}`, retryAssignments, retryPreview.Data.RelationshipFingerprint)
@@ -1919,9 +1949,38 @@ func TestRelayPlanningRetriesNewTargetAfterRenameWithoutDuplicatingAgain(t *test
 	if response.Code != http.StatusOK {
 		t.Fatalf("retry execute status = %d, want 200, body=%s", response.Code, response.Body.String())
 	}
-	wantEvents := "[rename:100:Reviewed Target account:11:100:1 group-status:100:active]"
+	wantEvents := "[rename:100:Reviewed Target account:11:100:1]"
 	if fmt.Sprint(provider.events) != wantEvents {
-		t.Fatalf("retry events = %v, want %s without another duplicate", provider.events, wantEvents)
+		t.Fatalf("first retry events = %v, want %s without activation or another duplicate", provider.events, wantEvents)
+	}
+	mapping = client.RelayGroupMapping.GetX(ctx, mapping.ID)
+	if mapping.Status != "needs_retry" {
+		t.Fatalf("mapping status after Account failure = %q, want needs_retry", mapping.Status)
+	}
+
+	request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("Account retry preview status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &retryPreview); err != nil {
+		t.Fatalf("decode Account retry preview: %v", err)
+	}
+	delete(provider.accountFailures, int64(100))
+	provider.events = nil
+	retryPayload = fmt.Sprintf(`{"assignments":%s,"expected_relationship_fingerprint":%q,"operation_key":"create-account-retry-3"}`, retryAssignments, retryPreview.Data.RelationshipFingerprint)
+	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(retryPayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("Account retry execute status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	wantEvents = "[account:11:100:1 group-status:100:active]"
+	if fmt.Sprint(provider.events) != wantEvents {
+		t.Fatalf("second retry events = %v, want %s without rename or another duplicate", provider.events, wantEvents)
 	}
 }
 

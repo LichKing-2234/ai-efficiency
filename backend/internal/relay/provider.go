@@ -87,6 +87,11 @@ type PlatformGroupLister interface {
 	ListPlatformGroups(ctx context.Context) ([]Group, error)
 }
 
+// GroupReader resolves one group by stable ID, including inactive groups.
+type GroupReader interface {
+	GetGroup(ctx context.Context, groupID int64) (*Group, error)
+}
+
 // AccountRelationshipReader exposes only the safe account metadata needed to
 // inspect group relationships for one platform.
 type AccountRelationshipReader interface {
