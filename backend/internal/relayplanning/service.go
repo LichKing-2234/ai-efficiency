@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
@@ -145,13 +146,16 @@ type Candidate struct {
 }
 
 type Assignment struct {
-	Index           int             `json:"index"`
-	TotalCost       float64         `json:"total_cost"`
-	UserIDs         []int           `json:"user_ids"`
-	TargetGroupID   int64           `json:"target_group_id,omitempty"`
-	TargetGroupName string          `json:"target_group_name,omitempty"`
-	DesiredAccounts []AccountIntent `json:"desired_accounts,omitempty"`
-	Accounts        []TargetAccount `json:"accounts,omitempty"`
+	Index                    int             `json:"index"`
+	TotalCost                float64         `json:"total_cost"`
+	UserIDs                  []int           `json:"user_ids"`
+	TargetGroupID            int64           `json:"target_group_id,omitempty"`
+	TargetGroupName          string          `json:"target_group_name,omitempty"`
+	CurrentTargetGroupName   string          `json:"current_target_group_name,omitempty"`
+	SuggestedTargetGroupName string          `json:"suggested_target_group_name,omitempty"`
+	RenameSelected           bool            `json:"rename_selected,omitempty"`
+	DesiredAccounts          []AccountIntent `json:"desired_accounts,omitempty"`
+	Accounts                 []TargetAccount `json:"accounts,omitempty"`
 }
 
 type Plan struct {
@@ -182,10 +186,16 @@ type TargetChangeSummary struct {
 	Index           int                  `json:"index"`
 	TargetGroupID   int64                `json:"target_group_id,omitempty"`
 	TargetGroupName string               `json:"target_group_name"`
+	Rename          *GroupRenameChange   `json:"rename,omitempty"`
 	Accounts        []AccountChange      `json:"accounts"`
 	Members         []MemberChange       `json:"members"`
 	Subscriptions   []SubscriptionChange `json:"subscriptions"`
 	APIKeys         []APIKeyChange       `json:"api_keys"`
+}
+
+type GroupRenameChange struct {
+	FromName string `json:"from_name"`
+	ToName   string `json:"to_name"`
 }
 
 type AccountChange struct {
@@ -321,11 +331,14 @@ func (e *StalePlanError) Error() string {
 }
 
 type GroupResult struct {
-	Index  int    `json:"index"`
-	ID     int64  `json:"id,omitempty"`
-	Name   string `json:"name,omitempty"`
-	Status string `json:"status"`
-	Error  string `json:"error,omitempty"`
+	Index       int    `json:"index"`
+	ID          int64  `json:"id,omitempty"`
+	Name        string `json:"name,omitempty"`
+	CurrentName string `json:"current_name,omitempty"`
+	Status      string `json:"status"`
+	Rename      string `json:"rename,omitempty"`
+	Creation    string `json:"creation,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 type MemberResult struct {
@@ -583,12 +596,17 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	assignments := allocate(eligible, count)
 	var unmanagedMembers []UnmanagedMember
 	if mapping != nil {
+		groups, err = includePendingCreationGroups(ctx, p, groups, mapping.OperationState, req.Platform)
+		if err != nil {
+			return nil, fmt.Errorf("load pending relay planning targets: %w", err)
+		}
 		unmanagedMembers, err = s.loadUnmanagedMembers(ctx, p, mapping)
 		if err != nil {
 			return nil, fmt.Errorf("load unmanaged relay members: %w", err)
 		}
 		if len(req.Assignments) == 0 {
 			assignments = stableMappingAssignments(mapping, candidates, unmanagedMembers, selected, count, mapping.WeeklyCostTarget)
+			restoreRenameRetries(mapping.OperationState, assignments)
 		}
 		if len(req.RemovedUserIDs) > 0 {
 			removed := selectedSet(req.RemovedUserIDs)
@@ -619,8 +637,20 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		}
 		addUnmanagedCapacity(assignments, unmanagedMembers)
 	}
-	if err := s.assignTargets(ctx, req, groups, template.Name, assignments); err != nil {
+	departmentName := ""
+	if mapping != nil {
+		departmentName = mapping.DepartmentName
+	}
+	if currentDepartmentName, nameErr := s.departmentName(ctx, req.DepartmentID); nameErr == nil {
+		departmentName = currentDepartmentName
+	} else if mapping == nil {
+		return nil, fmt.Errorf("load relay planning department name: %w", nameErr)
+	}
+	if err := s.assignTargets(ctx, req, groups, departmentName, assignments); err != nil {
 		return nil, fmt.Errorf("assign relay planning targets: %w", err)
+	}
+	if err := validateTargetGroupNames(assignments, groups); err != nil {
+		return nil, fmt.Errorf("validate relay planning target names: %w", err)
 	}
 	if err := assignPreviewAccounts(ctx, p, req.Platform, template.ID, mapping, assignments); err != nil {
 		return nil, fmt.Errorf("assign relay planning Accounts: %w", err)
@@ -676,9 +706,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 			_, plan.Candidates[index].Selected = assigned[plan.Candidates[index].UserID]
 		}
 	}
-	if department, err := s.departmentName(ctx, req.DepartmentID); err == nil {
-		plan.DepartmentName = department
-	}
+	plan.DepartmentName = departmentName
 	if req.ExistingMappingID > 0 {
 		plan.MappingID = req.ExistingMappingID
 	}
@@ -688,6 +716,74 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	}
 	plan.TargetSummaries = buildTargetChangeSummaries(req, plan)
 	return plan, nil
+}
+
+func restoreRenameRetries(operationState map[string]map[string]string, assignments []Assignment) {
+	for _, entry := range operationState {
+		if entry["rename"] != "failed" || entry["target_group_name"] == "" {
+			continue
+		}
+		groupID, err := strconv.ParseInt(entry["target_group_id"], 10, 64)
+		if err != nil || groupID <= 0 {
+			continue
+		}
+		for index := range assignments {
+			if assignments[index].TargetGroupID == groupID {
+				assignments[index].RenameSelected = true
+				assignments[index].TargetGroupName = entry["target_group_name"]
+				break
+			}
+		}
+	}
+}
+
+func includePendingCreationGroups(ctx context.Context, provider relay.Provider, groups []relay.Group, operationState map[string]map[string]string, platform string) ([]relay.Group, error) {
+	pending := pendingCreationTargetIDs(operationState)
+	if len(pending) == 0 {
+		return groups, nil
+	}
+	for _, group := range groups {
+		delete(pending, group.ID)
+	}
+	if len(pending) == 0 {
+		return groups, nil
+	}
+	reader, ok := provider.(relay.GroupReader)
+	if !ok {
+		return nil, fmt.Errorf("relay provider does not support pending group reading")
+	}
+	groupIDs := make([]int64, 0, len(pending))
+	for groupID := range pending {
+		groupIDs = append(groupIDs, groupID)
+	}
+	sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
+	for _, groupID := range groupIDs {
+		group, err := reader.GetGroup(ctx, groupID)
+		if err != nil {
+			return nil, fmt.Errorf("get pending group %d: %w", groupID, err)
+		}
+		if group == nil || group.ID != groupID {
+			return nil, fmt.Errorf("get pending group %d: relay returned an unexpected group", groupID)
+		}
+		if !strings.EqualFold(strings.TrimSpace(group.Platform), strings.TrimSpace(platform)) {
+			return nil, fmt.Errorf("pending group %d does not belong to platform %s", groupID, platform)
+		}
+		groups = append(groups, *group)
+	}
+	return groups, nil
+}
+
+func pendingCreationTargetIDs(operationState map[string]map[string]string) map[int64]struct{} {
+	pending := make(map[int64]struct{})
+	for key, entry := range operationState {
+		if !strings.HasPrefix(key, "group:") || entry["creation"] != "pending" {
+			continue
+		}
+		if targetGroupID, err := strconv.ParseInt(entry["target_group_id"], 10, 64); err == nil && targetGroupID > 0 {
+			pending[targetGroupID] = struct{}{}
+		}
+	}
+	return pending
 }
 
 func stableMappingAssignments(mapping *ent.RelayGroupMapping, candidates []Candidate, unmanaged []UnmanagedMember, selected map[int]struct{}, count int, target float64) []Assignment {
@@ -812,6 +908,10 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 	if !ok {
 		return nil, fmt.Errorf("relay provider does not support group duplication")
 	}
+	renamer, ok := p.(relay.GroupRenamer)
+	if !ok {
+		return nil, fmt.Errorf("relay provider does not support group rename")
+	}
 	statusUpdater, _ := p.(relay.GroupStatusUpdater)
 	accountReader, ok := p.(relay.AccountRelationshipReader)
 	if !ok {
@@ -828,35 +928,60 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 	accountResults := make([]AccountResult, 0)
 	for index := 0; index < plan.GroupCount; index++ {
 		group, duplicateErr := duplicator.DuplicateGroup(ctx, plan.TemplateGroupID, fmt.Sprintf("%s-%d", req.OperationKey, index))
-		result := GroupResult{Index: index, Status: "failed"}
+		result := GroupResult{Index: index, Status: "failed", Rename: "skipped"}
+		if index < len(plan.Assignments) {
+			result.Name = plan.Assignments[index].TargetGroupName
+		}
 		if duplicateErr != nil {
 			result.Error = duplicateErr.Error()
 			groupResults = append(groupResults, result)
 			continue
 		}
 		result.ID = group.ID
-		result.Name = group.Name
+		result.CurrentName = group.Name
+		result.Creation = "pending"
 		createdIDs[index] = group.ID
+		if group.Name != result.Name {
+			renamed, renameErr := renamer.RenameGroup(ctx, group.ID, result.Name)
+			if renameErr != nil {
+				result.Rename = "failed"
+				result.Error = renameErr.Error()
+				groupResults = append(groupResults, result)
+				continue
+			}
+			if renamed == nil || renamed.ID != group.ID || renamed.Name != result.Name {
+				result.Rename = "failed"
+				result.Error = "relay returned an unexpected group after rename"
+				groupResults = append(groupResults, result)
+				continue
+			}
+			group = renamed
+			result.Rename = "succeeded"
+		}
 		if index < len(plan.Assignments) {
 			plan.Assignments[index].TargetGroupID = group.ID
-			plan.Assignments[index].TargetGroupName = group.Name
+			plan.Assignments[index].TargetGroupName = result.Name
 			desiredAccounts[strconv.FormatInt(group.ID, 10)] = append([]AccountIntent(nil), plan.Assignments[index].DesiredAccounts...)
 		}
 		accountMapping := Mapping{ProviderID: plan.ProviderID, Platform: plan.Platform, GroupIDs: []int64{group.ID}, AccountManagementInitialized: true, DesiredAccounts: desiredAccounts}
-		groupAccountResults, blocked := s.applyDesiredAccountRelationships(ctx, p, accountMapping)
+		groupAccountResults, blocked := s.applyDesiredAccountRelationships(ctx, p, accountMapping, nil)
 		accountResults = append(accountResults, groupAccountResults...)
 		if reason := blocked[group.ID]; reason != "" {
 			result.Error = reason
 			groupResults = append(groupResults, result)
 			continue
 		}
-		if statusUpdater != nil {
-			if activateErr := statusUpdater.UpdateGroupStatus(ctx, group.ID, "active"); activateErr != nil {
-				result.Error = activateErr.Error()
-				groupResults = append(groupResults, result)
-				continue
-			}
+		if statusUpdater == nil {
+			result.Error = "relay provider does not support target group activation"
+			groupResults = append(groupResults, result)
+			continue
 		}
+		if activateErr := statusUpdater.UpdateGroupStatus(ctx, group.ID, "active"); activateErr != nil {
+			result.Error = activateErr.Error()
+			groupResults = append(groupResults, result)
+			continue
+		}
+		result.Creation = "completed"
 		result.Status = "succeeded"
 		targetIDs[index] = group.ID
 		groupResults = append(groupResults, result)
@@ -1027,6 +1152,7 @@ type relationshipSnapshot struct {
 	ProviderID      int                              `json:"provider_id"`
 	Platform        string                           `json:"platform"`
 	Groups          []relationshipGroupFact          `json:"groups"`
+	PlannedRenames  []relationshipPlannedRenameFact  `json:"planned_renames"`
 	Accounts        []relationshipAccountFact        `json:"accounts"`
 	PlannedAccounts []relationshipPlannedAccountFact `json:"planned_accounts"`
 	Mappings        []relationshipMappingFact        `json:"mappings"`
@@ -1035,7 +1161,15 @@ type relationshipSnapshot struct {
 
 type relationshipGroupFact struct {
 	ID       int64  `json:"id"`
+	Name     string `json:"name"`
 	Platform string `json:"platform"`
+}
+
+type relationshipPlannedRenameFact struct {
+	TargetIndex   int    `json:"target_index"`
+	TargetGroupID int64  `json:"target_group_id,omitempty"`
+	CurrentName   string `json:"current_name,omitempty"`
+	DesiredName   string `json:"desired_name"`
 }
 
 type relationshipAccountFact struct {
@@ -1108,6 +1242,7 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 	affectedUserIDs := make(map[int]struct{})
 	desiredAccountIDs := make(map[int64]struct{})
 	plannedAccounts := make([]relationshipPlannedAccountFact, 0)
+	plannedRenames := make([]relationshipPlannedRenameFact, 0)
 	relevantGroupIDs := map[int64]struct{}{plan.TemplateGroupID: {}}
 	if plan.SourceGroupID > 0 {
 		relevantGroupIDs[plan.SourceGroupID] = struct{}{}
@@ -1121,6 +1256,9 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 		if assignment.TargetGroupID > 0 {
 			relevantGroupIDs[assignment.TargetGroupID] = struct{}{}
 		}
+		if assignment.TargetGroupID == 0 || (assignment.RenameSelected && assignment.TargetGroupName != assignment.CurrentTargetGroupName) {
+			plannedRenames = append(plannedRenames, relationshipPlannedRenameFact{TargetIndex: assignment.Index, TargetGroupID: assignment.TargetGroupID, CurrentName: assignment.CurrentTargetGroupName, DesiredName: assignment.TargetGroupName})
+		}
 		for _, userID := range assignment.UserIDs {
 			affectedUserIDs[userID] = struct{}{}
 		}
@@ -1131,6 +1269,9 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 			}
 		}
 	}
+	sort.Slice(plannedRenames, func(i, j int) bool {
+		return plannedRenames[i].TargetIndex < plannedRenames[j].TargetIndex
+	})
 	sort.Slice(plannedAccounts, func(i, j int) bool {
 		left, right := plannedAccounts[i], plannedAccounts[j]
 		return left.TargetIndex < right.TargetIndex || (left.TargetIndex == right.TargetIndex && (left.Priority < right.Priority || (left.Priority == right.Priority && left.AccountID < right.AccountID)))
@@ -1161,7 +1302,7 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 		}
 	}
 
-	snapshot := relationshipSnapshot{ProviderID: req.ProviderID, Platform: strings.ToLower(strings.TrimSpace(req.Platform)), PlannedAccounts: plannedAccounts}
+	snapshot := relationshipSnapshot{ProviderID: req.ProviderID, Platform: strings.ToLower(strings.TrimSpace(req.Platform)), PlannedRenames: plannedRenames, PlannedAccounts: plannedAccounts}
 	mappingIDList := make([]int, 0, len(mappingIDs))
 	for mappingID := range mappingIDs {
 		mappingIDList = append(mappingIDList, mappingID)
@@ -1240,7 +1381,7 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 		if _, relevant := relevantGroupIDs[group.ID]; !relevant {
 			continue
 		}
-		snapshot.Groups = append(snapshot.Groups, relationshipGroupFact{ID: group.ID, Platform: strings.ToLower(strings.TrimSpace(group.Platform))})
+		snapshot.Groups = append(snapshot.Groups, relationshipGroupFact{ID: group.ID, Name: strings.TrimSpace(group.Name), Platform: strings.ToLower(strings.TrimSpace(group.Platform))})
 	}
 	sort.Slice(snapshot.Groups, func(i, j int) bool { return snapshot.Groups[i].ID < snapshot.Groups[j].ID })
 
@@ -1403,10 +1544,11 @@ func encodeRelationshipFingerprint(snapshot relationshipSnapshot) (string, error
 	}
 	parts := []any{
 		struct {
-			ProviderID int                     `json:"provider_id"`
-			Platform   string                  `json:"platform"`
-			Groups     []relationshipGroupFact `json:"groups"`
-		}{snapshot.ProviderID, snapshot.Platform, snapshot.Groups},
+			ProviderID     int                             `json:"provider_id"`
+			Platform       string                          `json:"platform"`
+			Groups         []relationshipGroupFact         `json:"groups"`
+			PlannedRenames []relationshipPlannedRenameFact `json:"planned_renames"`
+		}{snapshot.ProviderID, snapshot.Platform, snapshot.Groups, snapshot.PlannedRenames},
 		struct {
 			Accounts        []relationshipAccountFact        `json:"accounts"`
 			PlannedAccounts []relationshipPlannedAccountFact `json:"planned_accounts"`
@@ -1509,6 +1651,9 @@ func buildTargetChangeSummaries(req PreviewRequest, plan *Plan) []TargetChangeSu
 		summaries[index] = TargetChangeSummary{
 			Index: assignment.Index, TargetGroupID: assignment.TargetGroupID, TargetGroupName: assignment.TargetGroupName,
 			Accounts: []AccountChange{}, Members: []MemberChange{}, Subscriptions: []SubscriptionChange{}, APIKeys: []APIKeyChange{},
+		}
+		if assignment.TargetGroupID > 0 && assignment.RenameSelected && assignment.TargetGroupName != assignment.CurrentTargetGroupName {
+			summaries[index].Rename = &GroupRenameChange{FromName: assignment.CurrentTargetGroupName, ToName: assignment.TargetGroupName}
 		}
 	}
 	var currentMapping *relationshipMappingFact
@@ -2313,23 +2458,73 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	assigner, _ := p.(subscriptionAssigner)
 	remover, _ := p.(subscriptionRemover)
 	binder, _ := p.(relay.APIKeyGroupBinder)
+	renamer, supportsRename := p.(relay.GroupRenamer)
+	pendingCreation := pendingCreationTargetIDs(mapping.OperationState)
+	preblockedTargets := make(map[int64]string)
+	groupResults := make([]GroupResult, 0, len(mapping.GroupIDs))
+	for _, assignment := range plan.Assignments {
+		result := GroupResult{Index: assignment.Index, ID: assignment.TargetGroupID, Name: assignment.CurrentTargetGroupName, CurrentName: assignment.CurrentTargetGroupName, Status: "unchanged", Rename: "skipped"}
+		if _, pending := pendingCreation[assignment.TargetGroupID]; pending {
+			result.Creation = "pending"
+		}
+		if assignment.RenameSelected && assignment.TargetGroupName != assignment.CurrentTargetGroupName {
+			result.Name = assignment.TargetGroupName
+			result.Status = "failed"
+			result.Rename = "failed"
+			switch {
+			case !supportsRename:
+				result.Error = "relay provider does not support group rename"
+			default:
+				renamed, renameErr := renamer.RenameGroup(ctx, assignment.TargetGroupID, assignment.TargetGroupName)
+				if renameErr != nil {
+					result.Error = renameErr.Error()
+				} else if renamed == nil || renamed.ID != assignment.TargetGroupID || renamed.Name != assignment.TargetGroupName {
+					result.Error = "relay returned an unexpected group after rename"
+				} else {
+					result.Status = "succeeded"
+					result.Rename = "succeeded"
+				}
+			}
+		}
+		if result.Creation == "pending" && result.Rename == "failed" {
+			preblockedTargets[result.ID] = result.Error
+		}
+		groupResults = append(groupResults, result)
+	}
 	if plan.AccountsReviewed {
 		mapping.AccountManagementInitialized = true
 		mapping.DesiredAccounts = desiredAccountsForGroupIDs(plan.Assignments, mapping.GroupIDs)
 	}
-	accountResults, blockedTargets := s.applyDesiredAccountRelationships(ctx, p, *mapping)
-	memberResults := make([]MemberResult, 0, len(plan.Candidates))
-	groupResults := make([]GroupResult, 0, len(mapping.GroupIDs))
-	for index, groupID := range mapping.GroupIDs {
-		name := ""
-		for _, assignment := range plan.Assignments {
-			if assignment.Index == index {
-				name = assignment.TargetGroupName
-				break
-			}
+	accountResults, blockedTargets := s.applyDesiredAccountRelationships(ctx, p, *mapping, preblockedTargets)
+	statusUpdater, supportsStatusUpdate := p.(relay.GroupStatusUpdater)
+	for index := range groupResults {
+		result := &groupResults[index]
+		if result.Creation != "pending" {
+			continue
 		}
-		groupResults = append(groupResults, GroupResult{Index: index, ID: groupID, Name: name, Status: "unchanged"})
+		if reason := blockedTargets[result.ID]; reason != "" {
+			result.Status = "failed"
+			if result.Error == "" {
+				result.Error = reason
+			}
+			continue
+		}
+		if !supportsStatusUpdate {
+			reason := "relay provider does not support target group activation"
+			blockedTargets[result.ID] = reason
+			result.Status, result.Error = "failed", reason
+			continue
+		}
+		if updateErr := statusUpdater.UpdateGroupStatus(ctx, result.ID, "active"); updateErr != nil {
+			reason := fmt.Sprintf("activate target group %d: %v", result.ID, updateErr)
+			blockedTargets[result.ID] = reason
+			result.Status, result.Error = "failed", reason
+			continue
+		}
+		result.Creation = "completed"
+		result.Status = "succeeded"
 	}
+	memberResults := make([]MemberResult, 0, len(plan.Candidates))
 	oldAssignments := mapping.MemberAssignments
 	oldSources := mapping.MemberSources
 	memberFromGroups := make(map[string]int64)
@@ -2612,8 +2807,11 @@ func (s *Service) resolveMoveSource(ctx context.Context, destination Mapping, us
 	return source, fromGroupID, nil
 }
 
-func (s *Service) applyDesiredAccountRelationships(ctx context.Context, provider relay.Provider, mapping Mapping) ([]AccountResult, map[int64]string) {
-	blocked := make(map[int64]string)
+func (s *Service) applyDesiredAccountRelationships(ctx context.Context, provider relay.Provider, mapping Mapping, preblocked map[int64]string) ([]AccountResult, map[int64]string) {
+	blocked := make(map[int64]string, len(preblocked))
+	for targetGroupID, reason := range preblocked {
+		blocked[targetGroupID] = reason
+	}
 	if !mapping.AccountManagementInitialized {
 		return nil, blocked
 	}
@@ -2628,6 +2826,9 @@ func (s *Service) applyDesiredAccountRelationships(ctx context.Context, provider
 	}
 	results := make([]AccountResult, 0)
 	for _, targetGroupID := range mapping.GroupIDs {
+		if blocked[targetGroupID] != "" {
+			continue
+		}
 		accounts, err := reader.ListAccountsForPlatform(ctx, mapping.Platform)
 		if err != nil {
 			reason := fmt.Sprintf("list account relationships for target group %d: %v", targetGroupID, err)
@@ -2760,6 +2961,15 @@ func executionState(operationKey string, groups []GroupResult, members []MemberR
 		}
 		if group.Name != "" {
 			entry["target_group_name"] = group.Name
+		}
+		if group.CurrentName != "" {
+			entry["current_target_group_name"] = group.CurrentName
+		}
+		if group.Rename != "" {
+			entry["rename"] = group.Rename
+		}
+		if group.Creation != "" {
+			entry["creation"] = group.Creation
 		}
 		if group.Error != "" {
 			entry["error"] = group.Error
@@ -2964,7 +3174,7 @@ func validateAssignments(assignments []Assignment, candidates []Candidate, count
 		if assignment.DesiredAccounts != nil {
 			desiredAccounts = append([]AccountIntent(nil), assignment.DesiredAccounts...)
 		}
-		validated[assignment.Index] = Assignment{Index: assignment.Index, TargetGroupID: assignment.TargetGroupID, TargetGroupName: strings.TrimSpace(assignment.TargetGroupName), UserIDs: make([]int, 0, len(assignment.UserIDs)), DesiredAccounts: desiredAccounts}
+		validated[assignment.Index] = Assignment{Index: assignment.Index, TargetGroupID: assignment.TargetGroupID, TargetGroupName: strings.TrimSpace(assignment.TargetGroupName), RenameSelected: assignment.RenameSelected, UserIDs: make([]int, 0, len(assignment.UserIDs)), DesiredAccounts: desiredAccounts}
 		for _, userID := range assignment.UserIDs {
 			candidate, ok := byUser[userID]
 			if !ok {
@@ -4001,7 +4211,7 @@ func resolveGroupCount(req PreviewRequest, candidates []Candidate) (int, int) {
 	return recommended, count
 }
 
-func (s *Service) assignTargets(ctx context.Context, req PreviewRequest, groups []relay.Group, sourceName string, assignments []Assignment) error {
+func (s *Service) assignTargets(ctx context.Context, req PreviewRequest, groups []relay.Group, departmentName string, assignments []Assignment) error {
 	existingIDs := make([]int64, 0)
 	if req.ExistingMappingID > 0 {
 		mapping, err := s.client.RelayGroupMapping.Get(ctx, req.ExistingMappingID)
@@ -4018,29 +4228,64 @@ func (s *Service) assignTargets(ctx context.Context, req PreviewRequest, groups 
 	if existingCount > len(assignments) {
 		existingCount = len(assignments)
 	}
-	proposedNames := proposedGroupNames(sourceName, groups, len(assignments)-existingCount)
+	existingSuggestions := proposedExistingGroupNames(departmentName, req.Platform, groups, existingIDs)
+	proposedNames := proposedGroupNames(departmentName, req.Platform, groups, len(assignments)-existingCount)
 	for i := range assignments {
 		if i < existingCount {
-			assignments[i].TargetGroupID = existingIDs[i]
-			assignments[i].TargetGroupName = groupByID[existingIDs[i]].Name
+			groupID := existingIDs[i]
+			currentName := groupByID[groupID].Name
+			assignments[i].TargetGroupID = groupID
+			assignments[i].CurrentTargetGroupName = currentName
+			assignments[i].SuggestedTargetGroupName = existingSuggestions[groupID]
+			if !assignments[i].RenameSelected {
+				assignments[i].TargetGroupName = currentName
+			} else if strings.TrimSpace(assignments[i].TargetGroupName) == "" {
+				assignments[i].TargetGroupName = assignments[i].SuggestedTargetGroupName
+			}
 			continue
 		}
-		assignments[i].TargetGroupName = proposedNames[i-existingCount]
+		if strings.TrimSpace(assignments[i].TargetGroupName) == "" {
+			assignments[i].TargetGroupName = proposedNames[i-existingCount]
+		}
 	}
 	return nil
 }
 
-func proposedGroupNames(sourceName string, groups []relay.Group, count int) []string {
+func proposedExistingGroupNames(departmentName, platform string, groups []relay.Group, existingIDs []int64) map[int64]string {
+	used := make(map[string]int64, len(groups)+len(existingIDs))
+	for _, group := range groups {
+		used[group.Name] = group.ID
+	}
+	orderedIDs := append([]int64(nil), existingIDs...)
+	sort.Slice(orderedIDs, func(i, j int) bool { return orderedIDs[i] < orderedIDs[j] })
+	result := make(map[int64]string, len(orderedIDs))
+	sequence := 1
+	for _, groupID := range orderedIDs {
+		for {
+			name := proposedGroupName(departmentName, platform, sequence)
+			sequence++
+			if ownerID, exists := used[name]; exists && ownerID != groupID {
+				continue
+			}
+			used[name] = groupID
+			result[groupID] = name
+			break
+		}
+	}
+	return result
+}
+
+func proposedGroupNames(departmentName, platform string, groups []relay.Group, count int) []string {
 	used := make(map[string]struct{}, len(groups)+count)
 	for _, group := range groups {
 		used[group.Name] = struct{}{}
 	}
 	names := make([]string, 0, count)
-	copyNumber := 1
+	sequence := 1
 	for len(names) < count {
 		for {
-			name := proposedGroupName(sourceName, copyNumber)
-			copyNumber++
+			name := proposedGroupName(departmentName, platform, sequence)
+			sequence++
 			if _, exists := used[name]; exists {
 				continue
 			}
@@ -4052,17 +4297,51 @@ func proposedGroupNames(sourceName string, groups []relay.Group, count int) []st
 	return names
 }
 
-func proposedGroupName(sourceName string, copyNumber int) string {
-	suffix := " (Copy)"
-	if copyNumber > 1 {
-		suffix = fmt.Sprintf(" (Copy %d)", copyNumber)
-	}
-	base := []rune(strings.TrimSpace(sourceName))
+func proposedGroupName(departmentName, platform string, sequence int) string {
+	departmentName = normalizeTargetGroupName(departmentName)
+	platform = strings.ToLower(strings.TrimSpace(platform))
+	suffix := fmt.Sprintf("-%s-%02d", platform, sequence)
+	base := []rune(departmentName)
 	maxBase := maxGroupNameRunes - len([]rune(suffix))
 	if len(base) > maxBase {
 		base = base[:maxBase]
 	}
 	return string(base) + suffix
+}
+
+func normalizeTargetGroupName(name string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(name))
+}
+
+func validateTargetGroupNames(assignments []Assignment, groups []relay.Group) error {
+	owners := make(map[string]int64, len(groups))
+	for _, group := range groups {
+		owners[group.Name] = group.ID
+	}
+	seen := make(map[string]struct{}, len(assignments))
+	for index := range assignments {
+		name := normalizeTargetGroupName(assignments[index].TargetGroupName)
+		if name == "" {
+			return fmt.Errorf("target %d name is required", assignments[index].Index+1)
+		}
+		if len([]rune(name)) > maxGroupNameRunes {
+			return fmt.Errorf("target %d name must not exceed %d characters", assignments[index].Index+1, maxGroupNameRunes)
+		}
+		if ownerID := owners[name]; ownerID > 0 && ownerID != assignments[index].TargetGroupID {
+			return fmt.Errorf("target group name %q is already in use", name)
+		}
+		if _, duplicate := seen[name]; duplicate {
+			return fmt.Errorf("target group name %q is duplicated", name)
+		}
+		seen[name] = struct{}{}
+		assignments[index].TargetGroupName = name
+	}
+	return nil
 }
 
 func candidateByUserID(candidates []Candidate, id int) *Candidate {

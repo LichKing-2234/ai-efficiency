@@ -47,6 +47,8 @@ type relayPlanningSearchProvider struct {
 	accountReads           int
 	accountUpdates         int
 	accountFailures        map[int64]error
+	renameFailures         map[int64]error
+	inactiveGroupIDs       map[int64]bool
 	enforceAccountSnapshot bool
 	events                 []string
 	subscriptionReads      atomic.Int64
@@ -59,7 +61,23 @@ func (p *relayPlanningSearchProvider) GetUser(_ context.Context, userID int64) (
 }
 
 func (p *relayPlanningSearchProvider) ListPlatformGroups(context.Context) ([]relay.Group, error) {
-	return append([]relay.Group(nil), p.groups...), nil
+	groups := make([]relay.Group, 0, len(p.groups))
+	for _, group := range p.groups {
+		if !p.inactiveGroupIDs[group.ID] {
+			groups = append(groups, group)
+		}
+	}
+	return groups, nil
+}
+
+func (p *relayPlanningSearchProvider) GetGroup(_ context.Context, groupID int64) (*relay.Group, error) {
+	for index := range p.groups {
+		if p.groups[index].ID == groupID {
+			group := p.groups[index]
+			return &group, nil
+		}
+	}
+	return nil, fmt.Errorf("group %d not found", groupID)
 }
 
 func (p *relayPlanningSearchProvider) ListUsers(context.Context) ([]relay.User, error) {
@@ -109,11 +127,44 @@ func (p *relayPlanningSearchProvider) GetBatchUserUsageStats(_ context.Context, 
 
 func (p *relayPlanningSearchProvider) DuplicateGroup(context.Context, int64, string) (*relay.Group, error) {
 	p.events = append(p.events, "duplicate:100")
-	return &relay.Group{ID: 100, Name: "Group Alpha Copy", Platform: "openai"}, nil
+	if p.inactiveGroupIDs == nil {
+		p.inactiveGroupIDs = make(map[int64]bool)
+	}
+	p.inactiveGroupIDs[100] = true
+	for index := range p.groups {
+		if p.groups[index].ID == 100 {
+			return &p.groups[index], nil
+		}
+	}
+	p.groups = append(p.groups, relay.Group{ID: 100, Name: "Group Alpha Copy", Platform: "openai"})
+	return &p.groups[len(p.groups)-1], nil
+}
+
+func (p *relayPlanningSearchProvider) RenameGroup(_ context.Context, groupID int64, name string) (*relay.Group, error) {
+	p.events = append(p.events, fmt.Sprintf("rename:%d:%s", groupID, name))
+	if err := p.renameFailures[groupID]; err != nil {
+		return nil, err
+	}
+	for index := range p.groups {
+		if p.groups[index].ID == groupID {
+			p.groups[index].Name = name
+			return &p.groups[index], nil
+		}
+	}
+	p.groups = append(p.groups, relay.Group{ID: groupID, Name: name, Platform: "openai"})
+	return &p.groups[len(p.groups)-1], nil
 }
 
 func (p *relayPlanningSearchProvider) UpdateGroupStatus(_ context.Context, groupID int64, status string) error {
 	p.events = append(p.events, fmt.Sprintf("group-status:%d:%s", groupID, status))
+	if p.inactiveGroupIDs == nil {
+		p.inactiveGroupIDs = make(map[int64]bool)
+	}
+	if status == "active" {
+		delete(p.inactiveGroupIDs, groupID)
+	} else {
+		p.inactiveGroupIDs[groupID] = true
+	}
 	return nil
 }
 
@@ -340,6 +391,9 @@ func TestRelayPlanningPreviewAllowsTargetOnlyExternalUserAndKeepsMissingUsageUnk
 	if body.Data.Assignments[0].TotalCost != 1000 {
 		t.Fatalf("assignment total = %v, want only known usage 1000", body.Data.Assignments[0].TotalCost)
 	}
+	if body.Data.Assignments[0].TargetGroupName != "Department Alpha-openai-01" {
+		t.Fatalf("target name = %q, want department-based suggestion", body.Data.Assignments[0].TargetGroupName)
+	}
 	if !containsRelayPlanningWarning(body.Data.Warnings, "30-day usage is unknown; capacity may be underestimated") {
 		t.Fatalf("warnings = %v, want unknown-usage capacity warning", body.Data.Warnings)
 	}
@@ -347,7 +401,7 @@ func TestRelayPlanningPreviewAllowsTargetOnlyExternalUserAndKeepsMissingUsageUnk
 		t.Fatalf("warnings = %v, source membership must not be required without a source", body.Data.Warnings)
 	}
 
-	editedPayload := fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"source_group_id":0,"weekly_cost_target":2500,"selected_user_ids":[%d,%d],"assignments":[{"index":0,"user_ids":[%d,%d]},{"index":1,"user_ids":[]},{"index":2,"user_ids":[]},{"index":3,"user_ids":[]}]}`, providerConfig.ID, alice.ID, carol.ID, alice.ID, carol.ID)
+	editedPayload := fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"source_group_id":0,"weekly_cost_target":2500,"selected_user_ids":[%d,%d],"assignments":[{"index":0,"target_group_name":"Custom Target","user_ids":[%d,%d]},{"index":1,"user_ids":[]},{"index":2,"user_ids":[]},{"index":3,"user_ids":[]}]}`, providerConfig.ID, alice.ID, carol.ID, alice.ID, carol.ID)
 	request = httptest.NewRequest(http.MethodPost, "/admin/relay-planning/preview", strings.NewReader(editedPayload))
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
@@ -360,6 +414,45 @@ func TestRelayPlanningPreviewAllowsTargetOnlyExternalUserAndKeepsMissingUsageUnk
 	}
 	if body.Data.GroupCount != 4 || len(body.Data.Assignments) != 4 {
 		t.Fatalf("edited target count = %d/%d, want 4/4", body.Data.GroupCount, len(body.Data.Assignments))
+	}
+	if body.Data.Assignments[0].TargetGroupName != "Custom Target" {
+		t.Fatalf("reviewed target name = %q, want administrator edit preserved", body.Data.Assignments[0].TargetGroupName)
+	}
+}
+
+func TestRelayPlanningPreviewRejectsOccupiedTargetName(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().
+		SetName("relay-planning-name-validation-test").
+		SetDisplayName("Relay Planning Name Validation Test").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetEnabled(true).
+		SaveX(ctx)
+	source, run := createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
+	alice := createRelayPlanningDirectoryUser(t, ctx, client, source, run, "dept-alpha", "alice", "alice@example.com", 42)
+	cost := 10.0
+	tokens := int64(100)
+	provider := &relayPlanningSearchProvider{
+		users:         map[int64]*relay.User{42: {ID: 42, Username: "alice", Email: alice.Email}},
+		groups:        []relay.Group{{ID: 10, Name: "Group Alpha", Platform: "openai"}},
+		subscriptions: map[int64][]relay.UserSubscription{42: {}},
+		usage:         map[int64]relay.TeamUserUsageStats{42: {UserID: 42, RangeActualCost: &cost, RangeTotalTokens: &tokens}},
+	}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	handler := NewRelayPlanningHandler(service)
+	router := gin.New()
+	router.POST("/admin/relay-planning/preview", handler.Preview)
+
+	payload := fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"weekly_cost_target":2500,"selected_user_ids":[%d],"assignments":[{"index":0,"target_group_name":"Group Alpha","user_ids":[%d]}]}`, providerConfig.ID, alice.ID, alice.ID)
+	request := httptest.NewRequest(http.MethodPost, "/admin/relay-planning/preview", strings.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "already in use") {
+		t.Fatalf("status/body = %d/%s, want occupied target name rejected", response.Code, response.Body.String())
 	}
 }
 
@@ -511,8 +604,18 @@ func TestRelayPlanningCreateInheritsTemplateAccountsAndAppliesReviewedOverride(t
 		t.Fatalf("default preview priorities = %+v, want duplicate Relay priority 1 preserved", previewBody.Data.Assignments[0].DesiredAccounts)
 	}
 
-	reviewedPreviewPayload := fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"source_group_id":20,"weekly_cost_target":2500,"group_count":1,"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d],"desired_accounts":[{"account_id":12,"priority":1}]}]}`, providerConfig.ID, alice.ID, alice.ID)
+	reviewedPreviewPayload := fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"source_group_id":20,"weekly_cost_target":2500,"group_count":1,"selected_user_ids":[%d],"assignments":[{"index":0,"target_group_name":"Reviewed Target","user_ids":[%d],"desired_accounts":[{"account_id":12,"priority":1}]}]}`, providerConfig.ID, alice.ID, alice.ID)
 	fingerprint := previewRelayPlanningFingerprint(t, router, "/admin/relay-planning/preview", reviewedPreviewPayload)
+	provider.groups = append(provider.groups, relay.Group{ID: 99, Name: "Reviewed Target", Platform: "openai"})
+	claimedNamePayload := fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"source_group_id":20,"weekly_cost_target":2500,"group_count":1,"selected_user_ids":[%d],"assignments":[{"index":0,"target_group_name":"Reviewed Target","user_ids":[%d],"desired_accounts":[{"account_id":12,"priority":1}]}],"expected_relationship_fingerprint":%q,"operation_key":"create-accounts-claimed-name"}`, providerConfig.ID, alice.ID, alice.ID, fingerprint)
+	request = httptest.NewRequest(http.MethodPost, "/admin/relay-planning/execute", strings.NewReader(claimedNamePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "stale_relay_plan") || len(provider.events) != 0 {
+		t.Fatalf("claimed name status/events = %d/%v, want stale 409 and no Relay writes, body=%s", response.Code, provider.events, response.Body.String())
+	}
+	provider.groups = provider.groups[:len(provider.groups)-1]
 	stalePayload := fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"source_group_id":20,"weekly_cost_target":2500,"group_count":1,"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d],"desired_accounts":[{"account_id":11,"priority":1}]}],"expected_relationship_fingerprint":%q,"operation_key":"create-accounts-stale"}`, providerConfig.ID, alice.ID, alice.ID, fingerprint)
 	request = httptest.NewRequest(http.MethodPost, "/admin/relay-planning/execute", strings.NewReader(stalePayload))
 	request.Header.Set("Content-Type", "application/json")
@@ -522,7 +625,7 @@ func TestRelayPlanningCreateInheritsTemplateAccountsAndAppliesReviewedOverride(t
 		t.Fatalf("stale reviewed Accounts status/events = %d/%v, want 409 and no Relay writes, body=%s", response.Code, provider.events, response.Body.String())
 	}
 
-	payload := fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"source_group_id":20,"weekly_cost_target":2500,"group_count":1,"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d],"desired_accounts":[{"account_id":12,"priority":1}]}],"expected_relationship_fingerprint":%q,"operation_key":"create-accounts-1"}`, providerConfig.ID, alice.ID, alice.ID, fingerprint)
+	payload := fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"source_group_id":20,"weekly_cost_target":2500,"group_count":1,"selected_user_ids":[%d],"assignments":[{"index":0,"target_group_name":"Reviewed Target","user_ids":[%d],"desired_accounts":[{"account_id":12,"priority":1}]}],"expected_relationship_fingerprint":%q,"operation_key":"create-accounts-1"}`, providerConfig.ID, alice.ID, alice.ID, fingerprint)
 	request = httptest.NewRequest(http.MethodPost, "/admin/relay-planning/execute", strings.NewReader(payload))
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
@@ -530,13 +633,14 @@ func TestRelayPlanningCreateInheritsTemplateAccountsAndAppliesReviewedOverride(t
 	if response.Code != http.StatusOK {
 		t.Fatalf("create status = %d, want 200, body=%s", response.Code, response.Body.String())
 	}
-	wantPrefix := []string{"duplicate:100", "account:12:100:1", "group-status:100:active", "subscription-add:42:100"}
+	wantPrefix := []string{"duplicate:100", "rename:100:Reviewed Target", "account:12:100:1", "group-status:100:active", "subscription-add:42:100"}
 	if len(provider.events) < len(wantPrefix) || fmt.Sprint(provider.events[:len(wantPrefix)]) != fmt.Sprint(wantPrefix) {
 		t.Fatalf("creation events = %v, want prefix %v", provider.events, wantPrefix)
 	}
 	var body struct {
 		Data struct {
-			Mapping *relayplanning.Mapping `json:"mapping"`
+			Groups  []relayplanning.GroupResult `json:"groups"`
+			Mapping *relayplanning.Mapping      `json:"mapping"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
@@ -544,6 +648,9 @@ func TestRelayPlanningCreateInheritsTemplateAccountsAndAppliesReviewedOverride(t
 	}
 	if body.Data.Mapping == nil || len(body.Data.Mapping.AccountPools) != 1 || len(body.Data.Mapping.AccountPools[0].Current) != 1 || body.Data.Mapping.AccountPools[0].Current[0].ID != 12 {
 		t.Fatalf("creation Account readback = %+v, want only reviewed Account 12 bound to the new Target", body.Data.Mapping)
+	}
+	if len(body.Data.Groups) != 1 || body.Data.Groups[0].Name != "Reviewed Target" || body.Data.Groups[0].Rename != "succeeded" {
+		t.Fatalf("creation Group result = %+v, want reviewed name and successful rename", body.Data.Groups)
 	}
 	persisted := client.RelayGroupMapping.Query().OnlyX(ctx)
 	if !persisted.AccountManagementInitialized {
@@ -751,7 +858,9 @@ func TestRelayPlanningReplanUsesBatchSubscriptionDirectory(t *testing.T) {
 	}
 	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
 	router := gin.New()
-	router.POST("/admin/relay-planning/mappings/:id/replan", NewRelayPlanningHandler(service).Replan)
+	handler := NewRelayPlanningHandler(service)
+	router.POST("/admin/relay-planning/mappings/:id/replan", handler.Replan)
+	router.POST("/admin/relay-planning/mappings/:id/replan/execute", handler.ReplanExecute)
 
 	request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID), strings.NewReader(`{}`))
 	request.Header.Set("Content-Type", "application/json")
@@ -1567,6 +1676,311 @@ func TestRelayPlanningFingerprintTracksReviewedRelationshipFacts(t *testing.T) {
 	client.User.UpdateOneID(alice.ID).SetRelayUserID(43).SaveX(ctx)
 	if got := previewRelayPlanningFingerprint(t, router, path, payload); got == baseline {
 		t.Fatal("local User to Relay ID change did not change fingerprint")
+	}
+}
+
+func TestRelayPlanningReplanSuggestsStableOptInTargetRenames(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().
+		SetName("relay-planning-rename-preview-test").
+		SetDisplayName("Relay Planning Rename Preview Test").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetEnabled(true).
+		SaveX(ctx)
+	createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
+	mapping := client.RelayGroupMapping.Create().
+		SetProviderID(providerConfig.ID).
+		SetDepartmentExternalID("dept-alpha").
+		SetDepartmentName("Department Alpha").
+		SetPlatform("openai").
+		SetTemplateGroupID(10).
+		SetGroupIds([]int64{102, 101}).
+		SetWeeklyCostTarget(2500).
+		SaveX(ctx)
+	provider := &relayPlanningSearchProvider{
+		groups: []relay.Group{
+			{ID: 10, Name: "Group Alpha", Platform: "openai"},
+			{ID: 99, Name: "Department Alpha-openai-01", Platform: "openai"},
+			{ID: 101, Name: "Legacy A", Platform: "openai"},
+			{ID: 102, Name: "Department Alpha-openai-02", Platform: "openai"},
+		},
+	}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	router := gin.New()
+	handler := NewRelayPlanningHandler(service)
+	router.POST("/admin/relay-planning/mappings/:id/replan", handler.Replan)
+	router.POST("/admin/relay-planning/mappings/:id/replan/execute", handler.ReplanExecute)
+	request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID), strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Data relayplanning.Plan `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Data.Assignments) != 2 {
+		t.Fatalf("assignments = %+v, want two managed Targets", body.Data.Assignments)
+	}
+	first, second := body.Data.Assignments[0], body.Data.Assignments[1]
+	if first.TargetGroupID != 102 || first.CurrentTargetGroupName != "Department Alpha-openai-02" || first.SuggestedTargetGroupName != "Department Alpha-openai-04" || first.TargetGroupName != "Department Alpha-openai-02" || first.RenameSelected {
+		t.Fatalf("first assignment = %+v, want ID 102 stable suggestion 04 and rename unselected", first)
+	}
+	if second.TargetGroupID != 101 || second.CurrentTargetGroupName != "Legacy A" || second.SuggestedTargetGroupName != "Department Alpha-openai-03" || second.TargetGroupName != "Legacy A" || second.RenameSelected {
+		t.Fatalf("second assignment = %+v, want ID 101 stable suggestion 03 and rename unselected", second)
+	}
+
+	reviewedAssignments := `[{"index":0,"target_group_name":"Custom B","rename_selected":true,"user_ids":[]},{"index":1,"target_group_name":"Ignored A","rename_selected":false,"user_ids":[]}]`
+	previewPayload := `{"assignments":` + reviewedAssignments + `}`
+	path := fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID)
+	request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(previewPayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("reviewed preview status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	var reviewedBody struct {
+		Data relayplanning.Plan `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &reviewedBody); err != nil {
+		t.Fatalf("decode reviewed preview: %v", err)
+	}
+	if len(reviewedBody.Data.TargetSummaries) != 2 || reviewedBody.Data.TargetSummaries[0].Rename == nil || reviewedBody.Data.TargetSummaries[0].Rename.FromName != "Department Alpha-openai-02" || reviewedBody.Data.TargetSummaries[0].Rename.ToName != "Custom B" || reviewedBody.Data.TargetSummaries[1].Rename != nil {
+		t.Fatalf("rename summaries = %+v, want only Department Alpha-openai-02 -> Custom B", reviewedBody.Data.TargetSummaries)
+	}
+	fingerprint := reviewedBody.Data.RelationshipFingerprint
+	executePayload := fmt.Sprintf(`{"assignments":%s,"expected_relationship_fingerprint":%q,"operation_key":"rename-only-1"}`, reviewedAssignments, fingerprint)
+	provider.groups[3].Name = "Changed Elsewhere"
+	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(executePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict || len(provider.events) != 0 {
+		t.Fatalf("stale current name status/events = %d/%v, want 409 and no Relay writes, body=%s", response.Code, provider.events, response.Body.String())
+	}
+	provider.groups[3].Name = "Department Alpha-openai-02"
+	changedReviewedAssignments := `[{"index":0,"target_group_name":"Other B","rename_selected":true,"user_ids":[]},{"index":1,"rename_selected":false,"user_ids":[]}]`
+	changedReviewedPayload := fmt.Sprintf(`{"assignments":%s,"expected_relationship_fingerprint":%q,"operation_key":"rename-only-changed-review"}`, changedReviewedAssignments, fingerprint)
+	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(changedReviewedPayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict || len(provider.events) != 0 {
+		t.Fatalf("changed reviewed name status/events = %d/%v, want 409 and no Relay writes, body=%s", response.Code, provider.events, response.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(executePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("rename-only status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	if fmt.Sprint(provider.events) != "[rename:102:Custom B]" {
+		t.Fatalf("rename-only events = %v, want only selected Target renamed", provider.events)
+	}
+	var executeBody struct {
+		Data relayplanning.ExecutionResult `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &executeBody); err != nil {
+		t.Fatalf("decode rename-only response: %v", err)
+	}
+	if len(executeBody.Data.Groups) != 2 || executeBody.Data.Groups[0].Name != "Custom B" || executeBody.Data.Groups[0].Rename != "succeeded" || executeBody.Data.Groups[1].Name != "Legacy A" || executeBody.Data.Groups[1].Rename != "skipped" {
+		t.Fatalf("rename-only Group results = %+v", executeBody.Data.Groups)
+	}
+	persisted := client.RelayGroupMapping.GetX(ctx, mapping.ID)
+	if fmt.Sprint(persisted.GroupIds) != "[102 101]" {
+		t.Fatalf("mapping Group IDs = %v, want stable IDs", persisted.GroupIds)
+	}
+}
+
+func TestRelayPlanningRenameFailureDoesNotBlockAccountsAndReplanRestoresRetry(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().
+		SetName("relay-planning-rename-retry-test").
+		SetDisplayName("Relay Planning Rename Retry Test").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetEnabled(true).
+		SaveX(ctx)
+	createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
+	mapping := client.RelayGroupMapping.Create().
+		SetProviderID(providerConfig.ID).
+		SetDepartmentExternalID("dept-alpha").
+		SetDepartmentName("Department Alpha").
+		SetPlatform("openai").
+		SetTemplateGroupID(10).
+		SetGroupIds([]int64{101}).
+		SetAccountManagementInitialized(true).
+		SetDesiredAccounts(map[string][]map[string]int64{"101": {{"account_id": 11, "priority": 1}}}).
+		SetWeeklyCostTarget(2500).
+		SaveX(ctx)
+	provider := &relayPlanningSearchProvider{
+		groups:         []relay.Group{{ID: 10, Name: "Group Alpha", Platform: "openai"}, {ID: 101, Name: "Legacy Target", Platform: "openai"}},
+		accounts:       []relay.Account{{ID: 11, Name: "Account Alpha", Platform: "openai"}},
+		renameFailures: map[int64]error{101: errors.New("synthetic rename failure")},
+	}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	handler := NewRelayPlanningHandler(service)
+	router := gin.New()
+	path := fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID)
+	router.POST("/admin/relay-planning/mappings/:id/replan", handler.Replan)
+	router.POST("/admin/relay-planning/mappings/:id/replan/execute", handler.ReplanExecute)
+	reviewedAssignments := `[{"index":0,"target_group_name":"Reviewed Target","rename_selected":true,"user_ids":[]}]`
+	fingerprint := previewRelayPlanningFingerprint(t, router, path, `{"assignments":`+reviewedAssignments+`}`)
+	executePayload := fmt.Sprintf(`{"assignments":%s,"expected_relationship_fingerprint":%q,"operation_key":"rename-retry-1"}`, reviewedAssignments, fingerprint)
+	request := httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(executePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("first execute status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	if fmt.Sprint(provider.events) != "[rename:101:Reviewed Target account:11:101:1]" {
+		t.Fatalf("first execute events = %v, want Account reconcile after failed rename", provider.events)
+	}
+	var firstBody struct {
+		Data relayplanning.ExecutionResult `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &firstBody); err != nil {
+		t.Fatalf("decode first execute: %v", err)
+	}
+	if len(firstBody.Data.Groups) != 1 || firstBody.Data.Groups[0].Rename != "failed" || len(firstBody.Data.Accounts) != 1 || firstBody.Data.Accounts[0].Status != "succeeded" || firstBody.Data.Mapping == nil || firstBody.Data.Mapping.Status != "needs_retry" {
+		t.Fatalf("first execute result = %+v, want independent rename failure and Account success", firstBody.Data)
+	}
+
+	request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("retry preview status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	var retryPreview struct {
+		Data relayplanning.Plan `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &retryPreview); err != nil {
+		t.Fatalf("decode retry preview: %v", err)
+	}
+	if len(retryPreview.Data.Assignments) != 1 || !retryPreview.Data.Assignments[0].RenameSelected || retryPreview.Data.Assignments[0].TargetGroupName != "Reviewed Target" {
+		t.Fatalf("retry assignment = %+v, want unresolved rename restored", retryPreview.Data.Assignments)
+	}
+
+	delete(provider.renameFailures, int64(101))
+	provider.events = nil
+	retryAssignments := `[{"index":0,"target_group_name":"Reviewed Target","rename_selected":true,"user_ids":[]}]`
+	retryPayload := fmt.Sprintf(`{"assignments":%s,"expected_relationship_fingerprint":%q,"operation_key":"rename-retry-2"}`, retryAssignments, retryPreview.Data.RelationshipFingerprint)
+	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(retryPayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || fmt.Sprint(provider.events) != "[rename:101:Reviewed Target]" {
+		t.Fatalf("retry status/events = %d/%v, want rename only, body=%s", response.Code, provider.events, response.Body.String())
+	}
+	updated := client.RelayGroupMapping.GetX(ctx, mapping.ID)
+	if updated.Status != "active" {
+		t.Fatalf("mapping status = %q, want active after successful retry", updated.Status)
+	}
+}
+
+func TestRelayPlanningRetriesNewTargetAfterRenameWithoutDuplicatingAgain(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().SetName("relay-planning-create-rename-retry-test").SetDisplayName("Relay Planning Create Rename Retry Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-admin-key").SetEnabled(true).SaveX(ctx)
+	createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
+	provider := &relayPlanningSearchProvider{
+		groups:         []relay.Group{{ID: 10, Name: "Group Alpha", Platform: "openai"}},
+		accounts:       []relay.Account{{ID: 11, Name: "Account Alpha", Platform: "openai", GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 10, Priority: 1}}}},
+		renameFailures: map[int64]error{100: errors.New("synthetic create rename failure")},
+	}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	handler := NewRelayPlanningHandler(service)
+	router := gin.New()
+	router.POST("/admin/relay-planning/preview", handler.Preview)
+	router.POST("/admin/relay-planning/execute", handler.Execute)
+	router.POST("/admin/relay-planning/mappings/:id/replan", handler.Replan)
+	router.POST("/admin/relay-planning/mappings/:id/replan/execute", handler.ReplanExecute)
+	assignments := `[{"index":0,"target_group_name":"Reviewed Target","user_ids":[]}]`
+	previewPayload := fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"weekly_cost_target":2500,"assignments":%s}`, providerConfig.ID, assignments)
+	fingerprint := previewRelayPlanningFingerprint(t, router, "/admin/relay-planning/preview", previewPayload)
+	executePayload := fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"weekly_cost_target":2500,"assignments":%s,"expected_relationship_fingerprint":%q,"operation_key":"create-rename-retry-1"}`, providerConfig.ID, assignments, fingerprint)
+	request := httptest.NewRequest(http.MethodPost, "/admin/relay-planning/execute", strings.NewReader(executePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || fmt.Sprint(provider.events) != "[duplicate:100 rename:100:Reviewed Target]" {
+		t.Fatalf("first execute status/events = %d/%v, body=%s", response.Code, provider.events, response.Body.String())
+	}
+	mapping := client.RelayGroupMapping.Query().OnlyX(ctx)
+	if fmt.Sprint(mapping.GroupIds) != "[100]" || mapping.Status != "needs_retry" {
+		t.Fatalf("failed creation mapping = groups:%v status:%s", mapping.GroupIds, mapping.Status)
+	}
+
+	path := fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID)
+	request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("retry preview status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	var retryPreview struct {
+		Data relayplanning.Plan `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &retryPreview); err != nil {
+		t.Fatalf("decode retry preview: %v", err)
+	}
+	delete(provider.renameFailures, int64(100))
+	provider.accountFailures = map[int64]error{100: errors.New("synthetic create account failure")}
+	provider.events = nil
+	retryAssignments := `[{"index":0,"target_group_name":"Reviewed Target","rename_selected":true,"user_ids":[]}]`
+	retryPayload := fmt.Sprintf(`{"assignments":%s,"expected_relationship_fingerprint":%q,"operation_key":"create-rename-retry-2"}`, retryAssignments, retryPreview.Data.RelationshipFingerprint)
+	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(retryPayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("retry execute status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	wantEvents := "[rename:100:Reviewed Target account:11:100:1]"
+	if fmt.Sprint(provider.events) != wantEvents {
+		t.Fatalf("first retry events = %v, want %s without activation or another duplicate", provider.events, wantEvents)
+	}
+	mapping = client.RelayGroupMapping.GetX(ctx, mapping.ID)
+	if mapping.Status != "needs_retry" {
+		t.Fatalf("mapping status after Account failure = %q, want needs_retry", mapping.Status)
+	}
+
+	request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("Account retry preview status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &retryPreview); err != nil {
+		t.Fatalf("decode Account retry preview: %v", err)
+	}
+	delete(provider.accountFailures, int64(100))
+	provider.events = nil
+	retryPayload = fmt.Sprintf(`{"assignments":%s,"expected_relationship_fingerprint":%q,"operation_key":"create-account-retry-3"}`, retryAssignments, retryPreview.Data.RelationshipFingerprint)
+	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(retryPayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("Account retry execute status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	wantEvents = "[account:11:100:1 group-status:100:active]"
+	if fmt.Sprint(provider.events) != wantEvents {
+		t.Fatalf("second retry events = %v, want %s without rename or another duplicate", provider.events, wantEvents)
 	}
 }
 

@@ -1958,6 +1958,31 @@ func (s *sub2apiRelay) ListPlatformGroups(ctx context.Context) ([]Group, error) 
 	return groups, nil
 }
 
+func (s *sub2apiRelay) GetGroup(ctx context.Context, groupID int64) (*Group, error) {
+	if groupID <= 0 {
+		return nil, fmt.Errorf("relay: get group: group id is required")
+	}
+	resp, err := s.doAdminRequest(ctx, http.MethodGet, fmt.Sprintf("/api/v1/admin/groups/%d", groupID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("relay: get group: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: get group: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+	}
+	var result struct {
+		envelopeStatus
+		Data Group `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("relay: get group: decode: %w", err)
+	}
+	if !result.ok() || result.Data.ID <= 0 {
+		return nil, fmt.Errorf("relay: get group: request failed")
+	}
+	return &result.Data, nil
+}
+
 // DuplicateGroup creates an inactive copy of a group through sub2api's
 // idempotent admin endpoint. The operation key is supplied by the caller so a
 // retried planning execution cannot create a second copy.
@@ -1991,6 +2016,39 @@ func (s *sub2apiRelay) DuplicateGroup(ctx context.Context, sourceGroupID int64, 
 	}
 	if !result.ok() || result.Data.ID <= 0 {
 		return nil, fmt.Errorf("relay: duplicate group: request failed")
+	}
+	return &result.Data, nil
+}
+
+func (s *sub2apiRelay) RenameGroup(ctx context.Context, groupID int64, name string) (*Group, error) {
+	if groupID <= 0 {
+		return nil, fmt.Errorf("relay: rename group: group id is required")
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, fmt.Errorf("relay: rename group: name is required")
+	}
+	payload, err := json.Marshal(map[string]string{"name": name})
+	if err != nil {
+		return nil, fmt.Errorf("relay: rename group: marshal: %w", err)
+	}
+	resp, err := s.doAdminRequest(ctx, http.MethodPut, fmt.Sprintf("/api/v1/admin/groups/%d", groupID), bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("relay: rename group: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: rename group: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+	}
+	var result struct {
+		envelopeStatus
+		Data Group `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("relay: rename group: decode: %w", err)
+	}
+	if !result.ok() || result.Data.ID <= 0 {
+		return nil, fmt.Errorf("relay: rename group: request failed")
 	}
 	return &result.Data, nil
 }

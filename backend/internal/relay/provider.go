@@ -87,6 +87,11 @@ type PlatformGroupLister interface {
 	ListPlatformGroups(ctx context.Context) ([]Group, error)
 }
 
+// GroupReader resolves one group by stable ID, including inactive groups.
+type GroupReader interface {
+	GetGroup(ctx context.Context, groupID int64) (*Group, error)
+}
+
 // AccountRelationshipReader exposes only the safe account metadata needed to
 // inspect group relationships for one platform.
 type AccountRelationshipReader interface {
@@ -103,6 +108,11 @@ type AccountRelationshipUpdater interface {
 // key is passed through to the upstream idempotency contract.
 type GroupDuplicator interface {
 	DuplicateGroup(ctx context.Context, sourceGroupID int64, operationKey string) (*Group, error)
+}
+
+// GroupRenamer changes only the display name of an existing group.
+type GroupRenamer interface {
+	RenameGroup(ctx context.Context, groupID int64, name string) (*Group, error)
 }
 
 // GroupStatusUpdater activates or deactivates an existing group. It is kept as

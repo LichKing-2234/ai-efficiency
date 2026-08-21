@@ -19,6 +19,7 @@ import {
   searchRelayPlanningUsers,
   type RelayPlanningAccount,
   type RelayPlanningAccountIntent,
+	type RelayPlanningExecution,
   type RelayPlanningRequest,
   type RelayPlanningMapping,
 	type RelayPlanningMemberAction,
@@ -39,6 +40,7 @@ const executing = ref(false)
 const confirmDialogOpen = ref(false)
 const error = ref('')
 const plan = ref<RelayPlanningPlan | null>(null)
+const lastExecution = ref<RelayPlanningExecution | null>(null)
 const activeMappingID = ref<number | null>(null)
 const selectedUserIDs = ref<Set<number>>(new Set())
 const selectedUnmanagedRelayIDs = ref<Set<number>>(new Set())
@@ -89,6 +91,8 @@ const unassignedCandidates = computed(() => plan.value?.candidates.filter((candi
 const accountMapping = computed(() => mappings.value.find((mapping) => mapping.id === accountMappingID.value) ?? null)
 const rebindGroups = computed(() => (providers.value.find((item) => item.id === rebindContext.provider_id)?.groups ?? [])
   .filter((group) => group.platform === rebindContext.platform))
+const targetNameErrors = computed(() => Object.fromEntries((plan.value?.assignments ?? []).map((assignment) => [assignment.index, validateTargetName(assignment.index)])))
+const hasTargetNameErrors = computed(() => Object.values(targetNameErrors.value).some(Boolean))
 
 function translateWarning(warning: string): string {
   void locale.value
@@ -130,6 +134,12 @@ function translateMappingStatus(status: string): string {
   if (status === 'needs_retry') return t('relayPlanning.needsRetry')
   if (status === 'active') return t('relayPlanning.active')
   return status
+}
+
+function renameResultText(status?: string): string {
+	if (status === 'succeeded') return t('relayPlanning.renameSucceeded')
+	if (status === 'failed') return t('relayPlanning.renameNeedsRetry')
+	return t('relayPlanning.renameSkipped')
 }
 
 function summaryUser(userID?: number, relayUserID?: number): string {
@@ -189,9 +199,36 @@ function assignmentPayload() {
     user_ids: [...(assignment.user_ids ?? [])],
     target_group_id: assignment.target_group_id,
     target_group_name: assignment.target_group_name,
+		rename_selected: Boolean(assignment.rename_selected),
 		desired_accounts: (assignment.accounts ?? []).map((account, index) => ({ account_id: account.id, priority: Number(account.priority || index + 1) })),
 		accounts: [],
   }))
+}
+
+function validateTargetName(targetIndex: number): string {
+	const assignment = plan.value?.assignments.find((item) => item.index === targetIndex)
+	if (!assignment) return ''
+	const name = String(assignment.target_group_name || '').trim()
+	if (!name) return t('relayPlanning.targetNameRequired')
+	if (Array.from(name).length > 100) return t('relayPlanning.targetNameTooLong')
+	if ((plan.value?.assignments ?? []).some((item) => item.index !== targetIndex && String(item.target_group_name || '').trim() === name)) return t('relayPlanning.targetNameDuplicate')
+	if ((provider.value?.groups ?? []).some((group) => group.group_name === name && Number(group.group_id) !== Number(assignment.target_group_id || 0))) return t('relayPlanning.targetNameOccupied')
+	return ''
+}
+
+function toggleTargetRename(targetIndex: number, checked: boolean) {
+	const assignment = plan.value?.assignments.find((item) => item.index === targetIndex)
+	if (!assignment?.target_group_id) return
+	assignment.rename_selected = checked
+	assignment.target_group_name = checked ? assignment.suggested_target_group_name || assignment.current_target_group_name || '' : assignment.current_target_group_name || ''
+}
+
+function applyAllTargetNames() {
+	for (const assignment of plan.value?.assignments ?? []) {
+		if (!assignment.target_group_id) continue
+		assignment.rename_selected = true
+		assignment.target_group_name = assignment.suggested_target_group_name || assignment.current_target_group_name || ''
+	}
 }
 
 function memberSourcesPayload(userIDs = selectedUserIDs.value): Record<string, number> {
@@ -257,6 +294,7 @@ function addSuggestedGroup() {
     accounts,
   })
   plan.value.group_count = plan.value.assignments.length
+	recalculateProposedTargetNames()
 }
 
 function removeSuggestedGroup(targetIndex: number) {
@@ -270,7 +308,26 @@ function removeSuggestedGroup(targetIndex: number) {
       target_group_name: assignment.index === index ? assignment.target_group_name : '',
     }))
   plan.value.group_count = plan.value.assignments.length
+	recalculateProposedTargetNames()
   recalculateAssignments()
+}
+
+function recalculateProposedTargetNames() {
+	if (!plan.value || activeMappingID.value) return
+	const used = new Set((provider.value?.groups ?? []).map((group) => group.group_name))
+	let sequence = 1
+	for (const assignment of plan.value.assignments) {
+		while (true) {
+			const suffix = `-${plan.value.platform.trim().toLowerCase()}-${String(sequence).padStart(2, '0')}`
+			sequence += 1
+			const department = Array.from(plan.value.department_name.trim().replace(/[\u0000-\u001f\u007f-\u009f]/g, ''))
+			const name = `${department.slice(0, Math.max(0, 100 - Array.from(suffix).length)).join('')}${suffix}`
+			if (used.has(name)) continue
+			used.add(name)
+			assignment.target_group_name = name
+			break
+		}
+	}
 }
 
 function moveCandidate(userID: number, targetIndex: number | null) {
@@ -515,6 +572,7 @@ async function preview() {
   loading.value = true
   error.value = ''
   try {
+		lastExecution.value = null
     const response = await previewRelayPlan(request)
     const nextPlan = response.data.data ?? null
     suggestedGroupAccountDefaults.value = (nextPlan?.assignments[0]?.accounts ?? []).map((account) => ({ ...account }))
@@ -674,6 +732,7 @@ async function executeConfirmed() {
     const response = activeMappingID.value
       ? await executeRelayReplan(activeMappingID.value, request)
       : await executeRelayPlan(request)
+		lastExecution.value = response.data.data ?? null
     applyPlan(response.data.data?.plan ?? plan.value)
     operationKey.value = request.operation_key
     await loadMappings()
@@ -695,6 +754,7 @@ async function executeConfirmed() {
 
 async function replan(mapping: RelayPlanningMapping) {
   try {
+		lastExecution.value = null
     const retryRemovedUserIDs = retryRemovalUserIDs(mapping)
     const retryActions = retryMemberActions(mapping)
     const retryRequest = {
@@ -723,6 +783,7 @@ async function replan(mapping: RelayPlanningMapping) {
 function resetPlan() {
 	clearSearchState()
   plan.value = null
+	lastExecution.value = null
   activeMappingID.value = null
   selectedUserIDs.value = new Set()
   selectedUnmanagedRelayIDs.value = new Set()
@@ -853,7 +914,7 @@ onBeforeUnmount(clearSearchState)
         </div>
         <div class="mt-4 flex flex-wrap gap-2">
           <el-button data-testid="preview-allocation" type="primary" :loading="loading" @click="preview">{{ t('relayPlanning.preview') }}</el-button>
-          <el-button v-if="plan" data-testid="open-execution-confirmation" :icon="Check" type="success" :loading="confirming" :disabled="plan.group_count === 0 || (!activeMappingID && selectedUserIDs.size === 0 && selectedUnmanagedRelayIDs.size === 0)" @click="requestExecution">{{ t('relayPlanning.confirmExecute') }}</el-button>
+          <el-button v-if="plan" data-testid="open-execution-confirmation" :icon="Check" type="success" :loading="confirming" :disabled="plan.group_count === 0 || hasTargetNameErrors || (!activeMappingID && selectedUserIDs.size === 0 && selectedUnmanagedRelayIDs.size === 0)" @click="requestExecution">{{ t('relayPlanning.confirmExecute') }}</el-button>
         </div>
         <el-alert v-if="error" class="mt-4" type="error" :closable="false" :title="error" />
       </section>
@@ -895,10 +956,16 @@ onBeforeUnmount(clearSearchState)
           </el-table>
         </div>
         <div class="rounded-lg border border-slate-200 bg-white p-4">
-          <div class="mb-2 flex items-center justify-between gap-3"><div class="text-sm font-semibold text-slate-900">{{ t('relayPlanning.proposedGroups') }}</div><el-button v-if="!activeMappingID" data-testid="add-suggested-group" size="small" type="primary" plain :icon="Plus" @click="addSuggestedGroup">{{ t('relayPlanning.addSuggestedGroup') }}</el-button></div>
+          <div class="mb-2 flex items-center justify-between gap-3"><div class="text-sm font-semibold text-slate-900">{{ t('relayPlanning.proposedGroups') }}</div><el-button v-if="activeMappingID" data-testid="apply-all-target-names" size="small" type="primary" plain @click="applyAllTargetNames">{{ t('relayPlanning.applyAllNames') }}</el-button><el-button v-else data-testid="add-suggested-group" size="small" type="primary" plain :icon="Plus" @click="addSuggestedGroup">{{ t('relayPlanning.addSuggestedGroup') }}</el-button></div>
           <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             <div v-for="assignment in plan.assignments" :key="assignment.index" :data-testid="`suggested-group-${assignment.index}`" class="rounded-md border border-slate-200 p-3">
               <div class="flex justify-between gap-3 text-sm font-medium"><span class="min-w-0 break-words">{{ assignment.target_group_name || `${t('relayPlanning.group')} ${assignment.index + 1}` }}<span v-if="assignment.target_group_id" class="text-slate-500"> (#{{ assignment.target_group_id }})</span></span><span class="flex shrink-0 items-center gap-2"><span>${{ assignment.total_cost.toFixed(2) }}</span><el-tooltip v-if="!activeMappingID && plan.assignments.length > 1" :content="t('relayPlanning.removeSuggestedGroup')"><el-button :data-testid="`remove-suggested-group-${assignment.index}`" circle size="small" type="danger" plain :icon="Delete" :aria-label="t('relayPlanning.removeSuggestedGroup')" @click="removeSuggestedGroup(assignment.index)" /></el-tooltip></span></div>
+				<div v-if="activeMappingID" class="mt-3 space-y-2">
+					<div class="grid gap-1 text-xs text-slate-500"><div>{{ t('relayPlanning.currentName') }}: <span class="break-words text-slate-700">{{ assignment.current_target_group_name }}</span></div><div>{{ t('relayPlanning.suggestedName') }}: <span class="break-words text-slate-700">{{ assignment.suggested_target_group_name }}</span></div></div>
+					<el-checkbox :data-testid="`rename-target-${assignment.index}`" :model-value="Boolean(assignment.rename_selected)" @change="(value) => toggleTargetRename(assignment.index, value === true)">{{ t('relayPlanning.renameTarget') }}</el-checkbox>
+				</div>
+				<el-input v-if="!activeMappingID || assignment.rename_selected" v-model="assignment.target_group_name" :data-testid="`target-name-${assignment.index}`" class="mt-2" maxlength="100" show-word-limit :placeholder="t('relayPlanning.targetName')" />
+				<div v-if="targetNameErrors[assignment.index]" class="mt-1 text-xs text-red-600">{{ targetNameErrors[assignment.index] }}</div>
               <div class="mt-2 text-xs text-slate-500">{{ t('relayPlanning.memberCount', { count: assignment.user_ids?.length ?? 0 }) }}</div>
 				<div class="mt-3 border-t border-slate-200 pt-3">
 					<div class="text-xs font-semibold text-slate-500">{{ t('relayPlanning.desiredAccounts') }}</div>
@@ -949,6 +1016,16 @@ onBeforeUnmount(clearSearchState)
           </div>
         </div>
       </section>
+
+		<section v-if="lastExecution" class="border-y border-slate-200 bg-white py-4">
+			<div class="mb-3 text-sm font-semibold text-slate-900">{{ t('relayPlanning.executionResults') }}</div>
+			<div class="divide-y divide-slate-200">
+				<div v-for="group in lastExecution.groups" :key="group.index" class="flex flex-wrap items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
+					<div class="min-w-0"><div class="break-words text-sm font-medium text-slate-900">{{ group.name || t('relayPlanning.groupNumber', { id: group.id ?? group.index + 1 }) }}</div><div v-if="group.current_name && group.current_name !== group.name" class="break-words text-xs text-slate-500">{{ group.current_name }} -> {{ group.name }}</div><div v-if="group.error" class="mt-1 break-words text-xs text-red-600">{{ group.error }}</div></div>
+					<el-tag :type="group.rename === 'failed' ? 'danger' : group.rename === 'succeeded' ? 'success' : 'info'">{{ renameResultText(group.rename) }}</el-tag>
+				</div>
+			</div>
+		</section>
 
       <section class="rounded-lg border border-slate-200 bg-white p-4">
         <div class="mb-2 flex items-center justify-between"><div class="text-sm font-semibold text-slate-900">{{ t('relayPlanning.managedMappings') }}</div><span class="text-xs text-slate-500">{{ t('relayPlanning.groupIdsAuthoritative') }}</span></div>
@@ -1025,7 +1102,7 @@ onBeforeUnmount(clearSearchState)
         :close-on-click-modal="!executing"
         :close-on-press-escape="!executing"
       >
-        <el-alert type="warning" :closable="false" show-icon :title="t('relayPlanning.executeWarning')" />
+		<el-alert type="warning" :closable="false" show-icon :title="t(activeMappingID ? 'relayPlanning.executeReviewedWarning' : 'relayPlanning.executeWarning')" />
         <dl v-if="plan" class="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
           <dt class="text-slate-500">{{ t('relayPlanning.templateGroup') }}</dt><dd class="min-w-0 break-words font-medium text-slate-900">{{ plan.template_group_name }} (#{{ plan.template_group_id }})</dd>
           <dt class="text-slate-500">{{ t('relayPlanning.migrationSource') }}</dt><dd class="min-w-0 break-words font-medium text-slate-900">{{ plan.source_group_name }} (#{{ plan.source_group_id }})</dd>
@@ -1039,6 +1116,7 @@ onBeforeUnmount(clearSearchState)
 			<div v-if="plan?.target_summaries?.length" class="mt-5 max-h-72 divide-y divide-slate-200 overflow-y-auto border-y border-slate-200">
 				<section v-for="summary in plan.target_summaries" :key="summary.index" class="py-3 first:pt-0 last:pb-0">
 					<h4 class="text-sm font-semibold text-slate-900">{{ summary.target_group_name || t('relayPlanning.groupNumber', { id: summary.target_group_id ?? summary.index + 1 }) }}</h4>
+					<div v-if="summary.rename" class="mt-2"><div class="text-xs font-semibold text-slate-500">{{ t('relayPlanning.renameChanges') }}</div><div class="mt-1 break-words text-sm text-slate-700">{{ summary.rename.from_name }} -> {{ summary.rename.to_name }}</div></div>
 					<div v-if="summary.accounts.length" class="mt-2">
 						<div class="text-xs font-semibold text-slate-500">{{ t('relayPlanning.accountChanges') }}</div>
 						<ul class="mt-1 space-y-1 text-sm text-slate-700"><li v-for="change in summary.accounts" :key="`${change.account_id}-${change.action}`">{{ accountChangeText(change) }}</li></ul>
@@ -1059,7 +1137,7 @@ onBeforeUnmount(clearSearchState)
 			</div>
 			<template #footer>
           <el-button :disabled="executing" @click="confirmDialogOpen = false">{{ t('relayPlanning.cancel') }}</el-button>
-          <el-button data-testid="confirm-execution" type="danger" :loading="executing" @click="executeConfirmed">{{ t('relayPlanning.createAndMigrate') }}</el-button>
+          <el-button data-testid="confirm-execution" type="danger" :loading="executing" @click="executeConfirmed">{{ t(activeMappingID ? 'relayPlanning.applyReviewedChanges' : 'relayPlanning.createAndMigrate') }}</el-button>
 			</template>
 		</el-dialog>
 

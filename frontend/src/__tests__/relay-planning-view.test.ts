@@ -51,14 +51,14 @@ const plan = {
     index: 0,
     total_cost: 1200,
     user_ids: [1],
-    target_group_name: 'Group Alpha (Copy)',
+    target_group_name: 'SDK Framework-openai-01',
 		desired_accounts: [{ account_id: 11, priority: 1 }],
 		accounts: [{ id: 11, name: 'Account Alpha', platform: 'openai', type: 'oauth', status: 'active', schedulable: true, priority: 1 }],
 	}],
 	target_summaries: [{
 		index: 0,
 		target_group_id: 101,
-		target_group_name: 'Group Alpha (Copy)',
+		target_group_name: 'SDK Framework-openai-01',
 		accounts: [
 			{ account_id: 11, action: 'add', new_priority: 1 },
 			{ account_id: 12, action: 'remove', old_priority: 1 },
@@ -183,7 +183,7 @@ describe('RelayPlanningView', () => {
 		expect(wrapper.text()).toContain('Account #11 is reused across Target Groups #101, #102')
 	})
 
-  it('uses the automatic group recommendation and shows expected relay names', async () => {
+	it('uses the automatic group recommendation and shows expected relay names', async () => {
     const { wrapper, relayPlanning } = await mountView()
 
     expect(wrapper.text()).toContain('30-day cost target per group (USD)')
@@ -192,8 +192,106 @@ describe('RelayPlanningView', () => {
     await fillAndPreview(wrapper)
 
     expect(relayPlanning.previewRelayPlan).toHaveBeenCalledWith(expect.not.objectContaining({ group_count: expect.anything() }))
-    expect(wrapper.text()).toContain('Group Alpha (Copy)')
-  })
+		expect(wrapper.text()).toContain('SDK Framework-openai-01')
+	})
+
+	it('edits a proposed Target name before confirmation', async () => {
+		const { wrapper, relayPlanning } = await mountView()
+		await fillAndPreview(wrapper)
+
+		await wrapper.get('[data-testid="target-name-0"]').setValue('Custom Target')
+		await wrapper.get('[data-testid="open-execution-confirmation"]').trigger('click')
+		await flushPromises()
+
+		expect(relayPlanning.previewRelayPlan).toHaveBeenLastCalledWith(expect.objectContaining({
+			assignments: [expect.objectContaining({ target_group_name: 'Custom Target' })],
+		}))
+	})
+
+	it('blocks confirmation when a reviewed Target name is already occupied', async () => {
+		const { wrapper } = await mountView()
+		await fillAndPreview(wrapper)
+
+		await wrapper.get('[data-testid="target-name-0"]').setValue('Group Alpha')
+		expect(wrapper.text()).toContain('This Relay Group name is already in use')
+		expect(wrapper.get('[data-testid="open-execution-confirmation"]').attributes('disabled')).toBeDefined()
+	})
+
+	it('applies existing Target rename suggestions explicitly and confirms a rename-only plan', async () => {
+		const mapping = {
+			id: 9,
+			provider_id: 7,
+			department_id: 'dept-alpha',
+			department_name: 'SDK Framework',
+			platform: 'openai',
+			template_group_id: 42,
+			template_group_name: 'Group Alpha',
+			source_group_id: 0,
+			source_group_name: '',
+			group_ids: [101, 102],
+			status: 'active',
+			weekly_cost_target: 2500,
+			account_management_initialized: false,
+			desired_accounts: {},
+			account_pools: [],
+			updated_at: '2026-08-20T00:00:00Z',
+		}
+		const replan = structuredClone({
+			...plan,
+			mapping_id: 9,
+			group_count: 2,
+			candidates: [],
+			assignments: [
+				{ index: 0, total_cost: 0, user_ids: [], target_group_id: 101, target_group_name: 'Legacy A', current_target_group_name: 'Legacy A', suggested_target_group_name: 'SDK Framework-openai-01', rename_selected: false, desired_accounts: [], accounts: [] },
+				{ index: 1, total_cost: 0, user_ids: [], target_group_id: 102, target_group_name: 'Legacy B', current_target_group_name: 'Legacy B', suggested_target_group_name: 'SDK Framework-openai-02', rename_selected: false, desired_accounts: [], accounts: [] },
+			],
+			target_summaries: [],
+		})
+		const reviewed = structuredClone({
+			...replan,
+			assignments: [
+				{ ...replan.assignments[0], target_group_name: 'SDK Framework-openai-01', rename_selected: true },
+				{ ...replan.assignments[1], target_group_name: 'Custom B', rename_selected: true },
+			],
+			target_summaries: [
+				{ index: 0, target_group_id: 101, target_group_name: 'SDK Framework-openai-01', rename: { from_name: 'Legacy A', to_name: 'SDK Framework-openai-01' }, accounts: [], members: [], subscriptions: [], api_keys: [] },
+				{ index: 1, target_group_id: 102, target_group_name: 'Custom B', rename: { from_name: 'Legacy B', to_name: 'Custom B' }, accounts: [], members: [], subscriptions: [], api_keys: [] },
+			],
+		})
+		const { wrapper, relayPlanning } = await mountView([mapping])
+		relayPlanning.previewRelayReplan.mockResolvedValueOnce({ data: { data: replan } }).mockResolvedValueOnce({ data: { data: reviewed } })
+		relayPlanning.executeRelayReplan.mockResolvedValue({ data: { data: { plan: reviewed, groups: [
+			{ index: 0, id: 101, name: 'SDK Framework-openai-01', current_name: 'Legacy A', status: 'succeeded', rename: 'succeeded' },
+			{ index: 1, id: 102, name: 'Custom B', current_name: 'Legacy B', status: 'failed', rename: 'failed', error: 'synthetic rename failure' },
+		], accounts: [], members: [] } } })
+
+		await wrapper.get('[data-testid="replan-mapping-9"]').trigger('click')
+		await flushPromises()
+		expect((wrapper.get('[data-testid="rename-target-0"] input').element as HTMLInputElement).checked).toBe(false)
+		await wrapper.get('[data-testid="apply-all-target-names"]').trigger('click')
+		await wrapper.get('[data-testid="target-name-1"]').setValue('Custom B')
+		await wrapper.get('[data-testid="open-execution-confirmation"]').trigger('click')
+		await flushPromises()
+
+		expect(relayPlanning.previewRelayReplan).toHaveBeenLastCalledWith(9, expect.objectContaining({
+			selected_user_ids: [],
+			assignments: [
+				expect.objectContaining({ target_group_id: 101, target_group_name: 'SDK Framework-openai-01', rename_selected: true }),
+				expect.objectContaining({ target_group_id: 102, target_group_name: 'Custom B', rename_selected: true }),
+			],
+		}))
+		expect(wrapper.text()).toContain('Legacy A -> SDK Framework-openai-01')
+		expect(wrapper.text()).toContain('Legacy B -> Custom B')
+		await wrapper.get('[data-testid="confirm-execution"]').trigger('click')
+		await flushPromises()
+		expect(relayPlanning.executeRelayReplan).toHaveBeenCalledWith(9, expect.objectContaining({
+			selected_user_ids: [],
+			assignments: expect.arrayContaining([expect.objectContaining({ rename_selected: true })]),
+		}))
+		expect(wrapper.text()).toContain('Rename succeeded')
+		expect(wrapper.text()).toContain('Rename needs retry')
+		expect(wrapper.text()).toContain('synthetic rename failure')
+	})
 
   it('adds and removes suggested groups before confirmation', async () => {
     const { wrapper, relayPlanning } = await mountView()
