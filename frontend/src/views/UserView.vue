@@ -48,6 +48,7 @@ const providerTestResult = ref<UserProviderTestResult | null>(null)
 const providerTestRequestId = ref(0)
 const copiedCommandKey = ref('')
 const credentialMutationLoading = ref(false)
+const credentialMutationRequestId = ref(0)
 const selectedConfigMethod = ref<'manual' | 'automatic' | 'ccswitch' | null>(null)
 const manualConfigConfirmKey = ref('')
 type SecretAction = 'reveal' | 'copy' | 'regenerate'
@@ -88,23 +89,31 @@ const onboardingState = computed(() => {
   return 'key_ready_without_test' as const
 })
 const primaryOnboardingActionLabel = computed(() => {
-  if (onboardingState.value === 'group_selected_without_key') return t('user.createMyApiKey')
+  if (onboardingState.value === 'group_selected_without_key') return t('user.createKeyAndContinue')
   if (selectedKeyValue.value) {
-    return t('user.runConnectionTest')
+    return t('user.nextConnectionTest')
   }
   return ''
 })
+const connectionTestActionLabel = computed(() =>
+  providerTestResult.value && !providerTestResult.value.success
+    ? t('user.retryConnectionTest')
+    : t('user.runConnectionTest')
+)
 const showConfigurationMethods = computed(() => !!selectedKeyValue.value)
-const onboardingActiveStep = computed(() => {
-  if (!selectedKeyValue.value) return 0
-  if (!providerTestResult.value?.success) return 1
-  return 2
-})
 const onboardingVisibleStep = ref(0)
-const onboardingReachableStep = computed(() => showConfigurationMethods.value ? 2 : onboardingActiveStep.value)
+const onboardingReachableStep = computed(() => showConfigurationMethods.value ? 2 : 0)
 
 function selectOnboardingStep(step: number) {
   if (step <= onboardingReachableStep.value) onboardingVisibleStep.value = step
+}
+
+function handlePrimaryOnboardingAction() {
+  if (selectedKeyValue.value) {
+    onboardingVisibleStep.value = 1
+    return
+  }
+  void handleCreateKey()
 }
 
 const ccSwitchImports = computed(() => {
@@ -239,7 +248,13 @@ function resetPostKeyFlow() {
   selectedConfigMethod.value = preferredConfigMethod()
 }
 
+function invalidateCredentialMutation() {
+  credentialMutationRequestId.value += 1
+  credentialMutationLoading.value = false
+}
+
 function selectProvider(providerId: number) {
+  invalidateCredentialMutation()
   secretConfirmAction.value = null
   manualConfigConfirmKey.value = ''
   selectedProviderId.value = providerId
@@ -250,6 +265,7 @@ function selectProvider(providerId: number) {
 }
 
 function selectGroup(groupId: string) {
+  invalidateCredentialMutation()
   secretConfirmAction.value = null
   manualConfigConfirmKey.value = ''
   selectedGroupId.value = groupId
@@ -308,6 +324,8 @@ async function loadProviderModels() {
 }
 
 async function loadProviders() {
+  invalidateCredentialMutation()
+  onboardingVisibleStep.value = 0
   loading.value = true
   error.value = ''
   try {
@@ -402,10 +420,13 @@ function updateSelectedGroupCredential(apiKeyId: number, name: string, status: s
 async function handleCreateKey() {
   if (!selectedProvider.value || !selectedGroup.value) return
   if (credentialMutationLoading.value) return
+  const requestId = credentialMutationRequestId.value + 1
+  credentialMutationRequestId.value = requestId
   credentialMutationLoading.value = true
   error.value = ''
   try {
     const res = await createGroupCredential(selectedProvider.value.id, selectedGroup.value.group_id)
+    if (credentialMutationRequestId.value !== requestId) return
     const data = res.data.data
     if (!data) return
     sessionSecrets[selectedSecretKey.value] = data.secret
@@ -414,9 +435,12 @@ async function handleCreateKey() {
     resetPostKeyFlow()
     onboardingVisibleStep.value = 1
   } catch (err: any) {
+    if (credentialMutationRequestId.value !== requestId) return
     error.value = err.response?.data?.message || err.message || t('user.createKeyFailed')
   } finally {
-    credentialMutationLoading.value = false
+    if (credentialMutationRequestId.value === requestId) {
+      credentialMutationLoading.value = false
+    }
   }
 }
 
@@ -447,10 +471,13 @@ async function confirmSecretAction() {
 async function handleRegenerateKey() {
   if (!selectedProvider.value || !selectedGroup.value) return
   if (credentialMutationLoading.value) return
+  const requestId = credentialMutationRequestId.value + 1
+  credentialMutationRequestId.value = requestId
   credentialMutationLoading.value = true
   error.value = ''
   try {
     const res = await regenerateGroupCredential(selectedProvider.value.id, selectedGroup.value.group_id)
+    if (credentialMutationRequestId.value !== requestId) return
     const data = res.data.data
     if (!data) return
     sessionSecrets[selectedSecretKey.value] = data.secret
@@ -458,9 +485,12 @@ async function handleRegenerateKey() {
     updateSelectedGroupCredential(data.api_key_id, data.name, data.status, data.secret)
     resetPostKeyFlow()
   } catch (err: any) {
+    if (credentialMutationRequestId.value !== requestId) return
     error.value = err.response?.data?.message || err.message || t('user.regenerateKeyFailed')
   } finally {
-    credentialMutationLoading.value = false
+    if (credentialMutationRequestId.value === requestId) {
+      credentialMutationLoading.value = false
+    }
   }
 }
 
@@ -560,10 +590,6 @@ async function handleTestProvider() {
     }
   }
 }
-
-watch(onboardingActiveStep, (step) => {
-  if (step === 0) onboardingVisibleStep.value = 0
-}, { immediate: true })
 
 watch(
   () => [
@@ -719,8 +745,7 @@ onBeforeUnmount(() => {
               <ElSteps
                 data-testid="onboarding-steps"
                 :data-direction="horizontalSteps ? 'horizontal' : 'vertical'"
-                :active="onboardingActiveStep"
-                finish-status="success"
+                :active="onboardingVisibleStep"
                 :simple="horizontalSteps"
                 :direction="horizontalSteps ? 'horizontal' : 'vertical'"
                 :class="horizontalSteps ? 'w-full' : 'h-44'"
@@ -780,13 +805,13 @@ onBeforeUnmount(() => {
                     <p v-if="selectedProvider" class="mt-2 text-sm text-gray-500">{{ selectedProvider.base_url }}</p>
                   </div>
                   <ElButton
-                    v-if="onboardingState === 'group_selected_without_key'"
+                    v-if="selectedGroup"
                     data-testid="primary-onboarding-action"
                     class="w-full xl:w-auto xl:shrink-0"
                     type="primary"
                     :loading="credentialMutationLoading"
                     :disabled="credentialMutationLoading"
-                    @click="handleCreateKey"
+                    @click="handlePrimaryOnboardingAction"
                   >
                     {{ credentialMutationLoading ? t('user.creatingKey') : primaryOnboardingActionLabel }}
                   </ElButton>
@@ -840,17 +865,27 @@ onBeforeUnmount(() => {
                     <h3 class="text-base font-semibold text-gray-900">{{ t('user.apiKeyStepTitle') }}</h3>
                     <p class="mt-1 text-sm text-gray-600">{{ t('user.apiKeyStageHelp') }}</p>
                   </div>
-                  <ElButton
-                    v-if="selectedKeyValue"
-                    data-testid="user-provider-test-run"
-                    class="w-full xl:w-auto xl:shrink-0"
-                    type="primary"
-                    :loading="providerTestLoading"
-                    :disabled="providerTestLoading || !canTestProvider"
-                    @click="handleTestProvider"
-                  >
-                    {{ providerTestLoading ? t('user.testing') : primaryOnboardingActionLabel }}
-                  </ElButton>
+                  <div v-if="selectedKeyValue" class="flex w-full flex-col gap-2 xl:w-auto xl:shrink-0 xl:flex-row">
+                    <ElButton
+                      data-testid="user-provider-test-run"
+                      class="!ml-0 w-full xl:w-auto"
+                      :type="providerTestResult?.success ? undefined : 'primary'"
+                      :loading="providerTestLoading"
+                      :disabled="providerTestLoading || !canTestProvider"
+                      @click="handleTestProvider"
+                    >
+                      {{ providerTestLoading ? t('user.testing') : connectionTestActionLabel }}
+                    </ElButton>
+                    <ElButton
+                      v-if="providerTestResult?.success"
+                      data-testid="onboarding-next-configuration"
+                      class="!ml-0 w-full xl:w-auto"
+                      type="primary"
+                      @click="selectOnboardingStep(2)"
+                    >
+                      {{ t('user.nextConfigureTools') }}
+                    </ElButton>
+                  </div>
                 </div>
 
                 <div v-if="selectedGroup" class="mt-4 space-y-4">
