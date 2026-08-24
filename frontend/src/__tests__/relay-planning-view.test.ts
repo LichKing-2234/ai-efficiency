@@ -346,10 +346,12 @@ describe('RelayPlanningView', () => {
 		const operationKey = relayPlanning.executeRelayMappingRenewal.mock.calls[0][1].operation_key
 		expect(wrapper.text()).toContain('Group Active Renamed')
 		expect(warning).toHaveBeenCalledWith('Relay relationships changed. Review the refreshed renewal and confirm again.')
+		expect(wrapper.get('[data-testid="renewal-review-alert"]').text()).toContain('Review the refreshed renewal')
 
 		await wrapper.get('[data-testid="confirm-renewal"]').trigger('click')
 		await flushPromises()
 		expect(relayPlanning.executeRelayMappingRenewal.mock.calls[1][1]).toEqual(expect.objectContaining({ expected_relationship_fingerprint: 'v2:refreshed-renewal', operation_key: operationKey }))
+		expect(wrapper.find('[data-testid="renewal-review-alert"]').exists()).toBe(false)
 	})
 
 	it('refetches authoritative facts before retry when the post-write preview was unavailable', async () => {
@@ -391,6 +393,7 @@ describe('RelayPlanningView', () => {
 		expect(relayPlanning.executeRelayMappingRenewal).toHaveBeenCalledTimes(1)
 		expect(wrapper.text()).toContain('Group Expired Refreshed')
 		expect(warning).toHaveBeenCalledWith('Relay relationships changed. Review the refreshed renewal and confirm again.')
+		expect(wrapper.get('[data-testid="renewal-review-alert"]').text()).toContain('Review the refreshed renewal')
 
 		await wrapper.get('[data-testid="retry-renewal-failures"]').trigger('click')
 		await flushPromises()
@@ -405,6 +408,7 @@ describe('RelayPlanningView', () => {
 		expect(wrapper.get('[data-testid="renewal-result-1"]').text()).toContain('Succeeded')
 		expect(wrapper.get('[data-testid="renewal-result-2"]').text()).toContain('Succeeded')
 		expect(wrapper.text()).not.toContain('synthetic refresh unavailable')
+		expect(wrapper.find('[data-testid="renewal-review-alert"]').exists()).toBe(false)
 	})
 
 	it('allows the department field to shrink inside the planning grid', async () => {

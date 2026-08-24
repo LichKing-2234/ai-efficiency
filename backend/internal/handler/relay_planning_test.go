@@ -1015,6 +1015,9 @@ func TestRelayPlanningMappingRenewalPreviewShowsManagedSubscriptionOutcomesWitho
 	provider.subscriptions[41][0].ExpiresAt = activeExpiry.Add(-time.Hour)
 	assertFingerprintChanged("expected subscription expiry")
 	provider.subscriptions[41] = append([]relay.UserSubscription(nil), originalAliceSubscriptions...)
+	provider.subscriptions[41][1].ExpiresAt = activeExpiry.Add(-time.Hour)
+	assertFingerprintChanged("unexpected subscription drift expiry")
+	provider.subscriptions[41] = append([]relay.UserSubscription(nil), originalAliceSubscriptions...)
 	provider.subscriptions[41][0].Status = "suspended"
 	assertFingerprintChanged("expected subscription status")
 	provider.subscriptions[41] = append([]relay.UserSubscription(nil), originalAliceSubscriptions...)
@@ -2183,6 +2186,11 @@ func TestRelayPlanningFingerprintTracksReviewedRelationshipFacts(t *testing.T) {
 	path := fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID)
 	payload := fmt.Sprintf(`{"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d]}]}`, alice.ID, alice.ID)
 	baseline := previewRelayPlanningFingerprint(t, router, path, payload)
+	provider.subscriptions[42][0].ExpiresAt = time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC)
+	if got := previewRelayPlanningFingerprint(t, router, path, payload); got != baseline {
+		t.Fatalf("generic planning expiry-only fingerprint = %q, want unchanged %q", got, baseline)
+	}
+	provider.subscriptions[42][0].ExpiresAt = time.Time{}
 
 	provider.groups[2].Platform = "anthropic"
 	if got := previewRelayPlanningFingerprint(t, router, path, payload); got == baseline {

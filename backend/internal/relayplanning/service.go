@@ -57,10 +57,11 @@ type Service struct {
 	resolver      ProviderResolver
 	users         *adminusers.Service
 	prewarmReader prewarmUsageReader
+	now           func() time.Time
 }
 
 func NewService(client *ent.Client, resolver ProviderResolver, prewarmReader *teamusage.PrewarmReader) *Service {
-	return &Service{client: client, resolver: resolver, users: adminusers.NewService(client), prewarmReader: prewarmReader}
+	return &Service{client: client, resolver: resolver, users: adminusers.NewService(client), prewarmReader: prewarmReader, now: time.Now}
 }
 
 type PreviewRequest struct {
@@ -1232,13 +1233,13 @@ func normalizePreviewAccountIntents(intents []AccountIntent, available map[int64
 type relationshipSnapshot struct {
 	ProviderID      int                              `json:"provider_id"`
 	Platform        string                           `json:"platform"`
-	RenewalDays     int                              `json:"renewal_days,omitempty"`
 	Groups          []relationshipGroupFact          `json:"groups"`
 	PlannedRenames  []relationshipPlannedRenameFact  `json:"planned_renames"`
 	Accounts        []relationshipAccountFact        `json:"accounts"`
 	PlannedAccounts []relationshipPlannedAccountFact `json:"planned_accounts"`
 	Mappings        []relationshipMappingFact        `json:"mappings"`
 	Users           []relationshipUserFact           `json:"users"`
+	Renewal         *relationshipRenewalFact         `json:"renewal,omitempty"`
 }
 
 type relationshipGroupFact struct {
@@ -1311,21 +1312,33 @@ type relationshipUserFact struct {
 }
 
 type relationshipSubscriptionFact struct {
-	GroupID   int64  `json:"group_id"`
-	Status    string `json:"status"`
-	ExpiresAt string `json:"expires_at,omitempty"`
+	GroupID int64  `json:"group_id"`
+	Status  string `json:"status"`
 }
 
 func relationshipSubscriptionFromRelay(subscription relay.UserSubscription) relationshipSubscriptionFact {
-	status := strings.ToLower(strings.TrimSpace(subscription.Status))
-	if status == "" {
-		status = "active"
-	}
-	expiresAt := ""
-	if !subscription.ExpiresAt.IsZero() {
-		expiresAt = subscription.ExpiresAt.UTC().Format(time.RFC3339Nano)
-	}
-	return relationshipSubscriptionFact{GroupID: subscription.GroupID, Status: status, ExpiresAt: expiresAt}
+	return relationshipSubscriptionFact{GroupID: subscription.GroupID, Status: strings.ToLower(strings.TrimSpace(subscription.Status))}
+}
+
+type relationshipRenewalFact struct {
+	Days    int                             `json:"days"`
+	Members []relationshipRenewalMemberFact `json:"members"`
+}
+
+type relationshipRenewalMemberFact struct {
+	UserID        int                            `json:"user_id"`
+	RelayUserID   int64                          `json:"relay_user_id"`
+	TargetGroupID int64                          `json:"target_group_id"`
+	Status        string                         `json:"status"`
+	PlannedAction string                         `json:"planned_action"`
+	CurrentExpiry string                         `json:"current_expiry,omitempty"`
+	Drift         []relationshipRenewalDriftFact `json:"drift"`
+}
+
+type relationshipRenewalDriftFact struct {
+	GroupID   int64  `json:"group_id"`
+	Status    string `json:"status"`
+	ExpiresAt string `json:"expires_at,omitempty"`
 }
 
 type relationshipAPIKeyFact struct {
@@ -1627,6 +1640,7 @@ func encodeRelationshipFingerprint(snapshot relationshipSnapshot) (string, error
 		LocalUserID   int                            `json:"local_user_id,omitempty"`
 		RelayUserID   int64                          `json:"relay_user_id"`
 		Subscriptions []relationshipSubscriptionFact `json:"subscriptions"`
+		Renewal       *relationshipRenewalFact       `json:"renewal,omitempty"`
 	}, len(snapshot.Users))
 	apiKeys := make([]struct {
 		LocalUserID int                      `json:"local_user_id,omitempty"`
@@ -1638,14 +1652,23 @@ func encodeRelationshipFingerprint(snapshot relationshipSnapshot) (string, error
 		subscriptions[index].LocalUserID, subscriptions[index].RelayUserID, subscriptions[index].Subscriptions = user.LocalUserID, user.RelayUserID, user.Subscriptions
 		apiKeys[index].LocalUserID, apiKeys[index].RelayUserID, apiKeys[index].APIKeys = user.LocalUserID, user.RelayUserID, user.APIKeys
 	}
+	if len(subscriptions) > 0 {
+		subscriptions[0].Renewal = snapshot.Renewal
+	} else if snapshot.Renewal != nil {
+		subscriptions = append(subscriptions, struct {
+			LocalUserID   int                            `json:"local_user_id,omitempty"`
+			RelayUserID   int64                          `json:"relay_user_id"`
+			Subscriptions []relationshipSubscriptionFact `json:"subscriptions"`
+			Renewal       *relationshipRenewalFact       `json:"renewal,omitempty"`
+		}{Renewal: snapshot.Renewal})
+	}
 	parts := []any{
 		struct {
 			ProviderID     int                             `json:"provider_id"`
 			Platform       string                          `json:"platform"`
-			RenewalDays    int                             `json:"renewal_days,omitempty"`
 			Groups         []relationshipGroupFact         `json:"groups"`
 			PlannedRenames []relationshipPlannedRenameFact `json:"planned_renames"`
-		}{snapshot.ProviderID, snapshot.Platform, snapshot.RenewalDays, snapshot.Groups, snapshot.PlannedRenames},
+		}{snapshot.ProviderID, snapshot.Platform, snapshot.Groups, snapshot.PlannedRenames},
 		struct {
 			Accounts        []relationshipAccountFact        `json:"accounts"`
 			PlannedAccounts []relationshipPlannedAccountFact `json:"planned_accounts"`
@@ -2200,7 +2223,7 @@ func (s *Service) PreviewMappingRenewal(ctx context.Context, id int, req Mapping
 			localUsers[item.ID] = item
 		}
 	}
-	now := time.Now().UTC()
+	now := s.currentTime()
 	members := make([]MappingRenewalMember, 0, len(localUserIDs))
 	for _, localUserID := range localUserIDs {
 		local := localUsers[localUserID]
@@ -2306,6 +2329,13 @@ func projectedRenewalExpiry(base time.Time, renewalDays int) time.Time {
 		return maximum
 	}
 	return result
+}
+
+func (s *Service) currentTime() time.Time {
+	if s.now == nil {
+		return time.Now().UTC()
+	}
+	return s.now().UTC()
 }
 
 func (s *Service) ExecuteMappingRenewal(ctx context.Context, id int, req MappingRenewalExecuteRequest) (*MappingRenewalExecution, error) {
@@ -2451,7 +2481,7 @@ func timePointer(value time.Time) *time.Time {
 }
 
 func encodeMappingRenewalFingerprint(mapping *ent.RelayGroupMapping, members []MappingRenewalMember, groupsByID map[int64]relay.Group, renewalDays int) (string, error) {
-	snapshot := relationshipSnapshot{ProviderID: mapping.ProviderID, Platform: strings.ToLower(strings.TrimSpace(mapping.Platform)), RenewalDays: renewalDays}
+	snapshot := relationshipSnapshot{ProviderID: mapping.ProviderID, Platform: strings.ToLower(strings.TrimSpace(mapping.Platform)), Renewal: &relationshipRenewalFact{Days: renewalDays}}
 	mappingFact := relationshipMappingFact{ID: mapping.ID, ProviderID: mapping.ProviderID, Platform: snapshot.Platform, GroupIDs: append([]int64(nil), mapping.GroupIds...)}
 	sort.Slice(mappingFact.GroupIDs, func(i, j int) bool { return mappingFact.GroupIDs[i] < mappingFact.GroupIDs[j] })
 	relevantGroupIDs := make(map[int64]struct{}, len(mapping.GroupIds))
@@ -2470,9 +2500,14 @@ func encodeMappingRenewalFingerprint(mapping *ent.RelayGroupMapping, members []M
 		}
 		sort.Slice(userFact.Subscriptions, func(i, j int) bool {
 			left, right := userFact.Subscriptions[i], userFact.Subscriptions[j]
-			return left.GroupID < right.GroupID || (left.GroupID == right.GroupID && (left.Status < right.Status || (left.Status == right.Status && left.ExpiresAt < right.ExpiresAt)))
+			return left.GroupID < right.GroupID || (left.GroupID == right.GroupID && left.Status < right.Status)
 		})
 		snapshot.Users = append(snapshot.Users, userFact)
+		renewalMember := relationshipRenewalMemberFact{UserID: member.UserID, RelayUserID: member.RelayUserID, TargetGroupID: member.ExpectedTargetGroupID, Status: member.Status, PlannedAction: member.PlannedAction, CurrentExpiry: canonicalRelationshipTime(member.CurrentExpiry), Drift: []relationshipRenewalDriftFact{}}
+		for _, drift := range member.Drift {
+			renewalMember.Drift = append(renewalMember.Drift, relationshipRenewalDriftFact{GroupID: drift.GroupID, Status: drift.Status, ExpiresAt: canonicalRelationshipTime(drift.ExpiresAt)})
+		}
+		snapshot.Renewal.Members = append(snapshot.Renewal.Members, renewalMember)
 	}
 	sort.Slice(mappingFact.Members, func(i, j int) bool { return mappingFact.Members[i].UserID < mappingFact.Members[j].UserID })
 	snapshot.Mappings = []relationshipMappingFact{mappingFact}
@@ -2485,6 +2520,13 @@ func encodeMappingRenewalFingerprint(mapping *ent.RelayGroupMapping, members []M
 	}
 	sort.Slice(snapshot.Groups, func(i, j int) bool { return snapshot.Groups[i].ID < snapshot.Groups[j].ID })
 	return encodeRelationshipFingerprint(snapshot)
+}
+
+func canonicalRelationshipTime(value *time.Time) string {
+	if value == nil || value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339Nano)
 }
 
 func (s *Service) AdoptCurrentAccounts(ctx context.Context, id int) (*Mapping, error) {

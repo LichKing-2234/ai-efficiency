@@ -179,9 +179,9 @@ func TestMappingRenewalServiceBindsTermAndRetriesFailedMemberWithStableKey(t *te
 			43: {ID: 43, Username: carol.Username, Email: carol.Email},
 			44: {ID: 44, Username: dana.Username, Email: dana.Email},
 		},
-		groups: []relay.Group{{ID: 101, Name: "Group Active", Platform: "openai"}, {ID: 102, Name: "Group Expired", Platform: "openai"}, {ID: 103, Name: "Group Missing", Platform: "openai"}, {ID: 104, Name: "Group Suspended", Platform: "openai"}},
+		groups: []relay.Group{{ID: 101, Name: "Group Active", Platform: "openai"}, {ID: 102, Name: "Group Expired", Platform: "openai"}, {ID: 103, Name: "Group Missing", Platform: "openai"}, {ID: 104, Name: "Group Suspended", Platform: "openai"}, {ID: 999, Name: "Group Drift", Platform: "openai"}},
 		subscriptions: map[int64][]relay.UserSubscription{
-			41: {{ID: 1, UserID: 41, GroupID: 101, Status: "active", ExpiresAt: time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC)}},
+			41: {{ID: 1, UserID: 41, GroupID: 101, Status: "active", ExpiresAt: time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC)}, {ID: 4, UserID: 41, GroupID: 999, Status: "active", ExpiresAt: time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC)}},
 			42: {{ID: 2, UserID: 42, GroupID: 102, Status: "expired", ExpiresAt: time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)}},
 			43: {},
 			44: {{ID: 3, UserID: 44, GroupID: 104, Status: "suspended", ExpiresAt: time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC)}},
@@ -189,6 +189,8 @@ func TestMappingRenewalServiceBindsTermAndRetriesFailedMemberWithStableKey(t *te
 		failures: make(map[int64]error),
 	}
 	service := NewService(client, relayPlanningProviderResolver(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	clock := time.Date(2029, time.December, 31, 0, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return clock }
 	days365 := 365
 	preview365, err := service.PreviewMappingRenewal(ctx, mapping.ID, MappingRenewalPreviewRequest{RenewalDays: &days365})
 	if err != nil {
@@ -211,6 +213,12 @@ func TestMappingRenewalServiceBindsTermAndRetriesFailedMemberWithStableKey(t *te
 	if !errors.As(err, &stale) || stale.RefreshedPreview == nil || stale.RefreshedPreview.RenewalDays != days30 || len(provider.writes) != 0 {
 		t.Fatalf("term mismatch error/writes = %v/%+v, want stale 30-day preview before writes", err, provider.writes)
 	}
+	clock = time.Date(2030, time.January, 2, 0, 0, 0, 0, time.UTC)
+	_, err = service.ExecuteMappingRenewal(ctx, mapping.ID, MappingRenewalExecuteRequest{RenewalDays: days365, Members: reviewed, ExpectedRelationshipFingerprint: preview365.RelationshipFingerprint, OperationKey: "renewal-natural-expiry"})
+	if !errors.As(err, &stale) || stale.RefreshedPreview == nil || stale.RefreshedPreview.RelationshipFingerprint == preview365.RelationshipFingerprint || stale.RefreshedPreview.Members[0].Status != "expired" || stale.RefreshedPreview.Members[0].PlannedAction != "renew" || len(stale.RefreshedPreview.Members[0].Drift) != 1 || stale.RefreshedPreview.Members[0].Drift[0].Status != "expired" || len(provider.writes) != 0 {
+		t.Fatalf("natural-expiry stale/writes = %v/%+v, want refreshed expired expected and drift facts before writes", err, provider.writes)
+	}
+	clock = time.Date(2029, time.December, 31, 0, 0, 0, 0, time.UTC)
 	provider.failures[42] = errors.New("synthetic expired renewal failure")
 	result, err := service.ExecuteMappingRenewal(ctx, mapping.ID, MappingRenewalExecuteRequest{RenewalDays: days365, Members: reviewed, ExpectedRelationshipFingerprint: preview365.RelationshipFingerprint, OperationKey: "renewal-service-1"})
 	if err != nil {
