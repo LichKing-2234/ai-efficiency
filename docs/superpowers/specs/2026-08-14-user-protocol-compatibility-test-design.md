@@ -33,6 +33,7 @@ sub2api 管理端的账号测试与这里也不是同一个证明：前者以账
 - 不模拟 streaming client；所有 probe 都是小型 non-streaming 请求。
 - 不把结果持久化到 backend、local storage 或其他页面。
 - 不把连接测试描述成 sub2api account health、生成配置验收或上游服务整体健康检查。
+- 不把连接测试成功描述成本机 Claude Code 或其他客户端已经完成配置。
 
 ## Capability Contract
 
@@ -78,6 +79,7 @@ Composite group 会由 sub2api 按请求模型选择实际平台，因此暴露�
 - prompt 固定为 `Reply with OK`，用户不能编辑。
 - output token 上限保持较小；请求明确 non-streaming。
 - 每次只调用所选协议一次，不 retry、不 fallback。
+- Claude/Anthropic Messages probe 携带 sub2api 当前接受的 Claude CLI Client Identity Profile：`claude-cli/<semver>` User-Agent、`X-App`、`anthropic-beta`、`anthropic-version`、Claude Code system text block 和合法格式的 `metadata.user_id`。该 profile 只作用于 `ProtocolCompleter` 的 Claude/Anthropic Messages 连接测试，不改变其他 Relay 请求或生成配置。
 
 路由和成功条件：
 
@@ -108,6 +110,7 @@ provider + group + current personal key + model + protocol
 
 - `backend/internal/relay` 定义稳定协议常量、group capability matrix 和可选 `ProtocolCompleter` 扩展。
 - sub2api adapter 负责 endpoint、headers、payload、terminal parsing 和 bounded raw error body。
+- sub2api adapter 也负责把 Claude/Anthropic Messages 连接测试的 Claude Client Identity Profile 限定在该 probe 请求内；它不把身份信号注入其他平台 probe 或普通 Relay 调用。
 - user provider handler 负责身份、group authorization、当前个人 key 选择、默认协议和 capability validation。
 - `backend/internal/usersetup` 只把 group capability facts 暴露给 `/user`。
 - `frontend/src/views/UserView.vue` 负责选择、标签、current-page state 和 generation guard；它不复制 platform capability matrix。
@@ -122,4 +125,5 @@ provider + group + current personal key + model + protocol
 6. success 同时要求 HTTP success、合法 terminal response 和非空 assistant text。
 7. provider、group、key、model、protocol 任一变化都会清除结果，旧异步请求不能覆盖新状态。
 8. 错误包含 AI Efficiency 收到的完整 bounded upstream body。
-9. 生成配置逻辑和 sub2api 源码不变。
+9. Claude/Anthropic Messages probe 满足 sub2api 当前 Claude CLI 识别合同，且 identity profile 不影响其他平台 probe 或普通 Relay 请求。
+10. 生成配置逻辑和 sub2api 源码不变。

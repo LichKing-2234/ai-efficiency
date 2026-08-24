@@ -29,6 +29,13 @@ const (
 	providerCurrentStatsBodyLimit  = 2 << 20
 )
 
+const (
+	claudeConnectionProbeUserAgent      = "claude-cli/2.1.220 (external, cli)"
+	claudeConnectionProbeBeta           = "claude-code-20250219"
+	claudeConnectionProbeSystemPrompt   = "You are Claude Code, Anthropic's official CLI for Claude."
+	claudeConnectionProbeMetadataUserID = `{"device_id":"0000000000000000000000000000000000000000000000000000000000000000","account_uuid":"","session_id":"00000000-0000-0000-0000-000000000000"}`
+)
+
 type sub2apiRelay struct {
 	mu       sync.RWMutex
 	client   *http.Client
@@ -1222,9 +1229,10 @@ func (s *sub2apiRelay) chatCompletion(ctx context.Context, req ChatCompletionReq
 // ChatCompletionForPlatform sends a small non-streaming probe using the protocol
 // that sub2api exposes for the selected group platform.
 func (s *sub2apiRelay) ChatCompletionForPlatform(ctx context.Context, platform string, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
+	if isClaudePlatform(platform) {
+		return s.anthropicMessages(ctx, req, "", false)
+	}
 	switch strings.ToLower(strings.TrimSpace(platform)) {
-	case "anthropic", "claude":
-		return s.anthropicMessages(ctx, req, "")
 	case "gemini":
 		return s.geminiGenerateContent(ctx, req, "")
 	case "antigravity":
@@ -1232,7 +1240,7 @@ func (s *sub2apiRelay) ChatCompletionForPlatform(ctx context.Context, platform s
 			strings.HasPrefix(strings.ToLower(s.inferenceModel()), "gemini") {
 			return s.geminiGenerateContent(ctx, req, "/antigravity")
 		}
-		return s.anthropicMessages(ctx, req, "/antigravity")
+		return s.anthropicMessages(ctx, req, "/antigravity", false)
 	default:
 		return s.ChatCompletion(ctx, req)
 	}
@@ -1247,11 +1255,12 @@ func (s *sub2apiRelay) CompletionForProtocol(ctx context.Context, platform, prot
 	case ProtocolChatCompletions:
 		return s.chatCompletion(ctx, req, relayProbeErrorMessageSuffix, true)
 	case ProtocolMessages:
+		normalizedPlatform := strings.ToLower(strings.TrimSpace(platform))
 		routePrefix := ""
-		if strings.EqualFold(strings.TrimSpace(platform), "antigravity") {
+		if normalizedPlatform == "antigravity" {
 			routePrefix = "/antigravity"
 		}
-		return s.anthropicMessages(ctx, req, routePrefix)
+		return s.anthropicMessages(ctx, req, routePrefix, isClaudePlatform(platform))
 	case ProtocolGenerateContent:
 		return s.geminiGenerateContent(ctx, req, "")
 	case ProtocolAntigravityGenerateContent:
@@ -1400,10 +1409,21 @@ func normalizeModelListItems(items []modelListItem) []ModelOption {
 	return models
 }
 
-func (s *sub2apiRelay) anthropicMessages(ctx context.Context, req ChatCompletionRequest, routePrefix string) (*ChatCompletionResponse, error) {
+func (s *sub2apiRelay) anthropicMessages(ctx context.Context, req ChatCompletionRequest, routePrefix string, withClaudeClientIdentity bool) (*ChatCompletionResponse, error) {
 	req.Model = s.completionModel(req.Model)
 
-	body, err := json.Marshal(req)
+	payload := any(req)
+	if withClaudeClientIdentity {
+		payload = anthropicMessagesProbeRequest{
+			ChatCompletionRequest: req,
+			System: []anthropicSystemBlock{{
+				Type: "text",
+				Text: claudeConnectionProbeSystemPrompt,
+			}},
+			Metadata: anthropicMetadata{UserID: claudeConnectionProbeMetadataUserID},
+		}
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("relay: messages: marshal: %w", err)
 	}
@@ -1417,6 +1437,11 @@ func (s *sub2apiRelay) anthropicMessages(ctx context.Context, req ChatCompletion
 	httpReq.Header.Set("x-api-key", apiKey)
 	httpReq.Header.Set("anthropic-version", "2023-06-01")
 	httpReq.Header.Set("Content-Type", "application/json")
+	if withClaudeClientIdentity {
+		httpReq.Header.Set("User-Agent", claudeConnectionProbeUserAgent)
+		httpReq.Header.Set("X-App", "cli")
+		httpReq.Header.Set("anthropic-beta", claudeConnectionProbeBeta)
+	}
 
 	resp, err := s.client.Do(httpReq)
 	if err != nil {
@@ -3248,6 +3273,21 @@ type anthropicMessagesResponse struct {
 		InputTokens  int `json:"input_tokens"`
 		OutputTokens int `json:"output_tokens"`
 	} `json:"usage"`
+}
+
+type anthropicMessagesProbeRequest struct {
+	ChatCompletionRequest
+	System   []anthropicSystemBlock `json:"system"`
+	Metadata anthropicMetadata      `json:"metadata"`
+}
+
+type anthropicSystemBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type anthropicMetadata struct {
+	UserID string `json:"user_id"`
 }
 
 func (r anthropicMessagesResponse) contentText() string {
