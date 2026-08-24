@@ -31,6 +31,8 @@ const (
 	maxPlanningUsers    = 5000
 	maxCandidateWorkers = 8
 	defaultValidityDays = 365
+	defaultRenewalDays  = 365
+	maxRenewalDays      = 36500
 	maxGroupNameRunes   = 100
 )
 
@@ -260,6 +262,42 @@ type Mapping struct {
 	DepartmentSuggestions        []DepartmentSuggestion       `json:"department_suggestions,omitempty"`
 	Warnings                     []string                     `json:"warnings,omitempty"`
 	UpdatedAt                    time.Time                    `json:"updated_at"`
+}
+
+type MappingRenewalPreviewRequest struct {
+	RenewalDays *int `json:"renewal_days"`
+}
+
+type MappingRenewalPreview struct {
+	MappingID               int                    `json:"mapping_id"`
+	ProviderID              int                    `json:"provider_id"`
+	Platform                string                 `json:"platform"`
+	RenewalDays             int                    `json:"renewal_days"`
+	Members                 []MappingRenewalMember `json:"members"`
+	GeneratedAt             time.Time              `json:"generated_at"`
+	RelationshipFingerprint string                 `json:"relationship_fingerprint"`
+}
+
+type MappingRenewalMember struct {
+	UserID                  int                   `json:"user_id"`
+	RelayUserID             int64                 `json:"relay_user_id"`
+	Username                string                `json:"username"`
+	Email                   string                `json:"email"`
+	ExpectedTargetGroupID   int64                 `json:"expected_target_group_id"`
+	ExpectedTargetGroupName string                `json:"expected_target_group_name"`
+	Status                  string                `json:"status"`
+	CurrentExpiry           *time.Time            `json:"current_expiry,omitempty"`
+	PlannedAction           string                `json:"planned_action"`
+	ResultingExpiry         *time.Time            `json:"resulting_expiry,omitempty"`
+	Drift                   []MappingRenewalDrift `json:"drift,omitempty"`
+	subscriptions           []relay.UserSubscription
+}
+
+type MappingRenewalDrift struct {
+	GroupID   int64      `json:"group_id"`
+	GroupName string     `json:"group_name"`
+	Status    string     `json:"status"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 type AccountIntent struct {
@@ -1229,8 +1267,21 @@ type relationshipUserFact struct {
 }
 
 type relationshipSubscriptionFact struct {
-	GroupID int64  `json:"group_id"`
-	Status  string `json:"status"`
+	GroupID   int64  `json:"group_id"`
+	Status    string `json:"status"`
+	ExpiresAt string `json:"expires_at,omitempty"`
+}
+
+func relationshipSubscriptionFromRelay(subscription relay.UserSubscription) relationshipSubscriptionFact {
+	status := strings.ToLower(strings.TrimSpace(subscription.Status))
+	if status == "" {
+		status = "active"
+	}
+	expiresAt := ""
+	if !subscription.ExpiresAt.IsZero() {
+		expiresAt = subscription.ExpiresAt.UTC().Format(time.RFC3339Nano)
+	}
+	return relationshipSubscriptionFact{GroupID: subscription.GroupID, Status: status, ExpiresAt: expiresAt}
 }
 
 type relationshipAPIKeyFact struct {
@@ -1487,7 +1538,8 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 					groupID = subscription.Group.ID
 				}
 				if _, relevant := relevantGroupIDs[groupID]; relevant {
-					userFacts[index].Subscriptions = append(userFacts[index].Subscriptions, relationshipSubscriptionFact{GroupID: groupID, Status: strings.ToLower(strings.TrimSpace(subscription.Status))})
+					subscription.GroupID = groupID
+					userFacts[index].Subscriptions = append(userFacts[index].Subscriptions, relationshipSubscriptionFromRelay(subscription))
 				}
 			}
 			keys, err := provider.ListUserAPIKeys(ctx, userFacts[index].RelayUserID)
@@ -2041,6 +2093,233 @@ func (s *Service) GetMapping(ctx context.Context, id int) (*Mapping, error) {
 	}
 	mapping.Warnings = uniqueStrings(mapping.Warnings)
 	return &mapping, nil
+}
+
+func (s *Service) PreviewMappingRenewal(ctx context.Context, id int, req MappingRenewalPreviewRequest) (*MappingRenewalPreview, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("mapping id is required")
+	}
+	renewalDays := defaultRenewalDays
+	if req.RenewalDays != nil {
+		if *req.RenewalDays <= 0 {
+			return nil, fmt.Errorf("renewal_days must be positive")
+		}
+		if *req.RenewalDays > maxRenewalDays {
+			return nil, fmt.Errorf("renewal_days must not exceed %d", maxRenewalDays)
+		}
+		renewalDays = *req.RenewalDays
+	}
+	mapping, err := s.client.RelayGroupMapping.Get(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("load relay group mapping: %w", err)
+	}
+	if s.resolver == nil {
+		return nil, fmt.Errorf("relay provider resolver is unavailable")
+	}
+	provider, err := s.resolver.Resolve(ctx, mapping.ProviderID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve relay provider: %w", err)
+	}
+	groupLister, ok := provider.(relay.PlatformGroupLister)
+	if !ok {
+		return nil, fmt.Errorf("relay provider does not support group listing")
+	}
+	groups, err := groupLister.ListPlatformGroups(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list relay groups: %w", err)
+	}
+	groupsByID := make(map[int64]relay.Group, len(groups))
+	for _, group := range groups {
+		groupsByID[group.ID] = group
+	}
+	subscriptionLister, ok := provider.(relay.UserSubscriptionLister)
+	if !ok {
+		return nil, fmt.Errorf("relay provider does not support subscription relationship reading")
+	}
+	localUserIDs := make([]int, 0, len(mapping.MemberAssignments))
+	for rawUserID, targetGroupID := range mapping.MemberAssignments {
+		localUserID, parseErr := strconv.Atoi(rawUserID)
+		if parseErr != nil || localUserID <= 0 || targetGroupID <= 0 {
+			return nil, fmt.Errorf("mapping contains an invalid managed member assignment")
+		}
+		localUserIDs = append(localUserIDs, localUserID)
+	}
+	sort.Ints(localUserIDs)
+	localUsers := make(map[int]*ent.User, len(localUserIDs))
+	if len(localUserIDs) > 0 {
+		items, queryErr := s.client.User.Query().Where(user.IDIn(localUserIDs...)).All(ctx)
+		if queryErr != nil {
+			return nil, fmt.Errorf("load managed mapping members: %w", queryErr)
+		}
+		for _, item := range items {
+			localUsers[item.ID] = item
+		}
+	}
+	now := time.Now().UTC()
+	members := make([]MappingRenewalMember, 0, len(localUserIDs))
+	for _, localUserID := range localUserIDs {
+		local := localUsers[localUserID]
+		if local == nil || local.RelayUserID == nil || *local.RelayUserID <= 0 {
+			return nil, fmt.Errorf("managed mapping member %d has no Relay identity", localUserID)
+		}
+		relayUserID := int64(*local.RelayUserID)
+		remote, getErr := provider.GetUser(ctx, relayUserID)
+		if getErr != nil {
+			return nil, fmt.Errorf("verify Relay identity for managed mapping member %d: %w", localUserID, getErr)
+		}
+		if !sameRelayIdentity(local.Username, local.Email, relayUserID, remote) {
+			return nil, fmt.Errorf("managed mapping member %d has a stale Relay identity", localUserID)
+		}
+		subscriptions, listErr := subscriptionLister.ListUserSubscriptions(ctx, relayUserID)
+		if listErr != nil {
+			return nil, fmt.Errorf("list subscriptions for Relay user %d: %w", relayUserID, listErr)
+		}
+		for index := range subscriptions {
+			if subscriptions[index].GroupID <= 0 && subscriptions[index].Group != nil {
+				subscriptions[index].GroupID = subscriptions[index].Group.ID
+			}
+		}
+		sort.Slice(subscriptions, func(i, j int) bool {
+			if subscriptions[i].GroupID == subscriptions[j].GroupID {
+				return subscriptions[i].ID < subscriptions[j].ID
+			}
+			return subscriptions[i].GroupID < subscriptions[j].GroupID
+		})
+		targetGroupID := mapping.MemberAssignments[strconv.Itoa(localUserID)]
+		targetGroup := groupsByID[targetGroupID]
+		if targetGroup.ID <= 0 || !strings.EqualFold(strings.TrimSpace(targetGroup.Platform), strings.TrimSpace(mapping.Platform)) {
+			return nil, fmt.Errorf("managed target group %d is unavailable on platform %s", targetGroupID, mapping.Platform)
+		}
+		member := MappingRenewalMember{
+			UserID:                  local.ID,
+			RelayUserID:             relayUserID,
+			Username:                local.Username,
+			Email:                   local.Email,
+			ExpectedTargetGroupID:   targetGroupID,
+			ExpectedTargetGroupName: strings.TrimSpace(targetGroup.Name),
+			Drift:                   []MappingRenewalDrift{},
+			subscriptions:           subscriptions,
+		}
+		var expected *relay.UserSubscription
+		for index := range subscriptions {
+			subscription := &subscriptions[index]
+			if subscription.GroupID == targetGroupID && expected == nil {
+				expected = subscription
+				continue
+			}
+			if subscription.GroupID <= 0 {
+				continue
+			}
+			group := groupsByID[subscription.GroupID]
+			if subscription.Group != nil && strings.TrimSpace(subscription.Group.Name) != "" {
+				group = *subscription.Group
+			}
+			member.Drift = append(member.Drift, MappingRenewalDrift{
+				GroupID:   subscription.GroupID,
+				GroupName: strings.TrimSpace(group.Name),
+				Status:    renewalSubscriptionStatus(subscription, now),
+				ExpiresAt: timePointer(subscription.ExpiresAt),
+			})
+		}
+		member.Status = renewalSubscriptionStatus(expected, now)
+		if expected != nil {
+			member.CurrentExpiry = timePointer(expected.ExpiresAt)
+		}
+		switch member.Status {
+		case "active":
+			member.PlannedAction = "extend"
+			result := projectedRenewalExpiry(expected.ExpiresAt, renewalDays)
+			member.ResultingExpiry = &result
+		case "expired":
+			member.PlannedAction = "renew"
+			result := projectedRenewalExpiry(now, renewalDays)
+			member.ResultingExpiry = &result
+		case "suspended":
+			member.PlannedAction = "skip"
+			member.ResultingExpiry = timePointer(expected.ExpiresAt)
+		default:
+			member.PlannedAction = "create"
+			result := projectedRenewalExpiry(now, renewalDays)
+			member.ResultingExpiry = &result
+		}
+		members = append(members, member)
+	}
+	fingerprint, err := encodeMappingRenewalFingerprint(mapping, members, groupsByID)
+	if err != nil {
+		return nil, fmt.Errorf("fingerprint mapping renewal relationships: %w", err)
+	}
+	return &MappingRenewalPreview{
+		MappingID: mapping.ID, ProviderID: mapping.ProviderID, Platform: mapping.Platform,
+		RenewalDays: renewalDays, Members: members, GeneratedAt: now, RelationshipFingerprint: fingerprint,
+	}, nil
+}
+
+func projectedRenewalExpiry(base time.Time, renewalDays int) time.Time {
+	result := base.AddDate(0, 0, renewalDays)
+	maximum := time.Date(2099, time.December, 31, 23, 59, 59, 0, time.UTC)
+	if result.After(maximum) {
+		return maximum
+	}
+	return result
+}
+
+func renewalSubscriptionStatus(subscription *relay.UserSubscription, now time.Time) string {
+	if subscription == nil {
+		return "missing"
+	}
+	status := strings.ToLower(strings.TrimSpace(subscription.Status))
+	if status == "suspended" {
+		return "suspended"
+	}
+	if status == "expired" || subscription.ExpiresAt.IsZero() || !subscription.ExpiresAt.After(now) {
+		return "expired"
+	}
+	return "active"
+}
+
+func timePointer(value time.Time) *time.Time {
+	if value.IsZero() {
+		return nil
+	}
+	copy := value.UTC()
+	return &copy
+}
+
+func encodeMappingRenewalFingerprint(mapping *ent.RelayGroupMapping, members []MappingRenewalMember, groupsByID map[int64]relay.Group) (string, error) {
+	snapshot := relationshipSnapshot{ProviderID: mapping.ProviderID, Platform: strings.ToLower(strings.TrimSpace(mapping.Platform))}
+	mappingFact := relationshipMappingFact{ID: mapping.ID, ProviderID: mapping.ProviderID, Platform: snapshot.Platform, GroupIDs: append([]int64(nil), mapping.GroupIds...)}
+	sort.Slice(mappingFact.GroupIDs, func(i, j int) bool { return mappingFact.GroupIDs[i] < mappingFact.GroupIDs[j] })
+	relevantGroupIDs := make(map[int64]struct{}, len(mapping.GroupIds))
+	for _, groupID := range mapping.GroupIds {
+		relevantGroupIDs[groupID] = struct{}{}
+	}
+	for _, member := range members {
+		mappingFact.Members = append(mappingFact.Members, relationshipMappingMemberFact{UserID: member.UserID, TargetGroupID: member.ExpectedTargetGroupID, SourceGroupID: mapping.MemberSources[strconv.Itoa(member.UserID)]})
+		userFact := relationshipUserFact{LocalUserID: member.UserID, RelayUserID: member.RelayUserID}
+		for _, subscription := range member.subscriptions {
+			if subscription.GroupID <= 0 {
+				continue
+			}
+			relevantGroupIDs[subscription.GroupID] = struct{}{}
+			userFact.Subscriptions = append(userFact.Subscriptions, relationshipSubscriptionFromRelay(subscription))
+		}
+		sort.Slice(userFact.Subscriptions, func(i, j int) bool {
+			left, right := userFact.Subscriptions[i], userFact.Subscriptions[j]
+			return left.GroupID < right.GroupID || (left.GroupID == right.GroupID && (left.Status < right.Status || (left.Status == right.Status && left.ExpiresAt < right.ExpiresAt)))
+		})
+		snapshot.Users = append(snapshot.Users, userFact)
+	}
+	sort.Slice(mappingFact.Members, func(i, j int) bool { return mappingFact.Members[i].UserID < mappingFact.Members[j].UserID })
+	snapshot.Mappings = []relationshipMappingFact{mappingFact}
+	for groupID := range relevantGroupIDs {
+		group := groupsByID[groupID]
+		if group.ID <= 0 {
+			continue
+		}
+		snapshot.Groups = append(snapshot.Groups, relationshipGroupFact{ID: group.ID, Name: strings.TrimSpace(group.Name), Platform: strings.ToLower(strings.TrimSpace(group.Platform))})
+	}
+	sort.Slice(snapshot.Groups, func(i, j int) bool { return snapshot.Groups[i].ID < snapshot.Groups[j].ID })
+	return encodeRelationshipFingerprint(snapshot)
 }
 
 func (s *Service) AdoptCurrentAccounts(ctx context.Context, id int) (*Mapping, error) {
@@ -3397,11 +3676,13 @@ func loadCandidateRelayFacts(ctx context.Context, p relay.Provider, userID int64
 					}
 					if !strings.EqualFold(strings.TrimSpace(subscription.Status), "active") || groupID <= 0 {
 						if groupID > 0 {
-							facts.relationshipSubscriptions = append(facts.relationshipSubscriptions, relationshipSubscriptionFact{GroupID: groupID, Status: strings.ToLower(strings.TrimSpace(subscription.Status))})
+							subscription.GroupID = groupID
+							facts.relationshipSubscriptions = append(facts.relationshipSubscriptions, relationshipSubscriptionFromRelay(subscription))
 						}
 						continue
 					}
-					facts.relationshipSubscriptions = append(facts.relationshipSubscriptions, relationshipSubscriptionFact{GroupID: groupID, Status: "active"})
+					subscription.GroupID = groupID
+					facts.relationshipSubscriptions = append(facts.relationshipSubscriptions, relationshipSubscriptionFromRelay(subscription))
 					if groupID == source.ID {
 						facts.eligible = strings.EqualFold(strings.TrimSpace(source.Platform), strings.TrimSpace(platform))
 					} else {

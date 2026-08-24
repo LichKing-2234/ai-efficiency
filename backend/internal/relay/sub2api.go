@@ -2163,6 +2163,7 @@ type sub2apiUserSubscription struct {
 	UserID          int64      `json:"user_id"`
 	GroupID         int64      `json:"group_id"`
 	Status          string     `json:"status"`
+	ExpiresAt       time.Time  `json:"expires_at"`
 	DailyUsageUSD   float64    `json:"daily_usage_usd"`
 	WeeklyUsageUSD  float64    `json:"weekly_usage_usd"`
 	MonthlyUsageUSD float64    `json:"monthly_usage_usd"`
@@ -2227,6 +2228,7 @@ func userSubscriptionFromSub2API(item sub2apiUserSubscription) UserSubscription 
 		UserID:          item.UserID,
 		GroupID:         item.GroupID,
 		Status:          item.Status,
+		ExpiresAt:       item.ExpiresAt,
 		DailyUsageUSD:   item.DailyUsageUSD,
 		WeeklyUsageUSD:  item.WeeklyUsageUSD,
 		MonthlyUsageUSD: item.MonthlyUsageUSD,

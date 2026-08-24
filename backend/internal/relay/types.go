@@ -160,6 +160,7 @@ type UserSubscription struct {
 	UserID          int64      `json:"user_id"`
 	GroupID         int64      `json:"group_id"`
 	Status          string     `json:"status"`
+	ExpiresAt       time.Time  `json:"expires_at"`
 	DailyUsageUSD   float64    `json:"daily_usage_usd"`
 	WeeklyUsageUSD  float64    `json:"weekly_usage_usd"`
 	MonthlyUsageUSD float64    `json:"monthly_usage_usd"`

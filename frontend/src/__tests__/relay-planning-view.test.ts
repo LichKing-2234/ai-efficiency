@@ -13,6 +13,7 @@ vi.mock('@/api/relayPlanning', () => ({
 	executeRelayPlan: vi.fn(),
   executeRelayReplan: vi.fn(),
   listRelayGroupMappings: vi.fn(),
+  previewRelayMappingRenewal: vi.fn(),
   previewRelayPlan: vi.fn(),
   previewRelayReplan: vi.fn(),
 	rebindRelayGroupMapping: vi.fn(),
@@ -76,6 +77,21 @@ const plan = {
 	generated_at: '2026-08-19T00:00:00Z',
 }
 
+const renewalPreview = {
+	mapping_id: 9,
+	provider_id: 7,
+	platform: 'openai',
+	renewal_days: 365,
+	members: [
+		{ user_id: 1, relay_user_id: 101, username: 'alice', email: 'alice@example.com', expected_target_group_id: 201, expected_target_group_name: 'Group Active', status: 'active', current_expiry: '2026-09-01T00:00:00Z', planned_action: 'extend', resulting_expiry: '2027-09-01T00:00:00Z', drift: [{ group_id: 999, group_name: 'Group Drift', status: 'active', expires_at: '2026-09-01T00:00:00Z' }] },
+		{ user_id: 2, relay_user_id: 102, username: 'bob', email: 'bob@example.org', expected_target_group_id: 202, expected_target_group_name: 'Group Expired', status: 'expired', current_expiry: '2026-08-01T00:00:00Z', planned_action: 'renew', resulting_expiry: '2027-08-24T00:00:00Z' },
+		{ user_id: 3, relay_user_id: 103, username: 'carol', email: 'carol@example.net', expected_target_group_id: 203, expected_target_group_name: 'Group Missing', status: 'missing', planned_action: 'create', resulting_expiry: '2027-08-24T00:00:00Z' },
+		{ user_id: 4, relay_user_id: 104, username: 'dana', email: 'dana@example.edu', expected_target_group_id: 204, expected_target_group_name: 'Group Suspended', status: 'suspended', current_expiry: '2026-10-01T00:00:00Z', planned_action: 'skip', resulting_expiry: '2026-10-01T00:00:00Z' },
+	],
+	generated_at: '2026-08-24T00:00:00Z',
+	relationship_fingerprint: 'v2:renewal-preview-fingerprint',
+}
+
 async function mountView(initialMappings: any[] = [], wide = false) {
 	const mediaQuery = {
 		matches: wide,
@@ -96,6 +112,7 @@ async function mountView(initialMappings: any[] = [], wide = false) {
     data: { data: { providers: [{ id: 7, name: 'relay', display_name: 'Relay', groups: [{ group_id: '42', group_name: 'Group Alpha', platform: 'openai' }] }] } },
   })
 	relayPlanning.listRelayGroupMappings.mockResolvedValue({ data: { data: { items: initialMappings } } })
+	relayPlanning.previewRelayMappingRenewal.mockImplementation((_id: number, data: { renewal_days: number }) => Promise.resolve({ data: { data: structuredClone({ ...renewalPreview, renewal_days: data.renewal_days }) } }))
   relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: structuredClone(plan) } })
 	relayPlanning.searchRelayPlanningUsers.mockResolvedValue({
     data: { data: { items: [], total: 0, page: 1, page_size: 20 } },
@@ -116,8 +133,8 @@ async function mountView(initialMappings: any[] = [], wide = false) {
         ElOption: { props: ['label', 'value'], template: '<option :value="value">{{ label }}</option>' },
         ElInputNumber: {
           props: ['modelValue'],
-          emits: ['update:modelValue'],
-          template: '<input type="number" :value="modelValue" @input="$emit(\'update:modelValue\', Number($event.target.value))">',
+		  emits: ['update:modelValue', 'change'],
+		  template: '<input type="number" :value="modelValue" @input="$emit(\'update:modelValue\', Number($event.target.value))" @change="$emit(\'change\', Number($event.target.value))">',
         },
 				ElPagination: {
 					props: ['currentPage', 'pageSize', 'total'],
@@ -164,6 +181,70 @@ describe('RelayPlanningView', () => {
 		expect(matchMedia).toHaveBeenCalledWith('(min-width: 1280px)')
 		expect(wrapper.find('[data-testid="candidate-table-layout"]').exists()).toBe(true)
 		expect(wrapper.find('[data-testid="candidate-card-layout"]').exists()).toBe(false)
+	})
+
+	it('previews managed subscription renewal from both responsive mapping layouts', async () => {
+		const mapping = {
+			id: 9,
+			provider_id: 7,
+			department_id: 'dept-alpha',
+			department_name: 'SDK Framework',
+			platform: 'openai',
+			template_group_id: 42,
+			template_group_name: 'Group Alpha',
+			source_group_id: 0,
+			source_group_name: '',
+			group_ids: [201, 202, 203, 204],
+			status: 'active',
+			weekly_cost_target: 2500,
+			member_assignments: { '1': 201, '2': 202, '3': 203, '4': 204 },
+			account_management_initialized: false,
+			desired_accounts: {},
+			account_pools: [],
+			updated_at: '2026-08-24T00:00:00Z',
+		}
+		const { wrapper, relayPlanning } = await mountView([mapping])
+
+		expect(wrapper.find('[data-testid="mapping-card-layout"]').exists()).toBe(true)
+		await wrapper.get('[data-testid="renew-mapping-9"]').trigger('click')
+		await flushPromises()
+
+		expect(relayPlanning.previewRelayMappingRenewal).toHaveBeenCalledWith(9, { renewal_days: 365 })
+		const dialog = wrapper.findAllComponents(ElDialog).find((item) => item.props('modelValue') === true)
+		expect(dialog?.props('modelValue')).toBe(true)
+		expect(dialog?.props('appendToBody')).toBe(true)
+		expect(dialog?.props('alignCenter')).toBe(true)
+		expect(wrapper.get('[data-testid="renewal-selected-count"]').text()).toContain('4')
+		for (const userID of [1, 2, 3, 4]) {
+			expect((wrapper.get(`[data-testid="renewal-member-${userID}"]`).find('input').element as HTMLInputElement).checked).toBe(true)
+		}
+		expect(wrapper.text()).toContain('Group Active')
+		expect(wrapper.text()).toContain('Extend')
+		expect(wrapper.text()).toContain('Expired')
+		expect(wrapper.text()).toContain('Renew')
+		expect(wrapper.text()).toContain('Missing')
+		expect(wrapper.text()).toContain('Create')
+		expect(wrapper.text()).toContain('Suspended')
+		expect(wrapper.text()).toContain('Skip')
+		expect(wrapper.text()).toContain('Group Drift')
+		expect(wrapper.get('[data-testid="renewal-current-expiry-1"]').text()).toContain('2026')
+		expect(wrapper.get('[data-testid="renewal-resulting-expiry-1"]').text()).toContain('2027')
+
+		await wrapper.get('[data-testid="renewal-member-2"]').find('input').setValue(false)
+		expect(wrapper.get('[data-testid="renewal-selected-count"]').text()).toContain('3')
+		const term = wrapper.get('[data-testid="renewal-days-input"]')
+		await term.setValue(30)
+		await term.trigger('change')
+		await flushPromises()
+		expect(relayPlanning.previewRelayMappingRenewal).toHaveBeenLastCalledWith(9, { renewal_days: 30 })
+		expect((wrapper.get('[data-testid="renewal-member-2"]').find('input').element as HTMLInputElement).checked).toBe(false)
+		expect(relayPlanning.executeRelayPlan).not.toHaveBeenCalled()
+		expect(relayPlanning.executeRelayReplan).not.toHaveBeenCalled()
+
+		wrapper.unmount()
+		const wide = await mountView([mapping], true)
+		expect(wide.wrapper.find('[data-testid="mapping-table-layout"]').exists()).toBe(true)
+		expect(wide.wrapper.find('[data-testid="renew-mapping-9"]').exists()).toBe(true)
 	})
 
 	it('allows the department field to shrink inside the planning grid', async () => {

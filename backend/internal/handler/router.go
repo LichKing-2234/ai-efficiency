@@ -528,6 +528,7 @@ func setupRouter(
 			relayPlanningGroup.POST("/preview", relayPlanningHandler.Preview)
 			relayPlanningGroup.POST("/execute", relayPlanningHandler.Execute)
 			relayPlanningGroup.GET("/mappings", relayPlanningHandler.ListMappings)
+			relayPlanningGroup.POST("/mappings/:id/renewal/preview", relayPlanningHandler.PreviewMappingRenewal)
 			relayPlanningGroup.PUT("/mappings/:id/rebind", relayPlanningHandler.Rebind)
 			relayPlanningGroup.POST("/mappings/:id/accounts/adopt", relayPlanningHandler.AdoptCurrentAccounts)
 			relayPlanningGroup.PUT("/mappings/:id/accounts", relayPlanningHandler.SaveDesiredAccounts)

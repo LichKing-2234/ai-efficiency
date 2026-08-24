@@ -91,6 +91,25 @@ func (h *RelayPlanningHandler) ListMappings(c *gin.Context) {
 	pkg.Success(c, gin.H{"items": items})
 }
 
+func (h *RelayPlanningHandler) PreviewMappingRenewal(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		pkg.Error(c, http.StatusBadRequest, "invalid mapping id")
+		return
+	}
+	var req relayplanning.MappingRenewalPreviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil && err != io.EOF {
+		pkg.Error(c, http.StatusBadRequest, "invalid mapping renewal preview request")
+		return
+	}
+	preview, err := h.service.PreviewMappingRenewal(c.Request.Context(), id, req)
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	pkg.Success(c, preview)
+}
+
 func (h *RelayPlanningHandler) Rebind(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {

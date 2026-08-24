@@ -824,6 +824,208 @@ func TestRelayPlanningListMappingsUsesBatchSubscriptionDirectory(t *testing.T) {
 	}
 }
 
+func TestRelayPlanningMappingRenewalPreviewShowsManagedSubscriptionOutcomesWithoutMutation(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().
+		SetName("relay-planning-renewal-preview-test").
+		SetDisplayName("Relay Planning Renewal Preview Test").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetEnabled(true).
+		SaveX(ctx)
+	alice := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource("ldap").SetRelayUserID(41).SaveX(ctx)
+	bob := client.User.Create().SetUsername("bob").SetEmail("bob@example.org").SetAuthSource("ldap").SetRelayUserID(42).SaveX(ctx)
+	carol := client.User.Create().SetUsername("carol").SetEmail("carol@example.net").SetAuthSource("ldap").SetRelayUserID(43).SaveX(ctx)
+	dana := client.User.Create().SetUsername("dana").SetEmail("dana@example.edu").SetAuthSource("ldap").SetRelayUserID(44).SaveX(ctx)
+	mapping := client.RelayGroupMapping.Create().
+		SetProviderID(providerConfig.ID).
+		SetDepartmentExternalID("dept-alpha").
+		SetDepartmentName("Department Alpha").
+		SetPlatform("openai").
+		SetTemplateGroupID(10).
+		SetGroupIds([]int64{101, 102, 103, 104}).
+		SetMemberAssignments(map[string]int64{
+			fmt.Sprint(alice.ID): 101,
+			fmt.Sprint(bob.ID):   102,
+			fmt.Sprint(carol.ID): 103,
+			fmt.Sprint(dana.ID):  104,
+		}).
+		SaveX(ctx)
+	activeExpiry := time.Date(2099, time.January, 2, 3, 4, 5, 0, time.UTC)
+	expiredAt := time.Date(2000, time.January, 2, 3, 4, 5, 0, time.UTC)
+	suspendedExpiry := time.Date(2099, time.February, 3, 4, 5, 6, 0, time.UTC)
+	provider := &relayPlanningSearchProvider{
+		users: map[int64]*relay.User{
+			41: {ID: 41, Username: "alice", Email: "alice@example.com"},
+			42: {ID: 42, Username: "bob", Email: "bob@example.org"},
+			43: {ID: 43, Username: "carol", Email: "carol@example.net"},
+			44: {ID: 44, Username: "dana", Email: "dana@example.edu"},
+			99: {ID: 99, Username: "relay-only", Email: "relay-only@example.invalid"},
+		},
+		groups: []relay.Group{
+			{ID: 101, Name: "Group Active", Platform: "openai"},
+			{ID: 102, Name: "Group Expired", Platform: "openai"},
+			{ID: 103, Name: "Group Missing", Platform: "openai"},
+			{ID: 104, Name: "Group Suspended", Platform: "openai"},
+			{ID: 999, Name: "Group Drift", Platform: "openai"},
+		},
+		subscriptions: map[int64][]relay.UserSubscription{
+			41: {
+				{ID: 1, UserID: 41, GroupID: 101, Status: "active", ExpiresAt: activeExpiry},
+				{ID: 2, UserID: 41, GroupID: 999, Status: "active", ExpiresAt: activeExpiry},
+			},
+			42: {{ID: 3, UserID: 42, GroupID: 102, Status: "expired", ExpiresAt: expiredAt}},
+			43: {},
+			44: {{ID: 4, UserID: 44, GroupID: 104, Status: "suspended", ExpiresAt: suspendedExpiry}},
+			99: {{ID: 5, UserID: 99, GroupID: 103, Status: "active", ExpiresAt: activeExpiry}},
+		},
+	}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	handler := NewRelayPlanningHandler(service)
+	router := gin.New()
+	router.POST("/admin/relay-planning/mappings/:id/renewal/preview", handler.PreviewMappingRenewal)
+	path := fmt.Sprintf("/admin/relay-planning/mappings/%d/renewal/preview", mapping.ID)
+
+	request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Data relayplanning.MappingRenewalPreview `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	preview := body.Data
+	if preview.MappingID != mapping.ID || preview.RenewalDays != 365 || len(preview.Members) != 4 {
+		t.Fatalf("preview = %+v, want mapping %d with four managed members and 365 days", preview, mapping.ID)
+	}
+	if !strings.HasPrefix(preview.RelationshipFingerprint, "v2:") || strings.Contains(response.Body.String(), "test-admin-key") {
+		t.Fatalf("fingerprint/response = %q/%s, want opaque v2 facts without credentials", preview.RelationshipFingerprint, response.Body.String())
+	}
+	if provider.subscriptionReads.Load() != 4 {
+		t.Fatalf("subscription reads = %d, want only four saved managed members", provider.subscriptionReads.Load())
+	}
+	active := preview.Members[0]
+	maximumExpiry := time.Date(2099, time.December, 31, 23, 59, 59, 0, time.UTC)
+	if active.UserID != alice.ID || active.ExpectedTargetGroupID != 101 || active.ExpectedTargetGroupName != "Group Active" || active.Status != "active" || active.PlannedAction != "extend" || active.CurrentExpiry == nil || !active.CurrentExpiry.Equal(activeExpiry) || active.ResultingExpiry == nil || !active.ResultingExpiry.Equal(maximumExpiry) {
+		t.Fatalf("active member = %+v, want expiry capped at Relay maximum %s", active, maximumExpiry)
+	}
+	if len(active.Drift) != 1 || active.Drift[0].GroupID != 999 || active.Drift[0].GroupName != "Group Drift" || active.Drift[0].Status != "active" {
+		t.Fatalf("active drift = %+v, want unexpected Group 999", active.Drift)
+	}
+	expired := preview.Members[1]
+	if expired.Status != "expired" || expired.PlannedAction != "renew" || expired.ResultingExpiry == nil || !expired.ResultingExpiry.Equal(preview.GeneratedAt.AddDate(0, 0, 365)) {
+		t.Fatalf("expired member = %+v, want renewal from Preview time", expired)
+	}
+	missing := preview.Members[2]
+	if missing.Status != "missing" || missing.PlannedAction != "create" || missing.CurrentExpiry != nil || missing.ResultingExpiry == nil || !missing.ResultingExpiry.Equal(preview.GeneratedAt.AddDate(0, 0, 365)) {
+		t.Fatalf("missing member = %+v, want new subscription from Preview time", missing)
+	}
+	suspended := preview.Members[3]
+	if suspended.Status != "suspended" || suspended.PlannedAction != "skip" || suspended.ResultingExpiry == nil || !suspended.ResultingExpiry.Equal(suspendedExpiry) {
+		t.Fatalf("suspended member = %+v, want unchanged skipped subscription", suspended)
+	}
+	if len(provider.assigned) != 0 || len(provider.removed) != 0 || len(provider.bound) != 0 || provider.accountUpdates != 0 || len(provider.events) != 0 {
+		t.Fatalf("provider mutations = assigned:%v removed:%v bound:%v accounts:%d events:%v, want none", provider.assigned, provider.removed, provider.bound, provider.accountUpdates, provider.events)
+	}
+	fingerprintForCurrentFacts := func() string {
+		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("fingerprint preview status = %d, want 200, body=%s", response.Code, response.Body.String())
+		}
+		var current struct {
+			Data relayplanning.MappingRenewalPreview `json:"data"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &current); err != nil {
+			t.Fatalf("decode fingerprint preview: %v", err)
+		}
+		return current.Data.RelationshipFingerprint
+	}
+	assertFingerprintChanged := func(label string) {
+		if current := fingerprintForCurrentFacts(); current == preview.RelationshipFingerprint {
+			t.Fatalf("%s did not change renewal relationship fingerprint %q", label, current)
+		}
+	}
+	originalAliceSubscriptions := append([]relay.UserSubscription(nil), provider.subscriptions[41]...)
+	provider.subscriptions[41][0].ExpiresAt = activeExpiry.Add(-time.Hour)
+	assertFingerprintChanged("expected subscription expiry")
+	provider.subscriptions[41] = append([]relay.UserSubscription(nil), originalAliceSubscriptions...)
+	provider.subscriptions[41][0].Status = "suspended"
+	assertFingerprintChanged("expected subscription status")
+	provider.subscriptions[41] = append([]relay.UserSubscription(nil), originalAliceSubscriptions...)
+	provider.subscriptions[41] = provider.subscriptions[41][:1]
+	assertFingerprintChanged("unexpected subscription drift")
+	provider.subscriptions[41] = append([]relay.UserSubscription(nil), originalAliceSubscriptions...)
+	provider.groups[0].Name = "Group Active Renamed"
+	assertFingerprintChanged("expected target Group")
+	provider.groups[0].Name = "Group Active"
+	changedAssignments := map[string]int64{
+		fmt.Sprint(alice.ID): 102,
+		fmt.Sprint(bob.ID):   102,
+		fmt.Sprint(carol.ID): 103,
+		fmt.Sprint(dana.ID):  104,
+	}
+	client.RelayGroupMapping.UpdateOneID(mapping.ID).SetMemberAssignments(changedAssignments).SaveX(ctx)
+	assertFingerprintChanged("managed member assignment")
+	client.RelayGroupMapping.UpdateOneID(mapping.ID).SetMemberAssignments(map[string]int64{
+		fmt.Sprint(alice.ID): 101,
+		fmt.Sprint(bob.ID):   102,
+		fmt.Sprint(carol.ID): 103,
+		fmt.Sprint(dana.ID):  104,
+	}).SaveX(ctx)
+
+	request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"renewal_days":30}`))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("adjusted term status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode adjusted response: %v", err)
+	}
+	if body.Data.RenewalDays != 30 || body.Data.Members[0].ResultingExpiry == nil || !body.Data.Members[0].ResultingExpiry.Equal(activeExpiry.AddDate(0, 0, 30)) {
+		t.Fatalf("adjusted preview = %+v, want active expiry extended by 30 days", body.Data)
+	}
+}
+
+func TestRelayPlanningMappingRenewalPreviewRejectsUnsupportedTerm(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	mapping := client.RelayGroupMapping.Create().SetProviderID(7).SetDepartmentExternalID("dept-alpha").SetDepartmentName("Department Alpha").SetPlatform("openai").SetTemplateGroupID(10).SetGroupIds([]int64{101}).SaveX(ctx)
+	provider := &relayPlanningSearchProvider{}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	handler := NewRelayPlanningHandler(service)
+	router := gin.New()
+	router.POST("/admin/relay-planning/mappings/:id/renewal/preview", handler.PreviewMappingRenewal)
+	for _, test := range []struct {
+		payload string
+		want    string
+	}{
+		{payload: `{"renewal_days":0}`, want: "renewal_days must be positive"},
+		{payload: `{"renewal_days":36501}`, want: "renewal_days must not exceed 36500"},
+	} {
+		request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/relay-planning/mappings/%d/renewal/preview", mapping.ID), strings.NewReader(test.payload))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), test.want) {
+			t.Fatalf("status/body = %d/%s, want %q", response.Code, response.Body.String(), test.want)
+		}
+	}
+	if provider.subscriptionReads.Load() != 0 {
+		t.Fatalf("subscription reads = %d, want validation before provider reads", provider.subscriptionReads.Load())
+	}
+}
+
 func TestRelayPlanningReplanUsesBatchSubscriptionDirectory(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)

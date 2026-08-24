@@ -1280,6 +1280,31 @@ func TestListUsersWithActiveSubscriptionsUsesBatchDirectoryFacts(t *testing.T) {
 	}
 }
 
+func TestListUserSubscriptionsPreservesRenewalRelationshipFacts(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users/11/subscriptions", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":[{"id":71,"user_id":11,"group_id":101,"status":"active","starts_at":"2026-08-01T00:00:00Z","expires_at":"2026-09-01T00:00:00Z","notes":"provider-private"}]}`))
+	})
+
+	provider := newTestProvider(t, mux)
+	lister, ok := provider.(relay.UserSubscriptionLister)
+	if !ok {
+		t.Fatal("provider does not implement UserSubscriptionLister")
+	}
+	subscriptions, err := lister.ListUserSubscriptions(context.Background(), 11)
+	if err != nil {
+		t.Fatalf("ListUserSubscriptions() error = %v", err)
+	}
+	expiresAt := time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC)
+	if got, want := subscriptions, []relay.UserSubscription{{ID: 71, UserID: 11, GroupID: 101, Status: "active", ExpiresAt: expiresAt}}; !cmp.Equal(got, want) {
+		t.Fatalf("subscriptions mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	}
+}
+
 func TestProviderWideDirectoryContractUsesFixedQueryAndAuthoritativePages(t *testing.T) {
 	pageBodies := map[string][]byte{
 		"1": []byte(`{"success":true,"data":{"items":[{"id":11},{"id":12}],"page":1,"page_size":1000,"pages":2,"total":3}}`),
