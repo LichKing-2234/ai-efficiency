@@ -3,6 +3,7 @@ package relay
 import (
 	"bytes"
 	"encoding/json"
+	"sort"
 	"strings"
 	"time"
 )
@@ -168,6 +169,35 @@ type UserSubscription struct {
 	WeeklyResetAt   *time.Time `json:"weekly_reset_at,omitempty"`
 	MonthlyResetAt  *time.Time `json:"monthly_reset_at,omitempty"`
 	Group           *Group     `json:"group,omitempty"`
+}
+
+// UserRelationship is one provider-directory identity with the complete
+// subscription facts returned on the same page.
+type UserRelationship struct {
+	User          User
+	Subscriptions []UserSubscription
+}
+
+func (relationship UserRelationship) ActiveSubscriptionGroupIDs() []int64 {
+	seen := make(map[int64]struct{}, len(relationship.Subscriptions))
+	for _, subscription := range relationship.Subscriptions {
+		if !strings.EqualFold(strings.TrimSpace(subscription.Status), "active") {
+			continue
+		}
+		groupID := subscription.GroupID
+		if groupID <= 0 && subscription.Group != nil {
+			groupID = subscription.Group.ID
+		}
+		if groupID > 0 {
+			seen[groupID] = struct{}{}
+		}
+	}
+	groupIDs := make([]int64, 0, len(seen))
+	for groupID := range seen {
+		groupIDs = append(groupIDs, groupID)
+	}
+	sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
+	return groupIDs
 }
 
 func (u *User) UnmarshalJSON(data []byte) error {

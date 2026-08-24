@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -39,6 +41,7 @@ type relayPlanningSearchProvider struct {
 	keys                   map[int64][]relay.APIKey
 	usage                  map[int64]relay.TeamUserUsageStats
 	subscriptionError      error
+	relationshipError      error
 	allowedGroupsError     error
 	assigned               []string
 	removed                []string
@@ -55,10 +58,20 @@ type relayPlanningSearchProvider struct {
 	subscriptionReads      atomic.Int64
 	keyReads               atomic.Int64
 	directoryReads         atomic.Int64
+	relationshipReads      atomic.Int64
+	relationshipPageReads  atomic.Int64
+	relationshipPages      [][]int64
+	userReads              atomic.Int64
+	groupReads             atomic.Int64
+	dependencyStarted      chan string
+	dependencyRelease      chan struct{}
 	renewalWrites          []relayPlanningRenewalWrite
 	renewalFailures        map[int64]error
 	renewalAmbiguous       map[int64]error
 	renewalAppliedKeys     map[string]bool
+	renewalMu              sync.Mutex
+	renewalLegacyExtends   atomic.Int64
+	renewalDirectExtends   atomic.Int64
 }
 
 type relayPlanningRenewalWrite struct {
@@ -70,10 +83,13 @@ type relayPlanningRenewalWrite struct {
 }
 
 func (p *relayPlanningSearchProvider) GetUser(_ context.Context, userID int64) (*relay.User, error) {
+	p.userReads.Add(1)
 	return p.users[userID], nil
 }
 
 func (p *relayPlanningSearchProvider) ListPlatformGroups(context.Context) ([]relay.Group, error) {
+	p.groupReads.Add(1)
+	p.waitForDependency("groups")
 	groups := make([]relay.Group, 0, len(p.groups))
 	for _, group := range p.groups {
 		if !p.inactiveGroupIDs[group.ID] {
@@ -106,6 +122,52 @@ func (p *relayPlanningSearchProvider) ListUsersWithActiveSubscriptions(context.C
 		groups[userID] = append([]int64(nil), groupIDs...)
 	}
 	return users, groups, nil
+}
+
+func (p *relayPlanningSearchProvider) ListUserRelationships(context.Context) ([]relay.UserRelationship, error) {
+	p.relationshipReads.Add(1)
+	p.waitForDependency("relationships")
+	if p.relationshipError != nil {
+		return nil, p.relationshipError
+	}
+	if p.subscriptionError != nil {
+		return nil, p.subscriptionError
+	}
+	if len(p.relationshipPages) > 0 {
+		relationships := make([]relay.UserRelationship, 0, len(p.users))
+		for _, page := range p.relationshipPages {
+			p.relationshipPageReads.Add(1)
+			for _, userID := range page {
+				if user := p.users[userID]; user != nil {
+					relationships = append(relationships, relay.UserRelationship{User: *user, Subscriptions: append([]relay.UserSubscription(nil), p.subscriptions[userID]...)})
+				}
+			}
+		}
+		return relationships, nil
+	}
+	p.relationshipPageReads.Add(1)
+	if len(p.users) == 0 && len(p.directoryUsers) > 0 {
+		relationships := make([]relay.UserRelationship, 0, len(p.directoryUsers))
+		for _, user := range p.directoryUsers {
+			subscriptions := make([]relay.UserSubscription, 0, len(p.activeSubscriptionIDs[user.ID]))
+			for _, groupID := range p.activeSubscriptionIDs[user.ID] {
+				subscriptions = append(subscriptions, relay.UserSubscription{UserID: user.ID, GroupID: groupID, Status: "active"})
+			}
+			relationships = append(relationships, relay.UserRelationship{User: user, Subscriptions: subscriptions})
+		}
+		return relationships, nil
+	}
+	userIDs := make([]int64, 0, len(p.users))
+	for userID := range p.users {
+		userIDs = append(userIDs, userID)
+	}
+	sort.Slice(userIDs, func(i, j int) bool { return userIDs[i] < userIDs[j] })
+	relationships := make([]relay.UserRelationship, 0, len(userIDs))
+	for _, userID := range userIDs {
+		user := *p.users[userID]
+		relationships = append(relationships, relay.UserRelationship{User: user, Subscriptions: append([]relay.UserSubscription(nil), p.subscriptions[userID]...)})
+	}
+	return relationships, nil
 }
 
 func (p *relayPlanningSearchProvider) ListUserSubscriptions(_ context.Context, userID int64) ([]relay.UserSubscription, error) {
@@ -192,10 +254,32 @@ func (p *relayPlanningSearchProvider) AssignSubscriptionForUserWithOperationKey(
 }
 
 func (p *relayPlanningSearchProvider) ExtendSubscriptionForUserWithOperationKey(_ context.Context, userID, groupID int64, days int, operationKey string) error {
+	p.renewalLegacyExtends.Add(1)
+	return p.applyRenewalWrite("extend", userID, groupID, days, operationKey)
+}
+
+func (p *relayPlanningSearchProvider) ExtendSubscriptionByIDWithOperationKey(_ context.Context, subscriptionID int64, days int, operationKey string) error {
+	p.renewalDirectExtends.Add(1)
+	p.renewalMu.Lock()
+	var userID, groupID int64
+	for currentUserID, subscriptions := range p.subscriptions {
+		for _, subscription := range subscriptions {
+			if subscription.ID == subscriptionID {
+				userID, groupID = currentUserID, subscription.GroupID
+				break
+			}
+		}
+	}
+	p.renewalMu.Unlock()
+	if userID <= 0 || groupID <= 0 {
+		return fmt.Errorf("reviewed subscription %d not found", subscriptionID)
+	}
 	return p.applyRenewalWrite("extend", userID, groupID, days, operationKey)
 }
 
 func (p *relayPlanningSearchProvider) applyRenewalWrite(action string, userID, groupID int64, days int, operationKey string) error {
+	p.renewalMu.Lock()
+	defer p.renewalMu.Unlock()
 	p.renewalWrites = append(p.renewalWrites, relayPlanningRenewalWrite{Action: action, UserID: userID, GroupID: groupID, Days: days, OperationKey: operationKey})
 	if p.renewalAppliedKeys == nil {
 		p.renewalAppliedKeys = make(map[string]bool)
@@ -248,12 +332,21 @@ func (p *relayPlanningSearchProvider) BindAPIKeyToGroup(_ context.Context, keyID
 
 func (p *relayPlanningSearchProvider) ListAccountsForPlatform(context.Context, string) ([]relay.Account, error) {
 	p.accountReads++
+	p.waitForDependency("accounts")
 	accounts := make([]relay.Account, len(p.accounts))
 	for index := range p.accounts {
 		accounts[index] = p.accounts[index]
 		accounts[index].GroupRelationships = append([]relay.AccountGroupRelationship(nil), p.accounts[index].GroupRelationships...)
 	}
 	return accounts, nil
+}
+
+func (p *relayPlanningSearchProvider) waitForDependency(name string) {
+	if p.dependencyStarted == nil || p.dependencyRelease == nil {
+		return
+	}
+	p.dependencyStarted <- name
+	<-p.dependencyRelease
 }
 
 func (p *relayPlanningSearchProvider) SetAccountGroupRelationship(_ context.Context, accountID, groupID int64, expected []relay.AccountGroupRelationship, desiredPriority *int) error {
@@ -412,6 +505,7 @@ func TestRelayPlanningPreviewAllowsTargetOnlyExternalUserAndKeepsMissingUsageUnk
 		usage: map[int64]relay.TeamUserUsageStats{
 			42: {UserID: 42, RangeActualCost: &cost, RangeTotalTokens: &tokens},
 		},
+		relationshipError: errors.New("initial Preview must not load a provider-wide relationship snapshot"),
 	}
 	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
 		if providerID != providerConfig.ID {
@@ -431,6 +525,9 @@ func TestRelayPlanningPreviewAllowsTargetOnlyExternalUserAndKeepsMissingUsageUnk
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	if provider.relationshipReads.Load() != 0 {
+		t.Fatalf("initial Preview relationship snapshot reads = %d, want 0", provider.relationshipReads.Load())
 	}
 	var body struct {
 		Data relayplanning.Plan `json:"data"`
@@ -810,7 +907,7 @@ func TestRelayPlanningAdoptCurrentAccountsInitializesDesiredStateWithoutRelayWri
 	}
 }
 
-func TestRelayPlanningListMappingsUsesBatchSubscriptionDirectory(t *testing.T) {
+func TestRelayPlanningListMappingsUsesRelationshipSnapshot(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	providerConfig := client.RelayProvider.Create().
@@ -870,14 +967,124 @@ func TestRelayPlanningListMappingsUsesBatchSubscriptionDirectory(t *testing.T) {
 	if len(body.Data.Items) != 2 || !containsRelayPlanningWarning(body.Data.Items[0].Warnings, "unmanaged relay member 900 in target group 101") {
 		t.Fatalf("mapping warnings = %+v, want batch-derived unmanaged member warning", body.Data.Items)
 	}
-	if got := provider.directoryReads.Load(); got != 1 {
-		t.Fatalf("directory reads = %d, want 1", got)
+	if got := provider.relationshipReads.Load(); got != 1 {
+		t.Fatalf("relationship snapshot reads = %d, want 1", got)
+	}
+	if got := provider.directoryReads.Load(); got != 0 {
+		t.Fatalf("legacy directory reads = %d, want 0", got)
 	}
 	if got := provider.subscriptionReads.Load(); got != 0 {
 		t.Fatalf("per-user subscription reads = %d, want 0", got)
 	}
 	if got := provider.accountReads; got != 1 {
 		t.Fatalf("same-platform Account reads = %d, want 1", got)
+	}
+}
+
+func TestRelayPlanningListMappingsStartsIndependentRelayReadsTogether(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().
+		SetName("relay-planning-concurrent-list-test").
+		SetDisplayName("Relay Planning Concurrent List Test").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetEnabled(true).
+		SaveX(ctx)
+	createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
+	client.RelayGroupMapping.Create().
+		SetProviderID(providerConfig.ID).
+		SetDepartmentExternalID("dept-alpha").
+		SetDepartmentName("Department Alpha").
+		SetPlatform("openai").
+		SetTemplateGroupID(10).
+		SetGroupIds([]int64{101}).
+		SaveX(ctx)
+	started := make(chan string, 3)
+	release := make(chan struct{})
+	provider := &relayPlanningSearchProvider{
+		groups:            []relay.Group{{ID: 10, Name: "Group Alpha", Platform: "openai"}, {ID: 101, Name: "Group Target", Platform: "openai"}},
+		accounts:          []relay.Account{{ID: 11, Name: "Account Alpha", Platform: "openai"}},
+		dependencyStarted: started,
+		dependencyRelease: release,
+	}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	router := gin.New()
+	router.GET("/admin/relay-planning/mappings", NewRelayPlanningHandler(service).ListMappings)
+
+	response := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		request := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/admin/relay-planning/mappings?provider_id=%d", providerConfig.ID), nil)
+		router.ServeHTTP(response, request)
+		close(done)
+	}()
+	seen := make(map[string]bool, 3)
+	for len(seen) < 3 {
+		select {
+		case name := <-started:
+			seen[name] = true
+		case <-time.After(time.Second):
+			close(release)
+			t.Fatalf("started dependencies = %v, want groups, relationships, and accounts before release", seen)
+		}
+	}
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("mapping list did not complete after releasing dependencies")
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	if provider.groupReads.Load() != 1 || provider.relationshipReads.Load() != 1 || provider.accountReads != 1 {
+		t.Fatalf("Relay reads = groups:%d relationships:%d accounts:%d, want 1/1/1", provider.groupReads.Load(), provider.relationshipReads.Load(), provider.accountReads)
+	}
+}
+
+func TestRelayPlanningListMappingsSQLReadCountDoesNotGrowWithMappings(t *testing.T) {
+	ctx := context.Background()
+	client, dsn := testdb.OpenWithDSN(t)
+	providerConfig := client.RelayProvider.Create().SetName("relay-planning-query-budget-test").SetDisplayName("Relay Planning Query Budget Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-admin-key").SetEnabled(true).SaveX(ctx)
+	createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
+	createMapping := func(departmentID string, groupID int64) {
+		client.RelayGroupMapping.Create().SetProviderID(providerConfig.ID).SetDepartmentExternalID(departmentID).SetDepartmentName(departmentID).SetPlatform("openai").SetTemplateGroupID(10).SetGroupIds([]int64{groupID}).SaveX(ctx)
+	}
+	createMapping("dept-alpha", 101)
+	createMapping("dept-missing-1", 102)
+
+	var queryMu sync.Mutex
+	queries := make([]string, 0)
+	loggedClient, err := ent.Open("postgres", dsn, ent.Debug(), ent.Log(func(values ...any) {
+		queryMu.Lock()
+		queries = append(queries, fmt.Sprint(values...))
+		queryMu.Unlock()
+	}))
+	if err != nil {
+		t.Fatalf("open query-count client: %v", err)
+	}
+	t.Cleanup(func() { _ = loggedClient.Close() })
+	provider := &relayPlanningSearchProvider{groups: []relay.Group{{ID: 10, Name: "Group Alpha", Platform: "openai"}}, accounts: []relay.Account{}}
+	service := relayplanning.NewService(loggedClient, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	readCount := func() int {
+		queryMu.Lock()
+		queries = queries[:0]
+		queryMu.Unlock()
+		if _, listErr := service.ListMappings(ctx, providerConfig.ID); listErr != nil {
+			t.Fatalf("list mappings: %v", listErr)
+		}
+		queryMu.Lock()
+		defer queryMu.Unlock()
+		return len(queries)
+	}
+	smallCount := readCount()
+	for index := 2; index <= 9; index++ {
+		createMapping(fmt.Sprintf("dept-missing-%d", index), int64(101+index))
+	}
+	largeCount := readCount()
+	if largeCount != smallCount {
+		t.Fatalf("SQL reads = %d for two mappings and %d for ten mappings, want constant", smallCount, largeCount)
 	}
 }
 
@@ -937,6 +1144,7 @@ func TestRelayPlanningMappingRenewalPreviewShowsManagedSubscriptionOutcomesWitho
 			44: {{ID: 4, UserID: 44, GroupID: 104, Status: "suspended", ExpiresAt: suspendedExpiry}},
 			99: {{ID: 5, UserID: 99, GroupID: 103, Status: "active", ExpiresAt: activeExpiry}},
 		},
+		relationshipPages: [][]int64{{41, 42}, {43, 44, 99}},
 	}
 	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
 	handler := NewRelayPlanningHandler(service)
@@ -964,8 +1172,17 @@ func TestRelayPlanningMappingRenewalPreviewShowsManagedSubscriptionOutcomesWitho
 	if !strings.HasPrefix(preview.RelationshipFingerprint, "v2:") || strings.Contains(response.Body.String(), "test-admin-key") {
 		t.Fatalf("fingerprint/response = %q/%s, want opaque v2 facts without credentials", preview.RelationshipFingerprint, response.Body.String())
 	}
-	if provider.subscriptionReads.Load() != 4 {
-		t.Fatalf("subscription reads = %d, want only four saved managed members", provider.subscriptionReads.Load())
+	if got := provider.relationshipReads.Load(); got != 1 {
+		t.Fatalf("relationship snapshot reads = %d, want 1", got)
+	}
+	if got := provider.relationshipPageReads.Load(); got != 2 {
+		t.Fatalf("relationship snapshot page reads = %d, want 2", got)
+	}
+	if got := provider.userReads.Load(); got != 0 {
+		t.Fatalf("per-member user reads = %d, want 0", got)
+	}
+	if got := provider.subscriptionReads.Load(); got != 0 {
+		t.Fatalf("per-member subscription reads = %d, want 0", got)
 	}
 	active := preview.Members[0]
 	maximumExpiry := time.Date(2099, time.December, 31, 23, 59, 59, 0, time.UTC)
@@ -1150,6 +1367,7 @@ func TestRelayPlanningMappingRenewalExecuteRejectsStaleFactsBeforeWrite(t *testi
 func TestRelayPlanningMappingRenewalExecuteReportsStatesAndRetriesOnlyFailures(t *testing.T) {
 	fixture := newRelayPlanningRenewalExecutionFixture(t)
 	preview := fixture.preview(t)
+	readsBeforeExecute := fixture.provider.relationshipReads.Load()
 	aliceExpiryBefore := fixture.provider.subscriptions[41][0].ExpiresAt
 	danaExpiryBefore := fixture.provider.subscriptions[44][0].ExpiresAt
 	fixture.provider.renewalAmbiguous[42] = errors.New("synthetic timeout after apply")
@@ -1180,6 +1398,18 @@ func TestRelayPlanningMappingRenewalExecuteReportsStatesAndRetriesOnlyFailures(t
 	}
 	if got := len(fixture.provider.renewalWrites); got != 3 {
 		t.Fatalf("renewal writes = %+v, want active, expired, and missing only", fixture.provider.renewalWrites)
+	}
+	if got := fixture.provider.relationshipReads.Load() - readsBeforeExecute; got != 2 {
+		t.Fatalf("execution relationship snapshot reads = %d, want preflight and readback only", got)
+	}
+	if got := fixture.provider.renewalLegacyExtends.Load(); got != 0 {
+		t.Fatalf("user/group extension calls = %d, want 0", got)
+	}
+	if got := fixture.provider.renewalDirectExtends.Load(); got != 2 {
+		t.Fatalf("reviewed subscription extension calls = %d, want active and expired only", got)
+	}
+	if fixture.provider.userReads.Load() != 0 || fixture.provider.subscriptionReads.Load() != 0 {
+		t.Fatalf("per-member discovery reads = users:%d subscriptions:%d, want 0/0", fixture.provider.userReads.Load(), fixture.provider.subscriptionReads.Load())
 	}
 	if got := fixture.provider.subscriptions[41][0].ExpiresAt; !got.Equal(aliceExpiryBefore.AddDate(0, 0, 365)) {
 		t.Fatalf("active expiry = %s, want current expiry %s + 365 days", got, aliceExpiryBefore)
@@ -1219,8 +1449,13 @@ func TestRelayPlanningMappingRenewalExecuteReportsStatesAndRetriesOnlyFailures(t
 	if len(body.Data.Members) != 2 || body.Data.Members[0].Status != "succeeded" || body.Data.Members[1].Status != "succeeded" {
 		t.Fatalf("retry results = %+v, want only two failed members succeeded", body.Data.Members)
 	}
-	if got := fixture.provider.renewalWrites[3:]; len(got) != 2 || got[0].UserID != 42 || got[1].UserID != 43 || got[0].OperationKey != firstKeys[42] || got[1].OperationKey != firstKeys[43] {
-		t.Fatalf("retry writes = %+v, want failed members with original keys", got)
+	retryWrites := fixture.provider.renewalWrites[3:]
+	retryKeys := make(map[int64]string, len(retryWrites))
+	for _, write := range retryWrites {
+		retryKeys[write.UserID] = write.OperationKey
+	}
+	if len(retryWrites) != 2 || retryKeys[42] != firstKeys[42] || retryKeys[43] != firstKeys[43] {
+		t.Fatalf("retry writes = %+v, want failed members with original keys", retryWrites)
 	}
 	if !fixture.provider.subscriptions[42][0].ExpiresAt.Equal(bobExpiryAfterAmbiguousWrite) {
 		t.Fatalf("ambiguous retry expiry = %s, want no second extension after %s", fixture.provider.subscriptions[42][0].ExpiresAt, bobExpiryAfterAmbiguousWrite)
@@ -1337,7 +1572,7 @@ func mappingRenewalRetryPayload(t *testing.T, result relayplanning.MappingRenewa
 	return payload
 }
 
-func TestRelayPlanningReplanUsesBatchSubscriptionDirectory(t *testing.T) {
+func TestRelayPlanningReplanUsesSharedRelationshipSnapshot(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	providerConfig := client.RelayProvider.Create().
@@ -1392,8 +1627,11 @@ func TestRelayPlanningReplanUsesBatchSubscriptionDirectory(t *testing.T) {
 	if len(body.Data.UnmanagedMembers) != 1 || body.Data.UnmanagedMembers[0].RelayUserID != 900 || fmt.Sprint(body.Data.UnmanagedMembers[0].TargetGroupIDs) != "[101]" {
 		t.Fatalf("unmanaged members = %+v, want Relay user 900 in target Group 101", body.Data.UnmanagedMembers)
 	}
-	if got := provider.directoryReads.Load(); got != 1 {
-		t.Fatalf("directory reads = %d, want 1", got)
+	if got := provider.relationshipReads.Load(); got != 1 {
+		t.Fatalf("relationship snapshot reads = %d, want 1", got)
+	}
+	if got := provider.directoryReads.Load(); got != 0 {
+		t.Fatalf("legacy directory reads = %d, want 0", got)
 	}
 	if got := provider.subscriptionReads.Load(); got != 0 {
 		t.Fatalf("per-user subscription reads = %d, want 0", got)
@@ -2053,8 +2291,8 @@ func TestRelayPlanningConfirmRejectsChangedRelationshipsBeforeRelayWrites(t *tes
 	if previewBody.Data.RelationshipFingerprint == "" {
 		t.Fatal("preview relationship fingerprint is empty")
 	}
-	if provider.subscriptionReads.Load() != 1 || provider.keyReads.Load() != 1 {
-		t.Fatalf("Preview relationship reads = subscriptions:%d keys:%d, want one candidate read each", provider.subscriptionReads.Load(), provider.keyReads.Load())
+	if provider.relationshipReads.Load() != 1 || provider.subscriptionReads.Load() != 0 || provider.keyReads.Load() != 1 {
+		t.Fatalf("Preview relationship reads = snapshot:%d subscriptions:%d keys:%d, want 1/0/1", provider.relationshipReads.Load(), provider.subscriptionReads.Load(), provider.keyReads.Load())
 	}
 	if len(previewBody.Data.TargetSummaries) != 1 {
 		t.Fatalf("target summaries = %+v, want one Target Group summary", previewBody.Data.TargetSummaries)
@@ -2575,9 +2813,10 @@ func TestRelayPlanningReplanIncludesSavedExternalMember(t *testing.T) {
 			42: {ID: 42, Username: "alice", Email: alice.Email},
 			43: {ID: 43, Username: "bob", Email: bob.Email},
 		},
-		groups:        []relay.Group{{ID: 10, Name: "Group Alpha", Platform: "openai"}, {ID: 20, Name: "Group Beta", Platform: "openai"}, {ID: 30, Name: "Group Gamma", Platform: "openai"}, {ID: 101, Name: "Group Target", Platform: "openai"}},
-		subscriptions: map[int64][]relay.UserSubscription{42: {{UserID: 42, GroupID: 20, Status: "active"}}, 43: {{UserID: 43, GroupID: 30, Status: "active"}, {UserID: 43, GroupID: 101, Status: "active"}}},
-		keys:          map[int64][]relay.APIKey{42: {}, 43: {}},
+		groups:            []relay.Group{{ID: 10, Name: "Group Alpha", Platform: "openai"}, {ID: 20, Name: "Group Beta", Platform: "openai"}, {ID: 30, Name: "Group Gamma", Platform: "openai"}, {ID: 101, Name: "Group Target", Platform: "openai"}},
+		subscriptions:     map[int64][]relay.UserSubscription{42: {{UserID: 42, GroupID: 20, Status: "active"}}, 43: {{UserID: 43, GroupID: 30, Status: "active"}, {UserID: 43, GroupID: 101, Status: "active"}}},
+		keys:              map[int64][]relay.APIKey{42: {}, 43: {}},
+		relationshipPages: [][]int64{{42}, {43}},
 	}
 	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
 	router := gin.New()
@@ -2621,6 +2860,18 @@ func TestRelayPlanningReplanIncludesSavedExternalMember(t *testing.T) {
 	}
 	if len(provider.events) > 0 {
 		t.Fatalf("Replan wrote Relay state before confirmation: %v", provider.events)
+	}
+	if provider.relationshipReads.Load() != 1 || provider.groupReads.Load() != 1 || provider.accountReads != 1 {
+		t.Fatalf("shared Replan reads = relationships:%d groups:%d accounts:%d, want 1/1/1", provider.relationshipReads.Load(), provider.groupReads.Load(), provider.accountReads)
+	}
+	if provider.relationshipPageReads.Load() != 2 {
+		t.Fatalf("relationship snapshot page reads = %d, want 2", provider.relationshipPageReads.Load())
+	}
+	if provider.userReads.Load() != 0 || provider.subscriptionReads.Load() != 0 || provider.directoryReads.Load() != 0 {
+		t.Fatalf("legacy Replan reads = users:%d subscriptions:%d directory:%d, want 0/0/0", provider.userReads.Load(), provider.subscriptionReads.Load(), provider.directoryReads.Load())
+	}
+	if provider.keyReads.Load() != 2 {
+		t.Fatalf("API Key reads = %d, want once for each relevant user", provider.keyReads.Load())
 	}
 	executePayload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[%d]}],"expected_relationship_fingerprint":%q,"operation_key":"unchanged-external-member-1"}`, bob.ID, plan.RelationshipFingerprint)
 	request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/relay-planning/mappings/%d/replan/execute", mapping.ID), strings.NewReader(executePayload))

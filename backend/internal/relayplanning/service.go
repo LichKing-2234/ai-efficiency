@@ -60,6 +60,59 @@ type Service struct {
 	now           func() time.Time
 }
 
+type providerRelationshipSnapshot struct {
+	relationships []relay.UserRelationship
+	byUserID      map[int64]relay.UserRelationship
+}
+
+type accountListResult struct {
+	accounts []relay.Account
+	err      error
+}
+
+type mappingProviderFacts struct {
+	provider      relay.Provider
+	groups        []relay.Group
+	relationships *mappingRelationshipFacts
+	accounts      map[string]*accountListResult
+}
+
+type mappingDirectoryFacts struct {
+	available   map[string]bool
+	departments []DepartmentSuggestion
+}
+
+type planningAPIKeyResult struct {
+	once sync.Once
+	keys []relay.APIKey
+	err  error
+}
+
+type planningRequestFacts struct {
+	relationships *providerRelationshipSnapshot
+	accounts      accountListResult
+	apiKeyMu      sync.Mutex
+	apiKeys       map[int64]*planningAPIKeyResult
+}
+
+func newPlanningRequestFacts() *planningRequestFacts {
+	return &planningRequestFacts{apiKeys: make(map[int64]*planningAPIKeyResult)}
+}
+
+func (facts *planningRequestFacts) userAPIKeys(ctx context.Context, provider relay.Provider, relayUserID int64) ([]relay.APIKey, error) {
+	facts.apiKeyMu.Lock()
+	result := facts.apiKeys[relayUserID]
+	if result == nil {
+		result = &planningAPIKeyResult{}
+		facts.apiKeys[relayUserID] = result
+	}
+	facts.apiKeyMu.Unlock()
+	result.once.Do(func() {
+		result.keys, result.err = provider.ListUserAPIKeys(ctx, relayUserID)
+	})
+	return result.keys, result.err
+}
+
 func NewService(client *ent.Client, resolver ProviderResolver, prewarmReader *teamusage.PrewarmReader) *Service {
 	return &Service{client: client, resolver: resolver, users: adminusers.NewService(client), prewarmReader: prewarmReader, now: time.Now}
 }
@@ -335,6 +388,7 @@ type MappingRenewalMember struct {
 	ResultingExpiry         *time.Time            `json:"resulting_expiry,omitempty"`
 	Drift                   []MappingRenewalDrift `json:"drift,omitempty"`
 	subscriptions           []relay.UserSubscription
+	expectedSubscriptionID  int64
 }
 
 type MappingRenewalDrift struct {
@@ -575,9 +629,40 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	if !ok {
 		return nil, fmt.Errorf("relay provider does not support group listing")
 	}
-	groups, err := lister.ListPlatformGroups(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list relay groups: %w", err)
+	facts := newPlanningRequestFacts()
+	var groups []relay.Group
+	var groupsErr, relationshipsErr error
+	var relationshipReads sync.WaitGroup
+	relationshipReads.Add(1)
+	go func() {
+		defer relationshipReads.Done()
+		groups, groupsErr = lister.ListPlatformGroups(ctx)
+	}()
+	if req.ExistingMappingID > 0 {
+		_, supported := p.(relay.UserRelationshipSnapshotReader)
+		if supported {
+			relationshipReads.Add(1)
+			go func() {
+				defer relationshipReads.Done()
+				facts.relationships, relationshipsErr = loadProviderRelationshipSnapshot(ctx, p)
+			}()
+		}
+	}
+	if accountReader, supported := p.(relay.AccountRelationshipReader); supported {
+		relationshipReads.Add(1)
+		go func() {
+			defer relationshipReads.Done()
+			facts.accounts.accounts, facts.accounts.err = accountReader.ListAccountsForPlatform(ctx, req.Platform)
+		}()
+	} else {
+		facts.accounts.err = fmt.Errorf("relay provider does not support account relationship reading")
+	}
+	relationshipReads.Wait()
+	if groupsErr != nil {
+		return nil, fmt.Errorf("list relay groups: %w", groupsErr)
+	}
+	if relationshipsErr != nil {
+		return nil, fmt.Errorf("list Relay user relationships: %w", relationshipsErr)
 	}
 	template, err := findSourceGroup(groups, req.TemplateGroupID, req.Platform)
 	if err != nil {
@@ -656,7 +741,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 			users = filtered
 		}
 	}
-	candidates, err := s.buildCandidates(ctx, p, req.ProviderID, providerConfig.ConfigurationVersion, users, source, groups, req.MemberSources, req.Platform, req.DepartmentID)
+	candidates, err := s.buildCandidates(ctx, p, facts, req.ProviderID, providerConfig.ConfigurationVersion, users, source, groups, req.MemberSources, req.Platform, req.DepartmentID)
 	if err != nil {
 		return nil, fmt.Errorf("build relay planning candidates: %w", err)
 	}
@@ -682,7 +767,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		if err != nil {
 			return nil, fmt.Errorf("load pending relay planning targets: %w", err)
 		}
-		unmanagedMembers, err = s.loadUnmanagedMembers(ctx, p, mapping)
+		unmanagedMembers, err = s.loadUnmanagedMembers(ctx, p, facts, providerConfig.ConfigurationVersion, mapping)
 		if err != nil {
 			return nil, fmt.Errorf("load unmanaged relay members: %w", err)
 		}
@@ -734,7 +819,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	if err := validateTargetGroupNames(assignments, groups); err != nil {
 		return nil, fmt.Errorf("validate relay planning target names: %w", err)
 	}
-	if err := assignPreviewAccounts(ctx, p, req.Platform, template.ID, mapping, assignments); err != nil {
+	if err := assignPreviewAccounts(facts.accounts, req.Platform, template.ID, mapping, assignments); err != nil {
 		return nil, fmt.Errorf("assign relay planning Accounts: %w", err)
 	}
 	warnings := make([]string, 0)
@@ -779,7 +864,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	if req.ExistingMappingID > 0 {
 		plan.MappingID = req.ExistingMappingID
 	}
-	plan.RelationshipFingerprint, err = s.relationshipFingerprint(ctx, p, req, plan, groups)
+	plan.RelationshipFingerprint, err = s.relationshipFingerprint(ctx, p, facts, req, plan, groups)
 	if err != nil {
 		return nil, fmt.Errorf("fingerprint relay relationships: %w", err)
 	}
@@ -1043,9 +1128,9 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 				continue
 			}
 			if candidate.SourceGroupID > 0 {
-				member = executeMemberMigration(ctx, p, assigner, remover, binder, candidate, targetID, candidate.SourceGroupID, member)
+				member = executeMemberMigration(ctx, assigner, remover, binder, candidate, targetID, candidate.SourceGroupID, member)
 			} else {
-				member = executeMemberMigration(ctx, p, assigner, nil, nil, candidate, targetID, 0, member)
+				member = executeMemberMigration(ctx, assigner, nil, nil, candidate, targetID, 0, member)
 			}
 			memberResults = append(memberResults, member)
 		}
@@ -1115,15 +1200,11 @@ func accountIntentsForGroup(accounts []relay.Account, platform string, groupID i
 	return intents
 }
 
-func assignPreviewAccounts(ctx context.Context, provider relay.Provider, platform string, templateGroupID int64, mapping *ent.RelayGroupMapping, assignments []Assignment) error {
-	reader, ok := provider.(relay.AccountRelationshipReader)
-	if !ok {
-		return fmt.Errorf("relay provider does not support account relationship reading")
+func assignPreviewAccounts(result accountListResult, platform string, templateGroupID int64, mapping *ent.RelayGroupMapping, assignments []Assignment) error {
+	if result.err != nil {
+		return fmt.Errorf("list relay accounts: %w", result.err)
 	}
-	accounts, err := reader.ListAccountsForPlatform(ctx, platform)
-	if err != nil {
-		return fmt.Errorf("list relay accounts: %w", err)
-	}
+	accounts := result.accounts
 	available := make(map[int64]relay.Account, len(accounts))
 	for _, account := range accounts {
 		if strings.EqualFold(strings.TrimSpace(account.Platform), strings.TrimSpace(platform)) {
@@ -1298,7 +1379,7 @@ type relationshipAPIKeyFact struct {
 	GroupID int64 `json:"group_id"`
 }
 
-func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Provider, req PreviewRequest, plan *Plan, groups []relay.Group) (string, error) {
+func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Provider, requestFacts *planningRequestFacts, req PreviewRequest, plan *Plan, groups []relay.Group) (string, error) {
 	affectedUserIDs := make(map[int]struct{})
 	desiredAccountIDs := make(map[int64]struct{})
 	plannedAccounts := make([]relationshipPlannedAccountFact, 0)
@@ -1445,14 +1526,10 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 	}
 	sort.Slice(snapshot.Groups, func(i, j int) bool { return snapshot.Groups[i].ID < snapshot.Groups[j].ID })
 
-	accountReader, ok := provider.(relay.AccountRelationshipReader)
-	if !ok {
-		return "", fmt.Errorf("relay provider does not support account relationship reading")
+	if requestFacts.accounts.err != nil {
+		return "", fmt.Errorf("list account relationships: %w", requestFacts.accounts.err)
 	}
-	accounts, err := accountReader.ListAccountsForPlatform(ctx, req.Platform)
-	if err != nil {
-		return "", fmt.Errorf("list account relationships: %w", err)
-	}
+	accounts := requestFacts.accounts.accounts
 	for _, mapping := range snapshot.Mappings {
 		for _, desired := range mapping.DesiredAccounts {
 			desiredAccountIDs[desired.AccountID] = struct{}{}
@@ -1534,12 +1611,22 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 				}
 			}
 		} else {
-			if !supportsSubscriptions {
-				return "", fmt.Errorf("relay provider does not support subscription relationship reading")
-			}
-			subscriptions, err := subscriptionLister.ListUserSubscriptions(ctx, userFacts[index].RelayUserID)
-			if err != nil {
-				return "", fmt.Errorf("list subscriptions for relay user %d: %w", userFacts[index].RelayUserID, err)
+			var subscriptions []relay.UserSubscription
+			if requestFacts.relationships != nil {
+				relationship, found := requestFacts.relationships.byUserID[userFacts[index].RelayUserID]
+				if !found {
+					return "", fmt.Errorf("relay user %d is unavailable in the relationship snapshot", userFacts[index].RelayUserID)
+				}
+				subscriptions = relationship.Subscriptions
+			} else {
+				if !supportsSubscriptions {
+					return "", fmt.Errorf("relay provider does not support subscription relationship reading")
+				}
+				var err error
+				subscriptions, err = subscriptionLister.ListUserSubscriptions(ctx, userFacts[index].RelayUserID)
+				if err != nil {
+					return "", fmt.Errorf("list subscriptions for relay user %d: %w", userFacts[index].RelayUserID, err)
+				}
 			}
 			for _, subscription := range subscriptions {
 				groupID := subscription.GroupID
@@ -1551,7 +1638,7 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 					userFacts[index].Subscriptions = append(userFacts[index].Subscriptions, relationshipSubscriptionFromRelay(subscription))
 				}
 			}
-			keys, err := provider.ListUserAPIKeys(ctx, userFacts[index].RelayUserID)
+			keys, err := requestFacts.userAPIKeys(ctx, provider, userFacts[index].RelayUserID)
 			if err != nil {
 				return "", fmt.Errorf("list API keys for relay user %d: %w", userFacts[index].RelayUserID, err)
 			}
@@ -1706,6 +1793,8 @@ func stalePlanFromPreviewError(expected string, previewErr error) *StalePlanErro
 			difference = "Template Group changed or is no longer available"
 		case strings.Contains(message, "target group"):
 			difference = "a Target Group changed or is no longer available"
+		case strings.Contains(message, "user relationships") || strings.Contains(message, "subscription"):
+			difference = "subscription relationships changed or are no longer available"
 		case strings.Contains(message, "account"):
 			difference = "Account relationships changed or are no longer available"
 		}
@@ -1992,66 +2081,87 @@ func (s *Service) ListMappings(ctx context.Context, providerID int) ([]Mapping, 
 	if err != nil {
 		return nil, fmt.Errorf("list relay group mappings: %w", err)
 	}
-	out := make([]Mapping, 0, len(rows))
-	groupCache := make(map[int][]relay.Group)
-	providerCache := make(map[int]relay.Provider)
-	relationshipCache := make(map[int]*mappingRelationshipFacts)
-	relationshipLoaded := make(map[int]bool)
-	type accountListResult struct {
-		accounts []relay.Account
-		err      error
+	if len(rows) == 0 {
+		return []Mapping{}, nil
 	}
-	accountCache := make(map[string]accountListResult)
+	providerFacts := make(map[int]*mappingProviderFacts)
+	platforms := make(map[int]map[string]string)
+	for _, row := range rows {
+		if platforms[row.ProviderID] == nil {
+			platforms[row.ProviderID] = make(map[string]string)
+		}
+		platforms[row.ProviderID][strings.ToLower(strings.TrimSpace(row.Platform))] = row.Platform
+		if providerFacts[row.ProviderID] != nil {
+			continue
+		}
+		facts := &mappingProviderFacts{accounts: make(map[string]*accountListResult)}
+		if s.resolver != nil {
+			facts.provider, _ = s.resolver.Resolve(ctx, row.ProviderID)
+		}
+		providerFacts[row.ProviderID] = facts
+	}
+
+	var directoryFacts *mappingDirectoryFacts
+	var dependencies sync.WaitGroup
+	dependencies.Add(1)
+	go func() {
+		defer dependencies.Done()
+		directoryFacts, _ = s.loadMappingDirectoryFacts(ctx, rows)
+	}()
+	for currentProviderID, facts := range providerFacts {
+		if facts.provider == nil {
+			continue
+		}
+		if lister, ok := facts.provider.(relay.PlatformGroupLister); ok {
+			dependencies.Add(1)
+			go func(facts *mappingProviderFacts) {
+				defer dependencies.Done()
+				facts.groups, _ = lister.ListPlatformGroups(ctx)
+			}(facts)
+		}
+		dependencies.Add(1)
+		go func(facts *mappingProviderFacts) {
+			defer dependencies.Done()
+			facts.relationships, _ = loadMappingRelationshipFacts(ctx, s.client, facts.provider)
+		}(facts)
+		reader, ok := facts.provider.(relay.AccountRelationshipReader)
+		if !ok {
+			continue
+		}
+		for normalizedPlatform, platform := range platforms[currentProviderID] {
+			result := &accountListResult{}
+			facts.accounts[normalizedPlatform] = result
+			dependencies.Add(1)
+			go func(result *accountListResult, platform string) {
+				defer dependencies.Done()
+				result.accounts, result.err = reader.ListAccountsForPlatform(ctx, platform)
+			}(result, platform)
+		}
+	}
+	dependencies.Wait()
+
+	out := make([]Mapping, 0, len(rows))
 	for _, row := range rows {
 		mapping := mappingFromEnt(row)
-		if _, loaded := groupCache[mapping.ProviderID]; !loaded {
-			if s.resolver != nil {
-				if provider, resolveErr := s.resolver.Resolve(ctx, mapping.ProviderID); resolveErr == nil {
-					providerCache[mapping.ProviderID] = provider
-					if lister, ok := provider.(relay.PlatformGroupLister); ok {
-						if groups, listErr := lister.ListPlatformGroups(ctx); listErr == nil {
-							groupCache[mapping.ProviderID] = groups
-						}
+		facts := providerFacts[mapping.ProviderID]
+		mapping.Warnings = append(mapping.Warnings, mappingAvailabilityWarnings(mapping, facts.groups)...)
+		mapping.Warnings = append(mapping.Warnings, mappingRelationshipWarnings(facts.relationships, mapping)...)
+		if result := facts.accounts[strings.ToLower(strings.TrimSpace(mapping.Platform))]; result != nil {
+			if result.err == nil {
+				mapping.AccountPools = accountPools(mapping, result.accounts)
+				mapping.Warnings = append(mapping.Warnings, accountPoolWarnings(mapping.AccountPools, mapping.AccountManagementInitialized)...)
+				for _, pool := range mapping.AccountPools {
+					if pool.Drift {
+						mapping.Warnings = append(mapping.Warnings, fmt.Sprintf("target group %d account relationships drifted", pool.TargetGroupID))
 					}
 				}
-			}
-			if _, loaded := groupCache[mapping.ProviderID]; !loaded {
-				groupCache[mapping.ProviderID] = nil
-			}
-		}
-		mapping.Warnings = append(mapping.Warnings, mappingAvailabilityWarnings(mapping, groupCache[mapping.ProviderID])...)
-		if !relationshipLoaded[mapping.ProviderID] {
-			relationshipLoaded[mapping.ProviderID] = true
-			if facts, factsErr := loadMappingRelationshipFacts(ctx, s.client, providerCache[mapping.ProviderID]); factsErr == nil {
-				relationshipCache[mapping.ProviderID] = facts
+			} else {
+				mapping.Warnings = append(mapping.Warnings, fmt.Sprintf("account relationships are unavailable: %v", result.err))
 			}
 		}
-		mapping.Warnings = append(mapping.Warnings, mappingRelationshipWarnings(relationshipCache[mapping.ProviderID], mapping)...)
-		if provider := providerCache[mapping.ProviderID]; provider != nil {
-			if reader, ok := provider.(relay.AccountRelationshipReader); ok {
-				cacheKey := fmt.Sprintf("%d:%s", mapping.ProviderID, strings.ToLower(strings.TrimSpace(mapping.Platform)))
-				result, loaded := accountCache[cacheKey]
-				if !loaded {
-					result.accounts, result.err = reader.ListAccountsForPlatform(ctx, mapping.Platform)
-					accountCache[cacheKey] = result
-				}
-				if result.err == nil {
-					accounts := result.accounts
-					mapping.AccountPools = accountPools(mapping, accounts)
-					mapping.Warnings = append(mapping.Warnings, accountPoolWarnings(mapping.AccountPools, mapping.AccountManagementInitialized)...)
-					for _, pool := range mapping.AccountPools {
-						if pool.Drift {
-							mapping.Warnings = append(mapping.Warnings, fmt.Sprintf("target group %d account relationships drifted", pool.TargetGroupID))
-						}
-					}
-				} else {
-					mapping.Warnings = append(mapping.Warnings, fmt.Sprintf("account relationships are unavailable: %v", result.err))
-				}
-			}
-		}
-		if departmentErr := s.validateDepartment(ctx, mapping.DepartmentID); departmentErr != nil {
+		if directoryFacts == nil || !directoryFacts.available[mapping.DepartmentID] {
 			mapping.Warnings = append(mapping.Warnings, fmt.Sprintf("department %s is unavailable", mapping.DepartmentID))
-			mapping.DepartmentSuggestions = s.departmentSuggestions(ctx, mapping.ProviderID, mapping.Platform, mapping.DepartmentID)
+			mapping.DepartmentSuggestions = directoryFacts.suggestions(rows, mapping)
 		}
 		if len(mapping.GroupIDs) == 0 {
 			mapping.Warnings = append(mapping.Warnings, "mapping has no target groups")
@@ -2083,6 +2193,77 @@ func (s *Service) ListMappings(ctx context.Context, providerID int) ([]Mapping, 
 		out[index].Warnings = uniqueStrings(out[index].Warnings)
 	}
 	return out, nil
+}
+
+func (s *Service) loadMappingDirectoryFacts(ctx context.Context, rows []*ent.RelayGroupMapping) (*mappingDirectoryFacts, error) {
+	facts := &mappingDirectoryFacts{available: make(map[string]bool)}
+	snapshot, found, err := directorysync.CurrentSnapshot(ctx, s.client)
+	if err != nil {
+		return facts, fmt.Errorf("load current Directory snapshot for mappings: %w", err)
+	}
+	if !found {
+		return facts, nil
+	}
+	externalIDs := make([]string, 0, len(rows))
+	seen := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		externalID := strings.TrimSpace(row.DepartmentExternalID)
+		if externalID == "" {
+			continue
+		}
+		if _, exists := seen[externalID]; exists {
+			continue
+		}
+		seen[externalID] = struct{}{}
+		externalIDs = append(externalIDs, externalID)
+	}
+	if len(externalIDs) > 0 {
+		departments, queryErr := s.client.DirectoryDepartment.Query().Where(
+			directorydepartment.SourceIDEQ(snapshot.SourceID),
+			directorydepartment.ExternalIDIn(externalIDs...),
+		).All(ctx)
+		if queryErr != nil {
+			return facts, fmt.Errorf("load mapped departments: %w", queryErr)
+		}
+		for _, department := range departments {
+			facts.available[department.ExternalID] = true
+		}
+	}
+	if len(facts.available) == len(externalIDs) {
+		return facts, nil
+	}
+	departments, err := s.client.DirectoryDepartment.Query().Where(directorydepartment.SourceIDEQ(snapshot.SourceID)).Order(ent.Asc(directorydepartment.FieldName)).Limit(50).All(ctx)
+	if err != nil {
+		return facts, fmt.Errorf("load Directory department suggestions: %w", err)
+	}
+	facts.departments = make([]DepartmentSuggestion, 0, len(departments))
+	for _, department := range departments {
+		facts.departments = append(facts.departments, DepartmentSuggestion{ID: department.ExternalID, Name: department.Name})
+	}
+	return facts, nil
+}
+
+func (facts *mappingDirectoryFacts) suggestions(rows []*ent.RelayGroupMapping, mapping Mapping) []DepartmentSuggestion {
+	if facts == nil {
+		return nil
+	}
+	bound := make(map[string]struct{})
+	for _, row := range rows {
+		if row.ProviderID == mapping.ProviderID && strings.EqualFold(strings.TrimSpace(row.Platform), strings.TrimSpace(mapping.Platform)) {
+			bound[row.DepartmentExternalID] = struct{}{}
+		}
+	}
+	out := make([]DepartmentSuggestion, 0, len(facts.departments))
+	for _, department := range facts.departments {
+		if department.ID == mapping.DepartmentID {
+			continue
+		}
+		if _, exists := bound[department.ID]; exists {
+			continue
+		}
+		out = append(out, department)
+	}
+	return out
 }
 
 func (s *Service) GetMapping(ctx context.Context, id int) (*Mapping, error) {
@@ -2144,17 +2325,30 @@ func (s *Service) PreviewMappingRenewal(ctx context.Context, id int, req Mapping
 	if !ok {
 		return nil, fmt.Errorf("relay provider does not support group listing")
 	}
-	groups, err := groupLister.ListPlatformGroups(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list relay groups: %w", err)
+	var groups []relay.Group
+	var groupsErr error
+	var relationships *providerRelationshipSnapshot
+	var relationshipsErr error
+	var reads sync.WaitGroup
+	reads.Add(2)
+	go func() {
+		defer reads.Done()
+		groups, groupsErr = groupLister.ListPlatformGroups(ctx)
+	}()
+	go func() {
+		defer reads.Done()
+		relationships, relationshipsErr = loadProviderRelationshipSnapshot(ctx, provider)
+	}()
+	reads.Wait()
+	if groupsErr != nil {
+		return nil, fmt.Errorf("list relay groups: %w", groupsErr)
+	}
+	if relationshipsErr != nil {
+		return nil, fmt.Errorf("list Relay user relationships: %w", relationshipsErr)
 	}
 	groupsByID := make(map[int64]relay.Group, len(groups))
 	for _, group := range groups {
 		groupsByID[group.ID] = group
-	}
-	subscriptionLister, ok := provider.(relay.UserSubscriptionLister)
-	if !ok {
-		return nil, fmt.Errorf("relay provider does not support subscription relationship reading")
 	}
 	localUserIDs := make([]int, 0, len(mapping.MemberAssignments))
 	for rawUserID, targetGroupID := range mapping.MemberAssignments {
@@ -2183,17 +2377,11 @@ func (s *Service) PreviewMappingRenewal(ctx context.Context, id int, req Mapping
 			return nil, fmt.Errorf("managed mapping member %d has no Relay identity", localUserID)
 		}
 		relayUserID := int64(*local.RelayUserID)
-		remote, getErr := provider.GetUser(ctx, relayUserID)
-		if getErr != nil {
-			return nil, fmt.Errorf("verify Relay identity for managed mapping member %d: %w", localUserID, getErr)
-		}
-		if !sameRelayIdentity(local.Username, local.Email, relayUserID, remote) {
+		remote, found := relationships.byUserID[relayUserID]
+		if !found || !sameRelayIdentity(local.Username, local.Email, relayUserID, &remote.User) {
 			return nil, fmt.Errorf("managed mapping member %d has a stale Relay identity", localUserID)
 		}
-		subscriptions, listErr := subscriptionLister.ListUserSubscriptions(ctx, relayUserID)
-		if listErr != nil {
-			return nil, fmt.Errorf("list subscriptions for Relay user %d: %w", relayUserID, listErr)
-		}
+		subscriptions := append([]relay.UserSubscription(nil), remote.Subscriptions...)
 		for index := range subscriptions {
 			if subscriptions[index].GroupID <= 0 && subscriptions[index].Group != nil {
 				subscriptions[index].GroupID = subscriptions[index].Group.ID
@@ -2244,6 +2432,7 @@ func (s *Service) PreviewMappingRenewal(ctx context.Context, id int, req Mapping
 		member.Status = renewalSubscriptionStatus(expected, now)
 		if expected != nil {
 			member.CurrentExpiry = timePointer(expected.ExpiresAt)
+			member.expectedSubscriptionID = expected.ID
 		}
 		switch member.Status {
 		case "active":
@@ -2272,6 +2461,32 @@ func (s *Service) PreviewMappingRenewal(ctx context.Context, id int, req Mapping
 		MappingID: mapping.ID, ProviderID: mapping.ProviderID, Platform: mapping.Platform,
 		RenewalDays: renewalDays, Members: members, GeneratedAt: now, RelationshipFingerprint: fingerprint,
 	}, nil
+}
+
+func loadProviderRelationshipSnapshot(ctx context.Context, provider relay.Provider) (*providerRelationshipSnapshot, error) {
+	reader, ok := provider.(relay.UserRelationshipSnapshotReader)
+	if !ok {
+		return nil, fmt.Errorf("relay provider does not support relationship snapshot reading")
+	}
+	relationships, err := reader.ListUserRelationships(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read provider relationship snapshot: %w", err)
+	}
+	snapshot := &providerRelationshipSnapshot{relationships: relationships, byUserID: make(map[int64]relay.UserRelationship, len(relationships))}
+	for index := range snapshot.relationships {
+		relationship := &snapshot.relationships[index]
+		if relationship.User.ID <= 0 {
+			continue
+		}
+		for subscriptionIndex := range relationship.Subscriptions {
+			subscription := &relationship.Subscriptions[subscriptionIndex]
+			if subscription.GroupID <= 0 && subscription.Group != nil {
+				subscription.GroupID = subscription.Group.ID
+			}
+		}
+		snapshot.byUserID[relationship.User.ID] = *relationship
+	}
+	return snapshot, nil
 }
 
 func projectedRenewalExpiry(base time.Time, renewalDays int) time.Time {
@@ -2353,15 +2568,16 @@ func (s *Service) ExecuteMappingRenewal(ctx context.Context, id int, req Mapping
 	if !ok {
 		return nil, fmt.Errorf("relay provider does not support idempotent subscription writing")
 	}
-	result := &MappingRenewalExecution{MappingID: id, RenewalDays: req.RenewalDays, OperationKey: strings.TrimSpace(req.OperationKey), Members: make([]MappingRenewalMemberResult, 0, len(items))}
-	for _, item := range items {
+	result := &MappingRenewalExecution{MappingID: id, RenewalDays: req.RenewalDays, OperationKey: strings.TrimSpace(req.OperationKey), Members: make([]MappingRenewalMemberResult, len(items))}
+	executeItem := func(index int) {
+		item := items[index]
 		action := item.reviewed.PlannedAction
 		memberResult := MappingRenewalMemberResult{UserID: item.current.UserID, RelayUserID: item.current.RelayUserID, TargetGroupID: item.current.ExpectedTargetGroupID, Action: action}
 		if item.current.PlannedAction == "skip" {
 			memberResult.Action = "skip"
 			memberResult.Status = "skipped"
-			result.Members = append(result.Members, memberResult)
-			continue
+			result.Members[index] = memberResult
+			return
 		}
 		memberKey := mappingRenewalMemberOperationKey(result.OperationKey, id, item.current.UserID, item.current.ExpectedTargetGroupID, action)
 		var writeErr error
@@ -2369,7 +2585,11 @@ func (s *Service) ExecuteMappingRenewal(ctx context.Context, id int, req Mapping
 		case "create":
 			writeErr = writer.AssignSubscriptionForUserWithOperationKey(ctx, item.current.RelayUserID, item.current.ExpectedTargetGroupID, req.RenewalDays, memberKey)
 		case "extend", "renew":
-			writeErr = writer.ExtendSubscriptionForUserWithOperationKey(ctx, item.current.RelayUserID, item.current.ExpectedTargetGroupID, req.RenewalDays, memberKey)
+			if item.current.expectedSubscriptionID <= 0 {
+				writeErr = fmt.Errorf("reviewed subscription identity is unavailable")
+			} else {
+				writeErr = writer.ExtendSubscriptionByIDWithOperationKey(ctx, item.current.expectedSubscriptionID, req.RenewalDays, memberKey)
+			}
 		default:
 			writeErr = fmt.Errorf("unsupported renewal action %q", action)
 		}
@@ -2379,8 +2599,28 @@ func (s *Service) ExecuteMappingRenewal(ctx context.Context, id int, req Mapping
 		} else {
 			memberResult.Status = "succeeded"
 		}
-		result.Members = append(result.Members, memberResult)
+		result.Members[index] = memberResult
 	}
+	jobs := make(chan int)
+	workerCount := maxCandidateWorkers
+	if len(items) < workerCount {
+		workerCount = len(items)
+	}
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	for worker := 0; worker < workerCount; worker++ {
+		go func() {
+			defer workers.Done()
+			for index := range jobs {
+				executeItem(index)
+			}
+		}()
+	}
+	for index := range items {
+		jobs <- index
+	}
+	close(jobs)
+	workers.Wait()
 	result.Preview, err = s.PreviewMappingRenewal(ctx, id, MappingRenewalPreviewRequest{RenewalDays: &req.RenewalDays})
 	if err != nil {
 		result.PreviewError = err.Error()
@@ -2986,15 +3226,14 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 			continue
 		}
 		member := completedSubscriptionFromState(mapping.OperationState, "member:"+key, MemberResult{Action: "remove", UserID: userID, TargetGroupID: targetGroupID, Subscription: "skipped", SourceRemoval: "skipped"})
-		local, userErr := s.client.User.Get(ctx, userID)
-		if userErr != nil || local.RelayUserID == nil || *local.RelayUserID <= 0 {
+		candidate := candidateByUserID(plan.Candidates, userID)
+		if candidate == nil || candidate.RelayUserID <= 0 {
 			member.Error = "managed user has no valid Relay mapping"
 			memberResults = append(memberResults, member)
 			continue
 		}
-		candidate := &Candidate{UserID: userID, RelayUserID: int64(*local.RelayUserID)}
 		if sourceGroupID > 0 {
-			member = executeMemberMigration(ctx, p, assigner, remover, binder, candidate, sourceGroupID, targetGroupID, member)
+			member = executeMemberMigration(ctx, assigner, remover, binder, candidate, sourceGroupID, targetGroupID, member)
 		} else if remover == nil {
 			member.Error = "relay provider does not support subscription removal"
 		} else if removeErr := remover.RemoveSubscriptionForUser(ctx, candidate.RelayUserID, targetGroupID); removeErr != nil && !isNotFoundError(removeErr) {
@@ -3059,19 +3298,19 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 					candidate.SourceGroupID = sourceGroupID
 				}
 				member.Action = "move_here"
-				member = executeMemberMigration(ctx, p, assigner, remover, binder, candidate, targetID, fromGroupID, member)
+				member = executeMemberMigration(ctx, assigner, remover, binder, candidate, targetID, fromGroupID, member)
 				transferUpdates = append(transferUpdates, transferUpdate{mapping: transferSource, userID: userID, result: member})
 			} else if action.Mode == "add_additionally" {
 				candidate.SourceGroupID = 0
 				member.Action = "add_additionally"
-				member = executeMemberMigration(ctx, p, assigner, nil, nil, candidate, targetID, 0, member)
+				member = executeMemberMigration(ctx, assigner, nil, nil, candidate, targetID, 0, member)
 			} else if !retry && fromGroupID == targetID {
 				member.Subscription = "unchanged"
 				member.SourceRemoval = "skipped"
 			} else if candidate.SourceMember {
-				member = executeMemberMigration(ctx, p, assigner, remover, binder, candidate, targetID, fromGroupID, member)
+				member = executeMemberMigration(ctx, assigner, remover, binder, candidate, targetID, fromGroupID, member)
 			} else {
-				member = executeMemberMigration(ctx, p, assigner, nil, nil, candidate, targetID, 0, member)
+				member = executeMemberMigration(ctx, assigner, nil, nil, candidate, targetID, 0, member)
 			}
 			memberFromGroups[key] = fromGroupID
 			memberResults = append(memberResults, member)
@@ -3457,7 +3696,7 @@ func completedSubscriptionFromState(state map[string]map[string]string, key stri
 	return member
 }
 
-func executeMemberMigration(ctx context.Context, p relay.Provider, assigner subscriptionAssigner, remover subscriptionRemover, binder relay.APIKeyGroupBinder, candidate *Candidate, targetGroupID, fromGroupID int64, member MemberResult) MemberResult {
+func executeMemberMigration(ctx context.Context, assigner subscriptionAssigner, remover subscriptionRemover, binder relay.APIKeyGroupBinder, candidate *Candidate, targetGroupID, fromGroupID int64, member MemberResult) MemberResult {
 	if member.Subscription != "succeeded" {
 		if assigner == nil {
 			member.Error = "relay provider does not support subscription assignment"
@@ -3472,15 +3711,10 @@ func executeMemberMigration(ctx context.Context, p relay.Provider, assigner subs
 	if fromGroupID <= 0 || fromGroupID == targetGroupID {
 		return member
 	}
-	keys, err := p.ListUserAPIKeys(ctx, candidate.RelayUserID)
-	if err != nil {
-		member.Error = err.Error()
-		return member
-	}
 	if binder != nil {
 		apiKeyError := false
-		for _, key := range keys {
-			if apiKeyGroupID(key) != fromGroupID {
+		for _, key := range candidate.relationshipAPIKeys {
+			if key.GroupID != fromGroupID {
 				continue
 			}
 			if bindErr := binder.BindAPIKeyToGroup(ctx, key.ID, targetGroupID); bindErr != nil {
@@ -3669,7 +3903,7 @@ func validateMemberSourceGroups(memberSources map[string]int64, groups []relay.G
 	return nil
 }
 
-func (s *Service) buildCandidates(ctx context.Context, p relay.Provider, providerID int, providerVersion int64, users []*ent.User, source relay.Group, groups []relay.Group, memberSources map[string]int64, platform, departmentID string) ([]Candidate, error) {
+func (s *Service) buildCandidates(ctx context.Context, p relay.Provider, requestFacts *planningRequestFacts, providerID int, providerVersion int64, users []*ent.User, source relay.Group, groups []relay.Group, memberSources map[string]int64, platform, departmentID string) ([]Candidate, error) {
 	allUsers, err := s.client.User.Query().Where(user.RelayUserIDNotNil()).Order(ent.Asc(user.FieldID)).Limit(maxPlanningUsers).All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load users for global token ranking: %w", err)
@@ -3734,7 +3968,7 @@ func (s *Service) buildCandidates(ctx context.Context, p relay.Provider, provide
 						}
 					}
 				}
-				out[job.index] = s.buildCandidate(ctx, p, job.user, candidateSource, platform, departmentID, globalStats, ranks)
+				out[job.index] = s.buildCandidate(ctx, p, requestFacts, job.user, candidateSource, platform, departmentID, globalStats, ranks)
 			}
 		}()
 	}
@@ -3745,7 +3979,7 @@ func (s *Service) buildCandidates(ctx context.Context, p relay.Provider, provide
 	return out, nil
 }
 
-func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, u *ent.User, source relay.Group, platform, departmentID string, globalStats map[int64]relay.TeamUserUsageStats, ranks map[int64]int) Candidate {
+func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestFacts *planningRequestFacts, u *ent.User, source relay.Group, platform, departmentID string, globalStats map[int64]relay.TeamUserUsageStats, ranks map[int64]int) Candidate {
 	candidate := Candidate{UserID: u.ID, Username: u.Username, Email: u.Email, Eligible: false, Selected: true}
 	if u.RelayUserID == nil || *u.RelayUserID <= 0 {
 		candidate.Warnings = append(candidate.Warnings, fmt.Sprintf("user %d has no relay mapping", u.ID))
@@ -3754,13 +3988,17 @@ func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, u *ent.U
 	candidate.RelayUserID = int64(*u.RelayUserID)
 	var remote *relay.User
 	var identityErr error
-	identityDone := make(chan struct{})
-	go func() {
+	var relationship *relay.UserRelationship
+	if requestFacts.relationships != nil {
+		if current, found := requestFacts.relationships.byUserID[candidate.RelayUserID]; found {
+			current := current
+			remote = &current.User
+			relationship = &current
+		}
+	} else {
 		remote, identityErr = p.GetUser(ctx, candidate.RelayUserID)
-		close(identityDone)
-	}()
-	facts := loadCandidateRelayFacts(ctx, p, candidate.RelayUserID, source, platform)
-	<-identityDone
+	}
+	facts := loadCandidateRelayFacts(ctx, p, requestFacts, relationship, candidate.RelayUserID, source, platform)
 	if identityErr != nil {
 		candidate.Warnings = append(candidate.Warnings, "relay mapping could not be verified for the selected provider")
 		return candidate
@@ -3815,7 +4053,7 @@ type candidateRelayFacts struct {
 	groupErr, keyErr          error
 }
 
-func loadCandidateRelayFacts(ctx context.Context, p relay.Provider, userID int64, source relay.Group, platform string) candidateRelayFacts {
+func loadCandidateRelayFacts(ctx context.Context, p relay.Provider, requestFacts *planningRequestFacts, relationship *relay.UserRelationship, userID int64, source relay.Group, platform string) candidateRelayFacts {
 	var facts candidateRelayFacts
 	var workers sync.WaitGroup
 	workers.Add(2)
@@ -3823,30 +4061,35 @@ func loadCandidateRelayFacts(ctx context.Context, p relay.Provider, userID int64
 		defer workers.Done()
 		groupIDs := make(map[int64]struct{})
 		usedSubscriptions := false
-		if lister, ok := p.(relay.UserSubscriptionLister); ok {
-			subscriptions, err := lister.ListUserSubscriptions(ctx, userID)
-			if err == nil {
-				usedSubscriptions = true
-				facts.canAdd = true
-				for _, subscription := range subscriptions {
-					groupID := subscription.GroupID
-					if groupID <= 0 && subscription.Group != nil {
-						groupID = subscription.Group.ID
+		var subscriptions []relay.UserSubscription
+		if relationship != nil {
+			subscriptions = relationship.Subscriptions
+			usedSubscriptions = true
+		} else if lister, ok := p.(relay.UserSubscriptionLister); ok {
+			var err error
+			subscriptions, err = lister.ListUserSubscriptions(ctx, userID)
+			usedSubscriptions = err == nil
+		}
+		if usedSubscriptions {
+			facts.canAdd = true
+			for _, subscription := range subscriptions {
+				groupID := subscription.GroupID
+				if groupID <= 0 && subscription.Group != nil {
+					groupID = subscription.Group.ID
+				}
+				if !strings.EqualFold(strings.TrimSpace(subscription.Status), "active") || groupID <= 0 {
+					if groupID > 0 {
+						subscription.GroupID = groupID
+						facts.relationshipSubscriptions = append(facts.relationshipSubscriptions, relationshipSubscriptionFromRelay(subscription))
 					}
-					if !strings.EqualFold(strings.TrimSpace(subscription.Status), "active") || groupID <= 0 {
-						if groupID > 0 {
-							subscription.GroupID = groupID
-							facts.relationshipSubscriptions = append(facts.relationshipSubscriptions, relationshipSubscriptionFromRelay(subscription))
-						}
-						continue
-					}
-					subscription.GroupID = groupID
-					facts.relationshipSubscriptions = append(facts.relationshipSubscriptions, relationshipSubscriptionFromRelay(subscription))
-					if groupID == source.ID {
-						facts.eligible = strings.EqualFold(strings.TrimSpace(source.Platform), strings.TrimSpace(platform))
-					} else {
-						groupIDs[groupID] = struct{}{}
-					}
+					continue
+				}
+				subscription.GroupID = groupID
+				facts.relationshipSubscriptions = append(facts.relationshipSubscriptions, relationshipSubscriptionFromRelay(subscription))
+				if groupID == source.ID {
+					facts.eligible = strings.EqualFold(strings.TrimSpace(source.Platform), strings.TrimSpace(platform))
+				} else {
+					groupIDs[groupID] = struct{}{}
 				}
 			}
 		}
@@ -3879,7 +4122,7 @@ func loadCandidateRelayFacts(ctx context.Context, p relay.Provider, userID int64
 	}()
 	go func() {
 		defer workers.Done()
-		keys, err := p.ListUserAPIKeys(ctx, userID)
+		keys, err := requestFacts.userAPIKeys(ctx, p, userID)
 		facts.keyErr = err
 		if err != nil {
 			return
@@ -4303,6 +4546,13 @@ func loadMappingRelationshipFacts(ctx context.Context, client *ent.Client, provi
 	if provider == nil || client == nil {
 		return nil, nil
 	}
+	if _, ok := provider.(relay.UserRelationshipSnapshotReader); ok {
+		snapshot, err := loadProviderRelationshipSnapshot(ctx, provider)
+		if err != nil {
+			return nil, fmt.Errorf("load provider relationship snapshot for mappings: %w", err)
+		}
+		return mappingRelationshipFactsFromSnapshot(ctx, client, snapshot)
+	}
 	subsLister, ok := provider.(relay.UserSubscriptionLister)
 	directory, directoryOK := provider.(relay.UserDirectoryProvider)
 	batchDirectory, batchOK := provider.(relay.UserSubscriptionDirectoryProvider)
@@ -4324,7 +4574,7 @@ func loadMappingRelationshipFacts(ctx context.Context, client *ent.Client, provi
 	}
 	localUsers, err := client.User.Query().Where(user.RelayUserIDNotNil()).All(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load local Relay user bindings: %w", err)
 	}
 	localByRelay := make(map[int64]int, len(localUsers))
 	for _, localUser := range localUsers {
@@ -4383,6 +4633,28 @@ func loadMappingRelationshipFacts(ctx context.Context, client *ent.Client, provi
 	return &mappingRelationshipFacts{users: users, localByRelay: localByRelay, activeGroupsByUserID: activeGroupsByUserID}, nil
 }
 
+func mappingRelationshipFactsFromSnapshot(ctx context.Context, client *ent.Client, snapshot *providerRelationshipSnapshot) (*mappingRelationshipFacts, error) {
+	localUsers, err := client.User.Query().Where(user.RelayUserIDNotNil()).All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load local Relay user bindings from relationship snapshot: %w", err)
+	}
+	facts := &mappingRelationshipFacts{
+		users:                make([]relay.User, 0, len(snapshot.relationships)),
+		localByRelay:         make(map[int64]int, len(localUsers)),
+		activeGroupsByUserID: make(map[int64][]int64, len(snapshot.relationships)),
+	}
+	for _, localUser := range localUsers {
+		if localUser.RelayUserID != nil && *localUser.RelayUserID > 0 {
+			facts.localByRelay[int64(*localUser.RelayUserID)] = localUser.ID
+		}
+	}
+	for _, relationship := range snapshot.relationships {
+		facts.users = append(facts.users, relationship.User)
+		facts.activeGroupsByUserID[relationship.User.ID] = relationship.ActiveSubscriptionGroupIDs()
+	}
+	return facts, nil
+}
+
 func mappingRelationshipWarnings(facts *mappingRelationshipFacts, mapping Mapping) []string {
 	if facts == nil {
 		return nil
@@ -4437,11 +4709,11 @@ func mappingRelationshipWarnings(facts *mappingRelationshipFacts, mapping Mappin
 	return uniqueStrings(warnings)
 }
 
-func (s *Service) loadUnmanagedMembers(ctx context.Context, provider relay.Provider, mapping *ent.RelayGroupMapping) ([]UnmanagedMember, error) {
+func (s *Service) loadUnmanagedMembers(ctx context.Context, provider relay.Provider, requestFacts *planningRequestFacts, providerVersion int64, mapping *ent.RelayGroupMapping) ([]UnmanagedMember, error) {
 	directory, directoryOK := provider.(relay.UserDirectoryProvider)
 	subsLister, subsOK := provider.(relay.UserSubscriptionLister)
 	batchDirectory, batchOK := provider.(relay.UserSubscriptionDirectoryProvider)
-	if !batchOK && (!directoryOK || !subsOK) {
+	if requestFacts.relationships == nil && !batchOK && (!directoryOK || !subsOK) {
 		return nil, nil
 	}
 	var (
@@ -4449,7 +4721,15 @@ func (s *Service) loadUnmanagedMembers(ctx context.Context, provider relay.Provi
 		activeGroupsByUser map[int64][]int64
 		err                error
 	)
-	if batchOK {
+	if requestFacts.relationships != nil {
+		remoteUsers = make([]relay.User, 0, len(requestFacts.relationships.relationships))
+		activeGroupsByUser = make(map[int64][]int64, len(requestFacts.relationships.relationships))
+		for _, relationship := range requestFacts.relationships.relationships {
+			remoteUsers = append(remoteUsers, relationship.User)
+			activeGroupsByUser[relationship.User.ID] = relationship.ActiveSubscriptionGroupIDs()
+		}
+		batchOK = true
+	} else if batchOK {
 		remoteUsers, activeGroupsByUser, err = batchDirectory.ListUsersWithActiveSubscriptions(ctx)
 	} else {
 		remoteUsers, err = directory.ListUsers(ctx)
@@ -4526,7 +4806,7 @@ func (s *Service) loadUnmanagedMembers(ctx context.Context, provider relay.Provi
 		out = append(out, UnmanagedMember{RelayUserID: remoteUser.ID, Username: remoteUser.Username, Email: remoteUser.Email, TargetGroupIDs: targetIDs})
 		relayIDs = append(relayIDs, remoteUser.ID)
 	}
-	stats, statsErr := usageStats(ctx, provider, relayIDs)
+	stats, statsErr := s.loadUsageStats(ctx, provider, mapping.ProviderID, providerVersion, relayIDs)
 	if statsErr != nil {
 		return nil, fmt.Errorf("load unmanaged member usage: %w", statsErr)
 	}

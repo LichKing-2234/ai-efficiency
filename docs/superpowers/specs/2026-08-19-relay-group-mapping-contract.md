@@ -92,13 +92,20 @@ department disappears from the current directory snapshot, mapping reads keep
 the relationship, mark it unavailable, and return same-Platform departments
 that are not already mapped as suggestions.
 
-The mapping list reads the Provider's user directory together with active
-subscription Group IDs in one paginated operation per Provider and reuses one
-Account relationship read per Provider and Platform for the lifetime of the
-HTTP request. Replan uses the same batch directory contract when detecting
-Relay-only members in managed target Groups. Neither path fans out one
-subscription request per Provider user; relationship freshness remains
-request-bound and is not stored in a cross-request cache.
+The mapping list starts its Provider Group, complete user/subscription, and
+same-Platform Account reads concurrently. It loads the current Directory
+snapshot once, resolves all mapped departments in one bounded query, and
+reuses those facts across every mapping returned by the HTTP request. Relay
+pagination and the number of Providers or Platforms determine the upstream
+read count; the number of managed mappings does not.
+
+Relay Planning's provider-wide relationship snapshot contains exact user
+identity and every subscription's ID, Group, status, and expiry. Renewal and
+Replan reuse one such snapshot throughout a Preview request for candidate
+validation, managed and unmanaged membership, drift, effects, and fingerprint
+construction. API Keys are read at most once for each relevant Relay user, and
+Group and Account collections are loaded once. These request-scoped facts are
+discarded with the request and are never stored in a cross-request cache.
 
 ## Account and Member Maintenance
 
@@ -159,15 +166,19 @@ suspended subscription is skipped and remains suspended. Subscriptions in an
 unexpected or additional Group are shown as drift but are never renewed,
 removed, or used as a reason to move API Keys by this operation.
 
-Renewal requires a final explicit Confirm and revalidates the relevant
-subscription facts before its first write. Execution is synchronous and reports
-per-member `succeeded`, `skipped`, or `failed` results in the current dialog. It
-does not create a background job or renewal-history entity. One stable operation
-key is retained for the dialog, propagated as deterministic per-member
-idempotency keys, and reused only when retrying failed members. Successful and
-skipped members are never submitted again by that retry. Closing or refreshing
-the result dialog ends that result view; a later renewal starts a new explicit
-operation.
+Renewal requires a final explicit Confirm and obtains one fresh relationship
+snapshot before its first write. Stale validation uses that snapshot, and an
+`extend` or `renew` writes the reviewed subscription ID directly without
+rediscovering it by user and Group. Selected mutations run with bounded
+concurrency while results retain deterministic member order. Readback uses one
+new bounded snapshot after all mutations complete. Execution is synchronous
+and reports per-member `succeeded`, `skipped`, or `failed` results in the
+current dialog. It does not create a background job or renewal-history entity.
+One stable operation key is retained for the dialog, propagated as
+deterministic per-member idempotency keys, and reused only when retrying failed
+members. Successful and skipped members are never submitted again by that
+retry. Closing or refreshing the result dialog ends that result view; a later
+renewal starts a new explicit operation.
 
 ## Relationship-Bound Confirmation
 

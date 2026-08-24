@@ -353,7 +353,7 @@ func (s *sub2apiRelay) getUserFromAdminList(ctx context.Context, userID int64) (
 			return nil, err
 		}
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
+			return nil, fmt.Errorf("list user relationships page %d: unexpected status %d", page, resp.StatusCode)
 		}
 
 		var result struct {
@@ -364,7 +364,7 @@ func (s *sub2apiRelay) getUserFromAdminList(ctx context.Context, userID int64) (
 			return nil, err
 		}
 		if !result.ok() {
-			return nil, fmt.Errorf("request failed")
+			return nil, fmt.Errorf("list user relationships page %d: request failed", page)
 		}
 
 		items, pages, err := decodeUserListItems(result.Data)
@@ -885,8 +885,21 @@ func (s *sub2apiRelay) findUsersBySearch(ctx context.Context, search string) ([]
 }
 
 func (s *sub2apiRelay) listUsersFromAdminList(ctx context.Context) ([]User, map[int64][]int64, error) {
-	var users []User
+	relationships, err := s.ListUserRelationships(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list user relationships: %w", err)
+	}
+	users := make([]User, 0, len(relationships))
 	activeGroups := make(map[int64][]int64)
+	for _, relationship := range relationships {
+		users = append(users, relationship.User)
+		activeGroups[relationship.User.ID] = relationship.ActiveSubscriptionGroupIDs()
+	}
+	return users, activeGroups, nil
+}
+
+func (s *sub2apiRelay) ListUserRelationships(ctx context.Context) ([]UserRelationship, error) {
+	var relationships []UserRelationship
 	for page := 1; ; page++ {
 		query := url.Values{}
 		query.Set("page", strconv.Itoa(page))
@@ -894,15 +907,15 @@ func (s *sub2apiRelay) listUsersFromAdminList(ctx context.Context) ([]User, map[
 		query.Set("include_subscriptions", "true")
 		resp, err := s.doAdminRequest(ctx, http.MethodGet, "/api/v1/admin/users?"+query.Encode(), nil)
 		if err != nil {
-			return nil, nil, err
+			return nil, fmt.Errorf("list user relationships page %d: request: %w", page, err)
 		}
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
-			return nil, nil, err
+			return nil, fmt.Errorf("list user relationships page %d: read body: %w", page, err)
 		}
 		if resp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
+			return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 		}
 
 		var result struct {
@@ -910,64 +923,41 @@ func (s *sub2apiRelay) listUsersFromAdminList(ctx context.Context) ([]User, map[
 			Data json.RawMessage `json:"data"`
 		}
 		if err := json.Unmarshal(body, &result); err != nil {
-			return nil, nil, err
+			return nil, fmt.Errorf("list user relationships page %d: decode envelope: %w", page, err)
 		}
 		if !result.ok() {
-			return nil, nil, fmt.Errorf("request failed")
+			return nil, fmt.Errorf("request failed")
 		}
 
 		items, pages, err := decodeUserListItems(result.Data)
 		if err != nil {
-			return nil, nil, err
+			return nil, fmt.Errorf("list user relationships page %d: decode items: %w", page, err)
 		}
 		for _, item := range items {
 			user, err := decodeUserWithFacts(item)
 			if err != nil {
-				return nil, nil, err
+				return nil, fmt.Errorf("list user relationships page %d: decode user: %w", page, err)
 			}
-			users = append(users, user)
-			groupIDs, err := decodeActiveSubscriptionGroupIDs(item)
-			if err != nil {
-				return nil, nil, err
+			var facts struct {
+				Subscriptions []sub2apiUserSubscription `json:"subscriptions"`
 			}
-			activeGroups[user.ID] = groupIDs
+			if err := json.Unmarshal(item, &facts); err != nil {
+				return nil, fmt.Errorf("list user relationships page %d: decode subscriptions: %w", page, err)
+			}
+			subscriptions := make([]UserSubscription, 0, len(facts.Subscriptions))
+			for _, item := range facts.Subscriptions {
+				subscription := userSubscriptionFromSub2API(item)
+				if subscription.GroupID <= 0 && subscription.Group != nil {
+					subscription.GroupID = subscription.Group.ID
+				}
+				subscriptions = append(subscriptions, subscription)
+			}
+			relationships = append(relationships, UserRelationship{User: user, Subscriptions: subscriptions})
 		}
 		if pages <= 1 || page >= pages {
-			return users, activeGroups, nil
+			return relationships, nil
 		}
 	}
-}
-
-func decodeActiveSubscriptionGroupIDs(data json.RawMessage) ([]int64, error) {
-	var facts struct {
-		Subscriptions []struct {
-			Status  string `json:"status"`
-			GroupID int64  `json:"group_id"`
-			Group   *Group `json:"group"`
-		} `json:"subscriptions"`
-	}
-	if err := json.Unmarshal(data, &facts); err != nil {
-		return nil, err
-	}
-	seen := make(map[int64]struct{}, len(facts.Subscriptions))
-	for _, subscription := range facts.Subscriptions {
-		if !strings.EqualFold(strings.TrimSpace(subscription.Status), "active") {
-			continue
-		}
-		groupID := subscription.GroupID
-		if groupID <= 0 && subscription.Group != nil {
-			groupID = subscription.Group.ID
-		}
-		if groupID > 0 {
-			seen[groupID] = struct{}{}
-		}
-	}
-	groupIDs := make([]int64, 0, len(seen))
-	for groupID := range seen {
-		groupIDs = append(groupIDs, groupID)
-	}
-	sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
-	return groupIDs, nil
 }
 
 func (s *sub2apiRelay) findUserInAdminList(ctx context.Context, match func(User) bool) (*User, error) {
@@ -2770,6 +2760,15 @@ func (s *sub2apiRelay) ExtendSubscriptionForUserWithOperationKey(ctx context.Con
 	return s.extendSubscriptionForUser(ctx, userID, groupID, days, operationKey)
 }
 
+// ExtendSubscriptionByIDWithOperationKey extends the exact subscription from
+// a reviewed relationship snapshot without rediscovering it by user and Group.
+func (s *sub2apiRelay) ExtendSubscriptionByIDWithOperationKey(ctx context.Context, subscriptionID int64, days int, operationKey string) error {
+	if strings.TrimSpace(operationKey) == "" {
+		return fmt.Errorf("extend subscription: operation key is required")
+	}
+	return s.extendSubscriptionByID(ctx, subscriptionID, days, operationKey)
+}
+
 func (s *sub2apiRelay) extendSubscriptionForUser(ctx context.Context, userID, groupID int64, days int, operationKey string) error {
 	if userID <= 0 {
 		return fmt.Errorf("extend subscription: user id is required")
@@ -2784,12 +2783,21 @@ func (s *sub2apiRelay) extendSubscriptionForUser(ctx context.Context, userID, gr
 	if err != nil {
 		return fmt.Errorf("extend subscription: %w", err)
 	}
+	return s.extendSubscriptionByID(ctx, subscription.ID, days, operationKey)
+}
 
+func (s *sub2apiRelay) extendSubscriptionByID(ctx context.Context, subscriptionID int64, days int, operationKey string) error {
+	if subscriptionID <= 0 {
+		return fmt.Errorf("extend subscription: subscription id is required")
+	}
+	if days <= 0 {
+		return fmt.Errorf("extend subscription: days is required")
+	}
 	payload, err := json.Marshal(map[string]any{"days": days})
 	if err != nil {
 		return fmt.Errorf("extend subscription: marshal: %w", err)
 	}
-	resp, err := s.doAdminRequestWithOperationKey(ctx, http.MethodPost, fmt.Sprintf("/api/v1/admin/subscriptions/%d/extend", subscription.ID), bytes.NewReader(payload), operationKey)
+	resp, err := s.doAdminRequestWithOperationKey(ctx, http.MethodPost, fmt.Sprintf("/api/v1/admin/subscriptions/%d/extend", subscriptionID), bytes.NewReader(payload), operationKey)
 	if err != nil {
 		return fmt.Errorf("extend subscription: %w", err)
 	}
