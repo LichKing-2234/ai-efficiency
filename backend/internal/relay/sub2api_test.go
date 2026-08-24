@@ -114,6 +114,142 @@ func TestProtocolProbeReturnsCompleteUpstreamError(t *testing.T) {
 	}
 }
 
+func TestClaudeMessagesProtocolProbeCarriesClientIdentityProfile(t *testing.T) {
+	type capturedRequest struct {
+		header http.Header
+		body   map[string]any
+	}
+	captured := make(chan capturedRequest, 1)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/messages", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		captured <- capturedRequest{header: r.Header.Clone(), body: body}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"OK"}],"stop_reason":"end_turn","usage":{"input_tokens":2,"output_tokens":1}}`)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	p := relay.NewSub2apiProvider(srv.Client(), srv.URL+"/v1", "test-user-key", "selected-model", zap.NewNop()).(relay.ProtocolCompleter)
+	maxTokens := 16
+	response, err := p.CompletionForProtocol(context.Background(), "anthropic", relay.ProtocolMessages, relay.ChatCompletionRequest{
+		Model:     "selected-model",
+		Messages:  []relay.ChatMessage{{Role: "user", Content: "Reply with OK"}},
+		MaxTokens: &maxTokens,
+	})
+	if err != nil {
+		t.Fatalf("CompletionForProtocol() error = %v", err)
+	}
+	if response.Content != "OK" || response.TokensUsed != 3 {
+		t.Fatalf("CompletionForProtocol() response = %+v, want content OK and 3 tokens", response)
+	}
+
+	request := <-captured
+	if got := request.header.Get("Authorization"); got != "Bearer test-user-key" {
+		t.Errorf("Authorization = %q, want selected user credential", got)
+	}
+	if got := request.header.Get("x-api-key"); got != "test-user-key" {
+		t.Errorf("x-api-key = %q, want selected user credential", got)
+	}
+	for name, want := range map[string]string{
+		"User-Agent":        "claude-cli/2.1.220 (external, cli)",
+		"X-App":             "cli",
+		"anthropic-beta":    "claude-code-20250219",
+		"anthropic-version": "2023-06-01",
+	} {
+		if got := request.header.Get(name); got != want {
+			t.Errorf("%s = %q, want %q", name, got, want)
+		}
+	}
+	if request.body["model"] != "selected-model" || request.body["stream"] != false || request.body["max_tokens"] != float64(16) {
+		t.Errorf("messages request controls = %#v", request.body)
+	}
+	if diff := cmp.Diff([]any{map[string]any{"role": "user", "content": "Reply with OK"}}, request.body["messages"]); diff != "" {
+		t.Errorf("messages mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]any{map[string]any{
+		"type": "text",
+		"text": "You are Claude Code, Anthropic's official CLI for Claude.",
+	}}, request.body["system"]); diff != "" {
+		t.Errorf("system mismatch (-want +got):\n%s", diff)
+	}
+	wantMetadata := map[string]any{
+		"user_id": `{"device_id":"0000000000000000000000000000000000000000000000000000000000000000","account_uuid":"","session_id":"00000000-0000-0000-0000-000000000000"}`,
+	}
+	if diff := cmp.Diff(wantMetadata, request.body["metadata"]); diff != "" {
+		t.Errorf("metadata mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestNonClaudeMessagesProtocolProbeOmitsClaudeClientIdentityProfile(t *testing.T) {
+	tests := []struct {
+		platform string
+		path     string
+	}{
+		{platform: "openai", path: "/v1/messages"},
+		{platform: "antigravity", path: "/antigravity/v1/messages"},
+		{platform: "grok", path: "/v1/messages"},
+		{platform: "composite", path: "/v1/messages"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.platform, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc(tt.path, func(w http.ResponseWriter, r *http.Request) {
+				if got := r.Header.Get("Authorization"); got != "Bearer test-user-key" {
+					t.Errorf("Authorization = %q, want selected user credential", got)
+				}
+				if got := r.Header.Get("x-api-key"); got != "test-user-key" {
+					t.Errorf("x-api-key = %q, want selected user credential", got)
+				}
+				if got := r.Header.Get("User-Agent"); strings.HasPrefix(got, "claude-cli/") {
+					t.Errorf("User-Agent = %q, want no Claude CLI identity", got)
+				}
+				for _, name := range []string{"X-App", "anthropic-beta"} {
+					if got := r.Header.Get(name); got != "" {
+						t.Errorf("%s = %q, want empty", name, got)
+					}
+				}
+
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Fatalf("decode request: %v", err)
+				}
+				if body["model"] != "selected-model" || body["stream"] != false || body["max_tokens"] != float64(16) {
+					t.Errorf("messages request controls = %#v", body)
+				}
+				for _, field := range []string{"system", "metadata"} {
+					if _, ok := body[field]; ok {
+						t.Errorf("messages request contains Claude identity field %q: %#v", field, body[field])
+					}
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"OK"}],"stop_reason":"end_turn","usage":{"input_tokens":2,"output_tokens":1}}`)
+			})
+			srv := httptest.NewServer(mux)
+			t.Cleanup(srv.Close)
+
+			p := relay.NewSub2apiProvider(srv.Client(), srv.URL+"/v1", "test-user-key", "selected-model", zap.NewNop()).(relay.ProtocolCompleter)
+			maxTokens := 16
+			response, err := p.CompletionForProtocol(context.Background(), tt.platform, relay.ProtocolMessages, relay.ChatCompletionRequest{
+				Model:     "selected-model",
+				Messages:  []relay.ChatMessage{{Role: "user", Content: "Reply with OK"}},
+				MaxTokens: &maxTokens,
+			})
+			if err != nil {
+				t.Fatalf("CompletionForProtocol() error = %v", err)
+			}
+			if response.Content != "OK" || response.TokensUsed != 3 {
+				t.Fatalf("CompletionForProtocol() response = %+v, want content OK and 3 tokens", response)
+			}
+		})
+	}
+}
+
 func TestProtocolCompleterUsesStableRoutes(t *testing.T) {
 	tests := []struct {
 		name     string

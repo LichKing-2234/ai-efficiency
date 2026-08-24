@@ -111,7 +111,18 @@ type ProtocolCapabilities struct {
 	Recommended string
 }
 
+func isClaudePlatform(platform string) bool {
+	platform = strings.ToLower(strings.TrimSpace(platform))
+	return platform == "anthropic" || platform == "claude"
+}
+
 func StableProtocolCapabilities(group Group) ProtocolCapabilities {
+	if isClaudePlatform(group.Platform) {
+		return ProtocolCapabilities{
+			Supported:   []string{ProtocolMessages, ProtocolResponses, ProtocolChatCompletions},
+			Recommended: ProtocolMessages,
+		}
+	}
 	switch strings.ToLower(strings.TrimSpace(group.Platform)) {
 	case "openai":
 		supported := []string{ProtocolResponses, ProtocolChatCompletions}
@@ -119,11 +130,6 @@ func StableProtocolCapabilities(group Group) ProtocolCapabilities {
 			supported = append(supported, ProtocolMessages)
 		}
 		return ProtocolCapabilities{Supported: supported, Recommended: ProtocolResponses}
-	case "anthropic", "claude":
-		return ProtocolCapabilities{
-			Supported:   []string{ProtocolMessages, ProtocolResponses, ProtocolChatCompletions},
-			Recommended: ProtocolMessages,
-		}
 	case "gemini":
 		return ProtocolCapabilities{
 			Supported:   []string{ProtocolGenerateContent, ProtocolChatCompletions},
