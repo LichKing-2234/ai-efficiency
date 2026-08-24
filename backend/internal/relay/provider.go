@@ -191,6 +191,13 @@ type UserSubscriptionLister interface {
 	ListUserSubscriptions(ctx context.Context, relayUserID int64) ([]UserSubscription, error)
 }
 
+// IdempotentUserSubscriptionWriter is an optional admin write capability for
+// callers that must safely replay one exact subscription mutation.
+type IdempotentUserSubscriptionWriter interface {
+	AssignSubscriptionForUserWithOperationKey(ctx context.Context, relayUserID, groupID int64, validityDays int, operationKey string) error
+	ExtendSubscriptionForUserWithOperationKey(ctx context.Context, relayUserID, groupID int64, days int, operationKey string) error
+}
+
 type UserSubscriptionQuotaResetter interface {
 	ResetSubscriptionQuotaForUser(ctx context.Context, relayUserID, groupID int64) error
 }

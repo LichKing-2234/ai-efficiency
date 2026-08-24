@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { CaretBottom, CaretTop, Check, Delete, Plus, Refresh, Setting, Switch } from '@element-plus/icons-vue'
+import { Calendar, CaretBottom, CaretTop, Check, Delete, Plus, Refresh, Setting, Switch } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import AppLayout from '@/components/AppLayout.vue'
 import AdminDepartmentPicker from '@/components/admin/AdminDepartmentPicker.vue'
@@ -9,9 +9,11 @@ import { relayPlanningMessages } from '@/locales/relayPlanning'
 import { listAdminUserSubscriptionOptions } from '@/api/adminUsers'
 import {
 	adoptCurrentRelayAccounts,
+  executeRelayMappingRenewal,
   executeRelayPlan,
   executeRelayReplan,
   listRelayGroupMappings,
+  previewRelayMappingRenewal,
   previewRelayPlan,
   previewRelayReplan,
   rebindRelayGroupMapping,
@@ -23,6 +25,10 @@ import {
 	type RelayPlanningExecution,
   type RelayPlanningRequest,
   type RelayPlanningMapping,
+	type RelayPlanningMappingRenewalExecution,
+	type RelayPlanningMappingRenewalMember,
+	type RelayPlanningMappingRenewalReviewedMember,
+	type RelayPlanningMappingRenewalPreview,
 	type RelayPlanningMemberAction,
   type RelayPlanningPlan,
 	type RelayPlanningTargetSummary,
@@ -61,6 +67,17 @@ const suggestedGroupAccountDefaults = ref<RelayPlanningAccount[]>([])
 const mappings = ref<RelayPlanningMapping[]>([])
 const mappingPage = ref(1)
 const mappingPageSize = 10
+const renewalDialogOpen = ref(false)
+const renewalLoadingID = ref<number | null>(null)
+const renewalPreviewLoading = ref(false)
+const renewalMappingID = ref<number | null>(null)
+const renewalDays = ref(365)
+const renewalPreview = ref<RelayPlanningMappingRenewalPreview | null>(null)
+const selectedRenewalUserIDs = ref<Set<number>>(new Set())
+const renewalExecuting = ref(false)
+const renewalExecution = ref<RelayPlanningMappingRenewalExecution | null>(null)
+const renewalOperationKey = ref('')
+const renewalReviewNotice = ref('')
 const rebindPendingID = ref<number | null>(null)
 const rebindDialogOpen = ref(false)
 const rebindMappingID = ref<number | null>(null)
@@ -99,6 +116,7 @@ const rebindGroups = computed(() => (providers.value.find((item) => item.id === 
   .filter((group) => group.platform === rebindContext.platform))
 const targetNameErrors = computed(() => Object.fromEntries((plan.value?.assignments ?? []).map((assignment) => [assignment.index, validateTargetName(assignment.index)])))
 const hasTargetNameErrors = computed(() => Object.values(targetNameErrors.value).some(Boolean))
+const failedRenewalMembers = computed(() => renewalExecution.value?.members.filter((member) => member.status === 'failed') ?? [])
 
 function translateWarning(warning: string): string {
   void locale.value
@@ -400,6 +418,192 @@ async function loadMappings() {
   const response = await listRelayGroupMappings(form.provider_id || undefined)
   mappings.value = response.data.data?.items ?? []
   mappingPage.value = Math.min(mappingPage.value, Math.max(1, Math.ceil(mappings.value.length / mappingPageSize)))
+}
+
+function applyRenewalPreview(next: RelayPlanningMappingRenewalPreview, selectAll: boolean) {
+	const previous = selectedRenewalUserIDs.value
+	renewalPreview.value = next
+	renewalDays.value = next.renewal_days
+	selectedRenewalUserIDs.value = new Set(next.members
+		.filter((member) => selectAll || previous.has(member.user_id))
+		.map((member) => member.user_id))
+}
+
+async function renewMapping(mapping: RelayPlanningMapping) {
+	if (renewalLoadingID.value !== null) return
+	renewalLoadingID.value = mapping.id
+	renewalMappingID.value = mapping.id
+	renewalDays.value = 365
+	renewalPreview.value = null
+	selectedRenewalUserIDs.value = new Set()
+	renewalExecution.value = null
+	renewalOperationKey.value = crypto.randomUUID()
+	renewalReviewNotice.value = ''
+	try {
+		const response = await previewRelayMappingRenewal(mapping.id, { renewal_days: 365 })
+		if (!response.data.data) throw new Error(t('relayPlanning.renewalPreviewFailed'))
+		applyRenewalPreview(response.data.data, true)
+		renewalDialogOpen.value = true
+	} catch (err: any) {
+		ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.renewalPreviewFailed'))
+	} finally {
+		renewalLoadingID.value = null
+	}
+}
+
+function resetRenewalOperation() {
+	renewalMappingID.value = null
+	renewalDays.value = 365
+	renewalPreview.value = null
+	selectedRenewalUserIDs.value = new Set()
+	renewalExecution.value = null
+	renewalOperationKey.value = ''
+	renewalReviewNotice.value = ''
+	renewalPreviewLoading.value = false
+}
+
+function closeRenewalOperation() {
+	if (renewalExecuting.value || renewalPreviewLoading.value) return
+	renewalDialogOpen.value = false
+	resetRenewalOperation()
+}
+
+async function refreshRenewalPreview() {
+	if (renewalMappingID.value === null || !Number.isInteger(renewalDays.value) || renewalDays.value <= 0 || renewalDays.value > 36500) {
+		ElMessage.error(t('relayPlanning.positiveRenewalDaysRequired'))
+		return
+	}
+	renewalPreviewLoading.value = true
+	try {
+		const response = await previewRelayMappingRenewal(renewalMappingID.value, { renewal_days: renewalDays.value })
+		if (!response.data.data) throw new Error(t('relayPlanning.renewalPreviewFailed'))
+		applyRenewalPreview(response.data.data, false)
+	} catch (err: any) {
+		ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.renewalPreviewFailed'))
+	} finally {
+		renewalPreviewLoading.value = false
+	}
+}
+
+function toggleRenewalMember(userID: number, checked: boolean) {
+	const next = new Set(selectedRenewalUserIDs.value)
+	if (checked) next.add(userID)
+	else next.delete(userID)
+	selectedRenewalUserIDs.value = next
+}
+
+function reviewedRenewalMembers(): RelayPlanningMappingRenewalReviewedMember[] {
+	return (renewalPreview.value?.members ?? [])
+		.filter((member) => selectedRenewalUserIDs.value.has(member.user_id))
+		.map((member) => ({ user_id: member.user_id, target_group_id: member.expected_target_group_id, planned_action: member.planned_action }))
+}
+
+async function confirmMappingRenewal() {
+	if (!renewalPreview.value || selectedRenewalUserIDs.value.size === 0) {
+		ElMessage.error(t('relayPlanning.renewalNoSelection'))
+		return
+	}
+	await submitMappingRenewal(reviewedRenewalMembers(), renewalPreview.value.relationship_fingerprint, false)
+}
+
+async function retryMappingRenewalFailures() {
+	if (!renewalExecution.value || failedRenewalMembers.value.length === 0 || renewalMappingID.value === null) return
+	if (!renewalExecution.value.preview) {
+		renewalPreviewLoading.value = true
+		try {
+			const response = await previewRelayMappingRenewal(renewalMappingID.value, { renewal_days: renewalDays.value })
+			if (!response.data.data) throw new Error(t('relayPlanning.renewalPreviewFailed'))
+			applyRenewalPreview(response.data.data, false)
+			renewalExecution.value = { ...renewalExecution.value, preview: response.data.data, preview_error: undefined }
+			renewalReviewNotice.value = t('relayPlanning.staleRenewal')
+			ElMessage.warning(t('relayPlanning.staleRenewal'))
+			return
+		} catch (err: any) {
+			ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.renewalPreviewFailed'))
+			return
+		} finally {
+			renewalPreviewLoading.value = false
+		}
+	}
+	const members = failedRenewalMembers.value.map((member) => ({ user_id: member.user_id, target_group_id: member.target_group_id, planned_action: member.action }))
+	await submitMappingRenewal(members, renewalExecution.value.preview!.relationship_fingerprint, true)
+}
+
+async function submitMappingRenewal(members: RelayPlanningMappingRenewalReviewedMember[], fingerprint: string, retry: boolean) {
+	if (renewalMappingID.value === null || renewalExecuting.value) return
+	renewalReviewNotice.value = ''
+	renewalExecuting.value = true
+	try {
+		const response = await executeRelayMappingRenewal(renewalMappingID.value, {
+			renewal_days: renewalDays.value,
+			members,
+			expected_relationship_fingerprint: fingerprint,
+			operation_key: renewalOperationKey.value,
+			retry,
+		})
+		const next = response.data.data
+		if (!next) throw new Error(t('relayPlanning.renewalExecutionFailed'))
+		if (retry && renewalExecution.value) {
+			const replacements = new Map(next.members.map((member) => [member.user_id, member]))
+			renewalExecution.value = { ...next, members: renewalExecution.value.members.map((member) => replacements.get(member.user_id) ?? member) }
+		} else {
+			renewalExecution.value = next
+		}
+		if (next.preview) applyRenewalPreview(next.preview, false)
+		ElMessage.success(t('relayPlanning.renewalExecutionFinished'))
+	} catch (err: any) {
+		const details = err.response?.data?.details
+		if (err.response?.status === 409 && details?.error_code === 'stale_relay_plan' && details.refreshed_preview) {
+			applyRenewalPreview(details.refreshed_preview, false)
+			if (renewalExecution.value) renewalExecution.value = { ...renewalExecution.value, preview: details.refreshed_preview }
+			renewalReviewNotice.value = t('relayPlanning.staleRenewal')
+			ElMessage.warning(t('relayPlanning.staleRenewal'))
+			return
+		}
+		ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.renewalExecutionFailed'))
+	} finally {
+		renewalExecuting.value = false
+	}
+}
+
+function renewalStatusText(status: RelayPlanningMappingRenewalMember['status']): string {
+	if (status === 'active') return t('relayPlanning.renewalStatusActive')
+	if (status === 'expired') return t('relayPlanning.renewalStatusExpired')
+	if (status === 'suspended') return t('relayPlanning.renewalStatusSuspended')
+	return t('relayPlanning.renewalStatusMissing')
+}
+
+function renewalActionText(action: RelayPlanningMappingRenewalMember['planned_action']): string {
+	if (action === 'extend') return t('relayPlanning.renewalActionExtend')
+	if (action === 'renew') return t('relayPlanning.renewalActionRenew')
+	if (action === 'skip') return t('relayPlanning.renewalActionSkip')
+	return t('relayPlanning.renewalActionCreate')
+}
+
+function renewalStatusTag(status: RelayPlanningMappingRenewalMember['status']): 'success' | 'warning' | 'danger' | 'info' {
+	if (status === 'active') return 'success'
+	if (status === 'suspended') return 'warning'
+	if (status === 'expired') return 'danger'
+	return 'info'
+}
+
+function renewalResultText(status: 'succeeded' | 'skipped' | 'failed'): string {
+	if (status === 'succeeded') return t('relayPlanning.renewalSucceeded')
+	if (status === 'skipped') return t('relayPlanning.renewalSkipped')
+	return t('relayPlanning.renewalFailed')
+}
+
+function renewalResultTag(status: 'succeeded' | 'skipped' | 'failed'): 'success' | 'info' | 'danger' {
+	if (status === 'succeeded') return 'success'
+	if (status === 'skipped') return 'info'
+	return 'danger'
+}
+
+function formatRenewalDate(value?: string): string {
+	if (!value) return '-'
+	const parsed = new Date(value)
+	if (Number.isNaN(parsed.getTime())) return value
+	return new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(parsed)
 }
 
 function manageAccounts(mapping: RelayPlanningMapping) {
@@ -1044,7 +1248,7 @@ onBeforeUnmount(clearSearchState)
             <dl class="mt-3 space-y-2 text-sm"><div><dt class="text-xs text-slate-500">{{ t('relayPlanning.templateGroup') }}</dt><dd class="break-words">{{ mapping.template_group_name || '-' }} (#{{ mapping.template_group_id }})</dd></div><div><dt class="text-xs text-slate-500">{{ t('relayPlanning.migrationSource') }}</dt><dd class="break-words">{{ mapping.source_group_name }} (#{{ mapping.source_group_id }})</dd></div><div><dt class="text-xs text-slate-500">{{ t('relayPlanning.managedGroups') }}</dt><dd class="break-words">{{ mapping.group_ids.join(', ') || '-' }}</dd></div></dl>
             <div v-if="mapping.warnings?.length" class="mt-2 text-xs text-amber-700">{{ mapping.warnings.map(translateWarning).join('; ') }}</div>
             <div v-if="mapping.department_suggestions?.length" class="mt-2 text-xs text-slate-500">{{ t('relayPlanning.departmentSuggestions') }}: {{ mapping.department_suggestions.map(departmentSuggestionLabel).join(', ') }}</div>
-            <div class="mt-3 flex flex-wrap gap-2"><el-button :data-testid="`replan-mapping-${mapping.id}`" size="small" type="primary" @click="replan(mapping)">{{ t('relayPlanning.replan') }}</el-button><el-button :data-testid="`rebind-mapping-${mapping.id}`" size="small" :loading="rebindPendingID === mapping.id" :disabled="rebindPendingID !== null && rebindPendingID !== mapping.id" @click="rebind(mapping)">{{ t('relayPlanning.rebind') }}</el-button><el-button :data-testid="`manage-accounts-${mapping.id}`" size="small" @click="manageAccounts(mapping)">{{ t('relayPlanning.manageAccounts') }}</el-button></div>
+            <div class="mt-3 flex flex-wrap gap-2"><el-button :data-testid="`replan-mapping-${mapping.id}`" size="small" type="primary" @click="replan(mapping)">{{ t('relayPlanning.replan') }}</el-button><el-button :data-testid="`renew-mapping-${mapping.id}`" size="small" :icon="Calendar" :loading="renewalLoadingID === mapping.id" :disabled="renewalLoadingID !== null && renewalLoadingID !== mapping.id" @click="renewMapping(mapping)">{{ t('relayPlanning.renewSubscriptions') }}</el-button><el-button :data-testid="`rebind-mapping-${mapping.id}`" size="small" :loading="rebindPendingID === mapping.id" :disabled="rebindPendingID !== null && rebindPendingID !== mapping.id" @click="rebind(mapping)">{{ t('relayPlanning.rebind') }}</el-button><el-button :data-testid="`manage-accounts-${mapping.id}`" size="small" @click="manageAccounts(mapping)">{{ t('relayPlanning.manageAccounts') }}</el-button></div>
           </article>
         </div>
         <el-table v-else-if="mappings.length" data-testid="mapping-table-layout" :data="paginatedMappings" stripe>
@@ -1054,7 +1258,7 @@ onBeforeUnmount(clearSearchState)
           <el-table-column :label="t('relayPlanning.migrationSource')" min-width="160"><template #default="scope">{{ scope.row.source_group_name }} (#{{ scope.row.source_group_id }})</template></el-table-column>
           <el-table-column :label="t('relayPlanning.managedGroups')" min-width="180"><template #default="scope">{{ scope.row.group_ids.join(', ') }}</template></el-table-column>
           <el-table-column :label="t('relayPlanning.status')" min-width="150"><template #default="scope"><el-tag :type="scope.row.warnings?.length || scope.row.status === 'needs_retry' ? 'warning' : 'success'">{{ scope.row.warnings?.length ? t('relayPlanning.reviewNeeded') : translateMappingStatus(scope.row.status) }}</el-tag><div v-if="scope.row.warnings?.length" class="mt-1 text-xs text-amber-700">{{ scope.row.warnings.map(translateWarning).join('; ') }}</div><div v-if="scope.row.department_suggestions?.length" class="mt-1 text-xs text-slate-500">{{ t('relayPlanning.departmentSuggestions') }}: {{ scope.row.department_suggestions.map(departmentSuggestionLabel).join(', ') }}</div></template></el-table-column>
-          <el-table-column :label="t('relayPlanning.actions')" min-width="240"><template #default="scope"><el-button :data-testid="`replan-mapping-${scope.row.id}`" link type="primary" @click="replan(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.replan') }}</el-button><el-button :data-testid="`rebind-mapping-${scope.row.id}`" link type="primary" :loading="rebindPendingID === scope.row.id" :disabled="rebindPendingID !== null && rebindPendingID !== scope.row.id" @click="rebind(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.rebind') }}</el-button><el-button :data-testid="`manage-accounts-${scope.row.id}`" link type="primary" @click="manageAccounts(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.manageAccounts') }}</el-button></template></el-table-column>
+          <el-table-column :label="t('relayPlanning.actions')" min-width="360"><template #default="scope"><el-button :data-testid="`replan-mapping-${scope.row.id}`" link type="primary" @click="replan(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.replan') }}</el-button><el-button :data-testid="`renew-mapping-${scope.row.id}`" link type="primary" :icon="Calendar" :loading="renewalLoadingID === scope.row.id" :disabled="renewalLoadingID !== null && renewalLoadingID !== scope.row.id" @click="renewMapping(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.renewSubscriptions') }}</el-button><el-button :data-testid="`rebind-mapping-${scope.row.id}`" link type="primary" :loading="rebindPendingID === scope.row.id" :disabled="rebindPendingID !== null && rebindPendingID !== scope.row.id" @click="rebind(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.rebind') }}</el-button><el-button :data-testid="`manage-accounts-${scope.row.id}`" link type="primary" @click="manageAccounts(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.manageAccounts') }}</el-button></template></el-table-column>
         </el-table>
         <el-pagination v-if="mappings.length > mappingPageSize" data-testid="mapping-pagination" class="mt-4 justify-end" size="small" background layout="prev, pager, next" :pager-count="5" :current-page="mappingPage" :page-size="mappingPageSize" :total="mappings.length" @current-change="mappingPage = $event" />
         <div v-if="accountMapping" class="mt-4 border-t border-slate-200 pt-4">
@@ -1101,6 +1305,59 @@ onBeforeUnmount(clearSearchState)
           </div>
         </div>
       </section>
+
+		<el-dialog
+			v-model="renewalDialogOpen"
+			data-testid="renewal-preview-dialog"
+			:title="t('relayPlanning.renewalPreviewTitle')"
+			append-to-body
+			align-center
+			width="min(100%, 56rem)"
+			:show-close="!renewalExecuting && !renewalPreviewLoading"
+			:close-on-click-modal="!renewalExecuting && !renewalPreviewLoading"
+			:close-on-press-escape="!renewalExecuting && !renewalPreviewLoading"
+			@closed="resetRenewalOperation"
+		>
+			<div class="flex flex-wrap items-end justify-between gap-4">
+				<el-form-item :label="t('relayPlanning.renewalTermDays')" class="!mb-0">
+					<el-input-number v-model="renewalDays" data-testid="renewal-days-input" :min="1" :max="36500" :precision="0" :disabled="renewalPreviewLoading || renewalExecuting || renewalExecution !== null" controls-position="right" @change="refreshRenewalPreview" />
+				</el-form-item>
+				<div data-testid="renewal-selected-count" class="text-sm font-medium text-slate-700">{{ t('relayPlanning.renewalSelectedCount', { count: selectedRenewalUserIDs.size }) }}</div>
+			</div>
+			<el-alert v-if="renewalReviewNotice" data-testid="renewal-review-alert" class="mt-3" type="warning" :closable="false" show-icon :title="renewalReviewNotice" />
+			<div v-if="renewalPreview" class="mt-4 max-h-[65vh] divide-y divide-slate-200 overflow-y-auto border-y border-slate-200">
+				<div v-for="member in renewalPreview.members" :key="member.user_id" :data-testid="`renewal-member-${member.user_id}`" class="flex items-start gap-3 py-4 first:pt-3 last:pb-3">
+					<el-checkbox :model-value="selectedRenewalUserIDs.has(member.user_id)" :disabled="renewalExecuting || renewalExecution !== null" class="mt-0.5" @change="(checked) => toggleRenewalMember(member.user_id, checked === true)" />
+					<span class="min-w-0 flex-1">
+						<span class="flex flex-wrap items-start justify-between gap-2">
+							<span class="min-w-0"><span class="block break-words text-sm font-semibold text-slate-900">{{ member.username || member.email }}</span><span class="block break-all text-xs text-slate-500">{{ member.email }}</span></span>
+							<span class="flex shrink-0 flex-wrap gap-2"><el-tag :type="renewalStatusTag(member.status)" size="small">{{ renewalStatusText(member.status) }}</el-tag><el-tag type="info" size="small">{{ renewalActionText(member.planned_action) }}</el-tag></span>
+						</span>
+						<span class="mt-3 grid gap-3 text-sm sm:grid-cols-3">
+							<span class="min-w-0"><span class="block text-xs text-slate-500">{{ t('relayPlanning.expectedTargetGroup') }}</span><span class="block break-words text-slate-800">{{ member.expected_target_group_name || t('relayPlanning.groupNumber', { id: member.expected_target_group_id }) }} (#{{ member.expected_target_group_id }})</span></span>
+							<span class="min-w-0"><span class="block text-xs text-slate-500">{{ t('relayPlanning.currentExpiry') }}</span><span :data-testid="`renewal-current-expiry-${member.user_id}`" class="block break-words text-slate-800">{{ formatRenewalDate(member.current_expiry) }}</span></span>
+							<span class="min-w-0"><span class="block text-xs text-slate-500">{{ t('relayPlanning.resultingExpiry') }}</span><span :data-testid="`renewal-resulting-expiry-${member.user_id}`" class="block break-words text-slate-800">{{ formatRenewalDate(member.resulting_expiry) }}</span></span>
+						</span>
+						<span v-if="member.drift?.length" class="mt-3 block text-xs text-amber-700"><span class="font-semibold">{{ t('relayPlanning.unexpectedSubscriptions') }}:</span> {{ member.drift.map((item) => `${item.group_name || t('relayPlanning.groupNumber', { id: item.group_id })} (#${item.group_id}) · ${item.status}`).join('; ') }}</span>
+					</span>
+				</div>
+			</div>
+			<div v-if="renewalExecution" class="mt-4 border-t border-slate-200 pt-3">
+				<div class="text-sm font-semibold text-slate-900">{{ t('relayPlanning.renewalResults') }}</div>
+				<div class="mt-2 divide-y divide-slate-100">
+					<div v-for="member in renewalExecution.members" :key="member.user_id" :data-testid="`renewal-result-${member.user_id}`" class="flex flex-wrap items-start justify-between gap-3 py-2 text-sm">
+						<span class="min-w-0"><span class="block font-medium text-slate-800">{{ t('relayPlanning.userNumber', { id: member.user_id }) }} · {{ renewalActionText(member.action) }}</span><span v-if="member.error" class="block break-words text-xs text-red-600">{{ member.error }}</span></span>
+						<el-tag :type="renewalResultTag(member.status)" size="small">{{ renewalResultText(member.status) }}</el-tag>
+					</div>
+				</div>
+				<el-alert v-if="renewalExecution.preview_error" class="mt-2" type="warning" :closable="false" show-icon :title="renewalExecution.preview_error" />
+			</div>
+			<template #footer>
+				<el-button data-testid="close-renewal" :disabled="renewalExecuting || renewalPreviewLoading" @click="closeRenewalOperation">{{ t('relayPlanning.close') }}</el-button>
+				<el-button v-if="!renewalExecution" data-testid="confirm-renewal" type="primary" :loading="renewalExecuting" :disabled="selectedRenewalUserIDs.size === 0" @click="confirmMappingRenewal">{{ t('relayPlanning.confirmRenewal') }}</el-button>
+				<el-button v-else-if="failedRenewalMembers.length" data-testid="retry-renewal-failures" type="primary" :loading="renewalExecuting || renewalPreviewLoading" @click="retryMappingRenewalFailures">{{ t('relayPlanning.retryFailedRenewals') }}</el-button>
+			</template>
+		</el-dialog>
 
       <el-dialog
         v-model="confirmDialogOpen"

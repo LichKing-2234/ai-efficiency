@@ -136,6 +136,39 @@ mapping, subscription, and API-Key bindings and adds only the new target
 subscription. The UI warns that this leaves the user in multiple managed
 Account pools. Department changes never trigger either action automatically.
 
+## Mapping Renewal
+
+Every new subscription assigned by Relay Planning uses 365 validity days. This
+applies to initial execution, Replan additions, `Add Additionally`, and adoption
+of a Relay-only member. The new default affects only future assignments. A
+release never backfills, extends, or otherwise mutates an existing subscription.
+
+Each managed mapping exposes an explicit `Renew Subscriptions` action. The
+renewal Preview selects all saved managed mapping members by default and allows
+the administrator to deselect individual members. Relay-only users observed in
+a target Group remain outside the renewal scope until they are explicitly
+adopted. The renewal term defaults to 365 days, can be changed for the current
+operation, and is not persisted as mapping configuration.
+
+The read-only Preview shows each selected member, expected target Group,
+subscription status, current expiry, planned action, and resulting expiry. For
+an active subscription, the term is added to its current expiry. For an expired
+subscription, the term starts at execution time and the subscription becomes
+active. A missing expected subscription is created for the requested term. A
+suspended subscription is skipped and remains suspended. Subscriptions in an
+unexpected or additional Group are shown as drift but are never renewed,
+removed, or used as a reason to move API Keys by this operation.
+
+Renewal requires a final explicit Confirm and revalidates the relevant
+subscription facts before its first write. Execution is synchronous and reports
+per-member `succeeded`, `skipped`, or `failed` results in the current dialog. It
+does not create a background job or renewal-history entity. One stable operation
+key is retained for the dialog, propagated as deterministic per-member
+idempotency keys, and reused only when retrying failed members. Successful and
+skipped members are never submitted again by that retry. Closing or refreshing
+the result dialog ends that result view; a later renewal starts a new explicit
+operation.
+
 ## Relationship-Bound Confirmation
 
 Every Preview returns an opaque versioned SHA-256 relationship fingerprint.
