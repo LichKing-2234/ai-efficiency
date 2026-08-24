@@ -3,7 +3,7 @@
 **Date:** 2026-08-14
 **Status:** Current implementation contract
 **Scope:** `/user` protocol compatibility testing, relay group capability metadata, and `POST /api/v1/user/providers/:id/test`
-**Related Issues:** [#291](https://github.com/LichKing-2234/ai-efficiency/issues/291), [#292](https://github.com/LichKing-2234/ai-efficiency/issues/292), [#293](https://github.com/LichKing-2234/ai-efficiency/issues/293)
+**Related Issues:** [#291](https://github.com/LichKing-2234/ai-efficiency/issues/291), [#292](https://github.com/LichKing-2234/ai-efficiency/issues/292), [#293](https://github.com/LichKing-2234/ai-efficiency/issues/293), [#343](https://github.com/LichKing-2234/ai-efficiency/issues/343)
 
 ## Spec Relationship
 
@@ -25,6 +25,7 @@ sub2api 管理端的账号测试与这里也不是同一个证明：前者以账
 3. 让成功结果严格对应 provider、group、当前 key、model 和 protocol，避免陈旧异步结果误导用户。
 4. 对每种协议验证合法终止状态和非空 assistant text。
 5. 将 relay/upstream 返回给 AI Efficiency 的完整错误正文展示给用户，便于诊断协议转换链。
+6. 让 OpenAI group 的 Responses probe 在 sub2api 启用 Codex 官方客户端限制时仍能被识别，同时保持其平台发起的连接测试身份。
 
 ## Non-Goals
 
@@ -33,7 +34,7 @@ sub2api 管理端的账号测试与这里也不是同一个证明：前者以账
 - 不模拟 streaming client；所有 probe 都是小型 non-streaming 请求。
 - 不把结果持久化到 backend、local storage 或其他页面。
 - 不把连接测试描述成 sub2api account health、生成配置验收或上游服务整体健康检查。
-- 不把连接测试成功描述成本机 Claude Code 或其他客户端已经完成配置。
+- 不把连接测试成功描述成本机 Claude Code、Codex 或其他客户端已经完成配置；Client Identity Profile 只标识这次平台发起的 probe。
 
 ## Capability Contract
 
@@ -80,6 +81,7 @@ Composite group 会由 sub2api 按请求模型选择实际平台，因此暴露�
 - output token 上限保持较小；请求明确 non-streaming。
 - 每次只调用所选协议一次，不 retry、不 fallback。
 - Claude/Anthropic Messages probe 携带 sub2api 当前接受的 Claude CLI Client Identity Profile：`claude-cli/<semver>` User-Agent、`X-App`、`anthropic-beta`、`anthropic-version`、Claude Code system text block 和合法格式的 `metadata.user_id`。该 profile 只作用于 `ProtocolCompleter` 的 Claude/Anthropic Messages 连接测试，不改变其他 Relay 请求或生成配置。
+- 当 `platform=openai` 且 `protocol=responses` 时，sub2api adapter 只为这次 Connection Test 附加 Codex Client Identity Profile：当前已知兼容的 `codex-tui/0.146.0 (Ubuntu 22.4.0; x86_64) xterm-256color` User-Agent、配套 `originator=codex-tui`、`version=0.146.0`，以及每次请求独立的 `X-Codex-Window-ID`。其他 platform/protocol probe 和普通 Relay 请求不得携带该 profile。
 
 路由和成功条件：
 
@@ -111,6 +113,7 @@ provider + group + current personal key + model + protocol
 - `backend/internal/relay` 定义稳定协议常量、group capability matrix 和可选 `ProtocolCompleter` 扩展。
 - sub2api adapter 负责 endpoint、headers、payload、terminal parsing 和 bounded raw error body。
 - sub2api adapter 也负责把 Claude/Anthropic Messages 连接测试的 Claude Client Identity Profile 限定在该 probe 请求内；它不把身份信号注入其他平台 probe 或普通 Relay 调用。
+- sub2api adapter 也只在 OpenAI Responses Connection Test 上附加 Codex Client Identity Profile；其他协议和普通 Relay 调用不携带该 profile。
 - user provider handler 负责身份、group authorization、当前个人 key 选择、默认协议和 capability validation。
 - `backend/internal/usersetup` 只把 group capability facts 暴露给 `/user`。
 - `frontend/src/views/UserView.vue` 负责选择、标签、current-page state 和 generation guard；它不复制 platform capability matrix。
@@ -126,4 +129,6 @@ provider + group + current personal key + model + protocol
 7. provider、group、key、model、protocol 任一变化都会清除结果，旧异步请求不能覆盖新状态。
 8. 错误包含 AI Efficiency 收到的完整 bounded upstream body。
 9. Claude/Anthropic Messages probe 满足 sub2api 当前 Claude CLI 识别合同，且 identity profile 不影响其他平台 probe 或普通 Relay 请求。
-10. 生成配置逻辑和 sub2api 源码不变。
+10. OpenAI Responses probe 携带可识别且版本自洽的 Codex User-Agent、originator、version 和 `X-Codex-Window-ID`；其他 probe 不携带该 profile。
+11. 结果文案不声称已验证本机 Codex 客户端。
+12. 生成配置逻辑和 sub2api 源码不变。
