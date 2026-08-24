@@ -762,6 +762,49 @@ describe('RelayPlanningView', () => {
 			removed_user_ids: [1],
 			assignments: [expect.objectContaining({ user_ids: [] })],
 		}))
+		})
+
+	it('opens Replan with only the last confirmed roster selected', async () => {
+		const mapping = {
+			id: 9,
+			provider_id: 7,
+			department_id: 'dept-alpha',
+			department_name: 'SDK Framework',
+			platform: 'openai',
+			template_group_id: 42,
+			template_group_name: 'Group Alpha',
+			source_group_id: 42,
+			source_group_name: 'Group Alpha',
+			group_ids: [101],
+			status: 'active',
+			weekly_cost_target: 2500,
+			member_assignments: { '1': 101 },
+			member_sources: { '1': 42 },
+			account_management_initialized: true,
+			desired_accounts: { '101': [{ account_id: 11, priority: 1 }] },
+			account_pools: [],
+			updated_at: '2026-08-20T00:00:00Z',
+		}
+		const replan = structuredClone({
+			...plan,
+			mapping_id: 9,
+			candidates: [
+				{ ...plan.candidates[0], selected: true },
+				{ ...plan.candidates[0], user_id: 2, relay_user_id: 102, username: 'bob', email: 'bob@example.org', selected: false },
+			],
+			assignments: [{ ...plan.assignments[0], target_group_id: 101, user_ids: [1] }],
+		})
+		const { wrapper, relayPlanning } = await mountView([mapping])
+		relayPlanning.previewRelayReplan.mockResolvedValue({ data: { data: replan } })
+
+		await wrapper.get('[data-testid="replan-mapping-9"]').trigger('click')
+		await flushPromises()
+
+		const selectedSummary = wrapper.findAll('.rounded-lg').find((item) => item.text().includes('Selected eligible members'))
+		expect(selectedSummary?.find('.text-2xl').text()).toBe('1')
+		expect(wrapper.get('[data-testid="suggested-group-0"]').text()).toContain('alice')
+		expect(wrapper.get('[data-testid="suggested-group-0"]').text()).not.toContain('bob')
+		expect((wrapper.get('[data-testid="candidate-target-2"]').element as HTMLSelectElement).value).toBe('')
 	})
 
 	it('defaults an existing managed user to Move Here and exposes Add Additionally', async () => {

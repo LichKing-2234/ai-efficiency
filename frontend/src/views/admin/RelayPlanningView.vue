@@ -88,7 +88,7 @@ const form = reactive({
 const provider = computed(() => providers.value.find((item) => item.id === form.provider_id))
 const groups = computed(() => (provider.value?.groups ?? []).filter((group) => !form.platform || group.platform === form.platform))
 const platforms = computed(() => Array.from(new Set((provider.value?.groups ?? []).map((group) => group.platform).filter(Boolean))))
-const eligibleCandidates = computed(() => plan.value?.candidates.filter((candidate) => candidate.eligible) ?? [])
+const displayedEligibleMemberCount = computed(() => plan.value?.candidates.filter((candidate) => candidate.eligible && (!activeMappingID.value || selectedUserIDs.value.has(candidate.user_id))).length ?? 0)
 const unassignedCandidates = computed(() => plan.value?.candidates.filter((candidate) => candidate.can_add && !selectedUserIDs.value.has(candidate.user_id)) ?? [])
 const accountMapping = computed(() => mappings.value.find((mapping) => mapping.id === accountMappingID.value) ?? null)
 const paginatedMappings = computed(() => {
@@ -930,7 +930,7 @@ onBeforeUnmount(clearSearchState)
       <section v-if="plan" class="space-y-4">
         <div class="grid gap-4 sm:grid-cols-3">
           <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-xs text-slate-500">{{ t('relayPlanning.plannedGroups') }}</div><div class="mt-1 text-2xl font-semibold">{{ plan.group_count }}</div><div v-if="plan.group_count !== plan.recommended_group_count" class="mt-1 text-xs text-slate-500">{{ t('relayPlanning.recommended') }}: {{ plan.recommended_group_count }}</div></div>
-          <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-xs text-slate-500">{{ t('relayPlanning.selectedEligibleMembers') }}</div><div class="mt-1 text-2xl font-semibold">{{ eligibleCandidates.length }}</div></div>
+          <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-xs text-slate-500">{{ t('relayPlanning.selectedEligibleMembers') }}</div><div class="mt-1 text-2xl font-semibold">{{ displayedEligibleMemberCount }}</div></div>
           <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-xs text-slate-500">{{ t('relayPlanning.planningTarget') }}</div><div class="mt-1 text-2xl font-semibold">${{ plan.weekly_cost_target.toFixed(2) }}</div></div>
         </div>
         <el-alert v-if="plan.warnings?.length" type="warning" :closable="false" :title="t('relayPlanning.reviewWarnings')" class="whitespace-pre-line">

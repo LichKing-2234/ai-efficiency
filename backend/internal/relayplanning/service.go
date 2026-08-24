@@ -605,7 +605,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 			return nil, fmt.Errorf("load unmanaged relay members: %w", err)
 		}
 		if len(req.Assignments) == 0 {
-			assignments = stableMappingAssignments(mapping, candidates, unmanagedMembers, selected, count, mapping.WeeklyCostTarget)
+			assignments = stableMappingAssignments(mapping, candidates, unmanagedMembers, count)
 			restoreRenameRetries(mapping.OperationState, assignments)
 		}
 		if len(req.RemovedUserIDs) > 0 {
@@ -673,19 +673,6 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	for _, candidate := range candidates {
 		warnings = append(warnings, candidate.Warnings...)
 	}
-	if req.ExistingMappingID > 0 {
-		assignedUsers := make(map[int]struct{})
-		for _, assignment := range assignments {
-			for _, userID := range assignment.UserIDs {
-				assignedUsers[userID] = struct{}{}
-			}
-		}
-		for _, candidate := range eligible {
-			if _, assigned := assignedUsers[candidate.UserID]; !assigned {
-				warnings = append(warnings, fmt.Sprintf("user %d exceeds remaining planning capacity", candidate.UserID))
-			}
-		}
-	}
 	plan := &Plan{
 		ProviderID: req.ProviderID, DepartmentID: req.DepartmentID, Platform: req.Platform,
 		TemplateGroupID: template.ID, TemplateGroupName: template.Name,
@@ -702,7 +689,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		}
 	}
 	for index := range plan.Candidates {
-		if req.Assignments != nil {
+		if mapping != nil || req.Assignments != nil {
 			_, plan.Candidates[index].Selected = assigned[plan.Candidates[index].UserID]
 		}
 	}
@@ -786,7 +773,7 @@ func pendingCreationTargetIDs(operationState map[string]map[string]string) map[i
 	return pending
 }
 
-func stableMappingAssignments(mapping *ent.RelayGroupMapping, candidates []Candidate, unmanaged []UnmanagedMember, selected map[int]struct{}, count int, target float64) []Assignment {
+func stableMappingAssignments(mapping *ent.RelayGroupMapping, candidates []Candidate, unmanaged []UnmanagedMember, count int) []Assignment {
 	if count <= 0 {
 		return nil
 	}
@@ -834,41 +821,6 @@ func stableMappingAssignments(mapping *ent.RelayGroupMapping, candidates []Candi
 				break
 			}
 		}
-	}
-	for _, candidate := range candidates {
-		if !candidate.CanAdd || !candidate.SourceMember {
-			continue
-		}
-		if len(selected) > 0 {
-			if _, ok := selected[candidate.UserID]; !ok {
-				continue
-			}
-		}
-		if _, ok := assigned[candidate.UserID]; ok {
-			continue
-		}
-		best := -1
-		for index := 0; index < len(assignments); index++ {
-			if target > 0 && assignments[index].TotalCost+candidate.RangeCost > target {
-				continue
-			}
-			if best < 0 || assignments[index].TotalCost < assignments[best].TotalCost {
-				best = index
-			}
-		}
-		if best < 0 {
-			for index := range assignments {
-				if target <= 0 || assignments[index].TotalCost+candidate.RangeCost <= target {
-					best = index
-					break
-				}
-			}
-		}
-		if best < 0 {
-			continue
-		}
-		assignments[best].UserIDs = append(assignments[best].UserIDs, candidate.UserID)
-		assignments[best].TotalCost += candidate.RangeCost
 	}
 	return assignments
 }

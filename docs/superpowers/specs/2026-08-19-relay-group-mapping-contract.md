@@ -67,6 +67,14 @@ IDs are authoritative; display names are snapshots. Replan preserves target
 Group IDs and only produces a new member assignment matrix. It does not create,
 deactivate, resize, or automatically reshuffle target Groups.
 
+Opening Replan reconstructs the last confirmed member-to-target assignments as
+a zero-change baseline, including saved members outside the mapping's current
+department whose local-to-Relay identity remains valid. Other eligible
+candidates remain visible with the existing usage and ranking fields, but start
+unselected and unassigned and are not recommendations. Remaining target
+capacity never places them automatically; only explicit administrator add,
+move, remove, or adoption actions change the reviewed member matrix.
+
 Replan shows the current Relay name and department-based suggestion for every
 managed Target. Suggestions are assigned in stable ascending Target Group ID
 order, so member moves and usage changes do not renumber them. A department
