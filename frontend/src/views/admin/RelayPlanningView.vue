@@ -59,6 +59,8 @@ const targetSearchRequestIDs = new Map<number, number>()
 const operationKey = ref('')
 const suggestedGroupAccountDefaults = ref<RelayPlanningAccount[]>([])
 const mappings = ref<RelayPlanningMapping[]>([])
+const mappingPage = ref(1)
+const mappingPageSize = 10
 const rebindPendingID = ref<number | null>(null)
 const rebindDialogOpen = ref(false)
 const rebindMappingID = ref<number | null>(null)
@@ -89,6 +91,10 @@ const platforms = computed(() => Array.from(new Set((provider.value?.groups ?? [
 const eligibleCandidates = computed(() => plan.value?.candidates.filter((candidate) => candidate.eligible) ?? [])
 const unassignedCandidates = computed(() => plan.value?.candidates.filter((candidate) => candidate.can_add && !selectedUserIDs.value.has(candidate.user_id)) ?? [])
 const accountMapping = computed(() => mappings.value.find((mapping) => mapping.id === accountMappingID.value) ?? null)
+const paginatedMappings = computed(() => {
+  const start = (mappingPage.value - 1) * mappingPageSize
+  return mappings.value.slice(start, start + mappingPageSize)
+})
 const rebindGroups = computed(() => (providers.value.find((item) => item.id === rebindContext.provider_id)?.groups ?? [])
   .filter((group) => group.platform === rebindContext.platform))
 const targetNameErrors = computed(() => Object.fromEntries((plan.value?.assignments ?? []).map((assignment) => [assignment.index, validateTargetName(assignment.index)])))
@@ -393,6 +399,7 @@ async function loadOptions() {
 async function loadMappings() {
   const response = await listRelayGroupMappings(form.provider_id || undefined)
   mappings.value = response.data.data?.items ?? []
+  mappingPage.value = Math.min(mappingPage.value, Math.max(1, Math.ceil(mappings.value.length / mappingPageSize)))
 }
 
 function manageAccounts(mapping: RelayPlanningMapping) {
@@ -1032,7 +1039,7 @@ onBeforeUnmount(clearSearchState)
         <div class="mb-2 flex items-center justify-between"><div class="text-sm font-semibold text-slate-900">{{ t('relayPlanning.managedMappings') }}</div><span class="text-xs text-slate-500">{{ t('relayPlanning.groupIdsAuthoritative') }}</span></div>
         <el-empty v-if="!mappings.length" :description="t('relayPlanning.noMappings')" />
         <div v-if="mappings.length && !wideContentLayout" data-testid="mapping-card-layout" class="space-y-3">
-          <article v-for="mapping in mappings" :key="mapping.id" class="rounded-md border border-slate-200 p-3">
+          <article v-for="mapping in paginatedMappings" :key="mapping.id" class="rounded-md border border-slate-200 p-3">
             <div class="flex items-start justify-between gap-3"><div class="min-w-0"><div class="break-words font-medium text-slate-900">{{ mapping.department_name || mapping.department_id }}</div><div class="text-xs text-slate-500">{{ mapping.platform }}</div></div><el-tag :type="mapping.warnings?.length || mapping.status === 'needs_retry' ? 'warning' : 'success'">{{ mapping.warnings?.length ? t('relayPlanning.reviewNeeded') : translateMappingStatus(mapping.status) }}</el-tag></div>
             <dl class="mt-3 space-y-2 text-sm"><div><dt class="text-xs text-slate-500">{{ t('relayPlanning.templateGroup') }}</dt><dd class="break-words">{{ mapping.template_group_name || '-' }} (#{{ mapping.template_group_id }})</dd></div><div><dt class="text-xs text-slate-500">{{ t('relayPlanning.migrationSource') }}</dt><dd class="break-words">{{ mapping.source_group_name }} (#{{ mapping.source_group_id }})</dd></div><div><dt class="text-xs text-slate-500">{{ t('relayPlanning.managedGroups') }}</dt><dd class="break-words">{{ mapping.group_ids.join(', ') || '-' }}</dd></div></dl>
             <div v-if="mapping.warnings?.length" class="mt-2 text-xs text-amber-700">{{ mapping.warnings.map(translateWarning).join('; ') }}</div>
@@ -1040,7 +1047,7 @@ onBeforeUnmount(clearSearchState)
             <div class="mt-3 flex flex-wrap gap-2"><el-button :data-testid="`replan-mapping-${mapping.id}`" size="small" type="primary" @click="replan(mapping)">{{ t('relayPlanning.replan') }}</el-button><el-button :data-testid="`rebind-mapping-${mapping.id}`" size="small" :loading="rebindPendingID === mapping.id" :disabled="rebindPendingID !== null && rebindPendingID !== mapping.id" @click="rebind(mapping)">{{ t('relayPlanning.rebind') }}</el-button><el-button :data-testid="`manage-accounts-${mapping.id}`" size="small" @click="manageAccounts(mapping)">{{ t('relayPlanning.manageAccounts') }}</el-button></div>
           </article>
         </div>
-        <el-table v-else-if="mappings.length" data-testid="mapping-table-layout" :data="mappings" stripe>
+        <el-table v-else-if="mappings.length" data-testid="mapping-table-layout" :data="paginatedMappings" stripe>
           <el-table-column prop="department_name" :label="t('relayPlanning.department')" min-width="150" />
           <el-table-column prop="platform" :label="t('relayPlanning.platform')" width="110" />
           <el-table-column :label="t('relayPlanning.templateGroup')" min-width="160"><template #default="scope">{{ scope.row.template_group_name || '-' }} (#{{ scope.row.template_group_id }})</template></el-table-column>
@@ -1049,6 +1056,7 @@ onBeforeUnmount(clearSearchState)
           <el-table-column :label="t('relayPlanning.status')" min-width="150"><template #default="scope"><el-tag :type="scope.row.warnings?.length || scope.row.status === 'needs_retry' ? 'warning' : 'success'">{{ scope.row.warnings?.length ? t('relayPlanning.reviewNeeded') : translateMappingStatus(scope.row.status) }}</el-tag><div v-if="scope.row.warnings?.length" class="mt-1 text-xs text-amber-700">{{ scope.row.warnings.map(translateWarning).join('; ') }}</div><div v-if="scope.row.department_suggestions?.length" class="mt-1 text-xs text-slate-500">{{ t('relayPlanning.departmentSuggestions') }}: {{ scope.row.department_suggestions.map(departmentSuggestionLabel).join(', ') }}</div></template></el-table-column>
           <el-table-column :label="t('relayPlanning.actions')" min-width="240"><template #default="scope"><el-button :data-testid="`replan-mapping-${scope.row.id}`" link type="primary" @click="replan(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.replan') }}</el-button><el-button :data-testid="`rebind-mapping-${scope.row.id}`" link type="primary" :loading="rebindPendingID === scope.row.id" :disabled="rebindPendingID !== null && rebindPendingID !== scope.row.id" @click="rebind(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.rebind') }}</el-button><el-button :data-testid="`manage-accounts-${scope.row.id}`" link type="primary" @click="manageAccounts(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.manageAccounts') }}</el-button></template></el-table-column>
         </el-table>
+        <el-pagination v-if="mappings.length > mappingPageSize" data-testid="mapping-pagination" class="mt-4 justify-end" size="small" background layout="prev, pager, next" :pager-count="5" :current-page="mappingPage" :page-size="mappingPageSize" :total="mappings.length" @current-change="mappingPage = $event" />
         <div v-if="accountMapping" class="mt-4 border-t border-slate-200 pt-4">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div><div class="text-sm font-semibold text-slate-900">{{ t('relayPlanning.accountRelationships') }}</div><div class="text-xs text-slate-500">{{ accountMapping.department_name }} · {{ accountMapping.platform }}</div></div>
