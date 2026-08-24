@@ -2039,7 +2039,7 @@ func TestRelayPlanningReplanIncludesSavedExternalMember(t *testing.T) {
 			43: {ID: 43, Username: "bob", Email: bob.Email},
 		},
 		groups:        []relay.Group{{ID: 10, Name: "Group Alpha", Platform: "openai"}, {ID: 20, Name: "Group Beta", Platform: "openai"}, {ID: 30, Name: "Group Gamma", Platform: "openai"}, {ID: 101, Name: "Group Target", Platform: "openai"}},
-		subscriptions: map[int64][]relay.UserSubscription{42: {}, 43: {{UserID: 43, GroupID: 30, Status: "active"}, {UserID: 43, GroupID: 101, Status: "active"}}},
+		subscriptions: map[int64][]relay.UserSubscription{42: {{UserID: 42, GroupID: 20, Status: "active"}}, 43: {{UserID: 43, GroupID: 30, Status: "active"}, {UserID: 43, GroupID: 101, Status: "active"}}},
 		keys:          map[int64][]relay.APIKey{42: {}, 43: {}},
 	}
 	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
@@ -2068,11 +2068,11 @@ func TestRelayPlanningReplanIncludesSavedExternalMember(t *testing.T) {
 	for _, candidate := range plan.Candidates {
 		candidates[candidate.UserID] = candidate
 	}
-	if _, ok := candidates[alice.ID]; !ok {
-		t.Fatalf("current department candidate missing from Replan: %+v", plan.Candidates)
+	if candidate, ok := candidates[alice.ID]; !ok || candidate.Selected {
+		t.Fatalf("additional department candidate = %+v, want present and unselected among %+v", candidate, plan.Candidates)
 	}
-	if candidate, ok := candidates[bob.ID]; !ok || candidate.SourceGroupID != 30 {
-		t.Fatalf("saved external member = %+v, want Source Group 30 among candidates %+v", candidate, plan.Candidates)
+	if candidate, ok := candidates[bob.ID]; !ok || !candidate.Selected || candidate.SourceGroupID != 30 {
+		t.Fatalf("saved external member = %+v, want selected with Source Group 30 among candidates %+v", candidate, plan.Candidates)
 	}
 	if len(plan.Assignments) != 1 || plan.Assignments[0].TargetGroupID != 101 || len(plan.Assignments[0].UserIDs) != 1 || plan.Assignments[0].UserIDs[0] != bob.ID {
 		t.Fatalf("assignments = %+v, want only saved external user %d in Target Group 101", plan.Assignments, bob.ID)
