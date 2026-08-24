@@ -30,7 +30,7 @@ import (
 const (
 	maxPlanningUsers    = 5000
 	maxCandidateWorkers = 8
-	defaultValidityDays = 30
+	defaultValidityDays = 365
 	maxGroupNameRunes   = 100
 )
 

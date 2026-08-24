@@ -468,6 +468,9 @@ func TestExecuteReplanRetriesFailedAPIKeyMoveFromPreviousTarget(t *testing.T) {
 	if fake.assignmentCalls != 1 {
 		t.Fatalf("subscription assignments after first attempt = %d, want 1", fake.assignmentCalls)
 	}
+	if fmt.Sprint(fake.assignmentValidityDays) != "[365]" {
+		t.Fatalf("subscription validity after first attempt = %v, want [365]", fake.assignmentValidityDays)
+	}
 
 	fake.mu.Lock()
 	fake.bindFailures = 0
@@ -500,6 +503,9 @@ func TestExecuteReplanRetriesFailedAPIKeyMoveFromPreviousTarget(t *testing.T) {
 	if fake.assignmentCalls != 1 {
 		t.Fatalf("subscription assignments after retry = %d, want successful step not repeated", fake.assignmentCalls)
 	}
+	if fmt.Sprint(fake.assignmentValidityDays) != "[365]" {
+		t.Fatalf("subscription validity after retry = %v, want successful 365-day step not repeated", fake.assignmentValidityDays)
+	}
 
 	updated := client.RelayGroupMapping.GetX(ctx, mappingRow.ID)
 	retryState := updated.OperationState
@@ -531,6 +537,9 @@ func TestExecuteReplanRetriesFailedAPIKeyMoveFromPreviousTarget(t *testing.T) {
 	}
 	if fake.assignmentCalls != 2 {
 		t.Fatalf("subscription assignments after changed-target retry = %d, want new Target assigned", fake.assignmentCalls)
+	}
+	if fmt.Sprint(fake.assignmentValidityDays) != "[365 365]" {
+		t.Fatalf("subscription validity after changed-target retry = %v, want each new Target assigned for 365 days", fake.assignmentValidityDays)
 	}
 }
 
@@ -567,13 +576,14 @@ func createRelayPlanningDirectorySnapshot(t *testing.T, ctx context.Context, cli
 
 type replanRetryProvider struct {
 	relay.Provider
-	mu              sync.Mutex
-	groups          []relay.Group
-	subscriptions   []relay.UserSubscription
-	keys            []relay.APIKey
-	bindFailures    int
-	bound           []string
-	assignmentCalls int
+	mu                     sync.Mutex
+	groups                 []relay.Group
+	subscriptions          []relay.UserSubscription
+	keys                   []relay.APIKey
+	bindFailures           int
+	bound                  []string
+	assignmentCalls        int
+	assignmentValidityDays []int
 }
 
 type relayPlanningProviderResolver func(context.Context, int) (relay.Provider, error)
@@ -616,10 +626,11 @@ func (p *replanRetryProvider) GetUsageStats(context.Context, int64, time.Time, t
 	return &relay.UsageStats{TotalTokens: 100, TotalCost: 10}, nil
 }
 
-func (p *replanRetryProvider) AssignSubscriptionForUser(context.Context, int64, int64, int) error {
+func (p *replanRetryProvider) AssignSubscriptionForUser(_ context.Context, _, _ int64, validityDays int) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.assignmentCalls++
+	p.assignmentValidityDays = append(p.assignmentValidityDays, validityDays)
 	return nil
 }
 

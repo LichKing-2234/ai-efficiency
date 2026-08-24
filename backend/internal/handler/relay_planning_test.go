@@ -168,8 +168,8 @@ func (p *relayPlanningSearchProvider) UpdateGroupStatus(_ context.Context, group
 	return nil
 }
 
-func (p *relayPlanningSearchProvider) AssignSubscriptionForUser(_ context.Context, userID, groupID int64, _ int) error {
-	p.assigned = append(p.assigned, fmt.Sprintf("%d:%d", userID, groupID))
+func (p *relayPlanningSearchProvider) AssignSubscriptionForUser(_ context.Context, userID, groupID int64, validityDays int) error {
+	p.assigned = append(p.assigned, fmt.Sprintf("%d:%d:%d", userID, groupID, validityDays))
 	p.events = append(p.events, fmt.Sprintf("subscription-add:%d:%d", userID, groupID))
 	return nil
 }
@@ -531,8 +531,8 @@ func TestRelayPlanningExecuteUsesOnlyEachUsersExplicitSource(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200, body=%s", response.Code, response.Body.String())
 	}
-	if fmt.Sprint(provider.assigned) != "[42:100 43:100]" {
-		t.Fatalf("assigned = %v, want both users added to target", provider.assigned)
+	if fmt.Sprint(provider.assigned) != "[42:100:365 43:100:365]" {
+		t.Fatalf("assigned = %v, want both users added to target for 365 days", provider.assigned)
 	}
 	if fmt.Sprint(provider.bound) != "[501:100]" || fmt.Sprint(provider.removed) != "[42:20]" {
 		t.Fatalf("bound/removed = %v / %v, want only Alice's selected Source relationship changed", provider.bound, provider.removed)
@@ -862,7 +862,8 @@ func TestRelayPlanningReplanUsesBatchSubscriptionDirectory(t *testing.T) {
 	router.POST("/admin/relay-planning/mappings/:id/replan", handler.Replan)
 	router.POST("/admin/relay-planning/mappings/:id/replan/execute", handler.ReplanExecute)
 
-	request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID), strings.NewReader(`{}`))
+	path := fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID)
+	request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
@@ -883,6 +884,18 @@ func TestRelayPlanningReplanUsesBatchSubscriptionDirectory(t *testing.T) {
 	}
 	if got := provider.subscriptionReads.Load(); got != 0 {
 		t.Fatalf("per-user subscription reads = %d, want 0", got)
+	}
+	adoptionFingerprint := previewRelayPlanningFingerprint(t, router, path, `{"adopt_relay_user_ids":[900]}`)
+	executePayload := fmt.Sprintf(`{"adopt_relay_user_ids":[900],"expected_relationship_fingerprint":%q,"operation_key":"adopt-relay-user-1"}`, adoptionFingerprint)
+	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(executePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("adoption status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	if fmt.Sprint(provider.assigned) != "[900:101:365]" {
+		t.Fatalf("adoption assignment = %v, want Relay-only member ensured for 365 days", provider.assigned)
 	}
 }
 
@@ -1056,6 +1069,9 @@ func TestRelayPlanningConfirmAppliesDesiredAccountsBeforeMigratingMembers(t *tes
 	}
 	if len(provider.events) < 2 || provider.events[0] != "account:12:101:1" || !strings.HasPrefix(provider.events[1], "subscription-add:") {
 		t.Fatalf("execution events = %v, want Account apply before member migration", provider.events)
+	}
+	if fmt.Sprint(provider.assigned) != "[42:101:365]" {
+		t.Fatalf("Replan assignment = %v, want new member subscription for 365 days", provider.assigned)
 	}
 	var body struct {
 		Data struct {
@@ -1408,6 +1424,9 @@ func TestRelayPlanningAddAdditionallyPreservesExistingManagedRelationship(t *tes
 	}
 	if fmt.Sprint(provider.events) != "[subscription-add:42:202]" || len(provider.bound) != 0 || len(provider.removed) != 0 {
 		t.Fatalf("add additionally events = %v, bound=%v removed=%v, want only new Target subscription", provider.events, provider.bound, provider.removed)
+	}
+	if fmt.Sprint(provider.assigned) != "[42:202:365]" {
+		t.Fatalf("add additionally assignment = %v, want new Target subscription for 365 days", provider.assigned)
 	}
 	updatedA := client.RelayGroupMapping.GetX(ctx, mappingA.ID)
 	updatedB := client.RelayGroupMapping.GetX(ctx, mappingB.ID)
@@ -2044,7 +2063,9 @@ func TestRelayPlanningReplanIncludesSavedExternalMember(t *testing.T) {
 	}
 	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
 	router := gin.New()
-	router.POST("/admin/relay-planning/mappings/:id/replan", NewRelayPlanningHandler(service).Replan)
+	handler := NewRelayPlanningHandler(service)
+	router.POST("/admin/relay-planning/mappings/:id/replan", handler.Replan)
+	router.POST("/admin/relay-planning/mappings/:id/replan/execute", handler.ReplanExecute)
 
 	replan := func(payload string) relayplanning.Plan {
 		t.Helper()
@@ -2082,6 +2103,17 @@ func TestRelayPlanningReplanIncludesSavedExternalMember(t *testing.T) {
 	}
 	if len(provider.events) > 0 {
 		t.Fatalf("Replan wrote Relay state before confirmation: %v", provider.events)
+	}
+	executePayload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[%d]}],"expected_relationship_fingerprint":%q,"operation_key":"unchanged-external-member-1"}`, bob.ID, plan.RelationshipFingerprint)
+	request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/relay-planning/mappings/%d/replan/execute", mapping.ID), strings.NewReader(executePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("unchanged replan status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	if len(provider.assigned) != 0 {
+		t.Fatalf("unchanged replan assignments = %v, want existing subscription untouched", provider.assigned)
 	}
 }
 
