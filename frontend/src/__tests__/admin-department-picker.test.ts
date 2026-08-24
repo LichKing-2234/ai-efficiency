@@ -174,13 +174,16 @@ describe('AdminDepartmentPicker', () => {
 
     const trigger = wrapper.get('[data-testid="admin-department-picker-trigger"]')
     expect(trigger.classes()).toEqual(
-      expect.arrayContaining(['el-button', 'w-full']),
+      expect.arrayContaining(['el-button', 'w-full', '[&>span]:min-w-0', '[&>span]:w-full']),
     )
     expect(wrapper.get('[data-testid="admin-department-picker-trigger-content"]').classes()).toEqual(
-      expect.arrayContaining(['flex', 'w-full', 'items-center', 'justify-between']),
+      expect.arrayContaining(['flex', 'min-w-0', 'w-full', 'items-center', 'justify-between']),
     )
     expect(wrapper.get('[data-testid="admin-department-picker-trigger-label"]').classes()).toEqual(
       expect.arrayContaining(['min-w-0', 'truncate']),
+    )
+    expect(wrapper.get('[data-testid="admin-department-picker"]').classes()).toEqual(
+      expect.arrayContaining(['min-w-0', 'w-full']),
     )
     await trigger.trigger('click')
     await flushPromises()
@@ -391,6 +394,34 @@ describe('AdminDepartmentPicker', () => {
     await wrapper.get('[data-testid="admin-department-picker-all"]').trigger('click')
     expect(wrapper.emitted('update:modelValue')).toEqual([['']])
     expect(wrapper.emitted('change')).toEqual([['']])
+  })
+
+  it('keeps the current options visible while the next page is loading', async () => {
+    const nextPage = deferred<any>()
+    mockGet
+      .mockImplementationOnce(() => optionsResponse([alpha], { total: 21 }))
+      .mockImplementationOnce(() => nextPage.promise)
+    const wrapper = mountPicker('', { allowAll: false })
+
+    await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
+    await flushPromises()
+    const nextButton = wrapper.get('[data-testid="admin-department-picker-next"]')
+    const mouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    expect(nextButton.element.dispatchEvent(mouseDown)).toBe(false)
+    await nextButton.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="admin-department-picker-menu"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="admin-department-picker-option-dept-alpha"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="admin-department-picker-search"]').trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+
+    nextPage.resolve(await optionsResponse([beta], { page: 2, total: 21 }))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="admin-department-picker-option-dept-alpha"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="admin-department-picker-option-dept-beta"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="admin-department-picker-page"]').text()).toContain('2')
   })
 
   it('can reopen and retry after clearing while the first option request is pending', async () => {

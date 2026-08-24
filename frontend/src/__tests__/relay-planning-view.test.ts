@@ -166,6 +166,13 @@ describe('RelayPlanningView', () => {
 		expect(wrapper.find('[data-testid="candidate-card-layout"]').exists()).toBe(false)
 	})
 
+	it('allows the department field to shrink inside the planning grid', async () => {
+		const { wrapper } = await mountView()
+		const picker = wrapper.get('[data-testid="department-select"]')
+
+		expect(picker.element.parentElement?.classList.contains('min-w-0')).toBe(true)
+	})
+
 	it('localizes multi-Account and reused-Account mapping warnings', async () => {
 		const { wrapper } = await mountView([{
 			id: 9,

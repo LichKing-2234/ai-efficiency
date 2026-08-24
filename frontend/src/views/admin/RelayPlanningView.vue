@@ -884,7 +884,7 @@ onBeforeUnmount(clearSearchState)
               <el-option v-for="item in providers" :key="item.id" :label="item.display_name || item.name" :value="item.id" />
             </el-select>
           </el-form-item>
-          <el-form-item :label="t('relayPlanning.department')" class="!mb-0">
+          <el-form-item :label="t('relayPlanning.department')" class="!mb-0 min-w-0">
             <AdminDepartmentPicker
               v-model="form.department_id"
               data-testid="department-select"
@@ -1155,7 +1155,7 @@ onBeforeUnmount(clearSearchState)
 		>
 			<el-alert type="warning" :closable="false" show-icon :title="t('relayPlanning.confirmRebindMessage')" />
 			<div class="mt-5 grid gap-4">
-				<el-form-item :label="t('relayPlanning.department')" class="!mb-0">
+				<el-form-item :label="t('relayPlanning.department')" class="!mb-0 min-w-0">
 					<AdminDepartmentPicker
 						v-model="rebindForm.department_id"
 						data-testid="rebind-department-select"

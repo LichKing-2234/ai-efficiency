@@ -234,6 +234,7 @@ function moveActiveOption(nextIndex: number) {
 }
 
 function activateActiveOption() {
+  if (loading.value) return
   if (props.allowAll && activeOptionIndex.value === 0) {
     choose('', null, true)
     return
@@ -297,11 +298,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="root" data-testid="admin-department-picker" class="relative mt-1" @focusout="handleFocusOut">
+  <div ref="root" data-testid="admin-department-picker" class="relative mt-1 min-w-0 w-full" @focusout="handleFocusOut">
     <ElButton
       ref="trigger"
       data-testid="admin-department-picker-trigger"
-      class="!ml-0 h-[38px] w-full text-left"
+      class="!ml-0 h-[38px] w-full text-left [&>span]:min-w-0 [&>span]:w-full"
       :aria-expanded="open"
       :aria-labelledby="triggerLabelledBy"
       aria-haspopup="listbox"
@@ -309,7 +310,7 @@ onBeforeUnmount(() => {
       @click="toggleOpen"
       @keydown.esc.stop.prevent="close(true)"
     >
-      <span data-testid="admin-department-picker-trigger-content" class="flex w-full items-center justify-between gap-2">
+      <span data-testid="admin-department-picker-trigger-content" class="flex min-w-0 w-full items-center justify-between gap-2">
         <span :id="valueID" data-testid="admin-department-picker-trigger-label" class="min-w-0 truncate">{{ selectedLabel }}</span>
         <ElIcon class="shrink-0" aria-hidden="true"><ArrowUp v-if="open" /><ArrowDown v-else /></ElIcon>
       </span>
@@ -358,13 +359,13 @@ onBeforeUnmount(() => {
         <p v-if="loading" class="px-3 py-3 text-sm text-gray-500">{{ t('adminUsers.loading') }}</p>
         <ElButton
           v-for="(option, index) in items"
-          v-else
           :key="option.external_id"
           :id="optionID(index + optionOffset)"
           text
           :data-testid="`admin-department-picker-option-${option.external_id}`"
           class="!ml-0 !flex w-full !justify-start px-3 py-2 text-left"
           :class="modelValue === option.external_id || activeOptionIndex === index + optionOffset ? 'bg-gray-50 font-medium text-gray-900' : 'text-gray-700'"
+          :disabled="loading"
           role="option"
           tabindex="-1"
           :aria-selected="modelValue === option.external_id"
@@ -389,6 +390,7 @@ onBeforeUnmount(() => {
         <ElButton
           data-testid="admin-department-picker-prev"
           :disabled="loading || !canGoPrevious"
+          @mousedown.prevent
           @click="previousPage"
         >
           {{ t('adminUsers.prev') }}
@@ -397,6 +399,7 @@ onBeforeUnmount(() => {
         <ElButton
           data-testid="admin-department-picker-next"
           :disabled="loading || !canGoNext"
+          @mousedown.prevent
           @click="nextPage"
         >
           {{ t('adminUsers.next') }}
