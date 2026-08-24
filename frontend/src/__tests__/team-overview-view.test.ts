@@ -1207,6 +1207,30 @@ describe('TeamOverviewView', () => {
     expect(days).toBe(30)
   })
 
+  it('restores the saved today window before the first team usage requests', async () => {
+    localStorage.setItem('ae.usage.window', 'today')
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    const params = expect.objectContaining({
+      granularity: 'hour',
+      start_date: expect.any(String),
+      end_date: expect.any(String),
+      timezone: expect.any(String),
+    })
+    expect(mockGetTeamUsageSummary).toHaveBeenCalledWith(params)
+    expect(mockGetTeamUsageTrend).toHaveBeenCalledWith(params)
+    expect(mockGetTeamUsageMembers).toHaveBeenCalledWith(params)
+    expect(mockGetTeamUsageOrganization).toHaveBeenCalledWith(params)
+    expect((wrapper.get('[data-test="range-today"] input').element as HTMLInputElement).checked).toBe(true)
+  })
+
   it('switches Team Overview between today, 7-day, and 30-day windows', async () => {
     const router = createTestRouter()
     await router.push('/usage/team')
@@ -1225,6 +1249,7 @@ describe('TeamOverviewView', () => {
 
     mockGetTeamUsageOrganization.mockClear()
     await selectElementRadio(wrapper, '[data-test="range-7d"]')
+    expect(localStorage.getItem('ae.usage.window')).toBe('7d')
     await flushPromises()
 
     const params = mockGetTeamUsageOrganization.mock.calls[0][0] as {

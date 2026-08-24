@@ -6,6 +6,8 @@ import { getTeamUsageMembers, getTeamUsageSummary, getTeamUsageTrend } from '@/a
 import { useTeamUsageOrganization } from '@/composables/useTeamUsageOrganization'
 import { useI18n } from '@/i18n'
 import { formatTokenCount } from '@/utils/formatters'
+import { readUsageWindowPreference, writeUsageWindowPreference } from '@/utils/usageWindowPreference'
+import type { UsageWindow } from '@/utils/usageWindowPreference'
 import type { TeamUsageMembersResponse, TeamUsageOverviewParams, TeamUsageSummaryResponse, TeamUsageTrendResponse } from '@/types'
 
 const TeamOverviewMemberTrendChart = defineAsyncComponent(
@@ -23,8 +25,7 @@ const membersLoading = ref(false)
 const summaryError = ref<'no_scope' | 'unavailable' | null>(null)
 const trendError = ref<'no_scope' | 'unavailable' | null>(null)
 const membersError = ref<'no_scope' | 'unavailable' | null>(null)
-type RangeOption = 'today' | '7d' | '30d'
-const selectedRange = ref<RangeOption>('30d')
+const selectedRange = ref<UsageWindow>(readUsageWindowPreference())
 let summaryRequestSeq = 0
 let trendRequestSeq = 0
 let membersRequestSeq = 0
@@ -179,7 +180,7 @@ function formatDate(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
-function buildOverviewParams(range: RangeOption): TeamUsageOverviewParams {
+function buildOverviewParams(range: UsageWindow): TeamUsageOverviewParams {
   const end = new Date()
   const start = new Date(end)
   if (range === 'today') {
@@ -199,8 +200,9 @@ function buildOverviewParams(range: RangeOption): TeamUsageOverviewParams {
   }
 }
 
-function selectRange(range: RangeOption) {
+function selectRange(range: UsageWindow) {
   selectedRange.value = range
+  writeUsageWindowPreference(range)
   void loadOverview()
 }
 
