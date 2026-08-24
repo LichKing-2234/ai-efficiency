@@ -198,6 +198,37 @@ describe('RelayPlanningView', () => {
 		expect(wrapper.text()).toContain('Account #11 is reused across Target Groups #101, #102')
 	})
 
+	it('paginates managed mappings without rendering every mapping at once', async () => {
+		const mappings = Array.from({ length: 11 }, (_, index) => ({
+			id: index + 1,
+			provider_id: 7,
+			department_id: `dept-${index + 1}`,
+			department_name: `Department ${index + 1}`,
+			platform: 'openai',
+			template_group_id: 42,
+			template_group_name: 'Group Alpha',
+			source_group_id: 42,
+			source_group_name: 'Group Alpha',
+			group_ids: [101 + index],
+			status: 'active',
+			weekly_cost_target: 2500,
+			account_management_initialized: false,
+			desired_accounts: {},
+			account_pools: [],
+			updated_at: '2026-08-24T00:00:00Z',
+		}))
+		const { wrapper } = await mountView(mappings)
+
+		expect(wrapper.find('[data-testid="rebind-mapping-1"]').exists()).toBe(true)
+		expect(wrapper.find('[data-testid="rebind-mapping-11"]').exists()).toBe(false)
+
+		await wrapper.get('[data-testid="mapping-pagination"]').trigger('click')
+		await flushPromises()
+
+		expect(wrapper.find('[data-testid="rebind-mapping-1"]').exists()).toBe(false)
+		expect(wrapper.find('[data-testid="rebind-mapping-11"]').exists()).toBe(true)
+	})
+
 	it('uses the automatic group recommendation and shows expected relay names', async () => {
     const { wrapper, relayPlanning } = await mountView()
 
@@ -816,7 +847,8 @@ describe('RelayPlanningView', () => {
 		expect(prompt).not.toHaveBeenCalled()
 		expect(dialog?.props('appendToBody')).toBe(true)
 		expect(dialog?.props('alignCenter')).toBe(true)
-		expect(wrapper.find('[data-testid="rebind-department-select"]').exists()).toBe(true)
+		const departmentPicker = wrapper.get('[data-testid="rebind-department-select"]')
+		expect(departmentPicker.element.parentElement?.classList.contains('min-w-0')).toBe(true)
 		expect(wrapper.find('[data-testid="rebind-template-select"]').exists()).toBe(true)
 		expect(wrapper.find('[data-testid="rebind-source-select"]').exists()).toBe(true)
 		expect(wrapper.find('[data-testid="rebind-targets-select"]').exists()).toBe(true)
