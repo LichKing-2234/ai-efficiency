@@ -19,6 +19,7 @@ import (
 
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -245,6 +246,98 @@ func TestNonClaudeMessagesProtocolProbeOmitsClaudeClientIdentityProfile(t *testi
 			}
 			if response.Content != "OK" || response.TokensUsed != 3 {
 				t.Fatalf("CompletionForProtocol() response = %+v, want content OK and 3 tokens", response)
+			}
+		})
+	}
+}
+
+func TestProtocolCompleterScopesCodexIdentityToOpenAIResponses(t *testing.T) {
+	const (
+		codexUserAgent  = "codex-tui/0.146.0 (Ubuntu 22.4.0; x86_64) xterm-256color"
+		codexOriginator = "codex-tui"
+		codexVersion    = "0.146.0"
+	)
+	tests := []struct {
+		name              string
+		platform          string
+		protocol          string
+		route             string
+		responseBody      string
+		wantCodexIdentity bool
+	}{
+		{
+			name:              "Codex Responses",
+			platform:          "openai",
+			protocol:          relay.ProtocolResponses,
+			route:             "/v1/responses",
+			responseBody:      `{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"OK"}]}]}`,
+			wantCodexIdentity: true,
+		},
+		{
+			name:         "Grok Responses",
+			platform:     "grok",
+			protocol:     relay.ProtocolResponses,
+			route:        "/v1/responses",
+			responseBody: `{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"OK"}]}]}`,
+		},
+		{
+			name:         "OpenAI Chat Completions",
+			platform:     "openai",
+			protocol:     relay.ProtocolChatCompletions,
+			route:        "/v1/chat/completions",
+			responseBody: `{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}]}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seenWindowIDs := make(map[string]struct{})
+			mux := http.NewServeMux()
+			mux.HandleFunc(tt.route, func(w http.ResponseWriter, r *http.Request) {
+				if tt.wantCodexIdentity {
+					if got := r.Header.Get("User-Agent"); got != codexUserAgent {
+						t.Errorf("User-Agent = %q, want %q", got, codexUserAgent)
+					}
+					if got := r.Header.Get("Originator"); got != codexOriginator {
+						t.Errorf("Originator = %q, want %q", got, codexOriginator)
+					}
+					if got := r.Header.Get("Version"); got != codexVersion {
+						t.Errorf("Version = %q, want %q", got, codexVersion)
+					}
+					windowID := strings.TrimSpace(r.Header.Get("X-Codex-Window-ID"))
+					if parsed, err := uuid.Parse(windowID); err != nil || parsed.String() != windowID {
+						t.Errorf("X-Codex-Window-ID = %q, want canonical UUID", windowID)
+					} else if _, exists := seenWindowIDs[windowID]; exists {
+						t.Errorf("X-Codex-Window-ID = %q was reused", windowID)
+					} else {
+						seenWindowIDs[windowID] = struct{}{}
+					}
+				} else {
+					if got := r.Header.Get("User-Agent"); got == codexUserAgent {
+						t.Errorf("User-Agent unexpectedly carries Codex identity: %q", got)
+					}
+					for _, header := range []string{"Originator", "Version", "X-Codex-Window-ID"} {
+						if got := r.Header.Get(header); got != "" {
+							t.Errorf("%s = %q, want empty", header, got)
+						}
+					}
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, tt.responseBody)
+			})
+
+			p := newTestProvider(t, mux).(relay.ProtocolCompleter)
+			for range 2 {
+				response, err := p.CompletionForProtocol(context.Background(), tt.platform, tt.protocol, relay.ChatCompletionRequest{
+					Model:    "gpt-5.4",
+					Messages: []relay.ChatMessage{{Role: "user", Content: "Reply with OK"}},
+				})
+				if err != nil {
+					t.Fatalf("CompletionForProtocol() error = %v", err)
+				}
+				if response.Content != "OK" {
+					t.Fatalf("CompletionForProtocol() content = %q, want OK", response.Content)
+				}
 			}
 		})
 	}

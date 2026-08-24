@@ -16,12 +16,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
 const maxPingResponseBodyBytes int64 = 4 * 1024
 
 const (
+	codexResponsesProbeVersion    = "0.146.0"
+	codexResponsesProbeOriginator = "codex-tui"
+	// Keep the platform-originated Connection Test recognizable without changing
+	// any installed client or unrelated Relay request.
+	codexResponsesProbeUserAgent = codexResponsesProbeOriginator + "/" + codexResponsesProbeVersion + " (Ubuntu 22.4.0; x86_64) xterm-256color"
+
 	providerDirectoryPageSize      = 1000
 	providerDirectoryUserLimit     = 5000
 	providerDirectoryResponseLimit = 16 << 20
@@ -1251,7 +1258,7 @@ func (s *sub2apiRelay) CompletionForProtocol(ctx context.Context, platform, prot
 	req.Stream = &stream
 	switch strings.ToLower(strings.TrimSpace(protocol)) {
 	case ProtocolResponses:
-		return s.openAIResponses(ctx, req)
+		return s.openAIResponses(ctx, req, strings.EqualFold(strings.TrimSpace(platform), "openai"))
 	case ProtocolChatCompletions:
 		return s.chatCompletion(ctx, req, relayProbeErrorMessageSuffix, true)
 	case ProtocolMessages:
@@ -1270,7 +1277,7 @@ func (s *sub2apiRelay) CompletionForProtocol(ctx context.Context, platform, prot
 	}
 }
 
-func (s *sub2apiRelay) openAIResponses(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
+func (s *sub2apiRelay) openAIResponses(ctx context.Context, req ChatCompletionRequest, applyCodexIdentity bool) (*ChatCompletionResponse, error) {
 	prompt := firstUserMessage(req.Messages)
 	if prompt == "" {
 		prompt = "Hi"
@@ -1298,6 +1305,12 @@ func (s *sub2apiRelay) openAIResponses(ctx context.Context, req ChatCompletionRe
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+s.inferenceAPIKey())
 	httpReq.Header.Set("Content-Type", "application/json")
+	if applyCodexIdentity {
+		httpReq.Header.Set("User-Agent", codexResponsesProbeUserAgent)
+		httpReq.Header.Set("Originator", codexResponsesProbeOriginator)
+		httpReq.Header.Set("Version", codexResponsesProbeVersion)
+		httpReq.Header.Set("X-Codex-Window-ID", uuid.NewString())
+	}
 
 	resp, err := s.client.Do(httpReq)
 	if err != nil {
