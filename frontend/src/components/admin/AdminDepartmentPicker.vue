@@ -5,10 +5,14 @@ import { listAdminUserDepartmentOptions } from '@/api/adminUsers'
 import { useI18n } from '@/i18n'
 import type { AdminDepartmentOption } from '@/types'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: string
   labelledBy?: string
-}>()
+  allowAll?: boolean
+  placeholder?: string
+}>(), {
+  allowAll: true,
+})
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
@@ -43,11 +47,12 @@ let searchTimer: number | undefined
 let committedQuery = ''
 
 const selectedLabel = computed(() => {
-  if (!props.modelValue) return t('adminUsers.allDepartments')
+  if (!props.modelValue) return props.placeholder || t(props.allowAll ? 'adminUsers.allDepartments' : 'adminUsers.department')
   const option = selectedOption.value
   if (option?.external_id !== props.modelValue) return props.modelValue
   return option.display_path || option.name || props.modelValue
 })
+const optionOffset = computed(() => props.allowAll ? 1 : 0)
 const canGoPrevious = computed(() => page.value > 1)
 const canGoNext = computed(() => page.value * pageSize.value < total.value)
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
@@ -56,10 +61,10 @@ const triggerLabelledBy = computed(() => {
   return externalLabel ? `${externalLabel} ${valueID}` : valueID
 })
 const activeOptionID = computed(() => {
-  if (activeOptionIndex.value <= 0) return allOptionID
-  return items.value[activeOptionIndex.value - 1]
+  if (props.allowAll && activeOptionIndex.value === 0) return allOptionID
+  return items.value[activeOptionIndex.value - optionOffset.value]
     ? optionID(activeOptionIndex.value)
-    : allOptionID
+    : undefined
 })
 
 function clearSearchTimer() {
@@ -79,7 +84,7 @@ function optionID(index: number) {
 
 function resetActiveOption() {
   const selectedIndex = items.value.findIndex((item) => item.external_id === props.modelValue)
-  activeOptionIndex.value = selectedIndex >= 0 ? selectedIndex + 1 : 0
+  activeOptionIndex.value = selectedIndex >= 0 ? selectedIndex + optionOffset.value : 0
 }
 
 async function loadOptions(targetPage: number, selectedID = '', query = searchQuery.value.trim()) {
@@ -224,15 +229,16 @@ function handleFocusOut(event: FocusEvent) {
 }
 
 function moveActiveOption(nextIndex: number) {
-  activeOptionIndex.value = Math.max(0, Math.min(nextIndex, items.value.length))
+  const maxIndex = Math.max(0, items.value.length - 1 + optionOffset.value)
+  activeOptionIndex.value = Math.max(0, Math.min(nextIndex, maxIndex))
 }
 
 function activateActiveOption() {
-  if (activeOptionIndex.value === 0) {
+  if (props.allowAll && activeOptionIndex.value === 0) {
     choose('', null, true)
     return
   }
-  const option = items.value[activeOptionIndex.value - 1]
+  const option = items.value[activeOptionIndex.value - optionOffset.value]
   if (option) choose(option.external_id, option, true)
 }
 
@@ -249,7 +255,7 @@ function handleSearchKeydown(event: Event | KeyboardEvent) {
     moveActiveOption(0)
   } else if (keyboardEvent.key === 'End') {
     keyboardEvent.preventDefault()
-    moveActiveOption(items.value.length)
+    moveActiveOption(items.value.length - 1 + optionOffset.value)
   } else if (keyboardEvent.key === 'Enter') {
     keyboardEvent.preventDefault()
     activateActiveOption()
@@ -335,6 +341,7 @@ onBeforeUnmount(() => {
 
       <div :id="listboxID" class="max-h-64 overflow-y-auto py-1" role="listbox" :aria-label="t('adminUsers.department')">
         <ElButton
+          v-if="allowAll"
           :id="allOptionID"
           text
           data-testid="admin-department-picker-all"
@@ -353,15 +360,15 @@ onBeforeUnmount(() => {
           v-for="(option, index) in items"
           v-else
           :key="option.external_id"
-          :id="optionID(index + 1)"
+          :id="optionID(index + optionOffset)"
           text
           :data-testid="`admin-department-picker-option-${option.external_id}`"
           class="!ml-0 !flex w-full !justify-start px-3 py-2 text-left"
-          :class="modelValue === option.external_id || activeOptionIndex === index + 1 ? 'bg-gray-50 font-medium text-gray-900' : 'text-gray-700'"
+          :class="modelValue === option.external_id || activeOptionIndex === index + optionOffset ? 'bg-gray-50 font-medium text-gray-900' : 'text-gray-700'"
           role="option"
           tabindex="-1"
           :aria-selected="modelValue === option.external_id"
-          @mouseenter="activeOptionIndex = index + 1"
+          @mouseenter="activeOptionIndex = index + optionOffset"
           @click="choose(option.external_id, option)"
         >
           <span class="block truncate">{{ option.display_path || option.name }}</span>

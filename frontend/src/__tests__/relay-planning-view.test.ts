@@ -131,8 +131,16 @@ async function mountView(initialMappings: any[] = [], wide = false) {
   return { wrapper, relayPlanning, matchMedia }
 }
 
+async function selectPlanningDepartment(wrapper: ReturnType<typeof mount>, departmentID = 'dept-alpha') {
+  const picker = wrapper.get('[data-testid="department-select"]')
+  await picker.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
+  await flushPromises()
+  await picker.get(`[data-testid="admin-department-picker-option-${departmentID}"]`).trigger('click')
+  await flushPromises()
+}
+
 async function fillAndPreview(wrapper: ReturnType<typeof mount>) {
-  await wrapper.get('[data-testid="department-select"]').setValue('dept-alpha')
+  await selectPlanningDepartment(wrapper)
   await wrapper.get('[data-testid="platform-select"]').setValue('openai')
   await flushPromises()
   await wrapper.get('[data-testid="template-group-select"]').setValue('42')
@@ -193,6 +201,108 @@ describe('RelayPlanningView', () => {
 
     expect(relayPlanning.previewRelayPlan).toHaveBeenCalledWith(expect.not.objectContaining({ group_count: expect.anything() }))
 		expect(wrapper.text()).toContain('SDK Framework-openai-01')
+	})
+
+	it('searches and selects a department beyond the first 100 without mutating Relay before Preview', async () => {
+		const { wrapper, relayPlanning } = await mountView()
+		const adminUsers = await import('@/api/adminUsers') as any
+		const lateDepartment = {
+			external_id: 'dept-101',
+			name: 'Department 101',
+			display_path: 'Company / Department 101',
+		}
+		expect(adminUsers.listAdminUserDepartmentOptions).not.toHaveBeenCalled()
+		adminUsers.listAdminUserDepartmentOptions.mockClear()
+		adminUsers.listAdminUserDepartmentOptions.mockImplementation((params: { q?: string; page: number }) => {
+			const items = params.q || params.page === 6
+				? [lateDepartment]
+				: Array.from({ length: 20 }, (_, index) => {
+					const number = (params.page - 1) * 20 + index + 1
+					return { external_id: `dept-${number}`, name: `Department ${number}`, display_path: `Company / Department ${number}` }
+				})
+			return Promise.resolve({ data: { data: { items, selected: null, total: params.q ? 1 : 101, page: params.page, page_size: 20 } } })
+		})
+
+		const picker = wrapper.get('[data-testid="department-select"]')
+		expect(picker.get('[data-testid="admin-department-picker-trigger"]').text()).toContain('Select department')
+		await picker.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
+		await flushPromises()
+		expect(picker.find('[data-testid="admin-department-picker-all"]').exists()).toBe(false)
+
+		for (let page = 2; page <= 6; page += 1) {
+			await picker.get('[data-testid="admin-department-picker-next"]').trigger('click')
+			await flushPromises()
+		}
+		expect(adminUsers.listAdminUserDepartmentOptions).toHaveBeenLastCalledWith({ page: 6, page_size: 20 })
+		await picker.get('[data-testid="admin-department-picker-option-dept-101"]').trigger('click')
+		await picker.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
+		await picker.get('[data-testid="admin-department-picker-search"]').setValue('Department 101')
+		await vi.waitFor(() => expect(adminUsers.listAdminUserDepartmentOptions).toHaveBeenCalledWith({ q: 'Department 101', page: 1, page_size: 20 }))
+
+		expect(relayPlanning.previewRelayPlan).not.toHaveBeenCalled()
+		expect(relayPlanning.executeRelayPlan).not.toHaveBeenCalled()
+		await picker.get('[data-testid="admin-department-picker-option-dept-101"]').trigger('click')
+		await wrapper.get('[data-testid="platform-select"]').setValue('openai')
+		await wrapper.get('[data-testid="template-group-select"]').setValue('42')
+		await wrapper.get('[data-testid="cost-target-input"]').setValue(2500)
+		await wrapper.get('[data-testid="preview-allocation"]').trigger('click')
+		await flushPromises()
+
+		expect(relayPlanning.previewRelayPlan).toHaveBeenCalledWith(expect.objectContaining({ department_id: 'dept-101' }))
+	})
+
+	it('restores and searches the selected department in Rebind without mutation before confirmation', async () => {
+		const mapping = {
+			id: 9,
+			provider_id: 7,
+			department_id: 'dept-101',
+			department_name: 'Department 101',
+			platform: 'openai',
+			template_group_id: 42,
+			template_group_name: 'Group Alpha',
+			source_group_id: 42,
+			source_group_name: 'Group Alpha',
+			group_ids: [101],
+			status: 'active',
+			weekly_cost_target: 2500,
+			account_management_initialized: false,
+			desired_accounts: {},
+			account_pools: [],
+			updated_at: '2026-08-20T00:00:00Z',
+		}
+		const selected = { external_id: 'dept-101', name: 'Department 101', display_path: 'Company / Department 101' }
+		const replacement = { external_id: 'dept-beta', name: 'Department Beta', display_path: 'Company / Department Beta' }
+		const { wrapper, relayPlanning } = await mountView([mapping])
+		const adminUsers = await import('@/api/adminUsers') as any
+		adminUsers.listAdminUserDepartmentOptions.mockClear()
+		adminUsers.listAdminUserDepartmentOptions.mockImplementation((params: { q?: string; selected_id?: string; page: number }) => Promise.resolve({
+			data: { data: {
+				items: params.q ? [replacement] : [],
+				selected: params.selected_id ? selected : null,
+				total: params.q ? 1 : 101,
+				page: params.page,
+				page_size: 20,
+			} },
+		}))
+		relayPlanning.rebindRelayGroupMapping.mockResolvedValue({ data: { data: mapping } })
+
+		await wrapper.get('[data-testid="rebind-mapping-9"]').trigger('click')
+		await flushPromises()
+		const picker = wrapper.get('[data-testid="rebind-department-select"]')
+		expect(adminUsers.listAdminUserDepartmentOptions).toHaveBeenCalledWith({ selected_id: 'dept-101', page: 1, page_size: 20 })
+		expect(picker.get('[data-testid="admin-department-picker-trigger"]').text()).toContain('Company / Department 101')
+
+		await picker.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
+		await picker.get('[data-testid="admin-department-picker-search"]').setValue('Department Beta')
+		await vi.waitFor(() => expect(adminUsers.listAdminUserDepartmentOptions).toHaveBeenCalledWith({ q: 'Department Beta', page: 1, page_size: 20 }))
+		expect(relayPlanning.rebindRelayGroupMapping).not.toHaveBeenCalled()
+		await picker.get('[data-testid="admin-department-picker-option-dept-beta"]').trigger('click')
+		await wrapper.get('[data-testid="confirm-rebind"]').trigger('click')
+		await flushPromises()
+
+		expect(relayPlanning.rebindRelayGroupMapping).toHaveBeenCalledWith(9, expect.objectContaining({ department_id: 'dept-beta' }))
+		expect(relayPlanning.previewRelayPlan).not.toHaveBeenCalled()
+		expect(relayPlanning.executeRelayPlan).not.toHaveBeenCalled()
 	})
 
 	it('edits a proposed Target name before confirmation', async () => {
@@ -395,7 +505,7 @@ describe('RelayPlanningView', () => {
         assignments: [{ ...plan.assignments[0], user_ids: [1, 2] }],
       }) } })
 
-    await wrapper.get('[data-testid="department-select"]').setValue('dept-alpha')
+    await selectPlanningDepartment(wrapper)
     await wrapper.get('[data-testid="platform-select"]').setValue('openai')
     await flushPromises()
     await wrapper.get('[data-testid="template-group-select"]').setValue('42')

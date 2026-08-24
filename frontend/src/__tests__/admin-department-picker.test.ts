@@ -61,13 +61,15 @@ function deferred<T>() {
 
 function mountPicker(
   modelValue = '',
-  options: { labelledBy?: string; attachToDocument?: boolean } = {},
+  options: { labelledBy?: string; attachToDocument?: boolean; allowAll?: boolean; placeholder?: string } = {},
 ) {
   const wrapper = mount(AdminDepartmentPicker, {
     attachTo: options.attachToDocument ? document.body : undefined,
     props: {
       modelValue,
       ...(options.labelledBy ? { labelledBy: options.labelledBy } : {}),
+      ...(options.allowAll === false ? { allowAll: false } : {}),
+      ...(options.placeholder ? { placeholder: options.placeholder } : {}),
     },
   })
   mountedWrappers.add(wrapper)
@@ -188,6 +190,32 @@ describe('AdminDepartmentPicker', () => {
       params: { page: 1, page_size: 20 },
     })
     expect(wrapper.text()).toContain('Company / Department Alpha')
+  })
+
+  it('keeps an empty required picker as a placeholder and selects only real departments', async () => {
+    mockGet.mockImplementation(() => optionsResponse([alpha, beta]))
+    const wrapper = mountPicker('', {
+      allowAll: false,
+      placeholder: 'Select department',
+      attachToDocument: true,
+    })
+
+    const trigger = wrapper.get('[data-testid="admin-department-picker-trigger"]')
+    expect(trigger.text()).toContain('Select department')
+
+    await trigger.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="admin-department-picker-all"]').exists()).toBe(false)
+    const search = wrapper.get('[data-testid="admin-department-picker-search"]')
+    expect(search.attributes('aria-activedescendant')).toBe(
+      wrapper.get('[data-testid="admin-department-picker-option-dept-alpha"]').attributes('id'),
+    )
+
+    await search.trigger('keydown', { key: 'Enter' })
+
+    expect(wrapper.emitted('update:modelValue')).toEqual([['dept-alpha']])
+    expect(wrapper.emitted('change')).toEqual([['dept-alpha']])
   })
 
   it('resolves one initial deep-linked selection with selected_id and no duplicate request on open', async () => {

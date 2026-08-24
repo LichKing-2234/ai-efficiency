@@ -3,9 +3,10 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { CaretBottom, CaretTop, Check, Delete, Plus, Refresh, Setting, Switch } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import AppLayout from '@/components/AppLayout.vue'
+import AdminDepartmentPicker from '@/components/admin/AdminDepartmentPicker.vue'
 import { useI18n } from '@/i18n'
 import { relayPlanningMessages } from '@/locales/relayPlanning'
-import { listAdminUserDepartmentOptions, listAdminUserSubscriptionOptions } from '@/api/adminUsers'
+import { listAdminUserSubscriptionOptions } from '@/api/adminUsers'
 import {
 	adoptCurrentRelayAccounts,
   executeRelayPlan,
@@ -71,7 +72,6 @@ const accountSearchResults = reactive<Record<string, RelayPlanningAccount[]>>({}
 const accountSearchLoading = reactive<Record<string, boolean>>({})
 const accountSearchTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const accountSearchRequestIDs = new Map<string, number>()
-const departments = ref<Array<{ external_id: string; name: string; display_path: string }>>([])
 const providers = ref<Array<{ id: number; name: string; display_name: string; groups: Array<{ group_id: string; group_name: string; platform: string }> }>>([])
 
 const form = reactive({
@@ -385,11 +385,7 @@ function retryMemberActions(mapping: RelayPlanningMapping): Record<string, Relay
 }
 
 async function loadOptions() {
-  const [departmentResponse, providerResponse] = await Promise.all([
-    listAdminUserDepartmentOptions({ page: 1, page_size: 200 }),
-    listAdminUserSubscriptionOptions(),
-  ])
-  departments.value = departmentResponse.data.data?.items ?? []
+  const providerResponse = await listAdminUserSubscriptionOptions()
   providers.value = providerResponse.data.data?.providers ?? []
   if (!form.provider_id) form.provider_id = providers.value[0]?.id ?? 0
 }
@@ -889,9 +885,14 @@ onBeforeUnmount(clearSearchState)
             </el-select>
           </el-form-item>
           <el-form-item :label="t('relayPlanning.department')" class="!mb-0">
-            <el-select v-model="form.department_id" data-testid="department-select" class="w-full" filterable :placeholder="t('relayPlanning.selectDepartment')" @change="resetPlan">
-              <el-option v-for="item in departments" :key="item.external_id" :label="item.display_path || item.name" :value="item.external_id" />
-            </el-select>
+            <AdminDepartmentPicker
+              v-model="form.department_id"
+              data-testid="department-select"
+              class="w-full"
+              :allow-all="false"
+              :placeholder="t('relayPlanning.selectDepartment')"
+              @change="resetPlan"
+            />
           </el-form-item>
           <el-form-item :label="t('relayPlanning.platform')" class="!mb-0">
             <el-select v-model="form.platform" data-testid="platform-select" class="w-full" :placeholder="t('relayPlanning.selectPlatform')" @change="form.template_group_id = 0; form.source_group_id = 0; resetPlan()">
@@ -1155,9 +1156,13 @@ onBeforeUnmount(clearSearchState)
 			<el-alert type="warning" :closable="false" show-icon :title="t('relayPlanning.confirmRebindMessage')" />
 			<div class="mt-5 grid gap-4">
 				<el-form-item :label="t('relayPlanning.department')" class="!mb-0">
-					<el-select v-model="rebindForm.department_id" data-testid="rebind-department-select" class="w-full" filterable :placeholder="t('relayPlanning.selectDepartment')">
-						<el-option v-for="item in departments" :key="item.external_id" :label="item.display_path || item.name" :value="item.external_id" />
-					</el-select>
+					<AdminDepartmentPicker
+						v-model="rebindForm.department_id"
+						data-testid="rebind-department-select"
+						class="w-full"
+						:allow-all="false"
+						:placeholder="t('relayPlanning.selectDepartment')"
+					/>
 				</el-form-item>
 				<el-form-item :label="t('relayPlanning.templateGroup')" class="!mb-0">
 					<el-select v-model="rebindForm.template_group_id" data-testid="rebind-template-select" class="w-full" filterable :placeholder="t('relayPlanning.selectTemplateGroup')">
