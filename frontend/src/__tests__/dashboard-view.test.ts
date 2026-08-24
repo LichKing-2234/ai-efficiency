@@ -246,6 +246,39 @@ describe('DashboardView', () => {
     expect((thirtyDays.get('input[type="radio"]').element as HTMLInputElement).checked).toBe(true)
   })
 
+  it('restores the saved 7-day window before the first personal usage requests', async () => {
+    localStorage.setItem('ae.usage.window', '7d')
+    const router = createTestRouter()
+    await router.push('/usage')
+    await router.isReady()
+
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    const params = (getUserUsageDashboard as any).mock.calls[0][0]
+    const start = new Date(`${params.start_date}T00:00:00Z`)
+    const end = new Date(`${params.end_date}T00:00:00Z`)
+    expect(Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1).toBe(7)
+    expect((getUserUsageGroupQuotas as any).mock.calls[0][0]).toEqual(params)
+    expect((getUserUsageGroupPoolUsage as any).mock.calls[0][0]).toEqual(params)
+    expect((wrapper.get('[data-test="range-7d"] input').element as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('keeps an explicit window preference when the new personal request fails', async () => {
+    const router = createTestRouter()
+    await router.push('/usage')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+    ;(getUserUsageDashboard as any).mockRejectedValueOnce(new Error('synthetic usage outage'))
+
+    await wrapper.get('[data-test="range-7d"]').trigger('click')
+
+    expect(localStorage.getItem('ae.usage.window')).toBe('7d')
+    await flushPromises()
+    expect(localStorage.getItem('ae.usage.window')).toBe('7d')
+  })
+
   it('keeps usage visible when the independent quota request fails', async () => {
     const { getUserUsageDashboard, getUserUsageGroupQuotas } = await import('@/api/userUsage')
     ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })
@@ -333,6 +366,7 @@ describe('DashboardView', () => {
     ;(getTeamUsageSubjectDashboard as any).mockResolvedValue({
       data: { data: { ...usageSnapshot, subject: { user_id: 225, display_name: 'Pat', selectable: true }, subject_subscription_groups: [] } },
     })
+    localStorage.setItem('ae.usage.window', 'today')
 
     const router = createTestRouter()
     await router.push('/usage/members/225')
@@ -340,7 +374,7 @@ describe('DashboardView', () => {
     mount(DashboardView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
 
-    expect(getTeamUsageSubjectDashboard).toHaveBeenCalled()
+    expect(getTeamUsageSubjectDashboard).toHaveBeenCalledWith(225, expect.objectContaining({ granularity: 'hour' }))
     expect(getUserUsageDashboard).not.toHaveBeenCalled()
     expect(getUserUsageGroupQuotas).not.toHaveBeenCalled()
   })
