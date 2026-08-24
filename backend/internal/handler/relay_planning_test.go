@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -54,6 +55,18 @@ type relayPlanningSearchProvider struct {
 	subscriptionReads      atomic.Int64
 	keyReads               atomic.Int64
 	directoryReads         atomic.Int64
+	renewalWrites          []relayPlanningRenewalWrite
+	renewalFailures        map[int64]error
+	renewalAmbiguous       map[int64]error
+	renewalAppliedKeys     map[string]bool
+}
+
+type relayPlanningRenewalWrite struct {
+	Action       string
+	UserID       int64
+	GroupID      int64
+	Days         int
+	OperationKey string
 }
 
 func (p *relayPlanningSearchProvider) GetUser(_ context.Context, userID int64) (*relay.User, error) {
@@ -171,6 +184,50 @@ func (p *relayPlanningSearchProvider) UpdateGroupStatus(_ context.Context, group
 func (p *relayPlanningSearchProvider) AssignSubscriptionForUser(_ context.Context, userID, groupID int64, validityDays int) error {
 	p.assigned = append(p.assigned, fmt.Sprintf("%d:%d:%d", userID, groupID, validityDays))
 	p.events = append(p.events, fmt.Sprintf("subscription-add:%d:%d", userID, groupID))
+	return nil
+}
+
+func (p *relayPlanningSearchProvider) AssignSubscriptionForUserWithOperationKey(_ context.Context, userID, groupID int64, days int, operationKey string) error {
+	return p.applyRenewalWrite("create", userID, groupID, days, operationKey)
+}
+
+func (p *relayPlanningSearchProvider) ExtendSubscriptionForUserWithOperationKey(_ context.Context, userID, groupID int64, days int, operationKey string) error {
+	return p.applyRenewalWrite("extend", userID, groupID, days, operationKey)
+}
+
+func (p *relayPlanningSearchProvider) applyRenewalWrite(action string, userID, groupID int64, days int, operationKey string) error {
+	p.renewalWrites = append(p.renewalWrites, relayPlanningRenewalWrite{Action: action, UserID: userID, GroupID: groupID, Days: days, OperationKey: operationKey})
+	if p.renewalAppliedKeys == nil {
+		p.renewalAppliedKeys = make(map[string]bool)
+	}
+	if p.renewalAppliedKeys[operationKey] {
+		return nil
+	}
+	if err := p.renewalFailures[userID]; err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	if action == "create" {
+		p.subscriptions[userID] = append(p.subscriptions[userID], relay.UserSubscription{ID: int64(1000 + len(p.renewalAppliedKeys)), UserID: userID, GroupID: groupID, Status: "active", ExpiresAt: now.AddDate(0, 0, days)})
+	} else {
+		for index := range p.subscriptions[userID] {
+			subscription := &p.subscriptions[userID][index]
+			if subscription.GroupID != groupID {
+				continue
+			}
+			base := subscription.ExpiresAt
+			if !base.After(now) {
+				base = now
+			}
+			subscription.ExpiresAt = base.AddDate(0, 0, days)
+			subscription.Status = "active"
+			break
+		}
+	}
+	p.renewalAppliedKeys[operationKey] = true
+	if err := p.renewalAmbiguous[userID]; err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1024,6 +1081,257 @@ func TestRelayPlanningMappingRenewalPreviewRejectsUnsupportedTerm(t *testing.T) 
 	if provider.subscriptionReads.Load() != 0 {
 		t.Fatalf("subscription reads = %d, want validation before provider reads", provider.subscriptionReads.Load())
 	}
+}
+
+func TestRelayPlanningMappingRenewalExecuteRejectsStaleFactsBeforeWrite(t *testing.T) {
+	fixture := newRelayPlanningRenewalExecutionFixture(t)
+	preview := fixture.preview(t)
+	payload := mappingRenewalExecutePayload(t, preview, []int{fixture.alice.ID}, "renewal-dialog-stale", false)
+	var reviewedRequest map[string]any
+	if err := json.Unmarshal(payload, &reviewedRequest); err != nil {
+		t.Fatalf("decode reviewed execution: %v", err)
+	}
+	reviewedRequest["renewal_days"] = 30
+	changedTermPayload, err := json.Marshal(reviewedRequest)
+	if err != nil {
+		t.Fatalf("encode changed-term execution: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, fixture.path+"/execute", bytes.NewReader(changedTermPayload))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	fixture.router.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("changed-term status = %d, want 409, body=%s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Details struct {
+			ErrorCode          string                               `json:"error_code"`
+			CurrentFingerprint string                               `json:"current_relationship_fingerprint"`
+			RefreshedPreview   *relayplanning.MappingRenewalPreview `json:"refreshed_preview"`
+			Differences        []string                             `json:"differences"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode changed-term response: %v", err)
+	}
+	if body.Details.ErrorCode != "stale_relay_plan" || body.Details.RefreshedPreview == nil || body.Details.RefreshedPreview.RenewalDays != 30 || len(fixture.provider.renewalWrites) != 0 {
+		t.Fatalf("changed-term details/writes = %+v/%+v, want refreshed 30-day preview before writes", body.Details, fixture.provider.renewalWrites)
+	}
+	fixture.provider.subscriptions[41][0].ExpiresAt = fixture.provider.subscriptions[41][0].ExpiresAt.Add(time.Hour)
+	request = httptest.NewRequest(http.MethodPost, fixture.path+"/execute", bytes.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	fixture.router.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("stale-facts status = %d, want 409, body=%s", response.Code, response.Body.String())
+	}
+	body = struct {
+		Details struct {
+			ErrorCode          string                               `json:"error_code"`
+			CurrentFingerprint string                               `json:"current_relationship_fingerprint"`
+			RefreshedPreview   *relayplanning.MappingRenewalPreview `json:"refreshed_preview"`
+			Differences        []string                             `json:"differences"`
+		} `json:"details"`
+	}{}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode stale-facts response: %v", err)
+	}
+	if body.Details.ErrorCode != "stale_relay_plan" || body.Details.CurrentFingerprint == preview.RelationshipFingerprint || body.Details.RefreshedPreview == nil || len(body.Details.Differences) == 0 {
+		t.Fatalf("stale details = %+v, want refreshed renewal preview and safe differences", body.Details)
+	}
+	if len(fixture.provider.renewalWrites) != 0 {
+		t.Fatalf("renewal writes = %+v, want none before stale rejection", fixture.provider.renewalWrites)
+	}
+}
+
+func TestRelayPlanningMappingRenewalExecuteReportsStatesAndRetriesOnlyFailures(t *testing.T) {
+	fixture := newRelayPlanningRenewalExecutionFixture(t)
+	preview := fixture.preview(t)
+	aliceExpiryBefore := fixture.provider.subscriptions[41][0].ExpiresAt
+	danaExpiryBefore := fixture.provider.subscriptions[44][0].ExpiresAt
+	fixture.provider.renewalAmbiguous[42] = errors.New("synthetic timeout after apply")
+	fixture.provider.renewalFailures[43] = errors.New("synthetic assignment failure")
+	payload := mappingRenewalExecutePayload(t, preview, []int{fixture.alice.ID, fixture.bob.ID, fixture.carol.ID, fixture.dana.ID}, "renewal-dialog-1", false)
+	request := httptest.NewRequest(http.MethodPost, fixture.path+"/execute", bytes.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	fixture.router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("execute status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Data relayplanning.MappingRenewalExecution `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode execute response: %v", err)
+	}
+	result := body.Data
+	if result.OperationKey != "renewal-dialog-1" || result.Preview == nil || len(result.Members) != 4 {
+		t.Fatalf("execution = %+v, want operation key, refreshed preview, and four results", result)
+	}
+	wantStatuses := []string{"succeeded", "failed", "failed", "skipped"}
+	for index, want := range wantStatuses {
+		if result.Members[index].Status != want {
+			t.Fatalf("member results = %+v, want status %q at index %d", result.Members, want, index)
+		}
+	}
+	if got := len(fixture.provider.renewalWrites); got != 3 {
+		t.Fatalf("renewal writes = %+v, want active, expired, and missing only", fixture.provider.renewalWrites)
+	}
+	if got := fixture.provider.subscriptions[41][0].ExpiresAt; !got.Equal(aliceExpiryBefore.AddDate(0, 0, 365)) {
+		t.Fatalf("active expiry = %s, want current expiry %s + 365 days", got, aliceExpiryBefore)
+	}
+	if got := fixture.provider.subscriptions[42][0]; got.Status != "active" || !got.ExpiresAt.After(time.Now().UTC()) {
+		t.Fatalf("expired subscription after ambiguous write = %+v, want active from execution time", got)
+	}
+	if len(fixture.provider.subscriptions[43]) != 0 {
+		t.Fatalf("failed missing subscription write created %+v", fixture.provider.subscriptions[43])
+	}
+	if got := fixture.provider.subscriptions[44][0]; got.Status != "suspended" || !got.ExpiresAt.Equal(danaExpiryBefore) {
+		t.Fatalf("suspended subscription = %+v, want unchanged expiry %s", got, danaExpiryBefore)
+	}
+	firstKeys := make(map[int64]string)
+	for _, call := range fixture.provider.renewalWrites {
+		if call.OperationKey == "" || call.Days != 365 {
+			t.Fatalf("renewal write = %+v, want keyed 365-day write", call)
+		}
+		firstKeys[call.UserID] = call.OperationKey
+	}
+	if firstKeys[41] == firstKeys[42] || firstKeys[42] == firstKeys[43] || firstKeys[41] == firstKeys[43] {
+		t.Fatalf("per-member operation keys = %+v, want deterministic unique keys", firstKeys)
+	}
+	bobExpiryAfterAmbiguousWrite := fixture.provider.subscriptions[42][0].ExpiresAt
+	delete(fixture.provider.renewalFailures, int64(43))
+	retryPayload := mappingRenewalRetryPayload(t, result, "renewal-dialog-1")
+	request = httptest.NewRequest(http.MethodPost, fixture.path+"/execute", bytes.NewReader(retryPayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	fixture.router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("retry status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode retry response: %v", err)
+	}
+	if len(body.Data.Members) != 2 || body.Data.Members[0].Status != "succeeded" || body.Data.Members[1].Status != "succeeded" {
+		t.Fatalf("retry results = %+v, want only two failed members succeeded", body.Data.Members)
+	}
+	if got := fixture.provider.renewalWrites[3:]; len(got) != 2 || got[0].UserID != 42 || got[1].UserID != 43 || got[0].OperationKey != firstKeys[42] || got[1].OperationKey != firstKeys[43] {
+		t.Fatalf("retry writes = %+v, want failed members with original keys", got)
+	}
+	if !fixture.provider.subscriptions[42][0].ExpiresAt.Equal(bobExpiryAfterAmbiguousWrite) {
+		t.Fatalf("ambiguous retry expiry = %s, want no second extension after %s", fixture.provider.subscriptions[42][0].ExpiresAt, bobExpiryAfterAmbiguousWrite)
+	}
+	if got := fixture.provider.subscriptions[43]; len(got) != 1 || got[0].Status != "active" || !got[0].ExpiresAt.After(time.Now().UTC()) {
+		t.Fatalf("retried missing subscription = %+v, want one active subscription from execution time", got)
+	}
+	if len(fixture.provider.subscriptions[41]) != 2 || fixture.provider.subscriptions[41][1].GroupID != 999 || len(fixture.provider.assigned) != 0 || len(fixture.provider.removed) != 0 || len(fixture.provider.bound) != 0 || len(fixture.provider.events) != 0 {
+		t.Fatalf("unrelated relationships changed: subscriptions=%+v assigned=%v removed=%v bound=%v events=%v", fixture.provider.subscriptions[41], fixture.provider.assigned, fixture.provider.removed, fixture.provider.bound, fixture.provider.events)
+	}
+}
+
+type relayPlanningRenewalExecutionFixture struct {
+	ctx      context.Context
+	client   *ent.Client
+	provider *relayPlanningSearchProvider
+	router   *gin.Engine
+	mapping  *ent.RelayGroupMapping
+	path     string
+	alice    *ent.User
+	bob      *ent.User
+	carol    *ent.User
+	dana     *ent.User
+}
+
+func newRelayPlanningRenewalExecutionFixture(t *testing.T) *relayPlanningRenewalExecutionFixture {
+	t.Helper()
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().SetName("renewal-execute-test").SetDisplayName("Renewal Execute Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-admin-key").SetEnabled(true).SaveX(ctx)
+	alice := client.User.Create().SetUsername("renewal-alice").SetEmail("alice@example.com").SetAuthSource("ldap").SetRelayUserID(41).SaveX(ctx)
+	bob := client.User.Create().SetUsername("renewal-bob").SetEmail("bob@example.org").SetAuthSource("ldap").SetRelayUserID(42).SaveX(ctx)
+	carol := client.User.Create().SetUsername("renewal-carol").SetEmail("carol@example.net").SetAuthSource("ldap").SetRelayUserID(43).SaveX(ctx)
+	dana := client.User.Create().SetUsername("renewal-dana").SetEmail("dana@example.edu").SetAuthSource("ldap").SetRelayUserID(44).SaveX(ctx)
+	mapping := client.RelayGroupMapping.Create().SetProviderID(providerConfig.ID).SetDepartmentExternalID("dept-renewal").SetDepartmentName("Department Renewal").SetPlatform("openai").SetTemplateGroupID(10).SetGroupIds([]int64{101, 102, 103, 104}).SetMemberAssignments(map[string]int64{fmt.Sprint(alice.ID): 101, fmt.Sprint(bob.ID): 102, fmt.Sprint(carol.ID): 103, fmt.Sprint(dana.ID): 104}).SaveX(ctx)
+	provider := &relayPlanningSearchProvider{
+		users: map[int64]*relay.User{
+			41: {ID: 41, Username: alice.Username, Email: alice.Email},
+			42: {ID: 42, Username: bob.Username, Email: bob.Email},
+			43: {ID: 43, Username: carol.Username, Email: carol.Email},
+			44: {ID: 44, Username: dana.Username, Email: dana.Email},
+		},
+		groups: []relay.Group{{ID: 101, Name: "Group Active", Platform: "openai"}, {ID: 102, Name: "Group Expired", Platform: "openai"}, {ID: 103, Name: "Group Missing", Platform: "openai"}, {ID: 104, Name: "Group Suspended", Platform: "openai"}, {ID: 999, Name: "Group Drift", Platform: "openai"}},
+		subscriptions: map[int64][]relay.UserSubscription{
+			41: {{ID: 1, UserID: 41, GroupID: 101, Status: "active", ExpiresAt: time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC)}, {ID: 2, UserID: 41, GroupID: 999, Status: "active", ExpiresAt: time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC)}},
+			42: {{ID: 3, UserID: 42, GroupID: 102, Status: "expired", ExpiresAt: time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)}},
+			43: {},
+			44: {{ID: 4, UserID: 44, GroupID: 104, Status: "suspended", ExpiresAt: time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC)}},
+		},
+		renewalFailures:    make(map[int64]error),
+		renewalAmbiguous:   make(map[int64]error),
+		renewalAppliedKeys: make(map[string]bool),
+	}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	handler := NewRelayPlanningHandler(service)
+	router := gin.New()
+	router.POST("/admin/relay-planning/mappings/:id/renewal/preview", handler.PreviewMappingRenewal)
+	router.POST("/admin/relay-planning/mappings/:id/renewal/execute", handler.ExecuteMappingRenewal)
+	return &relayPlanningRenewalExecutionFixture{ctx: ctx, client: client, provider: provider, router: router, mapping: mapping, path: fmt.Sprintf("/admin/relay-planning/mappings/%d/renewal", mapping.ID), alice: alice, bob: bob, carol: carol, dana: dana}
+}
+
+func (f *relayPlanningRenewalExecutionFixture) preview(t *testing.T) relayplanning.MappingRenewalPreview {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodPost, f.path+"/preview", strings.NewReader(`{"renewal_days":365}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	f.router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("preview status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Data relayplanning.MappingRenewalPreview `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode preview: %v", err)
+	}
+	return body.Data
+}
+
+func mappingRenewalExecutePayload(t *testing.T, preview relayplanning.MappingRenewalPreview, selectedUserIDs []int, operationKey string, retry bool) []byte {
+	t.Helper()
+	selected := make(map[int]bool, len(selectedUserIDs))
+	for _, userID := range selectedUserIDs {
+		selected[userID] = true
+	}
+	members := make([]map[string]any, 0, len(selectedUserIDs))
+	for _, member := range preview.Members {
+		if selected[member.UserID] {
+			members = append(members, map[string]any{"user_id": member.UserID, "target_group_id": member.ExpectedTargetGroupID, "planned_action": member.PlannedAction})
+		}
+	}
+	payload, err := json.Marshal(map[string]any{"renewal_days": preview.RenewalDays, "members": members, "expected_relationship_fingerprint": preview.RelationshipFingerprint, "operation_key": operationKey, "retry": retry})
+	if err != nil {
+		t.Fatalf("marshal renewal execution: %v", err)
+	}
+	return payload
+}
+
+func mappingRenewalRetryPayload(t *testing.T, result relayplanning.MappingRenewalExecution, operationKey string) []byte {
+	t.Helper()
+	if result.Preview == nil {
+		t.Fatal("renewal execution did not return a refreshed preview")
+	}
+	members := make([]map[string]any, 0)
+	for _, member := range result.Members {
+		if member.Status == "failed" {
+			members = append(members, map[string]any{"user_id": member.UserID, "target_group_id": member.TargetGroupID, "planned_action": member.Action})
+		}
+	}
+	payload, err := json.Marshal(map[string]any{"renewal_days": result.RenewalDays, "members": members, "expected_relationship_fingerprint": result.Preview.RelationshipFingerprint, "operation_key": operationKey, "retry": true})
+	if err != nil {
+		t.Fatalf("marshal renewal retry: %v", err)
+	}
+	return payload
 }
 
 func TestRelayPlanningReplanUsesBatchSubscriptionDirectory(t *testing.T) {

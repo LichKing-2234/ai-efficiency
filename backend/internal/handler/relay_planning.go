@@ -110,6 +110,36 @@ func (h *RelayPlanningHandler) PreviewMappingRenewal(c *gin.Context) {
 	pkg.Success(c, preview)
 }
 
+func (h *RelayPlanningHandler) ExecuteMappingRenewal(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		pkg.Error(c, http.StatusBadRequest, "invalid mapping id")
+		return
+	}
+	var req relayplanning.MappingRenewalExecuteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid mapping renewal execution request")
+		return
+	}
+	result, err := h.service.ExecuteMappingRenewal(c.Request.Context(), id, req)
+	if err != nil {
+		var stale *relayplanning.StaleMappingRenewalError
+		if errors.As(err, &stale) {
+			pkg.ErrorWithDetails(c, http.StatusConflict, stale.Error(), gin.H{
+				"error_code":                        "stale_relay_plan",
+				"expected_relationship_fingerprint": stale.ExpectedFingerprint,
+				"current_relationship_fingerprint":  stale.CurrentFingerprint,
+				"refreshed_preview":                 stale.RefreshedPreview,
+				"differences":                       stale.Differences,
+			})
+			return
+		}
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	pkg.Success(c, result)
+}
+
 func (h *RelayPlanningHandler) Rebind(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {

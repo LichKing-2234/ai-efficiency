@@ -123,6 +123,30 @@ export interface RelayPlanningMappingRenewalMember {
 	drift?: Array<{ group_id: number; group_name: string; status: string; expires_at?: string }>
 }
 
+export interface RelayPlanningMappingRenewalReviewedMember {
+	user_id: number
+	target_group_id: number
+	planned_action: RelayPlanningMappingRenewalMember['planned_action']
+}
+
+export interface RelayPlanningMappingRenewalExecution {
+	mapping_id: number
+	renewal_days: number
+	operation_key: string
+	members: RelayPlanningMappingRenewalMemberResult[]
+	preview?: RelayPlanningMappingRenewalPreview
+	preview_error?: string
+}
+
+export interface RelayPlanningMappingRenewalMemberResult {
+	user_id: number
+	relay_user_id: number
+	target_group_id: number
+	action: RelayPlanningMappingRenewalMember['planned_action']
+	status: 'succeeded' | 'skipped' | 'failed'
+	error?: string
+}
+
 export interface RelayPlanningAccountIntent {
 	account_id: number
 	priority: number
@@ -227,6 +251,10 @@ export function listRelayGroupMappings(providerId?: number) {
 
 export function previewRelayMappingRenewal(id: number, data: { renewal_days: number }) {
 	return client.post<ApiResponse<RelayPlanningMappingRenewalPreview>>(`/admin/relay-planning/mappings/${id}/renewal/preview`, data)
+}
+
+export function executeRelayMappingRenewal(id: number, data: { renewal_days: number; members: RelayPlanningMappingRenewalReviewedMember[]; expected_relationship_fingerprint: string; operation_key: string; retry: boolean }) {
+	return client.post<ApiResponse<RelayPlanningMappingRenewalExecution>>(`/admin/relay-planning/mappings/${id}/renewal/execute`, data)
 }
 
 export function rebindRelayGroupMapping(id: number, data: { department_id?: string; template_group_id?: number; source_group_id?: number; group_ids: number[]; status?: string }) {

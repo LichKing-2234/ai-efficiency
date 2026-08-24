@@ -278,6 +278,49 @@ type MappingRenewalPreview struct {
 	RelationshipFingerprint string                 `json:"relationship_fingerprint"`
 }
 
+type MappingRenewalExecuteRequest struct {
+	RenewalDays                     int                            `json:"renewal_days"`
+	Members                         []MappingRenewalReviewedMember `json:"members"`
+	ExpectedRelationshipFingerprint string                         `json:"expected_relationship_fingerprint"`
+	OperationKey                    string                         `json:"operation_key"`
+	Retry                           bool                           `json:"retry,omitempty"`
+}
+
+type MappingRenewalReviewedMember struct {
+	UserID        int    `json:"user_id"`
+	TargetGroupID int64  `json:"target_group_id"`
+	PlannedAction string `json:"planned_action"`
+}
+
+type MappingRenewalExecution struct {
+	MappingID    int                          `json:"mapping_id"`
+	RenewalDays  int                          `json:"renewal_days"`
+	OperationKey string                       `json:"operation_key"`
+	Members      []MappingRenewalMemberResult `json:"members"`
+	Preview      *MappingRenewalPreview       `json:"preview,omitempty"`
+	PreviewError string                       `json:"preview_error,omitempty"`
+}
+
+type MappingRenewalMemberResult struct {
+	UserID        int    `json:"user_id"`
+	RelayUserID   int64  `json:"relay_user_id"`
+	TargetGroupID int64  `json:"target_group_id"`
+	Action        string `json:"action"`
+	Status        string `json:"status"`
+	Error         string `json:"error,omitempty"`
+}
+
+type StaleMappingRenewalError struct {
+	ExpectedFingerprint string
+	CurrentFingerprint  string
+	RefreshedPreview    *MappingRenewalPreview
+	Differences         []string
+}
+
+func (e *StaleMappingRenewalError) Error() string {
+	return "Relay relationships changed after Preview"
+}
+
 type MappingRenewalMember struct {
 	UserID                  int                   `json:"user_id"`
 	RelayUserID             int64                 `json:"relay_user_id"`
@@ -1189,6 +1232,7 @@ func normalizePreviewAccountIntents(intents []AccountIntent, available map[int64
 type relationshipSnapshot struct {
 	ProviderID      int                              `json:"provider_id"`
 	Platform        string                           `json:"platform"`
+	RenewalDays     int                              `json:"renewal_days,omitempty"`
 	Groups          []relationshipGroupFact          `json:"groups"`
 	PlannedRenames  []relationshipPlannedRenameFact  `json:"planned_renames"`
 	Accounts        []relationshipAccountFact        `json:"accounts"`
@@ -1598,9 +1642,10 @@ func encodeRelationshipFingerprint(snapshot relationshipSnapshot) (string, error
 		struct {
 			ProviderID     int                             `json:"provider_id"`
 			Platform       string                          `json:"platform"`
+			RenewalDays    int                             `json:"renewal_days,omitempty"`
 			Groups         []relationshipGroupFact         `json:"groups"`
 			PlannedRenames []relationshipPlannedRenameFact `json:"planned_renames"`
-		}{snapshot.ProviderID, snapshot.Platform, snapshot.Groups, snapshot.PlannedRenames},
+		}{snapshot.ProviderID, snapshot.Platform, snapshot.RenewalDays, snapshot.Groups, snapshot.PlannedRenames},
 		struct {
 			Accounts        []relationshipAccountFact        `json:"accounts"`
 			PlannedAccounts []relationshipPlannedAccountFact `json:"planned_accounts"`
@@ -2244,7 +2289,7 @@ func (s *Service) PreviewMappingRenewal(ctx context.Context, id int, req Mapping
 		}
 		members = append(members, member)
 	}
-	fingerprint, err := encodeMappingRenewalFingerprint(mapping, members, groupsByID)
+	fingerprint, err := encodeMappingRenewalFingerprint(mapping, members, groupsByID, renewalDays)
 	if err != nil {
 		return nil, fmt.Errorf("fingerprint mapping renewal relationships: %w", err)
 	}
@@ -2261,6 +2306,126 @@ func projectedRenewalExpiry(base time.Time, renewalDays int) time.Time {
 		return maximum
 	}
 	return result
+}
+
+func (s *Service) ExecuteMappingRenewal(ctx context.Context, id int, req MappingRenewalExecuteRequest) (*MappingRenewalExecution, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("mapping id is required")
+	}
+	if req.RenewalDays <= 0 || req.RenewalDays > maxRenewalDays {
+		return nil, fmt.Errorf("renewal_days must be between 1 and %d", maxRenewalDays)
+	}
+	if strings.TrimSpace(req.ExpectedRelationshipFingerprint) == "" {
+		return nil, fmt.Errorf("expected_relationship_fingerprint is required")
+	}
+	if strings.TrimSpace(req.OperationKey) == "" {
+		return nil, fmt.Errorf("operation_key is required")
+	}
+	if len(req.Members) == 0 {
+		return nil, fmt.Errorf("at least one reviewed mapping member is required")
+	}
+	preview, err := s.PreviewMappingRenewal(ctx, id, MappingRenewalPreviewRequest{RenewalDays: &req.RenewalDays})
+	if err != nil {
+		return nil, fmt.Errorf("refresh mapping renewal preview: %w", err)
+	}
+	if req.ExpectedRelationshipFingerprint != preview.RelationshipFingerprint {
+		differences := relationshipFingerprintDifferences(req.ExpectedRelationshipFingerprint, preview.RelationshipFingerprint)
+		if len(differences) == 0 {
+			differences = []string{"Relay relationships changed after Preview; review the refreshed plan"}
+		}
+		return nil, &StaleMappingRenewalError{ExpectedFingerprint: req.ExpectedRelationshipFingerprint, CurrentFingerprint: preview.RelationshipFingerprint, RefreshedPreview: preview, Differences: differences}
+	}
+	currentMembers := make(map[int]MappingRenewalMember, len(preview.Members))
+	for _, member := range preview.Members {
+		currentMembers[member.UserID] = member
+	}
+	type executionItem struct {
+		reviewed MappingRenewalReviewedMember
+		current  MappingRenewalMember
+	}
+	items := make([]executionItem, 0, len(req.Members))
+	seen := make(map[int]struct{}, len(req.Members))
+	for _, reviewed := range req.Members {
+		if reviewed.UserID <= 0 || reviewed.TargetGroupID <= 0 {
+			return nil, fmt.Errorf("reviewed mapping member and target Group are required")
+		}
+		if _, duplicate := seen[reviewed.UserID]; duplicate {
+			return nil, fmt.Errorf("mapping member %d is duplicated", reviewed.UserID)
+		}
+		seen[reviewed.UserID] = struct{}{}
+		current, managed := currentMembers[reviewed.UserID]
+		if !managed || current.ExpectedTargetGroupID != reviewed.TargetGroupID {
+			return nil, fmt.Errorf("mapping member %d is not managed by target Group %d", reviewed.UserID, reviewed.TargetGroupID)
+		}
+		if !mappingRenewalActionCompatible(reviewed.PlannedAction, current.PlannedAction, req.Retry) {
+			return nil, fmt.Errorf("mapping member %d planned action changed from %s to %s", reviewed.UserID, reviewed.PlannedAction, current.PlannedAction)
+		}
+		items = append(items, executionItem{reviewed: reviewed, current: current})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].reviewed.UserID < items[j].reviewed.UserID })
+	provider, err := s.resolver.Resolve(ctx, preview.ProviderID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve relay provider: %w", err)
+	}
+	writer, ok := provider.(relay.IdempotentUserSubscriptionWriter)
+	if !ok {
+		return nil, fmt.Errorf("relay provider does not support idempotent subscription writing")
+	}
+	result := &MappingRenewalExecution{MappingID: id, RenewalDays: req.RenewalDays, OperationKey: strings.TrimSpace(req.OperationKey), Members: make([]MappingRenewalMemberResult, 0, len(items))}
+	for _, item := range items {
+		action := item.reviewed.PlannedAction
+		memberResult := MappingRenewalMemberResult{UserID: item.current.UserID, RelayUserID: item.current.RelayUserID, TargetGroupID: item.current.ExpectedTargetGroupID, Action: action}
+		if item.current.PlannedAction == "skip" {
+			memberResult.Action = "skip"
+			memberResult.Status = "skipped"
+			result.Members = append(result.Members, memberResult)
+			continue
+		}
+		memberKey := mappingRenewalMemberOperationKey(result.OperationKey, id, item.current.UserID, item.current.ExpectedTargetGroupID, action)
+		var writeErr error
+		switch action {
+		case "create":
+			writeErr = writer.AssignSubscriptionForUserWithOperationKey(ctx, item.current.RelayUserID, item.current.ExpectedTargetGroupID, req.RenewalDays, memberKey)
+		case "extend", "renew":
+			writeErr = writer.ExtendSubscriptionForUserWithOperationKey(ctx, item.current.RelayUserID, item.current.ExpectedTargetGroupID, req.RenewalDays, memberKey)
+		default:
+			writeErr = fmt.Errorf("unsupported renewal action %q", action)
+		}
+		if writeErr != nil {
+			memberResult.Status = "failed"
+			memberResult.Error = writeErr.Error()
+		} else {
+			memberResult.Status = "succeeded"
+		}
+		result.Members = append(result.Members, memberResult)
+	}
+	result.Preview, err = s.PreviewMappingRenewal(ctx, id, MappingRenewalPreviewRequest{RenewalDays: &req.RenewalDays})
+	if err != nil {
+		result.PreviewError = err.Error()
+	}
+	return result, nil
+}
+
+func mappingRenewalActionCompatible(reviewed, current string, retry bool) bool {
+	if reviewed == current {
+		return reviewed == "create" || reviewed == "extend" || reviewed == "renew" || reviewed == "skip"
+	}
+	if !retry {
+		return false
+	}
+	if current == "skip" {
+		return reviewed == "create" || reviewed == "extend" || reviewed == "renew"
+	}
+	if reviewed == "create" {
+		return current == "extend" || current == "renew"
+	}
+	return (reviewed == "extend" || reviewed == "renew") && (current == "extend" || current == "renew")
+}
+
+func mappingRenewalMemberOperationKey(operationKey string, mappingID, userID int, targetGroupID int64, action string) string {
+	canonical := fmt.Sprintf("mapping-renewal:v1:%s:%d:%d:%d:%s", strings.TrimSpace(operationKey), mappingID, userID, targetGroupID, action)
+	sum := sha256.Sum256([]byte(canonical))
+	return "mapping-renewal-v1-" + hex.EncodeToString(sum[:])
 }
 
 func renewalSubscriptionStatus(subscription *relay.UserSubscription, now time.Time) string {
@@ -2285,8 +2450,8 @@ func timePointer(value time.Time) *time.Time {
 	return &copy
 }
 
-func encodeMappingRenewalFingerprint(mapping *ent.RelayGroupMapping, members []MappingRenewalMember, groupsByID map[int64]relay.Group) (string, error) {
-	snapshot := relationshipSnapshot{ProviderID: mapping.ProviderID, Platform: strings.ToLower(strings.TrimSpace(mapping.Platform))}
+func encodeMappingRenewalFingerprint(mapping *ent.RelayGroupMapping, members []MappingRenewalMember, groupsByID map[int64]relay.Group, renewalDays int) (string, error) {
+	snapshot := relationshipSnapshot{ProviderID: mapping.ProviderID, Platform: strings.ToLower(strings.TrimSpace(mapping.Platform)), RenewalDays: renewalDays}
 	mappingFact := relationshipMappingFact{ID: mapping.ID, ProviderID: mapping.ProviderID, Platform: snapshot.Platform, GroupIDs: append([]int64(nil), mapping.GroupIds...)}
 	sort.Slice(mappingFact.GroupIDs, func(i, j int) bool { return mappingFact.GroupIDs[i] < mappingFact.GroupIDs[j] })
 	relevantGroupIDs := make(map[int64]struct{}, len(mapping.GroupIds))

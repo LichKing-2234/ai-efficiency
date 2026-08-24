@@ -2140,6 +2140,40 @@ func TestExtendSubscriptionForUserFindsExistingSubscriptionAndPostsDays(t *testi
 	}
 }
 
+func TestIdempotentUserSubscriptionWriterPropagatesOperationKeys(t *testing.T) {
+	var assignKey, extendKey string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/subscriptions/assign", func(w http.ResponseWriter, r *http.Request) {
+		assignKey = r.Header.Get("Idempotency-Key")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"id":77,"status":"active"}}`))
+	})
+	mux.HandleFunc("/api/v1/admin/users/42/subscriptions", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":[{"id":77,"user_id":42,"group_id":5,"status":"active"}]}`))
+	})
+	mux.HandleFunc("/api/v1/admin/subscriptions/77/extend", func(w http.ResponseWriter, r *http.Request) {
+		extendKey = r.Header.Get("Idempotency-Key")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"id":77,"status":"active"}}`))
+	})
+
+	provider := newTestProvider(t, mux)
+	writer, ok := provider.(relay.IdempotentUserSubscriptionWriter)
+	if !ok {
+		t.Fatal("provider does not implement IdempotentUserSubscriptionWriter")
+	}
+	if err := writer.AssignSubscriptionForUserWithOperationKey(context.Background(), 42, 5, 365, "mapping-renewal-create"); err != nil {
+		t.Fatalf("assign with operation key: %v", err)
+	}
+	if err := writer.ExtendSubscriptionForUserWithOperationKey(context.Background(), 42, 5, 365, "mapping-renewal-extend"); err != nil {
+		t.Fatalf("extend with operation key: %v", err)
+	}
+	if assignKey != "mapping-renewal-create" || extendKey != "mapping-renewal-extend" {
+		t.Fatalf("operation keys = assign:%q extend:%q, want propagated keys", assignKey, extendKey)
+	}
+}
+
 func TestRemoveSubscriptionForUserFindsExistingSubscriptionAndDeletes(t *testing.T) {
 	deleted := false
 

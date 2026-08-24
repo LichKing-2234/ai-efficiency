@@ -9,6 +9,7 @@ import { relayPlanningMessages } from '@/locales/relayPlanning'
 import { listAdminUserSubscriptionOptions } from '@/api/adminUsers'
 import {
 	adoptCurrentRelayAccounts,
+  executeRelayMappingRenewal,
   executeRelayPlan,
   executeRelayReplan,
   listRelayGroupMappings,
@@ -24,7 +25,9 @@ import {
 	type RelayPlanningExecution,
   type RelayPlanningRequest,
   type RelayPlanningMapping,
+	type RelayPlanningMappingRenewalExecution,
 	type RelayPlanningMappingRenewalMember,
+	type RelayPlanningMappingRenewalReviewedMember,
 	type RelayPlanningMappingRenewalPreview,
 	type RelayPlanningMemberAction,
   type RelayPlanningPlan,
@@ -71,6 +74,9 @@ const renewalMappingID = ref<number | null>(null)
 const renewalDays = ref(365)
 const renewalPreview = ref<RelayPlanningMappingRenewalPreview | null>(null)
 const selectedRenewalUserIDs = ref<Set<number>>(new Set())
+const renewalExecuting = ref(false)
+const renewalExecution = ref<RelayPlanningMappingRenewalExecution | null>(null)
+const renewalOperationKey = ref('')
 const rebindPendingID = ref<number | null>(null)
 const rebindDialogOpen = ref(false)
 const rebindMappingID = ref<number | null>(null)
@@ -109,6 +115,7 @@ const rebindGroups = computed(() => (providers.value.find((item) => item.id === 
   .filter((group) => group.platform === rebindContext.platform))
 const targetNameErrors = computed(() => Object.fromEntries((plan.value?.assignments ?? []).map((assignment) => [assignment.index, validateTargetName(assignment.index)])))
 const hasTargetNameErrors = computed(() => Object.values(targetNameErrors.value).some(Boolean))
+const failedRenewalMembers = computed(() => renewalExecution.value?.members.filter((member) => member.status === 'failed') ?? [])
 
 function translateWarning(warning: string): string {
   void locale.value
@@ -428,6 +435,8 @@ async function renewMapping(mapping: RelayPlanningMapping) {
 	renewalDays.value = 365
 	renewalPreview.value = null
 	selectedRenewalUserIDs.value = new Set()
+	renewalExecution.value = null
+	renewalOperationKey.value = crypto.randomUUID()
 	try {
 		const response = await previewRelayMappingRenewal(mapping.id, { renewal_days: 365 })
 		if (!response.data.data) throw new Error(t('relayPlanning.renewalPreviewFailed'))
@@ -438,6 +447,22 @@ async function renewMapping(mapping: RelayPlanningMapping) {
 	} finally {
 		renewalLoadingID.value = null
 	}
+}
+
+function resetRenewalOperation() {
+	renewalMappingID.value = null
+	renewalDays.value = 365
+	renewalPreview.value = null
+	selectedRenewalUserIDs.value = new Set()
+	renewalExecution.value = null
+	renewalOperationKey.value = ''
+	renewalPreviewLoading.value = false
+}
+
+function closeRenewalOperation() {
+	if (renewalExecuting.value || renewalPreviewLoading.value) return
+	renewalDialogOpen.value = false
+	resetRenewalOperation()
 }
 
 async function refreshRenewalPreview() {
@@ -464,6 +489,77 @@ function toggleRenewalMember(userID: number, checked: boolean) {
 	selectedRenewalUserIDs.value = next
 }
 
+function reviewedRenewalMembers(): RelayPlanningMappingRenewalReviewedMember[] {
+	return (renewalPreview.value?.members ?? [])
+		.filter((member) => selectedRenewalUserIDs.value.has(member.user_id))
+		.map((member) => ({ user_id: member.user_id, target_group_id: member.expected_target_group_id, planned_action: member.planned_action }))
+}
+
+async function confirmMappingRenewal() {
+	if (!renewalPreview.value || selectedRenewalUserIDs.value.size === 0) {
+		ElMessage.error(t('relayPlanning.renewalNoSelection'))
+		return
+	}
+	await submitMappingRenewal(reviewedRenewalMembers(), renewalPreview.value.relationship_fingerprint, false)
+}
+
+async function retryMappingRenewalFailures() {
+	if (!renewalExecution.value || failedRenewalMembers.value.length === 0 || renewalMappingID.value === null) return
+	if (!renewalExecution.value.preview) {
+		renewalPreviewLoading.value = true
+		try {
+			const response = await previewRelayMappingRenewal(renewalMappingID.value, { renewal_days: renewalDays.value })
+			if (!response.data.data) throw new Error(t('relayPlanning.renewalPreviewFailed'))
+			applyRenewalPreview(response.data.data, false)
+			renewalExecution.value = { ...renewalExecution.value, preview: response.data.data, preview_error: undefined }
+			ElMessage.warning(t('relayPlanning.staleRenewal'))
+			return
+		} catch (err: any) {
+			ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.renewalPreviewFailed'))
+			return
+		} finally {
+			renewalPreviewLoading.value = false
+		}
+	}
+	const members = failedRenewalMembers.value.map((member) => ({ user_id: member.user_id, target_group_id: member.target_group_id, planned_action: member.action }))
+	await submitMappingRenewal(members, renewalExecution.value.preview!.relationship_fingerprint, true)
+}
+
+async function submitMappingRenewal(members: RelayPlanningMappingRenewalReviewedMember[], fingerprint: string, retry: boolean) {
+	if (renewalMappingID.value === null || renewalExecuting.value) return
+	renewalExecuting.value = true
+	try {
+		const response = await executeRelayMappingRenewal(renewalMappingID.value, {
+			renewal_days: renewalDays.value,
+			members,
+			expected_relationship_fingerprint: fingerprint,
+			operation_key: renewalOperationKey.value,
+			retry,
+		})
+		const next = response.data.data
+		if (!next) throw new Error(t('relayPlanning.renewalExecutionFailed'))
+		if (retry && renewalExecution.value) {
+			const replacements = new Map(next.members.map((member) => [member.user_id, member]))
+			renewalExecution.value = { ...next, members: renewalExecution.value.members.map((member) => replacements.get(member.user_id) ?? member) }
+		} else {
+			renewalExecution.value = next
+		}
+		if (next.preview) applyRenewalPreview(next.preview, false)
+		ElMessage.success(t('relayPlanning.renewalExecutionFinished'))
+	} catch (err: any) {
+		const details = err.response?.data?.details
+		if (err.response?.status === 409 && details?.error_code === 'stale_relay_plan' && details.refreshed_preview) {
+			applyRenewalPreview(details.refreshed_preview, false)
+			if (renewalExecution.value) renewalExecution.value = { ...renewalExecution.value, preview: details.refreshed_preview }
+			ElMessage.warning(t('relayPlanning.staleRenewal'))
+			return
+		}
+		ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.renewalExecutionFailed'))
+	} finally {
+		renewalExecuting.value = false
+	}
+}
+
 function renewalStatusText(status: RelayPlanningMappingRenewalMember['status']): string {
 	if (status === 'active') return t('relayPlanning.renewalStatusActive')
 	if (status === 'expired') return t('relayPlanning.renewalStatusExpired')
@@ -483,6 +579,18 @@ function renewalStatusTag(status: RelayPlanningMappingRenewalMember['status']): 
 	if (status === 'suspended') return 'warning'
 	if (status === 'expired') return 'danger'
 	return 'info'
+}
+
+function renewalResultText(status: 'succeeded' | 'skipped' | 'failed'): string {
+	if (status === 'succeeded') return t('relayPlanning.renewalSucceeded')
+	if (status === 'skipped') return t('relayPlanning.renewalSkipped')
+	return t('relayPlanning.renewalFailed')
+}
+
+function renewalResultTag(status: 'succeeded' | 'skipped' | 'failed'): 'success' | 'info' | 'danger' {
+	if (status === 'succeeded') return 'success'
+	if (status === 'skipped') return 'info'
+	return 'danger'
 }
 
 function formatRenewalDate(value?: string): string {
@@ -1199,16 +1307,20 @@ onBeforeUnmount(clearSearchState)
 			append-to-body
 			align-center
 			width="min(100%, 56rem)"
+			:show-close="!renewalExecuting && !renewalPreviewLoading"
+			:close-on-click-modal="!renewalExecuting && !renewalPreviewLoading"
+			:close-on-press-escape="!renewalExecuting && !renewalPreviewLoading"
+			@closed="resetRenewalOperation"
 		>
 			<div class="flex flex-wrap items-end justify-between gap-4">
 				<el-form-item :label="t('relayPlanning.renewalTermDays')" class="!mb-0">
-					<el-input-number v-model="renewalDays" data-testid="renewal-days-input" :min="1" :max="36500" :precision="0" :disabled="renewalPreviewLoading" controls-position="right" @change="refreshRenewalPreview" />
+					<el-input-number v-model="renewalDays" data-testid="renewal-days-input" :min="1" :max="36500" :precision="0" :disabled="renewalPreviewLoading || renewalExecuting || renewalExecution !== null" controls-position="right" @change="refreshRenewalPreview" />
 				</el-form-item>
 				<div data-testid="renewal-selected-count" class="text-sm font-medium text-slate-700">{{ t('relayPlanning.renewalSelectedCount', { count: selectedRenewalUserIDs.size }) }}</div>
 			</div>
 			<div v-if="renewalPreview" class="mt-4 max-h-[65vh] divide-y divide-slate-200 overflow-y-auto border-y border-slate-200">
 				<div v-for="member in renewalPreview.members" :key="member.user_id" :data-testid="`renewal-member-${member.user_id}`" class="flex items-start gap-3 py-4 first:pt-3 last:pb-3">
-					<el-checkbox :model-value="selectedRenewalUserIDs.has(member.user_id)" class="mt-0.5" @change="(checked) => toggleRenewalMember(member.user_id, checked === true)" />
+					<el-checkbox :model-value="selectedRenewalUserIDs.has(member.user_id)" :disabled="renewalExecuting || renewalExecution !== null" class="mt-0.5" @change="(checked) => toggleRenewalMember(member.user_id, checked === true)" />
 					<span class="min-w-0 flex-1">
 						<span class="flex flex-wrap items-start justify-between gap-2">
 							<span class="min-w-0"><span class="block break-words text-sm font-semibold text-slate-900">{{ member.username || member.email }}</span><span class="block break-all text-xs text-slate-500">{{ member.email }}</span></span>
@@ -1223,8 +1335,20 @@ onBeforeUnmount(clearSearchState)
 					</span>
 				</div>
 			</div>
+			<div v-if="renewalExecution" class="mt-4 border-t border-slate-200 pt-3">
+				<div class="text-sm font-semibold text-slate-900">{{ t('relayPlanning.renewalResults') }}</div>
+				<div class="mt-2 divide-y divide-slate-100">
+					<div v-for="member in renewalExecution.members" :key="member.user_id" :data-testid="`renewal-result-${member.user_id}`" class="flex flex-wrap items-start justify-between gap-3 py-2 text-sm">
+						<span class="min-w-0"><span class="block font-medium text-slate-800">{{ t('relayPlanning.userNumber', { id: member.user_id }) }} · {{ renewalActionText(member.action) }}</span><span v-if="member.error" class="block break-words text-xs text-red-600">{{ member.error }}</span></span>
+						<el-tag :type="renewalResultTag(member.status)" size="small">{{ renewalResultText(member.status) }}</el-tag>
+					</div>
+				</div>
+				<el-alert v-if="renewalExecution.preview_error" class="mt-2" type="warning" :closable="false" show-icon :title="renewalExecution.preview_error" />
+			</div>
 			<template #footer>
-				<el-button @click="renewalDialogOpen = false">{{ t('relayPlanning.close') }}</el-button>
+				<el-button data-testid="close-renewal" :disabled="renewalExecuting || renewalPreviewLoading" @click="closeRenewalOperation">{{ t('relayPlanning.close') }}</el-button>
+				<el-button v-if="!renewalExecution" data-testid="confirm-renewal" type="primary" :loading="renewalExecuting" :disabled="selectedRenewalUserIDs.size === 0" @click="confirmMappingRenewal">{{ t('relayPlanning.confirmRenewal') }}</el-button>
+				<el-button v-else-if="failedRenewalMembers.length" data-testid="retry-renewal-failures" type="primary" :loading="renewalExecuting || renewalPreviewLoading" @click="retryMappingRenewalFailures">{{ t('relayPlanning.retryFailedRenewals') }}</el-button>
 			</template>
 		</el-dialog>
 

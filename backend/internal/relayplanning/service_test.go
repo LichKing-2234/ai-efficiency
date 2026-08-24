@@ -164,6 +164,114 @@ func TestResolveGroupCountAllowsExplicitReplanResize(t *testing.T) {
 	}
 }
 
+func TestMappingRenewalServiceBindsTermAndRetriesFailedMemberWithStableKey(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	alice := client.User.Create().SetUsername("renewal-service-alice").SetEmail("alice@example.com").SetAuthSource("ldap").SetRelayUserID(41).SaveX(ctx)
+	bob := client.User.Create().SetUsername("renewal-service-bob").SetEmail("bob@example.org").SetAuthSource("ldap").SetRelayUserID(42).SaveX(ctx)
+	carol := client.User.Create().SetUsername("renewal-service-carol").SetEmail("carol@example.net").SetAuthSource("ldap").SetRelayUserID(43).SaveX(ctx)
+	dana := client.User.Create().SetUsername("renewal-service-dana").SetEmail("dana@example.edu").SetAuthSource("ldap").SetRelayUserID(44).SaveX(ctx)
+	mapping := client.RelayGroupMapping.Create().SetProviderID(7).SetDepartmentExternalID("dept-renewal-service").SetDepartmentName("Department Renewal").SetPlatform("openai").SetTemplateGroupID(10).SetGroupIds([]int64{101, 102, 103, 104}).SetMemberAssignments(map[string]int64{fmt.Sprint(alice.ID): 101, fmt.Sprint(bob.ID): 102, fmt.Sprint(carol.ID): 103, fmt.Sprint(dana.ID): 104}).SaveX(ctx)
+	provider := &renewalServiceTestProvider{
+		users: map[int64]*relay.User{
+			41: {ID: 41, Username: alice.Username, Email: alice.Email},
+			42: {ID: 42, Username: bob.Username, Email: bob.Email},
+			43: {ID: 43, Username: carol.Username, Email: carol.Email},
+			44: {ID: 44, Username: dana.Username, Email: dana.Email},
+		},
+		groups: []relay.Group{{ID: 101, Name: "Group Active", Platform: "openai"}, {ID: 102, Name: "Group Expired", Platform: "openai"}, {ID: 103, Name: "Group Missing", Platform: "openai"}, {ID: 104, Name: "Group Suspended", Platform: "openai"}},
+		subscriptions: map[int64][]relay.UserSubscription{
+			41: {{ID: 1, UserID: 41, GroupID: 101, Status: "active", ExpiresAt: time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC)}},
+			42: {{ID: 2, UserID: 42, GroupID: 102, Status: "expired", ExpiresAt: time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)}},
+			43: {},
+			44: {{ID: 3, UserID: 44, GroupID: 104, Status: "suspended", ExpiresAt: time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC)}},
+		},
+		failures: make(map[int64]error),
+	}
+	service := NewService(client, relayPlanningProviderResolver(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	days365 := 365
+	preview365, err := service.PreviewMappingRenewal(ctx, mapping.ID, MappingRenewalPreviewRequest{RenewalDays: &days365})
+	if err != nil {
+		t.Fatalf("preview 365 days: %v", err)
+	}
+	days30 := 30
+	preview30, err := service.PreviewMappingRenewal(ctx, mapping.ID, MappingRenewalPreviewRequest{RenewalDays: &days30})
+	if err != nil {
+		t.Fatalf("preview 30 days: %v", err)
+	}
+	if preview365.RelationshipFingerprint == preview30.RelationshipFingerprint {
+		t.Fatalf("renewal fingerprints = %q, want reviewed term bound", preview365.RelationshipFingerprint)
+	}
+	reviewed := make([]MappingRenewalReviewedMember, 0, len(preview365.Members))
+	for _, member := range preview365.Members {
+		reviewed = append(reviewed, MappingRenewalReviewedMember{UserID: member.UserID, TargetGroupID: member.ExpectedTargetGroupID, PlannedAction: member.PlannedAction})
+	}
+	_, err = service.ExecuteMappingRenewal(ctx, mapping.ID, MappingRenewalExecuteRequest{RenewalDays: days30, Members: reviewed, ExpectedRelationshipFingerprint: preview365.RelationshipFingerprint, OperationKey: "renewal-service-1"})
+	var stale *StaleMappingRenewalError
+	if !errors.As(err, &stale) || stale.RefreshedPreview == nil || stale.RefreshedPreview.RenewalDays != days30 || len(provider.writes) != 0 {
+		t.Fatalf("term mismatch error/writes = %v/%+v, want stale 30-day preview before writes", err, provider.writes)
+	}
+	provider.failures[42] = errors.New("synthetic expired renewal failure")
+	result, err := service.ExecuteMappingRenewal(ctx, mapping.ID, MappingRenewalExecuteRequest{RenewalDays: days365, Members: reviewed, ExpectedRelationshipFingerprint: preview365.RelationshipFingerprint, OperationKey: "renewal-service-1"})
+	if err != nil {
+		t.Fatalf("execute renewal: %v", err)
+	}
+	if len(result.Members) != 4 || result.Members[0].Status != "succeeded" || result.Members[0].Action != "extend" || result.Members[1].Status != "failed" || result.Members[1].Action != "renew" || result.Members[2].Status != "succeeded" || result.Members[2].Action != "create" || result.Members[3].Status != "skipped" || result.Members[3].Action != "skip" {
+		t.Fatalf("member results = %+v, want active/expired/missing/suspended outcomes", result.Members)
+	}
+	if len(provider.writes) != 3 || provider.writes[0].operationKey == "" || provider.writes[1].operationKey == "" || provider.writes[2].operationKey == "" || provider.writes[0].operationKey == provider.writes[1].operationKey || provider.writes[1].operationKey == provider.writes[2].operationKey {
+		t.Fatalf("renewal writes = %+v, want three distinct deterministic member keys", provider.writes)
+	}
+	failedKey := provider.writes[1].operationKey
+	delete(provider.failures, int64(42))
+	retry, err := service.ExecuteMappingRenewal(ctx, mapping.ID, MappingRenewalExecuteRequest{RenewalDays: days365, Members: []MappingRenewalReviewedMember{{UserID: result.Members[1].UserID, TargetGroupID: result.Members[1].TargetGroupID, PlannedAction: result.Members[1].Action}}, ExpectedRelationshipFingerprint: result.Preview.RelationshipFingerprint, OperationKey: "renewal-service-1", Retry: true})
+	if err != nil || len(retry.Members) != 1 || retry.Members[0].Status != "succeeded" || len(provider.writes) != 4 || provider.writes[3].operationKey != failedKey {
+		t.Fatalf("retry/result/writes = %v/%+v/%+v, want failed member with stable key", err, retry, provider.writes)
+	}
+}
+
+type renewalServiceTestProvider struct {
+	relay.Provider
+	users         map[int64]*relay.User
+	groups        []relay.Group
+	subscriptions map[int64][]relay.UserSubscription
+	failures      map[int64]error
+	writes        []renewalServiceWrite
+}
+
+type renewalServiceWrite struct {
+	action       string
+	userID       int64
+	groupID      int64
+	days         int
+	operationKey string
+}
+
+func (p *renewalServiceTestProvider) GetUser(_ context.Context, userID int64) (*relay.User, error) {
+	return p.users[userID], nil
+}
+
+func (p *renewalServiceTestProvider) ListPlatformGroups(context.Context) ([]relay.Group, error) {
+	return append([]relay.Group(nil), p.groups...), nil
+}
+
+func (p *renewalServiceTestProvider) ListUserSubscriptions(_ context.Context, userID int64) ([]relay.UserSubscription, error) {
+	return append([]relay.UserSubscription(nil), p.subscriptions[userID]...), nil
+}
+
+func (p *renewalServiceTestProvider) AssignSubscriptionForUserWithOperationKey(_ context.Context, userID, groupID int64, days int, operationKey string) error {
+	return p.write("create", userID, groupID, days, operationKey)
+}
+
+func (p *renewalServiceTestProvider) ExtendSubscriptionForUserWithOperationKey(_ context.Context, userID, groupID int64, days int, operationKey string) error {
+	return p.write("extend", userID, groupID, days, operationKey)
+}
+
+func (p *renewalServiceTestProvider) write(action string, userID, groupID int64, days int, operationKey string) error {
+	p.writes = append(p.writes, renewalServiceWrite{action: action, userID: userID, groupID: groupID, days: days, operationKey: operationKey})
+	return p.failures[userID]
+}
+
 func TestProposedGroupNamesSkipOccupiedDepartmentSequence(t *testing.T) {
 	groups := []relay.Group{
 		{Name: "Group Alpha"},

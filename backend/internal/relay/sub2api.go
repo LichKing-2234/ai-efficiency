@@ -2156,6 +2156,7 @@ type subscriptionAssignment struct {
 	GroupID      int64
 	ValidityDays int
 	Notes        string
+	OperationKey string
 }
 
 type sub2apiUserSubscription struct {
@@ -2725,6 +2726,19 @@ func (s *sub2apiRelay) AssignDefaultSubscriptionsForUser(ctx context.Context, us
 
 // AssignSubscriptionForUser assigns one subscription group to a relay user.
 func (s *sub2apiRelay) AssignSubscriptionForUser(ctx context.Context, userID, groupID int64, validityDays int) error {
+	return s.assignSubscriptionForUser(ctx, userID, groupID, validityDays, "")
+}
+
+// AssignSubscriptionForUserWithOperationKey assigns one subscription while
+// propagating the caller's stable replay key to Relay.
+func (s *sub2apiRelay) AssignSubscriptionForUserWithOperationKey(ctx context.Context, userID, groupID int64, validityDays int, operationKey string) error {
+	if strings.TrimSpace(operationKey) == "" {
+		return fmt.Errorf("assign subscription: operation key is required")
+	}
+	return s.assignSubscriptionForUser(ctx, userID, groupID, validityDays, operationKey)
+}
+
+func (s *sub2apiRelay) assignSubscriptionForUser(ctx context.Context, userID, groupID int64, validityDays int, operationKey string) error {
 	if userID <= 0 {
 		return fmt.Errorf("assign subscription: user id is required")
 	}
@@ -2738,11 +2752,25 @@ func (s *sub2apiRelay) AssignSubscriptionForUser(ctx context.Context, userID, gr
 		GroupID:      groupID,
 		ValidityDays: validityDays,
 		Notes:        "assigned by ai-efficiency admin",
+		OperationKey: operationKey,
 	})
 }
 
 // ExtendSubscriptionForUser extends an existing subscription group for a relay user.
 func (s *sub2apiRelay) ExtendSubscriptionForUser(ctx context.Context, userID, groupID int64, days int) error {
+	return s.extendSubscriptionForUser(ctx, userID, groupID, days, "")
+}
+
+// ExtendSubscriptionForUserWithOperationKey extends one subscription while
+// propagating the caller's stable replay key to Relay.
+func (s *sub2apiRelay) ExtendSubscriptionForUserWithOperationKey(ctx context.Context, userID, groupID int64, days int, operationKey string) error {
+	if strings.TrimSpace(operationKey) == "" {
+		return fmt.Errorf("extend subscription: operation key is required")
+	}
+	return s.extendSubscriptionForUser(ctx, userID, groupID, days, operationKey)
+}
+
+func (s *sub2apiRelay) extendSubscriptionForUser(ctx context.Context, userID, groupID int64, days int, operationKey string) error {
 	if userID <= 0 {
 		return fmt.Errorf("extend subscription: user id is required")
 	}
@@ -2761,7 +2789,7 @@ func (s *sub2apiRelay) ExtendSubscriptionForUser(ctx context.Context, userID, gr
 	if err != nil {
 		return fmt.Errorf("extend subscription: marshal: %w", err)
 	}
-	resp, err := s.doAdminRequest(ctx, http.MethodPost, fmt.Sprintf("/api/v1/admin/subscriptions/%d/extend", subscription.ID), bytes.NewReader(payload))
+	resp, err := s.doAdminRequestWithOperationKey(ctx, http.MethodPost, fmt.Sprintf("/api/v1/admin/subscriptions/%d/extend", subscription.ID), bytes.NewReader(payload), operationKey)
 	if err != nil {
 		return fmt.Errorf("extend subscription: %w", err)
 	}
@@ -2962,7 +2990,7 @@ func (s *sub2apiRelay) assignSubscription(ctx context.Context, userID int64, ite
 		return fmt.Errorf("assign subscription: marshal: %w", err)
 	}
 
-	resp, err := s.doAdminRequest(ctx, http.MethodPost, "/api/v1/admin/subscriptions/assign", bytes.NewReader(payload))
+	resp, err := s.doAdminRequestWithOperationKey(ctx, http.MethodPost, "/api/v1/admin/subscriptions/assign", bytes.NewReader(payload), item.OperationKey)
 	if err != nil {
 		return fmt.Errorf("assign subscription: %w", err)
 	}
@@ -3207,11 +3235,18 @@ func (s *sub2apiRelay) ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID 
 
 // doAdminRequest is a helper that sends an authenticated request to the admin API.
 func (s *sub2apiRelay) doAdminRequest(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
+	return s.doAdminRequestWithOperationKey(ctx, method, path, body, "")
+}
+
+func (s *sub2apiRelay) doAdminRequestWithOperationKey(ctx context.Context, method, path string, body io.Reader, operationKey string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, s.adminURL+path, body)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("X-API-Key", s.adminAPIKey())
+	if operationKey = strings.TrimSpace(operationKey); operationKey != "" {
+		req.Header.Set("Idempotency-Key", operationKey)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

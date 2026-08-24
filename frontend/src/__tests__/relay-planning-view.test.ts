@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { ElDialog, ElMessageBox } from 'element-plus'
+import { ElDialog, ElMessage, ElMessageBox } from 'element-plus'
 import RelayPlanningView from '@/views/admin/RelayPlanningView.vue'
 
 vi.mock('@/api/adminUsers', () => ({
@@ -11,6 +11,7 @@ vi.mock('@/api/adminUsers', () => ({
 vi.mock('@/api/relayPlanning', () => ({
 	adoptCurrentRelayAccounts: vi.fn(),
 	executeRelayPlan: vi.fn(),
+  executeRelayMappingRenewal: vi.fn(),
   executeRelayReplan: vi.fn(),
   listRelayGroupMappings: vi.fn(),
   previewRelayMappingRenewal: vi.fn(),
@@ -90,6 +91,26 @@ const renewalPreview = {
 	],
 	generated_at: '2026-08-24T00:00:00Z',
 	relationship_fingerprint: 'v2:renewal-preview-fingerprint',
+}
+
+const renewalMapping = {
+	id: 9,
+	provider_id: 7,
+	department_id: 'dept-alpha',
+	department_name: 'SDK Framework',
+	platform: 'openai',
+	template_group_id: 42,
+	template_group_name: 'Group Alpha',
+	source_group_id: 0,
+	source_group_name: '',
+	group_ids: [201, 202, 203, 204],
+	status: 'active',
+	weekly_cost_target: 2500,
+	member_assignments: { '1': 201, '2': 202, '3': 203, '4': 204 },
+	account_management_initialized: false,
+	desired_accounts: {},
+	account_pools: [],
+	updated_at: '2026-08-24T00:00:00Z',
 }
 
 async function mountView(initialMappings: any[] = [], wide = false) {
@@ -184,25 +205,7 @@ describe('RelayPlanningView', () => {
 	})
 
 	it('previews managed subscription renewal from both responsive mapping layouts', async () => {
-		const mapping = {
-			id: 9,
-			provider_id: 7,
-			department_id: 'dept-alpha',
-			department_name: 'SDK Framework',
-			platform: 'openai',
-			template_group_id: 42,
-			template_group_name: 'Group Alpha',
-			source_group_id: 0,
-			source_group_name: '',
-			group_ids: [201, 202, 203, 204],
-			status: 'active',
-			weekly_cost_target: 2500,
-			member_assignments: { '1': 201, '2': 202, '3': 203, '4': 204 },
-			account_management_initialized: false,
-			desired_accounts: {},
-			account_pools: [],
-			updated_at: '2026-08-24T00:00:00Z',
-		}
+		const mapping = structuredClone(renewalMapping)
 		const { wrapper, relayPlanning } = await mountView([mapping])
 
 		expect(wrapper.find('[data-testid="mapping-card-layout"]').exists()).toBe(true)
@@ -245,6 +248,163 @@ describe('RelayPlanningView', () => {
 		const wide = await mountView([mapping], true)
 		expect(wide.wrapper.find('[data-testid="mapping-table-layout"]').exists()).toBe(true)
 		expect(wide.wrapper.find('[data-testid="renew-mapping-9"]').exists()).toBe(true)
+	})
+
+	it('confirms renewal and retries only failed members with the same operation key', async () => {
+		const { wrapper, relayPlanning } = await mountView([structuredClone(renewalMapping)])
+		const afterExecution = structuredClone({ ...renewalPreview, relationship_fingerprint: 'v2:after-execution' })
+		relayPlanning.executeRelayMappingRenewal
+			.mockImplementationOnce((_id: number, request: any) => Promise.resolve({ data: { data: {
+				mapping_id: 9,
+				renewal_days: 365,
+				operation_key: request.operation_key,
+				members: [
+					{ user_id: 1, relay_user_id: 101, target_group_id: 201, action: 'extend', status: 'succeeded' },
+					{ user_id: 2, relay_user_id: 102, target_group_id: 202, action: 'renew', status: 'failed', error: 'synthetic timeout' },
+					{ user_id: 3, relay_user_id: 103, target_group_id: 203, action: 'create', status: 'failed', error: 'synthetic failure' },
+					{ user_id: 4, relay_user_id: 104, target_group_id: 204, action: 'skip', status: 'skipped' },
+				],
+				preview: afterExecution,
+			} } }))
+			.mockImplementationOnce((_id: number, request: any) => Promise.resolve({ data: { data: {
+				mapping_id: 9,
+				renewal_days: 365,
+				operation_key: request.operation_key,
+				members: [
+					{ user_id: 2, relay_user_id: 102, target_group_id: 202, action: 'renew', status: 'succeeded' },
+					{ user_id: 3, relay_user_id: 103, target_group_id: 203, action: 'create', status: 'succeeded' },
+				],
+				preview: { ...afterExecution, relationship_fingerprint: 'v2:after-retry' },
+			} } }))
+			.mockImplementationOnce((_id: number, request: any) => Promise.resolve({ data: { data: {
+				mapping_id: 9,
+				renewal_days: 365,
+				operation_key: request.operation_key,
+				members: [],
+				preview: renewalPreview,
+			} } }))
+
+		await wrapper.get('[data-testid="renew-mapping-9"]').trigger('click')
+		await flushPromises()
+		await wrapper.get('[data-testid="confirm-renewal"]').trigger('click')
+		await flushPromises()
+
+		expect(relayPlanning.executeRelayMappingRenewal).toHaveBeenCalledTimes(1)
+		const firstRequest = relayPlanning.executeRelayMappingRenewal.mock.calls[0][1]
+		expect(firstRequest).toEqual({
+			renewal_days: 365,
+			members: renewalPreview.members.map((member) => ({ user_id: member.user_id, target_group_id: member.expected_target_group_id, planned_action: member.planned_action })),
+			expected_relationship_fingerprint: 'v2:renewal-preview-fingerprint',
+			operation_key: expect.any(String),
+			retry: false,
+		})
+		expect(wrapper.get('[data-testid="renewal-result-1"]').text()).toContain('Succeeded')
+		expect(wrapper.get('[data-testid="renewal-result-2"]').text()).toContain('Failed')
+		expect(wrapper.get('[data-testid="renewal-result-4"]').text()).toContain('Skipped')
+
+		await wrapper.get('[data-testid="retry-renewal-failures"]').trigger('click')
+		await flushPromises()
+		const retryRequest = relayPlanning.executeRelayMappingRenewal.mock.calls[1][1]
+		expect(retryRequest).toEqual({
+			renewal_days: 365,
+			members: [
+				{ user_id: 2, target_group_id: 202, planned_action: 'renew' },
+				{ user_id: 3, target_group_id: 203, planned_action: 'create' },
+			],
+			expected_relationship_fingerprint: 'v2:after-execution',
+			operation_key: firstRequest.operation_key,
+			retry: true,
+		})
+		expect(wrapper.get('[data-testid="renewal-result-1"]').text()).toContain('Succeeded')
+		expect(wrapper.get('[data-testid="renewal-result-2"]').text()).toContain('Succeeded')
+		expect(wrapper.get('[data-testid="renewal-result-4"]').text()).toContain('Skipped')
+		expect(wrapper.find('[data-testid="retry-renewal-failures"]').exists()).toBe(false)
+
+		await wrapper.get('[data-testid="close-renewal"]').trigger('click')
+		await wrapper.get('[data-testid="renew-mapping-9"]').trigger('click')
+		await flushPromises()
+		expect(wrapper.find('[data-testid="renewal-result-1"]').exists()).toBe(false)
+		await wrapper.get('[data-testid="confirm-renewal"]').trigger('click')
+		await flushPromises()
+		expect(relayPlanning.executeRelayMappingRenewal.mock.calls[2][1].operation_key).not.toBe(firstRequest.operation_key)
+	})
+
+	it('refreshes stale renewal facts and requires another explicit confirmation', async () => {
+		const warning = vi.spyOn(ElMessage, 'warning').mockImplementation(() => undefined as any)
+		const { wrapper, relayPlanning } = await mountView([structuredClone(renewalMapping)])
+		const refreshed = structuredClone({ ...renewalPreview, relationship_fingerprint: 'v2:refreshed-renewal', members: renewalPreview.members.map((member) => member.user_id === 1 ? { ...member, expected_target_group_name: 'Group Active Renamed' } : member) })
+		relayPlanning.executeRelayMappingRenewal
+			.mockRejectedValueOnce({ response: { status: 409, data: { details: { error_code: 'stale_relay_plan', refreshed_preview: refreshed } } } })
+			.mockImplementationOnce((_id: number, request: any) => Promise.resolve({ data: { data: { mapping_id: 9, renewal_days: 365, operation_key: request.operation_key, members: [], preview: refreshed } } }))
+
+		await wrapper.get('[data-testid="renew-mapping-9"]').trigger('click')
+		await flushPromises()
+		await wrapper.get('[data-testid="confirm-renewal"]').trigger('click')
+		await flushPromises()
+
+		expect(relayPlanning.executeRelayMappingRenewal).toHaveBeenCalledTimes(1)
+		const operationKey = relayPlanning.executeRelayMappingRenewal.mock.calls[0][1].operation_key
+		expect(wrapper.text()).toContain('Group Active Renamed')
+		expect(warning).toHaveBeenCalledWith('Relay relationships changed. Review the refreshed renewal and confirm again.')
+
+		await wrapper.get('[data-testid="confirm-renewal"]').trigger('click')
+		await flushPromises()
+		expect(relayPlanning.executeRelayMappingRenewal.mock.calls[1][1]).toEqual(expect.objectContaining({ expected_relationship_fingerprint: 'v2:refreshed-renewal', operation_key: operationKey }))
+	})
+
+	it('refetches authoritative facts before retry when the post-write preview was unavailable', async () => {
+		const warning = vi.spyOn(ElMessage, 'warning').mockImplementation(() => undefined as any)
+		const { wrapper, relayPlanning } = await mountView([structuredClone(renewalMapping)])
+		relayPlanning.executeRelayMappingRenewal
+			.mockImplementationOnce((_id: number, request: any) => Promise.resolve({ data: { data: {
+				mapping_id: 9,
+				renewal_days: 365,
+				operation_key: request.operation_key,
+				members: [
+					{ user_id: 1, relay_user_id: 101, target_group_id: 201, action: 'extend', status: 'succeeded' },
+					{ user_id: 2, relay_user_id: 102, target_group_id: 202, action: 'renew', status: 'failed', error: 'synthetic timeout' },
+				],
+				preview_error: 'synthetic refresh unavailable',
+			} } }))
+			.mockImplementationOnce((_id: number, request: any) => Promise.resolve({ data: { data: {
+				mapping_id: 9,
+				renewal_days: 365,
+				operation_key: request.operation_key,
+				members: [{ user_id: 2, relay_user_id: 102, target_group_id: 202, action: 'renew', status: 'succeeded' }],
+				preview: { ...renewalPreview, relationship_fingerprint: 'v2:after-recovered-retry' },
+			} } }))
+
+		await wrapper.get('[data-testid="renew-mapping-9"]').trigger('click')
+		await flushPromises()
+		await wrapper.get('[data-testid="confirm-renewal"]').trigger('click')
+		await flushPromises()
+		const operationKey = relayPlanning.executeRelayMappingRenewal.mock.calls[0][1].operation_key
+		expect(wrapper.text()).toContain('synthetic refresh unavailable')
+		expect(wrapper.find('[data-testid="retry-renewal-failures"]').exists()).toBe(true)
+		const recoveredPreview = { ...renewalPreview, relationship_fingerprint: 'v2:recovered-preview', members: renewalPreview.members.map((member) => member.user_id === 2 ? { ...member, status: 'active', planned_action: 'extend', expected_target_group_name: 'Group Expired Refreshed' } : member) }
+		relayPlanning.previewRelayMappingRenewal.mockResolvedValueOnce({ data: { data: recoveredPreview } })
+
+		await wrapper.get('[data-testid="retry-renewal-failures"]').trigger('click')
+		await flushPromises()
+
+		expect(relayPlanning.previewRelayMappingRenewal).toHaveBeenCalledTimes(2)
+		expect(relayPlanning.executeRelayMappingRenewal).toHaveBeenCalledTimes(1)
+		expect(wrapper.text()).toContain('Group Expired Refreshed')
+		expect(warning).toHaveBeenCalledWith('Relay relationships changed. Review the refreshed renewal and confirm again.')
+
+		await wrapper.get('[data-testid="retry-renewal-failures"]').trigger('click')
+		await flushPromises()
+
+		expect(relayPlanning.executeRelayMappingRenewal.mock.calls[1][1]).toEqual({
+			renewal_days: 365,
+			members: [{ user_id: 2, target_group_id: 202, planned_action: 'renew' }],
+			expected_relationship_fingerprint: 'v2:recovered-preview',
+			operation_key: operationKey,
+			retry: true,
+		})
+		expect(wrapper.get('[data-testid="renewal-result-1"]').text()).toContain('Succeeded')
+		expect(wrapper.get('[data-testid="renewal-result-2"]').text()).toContain('Succeeded')
+		expect(wrapper.text()).not.toContain('synthetic refresh unavailable')
 	})
 
 	it('allows the department field to shrink inside the planning grid', async () => {
