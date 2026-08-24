@@ -1,6 +1,7 @@
 # User API-Key-First Onboarding Design
 
 **Date:** 2026-06-14
+**Last updated:** 2026-08-24
 **Status:** Approved design for current implementation
 **Scope:** `frontend/src/views/UserView.vue`, `frontend/src/utils/userSetupReview.ts`, `frontend/src/i18n.ts`, `frontend/src/__tests__/`, `docs/architecture.md`
 **Related:**
@@ -43,14 +44,14 @@
 1. 把 `/user` 的首屏主叙事改成：
 
    ```text
-   选择接入组 -> 创建我的 API Key -> 运行连接测试 -> 选择配置方式
+   选择接入组 -> 创建 API Key 并继续 -> 运行连接测试 -> 选择配置方式
    ```
 
 2. 保留当前 provider/group/self-serve/test 的后端合同，不引入新的 onboarding backend API。
 3. 去掉“研发 / 非研发”切换，让所有用户共用同一条主流程，只在“配置方式”阶段分流。
 4. 保留 `接入组` 这个术语，但让它成为清晰解释后的用户可操作对象，而不是抽象技术背景。
 5. 让 API key 的创建和管理成为首屏第一主区，让连接测试成为创建后的默认下一步。
-6. 让 `手动配置`、`自动配置`、`CC Switch 配置` 在 API key 可用后出现，并把连接测试保留为推荐的下一步动作，而不是显示门槛。
+6. 让 `手动配置`、`自动配置`、`CC Switch 配置` 在 API key 可用后成为可达步骤，并把连接测试保留为推荐的下一步动作，而不是配置门槛。
 7. 保留研发能力，但把 CLI、repo attribution、恢复命令、诊断命令下沉为“自动配置”路径或高级区。
 8. 为 `CC Switch` 增加明确的 app-specific 一键导入设计合同，而不是停留在说明文字。
 
@@ -60,7 +61,7 @@
 2. 不新增浏览器到本机 CLI 的执行桥，不在浏览器里执行 `ae-cli`。
 3. 不改变 `ae-cli discover` 当前 provider-scoped 合同，也不把它重写成 group-scoped 工具配置命令。
 4. 不新增 universal provider deep link 合同给 `CC Switch`；第一版只使用官方 app-specific provider import 协议。
-5. 不把 `/user` 改成多步向导页面，不引入单独 route 跳转式 wizard。
+5. 不把 `/user` 拆成单独 route 跳转式 wizard；三步展示仍位于同一个主流程卡片中。
 6. 不在本轮改变首页 `/`、`/events`、`/repos`、`/settings` 的主要信息架构；这些页面继续由既有 spec 管理。
 7. 不改变现有模型加载和连接测试的 downstream probe 行为。
 
@@ -70,11 +71,11 @@
 
 `/user` 不再把 `Setup progress` 作为页面主标题，也不再让“我是研发 / 我是非研发”决定页面结构。
 
-页面主标题改为：
+页面主标题为：
 
-- `Create or manage my API key` / `创建 / 管理我的 API Key`
+- `AI setup and configuration` / `AI 接入与配置`
 
-这不是全局“完成接入”按钮，而是当前选中接入组下的第一主动作。用户第一眼应当理解：
+主流程卡片使用明确的三步展示，但它不是全局“完成接入”状态。用户第一眼应当理解：
 
 1. 先选择一个接入组。
 2. 为自己创建这个组的 API key。
@@ -94,7 +95,7 @@
 推荐布局可以是当前两栏结构的演进：
 
 - 次级栏继续显示 provider 列表和当前 provider 下的 groups。
-- 主内容区不再显示 checklist stepper，而是显示当前选中 group 的主流程卡片。
+- 主内容区显示当前选中 group 的三步主流程卡片；stepper 的 Current Step 与当前可见面板始终一致，step title 提供可达步骤的回看入口，不承担唯一的前进动作。
 
 页面中不再出现“研发路径”或“非研发路径”按钮。用户不需要先声明身份，只需要沿着当前 group 完成接入动作。
 
@@ -108,6 +109,12 @@
 4. `test_success`
 5. `test_failed`
 
+业务状态与当前显示步骤分开维护：
+
+- 业务状态只决定哪些 step title 可达，不决定 stepper 的 Current Step 或高亮。
+- 当前显示步骤不会根据 key/test 完成事实自动前进；页面初始化和 provider/group 切换将其重置，主按钮等显式动作负责向后推进。
+- 打开页面或切换 provider/group 时始终显示第 1 步，即使当前 group 已有 key 或曾经完成过测试。
+
 各状态的页面行为：
 
 #### `no_group_selected`
@@ -118,39 +125,44 @@
 
 #### `group_selected_without_key`
 
-- 主按钮显示 `创建我的 API Key`。
+- 主按钮显示 `创建 API Key 并继续`。
 - 展示当前 group 的用途说明、平台、服务入口等必要上下文。
 - Key 显示区保留空态说明。
 - `连接测试` 和 `配置方式` 不展示。
+- 只有创建成功且请求仍属于当前 provider/group 时才进入第 2 步；失败或过期响应留在第 1 步。
 
 #### `key_ready_without_test`
 
 - API key reveal/copy/regenerate 仍可用，但退居辅助位置。
-- `配置方式` 立即可见。
+- 第 1 步显示 `下一步：连接测试`，用户点击后才进入第 2 步。
+- `配置方式` step title 在 key 可用后即可到达，因此连接测试不是配置门槛。
 - `运行连接测试` 仍然是推荐动作，但不再是显示配置方式的门槛。
 
 #### `test_success`
 
 - `连接测试` 显示最近一次成功状态。
-- `手动配置`、`自动配置`、`CC Switch 配置` 继续可见。
+- 成功结果继续停留在第 2 步，并显示 `下一步：配置工具`；点击后才进入第 3 步。
+- `手动配置`、`自动配置`、`CC Switch 配置` 仍可通过已可达的第 3 步回看。
 - 页面不显示“已全部完成”；这里只表示“连接已验证，可以继续配置工具”。
 
 #### `test_failed`
 
 - 保持当前 group 和当前 key 可见。
-- 显示失败结果与重试动作。
-- `配置方式` 继续可见，因为用户仍然可能需要先走手动或自动配置，再回头重试。
+- 第 2 步保留失败结果，并把主测试动作显示为 `重试连接测试`。
+- 第 3 步仍然可达，因为用户可能需要先配置工具，再回头重试。
 
 切换 provider 或 group 时：
 
 - 清空当前测试结果。
 - 清空当前“已展开的配置方式”视图。
 - 保留该 group 已存在的 key 状态。
+- 当前显示步骤回到第 1 步，不根据已有 key 自动跳转。
+- 使在途 credential 和 test 请求失效，旧响应不得写入或推进新选择。
 
 重新生成 key 时：
 
 - 当前测试结果必须失效。
-- `配置方式` 不隐藏，但页面应明确提示“建议重新运行连接测试”。
+- 当前显示步骤保留在第 2 步，`配置方式` 仍然可达。
 
 ### 4. Access Group As The First-Class Object
 
@@ -350,13 +362,14 @@ ccswitch://v1/import?resource=provider&app=gemini&name=Relay%20Main%20%2F%20Gene
 - `user.setupAudienceLabel`
 - `user.setupAudienceDeveloper`
 - `user.setupAudienceNonDeveloper`
-- 所有“完成接入”“我是研发 / 我是非研发”导向文案
+- 把全局 onboarding 描述成“已全部完成”的文案，以及所有“我是研发 / 我是非研发”导向文案
 
 需要新增或重写为新主叙事的文案：
 
-- `创建 / 管理我的 API Key`
-- `下一步：运行连接测试`
-- `连接成功后选择配置方式`
+- `创建 API Key 并继续`
+- `下一步：连接测试`
+- `运行连接测试` / `重试连接测试`
+- `下一步：配置工具`
 - `手动配置`
 - `自动配置`
 - `CC Switch 配置`
@@ -368,12 +381,15 @@ ccswitch://v1/import?resource=provider&app=gemini&name=Relay%20Main%20%2F%20Gene
 `frontend/src/__tests__/user-view.test.ts` 需要从“开发者/非开发者切换 + checklist”改为：
 
 1. 没有 group 时不展示配置方式。
-2. 选中 group 且无 key 时，主动作是 `创建我的 API Key`。
-3. 创建 key 后，`手动配置 / 自动配置 / CC Switch 配置` 即可见。
-4. `运行连接测试` 仍然保留为推荐动作，但不是配置方式显示门槛。
-5. 切换 group 或 regenerate key 会重置测试成功态，但不会强制隐藏配置方式。
-6. `高级命令参考` 只在 `自动配置` 面板内出现。
-7. `CC Switch` 按钮只为匹配 platform 的 app 展示，并生成对应 deep link。
+2. 初始加载和切换 provider/group 始终显示第 1 步，已有 key 不触发自动跳转。
+3. 选中 group 且无 key 时，主动作是 `创建 API Key 并继续`，只在成功后进入第 2 步。
+4. 已有 key 时，第 1 步通过 `下一步：连接测试` 进入第 2 步。
+5. 测试成功留在第 2 步并显示 `下一步：配置工具`；测试失败留在第 2 步并显示重试动作。
+6. step title 是可聚焦的回看入口，但所有正向路径都可通过主按钮完成。
+7. 切换 group 或 regenerate key 会重置测试成功态，过期 credential/test 响应不会推进新选择。
+8. `运行连接测试` 仍然是推荐动作，但不是配置方式的可达门槛。
+9. `高级命令参考` 只在 `自动配置` 面板内出现。
+10. `CC Switch` 按钮只为匹配 platform 的 app 展示，并生成对应 deep link。
 
 `frontend/src/__tests__/user-setup-review.test.ts` 继续验证手动片段和自动配置 helper；新增 `CC Switch` deep link builder 的单元测试。
 
@@ -395,12 +411,14 @@ ccswitch://v1/import?resource=provider&app=gemini&name=Relay%20Main%20%2F%20Gene
 
 `/user` 页面在本轮的 copy 要遵守以下规则：
 
-- 不再以“完成接入”“接入进度”作为标题。
+- 页面 H1 不再使用“完成接入”“接入进度”，也不把局部步骤进度描述成全局完成态。
 - 不再要求用户先声明自己是不是研发。
 - 保留 `接入组` 这个正式名词。
 - 首屏动作必须使用动词：
-  - `创建我的 API Key`
-  - `运行连接测试`
+  - `创建 API Key 并继续`
+  - `下一步：连接测试`
+  - `运行连接测试` / `重试连接测试`
+  - `下一步：配置工具`
   - `手动配置`
   - `自动配置`
   - `CC Switch 配置`
@@ -414,15 +432,18 @@ ccswitch://v1/import?resource=provider&app=gemini&name=Relay%20Main%20%2F%20Gene
 
 1. `/user` 页面不再显示 `我是研发 / 我是非研发` 切换。
 2. `/user` 页面不再以 `接入进度` 或“完成接入”为主标题和主叙事。
-3. 当前选中接入组无 key 时，主动作是 `创建我的 API Key`。
-4. key 创建成功后，主动作默认切换为 `运行连接测试`。
-5. `手动配置 / 自动配置 / CC Switch 配置` 在 API key 可用后出现，连接测试保留为推荐动作但不是显示门槛。
-6. 切换 group 或 regenerate key 会使测试成功态失效，但不会强制隐藏配置方式。
-7. 无接入组时页面会显示明确空态，而不是静默缺内容。
-8. `CC Switch` 使用 `ccswitch://v1/import?resource=provider&app=...` app-specific provider import 协议。
-9. `CC Switch` 第一版不承诺 universal provider import deep link。
-10. 手动配置与自动配置继续遵守当前 `ae-cli` 工具配置合同。
-11. `/user` 现有 provider/group/self-serve/test 的 backend API 合同保持不变。
+3. 打开页面或切换 provider/group 时始终显示第 1 步，不根据已有 key 自动跳转。
+4. 当前选中接入组无 key 时，主动作是 `创建 API Key 并继续`，创建成功才进入第 2 步。
+5. 当前选中接入组已有 key 时，主动作是 `下一步：连接测试`。
+6. 测试成功保留结果并显示 `下一步：配置工具`；测试失败保留结果并显示 `重试连接测试`。
+7. step title 保持可聚焦回看，但不是正向推进的唯一入口。
+8. `手动配置 / 自动配置 / CC Switch 配置` 在 API key 可用后可达，连接测试保留为推荐动作但不是配置门槛。
+9. 切换 group 或 regenerate key 会使测试成功态失效，过期 credential/test 响应不会覆盖或推进当前选择。
+10. 无接入组时页面会显示明确空态，而不是静默缺内容。
+11. `CC Switch` 使用 `ccswitch://v1/import?resource=provider&app=...` app-specific provider import 协议。
+12. `CC Switch` 第一版不承诺 universal provider import deep link。
+13. 手动配置与自动配置继续遵守当前 `ae-cli` 工具配置合同。
+14. `/user` 现有 provider/group/self-serve/test 的 backend API 合同保持不变。
 
 ## External References
 

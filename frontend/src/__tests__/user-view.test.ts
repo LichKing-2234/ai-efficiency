@@ -372,21 +372,22 @@ describe('UserView', () => {
     expect(wrapper.text()).not.toContain('default_model')
   })
 
-  it('keeps Element Plus step titles and lets the step icon switch the viewed step', async () => {
+  it('keeps reachable step titles as keyboard-accessible review navigation', async () => {
     const { wrapper } = await mountUserView()
 
     const stepButtons = [0, 1, 2].map((step) => wrapper.get(`[data-testid="onboarding-step-button-${step}"]`))
     expect(stepButtons.every((button) => button.classes().includes('el-button'))).toBe(true)
+    expect(stepButtons.every((button) => button.element.tagName === 'BUTTON')).toBe(true)
     expect(stepButtons.map((button) => button.text())).toEqual([
       '1. Choose an access group',
       '2. Create API key',
       '3. Configure tools',
     ])
 
-    await wrapper.get('[data-testid="onboarding-step-trigger-0"] .el-step__icon').trigger('click')
-    expect(wrapper.find('[data-testid="onboarding-step-0"]').exists()).toBe(true)
+    await stepButtons[1].trigger('click')
+    expect(wrapper.find('[data-testid="onboarding-step-1"]').exists()).toBe(true)
 
-    await wrapper.get('[data-testid="onboarding-step-trigger-2"] .el-step__icon').trigger('click')
+    await stepButtons[2].trigger('click')
     expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(true)
   })
 
@@ -429,9 +430,69 @@ describe('UserView', () => {
     expect(wrapper.find('[data-testid="onboarding-step-1"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('sk-exi...3456')
 
-    await openOnboardingStep(wrapper, 1)
+    const continueButton = wrapper.get('[data-testid="primary-onboarding-action"]')
+    expect(continueButton.text()).toBe('Next: Connection test')
+    await continueButton.trigger('click')
+
     expect(wrapper.find('[data-testid="onboarding-step-1"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('sk-exi...3456')
+  })
+
+  it('keeps the stepper current marker aligned with the visible onboarding panel', async () => {
+    const { testUserProvider } = await import('@/api/user')
+    ;(testUserProvider as any).mockResolvedValue({
+      data: { data: { success: true, message: 'Connection successful', response: 'pong' } },
+    })
+
+    const { wrapper } = await mountUserView()
+    const currentStep = () => wrapper
+      .findAll('[data-testid^="onboarding-step-trigger-"] .el-step__head')
+      .findIndex((step) => step.classes().includes('is-process'))
+
+    expect(wrapper.find('[data-testid="onboarding-step-0"]').exists()).toBe(true)
+    expect(currentStep()).toBe(0)
+
+    await wrapper.get('[data-testid="primary-onboarding-action"]').trigger('click')
+    expect(wrapper.find('[data-testid="onboarding-step-1"]').exists()).toBe(true)
+    expect(currentStep()).toBe(1)
+
+    await selectProviderModel(wrapper, 'Claude Sonnet 4.6', 'claude-sonnet-4-6')
+    await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="onboarding-step-1"]').exists()).toBe(true)
+    expect(currentStep()).toBe(1)
+
+    await wrapper.get('[data-testid="onboarding-next-configuration"]').trigger('click')
+    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(true)
+    expect(currentStep()).toBe(2)
+  })
+
+  it('does not mark skipped onboarding steps successful when configuration is opened before testing', async () => {
+    const { wrapper } = await mountUserView()
+
+    await openConfigurationMethods(wrapper)
+
+    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-testid^="onboarding-step-trigger-"] .el-step__head.is-success')).toHaveLength(0)
+  })
+
+  it('does not mark onboarding steps successful after a failed test while reviewing configuration or earlier steps', async () => {
+    const { testUserProvider } = await import('@/api/user')
+    ;(testUserProvider as any).mockRejectedValue({ response: { data: { message: 'Connection failed' } } })
+
+    const { wrapper } = await mountUserView()
+    await openOnboardingStep(wrapper, 1)
+    await selectProviderModel(wrapper, 'Claude Sonnet 4.6', 'claude-sonnet-4-6')
+    await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Connection failed')
+    await openConfigurationMethods(wrapper)
+    expect(wrapper.findAll('[data-testid^="onboarding-step-trigger-"] .el-step__head.is-success')).toHaveLength(0)
+
+    await openOnboardingStep(wrapper, 1)
+    expect(wrapper.find('[data-testid="onboarding-step-1"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-testid^="onboarding-step-trigger-"] .el-step__head.is-success')).toHaveLength(0)
   })
 
   it('keeps the summary and primary action stacked until the wide-content breakpoint', async () => {
@@ -542,18 +603,18 @@ describe('UserView', () => {
     expect(wrapper.text()).not.toContain('relay response')
   })
 
-  it('shows create my api key as the primary action when the selected group has no key', async () => {
+  it('shows create and continue as the primary action when the selected group has no key', async () => {
     const { wrapper } = await mountUserView()
 
     await selectAccessGroup(wrapper, '42')
 
-    expect(wrapper.get('[data-testid="primary-onboarding-action"]').text()).toBe('Create my API key')
+    expect(wrapper.get('[data-testid="primary-onboarding-action"]').text()).toBe('Create API key and continue')
     expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain("I'm a developer")
     expect(wrapper.text()).not.toContain("I'm not a developer")
   })
 
-  it('reveals configuration methods as soon as a key is available', async () => {
+  it('keeps configuration reachable with a key and continues explicitly after a successful test', async () => {
     const { createGroupCredential, testUserProvider } = await import('@/api/user')
     ;(createGroupCredential as any).mockResolvedValue({
       data: { data: { api_key_id: 7, name: 'alice', status: 'active', secret: 'sk-openai' } },
@@ -581,8 +642,12 @@ describe('UserView', () => {
     expect(wrapper.find('[data-testid="onboarding-step-1"]').exists()).toBe(true)
     expect((testUserProvider as any).mock.calls).toHaveLength(1)
     expect(wrapper.text()).toContain('Connection successful')
+    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(false)
 
-    await openConfigurationMethods(wrapper)
+    const continueButton = wrapper.get('[data-testid="onboarding-next-configuration"]')
+    expect(continueButton.text()).toBe('Next: Configure tools')
+    await continueButton.trigger('click')
+
     expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(true)
     await openOnboardingStep(wrapper, 1)
     await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
@@ -952,6 +1017,31 @@ describe('UserView', () => {
     expect(wrapper.find('[data-testid="primary-onboarding-action"]').exists()).toBe(false)
   })
 
+  it('ignores a key creation result after the user switches access groups', async () => {
+    const { createGroupCredential } = await import('@/api/user')
+    const pendingCreate = deferred<any>()
+    ;(createGroupCredential as any).mockReturnValue(pendingCreate.promise)
+
+    const { wrapper } = await mountUserView()
+    await selectAccessGroup(wrapper, '42')
+    await wrapper.get('[data-testid="primary-onboarding-action"]').trigger('click')
+    await flushPromises()
+
+    await selectAccessGroup(wrapper, '43')
+    pendingCreate.resolve({
+      data: { data: { api_key_id: 7, name: 'alice', status: 'active', secret: 'sk-stale' } },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="onboarding-step-0"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="onboarding-step-1"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('sk-stale')
+
+    await wrapper.get('[data-testid="primary-onboarding-action"]').trigger('click')
+    expect(wrapper.text()).toContain('sk-exi...3456')
+    expect(wrapper.text()).not.toContain('sk-stale')
+  })
+
   it('retains separate in-memory secrets per provider and group', async () => {
     const { createGroupCredential, regenerateGroupCredential } = await import('@/api/user')
     ;(createGroupCredential as any).mockResolvedValue({
@@ -1053,6 +1143,8 @@ describe('UserView', () => {
     const message = wrapper.get('[data-testid="user-provider-test-message"]')
     expect(message.text()).toBe(diagnostic)
     expect(message.classes()).toEqual(expect.arrayContaining(['max-h-64', 'overflow-y-auto', 'break-all', 'whitespace-pre-wrap']))
+    expect(wrapper.find('[data-testid="onboarding-step-1"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="user-provider-test-run"]').text()).toBe('Retry connection test')
   })
 
   it('defaults OpenAI compatibility tests to the recommended protocol', async () => {
@@ -1099,6 +1191,45 @@ describe('UserView', () => {
       for (const expected of testCase.expected) expect(text).toContain(expected)
       for (const excluded of testCase.excluded) expect(text).not.toContain(excluded)
     }
+  })
+
+  it.each([
+    {
+      context: 'provider',
+      switchContext: async (wrapper: any) => {
+        await wrapper.get('[data-testid="provider-1"]').trigger('click')
+        await flushPromises()
+      },
+    },
+    {
+      context: 'access group',
+      switchContext: async (wrapper: any) => {
+        await openOnboardingStep(wrapper, 0)
+        await wrapper.get('[data-testid="group-44"]').trigger('click')
+        await flushPromises()
+      },
+    },
+  ])('ignores a connection result after the user switches $context', async ({ switchContext }) => {
+    const { testUserProvider } = await import('@/api/user')
+    const pendingTest = deferred<any>()
+    ;(testUserProvider as any).mockReturnValue(pendingTest.promise)
+
+    const { wrapper } = await mountUserView()
+    await wrapper.get('[data-testid="primary-onboarding-action"]').trigger('click')
+    await selectProviderModel(wrapper, 'Claude Sonnet 4.6', 'claude-sonnet-4-6')
+    await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
+    await flushPromises()
+
+    await switchContext(wrapper)
+    pendingTest.resolve({
+      data: { data: { success: true, message: 'Stale connection result', response: 'stale' } },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="onboarding-step-0"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="onboarding-next-configuration"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Stale connection result')
+    expect(wrapper.get('[data-testid="onboarding-step-trigger-0"] .el-step__head').classes()).toContain('is-process')
   })
 
   it('invalidates changed test context and ignores out-of-order results', async () => {
