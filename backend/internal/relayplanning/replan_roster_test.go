@@ -14,8 +14,8 @@ func TestReviewReplanRosterKeepsUnavailableSavedMemberAndBlocksExecution(t *test
 			2: 101,
 		},
 		Members: []replanRosterMember{
-			{UserID: 1, Assignable: true, IdentityAvailable: true, RangeCost: 12.5},
-			{UserID: 2},
+			{UserID: 1, Assignable: true, RangeCost: 12.5},
+			{UserID: 2, UnavailableReason: replanRosterUnavailableIdentity},
 		},
 		UnmanagedCosts: map[int64]float64{101: 3.5},
 	})
@@ -31,7 +31,7 @@ func TestReviewReplanRosterKeepsUnavailableSavedMemberAndBlocksExecution(t *test
 	if got := result.Targets[0].TotalCost; got != 16 {
 		t.Fatalf("saved roster total cost = %v, want 16", got)
 	}
-	wantBlockers := []replanRosterBlocker{{UserID: 2, Reason: replanRosterBlockerUnavailableIdentity}}
+	wantBlockers := []replanRosterBlocker{{UserID: 2, Reason: replanRosterUnavailableIdentity}}
 	if !reflect.DeepEqual(result.Blockers, wantBlockers) {
 		t.Fatalf("blockers = %v, want %v", result.Blockers, wantBlockers)
 	}
@@ -45,9 +45,9 @@ func TestReviewReplanRosterAppliesExplicitEditsWithoutDroppingUnavailableSavedMe
 			2: 101,
 		},
 		Members: []replanRosterMember{
-			{UserID: 1, Assignable: true, IdentityAvailable: true, RangeCost: 10},
-			{UserID: 2},
-			{UserID: 3, Assignable: true, IdentityAvailable: true, RangeCost: 5},
+			{UserID: 1, Assignable: true, RangeCost: 10},
+			{UserID: 2, UnavailableReason: replanRosterUnavailableIdentity},
+			{UserID: 3, Assignable: true, RangeCost: 5},
 		},
 		HasReview: true,
 		ReviewedTargets: []replanRosterTargetReview{
@@ -67,7 +67,7 @@ func TestReviewReplanRosterAppliesExplicitEditsWithoutDroppingUnavailableSavedMe
 	if result.Targets[0].TotalCost != 0 || result.Targets[1].TotalCost != 15 {
 		t.Fatalf("target costs = %v / %v, want 0 / 15", result.Targets[0].TotalCost, result.Targets[1].TotalCost)
 	}
-	wantBlockers := []replanRosterBlocker{{UserID: 2, Reason: replanRosterBlockerUnavailableIdentity}}
+	wantBlockers := []replanRosterBlocker{{UserID: 2, Reason: replanRosterUnavailableIdentity}}
 	if !reflect.DeepEqual(result.Blockers, wantBlockers) {
 		t.Fatalf("blockers = %v, want %v", result.Blockers, wantBlockers)
 	}
@@ -81,8 +81,8 @@ func TestReviewReplanRosterRemovesOnlyAvailableSavedMembers(t *testing.T) {
 			2: 101,
 		},
 		Members: []replanRosterMember{
-			{UserID: 1, Assignable: true, IdentityAvailable: true},
-			{UserID: 2},
+			{UserID: 1, Assignable: true},
+			{UserID: 2, UnavailableReason: replanRosterUnavailableIdentity},
 		},
 		RemovedUserIDs: []int{1, 2},
 	})
@@ -92,7 +92,7 @@ func TestReviewReplanRosterRemovesOnlyAvailableSavedMembers(t *testing.T) {
 	if got := result.Targets[0].UserIDs; !reflect.DeepEqual(got, []int{2}) {
 		t.Fatalf("saved roster after removals = %v, want unavailable member [2]", got)
 	}
-	wantBlockers := []replanRosterBlocker{{UserID: 2, Reason: replanRosterBlockerUnavailableIdentity}}
+	wantBlockers := []replanRosterBlocker{{UserID: 2, Reason: replanRosterUnavailableIdentity}}
 	if !reflect.DeepEqual(result.Blockers, wantBlockers) {
 		t.Fatalf("blockers = %v, want %v", result.Blockers, wantBlockers)
 	}
@@ -107,7 +107,7 @@ func TestReviewReplanRosterRejectsInvalidExplicitEdits(t *testing.T) {
 	}{
 		{
 			name:    "duplicate member",
-			members: []replanRosterMember{{UserID: 1, Assignable: true, IdentityAvailable: true}},
+			members: []replanRosterMember{{UserID: 1, Assignable: true}},
 			reviewed: []replanRosterTargetReview{
 				{Index: 0, UserIDs: []int{1}},
 				{Index: 1, UserIDs: []int{1}},
@@ -122,7 +122,7 @@ func TestReviewReplanRosterRejectsInvalidExplicitEdits(t *testing.T) {
 		},
 		{
 			name:     "unavailable new member",
-			members:  []replanRosterMember{{UserID: 9}},
+			members:  []replanRosterMember{{UserID: 9, UnavailableReason: replanRosterUnavailableIdentity}},
 			reviewed: []replanRosterTargetReview{{Index: 0, UserIDs: []int{9}}, {Index: 1, UserIDs: []int{}}},
 			wantErr:  "user 9 cannot be added to a target group",
 		},
@@ -146,11 +146,10 @@ func TestReviewReplanRosterCountsObservedTargetOccupancy(t *testing.T) {
 	result, err := reviewReplanRoster(replanRosterInput{
 		TargetGroupIDs: []int64{101},
 		Members: []replanRosterMember{{
-			UserID:            3,
-			Assignable:        true,
-			IdentityAvailable: true,
-			RangeCost:         5,
-			CurrentGroupIDs:   []int64{101},
+			UserID:          3,
+			Assignable:      true,
+			RangeCost:       5,
+			CurrentGroupIDs: []int64{101},
 		}},
 		UnmanagedCosts: map[int64]float64{101: 3},
 	})
@@ -175,7 +174,7 @@ func TestReviewReplanRosterKeepsMissingSavedMemberDuringReview(t *testing.T) {
 	if got := result.Targets[0].UserIDs; !reflect.DeepEqual(got, []int{7}) {
 		t.Fatalf("saved roster = %v, want missing saved member [7]", got)
 	}
-	wantBlockers := []replanRosterBlocker{{UserID: 7, Reason: replanRosterBlockerUnavailableIdentity}}
+	wantBlockers := []replanRosterBlocker{{UserID: 7, Reason: replanRosterUnavailableIdentity}}
 	if !reflect.DeepEqual(result.Blockers, wantBlockers) {
 		t.Fatalf("blockers = %v, want %v", result.Blockers, wantBlockers)
 	}

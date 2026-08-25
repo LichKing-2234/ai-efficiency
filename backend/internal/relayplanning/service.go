@@ -199,7 +199,7 @@ type Candidate struct {
 	relationshipAPIKeys       []relationshipAPIKeyFact
 	relationshipGroupErr      error
 	relationshipKeyErr        error
-	relayIdentityAvailable    bool
+	replanUnavailableReason   replanRosterUnavailableReason
 }
 
 type Assignment struct {
@@ -962,7 +962,7 @@ func replanRosterInputFromPlan(mapping *ent.RelayGroupMapping, candidates []Cand
 		members = append(members, replanRosterMember{
 			UserID:            candidate.UserID,
 			Assignable:        candidate.CanAdd,
-			IdentityAvailable: candidate.relayIdentityAvailable,
+			UnavailableReason: candidate.replanUnavailableReason,
 			RangeCost:         candidate.RangeCost,
 			CurrentGroupIDs:   append([]int64(nil), candidate.CurrentGroupIDs...),
 		})
@@ -1038,10 +1038,19 @@ func replanRosterDifferences(blockers []replanRosterBlocker) []string {
 
 func replanRosterBlockerMessages(blocker replanRosterBlocker) (warning, difference string) {
 	switch blocker.Reason {
-	case replanRosterBlockerUnavailableIdentity:
-		return fmt.Sprintf("user %d has no relay mapping", blocker.UserID), "Relay user mappings changed or are no longer available"
+	case replanRosterUnavailableIdentity:
+		return fmt.Sprintf("user %d has no relay mapping", blocker.UserID), replanRosterUnavailableDifference(blocker.Reason)
 	default:
 		return "", ""
+	}
+}
+
+func replanRosterUnavailableDifference(reason replanRosterUnavailableReason) string {
+	switch reason {
+	case replanRosterUnavailableSubscription:
+		return "subscription relationships changed"
+	default:
+		return "Relay user mappings changed or are no longer available"
 	}
 }
 
@@ -1834,8 +1843,11 @@ func stalePlanFromPreviewError(expected string, previewErr error) *StalePlanErro
 		return nil
 	}
 	difference := "reviewed Relay relationship facts changed or are no longer available"
+	var rosterErr *replanRosterMemberError
 	var candidateErr *assignmentCandidateError
-	if errors.As(previewErr, &candidateErr) {
+	if errors.As(previewErr, &rosterErr) {
+		difference = replanRosterUnavailableDifference(rosterErr.Reason)
+	} else if errors.As(previewErr, &candidateErr) {
 		difference = candidateErr.Difference
 	} else {
 		message := strings.ToLower(previewErr.Error())
@@ -4041,7 +4053,7 @@ func (s *Service) buildCandidates(ctx context.Context, p relay.Provider, request
 }
 
 func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestFacts *planningRequestFacts, u *ent.User, source relay.Group, platform, departmentID string, globalStats map[int64]relay.TeamUserUsageStats, ranks map[int64]int) Candidate {
-	candidate := Candidate{UserID: u.ID, Username: u.Username, Email: u.Email, Eligible: false, Selected: true}
+	candidate := Candidate{UserID: u.ID, Username: u.Username, Email: u.Email, Eligible: false, Selected: true, replanUnavailableReason: replanRosterUnavailableIdentity}
 	if u.RelayUserID == nil || *u.RelayUserID <= 0 {
 		candidate.Warnings = append(candidate.Warnings, fmt.Sprintf("user %d has no relay mapping", u.ID))
 		return candidate
@@ -4068,7 +4080,7 @@ func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestF
 		candidate.Warnings = append(candidate.Warnings, "relay mapping is not valid for the selected provider")
 		return candidate
 	}
-	candidate.relayIdentityAvailable = true
+	candidate.replanUnavailableReason = 0
 	stat, usageKnown := globalStats[candidate.RelayUserID]
 	candidate.UsageKnown = usageKnown
 	candidate.RangeCost = usageCost(stat)
@@ -4079,6 +4091,7 @@ func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestF
 	candidate.relationshipGroupErr = facts.groupErr
 	candidate.relationshipKeyErr = facts.keyErr
 	if facts.groupErr != nil {
+		candidate.replanUnavailableReason = replanRosterUnavailableSubscription
 		candidate.Warnings = append(candidate.Warnings, fmt.Sprintf("relay groups unavailable: %v", facts.groupErr))
 		return candidate
 	}

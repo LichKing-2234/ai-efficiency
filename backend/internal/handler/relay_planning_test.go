@@ -75,6 +75,31 @@ type relayPlanningSearchProvider struct {
 	renewalDirectExtends   atomic.Int64
 }
 
+type relayPlanningFallbackProvider struct {
+	relay.Provider
+	backing *relayPlanningSearchProvider
+}
+
+func (p *relayPlanningFallbackProvider) ListPlatformGroups(ctx context.Context) ([]relay.Group, error) {
+	return p.backing.ListPlatformGroups(ctx)
+}
+
+func (p *relayPlanningFallbackProvider) ListAccountsForPlatform(ctx context.Context, platform string) ([]relay.Account, error) {
+	return p.backing.ListAccountsForPlatform(ctx, platform)
+}
+
+func (p *relayPlanningFallbackProvider) ListUserSubscriptions(ctx context.Context, userID int64) ([]relay.UserSubscription, error) {
+	return p.backing.ListUserSubscriptions(ctx, userID)
+}
+
+func (p *relayPlanningFallbackProvider) ListUsersWithActiveSubscriptions(ctx context.Context) ([]relay.User, map[int64][]int64, error) {
+	return p.backing.ListUsersWithActiveSubscriptions(ctx)
+}
+
+func (p *relayPlanningFallbackProvider) GetBatchUserUsageStats(ctx context.Context, userIDs []int64, params relay.TeamUsageSummaryParams) (map[int64]relay.TeamUserUsageStats, error) {
+	return p.backing.GetBatchUserUsageStats(ctx, userIDs, params)
+}
+
 type relayPlanningRenewalWrite struct {
 	Action       string
 	UserID       int64
@@ -3092,6 +3117,72 @@ func TestRelayPlanningPreviewRejectsStaleProviderIdentity(t *testing.T) {
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422 for stale Provider identity, body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestRelayPlanningReplanPreservesSubscriptionStaleCategory(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().SetName("relay-planning-subscription-stale-test").SetDisplayName("Relay Planning Subscription Stale Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-admin-key").SetEnabled(true).SaveX(ctx)
+	source, run := createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
+	alice := createRelayPlanningDirectoryUser(t, ctx, client, source, run, "dept-alpha", "alice", "alice@example.com", 42)
+	mapping := client.RelayGroupMapping.Create().
+		SetProviderID(providerConfig.ID).SetDepartmentExternalID("dept-alpha").SetDepartmentName("Department Alpha").SetPlatform("openai").
+		SetTemplateGroupID(10).SetSourceGroupID(20).SetGroupIds([]int64{101}).
+		SetMemberAssignments(map[string]int64{fmt.Sprint(alice.ID): 101}).SetMemberSources(map[string]int64{fmt.Sprint(alice.ID): 20}).
+		SetAccountManagementInitialized(true).SetWeeklyCostTarget(2500).SaveX(ctx)
+	backing := &relayPlanningSearchProvider{
+		users:                 map[int64]*relay.User{42: {ID: 42, Username: "alice", Email: alice.Email}},
+		directoryUsers:        []relay.User{{ID: 42, Username: "alice", Email: alice.Email}},
+		activeSubscriptionIDs: map[int64][]int64{42: {101}},
+		groups:                []relay.Group{{ID: 10, Name: "Group Alpha", Platform: "openai"}, {ID: 20, Name: "Group Source", Platform: "openai"}, {ID: 101, Name: "Group Target", Platform: "openai"}},
+		subscriptions:         map[int64][]relay.UserSubscription{42: {{UserID: 42, GroupID: 101, Status: "active"}}},
+		keys:                  map[int64][]relay.APIKey{42: {}},
+	}
+	provider := &relayPlanningFallbackProvider{Provider: backing, backing: backing}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	router := gin.New()
+	handler := NewRelayPlanningHandler(service)
+	path := fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID)
+	router.POST("/admin/relay-planning/mappings/:id/replan", handler.Replan)
+	router.POST("/admin/relay-planning/mappings/:id/replan/execute", handler.ReplanExecute)
+	request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("initial Replan status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	var initial struct {
+		Data relayplanning.Plan `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &initial); err != nil {
+		t.Fatalf("decode initial Replan response: %v", err)
+	}
+	backing.subscriptionError = errors.New("synthetic subscription read failure")
+	backing.allowedGroupsError = errors.New("synthetic allowed-group read failure")
+	executePayload := fmt.Sprintf(`{"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d]}],"expected_relationship_fingerprint":%q,"operation_key":"subscription-stale-1"}`, alice.ID, alice.ID, initial.Data.RelationshipFingerprint)
+	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(executePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("subscription stale status = %d, want 409, body=%s", response.Code, response.Body.String())
+	}
+	var staleBody struct {
+		Details struct {
+			ErrorCode   string   `json:"error_code"`
+			Differences []string `json:"differences"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &staleBody); err != nil {
+		t.Fatalf("decode subscription stale response: %v", err)
+	}
+	if staleBody.Details.ErrorCode != "stale_relay_plan" || !containsRelayPlanningWarning(staleBody.Details.Differences, "subscription relationships changed") {
+		t.Fatalf("subscription stale details = %+v, want safe subscription category", staleBody.Details)
+	}
+	if len(backing.events) != 0 || backing.accountUpdates != 0 {
+		t.Fatalf("Relay writes = events:%v account_updates:%d, want none", backing.events, backing.accountUpdates)
 	}
 }
 
