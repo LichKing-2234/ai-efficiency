@@ -237,7 +237,7 @@ type Plan struct {
 	RelationshipFingerprint string                `json:"relationship_fingerprint"`
 	AccountsReviewed        bool                  `json:"accounts_reviewed"`
 	relationshipSnapshot    relationshipSnapshot
-	executionBlockers       []string
+	executionBlockers       []replanRosterBlocker
 }
 
 type TargetChangeSummary struct {
@@ -764,7 +764,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	}
 	assignments := allocate(eligible, count)
 	var unmanagedMembers []UnmanagedMember
-	var replanBlockers []string
+	var replanBlockers []replanRosterBlocker
 	if mapping != nil {
 		groups, err = includePendingCreationGroups(ctx, p, groups, mapping.OperationState, req.Platform)
 		if err != nil {
@@ -779,9 +779,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 			return nil, fmt.Errorf("validate relay planning assignments: %w", rosterErr)
 		}
 		assignments = assignmentsFromReplanRoster(roster, req.Assignments)
-		if len(roster.BlockedUserIDs) > 0 {
-			replanBlockers = []string{"Relay user mappings changed or are no longer available"}
-		}
+		replanBlockers = append(replanBlockers, roster.Blockers...)
 		if req.Assignments == nil {
 			restoreRenameRetries(mapping.OperationState, assignments)
 		}
@@ -841,6 +839,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	for _, candidate := range candidates {
 		warnings = append(warnings, candidate.Warnings...)
 	}
+	warnings = append(warnings, replanRosterWarnings(replanBlockers)...)
 	plan := &Plan{
 		ProviderID: req.ProviderID, DepartmentID: req.DepartmentID, Platform: req.Platform,
 		TemplateGroupID: template.ID, TemplateGroupName: template.Name,
@@ -1005,6 +1004,28 @@ func assignmentsFromReplanRoster(roster replanRosterResult, reviewed []Assignmen
 		assignments[target.Index].TotalCost = target.TotalCost
 	}
 	return assignments
+}
+
+func replanRosterWarnings(blockers []replanRosterBlocker) []string {
+	warnings := make([]string, 0, len(blockers))
+	for _, blocker := range blockers {
+		switch blocker.Reason {
+		case replanRosterBlockerUnavailableIdentity:
+			warnings = append(warnings, fmt.Sprintf("user %d has no relay mapping", blocker.UserID))
+		}
+	}
+	return warnings
+}
+
+func replanRosterDifferences(blockers []replanRosterBlocker) []string {
+	differences := make([]string, 0, len(blockers))
+	for _, blocker := range blockers {
+		switch blocker.Reason {
+		case replanRosterBlockerUnavailableIdentity:
+			differences = append(differences, "Relay user mappings changed or are no longer available")
+		}
+	}
+	return uniqueStrings(differences)
 }
 
 func addUnmanagedCapacity(assignments []Assignment, unmanaged []UnmanagedMember) {
@@ -3149,7 +3170,7 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 			ExpectedFingerprint: req.ExpectedRelationshipFingerprint,
 			CurrentFingerprint:  plan.RelationshipFingerprint,
 			RefreshedPlan:       plan,
-			Differences:         append([]string(nil), plan.executionBlockers...),
+			Differences:         replanRosterDifferences(plan.executionBlockers),
 		}
 	}
 	p, err := s.resolver.Resolve(ctx, mapping.ProviderID)

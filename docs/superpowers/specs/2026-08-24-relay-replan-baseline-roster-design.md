@@ -44,9 +44,10 @@ Opening Replan alone produces no member mutation and no proposed member delta.
 ## Backend Contract
 
 For an existing-mapping Replan request without reviewed assignments, returned
-assignments contain only valid members restored from the saved mapping and
-their saved target Group IDs. Remaining target capacity never pulls in eligible
-source or department candidates.
+assignments contain every saved managed member and the saved target Group ID.
+Members with an unavailable current identity remain visible but make the plan
+non-executable. Remaining target capacity never pulls in eligible source or
+department candidates.
 
 Candidate loading still includes saved members outside the mapping's current
 department so the complete Replan Baseline can be reconstructed. Other

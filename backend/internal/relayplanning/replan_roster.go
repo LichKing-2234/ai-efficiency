@@ -35,9 +35,18 @@ type replanRosterTargetReview struct {
 	UserIDs []int
 }
 
+type replanRosterBlockerReason uint8
+
+const replanRosterBlockerUnavailableIdentity replanRosterBlockerReason = iota + 1
+
+type replanRosterBlocker struct {
+	UserID int
+	Reason replanRosterBlockerReason
+}
+
 type replanRosterResult struct {
-	Targets        []replanRosterTarget
-	BlockedUserIDs []int
+	Targets  []replanRosterTarget
+	Blockers []replanRosterBlocker
 }
 
 func reviewReplanRoster(input replanRosterInput) (replanRosterResult, error) {
@@ -72,14 +81,17 @@ func reviewReplanRoster(input replanRosterInput) (replanRosterResult, error) {
 			}
 			seenTargets[reviewed.Index] = struct{}{}
 			for _, userID := range reviewed.UserIDs {
-				member, found := members[userID]
-				if !found {
-					return replanRosterResult{}, &assignmentCandidateError{UserID: userID, Difference: "Relay user mappings changed"}
-				}
 				if _, exists := seenUsers[userID]; exists {
 					return replanRosterResult{}, fmt.Errorf("user %d is assigned more than once", userID)
 				}
 				seenUsers[userID] = struct{}{}
+				member, found := members[userID]
+				if !found {
+					if savedGroupID, saved := input.SavedAssignments[userID]; saved && savedGroupID > 0 {
+						continue
+					}
+					return replanRosterResult{}, &assignmentCandidateError{UserID: userID, Difference: "Relay user mappings changed"}
+				}
 				if !member.Assignable {
 					if savedGroupID, saved := input.SavedAssignments[userID]; saved && !member.IdentityAvailable && savedGroupID > 0 {
 						continue
@@ -113,15 +125,15 @@ func reviewReplanRoster(input replanRosterInput) (replanRosterResult, error) {
 			if found {
 				result.Targets[targetIndex].TotalCost += member.RangeCost
 			}
-			result.BlockedUserIDs = append(result.BlockedUserIDs, userID)
+			result.Blockers = append(result.Blockers, replanRosterBlocker{UserID: userID, Reason: replanRosterBlockerUnavailableIdentity})
 		} else if !input.HasReview {
 			result.Targets[targetIndex].UserIDs = append(result.Targets[targetIndex].UserIDs, userID)
 			result.Targets[targetIndex].TotalCost += member.RangeCost
 		}
 	}
-	blocked := make(map[int]struct{}, len(result.BlockedUserIDs))
-	for _, userID := range result.BlockedUserIDs {
-		blocked[userID] = struct{}{}
+	blocked := make(map[int]struct{}, len(result.Blockers))
+	for _, blocker := range result.Blockers {
+		blocked[blocker.UserID] = struct{}{}
 	}
 	removed := make(map[int]struct{}, len(input.RemovedUserIDs))
 	for _, userID := range input.RemovedUserIDs {

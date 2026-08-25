@@ -2977,6 +2977,32 @@ func TestRelayPlanningReplanKeepsUnavailableSavedMemberAndBlocksMixedConfirm(t *
 	if len(provider.events) != 0 || len(provider.assigned) != 0 || len(provider.removed) != 0 || len(provider.bound) != 0 || provider.accountUpdates != 0 {
 		t.Fatalf("Relay writes = events:%v assigned:%v removed:%v bound:%v account_updates:%d, want none", provider.events, provider.assigned, provider.removed, provider.bound, provider.accountUpdates)
 	}
+
+	client.User.DeleteOneID(bob.ID).ExecX(ctx)
+	missingLocal, status, body := preview(reviewPayload)
+	if status != http.StatusOK {
+		t.Fatalf("missing-local Replan status = %d, want 200, body=%s", status, body)
+	}
+	if len(missingLocal.Assignments) != 1 || !reflect.DeepEqual(missingLocal.Assignments[0].UserIDs, []int{alice.ID, bob.ID}) {
+		t.Fatalf("missing-local assignments = %+v, want saved member retained", missingLocal.Assignments)
+	}
+	if !containsRelayPlanningWarning(missingLocal.Warnings, fmt.Sprintf("user %d has no relay mapping", bob.ID)) {
+		t.Fatalf("missing-local warnings = %v, want safe unavailable identity warning", missingLocal.Warnings)
+	}
+	executePayload = fmt.Sprintf(`{"selected_user_ids":[%d,%d],"assignments":[{"index":0,"user_ids":[%d,%d]}],"expected_relationship_fingerprint":%q,"operation_key":"blocked-missing-local-member-1"}`, alice.ID, bob.ID, alice.ID, bob.ID, missingLocal.RelationshipFingerprint)
+	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(executePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("missing-local confirm status = %d, want 409, body=%s", response.Code, response.Body.String())
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &staleBody); err != nil {
+		t.Fatalf("decode missing-local confirm response: %v", err)
+	}
+	if len(staleBody.Details.RefreshedPlan.Assignments) != 1 || !reflect.DeepEqual(staleBody.Details.RefreshedPlan.Assignments[0].UserIDs, []int{alice.ID, bob.ID}) {
+		t.Fatalf("missing-local refreshed assignments = %+v, want complete reviewed roster", staleBody.Details.RefreshedPlan.Assignments)
+	}
 }
 
 func TestRelayPlanningPreviewRejectsStaleProviderIdentity(t *testing.T) {
