@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -2883,6 +2884,98 @@ func TestRelayPlanningReplanIncludesSavedExternalMember(t *testing.T) {
 	}
 	if len(provider.assigned) != 0 {
 		t.Fatalf("unchanged replan assignments = %v, want existing subscription untouched", provider.assigned)
+	}
+}
+
+func TestRelayPlanningReplanKeepsUnavailableSavedMemberAndBlocksMixedConfirm(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().SetName("relay-planning-unavailable-member-test").SetDisplayName("Relay Planning Unavailable Member Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-admin-key").SetEnabled(true).SaveX(ctx)
+	source, run := createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
+	alice := createRelayPlanningDirectoryUser(t, ctx, client, source, run, "dept-alpha", "alice", "alice@example.com", 42)
+	bob := client.User.Create().SetUsername("bob").SetEmail("bob@example.org").SetAuthSource("ldap").SaveX(ctx)
+	mapping := client.RelayGroupMapping.Create().
+		SetProviderID(providerConfig.ID).SetDepartmentExternalID("dept-alpha").SetDepartmentName("Department Alpha").SetPlatform("openai").
+		SetTemplateGroupID(10).SetSourceGroupID(20).SetGroupIds([]int64{101}).
+		SetMemberAssignments(map[string]int64{fmt.Sprint(bob.ID): 101}).SetMemberSources(map[string]int64{fmt.Sprint(bob.ID): 20}).
+		SetAccountManagementInitialized(true).SetWeeklyCostTarget(2500).SaveX(ctx)
+	provider := &relayPlanningSearchProvider{
+		users:             map[int64]*relay.User{42: {ID: 42, Username: "alice", Email: alice.Email}},
+		groups:            []relay.Group{{ID: 10, Name: "Group Alpha", Platform: "openai"}, {ID: 20, Name: "Group Source", Platform: "openai"}, {ID: 101, Name: "Group Target", Platform: "openai"}},
+		subscriptions:     map[int64][]relay.UserSubscription{42: {{UserID: 42, GroupID: 20, Status: "active"}}},
+		keys:              map[int64][]relay.APIKey{42: {}},
+		relationshipPages: [][]int64{{42}},
+	}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	router := gin.New()
+	handler := NewRelayPlanningHandler(service)
+	path := fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID)
+	router.POST("/admin/relay-planning/mappings/:id/replan", handler.Replan)
+	router.POST("/admin/relay-planning/mappings/:id/replan/execute", handler.ReplanExecute)
+
+	preview := func(payload string) (relayplanning.Plan, int, string) {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(payload))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		var body struct {
+			Data relayplanning.Plan `json:"data"`
+		}
+		if response.Code == http.StatusOK {
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode Replan response: %v", err)
+			}
+		}
+		return body.Data, response.Code, response.Body.String()
+	}
+
+	initial, status, body := preview(`{}`)
+	if status != http.StatusOK {
+		t.Fatalf("initial Replan status = %d, want 200, body=%s", status, body)
+	}
+	if len(initial.Assignments) != 1 || !reflect.DeepEqual(initial.Assignments[0].UserIDs, []int{bob.ID}) {
+		t.Fatalf("initial assignments = %+v, want unavailable saved member %d", initial.Assignments, bob.ID)
+	}
+	if len(initial.Candidates) != 2 || !initial.Candidates[1].Selected || !containsRelayPlanningWarning(initial.Candidates[1].Warnings, "has no relay mapping") {
+		t.Fatalf("unavailable candidate = %+v, want selected saved member with warning", initial.Candidates)
+	}
+
+	reviewPayload := fmt.Sprintf(`{"selected_user_ids":[%d,%d],"assignments":[{"index":0,"user_ids":[%d,%d]}]}`, alice.ID, bob.ID, alice.ID, bob.ID)
+	reviewed, status, body := preview(reviewPayload)
+	if status != http.StatusOK {
+		t.Fatalf("reviewed Replan status = %d, want 200, body=%s", status, body)
+	}
+	if len(reviewed.Assignments) != 1 || !reflect.DeepEqual(reviewed.Assignments[0].UserIDs, []int{alice.ID, bob.ID}) {
+		t.Fatalf("reviewed assignments = %+v, want valid edit plus unavailable saved member", reviewed.Assignments)
+	}
+
+	executePayload := fmt.Sprintf(`{"selected_user_ids":[%d,%d],"assignments":[{"index":0,"user_ids":[%d,%d]}],"expected_relationship_fingerprint":%q,"operation_key":"blocked-unavailable-member-1"}`, alice.ID, bob.ID, alice.ID, bob.ID, reviewed.RelationshipFingerprint)
+	request := httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(executePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("blocked confirm status = %d, want 409, body=%s", response.Code, response.Body.String())
+	}
+	var staleBody struct {
+		Details struct {
+			ErrorCode     string             `json:"error_code"`
+			RefreshedPlan relayplanning.Plan `json:"refreshed_plan"`
+			Differences   []string           `json:"differences"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &staleBody); err != nil {
+		t.Fatalf("decode blocked confirm response: %v", err)
+	}
+	if staleBody.Details.ErrorCode != "stale_relay_plan" || !containsRelayPlanningWarning(staleBody.Details.Differences, "Relay user mappings changed") {
+		t.Fatalf("blocked confirm details = %+v, want safe Relay identity difference", staleBody.Details)
+	}
+	if len(staleBody.Details.RefreshedPlan.Assignments) != 1 || !reflect.DeepEqual(staleBody.Details.RefreshedPlan.Assignments[0].UserIDs, []int{alice.ID, bob.ID}) {
+		t.Fatalf("refreshed assignments = %+v, want complete reviewed roster", staleBody.Details.RefreshedPlan.Assignments)
+	}
+	if len(provider.events) != 0 || len(provider.assigned) != 0 || len(provider.removed) != 0 || len(provider.bound) != 0 || provider.accountUpdates != 0 {
+		t.Fatalf("Relay writes = events:%v assigned:%v removed:%v bound:%v account_updates:%d, want none", provider.events, provider.assigned, provider.removed, provider.bound, provider.accountUpdates)
 	}
 }
 
