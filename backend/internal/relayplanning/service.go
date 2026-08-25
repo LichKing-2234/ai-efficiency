@@ -1009,9 +1009,9 @@ func assignmentsFromReplanRoster(roster replanRosterResult, reviewed []Assignmen
 func replanRosterWarnings(blockers []replanRosterBlocker) []string {
 	warnings := make([]string, 0, len(blockers))
 	for _, blocker := range blockers {
-		switch blocker.Reason {
-		case replanRosterBlockerUnavailableIdentity:
-			warnings = append(warnings, fmt.Sprintf("user %d has no relay mapping", blocker.UserID))
+		warning, _ := replanRosterBlockerMessages(blocker)
+		if warning != "" {
+			warnings = append(warnings, warning)
 		}
 	}
 	return warnings
@@ -1020,12 +1020,21 @@ func replanRosterWarnings(blockers []replanRosterBlocker) []string {
 func replanRosterDifferences(blockers []replanRosterBlocker) []string {
 	differences := make([]string, 0, len(blockers))
 	for _, blocker := range blockers {
-		switch blocker.Reason {
-		case replanRosterBlockerUnavailableIdentity:
-			differences = append(differences, "Relay user mappings changed or are no longer available")
+		_, difference := replanRosterBlockerMessages(blocker)
+		if difference != "" {
+			differences = append(differences, difference)
 		}
 	}
 	return uniqueStrings(differences)
+}
+
+func replanRosterBlockerMessages(blocker replanRosterBlocker) (warning, difference string) {
+	switch blocker.Reason {
+	case replanRosterBlockerUnavailableIdentity:
+		return fmt.Sprintf("user %d has no relay mapping", blocker.UserID), "Relay user mappings changed or are no longer available"
+	default:
+		return "", ""
+	}
 }
 
 func addUnmanagedCapacity(assignments []Assignment, unmanaged []UnmanagedMember) {
