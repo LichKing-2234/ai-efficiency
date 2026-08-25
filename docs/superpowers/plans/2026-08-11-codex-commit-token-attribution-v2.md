@@ -2,6 +2,7 @@
 
 **Date:** 2026-08-11
 **Status:** T01-T12 and T14-T22 are implemented, released where applicable, and production-qualified. T18/T19 merged through PR #306 as `b56419d6`, T20 merged through PR #307 as `2d5b5574`, and T21 merged through PR #308 as `403f9854`; CLI-only `ae-cli/v0.2.0-preview.12` contains all three recovery stages. The exact current-runtime inline-wrapper parser repair and scanner-progress invalidation merged through PR #325 as `c757fbd5` from implementation commit `37bce887`, with the full local ae-cli suite, PR-head CI `32359847423`, merge-SHA main CI `32362180500`, and final review green. CLI-only `ae-cli/v0.2.0-preview.13` was then published from `f54184a6` by release run `32364192912`, installed through the approved proxy path, and qualified by Helm commit `c35758f5`: one `relay_official` group, 112 reconciled and materialized Requests, four direct pools, exact four-component conservation, and `21,668,159` Token visible on the repo 72 Activity row. Managed-hook replay changed none of those identities or totals. T22/#305 is complete, but this operator canary remains excluded from T13's ordinary-workflow gate. The selected-window denominator repair first shipped in platform `v0.1.0-preview.87`; exact readback established replacement #252 Day 0 at `2026-08-17T05:32:57.925948Z`, and production now runs `v0.1.0-preview.88` at Helm revision 88. The 2026-08-20 T13 evidence snapshot passed, including independently qualified ordinary PR #319 and complete SCM coverage. #252 cleanup has not run and still requires an immediate final re-read plus separate implementation/release/deployment/destructive-migration authority. The replacement Day 0 remains a historical and conservation baseline, not a fixed waiting clock.
+**Current unreleased recovery hardening:** T23/#379-#383 is implemented on `fix/ae-cli-attribution-recovery-379-383`; final post-review verification is still in progress. No CLI release, deployment, production-state cleanup, or server-side deletion is authorized or recorded by T23.
 **T13 invalidated baseline:** The provisional Day 0 at `2026-08-14T07:22:18.199843Z` is retained only as historical evidence. Its formal-pool facts remain 7 pools, 7 direct relations across 6 commits, `6,890,621` Token, 71 source requests/responses, and zero gaps, but the recorded `35,272,145,109` denominator was cumulative personal Usage rather than the selected 2026-08-13 through 2026-08-14 window. A later production reproduction showed the same cumulative `35,312,542,273` denominator for 2-day, 7-day, and 30-day selections while their Usage trend totals differed. The earlier `2026-08-21T07:22:18.199843Z` cleanup eligibility is void. Its replacement requirements were satisfied by the release, deployment, and readback recorded below; the old clock remains permanently invalid.
 **T13 replacement Day 0:** The complete production readback at `2026-08-17T05:32:57.925948Z` is the active historical and conservation baseline. Personal Activity and Usage used the same `Asia/Shanghai` local-day windows: 2-day `2026-08-16..17` returned true-zero committed Token over `96,556,726` Usage Token; 7-day `2026-08-11..17` returned exact `6,890,621 / 3,564,608,255 = 0.19330654330204933%`; and 30-day `2026-07-19..08-17` returned exact `6,890,621 / 15,156,957,118 = 0.04546177010566904%`. Every Activity denominator equaled the corresponding Usage trend sum while the cumulative Usage stats value was independently `35,085,487,404`. Claim coverage was complete, readiness was active, and focused PR sync jobs 31/32 restored complete SCM coverage with zero failed, partial, unsynced, or stale Repository. The conserved formal baseline is 7 pools, 7 direct relations across 6 commits, `6,890,621` Token, 71 source requests/responses, zero gaps, and zero duplicate pool/relation/provider-scoped Request identities; the v1 tables remain `0/0`, the one shadow pool remains isolated, formal near-expiry/finalization errors are `0/0`, and v1 writes return structured `409 upgrade_required`. This baseline measures later deltas; it does not impose an earliest cleanup time.
 **T13 evidence snapshot:** AI Efficiency PR #319 was created and merged after replacement Day 0 as an ordinary `feat(usage)` delivery. Its commit `429c6f00e25b21425b0d87fb9e34bdd960e661a3` owns five direct formal pools and exactly `1,203,261` input + `72,762` output + `0` cache creation + `21,934,592` cache read = `23,210,615` Token. Focused SCM jobs 33/34/35 completed `16/16`, `176/176`, and `66/66` usage refreshes with zero failures after repo 72 was bound to the existing matching Bitbucket provider and its webhook registered. Activity then reported complete claim and SCM coverage, active readiness, and an exact fresh `135,054,403 / 1,966,122,454 = 6.869073832366699%` ratio for `2026-08-17..20`. The repeatable-read production snapshot at `2026-08-20T13:31:51.123751Z` conserved 37 formal pools, 37 direct relations across 11 commits, `4,882,592` input + `324,812` output + `0` cache creation + `137,123,584` cache read = `142,330,988` Token and 946 Requests. Coverage gaps, pool/relation/provider-scoped Request duplicates, pool conservation errors, terminal Request errors, near-boundary pending Requests, finalization errors, and expired unfinalized groups were all zero; 41 pending Requests were before the final-attempt boundary, v1 remained `0/0`, the single shadow pool remained isolated, and the v1 probe returned structured `409 upgrade_required`. Live/ready and database, Redis, and Relay checks were green on platform `v0.1.0-preview.88`.
@@ -34,6 +35,7 @@ T01 contract publication (#253)
   -> T18 machine coordinator (#301) + T19 compaction recovery (#302)
      -> T20 deleted-worktree recovery (#303) -> T21 backlog migration (#304)
      -> T22 Helm release canary (#305)
+  -> T23 local recovery hardening (#379-#383) -> separately authorized CLI release
 ```
 
 ## Execution Ledger
@@ -417,7 +419,8 @@ T01 contract publication (#253)
 - [x] Freeze the Relay provider on each newly captured v2 commit trigger while
   preserving its original Repository, workspace, checkpoint, and commit.
 - [x] Allow only the same reporting owner and exact canonical Repository to
-  lend another checkout whose `HEAD` or refs reach every retained commit.
+  lend another checkout, then classify each retained trigger independently by
+  whether its exact commit is reachable from that checkout's `HEAD` or refs.
 - [x] Keep unavailable commits and mismatched Repository/provider identities
   retained with safe local-state diagnostics and no heuristic rebinding.
 - [x] Prove a real temporary worktree can be removed before pre-push recovery
@@ -476,6 +479,30 @@ T01 contract publication (#253)
   from other Repositories were excluded from this exact-commit conservation
   proof. Repo 72 remains intentionally eligible but SCM-unbound, and the final
   #252 SCM gate remains incomplete rather than being changed by this canary.
+
+### T23 — Local attribution recovery hardening ([#379](https://github.com/LichKing-2234/ai-efficiency/issues/379), [#380](https://github.com/LichKing-2234/ai-efficiency/issues/380), [#381](https://github.com/LichKing-2234/ai-efficiency/issues/381), [#382](https://github.com/LichKing-2234/ai-efficiency/issues/382), [#383](https://github.com/LichKing-2234/ai-efficiency/issues/383))
+
+- [x] Isolate ordinary Git fixtures before their first mutation and isolate the
+  HOME, Git configuration, backend, credentials, and child processes of tests
+  that intentionally execute managed hooks.
+- [x] Coalesce concurrent machine wakes without an unbounded waiting population, preserve one
+  global claim-ledger owner, retain at most one bounded waiter with the original
+  uploader for each server/owner scope, and bound a detached owner to ten
+  minutes.
+- [x] Process and ACK reachable trigger siblings exactly once while retaining
+  unavailable provider, checkpoint, or commit identities with safe diagnostics
+  and no heuristic rebinding.
+- [x] Quarantine only the exact synthetic fixture Repository under the current
+  server/reporting owner, preserve all non-matching task and unresolved bytes,
+  expose aggregate audit counts, and perform no backend or server-side cleanup.
+- [x] Qualify the built binary in a disposable environment with concurrent
+  managed-hook wakeups, controlled v2 ACK, synthetic and legitimate deleted
+  worktrees, retained-trigger ref restoration, final status convergence, and no
+  access to the operator HOME or production backend.
+- [ ] Re-run the complete ae-cli suite, focused race coverage, `go vet`, and
+  `git diff --check` after review remediation; complete a final two-axis review,
+  address every finding, and commit the clean branch. No release or deployment
+  is authorized by this checkbox.
 
 ## Cross-Ticket Invariants
 

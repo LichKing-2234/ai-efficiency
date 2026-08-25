@@ -192,6 +192,10 @@ does not enter formal commit Token.
 
 ## 6. Event-Driven Delivery
 
+The runner/recovery hardening below is the current source contract. It does not
+claim release or production rollout until a later CLI release is independently
+published and verified.
+
 v2 remains Git-event-driven and adds no daemon or periodic synchronization:
 
 - `post-commit` closes or revises deterministically matched groups;
@@ -206,12 +210,18 @@ reliably start a successor; it may not require another Git event.
 All reporting work on one machine is serialized by one transient drain owner.
 Per-workspace tasks remain the durable queue and evidence boundary, but a
 detached owner drains every runnable task for the active server and reporting
-owner rather than competing for the machine-scoped claim ledger. A bounded
-five-minute workspace quantum that exhausts its context becomes `yielded`,
-releases its lease, and is immediately selected for another quantum by the
-same event-started owner. The process exits when its matching queue is empty;
-this is neither a daemon nor a periodic synchronizer. A dead owner lock is
-recoverable from the persisted tasks and process liveness evidence.
+owner rather than competing for the machine-scoped claim ledger. Contenders
+coalesce through one idempotent wake keyed by normalized server and reporting
+owner. Exactly one contender per scope remains
+as a bounded waiter with that scope's in-memory uploader; other same-scope
+contenders exit immediately. The waiter acquires the global ledger lock after
+the owner releases it, so an account/config switch cannot redirect the wake. A
+bounded five-minute
+workspace quantum that exhausts its context becomes `yielded`; the detached
+owner itself exits after ten minutes and starts one successor when retained
+work remains. The process exits when its matching queue is empty; this is
+neither a daemon nor a periodic synchronizer. A dead owner lock is recoverable
+from the persisted tasks and process liveness evidence.
 
 Every newly captured v2 commit trigger freezes the selected Relay provider ID
 alongside its original Repository, workspace, checkpoint event, commit, and
@@ -219,14 +229,19 @@ capture time. If the original worktree directory or Git worktree metadata no
 longer exists, another checkout can lend its Git root to that retained task
 only when the normalized server and reporting owner already match, the exact
 Repository ID and canonical remote identity match, and every full commit object
-is reachable from that checkout's `HEAD` or a Git ref. Recovery changes only
-the runtime Git root: workspace, checkpoint, commit, provider, and evidence
-identity remain the original values. A missing provider, missing or unreachable
-commit, cross-Repository checkout, different owner, or mismatched checkpoint
-stays retained with a safe local-state failure. No cwd, timestamp, branch name,
-patch similarity, or code-content heuristic can rebind a trigger. `pre-push`
-and `ae-cli sync` wake this path through the same transient owner; neither adds
-a daemon or periodic scan.
+is evaluated independently for reachability from that checkout's `HEAD` or a
+Git ref. Recovery changes only the runtime Git root: workspace, checkpoint,
+commit, provider, and evidence identity remain the original values. Runnable
+triggers revalidate their frozen server, reporting owner, Repository ID/key,
+workspace, provider, and checkpoint before they are scanned and acknowledged
+exactly once, while a missing provider,
+missing or unreachable commit, or mismatched checkpoint remains in the same
+durable task with a safe local-state failure. One retained trigger never blocks
+a runnable sibling or a later unrelated trigger. Cross-Repository checkout and
+different-owner recovery still reject the complete task before scanning. No
+cwd, timestamp, branch name, patch similarity, or code-content heuristic can
+rebind a trigger. `pre-push` and `ae-cli sync` wake this path through the same
+transient owner; neither adds a daemon or periodic scan.
 
 On first runner, status, or doctor activity after upgrade, the same reporting
 installation scans the existing workspace tasks for its normalized server and
@@ -238,6 +253,20 @@ remain unchanged. Stale scanner versions discard only local digest progress so
 the current scanner rebuilds them; current progress deduplicates exact source,
 unit, and turn keys. A busy or conflicting workspace is deferred without
 blocking unrelated migration, and future task/progress versions are left alone.
+Hook-time task upsert applies this schema promotion before canonical trigger
+comparison, so the first exact replay after upgrade cannot conflict merely
+because the retained trigger predates frozen identity fields.
+The same first-activity boundary quarantines only the exact synthetic Repository
+identity emitted by affected historical Git fixtures under the current
+normalized server and reporting owner. Its complete workspace directory and
+matching unresolved JSONL events move into an audit quarantine;
+all non-matching bytes and every legitimate missing-worktree task remain active.
+This migration is idempotent, local-only, and performs no backend request or
+server-side deletion. Missing paths, temporary-looking names, age, and failure
+reason are never sufficient quarantine evidence. It holds the same machine
+ownership as the runner, journals the active binding before any move, performs
+audit-first atomic file/directory replacements, and resumes an interrupted
+journal on the next first-activity pass.
 
 One runner pass performs one 90-day-bounded Codex transport-evidence query and
 one discovery of active `sessions` plus `archived_sessions`. File modification
@@ -302,6 +331,8 @@ machine-wide `queued`, `running`, `yielded`, and `recoverable` task totals, plus
 terminal-conflict and seven-day-expiry-warning counts. Failure diagnostics
 contain only the stage, a fixed safe reason, the first failure time, and the
 remaining trigger count; raw Request or response identifiers are never printed.
+They also expose only aggregate synthetic-fixture quarantine workspace/event
+counts and its first migration time, never the quarantined paths or payloads.
 Migration and lazy 90-day cleanup mutate only local recovery detail. They never
 delete acknowledged formal pools, relations, or any server data.
 

@@ -37,15 +37,17 @@ type Handler struct {
 }
 
 type ExecutionContext struct {
-	ServerURL     string
-	AuthSubject   string
-	RepoConfigID  int
-	RepoKey       string
-	RepoFullName  string
-	WorkspaceID   string
-	RepoRoot      string
-	Branch        string
-	DurableReplay bool
+	ServerURL              string
+	AuthSubject            string
+	RepoConfigID           int
+	RepoKey                string
+	RepoFullName           string
+	WorkspaceID            string
+	RepoRoot               string
+	Branch                 string
+	DurableReplay          bool
+	runnableV2TriggerIDs   map[string]struct{}
+	retainedV2TriggerError error
 }
 
 func NewHandler(u Uploader) *Handler {
@@ -415,6 +417,8 @@ func (h *Handler) FlushUnresolvedResolved(ctx context.Context, execCtx Execution
 func v2SyncTriggerFromHookEvent(ev HookEvent) V2SyncTrigger {
 	return V2SyncTrigger{
 		Kind: strings.TrimSpace(ev.Kind), EventID: strings.TrimSpace(ev.EventID), CommitSHA: strings.TrimSpace(ev.CommitSHA),
+		ServerURL: normalizeHookServerURL(ev.ServerURL), AuthSubject: strings.TrimSpace(ev.AuthSubject), RepoConfigID: ev.RepoConfigID,
+		RepoKey: strings.TrimSpace(ev.RepoKey), WorkspaceID: strings.TrimSpace(ev.WorkspaceID),
 		Branch: strings.TrimSpace(ev.BranchSnapshot), RewriteType: strings.TrimSpace(ev.RewriteType),
 		OldCommitSHA: strings.TrimSpace(ev.OldCommitSHA), NewCommitSHA: strings.TrimSpace(ev.NewCommitSHA),
 		CapturedAt: parseTriggerTime(ev.CapturedAt),
