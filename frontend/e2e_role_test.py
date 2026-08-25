@@ -46,6 +46,7 @@ USER_ROUTE_CASES = (
     {
         "path": "/usage/team",
         "selector": "[data-testid='team-overview-content']",
+        "fit_selectors": ("[data-testid='team-overview-member-pagination']",),
         "state_selectors": (
             "[data-testid='team-overview-summary']",
             "[data-testid='team-overview-trend']",
@@ -89,7 +90,7 @@ ADMIN_ROUTE_CASES = (
     {
         "path": "/repos",
         "selector": "[data-testid='repo-binding-filter']",
-        "fit_selectors": ("[data-testid='repo-row'] > div:first-child",),
+        "fit_selectors": ("[data-testid='repo-row'] > div:first-child", "[data-testid='repo-pagination']"),
         "exercise": "repo-dialog",
     },
     {"path": "/repos/9", "selector": "[data-testid='repo-operations']"},
@@ -103,6 +104,7 @@ ADMIN_ROUTE_CASES = (
         "selector": "[data-testid='admin-users-view-users']",
         "exercise": "admin-users-layout",
         "desktop_min_width": 1440,
+        "fit_selectors": ("[data-testid='admin-users-pagination']",),
         "state_selectors": ("[data-admin-user-list='mobile']", "[data-admin-user-row]"),
         "desktop_state_selectors": ("[data-admin-user-list='desktop']", "[data-admin-user-row]"),
         "desktop_fit_selectors": (
@@ -114,6 +116,7 @@ ADMIN_ROUTE_CASES = (
     {
         "path": "/admin/directory/offboarding",
         "selector": "[data-testid='offboarding-search']",
+        "fit_selectors": ("[data-testid='offboarding-pagination']",),
         "exercise": "offboarding-dialog",
     },
     {
@@ -462,7 +465,8 @@ def mock_matrix_api(route, role):
         "/api/v1/user/team-usage/members": {
             **snapshot,
             "items": [member],
-            "total_count": 1,
+            "total_count": 100,
+            "next_cursor": "cursor-e2e-page-2",
         },
         "/api/v1/user/team-usage/organization": {
             **snapshot,
@@ -568,21 +572,21 @@ def mock_matrix_api(route, role):
             "page_size": 20,
             "total": 1 if role == "admin" else 0,
         },
-        "/api/v1/repos": {"items": [repo], "total": 1, "page": 1, "page_size": 20},
+        "/api/v1/repos": {"items": [repo], "total": 41, "page": 1, "page_size": 20},
         "/api/v1/repos/inventory": [{
             "provider_key": "scm_provider:3",
             "provider_id": 3,
             "name": "GitHub",
             "type": "github",
-            "total_repos": 1,
-            "bound_repos": 1,
+            "total_repos": 41,
+            "bound_repos": 41,
             "unbound_repos": 0,
             "active_repos": 1,
             "webhook_failed_repos": 0,
             "scopes": [{
                 "scope": "example-org",
-                "total_repos": 1,
-                "bound_repos": 1,
+                "total_repos": 41,
+                "bound_repos": 41,
                 "unbound_repos": 0,
                 "active_repos": 1,
                 "webhook_failed_repos": 0,
@@ -656,7 +660,7 @@ def mock_matrix_api(route, role):
             "retryable": False,
             "latest_accepted_at": "2026-08-08T08:00:00Z",
         },
-        "/api/v1/admin/users": {"items": [admin_user()], "total": 1, "page": 1, "page_size": 20},
+        "/api/v1/admin/users": {"items": [admin_user()], "total": 41, "page": 1, "page_size": 20},
         "/api/v1/admin/users/department-options": {
             "items": [], "selected": None, "total": 0, "page": 1, "page_size": 20,
         },
@@ -674,7 +678,7 @@ def mock_matrix_api(route, role):
             }],
             "page": 1,
             "page_size": 20,
-            "total": 1,
+            "total": 41,
         },
     }
 
@@ -1198,7 +1202,7 @@ def exercise_route_control(page, exercise):
         usable = bool(search_box) and (
             (column_count == 1 and search_box["width"] >= 240)
             if width < 1280
-            else (column_count == 5 and search_box["width"] >= 200)
+            else (column_count == 4 and search_box["width"] >= 200)
         )
         return usable, f"Unexpected Admin Users filter layout at {width}px"
     if exercise == "user-onboarding":

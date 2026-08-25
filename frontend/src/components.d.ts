@@ -22,7 +22,7 @@ declare module 'vue' {
     AppSidebar: typeof import('./components/AppSidebar.vue')['default']
     AuthShell: typeof import('./components/AuthShell.vue')['default']
     CodePlatformSettings: typeof import('./components/settings/CodePlatformSettings.vue')['default']
-    CursorPager: typeof import('./components/activity/CursorPager.vue')['default']
+    CursorPager: typeof import('./components/CursorPager.vue')['default']
     DepartmentTreeToggle: typeof import('./components/DepartmentTreeToggle.vue')['default']
     DeploymentRuntimeSettings: typeof import('./components/settings/DeploymentRuntimeSettings.vue')['default']
     DirectorySyncSettings: typeof import('./components/settings/DirectorySyncSettings.vue')['default']

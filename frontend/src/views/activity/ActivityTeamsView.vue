@@ -5,7 +5,7 @@ import { useActivityTeams } from '@/composables/useActivityTeams'
 import { useI18n } from '@/i18n'
 
 const { t } = useI18n()
-const { loading, error, load, rootBranch, branchFor, ensureBranch, loadMoreDepartments } = useActivityTeams()
+const { loading, error, load, rootBranch, branchFor, ensureBranch, loadMoreDepartments, retryBranch } = useActivityTeams()
 </script>
 
 <template>
@@ -38,10 +38,17 @@ const { loading, error, load, rootBranch, branchFor, ensureBranch, loadMoreDepar
             :branch-for="branchFor"
             :ensure-branch="ensureBranch"
             :load-more-departments="loadMoreDepartments"
+            :retry-branch="retryBranch"
           />
         </ul>
+        <div v-if="rootBranch.error" data-testid="activity-teams-error-root" class="border-t border-slate-100 px-4 py-3 text-sm text-slate-600">
+          {{ t('activity.teamsLoadFailed') }}
+          <ElButton data-testid="activity-teams-retry-root" type="primary" link @click="retryBranch(null)">
+            {{ t('activity.retry') }}
+          </ElButton>
+        </div>
         <div v-if="rootBranch.nextDepartmentCursor" class="border-t border-slate-100 px-4 py-3">
-          <ElButton :disabled="rootBranch.departmentLoading" @click="loadMoreDepartments(null)">
+          <ElButton data-testid="activity-teams-more-root" :disabled="rootBranch.departmentLoading" @click="loadMoreDepartments(null)">
             {{ t('teamUsage.loadMoreDepartments') }}
           </ElButton>
         </div>

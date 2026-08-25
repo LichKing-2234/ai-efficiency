@@ -11,6 +11,7 @@ const props = defineProps<{
   branchFor: (parentID: string) => TeamUsageOrganizationBranchState | undefined
   ensureBranch: (parentID: string) => void
   loadMoreDepartments: (parentID: string | null) => void
+  retryBranch: (parentID: string | null) => void
 }>()
 
 const { t } = useI18n()
@@ -51,7 +52,7 @@ function toggle() {
     <div v-if="expanded && branch?.loading" role="status" class="ml-12 px-4 py-3 text-sm text-slate-500">{{ t('activity.loadingTeams') }}</div>
     <div v-else-if="expanded && branch?.error && !branch.loaded" class="ml-12 px-4 py-3 text-sm text-slate-600">
       {{ t('activity.teamsLoadFailed') }}
-      <ElButton type="primary" link @click="ensureBranch(team.department_external_id)">{{ t('activity.retry') }}</ElButton>
+      <ElButton :data-testid="`activity-teams-retry-${team.department_external_id}`" type="primary" link @click="retryBranch(team.department_external_id)">{{ t('activity.retry') }}</ElButton>
     </div>
     <ul v-else-if="expanded && branch?.departments.length" class="ml-5 border-l border-slate-200 pl-3">
       <ActivityTeamTreeNode
@@ -61,10 +62,22 @@ function toggle() {
         :branch-for="branchFor"
         :ensure-branch="ensureBranch"
         :load-more-departments="loadMoreDepartments"
+        :retry-branch="retryBranch"
       />
     </ul>
+    <div
+      v-if="expanded && branch?.error && branch.loaded"
+      :data-testid="`activity-teams-error-${team.department_external_id}`"
+      class="ml-12 px-4 py-3 text-sm text-slate-600"
+    >
+      {{ t('activity.teamsLoadFailed') }}
+      <ElButton :data-testid="`activity-teams-retry-${team.department_external_id}`" type="primary" link @click="retryBranch(team.department_external_id)">
+        {{ t('activity.retry') }}
+      </ElButton>
+    </div>
     <ElButton
       v-if="expanded && branch?.nextDepartmentCursor"
+      :data-testid="`activity-teams-more-${team.department_external_id}`"
       class="ml-12 my-2"
       :disabled="branch.departmentLoading"
       @click="loadMoreDepartments(team.department_external_id)"

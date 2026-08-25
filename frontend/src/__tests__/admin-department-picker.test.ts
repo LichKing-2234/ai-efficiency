@@ -1,5 +1,6 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ElPagination } from 'element-plus'
 
 vi.mock('@/api/client', () => ({
   default: {
@@ -74,6 +75,15 @@ function mountPicker(
   })
   mountedWrappers.add(wrapper)
   return wrapper
+}
+
+async function clickPickerPage(wrapper: VueWrapper, direction: 'prev' | 'next') {
+  const label = direction === 'prev' ? 'Go to previous page' : 'Go to next page'
+  const button = wrapper.get(`[data-testid="admin-department-picker-pagination"] button[aria-label="${label}"]`)
+  const mouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+  expect(button.element.dispatchEvent(mouseDown)).toBe(false)
+  await button.trigger('click')
+  await flushPromises()
 }
 
 describe('admin users bounded department API', () => {
@@ -378,15 +388,13 @@ describe('AdminDepartmentPicker', () => {
     await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
 
     expect(wrapper.get('[data-testid="admin-department-picker-all"]').classes()).toContain('el-button')
-    await wrapper.get('[data-testid="admin-department-picker-next"]').trigger('click')
-    await flushPromises()
+    await clickPickerPage(wrapper, 'next')
     expect(mockGet).toHaveBeenLastCalledWith('/admin/users/department-options', {
       params: { page: 2, page_size: 20 },
     })
-    expect(wrapper.get('[data-testid="admin-department-picker-page"]').text()).toContain('2')
+    expect(wrapper.getComponent(ElPagination).props('currentPage')).toBe(2)
 
-    await wrapper.get('[data-testid="admin-department-picker-prev"]').trigger('click')
-    await flushPromises()
+    await clickPickerPage(wrapper, 'prev')
     expect(mockGet).toHaveBeenLastCalledWith('/admin/users/department-options', {
       params: { page: 1, page_size: 20 },
     })
@@ -394,6 +402,41 @@ describe('AdminDepartmentPicker', () => {
     await wrapper.get('[data-testid="admin-department-picker-all"]').trigger('click')
     expect(wrapper.emitted('update:modelValue')).toEqual([['']])
     expect(wrapper.emitted('change')).toEqual([['']])
+  })
+
+  it('uses compact indexed pagination for multi-page options', async () => {
+    mockGet.mockImplementation(() => optionsResponse([alpha], { total: 21 }))
+    const wrapper = mountPicker()
+
+    await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
+    await flushPromises()
+
+    const pagination = wrapper.getComponent(ElPagination)
+    expect(pagination.props('pageSize')).toBe(20)
+    expect(pagination.props('total')).toBe(21)
+    expect(pagination.props('layout')).toBe('prev, slot, next')
+  })
+
+  it('resets embedded paging when the picker closes and reopens', async () => {
+    mockGet.mockImplementation((_path: string, config: { params: { page: number } }) =>
+      optionsResponse(config.params.page === 2 ? [beta] : [alpha], { page: config.params.page, total: 21 }))
+    const wrapper = mountPicker()
+
+    await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
+    await flushPromises()
+    await clickPickerPage(wrapper, 'next')
+    expect(mockGet).toHaveBeenLastCalledWith('/admin/users/department-options', {
+      params: { page: 2, page_size: 20 },
+    })
+
+    await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
+    await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
+    await flushPromises()
+
+    expect(mockGet).toHaveBeenLastCalledWith('/admin/users/department-options', {
+      params: { page: 1, page_size: 20 },
+    })
+    expect(wrapper.getComponent(ElPagination).props('currentPage')).toBe(1)
   })
 
   it('keeps the current options visible while the next page is loading', async () => {
@@ -405,7 +448,7 @@ describe('AdminDepartmentPicker', () => {
 
     await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
     await flushPromises()
-    const nextButton = wrapper.get('[data-testid="admin-department-picker-next"]')
+    const nextButton = wrapper.get('[data-testid="admin-department-picker-pagination"] button[aria-label="Go to next page"]')
     const mouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
     expect(nextButton.element.dispatchEvent(mouseDown)).toBe(false)
     await nextButton.trigger('click')
@@ -421,7 +464,22 @@ describe('AdminDepartmentPicker', () => {
 
     expect(wrapper.find('[data-testid="admin-department-picker-option-dept-alpha"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="admin-department-picker-option-dept-beta"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="admin-department-picker-page"]').text()).toContain('2')
+    expect(wrapper.getComponent(ElPagination).props('currentPage')).toBe(2)
+  })
+
+  it('keeps the current options and page when the next page fails', async () => {
+    mockGet
+      .mockImplementationOnce(() => optionsResponse([alpha], { total: 21 }))
+      .mockRejectedValueOnce(new Error('synthetic option page failure'))
+    const wrapper = mountPicker('', { allowAll: false })
+
+    await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
+    await flushPromises()
+    await clickPickerPage(wrapper, 'next')
+
+    expect(wrapper.find('[data-testid="admin-department-picker-option-dept-alpha"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="admin-department-picker-error"]').text()).toContain('synthetic option page failure')
+    expect(wrapper.getComponent(ElPagination).props('currentPage')).toBe(1)
   })
 
   it('can reopen and retry after clearing while the first option request is pending', async () => {
@@ -442,7 +500,7 @@ describe('AdminDepartmentPicker', () => {
     expect(wrapper.text()).toContain('Company / Department Alpha')
   })
 
-  it('atomically clears a failed search page and retries that query on reopen', async () => {
+  it('atomically clears a failed search page and resets the query on reopen', async () => {
     vi.useFakeTimers()
     mockGet
       .mockImplementationOnce(() => optionsResponse([alpha, beta], { page: 2, total: 45 }))
@@ -460,8 +518,7 @@ describe('AdminDepartmentPicker', () => {
     expect(wrapper.get('[data-testid="admin-department-picker-error"]').find('.el-alert').exists()).toBe(true)
     expect(wrapper.find('[data-testid="admin-department-picker-option-dept-alpha"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="admin-department-picker-option-dept-beta"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="admin-department-picker-page"]').text()).toContain('1 / 1')
-    expect((wrapper.get('[data-testid="admin-department-picker-next"]').element as HTMLButtonElement).disabled).toBe(true)
+    expect(wrapper.find('[data-testid="admin-department-picker-pagination"]').exists()).toBe(false)
 
     await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
     await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
@@ -469,7 +526,7 @@ describe('AdminDepartmentPicker', () => {
 
     expect(mockGet).toHaveBeenCalledTimes(3)
     expect(mockGet).toHaveBeenLastCalledWith('/admin/users/department-options', {
-      params: { q: 'recover', page: 1, page_size: 20 },
+      params: { page: 1, page_size: 20 },
     })
     expect(wrapper.text()).toContain('Recovered')
   })

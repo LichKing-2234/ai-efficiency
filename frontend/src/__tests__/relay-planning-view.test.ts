@@ -512,10 +512,10 @@ describe('RelayPlanningView', () => {
 		await flushPromises()
 		expect(picker.find('[data-testid="admin-department-picker-all"]').exists()).toBe(false)
 
-		for (let page = 2; page <= 6; page += 1) {
-			await picker.get('[data-testid="admin-department-picker-next"]').trigger('click')
-			await flushPromises()
-		}
+  for (let page = 2; page <= 6; page += 1) {
+   await picker.get('[data-testid="admin-department-picker-pagination"]').trigger('click')
+   await flushPromises()
+  }
 		expect(adminUsers.listAdminUserDepartmentOptions).toHaveBeenLastCalledWith({ page: 6, page_size: 20 })
 		await picker.get('[data-testid="admin-department-picker-option-dept-101"]').trigger('click')
 		await picker.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
@@ -867,7 +867,7 @@ describe('RelayPlanningView', () => {
 		}
 	})
 
-	it('edits Account assignments in the Preview target before confirmation', async () => {
+		it('edits Account assignments in the Preview target before confirmation', async () => {
 		vi.useFakeTimers()
 		try {
 			const { wrapper, relayPlanning } = await mountView()
@@ -890,9 +890,62 @@ describe('RelayPlanningView', () => {
 		} finally {
 			vi.useRealTimers()
 		}
-	})
+		})
 
-	it('shows current Account relationships and adopts them without applying Relay changes', async () => {
+		it('pages Preview Account search results beyond the first 20 matches', async () => {
+			vi.useFakeTimers()
+			try {
+				const { wrapper, relayPlanning } = await mountView()
+				relayPlanning.searchRelayPlanningAccounts.mockImplementation(({ page }: { page: number }) => Promise.resolve({
+					data: { data: {
+						items: [{ id: page === 2 ? 32 : 12, name: page === 2 ? 'Account Page Two' : 'Account Page One', platform: 'openai', type: 'apikey', status: 'active', schedulable: true, group_relationships: [] }],
+						total: 45,
+						page,
+						page_size: 20,
+					} },
+				}))
+				await fillAndPreview(wrapper)
+
+				await wrapper.get('[data-testid="target-account-search-0"]').setValue('Account')
+				await vi.advanceTimersByTimeAsync(300)
+				await flushPromises()
+				expect(wrapper.text()).toContain('Account Page One')
+
+				await wrapper.get('[data-testid="target-account-pagination-0"]').trigger('click')
+				await flushPromises()
+
+				expect(relayPlanning.searchRelayPlanningAccounts).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, page_size: 20 }))
+				expect(wrapper.text()).toContain('Account Page Two')
+				expect(wrapper.find('[data-testid="add-target-account-0-32"]').exists()).toBe(true)
+			} finally {
+				vi.useRealTimers()
+			}
+		})
+
+		it('keeps Account results visible with an in-surface retry when paging fails', async () => {
+			vi.useFakeTimers()
+			try {
+				const { wrapper, relayPlanning } = await mountView()
+				relayPlanning.searchRelayPlanningAccounts
+					.mockResolvedValueOnce({ data: { data: { items: [{ id: 12, name: 'Stable Account', platform: 'openai', type: 'apikey', status: 'active', schedulable: true, group_relationships: [] }], total: 45, page: 1, page_size: 20 } } })
+					.mockRejectedValueOnce(new Error('synthetic Account page failure'))
+				await fillAndPreview(wrapper)
+
+				await wrapper.get('[data-testid="target-account-search-0"]').setValue('Account')
+				await vi.advanceTimersByTimeAsync(300)
+				await flushPromises()
+				await wrapper.get('[data-testid="target-account-pagination-0"]').trigger('click')
+				await flushPromises()
+
+				expect(wrapper.text()).toContain('Stable Account')
+				expect(wrapper.text()).toContain('synthetic Account page failure')
+				expect(wrapper.text()).toContain('Retry')
+			} finally {
+				vi.useRealTimers()
+			}
+		})
+
+		it('shows current Account relationships and adopts them without applying Relay changes', async () => {
 		const mapping = {
 			id: 9,
 			provider_id: 7,
@@ -954,20 +1007,29 @@ describe('RelayPlanningView', () => {
 			updated_at: '2026-08-20T00:00:00Z',
 		}
 		const { wrapper, relayPlanning } = await mountView([mapping])
-		relayPlanning.searchRelayPlanningAccounts.mockResolvedValue({ data: { data: { items: [{ id: 12, name: 'Account Beta', platform: 'openai', type: 'apikey', status: 'error', schedulable: false, group_relationships: [] }], total: 1, page: 1, page_size: 20 } } })
+			relayPlanning.searchRelayPlanningAccounts.mockImplementation(({ page }: { page: number }) => Promise.resolve({ data: { data: {
+				items: [{ id: page === 2 ? 32 : 12, name: page === 2 ? 'Account Page Two' : 'Account Beta', platform: 'openai', type: 'apikey', status: 'error', schedulable: false, group_relationships: [] }],
+				total: 45,
+				page,
+				page_size: 20,
+			} } }))
 		relayPlanning.saveRelayDesiredAccounts.mockResolvedValue({ data: { data: mapping } })
 
-		await wrapper.get('[data-testid="manage-accounts-9"]').trigger('click')
-		await wrapper.get('[data-testid="account-search-9-101"]').setValue('Beta')
-		await vi.waitFor(() => expect(relayPlanning.searchRelayPlanningAccounts).toHaveBeenCalledWith(expect.objectContaining({ provider_id: 7, platform: 'openai', q: 'Beta' })))
+			await wrapper.get('[data-testid="manage-accounts-9"]').trigger('click')
+			await wrapper.get('[data-testid="account-search-9-101"]').setValue('Beta')
+			await vi.waitFor(() => expect(relayPlanning.searchRelayPlanningAccounts).toHaveBeenCalledWith(expect.objectContaining({ provider_id: 7, platform: 'openai', q: 'Beta' })))
+			await wrapper.get('[data-testid="account-pagination-9-101"]').trigger('click')
+			await flushPromises()
+			expect(relayPlanning.searchRelayPlanningAccounts).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, page_size: 20 }))
+			expect(wrapper.text()).toContain('Account Page Two')
 
-		await wrapper.get('[data-testid="add-account-9-101-12"]').trigger('click')
-		await wrapper.get('[data-testid="move-account-up-9-101-12"]').trigger('click')
+			await wrapper.get('[data-testid="add-account-9-101-32"]').trigger('click')
+			await wrapper.get('[data-testid="move-account-up-9-101-32"]').trigger('click')
 		await wrapper.get('[data-testid="save-desired-accounts-9"]').trigger('click')
 		await flushPromises()
 
-		expect(relayPlanning.saveRelayDesiredAccounts).toHaveBeenCalledWith(9, {
-			'101': [{ account_id: 12, priority: 1 }, { account_id: 11, priority: 2 }],
+			expect(relayPlanning.saveRelayDesiredAccounts).toHaveBeenCalledWith(9, {
+				'101': [{ account_id: 32, priority: 1 }, { account_id: 11, priority: 2 }],
 		})
 		expect(relayPlanning.executeRelayReplan).not.toHaveBeenCalled()
 	})

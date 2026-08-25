@@ -2,7 +2,7 @@
 import { computed, defineAsyncComponent } from 'vue'
 import { Refresh, Search } from '@element-plus/icons-vue'
 import ActivityDateRange from '@/components/activity/ActivityDateRange.vue'
-import CursorPager from '@/components/activity/CursorPager.vue'
+import CursorPager from '@/components/CursorPager.vue'
 import { useWideContentLayout } from '@/composables/useMediaQuery'
 import { useActivityAnalytics } from '@/composables/useActivityAnalytics'
 import { useI18n } from '@/i18n'
@@ -204,7 +204,7 @@ function barWidth(value: number, max: number) { return `${Math.max(3, value / ma
         <ul v-else class="divide-y divide-slate-100" data-testid="activity-repository-cards">
           <li v-for="row in repositories.items" :key="row.repo_config_id"><button class="min-h-11 w-full px-4 py-4 text-left" :class="selectedRepoID === row.repo_config_id ? 'bg-blue-50' : ''" :aria-pressed="selectedRepoID === row.repo_config_id" @click="selectRepository(row)"><p class="break-words font-medium text-slate-900">{{ row.name }}</p><dl class="mt-3 grid grid-cols-2 gap-3 text-sm"><div><dt class="text-slate-500">{{ t('activity.committedToken') }}</dt><dd class="font-semibold">{{ token(row.direct_tokens) }}</dd></div><div><dt class="text-slate-500">{{ t('activity.directShare') }}</dt><dd>{{ percent(row.direct_share) }}</dd></div><div><dt class="text-slate-500">{{ t('activity.periodChange') }}</dt><dd>{{ tokenChange(row.token_change) || '—' }}</dd></div><div><dt class="text-slate-500">{{ t('activity.sharedParticipation') }}</dt><dd>{{ token(row.shared_tokens) }}</dd></div></dl></button></li>
         </ul>
-        <CursorPager :has-previous="repoPage > 0" :has-next="Boolean(repositories?.next_cursor)" :loading="loading.repositories" :previous-label="t('activity.previousPage')" :next-label="t('activity.nextPage')" test-i-d-prefix="activity-repositories" @previous="previousPage('repositories')" @next="nextPage('repositories')" />
+        <CursorPager :has-previous="repoPage > 0" :has-next="Boolean(repositories?.next_cursor)" :loading="loading.repositories" :loading-label="t('settings.loading')" :previous-label="t('activity.previousPage')" :next-label="t('activity.nextPage')" test-i-d-prefix="activity-repositories" @previous="previousPage('repositories')" @next="nextPage('repositories')" />
       </template>
 
       <template v-else>
@@ -223,7 +223,7 @@ function barWidth(value: number, max: number) { return `${Math.max(3, value / ma
           <li v-for="row in pullRequests.items" :key="row.pr_record_id"><button class="min-h-11 w-full px-4 py-4 text-left" :class="selectedPRID === row.pr_record_id ? 'bg-cyan-50' : ''" :aria-pressed="selectedPRID === row.pr_record_id" @click="selectPullRequest(row)"><p class="font-medium text-slate-900">{{ row.repository_name }} #{{ row.scm_pr_id }}</p><p class="mt-1 break-words text-sm text-slate-600">{{ row.title }}</p><div class="mt-3 flex flex-wrap gap-4 text-sm text-slate-500"><span>{{ token(row.involved_tokens) }} {{ t('activity.involvedToken') }}</span><span v-if="row.token_change != null">{{ tokenChange(row.token_change) }} {{ t('activity.previousPeriod') }}</span><span>{{ row.overlap_state === 'shared' ? t('activity.sharedOverlap') : t('activity.directInvolvement') }}</span><span>{{ row.status }}</span></div></button><div v-if="expandedPR === row.pr_record_id && row.commits?.length" class="bg-slate-50 px-4 py-3 text-xs text-slate-600"><p class="mb-2 font-medium">{{ t('activity.relatedCommits') }}</p><ul class="space-y-1 font-mono"><li v-for="commit in row.commits" :key="`${commit.repo_config_id}:${commit.commit_sha}`">{{ commit.commit_sha.slice(0, 12) }}</li></ul></div></li>
         </ul>
         <div v-if="wide && expandedPR && selectedPRRow?.commits?.length" class="border-t border-slate-100 bg-slate-50 px-5 py-4 text-xs text-slate-600"><p class="mb-2 font-medium">{{ t('activity.relatedCommits') }}</p><ul class="space-y-1 font-mono"><li v-for="commit in selectedPRRow.commits" :key="`${commit.repo_config_id}:${commit.commit_sha}`">{{ commit.commit_sha.slice(0, 12) }}</li></ul></div>
-        <CursorPager :has-previous="prPage > 0" :has-next="Boolean(pullRequests?.next_cursor)" :loading="loading.pullRequests" :previous-label="t('activity.previousPage')" :next-label="t('activity.nextPage')" test-i-d-prefix="activity-pull-requests" @previous="previousPage('pullRequests')" @next="nextPage('pullRequests')" />
+        <CursorPager :has-previous="prPage > 0" :has-next="Boolean(pullRequests?.next_cursor)" :loading="loading.pullRequests" :loading-label="t('settings.loading')" :previous-label="t('activity.previousPage')" :next-label="t('activity.nextPage')" test-i-d-prefix="activity-pull-requests" @previous="previousPage('pullRequests')" @next="nextPage('pullRequests')" />
       </template>
     </section>
   </div>

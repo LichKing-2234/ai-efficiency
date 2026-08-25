@@ -18,6 +18,7 @@ import {
 } from '@/api/adminUsers'
 import { useI18n } from '@/i18n'
 import { authSourceLabel, subscriptionResultStatusLabel, userRoleLabel } from '@/utils/displayLabels'
+import { FULL_PAGE_SIZES, fullPageSize, positivePage } from '@/utils/pagination'
 import type {
   AdminAssignableSubscriptionProvider,
   AdminDepartmentChildrenResponse,
@@ -65,6 +66,7 @@ const error = ref('')
 const rows = ref<AdminUser[]>([])
 const total = ref(0)
 const desktopUserRows = useMediaQuery('(min-width: 1440px)')
+const desktopPagination = useMediaQuery('(min-width: 768px)')
 const rootDepartments = ref<LoadedDepartmentChildren | null>(null)
 const childrenByParentID = ref<Map<string, LoadedDepartmentChildren>>(new Map())
 const departmentsLoading = ref(false)
@@ -143,13 +145,14 @@ const filters = reactive({
   q: queryString('q'),
   department_id: queryString('department_id'),
   access_status: queryString('access_status'),
-  page: queryNumber('page', 1),
-  page_size: queryNumber('page_size', 20),
+  page: positivePage(route.query.page),
+  page_size: fullPageSize(route.query.page_size),
 })
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / filters.page_size)))
-const canGoPrev = computed(() => filters.page > 1)
-const canGoNext = computed(() => filters.page < totalPages.value)
+const pageStart = computed(() => total.value === 0 ? 0 : ((filters.page - 1) * filters.page_size) + 1)
+const pageEnd = computed(() => Math.min(total.value, filters.page * filters.page_size))
+const showUserPagination = computed(() => rows.value.length > 0 && total.value > filters.page_size)
 const activeViewLoading = computed(() => filters.view === 'departments' ? departmentsLoading.value : loading.value)
 const showMobileUserRows = computed(() => filters.view === 'users' && rows.value.length > 0 && !desktopUserRows.value)
 const showDesktopUserRows = computed(() => filters.view === 'users' && rows.value.length > 0 && desktopUserRows.value)
@@ -175,14 +178,10 @@ const visibleDepartmentRows = computed<VisibleDepartmentRow[]>(() => flattenLoad
   childrenByParentID.value,
   expandedDepartmentIds.value,
 ))
-const rootDepartmentTotalPages = computed(() => Math.max(
-  1,
-  Math.ceil((rootDepartments.value?.total ?? 0) / (rootDepartments.value?.page_size ?? 25)),
-))
-const canGoPreviousRootDepartmentPage = computed(() => (rootDepartments.value?.page ?? 1) > 1)
-const canGoNextRootDepartmentPage = computed(() => {
+const showRootDepartmentPagination = computed(() => {
   const current = rootDepartments.value
   return current != null && current.page * current.page_size < current.total
+    || current != null && current.page > 1
 })
 const canSubmitSubscriptionManagement = computed(() => {
   if (subscriptionForm.loading || !subscriptionForm.provider_id || !subscriptionForm.group_id) return false
@@ -193,7 +192,7 @@ const canSubmitSubscriptionManagement = computed(() => {
   return true
 })
 
-async function loadUsers() {
+async function loadUsers(preserveResults = false, pushHistory = false) {
   const generation = ++userRequestGeneration
   loading.value = true
   error.value = ''
@@ -206,18 +205,22 @@ async function loadUsers() {
       page_size: filters.page_size,
     }
     const res = await listAdminUsers(params)
-    if (generation !== userRequestGeneration) return
+    if (generation !== userRequestGeneration) return undefined
     const data = res.data.data
     rows.value = data?.items ?? []
     total.value = data?.total ?? 0
     filters.page = data?.page ?? filters.page
     filters.page_size = data?.page_size ?? filters.page_size
-    replaceAdminUsersQuery()
+    syncAdminUsersQuery(pushHistory)
+    return true
   } catch (err: any) {
-    if (generation !== userRequestGeneration) return
+    if (generation !== userRequestGeneration) return undefined
     error.value = err.response?.data?.message || err.message || t('adminUsers.loadFailed')
-    rows.value = []
-    total.value = 0
+    if (!preserveResults) {
+      rows.value = []
+      total.value = 0
+    }
+    return false
   } finally {
     if (generation === userRequestGeneration) loading.value = false
   }
@@ -257,7 +260,7 @@ function flattenLoadedDepartmentRows(
   return visible
 }
 
-async function loadRootDepartments(page = 1) {
+async function loadRootDepartments(page = 1, preserveResults = false) {
   if (departmentsLoading.value) return
   const generation = ++rootDepartmentRequestGeneration
   departmentsLoading.value = true
@@ -268,7 +271,7 @@ async function loadRootDepartments(page = 1) {
     rootDepartments.value = loadedDepartmentPage(res.data.data, page)
   } catch (err: any) {
     if (generation !== rootDepartmentRequestGeneration) return
-    rootDepartments.value = null
+    if (!preserveResults) rootDepartments.value = null
     departmentsError.value = err.response?.data?.message || err.message || t('adminUsers.departmentsLoadFailed')
   } finally {
     if (generation === rootDepartmentRequestGeneration) departmentsLoading.value = false
@@ -353,12 +356,7 @@ function queryString(key: string) {
   return typeof value === 'string' ? value : ''
 }
 
-function queryNumber(key: string, fallback: number) {
-  const value = Number(queryString(key))
-  return Number.isFinite(value) && value > 0 ? value : fallback
-}
-
-function replaceAdminUsersQuery() {
+function syncAdminUsersQuery(pushHistory = false) {
   const query: Record<string, string> = {}
   if (filters.view === 'departments') query.view = 'departments'
   if (filters.q.trim()) query.q = filters.q.trim()
@@ -366,7 +364,8 @@ function replaceAdminUsersQuery() {
   if (filters.access_status.trim()) query.access_status = filters.access_status.trim()
   if (filters.page > 1) query.page = String(filters.page)
   if (filters.page_size !== 20) query.page_size = String(filters.page_size)
-  void router.replace({ query })
+  if (pushHistory) void router.push({ query })
+  else void router.replace({ query })
 }
 
 function clearSearchTimer() {
@@ -379,25 +378,25 @@ function clearSearchTimer() {
 async function applySearch() {
   clearSearchTimer()
   filters.page = 1
-  await loadUsers()
+  await loadUsers(false, true)
 }
 
 async function changeDepartmentFilter() {
   filters.page = 1
   clearSubscriptionFeedback()
-  await loadUsers()
+  await loadUsers(false, true)
 }
 
 async function changeAccessStatusFilter() {
   filters.page = 1
   clearSubscriptionFeedback()
-  await loadUsers()
+  await loadUsers(false, true)
 }
 
 async function setAdminUsersView(view: 'users' | 'departments') {
   filters.view = view
   filters.page = 1
-  replaceAdminUsersQuery()
+  syncAdminUsersQuery(true)
   if (view === 'departments' && rootDepartments.value === null && !departmentsLoading.value) {
     await loadRootDepartments(1)
   }
@@ -421,24 +420,25 @@ async function openDepartmentUsers(department: AdminDirectoryDepartmentSummary) 
   filters.department_id = department.external_id
   filters.page = 1
   clearSubscriptionFeedback()
-  await loadUsers()
+  await loadUsers(false, true)
 }
 
-async function changePageSize() {
+async function changePageSize(pageSize: number) {
+  const previousPage = filters.page
+  const previousPageSize = filters.page_size
+  filters.page_size = pageSize
   filters.page = 1
-  await loadUsers()
+  if (await loadUsers(true, true) === false) {
+    filters.page = previousPage
+    filters.page_size = previousPageSize
+  }
 }
 
-async function previousPage() {
-  if (!canGoPrev.value) return
-  filters.page -= 1
-  await loadUsers()
-}
-
-async function nextPage() {
-  if (!canGoNext.value) return
-  filters.page += 1
-  await loadUsers()
+async function changePage(page: number) {
+  if (page < 1 || page > totalPages.value || page === filters.page) return
+  const previousPage = filters.page
+  filters.page = page
+  if (await loadUsers(true, true) === false) filters.page = previousPage
 }
 
 function formatDate(value?: string | null) {
@@ -564,16 +564,10 @@ async function loadMoreDepartmentChildren(departmentID: string) {
   await loadDepartmentChildren(departmentID, loaded.page + 1, true)
 }
 
-async function previousRootDepartmentPage() {
+async function changeRootDepartmentPage(page: number) {
   const current = rootDepartments.value
-  if (!current || current.page <= 1 || departmentsLoading.value) return
-  await loadRootDepartments(current.page - 1)
-}
-
-async function nextRootDepartmentPage() {
-  const current = rootDepartments.value
-  if (!current || current.page * current.page_size >= current.total || departmentsLoading.value) return
-  await loadRootDepartments(current.page + 1)
+  if (!current || page === current.page || departmentsLoading.value) return
+  await loadRootDepartments(page, true)
 }
 
 function subtreeMemberCountLabel(department: AdminDirectoryDepartmentSummary) {
@@ -928,14 +922,46 @@ async function confirmDisableAccess() {
 }
 
 watch(
-		() => filters.q,
+			() => filters.q,
   () => {
+    if (filters.q === queryString('q')) return
     userRequestGeneration += 1
     clearSearchTimer()
     searchTimer = window.setTimeout(() => {
       void applySearch()
     }, 300)
 	}
+)
+
+watch(
+  () => route.fullPath,
+  () => {
+    const next = {
+      view: queryString('view') === 'departments' ? 'departments' as const : 'users' as const,
+      q: queryString('q'),
+      department_id: queryString('department_id'),
+      access_status: queryString('access_status'),
+      page: positivePage(route.query.page),
+      page_size: fullPageSize(route.query.page_size),
+    }
+    if (
+      filters.view === next.view
+      && filters.q === next.q
+      && filters.department_id === next.department_id
+      && filters.access_status === next.access_status
+      && filters.page === next.page
+      && filters.page_size === next.page_size
+    ) return
+    clearSearchTimer()
+    Object.assign(filters, next)
+    clearSubscriptionFeedback()
+    if (next.view === 'departments') {
+      invalidateDepartmentChildren()
+      void loadRootDepartments(1)
+    } else {
+      void loadUsers()
+    }
+  },
 )
 
 onMounted(() => {
@@ -987,7 +1013,7 @@ onBeforeUnmount(() => {
       </ElRadioGroup>
 
       <div v-if="filters.view === 'users'" class="order-3 rounded-lg bg-white p-4 shadow">
-        <div data-testid="admin-users-filter-grid" class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_220px_180px_120px_auto]">
+        <div data-testid="admin-users-filter-grid" class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_220px_180px_auto]">
           <label data-testid="admin-users-search-field" class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ t('adminUsers.search') }}
             <ElInput
@@ -1020,22 +1046,6 @@ onBeforeUnmount(() => {
               <ElOption data-testid="admin-users-access-status-option-configured" value="configured" :label="t('adminUsers.configured')" />
               <ElOption data-testid="admin-users-access-status-option-disabled" value="disabled" :label="t('adminUsers.disabled')" />
               <ElOption data-testid="admin-users-access-status-option-missing-credential" value="missing_credential" :label="t('adminUsers.missingRelayCredential')" />
-            </ElSelect>
-          </div>
-          <div class="text-xs font-medium uppercase tracking-wide text-gray-500">
-            <span>{{ t('adminUsers.pageSize') }}</span>
-            <ElSelect
-              v-model="filters.page_size"
-              data-testid="admin-users-page-size"
-              class="mt-1 w-full"
-              :teleported="false"
-              :aria-label="t('adminUsers.pageSize')"
-              @change="changePageSize"
-            >
-              <ElOption data-testid="admin-users-page-size-option-10" :value="10" label="10" />
-              <ElOption data-testid="admin-users-page-size-option-20" :value="20" label="20" />
-              <ElOption data-testid="admin-users-page-size-option-50" :value="50" label="50" />
-              <ElOption data-testid="admin-users-page-size-option-100" :value="100" label="100" />
             </ElSelect>
           </div>
           <div class="flex items-end">
@@ -1229,29 +1239,12 @@ onBeforeUnmount(() => {
       <div v-if="filters.view === 'departments'" class="order-4 rounded-lg bg-white p-5 shadow">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('adminUsers.departments') }}</h2>
-	        <div class="flex items-center gap-2 text-xs text-gray-500">
-	          <span>{{ rootDepartments?.total ?? 0 }} {{ t('adminUsers.totalSuffix') }}</span>
-	          <ElButton
-	            data-testid="admin-users-department-roots-prev"
-	            :disabled="departmentsLoading || !canGoPreviousRootDepartmentPage"
-	            @click="previousRootDepartmentPage"
-	          >
-	            {{ t('adminUsers.prev') }}
-	          </ElButton>
-	          <span>{{ t('adminUsers.page') }} {{ rootDepartments?.page ?? 1 }} / {{ rootDepartmentTotalPages }}</span>
-	          <ElButton
-	            data-testid="admin-users-department-roots-next"
-	            :disabled="departmentsLoading || !canGoNextRootDepartmentPage"
-	            @click="nextRootDepartmentPage"
-	          >
-	            {{ t('adminUsers.next') }}
-	          </ElButton>
-	        </div>
+          <span class="text-xs text-gray-500">{{ rootDepartments?.total ?? 0 }} {{ t('adminUsers.totalSuffix') }}</span>
         </div>
         <ElAlert v-if="departmentsError" class="mt-3" type="error" :closable="false" show-icon :title="departmentsError" />
-        <div v-if="departmentsLoading" class="mt-3 text-sm text-gray-500">{{ t('adminUsers.loading') }}</div>
+        <div v-if="departmentsLoading && !rootDepartments" class="mt-3 text-sm text-gray-500">{{ t('adminUsers.loading') }}</div>
         <div v-else-if="visibleDepartmentRows.length === 0" class="mt-3 text-sm text-gray-400">{{ t('adminUsers.noDepartments') }}</div>
-	        <div v-else class="mt-3 overflow-hidden rounded-md border border-gray-200" role="tree">
+		        <div v-else class="mt-3 overflow-hidden rounded-md border border-gray-200" role="tree">
 	          <div
 	            v-for="visibleRow in visibleDepartmentRows"
 	            :key="visibleRow.department.external_id"
@@ -1297,10 +1290,10 @@ onBeforeUnmount(() => {
 	                v-else-if="departmentExpanded(visibleRow.department) && departmentChildrenEmpty(visibleRow.department.external_id)"
 	                :data-testid="`admin-users-department-children-empty-${visibleRow.department.external_id}`"
 	                class="mt-1 text-xs text-gray-400"
-	              >
-	                {{ t('adminUsers.noDepartments') }}
-	              </div>
-	            </div>
+		              >
+		                {{ t('adminUsers.noDepartments') }}
+		              </div>
+		            </div>
             <div class="flex shrink-0 flex-wrap items-center gap-2 text-xs text-gray-600">
               <span class="rounded-full bg-gray-100 px-2 py-0.5">{{ memberCountLabel(visibleRow.department.member_count) }}</span>
               <span class="rounded-full bg-slate-50 px-2 py-0.5 text-slate-700">{{ subtreeMemberCountLabel(visibleRow.department) }}</span>
@@ -1320,42 +1313,43 @@ onBeforeUnmount(() => {
 		            @keydown.enter.prevent.stop="loadMoreDepartmentChildren(visibleRow.department.external_id)"
 		            @keydown.space.prevent.stop="loadMoreDepartmentChildren(visibleRow.department.external_id)"
 	          >
-	            {{ t('adminUsers.next') }}
+		            {{ t('teamUsage.loadMoreDepartments') }}
 	          </ElButton>
-            </div>
-	          </div>
-	        </div>
+			          </div>
+			        </div>
+        </div>
+        <div v-if="showRootDepartmentPagination" class="mt-4 flex justify-end border-t border-slate-200 pt-4">
+          <ElPagination
+            data-testid="admin-users-department-pagination"
+            size="small"
+            background
+            :layout="desktopPagination ? 'prev, pager, next' : 'prev, slot, next'"
+            :pager-count="5"
+            :current-page="rootDepartments?.page ?? 1"
+            :page-size="rootDepartments?.page_size ?? 25"
+            :total="rootDepartments?.total ?? 0"
+            :disabled="departmentsLoading"
+            @current-change="changeRootDepartmentPage"
+          >
+            <span v-if="!desktopPagination" class="px-1 text-xs text-gray-500">
+              {{ t('pagination.pageOf', {
+                page: rootDepartments?.page ?? 1,
+                pages: Math.max(1, Math.ceil((rootDepartments?.total ?? 0) / (rootDepartments?.page_size ?? 25))),
+              }) }}
+            </span>
+          </ElPagination>
+        </div>
       </div>
 
       <div v-if="filters.view === 'users'" data-testid="admin-users-list-panel" class="order-4 rounded-lg bg-white p-5 shadow">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('adminUsers.localUsers') }}</h2>
-          <div class="flex items-center gap-2 text-xs text-gray-500">
-            <span>{{ total }} {{ t('adminUsers.totalSuffix') }}</span>
-            <ElButton
-              data-testid="admin-users-prev-page"
-              :disabled="!canGoPrev || loading"
-              @click="previousPage"
-            >
-              {{ t('adminUsers.prev') }}
-            </ElButton>
-            <span>{{ t('adminUsers.page') }} {{ filters.page }} / {{ totalPages }}</span>
-            <ElButton
-              data-testid="admin-users-next-page"
-              :disabled="!canGoNext || loading"
-              @click="nextPage"
-            >
-              {{ t('adminUsers.next') }}
-            </ElButton>
-          </div>
-        </div>
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('adminUsers.localUsers') }}</h2>
 
-	        <div v-if="showMobileUserRows" data-admin-user-list="mobile" class="mt-3 space-y-3">
+	        <div v-if="showMobileUserRows" data-admin-user-list="mobile" class="mt-3 divide-y divide-slate-200 border-y border-slate-200">
 	          <div
 	            v-for="row in rows"
 	            :key="row.id"
 	            data-admin-user-row
-	            class="rounded-lg border border-gray-100 bg-white p-4 shadow-sm"
+	            class="bg-white py-4"
 	          >
             <div class="flex items-start justify-between gap-3">
               <label class="flex min-w-0 items-start gap-3">
@@ -1531,8 +1525,38 @@ onBeforeUnmount(() => {
               </template>
             </ElTableColumn>
           </ElTable>
-        </div>
+	        </div>
 	        <ElEmpty v-if="!error && rows.length === 0" class="mt-3" :description="t('adminUsers.empty')" />
+        <div
+          v-if="showUserPagination"
+          class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4"
+        >
+          <span
+            v-if="desktopPagination"
+            data-testid="admin-users-page-range"
+            class="text-sm text-slate-500"
+          >
+            {{ t('pagination.range', { start: pageStart, end: pageEnd, total }) }}
+          </span>
+          <ElPagination
+            data-testid="admin-users-pagination"
+            class="ml-auto"
+            background
+            :current-page="filters.page"
+            :page-size="filters.page_size"
+            :page-sizes="FULL_PAGE_SIZES"
+            :total="total"
+            :pager-count="5"
+            :disabled="loading"
+            :layout="desktopPagination ? 'sizes, prev, pager, next' : 'prev, slot, next'"
+            @current-change="changePage"
+            @size-change="changePageSize"
+          >
+            <span v-if="!desktopPagination" class="px-2 text-sm text-slate-600">
+              {{ t('pagination.pageOf', { page: filters.page, pages: totalPages }) }}
+            </span>
+          </ElPagination>
+        </div>
       </div>
     </div>
 

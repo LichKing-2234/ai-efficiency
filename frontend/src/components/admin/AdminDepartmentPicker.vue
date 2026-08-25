@@ -53,9 +53,7 @@ const selectedLabel = computed(() => {
   return option.display_path || option.name || props.modelValue
 })
 const optionOffset = computed(() => props.allowAll ? 1 : 0)
-const canGoPrevious = computed(() => page.value > 1)
-const canGoNext = computed(() => page.value * pageSize.value < total.value)
-const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
+const showPagination = computed(() => items.value.length > 0 && total.value > pageSize.value)
 const triggerLabelledBy = computed(() => {
   const externalLabel = props.labelledBy?.trim()
   return externalLabel ? `${externalLabel} ${valueID}` : valueID
@@ -87,7 +85,7 @@ function resetActiveOption() {
   activeOptionIndex.value = selectedIndex >= 0 ? selectedIndex + optionOffset.value : 0
 }
 
-async function loadOptions(targetPage: number, selectedID = '', query = searchQuery.value.trim()) {
+async function loadOptions(targetPage: number, selectedID = '', query = searchQuery.value.trim(), preserveResults = false) {
   const generation = ++requestGeneration
   const selectionGeneration = selectedID ? ++selectionRequestGeneration : 0
   if (selectedID) selectionPendingID = selectedID
@@ -120,14 +118,16 @@ async function loadOptions(targetPage: number, selectedID = '', query = searchQu
     resetActiveOption()
   } catch (err: any) {
     if (generation !== requestGeneration) return
-    items.value = []
-    page.value = 1
-    pageSize.value = 20
-    total.value = 0
-    hasLoadedOptions.value = false
-    activeOptionIndex.value = 0
+    if (!preserveResults) {
+      items.value = []
+      page.value = 1
+      pageSize.value = 20
+      total.value = 0
+      hasLoadedOptions.value = false
+      activeOptionIndex.value = 0
+      optionsRequested = false
+    }
     error.value = err.response?.data?.message || err.message || t('adminUsers.departmentsLoadFailed')
-    optionsRequested = false
   } finally {
     if (selectedID && selectionGeneration === selectionRequestGeneration && selectionPendingID === selectedID) {
       selectionPendingID = ''
@@ -183,8 +183,16 @@ function close(restoreTriggerFocus = false) {
   clearSearchTimer()
   requestGeneration += 1
   loading.value = false
-  optionsRequested = hasLoadedOptions.value
-  if (!error.value) searchQuery.value = committedQuery
+  searchQuery.value = ''
+  committedQuery = ''
+  items.value = []
+  page.value = 1
+  pageSize.value = 20
+  total.value = 0
+  hasLoadedOptions.value = false
+  activeOptionIndex.value = 0
+  error.value = ''
+  optionsRequested = false
   if (restoreTriggerFocus) void nextTick(() => trigger.value?.ref?.focus())
 }
 
@@ -208,14 +216,9 @@ function scheduleSearch() {
   }, 300)
 }
 
-async function previousPage() {
-  if (loading.value || !canGoPrevious.value) return
-  await loadOptions(page.value - 1)
-}
-
-async function nextPage() {
-  if (loading.value || !canGoNext.value) return
-  await loadOptions(page.value + 1)
+async function changePage(targetPage: number) {
+  if (loading.value || targetPage === page.value) return
+  await loadOptions(targetPage, '', searchQuery.value.trim(), true)
 }
 
 function handleDocumentPointerDown(event: Event) {
@@ -386,24 +389,24 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="flex items-center justify-between gap-2 border-t border-gray-100 px-2 py-2 text-xs text-gray-500">
-        <ElButton
-          data-testid="admin-department-picker-prev"
-          :disabled="loading || !canGoPrevious"
+      <div v-if="showPagination" class="flex justify-end border-t border-gray-100 px-2 py-2">
+        <ElPagination
+          data-testid="admin-department-picker-pagination"
+          size="small"
+          background
+          layout="prev, slot, next"
+          :pager-count="5"
+          :current-page="page"
+          :page-size="pageSize"
+          :total="total"
+          :disabled="loading"
           @mousedown.prevent
-          @click="previousPage"
+          @current-change="changePage"
         >
-          {{ t('adminUsers.prev') }}
-        </ElButton>
-        <span data-testid="admin-department-picker-page">{{ t('adminUsers.page') }} {{ page }} / {{ totalPages }}</span>
-        <ElButton
-          data-testid="admin-department-picker-next"
-          :disabled="loading || !canGoNext"
-          @mousedown.prevent
-          @click="nextPage"
-        >
-          {{ t('adminUsers.next') }}
-        </ElButton>
+          <span class="px-1 text-xs text-gray-500">
+            {{ t('pagination.pageOf', { page, pages: Math.max(1, Math.ceil(total / pageSize)) }) }}
+          </span>
+        </ElPagination>
       </div>
     </div>
   </div>

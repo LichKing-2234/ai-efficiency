@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import AppPageHeader from '@/components/AppPageHeader.vue'
@@ -8,8 +8,10 @@ import { listProviders } from '@/api/scmProvider'
 import { autoBindUnboundRepos, createRepoDirect, repairFailedWebhooks } from '@/api/repo'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from '@/i18n'
+import { useMediaQuery } from '@/composables/useMediaQuery'
 import type { RepoConfig, RepoInventoryProviderSummary, RepoInventoryScopeSummary, RepoListParams, SCMProvider } from '@/types'
 import { repositoryStatusLabel, scmProviderTypeLabel } from '@/utils/displayLabels'
+import { FULL_PAGE_SIZES, fullPageSize, positivePage } from '@/utils/pagination'
 
 type BindingFilter = 'all' | 'bound' | 'unbound'
 
@@ -23,8 +25,9 @@ const deletingRepoID = ref<number | null>(null)
 const bindingFilter = ref<BindingFilter>(initialBindingFilter())
 const selectedProviderKey = ref(queryString(route.query.provider))
 const selectedScope = ref(queryString(route.query.scope))
-const currentPage = ref(readPositiveInt(route.query.page, 1))
-const currentPageSize = ref(readPositiveInt(route.query.page_size, 20))
+const currentPage = ref(positivePage(route.query.page))
+const currentPageSize = ref(fullPageSize(route.query.page_size))
+const desktopPagination = useMediaQuery('(min-width: 768px)', true)
 const scopeSearch = ref('')
 
 const autoBindLoading = ref(false)
@@ -46,8 +49,9 @@ const filteredScopes = computed(() => {
 })
 const hasInventory = computed(() => platformInventory.value.some((provider) => provider.total_repos > 0))
 const pageCount = computed(() => Math.max(1, Math.ceil(repoStore.total / currentPageSize.value)))
-const canGoPrevious = computed(() => currentPage.value > 1)
-const canGoNext = computed(() => currentPage.value < pageCount.value)
+const pageStart = computed(() => repoStore.total === 0 ? 0 : ((currentPage.value - 1) * currentPageSize.value) + 1)
+const pageEnd = computed(() => Math.min(repoStore.total, currentPage.value * currentPageSize.value))
+const showPagination = computed(() => repoStore.repos.length > 0 && repoStore.total > currentPageSize.value)
 
 const healthSummary = computed(() => {
   return platformInventory.value.reduce(
@@ -87,7 +91,7 @@ onMounted(() => {
     if (!applied) return
     hydrateServerPagination()
     hydrateServerSelection()
-    replaceRepoQuery()
+    syncRepoQuery()
   })
   void inventoryRequest.then(() => {
     ensureSelectionFromInventory()
@@ -99,14 +103,11 @@ function queryString(value: unknown) {
   return typeof value === 'string' ? value : ''
 }
 
-function readPositiveInt(value: unknown, fallback: number) {
-  const raw = queryString(value)
-  const parsed = Number.parseInt(raw, 10)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+function initialBindingFilter(): BindingFilter {
+  return bindingFilterFromQuery(route.query.binding)
 }
 
-function initialBindingFilter(): BindingFilter {
-  const value = route.query.binding
+function bindingFilterFromQuery(value: unknown): BindingFilter {
   return value === 'bound' || value === 'unbound' ? value : 'all'
 }
 
@@ -215,14 +216,15 @@ async function refreshWorkbench() {
   await fetchSelectedRepos()
 }
 
-async function fetchSelectedRepos() {
+async function fetchSelectedRepos(pushHistory = false) {
   const applied = await repoStore.fetchRepos(buildListParams())
-  if (!applied) return
+  if (!applied) return false
   hydrateServerPagination()
-  replaceRepoQuery()
+  syncRepoQuery(pushHistory)
+  return true
 }
 
-function replaceRepoQuery() {
+function syncRepoQuery(pushHistory = false) {
   const query: Record<string, string> = {}
   if (bindingFilter.value !== 'all') {
     query.binding = bindingFilter.value
@@ -239,7 +241,8 @@ function replaceRepoQuery() {
   if (currentPageSize.value !== 20) {
     query.page_size = String(currentPageSize.value)
   }
-  void router.replace({ query })
+  if (pushHistory) void router.push({ query })
+  else void router.replace({ query })
 }
 
 async function selectProvider(provider: RepoInventoryProviderSummary) {
@@ -247,13 +250,13 @@ async function selectProvider(provider: RepoInventoryProviderSummary) {
   selectedScope.value = firstScope(provider)
   scopeSearch.value = ''
   currentPage.value = 1
-  await fetchSelectedRepos()
+  await fetchSelectedRepos(true)
 }
 
 async function selectScope(scope: RepoInventoryScopeSummary) {
   selectedScope.value = scope.scope
   currentPage.value = 1
-  await fetchSelectedRepos()
+  await fetchSelectedRepos(true)
 }
 
 async function applyBindingFilter(next: BindingFilter) {
@@ -270,14 +273,51 @@ async function applyBindingFilter(next: BindingFilter) {
   }
 
   currentPage.value = 1
-  await fetchSelectedRepos()
+  await fetchSelectedRepos(true)
 }
 
 async function goToPage(page: number) {
   if (page < 1 || page > pageCount.value || page === currentPage.value) return
+  const previousPage = currentPage.value
   currentPage.value = page
-  await fetchSelectedRepos()
+  if (!await fetchSelectedRepos(true)) currentPage.value = previousPage
 }
+
+async function changePageSize(pageSize: number) {
+  const previousPage = currentPage.value
+  const previousPageSize = currentPageSize.value
+  currentPage.value = 1
+  currentPageSize.value = pageSize
+  if (!await fetchSelectedRepos(true)) {
+    currentPage.value = previousPage
+    currentPageSize.value = previousPageSize
+  }
+}
+
+watch(
+  () => route.fullPath,
+  () => {
+    if (route.path !== '/repos') return
+    const nextBinding = bindingFilterFromQuery(route.query.binding)
+    const nextProvider = queryString(route.query.provider)
+    const nextScope = queryString(route.query.scope)
+    const nextPage = positivePage(route.query.page)
+    const nextPageSize = fullPageSize(route.query.page_size)
+    if (
+      bindingFilter.value === nextBinding
+      && selectedProviderKey.value === nextProvider
+      && selectedScope.value === nextScope
+      && currentPage.value === nextPage
+      && currentPageSize.value === nextPageSize
+    ) return
+    bindingFilter.value = nextBinding
+    selectedProviderKey.value = nextProvider
+    selectedScope.value = nextScope
+    currentPage.value = nextPage
+    currentPageSize.value = nextPageSize
+    void fetchSelectedRepos()
+  },
+)
 
 function goToDetail(repo: RepoConfig) {
   router.push(`/repos/${repo.id}`)
@@ -731,26 +771,31 @@ function repoStatusType(status: string) {
               </div>
 
 
-              <div class="flex flex-col gap-3 border-t border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-                <div class="text-sm text-slate-500">
-                  {{ t('repos.pageOf', { page: currentPage, pages: pageCount }) }}
+              <div
+                v-if="showPagination"
+                class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-5 py-4"
+              >
+                <div data-testid="repo-page-range" class="hidden text-sm text-slate-500 md:block">
+                  {{ t('pagination.range', { start: pageStart, end: pageEnd, total: repoStore.total }) }}
                 </div>
-                <div class="flex items-center gap-2">
-                  <el-button
-                    data-testid="repo-prev-page"
-                    :disabled="!canGoPrevious"
-                    @click="goToPage(currentPage - 1)"
-                  >
-                    {{ t('repos.previousPage') }}
-                  </el-button>
-                  <el-button
-                    data-testid="repo-next-page"
-                    :disabled="!canGoNext"
-                    @click="goToPage(currentPage + 1)"
-                  >
-                    {{ t('repos.nextPage') }}
-                  </el-button>
-                </div>
+                <el-pagination
+                  data-testid="repo-pagination"
+                  class="ml-auto"
+                  background
+                  :current-page="currentPage"
+                  :page-size="currentPageSize"
+                  :page-sizes="FULL_PAGE_SIZES"
+                  :total="repoStore.total"
+                  :pager-count="5"
+                  :disabled="repoStore.loading"
+                  :layout="desktopPagination ? 'sizes, prev, pager, next' : 'prev, slot, next'"
+                  @current-change="goToPage"
+                  @size-change="changePageSize"
+                >
+                  <span v-if="!desktopPagination" class="px-2 text-sm text-slate-600">
+                    {{ t('pagination.pageOf', { page: currentPage, pages: pageCount }) }}
+                  </span>
+                </el-pagination>
               </div>
             </template>
           </div>

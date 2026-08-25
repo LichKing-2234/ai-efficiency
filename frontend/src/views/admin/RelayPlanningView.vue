@@ -35,11 +35,12 @@ import {
   type RelayPlanningUserSearchItem,
 } from '@/api/relayPlanning'
 import { createFeatureTranslator } from '@/utils/featureI18n'
-import { useWideContentLayout } from '@/composables/useMediaQuery'
+import { useMediaQuery, useWideContentLayout } from '@/composables/useMediaQuery'
 
 const { t: baseT, locale } = useI18n()
 const t = createFeatureTranslator(locale, baseT, 'relayPlanning.', relayPlanningMessages)
 const wideContentLayout = useWideContentLayout()
+const desktopPagination = useMediaQuery('(min-width: 768px)', true)
 
 const loading = ref(false)
 const confirming = ref(false)
@@ -58,6 +59,7 @@ const memberSources = ref<Record<string, number>>({})
 const targetSearchQueries = reactive<Record<number, string>>({})
 const targetSearchResults = reactive<Record<number, RelayPlanningUserSearchItem[]>>({})
 const targetSearchLoading = reactive<Record<number, boolean>>({})
+const targetSearchErrors = reactive<Record<number, string>>({})
 const targetSearchPages = reactive<Record<number, { total: number; page: number; page_size: number }>>({})
 const searchDelayMS = 300
 const targetSearchTimers = new Map<number, ReturnType<typeof setTimeout>>()
@@ -89,6 +91,8 @@ const accountDrafts = reactive<Record<number, Record<string, RelayPlanningAccoun
 const accountSearchQueries = reactive<Record<string, string>>({})
 const accountSearchResults = reactive<Record<string, RelayPlanningAccount[]>>({})
 const accountSearchLoading = reactive<Record<string, boolean>>({})
+const accountSearchErrors = reactive<Record<string, string>>({})
+const accountSearchPages = reactive<Record<string, { total: number; page: number; page_size: number }>>({})
 const accountSearchTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const accountSearchRequestIDs = new Map<string, number>()
 const providers = ref<Array<{ id: number; name: string; display_name: string; groups: Array<{ group_id: string; group_name: string; platform: string }> }>>([])
@@ -270,9 +274,12 @@ function clearSearchState() {
 	for (const key of Object.keys(targetSearchResults)) delete targetSearchResults[Number(key)]
 	for (const key of Object.keys(targetSearchLoading)) delete targetSearchLoading[Number(key)]
 	for (const key of Object.keys(targetSearchPages)) delete targetSearchPages[Number(key)]
+	for (const key of Object.keys(targetSearchErrors)) delete targetSearchErrors[Number(key)]
 	for (const key of Object.keys(accountSearchQueries)) delete accountSearchQueries[key]
 	for (const key of Object.keys(accountSearchResults)) delete accountSearchResults[key]
 	for (const key of Object.keys(accountSearchLoading)) delete accountSearchLoading[key]
+	for (const key of Object.keys(accountSearchErrors)) delete accountSearchErrors[key]
+	for (const key of Object.keys(accountSearchPages)) delete accountSearchPages[key]
 }
 
 function applyPlan(next: RelayPlanningPlan | null) {
@@ -658,6 +665,7 @@ function previewAccountSearchKey(targetIndex: number) {
 function scheduleAccountSearch(key: string, providerID: number, platform: string, value: string | number) {
 	const query = String(value || '').trim()
 	accountSearchQueries[key] = query
+	accountSearchErrors[key] = ''
 	const previous = accountSearchTimers.get(key)
 	if (previous) clearTimeout(previous)
 	const requestID = (accountSearchRequestIDs.get(key) ?? 0) + 1
@@ -665,9 +673,10 @@ function scheduleAccountSearch(key: string, providerID: number, platform: string
 	if (!query) {
 		accountSearchResults[key] = []
 		accountSearchLoading[key] = false
+		delete accountSearchPages[key]
 		return
 	}
-	accountSearchTimers.set(key, setTimeout(() => void runAccountSearch(key, providerID, platform, query, requestID), searchDelayMS))
+	accountSearchTimers.set(key, setTimeout(() => void runAccountSearch(key, providerID, platform, query, 1, requestID), searchDelayMS))
 }
 
 function schedulePreviewAccountSearch(targetIndex: number, value: string | number) {
@@ -680,13 +689,38 @@ function scheduleManagedAccountSearch(mapping: RelayPlanningMapping | null, targ
 	scheduleAccountSearch(accountSearchKey(mapping.id, targetGroupID), mapping.provider_id, mapping.platform, value)
 }
 
-async function runAccountSearch(key: string, providerID: number, platform: string, query: string, requestID: number) {
+function searchAccountPage(key: string, providerID: number, platform: string, page: number) {
+	const query = String(accountSearchQueries[key] || '').trim()
+	if (!query) return
+	const previous = accountSearchTimers.get(key)
+	if (previous) clearTimeout(previous)
+	const requestID = (accountSearchRequestIDs.get(key) ?? 0) + 1
+	accountSearchRequestIDs.set(key, requestID)
+	void runAccountSearch(key, providerID, platform, query, page, requestID)
+}
+
+function searchPreviewAccountPage(targetIndex: number, page: number) {
+	if (!plan.value) return
+	searchAccountPage(previewAccountSearchKey(targetIndex), plan.value.provider_id, plan.value.platform, page)
+}
+
+function searchManagedAccountPage(mapping: RelayPlanningMapping | null, targetGroupID: number, page: number) {
+	if (!mapping) return
+	searchAccountPage(accountSearchKey(mapping.id, targetGroupID), mapping.provider_id, mapping.platform, page)
+}
+
+async function runAccountSearch(key: string, providerID: number, platform: string, query: string, page: number, requestID: number) {
 	accountSearchLoading[key] = true
+	accountSearchErrors[key] = ''
 	try {
-		const response = await searchRelayPlanningAccounts({ provider_id: providerID, platform, q: query, page: 1, page_size: 20 })
-		if (accountSearchRequestIDs.get(key) === requestID) accountSearchResults[key] = response.data.data?.items ?? []
+		const response = await searchRelayPlanningAccounts({ provider_id: providerID, platform, q: query, page, page_size: 20 })
+		if (accountSearchRequestIDs.get(key) === requestID) {
+			const result = response.data.data
+			accountSearchResults[key] = result?.items ?? []
+			accountSearchPages[key] = { total: result?.total ?? 0, page: result?.page ?? page, page_size: result?.page_size ?? 20 }
+		}
 	} catch (err: any) {
-		if (accountSearchRequestIDs.get(key) === requestID) ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.accountSearchFailed'))
+		if (accountSearchRequestIDs.get(key) === requestID) accountSearchErrors[key] = err.response?.data?.message || err.message || t('relayPlanning.accountSearchFailed')
 	} finally {
 		if (accountSearchRequestIDs.get(key) === requestID) accountSearchLoading[key] = false
 	}
@@ -707,6 +741,7 @@ function addAccountToPreviewTarget(targetIndex: number, account: RelayPlanningAc
 	const key = previewAccountSearchKey(targetIndex)
 	accountSearchQueries[key] = ''
 	accountSearchResults[key] = []
+	delete accountSearchPages[key]
 }
 
 function reorderPreviewAccounts(targetIndex: number, accountID: number, offset: number) {
@@ -734,6 +769,7 @@ function addAccountToTarget(mappingID: number, targetGroupID: number, account: R
 	const searchKey = accountSearchKey(mappingID, targetGroupID)
 	accountSearchQueries[searchKey] = ''
 	accountSearchResults[searchKey] = []
+	delete accountSearchPages[searchKey]
 }
 
 function reorderAccounts(mappingID: number, targetGroupID: number, accountID: number, offset: number) {
@@ -798,6 +834,7 @@ function scheduleUserSearch(targetIndex: number, value: string | number) {
   if (!plan.value) return
   const query = String(value || '').trim()
   targetSearchQueries[targetIndex] = query
+	targetSearchErrors[targetIndex] = ''
 	const previous = targetSearchTimers.get(targetIndex)
 	if (previous) clearTimeout(previous)
 	const requestID = (targetSearchRequestIDs.get(targetIndex) ?? 0) + 1
@@ -824,6 +861,7 @@ function searchUserPage(targetIndex: number, page: number) {
 async function runUserSearch(targetIndex: number, query: string, page: number, requestID: number) {
 	if (!plan.value) return
   targetSearchLoading[targetIndex] = true
+	targetSearchErrors[targetIndex] = ''
   try {
     const response = await searchRelayPlanningUsers({
       provider_id: plan.value.provider_id,
@@ -838,7 +876,7 @@ async function runUserSearch(targetIndex: number, query: string, page: number, r
 			targetSearchPages[targetIndex] = { total: result?.total ?? 0, page: result?.page ?? page, page_size: result?.page_size ?? 20 }
 		}
   } catch (err: any) {
-		if (targetSearchRequestIDs.get(targetIndex) === requestID) ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.searchFailed'))
+			if (targetSearchRequestIDs.get(targetIndex) === requestID) targetSearchErrors[targetIndex] = err.response?.data?.message || err.message || t('relayPlanning.searchFailed')
   } finally {
 		if (targetSearchRequestIDs.get(targetIndex) === requestID) targetSearchLoading[targetIndex] = false
   }
@@ -1192,22 +1230,44 @@ onBeforeUnmount(clearSearchState)
 						</div>
 					</div>
 					<el-empty v-else :description="t('relayPlanning.noDesiredAccounts')" :image-size="48" />
-					<el-input :data-testid="`target-account-search-${assignment.index}`" :model-value="accountSearchQueries[previewAccountSearchKey(assignment.index)] || ''" :loading="accountSearchLoading[previewAccountSearchKey(assignment.index)]" clearable class="mt-3" :placeholder="t('relayPlanning.searchAccounts')" @input="(value) => schedulePreviewAccountSearch(assignment.index, value)" />
-					<div v-if="accountSearchResults[previewAccountSearchKey(assignment.index)]?.length" class="mt-2 divide-y divide-slate-100 border-y border-slate-100">
+						<el-input :data-testid="`target-account-search-${assignment.index}`" :model-value="accountSearchQueries[previewAccountSearchKey(assignment.index)] || ''" :loading="accountSearchLoading[previewAccountSearchKey(assignment.index)]" clearable class="mt-3" :placeholder="t('relayPlanning.searchAccounts')" @input="(value) => schedulePreviewAccountSearch(assignment.index, value)" />
+						<el-alert v-if="accountSearchErrors[previewAccountSearchKey(assignment.index)]" class="mt-2" type="error" :closable="false" show-icon :title="accountSearchErrors[previewAccountSearchKey(assignment.index)]" />
+						<el-button v-if="accountSearchErrors[previewAccountSearchKey(assignment.index)]" class="mt-1 !ml-0" size="small" type="primary" link @click="searchPreviewAccountPage(assignment.index, accountSearchPages[previewAccountSearchKey(assignment.index)]?.page ?? 1)">{{ t('relayPlanning.retry') }}</el-button>
+						<div v-if="accountSearchResults[previewAccountSearchKey(assignment.index)]?.length" class="mt-2 divide-y divide-slate-100 border-y border-slate-100">
 						<div v-for="account in accountSearchResults[previewAccountSearchKey(assignment.index)]" :key="account.id" class="flex items-center justify-between gap-3 py-2 text-sm">
 							<span class="min-w-0"><span class="block truncate font-medium">{{ account.name }} (#{{ account.id }})</span><span class="block truncate text-xs" :class="account.status !== 'active' || !account.schedulable ? 'text-amber-700' : 'text-slate-500'">{{ account.type }} · {{ account.status }} · {{ account.schedulable ? t('relayPlanning.schedulable') : t('relayPlanning.notSchedulable') }}</span></span>
 							<el-tooltip :content="t('relayPlanning.add')"><el-button :data-testid="`add-target-account-${assignment.index}-${account.id}`" circle size="small" type="primary" :icon="Plus" :disabled="assignment.accounts.some((item) => item.id === account.id)" :aria-label="t('relayPlanning.add')" @click="addAccountToPreviewTarget(assignment.index, account)" /></el-tooltip>
 						</div>
+						<el-pagination
+							v-if="accountSearchPages[previewAccountSearchKey(assignment.index)]?.total > accountSearchPages[previewAccountSearchKey(assignment.index)]?.page_size"
+							:data-testid="`target-account-pagination-${assignment.index}`"
+							class="mt-2 justify-end"
+							size="small"
+							background
+							:layout="desktopPagination ? 'prev, pager, next' : 'prev, slot, next'"
+							:pager-count="5"
+							:current-page="accountSearchPages[previewAccountSearchKey(assignment.index)].page"
+							:page-size="accountSearchPages[previewAccountSearchKey(assignment.index)].page_size"
+							:total="accountSearchPages[previewAccountSearchKey(assignment.index)].total"
+							:disabled="accountSearchLoading[previewAccountSearchKey(assignment.index)]"
+							@current-change="(page) => searchPreviewAccountPage(assignment.index, page)"
+						>
+							<span v-if="!desktopPagination" class="px-1 text-xs text-slate-500">{{ baseT('pagination.pageOf', { page: accountSearchPages[previewAccountSearchKey(assignment.index)].page, pages: Math.ceil(accountSearchPages[previewAccountSearchKey(assignment.index)].total / accountSearchPages[previewAccountSearchKey(assignment.index)].page_size) }) }}</span>
+						</el-pagination>
 					</div>
 				</div>
 					<div v-if="assignment.user_ids?.length" class="mt-2 space-y-2 text-sm text-slate-700"><div v-for="userID in assignment.user_ids" :key="userID"><div class="flex items-center justify-between gap-2"><span class="min-w-0 break-words">{{ candidateLabel(userID) }}</span><el-tooltip v-if="activeMappingID" :content="t('relayPlanning.removeMember')"><el-button :data-testid="`remove-member-${userID}`" circle size="small" type="danger" plain :icon="Delete" :aria-label="t('relayPlanning.removeMember')" @click="moveCandidate(userID, null)" /></el-tooltip></div><div v-if="memberActions[String(userID)]" class="mt-1"><el-radio-group v-model="memberActions[String(userID)].mode" size="small"><el-radio-button value="move_here">{{ t('relayPlanning.moveHere') }}</el-radio-button><el-radio-button value="add_additionally">{{ t('relayPlanning.addAdditionally') }}</el-radio-button></el-radio-group><div class="mt-1 text-xs text-amber-700">{{ managedAssignmentsByUser[String(userID)]?.map((item) => `${item.department_name || item.department_id} · #${item.target_group_id}`).join(', ') }}</div><div v-if="memberActions[String(userID)].mode === 'add_additionally'" class="mt-1 text-xs text-amber-700">{{ t('relayPlanning.addAdditionallyWarning') }}</div></div></div></div>
               <el-input :data-testid="`target-user-search-${assignment.index}`" :model-value="targetSearchQueries[assignment.index] || ''" :loading="targetSearchLoading[assignment.index]" clearable class="mt-3" :placeholder="t('relayPlanning.searchUsers')" @input="(value) => scheduleUserSearch(assignment.index, value)" />
+              <el-alert v-if="targetSearchErrors[assignment.index]" class="mt-2" type="error" :closable="false" show-icon :title="targetSearchErrors[assignment.index]" />
+              <el-button v-if="targetSearchErrors[assignment.index]" class="mt-1 !ml-0" size="small" type="primary" link @click="searchUserPage(assignment.index, targetSearchPages[assignment.index]?.page ?? 1)">{{ t('relayPlanning.retry') }}</el-button>
               <div v-if="targetSearchResults[assignment.index]?.length" class="mt-2 divide-y divide-slate-100 border-y border-slate-100">
                 <div v-for="item in targetSearchResults[assignment.index]" :key="item.user_id" class="flex items-center justify-between gap-3 py-2 text-sm">
                   <span class="min-w-0"><span class="block truncate font-medium">{{ item.username || item.email }}</span><span class="block truncate text-xs text-slate-500">{{ item.department?.display_path || item.department?.name || '-' }}</span><span v-if="item.disabled_reason" class="block text-xs text-amber-700">{{ item.disabled_reason }}</span></span>
                   <el-button :data-testid="`add-searched-user-${assignment.index}-${item.user_id}`" size="small" type="primary" :disabled="!item.selectable" @click="addSearchedUser(assignment.index, item)">{{ t('relayPlanning.add') }}</el-button>
                 </div>
-                <el-pagination v-if="targetSearchPages[assignment.index]?.total > targetSearchPages[assignment.index]?.page_size" :data-testid="`target-user-pagination-${assignment.index}`" class="mt-2 justify-end" small background layout="prev, pager, next" :current-page="targetSearchPages[assignment.index].page" :page-size="targetSearchPages[assignment.index].page_size" :total="targetSearchPages[assignment.index].total" @current-change="(page) => searchUserPage(assignment.index, page)" />
+                <el-pagination v-if="targetSearchPages[assignment.index]?.total > targetSearchPages[assignment.index]?.page_size" :data-testid="`target-user-pagination-${assignment.index}`" class="mt-2 justify-end" size="small" background :layout="desktopPagination ? 'prev, pager, next' : 'prev, slot, next'" :pager-count="5" :current-page="targetSearchPages[assignment.index].page" :page-size="targetSearchPages[assignment.index].page_size" :total="targetSearchPages[assignment.index].total" :disabled="targetSearchLoading[assignment.index]" @current-change="(page) => searchUserPage(assignment.index, page)">
+                  <span v-if="!desktopPagination" class="px-1 text-xs text-slate-500">{{ baseT('pagination.pageOf', { page: targetSearchPages[assignment.index].page, pages: Math.ceil(targetSearchPages[assignment.index].total / targetSearchPages[assignment.index].page_size) }) }}</span>
+                </el-pagination>
               </div>
             </div>
           </div>
@@ -1260,7 +1320,9 @@ onBeforeUnmount(clearSearchState)
           <el-table-column :label="t('relayPlanning.status')" min-width="150"><template #default="scope"><el-tag :type="scope.row.warnings?.length || scope.row.status === 'needs_retry' ? 'warning' : 'success'">{{ scope.row.warnings?.length ? t('relayPlanning.reviewNeeded') : translateMappingStatus(scope.row.status) }}</el-tag><div v-if="scope.row.warnings?.length" class="mt-1 text-xs text-amber-700">{{ scope.row.warnings.map(translateWarning).join('; ') }}</div><div v-if="scope.row.department_suggestions?.length" class="mt-1 text-xs text-slate-500">{{ t('relayPlanning.departmentSuggestions') }}: {{ scope.row.department_suggestions.map(departmentSuggestionLabel).join(', ') }}</div></template></el-table-column>
           <el-table-column :label="t('relayPlanning.actions')" min-width="360"><template #default="scope"><el-button :data-testid="`replan-mapping-${scope.row.id}`" link type="primary" @click="replan(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.replan') }}</el-button><el-button :data-testid="`renew-mapping-${scope.row.id}`" link type="primary" :icon="Calendar" :loading="renewalLoadingID === scope.row.id" :disabled="renewalLoadingID !== null && renewalLoadingID !== scope.row.id" @click="renewMapping(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.renewSubscriptions') }}</el-button><el-button :data-testid="`rebind-mapping-${scope.row.id}`" link type="primary" :loading="rebindPendingID === scope.row.id" :disabled="rebindPendingID !== null && rebindPendingID !== scope.row.id" @click="rebind(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.rebind') }}</el-button><el-button :data-testid="`manage-accounts-${scope.row.id}`" link type="primary" @click="manageAccounts(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.manageAccounts') }}</el-button></template></el-table-column>
         </el-table>
-        <el-pagination v-if="mappings.length > mappingPageSize" data-testid="mapping-pagination" class="mt-4 justify-end" size="small" background layout="prev, pager, next" :pager-count="5" :current-page="mappingPage" :page-size="mappingPageSize" :total="mappings.length" @current-change="mappingPage = $event" />
+        <el-pagination v-if="mappings.length > mappingPageSize" data-testid="mapping-pagination" class="mt-4 justify-end" size="small" background :layout="desktopPagination ? 'prev, pager, next' : 'prev, slot, next'" :pager-count="5" :current-page="mappingPage" :page-size="mappingPageSize" :total="mappings.length" @current-change="mappingPage = $event">
+          <span v-if="!desktopPagination" class="px-1 text-xs text-slate-500">{{ baseT('pagination.pageOf', { page: mappingPage, pages: Math.ceil(mappings.length / mappingPageSize) }) }}</span>
+        </el-pagination>
         <div v-if="accountMapping" class="mt-4 border-t border-slate-200 pt-4">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div><div class="text-sm font-semibold text-slate-900">{{ t('relayPlanning.accountRelationships') }}</div><div class="text-xs text-slate-500">{{ accountMapping.department_name }} · {{ accountMapping.platform }}</div></div>
@@ -1293,12 +1355,30 @@ onBeforeUnmount(clearSearchState)
 						</div>
 					</div>
 					<el-empty v-else :description="t('relayPlanning.noDesiredAccounts')" :image-size="48" />
-					<el-input :data-testid="`account-search-${accountMapping.id}-${pool.target_group_id}`" :model-value="accountSearchQueries[accountSearchKey(accountMapping.id, pool.target_group_id)] || ''" :loading="accountSearchLoading[accountSearchKey(accountMapping.id, pool.target_group_id)]" clearable class="mt-3" :placeholder="t('relayPlanning.searchAccounts')" @input="(value) => scheduleManagedAccountSearch(accountMapping, pool.target_group_id, value)" />
-					<div v-if="accountSearchResults[accountSearchKey(accountMapping.id, pool.target_group_id)]?.length" class="mt-2 divide-y divide-slate-100 border-y border-slate-100">
+						<el-input :data-testid="`account-search-${accountMapping.id}-${pool.target_group_id}`" :model-value="accountSearchQueries[accountSearchKey(accountMapping.id, pool.target_group_id)] || ''" :loading="accountSearchLoading[accountSearchKey(accountMapping.id, pool.target_group_id)]" clearable class="mt-3" :placeholder="t('relayPlanning.searchAccounts')" @input="(value) => scheduleManagedAccountSearch(accountMapping, pool.target_group_id, value)" />
+						<el-alert v-if="accountSearchErrors[accountSearchKey(accountMapping.id, pool.target_group_id)]" class="mt-2" type="error" :closable="false" show-icon :title="accountSearchErrors[accountSearchKey(accountMapping.id, pool.target_group_id)]" />
+						<el-button v-if="accountSearchErrors[accountSearchKey(accountMapping.id, pool.target_group_id)]" class="mt-1 !ml-0" size="small" type="primary" link @click="searchManagedAccountPage(accountMapping, pool.target_group_id, accountSearchPages[accountSearchKey(accountMapping.id, pool.target_group_id)]?.page ?? 1)">{{ t('relayPlanning.retry') }}</el-button>
+						<div v-if="accountSearchResults[accountSearchKey(accountMapping.id, pool.target_group_id)]?.length" class="mt-2 divide-y divide-slate-100 border-y border-slate-100">
 						<div v-for="account in accountSearchResults[accountSearchKey(accountMapping.id, pool.target_group_id)]" :key="account.id" class="flex items-center justify-between gap-3 py-2 text-sm">
 							<span class="min-w-0"><span class="block truncate font-medium">{{ account.name }} (#{{ account.id }})</span><span class="block truncate text-xs" :class="account.status !== 'active' || !account.schedulable ? 'text-amber-700' : 'text-slate-500'">{{ account.type }} · {{ account.status }} · {{ account.schedulable ? t('relayPlanning.schedulable') : t('relayPlanning.notSchedulable') }}</span></span>
 							<el-tooltip :content="t('relayPlanning.add')"><el-button :data-testid="`add-account-${accountMapping.id}-${pool.target_group_id}-${account.id}`" circle size="small" type="primary" :icon="Plus" :disabled="accountDrafts[accountMapping.id]?.[String(pool.target_group_id)]?.some((item) => item.id === account.id)" :aria-label="t('relayPlanning.add')" @click="addAccountToTarget(accountMapping.id, pool.target_group_id, account)" /></el-tooltip>
 						</div>
+						<el-pagination
+							v-if="accountSearchPages[accountSearchKey(accountMapping.id, pool.target_group_id)]?.total > accountSearchPages[accountSearchKey(accountMapping.id, pool.target_group_id)]?.page_size"
+							:data-testid="`account-pagination-${accountMapping.id}-${pool.target_group_id}`"
+							class="mt-2 justify-end"
+							size="small"
+							background
+							:layout="desktopPagination ? 'prev, pager, next' : 'prev, slot, next'"
+							:pager-count="5"
+							:current-page="accountSearchPages[accountSearchKey(accountMapping.id, pool.target_group_id)].page"
+							:page-size="accountSearchPages[accountSearchKey(accountMapping.id, pool.target_group_id)].page_size"
+							:total="accountSearchPages[accountSearchKey(accountMapping.id, pool.target_group_id)].total"
+							:disabled="accountSearchLoading[accountSearchKey(accountMapping.id, pool.target_group_id)]"
+							@current-change="(page) => searchManagedAccountPage(accountMapping, pool.target_group_id, page)"
+						>
+							<span v-if="!desktopPagination" class="px-1 text-xs text-slate-500">{{ baseT('pagination.pageOf', { page: accountSearchPages[accountSearchKey(accountMapping.id, pool.target_group_id)].page, pages: Math.ceil(accountSearchPages[accountSearchKey(accountMapping.id, pool.target_group_id)].total / accountSearchPages[accountSearchKey(accountMapping.id, pool.target_group_id)].page_size) }) }}</span>
+						</el-pagination>
 					</div>
 				</template>
             </div>

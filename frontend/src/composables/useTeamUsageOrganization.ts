@@ -56,5 +56,6 @@ export function useTeamUsageOrganization() {
     ensureBranch: browser.ensureBranch,
     loadMoreDepartments: browser.loadMoreDepartments,
     loadMoreMembers: browser.loadMoreMembers,
+    retryBranch: browser.retryBranch,
   }
 }

@@ -11,6 +11,7 @@ import {
   validateDirectorySource,
 } from '@/api/directory'
 import { useI18n, type MessageKey } from '@/i18n'
+import { useMediaQuery } from '@/composables/useMediaQuery'
 import { useSettingsResourcesStore } from '@/stores/settingsResources'
 import { useWorkItemsStore } from '@/stores/workItems'
 import type {
@@ -46,8 +47,10 @@ const runPage = ref(0)
 const runPageSize = ref(20)
 const runOffset = ref(0)
 const pendingRunOffset = ref<number | null>(null)
+const failedRunOffset = ref<number | null>(null)
 const runHistoryLoading = ref(false)
 const runHistoryError = ref('')
+const desktopPagination = useMediaQuery('(min-width: 768px)', true)
 const latestActiveRun = ref<DirectoryRunSummary | null>(null)
 const selectedRunId = ref<number | null>(null)
 const selectedRunSummary = ref<DirectoryRunSummary | null>(null)
@@ -76,8 +79,7 @@ const form = ref<DirectorySourceRequest>({
 
 const selectedSource = computed(() => sources.value.find((source) => source.id === selectedSourceId.value) || null)
 const runPageCount = computed(() => Math.max(1, Math.ceil(runTotal.value / Math.max(runPageSize.value, 1))))
-const canLoadPreviousRuns = computed(() => !runHistoryLoading.value && runOffset.value > 0)
-const canLoadNextRuns = computed(() => !runHistoryLoading.value && runOffset.value + runPageSize.value < runTotal.value)
+const showRunPagination = computed(() => runSummaries.value.length > 0 && runTotal.value > runPageSize.value)
 const currentCredentialRef = computed(() => {
   const match = form.value.dsl.match(/^\s*credential_ref:\s*["']?([^"'\s#]+)["']?\s*$/m)
   return match?.[1] || 'directory_api_key'
@@ -204,6 +206,7 @@ steps:
   },
 ]
 
+
 onMounted(loadSources)
 onUnmounted(() => {
   pageRequestGeneration++
@@ -282,6 +285,7 @@ function resetRunView() {
   runPageSize.value = RUN_PAGE_SIZE
   runOffset.value = 0
   pendingRunOffset.value = null
+  failedRunOffset.value = null
   pendingRunPageActionGeneration = null
   runHistoryLoading.value = false
   runHistoryError.value = ''
@@ -569,6 +573,7 @@ async function loadRunPage(sourceID: number, offset: number, recovery?: RunPageR
   pendingRunPageActionGeneration = recovery?.generation ?? null
   runHistoryLoading.value = true
   runHistoryError.value = ''
+  failedRunOffset.value = null
   try {
     const res = await listDirectoryRuns(sourceID, { limit: RUN_PAGE_SIZE, offset })
     if (!pageRequestContextMatches(generation, sourceID, offset, recovery)) return false
@@ -588,6 +593,7 @@ async function loadRunPage(sourceID: number, offset: number, recovery?: RunPageR
   } catch (e: any) {
     if (pageRequestContextMatches(generation, sourceID, offset, recovery)) {
       runHistoryError.value = apiErrorMessage(e, t('directorySync.runHistoryLoadFailed'))
+      failedRunOffset.value = offset
     }
     return false
   } finally {
@@ -599,14 +605,14 @@ async function loadRunPage(sourceID: number, offset: number, recovery?: RunPageR
   }
 }
 
-function loadPreviousRunPage() {
-  if (!selectedSourceId.value || !canLoadPreviousRuns.value) return
-  void loadRunPage(selectedSourceId.value, Math.max(0, runOffset.value - runPageSize.value))
+function changeRunPage(displayPage: number) {
+  if (!selectedSourceId.value || runHistoryLoading.value || displayPage === runPage.value + 1) return
+  void loadRunPage(selectedSourceId.value, (displayPage - 1) * runPageSize.value)
 }
 
-function loadNextRunPage() {
-  if (!selectedSourceId.value || !canLoadNextRuns.value) return
-  void loadRunPage(selectedSourceId.value, runOffset.value + runPageSize.value)
+function retryRunPage() {
+  if (!selectedSourceId.value || failedRunOffset.value == null || runHistoryLoading.value) return
+  void loadRunPage(selectedSourceId.value, failedRunOffset.value)
 }
 
 async function selectRun(run: DirectoryRunSummary) {
@@ -1055,7 +1061,14 @@ overrides:
             <span class="text-xs text-gray-500">{{ t('directorySync.runHistoryTotal', { total: runTotal }) }}</span>
           </div>
 
-          <ElAlert v-if="runHistoryError" class="mt-3" type="error" :title="runHistoryError" :closable="false" />
+          <ElAlert v-if="runHistoryError" class="mt-3" type="error" :closable="false">
+            <template #title>
+              <span>{{ runHistoryError }}</span>
+              <ElButton data-testid="directory-run-history-retry" class="!ml-2" type="primary" link @click="retryRunPage">
+                {{ t('pagination.retry') }}
+              </ElButton>
+            </template>
+          </ElAlert>
           <p v-if="runHistoryLoading && runSummaries.length === 0" class="mt-3 text-sm text-gray-500">{{ t('directorySync.runHistoryLoading') }}</p>
           <p v-else-if="!runHistoryError && runSummaries.length === 0" class="mt-3 text-sm text-gray-500">{{ t('directorySync.runHistoryEmpty') }}</p>
           <div v-if="runSummaries.length > 0" class="mt-3 divide-y divide-gray-200 border-y border-gray-200" role="list">
@@ -1078,26 +1091,26 @@ overrides:
             </ElButton>
           </div>
 
-          <div class="mt-3 flex min-h-9 flex-wrap items-center justify-between gap-2">
-            <ElButton
-              data-testid="directory-run-prev"
-              size="small"
-              :disabled="!canLoadPreviousRuns"
-              @click="loadPreviousRunPage"
-            >
-              {{ t('directorySync.runHistoryPrevious') }}
-            </ElButton>
-            <span data-testid="directory-run-page-meta" class="text-xs text-gray-500">
-              {{ t('directorySync.runHistoryPage', { page: runPage + 1, pages: runPageCount }) }}
+          <div v-if="showRunPagination" class="mt-3 flex min-h-9 justify-end border-t border-gray-100 pt-3">
+            <span data-testid="directory-run-page-meta" class="sr-only">
+              {{ t('pagination.pageOf', { page: runPage + 1, pages: runPageCount }) }}
             </span>
-            <ElButton
-              data-testid="directory-run-next"
+            <ElPagination
+              data-testid="directory-run-pagination"
               size="small"
-              :disabled="!canLoadNextRuns"
-              @click="loadNextRunPage"
+              background
+              :layout="desktopPagination ? 'prev, pager, next' : 'prev, slot, next'"
+              :pager-count="5"
+              :current-page="runPage + 1"
+              :page-size="runPageSize"
+              :total="runTotal"
+              :disabled="runHistoryLoading"
+              @current-change="changeRunPage"
             >
-              {{ t('directorySync.runHistoryNext') }}
-            </ElButton>
+              <span v-if="!desktopPagination" class="px-1 text-xs text-gray-500">
+                {{ t('pagination.pageOf', { page: runPage + 1, pages: runPageCount }) }}
+              </span>
+            </ElPagination>
           </div>
 
           <div v-if="selectedRunSummary" data-testid="directory-run-detail" class="mt-4 border-t border-gray-200 pt-4">
