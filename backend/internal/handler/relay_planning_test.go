@@ -3005,6 +3005,71 @@ func TestRelayPlanningReplanKeepsUnavailableSavedMemberAndBlocksMixedConfirm(t *
 	}
 }
 
+func TestRelayPlanningReplanRemovesOneOfTwoSavedMembers(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().SetName("relay-planning-multi-remove-test").SetDisplayName("Relay Planning Multi Remove Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-admin-key").SetEnabled(true).SaveX(ctx)
+	source, run := createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
+	alice := createRelayPlanningDirectoryUser(t, ctx, client, source, run, "dept-alpha", "alice", "alice@example.com", 42)
+	bob := createRelayPlanningDirectoryUser(t, ctx, client, source, run, "dept-alpha", "bob", "bob@example.org", 43)
+	mapping := client.RelayGroupMapping.Create().
+		SetProviderID(providerConfig.ID).SetDepartmentExternalID("dept-alpha").SetDepartmentName("Department Alpha").SetPlatform("openai").
+		SetTemplateGroupID(10).SetSourceGroupID(20).SetGroupIds([]int64{101}).
+		SetMemberAssignments(map[string]int64{fmt.Sprint(alice.ID): 101, fmt.Sprint(bob.ID): 101}).
+		SetMemberSources(map[string]int64{fmt.Sprint(alice.ID): 20, fmt.Sprint(bob.ID): 20}).
+		SetAccountManagementInitialized(true).SetWeeklyCostTarget(2500).SaveX(ctx)
+	provider := &relayPlanningSearchProvider{
+		users: map[int64]*relay.User{
+			42: {ID: 42, Username: "alice", Email: alice.Email},
+			43: {ID: 43, Username: "bob", Email: bob.Email},
+		},
+		groups: []relay.Group{{ID: 10, Name: "Group Alpha", Platform: "openai"}, {ID: 20, Name: "Group Source", Platform: "openai"}, {ID: 101, Name: "Group Target", Platform: "openai"}},
+		subscriptions: map[int64][]relay.UserSubscription{
+			42: {{UserID: 42, GroupID: 101, Status: "active"}},
+			43: {{UserID: 43, GroupID: 101, Status: "active"}},
+		},
+		keys:              map[int64][]relay.APIKey{42: {}, 43: {}},
+		relationshipPages: [][]int64{{42, 43}},
+	}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	router := gin.New()
+	handler := NewRelayPlanningHandler(service)
+	path := fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID)
+	router.POST("/admin/relay-planning/mappings/:id/replan", handler.Replan)
+	router.POST("/admin/relay-planning/mappings/:id/replan/execute", handler.ReplanExecute)
+	payload := fmt.Sprintf(`{"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d]}],"removed_user_ids":[%d]}`, alice.ID, alice.ID, bob.ID)
+	request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("reviewed removal status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Data relayplanning.Plan `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode reviewed removal response: %v", err)
+	}
+	if len(body.Data.Assignments) != 1 || !reflect.DeepEqual(body.Data.Assignments[0].UserIDs, []int{alice.ID}) {
+		t.Fatalf("reviewed removal assignments = %+v, want only Alice", body.Data.Assignments)
+	}
+	if containsRelayPlanningWarning(body.Data.Warnings, fmt.Sprintf("user %d has no relay mapping", bob.ID)) {
+		t.Fatalf("reviewed removal warnings = %v, Bob must not be treated as unavailable", body.Data.Warnings)
+	}
+	executePayload := fmt.Sprintf(`{"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d]}],"removed_user_ids":[%d],"expected_relationship_fingerprint":%q,"operation_key":"multi-remove-1"}`, alice.ID, alice.ID, bob.ID, body.Data.RelationshipFingerprint)
+	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(executePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("reviewed removal confirm status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	if !reflect.DeepEqual(provider.assigned, []string{"43:20:365"}) || !reflect.DeepEqual(provider.removed, []string{"43:101"}) {
+		t.Fatalf("reviewed removal writes = assigned:%v removed:%v, want Bob source restore and target removal", provider.assigned, provider.removed)
+	}
+}
+
 func TestRelayPlanningPreviewRejectsStaleProviderIdentity(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)

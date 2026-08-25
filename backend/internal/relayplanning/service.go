@@ -699,9 +699,17 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		return nil, fmt.Errorf("load department users: %w", err)
 	}
 	selected := selectedSet(req.SelectedUserIDs)
-	required := selected
-	restrictToSelected := len(selected) > 0
-	if !restrictToSelected && mapping != nil {
+	required := make(map[int]struct{}, len(selected)+len(req.RemovedUserIDs))
+	for userID := range selected {
+		required[userID] = struct{}{}
+	}
+	restrictToRequired := len(selected) > 0
+	for _, userID := range req.RemovedUserIDs {
+		if userID > 0 {
+			required[userID] = struct{}{}
+		}
+	}
+	if !restrictToRequired && mapping != nil {
 		required = make(map[int]struct{}, len(mapping.MemberAssignments))
 		for rawUserID := range mapping.MemberAssignments {
 			if userID, parseErr := strconv.Atoi(rawUserID); parseErr == nil && userID > 0 {
@@ -728,13 +736,13 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 			for _, u := range extra {
 				byID[u.ID] = u
 			}
-			if !restrictToSelected {
+			if !restrictToRequired {
 				users = append(users, extra...)
 			}
 		}
-		if restrictToSelected {
-			filtered := make([]*ent.User, 0, len(selected))
-			for userID := range selected {
+		if restrictToRequired {
+			filtered := make([]*ent.User, 0, len(required))
+			for userID := range required {
 				if u := byID[userID]; u != nil {
 					filtered = append(filtered, u)
 				}
