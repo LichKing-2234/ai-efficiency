@@ -6,13 +6,14 @@ import (
 )
 
 type replanRosterInput struct {
-	TargetGroupIDs   []int64
-	SavedAssignments map[int]int64
-	Members          []replanRosterMember
-	UnmanagedCosts   map[int64]float64
-	HasReview        bool
-	ReviewedTargets  []replanRosterTargetReview
-	RemovedUserIDs   []int
+	TargetGroupIDs          []int64
+	AvailableTargetGroupIDs []int64
+	SavedAssignments        map[int]int64
+	Members                 []replanRosterMember
+	UnmanagedCosts          map[int64]float64
+	HasReview               bool
+	ReviewedTargets         []replanRosterTargetReview
+	RemovedUserIDs          []int
 }
 
 type replanRosterMember struct {
@@ -40,11 +41,13 @@ type replanRosterUnavailableReason uint8
 const (
 	replanRosterUnavailableIdentity replanRosterUnavailableReason = iota + 1
 	replanRosterUnavailableSubscription
+	replanRosterUnavailableTarget
 )
 
 type replanRosterBlocker struct {
-	UserID int
-	Reason replanRosterUnavailableReason
+	UserID        int
+	TargetGroupID int64
+	Reason        replanRosterUnavailableReason
 }
 
 type replanRosterMemberError struct {
@@ -64,6 +67,15 @@ type replanRosterResult struct {
 func reviewReplanRoster(input replanRosterInput) (replanRosterResult, error) {
 	result := replanRosterResult{Targets: make([]replanRosterTarget, len(input.TargetGroupIDs))}
 	targetIndexes := make(map[int64]int, len(input.TargetGroupIDs))
+	availableTargets := make(map[int64]struct{}, len(input.AvailableTargetGroupIDs))
+	for _, groupID := range input.AvailableTargetGroupIDs {
+		availableTargets[groupID] = struct{}{}
+	}
+	if input.AvailableTargetGroupIDs == nil {
+		for _, groupID := range input.TargetGroupIDs {
+			availableTargets[groupID] = struct{}{}
+		}
+	}
 	for index, groupID := range input.TargetGroupIDs {
 		result.Targets[index] = replanRosterTarget{
 			Index:     index,
@@ -72,6 +84,9 @@ func reviewReplanRoster(input replanRosterInput) (replanRosterResult, error) {
 			TotalCost: input.UnmanagedCosts[groupID],
 		}
 		targetIndexes[groupID] = index
+		if _, available := availableTargets[groupID]; !available {
+			result.Blockers = append(result.Blockers, replanRosterBlocker{TargetGroupID: groupID, Reason: replanRosterUnavailableTarget})
+		}
 	}
 
 	members := make(map[int]replanRosterMember, len(input.Members))

@@ -798,7 +798,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		if err != nil {
 			return nil, fmt.Errorf("load unmanaged relay members: %w", err)
 		}
-		roster, rosterErr := reviewReplanRoster(replanRosterInputFromPlan(mapping, candidates, unmanagedMembers, req.Assignments, req.RemovedUserIDs))
+		roster, rosterErr := reviewReplanRoster(replanRosterInputFromPlan(mapping, candidates, unmanagedMembers, groups, req.Assignments, req.RemovedUserIDs))
 		if rosterErr != nil {
 			return nil, fmt.Errorf("validate relay planning assignments: %w", rosterErr)
 		}
@@ -839,7 +839,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	if err := s.assignTargets(ctx, req, groups, departmentName, assignments); err != nil {
 		return nil, fmt.Errorf("assign relay planning targets: %w", err)
 	}
-	if err := validateTargetGroupNames(assignments, groups); err != nil {
+	if err := validateTargetGroupNames(assignments, groups, replanBlockers); err != nil {
 		return nil, fmt.Errorf("validate relay planning target names: %w", err)
 	}
 	if err := assignPreviewAccounts(facts.accounts, req.Platform, template.ID, mapping, assignments); err != nil {
@@ -965,7 +965,7 @@ func pendingCreationTargetIDs(operationState map[string]map[string]string) map[i
 	return pending
 }
 
-func replanRosterInputFromPlan(mapping *ent.RelayGroupMapping, candidates []Candidate, unmanaged []UnmanagedMember, reviewed []Assignment, removedUserIDs []int) replanRosterInput {
+func replanRosterInputFromPlan(mapping *ent.RelayGroupMapping, candidates []Candidate, unmanaged []UnmanagedMember, groups []relay.Group, reviewed []Assignment, removedUserIDs []int) replanRosterInput {
 	savedAssignments := make(map[int]int64, len(mapping.MemberAssignments))
 	for rawUserID, groupID := range mapping.MemberAssignments {
 		userID, err := strconv.Atoi(rawUserID)
@@ -993,14 +993,25 @@ func replanRosterInputFromPlan(mapping *ent.RelayGroupMapping, candidates []Cand
 	for _, assignment := range reviewed {
 		reviewedTargets = append(reviewedTargets, replanRosterTargetReview{Index: assignment.Index, UserIDs: append([]int(nil), assignment.UserIDs...)})
 	}
+	availableTargetGroupIDs := make([]int64, 0, len(mapping.GroupIds))
+	savedTargets := make(map[int64]struct{}, len(mapping.GroupIds))
+	for _, groupID := range mapping.GroupIds {
+		savedTargets[groupID] = struct{}{}
+	}
+	for _, group := range groups {
+		if _, saved := savedTargets[group.ID]; saved && strings.EqualFold(strings.TrimSpace(group.Platform), strings.TrimSpace(mapping.Platform)) {
+			availableTargetGroupIDs = append(availableTargetGroupIDs, group.ID)
+		}
+	}
 	return replanRosterInput{
-		TargetGroupIDs:   append([]int64(nil), mapping.GroupIds...),
-		SavedAssignments: savedAssignments,
-		Members:          members,
-		UnmanagedCosts:   unmanagedCosts,
-		HasReview:        reviewed != nil,
-		ReviewedTargets:  reviewedTargets,
-		RemovedUserIDs:   append([]int(nil), removedUserIDs...),
+		TargetGroupIDs:          append([]int64(nil), mapping.GroupIds...),
+		AvailableTargetGroupIDs: availableTargetGroupIDs,
+		SavedAssignments:        savedAssignments,
+		Members:                 members,
+		UnmanagedCosts:          unmanagedCosts,
+		HasReview:               reviewed != nil,
+		ReviewedTargets:         reviewedTargets,
+		RemovedUserIDs:          append([]int(nil), removedUserIDs...),
 	}
 }
 
@@ -1056,6 +1067,8 @@ func replanRosterBlockerMessages(blocker replanRosterBlocker) (warning, differen
 	switch blocker.Reason {
 	case replanRosterUnavailableIdentity:
 		return fmt.Sprintf("user %d has no relay mapping", blocker.UserID), replanRosterUnavailableDifference(blocker.Reason)
+	case replanRosterUnavailableTarget:
+		return fmt.Sprintf("target group %d is unavailable", blocker.TargetGroupID), "a Target Group changed or is no longer available"
 	default:
 		return "", ""
 	}
@@ -5129,13 +5142,22 @@ func normalizeTargetGroupName(name string) string {
 	}, strings.TrimSpace(name))
 }
 
-func validateTargetGroupNames(assignments []Assignment, groups []relay.Group) error {
+func validateTargetGroupNames(assignments []Assignment, groups []relay.Group, blockers []replanRosterBlocker) error {
 	owners := make(map[string]int64, len(groups))
 	for _, group := range groups {
 		owners[group.Name] = group.ID
 	}
+	unavailableTargets := make(map[int64]struct{})
+	for _, blocker := range blockers {
+		if blocker.Reason == replanRosterUnavailableTarget && blocker.TargetGroupID > 0 {
+			unavailableTargets[blocker.TargetGroupID] = struct{}{}
+		}
+	}
 	seen := make(map[string]struct{}, len(assignments))
 	for index := range assignments {
+		if _, unavailable := unavailableTargets[assignments[index].TargetGroupID]; unavailable {
+			continue
+		}
 		name := normalizeTargetGroupName(assignments[index].TargetGroupName)
 		if name == "" {
 			return fmt.Errorf("target %d name is required", assignments[index].Index+1)

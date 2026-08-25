@@ -15,3 +15,7 @@ _Avoid_: Original members, current members
 **Replan Roster**:
 The managed mapping members in one target group at the Replan Baseline. It excludes newly eligible source or department users, is not expanded by recommendations, and retains members whose current Relay identity is unavailable.
 _Avoid_: Candidate pool, suggested members
+
+**Unavailable Replan Target**:
+A target Group ID saved by the Replan Baseline that is absent from the current Relay Group facts. Replan keeps the saved Target and its roster visible as non-executable drift until a later fresh Preview observes the Target again.
+_Avoid_: Deleted target, replacement target

@@ -6,6 +6,34 @@ import (
 	"testing"
 )
 
+func TestReviewReplanRosterKeepsUnavailableSavedTargetAndBlocksExecution(t *testing.T) {
+	result, err := reviewReplanRoster(replanRosterInput{
+		TargetGroupIDs:          []int64{101, 102},
+		AvailableTargetGroupIDs: []int64{102},
+		SavedAssignments: map[int]int64{
+			1: 101,
+			2: 102,
+		},
+		Members: []replanRosterMember{
+			{UserID: 1, Assignable: true, RangeCost: 12.5},
+			{UserID: 2, Assignable: true, RangeCost: 7.5},
+		},
+	})
+	if err != nil {
+		t.Fatalf("reviewReplanRoster() error = %v", err)
+	}
+	if got := result.Targets; !reflect.DeepEqual(got, []replanRosterTarget{
+		{Index: 0, GroupID: 101, UserIDs: []int{1}, TotalCost: 12.5},
+		{Index: 1, GroupID: 102, UserIDs: []int{2}, TotalCost: 7.5},
+	}) {
+		t.Fatalf("targets = %+v, want saved target order and rosters", got)
+	}
+	wantBlockers := []replanRosterBlocker{{TargetGroupID: 101, Reason: replanRosterUnavailableTarget}}
+	if !reflect.DeepEqual(result.Blockers, wantBlockers) {
+		t.Fatalf("blockers = %+v, want %+v", result.Blockers, wantBlockers)
+	}
+}
+
 func TestReviewReplanRosterKeepsUnavailableSavedMemberAndBlocksExecution(t *testing.T) {
 	result, err := reviewReplanRoster(replanRosterInput{
 		TargetGroupIDs: []int64{101},
