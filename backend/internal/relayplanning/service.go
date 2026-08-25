@@ -1657,10 +1657,10 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 		candidate, reusable := candidatesByUserID[userFacts[index].LocalUserID]
 		if reusable && candidate.RelayUserID == userFacts[index].RelayUserID {
 			if candidate.relationshipGroupErr != nil {
-				return "", fmt.Errorf("list subscriptions for relay user %d: %w", userFacts[index].RelayUserID, candidate.relationshipGroupErr)
+				return "", fmt.Errorf("subscription relationships are unavailable for relay user %d", userFacts[index].RelayUserID)
 			}
 			if candidate.relationshipKeyErr != nil {
-				return "", fmt.Errorf("list API keys for relay user %d: %w", userFacts[index].RelayUserID, candidate.relationshipKeyErr)
+				return "", fmt.Errorf("API Key relationships are unavailable for relay user %d", userFacts[index].RelayUserID)
 			}
 			for _, subscription := range candidate.relationshipSubscriptions {
 				if _, relevant := relevantGroupIDs[subscription.GroupID]; relevant {
@@ -1687,7 +1687,7 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 				var err error
 				subscriptions, err = subscriptionLister.ListUserSubscriptions(ctx, userFacts[index].RelayUserID)
 				if err != nil {
-					return "", fmt.Errorf("list subscriptions for relay user %d: %w", userFacts[index].RelayUserID, err)
+					return "", fmt.Errorf("subscription relationships are unavailable for relay user %d", userFacts[index].RelayUserID)
 				}
 			}
 			for _, subscription := range subscriptions {
@@ -1702,7 +1702,7 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 			}
 			keys, err := requestFacts.userAPIKeys(ctx, provider, userFacts[index].RelayUserID)
 			if err != nil {
-				return "", fmt.Errorf("list API keys for relay user %d: %w", userFacts[index].RelayUserID, err)
+				return "", fmt.Errorf("API Key relationships are unavailable for relay user %d", userFacts[index].RelayUserID)
 			}
 			for _, key := range keys {
 				groupID := apiKeyGroupID(key)
@@ -4092,7 +4092,7 @@ func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestF
 	candidate.relationshipKeyErr = facts.keyErr
 	if facts.groupErr != nil {
 		candidate.replanUnavailableReason = replanRosterUnavailableSubscription
-		candidate.Warnings = append(candidate.Warnings, fmt.Sprintf("relay groups unavailable: %v", facts.groupErr))
+		candidate.Warnings = append(candidate.Warnings, "subscription relationships are unavailable")
 		return candidate
 	}
 	candidate.SourceMember = facts.eligible

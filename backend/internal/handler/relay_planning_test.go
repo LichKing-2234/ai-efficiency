@@ -42,6 +42,7 @@ type relayPlanningSearchProvider struct {
 	keys                   map[int64][]relay.APIKey
 	usage                  map[int64]relay.TeamUserUsageStats
 	subscriptionError      error
+	keyError               error
 	relationshipError      error
 	allowedGroupsError     error
 	assigned               []string
@@ -213,6 +214,9 @@ func (p *relayPlanningSearchProvider) ListAllowedGroupsForUser(context.Context, 
 
 func (p *relayPlanningSearchProvider) ListUserAPIKeys(_ context.Context, userID int64) ([]relay.APIKey, error) {
 	p.keyReads.Add(1)
+	if p.keyError != nil {
+		return nil, p.keyError
+	}
 	return append([]relay.APIKey(nil), p.keys[userID]...), nil
 }
 
@@ -3161,6 +3165,26 @@ func TestRelayPlanningReplanPreservesSubscriptionStaleCategory(t *testing.T) {
 	}
 	backing.subscriptionError = errors.New("synthetic subscription read failure")
 	backing.allowedGroupsError = errors.New("synthetic allowed-group read failure")
+	request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity || strings.Contains(response.Body.String(), "synthetic subscription read failure") || strings.Contains(response.Body.String(), "synthetic allowed-group read failure") {
+		t.Fatalf("subscription Preview status/body = %d/%s, want safe 422 without raw provider errors", response.Code, response.Body.String())
+	}
+	backing.subscriptionError = nil
+	backing.allowedGroupsError = nil
+	backing.keyError = errors.New("synthetic API Key read failure")
+	request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity || strings.Contains(response.Body.String(), "synthetic API Key read failure") {
+		t.Fatalf("API Key Preview status/body = %d/%s, want safe 422 without raw provider error", response.Code, response.Body.String())
+	}
+	backing.keyError = nil
+	backing.subscriptionError = errors.New("synthetic subscription read failure")
+	backing.allowedGroupsError = errors.New("synthetic allowed-group read failure")
 	executePayload := fmt.Sprintf(`{"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d]}],"expected_relationship_fingerprint":%q,"operation_key":"subscription-stale-1"}`, alice.ID, alice.ID, initial.Data.RelationshipFingerprint)
 	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(executePayload))
 	request.Header.Set("Content-Type", "application/json")
@@ -3191,17 +3215,20 @@ func TestRelayPlanningFailedRemovalRemainsRetryable(t *testing.T) {
 	client := testdb.Open(t)
 	providerConfig := client.RelayProvider.Create().SetName("relay-planning-removal-retry-test").SetDisplayName("Relay Planning Removal Retry Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-admin-key").SetEnabled(true).SaveX(ctx)
 	source, run := createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
-	alice := createRelayPlanningDirectoryUser(t, ctx, client, source, run, "dept-alpha", "alice", "alice@example.com", 42)
+	bob := createRelayPlanningDirectoryUser(t, ctx, client, source, run, "dept-alpha", "bob", "bob@example.org", 43)
+	alice := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource("ldap").SetRelayUserID(42).SaveX(ctx)
 	mapping := client.RelayGroupMapping.Create().
 		SetProviderID(providerConfig.ID).SetDepartmentExternalID("dept-alpha").SetDepartmentName("Department Alpha").SetPlatform("openai").
-		SetTemplateGroupID(10).SetSourceGroupID(20).SetGroupIds([]int64{101}).SetMemberAssignments(map[string]int64{fmt.Sprint(alice.ID): 101}).SetMemberSources(map[string]int64{fmt.Sprint(alice.ID): 20}).
+		SetTemplateGroupID(10).SetSourceGroupID(20).SetGroupIds([]int64{101}).
+		SetMemberAssignments(map[string]int64{fmt.Sprint(alice.ID): 101, fmt.Sprint(bob.ID): 101}).
+		SetMemberSources(map[string]int64{fmt.Sprint(alice.ID): 20, fmt.Sprint(bob.ID): 20}).
 		SetAccountManagementInitialized(true).SetDesiredAccounts(map[string][]map[string]int64{"101": {{"account_id": 11, "priority": 1}}}).SetWeeklyCostTarget(2500).SaveX(ctx)
 	provider := &relayPlanningSearchProvider{
-		users:          map[int64]*relay.User{42: {ID: 42, Username: "alice", Email: alice.Email}},
+		users:          map[int64]*relay.User{42: {ID: 42, Username: "alice", Email: alice.Email}, 43: {ID: 43, Username: "bob", Email: bob.Email}},
 		groups:         []relay.Group{{ID: 10, Name: "Group Alpha", Platform: "openai"}, {ID: 20, Name: "Group Source", Platform: "openai"}, {ID: 101, Name: "Group Target", Platform: "openai"}},
 		accounts:       []relay.Account{{ID: 11, Name: "Account Alpha", Platform: "openai", GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 101, Priority: 1}}}},
-		subscriptions:  map[int64][]relay.UserSubscription{42: {{UserID: 42, GroupID: 101, Status: "active"}}},
-		keys:           map[int64][]relay.APIKey{42: {{ID: 501, UserID: 42, GroupID: 101, Status: "active"}}},
+		subscriptions:  map[int64][]relay.UserSubscription{42: {{UserID: 42, GroupID: 101, Status: "active"}}, 43: {{UserID: 43, GroupID: 101, Status: "active"}}},
+		keys:           map[int64][]relay.APIKey{42: {{ID: 501, UserID: 42, GroupID: 101, Status: "active"}}, 43: {}},
 		removeFailures: map[int64]error{101: errors.New("synthetic removal failure")},
 	}
 	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
@@ -3210,9 +3237,9 @@ func TestRelayPlanningFailedRemovalRemainsRetryable(t *testing.T) {
 	router.POST("/admin/relay-planning/mappings/:id/replan", handler.Replan)
 	router.POST("/admin/relay-planning/mappings/:id/replan/execute", handler.ReplanExecute)
 	path := fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID)
-	previewPayload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[]}],"removed_user_ids":[%d]}`, alice.ID)
+	previewPayload := fmt.Sprintf(`{"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d]}],"removed_user_ids":[%d]}`, bob.ID, bob.ID, alice.ID)
 	fingerprint := previewRelayPlanningFingerprint(t, router, path, previewPayload)
-	executePayload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[]}],"removed_user_ids":[%d],"expected_relationship_fingerprint":%q,"operation_key":"remove-retry-1"}`, alice.ID, fingerprint)
+	executePayload := fmt.Sprintf(`{"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d]}],"removed_user_ids":[%d],"expected_relationship_fingerprint":%q,"operation_key":"remove-retry-1"}`, bob.ID, bob.ID, alice.ID, fingerprint)
 	request := httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(executePayload))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
@@ -3221,7 +3248,7 @@ func TestRelayPlanningFailedRemovalRemainsRetryable(t *testing.T) {
 		t.Fatalf("execute status = %d, want 200, body=%s", response.Code, response.Body.String())
 	}
 	persisted := client.RelayGroupMapping.GetX(ctx, mapping.ID)
-	if _, stillDesired := persisted.MemberAssignments[fmt.Sprint(alice.ID)]; stillDesired || persisted.Status != "needs_retry" {
+	if _, stillDesired := persisted.MemberAssignments[fmt.Sprint(alice.ID)]; stillDesired || persisted.MemberAssignments[fmt.Sprint(bob.ID)] != 101 || persisted.Status != "needs_retry" {
 		t.Fatalf("failed removal persistence = assignments:%v status:%s, want updated desired state and retry metadata", persisted.MemberAssignments, persisted.Status)
 	}
 	request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(previewPayload))
@@ -3248,7 +3275,7 @@ func TestRelayPlanningFailedRemovalRemainsRetryable(t *testing.T) {
 		t.Fatalf("retry relationship summary = %+v, want Source restore, Target removal, and API Key move", retrySummary)
 	}
 	delete(provider.removeFailures, int64(101))
-	retryPayload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[]}],"removed_user_ids":[%d],"expected_relationship_fingerprint":%q,"operation_key":"remove-retry-2"}`, alice.ID, retryPreview.Data.RelationshipFingerprint)
+	retryPayload := fmt.Sprintf(`{"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d]}],"removed_user_ids":[%d],"expected_relationship_fingerprint":%q,"operation_key":"remove-retry-2"}`, bob.ID, bob.ID, alice.ID, retryPreview.Data.RelationshipFingerprint)
 	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(retryPayload))
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
