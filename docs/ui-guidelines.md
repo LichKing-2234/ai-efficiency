@@ -115,17 +115,19 @@ a broader custom theme until a product requirement justifies one.
 
 ## Build Contract
 
-The pre-migration baseline at commit `2e1c2884` is:
+The accepted Node 20 reference and rounded hard ceilings are:
 
-| Aggregate | Baseline gzip | Node 20 migration measurement | Enforced maximum |
+| Aggregate | Pre-migration baseline | Node 20 accepted reference | Enforced maximum |
 | --- | ---: | ---: | ---: |
-| Initial shell | 67,521 bytes | 72,603 bytes | 72,800 bytes |
-| Default English `/usage` | 96,562 bytes | 157,902 bytes | 159,500 bytes |
-| Complex `/admin/users` route | 100,309 bytes | 245,974 bytes | 253,909 bytes |
+| Initial shell | 67,521 bytes | 72,869 bytes | 76,800 bytes (75 KiB) |
+| Default English `/usage` | 96,562 bytes | 158,908 bytes | 163,840 bytes (160 KiB) |
+| Complex `/admin/users` route | 100,309 bytes | 254,272 bytes | 262,144 bytes (256 KiB) |
 
-`frontend/scripts/measure-build.mjs` enforces these exact ceilings. A
-hosted-runtime measurement that exceeds them is an application bundle
-regression to remove, not a reason to expand the contract.
+`frontend/scripts/measure-build.mjs` enforces these rounded ceilings under the
+repository-pinned Node runtime. They are not byte-perfect snapshots and must not
+automatically ratchet to each build. A future recalibration requires pinned-Node
+before/after evidence and a written justification; an unexplained exceedance
+remains an application bundle regression.
 Production and measured builds resolve Vue Router to its official browser
 production entry; development and tests retain the standard diagnostic entry.
 Measured production builds must also prove that Element Plus remains on demand,

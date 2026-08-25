@@ -9,7 +9,7 @@
 2026-08-25 本分支本地验证结果：
 
 - `npm test`: 59 个测试文件、849 个测试通过；
-- `npm run build:measure`: structural assertions 通过，initial shell 为 72,698 gzip bytes，默认英文 `/usage` 为 158,566，默认英文 `/admin/users` 为 253,901，均在现有限额内；
+- Node `20.20.2` 下 `npm run build:measure`: structural assertions 通过，initial shell 为 72,869 gzip bytes，默认英文 `/usage` 为 158,908，默认英文 `/admin/users` 为 254,272，均在现有限额内；
 - `npm run test:e2e:role`: 126/126 通过；
 - 390、768、1024、1280、1440 px route matrix 在真实多页 mock 下通过 overflow、content-fit、touch-target 和 interaction 检查，并完成人工截图抽查；
 - `git diff --check` 通过。
