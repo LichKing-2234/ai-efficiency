@@ -2,13 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
-import { ElDialog, ElMessage } from 'element-plus'
+import { ElDialog, ElMessage, ElPagination } from 'element-plus'
 import RepoListView from '@/views/repos/RepoListView.vue'
 import { setLocale } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { cleanupTeleportedContent, withTeleportedContent } from './helpers/teleport'
 
 const messageError = vi.spyOn(ElMessage, 'error').mockImplementation(() => undefined as any)
+
+async function clickRepoPage(wrapper: ReturnType<typeof mount>, direction: 'prev' | 'next') {
+  await wrapper.get(`[data-testid="repo-pagination"] .btn-${direction}`).trigger('click')
+  await flushPromises()
+}
 
 vi.mock('@/api/repo', () => ({
   listRepos: vi.fn().mockResolvedValue({ data: { data: { items: [], total: 0, page: 1, page_size: 20 } } }),
@@ -278,13 +283,13 @@ describe('RepoListView', () => {
   it('sends explicit route selection immediately without waiting for inventory', async () => {
     const { listRepos, getRepoInventory } = await import('@/api/repo')
     ;(getRepoInventory as any).mockReturnValue(new Promise(() => {}))
-    ;(listRepos as any).mockResolvedValue({ data: { data: { items: [sampleRepos[2]], total: 1, page: 2, page_size: 10 } } })
+    ;(listRepos as any).mockResolvedValue({ data: { data: { items: [sampleRepos[2]], total: 1, page: 2, page_size: 20 } } })
 
     const { wrapper } = await mountRepoList(undefined, '/repos?provider=scm_provider:2&scope=team&binding=bound&page=2&page_size=10', { useCurrentMocks: true })
 
     expect(listRepos).toHaveBeenCalledWith({
       page: 2,
-      pageSize: 10,
+      pageSize: 20,
       scmProviderId: 2,
       scope: 'team',
       bindingState: 'bound',
@@ -354,8 +359,7 @@ describe('RepoListView', () => {
     const { wrapper } = await mountRepoList(unboundRepos, '/repos?binding=unbound')
     expect(wrapper.findAll('[data-testid="repo-row"]')).toHaveLength(20)
 
-    await wrapper.get('[data-testid="repo-next-page"]').trigger('click')
-    await flushPromises()
+    await clickRepoPage(wrapper, 'next')
 
     expect(listRepos).toHaveBeenLastCalledWith({
       page: 2,
@@ -390,8 +394,7 @@ describe('RepoListView', () => {
     const { wrapper, router } = await mountRepoList(undefined, '/repos?page_size=1000000', { useCurrentMocks: true })
     expect(router.currentRoute.value.query.page_size).toBe('100')
 
-    await wrapper.get('[data-testid="repo-next-page"]').trigger('click')
-    await flushPromises()
+    await clickRepoPage(wrapper, 'next')
 
     expect(listRepos).toHaveBeenLastCalledWith({
       page: 2,
@@ -916,8 +919,7 @@ describe('RepoListView', () => {
     expect(wrapper.text()).toContain('repo-1')
     expect(wrapper.text()).not.toContain('repo-25')
 
-    await wrapper.get('[data-testid="repo-next-page"]').trigger('click')
-    await flushPromises()
+    await clickRepoPage(wrapper, 'next')
 
     expect(listRepos).toHaveBeenLastCalledWith({
       page: 2,
@@ -927,6 +929,52 @@ describe('RepoListView', () => {
     })
     expect(wrapper.text()).toContain('repo-25')
     expect(wrapper.text()).not.toContain('repo-outside-scope')
+  })
+
+  it('uses the full-page indexed pagination contract', async () => {
+    const { listRepos } = await import('@/api/repo')
+    const manyRepos = Array.from({ length: 25 }, (_, index) => ({
+      ...sampleRepos[0],
+      id: index + 1,
+      repo_key: `github.com/org/repo-${index + 1}`,
+      name: `repo-${index + 1}`,
+      full_name: `org/repo-${index + 1}`,
+    }))
+    const { wrapper, router } = await mountRepoList(manyRepos)
+
+    const pagination = wrapper.getComponent(ElPagination)
+    expect(pagination.props('pageSizes')).toEqual([20, 50, 100])
+    expect(wrapper.get('[data-testid="repo-page-range"]').text()).toBe('Showing 1-20 of 25')
+
+    pagination.vm.$emit('size-change', 50)
+    await flushPromises()
+
+    expect(listRepos).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, pageSize: 50 }))
+    expect(router.currentRoute.value.query.page_size).toBe('50')
+  })
+
+  it('reloads repository state when browser history restores an earlier query', async () => {
+    const { listRepos } = await import('@/api/repo')
+    const { router } = await mountRepoList(sampleRepos, '/repos?provider=scm_provider:1&scope=org')
+
+    await router.push('/repos?provider=scm_provider:1&scope=org&binding=bound&page=2&page_size=50')
+    await flushPromises()
+    expect(listRepos).toHaveBeenLastCalledWith(expect.objectContaining({
+      page: 2,
+      pageSize: 50,
+      scmProviderId: 1,
+      scope: 'org',
+      bindingState: 'bound',
+    }))
+
+    router.back()
+    await flushPromises()
+    expect(listRepos).toHaveBeenLastCalledWith(expect.objectContaining({
+      page: 1,
+      pageSize: 20,
+      scmProviderId: 1,
+      scope: 'org',
+    }))
   })
 
   it('shows delete confirm and deletes repo', async () => {

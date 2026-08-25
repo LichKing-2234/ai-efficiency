@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import TeamOverviewMemberTrendChart from '@/components/team-usage/TeamOverviewMemberTrendChart.vue'
 import TeamOverviewView from '@/views/TeamOverviewView.vue'
+import CursorPager from '@/components/CursorPager.vue'
 import { setLocale } from '@/i18n'
 import type { TeamOverviewMember, TeamUsageMembersResponse, TeamUsageOrganizationDepartment, TeamUsageOrganizationParams, TeamUsageOrganizationResponse, TeamUsageSummaryResponse, TeamUsageTrendResponse } from '@/types'
 
@@ -381,6 +382,32 @@ describe('TeamOverviewView', () => {
     expect(wrapper.findAll('[data-testid^="team-overview-department-department-root-"]')).toHaveLength(35)
   })
 
+  it('keeps root departments visible and retries a failed incremental page in place', async () => {
+    const product = organizationDepartment('department-product', 'Product')
+    mockGetTeamUsageOrganization
+      .mockResolvedValueOnce({ data: { data: organizationPage(null, [rootOrganizationDepartment], [], { departments: 'root-page-2' }) } } as any)
+      .mockRejectedValueOnce(new Error('synthetic root page failure'))
+      .mockResolvedValueOnce({ data: { data: organizationPage(null, [product]) } } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+    await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
+    await wrapper.get('[data-testid="team-overview-departments-more-root"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="team-overview-department-department-alpha"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="team-overview-organization-error-root"]').text()).toContain('Team usage is temporarily unavailable.')
+    await wrapper.get('[data-testid="team-overview-organization-retry-root"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="team-overview-department-department-alpha"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="team-overview-department-department-product"]').exists()).toBe(true)
+    expect(mockGetTeamUsageOrganization).toHaveBeenNthCalledWith(3, expect.objectContaining({ department_cursor: 'root-page-2' }))
+  })
+
   it('loads only the expanded branch and reuses it after collapse', async () => {
     const router = createTestRouter()
     await router.push('/usage/team')
@@ -581,10 +608,12 @@ describe('TeamOverviewView', () => {
 
   it('keeps sibling branches visible when one expansion fails', async () => {
     const beta = organizationDepartment('department-beta', 'Department Beta', { has_children: true, child_count: 1 })
+    const betaChild = organizationDepartment('department-beta-child', 'Beta Child', { parent_external_id: 'department-beta', depth: 1 })
     mockGetTeamUsageOrganization
       .mockResolvedValueOnce({ data: { data: organizationPage(null, [rootOrganizationDepartment, beta]) } } as any)
       .mockResolvedValueOnce({ data: { data: defaultOrganizationResponse({ parent_department_external_id: 'department-alpha' }) } } as any)
       .mockRejectedValueOnce(new Error('synthetic beta branch failure'))
+      .mockResolvedValueOnce({ data: { data: organizationPage('department-beta', [betaChild]) } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -598,6 +627,9 @@ describe('TeamOverviewView', () => {
 
     expect(wrapper.find('[data-testid="team-overview-department-department-alpha-team-one"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="team-overview-organization-error-department-beta"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="team-overview-organization-retry-department-beta"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="team-overview-department-department-beta-child"]').exists()).toBe(true)
   })
 
   it('keeps the root range for branch expansion across midnight and resets it on range change', async () => {
@@ -651,6 +683,7 @@ describe('TeamOverviewView', () => {
     expect(wrapper.get('[data-testid="team-overview-ranking-table"]').text()).toContain('Split Member 1')
     expect(wrapper.get('[data-testid="team-overview-member-pagination"]').text()).toContain('1-50')
     expect(wrapper.get('[data-testid="team-overview-member-pagination"]').text()).toContain('500')
+    expect(wrapper.getComponent(CursorPager).props('rangeLabel')).toBe('Showing 1-50 of 500')
   })
 
   it('keeps summary, trend, and organization available while members are delayed', async () => {

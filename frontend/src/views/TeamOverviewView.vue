@@ -42,6 +42,7 @@ const {
   ensureBranch: ensureOrganizationBranch,
   loadMoreDepartments: loadMoreOrganizationDepartments,
   loadMoreMembers: loadMoreOrganizationMembers,
+  retryBranch: retryOrganizationBranch,
 } = useTeamUsageOrganization()
 
 const loading = computed(() => summaryLoading.value || membersLoading.value)
@@ -391,6 +392,7 @@ onMounted(loadOverview)
           @expand-department="ensureOrganizationBranch"
           @load-more-departments="loadMoreOrganizationDepartments"
           @load-more-members="loadMoreOrganizationMembers"
+          @retry-organization-branch="retryOrganizationBranch"
         />
       </div>
   </div>

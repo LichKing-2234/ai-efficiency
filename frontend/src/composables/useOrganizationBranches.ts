@@ -13,6 +13,8 @@ export interface OrganizationBranchPage<Department, Member> {
   nextMemberCursor?: string
 }
 
+export type OrganizationBranchLoadMode = 'replace' | 'departments' | 'members'
+
 export interface OrganizationBranchState<Department, Member> {
   parentID: string | null
   departments: Department[]
@@ -24,6 +26,7 @@ export interface OrganizationBranchState<Department, Member> {
   memberLoading: boolean
   loaded: boolean
   error: boolean
+  failedMode?: OrganizationBranchLoadMode
   requestSequence: number
 }
 
@@ -35,7 +38,6 @@ export interface OrganizationBranchOptions<Context, Department, Member> {
   snapshotExpired?: (error: unknown) => boolean
 }
 
-type LoadMode = 'replace' | 'departments' | 'members'
 const ROOT_KEY = '__root__'
 
 function keyFor(parentID: string | null) {
@@ -116,7 +118,7 @@ export function useOrganizationBranches<Context, Department, Member>(
 
   async function loadBranch(
     parentID: string | null,
-    mode: LoadMode,
+    mode: OrganizationBranchLoadMode,
     recoverSnapshot = true,
     expectedGeneration = generation,
   ): Promise<void> {
@@ -128,6 +130,7 @@ export function useOrganizationBranches<Context, Department, Member>(
       ...current,
       requestSequence: sequence,
       error: false,
+      failedMode: undefined,
       loading: mode === 'replace',
       departmentLoading: mode === 'departments',
       memberLoading: mode === 'members',
@@ -190,6 +193,7 @@ export function useOrganizationBranches<Context, Department, Member>(
         departmentLoading: false,
         memberLoading: false,
         error: true,
+        failedMode: mode,
       })
     } finally {
       const latest = branches.value[key]
@@ -231,6 +235,12 @@ export function useOrganizationBranches<Context, Department, Member>(
     void loadBranch(parentID, 'members')
   }
 
+  function retryBranch(parentID: string | null) {
+    const branch = branches.value[keyFor(parentID)]
+    if (!branch?.error || !branch.failedMode || branch.loading || branch.departmentLoading || branch.memberLoading) return
+    void loadBranch(parentID, branch.failedMode)
+  }
+
   return {
     branches,
     rootBranch,
@@ -241,5 +251,6 @@ export function useOrganizationBranches<Context, Department, Member>(
     ensureBranch,
     loadMoreDepartments,
     loadMoreMembers,
+    retryBranch,
   }
 }

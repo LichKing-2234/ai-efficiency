@@ -6,6 +6,7 @@
 - Architecture overview: `docs/architecture.md`
 - Design specs: `docs/superpowers/specs/`
 - Implementation plans: `docs/superpowers/plans/`
+- Current list and pagination contract: `docs/superpowers/specs/2026-08-25-list-and-pagination-consistency-design.md`
 - Current auth/provider baseline: `docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md`
 - Current Replan baseline-roster contract: `docs/superpowers/specs/2026-08-24-relay-replan-baseline-roster-design.md`
 - Current Relay mapping maintenance contract: `docs/superpowers/specs/2026-08-19-relay-group-mapping-contract.md`

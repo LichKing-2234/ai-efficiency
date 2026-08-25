@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import type { Directive } from 'vue'
 import { useI18n } from '@/i18n'
+import CursorPager from '@/components/CursorPager.vue'
 import TeamOverviewDepartmentNode from '@/components/team-usage/TeamOverviewDepartmentNode.vue'
 import { useWideContentLayout } from '@/composables/useMediaQuery'
 import { formatTokenCount } from '@/utils/formatters'
@@ -38,6 +39,7 @@ const emit = defineEmits<{
   'expand-department': [departmentID: string]
   'load-more-departments': [departmentID: string | null]
   'load-more-members': [departmentID: string]
+  'retry-organization-branch': [departmentID: string | null]
 }>()
 
 const { t } = useI18n()
@@ -204,8 +206,14 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
         type="warning"
         :closable="false"
         show-icon
-        :title="t('teamUsage.unavailable')"
-      />
+      >
+        <template #title>
+          <span>{{ t('teamUsage.unavailable') }}</span>
+          <ElButton data-testid="team-overview-organization-retry-root" class="!ml-2" type="primary" link @click="emit('retry-organization-branch', null)">
+            {{ t('pagination.retry') }}
+          </ElButton>
+        </template>
+      </ElAlert>
       <div v-else-if="props.organizationRoot.departments.length === 0" class="py-3 text-sm text-slate-500">-</div>
       <template v-else>
         <div class="overflow-hidden rounded-md border border-gray-200" role="tree">
@@ -218,6 +226,7 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
             :branch-for="props.organizationBranchFor"
             :load-more-departments="(departmentID) => emit('load-more-departments', departmentID)"
             :load-more-members="(departmentID) => emit('load-more-members', departmentID)"
+            :retry-branch="(departmentID) => emit('retry-organization-branch', departmentID)"
             :open-member="openMember"
             :can-open="canOpen"
             :is-connected="isConnected"
@@ -233,6 +242,12 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
             :department-aria-level="departmentAriaLevel"
             :member-aria-level="memberAriaLevel"
           />
+        </div>
+        <div v-if="props.organizationRoot.error" data-testid="team-overview-organization-error-root" class="mt-3 text-sm text-slate-600">
+          {{ t('teamUsage.unavailable') }}
+          <ElButton data-testid="team-overview-organization-retry-root" type="primary" link @click="emit('retry-organization-branch', null)">
+            {{ t('pagination.retry') }}
+          </ElButton>
         </div>
         <ElButton
           v-if="props.organizationRoot.nextDepartmentCursor"
@@ -356,28 +371,19 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
       :title="t('teamUsage.unavailable')"
     />
 
-    <div
+    <CursorPager
       v-if="detailView === 'ranking' && showMemberPagination"
       data-testid="team-overview-member-pagination"
-      class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3"
-    >
-      <span class="text-sm text-slate-500">{{ t('teamUsage.memberPageRange', { start: memberPageStart, end: memberPageEnd, total: props.memberTotalCount }) }}</span>
-      <div class="flex items-center gap-2">
-        <ElButton
-          data-testid="team-overview-members-previous"
-          :disabled="!props.hasPreviousPage || props.memberLoading"
-          @click="emit('previous-page')"
-        >
-          {{ t('teamUsage.memberPagePrevious') }}
-        </ElButton>
-        <ElButton
-          data-testid="team-overview-members-next"
-          :disabled="!props.hasNextPage || props.memberLoading"
-          @click="emit('next-page')"
-        >
-          {{ t('teamUsage.memberPageNext') }}
-        </ElButton>
-      </div>
-    </div>
+      :has-previous="props.hasPreviousPage"
+      :has-next="props.hasNextPage"
+      :loading="props.memberLoading"
+      :loading-label="t('settings.loading')"
+      :previous-label="t('teamUsage.memberPagePrevious')"
+      :next-label="t('teamUsage.memberPageNext')"
+      :range-label="t('pagination.range', { start: memberPageStart, end: memberPageEnd, total: props.memberTotalCount })"
+      test-i-d-prefix="team-overview-members"
+      @previous="emit('previous-page')"
+      @next="emit('next-page')"
+    />
   </section>
 </template>

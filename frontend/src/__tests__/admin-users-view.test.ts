@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
-import { ElDialog, ElMessage } from 'element-plus'
+import { ElDialog, ElMessage, ElPagination } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import AdminUsersView from '@/views/admin/AdminUsersView.vue'
 import { setLocale } from '@/i18n'
@@ -106,6 +106,21 @@ async function selectElementRadio(wrapper: VueWrapper, radioTestID: string) {
     : control.get('input[type="radio"]')
   await input.setValue()
   await flushPromises()
+}
+
+async function changeAdminUsersPageSize(wrapper: VueWrapper, pageSize: number) {
+  wrapper.getComponent(ElPagination).vm.$emit('size-change', pageSize)
+  await flushPromises()
+}
+
+async function clickAdminUsersPage(wrapper: VueWrapper, direction: 'prev' | 'next') {
+  await paginationButton(wrapper, 'admin-users-pagination', direction).trigger('click')
+  await flushPromises()
+}
+
+function paginationButton(wrapper: VueWrapper, testID: string, direction: 'prev' | 'next') {
+  const label = direction === 'prev' ? 'Go to previous page' : 'Go to next page'
+  return wrapper.get(`[data-testid="${testID}"] button[aria-label="${label}"]`)
 }
 
 function userRow(id: number, username: string) {
@@ -500,8 +515,7 @@ describe('AdminUsersView', () => {
     expect(wrapper.get('[data-admin-user-list="desktop"]').find('.el-table').exists()).toBe(true)
     expect(wrapper.find('.el-tag').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('encrypted-relay-password-ciphertext')
-    expect(wrapper.text()).toContain('120 total')
-    expect(wrapper.text()).toContain('Page 1 / 6')
+    expect(wrapper.get('[data-testid="admin-users-page-range"]').text()).toBe('Showing 1-20 of 120')
 	  })
 
   it('puts the user list before collapsed subscription tools in the visual workflow', async () => {
@@ -602,7 +616,7 @@ describe('AdminUsersView', () => {
       '/admin/users',
       () => requestCount++ === 0 ? older.promise : newer.promise,
     )
-    const replace = vi.spyOn(router, 'replace')
+    const push = vi.spyOn(router, 'push')
 
     expect(wrapper.get('[data-testid="admin-users-access-status-filter"]').classes()).toContain('el-select')
     await selectElementOption(wrapper, 'admin-users-access-status-filter', 'admin-users-access-status-option-disabled')
@@ -611,18 +625,17 @@ describe('AdminUsersView', () => {
     newer.resolve({ items: [userRow(2, 'newer')], total: 1, page: 1, page_size: 20 })
     await flushPromises()
     expect(wrapper.text()).toContain('newer@example.com')
-    expect(replace).toHaveBeenCalledTimes(1)
+    expect(push).toHaveBeenCalledTimes(1)
 
     older.resolve({ items: [userRow(1, 'older')], total: 999, page: 3, page_size: 50 })
     await flushPromises()
 
     expect(wrapper.text()).toContain('newer@example.com')
     expect(wrapper.text()).not.toContain('older@example.com')
-    expect(wrapper.text()).toContain('1 total')
-    expect(wrapper.text()).toContain('Page 1 / 1')
+    expect(wrapper.find('[data-testid="admin-users-pagination"]').exists()).toBe(false)
     expect(router.currentRoute.value.query.page).toBeUndefined()
     expect(router.currentRoute.value.query.page_size).toBeUndefined()
-    expect(replace).toHaveBeenCalledTimes(1)
+    expect(push).toHaveBeenCalledTimes(1)
   })
 
   it('keeps user loading active when an older request finishes before the latest request', async () => {
@@ -658,7 +671,7 @@ describe('AdminUsersView', () => {
       '/admin/users',
       () => requestCount++ === 0 ? older.promise : newer.promise,
     )
-    const replace = vi.spyOn(router, 'replace')
+    const push = vi.spyOn(router, 'push')
 
     await wrapper.get('[data-testid="admin-users-search"]').setValue('new query')
     expect(listAdminUsers).toHaveBeenCalledTimes(1)
@@ -670,7 +683,7 @@ describe('AdminUsersView', () => {
     expect(wrapper.text()).not.toContain('older@example.com')
     expect(refresh.text()).toContain('Loading...')
     expect((refresh.element as HTMLButtonElement).disabled).toBe(true)
-    expect(replace).not.toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
 
     await vi.advanceTimersByTimeAsync(300)
     expect(listAdminUsers).toHaveBeenCalledTimes(2)
@@ -682,7 +695,7 @@ describe('AdminUsersView', () => {
     expect(wrapper.text()).toContain('newer@example.com')
     expect(refresh.text()).toContain('Refresh')
     expect((refresh.element as HTMLButtonElement).disabled).toBe(false)
-    expect(replace).toHaveBeenCalledTimes(1)
+    expect(push).toHaveBeenCalledTimes(1)
     expect(router.currentRoute.value.query.q).toBe('new query')
   })
 
@@ -703,7 +716,6 @@ describe('AdminUsersView', () => {
 
     const auditedSelects = [
       ['admin-users-access-status-filter', 'Access status'],
-      ['admin-users-page-size', 'Page Size'],
       ['subscription-scope', 'Scope'],
       ['subscription-operation', 'Operation'],
       ['subscription-provider', 'Select provider'],
@@ -794,6 +806,11 @@ describe('AdminUsersView', () => {
       page_size: 20,
     })
     expect(listAdminUserDepartmentChildren).toHaveBeenCalledTimes(1)
+
+    router.back()
+    await flushPromises()
+    expect(router.currentRoute.value.query.view).toBe('departments')
+    expect(router.currentRoute.value.query.department_id).toBeUndefined()
   })
 
   it('keeps a failed root request retryable and deduplicates department-tab activation while pending', async () => {
@@ -1134,12 +1151,12 @@ describe('AdminUsersView', () => {
       },
     )
 
-    await wrapper.get('[data-testid="admin-users-department-roots-next"]').trigger('click')
+    await paginationButton(wrapper, 'admin-users-department-pagination', 'next').trigger('click')
     await flushPromises()
     expect(listAdminUserDepartmentChildren).toHaveBeenLastCalledWith({ page: 2, page_size: 25 })
     expect(wrapper.find('[data-testid="admin-users-department-open-dept-beta"]').exists()).toBe(true)
 
-    await wrapper.get('[data-testid="admin-users-department-roots-prev"]').trigger('click')
+    await paginationButton(wrapper, 'admin-users-department-pagination', 'prev').trigger('click')
     await flushPromises()
     expect(listAdminUserDepartmentChildren).toHaveBeenLastCalledWith({ page: 1, page_size: 25 })
 
@@ -1155,6 +1172,40 @@ describe('AdminUsersView', () => {
     })
     expect(wrapper.findAll('[data-testid="admin-users-department-open-dept-alpha-team-one"]')).toHaveLength(1)
     expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-team-two"]').exists()).toBe(true)
+  })
+
+  it('uses compact indexed pagination for root departments', async () => {
+    const { wrapper } = await mountAdminUsersView(
+      '/admin/users?view=departments',
+      undefined,
+      false,
+      () => ({ items: [rootDepartments[0]], total: 26, page: 1, page_size: 25, parent_department_id: '' }),
+    )
+
+    const pagination = wrapper.getComponent(ElPagination)
+    expect(pagination.attributes('data-testid')).toBe('admin-users-department-pagination')
+    expect(pagination.props('pageSize')).toBe(25)
+    expect(pagination.props('total')).toBe(26)
+    expect(pagination.props('layout')).toBe('prev, pager, next')
+  })
+
+  it('keeps the current root department page when the next page fails', async () => {
+    const { wrapper } = await mountAdminUsersView(
+      '/admin/users?view=departments',
+      undefined,
+      false,
+      (params) => {
+        if (params.page === 2) throw new Error('synthetic root page failure')
+        return { items: [rootDepartments[0]], total: 26, page: 1, page_size: 25, parent_department_id: '' }
+      },
+    )
+
+    await paginationButton(wrapper, 'admin-users-department-pagination', 'next').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('synthetic root page failure')
+    expect(wrapper.getComponent(ElPagination).props('currentPage')).toBe(1)
   })
 
   it('renders stable empty state for an unknown parent child page', async () => {
@@ -1237,9 +1288,10 @@ describe('AdminUsersView', () => {
       page_size: 100,
     }))
 
-    expect(matchMediaController.matchMedia).toHaveBeenCalledTimes(1)
+    expect(matchMediaController.matchMedia).toHaveBeenCalledTimes(2)
     expect(matchMediaController.matchMedia).toHaveBeenCalledWith('(min-width: 1440px)')
-    expect(matchMediaController.addEventListener).toHaveBeenCalledTimes(1)
+    expect(matchMediaController.matchMedia).toHaveBeenCalledWith('(min-width: 768px)')
+    expect(matchMediaController.addEventListener).toHaveBeenCalledTimes(2)
     expect(wrapper.find('[data-admin-user-list="desktop"]').exists()).toBe(true)
     expect(wrapper.find('[data-admin-user-list="mobile"]').exists()).toBe(false)
     expect(wrapper.findAll('[data-admin-user-row]')).toHaveLength(100)
@@ -1273,8 +1325,8 @@ describe('AdminUsersView', () => {
     const { wrapper } = await mountAdminUsersView()
 
     const filters = wrapper.get('[data-testid="admin-users-filter-grid"]')
-    expect(filters.classes()).toContain('xl:grid-cols-[minmax(0,1fr)_220px_180px_120px_auto]')
-    expect(filters.classes()).not.toContain('lg:grid-cols-[minmax(0,1fr)_220px_180px_120px_auto]')
+    expect(filters.classes()).toContain('xl:grid-cols-[minmax(0,1fr)_220px_180px_auto]')
+    expect(filters.classes()).not.toContain('lg:grid-cols-[minmax(0,1fr)_220px_180px_auto]')
   })
 
   it('swaps viewports without reloading or duplicating selection and removes the exact listener', async () => {
@@ -1285,7 +1337,7 @@ describe('AdminUsersView', () => {
       page: 1,
       page_size: 100,
     }))
-    const listener = matchMediaController.addEventListener.mock.calls[0][1]
+    const listeners = matchMediaController.addEventListener.mock.calls.map((call) => call[1])
 
     await setElementCheckbox(wrapper, 'select-user-1')
     matchMediaController.change(false)
@@ -1313,8 +1365,10 @@ describe('AdminUsersView', () => {
     expect(viewRoundTripSelectAll.attributes('aria-checked')).toBe('mixed')
 
     wrapper.unmount()
-    expect(matchMediaController.removeEventListener).toHaveBeenCalledTimes(1)
-    expect(matchMediaController.removeEventListener).toHaveBeenCalledWith('change', listener)
+    expect(matchMediaController.removeEventListener).toHaveBeenCalledTimes(2)
+    for (const listener of listeners) {
+      expect(matchMediaController.removeEventListener).toHaveBeenCalledWith('change', listener)
+    }
   })
 
 	  it('renders the primary admin users workflow in Chinese', async () => {
@@ -1359,13 +1413,25 @@ describe('AdminUsersView', () => {
   it('updates page size and next page params', async () => {
     const { wrapper, listAdminUsers } = await mountAdminUsersView()
 
-    expect(wrapper.get('[data-testid="admin-users-page-size"]').classes()).toContain('el-select')
-    await selectElementOption(wrapper, 'admin-users-page-size', 'admin-users-page-size-option-50')
+    await changeAdminUsersPageSize(wrapper, 50)
     expect((listAdminUsers as any).mock.calls.at(-1)[0]).toEqual({ q: '', page: 1, page_size: 50 })
 
-    await wrapper.get('[data-testid="admin-users-next-page"]').trigger('click')
-    await flushPromises()
+    await clickAdminUsersPage(wrapper, 'next')
     expect((listAdminUsers as any).mock.calls.at(-1)[0]).toEqual({ q: '', page: 2, page_size: 50 })
+  })
+
+  it('renders the approved full-page indexed pagination contract', async () => {
+    const { wrapper } = await mountAdminUsersView('/admin/users', (params) => ({
+      items: [userRow(1, 'user-1')],
+      total: 45,
+      page: params?.page ?? 1,
+      page_size: params?.page_size ?? 20,
+    }))
+
+    const pagination = wrapper.getComponent(ElPagination)
+    expect(pagination.props('pageSizes')).toEqual([20, 50, 100])
+    expect(pagination.props('total')).toBe(45)
+    expect(wrapper.get('[data-testid="admin-users-page-range"]').text()).toBe('Showing 1-20 of 45')
   })
 
   it('restores and persists search pagination state in the URL query', async () => {
@@ -1373,10 +1439,52 @@ describe('AdminUsersView', () => {
 
     expect((listAdminUsers as any).mock.calls[0][0]).toEqual({ q: 'alice', page: 2, page_size: 50 })
 
-    await selectElementOption(wrapper, 'admin-users-page-size', 'admin-users-page-size-option-20')
+    await changeAdminUsersPageSize(wrapper, 20)
 
     expect(router.currentRoute.value.query.q).toBe('alice')
     expect(router.currentRoute.value.query.page_size).toBeUndefined()
+  })
+
+  it('normalizes an unsupported URL page size before the first request', async () => {
+    const { router, listAdminUsers } = await mountAdminUsersView('/admin/users?page=2&page_size=10')
+
+    expect((listAdminUsers as any).mock.calls[0][0]).toEqual({ q: '', page: 2, page_size: 20 })
+    expect(router.currentRoute.value.query.page).toBe('2')
+    expect(router.currentRoute.value.query.page_size).toBeUndefined()
+  })
+
+  it('reloads list state when browser history restores an earlier query', async () => {
+    const { router, listAdminUsers } = await mountAdminUsersView('/admin/users?q=alice')
+
+    await router.push('/admin/users?q=bob&page=2&page_size=50&access_status=disabled')
+    await flushPromises()
+    expect((listAdminUsers as any).mock.calls.at(-1)[0]).toEqual({
+      q: 'bob',
+      access_status: 'disabled',
+      page: 2,
+      page_size: 50,
+    })
+
+    router.back()
+    await flushPromises()
+    expect((listAdminUsers as any).mock.calls.at(-1)[0]).toEqual({ q: 'alice', page: 1, page_size: 20 })
+  })
+
+  it('keeps the last successful page when paging fails', async () => {
+    const { wrapper, router, listAdminUsers } = await mountAdminUsersView('/admin/users', (params) => ({
+      items: [userRow(1, 'stable-user')],
+      total: 40,
+      page: params?.page ?? 1,
+      page_size: params?.page_size ?? 20,
+    }))
+    ;(listAdminUsers as any).mockRejectedValueOnce(new Error('synthetic page failure'))
+
+    await clickAdminUsersPage(wrapper, 'next')
+
+    expect(wrapper.text()).toContain('stable-user@example.com')
+    expect(wrapper.text()).toContain('synthetic page failure')
+    expect(wrapper.getComponent(ElPagination).props('currentPage')).toBe(1)
+    expect(router.currentRoute.value.query.page).toBeUndefined()
   })
 
   it('copies encrypted ciphertext without calling reveal', async () => {
@@ -1667,11 +1775,9 @@ describe('AdminUsersView', () => {
       page_size: params?.page_size ?? 20,
     }))
 
-    await wrapper.get('[data-testid="admin-users-next-page"]').trigger('click')
-    await flushPromises()
+    await clickAdminUsersPage(wrapper, 'next')
     await setElementCheckbox(wrapper, 'select-user-9')
-    await wrapper.get('[data-testid="admin-users-prev-page"]').trigger('click')
-    await flushPromises()
+    await clickAdminUsersPage(wrapper, 'prev')
     await setElementCheckbox(wrapper, 'select-user-7')
     await selectElementOption(wrapper, 'subscription-provider', 'subscription-provider-option-3')
     await selectElementOption(wrapper, 'subscription-group', 'subscription-group-option-42')

@@ -12,6 +12,7 @@ const props = defineProps<{
   branchFor: (departmentID: string) => TeamUsageOrganizationBranchState | undefined
   loadMoreDepartments: (departmentID: string) => void
   loadMoreMembers: (departmentID: string) => void
+  retryBranch: (departmentID: string) => void
   openMember: (member: TeamOverviewMember) => void
   canOpen: (member: TeamOverviewMember) => boolean
   isConnected: (member: TeamOverviewMember) => boolean
@@ -93,6 +94,14 @@ function toggleNode() {
       :style="props.memberIndentStyle(props.node)"
     >
       {{ t('teamUsage.unavailable') }}
+      <ElButton
+        :data-testid="`team-overview-organization-retry-${props.node.department_external_id}`"
+        type="primary"
+        link
+        @click.stop="props.retryBranch(props.node.department_external_id)"
+      >
+        {{ t('pagination.retry') }}
+      </ElButton>
     </div>
     <template v-else-if="branch?.loaded">
       <div
@@ -138,6 +147,7 @@ function toggleNode() {
         :branch-for="props.branchFor"
         :load-more-departments="props.loadMoreDepartments"
         :load-more-members="props.loadMoreMembers"
+        :retry-branch="props.retryBranch"
         :open-member="props.openMember"
         :can-open="props.canOpen"
         :is-connected="props.isConnected"
@@ -178,6 +188,15 @@ function toggleNode() {
         <span v-if="branch.error" :data-testid="`team-overview-organization-error-${props.node.department_external_id}`" class="text-sm text-slate-600">
           {{ t('teamUsage.unavailable') }}
         </span>
+        <ElButton
+          v-if="branch.error"
+          :data-testid="`team-overview-organization-retry-${props.node.department_external_id}`"
+          type="primary"
+          link
+          @click.stop="props.retryBranch(props.node.department_external_id)"
+        >
+          {{ t('pagination.retry') }}
+        </ElButton>
       </div>
     </template>
   </template>

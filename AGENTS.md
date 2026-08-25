@@ -14,6 +14,7 @@ AI Efficiency Platform（AI 效能平台）是一个独立于 `sub2api` 的系�
 
 1. 当前代码
 2. 最新且最贴近问题域的 spec：
+   - `docs/superpowers/specs/2026-08-25-list-and-pagination-consistency-design.md`
    - `docs/superpowers/specs/2026-08-24-usage-window-preference-design.md`
    - `docs/superpowers/specs/2026-08-24-relay-replan-baseline-roster-design.md`
    - `docs/superpowers/specs/2026-08-19-relay-group-mapping-contract.md`
@@ -217,6 +218,7 @@ chore(deploy): update Docker Compose configuration
 ## Important Files
 
 - `docs/architecture.md` — 项目级架构总览与图示
+- `docs/superpowers/specs/2026-08-25-list-and-pagination-consistency-design.md` — 当前列表工作面与分页一致性合同：区分索引分页、游标翻页和分支增量加载，统一完整页面与嵌入式集合的响应式和边界行为
 - `docs/superpowers/specs/2026-08-24-usage-window-preference-design.md` — 当前浏览器级用量窗口偏好合同：个人、团队和成员用量共享最近一次 Today / 7 Days / 30 Days 选择，Activity 继续由 URL 管理
 - `docs/superpowers/specs/2026-08-24-relay-replan-baseline-roster-design.md` — 当前 Replan 初始成员合同：只恢复上次 Confirm 名单，其他候选人不选中、不分配、不推荐
 - `docs/superpowers/specs/2026-08-19-relay-group-mapping-contract.md` — 当前 Relay 部门 x Platform 映射维护、Account 关系、成员迁移、确认指纹与失败重试合同
