@@ -20,6 +20,17 @@ import (
 	"github.com/ai-efficiency/backend/internal/testdb"
 )
 
+func TestRedactedProviderReadErrorHidesMessageAndPreservesCause(t *testing.T) {
+	cause := errors.New("synthetic sensitive provider detail")
+	err := fmt.Errorf("read Relay relationships: %w", redactProviderReadError(cause))
+	if !errors.Is(err, cause) {
+		t.Fatalf("errors.Is(%v, cause) = false, want true", err)
+	}
+	if strings.Contains(err.Error(), cause.Error()) {
+		t.Fatalf("error %q exposes provider detail", err)
+	}
+}
+
 func TestPreviewRequestJSONUsesSnakeCase(t *testing.T) {
 	var got PreviewRequest
 	if err := json.Unmarshal([]byte(`{"provider_id":7,"department_id":"dept-alpha","platform":"openai","template_group_id":84,"source_group_id":42,"weekly_cost_target":12.5,"group_count":2,"selected_user_ids":[1,2],"existing_mapping_id":9}`), &got); err != nil {

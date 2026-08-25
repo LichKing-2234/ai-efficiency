@@ -199,6 +199,7 @@ type Candidate struct {
 	relationshipAPIKeys       []relationshipAPIKeyFact
 	relationshipGroupErr      error
 	relationshipKeyErr        error
+	replanUnavailableReason   replanRosterUnavailableReason
 }
 
 type Assignment struct {
@@ -236,6 +237,7 @@ type Plan struct {
 	RelationshipFingerprint string                `json:"relationship_fingerprint"`
 	AccountsReviewed        bool                  `json:"accounts_reviewed"`
 	relationshipSnapshot    relationshipSnapshot
+	executionBlockers       []replanRosterBlocker
 }
 
 type TargetChangeSummary struct {
@@ -458,6 +460,22 @@ type assignmentCandidateError struct {
 	Difference string
 }
 
+type redactedProviderReadError struct {
+	cause error
+}
+
+func (e *redactedProviderReadError) Error() string {
+	return "provider read failed"
+}
+
+func (e *redactedProviderReadError) Unwrap() error {
+	return e.cause
+}
+
+func redactProviderReadError(err error) error {
+	return &redactedProviderReadError{cause: err}
+}
+
 func (e *assignmentCandidateError) Error() string {
 	return fmt.Sprintf("user %d cannot be added to a target group", e.UserID)
 }
@@ -659,7 +677,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	}
 	relationshipReads.Wait()
 	if groupsErr != nil {
-		return nil, fmt.Errorf("list relay groups: %w", groupsErr)
+		return nil, fmt.Errorf("list relay groups: %w", redactProviderReadError(groupsErr))
 	}
 	if relationshipsErr != nil {
 		return nil, fmt.Errorf("list Relay user relationships: %w", relationshipsErr)
@@ -697,9 +715,17 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		return nil, fmt.Errorf("load department users: %w", err)
 	}
 	selected := selectedSet(req.SelectedUserIDs)
-	required := selected
-	restrictToSelected := len(selected) > 0
-	if !restrictToSelected && mapping != nil {
+	required := make(map[int]struct{}, len(selected)+len(req.RemovedUserIDs))
+	for userID := range selected {
+		required[userID] = struct{}{}
+	}
+	restrictToRequired := len(selected) > 0
+	for _, userID := range req.RemovedUserIDs {
+		if userID > 0 {
+			required[userID] = struct{}{}
+		}
+	}
+	if !restrictToRequired && mapping != nil {
 		required = make(map[int]struct{}, len(mapping.MemberAssignments))
 		for rawUserID := range mapping.MemberAssignments {
 			if userID, parseErr := strconv.Atoi(rawUserID); parseErr == nil && userID > 0 {
@@ -726,13 +752,13 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 			for _, u := range extra {
 				byID[u.ID] = u
 			}
-			if !restrictToSelected {
+			if !restrictToRequired {
 				users = append(users, extra...)
 			}
 		}
-		if restrictToSelected {
-			filtered := make([]*ent.User, 0, len(selected))
-			for userID := range selected {
+		if restrictToRequired {
+			filtered := make([]*ent.User, 0, len(required))
+			for userID := range required {
 				if u := byID[userID]; u != nil {
 					filtered = append(filtered, u)
 				}
@@ -762,6 +788,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	}
 	assignments := allocate(eligible, count)
 	var unmanagedMembers []UnmanagedMember
+	var replanBlockers []replanRosterBlocker
 	if mapping != nil {
 		groups, err = includePendingCreationGroups(ctx, p, groups, mapping.OperationState, req.Platform)
 		if err != nil {
@@ -771,8 +798,13 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		if err != nil {
 			return nil, fmt.Errorf("load unmanaged relay members: %w", err)
 		}
-		if len(req.Assignments) == 0 {
-			assignments = stableMappingAssignments(mapping, candidates, unmanagedMembers, count)
+		roster, rosterErr := reviewReplanRoster(replanRosterInputFromPlan(mapping, candidates, unmanagedMembers, req.Assignments, req.RemovedUserIDs))
+		if rosterErr != nil {
+			return nil, fmt.Errorf("validate relay planning assignments: %w", rosterErr)
+		}
+		assignments = assignmentsFromReplanRoster(roster, req.Assignments)
+		replanBlockers = append(replanBlockers, roster.Blockers...)
+		if req.Assignments == nil {
 			restoreRenameRetries(mapping.OperationState, assignments)
 		}
 		if len(req.RemovedUserIDs) > 0 {
@@ -786,18 +818,9 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 					return nil, fmt.Errorf("user %d is not managed by this mapping", userID)
 				}
 			}
-			for index := range assignments {
-				kept := assignments[index].UserIDs[:0]
-				for _, userID := range assignments[index].UserIDs {
-					if _, remove := removed[userID]; !remove {
-						kept = append(kept, userID)
-					}
-				}
-				assignments[index].UserIDs = kept
-			}
 		}
 	}
-	if req.Assignments != nil {
+	if mapping == nil && req.Assignments != nil {
 		assignments, err = validateAssignments(req.Assignments, candidates, count)
 		if err != nil {
 			return nil, fmt.Errorf("validate relay planning assignments: %w", err)
@@ -840,6 +863,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	for _, candidate := range candidates {
 		warnings = append(warnings, candidate.Warnings...)
 	}
+	warnings = append(warnings, replanRosterWarnings(replanBlockers)...)
 	plan := &Plan{
 		ProviderID: req.ProviderID, DepartmentID: req.DepartmentID, Platform: req.Platform,
 		TemplateGroupID: template.ID, TemplateGroupName: template.Name,
@@ -847,7 +871,8 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		RecommendedCount: recommended, GroupCount: count, Candidates: candidates, Assignments: assignments,
 		UnmanagedMembers: unmanagedMembers,
 		Warnings:         uniqueStrings(warnings), GeneratedAt: time.Now().UTC(),
-		AccountsReviewed: mapping == nil || mapping.AccountManagementInitialized || assignmentsReviewAccounts(req.Assignments),
+		AccountsReviewed:  mapping == nil || mapping.AccountManagementInitialized || assignmentsReviewAccounts(req.Assignments),
+		executionBlockers: replanBlockers,
 	}
 	assigned := make(map[int]struct{})
 	for _, assignment := range assignments {
@@ -914,7 +939,7 @@ func includePendingCreationGroups(ctx context.Context, provider relay.Provider, 
 	for _, groupID := range groupIDs {
 		group, err := reader.GetGroup(ctx, groupID)
 		if err != nil {
-			return nil, fmt.Errorf("get pending group %d: %w", groupID, err)
+			return nil, fmt.Errorf("get pending group %d: %w", groupID, redactProviderReadError(err))
 		}
 		if group == nil || group.ID != groupID {
 			return nil, fmt.Errorf("get pending group %d: relay returned an unexpected group", groupID)
@@ -940,56 +965,109 @@ func pendingCreationTargetIDs(operationState map[string]map[string]string) map[i
 	return pending
 }
 
-func stableMappingAssignments(mapping *ent.RelayGroupMapping, candidates []Candidate, unmanaged []UnmanagedMember, count int) []Assignment {
-	if count <= 0 {
-		return nil
-	}
-	assignments := make([]Assignment, count)
-	for index := range assignments {
-		assignments[index] = Assignment{Index: index, UserIDs: make([]int, 0)}
-		if index < len(mapping.GroupIds) {
-			assignments[index].TargetGroupID = mapping.GroupIds[index]
-		}
-	}
-	byUser := make(map[int]Candidate, len(candidates))
-	assigned := make(map[int]struct{})
-	for _, candidate := range candidates {
-		byUser[candidate.UserID] = candidate
-	}
-	addUnmanagedCapacity(assignments, unmanaged)
+func replanRosterInputFromPlan(mapping *ent.RelayGroupMapping, candidates []Candidate, unmanaged []UnmanagedMember, reviewed []Assignment, removedUserIDs []int) replanRosterInput {
+	savedAssignments := make(map[int]int64, len(mapping.MemberAssignments))
 	for rawUserID, groupID := range mapping.MemberAssignments {
 		userID, err := strconv.Atoi(rawUserID)
-		if err != nil || groupID <= 0 {
-			continue
+		if err == nil && userID > 0 && groupID > 0 {
+			savedAssignments[userID] = groupID
 		}
-		candidate, ok := byUser[userID]
-		if !ok || !candidate.CanAdd {
-			continue
+	}
+	members := make([]replanRosterMember, 0, len(candidates))
+	for _, candidate := range candidates {
+		members = append(members, replanRosterMember{
+			UserID:            candidate.UserID,
+			Assignable:        candidate.CanAdd,
+			UnavailableReason: candidate.replanUnavailableReason,
+			RangeCost:         candidate.RangeCost,
+			CurrentGroupIDs:   append([]int64(nil), candidate.CurrentGroupIDs...),
+		})
+	}
+	unmanagedCosts := make(map[int64]float64)
+	for _, member := range unmanaged {
+		for _, groupID := range member.TargetGroupIDs {
+			unmanagedCosts[groupID] += member.RangeCost
 		}
-		for index := range assignments {
-			if assignments[index].TargetGroupID == groupID {
-				assignments[index].UserIDs = append(assignments[index].UserIDs, userID)
-				assignments[index].TotalCost += candidate.RangeCost
-				assigned[userID] = struct{}{}
-				break
+	}
+	reviewedTargets := make([]replanRosterTargetReview, 0, len(reviewed))
+	for _, assignment := range reviewed {
+		reviewedTargets = append(reviewedTargets, replanRosterTargetReview{Index: assignment.Index, UserIDs: append([]int(nil), assignment.UserIDs...)})
+	}
+	return replanRosterInput{
+		TargetGroupIDs:   append([]int64(nil), mapping.GroupIds...),
+		SavedAssignments: savedAssignments,
+		Members:          members,
+		UnmanagedCosts:   unmanagedCosts,
+		HasReview:        reviewed != nil,
+		ReviewedTargets:  reviewedTargets,
+		RemovedUserIDs:   append([]int(nil), removedUserIDs...),
+	}
+}
+
+func assignmentsFromReplanRoster(roster replanRosterResult, reviewed []Assignment) []Assignment {
+	assignments := make([]Assignment, len(roster.Targets))
+	if reviewed != nil {
+		for _, assignment := range reviewed {
+			var desiredAccounts []AccountIntent
+			if assignment.DesiredAccounts != nil {
+				desiredAccounts = append([]AccountIntent(nil), assignment.DesiredAccounts...)
+			}
+			assignments[assignment.Index] = Assignment{
+				Index:           assignment.Index,
+				TargetGroupID:   assignment.TargetGroupID,
+				TargetGroupName: strings.TrimSpace(assignment.TargetGroupName),
+				RenameSelected:  assignment.RenameSelected,
+				DesiredAccounts: desiredAccounts,
 			}
 		}
 	}
-	// Count active target subscriptions that Relay reports even when the local
-	// mapping has not adopted that member yet. The warning layer keeps them
-	// unmanaged; this read-only cost contribution only protects capacity.
-	for _, candidate := range candidates {
-		if _, ok := assigned[candidate.UserID]; ok || !candidate.CanAdd {
-			continue
-		}
-		for index := range assignments {
-			if containsInt64(candidate.CurrentGroupIDs, assignments[index].TargetGroupID) {
-				assignments[index].TotalCost += candidate.RangeCost
-				break
-			}
-		}
+	for _, target := range roster.Targets {
+		assignments[target.Index].Index = target.Index
+		assignments[target.Index].TargetGroupID = target.GroupID
+		assignments[target.Index].UserIDs = append([]int(nil), target.UserIDs...)
+		assignments[target.Index].TotalCost = target.TotalCost
 	}
 	return assignments
+}
+
+func replanRosterWarnings(blockers []replanRosterBlocker) []string {
+	warnings := make([]string, 0, len(blockers))
+	for _, blocker := range blockers {
+		warning, _ := replanRosterBlockerMessages(blocker)
+		if warning != "" {
+			warnings = append(warnings, warning)
+		}
+	}
+	return warnings
+}
+
+func replanRosterDifferences(blockers []replanRosterBlocker) []string {
+	differences := make([]string, 0, len(blockers))
+	for _, blocker := range blockers {
+		_, difference := replanRosterBlockerMessages(blocker)
+		if difference != "" {
+			differences = append(differences, difference)
+		}
+	}
+	return uniqueStrings(differences)
+}
+
+func replanRosterBlockerMessages(blocker replanRosterBlocker) (warning, difference string) {
+	switch blocker.Reason {
+	case replanRosterUnavailableIdentity:
+		return fmt.Sprintf("user %d has no relay mapping", blocker.UserID), replanRosterUnavailableDifference(blocker.Reason)
+	default:
+		return "", ""
+	}
+}
+
+func replanRosterUnavailableDifference(reason replanRosterUnavailableReason) string {
+	switch reason {
+	case replanRosterUnavailableSubscription:
+		return "subscription relationships changed"
+	default:
+		return "Relay user mappings changed or are no longer available"
+	}
 }
 
 func addUnmanagedCapacity(assignments []Assignment, unmanaged []UnmanagedMember) {
@@ -1202,7 +1280,7 @@ func accountIntentsForGroup(accounts []relay.Account, platform string, groupID i
 
 func assignPreviewAccounts(result accountListResult, platform string, templateGroupID int64, mapping *ent.RelayGroupMapping, assignments []Assignment) error {
 	if result.err != nil {
-		return fmt.Errorf("list relay accounts: %w", result.err)
+		return fmt.Errorf("list relay accounts: %w", redactProviderReadError(result.err))
 	}
 	accounts := result.accounts
 	available := make(map[int64]relay.Account, len(accounts))
@@ -1527,7 +1605,7 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 	sort.Slice(snapshot.Groups, func(i, j int) bool { return snapshot.Groups[i].ID < snapshot.Groups[j].ID })
 
 	if requestFacts.accounts.err != nil {
-		return "", fmt.Errorf("list account relationships: %w", requestFacts.accounts.err)
+		return "", fmt.Errorf("list account relationships: %w", redactProviderReadError(requestFacts.accounts.err))
 	}
 	accounts := requestFacts.accounts.accounts
 	for _, mapping := range snapshot.Mappings {
@@ -1595,10 +1673,10 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 		candidate, reusable := candidatesByUserID[userFacts[index].LocalUserID]
 		if reusable && candidate.RelayUserID == userFacts[index].RelayUserID {
 			if candidate.relationshipGroupErr != nil {
-				return "", fmt.Errorf("list subscriptions for relay user %d: %w", userFacts[index].RelayUserID, candidate.relationshipGroupErr)
+				return "", fmt.Errorf("subscription relationships are unavailable for relay user %d: %w", userFacts[index].RelayUserID, redactProviderReadError(candidate.relationshipGroupErr))
 			}
 			if candidate.relationshipKeyErr != nil {
-				return "", fmt.Errorf("list API keys for relay user %d: %w", userFacts[index].RelayUserID, candidate.relationshipKeyErr)
+				return "", fmt.Errorf("API Key relationships are unavailable for relay user %d: %w", userFacts[index].RelayUserID, redactProviderReadError(candidate.relationshipKeyErr))
 			}
 			for _, subscription := range candidate.relationshipSubscriptions {
 				if _, relevant := relevantGroupIDs[subscription.GroupID]; relevant {
@@ -1625,7 +1703,7 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 				var err error
 				subscriptions, err = subscriptionLister.ListUserSubscriptions(ctx, userFacts[index].RelayUserID)
 				if err != nil {
-					return "", fmt.Errorf("list subscriptions for relay user %d: %w", userFacts[index].RelayUserID, err)
+					return "", fmt.Errorf("subscription relationships are unavailable for relay user %d: %w", userFacts[index].RelayUserID, redactProviderReadError(err))
 				}
 			}
 			for _, subscription := range subscriptions {
@@ -1640,7 +1718,7 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 			}
 			keys, err := requestFacts.userAPIKeys(ctx, provider, userFacts[index].RelayUserID)
 			if err != nil {
-				return "", fmt.Errorf("list API keys for relay user %d: %w", userFacts[index].RelayUserID, err)
+				return "", fmt.Errorf("API Key relationships are unavailable for relay user %d: %w", userFacts[index].RelayUserID, redactProviderReadError(err))
 			}
 			for _, key := range keys {
 				groupID := apiKeyGroupID(key)
@@ -1781,8 +1859,11 @@ func stalePlanFromPreviewError(expected string, previewErr error) *StalePlanErro
 		return nil
 	}
 	difference := "reviewed Relay relationship facts changed or are no longer available"
+	var rosterErr *replanRosterMemberError
 	var candidateErr *assignmentCandidateError
-	if errors.As(previewErr, &candidateErr) {
+	if errors.As(previewErr, &rosterErr) {
+		difference = replanRosterUnavailableDifference(rosterErr.Reason)
+	} else if errors.As(previewErr, &candidateErr) {
 		difference = candidateErr.Difference
 	} else {
 		message := strings.ToLower(previewErr.Error())
@@ -2470,7 +2551,7 @@ func loadProviderRelationshipSnapshot(ctx context.Context, provider relay.Provid
 	}
 	relationships, err := reader.ListUserRelationships(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("read provider relationship snapshot: %w", err)
+		return nil, fmt.Errorf("read provider relationship snapshot: %w", redactProviderReadError(err))
 	}
 	snapshot := &providerRelationshipSnapshot{relationships: relationships, byUserID: make(map[int64]relay.UserRelationship, len(relationships))}
 	for index := range snapshot.relationships {
@@ -3128,6 +3209,14 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	}
 	if err := validateRelationshipFingerprint(req.ExpectedRelationshipFingerprint, plan); err != nil {
 		return nil, fmt.Errorf("validate relay replan relationship fingerprint: %w", err)
+	}
+	if len(plan.executionBlockers) > 0 {
+		return nil, &StalePlanError{
+			ExpectedFingerprint: req.ExpectedRelationshipFingerprint,
+			CurrentFingerprint:  plan.RelationshipFingerprint,
+			RefreshedPlan:       plan,
+			Differences:         replanRosterDifferences(plan.executionBlockers),
+		}
 	}
 	p, err := s.resolver.Resolve(ctx, mapping.ProviderID)
 	if err != nil {
@@ -3980,7 +4069,7 @@ func (s *Service) buildCandidates(ctx context.Context, p relay.Provider, request
 }
 
 func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestFacts *planningRequestFacts, u *ent.User, source relay.Group, platform, departmentID string, globalStats map[int64]relay.TeamUserUsageStats, ranks map[int64]int) Candidate {
-	candidate := Candidate{UserID: u.ID, Username: u.Username, Email: u.Email, Eligible: false, Selected: true}
+	candidate := Candidate{UserID: u.ID, Username: u.Username, Email: u.Email, Eligible: false, Selected: true, replanUnavailableReason: replanRosterUnavailableIdentity}
 	if u.RelayUserID == nil || *u.RelayUserID <= 0 {
 		candidate.Warnings = append(candidate.Warnings, fmt.Sprintf("user %d has no relay mapping", u.ID))
 		return candidate
@@ -4007,6 +4096,7 @@ func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestF
 		candidate.Warnings = append(candidate.Warnings, "relay mapping is not valid for the selected provider")
 		return candidate
 	}
+	candidate.replanUnavailableReason = 0
 	stat, usageKnown := globalStats[candidate.RelayUserID]
 	candidate.UsageKnown = usageKnown
 	candidate.RangeCost = usageCost(stat)
@@ -4017,7 +4107,8 @@ func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestF
 	candidate.relationshipGroupErr = facts.groupErr
 	candidate.relationshipKeyErr = facts.keyErr
 	if facts.groupErr != nil {
-		candidate.Warnings = append(candidate.Warnings, fmt.Sprintf("relay groups unavailable: %v", facts.groupErr))
+		candidate.replanUnavailableReason = replanRosterUnavailableSubscription
+		candidate.Warnings = append(candidate.Warnings, "subscription relationships are unavailable")
 		return candidate
 	}
 	candidate.SourceMember = facts.eligible
@@ -4735,7 +4826,7 @@ func (s *Service) loadUnmanagedMembers(ctx context.Context, provider relay.Provi
 		remoteUsers, err = directory.ListUsers(ctx)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("list relay users: %w", err)
+		return nil, fmt.Errorf("list relay users: %w", redactProviderReadError(err))
 	}
 	localUsers, err := s.client.User.Query().Where(user.RelayUserIDNotNil()).All(ctx)
 	if err != nil {
@@ -4768,7 +4859,7 @@ func (s *Service) loadUnmanagedMembers(ctx context.Context, provider relay.Provi
 		if !batchOK {
 			subscriptions, listErr := subsLister.ListUserSubscriptions(ctx, remoteUser.ID)
 			if listErr != nil {
-				return nil, fmt.Errorf("list subscriptions for relay user %d: %w", remoteUser.ID, listErr)
+				return nil, fmt.Errorf("list subscriptions for relay user %d: %w", remoteUser.ID, redactProviderReadError(listErr))
 			}
 			activeGroupIDs = make([]int64, 0, len(subscriptions))
 			for _, subscription := range subscriptions {

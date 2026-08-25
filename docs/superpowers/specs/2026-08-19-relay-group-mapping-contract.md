@@ -69,11 +69,15 @@ deactivate, resize, or automatically reshuffle target Groups.
 
 Opening Replan reconstructs the last confirmed member-to-target assignments as
 a zero-change baseline, including saved members outside the mapping's current
-department whose local-to-Relay identity remains valid. Other eligible
-candidates remain visible with the existing usage and ranking fields, but start
-unselected and unassigned and are not recommendations. Remaining target
-capacity never places them automatically; only explicit administrator add,
-move, remove, or adoption actions change the reviewed member matrix.
+department and saved members whose current local-to-Relay identity is
+unavailable. An unavailable saved member remains visible in the saved Target
+with a safe warning and blocks the complete Confirm before any Relay write;
+otherwise valid edits in the same plan are not partially executed. Other
+eligible candidates remain visible with the existing usage and ranking fields,
+but start unselected and unassigned and are not recommendations. Remaining
+target capacity never places them automatically; only explicit administrator
+add, move, remove, or adoption actions change an executable reviewed member
+matrix.
 
 Replan shows the current Relay name and department-based suggestion for every
 managed Target. Suggestions are assigned in stable ascending Target Group ID
