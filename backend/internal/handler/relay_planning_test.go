@@ -2963,19 +2963,7 @@ func TestRelayPlanningReplanKeepsUnavailableSavedMemberAndBlocksMixedConfirm(t *
 
 	preview := func(payload string) (relayplanning.Plan, int, string) {
 		t.Helper()
-		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(payload))
-		request.Header.Set("Content-Type", "application/json")
-		response := httptest.NewRecorder()
-		router.ServeHTTP(response, request)
-		var body struct {
-			Data relayplanning.Plan `json:"data"`
-		}
-		if response.Code == http.StatusOK {
-			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
-				t.Fatalf("decode Replan response: %v", err)
-			}
-		}
-		return body.Data, response.Code, response.Body.String()
+		return previewRelayPlanningResponse(t, router, path, payload)
 	}
 
 	initial, status, body := preview(`{}`)
@@ -3101,19 +3089,7 @@ func TestRelayPlanningReplanKeepsUnavailableSavedTargetAndBlocksMixedConfirm(t *
 
 	preview := func(payload string) (relayplanning.Plan, int, string) {
 		t.Helper()
-		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(payload))
-		request.Header.Set("Content-Type", "application/json")
-		response := httptest.NewRecorder()
-		router.ServeHTTP(response, request)
-		var body struct {
-			Data relayplanning.Plan `json:"data"`
-		}
-		if response.Code == http.StatusOK {
-			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
-				t.Fatalf("decode Replan response: %v", err)
-			}
-		}
-		return body.Data, response.Code, response.Body.String()
+		return previewRelayPlanningResponse(t, router, path, payload)
 	}
 
 	initial, status, body := preview(`{}`)
@@ -3125,6 +3101,9 @@ func TestRelayPlanningReplanKeepsUnavailableSavedTargetAndBlocksMixedConfirm(t *
 	}
 	if !containsRelayPlanningWarning(initial.Warnings, "target group 101 is unavailable") {
 		t.Fatalf("initial warnings = %v, want safe unavailable Target warning", initial.Warnings)
+	}
+	if len(initial.TargetSummaries) != 2 || initial.TargetSummaries[0].Rename != nil || len(initial.TargetSummaries[0].Accounts) != 0 || len(initial.TargetSummaries[0].Members) != 0 || len(initial.TargetSummaries[0].Subscriptions) != 0 || len(initial.TargetSummaries[0].APIKeys) != 0 {
+		t.Fatalf("unavailable Target summary = %+v, want no synthesized changes", initial.TargetSummaries)
 	}
 
 	reviewPayload := fmt.Sprintf(`{"selected_user_ids":[%d,%d,%d],"assignments":[{"index":0,"user_ids":[%d]},{"index":1,"user_ids":[%d,%d]}]}`, alice.ID, bob.ID, carol.ID, alice.ID, bob.ID, carol.ID)
@@ -3166,6 +3145,9 @@ func TestRelayPlanningReplanKeepsUnavailableSavedTargetAndBlocksMixedConfirm(t *
 	persisted := client.RelayGroupMapping.GetX(ctx, mapping.ID)
 	if !reflect.DeepEqual(persisted.MemberAssignments, map[string]int64{fmt.Sprint(alice.ID): 101, fmt.Sprint(bob.ID): 102}) {
 		t.Fatalf("persisted assignments = %v, want unchanged saved roster", persisted.MemberAssignments)
+	}
+	if len(persisted.OperationState) != 0 {
+		t.Fatalf("persisted operation state = %v, want no retry-state write", persisted.OperationState)
 	}
 
 	provider.groups = append(provider.groups, relay.Group{ID: 101, Name: "Group Target A", Platform: "openai"})
@@ -3659,23 +3641,31 @@ func createRelayPlanningDirectoryUser(t *testing.T, ctx context.Context, client 
 
 func previewRelayPlanningFingerprint(t *testing.T, router http.Handler, path, payload string) string {
 	t.Helper()
+	plan, status, body := previewRelayPlanningResponse(t, router, path, payload)
+	if status != http.StatusOK {
+		t.Fatalf("preview status = %d, want 200, body=%s", status, body)
+	}
+	if plan.RelationshipFingerprint == "" {
+		t.Fatal("preview relationship fingerprint is empty")
+	}
+	return plan.RelationshipFingerprint
+}
+
+func previewRelayPlanningResponse(t *testing.T, router http.Handler, path, payload string) (relayplanning.Plan, int, string) {
+	t.Helper()
 	request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(payload))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("preview status = %d, want 200, body=%s", response.Code, response.Body.String())
-	}
 	var body struct {
 		Data relayplanning.Plan `json:"data"`
 	}
-	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode preview response: %v", err)
+	if response.Code == http.StatusOK {
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode preview response: %v", err)
+		}
 	}
-	if body.Data.RelationshipFingerprint == "" {
-		t.Fatal("preview relationship fingerprint is empty")
-	}
-	return body.Data.RelationshipFingerprint
+	return body.Data, response.Code, response.Body.String()
 }
 
 func containsRelayPlanningWarning(warnings []string, fragment string) bool {

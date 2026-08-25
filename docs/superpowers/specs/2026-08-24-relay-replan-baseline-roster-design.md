@@ -72,10 +72,12 @@ Current Relay Group facts determine whether each saved Target is available.
 The deterministic roster calculation receives those already-loaded facts and
 adds an unavailable-Target blocker without changing target order, member
 assignments, reviewed edits, or cost totals. Preview skips name validation only
-for that blocked Target because no current Relay name exists. Confirm returns
-the categorized stale-plan response before any Relay write. If the Target later
-reappears, its Group fingerprint changes, so the missing-state Preview is stale
-and a fresh Preview is required before normal Confirm can proceed.
+for that blocked Target because no current Relay name exists. Its assignment
+sets `target_unavailable`, so the frontend does not require a synthetic name or
+offer rename controls for the absent Target. Confirm returns the categorized
+stale-plan response before any Relay write. If the Target later reappears, its
+Group fingerprint changes, so the missing-state Preview is stale and a fresh
+Preview is required before normal Confirm can proceed.
 
 One request-scoped provider relationship snapshot supplies identity and
 complete subscription facts for current-department candidates, saved external

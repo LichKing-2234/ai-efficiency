@@ -207,6 +207,7 @@ type Assignment struct {
 	TotalCost                float64         `json:"total_cost"`
 	UserIDs                  []int           `json:"user_ids"`
 	TargetGroupID            int64           `json:"target_group_id,omitempty"`
+	TargetUnavailable        bool            `json:"target_unavailable,omitempty"`
 	TargetGroupName          string          `json:"target_group_name,omitempty"`
 	CurrentTargetGroupName   string          `json:"current_target_group_name,omitempty"`
 	SuggestedTargetGroupName string          `json:"suggested_target_group_name,omitempty"`
@@ -216,28 +217,29 @@ type Assignment struct {
 }
 
 type Plan struct {
-	ProviderID              int                   `json:"provider_id"`
-	DepartmentID            string                `json:"department_id"`
-	DepartmentName          string                `json:"department_name"`
-	Platform                string                `json:"platform"`
-	TemplateGroupID         int64                 `json:"template_group_id"`
-	TemplateGroupName       string                `json:"template_group_name"`
-	SourceGroupID           int64                 `json:"source_group_id"`
-	SourceGroupName         string                `json:"source_group_name"`
-	WeeklyCostTarget        float64               `json:"weekly_cost_target"`
-	RecommendedCount        int                   `json:"recommended_group_count"`
-	GroupCount              int                   `json:"group_count"`
-	Candidates              []Candidate           `json:"candidates"`
-	Assignments             []Assignment          `json:"assignments"`
-	UnmanagedMembers        []UnmanagedMember     `json:"unmanaged_members,omitempty"`
-	TargetSummaries         []TargetChangeSummary `json:"target_summaries"`
-	Warnings                []string              `json:"warnings,omitempty"`
-	GeneratedAt             time.Time             `json:"generated_at"`
-	MappingID               int                   `json:"mapping_id,omitempty"`
-	RelationshipFingerprint string                `json:"relationship_fingerprint"`
-	AccountsReviewed        bool                  `json:"accounts_reviewed"`
-	relationshipSnapshot    relationshipSnapshot
-	executionBlockers       []replanRosterBlocker
+	ProviderID                int                   `json:"provider_id"`
+	DepartmentID              string                `json:"department_id"`
+	DepartmentName            string                `json:"department_name"`
+	Platform                  string                `json:"platform"`
+	TemplateGroupID           int64                 `json:"template_group_id"`
+	TemplateGroupName         string                `json:"template_group_name"`
+	SourceGroupID             int64                 `json:"source_group_id"`
+	SourceGroupName           string                `json:"source_group_name"`
+	WeeklyCostTarget          float64               `json:"weekly_cost_target"`
+	RecommendedCount          int                   `json:"recommended_group_count"`
+	GroupCount                int                   `json:"group_count"`
+	Candidates                []Candidate           `json:"candidates"`
+	Assignments               []Assignment          `json:"assignments"`
+	UnmanagedMembers          []UnmanagedMember     `json:"unmanaged_members,omitempty"`
+	TargetSummaries           []TargetChangeSummary `json:"target_summaries"`
+	Warnings                  []string              `json:"warnings,omitempty"`
+	GeneratedAt               time.Time             `json:"generated_at"`
+	MappingID                 int                   `json:"mapping_id,omitempty"`
+	RelationshipFingerprint   string                `json:"relationship_fingerprint"`
+	AccountsReviewed          bool                  `json:"accounts_reviewed"`
+	relationshipSnapshot      relationshipSnapshot
+	executionBlockers         []replanRosterBlocker
+	unavailableTargetGroupIDs []int64
 }
 
 type TargetChangeSummary struct {
@@ -789,6 +791,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	assignments := allocate(eligible, count)
 	var unmanagedMembers []UnmanagedMember
 	var replanBlockers []replanRosterBlocker
+	var unavailableTargetGroupIDs []int64
 	if mapping != nil {
 		groups, err = includePendingCreationGroups(ctx, p, groups, mapping.OperationState, req.Platform)
 		if err != nil {
@@ -804,6 +807,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		}
 		assignments = assignmentsFromReplanRoster(roster, req.Assignments)
 		replanBlockers = append(replanBlockers, roster.Blockers...)
+		unavailableTargetGroupIDs = append(unavailableTargetGroupIDs, roster.UnavailableTargetGroupIDs...)
 		if req.Assignments == nil {
 			restoreRenameRetries(mapping.OperationState, assignments)
 		}
@@ -839,7 +843,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	if err := s.assignTargets(ctx, req, groups, departmentName, assignments); err != nil {
 		return nil, fmt.Errorf("assign relay planning targets: %w", err)
 	}
-	if err := validateTargetGroupNames(assignments, groups, replanBlockers); err != nil {
+	if err := validateTargetGroupNames(assignments, groups); err != nil {
 		return nil, fmt.Errorf("validate relay planning target names: %w", err)
 	}
 	if err := assignPreviewAccounts(facts.accounts, req.Platform, template.ID, mapping, assignments); err != nil {
@@ -864,6 +868,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		warnings = append(warnings, candidate.Warnings...)
 	}
 	warnings = append(warnings, replanRosterWarnings(replanBlockers)...)
+	warnings = append(warnings, replanUnavailableTargetWarnings(unavailableTargetGroupIDs)...)
 	plan := &Plan{
 		ProviderID: req.ProviderID, DepartmentID: req.DepartmentID, Platform: req.Platform,
 		TemplateGroupID: template.ID, TemplateGroupName: template.Name,
@@ -871,8 +876,9 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		RecommendedCount: recommended, GroupCount: count, Candidates: candidates, Assignments: assignments,
 		UnmanagedMembers: unmanagedMembers,
 		Warnings:         uniqueStrings(warnings), GeneratedAt: time.Now().UTC(),
-		AccountsReviewed:  mapping == nil || mapping.AccountManagementInitialized || assignmentsReviewAccounts(req.Assignments),
-		executionBlockers: replanBlockers,
+		AccountsReviewed:          mapping == nil || mapping.AccountManagementInitialized || assignmentsReviewAccounts(req.Assignments),
+		executionBlockers:         replanBlockers,
+		unavailableTargetGroupIDs: unavailableTargetGroupIDs,
 	}
 	assigned := make(map[int]struct{})
 	for _, assignment := range assignments {
@@ -993,25 +999,25 @@ func replanRosterInputFromPlan(mapping *ent.RelayGroupMapping, candidates []Cand
 	for _, assignment := range reviewed {
 		reviewedTargets = append(reviewedTargets, replanRosterTargetReview{Index: assignment.Index, UserIDs: append([]int(nil), assignment.UserIDs...)})
 	}
-	availableTargetGroupIDs := make([]int64, 0, len(mapping.GroupIds))
-	savedTargets := make(map[int64]struct{}, len(mapping.GroupIds))
-	for _, groupID := range mapping.GroupIds {
-		savedTargets[groupID] = struct{}{}
-	}
+	availableTargets := make(map[int64]struct{}, len(groups))
 	for _, group := range groups {
-		if _, saved := savedTargets[group.ID]; saved && strings.EqualFold(strings.TrimSpace(group.Platform), strings.TrimSpace(mapping.Platform)) {
-			availableTargetGroupIDs = append(availableTargetGroupIDs, group.ID)
+		if strings.EqualFold(strings.TrimSpace(group.Platform), strings.TrimSpace(mapping.Platform)) {
+			availableTargets[group.ID] = struct{}{}
 		}
 	}
+	targets := make([]replanRosterTargetInput, len(mapping.GroupIds))
+	for index, groupID := range mapping.GroupIds {
+		_, available := availableTargets[groupID]
+		targets[index] = replanRosterTargetInput{GroupID: groupID, Available: available}
+	}
 	return replanRosterInput{
-		TargetGroupIDs:          append([]int64(nil), mapping.GroupIds...),
-		AvailableTargetGroupIDs: availableTargetGroupIDs,
-		SavedAssignments:        savedAssignments,
-		Members:                 members,
-		UnmanagedCosts:          unmanagedCosts,
-		HasReview:               reviewed != nil,
-		ReviewedTargets:         reviewedTargets,
-		RemovedUserIDs:          append([]int(nil), removedUserIDs...),
+		Targets:          targets,
+		SavedAssignments: savedAssignments,
+		Members:          members,
+		UnmanagedCosts:   unmanagedCosts,
+		HasReview:        reviewed != nil,
+		ReviewedTargets:  reviewedTargets,
+		RemovedUserIDs:   append([]int(nil), removedUserIDs...),
 	}
 }
 
@@ -1035,6 +1041,7 @@ func assignmentsFromReplanRoster(roster replanRosterResult, reviewed []Assignmen
 	for _, target := range roster.Targets {
 		assignments[target.Index].Index = target.Index
 		assignments[target.Index].TargetGroupID = target.GroupID
+		assignments[target.Index].TargetUnavailable = target.Unavailable
 		assignments[target.Index].UserIDs = append([]int(nil), target.UserIDs...)
 		assignments[target.Index].TotalCost = target.TotalCost
 	}
@@ -1067,11 +1074,24 @@ func replanRosterBlockerMessages(blocker replanRosterBlocker) (warning, differen
 	switch blocker.Reason {
 	case replanRosterUnavailableIdentity:
 		return fmt.Sprintf("user %d has no relay mapping", blocker.UserID), replanRosterUnavailableDifference(blocker.Reason)
-	case replanRosterUnavailableTarget:
-		return fmt.Sprintf("target group %d is unavailable", blocker.TargetGroupID), "a Target Group changed or is no longer available"
 	default:
 		return "", ""
 	}
+}
+
+func replanUnavailableTargetWarnings(groupIDs []int64) []string {
+	warnings := make([]string, 0, len(groupIDs))
+	for _, groupID := range groupIDs {
+		warnings = append(warnings, fmt.Sprintf("target group %d is unavailable", groupID))
+	}
+	return warnings
+}
+
+func replanUnavailableTargetDifferences(groupIDs []int64) []string {
+	if len(groupIDs) == 0 {
+		return nil
+	}
+	return []string{"a Target Group changed or is no longer available"}
 }
 
 func replanRosterUnavailableDifference(reason replanRosterUnavailableReason) string {
@@ -3223,12 +3243,14 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	if err := validateRelationshipFingerprint(req.ExpectedRelationshipFingerprint, plan); err != nil {
 		return nil, fmt.Errorf("validate relay replan relationship fingerprint: %w", err)
 	}
-	if len(plan.executionBlockers) > 0 {
+	if len(plan.executionBlockers) > 0 || len(plan.unavailableTargetGroupIDs) > 0 {
+		differences := replanRosterDifferences(plan.executionBlockers)
+		differences = append(differences, replanUnavailableTargetDifferences(plan.unavailableTargetGroupIDs)...)
 		return nil, &StalePlanError{
 			ExpectedFingerprint: req.ExpectedRelationshipFingerprint,
 			CurrentFingerprint:  plan.RelationshipFingerprint,
 			RefreshedPlan:       plan,
-			Differences:         replanRosterDifferences(plan.executionBlockers),
+			Differences:         differences,
 		}
 	}
 	p, err := s.resolver.Resolve(ctx, mapping.ProviderID)
@@ -5142,20 +5164,14 @@ func normalizeTargetGroupName(name string) string {
 	}, strings.TrimSpace(name))
 }
 
-func validateTargetGroupNames(assignments []Assignment, groups []relay.Group, blockers []replanRosterBlocker) error {
+func validateTargetGroupNames(assignments []Assignment, groups []relay.Group) error {
 	owners := make(map[string]int64, len(groups))
 	for _, group := range groups {
 		owners[group.Name] = group.ID
 	}
-	unavailableTargets := make(map[int64]struct{})
-	for _, blocker := range blockers {
-		if blocker.Reason == replanRosterUnavailableTarget && blocker.TargetGroupID > 0 {
-			unavailableTargets[blocker.TargetGroupID] = struct{}{}
-		}
-	}
 	seen := make(map[string]struct{}, len(assignments))
 	for index := range assignments {
-		if _, unavailable := unavailableTargets[assignments[index].TargetGroupID]; unavailable {
+		if assignments[index].TargetUnavailable {
 			continue
 		}
 		name := normalizeTargetGroupName(assignments[index].TargetGroupName)

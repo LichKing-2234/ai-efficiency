@@ -686,6 +686,47 @@ describe('RelayPlanningView', () => {
 		expect(wrapper.text()).toContain('synthetic rename failure')
 	})
 
+	it('keeps an unavailable saved Target reviewable without requiring a synthetic name', async () => {
+		const mapping = {
+			...structuredClone(renewalMapping),
+			group_ids: [101],
+			member_assignments: { '1': 101 },
+		}
+		const unavailableTargetPlan = structuredClone({
+			...plan,
+			mapping_id: 9,
+			assignments: [{
+				...plan.assignments[0],
+				target_group_id: 101,
+				target_group_name: '',
+				current_target_group_name: '',
+				suggested_target_group_name: 'SDK Framework-openai-01',
+				rename_selected: false,
+				target_unavailable: true,
+			}],
+			target_summaries: [],
+			warnings: ['target group 101 is unavailable'],
+		})
+		const { wrapper, relayPlanning } = await mountView([mapping])
+		relayPlanning.previewRelayReplan.mockResolvedValue({ data: { data: unavailableTargetPlan } })
+
+		await wrapper.get('[data-testid="replan-mapping-9"]').trigger('click')
+		await flushPromises()
+
+		expect(wrapper.text()).not.toContain('Target name is required')
+		expect(wrapper.get('[data-testid="open-execution-confirmation"]').attributes('disabled')).toBeUndefined()
+		expect(wrapper.get('[data-testid="rename-target-0"] input').attributes('disabled')).toBeDefined()
+		await wrapper.get('[data-testid="apply-all-target-names"]').trigger('click')
+		expect((wrapper.get('[data-testid="rename-target-0"] input').element as HTMLInputElement).checked).toBe(false)
+
+		await wrapper.get('[data-testid="open-execution-confirmation"]').trigger('click')
+		await flushPromises()
+		expect(relayPlanning.previewRelayReplan).toHaveBeenLastCalledWith(9, expect.objectContaining({
+			assignments: [expect.objectContaining({ target_group_id: 101, target_group_name: '', rename_selected: false })],
+		}))
+		expect(wrapper.findAllComponents(ElDialog).some((dialog) => dialog.props('modelValue') === true)).toBe(true)
+	})
+
   it('adds and removes suggested groups before confirmation', async () => {
     const { wrapper, relayPlanning } = await mountView()
     await fillAndPreview(wrapper)

@@ -8,8 +8,10 @@ import (
 
 func TestReviewReplanRosterKeepsUnavailableSavedTargetAndBlocksExecution(t *testing.T) {
 	result, err := reviewReplanRoster(replanRosterInput{
-		TargetGroupIDs:          []int64{101, 102},
-		AvailableTargetGroupIDs: []int64{102},
+		Targets: []replanRosterTargetInput{
+			{GroupID: 101, Available: false},
+			{GroupID: 102, Available: true},
+		},
 		SavedAssignments: map[int]int64{
 			1: 101,
 			2: 102,
@@ -23,20 +25,29 @@ func TestReviewReplanRosterKeepsUnavailableSavedTargetAndBlocksExecution(t *test
 		t.Fatalf("reviewReplanRoster() error = %v", err)
 	}
 	if got := result.Targets; !reflect.DeepEqual(got, []replanRosterTarget{
-		{Index: 0, GroupID: 101, UserIDs: []int{1}, TotalCost: 12.5},
+		{Index: 0, GroupID: 101, UserIDs: []int{1}, TotalCost: 12.5, Unavailable: true},
 		{Index: 1, GroupID: 102, UserIDs: []int{2}, TotalCost: 7.5},
 	}) {
 		t.Fatalf("targets = %+v, want saved target order and rosters", got)
 	}
-	wantBlockers := []replanRosterBlocker{{TargetGroupID: 101, Reason: replanRosterUnavailableTarget}}
-	if !reflect.DeepEqual(result.Blockers, wantBlockers) {
-		t.Fatalf("blockers = %+v, want %+v", result.Blockers, wantBlockers)
+	if len(result.Blockers) != 0 || !reflect.DeepEqual(result.UnavailableTargetGroupIDs, []int64{101}) {
+		t.Fatalf("blockers = %+v unavailable targets = %v, want only Target 101 unavailable", result.Blockers, result.UnavailableTargetGroupIDs)
+	}
+	if warnings := replanUnavailableTargetWarnings(result.UnavailableTargetGroupIDs); !reflect.DeepEqual(warnings, []string{"target group 101 is unavailable"}) {
+		t.Fatalf("warnings = %v, want safe Target 101 warning", warnings)
+	}
+	if differences := replanUnavailableTargetDifferences(result.UnavailableTargetGroupIDs); !reflect.DeepEqual(differences, []string{"a Target Group changed or is no longer available"}) {
+		t.Fatalf("differences = %v, want safe Target Group stale category", differences)
+	}
+	repaired, err := reviewReplanRoster(replanRosterInput{Targets: availableReplanRosterTargets(101, 102)})
+	if err != nil || len(repaired.UnavailableTargetGroupIDs) != 0 {
+		t.Fatalf("repaired roster = %+v error = %v, want no unavailable Target blocker", repaired, err)
 	}
 }
 
 func TestReviewReplanRosterKeepsUnavailableSavedMemberAndBlocksExecution(t *testing.T) {
 	result, err := reviewReplanRoster(replanRosterInput{
-		TargetGroupIDs: []int64{101},
+		Targets: availableReplanRosterTargets(101),
 		SavedAssignments: map[int]int64{
 			1: 101,
 			2: 101,
@@ -67,7 +78,7 @@ func TestReviewReplanRosterKeepsUnavailableSavedMemberAndBlocksExecution(t *test
 
 func TestReviewReplanRosterAppliesExplicitEditsWithoutDroppingUnavailableSavedMember(t *testing.T) {
 	result, err := reviewReplanRoster(replanRosterInput{
-		TargetGroupIDs: []int64{101, 102},
+		Targets: availableReplanRosterTargets(101, 102),
 		SavedAssignments: map[int]int64{
 			1: 101,
 			2: 101,
@@ -103,7 +114,7 @@ func TestReviewReplanRosterAppliesExplicitEditsWithoutDroppingUnavailableSavedMe
 
 func TestReviewReplanRosterRemovesOnlyAvailableSavedMembers(t *testing.T) {
 	result, err := reviewReplanRoster(replanRosterInput{
-		TargetGroupIDs: []int64{101},
+		Targets: availableReplanRosterTargets(101),
 		SavedAssignments: map[int]int64{
 			1: 101,
 			2: 101,
@@ -158,7 +169,7 @@ func TestReviewReplanRosterRejectsInvalidExplicitEdits(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := reviewReplanRoster(replanRosterInput{
-				TargetGroupIDs:  []int64{101, 102},
+				Targets:         availableReplanRosterTargets(101, 102),
 				Members:         tt.members,
 				HasReview:       true,
 				ReviewedTargets: tt.reviewed,
@@ -172,7 +183,7 @@ func TestReviewReplanRosterRejectsInvalidExplicitEdits(t *testing.T) {
 
 func TestReviewReplanRosterCountsObservedTargetOccupancy(t *testing.T) {
 	result, err := reviewReplanRoster(replanRosterInput{
-		TargetGroupIDs: []int64{101},
+		Targets: availableReplanRosterTargets(101),
 		Members: []replanRosterMember{{
 			UserID:          3,
 			Assignable:      true,
@@ -191,7 +202,7 @@ func TestReviewReplanRosterCountsObservedTargetOccupancy(t *testing.T) {
 
 func TestReviewReplanRosterKeepsMissingSavedMemberDuringReview(t *testing.T) {
 	result, err := reviewReplanRoster(replanRosterInput{
-		TargetGroupIDs:   []int64{101},
+		Targets:          availableReplanRosterTargets(101),
 		SavedAssignments: map[int]int64{7: 101},
 		HasReview:        true,
 		ReviewedTargets:  []replanRosterTargetReview{{Index: 0, UserIDs: []int{7}}},
@@ -206,4 +217,12 @@ func TestReviewReplanRosterKeepsMissingSavedMemberDuringReview(t *testing.T) {
 	if !reflect.DeepEqual(result.Blockers, wantBlockers) {
 		t.Fatalf("blockers = %v, want %v", result.Blockers, wantBlockers)
 	}
+}
+
+func availableReplanRosterTargets(groupIDs ...int64) []replanRosterTargetInput {
+	targets := make([]replanRosterTargetInput, len(groupIDs))
+	for index, groupID := range groupIDs {
+		targets[index] = replanRosterTargetInput{GroupID: groupID, Available: true}
+	}
+	return targets
 }
