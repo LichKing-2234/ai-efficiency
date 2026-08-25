@@ -36,8 +36,11 @@ type relayPlanningSearchProvider struct {
 	relay.Provider
 	users                  map[int64]*relay.User
 	directoryUsers         []relay.User
+	directoryError         error
 	activeSubscriptionIDs  map[int64][]int64
 	groups                 []relay.Group
+	groupError             error
+	pendingGroupError      error
 	subscriptions          map[int64][]relay.UserSubscription
 	keys                   map[int64][]relay.APIKey
 	usage                  map[int64]relay.TeamUserUsageStats
@@ -50,6 +53,7 @@ type relayPlanningSearchProvider struct {
 	removeFailures         map[int64]error
 	bound                  []string
 	accounts               []relay.Account
+	accountError           error
 	accountReads           int
 	accountUpdates         int
 	accountFailures        map[int64]error
@@ -117,6 +121,9 @@ func (p *relayPlanningSearchProvider) GetUser(_ context.Context, userID int64) (
 func (p *relayPlanningSearchProvider) ListPlatformGroups(context.Context) ([]relay.Group, error) {
 	p.groupReads.Add(1)
 	p.waitForDependency("groups")
+	if p.groupError != nil {
+		return nil, p.groupError
+	}
 	groups := make([]relay.Group, 0, len(p.groups))
 	for _, group := range p.groups {
 		if !p.inactiveGroupIDs[group.ID] {
@@ -127,6 +134,9 @@ func (p *relayPlanningSearchProvider) ListPlatformGroups(context.Context) ([]rel
 }
 
 func (p *relayPlanningSearchProvider) GetGroup(_ context.Context, groupID int64) (*relay.Group, error) {
+	if p.pendingGroupError != nil {
+		return nil, p.pendingGroupError
+	}
 	for index := range p.groups {
 		if p.groups[index].ID == groupID {
 			group := p.groups[index]
@@ -138,11 +148,17 @@ func (p *relayPlanningSearchProvider) GetGroup(_ context.Context, groupID int64)
 
 func (p *relayPlanningSearchProvider) ListUsers(context.Context) ([]relay.User, error) {
 	p.directoryReads.Add(1)
+	if p.directoryError != nil {
+		return nil, p.directoryError
+	}
 	return append([]relay.User(nil), p.directoryUsers...), nil
 }
 
 func (p *relayPlanningSearchProvider) ListUsersWithActiveSubscriptions(context.Context) ([]relay.User, map[int64][]int64, error) {
 	p.directoryReads.Add(1)
+	if p.directoryError != nil {
+		return nil, nil, p.directoryError
+	}
 	users := append([]relay.User(nil), p.directoryUsers...)
 	groups := make(map[int64][]int64, len(p.activeSubscriptionIDs))
 	for userID, groupIDs := range p.activeSubscriptionIDs {
@@ -363,6 +379,9 @@ func (p *relayPlanningSearchProvider) BindAPIKeyToGroup(_ context.Context, keyID
 func (p *relayPlanningSearchProvider) ListAccountsForPlatform(context.Context, string) ([]relay.Account, error) {
 	p.accountReads++
 	p.waitForDependency("accounts")
+	if p.accountError != nil {
+		return nil, p.accountError
+	}
 	accounts := make([]relay.Account, len(p.accounts))
 	for index := range p.accounts {
 		accounts[index] = p.accounts[index]
@@ -3183,6 +3202,56 @@ func TestRelayPlanningReplanPreservesSubscriptionStaleCategory(t *testing.T) {
 		t.Fatalf("API Key Preview status/body = %d/%s, want safe 422 without raw provider error", response.Code, response.Body.String())
 	}
 	backing.keyError = nil
+	backing.groupError = errors.New("synthetic group read failure")
+	request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity || strings.Contains(response.Body.String(), "synthetic group read failure") {
+		t.Fatalf("Group Preview status/body = %d/%s, want safe 422 without raw provider error", response.Code, response.Body.String())
+	}
+	backing.groupError = nil
+	backing.accountError = errors.New("synthetic account read failure")
+	request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity || strings.Contains(response.Body.String(), "synthetic account read failure") {
+		t.Fatalf("Account Preview status/body = %d/%s, want safe 422 without raw provider error", response.Code, response.Body.String())
+	}
+	backing.accountError = nil
+	backing.directoryError = errors.New("synthetic directory relationship read failure")
+	request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity || strings.Contains(response.Body.String(), "synthetic directory relationship read failure") {
+		t.Fatalf("Directory relationship Preview status/body = %d/%s, want safe 422 without raw provider error", response.Code, response.Body.String())
+	}
+	backing.directoryError = nil
+	snapshotRouter := gin.New()
+	snapshotService := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return backing, nil }), nil)
+	snapshotRouter.POST("/admin/relay-planning/mappings/:id/replan", NewRelayPlanningHandler(snapshotService).Replan)
+	client.RelayGroupMapping.UpdateOneID(mapping.ID).SetOperationState(map[string]map[string]string{"group:1": {"creation": "pending", "target_group_id": "102"}}).SaveX(ctx)
+	backing.pendingGroupError = errors.New("synthetic pending Group read failure")
+	request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	snapshotRouter.ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity || strings.Contains(response.Body.String(), "synthetic pending Group read failure") {
+		t.Fatalf("pending Group Preview status/body = %d/%s, want safe 422 without raw provider error", response.Code, response.Body.String())
+	}
+	backing.pendingGroupError = nil
+	client.RelayGroupMapping.UpdateOneID(mapping.ID).SetOperationState(map[string]map[string]string{}).SaveX(ctx)
+	backing.relationshipError = errors.New("synthetic relationship snapshot failure")
+	request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	snapshotRouter.ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity || strings.Contains(response.Body.String(), "synthetic relationship snapshot failure") {
+		t.Fatalf("relationship snapshot Preview status/body = %d/%s, want safe 422 without raw provider error", response.Code, response.Body.String())
+	}
+	backing.relationshipError = nil
 	backing.subscriptionError = errors.New("synthetic subscription read failure")
 	backing.allowedGroupsError = errors.New("synthetic allowed-group read failure")
 	executePayload := fmt.Sprintf(`{"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d]}],"expected_relationship_fingerprint":%q,"operation_key":"subscription-stale-1"}`, alice.ID, alice.ID, initial.Data.RelationshipFingerprint)

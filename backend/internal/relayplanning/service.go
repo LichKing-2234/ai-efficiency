@@ -460,6 +460,22 @@ type assignmentCandidateError struct {
 	Difference string
 }
 
+type redactedProviderReadError struct {
+	cause error
+}
+
+func (e *redactedProviderReadError) Error() string {
+	return "provider read failed"
+}
+
+func (e *redactedProviderReadError) Unwrap() error {
+	return e.cause
+}
+
+func redactProviderReadError(err error) error {
+	return &redactedProviderReadError{cause: err}
+}
+
 func (e *assignmentCandidateError) Error() string {
 	return fmt.Sprintf("user %d cannot be added to a target group", e.UserID)
 }
@@ -661,7 +677,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	}
 	relationshipReads.Wait()
 	if groupsErr != nil {
-		return nil, fmt.Errorf("list relay groups: %w", groupsErr)
+		return nil, fmt.Errorf("list relay groups: %w", redactProviderReadError(groupsErr))
 	}
 	if relationshipsErr != nil {
 		return nil, fmt.Errorf("list Relay user relationships: %w", relationshipsErr)
@@ -923,7 +939,7 @@ func includePendingCreationGroups(ctx context.Context, provider relay.Provider, 
 	for _, groupID := range groupIDs {
 		group, err := reader.GetGroup(ctx, groupID)
 		if err != nil {
-			return nil, fmt.Errorf("get pending group %d: %w", groupID, err)
+			return nil, fmt.Errorf("get pending group %d: %w", groupID, redactProviderReadError(err))
 		}
 		if group == nil || group.ID != groupID {
 			return nil, fmt.Errorf("get pending group %d: relay returned an unexpected group", groupID)
@@ -1264,7 +1280,7 @@ func accountIntentsForGroup(accounts []relay.Account, platform string, groupID i
 
 func assignPreviewAccounts(result accountListResult, platform string, templateGroupID int64, mapping *ent.RelayGroupMapping, assignments []Assignment) error {
 	if result.err != nil {
-		return fmt.Errorf("list relay accounts: %w", result.err)
+		return fmt.Errorf("list relay accounts: %w", redactProviderReadError(result.err))
 	}
 	accounts := result.accounts
 	available := make(map[int64]relay.Account, len(accounts))
@@ -1589,7 +1605,7 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 	sort.Slice(snapshot.Groups, func(i, j int) bool { return snapshot.Groups[i].ID < snapshot.Groups[j].ID })
 
 	if requestFacts.accounts.err != nil {
-		return "", fmt.Errorf("list account relationships: %w", requestFacts.accounts.err)
+		return "", fmt.Errorf("list account relationships: %w", redactProviderReadError(requestFacts.accounts.err))
 	}
 	accounts := requestFacts.accounts.accounts
 	for _, mapping := range snapshot.Mappings {
@@ -1657,10 +1673,10 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 		candidate, reusable := candidatesByUserID[userFacts[index].LocalUserID]
 		if reusable && candidate.RelayUserID == userFacts[index].RelayUserID {
 			if candidate.relationshipGroupErr != nil {
-				return "", fmt.Errorf("subscription relationships are unavailable for relay user %d", userFacts[index].RelayUserID)
+				return "", fmt.Errorf("subscription relationships are unavailable for relay user %d: %w", userFacts[index].RelayUserID, redactProviderReadError(candidate.relationshipGroupErr))
 			}
 			if candidate.relationshipKeyErr != nil {
-				return "", fmt.Errorf("API Key relationships are unavailable for relay user %d", userFacts[index].RelayUserID)
+				return "", fmt.Errorf("API Key relationships are unavailable for relay user %d: %w", userFacts[index].RelayUserID, redactProviderReadError(candidate.relationshipKeyErr))
 			}
 			for _, subscription := range candidate.relationshipSubscriptions {
 				if _, relevant := relevantGroupIDs[subscription.GroupID]; relevant {
@@ -1687,7 +1703,7 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 				var err error
 				subscriptions, err = subscriptionLister.ListUserSubscriptions(ctx, userFacts[index].RelayUserID)
 				if err != nil {
-					return "", fmt.Errorf("subscription relationships are unavailable for relay user %d", userFacts[index].RelayUserID)
+					return "", fmt.Errorf("subscription relationships are unavailable for relay user %d: %w", userFacts[index].RelayUserID, redactProviderReadError(err))
 				}
 			}
 			for _, subscription := range subscriptions {
@@ -1702,7 +1718,7 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 			}
 			keys, err := requestFacts.userAPIKeys(ctx, provider, userFacts[index].RelayUserID)
 			if err != nil {
-				return "", fmt.Errorf("API Key relationships are unavailable for relay user %d", userFacts[index].RelayUserID)
+				return "", fmt.Errorf("API Key relationships are unavailable for relay user %d: %w", userFacts[index].RelayUserID, redactProviderReadError(err))
 			}
 			for _, key := range keys {
 				groupID := apiKeyGroupID(key)
@@ -2535,7 +2551,7 @@ func loadProviderRelationshipSnapshot(ctx context.Context, provider relay.Provid
 	}
 	relationships, err := reader.ListUserRelationships(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("read provider relationship snapshot: %w", err)
+		return nil, fmt.Errorf("read provider relationship snapshot: %w", redactProviderReadError(err))
 	}
 	snapshot := &providerRelationshipSnapshot{relationships: relationships, byUserID: make(map[int64]relay.UserRelationship, len(relationships))}
 	for index := range snapshot.relationships {
@@ -4810,7 +4826,7 @@ func (s *Service) loadUnmanagedMembers(ctx context.Context, provider relay.Provi
 		remoteUsers, err = directory.ListUsers(ctx)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("list relay users: %w", err)
+		return nil, fmt.Errorf("list relay users: %w", redactProviderReadError(err))
 	}
 	localUsers, err := s.client.User.Query().Where(user.RelayUserIDNotNil()).All(ctx)
 	if err != nil {
@@ -4843,7 +4859,7 @@ func (s *Service) loadUnmanagedMembers(ctx context.Context, provider relay.Provi
 		if !batchOK {
 			subscriptions, listErr := subsLister.ListUserSubscriptions(ctx, remoteUser.ID)
 			if listErr != nil {
-				return nil, fmt.Errorf("list subscriptions for relay user %d: %w", remoteUser.ID, listErr)
+				return nil, fmt.Errorf("list subscriptions for relay user %d: %w", remoteUser.ID, redactProviderReadError(listErr))
 			}
 			activeGroupIDs = make([]int64, 0, len(subscriptions))
 			for _, subscription := range subscriptions {
