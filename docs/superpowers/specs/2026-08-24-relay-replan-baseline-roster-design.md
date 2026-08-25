@@ -54,6 +54,15 @@ validated and summarized through the existing Preview and Confirm path.
 Existing identity revalidation remains authoritative: a stale or cross-Provider
 Relay identity is warned and cannot enter executable assignments.
 
+One request-scoped provider relationship snapshot supplies identity and
+complete subscription facts for current-department candidates, saved external
+members, and Relay-only unmanaged-member detection. Replan loads Group and
+same-Platform Account collections once and reads each relevant user's API Keys
+at most once, then reuses those same facts for eligibility, migration effects,
+the Replan Baseline and Roster, and the relationship fingerprint. A valid Team
+Usage prewarm generation remains the only provider-wide 30-day usage source on
+a full hit. No relationship fact is cached across HTTP requests.
+
 ## Unchanged Behavior
 
 This design does not change:
