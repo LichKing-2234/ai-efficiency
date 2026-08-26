@@ -55,20 +55,17 @@ func TestResolveLoginServerURLIgnoresBlankConfiguredValue(t *testing.T) {
 
 func TestLoginCommandSkipsOAuthWhenValidTokenExists(t *testing.T) {
 	tmpHome := t.TempDir()
-	oldHome := os.Getenv("HOME")
+	t.Setenv("HOME", tmpHome)
 	oldCfg := cfg
 	oldForce := loginForce
 	oldLogin := loginFlow
-	defer func() {
-		_ = os.Setenv("HOME", oldHome)
+	oldActivate := activateAfterLogin
+	t.Cleanup(func() {
 		cfg = oldCfg
 		loginForce = oldForce
 		loginFlow = oldLogin
-	}()
-
-	if err := os.Setenv("HOME", tmpHome); err != nil {
-		t.Fatalf("Setenv(HOME): %v", err)
-	}
+		activateAfterLogin = oldActivate
+	})
 	cfg = &config.Config{Server: config.ServerConfig{URL: "http://localhost:18081"}}
 	loginForce = false
 
@@ -90,6 +87,11 @@ func TestLoginCommandSkipsOAuthWhenValidTokenExists(t *testing.T) {
 		called = true
 		return nil, nil
 	}
+	activationCalls := 0
+	activateAfterLogin = func(context.Context, *client.Client, string, string) (*reporting.Config, error) {
+		activationCalls++
+		return nil, nil
+	}
 
 	buf := new(bytes.Buffer)
 	loginCmd.SetOut(buf)
@@ -100,6 +102,9 @@ func TestLoginCommandSkipsOAuthWhenValidTokenExists(t *testing.T) {
 	if called {
 		t.Fatal("expected OAuth login flow to be skipped when a valid token already exists")
 	}
+	if activationCalls != 1 {
+		t.Fatalf("reporting activation calls = %d, want 1", activationCalls)
+	}
 	if got := buf.String(); !strings.Contains(got, "Already logged in. Use --force to re-login.") {
 		t.Fatalf("output = %q, want already logged in message", got)
 	}
@@ -108,6 +113,7 @@ func TestLoginCommandSkipsOAuthWhenValidTokenExists(t *testing.T) {
 func TestLoginCommandActivatesReportingWhenValidTokenExists(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(home, ".gitconfig"))
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 
 	var ensureCalls, enableCalls int
@@ -251,6 +257,7 @@ func TestLoginCommandDoesNotReactivateRevokedReportingInstallation(t *testing.T)
 func TestLoginCommandPersistsFormalProtocolWithoutCreatingV1Baseline(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(home, ".gitconfig"))
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

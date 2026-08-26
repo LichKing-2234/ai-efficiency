@@ -20,6 +20,7 @@ import (
 var syncTaskLeaseTTL = time.Hour
 var syncTaskSpawnCooldown = 30 * time.Second
 var syncTaskRunTimeout = 5 * time.Minute
+var machineSyncOwnerTimeout = 10 * time.Minute
 var v2ClaimProgressBatchSize = 64
 var scanCodexV2ClaimSource = func(scan *attributionlocal.CodexV2ClaimScan, ctx context.Context, sourceKey string, options []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
 	return scan.ScanSource(ctx, sourceKey, options)
@@ -55,11 +56,31 @@ var spawnBackgroundSyncRunner = func(repoRoot string) error {
 	return nil
 }
 
+func RunDetachedPendingSyncTask(execCtx ExecutionContext, uploader Uploader) error {
+	ctx := context.Background()
+	var cancel context.CancelFunc
+	if machineSyncOwnerTimeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, machineSyncOwnerTimeout)
+		defer cancel()
+	}
+	err := RunPendingSyncTask(ctx, execCtx, uploader)
+	if errors.Is(err, ErrSyncTaskAlreadyRunning) {
+		return nil
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	if err := spawnBackgroundSyncRunner(execCtx.RepoRoot); err != nil {
+		return fmt.Errorf("start machine sync successor: %w", err)
+	}
+	return nil
+}
+
 func RunPendingSyncTask(ctx context.Context, execCtx ExecutionContext, uploader Uploader) error {
 	if !execCtx.hasStableReplayBinding() {
 		return nil
 	}
-	return withMachineSyncRunLock(ctx, func() error {
+	return withMachineSyncRunLock(ctx, execCtx, func() error {
 		if provider, ok := uploader.(interface{ RelayProviderID() int }); ok && provider.RelayProviderID() > 0 {
 			if _, err := MigrateMachineSyncBacklog(SyncTaskMigrationBinding{
 				ServerURL: execCtx.ServerURL, AuthSubject: execCtx.AuthSubject, RelayProviderID: provider.RelayProviderID(),
@@ -133,22 +154,31 @@ func runPendingSyncWorkspace(ctx context.Context, execCtx ExecutionContext, uplo
 		ctx, cancel = context.WithTimeout(ctx, syncTaskRunTimeout)
 		defer cancel()
 	}
-	task, err := LoadSyncTask(execCtx.WorkspaceID)
-	if err != nil || task == nil {
-		return err
-	}
-
-	startedAt := time.Now().UTC()
-	acquired, err := TryAcquireSyncTaskLease(task, os.Getpid(), startedAt, syncTaskLeaseTTL)
-	if err != nil {
-		return err
-	}
-	if !acquired {
-		return ErrSyncTaskAlreadyRunning
-	}
-
 	for {
+		task, err := LoadSyncTask(execCtx.WorkspaceID)
+		if err != nil || task == nil {
+			return err
+		}
+
+		startedAt := time.Now().UTC()
+		acquired, err := TryAcquireSyncTaskLease(task, os.Getpid(), startedAt, syncTaskLeaseTTL)
+		if err != nil {
+			return err
+		}
+		if !acquired {
+			return ErrSyncTaskAlreadyRunning
+		}
+
 		passGeneration := task.RequestGeneration
+		if len(execCtx.runnableV2TriggerIDs) > 0 {
+			runnable := make([]V2SyncTrigger, 0, len(execCtx.runnableV2TriggerIDs))
+			for _, trigger := range task.V2Triggers {
+				if _, ok := execCtx.runnableV2TriggerIDs[trigger.EventID]; ok {
+					runnable = append(runnable, trigger)
+				}
+			}
+			task.V2Triggers = runnable
+		}
 		if err := runPendingSyncPass(ctx, execCtx, uploader, task); err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
 				if yieldErr := MarkSyncTaskYielded(task, time.Now().UTC()); yieldErr != nil {
@@ -166,9 +196,21 @@ func runPendingSyncWorkspace(ctx context.Context, execCtx ExecutionContext, uplo
 		if err != nil {
 			return err
 		}
+		if execCtx.retainedV2TriggerError != nil {
+			if err := MarkSyncTaskFailure(task, time.Now().UTC(), execCtx.retainedV2TriggerError); err != nil {
+				return err
+			}
+			return execCtx.retainedV2TriggerError
+		}
 		if idle {
 			return nil
 		}
+		nextCtx, recoveryErr := executionContextForSyncTask(*task, execCtx)
+		if recoveryErr != nil {
+			_ = MarkSyncTaskFailure(task, time.Now().UTC(), recoveryErr)
+			return recoveryErr
+		}
+		execCtx = nextCtx
 	}
 }
 
@@ -212,27 +254,55 @@ func executionContextForSyncTask(task SyncTask, seed ExecutionContext) (Executio
 			return execCtx, syncTaskFailure(SyncTaskFailureStageLocalState, "repository checkout unavailable", err)
 		}
 	}
-	if err := validateSyncTaskCheckout(task, execCtx.RepoRoot, task.WorkspaceID, commitTriggers); err == nil {
-		return execCtx, nil
+	repoRoot := execCtx.RepoRoot
+	workspaceID := task.WorkspaceID
+	if err := validateSyncTaskRepository(task, repoRoot, workspaceID); err != nil {
+		if task.RepoConfigID != seed.RepoConfigID || strings.TrimSpace(task.RepoKey) != strings.TrimSpace(seed.RepoKey) {
+			return execCtx, syncTaskFailure(SyncTaskFailureStageLocalState, "repository checkout unavailable", fmt.Errorf("recovery repository identity does not match"))
+		}
+		if err := validateSyncTaskRepository(task, seed.RepoRoot, seed.WorkspaceID); err != nil {
+			return execCtx, syncTaskFailure(SyncTaskFailureStageLocalState, "repository checkout unavailable", err)
+		}
+		repoRoot = seed.RepoRoot
+		workspaceID = seed.WorkspaceID
 	}
-	if task.RepoConfigID != seed.RepoConfigID || strings.TrimSpace(task.RepoKey) != strings.TrimSpace(seed.RepoKey) {
-		return execCtx, syncTaskFailure(SyncTaskFailureStageLocalState, "repository checkout unavailable", fmt.Errorf("recovery repository identity does not match"))
-	}
-	for _, trigger := range commitTriggers {
+	runnable := make(map[string]struct{}, len(task.V2Triggers))
+	var retainedErr error
+	for _, trigger := range task.V2Triggers {
+		if strings.TrimSpace(trigger.Kind) != "post-commit" || strings.TrimSpace(trigger.CommitSHA) == "" {
+			runnable[trigger.EventID] = struct{}{}
+			continue
+		}
 		if trigger.RelayProviderID <= 0 {
-			return execCtx, syncTaskFailure(SyncTaskFailureStageLocalState, "provider identity unavailable for recovery", fmt.Errorf("trigger provider identity is missing"))
+			if retainedErr == nil {
+				retainedErr = syncTaskFailure(SyncTaskFailureStageLocalState, "provider identity unavailable for recovery", fmt.Errorf("trigger provider identity is missing"))
+			}
+			continue
+		}
+		err := validateSyncTaskTrigger(task, repoRoot, workspaceID, trigger)
+		if err == nil {
+			runnable[trigger.EventID] = struct{}{}
+			continue
+		}
+		var triggerErr error
+		switch {
+		case errors.Is(err, errSyncTaskRecoveryCommit):
+			triggerErr = syncTaskFailure(SyncTaskFailureStageLocalState, "commit unavailable in recovery checkout", err)
+		case errors.Is(err, errSyncTaskRecoveryCheckpoint):
+			triggerErr = syncTaskFailure(SyncTaskFailureStageLocalState, "checkpoint identity does not match", err)
+		default:
+			triggerErr = syncTaskFailure(SyncTaskFailureStageLocalState, "repository checkout unavailable", err)
+		}
+		if retainedErr == nil {
+			retainedErr = triggerErr
 		}
 	}
-	if err := validateSyncTaskCheckout(task, seed.RepoRoot, seed.WorkspaceID, commitTriggers); err != nil {
-		if errors.Is(err, errSyncTaskRecoveryCommit) {
-			return execCtx, syncTaskFailure(SyncTaskFailureStageLocalState, "commit unavailable in recovery checkout", err)
-		}
-		if errors.Is(err, errSyncTaskRecoveryCheckpoint) {
-			return execCtx, syncTaskFailure(SyncTaskFailureStageLocalState, "checkpoint identity does not match", err)
-		}
-		return execCtx, syncTaskFailure(SyncTaskFailureStageLocalState, "repository checkout unavailable", err)
+	if len(runnable) == 0 && retainedErr != nil {
+		return execCtx, retainedErr
 	}
-	execCtx.RepoRoot = seed.RepoRoot
+	execCtx.RepoRoot = repoRoot
+	execCtx.runnableV2TriggerIDs = runnable
+	execCtx.retainedV2TriggerError = retainedErr
 	return execCtx, nil
 }
 
@@ -247,6 +317,18 @@ func syncTaskCommitTriggers(triggers []V2SyncTrigger) []V2SyncTrigger {
 }
 
 func validateSyncTaskCheckout(task SyncTask, repoRoot, workspaceID string, triggers []V2SyncTrigger) error {
+	if err := validateSyncTaskRepository(task, repoRoot, workspaceID); err != nil {
+		return err
+	}
+	for _, trigger := range triggers {
+		if err := validateSyncTaskTrigger(task, repoRoot, workspaceID, trigger); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateSyncTaskRepository(task SyncTask, repoRoot, workspaceID string) error {
 	gitCtx, err := DetectGitContext(repoRoot)
 	if err != nil {
 		return fmt.Errorf("%w: %w", errSyncTaskRecoveryRepository, err)
@@ -254,18 +336,38 @@ func validateSyncTaskCheckout(task SyncTask, repoRoot, workspaceID string, trigg
 	if strings.TrimSpace(gitCtx.RepoKey) != strings.TrimSpace(task.RepoKey) || strings.TrimSpace(gitCtx.WorkspaceID) != strings.TrimSpace(workspaceID) {
 		return fmt.Errorf("%w: Git identity does not match", errSyncTaskRecoveryRepository)
 	}
+	return nil
+}
+
+func validateSyncTaskTrigger(task SyncTask, repoRoot, workspaceID string, trigger V2SyncTrigger) error {
+	if err := validateSyncTaskRepository(task, repoRoot, workspaceID); err != nil {
+		return err
+	}
+	if triggerServer := normalizeHookServerURL(trigger.ServerURL); triggerServer != "" && triggerServer != normalizeHookServerURL(task.ServerURL) {
+		return fmt.Errorf("%w: trigger server identity does not match", errSyncTaskRecoveryRepository)
+	}
+	if triggerOwner := strings.TrimSpace(trigger.AuthSubject); triggerOwner != "" && triggerOwner != strings.TrimSpace(task.AuthSubject) {
+		return fmt.Errorf("%w: trigger owner identity does not match", errSyncTaskRecoveryRepository)
+	}
+	if trigger.RepoConfigID > 0 && trigger.RepoConfigID != task.RepoConfigID {
+		return fmt.Errorf("%w: trigger Repository ID does not match", errSyncTaskRecoveryRepository)
+	}
+	if triggerRepo := strings.TrimSpace(trigger.RepoKey); triggerRepo != "" && triggerRepo != strings.TrimSpace(task.RepoKey) {
+		return fmt.Errorf("%w: trigger Repository identity does not match", errSyncTaskRecoveryRepository)
+	}
+	if triggerWorkspace := strings.TrimSpace(trigger.WorkspaceID); triggerWorkspace != "" && triggerWorkspace != strings.TrimSpace(task.WorkspaceID) {
+		return fmt.Errorf("%w: trigger workspace identity does not match", errSyncTaskRecoveryRepository)
+	}
 	taskContext := executionContextFromSyncTask(task)
-	for _, trigger := range triggers {
-		expectedEventID, err := CheckpointEventID(eventIDRepoHint(taskContext), trigger.CommitSHA)
-		if err != nil {
-			return fmt.Errorf("%w: derive expected event ID: %w", errSyncTaskRecoveryCheckpoint, err)
-		}
-		if strings.TrimSpace(trigger.EventID) != expectedEventID {
-			return errSyncTaskRecoveryCheckpoint
-		}
-		if !syncTaskCommitReachable(repoRoot, trigger.CommitSHA) {
-			return fmt.Errorf("%w: trigger commit is not reachable", errSyncTaskRecoveryCommit)
-		}
+	expectedEventID, err := CheckpointEventID(eventIDRepoHint(taskContext), trigger.CommitSHA)
+	if err != nil {
+		return fmt.Errorf("%w: derive expected event ID: %w", errSyncTaskRecoveryCheckpoint, err)
+	}
+	if strings.TrimSpace(trigger.EventID) != expectedEventID {
+		return errSyncTaskRecoveryCheckpoint
+	}
+	if !syncTaskCommitReachable(repoRoot, trigger.CommitSHA) {
+		return fmt.Errorf("%w: trigger commit is not reachable", errSyncTaskRecoveryCommit)
 	}
 	return nil
 }

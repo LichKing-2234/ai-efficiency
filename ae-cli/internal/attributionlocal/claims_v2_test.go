@@ -1275,6 +1275,9 @@ func v2ClaimRepo(t *testing.T, path, content string) (string, string) {
 		if output, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v: %s", args, err, output)
 		}
+		if len(args) == 1 && args[0] == "init" {
+			isolateGitRepoHooks(t, repo)
+		}
 	}
 	if err := os.WriteFile(filepath.Join(repo, path), []byte(content), 0o600); err != nil {
 		t.Fatal(err)
@@ -1302,6 +1305,9 @@ func gitClaim(t *testing.T, repo string, args ...string) string {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v: %s", args, err, output)
+	}
+	if len(args) == 1 && args[0] == "init" {
+		isolateGitRepoHooks(t, repo)
 	}
 	return string(output)
 }

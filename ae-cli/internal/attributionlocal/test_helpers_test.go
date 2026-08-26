@@ -344,12 +344,52 @@ func fixtureRepoRoot(t *testing.T) string {
 		}
 	}
 	run("init")
+	isolateGitRepoHooks(t, root)
 	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("hello\n"), 0o600); err != nil {
 		t.Fatalf("write README: %v", err)
 	}
 	run("add", "README.md")
 	run("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init")
 	return root
+}
+
+func isolateGitRepoHooks(t *testing.T, root string) {
+	t.Helper()
+	hooksDir := filepath.Join(root, ".git", "test-hooks-empty")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatalf("mkdir test hooks: %v", err)
+	}
+	cmd := exec.Command("git", "config", "core.hooksPath", hooksDir)
+	cmd.Dir = root
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("isolate Git hooks: %v: %s", err, output)
+	}
+}
+
+func TestGitFixturesDoNotRunInheritedGlobalHooks(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(home, ".gitconfig"))
+	capture := filepath.Join(home, "unexpected-post-commit")
+	t.Setenv("AE_TEST_GLOBAL_HOOK_CAPTURE", capture)
+	hooksDir := filepath.Join(home, "global-hooks")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hooksDir, "post-commit"), []byte("#!/bin/sh\nprintf x >>\"$AE_TEST_GLOBAL_HOOK_CAPTURE\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("git", "config", "--global", "core.hooksPath", hooksDir)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("configure sentinel hook: %v: %s", err, output)
+	}
+
+	fixtureRepoRoot(t)
+	v2ClaimRepo(t, "feature.go", "package feature\n")
+
+	if _, err := os.Stat(capture); !os.IsNotExist(err) {
+		t.Fatalf("Git fixture ran inherited global hook: %v", err)
+	}
 }
 
 func jsonTime(raw string) time.Time {

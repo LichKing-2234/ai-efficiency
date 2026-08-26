@@ -58,9 +58,35 @@ func initRepoWithCommit(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
+	emptyHooks := filepath.Join(dir, ".git", "test-hooks-empty")
+	if err := os.MkdirAll(emptyHooks, 0o755); err != nil {
+		t.Fatalf("mkdir test hooks: %v", err)
+	}
 	git(t, dir, "add", ".")
-	git(t, dir, "commit", "-m", "init")
+	git(t, dir, "-c", "core.hooksPath="+emptyHooks, "commit", "-m", "init")
 	return dir
+}
+
+func TestInitRepoWithCommitDoesNotRunInheritedGlobalHook(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(home, ".gitconfig"))
+	capture := filepath.Join(home, "unexpected-post-commit")
+	t.Setenv("AE_TEST_GLOBAL_HOOK_CAPTURE", capture)
+	hooksDir := filepath.Join(home, "global-hooks")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hooksDir, "post-commit"), []byte("#!/bin/sh\n: >\"$AE_TEST_GLOBAL_HOOK_CAPTURE\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(t, home, "config", "--global", "core.hooksPath", hooksDir)
+
+	initRepoWithCommit(t)
+
+	if _, err := os.Stat(capture); !os.IsNotExist(err) {
+		t.Fatalf("fixture commit ran inherited global hook: %v", err)
+	}
 }
 
 func TestDetectGitContextDerivesWorkspaceAndRepoKey(t *testing.T) {
@@ -226,6 +252,7 @@ func TestEnableGlobalForceDoesNotModifyRepoHooksPath(t *testing.T) {
 	repo := initRepoWithCommit(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(home, ".gitconfig"))
 	git(t, repo, "config", "core.hooksPath", ".git/custom-hooks")
 
 	if err := EnableGlobal(InstallOptions{CWD: repo, Force: true, GeneratorVersion: "test"}); err != nil {

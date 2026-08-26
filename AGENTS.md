@@ -146,6 +146,7 @@ ai-efficiency/
 ### Test and Example Data Hygiene
 
 - 测试、fixture、spec、plan、示例 JSON/命令输出中**不要写入真实用户数据、真实公司域名邮箱、真实密码、真实 token、真实 API key、真实订阅组名**。
+- Git 测试仓库必须在首次 commit、rewrite、merge、cherry-pick 或 push 前配置 test-owned empty `core.hooksPath`；只有显式验证 managed hooks 的测试可以启用 hook，且必须同时隔离 `HOME`、Git 配置、凭据、backend 和子进程。
 - 统一使用脱敏占位值，例如：
   - 邮箱：`alice@example.com`、`bob@example.org`
   - 用户名：`alice`、`bob`

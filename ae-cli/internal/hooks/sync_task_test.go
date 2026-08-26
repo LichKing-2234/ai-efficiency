@@ -699,6 +699,42 @@ func TestUpsertPendingSyncTaskRejectsSameEventIDDifferentPayload(t *testing.T) {
 	}
 }
 
+func TestUpsertPendingSyncTaskUpgradesVersion2TriggerBeforeExactReplay(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	now := time.Now().UTC()
+	legacy := SyncTask{
+		Version: 2, WorkspaceID: "ws-version-2-replay", RepoRoot: "/repo", ServerURL: "https://ae.example.com", AuthSubject: "user:1",
+		RepoConfigID: 23, RepoKey: "github.com/acme/repo", Status: SyncTaskStatusPending, LastRequestedAt: now,
+		V2Triggers: []V2SyncTrigger{{
+			Kind: "post-commit", EventID: "event-version-2", CommitSHA: strings.Repeat("a", 40), CapturedAt: now, RelayProviderID: 17,
+		}},
+	}
+	if err := SaveSyncTask(legacy); err != nil {
+		t.Fatal(err)
+	}
+	replay := legacy
+	replay.Version = syncTaskVersion
+	replay.V2Triggers[0].ServerURL = legacy.ServerURL
+	replay.V2Triggers[0].AuthSubject = legacy.AuthSubject
+	replay.V2Triggers[0].RepoConfigID = legacy.RepoConfigID
+	replay.V2Triggers[0].RepoKey = legacy.RepoKey
+	replay.V2Triggers[0].WorkspaceID = legacy.WorkspaceID
+	if err := UpsertPendingSyncTask(replay); err != nil {
+		t.Fatalf("exact version-2 replay: %v", err)
+	}
+	got, err := LoadSyncTask(legacy.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Version != syncTaskVersion || len(got.V2Triggers) != 1 {
+		t.Fatalf("upgraded replay task = %+v", got)
+	}
+	trigger := got.V2Triggers[0]
+	if trigger.ServerURL != legacy.ServerURL || trigger.AuthSubject != legacy.AuthSubject || trigger.RepoConfigID != legacy.RepoConfigID || trigger.RepoKey != legacy.RepoKey || trigger.WorkspaceID != legacy.WorkspaceID {
+		t.Fatalf("upgraded replay trigger = %+v", trigger)
+	}
+}
+
 func TestRunPendingSyncTaskDrainsWorkArrivingDuringRun(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == os.Getpid() })
@@ -828,9 +864,6 @@ func TestRunPendingSyncTaskSerializesMachineWorkspaces(t *testing.T) {
 func TestRunPendingSyncTaskWaiterDrainsTaskAfterOwnerFailure(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == os.Getpid() })
-	originalPollInterval := machineSyncLockPollInterval
-	machineSyncLockPollInterval = time.Millisecond
-	t.Cleanup(func() { machineSyncLockPollInterval = originalPollInterval })
 	now := time.Now().UTC()
 	ownerTask := SyncTask{WorkspaceID: "ws-owner-failure", RepoRoot: t.TempDir(), ServerURL: "https://ae.example.com", AuthSubject: "user:1", RepoConfigID: 2, RepoKey: "github.com/acme/repo-a", Status: SyncTaskStatusPending, LastRequestedAt: now}
 	waiterTask := SyncTask{WorkspaceID: "ws-waiter-successor", RepoRoot: t.TempDir(), ServerURL: ownerTask.ServerURL, AuthSubject: ownerTask.AuthSubject, RepoConfigID: 3, RepoKey: "github.com/acme/repo-b", Status: SyncTaskStatusPending, LastRequestedAt: now.Add(time.Second)}
@@ -878,6 +911,194 @@ func TestRunPendingSyncTaskWaiterDrainsTaskAfterOwnerFailure(t *testing.T) {
 	}
 	if got, err := LoadSyncTask(waiterTask.WorkspaceID); err != nil || got != nil {
 		t.Fatalf("waiter task = %+v, %v, want drained without another event", got, err)
+	}
+}
+
+func TestRunPendingSyncTaskCoalescesConcurrentMachineWakeups(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == os.Getpid() })
+	now := time.Now().UTC()
+	task := SyncTask{
+		WorkspaceID: "ws-machine-owner", RepoRoot: t.TempDir(), ServerURL: "https://ae.example.com", AuthSubject: "user:1",
+		RepoConfigID: 2, RepoKey: "github.com/acme/repo", Status: SyncTaskStatusPending, LastRequestedAt: now,
+	}
+	if err := UpsertPendingSyncTask(task); err != nil {
+		t.Fatal(err)
+	}
+
+	ownerStarted := make(chan struct{})
+	releaseOwner := make(chan struct{})
+	original := runAttributionSync
+	runAttributionSync = func(context.Context, attributionlocal.RunOptions, attributionlocal.BackendClient) error {
+		select {
+		case <-ownerStarted:
+		default:
+			close(ownerStarted)
+		}
+		<-releaseOwner
+		return nil
+	}
+	t.Cleanup(func() { runAttributionSync = original })
+
+	execCtx := ExecutionContext{
+		ServerURL: task.ServerURL, AuthSubject: task.AuthSubject, RepoConfigID: task.RepoConfigID,
+		RepoKey: task.RepoKey, WorkspaceID: task.WorkspaceID, RepoRoot: task.RepoRoot, DurableReplay: true,
+	}
+	ownerDone := make(chan error, 1)
+	go func() {
+		ownerDone <- RunPendingSyncTask(context.Background(), execCtx, syncCapableFakeUploader{fakeUploader: &fakeUploader{}})
+	}()
+	<-ownerStarted
+
+	started := time.Now()
+	errs := make(chan error, 100)
+	var wg sync.WaitGroup
+	for range 100 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer cancel()
+			errs <- RunPendingSyncTask(ctx, execCtx, syncCapableFakeUploader{fakeUploader: &fakeUploader{}})
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	if elapsed := time.Since(started); elapsed > 500*time.Millisecond {
+		t.Fatalf("coalesced wakeups waited %s for the active owner", elapsed)
+	}
+	alreadyRunning := 0
+	boundedWaiter := 0
+	for err := range errs {
+		switch {
+		case errors.Is(err, ErrSyncTaskAlreadyRunning):
+			alreadyRunning++
+		case errors.Is(err, context.DeadlineExceeded):
+			boundedWaiter++
+		default:
+			t.Fatalf("concurrent wakeup error = %v", err)
+		}
+	}
+	if alreadyRunning != 99 || boundedWaiter != 1 {
+		t.Fatalf("coalesced wakeups: already_running=%d bounded_waiter=%d, want 99/1", alreadyRunning, boundedWaiter)
+	}
+
+	close(releaseOwner)
+	if err := <-ownerDone; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunPendingSyncTaskDifferentOwnerWakeUsesScopedWaiter(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == os.Getpid() })
+	now := time.Now().UTC()
+	ownerTask := SyncTask{
+		WorkspaceID: "ws-owner-a", RepoRoot: t.TempDir(), ServerURL: "https://ae-a.example.com", AuthSubject: "user:a",
+		RepoConfigID: 1, RepoKey: "github.com/acme/repo-a", Status: SyncTaskStatusPending, LastRequestedAt: now,
+	}
+	otherTask := SyncTask{
+		WorkspaceID: "ws-owner-b", RepoRoot: t.TempDir(), ServerURL: "https://ae-b.example.com", AuthSubject: "user:b",
+		RepoConfigID: 2, RepoKey: "github.com/acme/repo-b", Status: SyncTaskStatusPending, LastRequestedAt: now,
+	}
+	if err := UpsertPendingSyncTask(ownerTask); err != nil {
+		t.Fatal(err)
+	}
+	ownerStarted := make(chan struct{})
+	releaseOwner := make(chan struct{})
+	originalRun := runAttributionSync
+	runAttributionSync = func(context.Context, attributionlocal.RunOptions, attributionlocal.BackendClient) error {
+		select {
+		case <-ownerStarted:
+		default:
+			close(ownerStarted)
+		}
+		<-releaseOwner
+		return nil
+	}
+	t.Cleanup(func() {
+		runAttributionSync = originalRun
+	})
+	uploader := syncCapableFakeUploader{fakeUploader: &fakeUploader{}}
+	ownerCtx := executionContextFromSyncTask(ownerTask)
+	otherCtx := executionContextFromSyncTask(otherTask)
+	ownerDone := make(chan error, 1)
+	go func() { ownerDone <- RunPendingSyncTask(context.Background(), ownerCtx, uploader) }()
+	<-ownerStarted
+	if err := UpsertPendingSyncTask(otherTask); err != nil {
+		t.Fatal(err)
+	}
+	otherDone := make(chan error, 1)
+	go func() { otherDone <- RunPendingSyncTask(context.Background(), otherCtx, uploader) }()
+	select {
+	case err := <-otherDone:
+		t.Fatalf("different owner returned before lock handoff: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(releaseOwner)
+	if err := <-ownerDone; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-otherDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("different reporting owner waiter did not acquire the released lock")
+	}
+	if task, err := LoadSyncTask(otherTask.WorkspaceID); err != nil || task != nil {
+		t.Fatalf("different owner task = %+v, %v, want drained", task, err)
+	}
+}
+
+func TestRunDetachedPendingSyncTaskSpawnsSuccessorAtOwnerDeadline(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	task := SyncTask{
+		WorkspaceID: "ws-owner-deadline", RepoRoot: t.TempDir(), ServerURL: "https://ae.example.com", AuthSubject: "user:1",
+		RepoConfigID: 2, RepoKey: "github.com/acme/repo", Status: SyncTaskStatusPending, LastRequestedAt: time.Now().UTC(),
+	}
+	if err := UpsertPendingSyncTask(task); err != nil {
+		t.Fatal(err)
+	}
+
+	originalRun := runAttributionSync
+	runAttributionSync = func(ctx context.Context, _ attributionlocal.RunOptions, _ attributionlocal.BackendClient) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	originalTimeout := machineSyncOwnerTimeout
+	machineSyncOwnerTimeout = 20 * time.Millisecond
+	originalSpawn := spawnBackgroundSyncRunner
+	spawned := make(chan string, 1)
+	spawnBackgroundSyncRunner = func(repoRoot string) error {
+		spawned <- repoRoot
+		return nil
+	}
+	t.Cleanup(func() {
+		runAttributionSync = originalRun
+		machineSyncOwnerTimeout = originalTimeout
+		spawnBackgroundSyncRunner = originalSpawn
+	})
+
+	execCtx := ExecutionContext{
+		ServerURL: task.ServerURL, AuthSubject: task.AuthSubject, RepoConfigID: task.RepoConfigID,
+		RepoKey: task.RepoKey, WorkspaceID: task.WorkspaceID, RepoRoot: task.RepoRoot, DurableReplay: true,
+	}
+	if err := RunDetachedPendingSyncTask(execCtx, syncCapableFakeUploader{fakeUploader: &fakeUploader{}}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-spawned:
+		if got != task.RepoRoot {
+			t.Fatalf("successor repo root = %q, want %q", got, task.RepoRoot)
+		}
+	default:
+		t.Fatal("owner deadline did not start a successor")
+	}
+	retained, err := LoadSyncTask(task.WorkspaceID)
+	if err != nil || retained == nil || retained.Status != SyncTaskStatusYielded {
+		t.Fatalf("deadline task = %+v, %v, want yielded", retained, err)
 	}
 }
 
@@ -1138,6 +1359,85 @@ func TestRunPendingSyncTaskRetainsUnreachableRecoveryCommit(t *testing.T) {
 	}
 }
 
+func TestRunPendingSyncTaskProcessesReachableTriggerAndRetainsUnreachableSibling(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == os.Getpid() })
+	repo := initRepoWithCommit2(t)
+	gitCtx, err := DetectGitContext(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reachableCommit := git2(t, repo, "rev-parse", "HEAD")
+	unreachableCommit := strings.Repeat("f", 40)
+	contextHint := eventIDRepoHint(ExecutionContext{RepoConfigID: 23, AuthSubject: "user:1", WorkspaceID: gitCtx.WorkspaceID})
+	reachableEvent, err := CheckpointEventID(contextHint, reachableCommit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unreachableEvent, err := CheckpointEventID(contextHint, unreachableCommit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	task := SyncTask{
+		WorkspaceID: gitCtx.WorkspaceID, RepoRoot: repo, ServerURL: "https://ae.example.com", AuthSubject: "user:1",
+		RepoConfigID: 23, RepoKey: gitCtx.RepoKey, Status: SyncTaskStatusPending, LastRequestedAt: now,
+		V2Triggers: []V2SyncTrigger{
+			{Kind: "post-commit", EventID: reachableEvent, CommitSHA: reachableCommit, CapturedAt: now, RelayProviderID: 17},
+			{Kind: "post-commit", EventID: unreachableEvent, CommitSHA: unreachableCommit, CapturedAt: now, RelayProviderID: 17},
+		},
+	}
+	if err := UpsertPendingSyncTask(task); err != nil {
+		t.Fatal(err)
+	}
+	sourcePath := filepath.Join(home, ".codex", "sessions", "mixed-recovery.jsonl")
+	if err := os.MkdirAll(filepath.Dir(sourcePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sourcePath, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	originalScan := scanCodexV2ClaimSource
+	scanCodexV2ClaimSource = func(_ *attributionlocal.CodexV2ClaimScan, _ context.Context, sourceKey string, options []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
+		if len(options) != 1 || options[0].CommitSHA != reachableCommit || options[0].CheckpointEventID != reachableEvent {
+			return nil, fmt.Errorf("mixed recovery options = %+v, want reachable trigger only", options)
+		}
+		return []attributionlocal.V2ClaimCandidate{{
+			LocalKey: sourceKey, FirstSeenAt: now,
+			Group: client.AttributionV2ClaimGroup{
+				SchemaVersion: 2, GroupID: "group-mixed-recovery", RelayProviderID: 17,
+				TokenSource: client.AttributionV2TokenSourceRelayOfficial, RequestIDs: []string{"request-synthetic"}, EvidenceDigest: "evidence-mixed-recovery",
+				CommitAllocations: []client.AttributionV2CommitAllocation{{
+					Sequence: 1, RepoConfigID: 23, RepoKey: gitCtx.RepoKey, WorkspaceID: gitCtx.WorkspaceID,
+					CheckpointEventID: reachableEvent, CommitSHA: reachableCommit, EvidenceDigest: "evidence-mixed-recovery",
+				}},
+			},
+		}}, nil
+	}
+	t.Cleanup(func() { scanCodexV2ClaimSource = originalScan })
+	backend := &acknowledgingV2ClaimClient{}
+	uploader := recoveringV2Uploader{acknowledgingV2Uploader: acknowledgingV2Uploader{fakeUploader: &fakeUploader{}, client: backend}, providerID: 17}
+	seed := ExecutionContext{
+		ServerURL: task.ServerURL, AuthSubject: task.AuthSubject, RepoConfigID: task.RepoConfigID, RepoKey: task.RepoKey,
+		WorkspaceID: gitCtx.WorkspaceID, RepoRoot: repo, DurableReplay: true,
+	}
+	if err := RunPendingSyncTask(context.Background(), seed, uploader); err == nil {
+		t.Fatal("mixed recovery error = nil, want retained sibling diagnostic")
+	}
+	if backend.calls != 1 || len(backend.groups) != 1 || backend.groups[0].CommitAllocations[0].CommitSHA != reachableCommit {
+		t.Fatalf("mixed recovery backend groups = %+v, calls=%d", backend.groups, backend.calls)
+	}
+	retained, err := LoadSyncTask(task.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retained == nil || len(retained.V2Triggers) != 1 || retained.V2Triggers[0].CommitSHA != unreachableCommit || retained.LastFailureReason != "commit unavailable in recovery checkout" {
+		t.Fatalf("mixed recovery retained task = %+v", retained)
+	}
+}
+
 func TestExecutionContextForSyncTaskRejectsMismatchedCheckpointRecovery(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	seedGit, err := DetectGitContext(repo)
@@ -1194,6 +1494,56 @@ func TestPruneExpiredV2SyncTriggersUsesNinetyDayBoundary(t *testing.T) {
 	progress, progressErr := LoadV2ClaimScanProgress(task.WorkspaceID)
 	if !deleted || loadErr != nil || remaining != nil || progressErr != nil || progress != nil {
 		t.Fatalf("expired task=%+v loadErr=%v progress=%+v progressErr=%v deleted=%t", remaining, loadErr, progress, progressErr, deleted)
+	}
+}
+
+func TestExecutionContextForSyncTaskRetainsOnlyMismatchedTriggerRepositoryIdentity(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	repo := initRepoWithCommit2(t)
+	gitCtx, err := DetectGitContext(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstCommit := git2(t, repo, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(repo, "second.txt"), []byte("second\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git2(t, repo, "add", "second.txt")
+	git2(t, repo, "commit", "-m", "second")
+	secondCommit := git2(t, repo, "rev-parse", "HEAD")
+	task := SyncTask{
+		WorkspaceID: gitCtx.WorkspaceID, RepoRoot: repo, ServerURL: "https://ae.example.com", AuthSubject: "user:1",
+		RepoConfigID: 23, RepoKey: gitCtx.RepoKey, Status: SyncTaskStatusPending, LastRequestedAt: time.Now().UTC(),
+	}
+	hint := eventIDRepoHint(executionContextFromSyncTask(task))
+	firstEvent, err := CheckpointEventID(hint, firstCommit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondEvent, err := CheckpointEventID(hint, secondCommit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := V2SyncTrigger{
+		Kind: "post-commit", ServerURL: task.ServerURL, AuthSubject: task.AuthSubject, RepoConfigID: task.RepoConfigID,
+		RepoKey: task.RepoKey, WorkspaceID: task.WorkspaceID, CapturedAt: time.Now().UTC(), RelayProviderID: 17,
+	}
+	first := base
+	first.EventID, first.CommitSHA = firstEvent, firstCommit
+	second := base
+	second.EventID, second.CommitSHA, second.RepoKey = secondEvent, secondCommit, "github.com/acme/other"
+	task.V2Triggers = []V2SyncTrigger{first, second}
+
+	resolved, err := executionContextForSyncTask(task, executionContextFromSyncTask(task))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := resolved.runnableV2TriggerIDs[firstEvent]; !ok || len(resolved.runnableV2TriggerIDs) != 1 {
+		t.Fatalf("runnable trigger IDs = %+v, want first only", resolved.runnableV2TriggerIDs)
+	}
+	var stageErr *syncTaskStageError
+	if !errors.As(resolved.retainedV2TriggerError, &stageErr) || stageErr.reason != "repository checkout unavailable" {
+		t.Fatalf("retained trigger error = %v", resolved.retainedV2TriggerError)
 	}
 }
 
