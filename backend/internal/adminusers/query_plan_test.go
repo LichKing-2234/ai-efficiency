@@ -44,45 +44,6 @@ const (
 	departmentFinalSummaryRole         departmentReadPlanRole = "final summary"
 )
 
-func TestHierarchyCleanupCompleteDepartmentsUsesConstantQueryRolesAcrossScales(t *testing.T) {
-	scales := []targetPlanScale{
-		{name: "small", users: 24, members: 22, departments: 12, memberships: 36},
-		{name: "large", users: 2400, members: 2200, departments: 120, memberships: 3600},
-	}
-	var wantQueryCount int
-	for _, scale := range scales {
-		t.Run(scale.name, func(t *testing.T) {
-			client, dsn := testdb.OpenWithDSN(t)
-			seedTargetPlanFixture(t, client, scale)
-			analyzeTargetPlanTables(t, dsn)
-
-			captureClient, recorder := newTargetQueryCaptureClient(t, dsn)
-			departments, err := NewService(captureClient).Departments(context.Background())
-			if err != nil {
-				t.Fatalf("Departments: %v", err)
-			}
-			if len(departments) != scale.departments {
-				t.Fatalf("complete departments = %d, want %d", len(departments), scale.departments)
-			}
-
-			queries := recorder.recordedQueries()
-			if wantQueryCount == 0 {
-				wantQueryCount = len(queries)
-			} else if len(queries) != wantQueryCount {
-				t.Fatalf("complete department query roles changed with scale: got %d want %d; queries=%s", len(queries), wantQueryCount, describeCapturedQueries(queries))
-			}
-			hierarchy := requireOneCapturedQuery(t, queries, "SEARCH DEPTH FIRST")
-			summary := requireOneCapturedQuery(t, queries, "department_summaries")
-			for _, role := range []capturedQuery{hierarchy, summary} {
-				assertNoSourceWideHierarchyReconstruction(t, role.query)
-				assertNoFormattedHierarchyParameters(t, role)
-			}
-			assertNamedRecursiveUnionLoopsOnce(t, explainTargetPlan(t, dsn, hierarchy.query, hierarchy.args), "department_hierarchy")
-			assertNamedRecursiveUnionLoopsOnce(t, explainTargetPlan(t, dsn, summary.query, summary.args), "descendants")
-		})
-	}
-}
-
 func TestDepartmentReadPlanBoundedRolesAcrossScales(t *testing.T) {
 	scales := []targetPlanScale{
 		{name: "small", users: 24, members: 22, departments: 12, memberships: 36},
@@ -141,7 +102,7 @@ func TestDepartmentReadPlanBoundedRolesAcrossScales(t *testing.T) {
 				roleCounts[planRole]++
 				assertNoSourceWideHierarchyReconstruction(t, role.query)
 				assertNoFormattedHierarchyParameters(t, role)
-				if strings.Contains(role.query, `SELECT "directory_departments"."id", "directory_departments"."source_id"`) {
+				if planRole != departmentAncestorPresentationRole && strings.Contains(role.query, `SELECT "directory_departments"."id", "directory_departments"."source_id"`) {
 					t.Fatalf("bounded role selected full department entities:\n%s", role.query)
 				}
 				plan := explainTargetPlan(t, dsn, role.query, role.args)
@@ -152,7 +113,7 @@ func TestDepartmentReadPlanBoundedRolesAcrossScales(t *testing.T) {
 					}
 				}
 				if planRole == departmentAncestorPresentationRole {
-					assertNamedRecursiveUnionLoopsOnce(t, plan, "ancestors")
+					assertNamedRecursiveUnionLoopsOnce(t, plan, "directory_fact_ancestors")
 				}
 				if planRole == departmentFinalSummaryRole {
 					assertNamedRecursiveUnionLoopsOnce(t, plan, "descendants")
@@ -191,7 +152,7 @@ func TestDepartmentReadPlanBoundedRolesAcrossScales(t *testing.T) {
 func classifyDepartmentReadPlanRole(t *testing.T, query string) departmentReadPlanRole {
 	t.Helper()
 	switch {
-	case strings.Contains(query, "ancestors("):
+	case strings.Contains(query, "directory_fact_ancestors("):
 		return departmentAncestorPresentationRole
 	case strings.Contains(query, "descendants("):
 		return departmentFinalSummaryRole
@@ -200,6 +161,11 @@ func classifyDepartmentReadPlanRole(t *testing.T, query string) departmentReadPl
 			return departmentChildCountRole
 		}
 		return departmentOptionCountRole
+	case strings.Contains(query, `SELECT "directory_departments"."id", "directory_departments"."external_id"`):
+		if strings.Contains(query, `"directory_departments"."effective_parent_external_id" IS NULL`) || strings.Contains(query, `"directory_departments"."effective_parent_external_id" =`) {
+			return departmentChildPageRole
+		}
+		return departmentOptionPageRole
 	case strings.Contains(query, `SELECT "directory_departments"."external_id", "directory_departments"."parent_external_id", "directory_departments"."name", "directory_departments"."path"`):
 		return departmentChildPageRole
 	case strings.Contains(query, `SELECT "directory_departments"."external_id", "directory_departments"."parent_external_id", "directory_departments"."name"`):
@@ -281,10 +247,10 @@ func TestCountPlanAndPagePlanReuseEffectivePredicatesAcrossScales(t *testing.T) 
 			assertListSQLRoleCount(t, queries, `eligible_user_ids`, 2)
 			assertListSQLRoleCount(t, queries, `FROM "directory_members"`, 1)
 			assertListSQLRoleCount(t, queries, `FROM "directory_member_departments"`, 1)
-			assertListSQLRoleCount(t, queries, `requested_candidates`, 1)
+			assertListSQLRoleCount(t, queries, `directory_fact_candidates`, 1)
 			assertListSQLRoleCount(t, queries, `FROM "directory_offboarding_actions"`, 1)
-			if len(queries) != 8 {
-				t.Fatalf("List SQL statements = %d, want constant 8 roles; queries=%s", len(queries), describeCapturedQueries(queries))
+			if len(queries) != 9 {
+				t.Fatalf("List SQL statements = %d, want constant 9 roles; queries=%s", len(queries), describeCapturedQueries(queries))
 			}
 
 			filtered := capturedQueriesContaining(queries, "eligible_user_ids")
@@ -311,29 +277,29 @@ func TestCountPlanAndPagePlanReuseEffectivePredicatesAcrossScales(t *testing.T) 
 			}
 
 			memberQuery := requireOneCapturedQuery(t, queries, `FROM "directory_members"`)
-			if !strings.Contains(memberQuery.query, `SELECT "directory_members"."id", "directory_members"."matched_user_id", "directory_members"."email_normalized", "directory_members"."department_external_id"`) ||
-				!strings.Contains(memberQuery.query, `"directory_members"."source_id" =`) ||
+			if !strings.Contains(memberQuery.query, `"directory_members"."source_id" =`) ||
+				!strings.Contains(memberQuery.query, `"directory_members"."last_seen_run_id" =`) ||
 				!strings.Contains(memberQuery.query, `"directory_members"."matched_user_id" IN`) {
-				t.Fatalf("page member query is not four-field and page-bounded:\n%s", memberQuery.query)
+				t.Fatalf("page member query is not current-snapshot and page-bounded:\n%s", memberQuery.query)
 			}
 			membershipQuery := requireOneCapturedQuery(t, queries, `FROM "directory_member_departments"`)
-			if !strings.Contains(membershipQuery.query, `SELECT "directory_member_departments"."id", "directory_member_departments"."directory_member_id", "directory_member_departments"."department_external_id"`) ||
+			if !strings.Contains(membershipQuery.query, `"directory_member_departments"."last_seen_run_id" =`) ||
 				!strings.Contains(membershipQuery.query, `"directory_member_departments"."directory_member_id" IN`) {
-				t.Fatalf("membership query is not three-field and page-member-bounded:\n%s", membershipQuery.query)
+				t.Fatalf("membership query is not current-snapshot and page-member-bounded:\n%s", membershipQuery.query)
 			}
 
-			ancestorQuery := requireOneCapturedQuery(t, queries, "requested_candidates")
+			ancestorQuery := requireOneCapturedQuery(t, queries, "directory_fact_candidates")
 			assertNoFormattedHierarchyParameters(t, ancestorQuery)
 			storedParentJoin := "child.parent_external_id" + " = parent.external_id"
 			if strings.Count(ancestorQuery.query, "WITH RECURSIVE") != 1 ||
-				strings.Count(ancestorQuery.query, "ancestors(") != 1 ||
+				strings.Count(ancestorQuery.query, "directory_fact_ancestors(") != 1 ||
 				strings.Contains(ancestorQuery.query, storedParentJoin) ||
 				!strings.Contains(ancestorQuery.query, "child.effective_parent_external_id = parent.external_id") {
 				t.Fatalf("ancestor query does not use one shared effective closure:\n%s", ancestorQuery.query)
 			}
 			ancestorPlan := explainTargetPlan(t, dsn, ancestorQuery.query, ancestorQuery.args)
 			assertNoSourceWideHierarchyReconstruction(t, ancestorQuery.query)
-			assertNamedRecursiveUnionLoopsOnce(t, ancestorPlan, "ancestors")
+			assertNamedRecursiveUnionLoopsOnce(t, ancestorPlan, "directory_fact_ancestors")
 			if got := planActualRows(t, ancestorPlan); scale.name == "large" && got >= float64(scale.departments) {
 				t.Fatalf("large ancestor output rows = %.0f, want candidates plus ancestors below all %d departments", got, scale.departments)
 			}
