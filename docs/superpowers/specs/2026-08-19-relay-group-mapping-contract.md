@@ -79,6 +79,16 @@ target capacity never places them automatically; only explicit administrator
 add, move, remove, or adoption actions change an executable reviewed member
 matrix.
 
+If a saved Target Group is absent from current Relay Group facts, Replan keeps
+that stable Target ID in its original order and retains its saved member roster.
+It shows a safe unavailable-Target warning and proposes no automatic
+replacement, member relocation, removal, resize, or deactivation. The complete
+reviewed plan is non-executable, including otherwise valid edits for available
+Targets, and Confirm returns the categorized stale-plan response before any
+Relay write. When the same Target relationship becomes available again, the
+Group fingerprint changes; the administrator must review a fresh Preview before
+Confirm can proceed normally.
+
 Replan shows the current Relay name and department-based suggestion for every
 managed Target. Suggestions are assigned in stable ascending Target Group ID
 order, so member moves and usage changes do not renumber them. A department

@@ -6,13 +6,18 @@ import (
 )
 
 type replanRosterInput struct {
-	TargetGroupIDs   []int64
+	Targets          []replanRosterTargetInput
 	SavedAssignments map[int]int64
 	Members          []replanRosterMember
 	UnmanagedCosts   map[int64]float64
 	HasReview        bool
 	ReviewedTargets  []replanRosterTargetReview
 	RemovedUserIDs   []int
+}
+
+type replanRosterTargetInput struct {
+	GroupID   int64
+	Available bool
 }
 
 type replanRosterMember struct {
@@ -24,10 +29,11 @@ type replanRosterMember struct {
 }
 
 type replanRosterTarget struct {
-	Index     int
-	GroupID   int64
-	UserIDs   []int
-	TotalCost float64
+	Index       int
+	GroupID     int64
+	UserIDs     []int
+	TotalCost   float64
+	Unavailable bool
 }
 
 type replanRosterTargetReview struct {
@@ -57,21 +63,27 @@ func (e *replanRosterMemberError) Error() string {
 }
 
 type replanRosterResult struct {
-	Targets  []replanRosterTarget
-	Blockers []replanRosterBlocker
+	Targets                   []replanRosterTarget
+	Blockers                  []replanRosterBlocker
+	UnavailableTargetGroupIDs []int64
 }
 
 func reviewReplanRoster(input replanRosterInput) (replanRosterResult, error) {
-	result := replanRosterResult{Targets: make([]replanRosterTarget, len(input.TargetGroupIDs))}
-	targetIndexes := make(map[int64]int, len(input.TargetGroupIDs))
-	for index, groupID := range input.TargetGroupIDs {
+	result := replanRosterResult{Targets: make([]replanRosterTarget, len(input.Targets))}
+	targetIndexes := make(map[int64]int, len(input.Targets))
+	for index, target := range input.Targets {
+		groupID := target.GroupID
 		result.Targets[index] = replanRosterTarget{
-			Index:     index,
-			GroupID:   groupID,
-			UserIDs:   []int{},
-			TotalCost: input.UnmanagedCosts[groupID],
+			Index:       index,
+			GroupID:     groupID,
+			UserIDs:     []int{},
+			TotalCost:   input.UnmanagedCosts[groupID],
+			Unavailable: !target.Available,
 		}
 		targetIndexes[groupID] = index
+		if !target.Available {
+			result.UnavailableTargetGroupIDs = append(result.UnavailableTargetGroupIDs, groupID)
+		}
 	}
 
 	members := make(map[int]replanRosterMember, len(input.Members))

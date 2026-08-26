@@ -4,10 +4,10 @@
 
 The zero-change Replan Baseline was implemented for #354 and merged through PR
 #355 on 2026-08-24. Request-scoped relationship reuse was merged through PR
-#363 on 2026-08-25. The unavailable-member follow-up for #374 is implemented on
-branch `fix/replan-unavailable-members-374` but is not merged or released by this
-document. This design supersedes only the existing-mapping Replan candidate
-auto-placement and unavailable-member behavior in the
+#363 on 2026-08-25. The unavailable-member follow-up for #374 merged through PR
+#376 on 2026-08-25. This design also defines the unavailable-saved-Target
+behavior tracked by #375. It supersedes only the existing-mapping Replan
+candidate auto-placement and unavailable-relationship behavior in the
 [Relay Group Mapping Contract](./2026-08-19-relay-group-mapping-contract.md).
 
 ## Problem
@@ -27,6 +27,10 @@ Replan opens as a zero-change view of the last confirmed mapping:
 - Each saved managed member stays assigned to the target Group recorded by the
   Replan Baseline. A member whose current local-to-Relay identity is unavailable
   remains visible in that saved Target with a safe warning.
+- Each saved Target Group ID stays in its original position. If that Target is
+  absent from current Relay Group facts, its saved roster remains visible with
+  a safe warning and no replacement, move, removal, resize, or deactivation is
+  proposed.
 - Replan does not automatically select, assign, or recommend any other member.
 - Each target Group shows its Replan Roster using the same member usage and
   ranking presentation available when creating a mapping. No new ranking
@@ -46,6 +50,8 @@ Opening Replan alone produces no member mutation and no proposed member delta.
 For an existing-mapping Replan request without reviewed assignments, returned
 assignments contain every saved managed member and the saved target Group ID.
 Members with an unavailable current identity remain visible but make the plan
+non-executable. An unavailable saved Target likewise remains in the assignment
+list by stable ID with its saved roster and makes the complete plan
 non-executable. Remaining target capacity never pulls in eligible source or
 department candidates.
 
@@ -61,6 +67,17 @@ saved assignment visible, but Confirm rejects the complete reviewed plan before
 any Relay write, including otherwise valid edits in the same plan. Explicit
 add, move, or remove edits cannot silently hide that saved member while the
 identity remains unavailable.
+
+Current Relay Group facts determine whether each saved Target is available.
+The deterministic roster calculation receives those already-loaded facts and
+adds an unavailable-Target blocker without changing target order, member
+assignments, reviewed edits, or cost totals. Preview skips name validation only
+for that blocked Target because no current Relay name exists. Its assignment
+sets `target_unavailable`, so the frontend does not require a synthetic name or
+offer rename controls for the absent Target. Confirm returns the categorized
+stale-plan response before any Relay write. If the Target later reappears, its
+Group fingerprint changes, so the missing-state Preview is stale and a fresh
+Preview is required before normal Confirm can proceed.
 
 One request-scoped provider relationship snapshot supplies identity and
 complete subscription facts for current-department candidates, saved external
@@ -100,3 +117,8 @@ This design does not change:
    If the administrator also reviews a valid edit for another member, Confirm
    rejects the complete plan before any Relay write and returns the refreshed
    roster through the existing stale-plan response.
+7. A saved Target Group is absent from current Relay Group facts. Replan keeps
+   the Target ID and its saved members in their original positions, warns that
+   the Target is unavailable, and blocks a mixed plan before any Relay write.
+   After the Target reappears, the old fingerprint is stale and a fresh Preview
+   restores normal execution.

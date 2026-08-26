@@ -25,6 +25,7 @@ export interface RelayPlanningAssignment {
   total_cost: number
   user_ids: number[]
   target_group_id?: number
+  target_unavailable?: boolean
   target_group_name?: string
 	current_target_group_name?: string
 	suggested_target_group_name?: string

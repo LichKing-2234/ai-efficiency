@@ -236,6 +236,7 @@ function assignmentPayload() {
 function validateTargetName(targetIndex: number): string {
 	const assignment = plan.value?.assignments.find((item) => item.index === targetIndex)
 	if (!assignment) return ''
+	if (assignment.target_unavailable) return ''
 	const name = String(assignment.target_group_name || '').trim()
 	if (!name) return t('relayPlanning.targetNameRequired')
 	if (Array.from(name).length > 100) return t('relayPlanning.targetNameTooLong')
@@ -246,14 +247,14 @@ function validateTargetName(targetIndex: number): string {
 
 function toggleTargetRename(targetIndex: number, checked: boolean) {
 	const assignment = plan.value?.assignments.find((item) => item.index === targetIndex)
-	if (!assignment?.target_group_id) return
+	if (!assignment?.target_group_id || assignment.target_unavailable) return
 	assignment.rename_selected = checked
 	assignment.target_group_name = checked ? assignment.suggested_target_group_name || assignment.current_target_group_name || '' : assignment.current_target_group_name || ''
 }
 
 function applyAllTargetNames() {
 	for (const assignment of plan.value?.assignments ?? []) {
-		if (!assignment.target_group_id) continue
+		if (!assignment.target_group_id || assignment.target_unavailable) continue
 		assignment.rename_selected = true
 		assignment.target_group_name = assignment.suggested_target_group_name || assignment.current_target_group_name || ''
 	}
@@ -1212,7 +1213,7 @@ onBeforeUnmount(clearSearchState)
               <div class="flex justify-between gap-3 text-sm font-medium"><span class="min-w-0 break-words">{{ assignment.target_group_name || `${t('relayPlanning.group')} ${assignment.index + 1}` }}<span v-if="assignment.target_group_id" class="text-slate-500"> (#{{ assignment.target_group_id }})</span></span><span class="flex shrink-0 items-center gap-2"><span>${{ assignment.total_cost.toFixed(2) }}</span><el-tooltip v-if="!activeMappingID && plan.assignments.length > 1" :content="t('relayPlanning.removeSuggestedGroup')"><el-button :data-testid="`remove-suggested-group-${assignment.index}`" circle size="small" type="danger" plain :icon="Delete" :aria-label="t('relayPlanning.removeSuggestedGroup')" @click="removeSuggestedGroup(assignment.index)" /></el-tooltip></span></div>
 				<div v-if="activeMappingID" class="mt-3 space-y-2">
 					<div class="grid gap-1 text-xs text-slate-500"><div>{{ t('relayPlanning.currentName') }}: <span class="break-words text-slate-700">{{ assignment.current_target_group_name }}</span></div><div>{{ t('relayPlanning.suggestedName') }}: <span class="break-words text-slate-700">{{ assignment.suggested_target_group_name }}</span></div></div>
-					<el-checkbox :data-testid="`rename-target-${assignment.index}`" :model-value="Boolean(assignment.rename_selected)" @change="(value) => toggleTargetRename(assignment.index, value === true)">{{ t('relayPlanning.renameTarget') }}</el-checkbox>
+					<el-checkbox :data-testid="`rename-target-${assignment.index}`" :model-value="Boolean(assignment.rename_selected)" :disabled="assignment.target_unavailable" @change="(value) => toggleTargetRename(assignment.index, value === true)">{{ t('relayPlanning.renameTarget') }}</el-checkbox>
 				</div>
 				<el-input v-if="!activeMappingID || assignment.rename_selected" v-model="assignment.target_group_name" :data-testid="`target-name-${assignment.index}`" class="mt-2" maxlength="100" show-word-limit :placeholder="t('relayPlanning.targetName')" />
 				<div v-if="targetNameErrors[assignment.index]" class="mt-1 text-xs text-red-600">{{ targetNameErrors[assignment.index] }}</div>
