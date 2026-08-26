@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-11
 **Status:** Active production contract since the verified 2026-08-12 cutover. The Responses WebSocket extension uses Codex-local Token and shipped in `ae-cli/v0.2.0-preview.8` plus platform `v0.1.0-preview.85`; the trusted-log repair shipped in CLI-only preview.9, and preview.10 completed the exact dual-baseline and scan-progress repair for current Codex 0.147. CLI-only `ae-cli/v0.2.0-preview.11` preserves the original single-allocation evidence digest and quarantines unchanged terminal conflicts without retransmission or later-trigger blockage. CLI-only preview.12 added coordinated drain, deleted-worktree recovery, and backlog migration; preview.13 then shipped the exact current-runtime inline-wrapper parser repair and scanner-progress invalidation. The authorized #305 Helm operator canary at commit `c35758f5` produced one `relay_official` group whose 112 official Requests materialized exactly once into four direct pools and `21,668,159` Token; a later managed-hook replay left the group, pools, relations, Request identities, and Token unchanged. This controlled canary does not satisfy #252's ordinary-workflow gate. A 2026-08-14 production read found that personal Activity used cumulative Usage stats instead of the selected-window trend total, invalidating the previously recorded #252 Day 0. PR #299 repaired the denominator and non-zero percentage display; the repair first shipped in platform `v0.1.0-preview.87`, exact production readback established the replacement #252 Day 0 at `2026-08-17T05:32:57.925948Z`, and platform preview.88 then ran at Helm revision 88. AI Efficiency PR #319 later satisfied the ordinary-workflow gate with five direct pools and `23,210,615` Token. The 2026-08-20 evidence snapshot passed every non-destructive execution-time gate and the operator authorized implementation, separate releases, deployment, and destructive migration. Phase 2 merged as `319735ac`, shipped in CLI `ae-cli/v0.2.0-preview.14` and platform `v0.1.0-preview.89`, and completed at Helm revision 89. Phase 3 source contraction merged as `996c23ea`, shipped in platform `v0.1.0-preview.90`, and now runs as Helm revision 90/chart `0.1.76`. The legacy tables and installation columns are absent; exact formal conservation and every health, Activity, SCM, and removed-route readback passed. No fixed elapsed-time wait applied.
-**Current implementation note:** Preview.15 shipped the task/hook recovery hardening from PR #392. Issue #394 now adds unreleased Codex 0.149.1 HTTP evidence compatibility through an exact unique-turn fallback, retained-evidence lower bound, terminal expiry classification, and scanner-progress v5 rebuild. This is a current code contract, not a release or production deployment claim.
+**Current implementation note:** Preview.15 shipped the task/hook recovery hardening from PR #392. Preview.16 shipped issue #394's Codex 0.149.1 exact unique-turn fallback, retained-evidence lower bound, terminal expiry classification, and scanner-progress v5 rebuild. Production v5 status then classified the historical local backlog but exposed issue #396: slow legacy checkpoint replay could consume the workspace quantum before compact v2 delivery began. The current code runs frozen v2 delivery first and preserves legacy replay afterward; that ordering fix is not yet released.
 **Scope:** `ae-cli`, backend attribution/reconciliation/read models, frontend Activity, repository administration
 **Supersedes for active behavior:** [Codex Token Attribution Ledger POC](./2026-08-05-codex-token-attribution-ledger-poc-design.md)
 **Related:**
@@ -218,6 +218,14 @@ v2 remains Git-event-driven and adds no daemon or periodic synchronization:
 Failed delivery remains in a durable local outbox. Hooks never block commit or
 push. A runner that receives new work while draining must consume it or
 reliably start a successor; it may not require another Git event.
+
+For a compact v2-capable uploader, one workspace pass processes the already
+frozen v2 triggers through scan, persistence, and backend acknowledgement before
+replaying unresolved or workspace checkpoint queues. Legacy checkpoint events
+remain durable and are still replayed after v2; they are not deleted or
+silently acknowledged. A slow legacy checkpoint therefore cannot consume the
+workspace quantum before formal v2 delivery begins. The older non-v2
+compatibility path keeps its existing checkpoint and tool-usage order.
 
 All reporting work on one machine is serialized by one transient drain owner.
 Per-workspace tasks remain the durable queue and evidence boundary, but a
