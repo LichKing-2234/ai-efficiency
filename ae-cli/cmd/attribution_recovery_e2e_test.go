@@ -237,7 +237,7 @@ func TestAttributionRecoveryInstalledBinaryE2E(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Sync Task: pending [failed]", "remaining_triggers: 1", "failure_reason: commit unavailable in recovery checkout",
-		"Synthetic Fixture Quarantine: workspaces=1 unresolved=1", "V2 Claim Delivery: pending=0 conflict=0 upgrade_required=0",
+		"Synthetic Fixture Quarantine: workspaces=1 unresolved=1", "V2 Claim Delivery: pending=0 conflict=0 upgrade_required=0 accepted=1 missing_request_id=0 ambiguous_request_evidence=0 request_evidence_expired=0",
 	} {
 		if !bytes.Contains(statusOutput, []byte(want)) {
 			t.Fatalf("installed status missing %q:\n%s", want, statusOutput)
@@ -271,7 +271,7 @@ func TestAttributionRecoveryInstalledBinaryE2E(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Sync Task: none [ok]", "Machine Sync Tasks: queued=0 running=0 yielded=0 recoverable=1 terminal=0 expiring=0",
-		"Synthetic Fixture Quarantine: workspaces=1 unresolved=1", "V2 Claim Delivery: pending=0 conflict=0 upgrade_required=0",
+		"Synthetic Fixture Quarantine: workspaces=1 unresolved=1", "V2 Claim Delivery: pending=0 conflict=0 upgrade_required=0 accepted=1 missing_request_id=0 ambiguous_request_evidence=0 request_evidence_expired=0",
 	} {
 		if !bytes.Contains(finalOutput, []byte(want)) {
 			t.Fatalf("final installed status missing %q:\n%s", want, finalOutput)
@@ -324,13 +324,14 @@ func runGitOutputForRecovery(t *testing.T, dir string, args ...string) string {
 
 func writeRecoveryCodexEvidence(t *testing.T, home string) {
 	t.Helper()
+	const turnID = "66666666-6666-4666-8666-666666666666"
 	sessions := filepath.Join(home, ".codex", "sessions")
 	if err := os.MkdirAll(sessions, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	rows := []map[string]any{
 		{"timestamp": time.Now().UTC().Format(time.RFC3339Nano), "type": "session_meta", "payload": map[string]any{"id": "thread-recovery-e2e"}},
-		{"timestamp": time.Now().UTC().Add(time.Second).Format(time.RFC3339Nano), "type": "turn_context", "payload": map[string]any{"turn_id": "turn-recovery-e2e"}},
+		{"timestamp": time.Now().UTC().Add(time.Second).Format(time.RFC3339Nano), "type": "turn_context", "payload": map[string]any{"turn_id": turnID}},
 		{"timestamp": time.Now().UTC().Add(2 * time.Second).Format(time.RFC3339Nano), "type": "response_item", "payload": map[string]any{
 			"type": "custom_tool_call", "name": "exec",
 			"input": "const patch = \"*** Begin Patch\\n*** Add File: feature.go\\n+package feature\\n*** End Patch\";\ntext(await tools.apply_patch(patch));",
@@ -356,9 +357,9 @@ func writeRecoveryCodexEvidence(t *testing.T, home string) {
 	if _, err := db.Exec(`CREATE TABLE logs (id INTEGER PRIMARY KEY, ts INTEGER, ts_nanos INTEGER, thread_id TEXT, target TEXT, feedback_log_body TEXT)`); err != nil {
 		t.Fatal(err)
 	}
-	logBody := `turn{thread.id=thread-recovery-e2e turn.id=turn-recovery-e2e}: Request completed method=POST api.path="responses" status=200 OK headers={"x-client-request-id":"request-recovery-e2e"}`
+	logBody := `turn{thread.id=transport-thread-recovery-e2e turn.id=` + turnID + `}: Request completed method=POST api.path="responses" status=200 OK headers={"x-client-request-id":"request-recovery-e2e"}`
 	if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(1, ?, 0, ?, ?, ?)`,
-		time.Now().UTC().Unix(), "thread-recovery-e2e", "codex_http_client::client", logBody); err != nil {
+		time.Now().UTC().Unix(), "transport-thread-recovery-e2e", "codex_http_client::client", logBody); err != nil {
 		t.Fatal(err)
 	}
 }

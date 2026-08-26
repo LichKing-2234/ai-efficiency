@@ -191,6 +191,153 @@ func TestScanCodexV2ClaimsFromHomeUsesRecentActiveAndArchivedSources(t *testing.
 	}
 }
 
+func TestScanCodexV2ClaimsFromHomeMatchesUniqueCodex01491TurnAcrossThreads(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	home := t.TempDir()
+	turnID := "11111111-1111-4111-8111-111111111111"
+	writeV2JSONL(t, filepath.Join(home, ".codex", "sessions", "codex-0.149.1.jsonl"),
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "jsonl-thread"}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": turnID}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: feature.go\n+package feature\n*** End Patch"}},
+	)
+	writeV2RequestRows(t, home,
+		v2RequestLogRow{threadID: "sqlite-thread", turnID: turnID, requestID: "request-codex-01491-a", observedAt: v2TestArtifactTime},
+		v2RequestLogRow{threadID: "sqlite-thread", turnID: turnID, requestID: "request-codex-01491-b", observedAt: v2TestArtifactTime.Add(time.Second)},
+	)
+
+	claims, err := ScanCodexV2ClaimsFromHome(context.Background(), home, V2ClaimScanOptions{
+		RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8, WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-01491",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups := UploadableV2ClaimGroups(claims)
+	if len(groups) != 1 || strings.Join(groups[0].RequestIDs, ",") != "client:request-codex-01491-a,client:request-codex-01491-b" {
+		t.Fatalf("Codex 0.149.1 groups = %+v, claims = %+v", groups, claims)
+	}
+}
+
+func TestScanCodexV2ClaimsFromHomeRejectsAmbiguousTurnFallback(t *testing.T) {
+	for _, testCase := range []struct {
+		name        string
+		jsonlRows   []v2JSONLTurn
+		requestRows []v2RequestLogRow
+	}{
+		{
+			name: "duplicate JSONL turn",
+			jsonlRows: []v2JSONLTurn{
+				{file: "first.jsonl", threadID: "jsonl-thread-a", turnID: "22222222-2222-4222-8222-222222222222"},
+				{file: "second.jsonl", threadID: "jsonl-thread-b", turnID: "22222222-2222-4222-8222-222222222222"},
+			},
+			requestRows: []v2RequestLogRow{{threadID: "sqlite-thread", turnID: "22222222-2222-4222-8222-222222222222", requestID: "request-jsonl-ambiguous", observedAt: v2TestArtifactTime}},
+		},
+		{
+			name:      "duplicate SQLite turn",
+			jsonlRows: []v2JSONLTurn{{file: "session.jsonl", threadID: "jsonl-thread", turnID: "33333333-3333-4333-8333-333333333333"}},
+			requestRows: []v2RequestLogRow{
+				{threadID: "sqlite-thread-a", turnID: "33333333-3333-4333-8333-333333333333", requestID: "request-sqlite-a", observedAt: v2TestArtifactTime},
+				{threadID: "sqlite-thread-b", turnID: "33333333-3333-4333-8333-333333333333", requestID: "request-sqlite-b", observedAt: v2TestArtifactTime.Add(time.Second)},
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+			home := t.TempDir()
+			for _, row := range testCase.jsonlRows {
+				writeV2JSONLTurn(t, home, row)
+			}
+			writeV2RequestRows(t, home, testCase.requestRows...)
+			claims, err := ScanCodexV2ClaimsFromHome(context.Background(), home, V2ClaimScanOptions{
+				RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8, WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-ambiguous",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(claims) == 0 {
+				t.Fatal("ambiguous turn produced no diagnostic claim")
+			}
+			for _, claim := range claims {
+				if claim.GapReason != "ambiguous_request_evidence" || len(claim.Group.RequestIDs) != 0 {
+					t.Fatalf("ambiguous claim = %+v", claim)
+				}
+			}
+			if groups := UploadableV2ClaimGroups(claims); len(groups) != 0 {
+				t.Fatalf("ambiguous groups = %+v", groups)
+			}
+		})
+	}
+}
+
+func TestScanCodexV2ClaimsFromHomePrefersExactPairOverAmbiguousTurnFallback(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	home := t.TempDir()
+	turnID := "44444444-4444-4444-8444-444444444444"
+	writeV2JSONLTurn(t, home, v2JSONLTurn{file: "session.jsonl", threadID: "jsonl-thread", turnID: turnID})
+	writeV2RequestRows(t, home,
+		v2RequestLogRow{threadID: "jsonl-thread", turnID: turnID, requestID: "request-exact", observedAt: v2TestArtifactTime},
+		v2RequestLogRow{threadID: "other-sqlite-thread", turnID: turnID, requestID: "request-other", observedAt: v2TestArtifactTime.Add(time.Second)},
+	)
+	claims, err := ScanCodexV2ClaimsFromHome(context.Background(), home, V2ClaimScanOptions{
+		RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8, WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-exact",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups := UploadableV2ClaimGroups(claims)
+	if len(groups) != 1 || strings.Join(groups[0].RequestIDs, ",") != "client:request-exact" {
+		t.Fatalf("exact-match groups = %+v, claims = %+v", groups, claims)
+	}
+}
+
+func TestScanCodexV2ClaimsFromHomeClassifiesExpiredRequestEvidence(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	home := t.TempDir()
+	path := filepath.Join(home, ".codex", "sessions", "retained-source.jsonl")
+	turnTime := v2TestArtifactTime
+	evidenceTime := turnTime.Add(24 * time.Hour)
+	writeV2JSONL(t, path,
+		map[string]any{"timestamp": turnTime.Format(time.RFC3339Nano), "type": "session_meta", "payload": map[string]any{"id": "jsonl-thread"}},
+		map[string]any{"timestamp": turnTime.Add(time.Second).Format(time.RFC3339Nano), "type": "turn_context", "payload": map[string]any{"turn_id": "55555555-5555-4555-8555-555555555555"}},
+		map[string]any{"timestamp": turnTime.Add(2 * time.Second).Format(time.RFC3339Nano), "type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: feature.go\n+package feature\n*** End Patch"}},
+	)
+	if err := os.Chtimes(path, evidenceTime.Add(time.Second), evidenceTime.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	writeV2RequestRows(t, home, v2RequestLogRow{threadID: "unrelated-thread", turnID: "unrelated-turn", requestID: "request-lower-bound", observedAt: evidenceTime})
+	claims, err := ScanCodexV2ClaimsFromHome(context.Background(), home, V2ClaimScanOptions{
+		RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8, WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-expired",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 1 || claims[0].GapReason != "request_evidence_expired" || len(UploadableV2ClaimGroups(claims)) != 0 {
+		t.Fatalf("expired claims = %+v", claims)
+	}
+}
+
+func TestPrepareCodexV2ClaimScanBoundsSourcesByTrustedEvidence(t *testing.T) {
+	home := t.TempDir()
+	evidenceTime := v2TestArtifactTime.Add(24 * time.Hour)
+	oldPath := filepath.Join(home, ".codex", "sessions", "before-evidence.jsonl")
+	recentPath := filepath.Join(home, ".codex", "sessions", "within-evidence.jsonl")
+	writeV2JSONL(t, oldPath, map[string]any{"type": "session_meta", "payload": map[string]any{"id": "old"}})
+	writeV2JSONL(t, recentPath, map[string]any{"type": "session_meta", "payload": map[string]any{"id": "recent"}})
+	if err := os.Chtimes(oldPath, evidenceTime.Add(-time.Second), evidenceTime.Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(recentPath, evidenceTime, evidenceTime); err != nil {
+		t.Fatal(err)
+	}
+	writeV2RequestRows(t, home, v2RequestLogRow{threadID: "sqlite-thread", turnID: "sqlite-turn", requestID: "request-lower-bound", observedAt: evidenceTime})
+	scan, err := PrepareCodexV2ClaimScan(context.Background(), home, v2TestArtifactTime.Add(-24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if keys := scan.SourceKeys(); len(keys) != 1 {
+		t.Fatalf("source keys = %v, want only source within trusted evidence retention", keys)
+	}
+}
+
 func TestScanCodexV2ClaimsFromHomeBatchReadsSourceOnceForMultipleCommits(t *testing.T) {
 	repo := t.TempDir()
 	for _, args := range [][]string{{"init"}, {"config", "user.email", "alice@example.com"}, {"config", "user.name", "Alice"}} {
@@ -617,7 +764,7 @@ func TestLoadCodexV2RequestEvidenceRequiresLiteralWebSocketSpans(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			evidence, err := loadCodexV2RequestEvidence(context.Background(), home, time.Time{})
+			evidence, _, err := loadCodexV2RequestEvidence(context.Background(), home, time.Time{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1004,13 +1151,14 @@ func TestScanCodexV2ClaimsRejectsWrongHeadersTargetsAndUnmatchedTurns(t *testing
 		{codexResponsesHTTPClientTarget, `turn{thread.id=thread-real turn.id=turn-other}: Request completed method=POST api.path="responses" status=200 OK headers={"x-client-request-id":"wrong-turn"}`},
 		{codexResponsesHTTPClientTarget, `turn{thread.id=thread-real turn.id=turn-real}: Request completed method=POST api.path="responses" status=503 Service Unavailable headers={"x-client-request-id":"failed-request"}`},
 		{"codex_api::sse::responses", `turn{thread.id=thread-real turn.id=turn-real}: Request completed method=POST api.path="responses" status=200 OK headers={"x-client-request-id":"wrong-target"}`},
+		{"codex_app_server_transport::transport::remote_control::websocket", `turn{thread.id=thread-real turn.id=turn-real}: websocket event: {"type":"response.completed","response":{"id":"resp-unsupported"}}`},
 		{codexResponsesWebSocketEventTarget, `turn{thread.id=thread-real turn.id=turn-real}:model_client.stream_responses_websocket{transport="responses_websocket" websocket.warmup=false}: unhandled responses event: response.in_progress`},
 		{codexResponsesWebSocketCompletionTarget, `turn{thread.id=thread-real turn.id=turn-other}:session_task.run:run_turn: post sampling token usage turn_id=turn-other total_usage_tokens=10`},
 		{codexResponsesWebSocketEventTarget, `turn{thread.id=thread-real turn.id=turn-real}:modelXclient.streamYresponsesZwebsocket{transport="responses_websocket" websocket.warmup=false}: unhandled responses event: response.in_progress`},
 		{codexResponsesWebSocketCompletionTarget, `turn{thread.id=thread-real turn.id=turn-real}:sessionXtask.run:runXturn: post sampling token usage turn_id=turn-real total_usage_tokens=10`},
 	}
 	for index, row := range rows {
-		if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, target, feedback_log_body) VALUES(?, ?, 0, ?, ?)`, index+1, time.Now().Unix(), row.target, row.body); err != nil {
+		if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, target, feedback_log_body) VALUES(?, ?, 0, ?, ?)`, index+1, v2TestArtifactTime.Unix(), row.target, row.body); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1042,12 +1190,14 @@ func TestLoadCodexV2RequestEvidenceRejectsAmbiguousRequestIdentity(t *testing.T)
 			t.Fatal(err)
 		}
 	}
-	evidence, err := loadCodexV2RequestEvidence(context.Background(), home, time.Time{})
+	evidence, _, err := loadCodexV2RequestEvidence(context.Background(), home, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(evidence) != 0 {
-		t.Fatalf("ambiguous evidence = %+v", evidence)
+	for _, item := range evidence {
+		if !item.ambiguous {
+			t.Fatalf("ambiguous evidence was trusted: %+v", evidence)
+		}
 	}
 }
 
@@ -1318,7 +1468,7 @@ func writeV2JSONL(t *testing.T, path string, rows ...map[string]any) {
 		t.Fatal(err)
 	}
 	var body strings.Builder
-	base := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
+	base := v2TestArtifactTime
 	for index, row := range rows {
 		if _, ok := row["timestamp"]; !ok {
 			row["timestamp"] = base.Add(time.Duration(index) * time.Second).Format(time.RFC3339Nano)
@@ -1335,7 +1485,31 @@ func writeV2JSONL(t *testing.T, path string, rows ...map[string]any) {
 	}
 }
 
-func writeV2RequestLog(t *testing.T, home string, turns map[string]string) {
+var v2TestArtifactTime = time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
+
+type v2JSONLTurn struct {
+	file     string
+	threadID string
+	turnID   string
+}
+
+func writeV2JSONLTurn(t *testing.T, home string, turn v2JSONLTurn) {
+	t.Helper()
+	writeV2JSONL(t, filepath.Join(home, ".codex", "sessions", turn.file),
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": turn.threadID}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": turn.turnID}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: feature.go\n+package feature\n*** End Patch"}},
+	)
+}
+
+type v2RequestLogRow struct {
+	threadID   string
+	turnID     string
+	requestID  string
+	observedAt time.Time
+}
+
+func writeV2RequestRows(t *testing.T, home string, rows ...v2RequestLogRow) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o700); err != nil {
 		t.Fatal(err)
@@ -1348,20 +1522,27 @@ func writeV2RequestLog(t *testing.T, home string, turns map[string]string) {
 	if _, err := db.Exec(`CREATE TABLE logs (id INTEGER PRIMARY KEY, ts INTEGER, ts_nanos INTEGER, thread_id TEXT, target TEXT, feedback_log_body TEXT)`); err != nil {
 		t.Fatal(err)
 	}
-	index := 0
+	for index, row := range rows {
+		body := `turn{thread.id=` + row.threadID + ` turn.id=` + row.turnID + `}: Request completed method=POST api.path="responses" status=200 OK headers={"x-client-request-id":"` + row.requestID + `"}`
+		if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(?, ?, ?, ?, ?, ?)`, index+1, row.observedAt.Unix(), row.observedAt.Nanosecond(), row.threadID, codexResponsesHTTPClientTarget, body); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func writeV2RequestLog(t *testing.T, home string, turns map[string]string) {
+	t.Helper()
+	rows := make([]v2RequestLogRow, 0, len(turns))
 	for identity, turnID := range turns {
-		index++
 		parts := strings.SplitN(identity, "/", 2)
 		threadID := parts[0]
 		requestID := "request-" + strings.TrimPrefix(threadID, "thread-")
 		if len(parts) == 2 {
 			requestID = parts[1]
 		}
-		body := `turn{thread.id=` + threadID + ` turn.id=` + turnID + `}: Request completed method=POST api.path="responses" status=200 OK headers={"x-client-request-id":"` + requestID + `"}`
-		if _, err := db.Exec(`INSERT INTO logs(id, ts, ts_nanos, thread_id, target, feedback_log_body) VALUES(?, ?, 0, ?, ?, ?)`, index, time.Now().UTC().Unix(), threadID, codexResponsesHTTPClientTarget, body); err != nil {
-			t.Fatal(err)
-		}
+		rows = append(rows, v2RequestLogRow{threadID: threadID, turnID: turnID, requestID: requestID, observedAt: v2TestArtifactTime})
 	}
+	writeV2RequestRows(t, home, rows...)
 }
 
 func scanV2ClaimsForTest(paths []string, opts V2ClaimScanOptions, threadID string, requestIDs ...string) ([]V2ClaimCandidate, error) {

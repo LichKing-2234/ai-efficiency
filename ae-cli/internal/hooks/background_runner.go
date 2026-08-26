@@ -571,6 +571,12 @@ func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionCon
 		if err := SaveV2ClaimScanProgress(progress); err != nil {
 			return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim progress could not be saved", err)
 		}
+		if err := attributionlocal.UpdateV2ClaimState(ctx, func(state *attributionlocal.V2ClaimState) error {
+			scan.FinalizeCandidates(state.Claims)
+			return nil
+		}); err != nil {
+			return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim state could not be finalized", err)
+		}
 	}
 	if _, err := deliverV2ClaimState(ctx, v2.V2ClaimClient(), protocol); err != nil {
 		return err
