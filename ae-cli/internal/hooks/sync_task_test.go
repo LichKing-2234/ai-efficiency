@@ -1220,7 +1220,7 @@ func (u recoveringV2Uploader) AttributionProtocol() client.AttributionProtocol {
 
 func (u recoveringV2Uploader) RelayProviderID() int { return u.providerID }
 
-func TestRunPendingSyncPassDeliversV2BeforeLegacyCheckpointReplay(t *testing.T) {
+func TestRunPendingSyncPassDeliversCurrentCheckpointBeforeV2(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	now := time.Now().UTC()
@@ -1246,14 +1246,14 @@ func TestRunPendingSyncPassDeliversV2BeforeLegacyCheckpointReplay(t *testing.T) 
 		t.Fatal(err)
 	}
 	if err := queue.Enqueue(HookEvent{
-		Kind: "post-commit", EventID: "event-legacy", WorkspaceID: execCtx.WorkspaceID,
+		Kind: "post-commit", EventID: "event-v2", WorkspaceID: execCtx.WorkspaceID,
 		ServerURL: execCtx.ServerURL, AuthSubject: execCtx.AuthSubject, RepoConfigID: execCtx.RepoConfigID, RepoKey: execCtx.RepoKey,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	backend := &acknowledgingV2ClaimClient{}
-	legacyAfterV2 := false
-	legacy := &fakeUploader{onCall: func() { legacyAfterV2 = backend.calls == 1 }}
+	checkpointBeforeV2 := false
+	legacy := &fakeUploader{onCall: func() { checkpointBeforeV2 = backend.calls == 0 }}
 	uploader := recoveringV2Uploader{
 		acknowledgingV2Uploader: acknowledgingV2Uploader{fakeUploader: legacy, client: backend},
 		providerID:              7,
@@ -1263,8 +1263,8 @@ func TestRunPendingSyncPassDeliversV2BeforeLegacyCheckpointReplay(t *testing.T) 
 	if err := runPendingSyncPass(context.Background(), execCtx, uploader, task); err != nil {
 		t.Fatal(err)
 	}
-	if !legacyAfterV2 || backend.calls != 1 || len(legacy.events) != 1 {
-		t.Fatalf("delivery order: v2_calls=%d legacy_calls=%d legacy_after_v2=%t", backend.calls, len(legacy.events), legacyAfterV2)
+	if !checkpointBeforeV2 || backend.calls != 1 || len(legacy.events) != 1 {
+		t.Fatalf("delivery order: v2_calls=%d checkpoint_calls=%d checkpoint_before_v2=%t", backend.calls, len(legacy.events), checkpointBeforeV2)
 	}
 	if items, err := queue.List(); err != nil || len(items) != 0 {
 		t.Fatalf("legacy queue after pass = %+v, %v", items, err)

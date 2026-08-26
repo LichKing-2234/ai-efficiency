@@ -111,7 +111,7 @@ func (h *CheckpointHandler) CompactCommit(c *gin.Context) {
 		CommitPatchID: req.CommitPatchID, SourcePatchID: req.SourcePatchID,
 		BindingSource: req.BindingSource, CapturedAt: req.CapturedAt,
 	}
-	if err := h.service.RecordCheckpointForUser(c.Request.Context(), uc.UserID, request); err != nil {
+	if err := h.service.RecordCompactCheckpointForUser(c.Request.Context(), uc.UserID, request); err != nil {
 		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 		return
 	}

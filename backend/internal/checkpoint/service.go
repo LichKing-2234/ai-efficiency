@@ -81,14 +81,18 @@ func NewService(entClient *ent.Client, options ...ServiceOptions) *Service {
 var localRewriteMu sync.Mutex
 
 func (s *Service) RecordCheckpoint(ctx context.Context, req CommitCheckpointRequest) error {
-	return s.recordCheckpoint(ctx, 0, req)
+	return s.recordCheckpoint(ctx, 0, req, true)
 }
 
 func (s *Service) RecordCheckpointForUser(ctx context.Context, userID int, req CommitCheckpointRequest) error {
-	return s.recordCheckpoint(ctx, userID, req)
+	return s.recordCheckpoint(ctx, userID, req, true)
 }
 
-func (s *Service) recordCheckpoint(ctx context.Context, userID int, req CommitCheckpointRequest) error {
+func (s *Service) RecordCompactCheckpointForUser(ctx context.Context, userID int, req CommitCheckpointRequest) error {
+	return s.recordCheckpoint(ctx, userID, req, false)
+}
+
+func (s *Service) recordCheckpoint(ctx context.Context, userID int, req CommitCheckpointRequest, bindToolUsage bool) error {
 	if s.entClient == nil {
 		return fmt.Errorf("record checkpoint: ent client is required")
 	}
@@ -205,32 +209,32 @@ func (s *Service) recordCheckpoint(ctx context.Context, userID int, req CommitCh
 		return fmt.Errorf("record checkpoint: create checkpoint: %w", err)
 	}
 
-	previousCapturedAt := time.Time{}
-	prevCP, err := txSvc.entClient.CommitCheckpoint.Query().
-		Where(
-			commitcheckpoint.RepoConfigIDEQ(rc.ID),
-			commitcheckpoint.WorkspaceIDEQ(workspaceID),
-			commitcheckpoint.CapturedAtLT(savedCheckpoint.CapturedAt),
-		).
-		Order(ent.Desc(commitcheckpoint.FieldCapturedAt)).
-		First(ctx)
-	if err != nil && !ent.IsNotFound(err) {
-		return fmt.Errorf("record checkpoint: load previous checkpoint: %w", err)
-	}
-	if prevCP != nil {
-		previousCapturedAt = prevCP.CapturedAt
-	}
+	if bindToolUsage {
+		previousCapturedAt := time.Time{}
+		prevCP, err := txSvc.entClient.CommitCheckpoint.Query().
+			Where(
+				commitcheckpoint.RepoConfigIDEQ(rc.ID),
+				commitcheckpoint.WorkspaceIDEQ(workspaceID),
+				commitcheckpoint.CapturedAtLT(savedCheckpoint.CapturedAt),
+			).
+			Order(ent.Desc(commitcheckpoint.FieldCapturedAt)).
+			First(ctx)
+		if err != nil && !ent.IsNotFound(err) {
+			return fmt.Errorf("record checkpoint: load previous checkpoint: %w", err)
+		}
+		if prevCP != nil {
+			previousCapturedAt = prevCP.CapturedAt
+		}
 
-	boundCount, err := toolusage.NewService(txSvc.entClient).BindUsageEventsToCheckpoint(ctx, toolusage.BindUsageEventsRequest{
-		WorkspaceID:        workspaceID,
-		CommitCheckpointID: savedCheckpoint.ID,
-		CommitCapturedAt:   savedCheckpoint.CapturedAt,
-		PreviousCapturedAt: previousCapturedAt,
-	})
-	if err != nil {
-		return fmt.Errorf("record checkpoint: bind tool usage events: %w", err)
+		if _, err := toolusage.NewService(txSvc.entClient).BindUsageEventsToCheckpoint(ctx, toolusage.BindUsageEventsRequest{
+			WorkspaceID:        workspaceID,
+			CommitCheckpointID: savedCheckpoint.ID,
+			CommitCapturedAt:   savedCheckpoint.CapturedAt,
+			PreviousCapturedAt: previousCapturedAt,
+		}); err != nil {
+			return fmt.Errorf("record checkpoint: bind tool usage events: %w", err)
+		}
 	}
-	_ = boundCount
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("record checkpoint: commit tx: %w", err)
 	}

@@ -395,9 +395,14 @@ func validHexObjectID(value string) bool {
 
 func runPendingSyncPass(ctx context.Context, execCtx ExecutionContext, uploader Uploader, task *SyncTask) error {
 	h := NewHandler(uploader)
+	if err := h.FlushUnresolvedResolved(ctx, execCtx); err != nil {
+		return err
+	}
+	if err := h.FlushResolved(ctx, execCtx); err != nil {
+		return err
+	}
 	syncClient := h.attributionSyncClient()
-	compactV2 := h.v2ClaimClient() != nil
-	if compactV2 {
+	if h.v2ClaimClient() != nil {
 		protocolSource, ok := uploader.(interface {
 			AttributionProtocol() client.AttributionProtocol
 		})
@@ -408,18 +413,7 @@ func runPendingSyncPass(ctx context.Context, execCtx ExecutionContext, uploader 
 		if err := protocol.Validate(); err != nil {
 			return err
 		}
-		if err := runV2ClaimSync(ctx, uploader, execCtx, task, protocol); err != nil {
-			return err
-		}
-	}
-	if err := h.FlushUnresolvedResolved(ctx, execCtx); err != nil {
-		return err
-	}
-	if err := h.FlushResolved(ctx, execCtx); err != nil {
-		return err
-	}
-	if compactV2 {
-		return nil
+		return runV2ClaimSync(ctx, uploader, execCtx, task, protocol)
 	}
 	if syncClient == nil {
 		return fmt.Errorf("sync uploader does not expose tool usage client")
