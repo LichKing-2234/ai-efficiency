@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/client"
+	"github.com/google/uuid"
 )
 
 const v2ClaimSchemaVersion = 2
@@ -27,6 +28,12 @@ const codexResponsesHTTPClientTarget = "codex_http_client::client"
 const codexResponsesWebSocketEventTarget = "codex_api::sse::responses"
 const codexResponsesWebSocketCompletionTarget = "codex_core::session::turn"
 const v2LocalEvidenceWindow = 90 * 24 * time.Hour
+
+const (
+	v2GapMissingRequestID         = "missing_request_id"
+	v2GapAmbiguousRequestEvidence = "ambiguous_request_evidence"
+	v2GapRequestEvidenceExpired   = "request_evidence_expired"
+)
 
 var codexV2SourceReadObserver = func(string) {}
 
@@ -81,8 +88,9 @@ type codexV2ClaimSource struct {
 // CodexV2ClaimScan holds one bounded source discovery and Request-evidence
 // query that can be reused across every commit trigger in a runner pass.
 type CodexV2ClaimScan struct {
-	sources  []codexV2ClaimSource
-	evidence []v2RequestEvidence
+	sources            []codexV2ClaimSource
+	evidence           []v2RequestEvidence
+	evidenceLowerBound time.Time
 }
 
 // SourceEvidenceKey changes only when trusted Request evidence for one
@@ -130,9 +138,12 @@ func PrepareCodexV2ClaimScan(ctx context.Context, homeDir string, cutoff time.Ti
 	if cutoff.IsZero() {
 		cutoff = time.Now().UTC().Add(-v2LocalEvidenceWindow)
 	}
-	evidence, err := loadCodexV2RequestEvidence(ctx, homeDir, cutoff)
+	evidence, evidenceLowerBound, err := loadCodexV2RequestEvidence(ctx, homeDir, cutoff)
 	if err != nil {
 		return nil, fmt.Errorf("load Codex v2 request evidence: %w", err)
+	}
+	if evidenceLowerBound.After(cutoff) {
+		cutoff = evidenceLowerBound
 	}
 	paths := findCodexV2JSONLFiles(homeDir, cutoff)
 	sources := make([]codexV2ClaimSource, 0, len(paths))
@@ -146,7 +157,16 @@ func PrepareCodexV2ClaimScan(ctx context.Context, homeDir string, cutoff time.Ti
 			path: path,
 		})
 	}
-	return &CodexV2ClaimScan{sources: sources, evidence: evidence}, nil
+	return &CodexV2ClaimScan{sources: sources, evidence: evidence, evidenceLowerBound: evidenceLowerBound}, nil
+}
+
+// FinalizeCandidates applies cross-source Request evidence classifications
+// after every source in the runner pass has contributed compact candidates.
+func (s *CodexV2ClaimScan) FinalizeCandidates(candidates []V2ClaimCandidate) {
+	if s == nil {
+		return
+	}
+	finalizeV2RequestEvidence(candidates, s.evidence, s.evidenceLowerBound)
 }
 
 func (s *CodexV2ClaimScan) SourceKeys() []string {
@@ -199,6 +219,7 @@ func ScanCodexV2ClaimsFromHomeBatch(ctx context.Context, homeDir string, options
 		}
 		candidates = append(candidates, scanned...)
 	}
+	scan.FinalizeCandidates(candidates)
 	return candidates, nil
 }
 
@@ -372,6 +393,7 @@ type v2RequestEvidence struct {
 	turnID       string
 	requestID    string
 	webSocket    bool
+	ambiguous    bool
 	transportIDs []string
 }
 
@@ -587,6 +609,9 @@ func buildCodexV2ClaimCandidates(ctx context.Context, path, sessionID string, op
 	}
 	sort.Slice(orderedTurns, func(i, j int) bool { return orderedTurns[i].startedAt.Before(orderedTurns[j].startedAt) })
 	for _, evidence := range requestEvidence {
+		if evidence.ambiguous {
+			continue
+		}
 		if evidence.threadID != "" && evidence.turnID != "" {
 			for _, turn := range orderedTurns {
 				if turn.threadID == evidence.threadID && turn.turnID == evidence.turnID {
@@ -624,24 +649,25 @@ func buildCodexV2ClaimCandidates(ctx context.Context, path, sessionID string, op
 			SchemaVersion: v2ClaimSchemaVersion, GroupID: groupID, RelayProviderID: opts.RelayProviderID,
 			TokenSource: client.AttributionV2TokenSourceRelayOfficial, ThreadID: turn.threadID, TurnID: turn.turnID, RequestIDs: requests,
 		}}
+		proofGap := ""
 		if turn.webSocket {
 			candidate.Group.TokenSource = client.AttributionV2TokenSourceCodexLocal
 		}
-		if len(requests) > 0 && turn.webSocket {
-			candidate.GapReason = "mixed_token_sources"
-		} else if len(requests) == 0 && !turn.webSocket {
-			candidate.GapReason = "missing_request_id"
-		} else if turn.webSocket && turn.localInvalid {
-			candidate.GapReason = "invalid_local_usage"
-		} else if len(requests) == 0 && len(turn.localUsage) == 0 {
-			candidate.GapReason = "missing_local_usage"
-		} else if len(turn.mutations) == 0 {
-			candidate.GapReason = "missing_structured_mutation"
-		} else if !validV2Mutations(turn.mutations) {
-			candidate.GapReason = "invalid_structured_mutation"
-		} else if introduced := introducedV2Mutations(ctx, opts.RepoRoot, opts.CommitSHA, turn.mutations); len(introduced) == 0 {
-			candidate.GapReason = "commit_content_mismatch"
-		} else {
+		switch {
+		case turn.webSocket && turn.localInvalid:
+			proofGap = "invalid_local_usage"
+		case turn.webSocket && len(turn.localUsage) == 0:
+			proofGap = "missing_local_usage"
+		case len(turn.mutations) == 0:
+			proofGap = "missing_structured_mutation"
+		case !validV2Mutations(turn.mutations):
+			proofGap = "invalid_structured_mutation"
+		default:
+			introduced := introducedV2Mutations(ctx, opts.RepoRoot, opts.CommitSHA, turn.mutations)
+			if len(introduced) == 0 {
+				proofGap = "commit_content_mismatch"
+				break
+			}
 			if turn.webSocket {
 				candidate.Group.LocalUsage = sortedV2LocalUsage(turn.localUsage)
 			}
@@ -657,9 +683,80 @@ func buildCodexV2ClaimCandidates(ctx context.Context, path, sessionID string, op
 				candidate.Group.Calibration = &calibration
 			}
 		}
+		switch {
+		case len(requests) > 0 && turn.webSocket:
+			candidate.GapReason = "mixed_token_sources"
+		case len(requests) == 0 && !turn.webSocket:
+			candidate.GapReason = v2GapMissingRequestID
+		default:
+			candidate.GapReason = proofGap
+		}
 		result = append(result, candidate)
 	}
 	return result
+}
+
+func finalizeV2RequestEvidence(candidates []V2ClaimCandidate, evidence []v2RequestEvidence, lowerBound time.Time) {
+	jsonlIdentities := map[string]map[string]struct{}{}
+	for index := range candidates {
+		candidate := &candidates[index]
+		if candidate.GapReason == v2GapMissingRequestID && !lowerBound.IsZero() && candidate.FirstSeenAt.Before(lowerBound) {
+			candidate.GapReason = v2GapRequestEvidenceExpired
+		}
+		turnID := strings.TrimSpace(candidate.Group.TurnID)
+		if turnID == "" || candidate.GapReason == v2GapRequestEvidenceExpired {
+			continue
+		}
+		identities := jsonlIdentities[turnID]
+		if identities == nil {
+			identities = map[string]struct{}{}
+			jsonlIdentities[turnID] = identities
+		}
+		identities[candidate.LocalKey] = struct{}{}
+	}
+	type sqliteTurnEvidence struct {
+		threads   map[string]struct{}
+		requests  []string
+		ambiguous bool
+	}
+	sqliteTurns := map[string]*sqliteTurnEvidence{}
+	for _, item := range evidence {
+		if item.webSocket || strings.TrimSpace(item.threadID) == "" || strings.TrimSpace(item.turnID) == "" {
+			continue
+		}
+		turn := sqliteTurns[item.turnID]
+		if turn == nil {
+			turn = &sqliteTurnEvidence{threads: map[string]struct{}{}}
+			sqliteTurns[item.turnID] = turn
+		}
+		turn.threads[item.threadID] = struct{}{}
+		turn.ambiguous = turn.ambiguous || item.ambiguous
+		if !item.ambiguous && strings.TrimSpace(item.requestID) != "" {
+			turn.requests = append(turn.requests, item.requestID)
+		}
+	}
+	for index := range candidates {
+		candidate := &candidates[index]
+		if candidate.GapReason != v2GapMissingRequestID || len(candidate.Group.RequestIDs) > 0 {
+			continue
+		}
+		turn := sqliteTurns[candidate.Group.TurnID]
+		if turn == nil {
+			continue
+		}
+		if _, err := uuid.Parse(candidate.Group.TurnID); err != nil {
+			continue
+		}
+		if turn.ambiguous || len(turn.requests) == 0 || len(jsonlIdentities[candidate.Group.TurnID]) != 1 || len(turn.threads) != 1 {
+			candidate.GapReason = v2GapAmbiguousRequestEvidence
+			continue
+		}
+		if len(candidate.Group.CommitAllocations) == 0 || strings.TrimSpace(candidate.Group.EvidenceDigest) == "" {
+			continue
+		}
+		candidate.Group.RequestIDs = uniqueSorted(turn.requests)
+		candidate.GapReason = ""
+	}
 }
 
 func v2StructuredPatchInput(toolName, input, arguments string) string {
@@ -965,18 +1062,18 @@ func equalClaimLines(left, right []string) bool {
 	return true
 }
 
-func loadCodexV2RequestEvidence(ctx context.Context, homeDir string, cutoff time.Time) ([]v2RequestEvidence, error) {
+func loadCodexV2RequestEvidence(ctx context.Context, homeDir string, cutoff time.Time) ([]v2RequestEvidence, time.Time, error) {
 	paths := findCodexSQLiteFiles(homeDir)
 	if len(paths) == 0 {
-		return nil, nil
+		return nil, time.Time{}, nil
 	}
 	db, err := sql.Open("sqlite", codexSQLiteReadOnlyDSN(paths[0]))
 	if err != nil {
-		return nil, fmt.Errorf("open Codex request log: %w", err)
+		return nil, time.Time{}, fmt.Errorf("open Codex request log: %w", err)
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx, `
-		SELECT thread_id, feedback_log_body
+		SELECT ts, ts_nanos, thread_id, feedback_log_body
 		FROM logs
 		WHERE target = ?
 		  AND ts >= ?
@@ -986,16 +1083,19 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string, cutoff time
 		  AND feedback_log_body LIKE '%"x-client-request-id"%'
 		ORDER BY ts, ts_nanos, id`, codexResponsesHTTPClientTarget, cutoff.Unix())
 	if err != nil {
-		return nil, fmt.Errorf("query Codex request log: %w", err)
+		return nil, time.Time{}, fmt.Errorf("query Codex request log: %w", err)
 	}
 	defer rows.Close()
 	byRequest := map[string]v2RequestEvidence{}
 	ambiguous := map[string]struct{}{}
+	ambiguousEvidence := map[string]v2RequestEvidence{}
+	var evidenceLowerBound time.Time
 	for rows.Next() {
+		var ts, tsNanos int64
 		var threadID sql.NullString
 		var body string
-		if err := rows.Scan(&threadID, &body); err != nil {
-			return nil, fmt.Errorf("scan Codex request log: %w", err)
+		if err := rows.Scan(&ts, &tsNanos, &threadID, &body); err != nil {
+			return nil, time.Time{}, fmt.Errorf("scan Codex request log: %w", err)
 		}
 		requestID := normalizeV2RequestID(firstSubmatch(reFailHdrClientReqID, body))
 		turnID := firstSubmatch(v2TurnIDPattern, body)
@@ -1003,21 +1103,35 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string, cutoff time
 		if requestID == "" || thread == "" || turnID == "" || !v2SuccessfulResponseStatus.MatchString(body) {
 			continue
 		}
+		observedAt := time.Unix(ts, tsNanos).UTC()
+		if evidenceLowerBound.IsZero() || observedAt.Before(evidenceLowerBound) {
+			evidenceLowerBound = observedAt
+		}
 		evidence := v2RequestEvidence{threadID: thread, turnID: turnID, requestID: requestID}
 		if existing, ok := byRequest[requestID]; ok && (existing.threadID != thread || existing.turnID != turnID) {
 			delete(byRequest, requestID)
 			ambiguous[requestID] = struct{}{}
+			existing.ambiguous = true
+			evidence.ambiguous = true
+			ambiguousEvidence[claimDigest(existing.requestID, existing.threadID, existing.turnID)] = existing
+			ambiguousEvidence[claimDigest(evidence.requestID, evidence.threadID, evidence.turnID)] = evidence
 			continue
 		}
-		if _, rejected := ambiguous[requestID]; !rejected {
-			byRequest[requestID] = evidence
+		if _, rejected := ambiguous[requestID]; rejected {
+			evidence.ambiguous = true
+			ambiguousEvidence[claimDigest(evidence.requestID, evidence.threadID, evidence.turnID)] = evidence
+			continue
 		}
+		byRequest[requestID] = evidence
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate Codex request log: %w", err)
+		return nil, time.Time{}, fmt.Errorf("iterate Codex request log: %w", err)
 	}
-	result := make([]v2RequestEvidence, 0, len(byRequest))
+	result := make([]v2RequestEvidence, 0, len(byRequest)+len(ambiguousEvidence))
 	for _, evidence := range byRequest {
+		result = append(result, evidence)
+	}
+	for _, evidence := range ambiguousEvidence {
 		result = append(result, evidence)
 	}
 	webSocketRows, err := db.QueryContext(ctx, `
@@ -1029,7 +1143,7 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string, cutoff time
 		  AND feedback_log_body LIKE '%websocket event:%'
 		ORDER BY ts, ts_nanos, id`, codexResponsesWebSocketEventTarget, cutoff.Unix())
 	if err != nil {
-		return nil, fmt.Errorf("query Codex WebSocket turn evidence: %w", err)
+		return nil, time.Time{}, fmt.Errorf("query Codex WebSocket turn evidence: %w", err)
 	}
 	defer webSocketRows.Close()
 	seenTurns := map[string]struct{}{}
@@ -1048,7 +1162,7 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string, cutoff time
 		var threadID sql.NullString
 		var body string
 		if err := webSocketRows.Scan(&threadID, &body); err != nil {
-			return nil, fmt.Errorf("scan Codex WebSocket turn evidence: %w", err)
+			return nil, time.Time{}, fmt.Errorf("scan Codex WebSocket turn evidence: %w", err)
 		}
 		thread, turn, ok := parseCodexV2WebSocketTurnEvidence(threadID.String, body)
 		if !ok {
@@ -1057,7 +1171,7 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string, cutoff time
 		appendWebSocketTurn(thread, turn)
 	}
 	if err := webSocketRows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate Codex WebSocket turn evidence: %w", err)
+		return nil, time.Time{}, fmt.Errorf("iterate Codex WebSocket turn evidence: %w", err)
 	}
 	webSocketTransportRows, err := db.QueryContext(ctx, `
 		SELECT thread_id, feedback_log_body
@@ -1069,7 +1183,7 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string, cutoff time
 		  AND instr(feedback_log_body, 'unhandled responses event: response.in_progress') > 0
 		ORDER BY ts, ts_nanos, id`, codexResponsesWebSocketEventTarget, cutoff.Unix())
 	if err != nil {
-		return nil, fmt.Errorf("query Codex WebSocket transport evidence: %w", err)
+		return nil, time.Time{}, fmt.Errorf("query Codex WebSocket transport evidence: %w", err)
 	}
 	defer webSocketTransportRows.Close()
 	transportTurns := map[string]v2RequestEvidence{}
@@ -1077,7 +1191,7 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string, cutoff time
 		var threadID sql.NullString
 		var body string
 		if err := webSocketTransportRows.Scan(&threadID, &body); err != nil {
-			return nil, fmt.Errorf("scan Codex WebSocket transport evidence: %w", err)
+			return nil, time.Time{}, fmt.Errorf("scan Codex WebSocket transport evidence: %w", err)
 		}
 		thread, turn, ok := parseCodexV2TurnSpan(threadID.String, body)
 		if ok {
@@ -1085,7 +1199,7 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string, cutoff time
 		}
 	}
 	if err := webSocketTransportRows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate Codex WebSocket transport evidence: %w", err)
+		return nil, time.Time{}, fmt.Errorf("iterate Codex WebSocket transport evidence: %w", err)
 	}
 	webSocketCompletionRows, err := db.QueryContext(ctx, `
 		SELECT thread_id, feedback_log_body
@@ -1095,14 +1209,14 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string, cutoff time
 		  AND instr(feedback_log_body, ':session_task.run:run_turn: post sampling token usage ') > 0
 		ORDER BY ts, ts_nanos, id`, codexResponsesWebSocketCompletionTarget, cutoff.Unix())
 	if err != nil {
-		return nil, fmt.Errorf("query Codex sampling completion evidence: %w", err)
+		return nil, time.Time{}, fmt.Errorf("query Codex sampling completion evidence: %w", err)
 	}
 	defer webSocketCompletionRows.Close()
 	for webSocketCompletionRows.Next() {
 		var threadID sql.NullString
 		var body string
 		if err := webSocketCompletionRows.Scan(&threadID, &body); err != nil {
-			return nil, fmt.Errorf("scan Codex sampling completion evidence: %w", err)
+			return nil, time.Time{}, fmt.Errorf("scan Codex sampling completion evidence: %w", err)
 		}
 		thread, turn, ok := parseCodexV2TurnSpan(threadID.String, body)
 		if !ok {
@@ -1113,14 +1227,14 @@ func loadCodexV2RequestEvidence(ctx context.Context, homeDir string, cutoff time
 		}
 	}
 	if err := webSocketCompletionRows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate Codex sampling completion evidence: %w", err)
+		return nil, time.Time{}, fmt.Errorf("iterate Codex sampling completion evidence: %w", err)
 	}
 	sort.Slice(result, func(i, j int) bool {
 		left := result[i].threadID + "\x00" + result[i].turnID + "\x00" + result[i].requestID
 		right := result[j].threadID + "\x00" + result[j].turnID + "\x00" + result[j].requestID
 		return left < right
 	})
-	return result, nil
+	return result, evidenceLowerBound, nil
 }
 
 func parseCodexV2WebSocketTurnEvidence(fallbackThreadID, body string) (string, string, bool) {

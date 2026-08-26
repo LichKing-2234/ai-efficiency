@@ -2,6 +2,7 @@
 
 **Date:** 2026-08-11
 **Status:** Active production contract since the verified 2026-08-12 cutover. The Responses WebSocket extension uses Codex-local Token and shipped in `ae-cli/v0.2.0-preview.8` plus platform `v0.1.0-preview.85`; the trusted-log repair shipped in CLI-only preview.9, and preview.10 completed the exact dual-baseline and scan-progress repair for current Codex 0.147. CLI-only `ae-cli/v0.2.0-preview.11` preserves the original single-allocation evidence digest and quarantines unchanged terminal conflicts without retransmission or later-trigger blockage. CLI-only preview.12 added coordinated drain, deleted-worktree recovery, and backlog migration; preview.13 then shipped the exact current-runtime inline-wrapper parser repair and scanner-progress invalidation. The authorized #305 Helm operator canary at commit `c35758f5` produced one `relay_official` group whose 112 official Requests materialized exactly once into four direct pools and `21,668,159` Token; a later managed-hook replay left the group, pools, relations, Request identities, and Token unchanged. This controlled canary does not satisfy #252's ordinary-workflow gate. A 2026-08-14 production read found that personal Activity used cumulative Usage stats instead of the selected-window trend total, invalidating the previously recorded #252 Day 0. PR #299 repaired the denominator and non-zero percentage display; the repair first shipped in platform `v0.1.0-preview.87`, exact production readback established the replacement #252 Day 0 at `2026-08-17T05:32:57.925948Z`, and platform preview.88 then ran at Helm revision 88. AI Efficiency PR #319 later satisfied the ordinary-workflow gate with five direct pools and `23,210,615` Token. The 2026-08-20 evidence snapshot passed every non-destructive execution-time gate and the operator authorized implementation, separate releases, deployment, and destructive migration. Phase 2 merged as `319735ac`, shipped in CLI `ae-cli/v0.2.0-preview.14` and platform `v0.1.0-preview.89`, and completed at Helm revision 89. Phase 3 source contraction merged as `996c23ea`, shipped in platform `v0.1.0-preview.90`, and now runs as Helm revision 90/chart `0.1.76`. The legacy tables and installation columns are absent; exact formal conservation and every health, Activity, SCM, and removed-route readback passed. No fixed elapsed-time wait applied.
+**Current implementation note:** Preview.15 shipped the task/hook recovery hardening from PR #392. Issue #394 now adds unreleased Codex 0.149.1 HTTP evidence compatibility through an exact unique-turn fallback, retained-evidence lower bound, terminal expiry classification, and scanner-progress v5 rebuild. This is a current code contract, not a release or production deployment claim.
 **Scope:** `ae-cli`, backend attribution/reconciliation/read models, frontend Activity, repository administration
 **Supersedes for active behavior:** [Codex Token Attribution Ledger POC](./2026-08-05-codex-token-attribution-ledger-poc-design.md)
 **Related:**
@@ -107,9 +108,16 @@ Rules:
 - provider and Token source switching never rewrite an older pending group;
 - `relay_official` binds the successful Responses HTTP completion's
   `x-client-request-id`, normalized to one `client:` prefix, directly to the
-  same trusted SQLite `thread.id + turn.id`. Transport connection IDs,
-  `x-request-id`, Kong IDs, SSE `response.id`, timing proximity, and unmatched
-  or ambiguous evidence are rejected;
+  same trusted SQLite `thread.id + turn.id` as the primary identity. Codex
+  0.149.1 may preserve the same turn UUID while the JSONL and trusted SQLite
+  thread identities differ. In that shape only, the CLI may fall back to the
+  exact turn UUID when it maps to exactly one JSONL local claim identity and
+  exactly one trusted SQLite thread identity across the complete active and
+  archived source set; all successful Request IDs for that one SQLite turn are
+  retained. Duplicate or conflicting turn identities are
+  `ambiguous_request_evidence` and remain local. Transport connection IDs,
+  `x-request-id`, Kong IDs, SSE `response.id`, timing proximity, cwd, paths,
+  model, and unmatched evidence are rejected;
 - `codex_local` requires trusted SQLite WebSocket transport and successful
   sampling evidence for the exact local `thread.id + turn.id`. For Codex
   0.147, the transport side is a non-warmup `response.in_progress` event emitted under
@@ -150,6 +158,10 @@ Rules:
   local usage is the formal source and never carries calibration or Request IDs;
 - the stable group ID must not depend on a file path, line number, or the
   current count of late-arriving Requests.
+- the earliest retained successful trusted HTTP Request row is the local
+  request-evidence lower bound. A previously discovered HTTP candidate before
+  that bound is `request_evidence_expired`, remains fail-closed, and is not
+  retried as `missing_request_id`; no Request ID or Token is synthesized.
 
 The local privacy boundary excludes prompt, response, reasoning text, code,
 diff, patch content, command arguments/output, API key, API key ID, raw JSONL,
@@ -269,9 +281,14 @@ audit-first atomic file/directory replacements, and resumes an interrupted
 journal on the next first-activity pass.
 
 One runner pass performs one 90-day-bounded Codex transport-evidence query and
-one discovery of active `sessions` plus `archived_sessions`. File modification
-time and the indexed SQLite timestamp predicate apply the window before JSONL
-or log contents are read. Every discovered source is streamed once for all
+one discovery of active `sessions` plus `archived_sessions`. For HTTP Request
+correlation, the effective source-discovery cutoff is the later of the 90-day
+window and the earliest retained successful trusted HTTP evidence row. Existing
+`missing_request_id` candidates before that lower bound become
+`request_evidence_expired`; sources wholly before it are not reopened when no
+deterministic proof can remain. File modification time and the indexed SQLite
+timestamp predicate apply the window before JSONL or log contents are read.
+Every discovered source is streamed once for all
 pending commit triggers in that pass. Durable, digest-only `source × trigger`
 completion units are saved after the corresponding claim candidates are saved,
 so timeout, process exit, or backend failure resumes the exact remaining units.
@@ -292,7 +309,12 @@ are not persisted in scan progress. Any scanner-semantics change that can alter
 claim classification increments the scan-progress version. An older version is
 rebuilt before completed units are consulted, so a previously failed-closed
 turn can recover without new transport evidence or a new Git trigger.
-Successful delivery removes the transient progress file.
+Scanner-progress v5 performs this rebuild once for the Codex 0.149.1
+correlation contract. It preserves exact `thread + turn` matches as primary,
+then finalizes unique-turn fallback against the complete compact candidate
+state after every source has been streamed. It does not perform a second JSONL
+read or persist a raw turn index. Successful delivery removes the transient
+progress file.
 
 When reporter-authenticated Repository resolution returns `not_found`, the
 same hook may narrowly ensure the minimum Repository identity from the
@@ -328,7 +350,10 @@ and cleaned lazily on later hook, sync, or CLI activity.
 
 Local status and doctor output distinguish the current Repository task from
 machine-wide `queued`, `running`, `yielded`, and `recoverable` task totals, plus
-terminal-conflict and seven-day-expiry-warning counts. Failure diagnostics
+terminal-conflict and seven-day-expiry-warning counts. The v2 delivery summary
+also reports aggregate accepted, `missing_request_id`,
+`ambiguous_request_evidence`, and `request_evidence_expired` counts without raw
+identifiers. Failure diagnostics
 contain only the stage, a fixed safe reason, the first failure time, and the
 remaining trigger count; raw Request or response identifiers are never printed.
 They also expose only aggregate synthetic-fixture quarantine workspace/event
@@ -868,6 +893,9 @@ Implementation is not complete until tests and readbacks cover:
 - HTTP/WebSocket source exclusivity, repeated WebSocket terminal snapshots,
   same-bucket aggregation, cache normalization, missing/invalid local usage,
   monotonic late growth, allocation migration, finalization, and cleanup;
+- Codex 0.149.1 exact-pair precedence, unique turn fallback, JSONL-side and
+  SQLite-side turn ambiguity, retained-evidence boundary, mixed-source
+  convergence, scanner-progress v5 replay, and installed-runner ACK readback;
 - large active/archive homes, multiple commit triggers sharing one source read,
   timeout/backend-failure resume, and automatic missing-Repository registration
   without claim creation for a manual commit;
@@ -898,5 +926,8 @@ Implementation is not complete until tests and readbacks cover:
 - individual ranking, productivity scoring, cost allocation, or chargeback;
 - a Repository/PR detail dashboard or independent PR route;
 - exposing raw Request evidence in the product UI;
+- treating current `codex_app_server_transport::transport::remote_control::websocket`
+  rows as trusted transport evidence without a separate exact transport,
+  success, and identity contract;
 - release, production deployment, or destructive reset in the design/ticketing
   phase.
