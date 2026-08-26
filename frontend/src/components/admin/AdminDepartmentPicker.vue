@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import { listAdminUserDepartmentOptions } from '@/api/adminUsers'
+import { useAdminDepartmentPickerWorkflow } from '@/composables/useAdminUsersWorkflow'
 import { useI18n } from '@/i18n'
 import type { AdminDepartmentOption } from '@/types'
 
@@ -27,24 +28,34 @@ const allOptionID = `${pickerID}-option-all`
 const root = ref<HTMLElement | null>(null)
 const trigger = ref<{ ref?: HTMLButtonElement } | null>(null)
 const searchInput = ref<{ input?: HTMLInputElement } | null>(null)
-const open = ref(false)
-const loading = ref(false)
-const error = ref('')
-const searchQuery = ref('')
-const items = ref<AdminDepartmentOption[]>([])
-const selectedOption = ref<AdminDepartmentOption | null>(null)
-const page = ref(1)
-const pageSize = ref(20)
-const total = ref(0)
-const hasLoadedOptions = ref(false)
 const activeOptionIndex = ref(0)
-const selectionCache = new Map<string, AdminDepartmentOption | null>()
-let optionsRequested = false
-let requestGeneration = 0
-let selectionRequestGeneration = 0
-let selectionPendingID = ''
-let searchTimer: number | undefined
-let committedQuery = ''
+const workflow = useAdminDepartmentPickerWorkflow({
+  getModelValue: () => props.modelValue,
+  loadOptions: async (params) => (await listAdminUserDepartmentOptions(params)).data.data ?? {
+    items: [],
+    selected: null,
+    total: 0,
+    page: params.page ?? 1,
+    page_size: params.page_size ?? 20,
+  },
+  optionLoadError: (requestError) => {
+    const error = requestError as { response?: { data?: { message?: string } }; message?: string }
+    return error.response?.data?.message || error.message || t('adminUsers.departmentsLoadFailed')
+  },
+})
+const {
+  open,
+  loading,
+  error,
+  searchQuery,
+  items,
+  selectedOption,
+  page,
+  pageSize,
+  total,
+  showPagination,
+  changePage,
+} = workflow
 
 const selectedLabel = computed(() => {
   if (!props.modelValue) return props.placeholder || t(props.allowAll ? 'adminUsers.allDepartments' : 'adminUsers.department')
@@ -53,7 +64,6 @@ const selectedLabel = computed(() => {
   return option.display_path || option.name || props.modelValue
 })
 const optionOffset = computed(() => props.allowAll ? 1 : 0)
-const showPagination = computed(() => items.value.length > 0 && total.value > pageSize.value)
 const triggerLabelledBy = computed(() => {
   const externalLabel = props.labelledBy?.trim()
   return externalLabel ? `${externalLabel} ${valueID}` : valueID
@@ -65,17 +75,6 @@ const activeOptionID = computed(() => {
     : undefined
 })
 
-function clearSearchTimer() {
-  if (searchTimer !== undefined) {
-    window.clearTimeout(searchTimer)
-    searchTimer = undefined
-  }
-}
-
-function cacheOptions(nextItems: AdminDepartmentOption[]) {
-  for (const item of nextItems) selectionCache.set(item.external_id, item)
-}
-
 function optionID(index: number) {
   return `${pickerID}-option-${index}`
 }
@@ -85,83 +84,8 @@ function resetActiveOption() {
   activeOptionIndex.value = selectedIndex >= 0 ? selectedIndex + optionOffset.value : 0
 }
 
-async function loadOptions(targetPage: number, selectedID = '', query = searchQuery.value.trim(), preserveResults = false) {
-  const generation = ++requestGeneration
-  const selectionGeneration = selectedID ? ++selectionRequestGeneration : 0
-  if (selectedID) selectionPendingID = selectedID
-  optionsRequested = true
-  loading.value = true
-  error.value = ''
-  try {
-    const params = {
-      ...(query ? { q: query } : {}),
-      ...(selectedID ? { selected_id: selectedID } : {}),
-      page: targetPage,
-      page_size: 20,
-    }
-    const response = await listAdminUserDepartmentOptions(params)
-    const data = response.data.data
-    if (selectedID && selectionGeneration === selectionRequestGeneration) {
-      const resolved = data?.selected ?? null
-      selectionCache.set(selectedID, resolved)
-      if (props.modelValue === selectedID) selectedOption.value = resolved
-    }
-    if (generation !== requestGeneration) return
-    const nextItems = data?.items ?? []
-    items.value = nextItems
-    cacheOptions(nextItems)
-    page.value = data?.page ?? targetPage
-    pageSize.value = data?.page_size ?? 20
-    total.value = data?.total ?? 0
-    hasLoadedOptions.value = true
-    committedQuery = query
-    resetActiveOption()
-  } catch (err: any) {
-    if (generation !== requestGeneration) return
-    if (!preserveResults) {
-      items.value = []
-      page.value = 1
-      pageSize.value = 20
-      total.value = 0
-      hasLoadedOptions.value = false
-      activeOptionIndex.value = 0
-      optionsRequested = false
-    }
-    error.value = err.response?.data?.message || err.message || t('adminUsers.departmentsLoadFailed')
-  } finally {
-    if (selectedID && selectionGeneration === selectionRequestGeneration && selectionPendingID === selectedID) {
-      selectionPendingID = ''
-    }
-    if (generation === requestGeneration) loading.value = false
-  }
-}
-
-async function resolveSelection(value: string) {
-  const selectedID = value.trim()
-  if (!selectedID) {
-    selectedOption.value = null
-    return
-  }
-  if (selectionCache.has(selectedID)) {
-    selectedOption.value = selectionCache.get(selectedID) ?? null
-    return
-  }
-  if (selectionPendingID === selectedID) return
-  await loadOptions(1, selectedID, '')
-}
-
 async function openPicker() {
-  if (open.value) return
-  open.value = true
-  const selectedID = props.modelValue.trim()
-  const selectionUnresolved = selectedID
-    && selectedOption.value?.external_id !== selectedID
-    && !selectionCache.has(selectedID)
-  if (selectionUnresolved && selectionPendingID !== selectedID) {
-    await resolveSelection(selectedID)
-  } else if (!hasLoadedOptions.value && !loading.value && !optionsRequested) {
-    await loadOptions(1)
-  }
+  await workflow.openPicker()
   await nextTick()
   searchInput.value?.input?.focus()
 }
@@ -175,50 +99,25 @@ async function toggleOpen() {
 }
 
 function close(restoreTriggerFocus = false) {
-  if (!open.value) {
+  if (!workflow.closePicker()) {
     if (restoreTriggerFocus) trigger.value?.ref?.focus()
     return
   }
-  open.value = false
-  clearSearchTimer()
-  requestGeneration += 1
-  loading.value = false
-  searchQuery.value = ''
-  committedQuery = ''
-  items.value = []
-  page.value = 1
-  pageSize.value = 20
-  total.value = 0
-  hasLoadedOptions.value = false
   activeOptionIndex.value = 0
-  error.value = ''
-  optionsRequested = false
   if (restoreTriggerFocus) void nextTick(() => trigger.value?.ref?.focus())
 }
 
 function choose(value: string, option: AdminDepartmentOption | null, restoreTriggerFocus = false) {
-  selectionRequestGeneration += 1
-  selectionPendingID = ''
-  selectedOption.value = option
-  if (option) selectionCache.set(option.external_id, option)
+  workflow.chooseOption(option)
   emit('update:modelValue', value)
   emit('change', value)
-  close(restoreTriggerFocus)
-}
-
-function scheduleSearch() {
-  clearSearchTimer()
-  requestGeneration += 1
   activeOptionIndex.value = 0
-  searchTimer = window.setTimeout(() => {
-    searchTimer = undefined
-    void loadOptions(1)
-  }, 300)
+  if (restoreTriggerFocus) void nextTick(() => trigger.value?.ref?.focus())
 }
 
-async function changePage(targetPage: number) {
-  if (loading.value || targetPage === page.value) return
-  await loadOptions(targetPage, '', searchQuery.value.trim(), true)
+function scheduleSearch(value: string) {
+  activeOptionIndex.value = 0
+  workflow.setSearchQuery(value)
 }
 
 function handleDocumentPointerDown(event: Event) {
@@ -272,30 +171,17 @@ function handleSearchKeydown(event: Event | KeyboardEvent) {
 
 watch(
   () => props.modelValue,
-  (value) => {
-    selectionRequestGeneration += 1
-    selectionPendingID = ''
-    if (!value) {
-      selectedOption.value = null
-      return
-    }
-    if (selectedOption.value?.external_id !== value) {
-      selectedOption.value = null
-      void resolveSelection(value)
-    }
-  },
+  (value) => { void workflow.changeModelValue(value) },
 )
+watch(items, resetActiveOption)
 
 onMounted(() => {
   document.addEventListener('pointerdown', handleDocumentPointerDown)
-  if (props.modelValue.trim()) void resolveSelection(props.modelValue)
+  if (props.modelValue.trim()) void workflow.resolveSelection(props.modelValue)
 })
 
 onBeforeUnmount(() => {
-  requestGeneration += 1
-  selectionRequestGeneration += 1
-  selectionPendingID = ''
-  clearSearchTimer()
+  workflow.dispose()
   document.removeEventListener('pointerdown', handleDocumentPointerDown)
 })
 </script>
