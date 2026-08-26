@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-22
 **Status:** Approved design for implementation planning
-**Scope:** `backend/internal/directorysync/`, `backend/ent/schema/`, `backend/internal/handler/`, `frontend/src/views/`, `frontend/src/components/settings/`, `frontend/src/api/`, `docs/architecture.md`
+**Scope:** `backend/internal/directorysync/`, `backend/internal/directoryfacts/`, `backend/ent/schema/`, `backend/internal/handler/`, `frontend/src/views/`, `frontend/src/components/settings/`, `frontend/src/api/`, `docs/architecture.md`
 **Related:**
 
 - [2026-03-24-oauth-cli-login-design.md](./2026-03-24-oauth-cli-login-design.md)
@@ -140,7 +140,7 @@ Use **Option A: Generic HTTP DSL With Synthetic Templates**.
 
 ## Architecture
 
-Add `backend/internal/directorysync` as the owner of organization source configuration, DSL validation, execution, normalization, snapshots, and risk derivation.
+`backend/internal/directorysync` owns organization source configuration, DSL validation, execution, normalization, snapshot writes, and risk derivation. `backend/internal/directoryfacts` owns selecting and interpreting the current persisted snapshot for in-process readers. Directory Sync remains the only writer.
 
 The module boundaries are:
 
@@ -149,6 +149,8 @@ The module boundaries are:
 - `directorysync.Normalizer`: converts step outputs into canonical departments and members.
 - `directorysync.RiskService`: derives offboarding candidates from local users and the latest successful full-company snapshot.
 - `directorysync.OffboardingService`: performs admin-confirmed offboarding actions by calling relay/provider disable capability and local auth token revocation.
+- `directoryfacts.Reader`: resolves the latest successful apply source/run and returns a request-scoped, read-only view pinned to both IDs.
+- `directoryfacts.View`: owns bounded reads plus the shared interpretation of effective department hierarchy and display paths, current memberships with compatibility fallback, local-user matching, and the union of department/member representative metadata. It returns ordinary domain values and does not expose Ent queries or Directory Sync mutation behavior.
 
 Existing modules remain responsible for their current domains:
 
@@ -215,7 +217,10 @@ Fields:
 The current company directory snapshot is resolved from the latest successful
 `full_company` apply run (`completed` or `completed_with_warnings`), using run
 completion time and run id as the ordering source of truth. Editing an older
-source must not make it current.
+source must not make it current. All in-process consumers resolve this through
+`directoryfacts.Reader`; subsequent reads from that view carry both `source_id`
+and `last_seen_run_id`, so one request cannot mix facts from different apply
+runs.
 
 Run logs must not store request headers, credential values, full response bodies, or raw employee data beyond bounded redacted samples.
 
@@ -667,10 +672,12 @@ user-row department text must use `display_path` or `name`, not the source
 `path`, because source paths may be numeric ID chains.
 
 The complete compatibility response is owned by `backend/internal/adminusers`.
-It derives preorder, depth, display path, child relations, and subtree summaries
-from persisted effective parents with a constant query-role shape. The HTTP
-handler must not load the complete member graph or run a second raw-parent tree,
-cycle, membership, or representative aggregation algorithm.
+It retains response presentation and access-management policy, while
+`backend/internal/directoryfacts` reads and interprets preorder, depth, display
+path, child relations, memberships, local-user matches, representative roots,
+and subtree summaries from persisted effective parents. The HTTP handler and
+`adminusers` must not load the complete member graph for paginated paths or run
+a second raw-parent tree, cycle, membership, match, or representative algorithm.
 
 ### Offboarding Review
 
@@ -1013,6 +1020,13 @@ Backend tests:
 - Preview run does not update `directory_members`.
 - Failed apply run does not change current facts or offboarding candidates.
 - Successful full-company apply updates departments, members, and `last_successful_run_id`.
+- The shared Directory facts interface covers missing current snapshots,
+  multi-department membership with primary-field fallback, matched-user-id and
+  normalized-email matching, representative metadata union, missing parents,
+  cycles, and deterministic ordering.
+- Admin Users, representative scope, quota reset, and Activity read equivalent
+  persisted facts through the same source/run-pinned `directoryfacts` view;
+  paginated and requester-scoped paths retain bounded query plans.
 - Successful apply stores one deterministic effective parent per department,
   preserves upstream parent facts, and versions every relation with the applied
   run id.
