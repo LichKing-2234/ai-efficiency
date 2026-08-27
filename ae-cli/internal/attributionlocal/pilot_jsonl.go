@@ -136,8 +136,13 @@ type pilotResponse struct {
 	credit           float64
 	creditSeen       bool
 	tokenUnavailable bool
-	sourcePath       string
-	sourceLine       int
+	// observedAt is when the consumption happened, taken from the event's own
+	// time rather than from when the collector saw it: on a replay the
+	// observation time is "now" while the consumption may be days old, and the
+	// checkpoint-window binding would then attach old usage to a new commit.
+	observedAt time.Time
+	sourcePath string
+	sourceLine int
 }
 
 type pilotUsage struct {
@@ -157,6 +162,18 @@ func (r *pilotResponse) earlierThan(other *pilotResponse) bool {
 		return r.sourcePath < other.sourcePath
 	}
 	return r.sourceLine < other.sourceLine
+}
+
+// pilotEventObservedAt reads the moment an event describes. Pilot writes
+// nanoseconds since the epoch as a string. A missing or unparsable value yields
+// the zero time, which the backend reads as "no observation" and refuses to
+// bind — the correct outcome, since a time may never be invented.
+func pilotEventObservedAt(event pilotEvent) time.Time {
+	nanos := asInt64(event.attrs["time_unix_nano"])
+	if nanos <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, nanos).UTC()
 }
 
 // ScanPilotClaims reads Pilot's normalized local output and produces commit-bound
@@ -336,6 +353,7 @@ func pilotResponseUsage(turn *pilotTurn, event pilotEvent) *pilotResponse {
 		sessionID:  turn.sessionID,
 		turnID:     turn.turnID,
 		responseID: event.str("gen_ai.response.id"),
+		observedAt: pilotEventObservedAt(event),
 		sourcePath: event.path,
 		sourceLine: event.line,
 	}
@@ -673,6 +691,8 @@ func pilotUsageEvent(response *pilotResponse, opts PilotScanOptions) LocalToolUs
 		CachedInputTokens: response.usage.cacheRead,
 		ReasoningTokens:   response.usage.reasoning,
 		CreditUsage:       response.credit,
+		ObservedStartAt:   response.observedAt,
+		ObservedEndAt:     response.observedAt,
 		RawSourcePath:     response.sourcePath,
 		RawSourceLocator:  "turn:" + response.turnID,
 	}

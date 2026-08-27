@@ -733,3 +733,77 @@ func TestScanPilotClaimsAttributesReplayedResponseDeterministically(t *testing.T
 		}
 	}
 }
+
+// The checkpoint-window binding the backend still uses for agents without a
+// deterministic proof refuses to bind a usage event with no observation time
+// (resolveCheckpointBinding returns early on a zero timestamp). Usage sourced
+// from Pilot must therefore carry the time the consumption happened.
+func TestScanPilotClaimsCarriesObservationTime(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	dir := t.TempDir()
+	writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-27.jsonl"),
+		map[string]any{
+			"event.name": "llm.response", "gen_ai.agent.type": "claude-code",
+			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "msg-1",
+			"gen_ai.usage.input_tokens": 10, "gen_ai.usage.output_tokens": 2,
+			// The moment the response happened, and a much later moment at which
+			// the collector saw it. Binding must use the former: on a replay the
+			// observation time is "now" while the consumption is days old.
+			"time_unix_nano":          "1787797232662000000",
+			"observed_time_unix_nano": "1787797261745000000",
+		},
+	)
+
+	result, err := ScanPilotClaims(context.Background(), PilotScanOptions{
+		OutputDir: dir,
+		V2ClaimScanOptions: V2ClaimScanOptions{
+			RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
+			WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-time",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Usage) != 1 {
+		t.Fatalf("usage events = %d, want 1", len(result.Usage))
+	}
+	usage := result.Usage[0]
+	if usage.ObservedEndAt.IsZero() || usage.ObservedStartAt.IsZero() {
+		t.Fatalf("observation times = %v/%v, want both set", usage.ObservedStartAt, usage.ObservedEndAt)
+	}
+	wantUnixNano := int64(1787797232662000000)
+	if got := usage.ObservedEndAt.UTC().UnixNano(); got != wantUnixNano {
+		t.Fatalf("ObservedEndAt = %d, want the response time %d, not the collector's observation time", got, wantUnixNano)
+	}
+}
+
+// A response Pilot reports with no usable time must not silently claim time
+// zero, which the backend would read as "no observation" and refuse to bind.
+func TestScanPilotClaimsLeavesObservationTimeZeroWhenPilotReportsNone(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	dir := t.TempDir()
+	writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-27.jsonl"),
+		map[string]any{
+			"event.name": "llm.response", "gen_ai.agent.type": "claude-code",
+			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "msg-1",
+			"gen_ai.usage.input_tokens": 10, "gen_ai.usage.output_tokens": 2,
+		},
+	)
+
+	result, err := ScanPilotClaims(context.Background(), PilotScanOptions{
+		OutputDir: dir,
+		V2ClaimScanOptions: V2ClaimScanOptions{
+			RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
+			WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-notime",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Usage) != 1 {
+		t.Fatalf("usage events = %d, want 1: consumption is still real without a timestamp", len(result.Usage))
+	}
+	if !result.Usage[0].ObservedEndAt.IsZero() {
+		t.Fatalf("ObservedEndAt = %v, want zero: no time was reported and none may be invented", result.Usage[0].ObservedEndAt)
+	}
+}
