@@ -60,6 +60,24 @@ production release.
 - Preview is read-only. Group creation, membership changes, source removal,
   API-Key binding, and adoption require the final Confirm action.
 
+## Frontend Reviewed-Plan Ownership
+
+`frontend/src/composables/useRelayPlanningWorkflow.ts` owns the active reviewed
+plan from the first Preview or Replan response through explicit Target, member,
+source, Account, rename, removal, cross-mapping, and unmanaged-adoption edits.
+It also owns plan-scoped user and Account search lifecycles, one canonical
+reviewed-state request projection, relationship-fingerprint and operation-key
+lifecycle, stale-plan replacement, persisted retry-intent restoration, and the
+Confirm/Execute handoff.
+
+`RelayPlanningView.vue` keeps provider/department/Platform planning inputs,
+mapping-list pagination, Mapping Renewal, Rebind, saved Account administration,
+rendering, feedback, and explicit administrator intent. HTTP transport remains
+in `frontend/src/api/relayPlanning.ts`. Preview and local edits remain read-only;
+only the explicit final Confirm invokes Execute. A categorized stale response
+closes the old confirmation and makes the refreshed plan visible without
+automatically replaying the previous execution.
+
 ## Stable Mapping
 
 The mapping is keyed by provider, department external ID, and Platform. Group
