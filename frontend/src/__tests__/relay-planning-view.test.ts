@@ -727,7 +727,7 @@ describe('RelayPlanningView', () => {
 		expect(wrapper.findAllComponents(ElDialog).some((dialog) => dialog.props('modelValue') === true)).toBe(true)
 	})
 
-  it('adds and removes suggested groups before confirmation', async () => {
+	it('adds and removes suggested groups before confirmation', async () => {
     const { wrapper, relayPlanning } = await mountView()
     await fillAndPreview(wrapper)
 
@@ -751,9 +751,71 @@ describe('RelayPlanningView', () => {
         expect.objectContaining({ index: 1, user_ids: [], desired_accounts: [{ account_id: 11, priority: 1 }] }),
       ],
     }))
-  })
+	})
 
-  it('opens a centered in-page confirmation without executing', async () => {
+	it('confirms a rendered managed-member removal with Source, Target, and API Key effects', async () => {
+		const mapping = {
+			...structuredClone(renewalMapping),
+			source_group_id: 42,
+			source_group_name: 'Group Alpha',
+			group_ids: [101],
+			member_assignments: { '1': 101 },
+			member_sources: { '1': 42 },
+			account_management_initialized: true,
+			desired_accounts: { '101': [{ account_id: 11, priority: 1 }] },
+		}
+		const replan = structuredClone({
+			...plan,
+			mapping_id: 9,
+			assignments: [{ ...plan.assignments[0], target_group_id: 101, user_ids: [1] }],
+			target_summaries: [],
+		})
+		const removal = structuredClone({
+			...replan,
+			assignments: [{ ...replan.assignments[0], user_ids: [] }],
+			target_summaries: [{
+				index: 0,
+				target_group_id: 101,
+				target_group_name: 'SDK Framework-openai-01',
+				accounts: [],
+				members: [{ user_id: 1, relay_user_id: 101, action: 'remove', from_group_id: 101, to_group_id: 42 }],
+				subscriptions: [
+					{ user_id: 1, relay_user_id: 101, action: 'add', group_id: 42 },
+					{ user_id: 1, relay_user_id: 101, action: 'remove', group_id: 101 },
+				],
+				api_keys: [{ user_id: 1, relay_user_id: 101, action: 'move', count: 1, from_group_id: 101, to_group_id: 42 }],
+			}],
+		})
+		const { wrapper, relayPlanning } = await mountView([mapping])
+		relayPlanning.previewRelayReplan
+			.mockResolvedValueOnce({ data: { data: replan } })
+			.mockResolvedValueOnce({ data: { data: removal } })
+		relayPlanning.executeRelayReplan.mockResolvedValue({ data: { data: { plan: removal, groups: [], accounts: [], members: [], mapping } } })
+
+		await wrapper.get('[data-testid="replan-mapping-9"]').trigger('click')
+		await flushPromises()
+		await wrapper.get('[data-testid="remove-member-1"]').trigger('click')
+		await wrapper.get('[data-testid="open-execution-confirmation"]').trigger('click')
+		await flushPromises()
+
+		expect(relayPlanning.previewRelayReplan).toHaveBeenLastCalledWith(9, expect.objectContaining({
+			removed_user_ids: [1],
+			assignments: [expect.objectContaining({ target_group_id: 101, user_ids: [] })],
+		}))
+		expect(wrapper.text()).toContain('Remove user #1 from Group #101')
+		expect(wrapper.text()).toContain('Add Group #42 subscription for user #1')
+		expect(wrapper.text()).toContain('Remove Group #101 subscription for user #1')
+		expect(wrapper.text()).toContain('Move 1 API Key(s) from Group #101 to Group #42 for user #1')
+
+		await wrapper.get('[data-testid="confirm-execution"]').trigger('click')
+		await flushPromises()
+		expect(relayPlanning.executeRelayReplan).toHaveBeenCalledWith(9, expect.objectContaining({
+			removed_user_ids: [1],
+			assignments: [expect.objectContaining({ target_group_id: 101, user_ids: [] })],
+		}))
+	})
+
+	it('opens a centered in-page confirmation without executing', async () => {
     const { wrapper, relayPlanning } = await mountView()
     await fillAndPreview(wrapper)
 

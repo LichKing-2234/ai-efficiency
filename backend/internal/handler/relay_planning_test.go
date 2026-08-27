@@ -24,6 +24,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/relayplanning"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 type relayPlanningResolverFunc func(context.Context, int) (relay.Provider, error)
@@ -34,55 +35,92 @@ func (f relayPlanningResolverFunc) Resolve(ctx context.Context, providerID int) 
 
 type relayPlanningSearchProvider struct {
 	relay.Provider
-	users                  map[int64]*relay.User
-	directoryUsers         []relay.User
-	directoryError         error
-	activeSubscriptionIDs  map[int64][]int64
-	groups                 []relay.Group
-	groupError             error
-	pendingGroupError      error
-	subscriptions          map[int64][]relay.UserSubscription
-	keys                   map[int64][]relay.APIKey
-	usage                  map[int64]relay.TeamUserUsageStats
-	subscriptionError      error
-	keyError               error
-	relationshipError      error
-	allowedGroupsError     error
-	assigned               []string
-	removed                []string
-	removeFailures         map[int64]error
-	bound                  []string
-	accounts               []relay.Account
-	accountError           error
-	accountReads           int
-	accountUpdates         int
-	accountFailures        map[int64]error
-	renameFailures         map[int64]error
-	inactiveGroupIDs       map[int64]bool
-	enforceAccountSnapshot bool
-	events                 []string
-	subscriptionReads      atomic.Int64
-	keyReads               atomic.Int64
-	directoryReads         atomic.Int64
-	relationshipReads      atomic.Int64
-	relationshipPageReads  atomic.Int64
-	relationshipPages      [][]int64
-	userReads              atomic.Int64
-	groupReads             atomic.Int64
-	dependencyStarted      chan string
-	dependencyRelease      chan struct{}
-	renewalWrites          []relayPlanningRenewalWrite
-	renewalFailures        map[int64]error
-	renewalAmbiguous       map[int64]error
-	renewalAppliedKeys     map[string]bool
-	renewalMu              sync.Mutex
-	renewalLegacyExtends   atomic.Int64
-	renewalDirectExtends   atomic.Int64
+	users                     map[int64]*relay.User
+	directoryUsers            []relay.User
+	directoryError            error
+	activeSubscriptionIDs     map[int64][]int64
+	groups                    []relay.Group
+	groupError                error
+	pendingGroupError         error
+	subscriptions             map[int64][]relay.UserSubscription
+	keys                      map[int64][]relay.APIKey
+	usage                     map[int64]relay.TeamUserUsageStats
+	subscriptionError         error
+	keyError                  error
+	relationshipError         error
+	relationshipReadbackError error
+	allowedGroupsError        error
+	assigned                  []string
+	removed                   []string
+	removeFailures            map[int64]error
+	bound                     []string
+	mutateWrites              bool
+	writeAcksOnly             bool
+	accounts                  []relay.Account
+	accountError              error
+	accountReads              int
+	accountUpdates            int
+	accountFailures           map[int64]error
+	renameFailures            map[int64]error
+	inactiveGroupIDs          map[int64]bool
+	enforceAccountSnapshot    bool
+	events                    []string
+	subscriptionReads         atomic.Int64
+	keyReads                  atomic.Int64
+	directoryReads            atomic.Int64
+	relationshipReads         atomic.Int64
+	relationshipPageReads     atomic.Int64
+	relationshipPages         [][]int64
+	userReads                 atomic.Int64
+	groupReads                atomic.Int64
+	dependencyStarted         chan string
+	dependencyRelease         chan struct{}
+	renewalWrites             []relayPlanningRenewalWrite
+	renewalFailures           map[int64]error
+	renewalAmbiguous          map[int64]error
+	renewalAppliedKeys        map[string]bool
+	renewalMu                 sync.Mutex
+	renewalLegacyExtends      atomic.Int64
+	renewalDirectExtends      atomic.Int64
 }
 
 type relayPlanningFallbackProvider struct {
 	relay.Provider
 	backing *relayPlanningSearchProvider
+}
+
+type relayPlanningSub2API interface {
+	relay.Provider
+	relay.UserRelationshipSnapshotReader
+	relay.UserSubscriptionLister
+	relay.APIKeyGroupBinder
+	AssignSubscriptionForUser(context.Context, int64, int64, int) error
+	RemoveSubscriptionForUser(context.Context, int64, int64) error
+}
+
+type relayPlanningSub2APIProvider struct {
+	relayPlanningSub2API
+	facts *relayPlanningSearchProvider
+}
+
+func (p *relayPlanningSub2APIProvider) ListPlatformGroups(ctx context.Context) ([]relay.Group, error) {
+	return p.facts.ListPlatformGroups(ctx)
+}
+
+func (p *relayPlanningSub2APIProvider) ListAccountsForPlatform(ctx context.Context, platform string) ([]relay.Account, error) {
+	return p.facts.ListAccountsForPlatform(ctx, platform)
+}
+
+func (p *relayPlanningSub2APIProvider) SetAccountGroupRelationship(ctx context.Context, accountID, groupID int64, expected []relay.AccountGroupRelationship, desiredPriority *int) error {
+	return p.facts.SetAccountGroupRelationship(ctx, accountID, groupID, expected, desiredPriority)
+}
+
+func (p *relayPlanningSub2APIProvider) UpdateGroupStatus(ctx context.Context, groupID int64, status string) error {
+	return p.facts.UpdateGroupStatus(ctx, groupID, status)
+}
+
+func (p *relayPlanningSub2APIProvider) GetBatchUserUsageStats(ctx context.Context, userIDs []int64, params relay.TeamUsageSummaryParams) (map[int64]relay.TeamUserUsageStats, error) {
+	return p.facts.GetBatchUserUsageStats(ctx, userIDs, params)
 }
 
 func (p *relayPlanningFallbackProvider) ListPlatformGroups(ctx context.Context) ([]relay.Group, error) {
@@ -172,6 +210,9 @@ func (p *relayPlanningSearchProvider) ListUserRelationships(context.Context) ([]
 	p.waitForDependency("relationships")
 	if p.relationshipError != nil {
 		return nil, p.relationshipError
+	}
+	if p.relationshipReadbackError != nil && (len(p.assigned) > 0 || len(p.removed) > 0 || len(p.bound) > 0) {
+		return nil, p.relationshipReadbackError
 	}
 	if p.subscriptionError != nil {
 		return nil, p.subscriptionError
@@ -292,6 +333,19 @@ func (p *relayPlanningSearchProvider) UpdateGroupStatus(_ context.Context, group
 func (p *relayPlanningSearchProvider) AssignSubscriptionForUser(_ context.Context, userID, groupID int64, validityDays int) error {
 	p.assigned = append(p.assigned, fmt.Sprintf("%d:%d:%d", userID, groupID, validityDays))
 	p.events = append(p.events, fmt.Sprintf("subscription-add:%d:%d", userID, groupID))
+	if p.writeAcksOnly || !p.mutateWrites {
+		return nil
+	}
+	if p.subscriptions == nil {
+		p.subscriptions = make(map[int64][]relay.UserSubscription)
+	}
+	for index := range p.subscriptions[userID] {
+		if p.subscriptions[userID][index].GroupID == groupID {
+			p.subscriptions[userID][index].Status = "active"
+			return nil
+		}
+	}
+	p.subscriptions[userID] = append(p.subscriptions[userID], relay.UserSubscription{ID: userID*1000 + groupID, UserID: userID, GroupID: groupID, Status: "active"})
 	return nil
 }
 
@@ -367,12 +421,33 @@ func (p *relayPlanningSearchProvider) RemoveSubscriptionForUser(_ context.Contex
 	if err := p.removeFailures[groupID]; err != nil {
 		return err
 	}
+	if p.writeAcksOnly || !p.mutateWrites {
+		return nil
+	}
+	remaining := p.subscriptions[userID][:0]
+	for _, subscription := range p.subscriptions[userID] {
+		if subscription.GroupID != groupID {
+			remaining = append(remaining, subscription)
+		}
+	}
+	p.subscriptions[userID] = remaining
 	return nil
 }
 
 func (p *relayPlanningSearchProvider) BindAPIKeyToGroup(_ context.Context, keyID, groupID int64) error {
 	p.bound = append(p.bound, fmt.Sprintf("%d:%d", keyID, groupID))
 	p.events = append(p.events, fmt.Sprintf("api-key:%d:%d", keyID, groupID))
+	if p.writeAcksOnly || !p.mutateWrites {
+		return nil
+	}
+	for userID := range p.keys {
+		for index := range p.keys[userID] {
+			if p.keys[userID][index].ID == keyID {
+				p.keys[userID][index].GroupID = groupID
+				return nil
+			}
+		}
+	}
 	return nil
 }
 
@@ -1942,12 +2017,13 @@ func TestRelayPlanningAccountFailureBlocksOnlyItsTarget(t *testing.T) {
 	}
 }
 
-func TestRelayPlanningExplicitRemovalRestoresSavedSourceAndMovesKeysBack(t *testing.T) {
+func TestRelayPlanningExplicitRemovalRestoresSavedSourcesAndMovesKeysBack(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	providerConfig := client.RelayProvider.Create().SetName("relay-planning-remove-test").SetDisplayName("Relay Planning Remove Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-admin-key").SetEnabled(true).SaveX(ctx)
 	createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
 	alice := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource("ldap").SetRelayUserID(42).SaveX(ctx)
+	bob := client.User.Create().SetUsername("bob").SetEmail("bob@example.org").SetAuthSource("ldap").SetRelayUserID(43).SaveX(ctx)
 	mapping := client.RelayGroupMapping.Create().
 		SetProviderID(providerConfig.ID).
 		SetDepartmentExternalID("dept-alpha").
@@ -1956,18 +2032,25 @@ func TestRelayPlanningExplicitRemovalRestoresSavedSourceAndMovesKeysBack(t *test
 		SetTemplateGroupID(10).
 		SetSourceGroupID(20).
 		SetGroupIds([]int64{101}).
-		SetMemberAssignments(map[string]int64{fmt.Sprint(alice.ID): 101}).
-		SetMemberSources(map[string]int64{fmt.Sprint(alice.ID): 20}).
+		SetMemberAssignments(map[string]int64{fmt.Sprint(alice.ID): 101, fmt.Sprint(bob.ID): 101}).
+		SetMemberSources(map[string]int64{fmt.Sprint(alice.ID): 20, fmt.Sprint(bob.ID): 20}).
 		SetAccountManagementInitialized(true).
 		SetDesiredAccounts(map[string][]map[string]int64{"101": {{"account_id": 11, "priority": 1}}}).
 		SetWeeklyCostTarget(2500).
 		SaveX(ctx)
 	provider := &relayPlanningSearchProvider{
-		users:         map[int64]*relay.User{42: {ID: 42, Username: "alice", Email: alice.Email}},
-		groups:        []relay.Group{{ID: 10, Name: "Template", Platform: "openai"}, {ID: 20, Name: "Source", Platform: "openai"}, {ID: 101, Name: "Target", Platform: "openai"}},
-		accounts:      []relay.Account{{ID: 11, Name: "Account Alpha", Platform: "openai", Type: "oauth", Status: "active", Schedulable: true, GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 101, Priority: 1}}}},
-		subscriptions: map[int64][]relay.UserSubscription{42: {{UserID: 42, GroupID: 101, Status: "active"}}},
-		keys:          map[int64][]relay.APIKey{42: {{ID: 501, UserID: 42, GroupID: 101, Status: "active"}}},
+		users:    map[int64]*relay.User{42: {ID: 42, Username: "alice", Email: alice.Email}, 43: {ID: 43, Username: "bob", Email: bob.Email}},
+		groups:   []relay.Group{{ID: 10, Name: "Template", Platform: "openai"}, {ID: 20, Name: "Source", Platform: "openai"}, {ID: 101, Name: "Target", Platform: "openai"}},
+		accounts: []relay.Account{{ID: 11, Name: "Account Alpha", Platform: "openai", Type: "oauth", Status: "active", Schedulable: true, GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 101, Priority: 1}}}},
+		subscriptions: map[int64][]relay.UserSubscription{
+			42: {{UserID: 42, GroupID: 101, Status: "active"}},
+			43: {{UserID: 43, GroupID: 20, Status: "active"}, {UserID: 43, GroupID: 101, Status: "active"}},
+		},
+		keys: map[int64][]relay.APIKey{
+			42: {{ID: 501, UserID: 42, GroupID: 101, Status: "active"}},
+			43: {{ID: 502, UserID: 43, GroupID: 101, Status: "active"}},
+		},
+		mutateWrites: true,
 	}
 	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
 	handler := NewRelayPlanningHandler(service)
@@ -1975,9 +2058,9 @@ func TestRelayPlanningExplicitRemovalRestoresSavedSourceAndMovesKeysBack(t *test
 	router.POST("/admin/relay-planning/mappings/:id/replan", handler.Replan)
 	router.POST("/admin/relay-planning/mappings/:id/replan/execute", handler.ReplanExecute)
 	previewPath := fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID)
-	previewPayload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[]}],"removed_user_ids":[%d]}`, alice.ID)
+	previewPayload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[]}],"removed_user_ids":[%d,%d]}`, alice.ID, bob.ID)
 	fingerprint := previewRelayPlanningFingerprint(t, router, previewPath, previewPayload)
-	payload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[]}],"removed_user_ids":[%d],"expected_relationship_fingerprint":%q,"operation_key":"remove-1"}`, alice.ID, fingerprint)
+	payload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[]}],"removed_user_ids":[%d,%d],"expected_relationship_fingerprint":%q,"operation_key":"remove-1"}`, alice.ID, bob.ID, fingerprint)
 	request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/relay-planning/mappings/%d/replan/execute", mapping.ID), strings.NewReader(payload))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
@@ -1985,13 +2068,264 @@ func TestRelayPlanningExplicitRemovalRestoresSavedSourceAndMovesKeysBack(t *test
 	if response.Code != http.StatusOK {
 		t.Fatalf("remove status = %d, want 200, body=%s", response.Code, response.Body.String())
 	}
-	wantEvents := []string{"subscription-add:42:20", "api-key:501:20", "subscription-remove:42:101"}
+	wantEvents := []string{"subscription-add:42:20", "api-key:501:20", "subscription-remove:42:101", "api-key:502:20", "subscription-remove:43:101"}
 	if fmt.Sprint(provider.events) != fmt.Sprint(wantEvents) {
 		t.Fatalf("removal events = %v, want %v", provider.events, wantEvents)
 	}
 	persisted := client.RelayGroupMapping.GetX(ctx, mapping.ID)
 	if _, exists := persisted.MemberAssignments[fmt.Sprint(alice.ID)]; exists {
 		t.Fatalf("removed member remains in mapping: %v", persisted.MemberAssignments)
+	}
+	if _, exists := persisted.MemberAssignments[fmt.Sprint(bob.ID)]; exists {
+		t.Fatalf("removed member remains in mapping: %v", persisted.MemberAssignments)
+	}
+	for _, relayUserID := range []int64{42, 43} {
+		if subscriptions := provider.subscriptions[relayUserID]; len(subscriptions) != 1 || subscriptions[0].GroupID != 20 || subscriptions[0].Status != "active" {
+			t.Fatalf("relay user %d subscriptions = %+v, want only active Source subscription", relayUserID, subscriptions)
+		}
+		if keys := provider.keys[relayUserID]; len(keys) != 1 || keys[0].GroupID != 20 {
+			t.Fatalf("relay user %d API Keys = %+v, want Source binding", relayUserID, keys)
+		}
+	}
+}
+
+func TestRelayPlanningExplicitRemovalRoundTripsThroughSub2APIAdapter(t *testing.T) {
+	ctx := context.Background()
+	subscriptions := map[int64]map[string]any{
+		101: {"id": int64(77), "user_id": int64(42), "group_id": int64(101), "status": "active"},
+	}
+	keyGroupID := int64(101)
+	var events []string
+	subscriptionItems := func() []map[string]any {
+		items := make([]map[string]any, 0, len(subscriptions))
+		for _, groupID := range []int64{20, 101} {
+			if subscription := subscriptions[groupID]; subscription != nil {
+				items = append(items, subscription)
+			}
+		}
+		return items
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"items": []any{map[string]any{"id": 42, "username": "alice", "email": "alice@example.com", "role": "user", "subscriptions": subscriptionItems()}},
+				"page":  1, "page_size": 200, "pages": 1, "total": 1,
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/admin/users/42/api-keys", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": []any{map[string]any{"id": 501, "user_id": 42, "group_id": keyGroupID, "status": "active"}}})
+	})
+	mux.HandleFunc("/api/v1/admin/subscriptions/assign", func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			UserID  int64 `json:"user_id"`
+			GroupID int64 `json:"group_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode assignment: %v", err)
+		}
+		events = append(events, fmt.Sprintf("assign:%d:%d", request.UserID, request.GroupID))
+		subscriptions[request.GroupID] = map[string]any{"id": int64(78), "user_id": request.UserID, "group_id": request.GroupID, "status": "active"}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"id":78,"status":"active"}}`))
+	})
+	mux.HandleFunc("/api/v1/admin/api-keys/501", func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			GroupID int64 `json:"group_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode API Key binding: %v", err)
+		}
+		events = append(events, fmt.Sprintf("bind:501:%d", request.GroupID))
+		keyGroupID = request.GroupID
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"api_key":{"id":501}}}`))
+	})
+	mux.HandleFunc("/api/v1/admin/users/42/subscriptions", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": subscriptionItems()})
+	})
+	mux.HandleFunc("/api/v1/admin/subscriptions/77", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Fatalf("subscription method = %s, want DELETE", r.Method)
+		}
+		events = append(events, "revoke:42:101")
+		delete(subscriptions, 101)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"message":"Subscription revoked successfully"}}`))
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().SetName("relay-planning-sub2api-remove-test").SetDisplayName("Relay Planning Sub2API Remove Test").SetBaseURL(server.URL).SetAdminAPIKey("test-admin-key").SetEnabled(true).SaveX(ctx)
+	createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
+	alice := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource("ldap").SetRelayUserID(42).SaveX(ctx)
+	mapping := client.RelayGroupMapping.Create().
+		SetProviderID(providerConfig.ID).SetDepartmentExternalID("dept-alpha").SetDepartmentName("Department Alpha").SetPlatform("openai").
+		SetTemplateGroupID(10).SetSourceGroupID(20).SetGroupIds([]int64{101}).
+		SetMemberAssignments(map[string]int64{fmt.Sprint(alice.ID): 101}).SetMemberSources(map[string]int64{fmt.Sprint(alice.ID): 20}).
+		SetAccountManagementInitialized(true).SetDesiredAccounts(map[string][]map[string]int64{"101": {{"account_id": 11, "priority": 1}}}).SetWeeklyCostTarget(2500).SaveX(ctx)
+	cost, tokens := 10.0, int64(100)
+	actualProvider := relay.NewSub2apiProvider(server.Client(), server.URL+"/v1", "test-user-key", "test-model", zap.NewNop())
+	provider := &relayPlanningSub2APIProvider{
+		relayPlanningSub2API: actualProvider.(relayPlanningSub2API),
+		facts: &relayPlanningSearchProvider{
+			groups:   []relay.Group{{ID: 10, Name: "Template", Platform: "openai"}, {ID: 20, Name: "Source", Platform: "openai"}, {ID: 101, Name: "Target", Platform: "openai"}},
+			accounts: []relay.Account{{ID: 11, Name: "Account Alpha", Platform: "openai", Type: "oauth", Status: "active", Schedulable: true, GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 101, Priority: 1}}}},
+			usage:    map[int64]relay.TeamUserUsageStats{42: {UserID: 42, RangeActualCost: &cost, RangeTotalTokens: &tokens}},
+		},
+	}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	handler := NewRelayPlanningHandler(service)
+	router := gin.New()
+	router.POST("/admin/relay-planning/mappings/:id/replan", handler.Replan)
+	router.POST("/admin/relay-planning/mappings/:id/replan/execute", handler.ReplanExecute)
+	path := fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID)
+	payload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[]}],"removed_user_ids":[%d]}`, alice.ID)
+	fingerprint := previewRelayPlanningFingerprint(t, router, path, payload)
+	executePayload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[]}],"removed_user_ids":[%d],"expected_relationship_fingerprint":%q,"operation_key":"sub2api-remove-1"}`, alice.ID, fingerprint)
+	request := httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(executePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("remove status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+
+	relationships, err := actualProvider.(relay.UserRelationshipSnapshotReader).ListUserRelationships(ctx)
+	if err != nil {
+		t.Fatalf("read final subscriptions: %v", err)
+	}
+	keys, err := actualProvider.ListUserAPIKeys(ctx, 42)
+	if err != nil {
+		t.Fatalf("read final API Keys: %v", err)
+	}
+	if got, want := events, []string{"assign:42:20", "bind:501:20", "revoke:42:101"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("write events = %v, want %v", got, want)
+	}
+	if len(relationships) != 1 || len(relationships[0].Subscriptions) != 1 || relationships[0].Subscriptions[0].GroupID != 20 || relationships[0].Subscriptions[0].Status != "active" {
+		t.Fatalf("final subscriptions = %+v, want only active Source", relationships)
+	}
+	if len(keys) != 1 || keys[0].GroupID != 20 {
+		t.Fatalf("final API Keys = %+v, want Source binding", keys)
+	}
+	if got := client.RelayGroupMapping.GetX(ctx, mapping.ID); got.Status != "active" || len(got.MemberAssignments) != 0 {
+		t.Fatalf("mapping = status:%s assignments:%v, want active without removed member", got.Status, got.MemberAssignments)
+	}
+}
+
+func TestRelayPlanningExplicitRemovalRetainsRetryWhenWriteReadbackDoesNotMatch(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().SetName("relay-planning-remove-readback-test").SetDisplayName("Relay Planning Remove Readback Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-admin-key").SetEnabled(true).SaveX(ctx)
+	createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
+	alice := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource("ldap").SetRelayUserID(42).SaveX(ctx)
+	mapping := client.RelayGroupMapping.Create().
+		SetProviderID(providerConfig.ID).SetDepartmentExternalID("dept-alpha").SetDepartmentName("Department Alpha").SetPlatform("openai").
+		SetTemplateGroupID(10).SetSourceGroupID(20).SetGroupIds([]int64{101}).
+		SetMemberAssignments(map[string]int64{fmt.Sprint(alice.ID): 101}).SetMemberSources(map[string]int64{fmt.Sprint(alice.ID): 20}).
+		SetAccountManagementInitialized(true).SetDesiredAccounts(map[string][]map[string]int64{"101": {{"account_id": 11, "priority": 1}}}).SetWeeklyCostTarget(2500).SaveX(ctx)
+	provider := &relayPlanningSearchProvider{
+		users:          map[int64]*relay.User{42: {ID: 42, Username: "alice", Email: alice.Email}},
+		groups:         []relay.Group{{ID: 10, Name: "Template", Platform: "openai"}, {ID: 20, Name: "Source", Platform: "openai"}, {ID: 101, Name: "Target", Platform: "openai"}},
+		accounts:       []relay.Account{{ID: 11, Name: "Account Alpha", Platform: "openai", Type: "oauth", Status: "active", Schedulable: true, GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 101, Priority: 1}}}},
+		subscriptions:  map[int64][]relay.UserSubscription{42: {{UserID: 42, GroupID: 101, Status: "active"}}},
+		keys:           map[int64][]relay.APIKey{42: {{ID: 501, UserID: 42, GroupID: 101, Status: "active"}}},
+		writeAcksOnly:  true,
+		removeFailures: map[int64]error{},
+	}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	handler := NewRelayPlanningHandler(service)
+	router := gin.New()
+	router.POST("/admin/relay-planning/mappings/:id/replan", handler.Replan)
+	router.POST("/admin/relay-planning/mappings/:id/replan/execute", handler.ReplanExecute)
+	path := fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID)
+	previewPayload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[]}],"removed_user_ids":[%d]}`, alice.ID)
+	fingerprint := previewRelayPlanningFingerprint(t, router, path, previewPayload)
+	executePayload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[]}],"removed_user_ids":[%d],"expected_relationship_fingerprint":%q,"operation_key":"remove-readback-1"}`, alice.ID, fingerprint)
+	request := httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(executePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("remove status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Data relayplanning.ExecutionResult `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode execution response: %v", err)
+	}
+	if len(body.Data.Members) != 1 || !strings.Contains(body.Data.Members[0].Error, "readback") {
+		t.Fatalf("member results = %+v, want relationship readback failure", body.Data.Members)
+	}
+	persisted := client.RelayGroupMapping.GetX(ctx, mapping.ID)
+	if persisted.Status != "needs_retry" {
+		t.Fatalf("mapping status = %s, want needs_retry", persisted.Status)
+	}
+	if _, exists := persisted.MemberAssignments[fmt.Sprint(alice.ID)]; exists {
+		t.Fatalf("removed member remains in desired mapping: %v", persisted.MemberAssignments)
+	}
+}
+
+func TestRelayPlanningExplicitRemovalRetryDoesNotRepeatCompletedWrites(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().SetName("relay-planning-remove-readback-retry-test").SetDisplayName("Relay Planning Remove Readback Retry Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-admin-key").SetEnabled(true).SaveX(ctx)
+	createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
+	alice := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource("ldap").SetRelayUserID(42).SaveX(ctx)
+	mapping := client.RelayGroupMapping.Create().
+		SetProviderID(providerConfig.ID).SetDepartmentExternalID("dept-alpha").SetDepartmentName("Department Alpha").SetPlatform("openai").
+		SetTemplateGroupID(10).SetSourceGroupID(20).SetGroupIds([]int64{101}).
+		SetMemberAssignments(map[string]int64{fmt.Sprint(alice.ID): 101}).SetMemberSources(map[string]int64{fmt.Sprint(alice.ID): 20}).
+		SetAccountManagementInitialized(true).SetDesiredAccounts(map[string][]map[string]int64{"101": {{"account_id": 11, "priority": 1}}}).SetWeeklyCostTarget(2500).SaveX(ctx)
+	provider := &relayPlanningSearchProvider{
+		users:                     map[int64]*relay.User{42: {ID: 42, Username: "alice", Email: alice.Email}},
+		groups:                    []relay.Group{{ID: 10, Name: "Template", Platform: "openai"}, {ID: 20, Name: "Source", Platform: "openai"}, {ID: 101, Name: "Target", Platform: "openai"}},
+		accounts:                  []relay.Account{{ID: 11, Name: "Account Alpha", Platform: "openai", Type: "oauth", Status: "active", Schedulable: true, GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 101, Priority: 1}}}},
+		subscriptions:             map[int64][]relay.UserSubscription{42: {{UserID: 42, GroupID: 101, Status: "active"}}},
+		keys:                      map[int64][]relay.APIKey{42: {{ID: 501, UserID: 42, GroupID: 101, Status: "active"}}},
+		mutateWrites:              true,
+		removeFailures:            map[int64]error{},
+		relationshipReadbackError: errors.New("synthetic readback outage"),
+	}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	handler := NewRelayPlanningHandler(service)
+	router := gin.New()
+	router.POST("/admin/relay-planning/mappings/:id/replan", handler.Replan)
+	router.POST("/admin/relay-planning/mappings/:id/replan/execute", handler.ReplanExecute)
+	path := fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID)
+	payload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[]}],"removed_user_ids":[%d]}`, alice.ID)
+	fingerprint := previewRelayPlanningFingerprint(t, router, path, payload)
+	executePayload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[]}],"removed_user_ids":[%d],"expected_relationship_fingerprint":%q,"operation_key":"remove-readback-retry-1"}`, alice.ID, fingerprint)
+	request := httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(executePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || client.RelayGroupMapping.GetX(ctx, mapping.ID).Status != "needs_retry" {
+		t.Fatalf("first execute = status:%d mapping:%s body:%s, want readback retry", response.Code, client.RelayGroupMapping.GetX(ctx, mapping.ID).Status, response.Body.String())
+	}
+	writesAfterFirstExecute := append([]string(nil), provider.events...)
+	provider.relationshipReadbackError = nil
+	retryFingerprint := previewRelayPlanningFingerprint(t, router, path, payload)
+	retryPayload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[]}],"removed_user_ids":[%d],"expected_relationship_fingerprint":%q,"operation_key":"remove-readback-retry-2"}`, alice.ID, retryFingerprint)
+	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(retryPayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("retry execute status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	if !reflect.DeepEqual(provider.events, writesAfterFirstExecute) {
+		t.Fatalf("retry writes = %v, want no repeats after %v", provider.events, writesAfterFirstExecute)
+	}
+	if got := client.RelayGroupMapping.GetX(ctx, mapping.ID).Status; got != "active" {
+		t.Fatalf("retry mapping status = %s, want active, body=%s", got, response.Body.String())
 	}
 }
 
@@ -2011,6 +2345,7 @@ func TestRelayPlanningExplicitRemovalWithoutSavedSourceOnlyRemovesTargetSubscrip
 		accounts:      []relay.Account{{ID: 11, Name: "Account Alpha", Platform: "openai", GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 101, Priority: 1}}}},
 		subscriptions: map[int64][]relay.UserSubscription{42: {{UserID: 42, GroupID: 101, Status: "active"}}},
 		keys:          map[int64][]relay.APIKey{42: {{ID: 501, UserID: 42, GroupID: 101, Status: "active"}}},
+		mutateWrites:  true,
 	}
 	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
 	handler := NewRelayPlanningHandler(service)
@@ -2181,8 +2516,8 @@ FOR EACH ROW EXECUTE FUNCTION reject_source_mapping_update();`, mappingA.ID)
 	retryRequest.Header.Set("Content-Type", "application/json")
 	retryResponse = httptest.NewRecorder()
 	router.ServeHTTP(retryResponse, retryRequest)
-	if retryResponse.Code != http.StatusOK || !containsRelayPlanningEvent(provider.events, "subscription-remove:42:101") {
-		t.Fatalf("retry status = %d, events=%v, want preserved Move Here removal, body=%s", retryResponse.Code, provider.events, retryResponse.Body.String())
+	if retryResponse.Code != http.StatusOK || len(provider.events) != 0 {
+		t.Fatalf("retry status = %d, events=%v, want preserved Move Here intent without repeating completed writes, body=%s", retryResponse.Code, provider.events, retryResponse.Body.String())
 	}
 }
 
@@ -3211,6 +3546,7 @@ func TestRelayPlanningReplanRemovesOneOfTwoSavedMembers(t *testing.T) {
 		},
 		keys:              map[int64][]relay.APIKey{42: {}, 43: {}},
 		relationshipPages: [][]int64{{42, 43}},
+		mutateWrites:      true,
 	}
 	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
 	router := gin.New()
@@ -3432,6 +3768,7 @@ func TestRelayPlanningFailedRemovalRemainsRetryable(t *testing.T) {
 		subscriptions:  map[int64][]relay.UserSubscription{42: {{UserID: 42, GroupID: 101, Status: "active"}}, 43: {{UserID: 43, GroupID: 101, Status: "active"}}},
 		keys:           map[int64][]relay.APIKey{42: {{ID: 501, UserID: 42, GroupID: 101, Status: "active"}}, 43: {}},
 		removeFailures: map[int64]error{101: errors.New("synthetic removal failure")},
+		mutateWrites:   true,
 	}
 	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
 	handler := NewRelayPlanningHandler(service)
@@ -3473,8 +3810,8 @@ func TestRelayPlanningFailedRemovalRemainsRetryable(t *testing.T) {
 	if retrySummary.TargetGroupID != 101 || len(retrySummary.Members) != 1 || retrySummary.Members[0].Action != "remove" || retrySummary.Members[0].FromGroupID != 101 || retrySummary.Members[0].ToGroupID != 20 {
 		t.Fatalf("retry member summary = %+v, want removal from Target 101 to Source 20", retrySummary)
 	}
-	if len(retrySummary.Subscriptions) != 2 || len(retrySummary.APIKeys) != 1 || retrySummary.APIKeys[0].FromGroupID != 101 || retrySummary.APIKeys[0].ToGroupID != 20 {
-		t.Fatalf("retry relationship summary = %+v, want Source restore, Target removal, and API Key move", retrySummary)
+	if len(retrySummary.Subscriptions) != 1 || retrySummary.Subscriptions[0].Action != "remove" || retrySummary.Subscriptions[0].GroupID != 101 || len(retrySummary.APIKeys) != 0 {
+		t.Fatalf("retry relationship summary = %+v, want only unfinished Target removal", retrySummary)
 	}
 	delete(provider.removeFailures, int64(101))
 	retryPayload := fmt.Sprintf(`{"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d]}],"removed_user_ids":[%d],"expected_relationship_fingerprint":%q,"operation_key":"remove-retry-2"}`, bob.ID, bob.ID, alice.ID, retryPreview.Data.RelationshipFingerprint)
