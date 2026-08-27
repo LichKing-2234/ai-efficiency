@@ -116,7 +116,7 @@ provider + group + current personal key + model + protocol
 - sub2api adapter 也只在 OpenAI Responses Connection Test 上附加 Codex Client Identity Profile；其他协议和普通 Relay 调用不携带该 profile。
 - user provider handler 负责身份、group authorization、当前个人 key 选择、默认协议和 capability validation。
 - `backend/internal/usersetup` 只把 group capability facts 暴露给 `/user`。
-- `frontend/src/views/UserView.vue` 负责选择、标签、current-page state 和 generation guard；它不复制 platform capability matrix。
+- `frontend/src/composables/useUserOnboardingWorkflow.ts` 负责 provider/group/key/model/protocol 绑定、current-page result state 和 generation guard；`frontend/src/views/UserView.vue` 负责标签、渲染和显式用户操作。两者都不复制 platform capability matrix。
 
 ## Acceptance Criteria
 

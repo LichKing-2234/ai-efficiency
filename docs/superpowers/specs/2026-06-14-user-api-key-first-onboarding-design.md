@@ -3,7 +3,7 @@
 **Date:** 2026-06-14
 **Last updated:** 2026-08-24
 **Status:** Approved design for current implementation
-**Scope:** `frontend/src/views/UserView.vue`, `frontend/src/utils/userSetupReview.ts`, `frontend/src/i18n.ts`, `frontend/src/__tests__/`, `docs/architecture.md`
+**Scope:** `frontend/src/composables/useUserOnboardingWorkflow.ts`, `frontend/src/views/UserView.vue`, `frontend/src/utils/userSetupReview.ts`, `frontend/src/i18n.ts`, `frontend/src/__tests__/`, `docs/architecture.md`
 **Related:**
 - [2026-05-21-user-page-cli-self-serve-design.md](./2026-05-21-user-page-cli-self-serve-design.md)
 - [2026-05-26-user-cli-setup-checklist-design.md](./2026-05-26-user-cli-setup-checklist-design.md)
@@ -163,6 +163,22 @@
 
 - 当前测试结果必须失效。
 - 当前显示步骤保留在第 2 步，`配置方式` 仍然可达。
+
+#### Frontend Workflow Ownership
+
+`frontend/src/composables/useUserOnboardingWorkflow.ts` 统一负责 provider 和
+Access Group 选择、每组 credential 与 secret 展示状态、Current Step 与显式前进/
+回看导航、模型加载与选择、协议选择、Connection Test 结果、配置方式选择，以及
+provider、credential、模型和测试请求的 generation。切换 provider 或 Access Group
+时，先重置依赖当前选择的可见状态再发起新请求；同组重新生成 credential 时，如果
+显式选择的 model 和 protocol 仍然可用，则继续保留。
+
+`frontend/src/api/user.ts` 继续负责 HTTP transport；
+`frontend/src/utils/userSetupReview.ts` 继续单独、确定性地生成手动配置、`ae-cli`
+命令和 CC Switch import link。`UserView.vue` 只渲染 workflow 状态，并保留响应式
+尺寸测量、剪贴板反馈、敏感操作确认、标签和显式用户操作。生命周期与过期响应测试
+通过 workflow interface 验证；route-view 测试保留渲染、可访问性和 transport 接线
+覆盖。
 
 ### 4. Access Group As The First-Class Object
 
