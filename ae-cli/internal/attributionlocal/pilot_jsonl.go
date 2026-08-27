@@ -71,6 +71,10 @@ type PilotScanResult struct {
 	// physical event, but it cannot be deduplicated against a replay of the same
 	// response — so the count is reported rather than left invisible.
 	UnidentifiedResponses int
+	// UnscopedRecords counts events that named no workspace at all. They cannot
+	// be attributed to the repository being scanned, so they are excluded rather
+	// than assumed, and counted so the exclusion is visible.
+	UnscopedRecords int
 }
 
 // DefaultPilotOutputDir is where Pilot writes local JSONL by default.
@@ -176,6 +180,29 @@ func pilotEventObservedAt(event pilotEvent) time.Time {
 	return time.Unix(0, nanos).UTC()
 }
 
+// pilotEventInScope reports whether an event belongs to the repository being
+// scanned. Pilot writes every workspace into one file per agent, so a scan that
+// did not filter would count another repository's consumption — on the machine
+// this was measured against, 41.6% of the Token in the local output belonged to
+// other workspaces, one of them a parent directory of the scanned repository.
+//
+// This uses the workspace only to decide which records are in scope. It never
+// decides which commit a record binds to: that stays a content proof for agents
+// that support one, and the backend's checkpoint window for those that do not.
+func pilotEventInScope(event pilotEvent, repoRoot string) (inScope bool, named bool) {
+	workspace := event.str("workspace.current_root")
+	if workspace == "" {
+		workspace = event.str("workspace.path")
+	}
+	if workspace == "" {
+		return false, false
+	}
+	if strings.TrimSpace(repoRoot) == "" {
+		return true, true
+	}
+	return sameWorkspacePathOrGitCommon(workspace, repoRoot), true
+}
+
 // ScanPilotClaims reads Pilot's normalized local output and produces commit-bound
 // claims plus usage events for every agent it covers.
 func ScanPilotClaims(ctx context.Context, opts PilotScanOptions) (PilotScanResult, error) {
@@ -191,6 +218,7 @@ func ScanPilotClaims(ctx context.Context, opts PilotScanOptions) (PilotScanResul
 		return PilotScanResult{}, err
 	}
 
+	var result PilotScanResult
 	turns := map[string]*pilotTurn{}
 	responses := map[string]*pilotResponse{}
 	var order int
@@ -202,6 +230,14 @@ func ScanPilotClaims(ctx context.Context, opts PilotScanOptions) (PilotScanResul
 		for _, event := range events {
 			turnID := event.str("gen_ai.turn.id")
 			if turnID == "" {
+				continue
+			}
+			inScope, named := pilotEventInScope(event, opts.RepoRoot)
+			if !named {
+				result.UnscopedRecords++
+				continue
+			}
+			if !inScope {
 				continue
 			}
 			turn, ok := turns[turnID]
@@ -227,7 +263,6 @@ func ScanPilotClaims(ctx context.Context, opts PilotScanOptions) (PilotScanResul
 	}
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].order < ordered[j].order })
 
-	var result PilotScanResult
 	for _, response := range orderedPilotResponses(responses) {
 		if response.responseID == "" {
 			result.UnidentifiedResponses++

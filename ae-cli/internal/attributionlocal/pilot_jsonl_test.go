@@ -38,18 +38,21 @@ func TestScanPilotClaimsBindsCodexPatchTurnToCommit(t *testing.T) {
 	writePilotJSONL(t, filepath.Join(dir, "codex-2026-08-27.jsonl"),
 		map[string]any{
 			"event.name": "tool.call", "gen_ai.agent.type": "codex",
-			"gen_ai.session.id": "session-codex", "gen_ai.turn.id": "session-codex:t1",
+			"workspace.current_root": repo,
+			"gen_ai.session.id":      "session-codex", "gen_ai.turn.id": "session-codex:t1",
 			"gen_ai.tool.name": "exec", "gen_ai.tool.call.id": "call-1",
 			"gen_ai.tool.call.arguments": "const patch = \"*** Begin Patch\\n*** Add File: feature.go\\n+package feature\\n*** End Patch\";\nconst result = await tools.apply_patch(patch);\ntext(result);",
 		},
 		map[string]any{
 			"event.name": "tool.result", "gen_ai.agent.type": "codex",
-			"gen_ai.turn.id": "session-codex:t1", "gen_ai.tool.call.id": "call-1",
+			"workspace.current_root": repo,
+			"gen_ai.turn.id":         "session-codex:t1", "gen_ai.tool.call.id": "call-1",
 			"tool.result.status": "success",
 		},
 		map[string]any{
 			"event.name": "llm.response", "gen_ai.agent.type": "codex",
-			"gen_ai.session.id": "session-codex", "gen_ai.turn.id": "session-codex:t1",
+			"workspace.current_root": repo,
+			"gen_ai.session.id":      "session-codex", "gen_ai.turn.id": "session-codex:t1",
 			"gen_ai.response.id": "resp-1", "gen_ai.turn.end": true,
 			"gen_ai.usage.input_tokens": 100, "gen_ai.usage.output_tokens": 20,
 			"gen_ai.usage.cache_read.input_tokens": 5, "gen_ai.usage.total_tokens": 125,
@@ -84,18 +87,21 @@ func TestScanPilotClaimsBindsClaudeWriteTurnToCommit(t *testing.T) {
 	writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-27.jsonl"),
 		map[string]any{
 			"event.name": "tool.call", "gen_ai.agent.type": "claude-code",
-			"gen_ai.session.id": "session-claude", "gen_ai.turn.id": "session-claude:t1",
+			"workspace.current_root": repo,
+			"gen_ai.session.id":      "session-claude", "gen_ai.turn.id": "session-claude:t1",
 			"gen_ai.tool.name": "Write", "gen_ai.tool.call.id": "toolu-1",
 			"gen_ai.tool.call.arguments": `{"file_path": "feature.go", "content": "package feature\n"}`,
 		},
 		map[string]any{
 			"event.name": "tool.result", "gen_ai.agent.type": "claude-code",
-			"gen_ai.turn.id": "session-claude:t1", "gen_ai.tool.call.id": "toolu-1",
+			"workspace.current_root": repo,
+			"gen_ai.turn.id":         "session-claude:t1", "gen_ai.tool.call.id": "toolu-1",
 			"tool.result.status": "success",
 		},
 		map[string]any{
 			"event.name": "llm.response", "gen_ai.agent.type": "claude-code",
-			"gen_ai.session.id": "session-claude", "gen_ai.turn.id": "session-claude:t1",
+			"workspace.current_root": repo,
+			"gen_ai.session.id":      "session-claude", "gen_ai.turn.id": "session-claude:t1",
 			"gen_ai.response.id": "msg-1", "gen_ai.turn.end": true,
 			"gen_ai.usage.input_tokens": 200, "gen_ai.usage.output_tokens": 30,
 			"gen_ai.usage.total_tokens": 230,
@@ -132,7 +138,8 @@ func TestScanPilotClaimsRecordsKiroCreditUsage(t *testing.T) {
 	writePilotJSONL(t, filepath.Join(dir, "kiro-cli-2026-08-27.jsonl"),
 		map[string]any{
 			"event.name": "llm.response", "gen_ai.agent.type": "kiro-cli",
-			"gen_ai.session.id": "session-kiro", "gen_ai.turn.id": "session-kiro:t1:r0",
+			"workspace.current_root": repo,
+			"gen_ai.session.id":      "session-kiro", "gen_ai.turn.id": "session-kiro:t1:r0",
 			"gen_ai.response.id": "kiro-resp-1", "gen_ai.turn.end": true,
 			"kiro.credit_cost": 0.07833677691542287, "kiro.token_source": "unavailable",
 		},
@@ -171,7 +178,8 @@ func TestScanPilotClaimsRecordsTokenUsageForCodexAndClaude(t *testing.T) {
 	writePilotJSONL(t, filepath.Join(dir, "codex-2026-08-27.jsonl"),
 		map[string]any{
 			"event.name": "llm.response", "gen_ai.agent.type": "codex",
-			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
+			"workspace.current_root": repo,
+			"gen_ai.session.id":      "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
 			"gen_ai.usage.input_tokens": 100, "gen_ai.usage.output_tokens": 20,
 			"gen_ai.usage.cache_read.input_tokens": 5, "gen_ai.usage.reasoning_output_tokens": 7,
 		},
@@ -207,13 +215,15 @@ func TestScanPilotClaimsRefusesUnrecognizedWrapper(t *testing.T) {
 	writePilotJSONL(t, filepath.Join(dir, "codex-2026-08-27.jsonl"),
 		map[string]any{
 			"event.name": "tool.call", "gen_ai.agent.type": "codex",
-			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1",
+			"workspace.current_root": repo,
+			"gen_ai.session.id":      "s", "gen_ai.turn.id": "s:t1",
 			"gen_ai.tool.name": "exec", "gen_ai.tool.call.id": "c1",
 			"gen_ai.tool.call.arguments": "const patch = \"*** Begin Patch\\n*** Add File: feature.go\\n+package feature\\n*** End Patch\";\nconst result = await tools.apply_patch(patch);\ntext(result.output);",
 		},
 		map[string]any{
 			"event.name": "llm.response", "gen_ai.agent.type": "codex",
-			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
+			"workspace.current_root": repo,
+			"gen_ai.session.id":      "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
 			"gen_ai.usage.input_tokens": 1, "gen_ai.usage.output_tokens": 1,
 		},
 	)
@@ -265,7 +275,8 @@ func TestScanPilotClaimsReportsUnhandledMutationTool(t *testing.T) {
 			dir := t.TempDir()
 			call := map[string]any{
 				"event.name": "tool.call", "gen_ai.agent.type": "claude-code",
-				"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.tool.call.id": "c1",
+				"workspace.current_root": repo,
+				"gen_ai.session.id":      "s", "gen_ai.turn.id": "s:t1", "gen_ai.tool.call.id": "c1",
 			}
 			for key, value := range toolAttrs {
 				call[key] = value
@@ -273,7 +284,8 @@ func TestScanPilotClaimsReportsUnhandledMutationTool(t *testing.T) {
 			writePilotJSONL(t, filepath.Join(dir, "agent-2026-08-27.jsonl"), call,
 				map[string]any{
 					"event.name": "llm.response", "gen_ai.agent.type": "claude-code",
-					"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
+					"workspace.current_root": repo,
+					"gen_ai.session.id":      "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
 					"gen_ai.usage.input_tokens": 10, "gen_ai.usage.output_tokens": 2,
 				},
 			)
@@ -306,13 +318,15 @@ func TestScanPilotClaimsIgnoresNonMutatingTools(t *testing.T) {
 	writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-27.jsonl"),
 		map[string]any{
 			"event.name": "tool.call", "gen_ai.agent.type": "claude-code",
-			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1",
+			"workspace.current_root": repo,
+			"gen_ai.session.id":      "s", "gen_ai.turn.id": "s:t1",
 			"gen_ai.tool.name": "Bash", "gen_ai.tool.call.id": "c1",
 			"gen_ai.tool.call.arguments": `{"command": "ls -la", "description": "list files"}`,
 		},
 		map[string]any{
 			"event.name": "llm.response", "gen_ai.agent.type": "claude-code",
-			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
+			"workspace.current_root": repo,
+			"gen_ai.session.id":      "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
 			"gen_ai.usage.input_tokens": 10, "gen_ai.usage.output_tokens": 2,
 		},
 	)
@@ -351,18 +365,20 @@ func pilotReplayRepo(t *testing.T, path, parent, current string) (string, string
 
 // pilotToolTurn writes one Pilot turn: a tool call plus the llm.response that
 // closes it, which is the minimum a claim needs.
-func pilotToolTurn(t *testing.T, dir, agentType, toolName, arguments string) {
+func pilotToolTurn(t *testing.T, dir, workspace, agentType, toolName, arguments string) {
 	t.Helper()
 	writePilotJSONL(t, filepath.Join(dir, agentType+"-2026-08-27.jsonl"),
 		map[string]any{
 			"event.name": "tool.call", "gen_ai.agent.type": agentType,
-			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1",
+			"workspace.current_root": workspace,
+			"gen_ai.session.id":      "s", "gen_ai.turn.id": "s:t1",
 			"gen_ai.tool.name": toolName, "gen_ai.tool.call.id": "c1",
 			"gen_ai.tool.call.arguments": arguments,
 		},
 		map[string]any{
 			"event.name": "llm.response", "gen_ai.agent.type": agentType,
-			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
+			"workspace.current_root": workspace,
+			"gen_ai.session.id":      "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
 			"gen_ai.usage.input_tokens": 10, "gen_ai.usage.output_tokens": 2,
 		},
 	)
@@ -421,7 +437,7 @@ func TestScanPilotClaimsBindsClaudeEditTurnToCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pilotToolTurn(t, dir, "claude-code", "Edit", string(arguments))
+	pilotToolTurn(t, dir, repo, "claude-code", "Edit", string(arguments))
 	requireBoundPilotClaim(t, scanPilotForTest(t, dir, repo, commit), commit)
 }
 
@@ -438,7 +454,7 @@ func TestScanPilotClaimsAppliesClaudeEditReplaceAll(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			pilotToolTurn(t, dir, "claude-code", "Edit", string(arguments))
+			pilotToolTurn(t, dir, repo, "claude-code", "Edit", string(arguments))
 			requireBoundPilotClaim(t, scanPilotForTest(t, dir, repo, commit), commit)
 		})
 	}
@@ -452,19 +468,22 @@ func TestScanPilotClaimsChainsClaudeEditsWithinATurn(t *testing.T) {
 	writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-27.jsonl"),
 		map[string]any{
 			"event.name": "tool.call", "gen_ai.agent.type": "claude-code",
-			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1",
+			"workspace.current_root": repo,
+			"gen_ai.session.id":      "s", "gen_ai.turn.id": "s:t1",
 			"gen_ai.tool.name": "Edit", "gen_ai.tool.call.id": "c1",
 			"gen_ai.tool.call.arguments": `{"file_path": "notes.txt", "old_string": "one", "new_string": "two", "replace_all": "False"}`,
 		},
 		map[string]any{
 			"event.name": "tool.call", "gen_ai.agent.type": "claude-code",
-			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1",
+			"workspace.current_root": repo,
+			"gen_ai.session.id":      "s", "gen_ai.turn.id": "s:t1",
 			"gen_ai.tool.name": "Edit", "gen_ai.tool.call.id": "c2",
 			"gen_ai.tool.call.arguments": `{"file_path": "notes.txt", "old_string": "two", "new_string": "three", "replace_all": "False"}`,
 		},
 		map[string]any{
 			"event.name": "llm.response", "gen_ai.agent.type": "claude-code",
-			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
+			"workspace.current_root": repo,
+			"gen_ai.session.id":      "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
 			"gen_ai.usage.input_tokens": 10, "gen_ai.usage.output_tokens": 2,
 		},
 	)
@@ -486,7 +505,7 @@ func TestScanPilotClaimsRefusesUnreplayableClaudeEdit(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			repo, commit := pilotReplayRepo(t, "notes.txt", "alpha\nbeta\nalpha\n", "gamma\nbeta\ngamma\n")
 			dir := t.TempDir()
-			pilotToolTurn(t, dir, "claude-code", "Edit", arguments)
+			pilotToolTurn(t, dir, repo, "claude-code", "Edit", arguments)
 			requireRefusedPilotClaim(t, scanPilotForTest(t, dir, repo, commit), "invalid_structured_mutation")
 		})
 	}
@@ -504,7 +523,7 @@ func TestScanPilotClaimsBindsKiroFsWriteCreateToCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pilotToolTurn(t, dir, "kiro-cli", "fs_write", string(arguments))
+	pilotToolTurn(t, dir, repo, "kiro-cli", "fs_write", string(arguments))
 	requireBoundPilotClaim(t, scanPilotForTest(t, dir, repo, commit), commit)
 }
 
@@ -513,7 +532,7 @@ func TestScanPilotClaimsBindsKiroFsWriteCreateToCommit(t *testing.T) {
 func TestScanPilotClaimsBindsKiroFsWriteStrReplaceToCommit(t *testing.T) {
 	repo, commit := pilotReplayRepo(t, "feature.go", "package feature\n\nfunc A() {}\n", "package feature\n\nfunc B() {}\n")
 	dir := t.TempDir()
-	pilotToolTurn(t, dir, "kiro-cli", "fs_write",
+	pilotToolTurn(t, dir, repo, "kiro-cli", "fs_write",
 		`{"command": "str_replace", "path": "feature.go", "old_str": "func A() {}", "new_str": "func B() {}", "summary": "rename"}`)
 	requireBoundPilotClaim(t, scanPilotForTest(t, dir, repo, commit), commit)
 }
@@ -528,7 +547,7 @@ func TestScanPilotClaimsRefusesUnreplayableKiroFsWrite(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			repo, commit := pilotReplayRepo(t, "notes.txt", "alpha\nbeta\nalpha\n", "gamma\nbeta\ngamma\n")
 			dir := t.TempDir()
-			pilotToolTurn(t, dir, "kiro-cli", "fs_write", arguments)
+			pilotToolTurn(t, dir, repo, "kiro-cli", "fs_write", arguments)
 			requireRefusedPilotClaim(t, scanPilotForTest(t, dir, repo, commit), "invalid_structured_mutation")
 		})
 	}
@@ -536,10 +555,11 @@ func TestScanPilotClaimsRefusesUnreplayableKiroFsWrite(t *testing.T) {
 
 // pilotResponseEvent builds one llm.response line. Usage keys are only written
 // when non-zero, matching Pilot's habit of omitting what an agent did not report.
-func pilotResponseEvent(agentType, sessionID, turnID, responseID string, input, output int64) map[string]any {
+func pilotResponseEvent(workspace, agentType, sessionID, turnID, responseID string, input, output int64) map[string]any {
 	event := map[string]any{
 		"event.name": "llm.response", "gen_ai.agent.type": agentType,
-		"gen_ai.session.id": sessionID, "gen_ai.turn.id": turnID,
+		"workspace.current_root": workspace,
+		"gen_ai.session.id":      sessionID, "gen_ai.turn.id": turnID,
 		"gen_ai.usage.input_tokens": input, "gen_ai.usage.output_tokens": output,
 	}
 	if responseID != "" {
@@ -570,12 +590,12 @@ func TestScanPilotClaimsCountsReplayedResponseOnce(t *testing.T) {
 	dir := t.TempDir()
 	// The original run.
 	writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-26.jsonl"),
-		pilotResponseEvent("claude-code", "session-original", "session-original:t1", "msg_011replay", 343844, 952),
+		pilotResponseEvent(repo, "claude-code", "session-original", "session-original:t1", "msg_011replay", 343844, 952),
 	)
 	// The resumed run replays the same native response under a new session and a
 	// restarted counter.
 	writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-27.jsonl"),
-		pilotResponseEvent("claude-code", "session-resumed", "session-resumed:t1", "msg_011replay", 343844, 952),
+		pilotResponseEvent(repo, "claude-code", "session-resumed", "session-resumed:t1", "msg_011replay", 343844, 952),
 	)
 
 	result := scanPilotForTest(t, dir, repo, commit)
@@ -608,13 +628,13 @@ func TestScanPilotClaimsCountsEveryResponseInATurn(t *testing.T) {
 	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
 	dir := t.TempDir()
 	writePilotJSONL(t, filepath.Join(dir, "codex-2026-08-26.jsonl"),
-		pilotResponseEvent("codex", "session-codex", "session-codex:t1", "msg_0ba1", 100, 10),
-		pilotResponseEvent("codex", "session-codex", "session-codex:t1", "rs_0ba1", 200, 20),
-		pilotResponseEvent("codex", "session-codex", "session-codex:t1", "msg_0ba2", 300, 30),
+		pilotResponseEvent(repo, "codex", "session-codex", "session-codex:t1", "msg_0ba1", 100, 10),
+		pilotResponseEvent(repo, "codex", "session-codex", "session-codex:t1", "rs_0ba1", 200, 20),
+		pilotResponseEvent(repo, "codex", "session-codex", "session-codex:t1", "msg_0ba2", 300, 30),
 	)
 	// A replay of one of them under a second turn adds nothing.
 	writePilotJSONL(t, filepath.Join(dir, "codex-2026-08-27.jsonl"),
-		pilotResponseEvent("codex", "session-replay", "session-replay:t1", "rs_0ba1", 200, 20),
+		pilotResponseEvent(repo, "codex", "session-replay", "session-replay:t1", "rs_0ba1", 200, 20),
 	)
 
 	result := scanPilotForTest(t, dir, repo, commit)
@@ -641,9 +661,9 @@ func TestScanPilotClaimsCountsUnidentifiedResponseOnce(t *testing.T) {
 	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
 	dir := t.TempDir()
 	writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-27.jsonl"),
-		pilotResponseEvent("claude-code", "s", "s:t1", "", 11, 1),
-		pilotResponseEvent("claude-code", "s", "s:t1", "", 22, 2),
-		pilotResponseEvent("claude-code", "s", "s:t1", "msg_011identified", 33, 3),
+		pilotResponseEvent(repo, "claude-code", "s", "s:t1", "", 11, 1),
+		pilotResponseEvent(repo, "claude-code", "s", "s:t1", "", 22, 2),
+		pilotResponseEvent(repo, "claude-code", "s", "s:t1", "msg_011identified", 33, 3),
 	)
 
 	result := scanPilotForTest(t, dir, repo, commit)
@@ -688,7 +708,8 @@ func TestScanPilotClaimsCountsReplayedKiroCreditOnce(t *testing.T) {
 	dir := t.TempDir()
 	credit := map[string]any{
 		"event.name": "llm.response", "gen_ai.agent.type": "kiro-cli",
-		"gen_ai.session.id": "session-original", "gen_ai.turn.id": "session-original:t1:r0",
+		"workspace.current_root": repo,
+		"gen_ai.session.id":      "session-original", "gen_ai.turn.id": "session-original:t1:r0",
 		"gen_ai.response.id": "3f1a5f0c-0b6d-4c2e-9a51-0d9d1a2b3c4d",
 		"kiro.credit_cost":   0.07833677691542287, "kiro.token_source": "unavailable",
 	}
@@ -722,10 +743,10 @@ func TestScanPilotClaimsAttributesReplayedResponseDeterministically(t *testing.T
 	for range 5 {
 		dir := t.TempDir()
 		writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-27.jsonl"),
-			pilotResponseEvent("claude-code", "session-late", "session-late:t1", "msg_011replay", 5, 1),
+			pilotResponseEvent(repo, "claude-code", "session-late", "session-late:t1", "msg_011replay", 5, 1),
 		)
 		writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-26.jsonl"),
-			pilotResponseEvent("claude-code", "session-early", "session-early:t1", "msg_011replay", 5, 1),
+			pilotResponseEvent(repo, "claude-code", "session-early", "session-early:t1", "msg_011replay", 5, 1),
 		)
 		result := scanPilotForTest(t, dir, repo, commit)
 		if len(result.Usage) != 1 || result.Usage[0].ToolSessionID != "session-early" {
@@ -744,7 +765,8 @@ func TestScanPilotClaimsCarriesObservationTime(t *testing.T) {
 	writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-27.jsonl"),
 		map[string]any{
 			"event.name": "llm.response", "gen_ai.agent.type": "claude-code",
-			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "msg-1",
+			"workspace.current_root": repo,
+			"gen_ai.session.id":      "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "msg-1",
 			"gen_ai.usage.input_tokens": 10, "gen_ai.usage.output_tokens": 2,
 			// The moment the response happened, and a much later moment at which
 			// the collector saw it. Binding must use the former: on a replay the
@@ -785,7 +807,8 @@ func TestScanPilotClaimsLeavesObservationTimeZeroWhenPilotReportsNone(t *testing
 	writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-27.jsonl"),
 		map[string]any{
 			"event.name": "llm.response", "gen_ai.agent.type": "claude-code",
-			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "msg-1",
+			"workspace.current_root": repo,
+			"gen_ai.session.id":      "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "msg-1",
 			"gen_ai.usage.input_tokens": 10, "gen_ai.usage.output_tokens": 2,
 		},
 	)
@@ -805,5 +828,91 @@ func TestScanPilotClaimsLeavesObservationTimeZeroWhenPilotReportsNone(t *testing
 	}
 	if !result.Usage[0].ObservedEndAt.IsZero() {
 		t.Fatalf("ObservedEndAt = %v, want zero: no time was reported and none may be invented", result.Usage[0].ObservedEndAt)
+	}
+}
+
+// Pilot writes every workspace's activity into one file per agent. A scan is
+// scoped to one repository, so events from another workspace must not be
+// counted against it. On the machine this was measured, 41.6% of the Token in
+// the local output belonged to workspaces other than the repository being
+// scanned — including a parent directory of it.
+func TestScanPilotClaimsExcludesOtherWorkspaces(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	other := t.TempDir()
+	dir := t.TempDir()
+	writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-27.jsonl"),
+		map[string]any{
+			"event.name": "llm.response", "gen_ai.agent.type": "claude-code",
+			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "mine",
+			"gen_ai.usage.input_tokens": 10, "gen_ai.usage.output_tokens": 2,
+			"workspace.current_root": repo, "time_unix_nano": "1787797232662000000",
+		},
+		map[string]any{
+			"event.name": "llm.response", "gen_ai.agent.type": "claude-code",
+			"gen_ai.session.id": "o", "gen_ai.turn.id": "o:t1", "gen_ai.response.id": "theirs",
+			"gen_ai.usage.input_tokens": 9999, "gen_ai.usage.output_tokens": 9999,
+			"workspace.current_root": other, "time_unix_nano": "1787797232662000000",
+		},
+		// current_root is absent on some records; workspace.path carries it.
+		map[string]any{
+			"event.name": "llm.response", "gen_ai.agent.type": "claude-code",
+			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t2", "gen_ai.response.id": "mine-2",
+			"gen_ai.usage.input_tokens": 5, "gen_ai.usage.output_tokens": 1,
+			"workspace.path": repo, "time_unix_nano": "1787797232662000000",
+		},
+	)
+
+	result, err := ScanPilotClaims(context.Background(), PilotScanOptions{
+		OutputDir: dir,
+		V2ClaimScanOptions: V2ClaimScanOptions{
+			RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
+			WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-ws",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Usage) != 2 {
+		t.Fatalf("usage events = %d, want 2: only this repository's activity", len(result.Usage))
+	}
+	var total int64
+	for _, u := range result.Usage {
+		total += u.InputTokens + u.OutputTokens
+	}
+	if total != 18 {
+		t.Fatalf("token total = %d, want 18: another workspace's usage leaked in", total)
+	}
+}
+
+// A record naming no workspace cannot be attributed to the repository being
+// scanned. It is excluded rather than assumed, and counted so the exclusion is
+// visible instead of silently shrinking the total.
+func TestScanPilotClaimsCountsRecordsWithNoWorkspace(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	dir := t.TempDir()
+	writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-27.jsonl"),
+		map[string]any{
+			"event.name": "llm.response", "gen_ai.agent.type": "claude-code",
+			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "nowhere",
+			"gen_ai.usage.input_tokens": 10, "gen_ai.usage.output_tokens": 2,
+			"time_unix_nano": "1787797232662000000",
+		},
+	)
+
+	result, err := ScanPilotClaims(context.Background(), PilotScanOptions{
+		OutputDir: dir,
+		V2ClaimScanOptions: V2ClaimScanOptions{
+			RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
+			WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-nows",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Usage) != 0 {
+		t.Fatalf("usage events = %d, want 0: an unattributable record may not be counted here", len(result.Usage))
+	}
+	if result.UnscopedRecords != 1 {
+		t.Fatalf("UnscopedRecords = %d, want 1", result.UnscopedRecords)
 	}
 }
