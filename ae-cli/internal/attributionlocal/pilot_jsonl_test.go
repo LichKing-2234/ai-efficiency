@@ -1,0 +1,236 @@
+package attributionlocal
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+// writePilotJSONL writes one Pilot normalized event per line, matching the shape
+// observed in ~/.loongsuite-pilot/logs/output/<agent>-<date>.jsonl.
+func writePilotJSONL(t *testing.T, path string, events ...map[string]any) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	for _, event := range events {
+		line, err := json.Marshal(event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := file.Write(append(line, '\n')); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestScanPilotClaimsBindsCodexPatchTurnToCommit(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	dir := t.TempDir()
+	writePilotJSONL(t, filepath.Join(dir, "codex-2026-08-27.jsonl"),
+		map[string]any{
+			"event.name": "tool.call", "gen_ai.agent.type": "codex",
+			"gen_ai.session.id": "session-codex", "gen_ai.turn.id": "session-codex:t1",
+			"gen_ai.tool.name": "exec", "gen_ai.tool.call.id": "call-1",
+			"gen_ai.tool.call.arguments": "const patch = \"*** Begin Patch\\n*** Add File: feature.go\\n+package feature\\n*** End Patch\";\nconst result = await tools.apply_patch(patch);\ntext(result);",
+		},
+		map[string]any{
+			"event.name": "tool.result", "gen_ai.agent.type": "codex",
+			"gen_ai.turn.id": "session-codex:t1", "gen_ai.tool.call.id": "call-1",
+			"tool.result.status": "success",
+		},
+		map[string]any{
+			"event.name": "llm.response", "gen_ai.agent.type": "codex",
+			"gen_ai.session.id": "session-codex", "gen_ai.turn.id": "session-codex:t1",
+			"gen_ai.response.id": "resp-1", "gen_ai.turn.end": true,
+			"gen_ai.usage.input_tokens": 100, "gen_ai.usage.output_tokens": 20,
+			"gen_ai.usage.cache_read.input_tokens": 5, "gen_ai.usage.total_tokens": 125,
+		},
+	)
+
+	result, err := ScanPilotClaims(context.Background(), PilotScanOptions{
+		OutputDir: dir,
+		V2ClaimScanOptions: V2ClaimScanOptions{
+			RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
+			WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-pilot-codex",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Claims) != 1 {
+		t.Fatalf("claims = %d, want 1", len(result.Claims))
+	}
+	claim := result.Claims[0]
+	if claim.GapReason != "" {
+		t.Fatalf("gap reason = %q, want none", claim.GapReason)
+	}
+	if len(claim.Group.CommitAllocations) != 1 || claim.Group.CommitAllocations[0].CommitSHA != commit {
+		t.Fatalf("commit allocations = %+v, want one bound to %s", claim.Group.CommitAllocations, commit)
+	}
+}
+
+func TestScanPilotClaimsBindsClaudeWriteTurnToCommit(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	dir := t.TempDir()
+	writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-27.jsonl"),
+		map[string]any{
+			"event.name": "tool.call", "gen_ai.agent.type": "claude-code",
+			"gen_ai.session.id": "session-claude", "gen_ai.turn.id": "session-claude:t1",
+			"gen_ai.tool.name": "Write", "gen_ai.tool.call.id": "toolu-1",
+			"gen_ai.tool.call.arguments": `{"file_path": "feature.go", "content": "package feature\n"}`,
+		},
+		map[string]any{
+			"event.name": "tool.result", "gen_ai.agent.type": "claude-code",
+			"gen_ai.turn.id": "session-claude:t1", "gen_ai.tool.call.id": "toolu-1",
+			"tool.result.status": "success",
+		},
+		map[string]any{
+			"event.name": "llm.response", "gen_ai.agent.type": "claude-code",
+			"gen_ai.session.id": "session-claude", "gen_ai.turn.id": "session-claude:t1",
+			"gen_ai.response.id": "msg-1", "gen_ai.turn.end": true,
+			"gen_ai.usage.input_tokens": 200, "gen_ai.usage.output_tokens": 30,
+			"gen_ai.usage.total_tokens": 230,
+		},
+	)
+
+	result, err := ScanPilotClaims(context.Background(), PilotScanOptions{
+		OutputDir: dir,
+		V2ClaimScanOptions: V2ClaimScanOptions{
+			RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
+			WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-pilot-claude",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Claims) != 1 {
+		t.Fatalf("claims = %d, want 1", len(result.Claims))
+	}
+	claim := result.Claims[0]
+	if claim.GapReason != "" {
+		t.Fatalf("gap reason = %q, want none", claim.GapReason)
+	}
+	if len(claim.Group.CommitAllocations) != 1 || claim.Group.CommitAllocations[0].CommitSHA != commit {
+		t.Fatalf("commit allocations = %+v, want one bound to %s", claim.Group.CommitAllocations, commit)
+	}
+}
+
+// Kiro reports credit, never Token. It performs no structured mutation this POC
+// can bind, so it must produce a credit-unit usage event and no claim.
+func TestScanPilotClaimsRecordsKiroCreditUsage(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	dir := t.TempDir()
+	writePilotJSONL(t, filepath.Join(dir, "kiro-cli-2026-08-27.jsonl"),
+		map[string]any{
+			"event.name": "llm.response", "gen_ai.agent.type": "kiro-cli",
+			"gen_ai.session.id": "session-kiro", "gen_ai.turn.id": "session-kiro:t1:r0",
+			"gen_ai.response.id": "kiro-resp-1", "gen_ai.turn.end": true,
+			"kiro.credit_cost": 0.07833677691542287, "kiro.token_source": "unavailable",
+		},
+	)
+
+	result, err := ScanPilotClaims(context.Background(), PilotScanOptions{
+		OutputDir: dir,
+		V2ClaimScanOptions: V2ClaimScanOptions{
+			RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
+			WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-pilot-kiro",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Usage) != 1 {
+		t.Fatalf("usage events = %d, want 1", len(result.Usage))
+	}
+	usage := result.Usage[0]
+	if usage.UsageUnit != UsageUnitCredit {
+		t.Fatalf("usage unit = %q, want %q", usage.UsageUnit, UsageUnitCredit)
+	}
+	if usage.CreditUsage != 0.07833677691542287 {
+		t.Fatalf("credit usage = %v, want the exact value Pilot reported", usage.CreditUsage)
+	}
+	if usage.InputTokens != 0 || usage.OutputTokens != 0 {
+		t.Fatalf("kiro token counts = %d/%d, want zero: Kiro has no Token source", usage.InputTokens, usage.OutputTokens)
+	}
+}
+
+// Token usage must reach the usage surface for every agent, not only the ones
+// that bind to a commit.
+func TestScanPilotClaimsRecordsTokenUsageForCodexAndClaude(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	dir := t.TempDir()
+	writePilotJSONL(t, filepath.Join(dir, "codex-2026-08-27.jsonl"),
+		map[string]any{
+			"event.name": "llm.response", "gen_ai.agent.type": "codex",
+			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
+			"gen_ai.usage.input_tokens": 100, "gen_ai.usage.output_tokens": 20,
+			"gen_ai.usage.cache_read.input_tokens": 5, "gen_ai.usage.reasoning_output_tokens": 7,
+		},
+	)
+
+	result, err := ScanPilotClaims(context.Background(), PilotScanOptions{
+		OutputDir: dir,
+		V2ClaimScanOptions: V2ClaimScanOptions{
+			RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
+			WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-usage",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Usage) != 1 {
+		t.Fatalf("usage events = %d, want 1", len(result.Usage))
+	}
+	usage := result.Usage[0]
+	if usage.UsageUnit != UsageUnitToken {
+		t.Fatalf("usage unit = %q, want %q", usage.UsageUnit, UsageUnitToken)
+	}
+	if usage.InputTokens != 100 || usage.OutputTokens != 20 || usage.CachedInputTokens != 5 || usage.ReasoningTokens != 7 {
+		t.Fatalf("token components = %+v, want the values Pilot reported", usage)
+	}
+}
+
+// A tool call whose wrapper we refuse must fail closed, exactly as the Codex
+// session-file path does.
+func TestScanPilotClaimsRefusesUnrecognizedWrapper(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	dir := t.TempDir()
+	writePilotJSONL(t, filepath.Join(dir, "codex-2026-08-27.jsonl"),
+		map[string]any{
+			"event.name": "tool.call", "gen_ai.agent.type": "codex",
+			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1",
+			"gen_ai.tool.name": "exec", "gen_ai.tool.call.id": "c1",
+			"gen_ai.tool.call.arguments": "const patch = \"*** Begin Patch\\n*** Add File: feature.go\\n+package feature\\n*** End Patch\";\nconst result = await tools.apply_patch(patch);\ntext(result.output);",
+		},
+		map[string]any{
+			"event.name": "llm.response", "gen_ai.agent.type": "codex",
+			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
+			"gen_ai.usage.input_tokens": 1, "gen_ai.usage.output_tokens": 1,
+		},
+	)
+
+	result, err := ScanPilotClaims(context.Background(), PilotScanOptions{
+		OutputDir: dir,
+		V2ClaimScanOptions: V2ClaimScanOptions{
+			RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
+			WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-refuse",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Claims) != 1 || result.Claims[0].GapReason != v2GapUnrecognizedPatchWrapper {
+		t.Fatalf("claims = %+v, want one claim gapped as %q", result.Claims, v2GapUnrecognizedPatchWrapper)
+	}
+	if len(result.Claims[0].Group.CommitAllocations) != 0 {
+		t.Fatalf("refused wrapper produced an allocation: %+v", result.Claims[0].Group.CommitAllocations)
+	}
+}
