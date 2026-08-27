@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -259,15 +260,97 @@ func findKiroJSONFiles(homeDir string) []string {
 	return walkFiles(filepath.Join(homeDir, ".kiro"), ".json")
 }
 
+const (
+	kiroCLIDataDirName = "kiro-cli"
+	kiroCLIDBFileName  = "data.sqlite3"
+)
+
+// kiroCLISQLiteDBCandidates resolves the Kiro CLI transcript database for one
+// platform, in the order LoongSuite Pilot's hooks/kiro-cli/db-path.mjs uses:
+//
+//	KIRO_CLI_DB          explicit database file
+//	KIRO_CLI_DATA_DIR    explicit data directory, + /data.sqlite3
+//	macOS default        <home>/Library/Application Support/kiro-cli
+//	Linux default        $XDG_DATA_HOME or <home>/.local/share, + /kiro-cli
+//	Windows default      %APPDATA%/kiro-cli
+//
+// An explicit override resolves to exactly that path so a misconfigured
+// override never silently falls through to another database. Windows appends
+// %LOCALAPPDATA%/kiro-cli, which is where Kiro CLI's open-source ancestor puts
+// the file (dirs::data_local_dir() in crates/agent/src/agent/util/directories.rs
+// maps to LocalAppData on Windows); Pilot's %APPDATA% entry stays first.
+func kiroCLISQLiteDBCandidates(homeDir, goos string) []string {
+	homeDir = strings.TrimSpace(homeDir)
+
+	if dbPath := strings.TrimSpace(os.Getenv("KIRO_CLI_DB")); dbPath != "" {
+		return []string{expandKiroCLIHomePrefix(dbPath, homeDir)}
+	}
+	if dataDir := strings.TrimSpace(os.Getenv("KIRO_CLI_DATA_DIR")); dataDir != "" {
+		return []string{filepath.Join(expandKiroCLIHomePrefix(dataDir, homeDir), kiroCLIDBFileName)}
+	}
+
+	switch goos {
+	case "darwin":
+		if homeDir == "" {
+			return nil
+		}
+		return []string{filepath.Join(homeDir, "Library", "Application Support", kiroCLIDataDirName, kiroCLIDBFileName)}
+	case "windows":
+		var out []string
+		if roaming := strings.TrimSpace(os.Getenv("APPDATA")); roaming != "" {
+			out = append(out, filepath.Join(roaming, kiroCLIDataDirName, kiroCLIDBFileName))
+		} else if homeDir != "" {
+			out = append(out, filepath.Join(homeDir, "AppData", "Roaming", kiroCLIDataDirName, kiroCLIDBFileName))
+		}
+		if local := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); local != "" {
+			out = append(out, filepath.Join(local, kiroCLIDataDirName, kiroCLIDBFileName))
+		} else if homeDir != "" {
+			out = append(out, filepath.Join(homeDir, "AppData", "Local", kiroCLIDataDirName, kiroCLIDBFileName))
+		}
+		return out
+	default:
+		if xdgDataHome := strings.TrimSpace(os.Getenv("XDG_DATA_HOME")); xdgDataHome != "" {
+			return []string{filepath.Join(expandKiroCLIHomePrefix(xdgDataHome, homeDir), kiroCLIDataDirName, kiroCLIDBFileName)}
+		}
+		if homeDir == "" {
+			return nil
+		}
+		return []string{filepath.Join(homeDir, ".local", "share", kiroCLIDataDirName, kiroCLIDBFileName)}
+	}
+}
+
+func expandKiroCLIHomePrefix(path, homeDir string) string {
+	path = strings.TrimSpace(path)
+	homeDir = strings.TrimSpace(homeDir)
+	if homeDir == "" || path == "" {
+		return path
+	}
+	if path == "~" {
+		return homeDir
+	}
+	if strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~\`) {
+		return filepath.Join(homeDir, path[2:])
+	}
+	return path
+}
+
+// FindKiroCLISQLiteFilesForCollector exposes the same platform-aware Kiro CLI
+// transcript database resolution the workspace scanner uses.
+func FindKiroCLISQLiteFilesForCollector(homeDir string) []string {
+	return findKiroCLISQLiteFiles(homeDir)
+}
+
 func findKiroCLISQLiteFiles(homeDir string) []string {
-	dbPath := filepath.Join(strings.TrimSpace(homeDir), "Library", "Application Support", "kiro-cli", "data.sqlite3")
-	if strings.TrimSpace(homeDir) == "" {
-		return nil
+	for _, dbPath := range kiroCLISQLiteDBCandidates(homeDir, runtime.GOOS) {
+		if strings.TrimSpace(dbPath) == "" {
+			continue
+		}
+		if _, err := os.Stat(dbPath); err != nil {
+			continue
+		}
+		return []string{dbPath}
 	}
-	if _, err := os.Stat(dbPath); err != nil {
-		return nil
-	}
-	return []string{dbPath}
+	return nil
 }
 
 func walkFiles(root string, ext string) []string {
