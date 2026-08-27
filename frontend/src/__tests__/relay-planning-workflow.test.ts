@@ -540,7 +540,10 @@ describe('useRelayPlanningWorkflow', () => {
       ],
       assignments: [{ ...reviewedPlan().assignments[0], target_group_id: 101, user_ids: [1] }],
     })
-    options.previewReplan.mockResolvedValue(replan)
+    options.previewReplan.mockImplementation(async (_mappingID, request) => ({
+      ...structuredClone(replan),
+      assignments: structuredClone(request.assignments ?? replan.assignments),
+    }))
     const workflow = useRelayPlanningWorkflow(options)
 
     await workflow.openReplan(mapping)
@@ -551,6 +554,12 @@ describe('useRelayPlanningWorkflow', () => {
     await workflow.requestConfirmation()
 
     expect(options.previewReplan).toHaveBeenLastCalledWith(9, expect.objectContaining({
+      selected_user_ids: [],
+      removed_user_ids: [1],
+      assignments: [expect.objectContaining({ target_group_id: 101, user_ids: [] })],
+    }))
+    await workflow.executeConfirmed()
+    expect(options.executeReplan).toHaveBeenCalledWith(9, expect.objectContaining({
       selected_user_ids: [],
       removed_user_ids: [1],
       assignments: [expect.objectContaining({ target_group_id: 101, user_ids: [] })],

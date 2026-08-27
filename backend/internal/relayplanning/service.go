@@ -721,7 +721,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	for userID := range selected {
 		required[userID] = struct{}{}
 	}
-	restrictToRequired := len(selected) > 0
+	restrictToRequired := len(selected) > 0 || len(req.RemovedUserIDs) > 0
 	for _, userID := range req.RemovedUserIDs {
 		if userID > 0 {
 			required[userID] = struct{}{}
@@ -3349,7 +3349,7 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 		if targetGroupID <= 0 {
 			continue
 		}
-		member := completedSubscriptionFromState(mapping.OperationState, "member:"+key, MemberResult{Action: "remove", UserID: userID, TargetGroupID: targetGroupID, Subscription: "skipped", SourceRemoval: "skipped"})
+		member := completedMemberStepsFromState(mapping.OperationState, "member:"+key, MemberResult{Action: "remove", UserID: userID, TargetGroupID: targetGroupID, Subscription: "skipped", SourceRemoval: "skipped"})
 		candidate := candidateByUserID(plan.Candidates, userID)
 		if candidate == nil || candidate.RelayUserID <= 0 {
 			member.Error = "managed user has no valid Relay mapping"
@@ -3403,7 +3403,7 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 			}
 			member := MemberResult{UserID: userID, TargetGroupID: targetID, Subscription: "skipped", SourceRemoval: "skipped"}
 			if retry {
-				member = completedSubscriptionFromState(mapping.OperationState, "member:"+key, member)
+				member = completedMemberStepsFromState(mapping.OperationState, "member:"+key, member)
 			}
 			if reason := blockedTargets[targetID]; reason != "" {
 				member.Error = reason
@@ -3464,6 +3464,7 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 			}
 		}
 	}
+	verifyRemovalRelationshipReadback(ctx, p, plan, mapping, memberResults)
 	state := executionState(req.OperationKey, groupResults, memberResults)
 	mergeAccountResultsIntoState(state, accountResults)
 	for _, member := range memberResults {
@@ -3811,34 +3812,45 @@ func executionState(operationKey string, groups []GroupResult, members []MemberR
 	return state
 }
 
-func completedSubscriptionFromState(state map[string]map[string]string, key string, member MemberResult) MemberResult {
+func completedMemberStepsFromState(state map[string]map[string]string, key string, member MemberResult) MemberResult {
 	entry := state[key]
 	targetGroupID, err := strconv.ParseInt(entry["target_group_id"], 10, 64)
-	if err == nil && targetGroupID == member.TargetGroupID && entry["subscription"] == "succeeded" {
-		member.Subscription = "succeeded"
+	if err == nil && targetGroupID == member.TargetGroupID {
+		if entry["subscription"] == "succeeded" {
+			member.Subscription = "succeeded"
+		}
+		if entry["source_removal"] == "succeeded" {
+			member.SourceRemoval = "succeeded"
+		}
+		if entry["api_keys"] != "" {
+			_, member.APIKeys = completedAPIKeySteps(strings.Split(entry["api_keys"], ","))
+		}
 	}
 	return member
 }
 
 func executeMemberMigration(ctx context.Context, assigner subscriptionAssigner, remover subscriptionRemover, binder relay.APIKeyGroupBinder, candidate *Candidate, targetGroupID, fromGroupID int64, member MemberResult) MemberResult {
 	if member.Subscription != "succeeded" {
-		if assigner == nil {
+		if hasActiveSubscription(relationshipUserFact{Subscriptions: candidate.relationshipSubscriptions}, targetGroupID) {
+			member.Subscription = "unchanged"
+		} else if assigner == nil {
 			member.Error = "relay provider does not support subscription assignment"
 			return member
-		}
-		if err := assigner.AssignSubscriptionForUser(ctx, candidate.RelayUserID, targetGroupID, defaultValidityDays); err != nil && !isAlreadyAssignedError(err) {
+		} else if err := assigner.AssignSubscriptionForUser(ctx, candidate.RelayUserID, targetGroupID, defaultValidityDays); err != nil && !isAlreadyAssignedError(err) {
 			member.Error = err.Error()
 			return member
+		} else {
+			member.Subscription = "succeeded"
 		}
-		member.Subscription = "succeeded"
 	}
 	if fromGroupID <= 0 || fromGroupID == targetGroupID {
 		return member
 	}
 	if binder != nil {
+		completedKeyIDs, _ := completedAPIKeySteps(member.APIKeys)
 		apiKeyError := false
 		for _, key := range candidate.relationshipAPIKeys {
-			if key.GroupID != fromGroupID {
+			if key.GroupID != fromGroupID || completedKeyIDs[key.ID] {
 				continue
 			}
 			if bindErr := binder.BindAPIKeyToGroup(ctx, key.ID, targetGroupID); bindErr != nil {
@@ -3853,6 +3865,9 @@ func executeMemberMigration(ctx context.Context, assigner subscriptionAssigner, 
 			return member
 		}
 	}
+	if member.SourceRemoval == "succeeded" {
+		return member
+	}
 	if remover == nil {
 		member.SourceRemoval = "skipped"
 		return member
@@ -3864,6 +3879,162 @@ func executeMemberMigration(ctx context.Context, assigner subscriptionAssigner, 
 	}
 	member.SourceRemoval = "succeeded"
 	return member
+}
+
+type apiKeyStepResult struct {
+	raw       string
+	keyID     int64
+	succeeded bool
+}
+
+func completedAPIKeySteps(results []string) (map[int64]bool, []string) {
+	latest := make(map[int64]apiKeyStepResult)
+	order := make([]int64, 0, len(results))
+	for _, result := range results {
+		parts := strings.SplitN(result, ":", 3)
+		if len(parts) < 2 {
+			continue
+		}
+		keyID, err := strconv.ParseInt(parts[0], 10, 64)
+		if err != nil || keyID <= 0 {
+			continue
+		}
+		if _, exists := latest[keyID]; !exists {
+			order = append(order, keyID)
+		}
+		latest[keyID] = apiKeyStepResult{raw: result, keyID: keyID, succeeded: parts[1] == "succeeded"}
+	}
+	completed := make(map[int64]bool)
+	kept := make([]string, 0, len(latest))
+	for _, keyID := range order {
+		step := latest[keyID]
+		if !step.succeeded {
+			continue
+		}
+		completed[step.keyID] = true
+		kept = append(kept, step.raw)
+	}
+	return completed, kept
+}
+
+func verifyRemovalRelationshipReadback(ctx context.Context, provider relay.Provider, plan *Plan, mapping *Mapping, members []MemberResult) {
+	removedIndexes := make([]int, 0)
+	candidates := make(map[int]*Candidate, len(plan.Candidates))
+	for index := range plan.Candidates {
+		candidates[plan.Candidates[index].UserID] = &plan.Candidates[index]
+	}
+	for index := range members {
+		if members[index].Action == "remove" && members[index].Error == "" {
+			removedIndexes = append(removedIndexes, index)
+		}
+	}
+	if len(removedIndexes) == 0 {
+		return
+	}
+
+	relationships := make(map[int64]relay.UserRelationship, len(removedIndexes))
+	if reader, ok := provider.(relay.UserRelationshipSnapshotReader); ok {
+		items, err := reader.ListUserRelationships(ctx)
+		if err != nil {
+			markRemovalReadbackUnavailable(members, removedIndexes)
+			return
+		}
+		for _, item := range items {
+			relationships[item.User.ID] = item
+		}
+	} else if reader, ok := provider.(relay.UserSubscriptionLister); ok {
+		for _, index := range removedIndexes {
+			candidate := candidates[members[index].UserID]
+			if candidate == nil {
+				continue
+			}
+			subscriptions, err := reader.ListUserSubscriptions(ctx, candidate.RelayUserID)
+			if err != nil {
+				markRemovalReadbackUnavailable(members, removedIndexes)
+				return
+			}
+			relationships[candidate.RelayUserID] = relay.UserRelationship{User: relay.User{ID: candidate.RelayUserID}, Subscriptions: subscriptions}
+		}
+	} else {
+		markRemovalReadbackUnavailable(members, removedIndexes)
+		return
+	}
+
+	for _, index := range removedIndexes {
+		member := &members[index]
+		candidate := candidates[member.UserID]
+		if candidate == nil {
+			member.Error = "relationship readback failed: managed user disappeared"
+			continue
+		}
+		problems := make([]string, 0, 3)
+		relationship, found := relationships[candidate.RelayUserID]
+		if !found {
+			member.Error = "relationship readback failed: Relay user is unavailable"
+			continue
+		}
+		facts := relationshipUserFact{RelayUserID: candidate.RelayUserID}
+		for _, subscription := range relationship.Subscriptions {
+			if subscription.GroupID <= 0 && subscription.Group != nil {
+				subscription.GroupID = subscription.Group.ID
+			}
+			facts.Subscriptions = append(facts.Subscriptions, relationshipSubscriptionFromRelay(subscription))
+		}
+		sourceGroupID := mapping.MemberSources[strconv.Itoa(member.UserID)]
+		if sourceGroupID <= 0 {
+			if previous := mapping.OperationState[fmt.Sprintf("member:%d", member.UserID)]; previous != nil {
+				sourceGroupID, _ = strconv.ParseInt(previous["source_group_id"], 10, 64)
+			}
+		}
+		if sourceGroupID > 0 && !hasActiveSubscription(facts, sourceGroupID) {
+			member.Subscription = "failed"
+			problems = append(problems, fmt.Sprintf("Source Group %d subscription is not active", sourceGroupID))
+		}
+		for _, subscription := range facts.Subscriptions {
+			if subscription.GroupID == member.TargetGroupID {
+				member.SourceRemoval = "failed"
+				problems = append(problems, fmt.Sprintf("Target Group %d subscription still exists", member.TargetGroupID))
+				break
+			}
+		}
+
+		expectedKeyGroupID := member.TargetGroupID
+		if sourceGroupID > 0 {
+			expectedKeyGroupID = sourceGroupID
+		}
+		expectedKeyIDs := make(map[int64]struct{})
+		for _, key := range candidate.relationshipAPIKeys {
+			if key.GroupID == member.TargetGroupID {
+				expectedKeyIDs[key.ID] = struct{}{}
+			}
+		}
+		if len(expectedKeyIDs) > 0 {
+			keys, err := provider.ListUserAPIKeys(ctx, candidate.RelayUserID)
+			if err != nil {
+				problems = append(problems, "API Key relationship readback is unavailable")
+			} else {
+				actualKeyGroups := make(map[int64]int64, len(keys))
+				for _, key := range keys {
+					actualKeyGroups[key.ID] = apiKeyGroupID(key)
+				}
+				for keyID := range expectedKeyIDs {
+					if actualKeyGroups[keyID] != expectedKeyGroupID {
+						member.APIKeys = append(member.APIKeys, fmt.Sprintf("%d:failed:relationship readback mismatch", keyID))
+						problems = append(problems, fmt.Sprintf("API Key %d is not bound to Group %d", keyID, expectedKeyGroupID))
+					}
+				}
+			}
+		}
+		if len(problems) > 0 {
+			member.Error = "relationship readback failed: " + strings.Join(problems, "; ")
+		}
+	}
+}
+
+func markRemovalReadbackUnavailable(members []MemberResult, indexes []int) {
+	for _, index := range indexes {
+		members[index].Error = "relationship readback failed: subscription relationships are unavailable"
+	}
 }
 
 func isAlreadyAssignedError(err error) bool {
