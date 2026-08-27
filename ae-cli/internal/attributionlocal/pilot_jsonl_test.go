@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -242,13 +243,21 @@ func TestScanPilotClaimsRefusesUnrecognizedWrapper(t *testing.T) {
 func TestScanPilotClaimsReportsUnhandledMutationTool(t *testing.T) {
 	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
 	cases := map[string]map[string]any{
-		"claude edit": {
-			"gen_ai.tool.name":           "Edit",
-			"gen_ai.tool.call.arguments": `{"file_path": "feature.go", "old_string": "package feature", "new_string": "package other"}`,
+		// A tool this source has never seen, recognised only by arguments that
+		// name a file and its new contents.
+		"unknown tool": {
+			"gen_ai.tool.name":           "mcp__files__write",
+			"gen_ai.tool.call.arguments": `{"path": "feature.go", "content": "package other\n"}`,
 		},
-		"kiro fs_write": {
+		// fs_write commands whose byte-exact newline handling this source does
+		// not establish from a primary source are routed here on purpose.
+		"kiro fs_write insert": {
 			"gen_ai.tool.name":           "fs_write",
-			"gen_ai.tool.call.arguments": `{"command": "create", "path": "feature.go", "file_text": "package other\n"}`,
+			"gen_ai.tool.call.arguments": `{"command": "insert", "path": "feature.go", "insert_line": 1, "new_str": "package other"}`,
+		},
+		"kiro fs_write append": {
+			"gen_ai.tool.name":           "fs_write",
+			"gen_ai.tool.call.arguments": `{"command": "append", "path": "feature.go", "new_str": "package other"}`,
 		},
 	}
 	for name, toolAttrs := range cases {
@@ -323,5 +332,204 @@ func TestScanPilotClaimsIgnoresNonMutatingTools(t *testing.T) {
 	}
 	if len(result.Usage) != 1 {
 		t.Fatalf("usage events = %d, want 1: the turn still consumed Token", len(result.Usage))
+	}
+}
+
+// pilotReplayRepo builds a repo whose HEAD commit rewrites one file. Every
+// replay-based extractor binds against this shape: the mutation must reproduce
+// the commit's content starting from its parent's.
+func pilotReplayRepo(t *testing.T, path, parent, current string) (string, string) {
+	t.Helper()
+	repo, _ := v2ClaimRepo(t, path, parent)
+	if err := os.WriteFile(filepath.Join(repo, path), []byte(current), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitClaim(t, repo, "add", path)
+	gitClaim(t, repo, "commit", "-m", "rewrite")
+	return repo, strings.TrimSpace(gitClaim(t, repo, "rev-parse", "HEAD"))
+}
+
+// pilotToolTurn writes one Pilot turn: a tool call plus the llm.response that
+// closes it, which is the minimum a claim needs.
+func pilotToolTurn(t *testing.T, dir, agentType, toolName, arguments string) {
+	t.Helper()
+	writePilotJSONL(t, filepath.Join(dir, agentType+"-2026-08-27.jsonl"),
+		map[string]any{
+			"event.name": "tool.call", "gen_ai.agent.type": agentType,
+			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1",
+			"gen_ai.tool.name": toolName, "gen_ai.tool.call.id": "c1",
+			"gen_ai.tool.call.arguments": arguments,
+		},
+		map[string]any{
+			"event.name": "llm.response", "gen_ai.agent.type": agentType,
+			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
+			"gen_ai.usage.input_tokens": 10, "gen_ai.usage.output_tokens": 2,
+		},
+	)
+}
+
+func scanPilotForTest(t *testing.T, dir, repo, commit string) PilotScanResult {
+	t.Helper()
+	result, err := ScanPilotClaims(context.Background(), PilotScanOptions{
+		OutputDir: dir,
+		V2ClaimScanOptions: V2ClaimScanOptions{
+			RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
+			WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-pilot",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func requireBoundPilotClaim(t *testing.T, result PilotScanResult, commit string) {
+	t.Helper()
+	if len(result.Claims) != 1 {
+		t.Fatalf("claims = %d, want 1", len(result.Claims))
+	}
+	claim := result.Claims[0]
+	if claim.GapReason != "" {
+		t.Fatalf("gap reason = %q, want none", claim.GapReason)
+	}
+	if len(claim.Group.CommitAllocations) != 1 || claim.Group.CommitAllocations[0].CommitSHA != commit {
+		t.Fatalf("commit allocations = %+v, want one bound to %s", claim.Group.CommitAllocations, commit)
+	}
+}
+
+func requireRefusedPilotClaim(t *testing.T, result PilotScanResult, reason string) {
+	t.Helper()
+	if len(result.Claims) != 1 || result.Claims[0].GapReason != reason {
+		t.Fatalf("claims = %+v, want one claim gapped as %q", result.Claims, reason)
+	}
+	if len(result.Claims[0].Group.CommitAllocations) != 0 {
+		t.Fatalf("refused mutation produced an allocation: %+v", result.Claims[0].Group.CommitAllocations)
+	}
+}
+
+// Claude Code Edit carries the replacement, not the result, so the post-state
+// has to be replayed from the commit's parent before it can be bound.
+func TestScanPilotClaimsBindsClaudeEditTurnToCommit(t *testing.T) {
+	repo, commit := pilotReplayRepo(t, "feature.go", "package feature\n\nfunc A() {}\n", "package feature\n\nfunc B() {}\n")
+	dir := t.TempDir()
+	// Claude Code always reports file_path absolute, and Pilot serialises
+	// replace_all as a string rather than a JSON boolean.
+	arguments, err := json.Marshal(map[string]any{
+		"file_path": filepath.Join(repo, "feature.go"), "old_string": "func A() {}",
+		"new_string": "func B() {}", "replace_all": "False",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pilotToolTurn(t, dir, "claude-code", "Edit", string(arguments))
+	requireBoundPilotClaim(t, scanPilotForTest(t, dir, repo, commit), commit)
+}
+
+// Pilot serialises replace_all as a string rather than a JSON boolean, so both
+// forms of true must select every occurrence.
+func TestScanPilotClaimsAppliesClaudeEditReplaceAll(t *testing.T) {
+	for name, replaceAll := range map[string]any{"string": "True", "boolean": true} {
+		t.Run(name, func(t *testing.T) {
+			repo, commit := pilotReplayRepo(t, "notes.txt", "alpha\nbeta\nalpha\n", "gamma\nbeta\ngamma\n")
+			dir := t.TempDir()
+			arguments, err := json.Marshal(map[string]any{
+				"file_path": "notes.txt", "old_string": "alpha", "new_string": "gamma", "replace_all": replaceAll,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			pilotToolTurn(t, dir, "claude-code", "Edit", string(arguments))
+			requireBoundPilotClaim(t, scanPilotForTest(t, dir, repo, commit), commit)
+		})
+	}
+}
+
+// Several Edits inside one turn have to chain: the second replays against the
+// first one's result, not against the commit parent.
+func TestScanPilotClaimsChainsClaudeEditsWithinATurn(t *testing.T) {
+	repo, commit := pilotReplayRepo(t, "notes.txt", "one\n", "three\n")
+	dir := t.TempDir()
+	writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-27.jsonl"),
+		map[string]any{
+			"event.name": "tool.call", "gen_ai.agent.type": "claude-code",
+			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1",
+			"gen_ai.tool.name": "Edit", "gen_ai.tool.call.id": "c1",
+			"gen_ai.tool.call.arguments": `{"file_path": "notes.txt", "old_string": "one", "new_string": "two", "replace_all": "False"}`,
+		},
+		map[string]any{
+			"event.name": "tool.call", "gen_ai.agent.type": "claude-code",
+			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1",
+			"gen_ai.tool.name": "Edit", "gen_ai.tool.call.id": "c2",
+			"gen_ai.tool.call.arguments": `{"file_path": "notes.txt", "old_string": "two", "new_string": "three", "replace_all": "False"}`,
+		},
+		map[string]any{
+			"event.name": "llm.response", "gen_ai.agent.type": "claude-code",
+			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
+			"gen_ai.usage.input_tokens": 10, "gen_ai.usage.output_tokens": 2,
+		},
+	)
+	requireBoundPilotClaim(t, scanPilotForTest(t, dir, repo, commit), commit)
+}
+
+// An Edit this source cannot replay must fail closed and stay countable: it
+// emits a mutation with no hash, which gaps the turn rather than silently
+// allocating or silently disappearing.
+func TestScanPilotClaimsRefusesUnreplayableClaudeEdit(t *testing.T) {
+	cases := map[string]string{
+		"old string absent":             `{"file_path": "notes.txt", "old_string": "missing", "new_string": "gamma", "replace_all": "False"}`,
+		"ambiguous without replace all": `{"file_path": "notes.txt", "old_string": "alpha", "new_string": "gamma", "replace_all": "False"}`,
+		"file absent from parent":       `{"file_path": "created.txt", "old_string": "alpha", "new_string": "gamma", "replace_all": "False"}`,
+		"empty old string":              `{"file_path": "notes.txt", "old_string": "", "new_string": "gamma", "replace_all": "True"}`,
+		"path escapes the repo":         `{"file_path": "../outside.txt", "old_string": "alpha", "new_string": "gamma"}`,
+	}
+	for name, arguments := range cases {
+		t.Run(name, func(t *testing.T) {
+			repo, commit := pilotReplayRepo(t, "notes.txt", "alpha\nbeta\nalpha\n", "gamma\nbeta\ngamma\n")
+			dir := t.TempDir()
+			pilotToolTurn(t, dir, "claude-code", "Edit", arguments)
+			requireRefusedPilotClaim(t, scanPilotForTest(t, dir, repo, commit), "invalid_structured_mutation")
+		})
+	}
+}
+
+// Kiro CLI fs_write `create` carries the whole post-state, so it binds the same
+// way Claude Code's Write does.
+func TestScanPilotClaimsBindsKiroFsWriteCreateToCommit(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	dir := t.TempDir()
+	arguments, err := json.Marshal(map[string]any{
+		"command": "create", "path": filepath.Join(repo, "feature.go"),
+		"file_text": "package feature\n", "summary": "add the feature package",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pilotToolTurn(t, dir, "kiro-cli", "fs_write", string(arguments))
+	requireBoundPilotClaim(t, scanPilotForTest(t, dir, repo, commit), commit)
+}
+
+// fs_write `str_replace` carries the replacement, so it replays like Edit — but
+// its schema has no replace_all, so a non-unique old_str is always refused.
+func TestScanPilotClaimsBindsKiroFsWriteStrReplaceToCommit(t *testing.T) {
+	repo, commit := pilotReplayRepo(t, "feature.go", "package feature\n\nfunc A() {}\n", "package feature\n\nfunc B() {}\n")
+	dir := t.TempDir()
+	pilotToolTurn(t, dir, "kiro-cli", "fs_write",
+		`{"command": "str_replace", "path": "feature.go", "old_str": "func A() {}", "new_str": "func B() {}", "summary": "rename"}`)
+	requireBoundPilotClaim(t, scanPilotForTest(t, dir, repo, commit), commit)
+}
+
+func TestScanPilotClaimsRefusesUnreplayableKiroFsWrite(t *testing.T) {
+	cases := map[string]string{
+		"non unique old str":      `{"command": "str_replace", "path": "notes.txt", "old_str": "alpha", "new_str": "gamma"}`,
+		"old str absent":          `{"command": "str_replace", "path": "notes.txt", "old_str": "missing", "new_str": "gamma"}`,
+		"str replace on new file": `{"command": "str_replace", "path": "created.txt", "old_str": "alpha", "new_str": "gamma"}`,
+	}
+	for name, arguments := range cases {
+		t.Run(name, func(t *testing.T) {
+			repo, commit := pilotReplayRepo(t, "notes.txt", "alpha\nbeta\nalpha\n", "gamma\nbeta\ngamma\n")
+			dir := t.TempDir()
+			pilotToolTurn(t, dir, "kiro-cli", "fs_write", arguments)
+			requireRefusedPilotClaim(t, scanPilotForTest(t, dir, repo, commit), "invalid_structured_mutation")
+		})
 	}
 }
