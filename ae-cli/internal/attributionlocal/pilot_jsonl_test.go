@@ -234,3 +234,94 @@ func TestScanPilotClaimsRefusesUnrecognizedWrapper(t *testing.T) {
 		t.Fatalf("refused wrapper produced an allocation: %+v", result.Claims[0].Group.CommitAllocations)
 	}
 }
+
+// A tool call that plainly carries a file mutation, from a tool this source does
+// not yet extract, must be reported rather than dropped. Silence here is the
+// same defect that let Codex wrapper drift go unnoticed: coverage gaps must be
+// countable, not invisible.
+func TestScanPilotClaimsReportsUnhandledMutationTool(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	cases := map[string]map[string]any{
+		"claude edit": {
+			"gen_ai.tool.name":           "Edit",
+			"gen_ai.tool.call.arguments": `{"file_path": "feature.go", "old_string": "package feature", "new_string": "package other"}`,
+		},
+		"kiro fs_write": {
+			"gen_ai.tool.name":           "fs_write",
+			"gen_ai.tool.call.arguments": `{"command": "create", "path": "feature.go", "file_text": "package other\n"}`,
+		},
+	}
+	for name, toolAttrs := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			call := map[string]any{
+				"event.name": "tool.call", "gen_ai.agent.type": "claude-code",
+				"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.tool.call.id": "c1",
+			}
+			for key, value := range toolAttrs {
+				call[key] = value
+			}
+			writePilotJSONL(t, filepath.Join(dir, "agent-2026-08-27.jsonl"), call,
+				map[string]any{
+					"event.name": "llm.response", "gen_ai.agent.type": "claude-code",
+					"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
+					"gen_ai.usage.input_tokens": 10, "gen_ai.usage.output_tokens": 2,
+				},
+			)
+
+			result, err := ScanPilotClaims(context.Background(), PilotScanOptions{
+				OutputDir: dir,
+				V2ClaimScanOptions: V2ClaimScanOptions{
+					RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
+					WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-unhandled",
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Claims) != 1 || result.Claims[0].GapReason != pilotGapUnhandledMutationTool {
+				t.Fatalf("claims = %+v, want one claim gapped as %q", result.Claims, pilotGapUnhandledMutationTool)
+			}
+			if len(result.Claims[0].Group.CommitAllocations) != 0 {
+				t.Fatalf("unhandled mutation tool produced an allocation: %+v", result.Claims[0].Group.CommitAllocations)
+			}
+		})
+	}
+}
+
+// A tool that does not carry a file mutation must stay silent: counting every
+// unhandled call would bury the signal under Bash.
+func TestScanPilotClaimsIgnoresNonMutatingTools(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	dir := t.TempDir()
+	writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-27.jsonl"),
+		map[string]any{
+			"event.name": "tool.call", "gen_ai.agent.type": "claude-code",
+			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1",
+			"gen_ai.tool.name": "Bash", "gen_ai.tool.call.id": "c1",
+			"gen_ai.tool.call.arguments": `{"command": "ls -la", "description": "list files"}`,
+		},
+		map[string]any{
+			"event.name": "llm.response", "gen_ai.agent.type": "claude-code",
+			"gen_ai.session.id": "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
+			"gen_ai.usage.input_tokens": 10, "gen_ai.usage.output_tokens": 2,
+		},
+	)
+
+	result, err := ScanPilotClaims(context.Background(), PilotScanOptions{
+		OutputDir: dir,
+		V2ClaimScanOptions: V2ClaimScanOptions{
+			RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
+			WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-bash",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Claims) != 0 {
+		t.Fatalf("claims = %+v, want none for a non-mutating tool", result.Claims)
+	}
+	if len(result.Usage) != 1 {
+		t.Fatalf("usage events = %d, want 1: the turn still consumed Token", len(result.Usage))
+	}
+}

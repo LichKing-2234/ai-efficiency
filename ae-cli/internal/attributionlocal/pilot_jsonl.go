@@ -35,7 +35,21 @@ const (
 	pilotAgentCodex  = "codex"
 	pilotAgentClaude = "claude-code"
 	pilotAgentKiro   = "kiro-cli"
+
+	// pilotGapUnhandledMutationTool marks a turn that plainly changed a file
+	// through a tool this source does not yet extract. Without it such a turn
+	// would produce no claim and no reason at all, which is exactly how Codex
+	// wrapper drift stayed invisible through a previous repair.
+	pilotGapUnhandledMutationTool = "unhandled_mutation_tool"
 )
+
+// pilotMutationArgumentKeys are the argument names that mark a tool call as
+// carrying a file mutation. Like the apply_patch hint, this detector is
+// deliberately loose: it only decides whether a coverage gap is worth
+// reporting, and can never authorise an allocation.
+var pilotMutationArgumentKeys = []string{
+	"file_path", "file_text", "old_string", "new_string", "content", "path",
+}
 
 // PilotScanOptions selects the Pilot output to read and carries the commit the
 // scan is binding against.
@@ -88,6 +102,7 @@ type pilotTurn struct {
 	mutations           []v2Mutation
 	replayFiles         map[string]v2ReplayFile
 	unrecognizedWrapper bool
+	unhandledTools      map[string]struct{}
 	source              string
 	firstSeen           time.Time
 	order               int
@@ -131,10 +146,11 @@ func ScanPilotClaims(ctx context.Context, opts PilotScanOptions) (PilotScanResul
 			turn, ok := turns[turnID]
 			if !ok {
 				turn = &pilotTurn{
-					turnID:      turnID,
-					replayFiles: map[string]v2ReplayFile{},
-					source:      path,
-					order:       order,
+					turnID:         turnID,
+					replayFiles:    map[string]v2ReplayFile{},
+					unhandledTools: map[string]struct{}{},
+					source:         path,
+					order:          order,
 				}
 				order++
 				turns[turnID] = turn
@@ -275,7 +291,35 @@ func applyPilotToolCall(ctx context.Context, turn *pilotTurn, event pilotEvent, 
 		if mutation, ok := pilotWriteMutation(ctx, arguments, opts, turn.replayFiles); ok {
 			turn.mutations = append(turn.mutations, mutation)
 		}
+	default:
+		if pilotArgumentsCarryMutation(arguments) {
+			turn.unhandledTools[event.str("gen_ai.tool.name")] = struct{}{}
+		}
 	}
+}
+
+// pilotArgumentsCarryMutation reports whether a tool call's arguments name a
+// file and its new contents. It is a coverage detector, not an acceptor.
+func pilotArgumentsCarryMutation(arguments string) bool {
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(arguments), &payload); err != nil {
+		return false
+	}
+	named := false
+	valued := false
+	for _, key := range pilotMutationArgumentKeys {
+		value, present := payload[key]
+		if !present || strings.TrimSpace(asString(value)) == "" {
+			continue
+		}
+		switch key {
+		case "file_path", "path":
+			named = true
+		default:
+			valued = true
+		}
+	}
+	return named && valued
 }
 
 func pilotToolArguments(event pilotEvent) string {
@@ -368,7 +412,7 @@ func pilotToolName(agentType string) string {
 // structured mutation. Turns with no mutation at all produce no claim: they are
 // accounted for on the usage surface instead.
 func pilotClaimCandidate(ctx context.Context, turn *pilotTurn, opts PilotScanOptions) (V2ClaimCandidate, bool) {
-	if len(turn.mutations) == 0 && !turn.unrecognizedWrapper {
+	if len(turn.mutations) == 0 && !turn.unrecognizedWrapper && len(turn.unhandledTools) == 0 {
 		return V2ClaimCandidate{}, false
 	}
 	groupID := claimDigest(fmt.Sprintf("%d", opts.RelayProviderID), turn.sessionID, turn.turnID)
@@ -389,6 +433,8 @@ func pilotClaimCandidate(ctx context.Context, turn *pilotTurn, opts PilotScanOpt
 	switch {
 	case len(turn.mutations) == 0 && turn.unrecognizedWrapper:
 		candidate.GapReason = v2GapUnrecognizedPatchWrapper
+	case len(turn.mutations) == 0 && len(turn.unhandledTools) > 0:
+		candidate.GapReason = pilotGapUnhandledMutationTool
 	case !validV2Mutations(turn.mutations):
 		candidate.GapReason = "invalid_structured_mutation"
 	default:
