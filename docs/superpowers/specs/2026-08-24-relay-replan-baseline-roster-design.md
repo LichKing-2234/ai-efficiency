@@ -45,6 +45,22 @@ Replan opens as a zero-change view of the last confirmed mapping:
 Replan remains read-only until the administrator confirms reviewed changes.
 Opening Replan alone produces no member mutation and no proposed member delta.
 
+## Frontend Ownership
+
+The Relay Planning reviewed-plan workflow owns the active initial Preview or
+Replan, explicit Target, member, source, unmanaged-member, and Account edits,
+plan-scoped user and Account searches, the canonical reviewed request,
+relationship fingerprint, operation key, stale replacement, retry restoration,
+and Confirm/Execute handoff. A response from an older plan request is ignored
+after reset, disposal, a newer plan request, or a newer explicit edit.
+
+The route view retains planning inputs, mapping list, renewal, Rebind, saved
+Account administration, rendering, and collection of explicit administrator
+intent. HTTP transport remains in `frontend/src/api`. Searched-user source and
+cross-mapping intent is committed only after the current Preview succeeds, and
+initial Preview, Replan, Confirm, and Execute use the same reviewed projection
+so hidden state cannot drift between payload builders.
+
 ## Backend Contract
 
 For an existing-mapping Replan request without reviewed assignments, returned
