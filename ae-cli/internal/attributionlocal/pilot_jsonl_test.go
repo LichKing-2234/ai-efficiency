@@ -533,3 +533,203 @@ func TestScanPilotClaimsRefusesUnreplayableKiroFsWrite(t *testing.T) {
 		})
 	}
 }
+
+// pilotResponseEvent builds one llm.response line. Usage keys are only written
+// when non-zero, matching Pilot's habit of omitting what an agent did not report.
+func pilotResponseEvent(agentType, sessionID, turnID, responseID string, input, output int64) map[string]any {
+	event := map[string]any{
+		"event.name": "llm.response", "gen_ai.agent.type": agentType,
+		"gen_ai.session.id": sessionID, "gen_ai.turn.id": turnID,
+		"gen_ai.usage.input_tokens": input, "gen_ai.usage.output_tokens": output,
+	}
+	if responseID != "" {
+		event["gen_ai.response.id"] = responseID
+	}
+	return event
+}
+
+func pilotUsageByEventID(t *testing.T, result PilotScanResult) map[string]LocalToolUsageEvent {
+	t.Helper()
+	byID := map[string]LocalToolUsageEvent{}
+	for _, usage := range result.Usage {
+		if _, clash := byID[usage.ToolEventID]; clash {
+			t.Fatalf("two usage events share tool event id %q: %+v", usage.ToolEventID, result.Usage)
+		}
+		byID[usage.ToolEventID] = usage
+	}
+	return byID
+}
+
+// Pilot's gen_ai.turn.id is a collector-derived counter over its own session id,
+// not a native identifier. Resuming a Claude Code session makes Pilot replay the
+// whole transcript under a fresh session and a restarted counter, so the same
+// native response reappears under a second turn id carrying the same usage.
+// Summing per turn inflated the total by every replayed response.
+func TestScanPilotClaimsCountsReplayedResponseOnce(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	dir := t.TempDir()
+	// The original run.
+	writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-26.jsonl"),
+		pilotResponseEvent("claude-code", "session-original", "session-original:t1", "msg_011replay", 343844, 952),
+	)
+	// The resumed run replays the same native response under a new session and a
+	// restarted counter.
+	writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-27.jsonl"),
+		pilotResponseEvent("claude-code", "session-resumed", "session-resumed:t1", "msg_011replay", 343844, 952),
+	)
+
+	result := scanPilotForTest(t, dir, repo, commit)
+	if len(result.Usage) != 1 {
+		t.Fatalf("usage events = %d, want 1: the replayed response is the same native response", len(result.Usage))
+	}
+	usage := result.Usage[0]
+	if usage.InputTokens != 343844 || usage.OutputTokens != 952 {
+		t.Fatalf("token components = %d/%d, want the response counted exactly once", usage.InputTokens, usage.OutputTokens)
+	}
+	if usage.ToolEventID != "msg_011replay" {
+		t.Fatalf("tool event id = %q, want the native response id", usage.ToolEventID)
+	}
+	// The dedupe key must be the native response id so a later scan that only
+	// sees the resumed file still reports the same event to the server.
+	if usage.DedupeKey != "pilot:claude-code:response:msg_011replay" {
+		t.Fatalf("dedupe key = %q, want it keyed on the native response id", usage.DedupeKey)
+	}
+	// Ownership goes to the earliest occurrence by (source file, line), which is
+	// the original run rather than the replay.
+	if usage.ToolSessionID != "session-original" || usage.RawSourceLocator != "turn:session-original:t1" {
+		t.Fatalf("attribution = %q/%q, want the earliest occurrence's session and turn", usage.ToolSessionID, usage.RawSourceLocator)
+	}
+}
+
+// A turn holds many responses — Codex four, Claude Code up to a few hundred.
+// Deduplicating on the response id must not collapse the distinct responses a
+// single turn made.
+func TestScanPilotClaimsCountsEveryResponseInATurn(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	dir := t.TempDir()
+	writePilotJSONL(t, filepath.Join(dir, "codex-2026-08-26.jsonl"),
+		pilotResponseEvent("codex", "session-codex", "session-codex:t1", "msg_0ba1", 100, 10),
+		pilotResponseEvent("codex", "session-codex", "session-codex:t1", "rs_0ba1", 200, 20),
+		pilotResponseEvent("codex", "session-codex", "session-codex:t1", "msg_0ba2", 300, 30),
+	)
+	// A replay of one of them under a second turn adds nothing.
+	writePilotJSONL(t, filepath.Join(dir, "codex-2026-08-27.jsonl"),
+		pilotResponseEvent("codex", "session-replay", "session-replay:t1", "rs_0ba1", 200, 20),
+	)
+
+	result := scanPilotForTest(t, dir, repo, commit)
+	if len(result.Usage) != 3 {
+		t.Fatalf("usage events = %d, want 3: one per distinct native response", len(result.Usage))
+	}
+	byID := pilotUsageByEventID(t, result)
+	for id, want := range map[string]int64{"msg_0ba1": 100, "rs_0ba1": 200, "msg_0ba2": 300} {
+		usage, ok := byID[id]
+		if !ok {
+			t.Fatalf("response %q produced no usage event: %+v", id, result.Usage)
+		}
+		if usage.InputTokens != want {
+			t.Fatalf("response %q input tokens = %d, want %d", id, usage.InputTokens, want)
+		}
+	}
+}
+
+// A response Pilot reported without a native id cannot be deduplicated. It must
+// still be counted — dropping it would understate real consumption — so it is
+// counted once per physical event and reported as unidentified rather than
+// silently folded into anything else.
+func TestScanPilotClaimsCountsUnidentifiedResponseOnce(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	dir := t.TempDir()
+	writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-27.jsonl"),
+		pilotResponseEvent("claude-code", "s", "s:t1", "", 11, 1),
+		pilotResponseEvent("claude-code", "s", "s:t1", "", 22, 2),
+		pilotResponseEvent("claude-code", "s", "s:t1", "msg_011identified", 33, 3),
+	)
+
+	result := scanPilotForTest(t, dir, repo, commit)
+	if result.UnidentifiedResponses != 2 {
+		t.Fatalf("unidentified responses = %d, want 2 reported rather than silently accepted", result.UnidentifiedResponses)
+	}
+	if len(result.Usage) != 3 {
+		t.Fatalf("usage events = %d, want 3: neither unidentified response may be dropped or merged", len(result.Usage))
+	}
+	var total int64
+	for _, usage := range result.Usage {
+		total += usage.InputTokens
+	}
+	if total != 66 {
+		t.Fatalf("input tokens = %d, want 66: each event counted exactly once", total)
+	}
+	byID := pilotUsageByEventID(t, result)
+	if usage, ok := byID["msg_011identified"]; !ok || usage.InputTokens != 33 {
+		t.Fatalf("identified response was merged with an unidentified one: %+v", result.Usage)
+	}
+	// An unidentified event is named and keyed by its own location, in a
+	// namespace that can never collide with a native response id.
+	for _, usage := range result.Usage {
+		if usage.ToolEventID == "msg_011identified" {
+			continue
+		}
+		if !strings.HasPrefix(usage.ToolEventID, "line:claude-code-2026-08-27.jsonl#") {
+			t.Fatalf("unidentified tool event id = %q, want the event's own location", usage.ToolEventID)
+		}
+		if usage.DedupeKey != "pilot:claude-code:event:"+usage.ToolEventID {
+			t.Fatalf("unidentified dedupe key = %q, want it keyed on the event's own location", usage.DedupeKey)
+		}
+	}
+}
+
+// Kiro bills in credit rather than Token, and its turn id is collector-derived
+// the same way, so replay inflates credit exactly as it inflates Token. Credit
+// rides on the same llm.response event as the response id, so one identity
+// deduplicates both.
+func TestScanPilotClaimsCountsReplayedKiroCreditOnce(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	dir := t.TempDir()
+	credit := map[string]any{
+		"event.name": "llm.response", "gen_ai.agent.type": "kiro-cli",
+		"gen_ai.session.id": "session-original", "gen_ai.turn.id": "session-original:t1:r0",
+		"gen_ai.response.id": "3f1a5f0c-0b6d-4c2e-9a51-0d9d1a2b3c4d",
+		"kiro.credit_cost":   0.07833677691542287, "kiro.token_source": "unavailable",
+	}
+	writePilotJSONL(t, filepath.Join(dir, "kiro-cli-2026-08-26.jsonl"), credit)
+	replay := map[string]any{}
+	for key, value := range credit {
+		replay[key] = value
+	}
+	replay["gen_ai.session.id"] = "session-resumed"
+	replay["gen_ai.turn.id"] = "session-resumed:t1:r0"
+	writePilotJSONL(t, filepath.Join(dir, "kiro-cli-2026-08-27.jsonl"), replay)
+
+	result := scanPilotForTest(t, dir, repo, commit)
+	if len(result.Usage) != 1 {
+		t.Fatalf("usage events = %d, want 1: replayed credit is the same native response", len(result.Usage))
+	}
+	usage := result.Usage[0]
+	if usage.UsageUnit != UsageUnitCredit {
+		t.Fatalf("usage unit = %q, want %q", usage.UsageUnit, UsageUnitCredit)
+	}
+	if usage.CreditUsage != 0.07833677691542287 {
+		t.Fatalf("credit usage = %v, want the exact value Pilot reported, counted once", usage.CreditUsage)
+	}
+}
+
+// The owning occurrence is chosen by (source file, line), never by the order the
+// scan happened to read files in, so the same directory always attributes a
+// replayed response to the same turn.
+func TestScanPilotClaimsAttributesReplayedResponseDeterministically(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	for range 5 {
+		dir := t.TempDir()
+		writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-27.jsonl"),
+			pilotResponseEvent("claude-code", "session-late", "session-late:t1", "msg_011replay", 5, 1),
+		)
+		writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-26.jsonl"),
+			pilotResponseEvent("claude-code", "session-early", "session-early:t1", "msg_011replay", 5, 1),
+		)
+		result := scanPilotForTest(t, dir, repo, commit)
+		if len(result.Usage) != 1 || result.Usage[0].ToolSessionID != "session-early" {
+			t.Fatalf("usage = %+v, want one event attributed to the earliest occurrence", result.Usage)
+		}
+	}
+}

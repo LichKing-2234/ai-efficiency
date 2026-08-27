@@ -66,6 +66,11 @@ type PilotScanOptions struct {
 type PilotScanResult struct {
 	Claims []V2ClaimCandidate
 	Usage  []LocalToolUsageEvent
+	// UnidentifiedResponses counts usage-bearing responses Pilot reported with
+	// no gen_ai.response.id. Their consumption is still counted, once per
+	// physical event, but it cannot be deduplicated against a replay of the same
+	// response — so the count is reported rather than left invisible.
+	UnidentifiedResponses int
 }
 
 // DefaultPilotOutputDir is where Pilot writes local JSONL by default.
@@ -89,17 +94,14 @@ func (e pilotEvent) str(key string) string  { return strings.TrimSpace(asString(
 func (e pilotEvent) i64(key string) int64   { return asInt64(e.attrs[key]) }
 func (e pilotEvent) f64(key string) float64 { return asFloat64(e.attrs[key]) }
 
-// pilotTurn accumulates every event sharing one gen_ai.turn.id.
+// pilotTurn accumulates every event sharing one gen_ai.turn.id. A turn is the
+// unit of commit binding only: usage is accounted per response instead, because
+// gen_ai.turn.id is not a native identifier — see pilotResponse.
 type pilotTurn struct {
 	agentType           string
 	sessionID           string
 	turnID              string
-	responseID          string
 	model               string
-	usage               pilotUsage
-	credit              float64
-	creditSeen          bool
-	tokenUnavailable    bool
 	mutations           []v2Mutation
 	replayFiles         map[string]v2ReplayFile
 	unrecognizedWrapper bool
@@ -109,12 +111,52 @@ type pilotTurn struct {
 	order               int
 }
 
+// pilotResponse is one native model response, the unit usage is accounted in.
+//
+// Pilot derives gen_ai.turn.id for Claude Code and Kiro CLI as
+// `<gen_ai.session.id>:t<N>`, where `t<N>` is a counter the collector maintains
+// rather than anything the agent reports. Resuming a session gives Pilot a new
+// session id and restarts that counter while the agent replays the same
+// transcript, so one native response reappears under a second turn id carrying
+// the usage it already reported. Summing per turn counted that consumption
+// twice; on the machine this was diagnosed against, 59 responses were replayed
+// and inflated the Token total by 9.2%.
+//
+// gen_ai.response.id is native and stable for every agent Pilot covers
+// (`msg_011…` from Anthropic, `msg_0ba…`/`rs_0ba…` from OpenAI, a UUID from
+// Kiro), so it is the identity usage is deduplicated on — both inside one scan
+// and, through DedupeKey, across scans and across machines.
+type pilotResponse struct {
+	key              string
+	agentType        string
+	sessionID        string
+	turnID           string
+	responseID       string
+	usage            pilotUsage
+	credit           float64
+	creditSeen       bool
+	tokenUnavailable bool
+	sourcePath       string
+	sourceLine       int
+}
+
 type pilotUsage struct {
 	input     int64
 	output    int64
 	cacheRead int64
 	reasoning int64
 	seen      bool
+}
+
+// earlierThan orders two occurrences of the same response by where they were
+// written, not by when the scan happened to read them. Pilot names its output
+// `<agent>-<date>.jsonl`, so the smaller (path, line) pair is the earlier
+// occurrence: the original run rather than the replay.
+func (r *pilotResponse) earlierThan(other *pilotResponse) bool {
+	if r.sourcePath != other.sourcePath {
+		return r.sourcePath < other.sourcePath
+	}
+	return r.sourceLine < other.sourceLine
 }
 
 // ScanPilotClaims reads Pilot's normalized local output and produces commit-bound
@@ -133,6 +175,7 @@ func ScanPilotClaims(ctx context.Context, opts PilotScanOptions) (PilotScanResul
 	}
 
 	turns := map[string]*pilotTurn{}
+	responses := map[string]*pilotResponse{}
 	var order int
 	for _, path := range files {
 		events, err := readPilotEvents(path)
@@ -157,6 +200,7 @@ func ScanPilotClaims(ctx context.Context, opts PilotScanOptions) (PilotScanResul
 				turns[turnID] = turn
 			}
 			applyPilotEvent(ctx, turn, event, opts)
+			applyPilotResponse(responses, turn, event)
 		}
 	}
 
@@ -167,15 +211,37 @@ func ScanPilotClaims(ctx context.Context, opts PilotScanOptions) (PilotScanResul
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].order < ordered[j].order })
 
 	var result PilotScanResult
-	for _, turn := range ordered {
-		if usage, ok := pilotUsageEvent(turn, opts); ok {
-			result.Usage = append(result.Usage, usage)
+	for _, response := range orderedPilotResponses(responses) {
+		if response.responseID == "" {
+			result.UnidentifiedResponses++
 		}
+		result.Usage = append(result.Usage, pilotUsageEvent(response, opts))
+	}
+	for _, turn := range ordered {
 		if claim, ok := pilotClaimCandidate(ctx, turn, opts); ok {
 			result.Claims = append(result.Claims, claim)
 		}
 	}
 	return result, nil
+}
+
+// orderedPilotResponses sorts the deduplicated responses by where they were
+// written. Map iteration order is never allowed to reach the output.
+func orderedPilotResponses(responses map[string]*pilotResponse) []*pilotResponse {
+	ordered := make([]*pilotResponse, 0, len(responses))
+	for _, response := range responses {
+		ordered = append(ordered, response)
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].earlierThan(ordered[j]) {
+			return true
+		}
+		if ordered[j].earlierThan(ordered[i]) {
+			return false
+		}
+		return ordered[i].key < ordered[j].key
+	})
+	return ordered
 }
 
 func pilotOutputFiles(dir string) ([]string, error) {
@@ -234,39 +300,100 @@ func applyPilotEvent(ctx context.Context, turn *pilotTurn, event pilotEvent, opt
 		turn.model = event.str("gen_ai.request.model")
 	}
 
-	switch event.str("event.name") {
-	case "llm.response":
-		if id := event.str("gen_ai.response.id"); id != "" {
-			turn.responseID = id
-		}
-		applyPilotUsage(turn, event)
-	case "tool.call":
+	if event.str("event.name") == "tool.call" {
 		applyPilotToolCall(ctx, turn, event, opts)
 	}
 }
 
-func applyPilotUsage(turn *pilotTurn, event pilotEvent) {
+// applyPilotResponse records what one llm.response reported, keyed on the native
+// response id so a replayed response is recognised as the one it already is.
+//
+// Two occurrences of the same response are never summed. The occurrence that
+// wins is the earlier one by (source file, line), and it supplies both the
+// numbers and the turn the usage is attributed to; the later occurrence
+// contributes nothing. Refusing to sum is what makes this fail closed: a
+// replayed response can only ever be counted at the value Pilot reported for
+// it, never at a multiple of it.
+func applyPilotResponse(responses map[string]*pilotResponse, turn *pilotTurn, event pilotEvent) {
+	if event.str("event.name") != "llm.response" {
+		return
+	}
+	current := pilotResponseUsage(turn, event)
+	if current == nil {
+		return
+	}
+	existing, ok := responses[current.key]
+	if !ok || current.earlierThan(existing) {
+		responses[current.key] = current
+	}
+}
+
+// pilotResponseUsage reads one llm.response into a pilotResponse, or reports nil
+// when the event carried no usage at all.
+func pilotResponseUsage(turn *pilotTurn, event pilotEvent) *pilotResponse {
+	response := &pilotResponse{
+		agentType:  turn.agentType,
+		sessionID:  turn.sessionID,
+		turnID:     turn.turnID,
+		responseID: event.str("gen_ai.response.id"),
+		sourcePath: event.path,
+		sourceLine: event.line,
+	}
 	for key, target := range map[string]*int64{
-		"gen_ai.usage.input_tokens":            &turn.usage.input,
-		"gen_ai.usage.output_tokens":           &turn.usage.output,
-		"gen_ai.usage.cache_read.input_tokens": &turn.usage.cacheRead,
-		"gen_ai.usage.reasoning_output_tokens": &turn.usage.reasoning,
+		"gen_ai.usage.input_tokens":            &response.usage.input,
+		"gen_ai.usage.output_tokens":           &response.usage.output,
+		"gen_ai.usage.cache_read.input_tokens": &response.usage.cacheRead,
+		"gen_ai.usage.reasoning_output_tokens": &response.usage.reasoning,
 	} {
 		if _, present := event.attrs[key]; present {
-			*target += event.i64(key)
-			turn.usage.seen = true
+			*target = event.i64(key)
+			response.usage.seen = true
 		}
 	}
 	// Kiro reports credit and declares Token unavailable. Credit is a
 	// tool-specific attribute outside Pilot's normalized schema, so it is read
-	// by name and never mixed into a Token total.
+	// by name and never mixed into a Token total. It rides on the same
+	// llm.response event as the response id, so deduplicating the response
+	// deduplicates the credit: replay inflates both, and one identity fixes both.
 	if _, present := event.attrs["kiro.credit_cost"]; present {
-		turn.credit += event.f64("kiro.credit_cost")
-		turn.creditSeen = true
+		response.credit = event.f64("kiro.credit_cost")
+		response.creditSeen = true
 	}
 	if event.str("kiro.token_source") == "unavailable" {
-		turn.tokenUnavailable = true
+		response.tokenUnavailable = true
 	}
+	if !response.usage.seen && !response.creditSeen {
+		return nil
+	}
+	response.key = pilotResponseKey(response)
+	return response
+}
+
+// pilotResponseKey is the identity usage is accounted under.
+//
+// A response Pilot reported with no gen_ai.response.id falls back to its own
+// location in Pilot's output. That counts it exactly once per physical event —
+// it is neither dropped, which would understate real consumption, nor merged
+// with a neighbouring response, which would lose it. What it cannot do is
+// recognise a replay of itself, so the scan reports how many such responses it
+// saw in PilotScanResult.UnidentifiedResponses. The two forms live in separate
+// namespaces so a synthetic key can never collide with a native response id.
+func pilotResponseKey(response *pilotResponse) string {
+	if response.responseID != "" {
+		return "pilot:" + response.agentType + ":response:" + response.responseID
+	}
+	return "pilot:" + response.agentType + ":event:" + pilotResponseEventID(response)
+}
+
+// pilotResponseEventID names the response for the usage surface. With no native
+// id it falls back to the event's own location, the way the Codex session file
+// source already does — the `line:` prefix keeps a synthesized name plainly
+// distinguishable from a native response id.
+func pilotResponseEventID(response *pilotResponse) string {
+	if response.responseID != "" {
+		return response.responseID
+	}
+	return fmt.Sprintf("line:%s#%d", filepath.Base(response.sourcePath), response.sourceLine)
 }
 
 // applyPilotToolCall extracts the structured mutation a tool call performed.
@@ -515,32 +642,40 @@ func pilotBoolArgument(value any) bool {
 	return false
 }
 
-func pilotUsageEvent(turn *pilotTurn, opts PilotScanOptions) (LocalToolUsageEvent, bool) {
-	if !turn.usage.seen && !turn.creditSeen {
-		return LocalToolUsageEvent{}, false
-	}
+// pilotUsageEvent reports one native response's consumption.
+//
+// ToolEventID and DedupeKey both carry the response identity rather than the
+// turn id, so the same event survives a resume: a later scan that only still has
+// the resumed file reports the same DedupeKey the original scan did, and the
+// server counts it once. Keying on the turn id could not do that — the turn id
+// changes on every resume. This matches what the Codex and Claude Code session
+// file sources already do, both of which key usage on the native response id.
+//
+// The turn the usage is attributed to is kept in RawSourceLocator, alongside the
+// session and file the winning occurrence came from.
+func pilotUsageEvent(response *pilotResponse, opts PilotScanOptions) LocalToolUsageEvent {
 	unit := UsageUnitToken
-	if turn.creditSeen && !turn.usage.seen {
+	if response.creditSeen && !response.usage.seen {
 		unit = UsageUnitCredit
 	}
 	return LocalToolUsageEvent{
-		Tool:              pilotToolName(turn.agentType),
+		Tool:              pilotToolName(response.agentType),
 		WorkspaceID:       strings.TrimSpace(opts.WorkspaceID),
 		RepoConfigID:      opts.RepoConfigID,
 		RepoKey:           strings.TrimSpace(opts.RepoKey),
-		ToolSessionID:     turn.sessionID,
-		ToolEventID:       turn.turnID,
-		DedupeKey:         fmt.Sprintf("pilot:%s:%s", turn.agentType, turn.turnID),
+		ToolSessionID:     response.sessionID,
+		ToolEventID:       pilotResponseEventID(response),
+		DedupeKey:         response.key,
 		RequestCount:      1,
 		UsageUnit:         unit,
-		InputTokens:       turn.usage.input,
-		OutputTokens:      turn.usage.output,
-		CachedInputTokens: turn.usage.cacheRead,
-		ReasoningTokens:   turn.usage.reasoning,
-		CreditUsage:       turn.credit,
-		RawSourcePath:     turn.source,
-		RawSourceLocator:  "turn:" + turn.turnID,
-	}, true
+		InputTokens:       response.usage.input,
+		OutputTokens:      response.usage.output,
+		CachedInputTokens: response.usage.cacheRead,
+		ReasoningTokens:   response.usage.reasoning,
+		CreditUsage:       response.credit,
+		RawSourcePath:     response.sourcePath,
+		RawSourceLocator:  "turn:" + response.turnID,
+	}
 }
 
 // pilotToolName maps Pilot's agent type onto the tool name the usage surface
