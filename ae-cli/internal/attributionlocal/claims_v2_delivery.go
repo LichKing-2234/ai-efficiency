@@ -24,6 +24,7 @@ type V2DeliverySummary struct {
 	MissingRequestID         int
 	AmbiguousRequestEvidence int
 	RequestEvidenceExpired   int
+	UnrecognizedPatchWrapper int
 }
 
 func UpdateV2ClaimState(ctx context.Context, fn func(*V2ClaimState) error) error {
@@ -64,6 +65,8 @@ func SummarizeV2ClaimDelivery(state *V2ClaimState) V2DeliverySummary {
 			summary.AmbiguousRequestEvidence++
 		case v2GapRequestEvidenceExpired:
 			summary.RequestEvidenceExpired++
+		case v2GapUnrecognizedPatchWrapper:
+			summary.UnrecognizedPatchWrapper++
 		}
 	}
 	return summary

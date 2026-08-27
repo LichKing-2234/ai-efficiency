@@ -33,16 +33,26 @@ const (
 	v2GapMissingRequestID         = "missing_request_id"
 	v2GapAmbiguousRequestEvidence = "ambiguous_request_evidence"
 	v2GapRequestEvidenceExpired   = "request_evidence_expired"
+	// v2GapUnrecognizedPatchWrapper marks a turn where a generated apply_patch
+	// wrapper was present but did not satisfy the accepted grammar. It is kept
+	// distinct from a turn with no mutation at all so that wrapper drift is
+	// countable instead of silent.
+	v2GapUnrecognizedPatchWrapper = "unrecognized_patch_wrapper"
 )
 
 var codexV2SourceReadObserver = func(string) {}
 
 var (
-	v2ThreadIDPattern          = regexp.MustCompile(`thread\.id=([^ }]+)`)
-	v2TurnIDPattern            = regexp.MustCompile(`turn\.id=([^ }]+)`)
-	v2SuccessfulResponseStatus = regexp.MustCompile(` status=2[0-9]{2} `)
-	v2WrappedPatchPattern      = regexp.MustCompile(`(?s)^\s*const\s+patch\s*=\s*("(?:\\.|[^"\\])*")\s*;\s*text\s*\(\s*await\s+tools\.apply_patch\s*\(\s*patch\s*\)\s*\)\s*;\s*$`)
-	v2InlinePatchPattern       = regexp.MustCompile(`(?s)^\s*const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*await\s+tools\.apply_patch\s*\(\s*("(?:\\.|[^"\\])*")\s*\)\s*;\s*text\s*\(\s*JSON\.stringify\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*\)\s*;\s*$`)
+	v2ThreadIDPattern            = regexp.MustCompile(`thread\.id=([^ }]+)`)
+	v2TurnIDPattern              = regexp.MustCompile(`turn\.id=([^ }]+)`)
+	v2SuccessfulResponseStatus   = regexp.MustCompile(` status=2[0-9]{2} `)
+	v2WrappedPatchPattern        = regexp.MustCompile(`(?s)^\s*const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*("(?:\\.|[^"\\])*")\s*;\s*text\s*\(\s*await\s+tools\.apply_patch\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*\)\s*;\s*$`)
+	v2ThreeStatementPatchPattern = regexp.MustCompile(`(?s)^\s*const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*("(?:\\.|[^"\\])*")\s*;\s*const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*await\s+tools\.apply_patch\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*;\s*text\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*;\s*$`)
+	// v2PatchWrapperHintPattern is deliberately loose. It never authorises an
+	// allocation; it only tells us a turn tried to call apply_patch so that a
+	// wrapper we do not accept can be counted rather than lost.
+	v2PatchWrapperHintPattern = regexp.MustCompile(`tools\.apply_patch\s*\(`)
+	v2InlinePatchPattern      = regexp.MustCompile(`(?s)^\s*const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*await\s+tools\.apply_patch\s*\(\s*("(?:\\.|[^"\\])*")\s*\)\s*;\s*text\s*\(\s*JSON\.stringify\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*\)\s*;\s*$`)
 )
 
 type V2ClaimScanOptions struct {
@@ -369,18 +379,19 @@ type v2Mutation struct {
 }
 
 type v2Turn struct {
-	threadID     string
-	turnID       string
-	model        string
-	webSocket    bool
-	requests     map[string]struct{}
-	transportIDs map[string]struct{}
-	mutations    []v2Mutation
-	replayFiles  map[string]v2ReplayFile
-	calibration  client.AttributionV2Calibration
-	localUsage   map[string]*client.AttributionV2LocalUsageBucket
-	localInvalid bool
-	startedAt    time.Time
+	threadID            string
+	turnID              string
+	model               string
+	webSocket           bool
+	requests            map[string]struct{}
+	transportIDs        map[string]struct{}
+	mutations           []v2Mutation
+	replayFiles         map[string]v2ReplayFile
+	calibration         client.AttributionV2Calibration
+	localUsage          map[string]*client.AttributionV2LocalUsageBucket
+	localInvalid        bool
+	unrecognizedWrapper bool
+	startedAt           time.Time
 }
 
 type v2ReplayFile struct {
@@ -533,9 +544,12 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 						current.transportIDs[transportID] = struct{}{}
 					}
 				}
-				if patch := v2StructuredPatchInput(row.Payload.Name, row.Payload.Input, row.Payload.Arguments); patch != "" {
+				patch, unrecognizedWrapper := v2StructuredPatchInput(row.Payload.Name, row.Payload.Input, row.Payload.Arguments)
+				if patch != "" {
 					opts := options[index]
 					current.mutations = append(current.mutations, v2PatchMutations(ctx, patch, opts.RepoRoot, opts.CommitSHA, current.replayFiles)...)
+				} else if unrecognizedWrapper {
+					current.unrecognizedWrapper = true
 				}
 			}
 		case "event_msg":
@@ -658,6 +672,8 @@ func buildCodexV2ClaimCandidates(ctx context.Context, path, sessionID string, op
 			proofGap = "invalid_local_usage"
 		case turn.webSocket && len(turn.localUsage) == 0:
 			proofGap = "missing_local_usage"
+		case len(turn.mutations) == 0 && turn.unrecognizedWrapper:
+			proofGap = v2GapUnrecognizedPatchWrapper
 		case len(turn.mutations) == 0:
 			proofGap = "missing_structured_mutation"
 		case !validV2Mutations(turn.mutations):
@@ -759,30 +775,35 @@ func finalizeV2RequestEvidence(candidates []V2ClaimCandidate, evidence []v2Reque
 	}
 }
 
-func v2StructuredPatchInput(toolName, input, arguments string) string {
+// v2StructuredPatchInput returns the patch a generated wrapper applied, and
+// whether the payload looked like an apply_patch attempt that the accepted
+// grammar rejected. The second value is diagnostic only and never widens what
+// may authorise a commit allocation.
+func v2StructuredPatchInput(toolName, input, arguments string) (string, bool) {
 	payload := input + "\n" + arguments
 	if isPatchTool(toolName) {
-		return payload
+		return payload, false
 	}
 	encodedPatch := ""
-	match := v2WrappedPatchPattern.FindStringSubmatch(payload)
-	if len(match) == 2 {
-		encodedPatch = match[1]
-	} else if match = v2InlinePatchPattern.FindStringSubmatch(payload); len(match) == 4 && match[1] == match[3] {
+	if match := v2WrappedPatchPattern.FindStringSubmatch(payload); len(match) == 4 && match[1] == match[3] {
+		encodedPatch = match[2]
+	} else if match := v2ThreeStatementPatchPattern.FindStringSubmatch(payload); len(match) == 6 && match[1] == match[4] && match[3] == match[5] {
+		encodedPatch = match[2]
+	} else if match := v2InlinePatchPattern.FindStringSubmatch(payload); len(match) == 4 && match[1] == match[3] {
 		encodedPatch = match[2]
 	}
 	if encodedPatch == "" {
-		return ""
+		return "", v2PatchWrapperHintPattern.MatchString(payload)
 	}
 	patch, err := strconv.Unquote(encodedPatch)
 	if err != nil {
-		return ""
+		return "", true
 	}
 	patch = strings.TrimSpace(patch)
 	if !strings.HasPrefix(patch, "*** Begin Patch\n") || !strings.HasSuffix(patch, "\n*** End Patch") {
-		return ""
+		return "", true
 	}
-	return patch
+	return patch, false
 }
 
 func v2PatchMutations(ctx context.Context, patch, repoRoot, commitSHA string, replayFiles map[string]v2ReplayFile) []v2Mutation {
