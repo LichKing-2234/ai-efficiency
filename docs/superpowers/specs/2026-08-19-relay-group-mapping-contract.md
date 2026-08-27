@@ -167,7 +167,8 @@ existing target whose reviewed desired Account pool is empty has its remaining
 Account bindings removed, is made inactive, and receives no member migration.
 
 An administrator may explicitly remove a managed member. A saved Source is
-restored, eligible API Keys still bound to the target are moved back, and the
+restored, or reused without another assignment when its subscription is already
+active. Eligible API Keys still bound to the target are moved back, and the
 target subscription is removed. Without a saved Source, only the target
 subscription is removed. `Move Here` transfers one member from one explicit
 same-Provider, same-Platform mapping. `Add Additionally` preserves the old
@@ -258,6 +259,12 @@ An explicit removal updates the desired member state immediately. If an
 upstream step fails, the operation state retains its Target and saved Source so
 the same removal can be Previewed and retried without restoring the deleted
 desired assignment.
+After all explicit-removal writes, execution obtains one fresh provider-wide
+subscription relationship snapshot and reads the affected users' API Keys. A
+removal succeeds only when the saved Source subscription is active, the Target
+subscription is absent, and every reviewed eligible Key has the expected final
+binding. Missing or unavailable readback remains `needs_retry`; it never restores
+the deleted desired assignment or repeats a step already proven successful.
 Failed `Move Here` operation state likewise retains the source mapping and
 actual previous target. Reopening Replan restores that action in the UI and the
 backend independently restores it when a client omits the retry action.
