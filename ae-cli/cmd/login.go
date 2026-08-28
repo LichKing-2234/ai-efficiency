@@ -50,6 +50,10 @@ var loginCmd = &cobra.Command{
 					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: login remains valid, but reporting activation is degraded: %v\n", activationErr)
 				}
 				cmd.Println("Already logged in. Use --force to re-login.")
+				// Existing logins are the population that would otherwise never
+				// get Pilot: they have no reason to run login again once it is
+				// working, so the early return has to carry the setup too.
+				ensurePilot(context.Background(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 				return nil
 			}
 		}
@@ -93,6 +97,7 @@ var loginCmd = &cobra.Command{
 		}
 
 		fmt.Fprintf(cmd.OutOrStdout(), "Login successful! Token saved to %s\n", tokenPath)
+		ensurePilot(context.Background(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 		fmt.Fprintln(cmd.OutOrStdout(), "Run 'ae-cli discover' to configure supported local AI tools.")
 		return nil
 	},
