@@ -3,41 +3,21 @@
 This document is the project-level architecture overview for `ai-efficiency`.
 
 - Use this file for the current system map, runtime relationships, and module boundaries.
-- Use the topic-specific specs in `docs/superpowers/specs/` for detailed contracts.
-- When documents disagree, prefer the newest relevant spec plus the current code.
+- Use [`docs/contracts/`](./contracts/README.md) for detailed current behavior contracts.
+- When documents disagree, apply the source-of-truth order below.
 - This file should always reflect the latest implemented project-level architecture.
-- Topic specs may intentionally preserve point-in-time design decisions and trade-offs; do not rewrite them wholesale just to mirror the latest code if doing so would erase architectural evolution.
-- When newer specs supersede or conflict with older specs, record that relationship in the newer spec rather than back-editing historical specs to mirror the latest implementation.
+- Use [`docs/history/`](./history/README.md) only for point-in-time rationale and evidence, never for current behavior or backlog.
 
 ## Source-of-Truth Order
 
-1. Topic-specific current specs:
-   - `docs/superpowers/specs/2026-08-19-relay-group-mapping-contract.md`
-   - `docs/superpowers/specs/2026-08-14-user-protocol-compatibility-test-design.md`
-   - `docs/superpowers/specs/2026-08-19-personal-usage-reset-and-oauth-pool-design.md`
-   - `docs/superpowers/specs/2026-08-11-codex-commit-token-attribution-v2-design.md`
-   - `docs/superpowers/specs/2026-07-25-stateless-team-usage-prewarm-worker-design.md`
-   - `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md`
-   - `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
-   - `docs/superpowers/specs/2026-07-07-quota-reset-approval-design.md`
-   - `docs/superpowers/specs/2026-06-26-team-usage-representative-quota-design.md`
-   - `docs/superpowers/specs/2026-06-22-configurable-directory-sync-design.md`
-   - `docs/superpowers/specs/2026-06-14-user-api-key-first-onboarding-design.md`
-   - `docs/superpowers/specs/2026-06-04-admin-sub2api-subscription-assignment-design.md`
-   - `docs/superpowers/specs/2026-06-02-repo-auto-binding-design.md`
-   - `docs/superpowers/specs/2026-06-10-independent-cli-release-design.md`
-   - `docs/superpowers/specs/2026-05-26-ae-cli-post-commit-async-attribution-sync-design.md`
-   - `docs/superpowers/specs/2026-05-19-ae-cli-deterministic-tool-configuration-design.md`
-   - `docs/superpowers/specs/2026-05-14-legacy-session-staged-cutover-design.md`
-   - `docs/superpowers/specs/2026-05-13-sessionless-local-tool-attribution-design.md`
-   - `docs/superpowers/specs/2026-04-15-oauth-device-login-design.md`
-   - `docs/superpowers/specs/2026-04-14-llm-settings-runtime-editing-design.md`
-   - `docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md`
-2. This architecture overview
-3. Historical design context when needed:
-   - `docs/superpowers/specs/2026-04-02-local-session-proxy-design.md`
-   - `docs/superpowers/specs/2026-03-26-session-pr-attribution-design.md`
-   - `docs/superpowers/specs/2026-03-17-ai-efficiency-platform-design.md`
+1. Current code
+2. The directly relevant neutral contract under [`docs/contracts/`](./contracts/README.md)
+3. This architecture overview
+
+Open GitHub Issues own unimplemented target state and work status. ADRs preserve
+independently useful architectural rationale. A tracked root `CONTEXT.md` owns
+domain vocabulary when present. Historical records explain the past but cannot
+override this order. Platform Sessions and the local session proxy are retired.
 
 ## Current System Context
 
@@ -801,10 +781,10 @@ flowchart LR
   `/activity` remains the canonical personal AI Coding Activity surface, with authorized member drill-down at `/activity/members/:user_id` and representative/Admin organization views at `/activity/teams` and `/activity/teams/:team_id`. The authorization-revalidated `/api/v1/activity/v2/overview`, `/v2/repositories`, and `/v2/pull-requests` contracts use exact local-date ranges. Team navigation reuses `/api/v1/user/team-usage/organization` for shallow child departments and direct-member pages, then requests `GET /api/v1/activity/v2/teams/:team_id/member-availability` only for positive user IDs on the current page. Availability recognizes direct/shared `formal_v2` commit relations in the selected range; it is never inferred from Usage Token, member selectability, or identity alone. Activity reads aggregate formal pools in PostgreSQL, use fixed 20-row signed keyset pages, keep claim and SCM-sync coverage separate, and obtain the denominator only through Personal/Team Usage business services. Personal/member range totals sum the exact Usage trend returned for the selected window with negative/overflow fail-closed checks; cumulative Usage stats are never a range denominator. Non-zero ratios retain visible precision instead of rendering as `0%`. The single validated attribution protocol selects `formal_v2`; isolated `shadow_v2` pools never change Activity or readiness. Adjacent comparison eligibility uses the frozen server `cutover_at`, never `MIN(bucket_start_utc)`, so a complete zero-data period after cutover remains comparable while a period crossing the boundary is omitted. `/auth/me` advertises setup/readiness capabilities and authenticated `GET /api/v1/attribution/status` combines aggregate installation state with that same formal-pool predicate. The no-store status DTO has five user-level states and an active-only latest accepted timestamp, exposes no device metadata, and returns a local retryable failure when the PostgreSQL readiness read fails. Platform `v0.1.0-preview.87` first shipped the selected-window denominator repair from PR #299; exact 2/7/30-day production reads matched Usage trend sums and established the replacement #252 Day 0 at `2026-08-17T05:32:57.925948Z`. Production now runs platform `v0.1.0-preview.90` at Helm revision 90; its post-deploy Activity read retained an exact Usage ratio and complete claim and SCM coverage after schema contraction.
 - Repository surface:
   Browser repository inventory, detail, PR sync, webhook, credential-binding, and mutation routes under `/api/v1/repos` are administrator-only. The three authenticated CLI discovery routes (`ensure-remote`, `resolve-remote`, and `hook-eligible`) retain their narrower contracts. Reporter-token routes provide read-only `/api/v1/attribution/repos/resolve-remote` plus a narrow `/api/v1/attribution/repos/ensure-remote` that creates only minimum canonical Repository identity after `not_found`; it does not grant browser administration or SCM/webhook mutation authority. The frontend keeps Repository pages operational-only and presents Token/PR analysis under Activity; Activity reads never trigger PR sync.
-- Remaining direction:
-  The staged v1 and AE OTel cleanup is complete. Phase 3 drained both Phase 2 application roles before explicit idempotent no-`CASCADE` DDL, then deployed platform preview.90. The final gate and post-deploy read conserved 48 formal pools, 48 direct relations, 1,313 Requests, and `192,289,908` Token with identical pool and relation digests and zero coverage, duplicate, component, lifecycle, expiry, or v1-row errors. The two legacy tables and two installation columns are absent; the v1 batch/revision, AE OTLP, and legacy Activity routes remain absent. No fixed elapsed-time wait applied. Also evaluate compact-trigger retention/claim deadlines from production distributions, migrate Claude/Kiro to the generic pool contract, and decide whether delivery-effectiveness correlation is useful. Cost allocation and individual ranking remain out of scope.
+- Legacy cleanup state:
+  The staged v1 and AE OTel cleanup is complete. Phase 3 drained both Phase 2 application roles before explicit idempotent no-`CASCADE` DDL, then deployed platform preview.90. The final gate and post-deploy read conserved 48 formal pools, 48 direct relations, 1,313 Requests, and `192,289,908` Token with identical pool and relation digests and zero coverage, duplicate, component, lifecycle, expiry, or v1-row errors. The two legacy tables and two installation columns are absent; the v1 batch/revision, AE OTLP, and legacy Activity routes remain absent. No fixed elapsed-time wait applied. Cost allocation and individual ranking remain out of scope.
 - Active Codex v2 contract:
-  [`2026-08-11-codex-commit-token-attribution-v2-design.md`](./superpowers/specs/2026-08-11-codex-commit-token-attribution-v2-design.md) defines mutually exclusive HTTP `relay_official` and WebSocket `codex_local` claim groups, deterministic commit proof, 90-day hot detail, long-lived globally deduplicated usage pools, Usage-backed Activity ratio reads, in-page Repository/PR analysis filters, and administrator-only Repository operations. Production selected the formal HTTP contract at the verified 2026-08-12 cutover and added the WebSocket path in platform `v0.1.0-preview.85`. CLI-only preview.9 repaired trusted-log correlation, preview.10 repaired current Codex 0.147 dual-baseline and stale scan progress, `ae-cli/v0.2.0-preview.11` preserved single-allocation evidence identity while quarantining unchanged terminal conflicts, preview.12 added coordinated drain/deleted-worktree/backlog recovery, and preview.13 added exact current-runtime inline-wrapper recognition plus scanner-progress invalidation. The preview.13 managed-hook Helm canary materialized 112 official Requests into four direct pools and exactly `21,668,159` Token; replay changed no pool, relation, Request identity, or Token component. This remains operator-canary evidence rather than #252 ordinary adoption. The provisional #252 Day 0 at `2026-08-14T07:22:18.199843Z` was later invalidated by the cumulative personal-denominator defect. Exact selected-window readback established replacement Day 0 at `2026-08-17T05:32:57.925948Z`. Ordinary PR #319 later supplied the required non-canary pool delta, and the 2026-08-20 evidence snapshot passed without cleanup. CLI `ae-cli/v0.2.0-preview.14` and platform `v0.1.0-preview.89` completed Phase 2 from `319735ac`; platform `v0.1.0-preview.90` completed Phase 3 from `996c23ea`. Production serves preview.90 with the legacy schema removed, and the pre-cutover `shadow_v2` pool remains isolated.
+  [`attribution-v2.md`](./contracts/attribution-v2.md) defines mutually exclusive HTTP `relay_official` and WebSocket `codex_local` claim groups, deterministic commit proof, 90-day hot detail, long-lived globally deduplicated usage pools, Usage-backed Activity ratio reads, in-page Repository/PR analysis filters, and administrator-only Repository operations. Production selected the formal HTTP contract at the verified 2026-08-12 cutover and added the WebSocket path in platform `v0.1.0-preview.85`. CLI-only preview.9 repaired trusted-log correlation, preview.10 repaired current Codex 0.147 dual-baseline and stale scan progress, `ae-cli/v0.2.0-preview.11` preserved single-allocation evidence identity while quarantining unchanged terminal conflicts, preview.12 added coordinated drain/deleted-worktree/backlog recovery, and preview.13 added exact current-runtime inline-wrapper recognition plus scanner-progress invalidation. The preview.13 managed-hook Helm canary materialized 112 official Requests into four direct pools and exactly `21,668,159` Token; replay changed no pool, relation, Request identity, or Token component. This remains operator-canary evidence rather than #252 ordinary adoption. The provisional #252 Day 0 at `2026-08-14T07:22:18.199843Z` was later invalidated by the cumulative personal-denominator defect. Exact selected-window readback established replacement Day 0 at `2026-08-17T05:32:57.925948Z`. Ordinary PR #319 later supplied the required non-canary pool delta, and the 2026-08-20 evidence snapshot passed without cleanup. CLI `ae-cli/v0.2.0-preview.14` and platform `v0.1.0-preview.89` completed Phase 2 from `319735ac`; platform `v0.1.0-preview.90` completed Phase 3 from `996c23ea`. Production serves preview.90 with the legacy schema removed, and the pre-cutover `shadow_v2` pool remains isolated.
 - Implemented v2 claim foundation:
   `ae-cli discover` preserves the selected Relay provider ID, and the compact runner freezes provider-aware Codex turn claim groups in a 90-day local state only after structured Add/Update/Delete patch evidence reproduces the committed Git tree exactly. HTTP groups include trusted provider-scoped Request IDs. WebSocket groups include only model/15-minute JSONL Token aggregates after exact-thread SQLite evidence proves both the WebSocket transport and a successful sampling result; current Codex uses the intersection of its trusted non-warmup `response.in_progress` transport row and `post sampling token usage` success row, while an older raw `response.completed` row remains accepted. A `generate=false` WebSocket warmup is never response evidence. Cumulative snapshots suppress duplicate terminal rows. An explicit same-turn top-level `compacted` boundary permits one unchanged cumulative snapshot with a different valid last-response value as a zero-Token baseline restatement; the same contradiction without that boundary fails closed. Raw `resp_*` values are discarded. The reporter-only `/api/v1/attribution/v2/claim-groups/batch` route persists source-explicit hot groups in the backend-selected epoch with per-group transactions and replay/conflict ACKs. Only HTTP creates Request claim rows. Only `formal_v2` pools feed current Activity and readiness; neither epoch changes the reset v1 totals.
 - Implemented v2 reconciliation:
@@ -870,6 +850,8 @@ Update this file when any of the following changes:
 
 - component boundaries between frontend, backend, ae-cli, SCM, or relay
 - runtime flow for login, hooks, attribution, or legacy compatibility boundaries
-- source-of-truth precedence across the core specs
+- source-of-truth precedence across current contracts
 
-Also update the relevant spec in `docs/superpowers/specs/` when the change is contract-level rather than only diagram-level.
+Also update the relevant file in `docs/contracts/` when current behavior changes.
+Keep unimplemented target state in GitHub Issues, durable rationale in ADRs when
+warranted, and point-in-time evidence in `docs/history/`.

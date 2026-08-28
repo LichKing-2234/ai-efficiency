@@ -31,7 +31,7 @@ ai-efficiency/
 ├── frontend/   # Vue frontend
 ├── ae-cli/     # CLI runtime and commands
 ├── deploy/     # Deployment assets
-├── docs/       # Architecture and specs
+├── docs/       # 架构、当前合同与历史记录
 ├── AGENTS.md   # Agent working rules
 └── CLAUDE.md   # Lightweight navigation notes
 ```
@@ -39,7 +39,8 @@ ai-efficiency/
 ## 关键文档
 
 - 架构总览：[`docs/architecture.md`](docs/architecture.md)
-- 当前主 specs：`docs/superpowers/specs/`
+- 当前行为合同：[`docs/contracts/`](docs/contracts/README.md)
+- 历史理由与证据：[`docs/history/`](docs/history/README.md)
 - CLI 安装与使用：[`ae-cli/README.md`](ae-cli/README.md)
 - 部署说明：[`deploy/README.md`](deploy/README.md)
 - 开源协议：[`LICENSE`](LICENSE)
@@ -47,12 +48,13 @@ ai-efficiency/
 
 ## 文档优先级
 
-当代码、spec 和历史文档不一致时，优先级为：
+当代码、合同和架构文档不一致时，优先级为：
 
 1. 当前代码
-2. `docs/superpowers/specs/` 下最新且最相关的 spec
+2. [`docs/contracts/`](docs/contracts/README.md) 下直接相关的当前合同
 3. [`docs/architecture.md`](docs/architecture.md)
-4. 历史基线文档
+
+未实现的目标状态和工作进度由 GitHub Issues 管理；确有独立价值的架构理由写入 ADR；已跟踪的根目录 `CONTEXT.md` 在存在时负责领域词汇；`docs/history/` 既不是当前行为合同，也不是待办列表。
 
 ## 本地开发
 
