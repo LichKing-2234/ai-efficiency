@@ -19,7 +19,11 @@ type ScanState struct {
 	FileModUnix     map[string]int64                `json:"file_mod_unix,omitempty"`
 }
 
-type Scanner struct{}
+type Scanner struct {
+	// PilotOutputDir overrides where LoongSuite Pilot's normalized local JSONL is
+	// read from. Empty means the default install location.
+	PilotOutputDir string
+}
 
 func NewScanner() *Scanner {
 	return &Scanner{}
@@ -37,6 +41,17 @@ func (s *Scanner) ScanWorkspaceContext(ctx context.Context, workspaceRoot string
 	}
 	homeDir, _ := os.UserHomeDir()
 	nextState := cloneScanState(state)
+
+	// Pilot, when installed, is the source for every agent it instruments. The
+	// per-agent readers below stay as the fallback for a machine without it.
+	if usage, ok := s.scanPilotUsage(ctx, workspaceRoot, workspaceID); ok {
+		out = append(out, usage...)
+		kiroIDE, err := s.scanKiroIDE(ctx, workspaceRoot, workspaceID, homeDir, state, &nextState)
+		if err != nil {
+			return nil, state, err
+		}
+		return dedupeAndSort(append(out, kiroIDE...)), nextState, nil
+	}
 
 	codexJSONLFiles := findCodexJSONLFiles(workspaceRoot, homeDir)
 	codexSessionIDs := make(map[string]struct{})
@@ -105,24 +120,6 @@ func (s *Scanner) ScanWorkspaceContext(ctx context.Context, workspaceRoot string
 		}
 	}
 
-	for _, path := range findKiroJSONFiles(homeDir) {
-		if err := ctx.Err(); err != nil {
-			return nil, state, err
-		}
-		if !shouldScanFile(path, state) {
-			continue
-		}
-		items, err := ParseKiroJSON(path, workspaceRoot)
-		if err != nil {
-			continue
-		}
-		rememberFileScan(&nextState, path)
-		for _, item := range items {
-			item.WorkspaceID = workspaceID
-			out = append(out, item)
-		}
-	}
-
 	for _, path := range findKiroCLISQLiteFiles(homeDir) {
 		if err := ctx.Err(); err != nil {
 			return nil, state, err
@@ -141,26 +138,11 @@ func (s *Scanner) ScanWorkspaceContext(ctx context.Context, workspaceRoot string
 		}
 	}
 
-	kiroIDESessionIDs := FindKiroIDESessionIDs(homeDir, workspaceRoot)
-	for _, path := range FindKiroIDEExecutionFiles(homeDir) {
-		if err := ctx.Err(); err != nil {
-			return nil, state, err
-		}
-		if !shouldScanFile(path, state) {
-			continue
-		}
-		items, err := ParseKiroIDEExecution(path, kiroIDESessionIDs)
-		if err != nil {
-			continue
-		}
-		rememberFileScan(&nextState, path)
-		for _, item := range items {
-			item.WorkspaceID = workspaceID
-			out = append(out, item)
-		}
+	kiroIDE, err := s.scanKiroIDE(ctx, workspaceRoot, workspaceID, homeDir, state, &nextState)
+	if err != nil {
+		return nil, state, err
 	}
-
-	return dedupeAndSort(out), nextState, nil
+	return dedupeAndSort(append(out, kiroIDE...)), nextState, nil
 }
 
 func mustWorkspaceID(workspaceRoot string) (string, error) {
@@ -445,4 +427,90 @@ func rememberFileScan(state *ScanState, path string) {
 		state.FileModUnix = map[string]int64{}
 	}
 	state.FileModUnix[path] = info.ModTime().Unix()
+}
+
+// scanPilotUsage reads usage from LoongSuite Pilot's normalized local output,
+// and reports whether Pilot is present at all.
+//
+// When it is, Pilot is the single source for every agent it instruments —
+// Codex, Claude Code, and Kiro CLI — and the per-agent readers for those three
+// are not consulted. Pilot does not instrument the Kiro IDE, so the two Kiro IDE
+// readers run either way.
+//
+// A Pilot directory that is missing or unreadable reports absent, so a broken
+// collector degrades to the per-agent readers instead of halting accounting.
+func (s *Scanner) scanPilotUsage(ctx context.Context, workspaceRoot, workspaceID string) ([]LocalToolUsageEvent, bool) {
+	dir := strings.TrimSpace(s.PilotOutputDir)
+	if dir == "" {
+		dir = DefaultPilotOutputDir()
+	}
+	if dir == "" {
+		return nil, false
+	}
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return nil, false
+	}
+
+	result, err := ScanPilotClaims(ctx, PilotScanOptions{
+		V2ClaimScanOptions: V2ClaimScanOptions{
+			RepoRoot:    workspaceRoot,
+			WorkspaceID: workspaceID,
+		},
+		OutputDir: dir,
+	})
+	if err != nil {
+		return nil, false
+	}
+
+	out := make([]LocalToolUsageEvent, 0, len(result.Usage))
+	for _, item := range result.Usage {
+		item.WorkspaceID = workspaceID
+		out = append(out, item)
+	}
+	return out, true
+}
+
+// scanKiroIDE reads the two Kiro IDE surfaces. Pilot does not instrument the
+// Kiro IDE, so these run whether or not Pilot is installed.
+func (s *Scanner) scanKiroIDE(ctx context.Context, workspaceRoot, workspaceID, homeDir string, state ScanState, nextState *ScanState) ([]LocalToolUsageEvent, error) {
+	var out []LocalToolUsageEvent
+
+	for _, path := range findKiroJSONFiles(homeDir) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if !shouldScanFile(path, state) {
+			continue
+		}
+		items, err := ParseKiroJSON(path, workspaceRoot)
+		if err != nil {
+			continue
+		}
+		rememberFileScan(nextState, path)
+		for _, item := range items {
+			item.WorkspaceID = workspaceID
+			out = append(out, item)
+		}
+	}
+
+	kiroIDESessionIDs := FindKiroIDESessionIDs(homeDir, workspaceRoot)
+	for _, path := range FindKiroIDEExecutionFiles(homeDir) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if !shouldScanFile(path, state) {
+			continue
+		}
+		items, err := ParseKiroIDEExecution(path, kiroIDESessionIDs)
+		if err != nil {
+			continue
+		}
+		rememberFileScan(nextState, path)
+		for _, item := range items {
+			item.WorkspaceID = workspaceID
+			out = append(out, item)
+		}
+	}
+
+	return out, nil
 }
