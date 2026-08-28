@@ -313,3 +313,42 @@ func TestCheckReportsAbsentWhenNothingWasEverRegistered(t *testing.T) {
 		t.Fatalf("state = %q, want %q", got.State, StateAbsent)
 	}
 }
+
+// A collector that is alive is healthy however old its output: output only
+// appears when an agent produces something. Judging on output age alone
+// reported an idle afternoon as an outage.
+func TestCheckReportsHealthyWhileTheCollectorHeartbeatIsFresh(t *testing.T) {
+	dataDir := pilotDataDir(t, checkNow.Add(-10*24*time.Hour))
+	heartbeat := filepath.Join(dataDir, "logs", runtimeRecordName)
+	if err := os.WriteFile(heartbeat, []byte(`{"status":"active"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stamp := checkNow.Add(-20 * time.Second)
+	if err := os.Chtimes(heartbeat, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+
+	got := checkerFor(dataDir, fakeService{installed: true}).Check()
+	if got.State != StateHealthy {
+		t.Fatalf("state = %q, want %q: the collector is alive, the agents are merely idle", got.State, StateHealthy)
+	}
+}
+
+// A stale heartbeat is a dead collector, however it died; the stall severities
+// in the table above all describe machines with no live heartbeat.
+func TestCheckIgnoresAStaleHeartbeat(t *testing.T) {
+	dataDir := pilotDataDir(t, checkNow.Add(-5*time.Hour))
+	heartbeat := filepath.Join(dataDir, "logs", runtimeRecordName)
+	if err := os.WriteFile(heartbeat, []byte(`{"status":"active"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stamp := checkNow.Add(-time.Hour)
+	if err := os.Chtimes(heartbeat, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+
+	got := checkerFor(dataDir, fakeService{installed: true}).Check()
+	if got.State != StateStalled {
+		t.Fatalf("state = %q, want %q for an hour-dead heartbeat", got.State, StateStalled)
+	}
+}

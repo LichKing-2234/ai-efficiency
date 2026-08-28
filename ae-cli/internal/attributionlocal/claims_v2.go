@@ -492,6 +492,7 @@ func UploadableV2ClaimGroups(candidates []V2ClaimCandidate) []client.Attribution
 		}
 		kept := &groups[at]
 		kept.CommitAllocations = mergeV2Allocations(kept.CommitAllocations, candidate.Group.CommitAllocations)
+		kept.EvidenceDigest = v2AllocationEvidenceDigest(kept.CommitAllocations)
 		kept.RequestIDs = uniqueSorted(append(kept.RequestIDs, candidate.Group.RequestIDs...))
 		kept.LocalUsage = sumV2LocalUsage(kept.LocalUsage, candidate.Group.LocalUsage)
 		if kept.Calibration == nil {

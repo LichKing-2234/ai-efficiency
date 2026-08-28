@@ -3,7 +3,6 @@ package attributionlocal
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"strings"
 	"time"
 
@@ -136,7 +135,7 @@ func ApplyV2ClaimAcknowledgements(state *V2ClaimState, sent []client.Attribution
 			kept = append(kept, claim)
 			continue
 		}
-		claim.GroupAcknowledged = claim.GroupAcknowledged || (sameV2GroupEnvelope(claim.Group, sentGroup) && v2ItemAcknowledged(ack.Group.Status))
+		claim.GroupAcknowledged = claim.GroupAcknowledged || (v2SentGroupCovers(sentGroup, claim.Group) && v2ItemAcknowledged(ack.Group.Status))
 		requestACKs := make(map[string]client.AttributionV2ItemStatus, len(ack.Requests))
 		for _, item := range ack.Requests {
 			requestACKs[strings.TrimSpace(item.ID)] = item
@@ -175,16 +174,69 @@ func ApplyV2ClaimAcknowledgements(state *V2ClaimState, sent []client.Attribution
 	return firstErr
 }
 
-func sameV2GroupEnvelope(current, sent client.AttributionV2ClaimGroup) bool {
-	return current.SchemaVersion == sent.SchemaVersion &&
-		current.GroupID == sent.GroupID &&
-		current.RelayProviderID == sent.RelayProviderID &&
-		current.TokenSource == sent.TokenSource &&
-		current.ThreadID == sent.ThreadID &&
-		current.TurnID == sent.TurnID &&
-		current.EvidenceDigest == sent.EvidenceDigest &&
-		reflect.DeepEqual(current.LocalUsage, sent.LocalUsage) &&
-		reflect.DeepEqual(current.CommitAllocations, sent.CommitAllocations)
+// v2SentGroupCovers reports whether everything this claim wants delivered was
+// inside the sent group.
+//
+// The sent group is the collapse of every local claim sharing its id — an
+// original turn and the replays a resumed session produced — so no single claim
+// equals it field for field. The previous rule demanded exactly that equality,
+// and a batch the backend had accepted was therefore recorded on every covered
+// claim as a failure and re-sent forever. Coverage is judged on content: each
+// allocation the claim holds is in the sent group, and each usage bucket it
+// holds fits inside the sent group's matching bucket, whose amounts are the sum
+// over the collapsed claims. Thread and turn are not compared — the collapse
+// keeps one representative's — and neither is the envelope evidence digest,
+// which each claim derives from its own allocation set; the allocations
+// themselves carry the digests that matter.
+//
+// The equality this replaces also guarded a race: content merged into the claim
+// between building the batch and applying its acknowledgement must not be
+// marked delivered. Coverage keeps that guard — anything newly merged is not in
+// the sent group, so the claim stays unacknowledged and re-sends.
+func v2SentGroupCovers(sent, current client.AttributionV2ClaimGroup) bool {
+	if current.SchemaVersion != sent.SchemaVersion ||
+		current.GroupID != sent.GroupID ||
+		current.RelayProviderID != sent.RelayProviderID ||
+		current.TokenSource != sent.TokenSource {
+		return false
+	}
+	for _, allocation := range current.CommitAllocations {
+		found := false
+		for _, sentAllocation := range sent.CommitAllocations {
+			if allocation.CheckpointEventID == sentAllocation.CheckpointEventID &&
+				allocation.CommitSHA == sentAllocation.CommitSHA &&
+				allocation.EvidenceDigest == sentAllocation.EvidenceDigest &&
+				allocation.RepoConfigID == sentAllocation.RepoConfigID &&
+				allocation.WorkspaceID == sentAllocation.WorkspaceID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	for _, bucket := range current.LocalUsage {
+		found := false
+		for _, sentBucket := range sent.LocalUsage {
+			if bucket.RequestedModel != sentBucket.RequestedModel || !bucket.BucketStartUTC.Equal(sentBucket.BucketStartUTC) {
+				continue
+			}
+			if bucket.InputTokens <= sentBucket.InputTokens &&
+				bucket.OutputTokens <= sentBucket.OutputTokens &&
+				bucket.CacheCreationTokens <= sentBucket.CacheCreationTokens &&
+				bucket.CacheReadTokens <= sentBucket.CacheReadTokens &&
+				bucket.TotalTokens <= sentBucket.TotalTokens &&
+				bucket.RequestCount <= sentBucket.RequestCount {
+				found = true
+			}
+			break
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 func validateV2ItemAcknowledgements(sent client.AttributionV2ClaimGroup, ack client.AttributionV2ClaimResult) error {

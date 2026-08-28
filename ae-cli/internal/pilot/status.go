@@ -203,6 +203,17 @@ func (c Checker) Check() Status {
 
 	status.LastOutputAt = latestOutputWrite(OutputDir(status.DataDir))
 
+	// A collector that is alive right now is healthy whatever its output age:
+	// output only appears when an agent produces something, and a developer who
+	// has not used an agent since lunch has stale output and a perfectly
+	// healthy collector. Judging on output alone — the previous rule — reported
+	// exactly that machine as stalled. The heartbeat is Pilot's own runtime
+	// record, rewritten every thirty seconds while it runs.
+	if c.Running() {
+		status.State = StateHealthy
+		return status
+	}
+
 	// Silence is measured from the later of the last output and the moment the
 	// service was installed. A fresh install has produced nothing yet, and
 	// reporting that as an outage would greet every new machine with a warning

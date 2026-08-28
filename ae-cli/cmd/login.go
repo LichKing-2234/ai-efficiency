@@ -92,6 +92,13 @@ var loginCmd = &cobra.Command{
 		if err := auth.WriteToken(tokenPath, token); err != nil {
 			return fmt.Errorf("save token: %w", err)
 		}
+		// Everything after this point speaks as the user who just logged in.
+		// The global client was built before the OAuth flow ran, on whatever
+		// token existed then — on a first login, none — and the machine setup
+		// below lists providers through it. Left stale, that lookup failed
+		// unauthorized on every fresh machine, the relay provider was never
+		// recorded, and commit attribution stayed off until a second login.
+		apiClient = client.New(serverURL, result.AccessToken)
 		if _, activationErr := activateAfterLogin(context.Background(), client.New(serverURL, result.AccessToken), serverURL, token.AuthSubject); activationErr != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: login succeeded, but reporting activation is degraded: %v\n", activationErr)
 		}
