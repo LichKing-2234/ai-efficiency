@@ -15,6 +15,7 @@ import (
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/client"
+	"github.com/ai-efficiency/ae-cli/internal/pilot"
 )
 
 var syncTaskLeaseTTL = time.Hour
@@ -660,4 +661,37 @@ func finishV2ClaimScan(workspaceID string, scanned bool) error {
 		return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim progress could not be cleared", err)
 	}
 	return nil
+}
+
+// v2ClaimSource is the claim evidence a machine holds locally. Two readers
+// satisfy it: LoongSuite Pilot, which covers every agent it instruments, and
+// the Codex session files, which are all a machine without Pilot has.
+type v2ClaimSource interface {
+	SourceKeys() []string
+	SourceEvidenceKey(turnKeys []string) string
+	FinalizeCandidates(candidates []attributionlocal.V2ClaimCandidate)
+	ScanSource(ctx context.Context, sourceKey string, options []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error)
+}
+
+// v2ClaimSourceWindow bounds how far back a claim source is read. It matches the
+// retention the Codex reader already used.
+const v2ClaimSourceWindow = 90 * 24 * time.Hour
+
+// prepareV2ClaimSource picks the claim source this machine has.
+//
+// Pilot is preferred wherever it is collecting, for the same reason the usage
+// surface prefers it: it covers every agent, while the Codex session files cover
+// one. A machine without Pilot, or one whose collector has stopped, falls back
+// to the Codex reader rather than losing the claims it can still prove.
+func prepareV2ClaimSource(ctx context.Context, cutoff time.Time) (v2ClaimSource, error) {
+	if (pilot.Checker{}).Running() {
+		scan, err := attributionlocal.PrepareLocalV2ClaimScan("", cutoff)
+		if err == nil && len(scan.SourceKeys()) > 0 {
+			return scan, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return attributionlocal.PrepareCodexV2ClaimScan(ctx, "", cutoff)
 }

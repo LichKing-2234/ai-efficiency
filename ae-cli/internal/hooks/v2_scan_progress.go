@@ -11,7 +11,7 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 )
 
-const v2ClaimScanProgressVersion = 6
+const v2ClaimScanProgressVersion = 7
 
 type V2ClaimScanProgress struct {
 	Version            int                 `json:"version"`
