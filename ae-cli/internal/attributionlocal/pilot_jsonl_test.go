@@ -181,7 +181,8 @@ func TestScanPilotClaimsRecordsTokenUsageForCodexAndClaude(t *testing.T) {
 			"workspace.current_root": repo,
 			"gen_ai.session.id":      "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
 			"gen_ai.usage.input_tokens": 100, "gen_ai.usage.output_tokens": 20,
-			"gen_ai.usage.cache_read.input_tokens": 5, "gen_ai.usage.reasoning_output_tokens": 7,
+			"gen_ai.usage.cache_read.input_tokens": 5, "gen_ai.usage.cache_creation.input_tokens": 15,
+			"gen_ai.usage.reasoning_output_tokens": 7,
 		},
 	)
 
@@ -202,8 +203,44 @@ func TestScanPilotClaimsRecordsTokenUsageForCodexAndClaude(t *testing.T) {
 	if usage.UsageUnit != UsageUnitToken {
 		t.Fatalf("usage unit = %q, want %q", usage.UsageUnit, UsageUnitToken)
 	}
-	if usage.InputTokens != 100 || usage.OutputTokens != 20 || usage.CachedInputTokens != 5 || usage.ReasoningTokens != 7 {
-		t.Fatalf("token components = %+v, want the values Pilot reported", usage)
+	// Pilot reports 100 input with 5 read from cache and 15 written to it, so 80
+	// input Token were actually re-read. The four components must not overlap:
+	// passing Pilot's 100 straight through would count the 20 cached Token twice.
+	if usage.InputTokens != 80 || usage.OutputTokens != 20 || usage.CachedInputTokens != 20 || usage.ReasoningTokens != 7 {
+		t.Fatalf("token components = %+v, want input 80, output 20, cached 20, reasoning 7", usage)
+	}
+}
+
+// Pilot's input total is normalized upstream. If a future version stops folding
+// the cache into it, the subtraction must not turn consumption negative.
+func TestScanPilotClaimsFloorsInputWhenCacheExceedsReportedTotal(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	dir := t.TempDir()
+	writePilotJSONL(t, filepath.Join(dir, "codex-2026-08-27.jsonl"),
+		map[string]any{
+			"event.name": "llm.response", "gen_ai.agent.type": "codex",
+			"workspace.current_root": repo,
+			"gen_ai.session.id":      "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
+			"gen_ai.usage.input_tokens": 5, "gen_ai.usage.output_tokens": 20,
+			"gen_ai.usage.cache_read.input_tokens": 40, "gen_ai.usage.cache_creation.input_tokens": 10,
+		},
+	)
+
+	result, err := ScanPilotClaims(context.Background(), PilotScanOptions{
+		OutputDir: dir,
+		V2ClaimScanOptions: V2ClaimScanOptions{
+			RepoRoot: repo, CommitSHA: commit, RepoConfigID: 8, WorkspaceID: "workspace-8",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Usage) != 1 {
+		t.Fatalf("usage events = %d, want 1", len(result.Usage))
+	}
+	if got := result.Usage[0]; got.InputTokens != 0 || got.CachedInputTokens != 50 {
+		t.Fatalf("token components = input %d, cached %d; want input floored to 0 and cached 50",
+			got.InputTokens, got.CachedInputTokens)
 	}
 }
 

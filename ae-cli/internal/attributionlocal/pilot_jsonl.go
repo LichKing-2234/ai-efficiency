@@ -150,11 +150,46 @@ type pilotResponse struct {
 }
 
 type pilotUsage struct {
-	input     int64
-	output    int64
-	cacheRead int64
-	reasoning int64
-	seen      bool
+	input         int64
+	output        int64
+	cacheRead     int64
+	cacheCreation int64
+	reasoning     int64
+	seen          bool
+}
+
+// uncachedInput is the input Token that was actually re-read for this response.
+//
+// Pilot normalizes gen_ai.usage.input_tokens to the whole input, cache included,
+// for every agent: a Claude response reporting 46024 read plus 22823 created
+// arrives as 68849 input. The usage surface keeps the cached part in its own
+// field, so returning the raw value would count every cached Token twice — on
+// this machine that inflated one repository's Claude total by roughly eight
+// times.
+//
+// Subtracting makes the four Token fields disjoint for every agent, so their sum
+// is the consumption. That is a change of split, not of total, and it also ends
+// a disagreement between the two per-agent readers this source replaces: the
+// Claude reader already reported input and cache as disjoint, while the Codex
+// reader carried Codex's own convention, where the cached Token are part of the
+// input count and any sum of the two double counts them.
+//
+// The floor is not defensive tidiness. It is what keeps a normalization change
+// upstream — a cache field that stops being part of the input total — from
+// turning into negative consumption.
+func (u pilotUsage) uncachedInput() int64 {
+	uncached := u.input - u.cacheRead - u.cacheCreation
+	if uncached < 0 {
+		return 0
+	}
+	return uncached
+}
+
+// cachedInput is every input Token served from cache, whether read from an
+// existing entry or written into a new one. The Claude reader this replaces
+// already sums the two, and the usage surface has one field for both.
+func (u pilotUsage) cachedInput() int64 {
+	return u.cacheRead + u.cacheCreation
 }
 
 // earlierThan orders two occurrences of the same response by where they were
@@ -393,10 +428,11 @@ func pilotResponseUsage(turn *pilotTurn, event pilotEvent) *pilotResponse {
 		sourceLine: event.line,
 	}
 	for key, target := range map[string]*int64{
-		"gen_ai.usage.input_tokens":            &response.usage.input,
-		"gen_ai.usage.output_tokens":           &response.usage.output,
-		"gen_ai.usage.cache_read.input_tokens": &response.usage.cacheRead,
-		"gen_ai.usage.reasoning_output_tokens": &response.usage.reasoning,
+		"gen_ai.usage.input_tokens":                &response.usage.input,
+		"gen_ai.usage.output_tokens":               &response.usage.output,
+		"gen_ai.usage.cache_read.input_tokens":     &response.usage.cacheRead,
+		"gen_ai.usage.cache_creation.input_tokens": &response.usage.cacheCreation,
+		"gen_ai.usage.reasoning_output_tokens":     &response.usage.reasoning,
 	} {
 		if _, present := event.attrs[key]; present {
 			*target = event.i64(key)
@@ -721,9 +757,9 @@ func pilotUsageEvent(response *pilotResponse, opts PilotScanOptions) LocalToolUs
 		DedupeKey:         response.key,
 		RequestCount:      1,
 		UsageUnit:         unit,
-		InputTokens:       response.usage.input,
+		InputTokens:       response.usage.uncachedInput(),
 		OutputTokens:      response.usage.output,
-		CachedInputTokens: response.usage.cacheRead,
+		CachedInputTokens: response.usage.cachedInput(),
 		ReasoningTokens:   response.usage.reasoning,
 		CreditUsage:       response.credit,
 		ObservedStartAt:   response.observedAt,
