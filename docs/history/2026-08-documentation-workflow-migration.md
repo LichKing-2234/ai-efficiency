@@ -89,17 +89,17 @@ Only the two rows identified as local-only old-path sources are additional migra
 - Open Issues #348, #389, #390, and #393 now point to neutral contracts or the
   neutral contract directory. Their target behavior remains tracker-owned
   until implementation merges.
-- Active product PR [#431](https://github.com/LichKing-2234/ai-efficiency/pull/431)
-  at `51ee082a` modifies the already-inventoried Relay Group Mapping source. It
-  adds no unique migration input. Exact-head backend, frontend, ae-cli, and
-  deploy-static CI passed in run
-  [33073464089](https://github.com/LichKing-2234/ai-efficiency/actions/runs/33073464089),
-  but product-merge authority remains separate. Cutover stays blocked until its
-  normal merge or owner-authorized revision completes and the delta is
-  reconciled into `docs/contracts/relay-group-mapping.md`.
+- Product PR [#431](https://github.com/LichKing-2234/ai-efficiency/pull/431)
+  merged final head `5c09b36c` as `89ca94e8`. It modified the
+  already-inventoried Relay Group Mapping source and added no unique migration
+  input. Its removal-source/retry delta is reconciled into
+  `docs/contracts/relay-group-mapping.md`; exact-head CI passed and PR-scoped
+  Git cleanup found no remaining matching worktree, branch, or remote ref.
 - The detached checkout's two local-only plans remain untouched. Hosted Issues
   #384-#390 own architecture target state; hosted Replan delivery and the
-  neutral Relay Group Mapping contract own the completed roster behavior.
+  neutral Relay Group Mapping contract own the completed roster behavior. A
+  final 2026-08-28 reread found the checkout still detached at `63af340e`, 18
+  commits behind hosted `main@89ca94e8`, with the same user-owned changes.
 
 ## Source Inventory
 

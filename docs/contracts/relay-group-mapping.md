@@ -90,7 +90,9 @@ succeeds, so hidden request builders cannot drift from the visible plan.
 
 A categorized stale response closes the old confirmation and may replace the
 visible plan with a refreshed read-only plan. It never replays the rejected
-execution or silently reapplies prior Confirm intent.
+execution or silently reapplies prior Confirm intent. A `needs_retry` mapping
+status takes precedence over relationship warnings, and member readback errors
+remain visible in the execution result.
 
 ## Stable Mapping and Replan
 
@@ -180,10 +182,28 @@ in reviewed state:
 - With a saved Source, execution reuses an already-active Source subscription
   or restores it, moves eligible Keys still bound to the reviewed Target back
   to the Source, and removes the Target subscription.
-- Without a saved Source, execution removes only the Target subscription and
-  invents no Source or Key move.
+- With an explicitly reviewed Target-only destination, execution removes only
+  the Target subscription and invents no Source or Key move.
+- A legacy managed member with no saved per-member Source provenance remains
+  non-executable until the administrator selects a same-Platform Source or
+  explicitly selects Target only. Template and managed Target Groups are not
+  valid removal Sources.
 - Unrelated subscriptions, API Keys, Groups, Accounts, and members remain
   unchanged.
+
+The reviewed removal destination travels through Preview, fingerprint,
+Confirm, execution, readback, and retry. Missing provenance never silently
+defaults to Target only; only an explicit zero value means Target only. A
+pending removal retry locks its reviewed destination. Changing Source or
+switching to Target only requires a new removal operation after that retry is
+resolved. A provenance-free legacy retry may show its removal intent in a
+read-only plan, but cannot invent subscription/Key effects or execute before
+destination review.
+
+Only eligible Keys that are active at review time enter a removal operation.
+Their IDs remain part of retry fingerprint/readback even if a later Relay
+change moves or deactivates them. Keys already inactive when reviewed stay
+outside the operation and are never moved.
 
 After removal writes, one fresh provider-wide subscription snapshot plus
 affected-user API-Key readback must prove: saved Source active when applicable,
@@ -245,7 +265,9 @@ Target/member/adopted-user steps, including status, source/previous Target, and
 safe error text. Replan restores unfinished explicit removal/move intent and the
 actual previous Target needed for API-Key retry. Successful steps are not
 submitted again; unresolved steps use a fresh Preview fingerprint and explicit
-Confirm.
+Confirm. A completed member step is reusable only when both its saved action and
+Target match the current retry; a completed forward migration cannot satisfy a
+later removal merely because both reference the same Target.
 
 Destination and source mapping changes commit in one local transaction. A local
 persistence failure rolls back every affected mapping and returns structured
