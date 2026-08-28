@@ -21,6 +21,7 @@ type V2ClaimScanProgress struct {
 	CompletedUnits     []string            `json:"completed_units,omitempty"`
 	SourceTurnKeys     map[string][]string `json:"source_turn_keys,omitempty"`
 	SourceEvidenceKeys map[string]string   `json:"source_evidence_keys,omitempty"`
+	UnprovenCommits    []V2UnprovenCommit  `json:"unproven_commits,omitempty"`
 	StartedAt          time.Time           `json:"started_at"`
 	Complete           bool                `json:"complete,omitempty"`
 }
@@ -140,4 +141,108 @@ func equalStrings(left, right []string) bool {
 		}
 	}
 	return true
+}
+
+// V2UnprovenCommit is a commit whose evidence had not arrived when its own
+// post-commit scan ran.
+//
+// For Claude Code the mutation reaches Pilot's output only when the turn ends,
+// and a developer who edits and commits inside one turn commits first. The scan
+// that runs then sees no evidence and, without this, the commit would never be
+// looked at again: the commits a scan considers come from the triggers of the
+// task that started it, and that task is finished.
+//
+// Keeping the commit here turns a permanent loss into a delay. It is retried on
+// every later scan until it is proven or until its evidence has aged out.
+type V2UnprovenCommit struct {
+	CommitSHA         string    `json:"commit_sha"`
+	CheckpointEventID string    `json:"checkpoint_event_id"`
+	RepoRoot          string    `json:"repo_root"`
+	RepoKey           string    `json:"repo_key,omitempty"`
+	RepoConfigID      int       `json:"repo_config_id"`
+	RelayProviderID   int       `json:"relay_provider_id"`
+	WorkspaceID       string    `json:"workspace_id"`
+	FirstSeenAt       time.Time `json:"first_seen_at"`
+}
+
+func (c V2UnprovenCommit) scanOptions() attributionlocal.V2ClaimScanOptions {
+	return attributionlocal.V2ClaimScanOptions{
+		RepoRoot:          c.RepoRoot,
+		CommitSHA:         c.CommitSHA,
+		RelayProviderID:   c.RelayProviderID,
+		RepoConfigID:      c.RepoConfigID,
+		RepoKey:           c.RepoKey,
+		WorkspaceID:       c.WorkspaceID,
+		CheckpointEventID: c.CheckpointEventID,
+	}
+}
+
+func unprovenCommitKey(option attributionlocal.V2ClaimScanOptions) string {
+	return strings.TrimSpace(option.CommitSHA) + "\x00" + strings.TrimSpace(option.CheckpointEventID)
+}
+
+// mergeUnprovenCommits records the commits a scan could not prove and forgets
+// the ones it could.
+//
+// Commits whose evidence is older than the window a scan reads are dropped:
+// retrying them would cost a scan every time and can no longer succeed.
+func mergeUnprovenCommits(existing []V2UnprovenCommit, scanned []attributionlocal.V2ClaimScanOptions, proven map[string]struct{}, now time.Time) []V2UnprovenCommit {
+	byKey := make(map[string]V2UnprovenCommit, len(existing)+len(scanned))
+	order := make([]string, 0, len(existing)+len(scanned))
+	remember := func(item V2UnprovenCommit) {
+		key := unprovenCommitKey(item.scanOptions())
+		if _, ok := byKey[key]; !ok {
+			order = append(order, key)
+		}
+		byKey[key] = item
+	}
+	for _, item := range existing {
+		remember(item)
+	}
+	for _, option := range scanned {
+		key := unprovenCommitKey(option)
+		if _, ok := byKey[key]; ok {
+			continue
+		}
+		remember(V2UnprovenCommit{
+			CommitSHA: strings.TrimSpace(option.CommitSHA), CheckpointEventID: strings.TrimSpace(option.CheckpointEventID),
+			RepoRoot: option.RepoRoot, RepoKey: option.RepoKey, RepoConfigID: option.RepoConfigID,
+			RelayProviderID: option.RelayProviderID, WorkspaceID: option.WorkspaceID, FirstSeenAt: now,
+		})
+	}
+
+	out := make([]V2UnprovenCommit, 0, len(order))
+	for _, key := range order {
+		item := byKey[key]
+		if _, ok := proven[key]; ok {
+			continue
+		}
+		if strings.TrimSpace(item.CommitSHA) == "" || strings.TrimSpace(item.CheckpointEventID) == "" {
+			continue
+		}
+		if !item.FirstSeenAt.IsZero() && now.Sub(item.FirstSeenAt) > v2ClaimSourceWindow {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+// provenCommitKeys names the commits a batch of candidates actually proved. A
+// candidate carrying a gap proved nothing, and a commit only claimed by such
+// candidates stays pending.
+func provenCommitKeys(candidates []attributionlocal.V2ClaimCandidate) map[string]struct{} {
+	proven := map[string]struct{}{}
+	for _, candidate := range candidates {
+		if strings.TrimSpace(candidate.GapReason) != "" {
+			continue
+		}
+		for _, allocation := range candidate.Group.CommitAllocations {
+			if strings.TrimSpace(allocation.EvidenceDigest) == "" {
+				continue
+			}
+			proven[strings.TrimSpace(allocation.CommitSHA)+"\x00"+strings.TrimSpace(allocation.CheckpointEventID)] = struct{}{}
+		}
+	}
+	return proven
 }

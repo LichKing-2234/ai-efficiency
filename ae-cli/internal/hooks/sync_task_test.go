@@ -583,7 +583,7 @@ func TestRunV2ClaimSyncRescansOldProgressVersion(t *testing.T) {
 
 	original := scanCodexV2ClaimSource
 	calls := 0
-	scanCodexV2ClaimSource = func(scan *attributionlocal.CodexV2ClaimScan, ctx context.Context, sourceKey string, options []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
+	scanCodexV2ClaimSource = func(scan v2ClaimSource, ctx context.Context, sourceKey string, options []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
 		calls++
 		return nil, nil
 	}
@@ -1268,7 +1268,7 @@ func TestRunPendingSyncTaskMigratesAndRecoversDeletedLegacyWorktree(t *testing.T
 	}
 
 	originalScan := scanCodexV2ClaimSource
-	scanCodexV2ClaimSource = func(_ *attributionlocal.CodexV2ClaimScan, _ context.Context, sourceKey string, options []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
+	scanCodexV2ClaimSource = func(_ v2ClaimSource, _ context.Context, sourceKey string, options []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
 		if len(options) != 1 {
 			return nil, fmt.Errorf("scan options = %d, want 1", len(options))
 		}
@@ -1400,7 +1400,7 @@ func TestRunPendingSyncTaskProcessesReachableTriggerAndRetainsUnreachableSibling
 	}
 
 	originalScan := scanCodexV2ClaimSource
-	scanCodexV2ClaimSource = func(_ *attributionlocal.CodexV2ClaimScan, _ context.Context, sourceKey string, options []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
+	scanCodexV2ClaimSource = func(_ v2ClaimSource, _ context.Context, sourceKey string, options []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
 		if len(options) != 1 || options[0].CommitSHA != reachableCommit || options[0].CheckpointEventID != reachableEvent {
 			return nil, fmt.Errorf("mixed recovery options = %+v, want reachable trigger only", options)
 		}
@@ -1769,7 +1769,7 @@ func TestRunV2ClaimSyncDeliversCompletedSourceBeforeLaterSourceStops(t *testing.
 	backend := &acknowledgingV2ClaimClient{}
 	original := scanCodexV2ClaimSource
 	calls := 0
-	scanCodexV2ClaimSource = func(_ *attributionlocal.CodexV2ClaimScan, _ context.Context, sourceKey string, _ []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
+	scanCodexV2ClaimSource = func(_ v2ClaimSource, _ context.Context, sourceKey string, _ []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
 		calls++
 		if calls == 2 {
 			return nil, context.Canceled
@@ -1813,7 +1813,7 @@ func TestRunV2ClaimSyncResumesRemainingUnitsAfterSourceInterruption(t *testing.T
 	original := scanCodexV2ClaimSource
 	calls := 0
 	interrupt := true
-	scanCodexV2ClaimSource = func(scan *attributionlocal.CodexV2ClaimScan, ctx context.Context, sourceKey string, options []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
+	scanCodexV2ClaimSource = func(scan v2ClaimSource, ctx context.Context, sourceKey string, options []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
 		calls++
 		if interrupt && calls == 2 {
 			return nil, context.Canceled
@@ -1869,7 +1869,7 @@ func TestRunV2ClaimSyncDrainsLargeHomeAcrossSmallBudgets(t *testing.T) {
 	v2ClaimProgressBatchSize = 100
 	budget := 0
 	scanned := 0
-	scanCodexV2ClaimSource = func(_ *attributionlocal.CodexV2ClaimScan, _ context.Context, _ string, _ []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
+	scanCodexV2ClaimSource = func(_ v2ClaimSource, _ context.Context, _ string, _ []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
 		if budget == 0 {
 			return nil, context.DeadlineExceeded
 		}
