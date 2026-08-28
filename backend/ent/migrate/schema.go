@@ -175,6 +175,7 @@ var (
 		{Name: "cache_creation_tokens", Type: field.TypeInt64, Default: 0},
 		{Name: "cache_read_tokens", Type: field.TypeInt64, Default: 0},
 		{Name: "total_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "credit_usage", Type: field.TypeFloat64, Default: 0},
 		{Name: "request_count", Type: field.TypeInt, Default: 0},
 		{Name: "coverage_gap_count", Type: field.TypeInt, Default: 0},
 		{Name: "created_at", Type: field.TypeTime},

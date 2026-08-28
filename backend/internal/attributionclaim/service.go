@@ -52,6 +52,7 @@ type LocalUsageBucket struct {
 	CacheCreationTokens int64     `json:"cache_creation_tokens"`
 	CacheReadTokens     int64     `json:"cache_read_tokens"`
 	TotalTokens         int64     `json:"total_tokens"`
+	CreditUsage         float64   `json:"credit_usage,omitempty"`
 	RequestCount        int       `json:"request_count"`
 }
 

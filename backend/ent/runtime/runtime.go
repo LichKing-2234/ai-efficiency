@@ -210,20 +210,24 @@ func init() {
 	attributionusagepoolDescTotalTokens := attributionusagepoolFields[10].Descriptor()
 	// attributionusagepool.DefaultTotalTokens holds the default value on creation for the total_tokens field.
 	attributionusagepool.DefaultTotalTokens = attributionusagepoolDescTotalTokens.Default.(int64)
+	// attributionusagepoolDescCreditUsage is the schema descriptor for credit_usage field.
+	attributionusagepoolDescCreditUsage := attributionusagepoolFields[11].Descriptor()
+	// attributionusagepool.DefaultCreditUsage holds the default value on creation for the credit_usage field.
+	attributionusagepool.DefaultCreditUsage = attributionusagepoolDescCreditUsage.Default.(float64)
 	// attributionusagepoolDescRequestCount is the schema descriptor for request_count field.
-	attributionusagepoolDescRequestCount := attributionusagepoolFields[11].Descriptor()
+	attributionusagepoolDescRequestCount := attributionusagepoolFields[12].Descriptor()
 	// attributionusagepool.DefaultRequestCount holds the default value on creation for the request_count field.
 	attributionusagepool.DefaultRequestCount = attributionusagepoolDescRequestCount.Default.(int)
 	// attributionusagepoolDescCoverageGapCount is the schema descriptor for coverage_gap_count field.
-	attributionusagepoolDescCoverageGapCount := attributionusagepoolFields[12].Descriptor()
+	attributionusagepoolDescCoverageGapCount := attributionusagepoolFields[13].Descriptor()
 	// attributionusagepool.DefaultCoverageGapCount holds the default value on creation for the coverage_gap_count field.
 	attributionusagepool.DefaultCoverageGapCount = attributionusagepoolDescCoverageGapCount.Default.(int)
 	// attributionusagepoolDescCreatedAt is the schema descriptor for created_at field.
-	attributionusagepoolDescCreatedAt := attributionusagepoolFields[13].Descriptor()
+	attributionusagepoolDescCreatedAt := attributionusagepoolFields[14].Descriptor()
 	// attributionusagepool.DefaultCreatedAt holds the default value on creation for the created_at field.
 	attributionusagepool.DefaultCreatedAt = attributionusagepoolDescCreatedAt.Default.(func() time.Time)
 	// attributionusagepoolDescUpdatedAt is the schema descriptor for updated_at field.
-	attributionusagepoolDescUpdatedAt := attributionusagepoolFields[14].Descriptor()
+	attributionusagepoolDescUpdatedAt := attributionusagepoolFields[15].Descriptor()
 	// attributionusagepool.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	attributionusagepool.DefaultUpdatedAt = attributionusagepoolDescUpdatedAt.Default.(func() time.Time)
 	// attributionusagepool.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

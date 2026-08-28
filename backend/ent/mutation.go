@@ -6284,6 +6284,8 @@ type AttributionUsagePoolMutation struct {
 	addcache_read_tokens     *int64
 	total_tokens             *int64
 	addtotal_tokens          *int64
+	credit_usage             *float64
+	addcredit_usage          *float64
 	request_count            *int
 	addrequest_count         *int
 	coverage_gap_count       *int
@@ -6930,6 +6932,62 @@ func (m *AttributionUsagePoolMutation) ResetTotalTokens() {
 	m.addtotal_tokens = nil
 }
 
+// SetCreditUsage sets the "credit_usage" field.
+func (m *AttributionUsagePoolMutation) SetCreditUsage(f float64) {
+	m.credit_usage = &f
+	m.addcredit_usage = nil
+}
+
+// CreditUsage returns the value of the "credit_usage" field in the mutation.
+func (m *AttributionUsagePoolMutation) CreditUsage() (r float64, exists bool) {
+	v := m.credit_usage
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreditUsage returns the old "credit_usage" field's value of the AttributionUsagePool entity.
+// If the AttributionUsagePool object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AttributionUsagePoolMutation) OldCreditUsage(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreditUsage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreditUsage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreditUsage: %w", err)
+	}
+	return oldValue.CreditUsage, nil
+}
+
+// AddCreditUsage adds f to the "credit_usage" field.
+func (m *AttributionUsagePoolMutation) AddCreditUsage(f float64) {
+	if m.addcredit_usage != nil {
+		*m.addcredit_usage += f
+	} else {
+		m.addcredit_usage = &f
+	}
+}
+
+// AddedCreditUsage returns the value that was added to the "credit_usage" field in this mutation.
+func (m *AttributionUsagePoolMutation) AddedCreditUsage() (r float64, exists bool) {
+	v := m.addcredit_usage
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCreditUsage resets all changes to the "credit_usage" field.
+func (m *AttributionUsagePoolMutation) ResetCreditUsage() {
+	m.credit_usage = nil
+	m.addcredit_usage = nil
+}
+
 // SetRequestCount sets the "request_count" field.
 func (m *AttributionUsagePoolMutation) SetRequestCount(i int) {
 	m.request_count = &i
@@ -7148,7 +7206,7 @@ func (m *AttributionUsagePoolMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AttributionUsagePoolMutation) Fields() []string {
-	fields := make([]string, 0, 15)
+	fields := make([]string, 0, 16)
 	if m.canonical_pool_key != nil {
 		fields = append(fields, attributionusagepool.FieldCanonicalPoolKey)
 	}
@@ -7181,6 +7239,9 @@ func (m *AttributionUsagePoolMutation) Fields() []string {
 	}
 	if m.total_tokens != nil {
 		fields = append(fields, attributionusagepool.FieldTotalTokens)
+	}
+	if m.credit_usage != nil {
+		fields = append(fields, attributionusagepool.FieldCreditUsage)
 	}
 	if m.request_count != nil {
 		fields = append(fields, attributionusagepool.FieldRequestCount)
@@ -7224,6 +7285,8 @@ func (m *AttributionUsagePoolMutation) Field(name string) (ent.Value, bool) {
 		return m.CacheReadTokens()
 	case attributionusagepool.FieldTotalTokens:
 		return m.TotalTokens()
+	case attributionusagepool.FieldCreditUsage:
+		return m.CreditUsage()
 	case attributionusagepool.FieldRequestCount:
 		return m.RequestCount()
 	case attributionusagepool.FieldCoverageGapCount:
@@ -7263,6 +7326,8 @@ func (m *AttributionUsagePoolMutation) OldField(ctx context.Context, name string
 		return m.OldCacheReadTokens(ctx)
 	case attributionusagepool.FieldTotalTokens:
 		return m.OldTotalTokens(ctx)
+	case attributionusagepool.FieldCreditUsage:
+		return m.OldCreditUsage(ctx)
 	case attributionusagepool.FieldRequestCount:
 		return m.OldRequestCount(ctx)
 	case attributionusagepool.FieldCoverageGapCount:
@@ -7357,6 +7422,13 @@ func (m *AttributionUsagePoolMutation) SetField(name string, value ent.Value) er
 		}
 		m.SetTotalTokens(v)
 		return nil
+	case attributionusagepool.FieldCreditUsage:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreditUsage(v)
+		return nil
 	case attributionusagepool.FieldRequestCount:
 		v, ok := value.(int)
 		if !ok {
@@ -7414,6 +7486,9 @@ func (m *AttributionUsagePoolMutation) AddedFields() []string {
 	if m.addtotal_tokens != nil {
 		fields = append(fields, attributionusagepool.FieldTotalTokens)
 	}
+	if m.addcredit_usage != nil {
+		fields = append(fields, attributionusagepool.FieldCreditUsage)
+	}
 	if m.addrequest_count != nil {
 		fields = append(fields, attributionusagepool.FieldRequestCount)
 	}
@@ -7442,6 +7517,8 @@ func (m *AttributionUsagePoolMutation) AddedField(name string) (ent.Value, bool)
 		return m.AddedCacheReadTokens()
 	case attributionusagepool.FieldTotalTokens:
 		return m.AddedTotalTokens()
+	case attributionusagepool.FieldCreditUsage:
+		return m.AddedCreditUsage()
 	case attributionusagepool.FieldRequestCount:
 		return m.AddedRequestCount()
 	case attributionusagepool.FieldCoverageGapCount:
@@ -7503,6 +7580,13 @@ func (m *AttributionUsagePoolMutation) AddField(name string, value ent.Value) er
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddTotalTokens(v)
+		return nil
+	case attributionusagepool.FieldCreditUsage:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCreditUsage(v)
 		return nil
 	case attributionusagepool.FieldRequestCount:
 		v, ok := value.(int)
@@ -7577,6 +7661,9 @@ func (m *AttributionUsagePoolMutation) ResetField(name string) error {
 		return nil
 	case attributionusagepool.FieldTotalTokens:
 		m.ResetTotalTokens()
+		return nil
+	case attributionusagepool.FieldCreditUsage:
+		m.ResetCreditUsage()
 		return nil
 	case attributionusagepool.FieldRequestCount:
 		m.ResetRequestCount()
