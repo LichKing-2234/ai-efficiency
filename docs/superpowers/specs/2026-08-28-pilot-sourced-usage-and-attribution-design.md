@@ -74,6 +74,21 @@ A stopped collector also hands the usage source back to the per-agent readers.
 Pilot's output directory survives being turned off, so deciding on the directory
 alone would keep the fallback suppressed while nothing replaced it.
 
+## Evidence arrives after the commit
+
+For Claude Code a mutation reaches Pilot's output only when the turn ends, and a
+developer who edits and commits inside one turn commits first. The scan that
+post-commit starts then sees no evidence at all. Measured here, a commit made at
+16:29 was scanned against output last written at 16:22 and proved nothing.
+
+Scan progress therefore carries the commits a scan could not prove, and every
+later scan retries them. A commit is forgotten once a candidate proves it; a
+gapped candidate proves nothing and leaves it pending. Entries older than the
+window a scan reads are dropped, because retrying them can no longer succeed.
+
+Codex is not affected — the collector tails its transcript continuously rather
+than waiting for a turn to end.
+
 ## Accepted costs
 
 - **One duplicate window at cutover.** Pilot's dedupe keys are in a different
