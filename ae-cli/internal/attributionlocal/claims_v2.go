@@ -452,11 +452,46 @@ func mergeV2ScannedCandidates(scanned []V2ClaimCandidate) []V2ClaimCandidate {
 	return result
 }
 
+// UploadableV2ClaimGroups collects the groups ready to send, with each group id
+// appearing once.
+//
+// Local state is keyed by the turn a claim was observed in, while a group is
+// named by what it proves. Those disagree after a Claude Code resume: the agent
+// replays the same work under a new session id and a restarted turn counter, so
+// two entries describe one piece of work and name one group. Sending both put
+// the same group id in a batch twice, and the backend rejected the second for
+// disagreeing with the first about which session and turn it came from, which
+// failed the whole batch.
+//
+// Collapsing them is not a workaround for that rejection but the correct
+// reading of it: the same group id means the same commit and the same evidence,
+// so the entries are the same work seen twice. Their commit allocations are
+// unioned; their usage is not summed, because it is one turn's consumption
+// reported twice rather than twice the consumption.
 func UploadableV2ClaimGroups(candidates []V2ClaimCandidate) []client.AttributionV2ClaimGroup {
 	groups := make([]client.AttributionV2ClaimGroup, 0, len(candidates))
+	index := map[string]int{}
 	for _, candidate := range candidates {
-		if v2ClaimUploadable(candidate) {
+		if !v2ClaimUploadable(candidate) {
+			continue
+		}
+		groupID := strings.TrimSpace(candidate.Group.GroupID)
+		at, seen := index[groupID]
+		if !seen || groupID == "" {
 			groups = append(groups, candidate.Group)
+			if groupID != "" {
+				index[groupID] = len(groups) - 1
+			}
+			continue
+		}
+		kept := &groups[at]
+		kept.CommitAllocations = mergeV2Allocations(kept.CommitAllocations, candidate.Group.CommitAllocations)
+		kept.RequestIDs = uniqueSorted(append(kept.RequestIDs, candidate.Group.RequestIDs...))
+		if len(kept.LocalUsage) == 0 {
+			kept.LocalUsage = candidate.Group.LocalUsage
+		}
+		if kept.Calibration == nil {
+			kept.Calibration = candidate.Group.Calibration
 		}
 	}
 	return groups
