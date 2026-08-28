@@ -567,6 +567,49 @@ describe('useRelayPlanningWorkflow', () => {
     workflow.dispose()
   })
 
+	 it('requires a reviewed Source before removing a legacy managed member', async () => {
+		 const options = workflowOptions()
+		 const mapping = relayMapping({
+			 member_assignments: { '1': 101 },
+			 member_sources: {},
+		 })
+		 const replan = reviewedPlan({
+			 mapping_id: 9,
+			 candidates: [{ ...reviewedPlan().candidates[0], source_group_id: 0, source_member: false }],
+			 assignments: [{ ...reviewedPlan().assignments[0], target_group_id: 101, user_ids: [1] }],
+		 })
+		 options.previewReplan.mockImplementation(async (_mappingID, request) => ({
+			 ...structuredClone(replan),
+			 candidates: replan.candidates.map((candidate) => ({
+				 ...candidate,
+				 source_group_id: request.member_sources?.[String(candidate.user_id)] ?? candidate.source_group_id,
+			 })),
+			 assignments: structuredClone(request.assignments ?? replan.assignments),
+		 }))
+		 const workflow = useRelayPlanningWorkflow(options)
+
+		 await workflow.openReplan(mapping)
+		 workflow.moveCandidate(1, null)
+
+		 expect(workflow.hasUnreviewedRemovalSources.value).toBe(true)
+		 await expect(workflow.requestConfirmation()).resolves.toEqual({ kind: 'unreviewed_removal_sources' })
+		 expect(options.previewReplan).toHaveBeenCalledTimes(1)
+
+		 workflow.setMemberSource(1, 42)
+		 expect(workflow.hasUnreviewedRemovalSources.value).toBe(false)
+		 await workflow.requestConfirmation()
+		 expect(options.previewReplan).toHaveBeenLastCalledWith(9, expect.objectContaining({
+			 removed_user_ids: [1],
+			 member_sources: { '1': 42 },
+		 }))
+		 await workflow.executeConfirmed()
+		 expect(options.executeReplan).toHaveBeenCalledWith(9, expect.objectContaining({
+			 removed_user_ids: [1],
+			 member_sources: { '1': 42 },
+		 }))
+		 workflow.dispose()
+	 })
+
   it('carries only explicitly selected Target renames into confirmation', async () => {
     const options = workflowOptions()
     const mapping = relayMapping({
@@ -667,6 +710,34 @@ describe('useRelayPlanningWorkflow', () => {
       removed_user_ids: [],
       member_actions: {},
     }))
+    workflow.dispose()
+  })
+
+  it('locks a reviewed removal destination while its retry is pending', async () => {
+    const options = workflowOptions()
+    const mapping = relayMapping({
+      status: 'needs_retry',
+      member_assignments: {},
+      member_sources: {},
+      operation_state: {
+        'member:1': {
+          action: 'remove',
+          source_reviewed: 'true',
+          source_group_id: '42',
+          source_removal: 'failed',
+          error: 'synthetic removal failure',
+        },
+      },
+    })
+    options.previewReplan.mockResolvedValue(reviewedPlan({ mapping_id: 9 }))
+    const workflow = useRelayPlanningWorkflow(options)
+
+    await workflow.openReplan(mapping)
+    expect(workflow.lockedRemovalSourceUserIDs.value).toEqual(new Set([1]))
+    expect(workflow.removalSources.value).toEqual({ '1': 42 })
+
+    workflow.setMemberSource(1, 0)
+    expect(workflow.removalSources.value).toEqual({ '1': 42 })
     workflow.dispose()
   })
 

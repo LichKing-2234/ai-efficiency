@@ -58,9 +58,12 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
   const lastExecution = ref<RelayPlanningExecution | null>(null)
   const activeMappingID = ref<number | null>(null)
   const activeMappingMemberAssignments = ref<Record<string, number>>({})
+  const activeMappingMemberSources = ref<Record<string, number>>({})
   const selectedUserIDs = ref<Set<number>>(new Set())
   const selectedUnmanagedRelayIDs = ref<Set<number>>(new Set())
   const removedUserIDs = ref<Set<number>>(new Set())
+  const removalSources = ref<Record<string, number | null>>({})
+  const lockedRemovalSourceUserIDs = ref<Set<number>>(new Set())
   const memberActions = ref<Record<string, RelayPlanningMemberAction>>({})
   const managedAssignmentsByUser = ref<Record<string, NonNullable<RelayPlanningUserSearchItem['managed_assignments']>>>({})
   const memberSources = ref<Record<string, number>>({})
@@ -103,6 +106,9 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     return code ? [[assignment.index, code]] : []
   })))
   const hasTargetNameErrors = computed(() => Object.keys(targetNameErrorCodes.value).length > 0)
+  const hasUnreviewedRemovalSources = computed(() => Array.from(removedUserIDs.value).some((userID) => (
+    removalSources.value[String(userID)] == null
+  )))
 
   function recalculateAssignments() {
     if (!plan.value) return
@@ -194,10 +200,19 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     actions = memberActions.value,
   ): Required<Pick<RelayPlanningReviewedPreviewRequest,
     'selected_user_ids' | 'assignments' | 'member_sources' | 'removed_user_ids' | 'member_actions' | 'adopt_relay_user_ids'>> {
+    const sourceUserIDs = new Set(selected)
+    const reviewedSources = { ...sources }
+    for (const userID of removedUserIDs.value) {
+      const sourceGroupID = removalSources.value[String(userID)]
+      if (sourceGroupID != null) {
+        sourceUserIDs.add(userID)
+        reviewedSources[String(userID)] = sourceGroupID
+      }
+    }
     return {
       selected_user_ids: Array.from(selected),
       assignments,
-      member_sources: memberSourcesPayload(selected, sources),
+      member_sources: memberSourcesPayload(sourceUserIDs, reviewedSources),
       removed_user_ids: Array.from(removedUserIDs.value),
       member_actions: actions,
       adopt_relay_user_ids: Array.from(selectedUnmanagedRelayIDs.value),
@@ -248,8 +263,11 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
       applyPlan(nextPlan)
       activeMappingID.value = null
       activeMappingMemberAssignments.value = {}
+      activeMappingMemberSources.value = {}
       selectedUnmanagedRelayIDs.value = new Set()
       removedUserIDs.value = new Set()
+      removalSources.value = {}
+      lockedRemovalSourceUserIDs.value = new Set()
       memberActions.value = {}
       managedAssignmentsByUser.value = {}
       operationKey.value = options.createOperationKey()
@@ -264,6 +282,10 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     const generation = invalidatePlanRequests()
     lastExecution.value = null
     const retryRemovedUserIDs = retryRemovalUserIDs(mapping)
+    const lockedRetryRemovedUserIDs = retryRemovedUserIDs.filter((userID) => {
+      const entry = mapping.operation_state?.[`member:${userID}`]
+      return entry?.source_reviewed === 'true' || entry?.source_group_id !== undefined
+    })
     const retryActions = retryMemberActions(mapping)
     const retryRequest: RelayPlanningReviewedPreviewRequest = {
       ...(retryRemovedUserIDs.length ? { removed_user_ids: retryRemovedUserIDs } : {}),
@@ -275,8 +297,17 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
       applyPlan(nextPlan)
       activeMappingID.value = mapping.id
       activeMappingMemberAssignments.value = { ...(mapping.member_assignments ?? {}) }
+      activeMappingMemberSources.value = { ...(mapping.member_sources ?? {}) }
       selectedUnmanagedRelayIDs.value = new Set()
       removedUserIDs.value = new Set(retryRemovedUserIDs)
+      lockedRemovalSourceUserIDs.value = new Set(lockedRetryRemovedUserIDs)
+		removalSources.value = Object.fromEntries(retryRemovedUserIDs.map((userID) => {
+        const key = String(userID)
+        const entry = mapping.operation_state?.[`member:${key}`]
+			if (Object.prototype.hasOwnProperty.call(mapping.member_sources ?? {}, key)) return [key, Number(mapping.member_sources?.[key] ?? 0)]
+			if (entry?.source_reviewed === 'true' || entry?.source_group_id !== undefined) return [key, Number(entry.source_group_id || 0)]
+			return [key, null]
+		}))
       memberActions.value = retryActions
       managedAssignmentsByUser.value = {}
       operationKey.value = options.createOperationKey()
@@ -373,9 +404,20 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     }
     if (targetIndex !== null) plan.value.assignments[targetIndex]?.user_ids.push(userID)
     const nextRemoved = new Set(removedUserIDs.value)
-    if (targetIndex === null && activeMappingMemberAssignments.value[String(userID)]) nextRemoved.add(userID)
-    else nextRemoved.delete(userID)
+		const nextRemovalSources = { ...removalSources.value }
+    if (targetIndex === null && activeMappingMemberAssignments.value[String(userID)]) {
+      nextRemoved.add(userID)
+      if (Object.prototype.hasOwnProperty.call(activeMappingMemberSources.value, String(userID))) {
+				nextRemovalSources[String(userID)] = Number(activeMappingMemberSources.value[String(userID)] || 0)
+			} else {
+				nextRemovalSources[String(userID)] = null
+			}
+    } else {
+      nextRemoved.delete(userID)
+			delete nextRemovalSources[String(userID)]
+    }
     removedUserIDs.value = nextRemoved
+		removalSources.value = nextRemovalSources
     recalculateAssignments()
   }
 
@@ -402,9 +444,17 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
   }
 
   function setMemberSource(userID: number, groupID: number) {
-    if (Number(memberSources.value[String(userID)] || 0) === groupID) return
+		const key = String(userID)
+		if (removedUserIDs.value.has(userID)) {
+			if (lockedRemovalSourceUserIDs.value.has(userID)) return
+			if (removalSources.value[key] === groupID) return
+			markPlanEdited()
+			removalSources.value = { ...removalSources.value, [key]: groupID }
+			return
+		}
+		if (Number(memberSources.value[key] || 0) === groupID) return
     markPlanEdited()
-    memberSources.value = { ...memberSources.value, [String(userID)]: groupID }
+		memberSources.value = { ...memberSources.value, [key]: groupID }
   }
 
   function toggleUnmanagedRelayUser(relayUserID: number, checked: boolean) {
@@ -661,6 +711,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
 
   async function requestConfirmation() {
     if (!plan.value) return
+    if (hasUnreviewedRemovalSources.value) return { kind: 'unreviewed_removal_sources' as const }
     const generation = invalidatePlanRequests()
     confirming.value = true
     try {
@@ -699,6 +750,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
 
   async function executeConfirmed() {
     if (!plan.value) return { kind: 'empty' as const }
+    if (hasUnreviewedRemovalSources.value) return { kind: 'unreviewed_removal_sources' as const }
     const generation = invalidatePlanRequests(false)
     executing.value = true
     const request: RelayPlanningExecuteRequest = {
@@ -744,9 +796,12 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     lastExecution.value = null
     activeMappingID.value = null
     activeMappingMemberAssignments.value = {}
+    activeMappingMemberSources.value = {}
     selectedUserIDs.value = new Set()
     selectedUnmanagedRelayIDs.value = new Set()
     removedUserIDs.value = new Set()
+    removalSources.value = {}
+    lockedRemovalSourceUserIDs.value = new Set()
     memberActions.value = {}
     managedAssignmentsByUser.value = {}
     memberSources.value = {}
@@ -776,6 +831,8 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     selectedUserIDs,
     selectedUnmanagedRelayIDs,
     removedUserIDs,
+    removalSources,
+    lockedRemovalSourceUserIDs,
     memberActions,
     managedAssignmentsByUser,
     memberSources,
@@ -787,6 +844,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     unassignedCandidates,
     targetNameErrorCodes,
     hasTargetNameErrors,
+    hasUnreviewedRemovalSources,
     preview,
     openReplan,
     requestConfirmation,
