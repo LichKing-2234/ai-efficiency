@@ -114,9 +114,7 @@ multiple departments. Missing/stale departments remain visible for cleanup but
 do not resolve new requests.
 
 The settings API supports replacing selected departments or the complete
-current-source configuration. A still-open tracker follow-up owns any future
-bounded department-search behavior; this contract does not present that target
-state as implemented.
+current-source configuration.
 
 ## Workbench and Work Items
 

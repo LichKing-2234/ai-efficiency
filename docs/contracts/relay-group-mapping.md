@@ -1,10 +1,11 @@
 # Relay Group Mapping Contract
 
 This contract describes the current administrator-owned department x Platform
-Relay Group Mapping, reviewed Preview, Replan baseline, Account relationships,
+Relay Group Mapping, reviewed Preview, Replan Baseline, Account relationships,
 member migration, confirmation, persistence, and retry behavior. Read it before
 changing Relay Planning Preview/Execute, Replan, mapping maintenance, Group or
-Account reconciliation, managed-member moves/removals, or mapping renewal.
+Account reconciliation, Managed Mapping Member moves/removals, or mapping
+renewal.
 
 Relay identity and Provider access follow
 [relay user access](./relay-user-access.md). Department facts follow
@@ -21,7 +22,10 @@ the request-scoped usage source under
 | Migration Source Group | Optional same-Platform Group whose reviewed members may lose the source subscription and have eligible API Keys moved. |
 | Target Group | Stable Relay Group managed by one mapping. Its ID is authoritative; its name is a display snapshot/reviewed mutation. |
 | Account relationship | Ordered Account-to-Target binding, including Relay priority, that controls the reviewed Account pool. |
-| Managed member | Local user with a Provider-valid Relay identity and a persisted desired Target assignment/source in the mapping. |
+| Managed Mapping Member | Local user explicitly assigned to a Target Group by one mapping. The persisted assignment remains authoritative in Replan when the current Relay identity is unavailable. |
+| Replan Baseline | Member-to-Target assignment saved by the last confirmed mapping operation and used as the comparison point for Replan. |
+| Replan Roster | Managed Mapping Members assigned to one Target Group by the Replan Baseline; it excludes newly eligible candidates and retains members whose current Relay identity is unavailable. |
+| Unavailable Replan Target | Target Group ID saved by the Replan Baseline but absent from current Relay Group facts. |
 | Relay-only unmanaged member | User observed in a managed Target but lacking a usable local mapping; visible for capacity and explicit adoption only. |
 
 A mapping is unique by Provider, Directory department external ID, and Platform.
@@ -101,11 +105,12 @@ the reviewed member matrix and selected Target names/Accounts, but it does not
 resize, duplicate, replace, deactivate, or automatically reshuffle Target
 Groups.
 
-Opening Replan reconstructs the last confirmed `member_assignments` as a
-zero-change baseline:
+Opening Replan reconstructs the last confirmed `member_assignments` as the
+zero-change Replan Baseline:
 
-- Every saved managed member starts selected in the saved Target.
-- Saved members outside the current department remain in the baseline.
+- Every Managed Mapping Member in the Replan Baseline starts selected in its
+  assigned Target Group.
+- Managed Mapping Members outside the current department remain in the baseline.
 - Other eligible candidates remain visible with existing usage/ranking fields
   but start unselected, unassigned, and not recommended.
 - Remaining Target capacity never selects or places another candidate.
@@ -115,18 +120,19 @@ Only explicit add, move, remove, target-only/source selection, or unmanaged
 adoption changes the executable roster. Initial-mapping auto-placement does not
 carry into Replan.
 
-If a saved member's current local-to-Relay identity is unavailable, the member
-remains visible in the saved Target with a safe warning. The complete plan is
-non-executable, including otherwise valid edits. Explicit removal cannot hide
-that blocker or silently delete the saved relationship while identity remains
-unavailable.
+If a Managed Mapping Member in the Replan Baseline has no current local-to-Relay
+identity, the member remains visible in its Replan Roster with a safe warning.
+The complete plan is non-executable, including otherwise valid edits. Explicit
+removal cannot hide that blocker or silently delete the saved relationship while
+identity remains unavailable.
 
-If a saved Target is absent from current Relay Group facts, Replan preserves its
-stable ID, original order, and saved roster. It supplies no replacement,
-relocation, removal, resize, deactivation, or synthetic name. Rename controls
-are disabled for that Target, and the complete plan is non-executable. When the
-Target reappears, the Group relationship fingerprint changes and a fresh
-Preview is required before normal Confirm.
+When a Target Group in the Replan Baseline is absent from current Relay Group
+facts, it is an Unavailable Replan Target. Replan preserves its stable ID,
+original order, and Replan Roster. It supplies no replacement, relocation,
+removal, resize, deactivation, or synthetic name. Rename controls are disabled
+for that Target, and the complete plan is non-executable. When the Target
+reappears, the Group relationship fingerprint changes and a fresh Preview is
+required before normal Confirm.
 
 Replan presents current and department-based names for every available managed
 Target. Existing Target rename is opt-in per Target or through explicit Apply
@@ -176,17 +182,17 @@ AI Efficiency-managed API Keys from the reviewed Source to the Target, and
 removes the Source subscription. A target-only addition ensures only the Target
 subscription. Every new subscription assigned by this workflow uses 365 days.
 
-An explicit managed-member removal deletes the desired assignment immediately
-in reviewed state:
+An explicit Managed Mapping Member removal deletes the desired assignment
+immediately in reviewed state:
 
 - With a saved Source, execution reuses an already-active Source subscription
   or restores it, moves eligible Keys still bound to the reviewed Target back
   to the Source, and removes the Target subscription.
 - With an explicitly reviewed Target-only destination, execution removes only
   the Target subscription and invents no Source or Key move.
-- A legacy managed member with no saved per-member Source provenance remains
-  non-executable until the administrator selects a same-Platform Source or
-  explicitly selects Target only. Template and managed Target Groups are not
+- A legacy Managed Mapping Member with no saved per-member Source provenance
+  remains non-executable until the administrator selects a same-Platform Source
+  or explicitly selects Target only. Template and managed Target Groups are not
   valid removal Sources.
 - Unrelated subscriptions, API Keys, Groups, Accounts, and members remain
   unchanged.
@@ -218,9 +224,9 @@ subscription, and API-Key bindings and adds only the new Target subscription.
 Department drift never triggers either action automatically.
 
 Relay-only unmanaged members contribute observed usage to Target capacity but
-are absent from renewal and managed rosters. Explicit adoption ensures only the
-Target subscription, creates the saved managed relationship, and never removes
-a source subscription or moves an API Key.
+are absent from renewal and Replan Rosters. Explicit adoption ensures only the
+Target subscription, creates the persisted Managed Mapping Member relationship,
+and never removes a source subscription or moves an API Key.
 
 ## Relationship-Bound Confirm
 
@@ -277,9 +283,10 @@ persistence failure rolls back every affected mapping and returns structured
 ## Mapping Renewal
 
 `Renew Subscriptions` is an explicit read-only Preview plus final Confirm. It
-selects saved managed members by default; Relay-only members remain outside
-scope until adopted. The term defaults to 365 days, is editable for the current
-operation, and is not persisted as mapping configuration.
+selects the Replan Baseline's Managed Mapping Members by default; Relay-only
+members remain outside scope until adopted. The term defaults to 365 days, is
+editable for the current operation, and is not persisted as mapping
+configuration.
 
 The reviewed action is deterministic:
 
@@ -303,11 +310,12 @@ result view ends that operation; a later renewal starts from a new Preview.
 ## Read and Privacy Boundaries
 
 Preview/Replan use one request-scoped provider-wide identity/subscription
-snapshot for candidate validation, managed/unmanaged membership, effects,
-retry, and fingerprint construction. Group and Account collections load once;
-each relevant user's API Keys load at most once. Directory facts are resolved
-once per mapping-list request. These facts are discarded after the request and
-are not cross-request authorization or relationship caches.
+snapshot for candidate validation, Managed Mapping Member and Relay-only
+unmanaged membership, effects, retry, and fingerprint construction. Group and
+Account collections load once; each relevant user's API Keys load at most once.
+Directory facts are resolved once per mapping-list request. These facts are
+discarded after the request and are not cross-request authorization or
+relationship caches.
 
 The mapping list begins Provider Group, relationship, Account, and Directory
 reads concurrently; upstream read count scales with Relay pagination and
@@ -320,8 +328,6 @@ There is no direct sub2api database coupling. Fingerprints, persisted state,
 logs, errors, and UI exclude credentials, API-Key values, private Account
 configuration, and raw upstream payloads.
 
-Workflow-level grouping of repeated Provider capability combinations remains
-future architecture work under
-[#389](https://github.com/LichKing-2234/ai-efficiency/issues/389). Current
-callers retain their implemented capability/fallback ownership until that
-tracker item receives separate implementation authority.
+Current callers retain their implemented Provider capability grouping and
+fallback ownership. `relay.Provider` remains capability-level rather than a
+workflow-level facade.

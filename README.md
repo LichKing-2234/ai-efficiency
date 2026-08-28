@@ -84,7 +84,7 @@ This project is open-sourced under the MIT License. See [`LICENSE`](LICENSE).
 
 - This README is the primary English entry point.
 - For current runtime boundaries and module responsibilities, read [`docs/architecture.md`](docs/architecture.md).
-- For feature-level behavior, prefer the latest spec over historical plans.
+- For feature-level current behavior, read the relevant contract; GitHub Issues own unimplemented target state.
 
 ## Star History
 

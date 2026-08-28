@@ -81,7 +81,7 @@ cd frontend && npm run build
 
 - 本文件是中文入口文档。
 - 当前运行时边界和模块职责请以 [`docs/architecture.md`](docs/architecture.md) 为准。
-- 功能级行为请优先参考最新 spec，而不是历史 plan。
+- 功能级当前行为请查看相关合同；未实现的目标状态由 GitHub Issues 管理。
 
 ## Star History
 

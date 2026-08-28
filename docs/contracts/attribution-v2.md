@@ -259,10 +259,9 @@ historical Token or readiness evidence.
 Commit-to-PR is many-to-many. A pool's full involved Token may appear in each
 related PR, so PR rows are non-additive and expose no global-total percentage.
 
-The conservation behavior is current. The remaining transaction-ownership
-audit is tracked by
-[#390](https://github.com/LichKing-2234/ai-efficiency/issues/390); callers must
-not assume that audit has already moved every transition behind one module.
+The conservation behavior is current, while transaction ownership remains
+distributed across implemented callers. No caller may assume every transition
+is already owned by one module.
 
 ## Activity and Readiness
 
@@ -321,11 +320,6 @@ consume legacy `tool_usage_events`. The older user-authenticated checkpoint and
 tool-usage path remains only for non-v2 compatibility, including current
 non-Codex collectors; it cannot feed formal Codex Activity pools.
 
-The current implementation parses local Codex evidence directly. The planned
-LoongSuite source direction and retain-until-consumed trigger/storage model are
-tracker-owned work under
-[#401](https://github.com/LichKing-2234/ai-efficiency/issues/401) and
-[#414](https://github.com/LichKing-2234/ai-efficiency/issues/414). Until a
-separate approved contract and implementation land, LoongSuite output, resident
-listeners/timers, Claude/Kiro formal pools, and Kiro credit in formal pools are
-not current attribution-v2 behavior.
+The current implementation parses local Codex evidence directly. It does not
+consume LoongSuite output, use resident listeners/timers, materialize
+Claude/Kiro formal pools, or credit Kiro into formal pools.
