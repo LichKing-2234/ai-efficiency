@@ -4,15 +4,12 @@
 
 - Tech stack: Go 1.24.x toolchain (Gin + Ent) backend, Vue 3 (Vite + TailwindCSS + Pinia) frontend
 - Architecture overview: `docs/architecture.md`
-- Design specs: `docs/superpowers/specs/`
-- Implementation plans: `docs/superpowers/plans/`
-- Current list and pagination contract: `docs/superpowers/specs/2026-08-25-list-and-pagination-consistency-design.md`
-- Current auth/provider baseline: `docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md`
-- Current Replan baseline-roster contract: `docs/superpowers/specs/2026-08-24-relay-replan-baseline-roster-design.md`
-- Current Relay mapping maintenance contract: `docs/superpowers/specs/2026-08-19-relay-group-mapping-contract.md`
-- Active Codex attribution contract and #252 cleanup gates: `docs/superpowers/specs/2026-08-11-codex-commit-token-attribution-v2-design.md`
-- Historical compact POC context: `docs/superpowers/specs/2026-08-05-codex-token-attribution-ledger-poc-design.md`
-- Local session proxy remains a draft in `docs/superpowers/specs/2026-04-02-local-session-proxy-design.md` unless code proves otherwise
+- Current behavior contracts: `docs/contracts/README.md`
+- Historical rationale and evidence: `docs/history/README.md`; never use history as current behavior or backlog
+- Unimplemented target state and work status: GitHub Issues
+- Independent architectural rationale: `docs/adr/` when warranted
+- Domain vocabulary: tracked root `CONTEXT.md` when present and relevant
+- Platform Sessions and the local session proxy are retired
 - Default verification:
   - `cd backend && go test ./...`
   - `cd ae-cli && go test ./...`

@@ -3,7 +3,7 @@
 This repository uses a single-context domain documentation layout.
 
 These rules supplement the source-of-truth order in `AGENTS.md`; they do not
-replace `docs/architecture.md` or the current domain-specific design specs.
+replace `docs/architecture.md` or the current domain-specific contracts.
 
 ## Before Exploring
 
