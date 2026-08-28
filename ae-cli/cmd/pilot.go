@@ -73,7 +73,17 @@ func ensurePilot(ctx context.Context, out, errOut io.Writer) {
 		return
 	}
 	if installed {
-		fmt.Fprintln(out, "LoongSuite Pilot installed and running.")
+		// The installer exiting zero is not proof that a service exists: on the
+		// machine this was tested against it exited zero while launchd refused
+		// the registration, because a stale one held the label. Reporting what
+		// the follow-up check found keeps a claim of success from outliving the
+		// thing it claims.
+		if status.State == pilot.StateAbsent {
+			fmt.Fprintln(errOut, "Warning: the LoongSuite Pilot installer finished but registered no service.")
+			fmt.Fprintln(errOut, "  Check it with 'loongsuite-pilot status'. Usage falls back to per-agent sources until it runs.")
+			return
+		}
+		fmt.Fprintln(out, "LoongSuite Pilot installed. It starts collecting as your agents run.")
 		return
 	}
 	reportPilotStatus(status, out, errOut)

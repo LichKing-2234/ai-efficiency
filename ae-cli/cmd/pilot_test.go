@@ -91,3 +91,26 @@ func TestReportPilotStatusStaysSilentForADisabledService(t *testing.T) {
 		t.Fatalf("out=%q errOut=%q, want silence for a deliberately disabled service", out.String(), errOut.String())
 	}
 }
+
+// The installer exiting zero is not proof that a service exists. On the machine
+// this was first tested against it exited zero while launchd refused the
+// registration, because a stale one from an earlier run held the label — and
+// login reported success anyway.
+func TestEnsurePilotDoesNotClaimSuccessWhenNoServiceWasRegistered(t *testing.T) {
+	t.Setenv(skipPilotEnv, "")
+	restore := pilotEnsure
+	pilotEnsure = func(context.Context, pilot.Checker, pilot.InstallOptions) (pilot.Status, bool, error) {
+		return pilot.Status{State: pilot.StateAbsent}, true, nil
+	}
+	t.Cleanup(func() { pilotEnsure = restore })
+
+	var out, errOut bytes.Buffer
+	ensurePilot(context.Background(), &out, &errOut)
+
+	if strings.Contains(out.String(), "installed") && !strings.Contains(errOut.String(), "registered no service") {
+		t.Fatalf("out = %q, errOut = %q; want the missing registration reported, not success", out.String(), errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "registered no service") {
+		t.Fatalf("errOut = %q, want it to say no service was registered", errOut.String())
+	}
+}

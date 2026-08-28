@@ -8,12 +8,14 @@ import (
 )
 
 type fakeService struct {
-	installed bool
-	disabled  bool
+	installed   bool
+	disabled    bool
+	installedAt time.Time
 }
 
-func (s fakeService) Installed() bool { return s.installed }
-func (s fakeService) Disabled() bool  { return s.disabled }
+func (s fakeService) Installed() bool        { return s.installed }
+func (s fakeService) Disabled() bool         { return s.disabled }
+func (s fakeService) InstalledAt() time.Time { return s.installedAt }
 
 var checkNow = time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
 
@@ -40,6 +42,9 @@ func pilotDataDir(t *testing.T, lastWrite time.Time) string {
 }
 
 func checkerFor(dataDir string, svc fakeService) Checker {
+	if svc.installed && svc.installedAt.IsZero() {
+		svc.installedAt = checkNow.Add(-365 * 24 * time.Hour)
+	}
 	return Checker{
 		DataDir: dataDir,
 		service: svc,
@@ -115,14 +120,29 @@ func TestCheckReportsStalledWhenAnEnabledServiceStopsProducing(t *testing.T) {
 	}
 }
 
-func TestCheckReportsStalledWhenAnEnabledServiceNeverWroteOutput(t *testing.T) {
+// A machine set up minutes ago has collected nothing yet. Reporting that as an
+// outage would greet every new install with a warning about a gap that never
+// happened.
+func TestCheckReportsHealthyForAFreshInstallThatHasNotCollectedYet(t *testing.T) {
 	dataDir := pilotDataDir(t, time.Time{})
-	got := checkerFor(dataDir, fakeService{installed: true}).Check()
+	svc := fakeService{installed: true, installedAt: checkNow.Add(-3 * time.Minute)}
+	got := checkerFor(dataDir, svc).Check()
+	if got.State != StateHealthy {
+		t.Fatalf("state = %q, want %q for an install three minutes old", got.State, StateHealthy)
+	}
+}
+
+// An install that is old and has still never collected anything is a real
+// fault, and the silence is measured from when it was installed.
+func TestCheckReportsStalledWhenAnOldInstallNeverWroteOutput(t *testing.T) {
+	dataDir := pilotDataDir(t, time.Time{})
+	svc := fakeService{installed: true, installedAt: checkNow.Add(-40 * 24 * time.Hour)}
+	got := checkerFor(dataDir, svc).Check()
 	if got.State != StateStalled {
 		t.Fatalf("state = %q, want %q", got.State, StateStalled)
 	}
-	if got.Severity() != SeverityWarn {
-		t.Fatalf("severity = %q, want %q: there is no gap to measure yet", got.Severity(), SeverityWarn)
+	if got.Severity() != SeverityError {
+		t.Fatalf("severity = %q, want %q for forty days of silence", got.Severity(), SeverityError)
 	}
 }
 

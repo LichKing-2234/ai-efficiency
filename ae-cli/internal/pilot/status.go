@@ -118,6 +118,11 @@ type service interface {
 	Installed() bool
 	// Disabled reports whether the service exists and someone turned it off.
 	Disabled() bool
+	// InstalledAt is when the service definition was written. A service cannot
+	// have produced anything before it existed, so this is the floor a silence
+	// is measured from — without it, a machine set up a minute ago would report
+	// its whole history as an outage.
+	InstalledAt() time.Time
 }
 
 // Checker resolves Pilot's status. The zero value checks the real machine.
@@ -192,15 +197,25 @@ func (c Checker) Check() Status {
 	}
 
 	status.LastOutputAt = latestOutputWrite(OutputDir(status.DataDir))
-	if status.LastOutputAt.IsZero() {
-		// Installed, enabled, and has never written anything. Treated as a stall
-		// rather than as healthy, but with no gap to measure, so it reports at
-		// the lower severity.
-		status.State = StateStalled
+
+	// Silence is measured from the later of the last output and the moment the
+	// service was installed. A fresh install has produced nothing yet, and
+	// reporting that as an outage would greet every new machine with a warning
+	// about a gap that never happened. Measured this way, a machine installed
+	// minutes ago is quiet, and one installed months ago that never collected
+	// anything reports the full silence.
+	since := status.LastOutputAt
+	if installedAt := svc.InstalledAt(); installedAt.After(since) {
+		since = installedAt
+	}
+	if since.IsZero() {
+		// Neither the service definition nor the output could be dated. There is
+		// nothing to measure, so claiming a fault would be an invention.
+		status.State = StateHealthy
 		return status
 	}
 
-	gap := c.clock().Sub(status.LastOutputAt)
+	gap := c.clock().Sub(since)
 	if gap < FreshWindow {
 		status.State = StateHealthy
 		return status

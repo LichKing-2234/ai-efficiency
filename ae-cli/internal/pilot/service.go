@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ServiceLabel is the identity Pilot's own installer registers its service
@@ -39,8 +40,9 @@ func platformService() service {
 // may not exist.
 type unknownService struct{}
 
-func (unknownService) Installed() bool { return false }
-func (unknownService) Disabled() bool  { return false }
+func (unknownService) Installed() bool        { return false }
+func (unknownService) Disabled() bool         { return false }
+func (unknownService) InstalledAt() time.Time { return time.Time{} }
 
 // launchdService reads macOS launchd.
 //
@@ -61,6 +63,9 @@ func (s launchdService) Installed() bool {
 	info, err := os.Stat(s.plistPath)
 	return err == nil && !info.IsDir()
 }
+
+// InstalledAt is when the agent plist was written.
+func (s launchdService) InstalledAt() time.Time { return fileModTime(s.plistPath) }
 
 // Disabled reads launchd's persistent disabled database.
 //
@@ -128,6 +133,9 @@ func (s systemdUserService) Installed() bool {
 	return err == nil && !info.IsDir()
 }
 
+// InstalledAt is when the unit file was written.
+func (s systemdUserService) InstalledAt() time.Time { return fileModTime(s.unitPath) }
+
 // Disabled asks systemd. `is-enabled` exits non-zero for a disabled unit and
 // prints the state either way, so the printed word is read rather than the exit
 // status.
@@ -158,4 +166,12 @@ func (s systemdUserService) readEnabled() (string, bool) {
 		return "", false
 	}
 	return state, true
+}
+
+func fileModTime(path string) time.Time {
+	info, err := os.Stat(strings.TrimSpace(path))
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime().UTC()
 }
