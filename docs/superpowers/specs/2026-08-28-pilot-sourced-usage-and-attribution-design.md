@@ -89,6 +89,36 @@ window a scan reads are dropped, because retrying them can no longer succeed.
 Codex is not affected — the collector tails its transcript continuously rather
 than waiting for a turn to end.
 
+## Replayed sessions partition the usage; the batch adds the partitions
+
+Compacting or resuming a Claude Code conversation creates a new session file
+carrying the replayed history, and Pilot exports that replay as one giant first
+turn — measured live, turns spanning five to seven hours of history against
+minutes for a real turn. Such a turn contains every mutation of the history, so
+it proves every commit the history produced, and its claim converges on the
+same content-derived group ids as the original turns'.
+
+The scan already prevents double pricing here: every response is priced into
+exactly one turn's claim, the earliest occurrence winning, so a replayed copy
+loses to its original wherever the original was exported. What remains in a
+giant turn's claim is the consumption whose originals were never exported —
+history predating the install, or wiped by a reinstall. Claims meeting under
+one group id therefore carry disjoint partitions of the consumption, verified
+live: each candidate's buckets equalled its winner partition exactly, and the
+partitions summed to the history's total.
+
+The upload batch carries each group id once — the backend rejects a repeat for
+disagreeing about its session and turn — with the partitions' allocations
+unioned and their usage added. Added, not deduplicated: keeping only one
+partition, an earlier behaviour, silently and permanently dropped the rest,
+because acknowledgements map back by group id and marked the dropped claims
+delivered.
+
+Two windows remain open and close only with response-level dedup on the
+backend: a response can be re-billed when its claim was delivered and its
+Pilot source then rotated out, so a later scan reassigns it to a replay turn
+under a fresh group; and nothing deduplicates across machines.
+
 ## Accepted costs
 
 - **One duplicate window at cutover.** Pilot's dedupe keys are in a different

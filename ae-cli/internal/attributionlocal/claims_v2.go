@@ -464,10 +464,16 @@ func mergeV2ScannedCandidates(scanned []V2ClaimCandidate) []V2ClaimCandidate {
 // failed the whole batch.
 //
 // Collapsing them is not a workaround for that rejection but the correct
-// reading of it: the same group id means the same commit and the same evidence,
-// so the entries are the same work seen twice. Their commit allocations are
-// unioned; their usage is not summed, because it is one turn's consumption
-// reported twice rather than twice the consumption.
+// reading of it: the same group id means the same commit and the same evidence.
+// Their commit allocations are unioned, and their usage is added. Adding is
+// safe because the scan already settled which turn each response belongs to:
+// every response is priced into exactly one turn's claim (the earliest
+// occurrence wins), so two claims that meet here carry disjoint partitions of
+// the consumption, never two copies of it. Measured on live data, each
+// candidate's buckets equalled its winner partition exactly, and keeping only
+// the first partition — the previous behaviour — silently dropped the others,
+// permanently: the acknowledgement maps back by group id, so the dropped
+// claims were still marked delivered and never re-sent.
 func UploadableV2ClaimGroups(candidates []V2ClaimCandidate) []client.AttributionV2ClaimGroup {
 	groups := make([]client.AttributionV2ClaimGroup, 0, len(candidates))
 	index := map[string]int{}
@@ -487,9 +493,7 @@ func UploadableV2ClaimGroups(candidates []V2ClaimCandidate) []client.Attribution
 		kept := &groups[at]
 		kept.CommitAllocations = mergeV2Allocations(kept.CommitAllocations, candidate.Group.CommitAllocations)
 		kept.RequestIDs = uniqueSorted(append(kept.RequestIDs, candidate.Group.RequestIDs...))
-		if len(kept.LocalUsage) == 0 {
-			kept.LocalUsage = candidate.Group.LocalUsage
-		}
+		kept.LocalUsage = sumV2LocalUsage(kept.LocalUsage, candidate.Group.LocalUsage)
 		if kept.Calibration == nil {
 			kept.Calibration = candidate.Group.Calibration
 		}
@@ -1451,6 +1455,52 @@ func sortedV2LocalUsage(values map[string]*client.AttributionV2LocalUsageBucket)
 		result = append(result, *values[key])
 	}
 	return result
+}
+
+// sumV2LocalUsage adds two usage partitions bucket by bucket.
+//
+// It is the collapse-time counterpart of mergeV2LocalUsage and must not be
+// confused with it. mergeV2LocalUsage reconciles two observations of the SAME
+// turn across scans, where an identical bucket is the same consumption seen
+// twice and is kept once. Here the inputs come from DIFFERENT turns, whose
+// responses the scan has already partitioned — each response priced into
+// exactly one turn — so a shared bucket key just means two turns consuming in
+// the same quarter hour, and the amounts add.
+func sumV2LocalUsage(existing, incoming []client.AttributionV2LocalUsageBucket) []client.AttributionV2LocalUsageBucket {
+	if len(incoming) == 0 {
+		return existing
+	}
+	byKey := make(map[string]*client.AttributionV2LocalUsageBucket, len(existing)+len(incoming))
+	order := make([]string, 0, len(existing)+len(incoming))
+	for _, usage := range append(append([]client.AttributionV2LocalUsageBucket(nil), existing...), incoming...) {
+		key := strings.TrimSpace(usage.RequestedModel) + "\x00" + usage.BucketStartUTC.UTC().Format(time.RFC3339)
+		bucket, ok := byKey[key]
+		if !ok {
+			copied := usage
+			copied.RequestedModel = strings.TrimSpace(copied.RequestedModel)
+			copied.BucketStartUTC = copied.BucketStartUTC.UTC()
+			byKey[key] = &copied
+			order = append(order, key)
+			continue
+		}
+		bucket.InputTokens += usage.InputTokens
+		bucket.OutputTokens += usage.OutputTokens
+		bucket.CacheCreationTokens += usage.CacheCreationTokens
+		bucket.CacheReadTokens += usage.CacheReadTokens
+		bucket.TotalTokens += usage.TotalTokens
+		bucket.RequestCount += usage.RequestCount
+	}
+	out := make([]client.AttributionV2LocalUsageBucket, 0, len(order))
+	for _, key := range order {
+		out = append(out, *byKey[key])
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].RequestedModel != out[j].RequestedModel {
+			return out[i].RequestedModel < out[j].RequestedModel
+		}
+		return out[i].BucketStartUTC.Before(out[j].BucketStartUTC)
+	})
+	return out
 }
 
 func mergeV2LocalUsage(existing, incoming []client.AttributionV2LocalUsageBucket) []client.AttributionV2LocalUsageBucket {

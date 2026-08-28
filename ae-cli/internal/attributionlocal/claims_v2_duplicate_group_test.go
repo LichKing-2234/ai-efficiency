@@ -9,24 +9,28 @@ import (
 
 var duplicateGroupNow = time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
 
-func duplicateGroupCandidate(localKey, groupID, commitSHA, evidence string) V2ClaimCandidate {
-	eventID := "event-" + commitSHA
+func duplicateGroupCandidate(localKey, groupID, commitSHA string, buckets ...client.AttributionV2LocalUsageBucket) V2ClaimCandidate {
 	c := V2ClaimCandidate{LocalKey: localKey, FirstSeenAt: duplicateGroupNow}
 	c.Group.GroupID = groupID
 	c.Group.ThreadID = localKey
 	c.Group.TurnID = localKey + ":t1"
-	c.Group.EvidenceDigest = evidence
+	c.Group.EvidenceDigest = "ev-" + groupID
 	c.Group.TokenSource = client.AttributionV2TokenSourceCodexLocal
 	c.Group.CommitAllocations = []client.AttributionV2CommitAllocation{{
-		Sequence: 1, CommitSHA: commitSHA, CheckpointEventID: eventID, EvidenceDigest: evidence,
+		Sequence: 1, CommitSHA: commitSHA, CheckpointEventID: "event-" + commitSHA, EvidenceDigest: "ev-" + groupID,
 	}}
-	c.Group.LocalUsage = []client.AttributionV2LocalUsageBucket{{
-		RequestedModel: "claude-opus-5", BucketStartUTC: duplicateGroupNow, TotalTokens: 1000, RequestCount: 1,
-	}}
+	c.Group.LocalUsage = buckets
 	return c
 }
 
-func duplicateGroupUsageTotal(g client.AttributionV2ClaimGroup) int64 {
+func duplicateGroupBucket(quarter time.Time, total int64) client.AttributionV2LocalUsageBucket {
+	return client.AttributionV2LocalUsageBucket{
+		RequestedModel: "claude-opus-5", BucketStartUTC: quarter,
+		OutputTokens: total, TotalTokens: total, RequestCount: 1,
+	}
+}
+
+func duplicateGroupTotal(g client.AttributionV2ClaimGroup) int64 {
 	var n int64
 	for _, b := range g.LocalUsage {
 		n += b.TotalTokens
@@ -35,26 +39,74 @@ func duplicateGroupUsageTotal(g client.AttributionV2ClaimGroup) int64 {
 }
 
 // A Claude Code resume replays the same work under a new session id and a
-// restarted turn counter. Local state is keyed by the turn, so it keeps two
-// entries; both name the same group, because a group is named by the commit and
-// the evidence. Sending both put one group id in a batch twice, and the backend
-// rejected the second for disagreeing about which session and turn it came
-// from — failing the whole batch.
+// restarted turn counter, so local state keeps one claim per turn while both
+// name the same group. The batch must carry that group id once — the backend
+// rejects a second occurrence for disagreeing about which session and turn it
+// came from, failing the whole batch.
+//
+// Their usage adds. The scan prices every response into exactly one turn's
+// claim (the earliest occurrence wins), so claims meeting here carry disjoint
+// partitions of the consumption — measured on live data, each candidate's
+// buckets equalled its winner partition exactly. The earlier behaviour kept
+// only the first partition, and because acknowledgements map back by group id,
+// the dropped partitions were still marked delivered and permanently lost.
 func TestUploadableGroupsCollapseOneGroupSeenUnderTwoTurns(t *testing.T) {
+	q1 := duplicateGroupNow
+	q2 := duplicateGroupNow.Add(15 * time.Minute)
 	state := &V2ClaimState{Version: 1}
 	MergeV2ClaimState(state, []V2ClaimCandidate{
-		duplicateGroupCandidate("sess-a", "GROUP-X", "commit-1", "ev-1"),
-		duplicateGroupCandidate("sess-b", "GROUP-X", "commit-1", "ev-1"),
+		duplicateGroupCandidate("sess-a", "GROUP-X", "commit-1", duplicateGroupBucket(q1, 1000)),
+		duplicateGroupCandidate("sess-b", "GROUP-X", "commit-1", duplicateGroupBucket(q2, 700)),
 	}, duplicateGroupNow)
 
 	groups := UploadableV2ClaimGroups(state.Claims)
-	seen := map[string]int{}
-	for _, g := range groups {
-		seen[g.GroupID]++
+	if len(groups) != 1 || groups[0].GroupID != "GROUP-X" {
+		t.Fatalf("groups = %+v, want the id once", groups)
 	}
-	t.Logf("local entries=%d uploadable groups=%d ids=%v", len(state.Claims), len(groups), seen)
-	if seen["GROUP-X"] > 1 {
-		t.Errorf("one batch carries GroupID %q %d times; the backend rejects the second for a session/turn mismatch", "GROUP-X", seen["GROUP-X"])
+	if got := duplicateGroupTotal(groups[0]); got != 1700 {
+		t.Fatalf("collapsed usage = %d, want 1700: the partitions are disjoint and must both survive", got)
+	}
+	if len(groups[0].LocalUsage) != 2 {
+		t.Fatalf("buckets = %+v, want both quarter hours", groups[0].LocalUsage)
+	}
+}
+
+// Two turns consuming in the same quarter hour share a bucket key; the amounts
+// add within the bucket rather than one replacing the other.
+func TestUploadableGroupsAddPartitionsSharingAQuarterHour(t *testing.T) {
+	state := &V2ClaimState{Version: 1}
+	MergeV2ClaimState(state, []V2ClaimCandidate{
+		duplicateGroupCandidate("sess-a", "GROUP-X", "commit-1", duplicateGroupBucket(duplicateGroupNow, 1000)),
+		duplicateGroupCandidate("sess-b", "GROUP-X", "commit-1", duplicateGroupBucket(duplicateGroupNow, 700)),
+	}, duplicateGroupNow)
+
+	groups := UploadableV2ClaimGroups(state.Claims)
+	if len(groups) != 1 || len(groups[0].LocalUsage) != 1 {
+		t.Fatalf("groups = %+v, want one group with one merged bucket", groups)
+	}
+	bucket := groups[0].LocalUsage[0]
+	if bucket.TotalTokens != 1700 || bucket.RequestCount != 2 {
+		t.Fatalf("bucket = %+v, want totals and request counts added", bucket)
+	}
+}
+
+// The shape measured live: an original turn and two giant replay turns all
+// prove the same commit. Each carries its own disjoint partition; the batch
+// must carry the group once with every partition's usage.
+func TestUploadableGroupsCarryEveryDisjointPartitionOnce(t *testing.T) {
+	state := &V2ClaimState{Version: 1}
+	MergeV2ClaimState(state, []V2ClaimCandidate{
+		duplicateGroupCandidate("orig", "GROUP-X", "commit-1", duplicateGroupBucket(duplicateGroupNow, 13931953)),
+		duplicateGroupCandidate("replay-1", "GROUP-X", "commit-1", duplicateGroupBucket(duplicateGroupNow.Add(15*time.Minute), 21454210)),
+		duplicateGroupCandidate("replay-2", "GROUP-X", "commit-1", duplicateGroupBucket(duplicateGroupNow.Add(30*time.Minute), 17297078)),
+	}, duplicateGroupNow)
+
+	groups := UploadableV2ClaimGroups(state.Claims)
+	if len(groups) != 1 {
+		t.Fatalf("groups = %d, want 1", len(groups))
+	}
+	if got := duplicateGroupTotal(groups[0]); got != 13931953+21454210+17297078 {
+		t.Fatalf("collapsed usage = %d, want the full sum of the three partitions", got)
 	}
 }
 
@@ -64,18 +116,22 @@ func TestUploadableGroupsCollapseOneGroupSeenUnderTwoTurns(t *testing.T) {
 func TestUploadableGroupsBillATurnOnceAcrossSeveralCommits(t *testing.T) {
 	state := &V2ClaimState{Version: 1}
 	MergeV2ClaimState(state, []V2ClaimCandidate{
-		duplicateGroupCandidate("sess-a", "GROUP-A", "commit-1", "ev-1"),
-		duplicateGroupCandidate("sess-a", "GROUP-B", "commit-2", "ev-2"),
+		duplicateGroupCandidate("sess-a", "GROUP-A", "commit-1", duplicateGroupBucket(duplicateGroupNow, 1000)),
+		duplicateGroupCandidate("sess-a", "GROUP-B", "commit-2", duplicateGroupBucket(duplicateGroupNow, 1000)),
 	}, duplicateGroupNow)
 
 	groups := UploadableV2ClaimGroups(state.Claims)
 	var total int64
 	for _, g := range groups {
-		total += duplicateGroupUsageTotal(g)
-		t.Logf("group %s allocations=%d tokens=%d", g.GroupID, len(g.CommitAllocations), duplicateGroupUsageTotal(g))
+		total += duplicateGroupTotal(g)
 	}
-	t.Logf("local entries=%d uploadable groups=%d total tokens=%d", len(state.Claims), len(groups), total)
-	if total > 1000 {
-		t.Errorf("one turn's 1000 tokens became %d across commits", total)
+	if len(groups) != 1 {
+		t.Fatalf("groups = %d (%+v), want the turn's claims merged into one", len(groups), groups)
+	}
+	if len(groups[0].CommitAllocations) != 2 {
+		t.Fatalf("allocations = %+v, want both commits on the one group", groups[0].CommitAllocations)
+	}
+	if total != 1000 {
+		t.Fatalf("total = %d, want the turn billed once", total)
 	}
 }
