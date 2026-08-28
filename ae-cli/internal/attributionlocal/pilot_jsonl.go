@@ -136,6 +136,7 @@ type pilotResponse struct {
 	sessionID        string
 	turnID           string
 	responseID       string
+	model            string
 	usage            pilotUsage
 	credit           float64
 	creditSeen       bool
@@ -304,8 +305,15 @@ func ScanPilotClaims(ctx context.Context, opts PilotScanOptions) (PilotScanResul
 		}
 		result.Usage = append(result.Usage, pilotUsageEvent(response, opts))
 	}
+	// Claims are priced from the same deduplicated responses the usage surface
+	// reports, grouped by the turn that performed the mutation. Pricing from the
+	// raw events instead would re-count every response a resume replayed.
+	byTurn := map[string][]*pilotResponse{}
+	for _, response := range orderedPilotResponses(responses) {
+		byTurn[response.turnID] = append(byTurn[response.turnID], response)
+	}
 	for _, turn := range ordered {
-		if claim, ok := pilotClaimCandidate(ctx, turn, opts); ok {
+		if claim, ok := pilotClaimCandidate(ctx, turn, byTurn[turn.turnID], opts); ok {
 			result.Claims = append(result.Claims, claim)
 		}
 	}
@@ -423,6 +431,7 @@ func pilotResponseUsage(turn *pilotTurn, event pilotEvent) *pilotResponse {
 		sessionID:  turn.sessionID,
 		turnID:     turn.turnID,
 		responseID: event.str("gen_ai.response.id"),
+		model:      firstNonEmpty(event.str("gen_ai.response.model"), event.str("gen_ai.request.model")),
 		observedAt: pilotEventObservedAt(event),
 		sourcePath: event.path,
 		sourceLine: event.line,
@@ -787,22 +796,25 @@ func pilotToolName(agentType string) string {
 // pilotClaimCandidate builds a commit-bound claim for a turn that performed a
 // structured mutation. Turns with no mutation at all produce no claim: they are
 // accounted for on the usage surface instead.
-func pilotClaimCandidate(ctx context.Context, turn *pilotTurn, opts PilotScanOptions) (V2ClaimCandidate, bool) {
+func pilotClaimCandidate(ctx context.Context, turn *pilotTurn, responses []*pilotResponse, opts PilotScanOptions) (V2ClaimCandidate, bool) {
 	if len(turn.mutations) == 0 && !turn.unrecognizedWrapper && len(turn.unhandledTools) == 0 {
 		return V2ClaimCandidate{}, false
 	}
-	groupID := claimDigest(fmt.Sprintf("%d", opts.RelayProviderID), turn.sessionID, turn.turnID)
 	candidate := V2ClaimCandidate{
 		LocalKey:    claimDigest(turn.sessionID, turn.turnID),
 		Source:      turn.source,
 		FirstSeenAt: turn.firstSeen,
 		Group: client.AttributionV2ClaimGroup{
 			SchemaVersion:   v2ClaimSchemaVersion,
-			GroupID:         groupID,
 			RelayProviderID: opts.RelayProviderID,
-			TokenSource:     client.AttributionV2TokenSourceRelayOfficial,
-			ThreadID:        turn.sessionID,
-			TurnID:          turn.turnID,
+			// Every agent Pilot covers is priced from what Pilot observed, not
+			// from the relay. Only Codex routes through the relay at all, and
+			// pricing one agent from a source the other two structurally cannot
+			// have would leave one commit carrying two kinds of number.
+			TokenSource: client.AttributionV2TokenSourceCodexLocal,
+			ThreadID:    turn.sessionID,
+			TurnID:      turn.turnID,
+			LocalUsage:  pilotLocalUsage(responses),
 		},
 	}
 
@@ -831,5 +843,73 @@ func pilotClaimCandidate(ctx context.Context, turn *pilotTurn, opts PilotScanOpt
 			EvidenceDigest:    evidenceDigest,
 		}}
 	}
+	// The backend derives the request count from the buckets, so it is not sent.
+	candidate.Group.GroupID = pilotClaimGroupID(turn, opts, candidate.Group.EvidenceDigest)
 	return candidate, true
+}
+
+// pilotClaimGroupID names a claim by what it proves rather than by where it was
+// observed.
+//
+// Deriving it from the session and turn was safe while only Codex produced
+// claims: Codex reports both natively and Pilot passes them through unchanged.
+// It is not safe for Claude Code, which has no turn concept at all — Pilot
+// numbers the turns itself, and a resumed session gets a new session id and a
+// restarted counter while the agent replays the same work. On this machine 190
+// of 1318 responses already appear under two turn ids. Named that way, one piece
+// of work would arrive as two groups and be counted twice.
+//
+// The commit and the evidence digest are both content-derived, so the same work
+// always names the same group however the collector happened to segment it.
+// Turns that prove nothing keep the observational name: they are not delivered,
+// and they have no evidence to be named by.
+func pilotClaimGroupID(turn *pilotTurn, opts PilotScanOptions, evidenceDigest string) string {
+	provider := fmt.Sprintf("%d", opts.RelayProviderID)
+	if strings.TrimSpace(evidenceDigest) == "" {
+		return claimDigest(provider, turn.sessionID, turn.turnID)
+	}
+	return claimDigest(provider, opts.CommitSHA, evidenceDigest)
+}
+
+// pilotLocalUsage prices a claim from the responses that produced it.
+//
+// The backend aggregates local usage into quarter-hour buckets per model and
+// rejects a bucket start that is not aligned to one, so the alignment happens
+// here rather than being discovered as a rejection later.
+func pilotLocalUsage(responses []*pilotResponse) []client.AttributionV2LocalUsageBucket {
+	if len(responses) == 0 {
+		return nil
+	}
+	type key struct {
+		model  string
+		bucket time.Time
+	}
+	order := make([]key, 0, len(responses))
+	buckets := map[key]*client.AttributionV2LocalUsageBucket{}
+	for _, response := range responses {
+		// A response with no observation time cannot be placed in a bucket, and
+		// inventing one would attribute its cost to an arbitrary quarter hour.
+		if response == nil || response.observedAt.IsZero() || !response.usage.seen {
+			continue
+		}
+		k := key{model: strings.TrimSpace(response.model), bucket: response.observedAt.UTC().Truncate(15 * time.Minute)}
+		bucket, ok := buckets[k]
+		if !ok {
+			bucket = &client.AttributionV2LocalUsageBucket{RequestedModel: k.model, BucketStartUTC: k.bucket}
+			buckets[k] = bucket
+			order = append(order, k)
+		}
+		bucket.InputTokens += response.usage.uncachedInput()
+		bucket.OutputTokens += response.usage.output
+		bucket.CacheCreationTokens += response.usage.cacheCreation
+		bucket.CacheReadTokens += response.usage.cacheRead
+		bucket.RequestCount++
+	}
+	out := make([]client.AttributionV2LocalUsageBucket, 0, len(order))
+	for _, k := range order {
+		bucket := buckets[k]
+		bucket.TotalTokens = bucket.InputTokens + bucket.OutputTokens + bucket.CacheCreationTokens + bucket.CacheReadTokens
+		out = append(out, *bucket)
+	}
+	return out
 }

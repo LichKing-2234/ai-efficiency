@@ -5,8 +5,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/ai-efficiency/ae-cli/internal/client"
+	"time"
 )
 
 // writePilotJSONL writes one Pilot normalized event per line, matching the shape
@@ -402,6 +406,8 @@ func pilotReplayRepo(t *testing.T, path, parent, current string) (string, string
 
 // pilotToolTurn writes one Pilot turn: a tool call plus the llm.response that
 // closes it, which is the minimum a claim needs.
+var pilotTestObservedAt = time.Date(2026, 8, 27, 10, 7, 0, 0, time.UTC)
+
 func pilotToolTurn(t *testing.T, dir, workspace, agentType, toolName, arguments string) {
 	t.Helper()
 	writePilotJSONL(t, filepath.Join(dir, agentType+"-2026-08-27.jsonl"),
@@ -417,6 +423,9 @@ func pilotToolTurn(t *testing.T, dir, workspace, agentType, toolName, arguments 
 			"workspace.current_root": workspace,
 			"gen_ai.session.id":      "s", "gen_ai.turn.id": "s:t1", "gen_ai.response.id": "r1",
 			"gen_ai.usage.input_tokens": 10, "gen_ai.usage.output_tokens": 2,
+			// Real Pilot output always carries an observation time, and a claim
+			// cannot be priced without one.
+			"time_unix_nano": pilotTestObservedAt.UnixNano(),
 		},
 	)
 }
@@ -953,3 +962,111 @@ func TestScanPilotClaimsCountsRecordsWithNoWorkspace(t *testing.T) {
 		t.Fatalf("UnscopedRecords = %d, want 1", result.UnscopedRecords)
 	}
 }
+
+// Every agent Pilot covers is priced from what Pilot observed. Only Codex
+// routes through the relay at all, so pricing one agent from a source the other
+// two structurally cannot have would leave one commit carrying two kinds of
+// number.
+func TestScanPilotClaimsPricesEveryAgentLocally(t *testing.T) {
+	const patch = "*** Begin Patch\n*** Add File: feature.go\n+package feature\n*** End Patch"
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	dir := t.TempDir()
+	pilotToolTurn(t, dir, repo, pilotAgentCodex, "apply_patch", patch)
+
+	result := scanPilotForTest(t, dir, repo, commit)
+	if len(result.Claims) != 1 {
+		t.Fatalf("claims = %d, want 1", len(result.Claims))
+	}
+	group := result.Claims[0].Group
+	if group.TokenSource != client.AttributionV2TokenSourceCodexLocal {
+		t.Fatalf("token source = %q, want %q", group.TokenSource, client.AttributionV2TokenSourceCodexLocal)
+	}
+	if len(group.RequestIDs) != 0 {
+		t.Fatalf("request ids = %v, want none: local pricing asks the relay nothing", group.RequestIDs)
+	}
+	if len(group.LocalUsage) != 1 {
+		t.Fatalf("local usage = %+v, want one bucket", group.LocalUsage)
+	}
+	bucket := group.LocalUsage[0]
+	if bucket.OutputTokens != 2 || bucket.RequestCount != 1 {
+		t.Fatalf("bucket = %+v, want the turn's one response priced into it", bucket)
+	}
+	if !bucket.BucketStartUTC.Equal(bucket.BucketStartUTC.Truncate(15 * time.Minute)) {
+		t.Fatalf("bucket start %s is not aligned to a quarter hour; the backend rejects that", bucket.BucketStartUTC)
+	}
+	if got := bucket.InputTokens + bucket.OutputTokens + bucket.CacheCreationTokens + bucket.CacheReadTokens; got != bucket.TotalTokens {
+		t.Fatalf("total %d does not equal its components %d", bucket.TotalTokens, got)
+	}
+}
+
+// Claude Code has no turn concept, so Pilot numbers the turns itself and a
+// resumed session restarts the counter under a new session id. A claim named by
+// session and turn would then arrive twice for one piece of work. Naming it by
+// the commit and the evidence keeps one name.
+func TestScanPilotClaimsNamesAGroupByItsEvidenceNotItsTurn(t *testing.T) {
+	repo, parent := v2ClaimRepo(t, "feature.go", "package feature\n")
+	_ = parent
+	current := "package feature\n\nfunc Added() {}\n"
+	if err := os.WriteFile(filepath.Join(repo, "feature.go"), []byte(current), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitClaim(t, repo, "add", "feature.go")
+	gitClaim(t, repo, "commit", "-m", "extend")
+	commit := strings.TrimSpace(gitClaim(t, repo, "rev-parse", "HEAD"))
+
+	// The same edit, observed twice under different session and turn ids — what
+	// a resume produces.
+	groupIDs := map[string]struct{}{}
+	for _, ids := range [][2]string{{"sess-a", "sess-a:t1"}, {"sess-b", "sess-b:t13"}} {
+		dir := t.TempDir()
+		writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-27.jsonl"),
+			map[string]any{
+				"event.name": "tool.call", "gen_ai.agent.type": pilotAgentClaude,
+				"workspace.current_root": repo,
+				"gen_ai.session.id":      ids[0], "gen_ai.turn.id": ids[1],
+				"gen_ai.tool.name": "Write", "gen_ai.tool.call.id": "c1",
+				"gen_ai.tool.call.arguments": `{"file_path":"feature.go","content":` + strconvQuote(current) + `}`,
+			},
+			map[string]any{
+				"event.name": "llm.response", "gen_ai.agent.type": pilotAgentClaude,
+				"workspace.current_root": repo,
+				"gen_ai.session.id":      ids[0], "gen_ai.turn.id": ids[1], "gen_ai.response.id": "msg_1",
+				"gen_ai.usage.input_tokens": 10, "gen_ai.usage.output_tokens": 2,
+				"time_unix_nano": pilotTestObservedAt.UnixNano(),
+			},
+		)
+		result := scanPilotForTest(t, dir, repo, commit)
+		if len(result.Claims) != 1 {
+			t.Fatalf("session %s: claims = %d, want 1", ids[0], len(result.Claims))
+		}
+		if result.Claims[0].GapReason != "" {
+			t.Fatalf("session %s: gap %q, want a proven claim", ids[0], result.Claims[0].GapReason)
+		}
+		groupIDs[result.Claims[0].Group.GroupID] = struct{}{}
+	}
+	if len(groupIDs) != 1 {
+		t.Fatalf("group ids = %d distinct values, want 1: the same evidence for the same commit is one claim", len(groupIDs))
+	}
+}
+
+// A turn that proves nothing has no evidence to be named by, and is not
+// delivered either, so it keeps its observational name.
+func TestScanPilotClaimsKeepsTheObservationalNameForAnUnprovenTurn(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	dir := t.TempDir()
+	pilotToolTurn(t, dir, repo, pilotAgentCodex, "apply_patch", "*** Begin Patch\n*** Add File: other.go\n+package other\n*** End Patch")
+
+	result := scanPilotForTest(t, dir, repo, commit)
+	if len(result.Claims) != 1 {
+		t.Fatalf("claims = %d, want 1", len(result.Claims))
+	}
+	claim := result.Claims[0]
+	if claim.GapReason == "" {
+		t.Fatal("want a gap: the patch does not match the commit's content")
+	}
+	if claim.Group.GroupID != claimDigest("7", "s", "s:t1") {
+		t.Fatalf("group id = %q, want the session/turn name for an unproven turn", claim.Group.GroupID)
+	}
+}
+
+func strconvQuote(s string) string { return strconv.Quote(s) }
