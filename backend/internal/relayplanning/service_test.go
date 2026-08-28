@@ -94,12 +94,18 @@ func TestFindGroupForPlatformRejectsCrossPlatformAndMissingGroups(t *testing.T) 
 }
 
 func TestExecutionStateRetainsRetryableStepErrors(t *testing.T) {
-	state := executionState("op-1", []GroupResult{{Index: 0, ID: 41, Status: "succeeded"}, {Index: 1, Status: "failed", Error: "upstream timeout"}}, []MemberResult{{UserID: 7, TargetGroupID: 41, Subscription: "succeeded", SourceRemoval: "failed", Error: "remove failed"}, {UserID: 8, TargetGroupID: 41, Subscription: "succeeded", SourceRemoval: "skipped", APIKeys: []string{"9:failed:bind timeout"}}})
-	if state["operation"]["status"] != "needs_retry" || state["group:1"]["error"] != "upstream timeout" || state["member:7"]["source_removal"] != "failed" {
+	state := executionState("op-1", []GroupResult{{Index: 0, ID: 41, Status: "succeeded"}, {Index: 1, Status: "failed", Error: "upstream timeout"}}, []MemberResult{{Action: "remove", UserID: 7, TargetGroupID: 41, Subscription: "skipped", SourceRemoval: "skipped", Error: "assign failed", reviewedAPIKeys: reviewedAPIKeySelection{IDs: []int64{7, 9}, Frozen: true}}, {UserID: 8, TargetGroupID: 41, Subscription: "succeeded", SourceRemoval: "skipped", APIKeys: []string{"9:failed:bind timeout"}}, {Action: "remove", UserID: 9, TargetGroupID: 41, Subscription: "skipped", SourceRemoval: "skipped", Error: "assign failed", reviewedAPIKeys: reviewedAPIKeySelection{Frozen: true}}})
+	if state["operation"]["status"] != "needs_retry" || state["group:1"]["error"] != "upstream timeout" || state["member:7"]["error"] != "assign failed" {
 		t.Fatalf("execution state = %#v", state)
 	}
-	if !operationStateNeedsRetry(state, "member:7") || !operationStateNeedsRetry(state, "member:8") || operationStateNeedsRetry(state, "member:9") {
-		t.Fatalf("retry lookup = member7:%v member8:%v member9:%v", operationStateNeedsRetry(state, "member:7"), operationStateNeedsRetry(state, "member:8"), operationStateNeedsRetry(state, "member:9"))
+	if state["member:7"]["reviewed_api_key_ids"] != "7,9" {
+		t.Fatalf("reviewed API Key state = %#v, want IDs persisted before writes", state["member:7"])
+	}
+	if reviewed, exists := state["member:9"]["reviewed_api_key_ids"]; !exists || reviewed != "" {
+		t.Fatalf("empty reviewed API Key state = %#v, want explicit empty marker", state["member:9"])
+	}
+	if !operationStateNeedsRetry(state, "member:7") || !operationStateNeedsRetry(state, "member:8") || !operationStateNeedsRetry(state, "member:9") || operationStateNeedsRetry(state, "member:10") {
+		t.Fatalf("retry lookup = member7:%v member8:%v member9:%v member10:%v", operationStateNeedsRetry(state, "member:7"), operationStateNeedsRetry(state, "member:8"), operationStateNeedsRetry(state, "member:9"), operationStateNeedsRetry(state, "member:10"))
 	}
 }
 
@@ -550,7 +556,7 @@ func (p concurrentCandidateFactsProvider) ListUserSubscriptions(context.Context,
 func (p concurrentCandidateFactsProvider) ListUserAPIKeys(context.Context, int64) ([]relay.APIKey, error) {
 	p.started <- "api_keys"
 	<-p.release
-	return []relay.APIKey{{ID: 7, GroupID: 42}}, nil
+	return []relay.APIKey{{ID: 7, GroupID: 42, Status: "active"}, {ID: 8, GroupID: 42, Status: "inactive"}}, nil
 }
 
 func (p concurrentCandidateFactsProvider) ListAllowedGroupsForUser(context.Context, int64) ([]relay.Group, error) {
@@ -584,6 +590,9 @@ func TestLoadCandidateRelayFactsUsesSubscriptionsAndRunsIndependentReadsConcurre
 	}
 	if !facts.eligible || facts.migratableKeyCount != 1 {
 		t.Fatalf("candidate facts = %#v, want eligible with one migratable key", facts)
+	}
+	if len(facts.relationshipAPIKeys) != 1 || facts.relationshipAPIKeys[0].ID != 7 {
+		t.Fatalf("candidate API Key facts = %#v, want only active key 7", facts.relationshipAPIKeys)
 	}
 	if len(facts.currentGroupIDs) != 1 || facts.currentGroupIDs[0] != 84 {
 		t.Fatalf("current group IDs = %#v, want [84]", facts.currentGroupIDs)

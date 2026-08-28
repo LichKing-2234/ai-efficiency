@@ -756,6 +756,8 @@ describe('RelayPlanningView', () => {
 	it('confirms a rendered managed-member removal with Source, Target, and API Key effects', async () => {
 		const mapping = {
 			...structuredClone(renewalMapping),
+			template_group_id: 10,
+			template_group_name: 'Template',
 			source_group_id: 42,
 			source_group_name: 'Group Alpha',
 			group_ids: [101],
@@ -767,6 +769,8 @@ describe('RelayPlanningView', () => {
 		const replan = structuredClone({
 			...plan,
 			mapping_id: 9,
+			template_group_id: 10,
+			template_group_name: 'Template',
 			assignments: [{ ...plan.assignments[0], target_group_id: 101, user_ids: [1] }],
 			target_summaries: [],
 		})
@@ -790,7 +794,13 @@ describe('RelayPlanningView', () => {
 		relayPlanning.previewRelayReplan
 			.mockResolvedValueOnce({ data: { data: replan } })
 			.mockResolvedValueOnce({ data: { data: removal } })
-		relayPlanning.executeRelayReplan.mockResolvedValue({ data: { data: { plan: removal, groups: [], accounts: [], members: [], mapping } } })
+		relayPlanning.executeRelayReplan.mockResolvedValue({ data: { data: {
+			plan: removal,
+			groups: [],
+			accounts: [],
+			members: [{ user_id: 1, target_group_id: 101, subscription: 'failed', source_removal: 'failed', error: 'relationship readback failed' }],
+			mapping: { ...mapping, status: 'needs_retry' },
+		} } })
 
 		await wrapper.get('[data-testid="replan-mapping-9"]').trigger('click')
 		await flushPromises()
@@ -813,6 +823,86 @@ describe('RelayPlanningView', () => {
 			removed_user_ids: [1],
 			assignments: [expect.objectContaining({ target_group_id: 101, user_ids: [] })],
 		}))
+		expect(wrapper.text()).toContain('Needs retry')
+		expect(wrapper.text()).toContain('relationship readback failed')
+	})
+
+	it('prioritizes needs-retry status over relationship warnings', async () => {
+		const mapping = {
+			...structuredClone(renewalMapping),
+			status: 'needs_retry',
+			warnings: ['unmanaged member 2 in target group 25'],
+		}
+		const { wrapper } = await mountView([mapping])
+
+		expect(wrapper.text()).toContain('Needs retry')
+		expect(wrapper.text()).toContain('User 2 is unmanaged in target Group #25')
+	})
+
+	it('requires a removal destination for a legacy managed member', async () => {
+		const mapping = {
+			...structuredClone(renewalMapping),
+			template_group_id: 10,
+			template_group_name: 'Template',
+			source_group_id: 42,
+			source_group_name: 'Group Alpha',
+			group_ids: [101],
+			member_assignments: { '1': 101 },
+			member_sources: {},
+			account_management_initialized: true,
+			desired_accounts: { '101': [{ account_id: 11, priority: 1 }] },
+		}
+		const replan = structuredClone({
+			...plan,
+			mapping_id: 9,
+			template_group_id: 10,
+			template_group_name: 'Template',
+			candidates: [{ ...plan.candidates[0], source_group_id: 0, source_member: false }],
+			assignments: [{ ...plan.assignments[0], target_group_id: 101, user_ids: [1] }],
+			target_summaries: [],
+		})
+		const removal = structuredClone({
+			...replan,
+			candidates: [{ ...replan.candidates[0], source_group_id: 42 }],
+			assignments: [{ ...replan.assignments[0], user_ids: [] }],
+			target_summaries: [{
+				index: 0,
+				target_group_id: 101,
+				target_group_name: 'SDK Framework-openai-01',
+				accounts: [],
+				members: [{ user_id: 1, relay_user_id: 101, action: 'remove', from_group_id: 101, to_group_id: 42 }],
+				subscriptions: [
+					{ user_id: 1, relay_user_id: 101, action: 'add', group_id: 42 },
+					{ user_id: 1, relay_user_id: 101, action: 'remove', group_id: 101 },
+				],
+				api_keys: [{ user_id: 1, relay_user_id: 101, action: 'move', count: 1, from_group_id: 101, to_group_id: 42 }],
+			}],
+		})
+		const { wrapper, relayPlanning } = await mountView([mapping])
+		relayPlanning.previewRelayReplan
+			.mockResolvedValueOnce({ data: { data: replan } })
+			.mockResolvedValueOnce({ data: { data: removal } })
+
+		await wrapper.get('[data-testid="replan-mapping-9"]').trigger('click')
+		await flushPromises()
+		await wrapper.get('[data-testid="remove-member-1"]').trigger('click')
+
+		expect(wrapper.get('[data-testid="open-execution-confirmation"]').attributes('disabled')).toBeDefined()
+		expect(wrapper.text()).toContain('Choose Source or Target only')
+		const source = wrapper.get('[data-testid="removed-member-source-1"]')
+		expect((source.element as HTMLSelectElement).value).toBe('')
+		await source.setValue('42')
+		expect(wrapper.get('[data-testid="open-execution-confirmation"]').attributes('disabled')).toBeUndefined()
+
+		await wrapper.get('[data-testid="open-execution-confirmation"]').trigger('click')
+		await flushPromises()
+		expect(relayPlanning.previewRelayReplan).toHaveBeenLastCalledWith(9, expect.objectContaining({
+			removed_user_ids: [1],
+			member_sources: { '1': 42 },
+		}))
+		expect(wrapper.text()).toContain('Add Group #42 subscription for user #1')
+		expect(wrapper.text()).toContain('Remove Group #101 subscription for user #1')
+		expect(wrapper.text()).toContain('Move 1 API Key(s) from Group #101 to Group #42 for user #1')
 	})
 
 	it('opens a centered in-page confirmation without executing', async () => {
@@ -1152,7 +1242,7 @@ describe('RelayPlanningView', () => {
 			status: 'needs_retry',
 			member_assignments: { '2': 101 },
 			operation_state: {
-				'member:1': { action: 'remove', source_removal: 'failed', error: 'synthetic removal failure' },
+				'member:1': { action: 'remove', source_reviewed: 'true', source_group_id: '0', source_removal: 'failed', error: 'synthetic removal failure' },
 				'member:2': { action: 'move_here', from_mapping_id: '8', source_removal: 'failed', error: 'synthetic move failure' },
 			},
 		}
@@ -1175,6 +1265,7 @@ describe('RelayPlanningView', () => {
 			member_actions: { '2': { mode: 'move_here', from_mapping_id: 8 } },
 		})
 		expect(wrapper.text()).toContain('Move here')
+		expect(wrapper.get('[data-testid="removed-member-source-1"]').attributes('disabled')).toBeDefined()
 	})
 
 	it('renders only the last confirmed Replan roster as selected', async () => {

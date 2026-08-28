@@ -76,7 +76,9 @@ rendering, feedback, and explicit administrator intent. HTTP transport remains
 in `frontend/src/api/relayPlanning.ts`. Preview and local edits remain read-only;
 only the explicit final Confirm invokes Execute. A categorized stale response
 closes the old confirmation and makes the refreshed plan visible without
-automatically replaying the previous execution.
+automatically replaying the previous execution. A `needs_retry` mapping status
+takes precedence over relationship warnings, and member readback errors remain
+visible in the execution result.
 
 ## Stable Mapping
 
@@ -168,10 +170,14 @@ Account bindings removed, is made inactive, and receives no member migration.
 
 An administrator may explicitly remove a managed member. A saved Source is
 restored, or reused without another assignment when its subscription is already
-active. Eligible API Keys still bound to the target are moved back, and the
-target subscription is removed. Without a saved Source, only the target
-subscription is removed. `Move Here` transfers one member from one explicit
-same-Provider, same-Platform mapping. `Add Additionally` preserves the old
+active. Eligible active API Keys still bound to the target are moved back, and
+the target subscription is removed. If a legacy managed member has no saved
+per-member Source, removal remains non-executable until the administrator
+explicitly selects a same-Platform Source or `Target only`. Template and managed
+Target Groups cannot be selected as the removal Source. Explicit `Target only`
+removes only the Target subscription and moves no API Key. `Move Here`
+transfers one member from one explicit same-Provider, same-Platform mapping.
+`Add Additionally` preserves the old
 mapping, subscription, and API-Key bindings and adds only the new target
 subscription. The UI warns that this leaves the user in multiple managed
 Account pools. Department changes never trigger either action automatically.
@@ -259,12 +265,25 @@ An explicit removal updates the desired member state immediately. If an
 upstream step fails, the operation state retains its Target and saved Source so
 the same removal can be Previewed and retried without restoring the deleted
 desired assignment.
+The reviewed removal destination is carried as per-member Source intent through
+Preview, Confirm, relationship fingerprinting, execution, readback, and retry.
+Missing provenance never defaults silently to `Target only`; an explicit zero is
+the only Target-only instruction. A pending removal retry keeps that reviewed
+destination locked; changing Source or switching to `Target only` requires a new
+removal operation after the pending retry is resolved. A provenance-free legacy
+retry may load a read-only plan that shows the removal intent without inventing
+subscription or API-Key effects; execution remains blocked until the
+administrator reviews a destination.
+Only Keys active when reviewed enter the removal operation. Their IDs remain in
+the retry fingerprint and final readback even if a later Relay change moves or
+deactivates them; Keys already inactive at review time remain outside the
+operation and are never moved.
 After all explicit-removal writes, execution obtains one fresh provider-wide
 subscription relationship snapshot and reads the affected users' API Keys. A
 removal succeeds only when the saved Source subscription is active, the Target
-subscription is absent, and every reviewed eligible Key has the expected final
-binding. Missing or unavailable readback remains `needs_retry`; it never restores
-the deleted desired assignment or repeats a step already proven successful.
+subscription is absent, and every reviewed eligible active Key has the expected
+final binding. Missing or unavailable readback remains `needs_retry`; it never
+restores the deleted desired assignment or repeats a step already proven successful.
 Failed `Move Here` operation state likewise retains the source mapping and
 actual previous target. Reopening Replan restores that action in the UI and the
 backend independently restores it when a client omits the retry action.
@@ -277,6 +296,9 @@ Preview. A retry obtains a fresh Preview fingerprint while retaining the saved
 operation state and actual previous target Group needed by unfinished steps.
 Completed subscription steps for the same reviewed Target are not submitted
 again during that retry; choosing a different Target requires a new step.
+Completed member steps are reusable only when the saved action and Target match
+the current retry. A completed forward migration never satisfies a later
+removal merely because both operations reference the same Target.
 Destination and source mapping changes are committed in one local transaction.
 The execution response reports one persistence result per affected mapping; a
 failure rolls back every local mapping change and returns structured retryable

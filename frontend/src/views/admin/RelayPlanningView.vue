@@ -108,6 +108,8 @@ const {
 	selectedUserIDs,
 	selectedUnmanagedRelayIDs,
 	removedUserIDs,
+	removalSources,
+	lockedRemovalSourceUserIDs,
 	memberActions,
 	managedAssignmentsByUser,
 	memberSources,
@@ -116,6 +118,7 @@ const {
 	displayedEligibleMemberCount,
 	unassignedCandidates,
 	hasTargetNameErrors,
+	hasUnreviewedRemovalSources,
 	preview: previewReviewedPlan,
 	openReplan: openReviewedReplan,
 	requestConfirmation: requestReviewedConfirmation,
@@ -205,6 +208,12 @@ function translateMappingStatus(status: string): string {
   return status
 }
 
+function mappingStatusText(mapping: RelayPlanningMapping): string {
+	if (mapping.status === 'needs_retry') return translateMappingStatus(mapping.status)
+	if (mapping.warnings?.length) return t('relayPlanning.reviewNeeded')
+	return translateMappingStatus(mapping.status)
+}
+
 function renameResultText(status?: string): string {
 	if (status === 'succeeded') return t('relayPlanning.renameSucceeded')
 	if (status === 'failed') return t('relayPlanning.renameNeedsRetry')
@@ -218,6 +227,11 @@ function summaryUser(userID?: number, relayUserID?: number): string {
 
 function summaryGroup(groupID: number | undefined, summary: RelayPlanningTargetSummary): string {
 	return groupID ? t('relayPlanning.groupNumber', { id: groupID }) : summary.target_group_name
+}
+
+function removalSourceGroups() {
+	const blocked = new Set([Number(plan.value?.template_group_id || 0), ...(plan.value?.assignments ?? []).map((assignment) => Number(assignment.target_group_id || 0))])
+	return groups.value.filter((group) => !blocked.has(Number(group.group_id)))
 }
 
 function accountChangeText(change: RelayPlanningTargetSummary['accounts'][number]): string {
@@ -805,7 +819,7 @@ onBeforeUnmount(() => {
         </div>
         <div class="mt-4 flex flex-wrap gap-2">
           <el-button data-testid="preview-allocation" type="primary" :loading="loading" @click="preview">{{ t('relayPlanning.preview') }}</el-button>
-          <el-button v-if="plan" data-testid="open-execution-confirmation" :icon="Check" type="success" :loading="confirming" :disabled="plan.group_count === 0 || hasTargetNameErrors || (!activeMappingID && selectedUserIDs.size === 0 && selectedUnmanagedRelayIDs.size === 0)" @click="requestExecution">{{ t('relayPlanning.confirmExecute') }}</el-button>
+          <el-button v-if="plan" data-testid="open-execution-confirmation" :icon="Check" type="success" :loading="confirming" :disabled="plan.group_count === 0 || hasTargetNameErrors || hasUnreviewedRemovalSources || (!activeMappingID && selectedUserIDs.size === 0 && selectedUnmanagedRelayIDs.size === 0)" @click="requestExecution">{{ t('relayPlanning.confirmExecute') }}</el-button>
         </div>
         <el-alert v-if="error" class="mt-4" type="error" :closable="false" :title="error" />
       </section>
@@ -912,7 +926,27 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </div>
-        </div>
+			</div>
+			<div v-if="removedUserIDs.size" data-testid="removed-member-source-review" class="rounded-md border border-amber-200 bg-amber-50 p-3">
+				<div class="text-sm font-semibold text-slate-900">{{ t('relayPlanning.removalDestination') }}</div>
+				<el-alert v-if="hasUnreviewedRemovalSources" class="mt-2" type="warning" :closable="false" show-icon :title="t('relayPlanning.removalDestinationRequired')" />
+				<div class="mt-3 space-y-2">
+					<div v-for="userID in removedUserIDs" :key="userID" class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,1fr)] sm:items-center">
+						<span class="min-w-0 break-words text-sm text-slate-700">{{ candidateLabel(userID) }}</span>
+						<el-select
+							:data-testid="`removed-member-source-${userID}`"
+							:model-value="removalSources[String(userID)] ?? undefined"
+							class="w-full"
+							:disabled="lockedRemovalSourceUserIDs.has(userID)"
+							:placeholder="t('relayPlanning.removalDestinationRequired')"
+							@change="(value) => setMemberSource(userID, Number(value || 0))"
+						>
+							<el-option :label="t('relayPlanning.targetOnly')" :value="0" />
+							<el-option v-for="item in removalSourceGroups()" :key="item.group_id" :label="`${item.group_name} (#${item.group_id})`" :value="Number(item.group_id)" />
+						</el-select>
+					</div>
+				</div>
+			</div>
         <div class="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4">
           <div class="mb-2 text-sm font-semibold text-slate-900">{{ t('relayPlanning.unassigned') }}</div>
           <div v-if="unassignedCandidates.length" class="flex flex-wrap gap-2"><el-tag v-for="candidate in unassignedCandidates" :key="candidate.user_id" type="warning">{{ candidate.username || candidate.email }}</el-tag></div>
@@ -932,6 +966,13 @@ onBeforeUnmount(() => {
 
 		<section v-if="lastExecution" class="border-y border-slate-200 bg-white py-4">
 			<div class="mb-3 text-sm font-semibold text-slate-900">{{ t('relayPlanning.executionResults') }}</div>
+			<el-alert v-if="lastExecution.mapping?.status === 'needs_retry'" data-testid="execution-needs-retry" class="mb-3" type="error" :closable="false" show-icon :title="t('relayPlanning.needsRetry')" />
+			<div v-if="lastExecution.members.some((member) => member.error)" class="mb-3 divide-y divide-red-100 border-y border-red-100">
+				<div v-for="member in lastExecution.members.filter((item) => item.error)" :key="`${member.user_id || 0}:${member.relay_user_id || 0}:${member.target_group_id || 0}`" :data-testid="`execution-member-error-${member.user_id || member.relay_user_id}`" class="py-2 text-sm">
+					<div class="font-medium text-slate-900">{{ member.user_id ? candidateLabel(member.user_id) : `Relay #${member.relay_user_id}` }}</div>
+					<div class="mt-1 break-words text-xs text-red-600">{{ member.error }}</div>
+				</div>
+			</div>
 			<div class="divide-y divide-slate-200">
 				<div v-for="group in lastExecution.groups" :key="group.index" class="flex flex-wrap items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
 					<div class="min-w-0"><div class="break-words text-sm font-medium text-slate-900">{{ group.name || t('relayPlanning.groupNumber', { id: group.id ?? group.index + 1 }) }}</div><div v-if="group.current_name && group.current_name !== group.name" class="break-words text-xs text-slate-500">{{ group.current_name }} -> {{ group.name }}</div><div v-if="group.error" class="mt-1 break-words text-xs text-red-600">{{ group.error }}</div></div>
@@ -945,7 +986,7 @@ onBeforeUnmount(() => {
         <el-empty v-if="!mappings.length" :description="t('relayPlanning.noMappings')" />
         <div v-if="mappings.length && !wideContentLayout" data-testid="mapping-card-layout" class="space-y-3">
           <article v-for="mapping in paginatedMappings" :key="mapping.id" class="rounded-md border border-slate-200 p-3">
-            <div class="flex items-start justify-between gap-3"><div class="min-w-0"><div class="break-words font-medium text-slate-900">{{ mapping.department_name || mapping.department_id }}</div><div class="text-xs text-slate-500">{{ mapping.platform }}</div></div><el-tag :type="mapping.warnings?.length || mapping.status === 'needs_retry' ? 'warning' : 'success'">{{ mapping.warnings?.length ? t('relayPlanning.reviewNeeded') : translateMappingStatus(mapping.status) }}</el-tag></div>
+            <div class="flex items-start justify-between gap-3"><div class="min-w-0"><div class="break-words font-medium text-slate-900">{{ mapping.department_name || mapping.department_id }}</div><div class="text-xs text-slate-500">{{ mapping.platform }}</div></div><el-tag :type="mapping.warnings?.length || mapping.status === 'needs_retry' ? 'warning' : 'success'">{{ mappingStatusText(mapping) }}</el-tag></div>
             <dl class="mt-3 space-y-2 text-sm"><div><dt class="text-xs text-slate-500">{{ t('relayPlanning.templateGroup') }}</dt><dd class="break-words">{{ mapping.template_group_name || '-' }} (#{{ mapping.template_group_id }})</dd></div><div><dt class="text-xs text-slate-500">{{ t('relayPlanning.migrationSource') }}</dt><dd class="break-words">{{ mapping.source_group_name }} (#{{ mapping.source_group_id }})</dd></div><div><dt class="text-xs text-slate-500">{{ t('relayPlanning.managedGroups') }}</dt><dd class="break-words">{{ mapping.group_ids.join(', ') || '-' }}</dd></div></dl>
             <div v-if="mapping.warnings?.length" class="mt-2 text-xs text-amber-700">{{ mapping.warnings.map(translateWarning).join('; ') }}</div>
             <div v-if="mapping.department_suggestions?.length" class="mt-2 text-xs text-slate-500">{{ t('relayPlanning.departmentSuggestions') }}: {{ mapping.department_suggestions.map(departmentSuggestionLabel).join(', ') }}</div>
@@ -958,7 +999,7 @@ onBeforeUnmount(() => {
           <el-table-column :label="t('relayPlanning.templateGroup')" min-width="160"><template #default="scope">{{ scope.row.template_group_name || '-' }} (#{{ scope.row.template_group_id }})</template></el-table-column>
           <el-table-column :label="t('relayPlanning.migrationSource')" min-width="160"><template #default="scope">{{ scope.row.source_group_name }} (#{{ scope.row.source_group_id }})</template></el-table-column>
           <el-table-column :label="t('relayPlanning.managedGroups')" min-width="180"><template #default="scope">{{ scope.row.group_ids.join(', ') }}</template></el-table-column>
-          <el-table-column :label="t('relayPlanning.status')" min-width="150"><template #default="scope"><el-tag :type="scope.row.warnings?.length || scope.row.status === 'needs_retry' ? 'warning' : 'success'">{{ scope.row.warnings?.length ? t('relayPlanning.reviewNeeded') : translateMappingStatus(scope.row.status) }}</el-tag><div v-if="scope.row.warnings?.length" class="mt-1 text-xs text-amber-700">{{ scope.row.warnings.map(translateWarning).join('; ') }}</div><div v-if="scope.row.department_suggestions?.length" class="mt-1 text-xs text-slate-500">{{ t('relayPlanning.departmentSuggestions') }}: {{ scope.row.department_suggestions.map(departmentSuggestionLabel).join(', ') }}</div></template></el-table-column>
+          <el-table-column :label="t('relayPlanning.status')" min-width="150"><template #default="scope"><el-tag :type="scope.row.warnings?.length || scope.row.status === 'needs_retry' ? 'warning' : 'success'">{{ mappingStatusText(scope.row as RelayPlanningMapping) }}</el-tag><div v-if="scope.row.warnings?.length" class="mt-1 text-xs text-amber-700">{{ scope.row.warnings.map(translateWarning).join('; ') }}</div><div v-if="scope.row.department_suggestions?.length" class="mt-1 text-xs text-slate-500">{{ t('relayPlanning.departmentSuggestions') }}: {{ scope.row.department_suggestions.map(departmentSuggestionLabel).join(', ') }}</div></template></el-table-column>
           <el-table-column :label="t('relayPlanning.actions')" min-width="360"><template #default="scope"><el-button :data-testid="`replan-mapping-${scope.row.id}`" link type="primary" @click="replan(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.replan') }}</el-button><el-button :data-testid="`renew-mapping-${scope.row.id}`" link type="primary" :icon="Calendar" :loading="renewalLoadingID === scope.row.id" :disabled="renewalLoadingID !== null && renewalLoadingID !== scope.row.id" @click="renewMapping(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.renewSubscriptions') }}</el-button><el-button :data-testid="`rebind-mapping-${scope.row.id}`" link type="primary" :loading="rebindPendingID === scope.row.id" :disabled="rebindPendingID !== null && rebindPendingID !== scope.row.id" @click="rebind(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.rebind') }}</el-button><el-button :data-testid="`manage-accounts-${scope.row.id}`" link type="primary" @click="manageAccounts(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.manageAccounts') }}</el-button></template></el-table-column>
         </el-table>
         <el-pagination v-if="mappings.length > mappingPageSize" data-testid="mapping-pagination" class="mt-4 justify-end" size="small" background :layout="desktopPagination ? 'prev, pager, next' : 'prev, slot, next'" :pager-count="5" :current-page="mappingPage" :page-size="mappingPageSize" :total="mappings.length" @current-change="mappingPage = $event">
