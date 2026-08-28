@@ -128,10 +128,19 @@ under a fresh group; and nothing deduplicates across machines.
   carrying a migration marker, while the platform is pre-release.
 - **No relay cross-check.** Commit-bound figures are what the agent reported.
 
+## Credit is an independent unit
+
+Some agents bill in credit instead of tokens — Kiro CLI reports only
+`kiro.credit_cost`, with every token field zero and `kiro.token_source`
+declaring tokens unavailable at source. Credit is carried as its own amount on
+the usage bucket and the attribution pool (`credit_usage`), never converted to
+or from tokens, and a bucket must carry at least one of the two. It adds across
+collapsed partitions and grows through the same monotonic contribution path as
+tokens. This closes the last gap in the claim surface's agent coverage: a Kiro
+commit is now proven and priced, in the unit Kiro actually bills in.
+
 ## Not resolved
 
-- Kiro CLI has no token, only credit, and the claim group has no credit field.
-  Its commits can be proven but not priced.
 - Windows is not wired up: Pilot's installer there is a PowerShell script with
   different arguments.
 - A Codex session already running when Pilot is installed loses its workspace

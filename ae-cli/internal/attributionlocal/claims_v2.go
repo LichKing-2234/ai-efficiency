@@ -1489,6 +1489,7 @@ func sumV2LocalUsage(existing, incoming []client.AttributionV2LocalUsageBucket) 
 		bucket.CacheCreationTokens += usage.CacheCreationTokens
 		bucket.CacheReadTokens += usage.CacheReadTokens
 		bucket.TotalTokens += usage.TotalTokens
+		bucket.CreditUsage += usage.CreditUsage
 		bucket.RequestCount += usage.RequestCount
 	}
 	out := make([]client.AttributionV2LocalUsageBucket, 0, len(order))
@@ -1522,7 +1523,7 @@ func mergeV2LocalUsage(existing, incoming []client.AttributionV2LocalUsageBucket
 func localUsageContains(left, right client.AttributionV2LocalUsageBucket) bool {
 	return left.InputTokens >= right.InputTokens && left.OutputTokens >= right.OutputTokens &&
 		left.CacheCreationTokens >= right.CacheCreationTokens && left.CacheReadTokens >= right.CacheReadTokens &&
-		left.TotalTokens >= right.TotalTokens && left.RequestCount >= right.RequestCount
+		left.TotalTokens >= right.TotalTokens && left.CreditUsage >= right.CreditUsage && left.RequestCount >= right.RequestCount
 }
 
 func v2LocalUsageDigest(values []client.AttributionV2LocalUsageBucket) string {
@@ -1532,7 +1533,7 @@ func v2LocalUsageDigest(values []client.AttributionV2LocalUsageBucket) string {
 			usage.RequestedModel, usage.BucketStartUTC.UTC().Format(time.RFC3339),
 			fmt.Sprintf("%d", usage.InputTokens), fmt.Sprintf("%d", usage.OutputTokens),
 			fmt.Sprintf("%d", usage.CacheCreationTokens), fmt.Sprintf("%d", usage.CacheReadTokens),
-			fmt.Sprintf("%d", usage.TotalTokens), fmt.Sprintf("%d", usage.RequestCount),
+			fmt.Sprintf("%d", usage.TotalTokens), fmt.Sprintf("%g", usage.CreditUsage), fmt.Sprintf("%d", usage.RequestCount),
 		}, "\x00"))
 	}
 	return claimDigest(parts...)

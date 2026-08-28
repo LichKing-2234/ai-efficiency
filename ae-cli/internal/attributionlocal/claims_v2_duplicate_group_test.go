@@ -135,3 +135,21 @@ func TestUploadableGroupsBillATurnOnceAcrossSeveralCommits(t *testing.T) {
 		t.Fatalf("total = %d, want the turn billed once", total)
 	}
 }
+
+// Credit adds across collapsed partitions exactly as tokens do.
+func TestUploadableGroupsAddCreditAcrossPartitions(t *testing.T) {
+	a := duplicateGroupCandidate("orig", "GROUP-K", "commit-1", duplicateGroupBucket(duplicateGroupNow, 0))
+	a.Group.LocalUsage[0].CreditUsage = 0.05
+	b := duplicateGroupCandidate("replay", "GROUP-K", "commit-1", duplicateGroupBucket(duplicateGroupNow, 0))
+	b.Group.LocalUsage[0].CreditUsage = 0.03
+	state := &V2ClaimState{Version: 1}
+	MergeV2ClaimState(state, []V2ClaimCandidate{a, b}, duplicateGroupNow)
+
+	groups := UploadableV2ClaimGroups(state.Claims)
+	if len(groups) != 1 || len(groups[0].LocalUsage) != 1 {
+		t.Fatalf("groups = %+v, want one group with one bucket", groups)
+	}
+	if got := groups[0].LocalUsage[0].CreditUsage; got != 0.08 {
+		t.Fatalf("credit = %v, want the partitions added to 0.08", got)
+	}
+}

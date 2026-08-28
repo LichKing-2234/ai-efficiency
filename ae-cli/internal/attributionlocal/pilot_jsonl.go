@@ -889,7 +889,7 @@ func pilotLocalUsage(responses []*pilotResponse) []client.AttributionV2LocalUsag
 	for _, response := range responses {
 		// A response with no observation time cannot be placed in a bucket, and
 		// inventing one would attribute its cost to an arbitrary quarter hour.
-		if response == nil || response.observedAt.IsZero() || !response.usage.seen {
+		if response == nil || response.observedAt.IsZero() || (!response.usage.seen && !response.creditSeen) {
 			continue
 		}
 		k := key{model: strings.TrimSpace(response.model), bucket: response.observedAt.UTC().Truncate(15 * time.Minute)}
@@ -903,6 +903,7 @@ func pilotLocalUsage(responses []*pilotResponse) []client.AttributionV2LocalUsag
 		bucket.OutputTokens += response.usage.output
 		bucket.CacheCreationTokens += response.usage.cacheCreation
 		bucket.CacheReadTokens += response.usage.cacheRead
+		bucket.CreditUsage += response.credit
 		bucket.RequestCount++
 	}
 	out := make([]client.AttributionV2LocalUsageBucket, 0, len(order))

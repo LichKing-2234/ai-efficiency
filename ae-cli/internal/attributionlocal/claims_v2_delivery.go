@@ -227,6 +227,7 @@ func v2SentGroupCovers(sent, current client.AttributionV2ClaimGroup) bool {
 				bucket.CacheCreationTokens <= sentBucket.CacheCreationTokens &&
 				bucket.CacheReadTokens <= sentBucket.CacheReadTokens &&
 				bucket.TotalTokens <= sentBucket.TotalTokens &&
+				bucket.CreditUsage <= sentBucket.CreditUsage &&
 				bucket.RequestCount <= sentBucket.RequestCount {
 				found = true
 			}

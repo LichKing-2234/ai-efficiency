@@ -1070,3 +1070,53 @@ func TestScanPilotClaimsKeepsTheObservationalNameForAnUnprovenTurn(t *testing.T)
 }
 
 func strconvQuote(s string) string { return strconv.Quote(s) }
+
+// Kiro CLI bills in credit and reports no tokens at all — on real 2.20.0 data
+// every token field is zero and kiro.token_source says unavailable. Its commits
+// were provable but not priceable: the pricing loop skipped every response
+// without token usage, so the claim carried no usage and the ledger recorded
+// nothing. Credit is now an independent amount on the bucket, never converted.
+func TestScanPilotClaimsPricesACreditOnlyAgentInCredit(t *testing.T) {
+	current := "package feature\n"
+	repo, commit := v2ClaimRepo(t, "feature.go", current)
+	dir := t.TempDir()
+	writePilotJSONL(t, filepath.Join(dir, "kiro-cli-2026-08-28.jsonl"),
+		map[string]any{
+			"event.name": "tool.call", "gen_ai.agent.type": pilotAgentKiro,
+			"workspace.current_root": repo,
+			"gen_ai.session.id":      "ks", "gen_ai.turn.id": "ks:t1",
+			"gen_ai.tool.name": "fs_write", "gen_ai.tool.call.id": "c1",
+			"gen_ai.tool.call.arguments": `{"command":"create","path":"feature.go","file_text":` + strconvQuote(current) + `}`,
+		},
+		map[string]any{
+			"event.name": "llm.response", "gen_ai.agent.type": pilotAgentKiro,
+			"workspace.current_root": repo,
+			"gen_ai.session.id":      "ks", "gen_ai.turn.id": "ks:t1", "gen_ai.response.id": "kr-1",
+			"gen_ai.request.model": "gpt-5.6-sol",
+			"kiro.token_source":    "unavailable", "kiro.credit_cost": 0.0783,
+			"time_unix_nano": pilotTestObservedAt.UnixNano(),
+		},
+	)
+
+	result := scanPilotForTest(t, dir, repo, commit)
+	if len(result.Claims) != 1 {
+		t.Fatalf("claims = %d, want 1", len(result.Claims))
+	}
+	claim := result.Claims[0]
+	if claim.GapReason != "" {
+		t.Fatalf("gap = %q, want the fs_write proven", claim.GapReason)
+	}
+	if len(claim.Group.LocalUsage) != 1 {
+		t.Fatalf("local usage = %+v, want the credit priced into one bucket", claim.Group.LocalUsage)
+	}
+	bucket := claim.Group.LocalUsage[0]
+	if bucket.CreditUsage != 0.0783 || bucket.TotalTokens != 0 || bucket.RequestCount != 1 {
+		t.Fatalf("bucket = %+v, want credit 0.0783 with zero tokens", bucket)
+	}
+	if bucket.RequestedModel != "gpt-5.6-sol" {
+		t.Fatalf("model = %q, want the model Kiro reported", bucket.RequestedModel)
+	}
+	if len(UploadableV2ClaimGroups(result.Claims)) != 1 {
+		t.Fatal("want the credit-priced claim deliverable")
+	}
+}
