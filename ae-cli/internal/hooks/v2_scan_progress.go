@@ -21,7 +21,6 @@ type V2ClaimScanProgress struct {
 	CompletedUnits     []string            `json:"completed_units,omitempty"`
 	SourceTurnKeys     map[string][]string `json:"source_turn_keys,omitempty"`
 	SourceEvidenceKeys map[string]string   `json:"source_evidence_keys,omitempty"`
-	UnprovenCommits    []V2UnprovenCommit  `json:"unproven_commits,omitempty"`
 	StartedAt          time.Time           `json:"started_at"`
 	Complete           bool                `json:"complete,omitempty"`
 }
@@ -154,6 +153,15 @@ func equalStrings(left, right []string) bool {
 //
 // Keeping the commit here turns a permanent loss into a delay. It is retried on
 // every later scan until it is proven or until its evidence has aged out.
+// V2UnprovenCommits is kept apart from scan progress on purpose. Progress is
+// scratch for one scan and is deleted the moment that scan finishes; these
+// commits have to outlive every scan until their evidence turns up.
+type V2UnprovenCommits struct {
+	Version   int                `json:"version"`
+	Commits   []V2UnprovenCommit `json:"commits,omitempty"`
+	UpdatedAt time.Time          `json:"updated_at"`
+}
+
 type V2UnprovenCommit struct {
 	CommitSHA         string    `json:"commit_sha"`
 	CheckpointEventID string    `json:"checkpoint_event_id"`
@@ -245,4 +253,48 @@ func provenCommitKeys(candidates []attributionlocal.V2ClaimCandidate) map[string
 		}
 	}
 	return proven
+}
+
+func V2UnprovenCommitsPath(workspaceID string) (string, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return "", fmt.Errorf("workspace_id is required")
+	}
+	return filepath.Join(attributionlocal.AttributionRootDir(), "workspaces", workspaceID, "v2-unproven-commits.json"), nil
+}
+
+func LoadV2UnprovenCommits(workspaceID string) ([]V2UnprovenCommit, error) {
+	path, err := V2UnprovenCommitsPath(workspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve unproven commit path: %w", err)
+	}
+	var store V2UnprovenCommits
+	if err := attributionlocal.LoadJSON(path, &store); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("load unproven commits: %w", err)
+	}
+	if store.Version != v2ClaimScanProgressVersion {
+		// The retry only makes sense against the source that recorded it.
+		return nil, nil
+	}
+	return store.Commits, nil
+}
+
+func SaveV2UnprovenCommits(workspaceID string, commits []V2UnprovenCommit, now time.Time) error {
+	path, err := V2UnprovenCommitsPath(workspaceID)
+	if err != nil {
+		return fmt.Errorf("resolve unproven commit path: %w", err)
+	}
+	if len(commits) == 0 {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("clear unproven commits: %w", err)
+		}
+		return nil
+	}
+	store := V2UnprovenCommits{Version: v2ClaimScanProgressVersion, Commits: commits, UpdatedAt: now.UTC()}
+	if err := attributionlocal.SaveJSON(path, store); err != nil {
+		return fmt.Errorf("save unproven commits: %w", err)
+	}
+	return nil
 }

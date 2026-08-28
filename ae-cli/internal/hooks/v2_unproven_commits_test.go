@@ -77,11 +77,11 @@ func TestProvenCommitKeysIgnoresGappedCandidates(t *testing.T) {
 }
 
 func TestAppendUnprovenCommitOptionsAddsPendingWithoutRepeating(t *testing.T) {
-	progress := &V2ClaimScanProgress{UnprovenCommits: []V2UnprovenCommit{
+	pending := []V2UnprovenCommit{
 		{CommitSHA: "sha-a", CheckpointEventID: "event-a", RepoRoot: "/repo"},
 		{CommitSHA: "sha-b", CheckpointEventID: "event-b", RepoRoot: "/repo"},
-	}}
-	got := appendUnprovenCommitOptions([]attributionlocal.V2ClaimScanOptions{commitOption("sha-a", "event-a")}, progress)
+	}
+	got := appendUnprovenCommitOptions([]attributionlocal.V2ClaimScanOptions{commitOption("sha-a", "event-a")}, pending)
 	if len(got) != 2 {
 		t.Fatalf("options = %d (%+v), want the task's own commit plus the one other pending commit", len(got), got)
 	}
@@ -98,5 +98,54 @@ func TestAppendUnprovenCommitOptionsLeavesOptionsAloneWithoutProgress(t *testing
 	options := []attributionlocal.V2ClaimScanOptions{commitOption("sha-a", "event-a")}
 	if got := appendUnprovenCommitOptions(options, nil); len(got) != 1 {
 		t.Fatalf("options = %+v, want them unchanged", got)
+	}
+}
+
+// The pending commits must outlive the scan progress, which finishV2ClaimScan
+// deletes the moment a scan finishes. Keeping them in the progress file meant
+// every completed scan threw away the retries it had just recorded.
+func TestUnprovenCommitsSurviveClearingScanProgress(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	const workspaceID = "workspace-survives"
+	pending := []V2UnprovenCommit{{
+		CommitSHA: "sha-a", CheckpointEventID: "event-a", RepoRoot: "/repo", FirstSeenAt: unprovenNow,
+	}}
+	if err := SaveV2UnprovenCommits(workspaceID, pending, unprovenNow); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveV2ClaimScanProgress(&V2ClaimScanProgress{
+		Version: v2ClaimScanProgressVersion, WorkspaceID: workspaceID, ContextID: "ctx", StartedAt: unprovenNow,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := finishV2ClaimScan(workspaceID, true); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := LoadV2UnprovenCommits(workspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].CommitSHA != "sha-a" {
+		t.Fatalf("pending = %+v, want the retry to survive the progress being cleared", got)
+	}
+}
+
+// An empty list removes the file rather than leaving an empty one behind, so a
+// machine with nothing pending has nothing to read.
+func TestSaveV2UnprovenCommitsClearsWhenNothingIsPending(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	const workspaceID = "workspace-clears"
+	if err := SaveV2UnprovenCommits(workspaceID, []V2UnprovenCommit{{
+		CommitSHA: "sha-a", CheckpointEventID: "event-a", FirstSeenAt: unprovenNow,
+	}}, unprovenNow); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveV2UnprovenCommits(workspaceID, nil, unprovenNow); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadV2UnprovenCommits(workspaceID)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("pending = %+v, err = %v; want nothing left", got, err)
 	}
 }

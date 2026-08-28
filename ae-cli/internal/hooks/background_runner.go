@@ -458,11 +458,11 @@ func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionCon
 	// Commits whose evidence had not arrived when their own scan ran are retried
 	// here, so a scan can have work to do even when this task carries no trigger
 	// of its own.
-	carried, err := LoadV2ClaimScanProgress(execCtx.WorkspaceID)
+	pendingCommits, err := LoadV2UnprovenCommits(execCtx.WorkspaceID)
 	if err != nil {
-		return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim progress could not be loaded", err)
+		return syncTaskFailure(SyncTaskFailureStageLocalState, "pending claim commits could not be loaded", err)
 	}
-	options = appendUnprovenCommitOptions(options, carried)
+	options = appendUnprovenCommitOptions(options, pendingCommits)
 
 	if len(options) > 0 {
 		scan, err := prepareV2ClaimSource(ctx, time.Now().UTC().Add(-v2ClaimSourceWindow))
@@ -473,19 +473,12 @@ func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionCon
 		if err != nil {
 			return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim progress could not be prepared", err)
 		}
-		progress := carried
+		progress, err := LoadV2ClaimScanProgress(execCtx.WorkspaceID)
+		if err != nil {
+			return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim progress could not be loaded", err)
+		}
 		if progress == nil || progress.Version != v2ClaimScanProgressVersion || progress.ContextID != contextID {
-			// A reset discards where the scan had got to, but not which commits
-			// are still waiting on evidence: those are about commits, not about
-			// how far a particular source scan progressed.
-			var pending []V2UnprovenCommit
-			if progress != nil {
-				pending = progress.UnprovenCommits
-			}
-			progress = &V2ClaimScanProgress{
-				Version: v2ClaimScanProgressVersion, WorkspaceID: execCtx.WorkspaceID, ContextID: contextID,
-				UnprovenCommits: pending, StartedAt: time.Now().UTC(),
-			}
+			progress = &V2ClaimScanProgress{Version: v2ClaimScanProgressVersion, WorkspaceID: execCtx.WorkspaceID, ContextID: contextID, StartedAt: time.Now().UTC()}
 		}
 		if progress.SourceTurnKeys == nil {
 			progress.SourceTurnKeys = map[string][]string{}
@@ -589,7 +582,11 @@ func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionCon
 			return err
 		}
 		progress.Complete = true
-		progress.UnprovenCommits = mergeUnprovenCommits(progress.UnprovenCommits, options, provenCommits, time.Now().UTC())
+		// Saved apart from progress, which finishV2ClaimScan deletes below.
+		now := time.Now().UTC()
+		if err := SaveV2UnprovenCommits(execCtx.WorkspaceID, mergeUnprovenCommits(pendingCommits, options, provenCommits, now), now); err != nil {
+			return syncTaskFailure(SyncTaskFailureStageLocalState, "pending claim commits could not be saved", err)
+		}
 		if err := SaveV2ClaimScanProgress(progress); err != nil {
 			return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim progress could not be saved", err)
 		}
@@ -719,16 +716,16 @@ func prepareV2ClaimSource(ctx context.Context, cutoff time.Time) (v2ClaimSource,
 
 // appendUnprovenCommitOptions adds the commits still waiting on evidence to the
 // ones this task asked about, without repeating any the task already carries.
-func appendUnprovenCommitOptions(options []attributionlocal.V2ClaimScanOptions, progress *V2ClaimScanProgress) []attributionlocal.V2ClaimScanOptions {
-	if progress == nil || len(progress.UnprovenCommits) == 0 {
+func appendUnprovenCommitOptions(options []attributionlocal.V2ClaimScanOptions, pending []V2UnprovenCommit) []attributionlocal.V2ClaimScanOptions {
+	if len(pending) == 0 {
 		return options
 	}
 	seen := make(map[string]struct{}, len(options))
 	for _, option := range options {
 		seen[unprovenCommitKey(option)] = struct{}{}
 	}
-	for _, pending := range progress.UnprovenCommits {
-		option := pending.scanOptions()
+	for _, item := range pending {
+		option := item.scanOptions()
 		key := unprovenCommitKey(option)
 		if _, ok := seen[key]; ok {
 			continue
