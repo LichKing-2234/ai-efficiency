@@ -414,7 +414,22 @@ func runPendingSyncPass(ctx context.Context, execCtx ExecutionContext, uploader 
 		if err := protocol.Validate(); err != nil {
 			return err
 		}
-		return runV2ClaimSync(ctx, uploader, execCtx, task, protocol)
+		claimErr := runV2ClaimSync(ctx, uploader, execCtx, task, protocol)
+		// The usage surface uploads alongside the claims rather than instead of
+		// them. Returning after the claim sync — the previous shape — meant a
+		// compact machine never uploaded a tool usage event at all: dashboards
+		// starved while claims flowed, and nothing reported it. Usage also does
+		// not wait on the claim sync's own preconditions — it needs no relay
+		// provider — so a claim-side failure leaves it running.
+		if syncClient == nil {
+			return claimErr
+		}
+		usageErr := runAttributionSync(ctx, attributionlocal.RunOptions{
+			WorkspaceRoot: execCtx.RepoRoot, WorkspaceID: execCtx.WorkspaceID, ServerURL: execCtx.ServerURL,
+			AuthSubject: execCtx.AuthSubject, RepoConfigID: execCtx.RepoConfigID, RepoKey: execCtx.RepoKey,
+			DurableReplay: execCtx.DurableReplay, ManagedUpload: true,
+		}, syncClient)
+		return errors.Join(claimErr, usageErr)
 	}
 	if syncClient == nil {
 		return fmt.Errorf("sync uploader does not expose tool usage client")
