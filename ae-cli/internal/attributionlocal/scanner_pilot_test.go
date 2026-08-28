@@ -22,6 +22,7 @@ func TestScanner_PilotReplacesPerAgentSources(t *testing.T) {
 
 	scanner := NewScanner()
 	scanner.PilotOutputDir = pilotDir
+	scanner.PilotRunning = func() bool { return true }
 	events, _, err := scanner.ScanWorkspace(fixture.WorkspaceRoot, ScanState{})
 	if err != nil {
 		t.Fatalf("scan: %v", err)
@@ -50,6 +51,7 @@ func TestScanner_PilotDoesNotSupersedeKiroIDE(t *testing.T) {
 
 	scanner := NewScanner()
 	scanner.PilotOutputDir = pilotDir
+	scanner.PilotRunning = func() bool { return true }
 	events, _, err := scanner.ScanWorkspace(fixture.WorkspaceRoot, ScanState{})
 	if err != nil {
 		t.Fatalf("scan: %v", err)
@@ -76,5 +78,31 @@ func TestScanner_WithoutPilotKeepsPerAgentSources(t *testing.T) {
 	}
 	if len(events) != 1 || events[0].DedupeKey != "codex-jsonl:sess-1:resp-1" {
 		t.Fatalf("events = %+v, want the per-agent Codex event", events)
+	}
+}
+
+// Turning Pilot off must hand the usage source back to the per-agent readers.
+//
+// Pilot's output directory survives being stopped, full of everything it
+// recorded before. Deciding on the directory alone would keep the per-agent
+// readers suppressed while nothing replaced them, and every agent turn from
+// then on would go uncounted — silently, which is the worst way for an
+// accounting tool to fail.
+func TestScanner_FallsBackToPerAgentSourcesWhenPilotIsNotCollecting(t *testing.T) {
+	fixture := buildAttributionFixture(t)
+	pilotDir := t.TempDir()
+	writePilotJSONL(t, filepath.Join(pilotDir, "codex-2026-08-28.jsonl"),
+		pilotScannerResponse(fixture.WorkspaceRoot, "resp-1", time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)))
+
+	scanner := NewScanner()
+	scanner.PilotOutputDir = pilotDir
+	scanner.PilotRunning = func() bool { return false }
+
+	events, _, err := scanner.ScanWorkspace(fixture.WorkspaceRoot, ScanState{})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if len(events) != 1 || events[0].DedupeKey != "codex-jsonl:sess-1:resp-1" {
+		t.Fatalf("events = %+v, want the per-agent Codex event once Pilot stopped collecting", events)
 	}
 }

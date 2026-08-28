@@ -73,16 +73,18 @@ func (s launchdService) InstalledAt() time.Time { return fileModTime(s.plistPath
 // disabled there, and that record survives a reboot. A service stopped any
 // other way — a plain kill, for instance — leaves no such record and is not
 // reported as disabled, which is correct: nobody asked for it to stay down.
+// It deliberately does not require Installed(). `loongsuite-pilot stop` calls
+// autostart_remove, which deletes the agent plist, so after a deliberate stop
+// there is no plist left to gate on — only this record survives, and gating on
+// the file would report a machine someone turned off as one that was never set
+// up, which is how login came to reinstall over a deliberate stop.
 func (s launchdService) Disabled() bool {
-	if !s.Installed() {
-		return false
-	}
 	out, ok := s.readDisabled()
 	if !ok {
-		// launchctl is unavailable or refused. Reporting "not disabled" would
-		// risk nagging about a service someone deliberately turned off, so
-		// treat an unreadable database as a deliberate stop.
-		return true
+		// launchctl is unavailable or refused. With no plist either there is
+		// nothing to be disabled; with a plist present, reporting "not disabled"
+		// would risk overriding a deliberate stop.
+		return s.Installed()
 	}
 	return launchdLabelDisabled(out, ServiceLabel)
 }
@@ -139,6 +141,10 @@ func (s systemdUserService) InstalledAt() time.Time { return fileModTime(s.unitP
 // Disabled asks systemd. `is-enabled` exits non-zero for a disabled unit and
 // prints the state either way, so the printed word is read rather than the exit
 // status.
+// Unlike launchd, systemd keeps no record of a unit that has been removed, and
+// `loongsuite-pilot stop` removes the unit. So on Linux a deliberate stop is
+// indistinguishable from never having installed, and login will offer to set it
+// up again. AE_CLI_SKIP_PILOT is the portable way to say "never".
 func (s systemdUserService) Disabled() bool {
 	if !s.Installed() {
 		return false

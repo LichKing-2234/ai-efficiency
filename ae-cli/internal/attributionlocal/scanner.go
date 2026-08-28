@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/ai-efficiency/ae-cli/internal/hookstate"
+	"github.com/ai-efficiency/ae-cli/internal/pilot"
 	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
@@ -23,6 +24,36 @@ type Scanner struct {
 	// PilotOutputDir overrides where LoongSuite Pilot's normalized local JSONL is
 	// read from. Empty means the default install location.
 	PilotOutputDir string
+	// PilotRunning overrides the collector liveness check. Nil means the real
+	// one.
+	PilotRunning func() bool
+}
+
+// pilotCollecting reports whether Pilot is currently collecting, and so whether
+// its output is the right source to read.
+//
+// A stopped collector must not be read as the source. Its output directory
+// survives being turned off, full of everything it recorded before, so deciding
+// on the directory alone would keep the per-agent readers suppressed while
+// nothing was replacing them — and every agent turn taken from then on would go
+// uncounted, silently. Falling back instead means a stopped collector costs
+// duplicate keys for the overlap rather than the whole gap.
+func (s *Scanner) pilotCollecting() bool {
+	if s != nil && s.PilotRunning != nil {
+		return s.PilotRunning()
+	}
+	return pilot.Checker{DataDir: s.pilotDataDir()}.Running()
+}
+
+// pilotDataDir derives Pilot's data directory from the configured output
+// directory, so a test that redirects the output also redirects the liveness
+// check.
+func (s *Scanner) pilotDataDir() string {
+	dir := strings.TrimSpace(s.PilotOutputDir)
+	if dir == "" {
+		return ""
+	}
+	return filepath.Dir(filepath.Dir(dir))
 }
 
 func NewScanner() *Scanner {
@@ -448,6 +479,9 @@ func (s *Scanner) scanPilotUsage(ctx context.Context, workspaceRoot, workspaceID
 		return nil, false
 	}
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return nil, false
+	}
+	if !s.pilotCollecting() {
 		return nil, false
 	}
 

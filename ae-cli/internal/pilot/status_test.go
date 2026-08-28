@@ -230,3 +230,86 @@ func TestSystemdReadsTheEnabledState(t *testing.T) {
 		}
 	}
 }
+
+// Pilot rewrites its runtime record every thirty seconds while running and
+// removes it on a clean shutdown, so the file is a precise liveness signal.
+// Output freshness is not: a developer who has not used an agent since lunch
+// has stale output and a perfectly healthy collector.
+func TestRunningReadsPilotsOwnRuntimeRecord(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		write   bool
+		age     time.Duration
+		running bool
+	}{
+		{name: "absent means a clean shutdown", write: false, running: false},
+		{name: "fresh means alive", write: true, age: 20 * time.Second, running: true},
+		{name: "stale means it died without cleaning up", write: true, age: 10 * time.Minute, running: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			logsDir := filepath.Join(dataDir, "logs")
+			if err := os.MkdirAll(logsDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if tc.write {
+				path := filepath.Join(logsDir, runtimeRecordName)
+				if err := os.WriteFile(path, []byte(`{"status":"active"}`), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				stamp := checkNow.Add(-tc.age)
+				if err := os.Chtimes(path, stamp, stamp); err != nil {
+					t.Fatal(err)
+				}
+			}
+			c := Checker{DataDir: dataDir, now: func() time.Time { return checkNow }}
+			if got := c.Running(); got != tc.running {
+				t.Fatalf("Running() = %v, want %v", got, tc.running)
+			}
+		})
+	}
+}
+
+// Stopping Pilot deletes its service definition but leaves launchd's record
+// that it was turned off. Requiring an installed service before reading that
+// record made a deliberate stop look like a machine that was never set up, and
+// login reinstalled over the person's decision.
+func TestCheckReportsDisabledEvenAfterTheServiceDefinitionIsRemoved(t *testing.T) {
+	svc := launchdService{
+		plistPath: filepath.Join(t.TempDir(), "com.loongsuite-pilot.plist"), // never written
+		disabledOutput: func() (string, bool) {
+			return "\tdisabled services = {\n\t\t\"" + ServiceLabel + "\" => disabled\n\t}", true
+		},
+	}
+	if svc.Installed() {
+		t.Fatal("the plist must be absent for this case to mean anything")
+	}
+	if !svc.Disabled() {
+		t.Fatal("want a stopped service to read as disabled with no plist present")
+	}
+
+	got := Checker{
+		DataDir: pilotDataDir(t, time.Time{}),
+		service: svc,
+		now:     func() time.Time { return checkNow },
+	}.Check()
+	if got.State != StateDisabled {
+		t.Fatalf("state = %q, want %q: this is what stops login reinstalling over a deliberate stop", got.State, StateDisabled)
+	}
+}
+
+// With neither a plist nor a disabled record, nothing was ever set up.
+func TestCheckReportsAbsentWhenNothingWasEverRegistered(t *testing.T) {
+	svc := launchdService{
+		plistPath:      filepath.Join(t.TempDir(), "com.loongsuite-pilot.plist"),
+		disabledOutput: func() (string, bool) { return "\tdisabled services = {\n\t}", true },
+	}
+	got := Checker{
+		DataDir: pilotDataDir(t, time.Time{}),
+		service: svc,
+		now:     func() time.Time { return checkNow },
+	}.Check()
+	if got.State != StateAbsent {
+		t.Fatalf("state = %q, want %q", got.State, StateAbsent)
+	}
+}

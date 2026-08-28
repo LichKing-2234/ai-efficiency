@@ -186,13 +186,18 @@ func (c Checker) svc() service {
 func (c Checker) Check() Status {
 	status := Status{DataDir: c.dataDir()}
 
+	// Disabled is asked first, and without requiring an installed service.
+	// Stopping Pilot deletes its service definition but leaves the platform's
+	// record that it was turned off, so asking "is it installed" first would
+	// read a deliberate stop as a machine that was never set up — and login
+	// would helpfully undo the person's decision.
 	svc := c.svc()
-	if !svc.Installed() {
-		status.State = StateAbsent
-		return status
-	}
 	if svc.Disabled() {
 		status.State = StateDisabled
+		return status
+	}
+	if !svc.Installed() {
+		status.State = StateAbsent
 		return status
 	}
 
@@ -255,4 +260,34 @@ func latestOutputWrite(outputDir string) time.Time {
 		}
 	}
 	return latest
+}
+
+// runtimeRecordName is the file Pilot rewrites while it is running, and removes
+// when it shuts down cleanly.
+const runtimeRecordName = "runtime.json"
+
+// runtimeFreshWindow is how stale Pilot's runtime record may be and still mean
+// "running". Pilot rewrites it every 30 seconds, so a few multiples of that
+// absorbs a slow machine without calling a dead collector alive.
+const runtimeFreshWindow = 3 * time.Minute
+
+// Running reports whether Pilot's collector is alive right now.
+//
+// This is separate from Check, and answers a different question. Check asks
+// whether a machine is set up to collect and reports when it has stopped
+// producing; this asks whether reading Pilot's output is currently the right
+// way to account for usage at all.
+//
+// The signal is Pilot's own runtime record: it rewrites the file every thirty
+// seconds while running, and deletes it on a clean shutdown. So a missing file
+// means stopped, a stale one means it died without cleaning up, and a fresh one
+// means alive. Output freshness cannot answer this — a developer who has not
+// used an agent since lunch has stale output and a perfectly healthy collector.
+func (c Checker) Running() bool {
+	path := filepath.Join(c.dataDir(), "logs", runtimeRecordName)
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return c.clock().Sub(info.ModTime().UTC()) < runtimeFreshWindow
 }
