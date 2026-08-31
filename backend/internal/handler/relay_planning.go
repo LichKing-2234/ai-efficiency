@@ -61,6 +61,9 @@ func (h *RelayPlanningHandler) Preview(c *gin.Context) {
 	}
 	plan, err := h.service.Preview(c.Request.Context(), req)
 	if err != nil {
+		if writeRelayPlanningExistingMappingError(c, err) {
+			return
+		}
 		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
@@ -249,6 +252,9 @@ func (h *RelayPlanningHandler) ReplanExecute(c *gin.Context) {
 }
 
 func writeRelayPlanningExecutionError(c *gin.Context, err error) {
+	if writeRelayPlanningExistingMappingError(c, err) {
+		return
+	}
 	var persistence *relayplanning.MappingPersistenceError
 	if errors.As(err, &persistence) {
 		pkg.ErrorWithDetails(c, http.StatusUnprocessableEntity, persistence.Error(), gin.H{
@@ -270,4 +276,16 @@ func writeRelayPlanningExecutionError(c *gin.Context, err error) {
 		return
 	}
 	pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
+}
+
+func writeRelayPlanningExistingMappingError(c *gin.Context, err error) bool {
+	var existing *relayplanning.ExistingMappingError
+	if !errors.As(err, &existing) {
+		return false
+	}
+	pkg.ErrorWithDetails(c, http.StatusConflict, existing.Error(), gin.H{
+		"error_code": "existing_mapping",
+		"mapping_id": existing.MappingID,
+	})
+	return true
 }

@@ -46,6 +46,15 @@ Group duplication/rename/activation, Account writes, subscription changes,
 API-Key moves, member adoption, and mapping persistence begin only after final
 Confirm.
 
+Provider, department, and Platform also identify the unique managed mapping.
+When that relationship already exists, the browser opens its Replan Baseline
+instead of requesting a new allocation. A stale browser mapping list may still
+reach the initial Preview endpoint; the backend then returns categorized HTTP
+409 `existing_mapping` with the existing Mapping ID, after which the browser
+refreshes the mapping list and opens that Replan. Initial Execute performs the
+same fresh collision check before any Relay or mapping write, so a stale client
+or direct API caller cannot replace the saved Target IDs or Replan Baseline.
+
 Candidate behavior depends on the reviewed source:
 
 - With a Migration Source, source members with valid local Relay mappings may
@@ -86,7 +95,8 @@ reviewed member, source, removal, cross-mapping action, unmanaged adoption,
 Target name, Account order, relationship fingerprint, operation key, stale
 replacement, retry restoration, and canonical request projection.
 
-The route view owns planning inputs, mapping-list navigation, renewal, Rebind,
+The route view owns planning inputs, mapping-list navigation including
+existing-Mapping Preview routing and stale-list recovery, renewal, Rebind,
 saved Account administration, rendering, and explicit administrator intent.
 HTTP transport remains in the Relay Planning API module. A searched-user source
 or cross-mapping intent enters reviewed state only after the latest Preview
