@@ -14,4 +14,5 @@ removed files are not redirected or guaranteed.
 | [Platform Origin](./platform-origin.md) | Initial platform problem, scope, and architectural origin |
 | [Retired Session and Update Directions](./retired-session-and-update-directions.md) | Superseded Platform Session, local proxy, installer, and update directions |
 | [Team Usage Performance Experiments](./team-usage-experiments.md) | Experiment sequence and measurements that led to the current loading contracts |
+| [Pilot-Sourced Usage and Attribution](./pilot-sourced-attribution.md) | Why one collector became the source for every agent it instruments, and the measurements behind it |
 | [Attribution V2 Cutover and Legacy Cleanup](./attribution-v2-cutover.md) | Production cutover, qualification, conservation, and legacy-removal evidence |

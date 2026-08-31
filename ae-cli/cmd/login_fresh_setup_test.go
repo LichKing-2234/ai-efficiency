@@ -39,10 +39,16 @@ func TestFirstLoginRecordsTheProviderWithTheFreshToken(t *testing.T) {
 
 	oldCfg, oldLogin, oldClient := cfg, loginFlow, apiClient
 	oldLoad, oldSave, oldHooks := setupLoadReporting, setupSaveProviderID, setupEnableHooks
+	oldHeadless := headlessBrowserEnv
 	t.Cleanup(func() {
 		cfg, loginFlow, apiClient = oldCfg, oldLogin, oldClient
 		setupLoadReporting, setupSaveProviderID, setupEnableHooks = oldLoad, oldSave, oldHooks
+		headlessBrowserEnv = oldHeadless
 	})
+	// The browser branch is what this test exercises, and the OAuth flow inside
+	// it is stubbed. Without this the command refuses before reaching the flow
+	// on any headless runner, which is every CI runner.
+	headlessBrowserEnv = func(func(string) string, string) bool { return false }
 	cfg = &config.Config{Server: config.ServerConfig{URL: server.URL}}
 	apiClient = nil // what a fresh machine has before any token exists
 	loginFlow = func(context.Context, auth.OAuthConfig) (*auth.OAuthResult, error) {
