@@ -252,6 +252,9 @@ describe('useRelayPlanningWorkflow', () => {
 		}))
 		expect(workflow.plan.value?.assignments[1].target_group_id).toBeUndefined()
 		expect(options.executeReplan).not.toHaveBeenCalled()
+		workflow.setTargetName(1, 'Invalid\nTarget')
+		expect(workflow.targetNameErrorCodes.value[1]).toBe('control')
+		workflow.setTargetName(1, 'Department Alpha-openai-02')
 
 		workflow.removeSuggestedGroup(1)
 		expect(workflow.plan.value?.assignments).toHaveLength(1)

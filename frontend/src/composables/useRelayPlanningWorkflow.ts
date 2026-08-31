@@ -325,12 +325,13 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     assignment.target_group_name = name
   }
 
-  function targetNameErrorCode(targetIndex: number): 'required' | 'too_long' | 'duplicate' | 'occupied' | '' {
+  function targetNameErrorCode(targetIndex: number): 'required' | 'too_long' | 'control' | 'duplicate' | 'occupied' | '' {
     const assignment = plan.value?.assignments.find((item) => item.index === targetIndex)
     if (!assignment || assignment.target_unavailable) return ''
     const name = String(assignment.target_group_name || '').trim()
     if (!name) return 'required'
     if (Array.from(name).length > 100) return 'too_long'
+		if (/[\u0000-\u001f\u007f-\u009f]/.test(name)) return 'control'
     if ((plan.value?.assignments ?? []).some((item) => (
       item.index !== targetIndex && String(item.target_group_name || '').trim() === name
     ))) return 'duplicate'

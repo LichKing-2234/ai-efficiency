@@ -160,6 +160,8 @@ const targetNameErrors = computed(() => Object.fromEntries(Object.entries(review
 		? 'relayPlanning.targetNameRequired'
 		: code === 'too_long'
 			? 'relayPlanning.targetNameTooLong'
+			: code === 'control'
+				? 'relayPlanning.targetNameControl'
 			: code === 'duplicate'
 				? 'relayPlanning.targetNameDuplicate'
 				: 'relayPlanning.targetNameOccupied'),

@@ -1186,6 +1186,62 @@ func addUnmanagedCapacity(assignments []Assignment, unmanaged []UnmanagedMember)
 	}
 }
 
+func duplicateAndRenameProposedTarget(
+	ctx context.Context,
+	duplicator relay.GroupDuplicator,
+	renamer relay.GroupRenamer,
+	templateGroupID int64,
+	creationKey string,
+	reservedGroupIDs []int64,
+	assignment *Assignment,
+	afterDuplicate func(GroupResult) error,
+) (GroupResult, error) {
+	result := GroupResult{Index: assignment.Index, Name: assignment.TargetGroupName, Status: "failed", Rename: "skipped", Creation: "failed"}
+	if duplicator == nil {
+		result.Error = "relay provider does not support group duplication"
+		return result, nil
+	}
+	group, err := duplicator.DuplicateGroup(ctx, templateGroupID, creationKey)
+	if err != nil {
+		result.Error = err.Error()
+		return result, nil
+	}
+	if group == nil || group.ID <= 0 || containsInt64(reservedGroupIDs, group.ID) {
+		result.Error = "relay returned an unexpected group after duplication"
+		return result, nil
+	}
+	assignment.TargetGroupID = group.ID
+	assignment.CurrentTargetGroupName = group.Name
+	result.ID = group.ID
+	result.CurrentName = group.Name
+	result.Creation = "pending"
+	if afterDuplicate != nil {
+		if err := afterDuplicate(result); err != nil {
+			return result, err
+		}
+	}
+	if group.Name == assignment.TargetGroupName {
+		return result, nil
+	}
+	result.Rename = "failed"
+	if renamer == nil {
+		result.Error = "relay provider does not support group rename"
+		return result, nil
+	}
+	renamed, err := renamer.RenameGroup(ctx, group.ID, assignment.TargetGroupName)
+	if err != nil {
+		result.Error = err.Error()
+		return result, nil
+	}
+	if renamed == nil || renamed.ID != group.ID || renamed.Name != assignment.TargetGroupName {
+		result.Error = "relay returned an unexpected group after rename"
+		return result, nil
+	}
+	assignment.CurrentTargetGroupName = renamed.Name
+	result.Rename = "succeeded"
+	return result, nil
+}
+
 func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionResult, error) {
 	if strings.TrimSpace(req.OperationKey) == "" {
 		return nil, fmt.Errorf("operation_key is required")
@@ -1231,46 +1287,25 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 	desiredAccounts := make(map[string][]AccountIntent, plan.GroupCount)
 	accountResults := make([]AccountResult, 0)
 	for index := 0; index < plan.GroupCount; index++ {
-		group, duplicateErr := duplicator.DuplicateGroup(ctx, plan.TemplateGroupID, fmt.Sprintf("%s-%d", req.OperationKey, index))
-		result := GroupResult{Index: index, Status: "failed", Rename: "skipped"}
-		if index < len(plan.Assignments) {
-			result.Name = plan.Assignments[index].TargetGroupName
+		assignment := &plan.Assignments[index]
+		result, createErr := duplicateAndRenameProposedTarget(ctx, duplicator, renamer, plan.TemplateGroupID, fmt.Sprintf("%s-%d", req.OperationKey, index), nil, assignment, nil)
+		if createErr != nil {
+			return nil, fmt.Errorf("create target %d: %w", index, createErr)
 		}
-		if duplicateErr != nil {
-			result.Error = duplicateErr.Error()
+		if result.ID <= 0 {
 			groupResults = append(groupResults, result)
 			continue
 		}
-		result.ID = group.ID
-		result.CurrentName = group.Name
-		result.Creation = "pending"
-		createdIDs[index] = group.ID
-		if group.Name != result.Name {
-			renamed, renameErr := renamer.RenameGroup(ctx, group.ID, result.Name)
-			if renameErr != nil {
-				result.Rename = "failed"
-				result.Error = renameErr.Error()
-				groupResults = append(groupResults, result)
-				continue
-			}
-			if renamed == nil || renamed.ID != group.ID || renamed.Name != result.Name {
-				result.Rename = "failed"
-				result.Error = "relay returned an unexpected group after rename"
-				groupResults = append(groupResults, result)
-				continue
-			}
-			group = renamed
-			result.Rename = "succeeded"
+		createdIDs[index] = result.ID
+		if result.Rename == "failed" {
+			groupResults = append(groupResults, result)
+			continue
 		}
-		if index < len(plan.Assignments) {
-			plan.Assignments[index].TargetGroupID = group.ID
-			plan.Assignments[index].TargetGroupName = result.Name
-			desiredAccounts[strconv.FormatInt(group.ID, 10)] = append([]AccountIntent(nil), plan.Assignments[index].DesiredAccounts...)
-		}
-		accountMapping := Mapping{ProviderID: plan.ProviderID, Platform: plan.Platform, GroupIDs: []int64{group.ID}, AccountManagementInitialized: true, DesiredAccounts: desiredAccounts}
+		desiredAccounts[strconv.FormatInt(result.ID, 10)] = append([]AccountIntent(nil), assignment.DesiredAccounts...)
+		accountMapping := Mapping{ProviderID: plan.ProviderID, Platform: plan.Platform, GroupIDs: []int64{result.ID}, AccountManagementInitialized: true, DesiredAccounts: desiredAccounts}
 		groupAccountResults, blocked := s.applyDesiredAccountRelationships(ctx, p, accountMapping, nil)
 		accountResults = append(accountResults, groupAccountResults...)
-		if reason := blocked[group.ID]; reason != "" {
+		if reason := blocked[result.ID]; reason != "" {
 			result.Error = reason
 			groupResults = append(groupResults, result)
 			continue
@@ -1280,14 +1315,14 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 			groupResults = append(groupResults, result)
 			continue
 		}
-		if activateErr := statusUpdater.UpdateGroupStatus(ctx, group.ID, "active"); activateErr != nil {
+		if activateErr := statusUpdater.UpdateGroupStatus(ctx, result.ID, "active"); activateErr != nil {
 			result.Error = activateErr.Error()
 			groupResults = append(groupResults, result)
 			continue
 		}
 		result.Creation = "completed"
 		result.Status = "succeeded"
-		targetIDs[index] = group.ID
+		targetIDs[index] = result.ID
 		groupResults = append(groupResults, result)
 	}
 	assigner, _ := p.(subscriptionAssigner)
@@ -3407,9 +3442,9 @@ func memberActionsWithRetries(operationState map[string]map[string]string, membe
 	return result
 }
 
-// ExecuteReplan applies only the final member-to-target assignment matrix. The
-// mapping's target Group IDs remain stable; group creation and deactivation are
-// deliberately outside replan.
+// ExecuteReplan preserves every existing Target ID while applying the reviewed
+// member matrix and creating appended proposed Targets. Existing Target
+// retirement and deactivation remain outside this operation.
 func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteRequest) (*ExecutionResult, error) {
 	mapping, err := s.GetMapping(ctx, mappingID)
 	if err != nil {
@@ -3473,6 +3508,7 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	renamer, supportsRename := p.(relay.GroupRenamer)
 	duplicator, supportsDuplicate := p.(relay.GroupDuplicator)
 	pendingCreation := pendingCreationTargetIDs(mapping.OperationState)
+	creationRevision := mapping.UpdatedAt.UnixNano()
 	preblockedTargets := make(map[int64]string)
 	groupResults := make([]GroupResult, 0, len(plan.Assignments))
 	for assignmentIndex := range plan.Assignments {
@@ -3480,36 +3516,28 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 		proposed := assignment.TargetGroupID == 0
 		result := GroupResult{Index: assignment.Index, ID: assignment.TargetGroupID, Name: assignment.CurrentTargetGroupName, CurrentName: assignment.CurrentTargetGroupName, Status: "unchanged", Rename: "skipped"}
 		if proposed {
-			result.Name = assignment.TargetGroupName
-			result.Status = "failed"
-			result.Creation = "failed"
-			if !supportsDuplicate {
-				result.Error = "relay provider does not support group duplication"
-				groupResults = append(groupResults, result)
-				continue
+			creationKey := fmt.Sprintf("replan-%d-%d-%d", mapping.ID, assignment.Index, creationRevision)
+			var proposedDuplicator relay.GroupDuplicator
+			if supportsDuplicate {
+				proposedDuplicator = duplicator
 			}
-			group, duplicateErr := duplicator.DuplicateGroup(ctx, plan.TemplateGroupID, fmt.Sprintf("%s-%d", req.OperationKey, assignment.Index))
-			if duplicateErr != nil {
-				result.Error = duplicateErr.Error()
-				groupResults = append(groupResults, result)
-				continue
+			var proposedRenamer relay.GroupRenamer
+			if supportsRename {
+				proposedRenamer = renamer
 			}
-			if group == nil || group.ID <= 0 || containsInt64(mapping.GroupIDs, group.ID) {
-				result.Error = "relay returned an unexpected group after duplication"
-				groupResults = append(groupResults, result)
-				continue
+			var createErr error
+			result, createErr = duplicateAndRenameProposedTarget(ctx, proposedDuplicator, proposedRenamer, plan.TemplateGroupID, creationKey, mapping.GroupIDs, assignment, func(checkpoint GroupResult) error {
+				mapping.GroupIDs = append(mapping.GroupIDs, checkpoint.ID)
+				return s.checkpointCreatedReplanTarget(ctx, mapping, plan, checkpoint, req.OperationKey)
+			})
+			if createErr != nil {
+				return nil, fmt.Errorf("checkpoint proposed target %d: %w", assignment.Index, createErr)
 			}
-			assignment.TargetGroupID = group.ID
-			assignment.CurrentTargetGroupName = group.Name
-			mapping.GroupIDs = append(mapping.GroupIDs, group.ID)
-			result.ID = group.ID
-			result.CurrentName = group.Name
-			result.Creation = "pending"
 		}
 		if _, pending := pendingCreation[assignment.TargetGroupID]; pending {
 			result.Creation = "pending"
 		}
-		if (proposed || assignment.RenameSelected) && assignment.TargetGroupName != assignment.CurrentTargetGroupName {
+		if !proposed && assignment.RenameSelected && assignment.TargetGroupName != assignment.CurrentTargetGroupName {
 			result.Name = assignment.TargetGroupName
 			result.Status = "failed"
 			result.Rename = "failed"
@@ -3826,6 +3854,29 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 		mappingResults[index].Status = "succeeded"
 	}
 	return &ExecutionResult{Plan: plan, Groups: groupResults, Accounts: accountResults, Members: memberResults, Mappings: mappingResults, Mapping: resultMapping}, nil
+}
+
+func (s *Service) checkpointCreatedReplanTarget(ctx context.Context, mapping *Mapping, plan *Plan, result GroupResult, operationKey string) error {
+	checkpoint := executionState(operationKey, []GroupResult{result}, nil)
+	checkpoint["operation"]["status"] = operationStatus(checkpoint)
+	operationState := mergeOperationState(mapping.OperationState, checkpoint)
+	desiredAccounts := desiredAccountsForGroupIDs(plan.Assignments, mapping.GroupIDs)
+	row, err := s.client.RelayGroupMapping.UpdateOneID(mapping.ID).
+		SetGroupIds(append([]int64(nil), mapping.GroupIDs...)).
+		SetAccountManagementInitialized(true).
+		SetDesiredAccounts(accountIntentsToStorage(desiredAccounts)).
+		SetOperationState(operationState).
+		SetStatus("needs_retry").
+		Save(ctx)
+	if err != nil {
+		return fmt.Errorf("persist created target checkpoint: %w", err)
+	}
+	mapping.AccountManagementInitialized = true
+	mapping.DesiredAccounts = desiredAccounts
+	mapping.OperationState = operationState
+	mapping.Status = row.Status
+	mapping.UpdatedAt = row.UpdatedAt
+	return nil
 }
 
 func (s *Service) resolveMoveSource(ctx context.Context, destination Mapping, userID int, action MemberAction) (*ent.RelayGroupMapping, int64, error) {
@@ -5700,6 +5751,9 @@ func validateTargetGroupNames(assignments []Assignment, groups []relay.Group) er
 	for index := range assignments {
 		if assignments[index].TargetUnavailable {
 			continue
+		}
+		if strings.IndexFunc(assignments[index].TargetGroupName, unicode.IsControl) >= 0 {
+			return fmt.Errorf("target %d name must not contain control characters", assignments[index].Index+1)
 		}
 		name := normalizeTargetGroupName(assignments[index].TargetGroupName)
 		if name == "" {
