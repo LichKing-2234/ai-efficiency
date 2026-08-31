@@ -58,7 +58,7 @@ func (s *Service) V2Overview(ctx context.Context, actorUserID int, query V2Query
 	if compareErr != nil {
 		return result, nil
 	}
-	_, previousCommitted, _, previousGap, providerMismatch, compareErr := s.queryV2ScopeTotalsSQL(ctx, scope, previousFrom, previousTo, previousDenominator)
+	_, _, previousCommitted, _, previousGap, providerMismatch, compareErr := s.queryV2ScopeTotalsSQL(ctx, scope, previousFrom, previousTo, previousDenominator)
 	if compareErr != nil || previousGap || providerMismatch {
 		return result, nil
 	}

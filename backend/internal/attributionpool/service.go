@@ -819,7 +819,7 @@ func migrateDurablePools(ctx context.Context, client *ent.Client, userID, repoCo
 			ledgerEpoch: pool.LedgerEpoch,
 			providerID:  pool.RelayProviderID, userID: pool.UserID, model: pool.RequestedModel, bucketStart: pool.BucketStartUtc, commits: counting,
 			input: pool.InputTokens, output: pool.OutputTokens, cacheCreate: pool.CacheCreationTokens,
-			cacheRead: pool.CacheReadTokens, total: pool.TotalTokens,
+			cacheRead: pool.CacheReadTokens, total: pool.TotalTokens, credit: pool.CreditUsage,
 		}
 		target, err := ensurePool(ctx, client, desired)
 		if err != nil {
@@ -927,7 +927,7 @@ func mergePoolTotals(ctx context.Context, client *ent.Client, targetID int, sour
 		attributionusagepool.CoverageGapCountLTE(math.MaxInt-source.CoverageGapCount),
 	).AddInputTokens(source.InputTokens).AddOutputTokens(source.OutputTokens).
 		AddCacheCreationTokens(source.CacheCreationTokens).AddCacheReadTokens(source.CacheReadTokens).
-		AddTotalTokens(source.TotalTokens).AddRequestCount(source.RequestCount).
+		AddTotalTokens(source.TotalTokens).AddCreditUsage(source.CreditUsage).AddRequestCount(source.RequestCount).
 		AddCoverageGapCount(source.CoverageGapCount).Save(ctx)
 	if err != nil {
 		return fmt.Errorf("merge rewritten attribution pool: %w", err)

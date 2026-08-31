@@ -10,11 +10,12 @@ import (
 )
 
 func (s *Service) queryV2OverviewSQL(ctx context.Context, actorUserID int, scope *v2Scope, query V2Query, from, to time.Time, denominator V2Denominator, result *V2Overview) (*V2Overview, error) {
-	committed, ratioCommitted, hasGap, ratioGap, providerMismatch, err := s.queryV2ScopeTotalsSQL(ctx, scope, from, to, denominator)
+	committed, committedCredit, ratioCommitted, hasGap, ratioGap, providerMismatch, err := s.queryV2ScopeTotalsSQL(ctx, scope, from, to, denominator)
 	if err != nil {
 		return nil, fmt.Errorf("load v2 overview totals: %w", err)
 	}
 	result.CommittedTokens = committed
+	result.CommittedCredit = committedCredit
 	result.Coverage = V2Coverage{Complete: !hasGap, LowerBound: hasGap}
 	ratioCoverage := V2Coverage{Complete: !ratioGap, LowerBound: ratioGap}
 	if providerMismatch {
@@ -29,19 +30,19 @@ func (s *Service) queryV2OverviewSQL(ctx context.Context, actorUserID int, scope
 		args = append(args, query.PRRecordID)
 		filter = " AND pr.id=" + fmt.Sprintf("$%d", len(args))
 		joins = " JOIN attribution_usage_pool_commits c ON c.pool_id=p.id JOIN pr_commit_usage_snapshots pcs ON pcs.commit_sha=c.commit_sha JOIN pr_records pr ON pr.id=pcs.pr_record_id AND pr.repo_config_pr_records=c.repo_config_id"
-		group = " GROUP BY p.id,p.total_tokens,p.bucket_start_utc,p.coverage_gap_count"
+		group = " GROUP BY p.id,p.total_tokens,p.credit_usage,p.bucket_start_utc,p.coverage_gap_count"
 	} else if query.RepoID > 0 {
 		args = append(args, query.RepoID)
 		filter = " AND c.repo_config_id=" + fmt.Sprintf("$%d", len(args))
 		joins = " JOIN attribution_usage_pool_commits c ON c.pool_id=p.id"
-		group = " GROUP BY p.id,p.total_tokens,p.bucket_start_utc,p.coverage_gap_count"
+		group = " GROUP BY p.id,p.total_tokens,p.credit_usage,p.bucket_start_utc,p.coverage_gap_count"
 	}
 	relationColumns := "true has_direct,false has_shared"
 	if query.PRRecordID > 0 || query.RepoID > 0 {
 		relationColumns = "bool_or(c.relation_kind='direct') has_direct,bool_or(c.relation_kind='shared') has_shared"
 	}
 	statement := fmt.Sprintf(`WITH selected AS (
- SELECT p.id,p.total_tokens,p.bucket_start_utc,p.coverage_gap_count,%s
+ SELECT p.id,p.total_tokens,p.credit_usage,p.bucket_start_utc,p.coverage_gap_count,%s
  FROM attribution_usage_pools p %s
 	 WHERE p.ledger_epoch=$1 AND p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3 AND p.user_id IN (%s) AND p.relay_provider_id > 0
 	   AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits counted WHERE counted.pool_id=p.id AND counted.relation_kind IN ('direct','shared'))
@@ -50,10 +51,13 @@ func (s *Service) queryV2OverviewSQL(ctx context.Context, actorUserID int, scope
  SELECT to_char(bucket_start_utc AT TIME ZONE %s,'YYYY-MM-DD') local_day,
         SUM(total_tokens)::bigint total_tokens,
         SUM(CASE WHEN has_direct THEN total_tokens ELSE 0 END)::bigint direct_tokens,
-        SUM(CASE WHEN has_shared THEN total_tokens ELSE 0 END)::bigint shared_tokens
+        SUM(CASE WHEN has_shared THEN total_tokens ELSE 0 END)::bigint shared_tokens,
+        SUM(credit_usage)::double precision credit_usage,
+        SUM(CASE WHEN has_direct THEN credit_usage ELSE 0 END)::double precision direct_credit,
+        SUM(CASE WHEN has_shared THEN credit_usage ELSE 0 END)::double precision shared_credit
  FROM selected GROUP BY local_day
 )
-SELECT local_day,total_tokens,direct_tokens,shared_tokens FROM daily ORDER BY local_day`, relationColumns, joins, users, filter, group, tzPH)
+SELECT local_day,total_tokens,direct_tokens,shared_tokens,credit_usage,direct_credit,shared_credit FROM daily ORDER BY local_day`, relationColumns, joins, users, filter, group, tzPH)
 	rows, err := s.v2DB.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query v2 overview: %w", err)
@@ -66,17 +70,22 @@ SELECT local_day,total_tokens,direct_tokens,shared_tokens FROM daily ORDER BY lo
 	for rows.Next() {
 		var day string
 		var total, direct, shared int64
-		if err := rows.Scan(&day, &total, &direct, &shared); err != nil {
+		var totalCredit, directCredit, sharedCredit float64
+		if err := rows.Scan(&day, &total, &direct, &shared, &totalCredit, &directCredit, &sharedCredit); err != nil {
 			return nil, fmt.Errorf("scan v2 overview: %w", err)
 		}
 		if point := trend[day]; point != nil {
 			if query.PRRecordID > 0 {
 				point.InvolvedTokens = total
+				point.InvolvedCredit = totalCredit
 			} else if query.RepoID > 0 {
 				point.DirectTokens = direct
 				point.SharedTokens = shared
+				point.DirectCredit = directCredit
+				point.SharedCredit = sharedCredit
 			} else {
 				point.DirectTokens = total
+				point.DirectCredit = totalCredit
 			}
 		}
 	}
@@ -99,7 +108,10 @@ SELECT local_day,total_tokens,direct_tokens,shared_tokens FROM daily ORDER BY lo
 	return result, nil
 }
 
-func (s *Service) queryV2ScopeTotalsSQL(ctx context.Context, scope *v2Scope, from, to time.Time, denominator V2Denominator) (int64, int64, bool, bool, bool, error) {
+// queryV2ScopeTotalsSQL returns committed tokens, committed credit, and the
+// ratio numerator. Credit stays out of the ratio: its denominator is relay Token
+// consumption, and credit is a unit the relay never billed.
+func (s *Service) queryV2ScopeTotalsSQL(ctx context.Context, scope *v2Scope, from, to time.Time, denominator V2Denominator) (int64, float64, int64, bool, bool, bool, error) {
 	args := []any{s.v2LedgerEpoch, from, to}
 	users := appendSQLInts(&args, sortedIntKeys(scope.userIDs))
 	providers := appendSQLInts(&args, sortedIntKeys(scope.providerIDs))
@@ -112,13 +124,14 @@ func (s *Service) queryV2ScopeTotalsSQL(ctx context.Context, scope *v2Scope, fro
 	if len(scope.providerIDs) == 0 {
 		mismatch = "true"
 	}
-	statement := fmt.Sprintf(`WITH scoped AS (SELECT p.* FROM attribution_usage_pools p WHERE p.ledger_epoch=$1 AND p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3 AND p.user_id IN (%s) AND p.relay_provider_id > 0 AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits c WHERE c.pool_id=p.id AND c.relation_kind IN ('direct','shared'))) SELECT COALESCE(SUM(total_tokens),0)::bigint,COALESCE(SUM(total_tokens) FILTER (WHERE relay_provider_id IN (%s) AND bucket_start_utc + interval '15 minutes' <= $%d),0)::bigint,COALESCE(bool_or(coverage_gap_count>0),false),COALESCE(bool_or(coverage_gap_count>0 AND bucket_start_utc + interval '15 minutes' <= $%d) FILTER (WHERE relay_provider_id IN (%s)),false),COALESCE(bool_or(%s),false) FROM scoped`, users, providers, len(args), len(args), providers, mismatch)
+	statement := fmt.Sprintf(`WITH scoped AS (SELECT p.* FROM attribution_usage_pools p WHERE p.ledger_epoch=$1 AND p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3 AND p.user_id IN (%s) AND p.relay_provider_id > 0 AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits c WHERE c.pool_id=p.id AND c.relation_kind IN ('direct','shared'))) SELECT COALESCE(SUM(total_tokens),0)::bigint,COALESCE(SUM(credit_usage),0)::double precision,COALESCE(SUM(total_tokens) FILTER (WHERE relay_provider_id IN (%s) AND bucket_start_utc + interval '15 minutes' <= $%d),0)::bigint,COALESCE(bool_or(coverage_gap_count>0),false),COALESCE(bool_or(coverage_gap_count>0 AND bucket_start_utc + interval '15 minutes' <= $%d) FILTER (WHERE relay_provider_id IN (%s)),false),COALESCE(bool_or(%s),false) FROM scoped`, users, providers, len(args), len(args), providers, mismatch)
 	var committed, ratio int64
+	var committedCredit float64
 	var gap, ratioGap, providerMismatch bool
-	if err := s.v2DB.QueryRowContext(ctx, statement, args...).Scan(&committed, &ratio, &gap, &ratioGap, &providerMismatch); err != nil {
-		return 0, 0, false, false, false, fmt.Errorf("query v2 scope totals: %w", err)
+	if err := s.v2DB.QueryRowContext(ctx, statement, args...).Scan(&committed, &committedCredit, &ratio, &gap, &ratioGap, &providerMismatch); err != nil {
+		return 0, 0, 0, false, false, false, fmt.Errorf("query v2 scope totals: %w", err)
 	}
-	return committed, ratio, gap, ratioGap, providerMismatch, nil
+	return committed, committedCredit, ratio, gap, ratioGap, providerMismatch, nil
 }
 
 func (s *Service) queryV2RepositoriesSQL(ctx context.Context, actorUserID int, scope *v2Scope, from, to time.Time, query V2PageQuery) (*V2Page[V2RepositoryRow], error) {
@@ -149,25 +162,27 @@ func (s *Service) queryV2RepositoriesSQL(ctx context.Context, actorUserID int, s
 		}
 	}
 	statement := fmt.Sprintf(`WITH pool_repo AS (
- SELECT c.repo_config_id, p.id pool_id, p.total_tokens,
+ SELECT c.repo_config_id, p.id pool_id, p.total_tokens, p.credit_usage,
         bool_or(c.relation_kind = 'direct') has_direct,
         bool_or(c.relation_kind = 'shared') has_shared
  FROM attribution_usage_pools p JOIN attribution_usage_pool_commits c ON c.pool_id=p.id
  WHERE p.ledger_epoch=$1 AND p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3
 	   AND p.user_id IN (%s) AND p.relay_provider_id > 0
- GROUP BY c.repo_config_id,p.id,p.total_tokens
+ GROUP BY c.repo_config_id,p.id,p.total_tokens,p.credit_usage
  HAVING bool_or(c.relation_kind IN ('direct','shared'))
 ), repo_totals AS (
  SELECT pr.repo_config_id,r.full_name repo_name,
         COALESCE(SUM(CASE WHEN pr.has_direct THEN pr.total_tokens ELSE 0 END),0)::bigint direct_tokens,
-        COALESCE(SUM(CASE WHEN pr.has_shared THEN pr.total_tokens ELSE 0 END),0)::bigint shared_tokens
+        COALESCE(SUM(CASE WHEN pr.has_shared THEN pr.total_tokens ELSE 0 END),0)::bigint shared_tokens,
+        COALESCE(SUM(CASE WHEN pr.has_direct THEN pr.credit_usage ELSE 0 END),0)::double precision direct_credit,
+        COALESCE(SUM(CASE WHEN pr.has_shared THEN pr.credit_usage ELSE 0 END),0)::double precision shared_credit
  FROM pool_repo pr JOIN repo_configs r ON r.id=pr.repo_config_id GROUP BY pr.repo_config_id,r.full_name
 ), scope_total AS (
  SELECT COALESCE(SUM(total_tokens),0)::bigint total_tokens FROM attribution_usage_pools
 	 WHERE ledger_epoch=$1 AND bucket_start_utc >= $2 AND bucket_start_utc < $3 AND user_id IN (%s) AND relay_provider_id > 0
 	   AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits counted WHERE counted.pool_id=attribution_usage_pools.id AND counted.relation_kind IN ('direct','shared'))
 )
-SELECT repo_config_id,repo_name,direct_tokens,shared_tokens,scope_total.total_tokens
+SELECT repo_config_id,repo_name,direct_tokens,shared_tokens,direct_credit,shared_credit,scope_total.total_tokens
 FROM repo_totals CROSS JOIN scope_total WHERE repo_name ILIKE %s ESCAPE '\' %s
 ORDER BY %s LIMIT %d`, users, users, searchPlaceholder, cursorWhere, order, v2PageSize+1)
 	rows, err := s.v2DB.QueryContext(ctx, statement, args...)
@@ -179,7 +194,7 @@ ORDER BY %s LIMIT %d`, users, users, searchPlaceholder, cursorWhere, order, v2Pa
 	for rows.Next() {
 		var row V2RepositoryRow
 		var total int64
-		if err := rows.Scan(&row.RepoConfigID, &row.Name, &row.DirectTokens, &row.SharedTokens, &total); err != nil {
+		if err := rows.Scan(&row.RepoConfigID, &row.Name, &row.DirectTokens, &row.SharedTokens, &row.DirectCredit, &row.SharedCredit, &total); err != nil {
 			return nil, fmt.Errorf("scan v2 repositories: %w", err)
 		}
 		if total > 0 {
@@ -242,7 +257,7 @@ func (s *Service) queryV2PullRequestsSQL(ctx context.Context, actorUserID int, s
 	}
 	statement := fmt.Sprintf(`WITH pool_pr AS (
  SELECT pr.id pr_record_id,pr.repo_config_pr_records repo_config_id,r.full_name repo_name,pr.scm_pr_id,pr.title,pr.scm_pr_url,pr.status,
-        p.id pool_id,p.total_tokens,bool_or(c.relation_kind='shared') has_shared,bool_or(c.relation_kind='direct') has_direct
+        p.id pool_id,p.total_tokens,p.credit_usage,bool_or(c.relation_kind='shared') has_shared,bool_or(c.relation_kind='direct') has_direct
  FROM attribution_usage_pools p JOIN attribution_usage_pool_commits c ON c.pool_id=p.id
  JOIN pr_commit_usage_snapshots pcs ON pcs.commit_sha=c.commit_sha
  JOIN pr_records pr ON pr.id=pcs.pr_record_id AND pr.repo_config_pr_records=c.repo_config_id
@@ -250,13 +265,14 @@ func (s *Service) queryV2PullRequestsSQL(ctx context.Context, actorUserID int, s
  WHERE p.ledger_epoch=$1 AND p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3
 	   AND p.user_id IN (%s) AND p.relay_provider_id > 0
 	   AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits counted WHERE counted.pool_id=p.id AND counted.relation_kind IN ('direct','shared')) %s
- GROUP BY pr.id,pr.repo_config_pr_records,r.full_name,pr.scm_pr_id,pr.title,pr.scm_pr_url,pr.status,p.id,p.total_tokens
+ GROUP BY pr.id,pr.repo_config_pr_records,r.full_name,pr.scm_pr_id,pr.title,pr.scm_pr_url,pr.status,p.id,p.total_tokens,p.credit_usage
 ), pr_totals AS (
  SELECT pr_record_id,repo_config_id,repo_name,scm_pr_id,title,scm_pr_url,status,SUM(total_tokens)::bigint involved_tokens,
+        SUM(credit_usage)::double precision involved_credit,
         CASE WHEN bool_or(has_shared) THEN 'shared' WHEN bool_or(has_direct) THEN 'direct' ELSE 'inherited' END overlap_state
  FROM pool_pr GROUP BY pr_record_id,repo_config_id,repo_name,scm_pr_id,title,scm_pr_url,status
 )
-SELECT pr_record_id,repo_config_id,repo_name,scm_pr_id,title,scm_pr_url,status,involved_tokens,overlap_state
+SELECT pr_record_id,repo_config_id,repo_name,scm_pr_id,title,scm_pr_url,status,involved_tokens,involved_credit,overlap_state
 FROM pr_totals WHERE (repo_name||' #'||scm_pr_id::text||' '||title) ILIKE %s ESCAPE '\' %s ORDER BY %s LIMIT %d`, users, filters, searchPH, cursorWhere, order, v2PageSize+1)
 	rows, err := s.v2DB.QueryContext(ctx, statement, args...)
 	if err != nil {
@@ -266,7 +282,7 @@ FROM pr_totals WHERE (repo_name||' #'||scm_pr_id::text||' '||title) ILIKE %s ESC
 	items := make([]V2PullRequestRow, 0, v2PageSize+1)
 	for rows.Next() {
 		var row V2PullRequestRow
-		if err := rows.Scan(&row.PRRecordID, &row.RepoConfigID, &row.RepositoryName, &row.SCMPRID, &row.Title, &row.URL, &row.Status, &row.InvolvedTokens, &row.OverlapState); err != nil {
+		if err := rows.Scan(&row.PRRecordID, &row.RepoConfigID, &row.RepositoryName, &row.SCMPRID, &row.Title, &row.URL, &row.Status, &row.InvolvedTokens, &row.InvolvedCredit, &row.OverlapState); err != nil {
 			return nil, fmt.Errorf("scan v2 pull requests: %w", err)
 		}
 		items = append(items, row)
@@ -428,16 +444,20 @@ func (s *Service) attachV2RepositoryChanges(ctx context.Context, scope *v2Scope,
 	repositories := appendSQLInts(&args, ids)
 	statement := fmt.Sprintf(`WITH values_by_period AS (
  SELECT c.repo_config_id, CASE WHEN p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3 THEN 'current' ELSE 'previous' END period,
-        p.id,p.total_tokens,p.coverage_gap_count,bool_or(c.relation_kind='direct') has_direct
+        p.id,p.total_tokens,p.credit_usage,p.coverage_gap_count,bool_or(c.relation_kind='direct') has_direct
  FROM attribution_usage_pools p JOIN attribution_usage_pool_commits c ON c.pool_id=p.id
  WHERE p.ledger_epoch=$1 AND ((p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3) OR (p.bucket_start_utc >= $4 AND p.bucket_start_utc < $5))
    AND p.user_id IN (%s) AND p.relay_provider_id > 0 AND c.repo_config_id IN (%s)
- GROUP BY c.repo_config_id,period,p.id,p.total_tokens,p.coverage_gap_count
+ GROUP BY c.repo_config_id,period,p.id,p.total_tokens,p.credit_usage,p.coverage_gap_count
 ), totals AS (
- SELECT repo_config_id,period,COALESCE(SUM(total_tokens) FILTER (WHERE has_direct),0)::bigint tokens,COALESCE(bool_or(coverage_gap_count>0),false) gap
+ SELECT repo_config_id,period,COALESCE(SUM(total_tokens) FILTER (WHERE has_direct),0)::bigint tokens,
+        COALESCE(SUM(credit_usage) FILTER (WHERE has_direct),0)::double precision credit,
+        COALESCE(bool_or(coverage_gap_count>0),false) gap
  FROM values_by_period GROUP BY repo_config_id,period
 )
-SELECT repo_config_id,COALESCE(MAX(tokens) FILTER (WHERE period='current'),0),COALESCE(MAX(tokens) FILTER (WHERE period='previous'),0),COALESCE(bool_or(gap),false) FROM totals GROUP BY repo_config_id`, users, repositories)
+SELECT repo_config_id,COALESCE(MAX(tokens) FILTER (WHERE period='current'),0),COALESCE(MAX(tokens) FILTER (WHERE period='previous'),0),
+       COALESCE(MAX(credit) FILTER (WHERE period='current'),0),COALESCE(MAX(credit) FILTER (WHERE period='previous'),0),
+       COALESCE(bool_or(gap),false) FROM totals GROUP BY repo_config_id`, users, repositories)
 	rows, err := s.v2DB.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return fmt.Errorf("query v2 repository changes: %w", err)
@@ -446,13 +466,16 @@ SELECT repo_config_id,COALESCE(MAX(tokens) FILTER (WHERE period='current'),0),CO
 	for rows.Next() {
 		var id int
 		var current, previous int64
+		var currentCredit, previousCredit float64
 		var gap bool
-		if err := rows.Scan(&id, &current, &previous, &gap); err != nil {
+		if err := rows.Scan(&id, &current, &previous, &currentCredit, &previousCredit, &gap); err != nil {
 			return fmt.Errorf("scan v2 repository changes: %w", err)
 		}
 		if row := byID[id]; row != nil && !gap {
 			change := current - previous
 			row.TokenChange = &change
+			creditChange := currentCredit - previousCredit
+			row.CreditChange = &creditChange
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -475,15 +498,17 @@ func (s *Service) attachV2PRChanges(ctx context.Context, scope *v2Scope, from, t
 	prs := appendSQLInts(&args, ids)
 	statement := fmt.Sprintf(`WITH pool_pr AS (
  SELECT pr.id pr_record_id,CASE WHEN p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3 THEN 'current' ELSE 'previous' END period,
-        p.id,p.total_tokens,p.coverage_gap_count
+        p.id,p.total_tokens,p.credit_usage,p.coverage_gap_count
  FROM attribution_usage_pools p JOIN attribution_usage_pool_commits c ON c.pool_id=p.id
  JOIN pr_commit_usage_snapshots pcs ON pcs.commit_sha=c.commit_sha JOIN pr_records pr ON pr.id=pcs.pr_record_id AND pr.repo_config_pr_records=c.repo_config_id
  WHERE p.ledger_epoch=$1 AND ((p.bucket_start_utc >= $2 AND p.bucket_start_utc < $3) OR (p.bucket_start_utc >= $4 AND p.bucket_start_utc < $5))
    AND p.user_id IN (%s) AND p.relay_provider_id > 0 AND pr.id IN (%s)
    AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits counted WHERE counted.pool_id=p.id AND counted.relation_kind IN ('direct','shared'))
- GROUP BY pr.id,period,p.id,p.total_tokens,p.coverage_gap_count
-), totals AS (SELECT pr_record_id,period,SUM(total_tokens)::bigint tokens,COALESCE(bool_or(coverage_gap_count>0),false) gap FROM pool_pr GROUP BY pr_record_id,period)
-SELECT pr_record_id,COALESCE(MAX(tokens) FILTER (WHERE period='current'),0),COALESCE(MAX(tokens) FILTER (WHERE period='previous'),0),COALESCE(bool_or(gap),false) FROM totals GROUP BY pr_record_id`, users, prs)
+ GROUP BY pr.id,period,p.id,p.total_tokens,p.credit_usage,p.coverage_gap_count
+), totals AS (SELECT pr_record_id,period,SUM(total_tokens)::bigint tokens,SUM(credit_usage)::double precision credit,COALESCE(bool_or(coverage_gap_count>0),false) gap FROM pool_pr GROUP BY pr_record_id,period)
+SELECT pr_record_id,COALESCE(MAX(tokens) FILTER (WHERE period='current'),0),COALESCE(MAX(tokens) FILTER (WHERE period='previous'),0),
+       COALESCE(MAX(credit) FILTER (WHERE period='current'),0),COALESCE(MAX(credit) FILTER (WHERE period='previous'),0),
+       COALESCE(bool_or(gap),false) FROM totals GROUP BY pr_record_id`, users, prs)
 	rows, err := s.v2DB.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return fmt.Errorf("query v2 pull-request changes: %w", err)
@@ -492,13 +517,16 @@ SELECT pr_record_id,COALESCE(MAX(tokens) FILTER (WHERE period='current'),0),COAL
 	for rows.Next() {
 		var id int
 		var current, previous int64
+		var currentCredit, previousCredit float64
 		var gap bool
-		if err := rows.Scan(&id, &current, &previous, &gap); err != nil {
+		if err := rows.Scan(&id, &current, &previous, &currentCredit, &previousCredit, &gap); err != nil {
 			return fmt.Errorf("scan v2 pull-request changes: %w", err)
 		}
 		if row := byID[id]; row != nil && !gap {
 			change := current - previous
 			row.TokenChange = &change
+			creditChange := currentCredit - previousCredit
+			row.CreditChange = &creditChange
 		}
 	}
 	if err := rows.Err(); err != nil {

@@ -48,11 +48,17 @@ type V2Ratio struct {
 	PercentagePointChange *float64   `json:"percentage_point_change,omitempty"`
 }
 
+// V2TrendPoint carries the two units side by side. Credit is what agents that
+// do not bill in tokens report — Kiro CLI reports only credit — and is never
+// converted to or from tokens, so a caller reads whichever unit it needs.
 type V2TrendPoint struct {
-	Date           string `json:"date"`
-	DirectTokens   int64  `json:"direct_tokens"`
-	SharedTokens   int64  `json:"shared_tokens"`
-	InvolvedTokens int64  `json:"involved_tokens"`
+	Date           string  `json:"date"`
+	DirectTokens   int64   `json:"direct_tokens"`
+	SharedTokens   int64   `json:"shared_tokens"`
+	InvolvedTokens int64   `json:"involved_tokens"`
+	DirectCredit   float64 `json:"direct_credit"`
+	SharedCredit   float64 `json:"shared_credit"`
+	InvolvedCredit float64 `json:"involved_credit"`
 }
 
 type V2Readiness struct {
@@ -68,6 +74,7 @@ type V2Overview struct {
 	ToDate          string         `json:"to"`
 	Timezone        string         `json:"timezone"`
 	CommittedTokens int64          `json:"committed_tokens"`
+	CommittedCredit float64        `json:"committed_credit"`
 	Coverage        V2Coverage     `json:"claim_coverage"`
 	SCMCoverage     SyncCoverage   `json:"scm_coverage"`
 	Ratio           V2Ratio        `json:"ratio"`
@@ -81,7 +88,10 @@ type V2RepositoryRow struct {
 	DirectTokens int64    `json:"direct_tokens"`
 	DirectShare  *float64 `json:"direct_share,omitempty"`
 	SharedTokens int64    `json:"shared_tokens"`
+	DirectCredit float64  `json:"direct_credit"`
+	SharedCredit float64  `json:"shared_credit"`
 	TokenChange  *int64   `json:"token_change,omitempty"`
+	CreditChange *float64 `json:"credit_change,omitempty"`
 }
 
 type V2CommitReference struct {
@@ -98,8 +108,10 @@ type V2PullRequestRow struct {
 	URL            string              `json:"url"`
 	Status         string              `json:"status"`
 	InvolvedTokens int64               `json:"involved_tokens"`
+	InvolvedCredit float64             `json:"involved_credit"`
 	OverlapState   string              `json:"overlap_state"`
 	TokenChange    *int64              `json:"token_change,omitempty"`
+	CreditChange   *float64            `json:"credit_change,omitempty"`
 	Commits        []V2CommitReference `json:"commits"`
 }
 
