@@ -42,7 +42,9 @@ func TestLoginSetupRecordsARelayProvider(t *testing.T) {
 	}, nil, nil, nil)
 
 	var out, errOut bytes.Buffer
-	ensureRelayProvider(context.Background(), &out, &errOut)
+	if id := ensureRelayProvider(context.Background(), &out, &errOut); id != 7 {
+		t.Fatalf("provider in effect = %d, want the one it just recorded", id)
+	}
 
 	if *saved != 7 {
 		t.Fatalf("saved provider = %d, want the primary one (7)", *saved)
@@ -57,7 +59,9 @@ func TestLoginSetupLeavesAnExistingProviderAlone(t *testing.T) {
 	saved, _ := stubSetup(t, &reporting.Config{RelayProviderID: 42}, []toolconfig.Provider{{ID: 7}}, nil, nil, nil)
 
 	var out, errOut bytes.Buffer
-	ensureRelayProvider(context.Background(), &out, &errOut)
+	if id := ensureRelayProvider(context.Background(), &out, &errOut); id != 42 {
+		t.Fatalf("provider in effect = %d, want the recorded choice reported back", id)
+	}
 
 	if *saved != 0 {
 		t.Fatalf("saved provider = %d, want the existing choice untouched", *saved)
@@ -82,7 +86,9 @@ func TestLoginSetupReportsEveryFailureWithoutFailingLogin(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			stubSetup(t, &reporting.Config{}, []toolconfig.Provider{{ID: 7, Name: "sub2api"}}, tc.listErr, tc.saveErr, nil)
 			var out, errOut bytes.Buffer
-			ensureRelayProvider(context.Background(), &out, &errOut)
+			if id := ensureRelayProvider(context.Background(), &out, &errOut); id != 0 {
+				t.Fatalf("provider in effect = %d, want zero so a caller cannot claim delivery is active", id)
+			}
 			if !strings.Contains(errOut.String(), tc.want) {
 				t.Fatalf("errOut = %q, want it to name the recovery command", errOut.String())
 			}

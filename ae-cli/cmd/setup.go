@@ -60,37 +60,40 @@ func completeMachineSetup(ctx context.Context, out, errOut io.Writer) {
 // it — pointing each agent's base URL at the relay — and that stays in
 // `discover`, where someone asked for it. The identifier is local state that
 // nothing else can supply, and commit attribution is inert without it.
-func ensureRelayProvider(ctx context.Context, out, errOut io.Writer) {
+// It returns the provider in effect, or zero when the machine still has
+// none — the caller may need to know before claiming delivery is active.
+func ensureRelayProvider(ctx context.Context, out, errOut io.Writer) int {
 	config, err := setupLoadReporting()
 	if err != nil {
 		fmt.Fprintf(errOut, "Warning: could not read reporting state (%v). Commit attribution stays off until 'ae-cli discover' runs.\n", err)
-		return
+		return 0
 	}
 	// Reading rather than creating. Switching accounts deletes this state on
 	// purpose, and recording a provider into a file that should not exist would
 	// resurrect the credentials the switch just cleared.
 	if config == nil {
-		return
+		return 0
 	}
 	if config.RelayProviderID > 0 {
-		return
+		return config.RelayProviderID
 	}
 
 	providers, err := setupListProviders(ctx)
 	if err != nil {
 		fmt.Fprintf(errOut, "Warning: could not list relay providers (%v). Commit attribution stays off until 'ae-cli discover' runs.\n", err)
-		return
+		return 0
 	}
 	provider, err := toolconfig.SelectProvider(providers, "")
 	if err != nil {
 		fmt.Fprintf(errOut, "Warning: no relay provider available (%v). Commit attribution stays off until one is configured.\n", err)
-		return
+		return 0
 	}
 	if err := setupSaveProviderID(provider.ID); err != nil {
 		fmt.Fprintf(errOut, "Warning: could not record the relay provider (%v). Commit attribution stays off until 'ae-cli discover' runs.\n", err)
-		return
+		return 0
 	}
 	fmt.Fprintf(out, "Reporting under relay provider %s.\n", providerLabel(provider))
+	return provider.ID
 }
 
 func providerLabel(provider toolconfig.Provider) string {
