@@ -16,14 +16,19 @@ const (
 )
 
 type V2DeliverySummary struct {
-	Pending                  int
-	Conflict                 int
-	UpgradeRequired          int
-	Accepted                 int
-	MissingRequestID         int
-	AmbiguousRequestEvidence int
-	RequestEvidenceExpired   int
-	UnrecognizedPatchWrapper int
+	Pending                   int
+	Conflict                  int
+	UpgradeRequired           int
+	Accepted                  int
+	MissingRequestID          int
+	AmbiguousRequestEvidence  int
+	RequestEvidenceExpired    int
+	UnrecognizedPatchWrapper  int
+	InvalidLocalUsage         int
+	MissingLocalUsage         int
+	MissingStructuredMutation int
+	InvalidStructuredMutation int
+	CommitContentMismatch     int
 }
 
 func UpdateV2ClaimState(ctx context.Context, fn func(*V2ClaimState) error) error {
@@ -66,6 +71,16 @@ func SummarizeV2ClaimDelivery(state *V2ClaimState) V2DeliverySummary {
 			summary.RequestEvidenceExpired++
 		case v2GapUnrecognizedPatchWrapper:
 			summary.UnrecognizedPatchWrapper++
+		case v2GapInvalidLocalUsage:
+			summary.InvalidLocalUsage++
+		case v2GapMissingLocalUsage:
+			summary.MissingLocalUsage++
+		case v2GapMissingStructuredMutation:
+			summary.MissingStructuredMutation++
+		case v2GapInvalidStructuredMutation:
+			summary.InvalidStructuredMutation++
+		case v2GapCommitContentMismatch:
+			summary.CommitContentMismatch++
 		}
 	}
 	return summary

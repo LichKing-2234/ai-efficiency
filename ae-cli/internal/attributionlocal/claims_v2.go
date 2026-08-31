@@ -38,6 +38,17 @@ const (
 	// distinct from a turn with no mutation at all so that wrapper drift is
 	// countable instead of silent.
 	v2GapUnrecognizedPatchWrapper = "unrecognized_patch_wrapper"
+
+	// The proof gaps. These were bare literals, which is why they were the only
+	// reasons a claim could fail that nothing counted and nothing printed: a
+	// machine could hold thousands of them and report pending=0 conflict=0.
+	// missing_structured_mutation in particular is what an agent's shell writes
+	// and an unreadable edit both become, and it was invisible.
+	v2GapInvalidLocalUsage         = "invalid_local_usage"
+	v2GapMissingLocalUsage         = "missing_local_usage"
+	v2GapMissingStructuredMutation = "missing_structured_mutation"
+	v2GapInvalidStructuredMutation = "invalid_structured_mutation"
+	v2GapCommitContentMismatch     = "commit_content_mismatch"
 )
 
 var codexV2SourceReadObserver = func(string) {}
@@ -709,19 +720,19 @@ func buildCodexV2ClaimCandidates(ctx context.Context, path, sessionID string, op
 		}
 		switch {
 		case turn.webSocket && turn.localInvalid:
-			proofGap = "invalid_local_usage"
+			proofGap = v2GapInvalidLocalUsage
 		case turn.webSocket && len(turn.localUsage) == 0:
-			proofGap = "missing_local_usage"
+			proofGap = v2GapMissingLocalUsage
 		case len(turn.mutations) == 0 && turn.unrecognizedWrapper:
 			proofGap = v2GapUnrecognizedPatchWrapper
 		case len(turn.mutations) == 0:
-			proofGap = "missing_structured_mutation"
+			proofGap = v2GapMissingStructuredMutation
 		case !validV2Mutations(turn.mutations):
-			proofGap = "invalid_structured_mutation"
+			proofGap = v2GapInvalidStructuredMutation
 		default:
 			introduced := introducedV2Mutations(ctx, opts.RepoRoot, opts.CommitSHA, turn.mutations)
 			if len(introduced) == 0 {
-				proofGap = "commit_content_mismatch"
+				proofGap = v2GapCommitContentMismatch
 				break
 			}
 			if turn.webSocket {

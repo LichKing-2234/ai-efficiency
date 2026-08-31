@@ -1049,11 +1049,11 @@ func pilotClaimCandidate(ctx context.Context, turn *pilotTurn, responses []*pilo
 	case len(turn.mutations) == 0 && len(turn.unhandledTools) > 0:
 		candidate.GapReason = pilotGapUnhandledMutationTool
 	case !validV2Mutations(turn.mutations):
-		candidate.GapReason = "invalid_structured_mutation"
+		candidate.GapReason = v2GapInvalidStructuredMutation
 	default:
 		introduced := introducedV2Mutations(ctx, opts.RepoRoot, opts.CommitSHA, turn.mutations)
 		if len(introduced) == 0 {
-			candidate.GapReason = "commit_content_mismatch"
+			candidate.GapReason = v2GapCommitContentMismatch
 			break
 		}
 		evidenceDigest := v2MutationDigest(introduced)
