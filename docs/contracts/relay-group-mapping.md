@@ -110,10 +110,10 @@ remain visible in the execution result.
 
 ## Stable Mapping and Replan
 
-Replan keeps the mapping's stable Target IDs and original order. It may change
-the reviewed member matrix and selected Target names/Accounts, but it does not
-resize, duplicate, replace, deactivate, or automatically reshuffle Target
-Groups.
+Replan keeps every existing Target's stable ID and original order. It may
+change the reviewed member matrix and selected Target names/Accounts, and it may
+append empty proposed Targets without Relay Group IDs. It does not remove,
+replace, deactivate, or automatically reshuffle existing Target Groups.
 
 Opening Replan reconstructs the last confirmed `member_assignments` as the
 zero-change Replan Baseline:
@@ -129,6 +129,16 @@ zero-change Replan Baseline:
 Only explicit add, move, remove, target-only/source selection, or unmanaged
 adoption changes the executable roster. Initial-mapping auto-placement does not
 carry into Replan.
+
+`Add group` appends a read-only proposed Target to Replan using the Template
+Group's reviewed Account defaults and the same deterministic naming and
+validation rules as initial Preview. Removing that unconfirmed proposed Target
+deletes only the draft. Confirm duplicates the proposed Target inactive,
+renames it, reconciles reviewed Accounts, activates it, applies explicitly
+reviewed members, and appends the returned stable Group ID to the Mapping.
+Creation state retains that ID across rename, Account, or activation failure so
+retry never duplicates another Group. Existing Target retirement remains
+outside this behavior.
 
 If a Managed Mapping Member in the Replan Baseline has no current local-to-Relay
 identity, the member remains visible in its Replan Roster with a safe warning.
@@ -269,9 +279,10 @@ The administrator must review and explicitly Confirm again.
 After a complete preflight passes, execution may record per-Target/member
 upstream failures as `needs_retry`; those failures are not relabeled as stale.
 
-A new Target is duplicated inactive from the Template, renamed, reconciled to
-the reviewed Account pool, activated, and only then receives members. Creation
-state records the stable new Group ID so retry cannot duplicate another Group.
+A new Target from either initial Preview or Replan is duplicated inactive from
+the Template, renamed, reconciled to the reviewed Account pool, activated, and
+only then receives members. Creation state records the stable new Group ID so
+retry cannot duplicate another Group.
 A rename/activation failure blocks later work for that new Target. Existing-
 Target rename failure is an independent retryable step and does not suppress
 reviewed Account/member steps.

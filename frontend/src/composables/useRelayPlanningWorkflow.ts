@@ -153,6 +153,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     options.onPlanApplied?.()
     plan.value = next
     if (!next) return
+		suggestedGroupAccountDefaults.value = (next.template_accounts ?? next.assignments[0]?.accounts ?? []).map((account) => ({ ...account }))
     for (const assignment of next.assignments) {
       assignment.accounts ??= []
       assignment.desired_accounts = assignment.accounts.map((account, index) => ({
@@ -259,7 +260,6 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
       lastExecution.value = null
       const nextPlan = await options.previewInitial(request)
       if (!isCurrentPlanRequest(generation)) return
-      suggestedGroupAccountDefaults.value = (nextPlan?.assignments[0]?.accounts ?? []).map((account) => ({ ...account }))
       applyPlan(nextPlan)
       activeMappingID.value = null
       activeMappingMemberAssignments.value = {}
@@ -325,12 +325,13 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     assignment.target_group_name = name
   }
 
-  function targetNameErrorCode(targetIndex: number): 'required' | 'too_long' | 'duplicate' | 'occupied' | '' {
+  function targetNameErrorCode(targetIndex: number): 'required' | 'too_long' | 'control' | 'duplicate' | 'occupied' | '' {
     const assignment = plan.value?.assignments.find((item) => item.index === targetIndex)
     if (!assignment || assignment.target_unavailable) return ''
     const name = String(assignment.target_group_name || '').trim()
     if (!name) return 'required'
     if (Array.from(name).length > 100) return 'too_long'
+		if (/[\u0000-\u001f\u007f-\u009f]/.test(name)) return 'control'
     if ((plan.value?.assignments ?? []).some((item) => (
       item.index !== targetIndex && String(item.target_group_name || '').trim() === name
     ))) return 'duplicate'
@@ -341,10 +342,11 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
   }
 
   function recalculateProposedTargetNames() {
-    if (!plan.value || activeMappingID.value) return
+		if (!plan.value) return
     const used = new Set(options.reservedGroups().map((group) => group.name))
     let sequence = 1
     for (const assignment of plan.value.assignments) {
+			if (assignment.target_group_id) continue
       while (true) {
         const suffix = `-${plan.value.platform.trim().toLowerCase()}-${String(sequence).padStart(2, '0')}`
         sequence += 1
@@ -359,7 +361,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
   }
 
   function addSuggestedGroup() {
-    if (!plan.value || activeMappingID.value) return
+		if (!plan.value) return
     markPlanEdited()
     const index = plan.value.assignments.length
     const accounts = suggestedGroupAccountDefaults.value.map((account) => ({ ...account }))
@@ -379,7 +381,9 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
   }
 
   function removeSuggestedGroup(targetIndex: number) {
-    if (!plan.value || activeMappingID.value || plan.value.assignments.length <= 1) return
+		if (!plan.value || plan.value.assignments.length <= 1) return
+		const target = plan.value.assignments.find((assignment) => assignment.index === targetIndex)
+		if (!target || (activeMappingID.value && target.target_group_id)) return
     markPlanEdited()
     clearReviewedSearchState()
     options.onPlanApplied?.()

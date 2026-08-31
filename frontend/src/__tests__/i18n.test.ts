@@ -226,8 +226,8 @@ describe('i18n locale loading', () => {
       ...Object.keys(directoryOffboardingMessages['zh-CN']),
     ].sort()
 
-    expect(englishKeys).toHaveLength(1199)
-    expect(chineseKeys).toHaveLength(1199)
+    expect(englishKeys).toHaveLength(1200)
+    expect(chineseKeys).toHaveLength(1200)
     expect(englishKeys).toContain('activity.title')
     expect(englishKeys).toContain('pagination.range')
     expect(englishKeys).toContain('pagination.pageOf')
