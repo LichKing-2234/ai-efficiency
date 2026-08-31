@@ -242,6 +242,7 @@ type Plan struct {
 	GroupCount                int                   `json:"group_count"`
 	Candidates                []Candidate           `json:"candidates"`
 	Assignments               []Assignment          `json:"assignments"`
+	TemplateAccounts          []TargetAccount       `json:"template_accounts"`
 	UnmanagedMembers          []UnmanagedMember     `json:"unmanaged_members,omitempty"`
 	TargetSummaries           []TargetChangeSummary `json:"target_summaries"`
 	Warnings                  []string              `json:"warnings,omitempty"`
@@ -828,7 +829,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		}
 	}
 	recommended, count := resolveGroupCount(req, eligible)
-	if req.ExistingMappingID == 0 && req.Assignments != nil {
+	if req.Assignments != nil {
 		count = assignmentCount(req.Assignments)
 	}
 	assignments := allocate(eligible, count)
@@ -844,7 +845,11 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		if err != nil {
 			return nil, fmt.Errorf("load unmanaged relay members: %w", err)
 		}
-		roster, rosterErr := reviewReplanRoster(replanRosterInputFromPlan(mapping, candidates, unmanagedMembers, groups, req.Assignments, req.RemovedUserIDs))
+		rosterInput, inputErr := replanRosterInputFromPlan(mapping, candidates, unmanagedMembers, groups, req.Assignments, req.RemovedUserIDs)
+		if inputErr != nil {
+			return nil, fmt.Errorf("validate relay planning assignments: %w", inputErr)
+		}
+		roster, rosterErr := reviewReplanRoster(rosterInput)
 		if rosterErr != nil {
 			return nil, fmt.Errorf("validate relay planning assignments: %w", rosterErr)
 		}
@@ -889,7 +894,8 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	if err := validateTargetGroupNames(assignments, groups); err != nil {
 		return nil, fmt.Errorf("validate relay planning target names: %w", err)
 	}
-	if err := assignPreviewAccounts(facts.accounts, req.Platform, template.ID, mapping, assignments); err != nil {
+	templateAccounts, err := assignPreviewAccounts(facts.accounts, req.Platform, template.ID, mapping, assignments)
+	if err != nil {
 		return nil, fmt.Errorf("assign relay planning Accounts: %w", err)
 	}
 	warnings := make([]string, 0)
@@ -916,7 +922,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		ProviderID: req.ProviderID, DepartmentID: req.DepartmentID, Platform: req.Platform,
 		TemplateGroupID: template.ID, TemplateGroupName: template.Name,
 		SourceGroupID: source.ID, SourceGroupName: source.Name, WeeklyCostTarget: req.WeeklyCostTarget,
-		RecommendedCount: recommended, GroupCount: count, Candidates: candidates, Assignments: assignments,
+		RecommendedCount: recommended, GroupCount: count, Candidates: candidates, Assignments: assignments, TemplateAccounts: templateAccounts,
 		UnmanagedMembers: unmanagedMembers,
 		Warnings:         uniqueStrings(warnings), GeneratedAt: time.Now().UTC(),
 		AccountsReviewed:          mapping == nil || mapping.AccountManagementInitialized || assignmentsReviewAccounts(req.Assignments),
@@ -1014,7 +1020,7 @@ func pendingCreationTargetIDs(operationState map[string]map[string]string) map[i
 	return pending
 }
 
-func replanRosterInputFromPlan(mapping *ent.RelayGroupMapping, candidates []Candidate, unmanaged []UnmanagedMember, groups []relay.Group, reviewed []Assignment, removedUserIDs []int) replanRosterInput {
+func replanRosterInputFromPlan(mapping *ent.RelayGroupMapping, candidates []Candidate, unmanaged []UnmanagedMember, groups []relay.Group, reviewed []Assignment, removedUserIDs []int) (replanRosterInput, error) {
 	savedAssignments := make(map[int]int64, len(mapping.MemberAssignments))
 	for rawUserID, groupID := range mapping.MemberAssignments {
 		userID, err := strconv.Atoi(rawUserID)
@@ -1048,10 +1054,31 @@ func replanRosterInputFromPlan(mapping *ent.RelayGroupMapping, candidates []Cand
 			availableTargets[group.ID] = struct{}{}
 		}
 	}
-	targets := make([]replanRosterTargetInput, len(mapping.GroupIds))
+	targetCount := len(mapping.GroupIds)
+	if reviewed != nil {
+		targetCount = assignmentCount(reviewed)
+		if targetCount < len(mapping.GroupIds) {
+			return replanRosterInput{}, fmt.Errorf("assignments must retain all %d existing target groups", len(mapping.GroupIds))
+		}
+		for _, assignment := range reviewed {
+			if assignment.Index < 0 || assignment.Index >= targetCount {
+				continue
+			}
+			switch {
+			case assignment.Index < len(mapping.GroupIds) && assignment.TargetGroupID > 0 && assignment.TargetGroupID != mapping.GroupIds[assignment.Index]:
+				return replanRosterInput{}, fmt.Errorf("assignment index %d must retain target group %d", assignment.Index, mapping.GroupIds[assignment.Index])
+			case assignment.Index >= len(mapping.GroupIds) && assignment.TargetGroupID > 0:
+				return replanRosterInput{}, fmt.Errorf("proposed assignment index %d cannot supply a target group ID", assignment.Index)
+			}
+		}
+	}
+	targets := make([]replanRosterTargetInput, targetCount)
 	for index, groupID := range mapping.GroupIds {
 		_, available := availableTargets[groupID]
 		targets[index] = replanRosterTargetInput{GroupID: groupID, Available: available}
+	}
+	for index := len(mapping.GroupIds); index < len(targets); index++ {
+		targets[index] = replanRosterTargetInput{Available: true}
 	}
 	return replanRosterInput{
 		Targets:          targets,
@@ -1061,7 +1088,7 @@ func replanRosterInputFromPlan(mapping *ent.RelayGroupMapping, candidates []Cand
 		HasReview:        reviewed != nil,
 		ReviewedTargets:  reviewedTargets,
 		RemovedUserIDs:   append([]int(nil), removedUserIDs...),
-	}
+	}, nil
 }
 
 func assignmentsFromReplanRoster(roster replanRosterResult, reviewed []Assignment) []Assignment {
@@ -1358,9 +1385,9 @@ func accountIntentsForGroup(accounts []relay.Account, platform string, groupID i
 	return intents
 }
 
-func assignPreviewAccounts(result accountListResult, platform string, templateGroupID int64, mapping *ent.RelayGroupMapping, assignments []Assignment) error {
+func assignPreviewAccounts(result accountListResult, platform string, templateGroupID int64, mapping *ent.RelayGroupMapping, assignments []Assignment) ([]TargetAccount, error) {
 	if result.err != nil {
-		return fmt.Errorf("list relay accounts: %w", redactProviderReadError(result.err))
+		return nil, fmt.Errorf("list relay accounts: %w", redactProviderReadError(result.err))
 	}
 	accounts := result.accounts
 	available := make(map[int64]relay.Account, len(accounts))
@@ -1370,6 +1397,10 @@ func assignPreviewAccounts(result accountListResult, platform string, templateGr
 		}
 	}
 	templateAccounts := accountIntentsForGroup(accounts, platform, templateGroupID)
+	_, templateSelection, err := normalizePreviewAccountIntents(templateAccounts, available, platform)
+	if err != nil {
+		return nil, fmt.Errorf("Template Group: %w", err)
+	}
 	var savedAccounts map[string][]AccountIntent
 	if mapping != nil {
 		savedAccounts = accountIntentsFromStorage(mapping.DesiredAccounts)
@@ -1378,6 +1409,8 @@ func assignPreviewAccounts(result accountListResult, platform string, templateGr
 		intents := assignments[index].DesiredAccounts
 		if intents == nil {
 			switch {
+			case assignments[index].TargetGroupID == 0:
+				intents = templateAccounts
 			case mapping != nil && mapping.AccountManagementInitialized:
 				intents = savedAccounts[strconv.FormatInt(assignments[index].TargetGroupID, 10)]
 			case mapping != nil && assignments[index].TargetGroupID > 0:
@@ -1388,12 +1421,12 @@ func assignPreviewAccounts(result accountListResult, platform string, templateGr
 		}
 		normalized, selected, err := normalizePreviewAccountIntents(intents, available, platform)
 		if err != nil {
-			return fmt.Errorf("target %d: %w", assignments[index].Index+1, err)
+			return nil, fmt.Errorf("target %d: %w", assignments[index].Index+1, err)
 		}
 		assignments[index].DesiredAccounts = normalized
 		assignments[index].Accounts = selected
 	}
-	return nil
+	return templateSelection, nil
 }
 
 func normalizePreviewAccountIntents(intents []AccountIntent, available map[int64]relay.Account, platform string) ([]AccountIntent, []TargetAccount, error) {
@@ -3438,15 +3471,45 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	remover, _ := p.(subscriptionRemover)
 	binder, _ := p.(relay.APIKeyGroupBinder)
 	renamer, supportsRename := p.(relay.GroupRenamer)
+	duplicator, supportsDuplicate := p.(relay.GroupDuplicator)
 	pendingCreation := pendingCreationTargetIDs(mapping.OperationState)
 	preblockedTargets := make(map[int64]string)
-	groupResults := make([]GroupResult, 0, len(mapping.GroupIDs))
-	for _, assignment := range plan.Assignments {
+	groupResults := make([]GroupResult, 0, len(plan.Assignments))
+	for assignmentIndex := range plan.Assignments {
+		assignment := &plan.Assignments[assignmentIndex]
+		proposed := assignment.TargetGroupID == 0
 		result := GroupResult{Index: assignment.Index, ID: assignment.TargetGroupID, Name: assignment.CurrentTargetGroupName, CurrentName: assignment.CurrentTargetGroupName, Status: "unchanged", Rename: "skipped"}
+		if proposed {
+			result.Name = assignment.TargetGroupName
+			result.Status = "failed"
+			result.Creation = "failed"
+			if !supportsDuplicate {
+				result.Error = "relay provider does not support group duplication"
+				groupResults = append(groupResults, result)
+				continue
+			}
+			group, duplicateErr := duplicator.DuplicateGroup(ctx, plan.TemplateGroupID, fmt.Sprintf("%s-%d", req.OperationKey, assignment.Index))
+			if duplicateErr != nil {
+				result.Error = duplicateErr.Error()
+				groupResults = append(groupResults, result)
+				continue
+			}
+			if group == nil || group.ID <= 0 || containsInt64(mapping.GroupIDs, group.ID) {
+				result.Error = "relay returned an unexpected group after duplication"
+				groupResults = append(groupResults, result)
+				continue
+			}
+			assignment.TargetGroupID = group.ID
+			assignment.CurrentTargetGroupName = group.Name
+			mapping.GroupIDs = append(mapping.GroupIDs, group.ID)
+			result.ID = group.ID
+			result.CurrentName = group.Name
+			result.Creation = "pending"
+		}
 		if _, pending := pendingCreation[assignment.TargetGroupID]; pending {
 			result.Creation = "pending"
 		}
-		if assignment.RenameSelected && assignment.TargetGroupName != assignment.CurrentTargetGroupName {
+		if (proposed || assignment.RenameSelected) && assignment.TargetGroupName != assignment.CurrentTargetGroupName {
 			result.Name = assignment.TargetGroupName
 			result.Status = "failed"
 			result.Rename = "failed"

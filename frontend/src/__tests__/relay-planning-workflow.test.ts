@@ -48,6 +48,7 @@ function reviewedPlan(overrides: Partial<RelayPlanningPlan> = {}): RelayPlanning
       desired_accounts: [{ account_id: 11, priority: 1 }],
       accounts: [{ id: 11, name: 'Account Alpha', platform: 'openai', type: 'oauth', status: 'active', schedulable: true, priority: 1 }],
     }],
+		template_accounts: [{ id: 11, name: 'Account Alpha', platform: 'openai', type: 'oauth', status: 'active', schedulable: true, priority: 1 }],
     target_summaries: [],
     relationship_fingerprint: 'v2:preview-fingerprint',
     accounts_reviewed: true,
@@ -212,6 +213,60 @@ describe('useRelayPlanningWorkflow', () => {
     expect(workflow.operationKey.value).toBe('operation-retry-2')
     workflow.dispose()
   })
+
+	it('adds and removes a proposed Target while reviewing Replan', async () => {
+		const options = workflowOptions()
+		options.reservedGroups = () => [
+			{ id: 42, name: 'Group Alpha' },
+			{ id: 101, name: 'Department Alpha-openai-01' },
+		]
+		const replan = reviewedPlan({
+			mapping_id: 9,
+			template_accounts: [{
+				id: 13,
+				name: 'Template Account',
+				platform: 'openai',
+				type: 'oauth',
+				status: 'active',
+				schedulable: true,
+				priority: 1,
+			}],
+			assignments: [{
+				...reviewedPlan().assignments[0],
+				target_group_id: 101,
+				target_group_name: 'Department Alpha-openai-01',
+			}],
+		})
+		options.previewReplan.mockResolvedValue(replan)
+		const workflow = useRelayPlanningWorkflow(options)
+
+		await workflow.openReplan(relayMapping())
+		workflow.addSuggestedGroup()
+
+		expect(workflow.plan.value?.assignments).toHaveLength(2)
+		expect(workflow.plan.value?.assignments[1]).toEqual(expect.objectContaining({
+			index: 1,
+			target_group_name: 'Department Alpha-openai-02',
+			user_ids: [],
+			accounts: [expect.objectContaining({ id: 13 })],
+		}))
+		expect(workflow.plan.value?.assignments[1].target_group_id).toBeUndefined()
+		expect(options.executeReplan).not.toHaveBeenCalled()
+
+		workflow.removeSuggestedGroup(1)
+		expect(workflow.plan.value?.assignments).toHaveLength(1)
+		workflow.addSuggestedGroup()
+		await workflow.requestConfirmation()
+
+		expect(options.previewReplan).toHaveBeenLastCalledWith(9, expect.objectContaining({
+			assignments: [
+				expect.objectContaining({ index: 0, target_group_id: 101 }),
+				expect.objectContaining({ index: 1, target_group_id: undefined, desired_accounts: [{ account_id: 13, priority: 1 }] }),
+			],
+		}))
+		expect(options.executeReplan).not.toHaveBeenCalled()
+		workflow.dispose()
+	})
 
   it('replaces a stale confirmation visibly without replaying execution', async () => {
     const options = workflowOptions()

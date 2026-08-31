@@ -534,6 +534,18 @@ describe('RelayPlanningView', () => {
 		expect(wrapper.get('[data-testid="suggested-group-0"]').text()).toContain('alice')
 		expect(wrapper.get('[data-testid="suggested-group-0"]').text()).not.toContain('bob')
 		expect((wrapper.get('[data-testid="candidate-target-2"]').element as HTMLSelectElement).value).toBe('')
+		expect(wrapper.find('[data-testid="apply-all-target-names"]').exists()).toBe(true)
+		expect(wrapper.find('[data-testid="add-suggested-group"]').exists()).toBe(true)
+
+		await wrapper.get('[data-testid="add-suggested-group"]').trigger('click')
+		expect(wrapper.findAll('[data-testid^="suggested-group-"]')).toHaveLength(2)
+		expect(wrapper.find('[data-testid="target-name-1"]').exists()).toBe(true)
+		expect(wrapper.find('[data-testid="remove-suggested-group-1"]').exists()).toBe(true)
+		expect(wrapper.find('[data-testid="remove-suggested-group-0"]').exists()).toBe(false)
+
+		await wrapper.get('[data-testid="remove-suggested-group-1"]').trigger('click')
+		expect(wrapper.findAll('[data-testid^="suggested-group-"]')).toHaveLength(1)
+		expect(wrapper.find('[data-testid="remove-suggested-group-0"]').exists()).toBe(false)
 	})
 
 	it('refreshes a stale Mapping list and opens the conflicting Mapping Replan', async () => {

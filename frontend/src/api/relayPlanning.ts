@@ -56,6 +56,7 @@ export interface RelayPlanningPlan {
   group_count: number
   candidates: RelayPlanningCandidate[]
   assignments: RelayPlanningAssignment[]
+	template_accounts: RelayPlanningAccount[]
 	unmanaged_members?: RelayPlanningUnmanagedMember[]
 	target_summaries: RelayPlanningTargetSummary[]
 	warnings?: string[]
