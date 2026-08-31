@@ -143,8 +143,17 @@ commit is now proven and priced, in the unit Kiro actually bills in.
 
 - Windows is not wired up: Pilot's installer there is a PowerShell script with
   different arguments.
-- A Codex session already running when Pilot is installed loses its workspace
-  attribution permanently: Pilot's tailer starts at the end of existing files
-  and never reads the `session_meta` line carrying `cwd`. Upstream defect.
+- Pilot never names a workspace on a Codex event. The tailer starts at the end
+  of an existing file and never reads the `session_meta` line carrying `cwd`,
+  and measurement widened the blast radius past what was first recorded here:
+  on one machine every Codex event was unscoped — 0 of 2,105 named a workspace
+  across 5 sessions, one of them opened three days after Pilot was installed —
+  while Claude Code named one on all 6,378. Starting a new session is not a
+  workaround. The upstream defect stands; `ae-cli` no longer loses the events to
+  it. `pilotEventInWorkspaceSession` places an unscoped Codex event by its
+  session identity, which Codex's own session files still bind to a `cwd`, and
+  leaves an unknown session unscoped rather than assuming the scanned
+  repository. Measured against the same machine's output, one repository went
+  from 0 usage events and 0 claims to 408 and 5.
 - `tool_usage_events.dedupe_key` is globally unique with no user or repo scope,
   so a collision between users is silently dropped rather than reported.

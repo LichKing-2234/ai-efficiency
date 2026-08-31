@@ -123,13 +123,23 @@ func (s *PilotV2ClaimScan) ScanSource(ctx context.Context, sourceKey string, opt
 		return nil, nil
 	}
 	var out []V2ClaimCandidate
+	// Resolved once per repository rather than once per commit: every trigger in
+	// one runner pass shares a repository, and the lookup reads the opening line
+	// of every Codex session file.
+	sessionsByRepo := map[string]map[string]struct{}{}
 	for _, option := range options {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		sessions, resolved := sessionsByRepo[option.RepoRoot]
+		if !resolved {
+			sessions = CodexWorkspaceSessionIDs(ctx, "", option.RepoRoot)
+			sessionsByRepo[option.RepoRoot] = sessions
+		}
 		result, err := ScanPilotClaims(ctx, PilotScanOptions{
-			V2ClaimScanOptions: option,
-			OutputDir:          s.outputDir,
+			V2ClaimScanOptions:  option,
+			OutputDir:           s.outputDir,
+			WorkspaceSessionIDs: sessions,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("scan Pilot claims: %w", err)

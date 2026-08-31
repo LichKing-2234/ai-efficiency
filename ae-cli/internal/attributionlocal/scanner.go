@@ -490,7 +490,8 @@ func (s *Scanner) scanPilotUsage(ctx context.Context, workspaceRoot, workspaceID
 			RepoRoot:    workspaceRoot,
 			WorkspaceID: workspaceID,
 		},
-		OutputDir: dir,
+		OutputDir:           dir,
+		WorkspaceSessionIDs: CodexWorkspaceSessionIDs(ctx, "", workspaceRoot),
 	})
 	if err != nil {
 		return nil, false

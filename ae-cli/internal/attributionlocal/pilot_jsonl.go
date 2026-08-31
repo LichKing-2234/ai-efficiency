@@ -58,6 +58,17 @@ type PilotScanOptions struct {
 	V2ClaimScanOptions
 	// OutputDir defaults to the Pilot local JSONL directory.
 	OutputDir string
+	// WorkspaceSessionIDs names the Codex sessions already known to belong to
+	// the scanned repository. Pilot's Codex tailer starts at the end of an
+	// existing session file and never reads the session_meta line carrying
+	// cwd, so its Codex events name no workspace at all and every one of them
+	// would be dropped as unscoped. The session identity is what is left, and
+	// Codex's own session files still carry the cwd that binds it.
+	//
+	// Empty means no fallback: an event that names no workspace stays
+	// unscoped, which is the correct answer for an agent whose sessions this
+	// machine cannot independently place.
+	WorkspaceSessionIDs map[string]struct{}
 }
 
 // PilotScanResult separates the two surfaces a scan produces: claims that bind
@@ -239,6 +250,70 @@ func pilotEventInScope(event pilotEvent, repoRoot string) (inScope bool, named b
 	return sameWorkspacePathOrGitCommon(workspace, repoRoot), true
 }
 
+// pilotEventInWorkspaceSession places an event Pilot left unscoped, using the
+// session identity the agent's own local files still bind to a workspace.
+//
+// This exists for one upstream defect: Pilot's Codex tailer opens an existing
+// session file at its end, so it never reads the session_meta line carrying
+// cwd, and every event from that session arrives with no workspace. Measured on
+// one machine, that was every Codex session — including one started three days
+// after Pilot was installed — so "start a new session" is not a workaround.
+//
+// It is deliberately narrow. Only Codex is placed this way, because only Codex
+// has session files this repository already knows how to read; the identity
+// must match exactly; and an unknown session stays unscoped rather than being
+// assumed to belong to the repository being scanned.
+func pilotEventInWorkspaceSession(event pilotEvent, sessions map[string]struct{}) bool {
+	if len(sessions) == 0 {
+		return false
+	}
+	if event.str("gen_ai.agent.type") != pilotCodexAgentType {
+		return false
+	}
+	sessionID := strings.TrimSpace(event.str("gen_ai.session.id"))
+	if sessionID == "" {
+		return false
+	}
+	_, ok := sessions[sessionID]
+	return ok
+}
+
+// pilotCodexAgentType is how Pilot names Codex in gen_ai.agent.type.
+const pilotCodexAgentType = "codex"
+
+// CodexWorkspaceSessionIDs resolves which Codex sessions belong to one
+// repository, by reading the session_meta line each Codex session file opens
+// with. It is the input to the fallback above, and returns nothing when Codex
+// has no session files this machine can read.
+func CodexWorkspaceSessionIDs(ctx context.Context, homeDir, workspaceRoot string) map[string]struct{} {
+	if strings.TrimSpace(workspaceRoot) == "" {
+		return nil
+	}
+	if strings.TrimSpace(homeDir) == "" {
+		resolved, err := os.UserHomeDir()
+		if err != nil {
+			return nil
+		}
+		homeDir = resolved
+	}
+	result := map[string]struct{}{}
+	for _, path := range findCodexJSONLFiles(workspaceRoot, homeDir) {
+		if ctx.Err() != nil {
+			return result
+		}
+		ids, err := findCodexWorkspaceSessionIDsContext(ctx, path, workspaceRoot)
+		if err != nil {
+			continue
+		}
+		for _, id := range ids {
+			if id = strings.TrimSpace(id); id != "" {
+				result[id] = struct{}{}
+			}
+		}
+	}
+	return result
+}
+
 // ScanPilotClaims reads Pilot's normalized local output and produces commit-bound
 // claims plus usage events for every agent it covers.
 func ScanPilotClaims(ctx context.Context, opts PilotScanOptions) (PilotScanResult, error) {
@@ -270,8 +345,11 @@ func ScanPilotClaims(ctx context.Context, opts PilotScanOptions) (PilotScanResul
 			}
 			inScope, named := pilotEventInScope(event, opts.RepoRoot)
 			if !named {
-				result.UnscopedRecords++
-				continue
+				if !pilotEventInWorkspaceSession(event, opts.WorkspaceSessionIDs) {
+					result.UnscopedRecords++
+					continue
+				}
+				inScope = true
 			}
 			if !inScope {
 				continue

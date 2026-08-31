@@ -50,6 +50,7 @@ func TestScanPilotClaimsBindsCodexPatchTurnToCommit(t *testing.T) {
 		map[string]any{
 			"event.name": "tool.result", "gen_ai.agent.type": "codex",
 			"workspace.current_root": repo,
+			"gen_ai.session.id":      "session-codex",
 			"gen_ai.turn.id":         "session-codex:t1", "gen_ai.tool.call.id": "call-1",
 			"tool.result.status": "success",
 		},
@@ -99,6 +100,7 @@ func TestScanPilotClaimsBindsClaudeWriteTurnToCommit(t *testing.T) {
 		map[string]any{
 			"event.name": "tool.result", "gen_ai.agent.type": "claude-code",
 			"workspace.current_root": repo,
+			"gen_ai.session.id":      "session-claude",
 			"gen_ai.turn.id":         "session-claude:t1", "gen_ai.tool.call.id": "toolu-1",
 			"tool.result.status": "success",
 		},
