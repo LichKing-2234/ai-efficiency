@@ -324,6 +324,21 @@ function conflictingMappingID(err: any) {
 		: null
 }
 
+async function recoverExistingMapping(err: any) {
+	const mappingID = conflictingMappingID(err)
+	if (!mappingID) return false
+	try {
+		await loadMappings()
+	} catch {
+		return false
+	}
+	const mapping = mappings.value.find((item) => item.id === mappingID)
+	if (!mapping) return false
+	closeConfirmation()
+	await replan(mapping)
+	return true
+}
+
 function applyRenewalPreview(next: RelayPlanningMappingRenewalPreview, selectAll: boolean) {
 	const previous = selectedRenewalUserIDs.value
 	renewalPreview.value = next
@@ -669,15 +684,7 @@ async function preview() {
   try {
     await previewReviewedPlan(request)
   } catch (err: any) {
-		const mappingID = conflictingMappingID(err)
-		if (mappingID) {
-			await loadMappings()
-			const refreshedMapping = mappings.value.find((mapping) => mapping.id === mappingID)
-			if (refreshedMapping) {
-				await replan(refreshedMapping)
-				return
-			}
-		}
+		if (await recoverExistingMapping(err)) return
     error.value = err.response?.data?.message || err.message || t('relayPlanning.previewFailed')
   }
 }
@@ -700,6 +707,7 @@ async function requestExecution() {
   try {
     await requestReviewedConfirmation()
   } catch (err: any) {
+		if (await recoverExistingMapping(err)) return
     ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.refreshPlanFailed'))
   }
 }
@@ -716,6 +724,7 @@ async function executeConfirmed() {
     await loadMappings()
 		ElMessage.success(t('relayPlanning.executionFinished'))
   } catch (err: any) {
+		if (await recoverExistingMapping(err)) return
     ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.executionFailed'))
   }
 }

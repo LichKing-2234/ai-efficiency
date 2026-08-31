@@ -659,7 +659,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		return nil, fmt.Errorf("validate relay planning request: %w", err)
 	}
 	if err := s.rejectExistingInitialMapping(ctx, req); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reject existing Relay Group Mapping: %w", err)
 	}
 	providerConfig, err := s.client.RelayProvider.Get(ctx, req.ProviderID)
 	if err != nil {
@@ -1167,7 +1167,7 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 	if err != nil {
 		var existing *ExistingMappingError
 		if errors.As(err, &existing) {
-			return nil, existing
+			return nil, fmt.Errorf("preview relay plan for execution: %w", err)
 		}
 		if stale := stalePlanFromPreviewError(req.ExpectedRelationshipFingerprint, err); stale != nil {
 			return nil, stale

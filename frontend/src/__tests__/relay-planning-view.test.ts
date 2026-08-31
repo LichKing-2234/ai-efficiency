@@ -134,6 +134,12 @@ const existingMapping = {
 	updated_at: '2026-08-31T00:00:00Z',
 }
 
+function existingMappingConflict() {
+	return {
+		response: { status: 409, data: { details: { error_code: 'existing_mapping', mapping_id: 9 } } },
+	}
+}
+
 async function mountView(initialMappings: any[] = [], wide = false) {
 	const mediaQuery = {
 		matches: wide,
@@ -538,9 +544,7 @@ describe('RelayPlanningView', () => {
 			assignments: [{ ...plan.assignments[0], target_group_id: 101, user_ids: [1] }],
 		})
 		const { wrapper, relayPlanning } = await mountView()
-		relayPlanning.previewRelayPlan.mockRejectedValueOnce({
-			response: { status: 409, data: { details: { error_code: 'existing_mapping', mapping_id: 9 } } },
-		})
+		relayPlanning.previewRelayPlan.mockRejectedValueOnce(existingMappingConflict())
 		relayPlanning.listRelayGroupMappings.mockResolvedValueOnce({ data: { data: { items: [mapping] } } })
 		relayPlanning.previewRelayReplan.mockResolvedValue({ data: { data: replan } })
 
@@ -549,6 +553,51 @@ describe('RelayPlanningView', () => {
 		expect(relayPlanning.listRelayGroupMappings).toHaveBeenCalledTimes(2)
 		expect(relayPlanning.previewRelayReplan).toHaveBeenCalledWith(9, {})
 		expect(wrapper.get('[data-testid="suggested-group-0"]').text()).toContain('alice')
+	})
+
+	it('opens the conflicting Mapping Replan when it appears before confirmation', async () => {
+		const mapping = structuredClone(existingMapping)
+		const replan = structuredClone({
+			...plan,
+			mapping_id: 9,
+			assignments: [{ ...plan.assignments[0], target_group_id: 101, user_ids: [1] }],
+		})
+		const { wrapper, relayPlanning } = await mountView()
+		await fillAndPreview(wrapper)
+		relayPlanning.previewRelayPlan.mockRejectedValueOnce(existingMappingConflict())
+		relayPlanning.listRelayGroupMappings.mockResolvedValueOnce({ data: { data: { items: [mapping] } } })
+		relayPlanning.previewRelayReplan.mockResolvedValue({ data: { data: replan } })
+
+		await wrapper.get('[data-testid="open-execution-confirmation"]').trigger('click')
+		await flushPromises()
+
+		expect(relayPlanning.listRelayGroupMappings).toHaveBeenCalledTimes(2)
+		expect(relayPlanning.previewRelayReplan).toHaveBeenCalledWith(9, {})
+		expect(wrapper.find('[data-testid="apply-all-target-names"]').exists()).toBe(true)
+	})
+
+	it('opens the conflicting Mapping Replan when it appears before initial Execute', async () => {
+		const mapping = structuredClone(existingMapping)
+		const replan = structuredClone({
+			...plan,
+			mapping_id: 9,
+			assignments: [{ ...plan.assignments[0], target_group_id: 101, user_ids: [1] }],
+		})
+		const { wrapper, relayPlanning } = await mountView()
+		await fillAndPreview(wrapper)
+		await wrapper.get('[data-testid="open-execution-confirmation"]').trigger('click')
+		await flushPromises()
+		relayPlanning.executeRelayPlan.mockRejectedValueOnce(existingMappingConflict())
+		relayPlanning.listRelayGroupMappings.mockResolvedValueOnce({ data: { data: { items: [mapping] } } })
+		relayPlanning.previewRelayReplan.mockResolvedValue({ data: { data: replan } })
+
+		await wrapper.get('[data-testid="confirm-execution"]').trigger('click')
+		await flushPromises()
+
+		expect(relayPlanning.executeRelayPlan).toHaveBeenCalledTimes(1)
+		expect(relayPlanning.listRelayGroupMappings).toHaveBeenCalledTimes(2)
+		expect(relayPlanning.previewRelayReplan).toHaveBeenCalledWith(9, {})
+		expect(wrapper.find('[data-testid="apply-all-target-names"]').exists()).toBe(true)
 	})
 
 	it('searches and selects a department beyond the first 100 without mutating Relay before Preview', async () => {

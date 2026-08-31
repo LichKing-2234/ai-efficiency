@@ -187,12 +187,12 @@ func TestRelayPlanningInitialEndpointsRejectExistingMapping(t *testing.T) {
 		{
 			name:    "Preview",
 			path:    "/admin/relay-planning/preview",
-			payload: fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"weekly_cost_target":2500}`, providerConfig.ID),
+			payload: fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"weekly_cost_target":2500,"existing_mapping_id":%d}`, providerConfig.ID, mapping.ID),
 		},
 		{
 			name:    "Execute",
 			path:    "/admin/relay-planning/execute",
-			payload: fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"weekly_cost_target":2500,"operation_key":"existing-mapping-1","expected_relationship_fingerprint":"v2:reviewed"}`, providerConfig.ID),
+			payload: fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"weekly_cost_target":2500,"existing_mapping_id":%d,"operation_key":"existing-mapping-1","expected_relationship_fingerprint":"v2:reviewed"}`, providerConfig.ID, mapping.ID),
 		},
 	}
 	for _, item := range requests {
@@ -220,6 +220,13 @@ func TestRelayPlanningInitialEndpointsRejectExistingMapping(t *testing.T) {
 	}
 	if len(provider.events) != 0 {
 		t.Fatalf("existing Mapping conflict wrote Relay state: %v", provider.events)
+	}
+	if count := client.RelayGroupMapping.Query().CountX(ctx); count != 1 {
+		t.Fatalf("mapping count = %d, want the existing Mapping only", count)
+	}
+	persisted := client.RelayGroupMapping.GetX(ctx, mapping.ID)
+	if !reflect.DeepEqual(persisted.GroupIds, []int64{101}) {
+		t.Fatalf("persisted target Groups = %v, want the original [101]", persisted.GroupIds)
 	}
 }
 

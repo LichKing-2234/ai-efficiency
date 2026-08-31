@@ -59,6 +59,7 @@ func (h *RelayPlanningHandler) Preview(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "invalid planning request")
 		return
 	}
+	req.ExistingMappingID = 0
 	plan, err := h.service.Preview(c.Request.Context(), req)
 	if err != nil {
 		if writeRelayPlanningExistingMappingError(c, err) {
@@ -76,6 +77,7 @@ func (h *RelayPlanningHandler) Execute(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "invalid planning execution request")
 		return
 	}
+	req.ExistingMappingID = 0
 	result, err := h.service.Execute(c.Request.Context(), req)
 	if err != nil {
 		writeRelayPlanningExecutionError(c, err)
