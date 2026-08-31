@@ -469,6 +469,14 @@ type StalePlanError struct {
 	Differences         []string
 }
 
+type ExistingMappingError struct {
+	MappingID int
+}
+
+func (e *ExistingMappingError) Error() string {
+	return "a Relay Group Mapping already exists for this Provider, department, and Platform"
+}
+
 type assignmentCandidateError struct {
 	UserID     int
 	Difference string
@@ -649,6 +657,9 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	req = normalizeRequest(req)
 	if err := validateRequest(req); err != nil {
 		return nil, fmt.Errorf("validate relay planning request: %w", err)
+	}
+	if err := s.rejectExistingInitialMapping(ctx, req); err != nil {
+		return nil, fmt.Errorf("reject existing Relay Group Mapping: %w", err)
 	}
 	providerConfig, err := s.client.RelayProvider.Get(ctx, req.ProviderID)
 	if err != nil {
@@ -1154,6 +1165,10 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 	}
 	plan, err := s.Preview(ctx, req.PreviewRequest)
 	if err != nil {
+		var existing *ExistingMappingError
+		if errors.As(err, &existing) {
+			return nil, fmt.Errorf("preview relay plan for execution: %w", err)
+		}
 		if stale := stalePlanFromPreviewError(req.ExpectedRelationshipFingerprint, err); stale != nil {
 			return nil, stale
 		}
@@ -4351,6 +4366,24 @@ func normalizeRequest(req PreviewRequest) PreviewRequest {
 		req.GroupCount = 0
 	}
 	return req
+}
+
+func (s *Service) rejectExistingInitialMapping(ctx context.Context, req PreviewRequest) error {
+	if req.ExistingMappingID > 0 {
+		return nil
+	}
+	mapping, err := s.client.RelayGroupMapping.Query().Where(
+		relaygroupmapping.ProviderIDEQ(req.ProviderID),
+		relaygroupmapping.DepartmentExternalIDEQ(req.DepartmentID),
+		relaygroupmapping.PlatformEQ(req.Platform),
+	).Only(ctx)
+	if ent.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("check existing Relay Group Mapping: %w", err)
+	}
+	return &ExistingMappingError{MappingID: mapping.ID}
 }
 
 func assignmentCount(assignments []Assignment) int {

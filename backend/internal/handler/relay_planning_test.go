@@ -151,6 +151,85 @@ type relayPlanningRenewalWrite struct {
 	OperationKey string
 }
 
+func TestRelayPlanningInitialEndpointsRejectExistingMapping(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().
+		SetName("relay-planning-existing-mapping-test").
+		SetDisplayName("Relay Planning Existing Mapping Test").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetEnabled(true).
+		SaveX(ctx)
+	mapping := client.RelayGroupMapping.Create().
+		SetProviderID(providerConfig.ID).
+		SetDepartmentExternalID("dept-alpha").
+		SetDepartmentName("Department Alpha").
+		SetPlatform("openai").
+		SetTemplateGroupID(10).
+		SetGroupIds([]int64{101}).
+		SetWeeklyCostTarget(2500).
+		SaveX(ctx)
+	provider := &relayPlanningSearchProvider{}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) {
+		return provider, nil
+	}), nil)
+	handler := NewRelayPlanningHandler(service)
+	router := gin.New()
+	router.POST("/admin/relay-planning/preview", handler.Preview)
+	router.POST("/admin/relay-planning/execute", handler.Execute)
+
+	requests := []struct {
+		name    string
+		path    string
+		payload string
+	}{
+		{
+			name:    "Preview",
+			path:    "/admin/relay-planning/preview",
+			payload: fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"weekly_cost_target":2500,"existing_mapping_id":%d}`, providerConfig.ID, mapping.ID),
+		},
+		{
+			name:    "Execute",
+			path:    "/admin/relay-planning/execute",
+			payload: fmt.Sprintf(`{"provider_id":%d,"department_id":"dept-alpha","platform":"openai","template_group_id":10,"weekly_cost_target":2500,"existing_mapping_id":%d,"operation_key":"existing-mapping-1","expected_relationship_fingerprint":"v2:reviewed"}`, providerConfig.ID, mapping.ID),
+		},
+	}
+	for _, item := range requests {
+		t.Run(item.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, item.path, strings.NewReader(item.payload))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != http.StatusConflict {
+				t.Fatalf("status = %d, want 409, body=%s", response.Code, response.Body.String())
+			}
+			var body struct {
+				Details struct {
+					ErrorCode string `json:"error_code"`
+					MappingID int    `json:"mapping_id"`
+				} `json:"details"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode conflict response: %v", err)
+			}
+			if body.Details.ErrorCode != "existing_mapping" || body.Details.MappingID != mapping.ID {
+				t.Fatalf("details = %+v, want existing_mapping for mapping %d", body.Details, mapping.ID)
+			}
+		})
+	}
+	if len(provider.events) != 0 {
+		t.Fatalf("existing Mapping conflict wrote Relay state: %v", provider.events)
+	}
+	if count := client.RelayGroupMapping.Query().CountX(ctx); count != 1 {
+		t.Fatalf("mapping count = %d, want the existing Mapping only", count)
+	}
+	persisted := client.RelayGroupMapping.GetX(ctx, mapping.ID)
+	if !reflect.DeepEqual(persisted.GroupIds, []int64{101}) {
+		t.Fatalf("persisted target Groups = %v, want the original [101]", persisted.GroupIds)
+	}
+}
+
 func (p *relayPlanningSearchProvider) GetUser(_ context.Context, userID int64) (*relay.User, error) {
 	p.userReads.Add(1)
 	return p.users[userID], nil

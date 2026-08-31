@@ -308,6 +308,37 @@ async function loadMappings() {
   mappingPage.value = Math.min(mappingPage.value, Math.max(1, Math.ceil(mappings.value.length / mappingPageSize)))
 }
 
+function existingMappingFor(request: RelayPlanningRequest) {
+	return mappings.value.find((mapping) => (
+		mapping.provider_id === request.provider_id
+		&& mapping.department_id === request.department_id.trim()
+		&& mapping.platform === request.platform.trim()
+	))
+}
+
+function conflictingMappingID(err: any) {
+	const details = err.response?.data?.details
+	const mappingID = Number(details?.mapping_id)
+	return err.response?.status === 409 && details?.error_code === 'existing_mapping' && mappingID > 0
+		? mappingID
+		: null
+}
+
+async function recoverExistingMapping(err: any) {
+	const mappingID = conflictingMappingID(err)
+	if (!mappingID) return false
+	try {
+		await loadMappings()
+	} catch {
+		return false
+	}
+	const mapping = mappings.value.find((item) => item.id === mappingID)
+	if (!mapping) return false
+	closeConfirmation()
+	await replan(mapping)
+	return true
+}
+
 function applyRenewalPreview(next: RelayPlanningMappingRenewalPreview, selectAll: boolean) {
 	const previous = selectedRenewalUserIDs.value
 	renewalPreview.value = next
@@ -645,9 +676,15 @@ async function preview() {
     return
   }
   error.value = ''
+	const existingMapping = existingMappingFor(request)
+	if (existingMapping) {
+		await replan(existingMapping)
+		return
+	}
   try {
     await previewReviewedPlan(request)
   } catch (err: any) {
+		if (await recoverExistingMapping(err)) return
     error.value = err.response?.data?.message || err.message || t('relayPlanning.previewFailed')
   }
 }
@@ -670,6 +707,7 @@ async function requestExecution() {
   try {
     await requestReviewedConfirmation()
   } catch (err: any) {
+		if (await recoverExistingMapping(err)) return
     ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.refreshPlanFailed'))
   }
 }
@@ -686,6 +724,7 @@ async function executeConfirmed() {
     await loadMappings()
 		ElMessage.success(t('relayPlanning.executionFinished'))
   } catch (err: any) {
+		if (await recoverExistingMapping(err)) return
     ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.executionFailed'))
   }
 }
