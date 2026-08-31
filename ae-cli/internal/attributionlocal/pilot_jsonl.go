@@ -314,6 +314,127 @@ func CodexWorkspaceSessionIDs(ctx context.Context, homeDir, workspaceRoot string
 	return result
 }
 
+// pilotEventEditPaths returns the paths a tool call declares it writes.
+//
+// A record that describes an edit always names the file — Claude Code carries
+// it as a named argument, Codex writes it into the patch envelope — because an
+// edit cannot be described without saying what it edits. That path is produced
+// by the edit itself.
+//
+// The workspace and git attributes are not. Pilot fills them by probing the
+// directory the session stands in, which answers a different question, and
+// measured on one machine it answers it wrongly in both directions: a session
+// started above its repositories carries no git attributes at all, and a
+// session standing in one repository while editing another names the one it
+// stands in. Neither failure carries a signal.
+func pilotEventEditPaths(event pilotEvent) []string {
+	arguments := pilotToolArguments(event)
+	if arguments == "" {
+		return nil
+	}
+	name := event.str("gen_ai.tool.name")
+	switch name {
+	case "exec", "shell", "apply_patch", "container.exec":
+		patch, _ := v2StructuredPatchInput(name, arguments, "")
+		if patch == "" {
+			return nil
+		}
+		return pilotPatchEnvelopePaths(patch)
+	case "Write", "Edit":
+		var payload struct {
+			FilePath string `json:"file_path"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &payload); err != nil {
+			return nil
+		}
+		if strings.TrimSpace(payload.FilePath) == "" {
+			return nil
+		}
+		return []string{payload.FilePath}
+	case "fs_write":
+		var payload struct {
+			Path string `json:"path"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &payload); err != nil {
+			return nil
+		}
+		if strings.TrimSpace(payload.Path) == "" {
+			return nil
+		}
+		return []string{payload.Path}
+	}
+	return nil
+}
+
+// pilotPatchEnvelopePaths reads the file headers out of an apply_patch envelope.
+// It only collects the names; replaying the patch is the mutation reader's job
+// and costs a Git read per file, which scoping must not.
+func pilotPatchEnvelopePaths(patch string) []string {
+	var out []string
+	for _, line := range strings.Split(patch, "\n") {
+		for _, prefix := range []string{"*** Add File: ", "*** Update File: ", "*** Delete File: "} {
+			if strings.HasPrefix(line, prefix) {
+				if name := strings.TrimSpace(strings.TrimPrefix(line, prefix)); name != "" {
+					out = append(out, name)
+				}
+				break
+			}
+		}
+	}
+	return out
+}
+
+// pilotTurnScopesFromPaths decides which turns the declared edit paths settle.
+//
+// The decision is per turn rather than per event because the turn is what this
+// ledger prices: its mutation proves the commit and its responses carry the
+// amount, and only the mutation names a path. Deciding each event alone would
+// admit the proof and drop the price, leaving a turn that proved a commit and
+// cost nothing.
+//
+//	true    at least one edit landed inside the repository being scanned
+//	false   the turn declared edits and none of them did
+//	absent  the turn declared no edit: nothing is settled, fall back
+func pilotTurnScopesFromPaths(events []pilotEvent, repoRoot string, into map[string]bool) {
+	if strings.TrimSpace(repoRoot) == "" {
+		return
+	}
+	for _, event := range events {
+		turnID := event.str("gen_ai.turn.id")
+		if turnID == "" || into[turnID] {
+			continue
+		}
+		paths := pilotEventEditPaths(event)
+		if len(paths) == 0 {
+			continue
+		}
+		// Only an absolute path settles anything. A relative one is read
+		// against whichever repository is being scanned, so it resolves inside
+		// every one of them and proves membership in none.
+		inside, absolute := false, false
+		for _, path := range paths {
+			if !filepath.IsAbs(path) {
+				continue
+			}
+			absolute = true
+			if canonicalClaimPath(repoRoot, path) != "" {
+				inside = true
+				break
+			}
+		}
+		if !absolute {
+			continue
+		}
+		if inside {
+			into[turnID] = true
+			continue
+		}
+		if _, decided := into[turnID]; !decided {
+			into[turnID] = false
+		}
+	}
+}
+
 // ScanPilotClaims reads Pilot's normalized local output and produces commit-bound
 // claims plus usage events for every agent it covers.
 func ScanPilotClaims(ctx context.Context, opts PilotScanOptions) (PilotScanResult, error) {
@@ -333,6 +454,21 @@ func ScanPilotClaims(ctx context.Context, opts PilotScanOptions) (PilotScanResul
 	turns := map[string]*pilotTurn{}
 	responses := map[string]*pilotResponse{}
 	var order int
+
+	// A turn's mutation and the responses that price it can sit in different
+	// files — Pilot's whole output directory is one source for exactly that
+	// reason — so what the declared paths settle has to be known before any
+	// event is admitted. This reads the sources twice. The first pass keeps
+	// only one verdict per turn and never replays a patch.
+	settled := map[string]bool{}
+	for _, path := range files {
+		events, err := readPilotEvents(path)
+		if err != nil {
+			return PilotScanResult{}, err
+		}
+		pilotTurnScopesFromPaths(events, opts.RepoRoot, settled)
+	}
+
 	for _, path := range files {
 		events, err := readPilotEvents(path)
 		if err != nil {
@@ -343,16 +479,27 @@ func ScanPilotClaims(ctx context.Context, opts PilotScanOptions) (PilotScanResul
 			if turnID == "" {
 				continue
 			}
-			inScope, named := pilotEventInScope(event, opts.RepoRoot)
-			if !named {
-				if !pilotEventInWorkspaceSession(event, opts.WorkspaceSessionIDs) {
-					result.UnscopedRecords++
+			// What the edit declared outranks where the session stood, in both
+			// directions: a turn proven to have edited this repository is
+			// admitted whole, and a turn proven to have edited only another one
+			// is refused whole. The workspace attributes decide only the turns
+			// that declared no edit, where nothing better exists.
+			if proven, decided := settled[turnID]; decided {
+				if !proven {
 					continue
 				}
-				inScope = true
-			}
-			if !inScope {
-				continue
+			} else {
+				inScope, named := pilotEventInScope(event, opts.RepoRoot)
+				if !named {
+					if !pilotEventInWorkspaceSession(event, opts.WorkspaceSessionIDs) {
+						result.UnscopedRecords++
+						continue
+					}
+					inScope = true
+				}
+				if !inScope {
+					continue
+				}
 			}
 			turn, ok := turns[turnID]
 			if !ok {
