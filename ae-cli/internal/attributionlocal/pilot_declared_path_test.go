@@ -122,3 +122,51 @@ func TestScanPilotClaimsDoesNotTreatARelativePathAsProof(t *testing.T) {
 			len(result.Claims))
 	}
 }
+
+// A turn that edited two repositories is admitted by both scans. That is what
+// lets the pool bind one turn's amount to commits in either, counted once under
+// the shared relation the ledger already has, rather than forcing a split
+// nothing could justify. It is also the boundary worth stating: admitting the
+// turn whole is what makes its amount reachable from a repository whose commit
+// it proved, and the amount is not divided between them.
+func TestScanPilotClaimsAdmitsATurnThatEditedTwoRepositories(t *testing.T) {
+	first, firstCommit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	second, secondCommit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	dir := t.TempDir()
+
+	turn := "session-claude:t1"
+	write := func(path string) map[string]any {
+		return map[string]any{
+			"event.name": "tool.call", "gen_ai.agent.type": "claude-code",
+			"gen_ai.session.id": "session-claude", "gen_ai.turn.id": turn,
+			"gen_ai.tool.name": "Write", "gen_ai.tool.call.id": "toolu-" + filepath.Base(filepath.Dir(path)),
+			"gen_ai.tool.call.arguments": map[string]any{"file_path": path, "content": "package feature\n"},
+			"workspace.path":             filepath.Dir(first),
+		}
+	}
+	writePilotJSONL(t, filepath.Join(dir, "claude-code-2026-08-31.jsonl"),
+		write(filepath.Join(first, "feature.go")),
+		write(filepath.Join(second, "feature.go")),
+		map[string]any{
+			"event.name": "llm.response", "gen_ai.agent.type": "claude-code",
+			"gen_ai.session.id": "session-claude", "gen_ai.turn.id": turn,
+			"gen_ai.response.id": "msg-1", "gen_ai.turn.end": true,
+			"gen_ai.usage.input_tokens": 200, "gen_ai.usage.output_tokens": 30,
+			"gen_ai.usage.total_tokens": 230,
+			"workspace.path":            filepath.Dir(first),
+		},
+	)
+
+	for _, repo := range []struct {
+		root, commit, name string
+	}{{first, firstCommit, "first"}, {second, secondCommit, "second"}} {
+		result := scanOne(t, dir, repo.root, repo.commit)
+		if len(result.Claims) != 1 || result.Claims[0].GapReason != "" {
+			t.Fatalf("%s repository: claims = %+v, want the turn bound to the commit it proved there",
+				repo.name, result.Claims)
+		}
+		if len(result.Usage) == 0 {
+			t.Fatalf("%s repository: usage = 0, want the turn priced", repo.name)
+		}
+	}
+}

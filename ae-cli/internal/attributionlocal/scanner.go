@@ -81,7 +81,22 @@ func (s *Scanner) ScanWorkspaceContext(ctx context.Context, workspaceRoot string
 		if err != nil {
 			return nil, state, err
 		}
-		return dedupeAndSort(append(out, kiroIDE...)), nextState, nil
+		out = append(out, kiroIDE...)
+		// Pilot instruments Kiro only through a custom agent the developer has
+		// to select; a plain `kiro-cli` run reports nothing to it. Reading
+		// Kiro's own store for those sessions is the difference between
+		// counting them and losing them, and it is skipped when Pilot did
+		// report Kiro because the two number the same consumption differently
+		// — kiro-cli:<conversation>:<event> against Pilot's response key — and
+		// nothing downstream would recognize them as one.
+		if !containsToolUsage(usage, kiroToolName) {
+			kiroCLI, err := s.scanKiroCLI(ctx, workspaceRoot, workspaceID, homeDir, state, &nextState)
+			if err != nil {
+				return nil, state, err
+			}
+			out = append(out, kiroCLI...)
+		}
+		return dedupeAndSort(out), nextState, nil
 	}
 
 	codexJSONLFiles := findCodexJSONLFiles(workspaceRoot, homeDir)
@@ -151,23 +166,11 @@ func (s *Scanner) ScanWorkspaceContext(ctx context.Context, workspaceRoot string
 		}
 	}
 
-	for _, path := range findKiroCLISQLiteFiles(homeDir) {
-		if err := ctx.Err(); err != nil {
-			return nil, state, err
-		}
-		if !shouldScanFile(path, state) {
-			continue
-		}
-		items, err := ParseKiroCLISQLite(path, workspaceRoot)
-		if err != nil {
-			continue
-		}
-		rememberFileScan(&nextState, path)
-		for _, item := range items {
-			item.WorkspaceID = workspaceID
-			out = append(out, item)
-		}
+	kiroCLI, err := s.scanKiroCLI(ctx, workspaceRoot, workspaceID, homeDir, state, &nextState)
+	if err != nil {
+		return nil, state, err
 	}
+	out = append(out, kiroCLI...)
 
 	kiroIDE, err := s.scanKiroIDE(ctx, workspaceRoot, workspaceID, homeDir, state, &nextState)
 	if err != nil {
@@ -503,6 +506,41 @@ func (s *Scanner) scanPilotUsage(ctx context.Context, workspaceRoot, workspaceID
 		out = append(out, item)
 	}
 	return out, true
+}
+
+// kiroToolName is how both readers name Kiro consumption.
+const kiroToolName = "kiro"
+
+func containsToolUsage(events []LocalToolUsageEvent, tool string) bool {
+	for _, event := range events {
+		if event.Tool == tool {
+			return true
+		}
+	}
+	return false
+}
+
+// scanKiroCLI reads Kiro CLI's own store.
+func (s *Scanner) scanKiroCLI(ctx context.Context, workspaceRoot, workspaceID, homeDir string, state ScanState, nextState *ScanState) ([]LocalToolUsageEvent, error) {
+	var out []LocalToolUsageEvent
+	for _, path := range findKiroCLISQLiteFiles(homeDir) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if !shouldScanFile(path, state) {
+			continue
+		}
+		items, err := ParseKiroCLISQLite(path, workspaceRoot)
+		if err != nil {
+			continue
+		}
+		rememberFileScan(nextState, path)
+		for _, item := range items {
+			item.WorkspaceID = workspaceID
+			out = append(out, item)
+		}
+	}
+	return out, nil
 }
 
 // scanKiroIDE reads the two Kiro IDE surfaces. Pilot does not instrument the
