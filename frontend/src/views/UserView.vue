@@ -1,16 +1,18 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import ReportingReadinessGuide from '@/components/activity/ReportingReadinessGuide.vue'
 import { createGroupCredential, getUserProviderModels, getUserProviders, regenerateGroupCredential, testUserProvider } from '@/api/user'
+import {
+  useUserOnboardingWorkflow,
+  type UserOnboardingMessageKey,
+} from '@/composables/useUserOnboardingWorkflow'
 import { useAuthStore } from '@/stores/auth'
-import { useI18n } from '@/i18n'
+import { useI18n, type MessageKey } from '@/i18n'
 import { authSourceLabel, userRoleLabel } from '@/utils/displayLabels'
 import type {
-  UserProviderTestResult,
   UserProviderModel,
   UserProviderProtocol,
-  UserProviderSummary,
 } from '@/types'
 import {
   buildCCSwitchProviderImportLink,
@@ -29,35 +31,85 @@ const horizontalSteps = ref(false)
 const HORIZONTAL_STEPS_MIN_WIDTH = 700
 let onboardingFlowObserver: ResizeObserver | null = null
 
-const loading = ref(true)
-const error = ref('')
-const providers = ref<UserProviderSummary[]>([])
-const selectedProviderId = ref<number | null>(null)
-const selectedGroupId = ref<string | null>(null)
-const selectedMessage = ref('')
-const sessionSecrets = reactive<Record<string, string>>({})
-const revealedSecretKeys = reactive<Record<string, boolean>>({})
-const providerTestModel = ref('')
-const providerModelOptions = ref<UserProviderModel[]>([])
-const providerModelsLoading = ref(false)
-const providerModelsMessage = ref('')
-const providerModelsRequestId = ref(0)
-const providerTestProtocol = ref<UserProviderProtocol | ''>('')
-const providerTestLoading = ref(false)
-const providerTestResult = ref<UserProviderTestResult | null>(null)
-const providerTestRequestId = ref(0)
 const copiedCommandKey = ref('')
-const credentialMutationLoading = ref(false)
-const credentialMutationRequestId = ref(0)
-const selectedConfigMethod = ref<'manual' | 'automatic' | 'ccswitch' | null>(null)
 const manualConfigConfirmKey = ref('')
 type SecretAction = 'reveal' | 'copy' | 'regenerate'
 const secretConfirmAction = ref<SecretAction | null>(null)
 
+const workflowMessageKeys: Record<UserOnboardingMessageKey, MessageKey> = {
+  loadFailed: 'user.loadFailed',
+  createKeyFailed: 'user.createKeyFailed',
+  regenerateKeyFailed: 'user.regenerateKeyFailed',
+  createKeyBeforeModelList: 'user.createKeyBeforeModelList',
+  noModelsAvailable: 'user.noModelsAvailable',
+  modelLoadFailed: 'user.modelLoadFailed',
+  createKeyBeforeTesting: 'user.createKeyBeforeTesting',
+  modelRequired: 'user.modelRequired',
+  requestFailed: 'user.requestFailed',
+}
+
+function workflowMessage(key: UserOnboardingMessageKey) {
+  return t(workflowMessageKeys[key])
+}
+
+function workflowErrorMessage(requestError: unknown, fallbackKey: UserOnboardingMessageKey) {
+  const request = requestError as { response?: { data?: { message?: string } }; message?: string }
+  return request.response?.data?.message || request.message || workflowMessage(fallbackKey)
+}
+
+const onboardingWorkflow = useUserOnboardingWorkflow({
+  loadProviders: async () => (await getUserProviders()).data.data ?? null,
+  createCredential: async (providerID, groupID) => (await createGroupCredential(providerID, groupID)).data.data ?? null,
+  regenerateCredential: async (providerID, groupID) => (await regenerateGroupCredential(providerID, groupID)).data.data ?? null,
+  loadModels: async (providerID, groupID, platform) => (
+    await getUserProviderModels(providerID, groupID, platform)
+  ).data.data ?? null,
+  testConnection: async (providerID, request) => (await testUserProvider(providerID, request)).data.data ?? null,
+  message: workflowMessage,
+  errorMessage: workflowErrorMessage,
+})
+
+const {
+  loading,
+  error,
+  providers,
+  selectedMessage,
+  selectedProviderID: selectedProviderId,
+  selectedGroupID: selectedGroupId,
+  selectedProvider,
+  selectedGroup,
+  selectedKeyValue,
+  keyRevealed: isSecretRevealed,
+  visibleStep: onboardingVisibleStep,
+  reachableStep: onboardingReachableStep,
+  onboardingState,
+  protocol: providerTestProtocol,
+  credentialLoading: credentialMutationLoading,
+  models: providerModelOptions,
+  model: providerTestModel,
+  modelsLoading: providerModelsLoading,
+  modelsMessage: providerModelsMessage,
+  connectionLoading: providerTestLoading,
+  connectionResult: providerTestResult,
+  canTestConnection: canTestProvider,
+  selectedConfigMethod,
+  load: loadOnboardingWorkflow,
+  selectProvider: selectWorkflowProvider,
+  selectGroup: selectWorkflowGroup,
+  goToStep: selectOnboardingStep,
+  continueFromAccess: continueOnboardingFromAccess,
+  setModel: setProviderTestModel,
+  setProtocol: setProviderTestProtocol,
+  setConfigMethod,
+  setKeyRevealed,
+  createCredential: createWorkflowCredential,
+  regenerateCredential: regenerateWorkflowCredential,
+  testConnection: testWorkflowConnection,
+  dispose: disposeOnboardingWorkflow,
+} = onboardingWorkflow
+
 const currentOrigin = computed(() => window.location.origin)
 const reportingCapabilities = computed(() => auth.user?.reporting_capabilities)
-const selectedProvider = computed(() => providers.value.find((provider) => provider.id === selectedProviderId.value) ?? null)
-const selectedGroup = computed(() => selectedProvider.value?.groups.find((group) => group.group_id === selectedGroupId.value) ?? null)
 const selectedIsAgentGroup = computed(() => isAgentAccessGroup(selectedGroup.value?.group_name))
 const showAutomaticConfigMethod = computed(() => !selectedIsAgentGroup.value)
 const ccSwitchMethodTitle = computed(() => selectedIsAgentGroup.value ? t('user.appImportMethodTitle') : t('user.ccSwitchConfigMethodTitle'))
@@ -81,13 +133,6 @@ const totalAccessGroupCount = computed(() =>
 )
 const hasAnyAccessGroups = computed(() => providers.value.some((provider) => provider.groups.length > 0))
 const selectedProviderHasGroups = computed(() => !!selectedProvider.value?.groups.length)
-const onboardingState = computed(() => {
-  if (!selectedGroup.value) return 'no_group_selected' as const
-  if (!selectedKeyValue.value) return 'group_selected_without_key' as const
-  if (providerTestResult.value?.success) return 'test_success' as const
-  if (providerTestResult.value && !providerTestResult.value.success) return 'test_failed' as const
-  return 'key_ready_without_test' as const
-})
 const primaryOnboardingActionLabel = computed(() => {
   if (onboardingState.value === 'group_selected_without_key') return t('user.createKeyAndContinue')
   if (selectedKeyValue.value) {
@@ -101,19 +146,9 @@ const connectionTestActionLabel = computed(() =>
     : t('user.runConnectionTest')
 )
 const showConfigurationMethods = computed(() => !!selectedKeyValue.value)
-const onboardingVisibleStep = ref(0)
-const onboardingReachableStep = computed(() => showConfigurationMethods.value ? 2 : 0)
-
-function selectOnboardingStep(step: number) {
-  if (step <= onboardingReachableStep.value) onboardingVisibleStep.value = step
-}
 
 function handlePrimaryOnboardingAction() {
-  if (selectedKeyValue.value) {
-    onboardingVisibleStep.value = 1
-    return
-  }
-  void handleCreateKey()
+  void continueOnboardingFromAccess()
 }
 
 const ccSwitchImports = computed(() => {
@@ -167,19 +202,7 @@ function credentialStatusHelp(state: string, hasKey?: boolean) {
   return hasKey ? t('user.readyWithKey') : t('user.readyNoKey')
 }
 
-function secretStateKey(providerId: number, groupId: string) {
-  return `${providerId}:${groupId}`
-}
-
-const selectedSecretKey = computed(() => {
-  if (!selectedProvider.value || !selectedGroup.value) return ''
-  return secretStateKey(selectedProvider.value.id, selectedGroup.value.group_id)
-})
-const selectedSecret = computed(() => (selectedSecretKey.value ? sessionSecrets[selectedSecretKey.value] ?? '' : ''))
-const selectedKeyValue = computed(() => selectedSecret.value || selectedGroup.value?.credential.key || '')
 const canReveal = computed(() => !!selectedKeyValue.value)
-const canTestProvider = computed(() => !!selectedKeyValue.value && !!providerTestModel.value.trim() && !!providerTestProtocol.value)
-const isSecretRevealed = computed(() => !!selectedSecretKey.value && !!revealedSecretKeys[selectedSecretKey.value])
 const displayedSecret = computed(() => {
   if (!selectedKeyValue.value) return ''
   return isSecretRevealed.value ? selectedKeyValue.value : maskApiKey(selectedKeyValue.value)
@@ -217,132 +240,24 @@ function providerProtocolLabel(protocol: UserProviderProtocol) {
   return `${protocolNames[protocol]} - ${kind}`
 }
 
-function selectDefaultGroup(provider: UserProviderSummary | null) {
-  selectedGroupId.value = provider?.groups[0]?.group_id ?? null
-}
-
-function selectDefaultProvider(rows: UserProviderSummary[]) {
-  const preferred =
-    rows.find((provider) => provider.is_primary && provider.groups.length > 0) ??
-    rows.find((provider) => provider.groups.length > 0) ??
-    rows.find((provider) => provider.is_primary) ??
-    rows[0] ??
-    null
-  selectedProviderId.value = preferred?.id ?? null
-  const provider = rows.find((item) => item.id === selectedProviderId.value) ?? null
-  selectDefaultGroup(provider)
-}
-
-function preferredConfigMethod(): 'manual' | 'ccswitch' {
-  return ccSwitchImports.value.length > 0 ? 'ccswitch' : 'manual'
-}
-
-function invalidateProviderTest() {
-  providerTestRequestId.value += 1
-  providerTestResult.value = null
-  providerTestLoading.value = false
-}
-
-function resetPostKeyFlow() {
-  invalidateProviderTest()
-  selectedConfigMethod.value = preferredConfigMethod()
-}
-
-function invalidateCredentialMutation() {
-  credentialMutationRequestId.value += 1
-  credentialMutationLoading.value = false
-}
-
-function selectProvider(providerId: number) {
-  invalidateCredentialMutation()
+function clearPendingViewActions() {
   secretConfirmAction.value = null
   manualConfigConfirmKey.value = ''
-  selectedProviderId.value = providerId
-  const provider = providers.value.find((item) => item.id === providerId) ?? null
-  selectDefaultGroup(provider)
-  resetPostKeyFlow()
-  onboardingVisibleStep.value = 0
 }
 
-function selectGroup(groupId: string) {
-  invalidateCredentialMutation()
-  secretConfirmAction.value = null
-  manualConfigConfirmKey.value = ''
-  selectedGroupId.value = groupId
-  resetPostKeyFlow()
-  onboardingVisibleStep.value = 0
+function selectProvider(providerID: number) {
+  clearPendingViewActions()
+  selectWorkflowProvider(providerID)
 }
 
-function resetProviderModels(message = '') {
-  providerModelOptions.value = []
-  providerModelsLoading.value = false
-  providerModelsMessage.value = message
-  providerTestModel.value = ''
-}
-
-async function loadProviderModels() {
-  const provider = selectedProvider.value
-  const group = selectedGroup.value
-  const requestId = providerModelsRequestId.value + 1
-  providerModelsRequestId.value = requestId
-  providerModelsMessage.value = ''
-
-  if (!provider || !group) {
-    resetProviderModels()
-    return
-  }
-  if (!selectedKeyValue.value) {
-    resetProviderModels(t('user.createKeyBeforeModelList'))
-    return
-  }
-
-  providerModelsLoading.value = true
-  try {
-    const res = await getUserProviderModels(provider.id, group.group_id, group.platform)
-    if (providerModelsRequestId.value !== requestId) return
-    const data = res.data.data
-    const models = data?.models ?? []
-    providerModelOptions.value = models
-    providerModelsMessage.value = data?.message ?? ''
-    if (models.length > 0) {
-      const current = providerTestModel.value.trim()
-      if (!models.some((model) => model.id === current)) {
-        providerTestModel.value = models[0].id
-      }
-    } else {
-      providerTestModel.value = ''
-      providerModelsMessage.value = providerModelsMessage.value || t('user.noModelsAvailable')
-    }
-  } catch (err: any) {
-    if (providerModelsRequestId.value !== requestId) return
-    resetProviderModels(err.response?.data?.message || err.message || t('user.modelLoadFailed'))
-  } finally {
-    if (providerModelsRequestId.value === requestId) {
-      providerModelsLoading.value = false
-    }
-  }
+function selectGroup(groupID: string) {
+  clearPendingViewActions()
+  selectWorkflowGroup(groupID)
 }
 
 async function loadProviders() {
-  invalidateCredentialMutation()
-  onboardingVisibleStep.value = 0
-  loading.value = true
-  error.value = ''
-  try {
-    const res = await getUserProviders()
-    const data = res.data.data
-    providers.value = data?.providers ?? []
-    selectedMessage.value = data?.message ?? ''
-    selectDefaultProvider(providers.value)
-    resetPostKeyFlow()
-  } catch (err: any) {
-    error.value = err.response?.data?.message || t('user.loadFailed')
-    providers.value = []
-    selectedProviderId.value = null
-    selectedGroupId.value = null
-  } finally {
-    loading.value = false
-  }
+  clearPendingViewActions()
+  await loadOnboardingWorkflow()
 }
 
 function maskApiKey(key: string) {
@@ -390,58 +305,8 @@ function manualConfigSnippetTitle(snippet: ManualConfigSnippet) {
   }
 }
 
-function updateSelectedGroupCredential(apiKeyId: number, name: string, status: string, key: string) {
-  if (!selectedProvider.value || !selectedGroup.value) return
-  providers.value = providers.value.map((provider) => {
-    if (provider.id !== selectedProvider.value?.id) {
-      return provider
-    }
-    return {
-      ...provider,
-      groups: provider.groups.map((group) =>
-        group.group_id === selectedGroup.value?.group_id
-          ? {
-              ...group,
-              credential: {
-                ...group.credential,
-                state: 'existing_hidden',
-                api_key_id: apiKeyId,
-                key,
-                name,
-                status,
-              },
-            }
-          : group
-      ),
-    }
-  })
-}
-
 async function handleCreateKey() {
-  if (!selectedProvider.value || !selectedGroup.value) return
-  if (credentialMutationLoading.value) return
-  const requestId = credentialMutationRequestId.value + 1
-  credentialMutationRequestId.value = requestId
-  credentialMutationLoading.value = true
-  error.value = ''
-  try {
-    const res = await createGroupCredential(selectedProvider.value.id, selectedGroup.value.group_id)
-    if (credentialMutationRequestId.value !== requestId) return
-    const data = res.data.data
-    if (!data) return
-    sessionSecrets[selectedSecretKey.value] = data.secret
-    revealedSecretKeys[selectedSecretKey.value] = false
-    updateSelectedGroupCredential(data.api_key_id, data.name, data.status, data.secret)
-    resetPostKeyFlow()
-    onboardingVisibleStep.value = 1
-  } catch (err: any) {
-    if (credentialMutationRequestId.value !== requestId) return
-    error.value = err.response?.data?.message || err.message || t('user.createKeyFailed')
-  } finally {
-    if (credentialMutationRequestId.value === requestId) {
-      credentialMutationLoading.value = false
-    }
-  }
+  await createWorkflowCredential()
 }
 
 function requestSecretAction(action: SecretAction) {
@@ -469,39 +334,15 @@ async function confirmSecretAction() {
 }
 
 async function handleRegenerateKey() {
-  if (!selectedProvider.value || !selectedGroup.value) return
-  if (credentialMutationLoading.value) return
-  const requestId = credentialMutationRequestId.value + 1
-  credentialMutationRequestId.value = requestId
-  credentialMutationLoading.value = true
-  error.value = ''
-  try {
-    const res = await regenerateGroupCredential(selectedProvider.value.id, selectedGroup.value.group_id)
-    if (credentialMutationRequestId.value !== requestId) return
-    const data = res.data.data
-    if (!data) return
-    sessionSecrets[selectedSecretKey.value] = data.secret
-    revealedSecretKeys[selectedSecretKey.value] = false
-    updateSelectedGroupCredential(data.api_key_id, data.name, data.status, data.secret)
-    resetPostKeyFlow()
-  } catch (err: any) {
-    if (credentialMutationRequestId.value !== requestId) return
-    error.value = err.response?.data?.message || err.message || t('user.regenerateKeyFailed')
-  } finally {
-    if (credentialMutationRequestId.value === requestId) {
-      credentialMutationLoading.value = false
-    }
-  }
+  await regenerateWorkflowCredential()
 }
 
 function revealSelectedKey() {
-  if (!selectedSecretKey.value) return
-  revealedSecretKeys[selectedSecretKey.value] = true
+  setKeyRevealed(true)
 }
 
 function hideSelectedKey() {
-  if (!selectedSecretKey.value) return
-  revealedSecretKeys[selectedSecretKey.value] = false
+  setKeyRevealed(false)
 }
 
 async function copySelectedKey() {
@@ -555,80 +396,8 @@ async function confirmManualConfigCopy() {
 }
 
 async function handleTestProvider() {
-  if (!selectedProvider.value || !selectedGroup.value) return
-  if (!selectedKeyValue.value) {
-    providerTestResult.value = { success: false, message: t('user.createKeyBeforeTesting') }
-    return
-  }
-  const model = providerTestModel.value.trim()
-  if (!model) {
-    providerTestResult.value = { success: false, message: t('user.modelRequired') }
-    return
-  }
-  const requestId = providerTestRequestId.value + 1
-  providerTestRequestId.value = requestId
-  providerTestLoading.value = true
-  providerTestResult.value = null
-  try {
-    const res = await testUserProvider(selectedProvider.value.id, {
-      platform: selectedGroup.value.platform,
-      group_id: selectedGroup.value.group_id,
-      model,
-      protocol: providerTestProtocol.value || undefined,
-    })
-    if (providerTestRequestId.value !== requestId) return
-    providerTestResult.value = res.data.data ?? { success: false, message: t('user.requestFailed') }
-  } catch (err: any) {
-    if (providerTestRequestId.value !== requestId) return
-    providerTestResult.value = {
-      success: false,
-      message: err.response?.data?.message || err.message || t('user.requestFailed'),
-    }
-  } finally {
-    if (providerTestRequestId.value === requestId) {
-      providerTestLoading.value = false
-    }
-  }
+  await testWorkflowConnection()
 }
-
-watch(
-  () => [
-    selectedProvider.value?.id,
-    selectedGroup.value?.group_id,
-    selectedKeyValue.value,
-    providerTestModel.value,
-    providerTestProtocol.value,
-  ],
-  () => {
-    invalidateProviderTest()
-  }
-)
-
-watch(
-  () => [
-    selectedProvider.value?.id,
-    selectedGroup.value?.group_id,
-    selectedGroup.value?.recommended_protocol,
-    selectedGroup.value?.supported_protocols?.join(','),
-  ],
-  () => {
-    const group = selectedGroup.value
-    providerTestProtocol.value = group?.recommended_protocol || group?.supported_protocols?.[0] || ''
-  },
-  { immediate: true }
-)
-
-watch(
-  () => [
-    selectedProvider.value?.id,
-    selectedGroup.value?.group_id,
-    selectedGroup.value?.platform,
-    selectedKeyValue.value,
-  ],
-  () => {
-    void loadProviderModels()
-  }
-)
 
 function syncOnboardingStepDirection(width?: number) {
   if (width === undefined) {
@@ -657,6 +426,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   onboardingFlowObserver?.disconnect()
+  disposeOnboardingWorkflow()
 })
 </script>
 
@@ -974,11 +744,12 @@ onBeforeUnmount(() => {
                       <div>
                         <label class="block text-xs font-medium uppercase tracking-wide text-gray-500">{{ t('user.protocol') }}</label>
                         <ElSelect
-                          v-model="providerTestProtocol"
+                          :model-value="providerTestProtocol"
                           data-testid="user-provider-test-protocol"
                           :teleported="false"
                           :aria-label="t('user.protocol')"
                           class="mt-1 w-full"
+                          @update:model-value="(value) => setProviderTestProtocol(value as UserProviderProtocol)"
                         >
                           <ElOption
                             v-for="protocol in selectedGroup.supported_protocols || []"
@@ -992,11 +763,12 @@ onBeforeUnmount(() => {
                         <label class="block text-xs font-medium uppercase tracking-wide text-gray-500">{{ t('user.model') }}</label>
                         <ElSelect
                           v-if="providerModelOptions.length > 0"
-                          v-model="providerTestModel"
+                          :model-value="providerTestModel"
                           data-testid="user-provider-test-model"
                           :teleported="false"
                           :aria-label="t('user.model')"
                           class="mt-1 w-full"
+                          @update:model-value="(value) => setProviderTestModel(String(value || ''))"
                         >
                           <ElOption
                             v-for="model in providerModelOptions"
@@ -1007,11 +779,12 @@ onBeforeUnmount(() => {
                         </ElSelect>
                         <ElInput
                           v-else
-                          v-model="providerTestModel"
+                          :model-value="providerTestModel"
                           data-testid="user-provider-test-model"
                           type="text"
                           :placeholder="providerModelsLoading ? t('user.loadingModels') : 'gpt-5.4'"
                           class="mt-1 w-full"
+                          @update:model-value="(value) => setProviderTestModel(String(value || ''))"
                         />
                         <p v-if="providerModelsLoading" class="mt-1 text-xs text-gray-500">{{ t('user.loadingModels') }}</p>
                         <p v-else-if="providerModelsMessage" class="mt-1 text-xs text-gray-500">{{ providerModelsMessage }}</p>
@@ -1061,7 +834,7 @@ onBeforeUnmount(() => {
                     border
                     class="!mx-0 !h-full w-full !items-start !p-4"
                     value="manual"
-                    @click="selectedConfigMethod = 'manual'"
+                    @click="setConfigMethod('manual')"
                   >
                     <div class="whitespace-normal">
                       <div class="font-medium text-gray-900">{{ t('user.manualConfigMethodTitle') }}</div>
@@ -1075,7 +848,7 @@ onBeforeUnmount(() => {
                     border
                     class="!mx-0 !h-full w-full !items-start !p-4"
                     value="automatic"
-                    @click="selectedConfigMethod = 'automatic'"
+                    @click="setConfigMethod('automatic')"
                   >
                     <div class="whitespace-normal">
                       <div class="font-medium text-gray-900">{{ t('user.automaticConfigMethodTitle') }}</div>
@@ -1089,7 +862,7 @@ onBeforeUnmount(() => {
                     border
                     class="!mx-0 !h-full w-full !items-start !p-4"
                     value="ccswitch"
-                    @click="selectedConfigMethod = 'ccswitch'"
+                    @click="setConfigMethod('ccswitch')"
                   >
                     <div class="whitespace-normal">
                       <div class="flex flex-wrap items-center gap-2">

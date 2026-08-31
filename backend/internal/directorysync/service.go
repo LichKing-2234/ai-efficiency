@@ -20,7 +20,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	entuser "github.com/ai-efficiency/backend/ent/user"
-	"github.com/ai-efficiency/backend/internal/directorytree"
+	"github.com/ai-efficiency/backend/internal/directoryfacts"
 	"github.com/ai-efficiency/backend/internal/relay"
 )
 
@@ -747,14 +747,29 @@ func (s *Service) ListDepartments(ctx context.Context, sourceID int, q string) (
 	if err != nil {
 		return nil, fmt.Errorf("list directory departments: %w", err)
 	}
-	tree := directorytree.New(departments)
+	domainDepartments := make([]directoryfacts.Department, 0, len(departments))
+	departmentsByExternalID := make(map[string]*ent.DirectoryDepartment, len(departments))
+	for _, department := range departments {
+		departmentsByExternalID[department.ExternalID] = department
+		domainDepartments = append(domainDepartments, directoryfacts.Department{
+			ID:                        department.ID,
+			ExternalID:                department.ExternalID,
+			ParentExternalID:          department.ParentExternalID,
+			EffectiveParentExternalID: department.EffectiveParentExternalID,
+			Name:                      department.Name,
+			Path:                      department.Path,
+			Metadata:                  department.Metadata,
+		})
+	}
+	facts := directoryfacts.NewFacts(directoryfacts.Snapshot{}, domainDepartments, nil, nil, nil)
 	needle := strings.ToLower(strings.TrimSpace(q))
 	items := make([]DepartmentOption, 0, len(departments))
-	for _, department := range tree.Ordered() {
+	for _, domainDepartment := range facts.Departments() {
+		department := departmentsByExternalID[domainDepartment.ExternalID]
 		if department == nil {
 			continue
 		}
-		displayPath := tree.DisplayPath(department.ExternalID)
+		displayPath := facts.Hierarchy().DisplayPath(department.ExternalID)
 		if needle != "" && !departmentOptionMatches(department, displayPath, needle) {
 			continue
 		}

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -113,25 +114,36 @@ func (facts *planningRequestFacts) userAPIKeys(ctx context.Context, provider rel
 	return result.keys, result.err
 }
 
+func (facts *planningRequestFacts) activeUserAPIKeys(ctx context.Context, provider relay.Provider, relayUserID int64) ([]relay.APIKey, error) {
+	keys, err := facts.userAPIKeys(ctx, provider, relayUserID)
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(append([]relay.APIKey(nil), keys...), func(key relay.APIKey) bool {
+		return !strings.EqualFold(strings.TrimSpace(key.Status), "active")
+	}), nil
+}
+
 func NewService(client *ent.Client, resolver ProviderResolver, prewarmReader *teamusage.PrewarmReader) *Service {
 	return &Service{client: client, resolver: resolver, users: adminusers.NewService(client), prewarmReader: prewarmReader, now: time.Now}
 }
 
 type PreviewRequest struct {
-	ProviderID        int                     `json:"provider_id"`
-	DepartmentID      string                  `json:"department_id"`
-	Platform          string                  `json:"platform"`
-	TemplateGroupID   int64                   `json:"template_group_id"`
-	SourceGroupID     int64                   `json:"source_group_id"`
-	WeeklyCostTarget  float64                 `json:"weekly_cost_target"`
-	GroupCount        int                     `json:"group_count"`
-	SelectedUserIDs   []int                   `json:"selected_user_ids"`
-	Assignments       []Assignment            `json:"assignments,omitempty"`
-	MemberSources     map[string]int64        `json:"member_sources,omitempty"`
-	AdoptRelayUserIDs []int64                 `json:"adopt_relay_user_ids,omitempty"`
-	RemovedUserIDs    []int                   `json:"removed_user_ids,omitempty"`
-	MemberActions     map[string]MemberAction `json:"member_actions,omitempty"`
-	ExistingMappingID int                     `json:"existing_mapping_id"`
+	ProviderID                    int                     `json:"provider_id"`
+	DepartmentID                  string                  `json:"department_id"`
+	Platform                      string                  `json:"platform"`
+	TemplateGroupID               int64                   `json:"template_group_id"`
+	SourceGroupID                 int64                   `json:"source_group_id"`
+	WeeklyCostTarget              float64                 `json:"weekly_cost_target"`
+	GroupCount                    int                     `json:"group_count"`
+	SelectedUserIDs               []int                   `json:"selected_user_ids"`
+	Assignments                   []Assignment            `json:"assignments,omitempty"`
+	MemberSources                 map[string]int64        `json:"member_sources,omitempty"`
+	AdoptRelayUserIDs             []int64                 `json:"adopt_relay_user_ids,omitempty"`
+	RemovedUserIDs                []int                   `json:"removed_user_ids,omitempty"`
+	MemberActions                 map[string]MemberAction `json:"member_actions,omitempty"`
+	ExistingMappingID             int                     `json:"existing_mapping_id"`
+	allowUnreviewedRemovalSources map[int]bool
 }
 
 type MemberAction struct {
@@ -498,14 +510,15 @@ type GroupResult struct {
 }
 
 type MemberResult struct {
-	Action        string   `json:"action,omitempty"`
-	UserID        int      `json:"user_id"`
-	RelayUserID   int64    `json:"relay_user_id,omitempty"`
-	TargetGroupID int64    `json:"target_group_id,omitempty"`
-	Subscription  string   `json:"subscription"`
-	SourceRemoval string   `json:"source_removal"`
-	APIKeys       []string `json:"api_keys,omitempty"`
-	Error         string   `json:"error,omitempty"`
+	Action          string   `json:"action,omitempty"`
+	UserID          int      `json:"user_id"`
+	RelayUserID     int64    `json:"relay_user_id,omitempty"`
+	TargetGroupID   int64    `json:"target_group_id,omitempty"`
+	Subscription    string   `json:"subscription"`
+	SourceRemoval   string   `json:"source_removal"`
+	APIKeys         []string `json:"api_keys,omitempty"`
+	Error           string   `json:"error,omitempty"`
+	reviewedAPIKeys reviewedAPIKeySelection
 }
 
 type AccountResult struct {
@@ -708,6 +721,25 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 			}
 		}
 		req.MemberSources = reviewedSources
+		managedTargets := make(map[int64]struct{}, len(mapping.GroupIds))
+		for _, groupID := range mapping.GroupIds {
+			managedTargets[groupID] = struct{}{}
+		}
+		for _, userID := range req.RemovedUserIDs {
+			sourceGroupID, reviewed := req.MemberSources[strconv.Itoa(userID)]
+			if !reviewed {
+				if req.allowUnreviewedRemovalSources[userID] {
+					continue
+				}
+				return nil, fmt.Errorf("removal source for user %d must be reviewed", userID)
+			}
+			if sourceGroupID == mapping.TemplateGroupID {
+				return nil, fmt.Errorf("removal source for user %d cannot be the template group", userID)
+			}
+			if _, managedTarget := managedTargets[sourceGroupID]; sourceGroupID > 0 && managedTarget {
+				return nil, fmt.Errorf("removal source for user %d cannot be a managed target group", userID)
+			}
+		}
 	}
 	if err := validateMemberSourceGroups(req.MemberSources, groups, req.Platform); err != nil {
 		return nil, fmt.Errorf("validate member source groups: %w", err)
@@ -721,7 +753,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	for userID := range selected {
 		required[userID] = struct{}{}
 	}
-	restrictToRequired := len(selected) > 0
+	restrictToRequired := len(selected) > 0 || len(req.RemovedUserIDs) > 0
 	for _, userID := range req.RemovedUserIDs {
 		if userID > 0 {
 			required[userID] = struct{}{}
@@ -1413,6 +1445,7 @@ type relationshipMappingFact struct {
 	AccountManagementInitialized bool                             `json:"account_management_initialized"`
 	DesiredAccounts              []relationshipDesiredAccountFact `json:"desired_accounts"`
 	Members                      []relationshipMappingMemberFact  `json:"members"`
+	ReviewedRemovalSources       []relationshipRemovalSourceFact  `json:"reviewed_removal_sources,omitempty"`
 	RetryMoves                   []relationshipRetryMoveFact      `json:"retry_moves,omitempty"`
 	RetryRemovals                []relationshipRetryRemovalFact   `json:"retry_removals,omitempty"`
 }
@@ -1436,6 +1469,11 @@ type relationshipMappingMemberFact struct {
 	SourceGroupID int64 `json:"source_group_id"`
 }
 
+type relationshipRemovalSourceFact struct {
+	UserID        int   `json:"user_id"`
+	SourceGroupID int64 `json:"source_group_id"`
+}
+
 type relationshipRetryMoveFact struct {
 	UserID        int   `json:"user_id"`
 	FromMappingID int   `json:"from_mapping_id"`
@@ -1443,9 +1481,16 @@ type relationshipRetryMoveFact struct {
 }
 
 type relationshipRetryRemovalFact struct {
-	UserID        int   `json:"user_id"`
-	TargetGroupID int64 `json:"target_group_id"`
-	SourceGroupID int64 `json:"source_group_id,omitempty"`
+	UserID            int     `json:"user_id"`
+	TargetGroupID     int64   `json:"target_group_id"`
+	SourceGroupID     int64   `json:"source_group_id,omitempty"`
+	ReviewedAPIKeyIDs []int64 `json:"reviewed_api_key_ids,omitempty"`
+	ReviewedAPIKeySet bool    `json:"reviewed_api_key_set,omitempty"`
+}
+
+type reviewedAPIKeySelection struct {
+	IDs    []int64
+	Frozen bool
 }
 
 type relationshipUserFact struct {
@@ -1495,6 +1540,7 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 	desiredAccountIDs := make(map[int64]struct{})
 	plannedAccounts := make([]relationshipPlannedAccountFact, 0)
 	plannedRenames := make([]relationshipPlannedRenameFact, 0)
+	reviewedAPIKeysByUser := make(map[int]reviewedAPIKeySelection)
 	relevantGroupIDs := map[int64]struct{}{plan.TemplateGroupID: {}}
 	if plan.SourceGroupID > 0 {
 		relevantGroupIDs[plan.SourceGroupID] = struct{}{}
@@ -1599,9 +1645,27 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 				targetGroupID, targetErr := strconv.ParseInt(entry["target_group_id"], 10, 64)
 				sourceGroupID, _ := strconv.ParseInt(entry["source_group_id"], 10, 64)
 				if targetErr == nil && targetGroupID > 0 {
-					fact.RetryRemovals = append(fact.RetryRemovals, relationshipRetryRemovalFact{UserID: userID, TargetGroupID: targetGroupID, SourceGroupID: sourceGroupID})
+					selection := reviewedAPIKeySelectionFromState(entry)
+					if current := reviewedAPIKeysByUser[userID]; current.Frozen || selection.Frozen {
+						selection.IDs = mergeAPIKeyIDs(current.IDs, selection.IDs)
+						selection.Frozen = current.Frozen || selection.Frozen
+					}
+					if selection.Frozen {
+						reviewedAPIKeysByUser[userID] = selection
+					}
+					fact.RetryRemovals = append(fact.RetryRemovals, relationshipRetryRemovalFact{UserID: userID, TargetGroupID: targetGroupID, SourceGroupID: sourceGroupID, ReviewedAPIKeyIDs: selection.IDs, ReviewedAPIKeySet: selection.Frozen})
 				}
 			}
+		}
+		if mapping.ID == req.ExistingMappingID {
+			for _, userID := range req.RemovedUserIDs {
+				if sourceGroupID, reviewed := req.MemberSources[strconv.Itoa(userID)]; reviewed {
+					fact.ReviewedRemovalSources = append(fact.ReviewedRemovalSources, relationshipRemovalSourceFact{UserID: userID, SourceGroupID: sourceGroupID})
+				}
+			}
+			sort.Slice(fact.ReviewedRemovalSources, func(i, j int) bool {
+				return fact.ReviewedRemovalSources[i].UserID < fact.ReviewedRemovalSources[j].UserID
+			})
 		}
 		sort.Slice(fact.DesiredAccounts, func(i, j int) bool {
 			left, right := fact.DesiredAccounts[i], fact.DesiredAccounts[j]
@@ -1704,6 +1768,7 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 			continue
 		}
 		candidate, reusable := candidatesByUserID[userFacts[index].LocalUserID]
+		reviewedAPIKeys := reviewedAPIKeysByUser[userFacts[index].LocalUserID]
 		if reusable && candidate.RelayUserID == userFacts[index].RelayUserID {
 			if candidate.relationshipGroupErr != nil {
 				return "", fmt.Errorf("subscription relationships are unavailable for relay user %d: %w", userFacts[index].RelayUserID, redactProviderReadError(candidate.relationshipGroupErr))
@@ -1717,7 +1782,8 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 				}
 			}
 			for _, key := range candidate.relationshipAPIKeys {
-				if _, relevant := relevantGroupIDs[key.GroupID]; relevant {
+				_, relevantGroup := relevantGroupIDs[key.GroupID]
+				if (reviewedAPIKeys.Frozen && slices.Contains(reviewedAPIKeys.IDs, key.ID)) || (!reviewedAPIKeys.Frozen && relevantGroup) {
 					userFacts[index].APIKeys = append(userFacts[index].APIKeys, key)
 				}
 			}
@@ -1749,14 +1815,37 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 					userFacts[index].Subscriptions = append(userFacts[index].Subscriptions, relationshipSubscriptionFromRelay(subscription))
 				}
 			}
-			keys, err := requestFacts.userAPIKeys(ctx, provider, userFacts[index].RelayUserID)
+			keys, err := requestFacts.activeUserAPIKeys(ctx, provider, userFacts[index].RelayUserID)
 			if err != nil {
 				return "", fmt.Errorf("API Key relationships are unavailable for relay user %d: %w", userFacts[index].RelayUserID, redactProviderReadError(err))
 			}
 			for _, key := range keys {
 				groupID := apiKeyGroupID(key)
-				if _, relevant := relevantGroupIDs[groupID]; relevant {
+				_, relevantGroup := relevantGroupIDs[groupID]
+				if (reviewedAPIKeys.Frozen && slices.Contains(reviewedAPIKeys.IDs, key.ID)) || (!reviewedAPIKeys.Frozen && relevantGroup) {
 					userFacts[index].APIKeys = append(userFacts[index].APIKeys, relationshipAPIKeyFact{ID: key.ID, GroupID: groupID})
+				}
+			}
+		}
+		if len(reviewedAPIKeys.IDs) > 0 {
+			keys, err := requestFacts.userAPIKeys(ctx, provider, userFacts[index].RelayUserID)
+			if err != nil {
+				return "", fmt.Errorf("API Key relationships are unavailable for relay user %d: %w", userFacts[index].RelayUserID, redactProviderReadError(err))
+			}
+			indexes := make(map[int64]int, len(userFacts[index].APIKeys))
+			for keyIndex, key := range userFacts[index].APIKeys {
+				indexes[key.ID] = keyIndex
+			}
+			for _, key := range keys {
+				if !slices.Contains(reviewedAPIKeys.IDs, key.ID) {
+					continue
+				}
+				fact := relationshipAPIKeyFact{ID: key.ID, GroupID: apiKeyGroupID(key)}
+				if keyIndex, exists := indexes[key.ID]; exists {
+					userFacts[index].APIKeys[keyIndex] = fact
+				} else {
+					indexes[key.ID] = len(userFacts[index].APIKeys)
+					userFacts[index].APIKeys = append(userFacts[index].APIKeys, fact)
 				}
 			}
 		}
@@ -2043,10 +2132,19 @@ func buildTargetChangeSummaries(req PreviewRequest, plan *Plan) []TargetChangeSu
 
 	if currentMapping != nil {
 		for _, userID := range req.RemovedUserIDs {
+			key := strconv.Itoa(userID)
 			targetGroupID := mappingMemberGroup(currentMapping, userID)
-			sourceGroupID := mappingMemberSource(currentMapping, userID)
+			unreviewedSource := req.allowUnreviewedRemovalSources[userID]
+			sourceGroupID, sourceReviewed := req.MemberSources[key]
+			if !sourceReviewed {
+				sourceGroupID = mappingMemberSource(currentMapping, userID)
+			}
 			if targetGroupID <= 0 {
-				targetGroupID, sourceGroupID = mappingRetryRemoval(currentMapping, userID)
+				var retrySourceGroupID int64
+				targetGroupID, retrySourceGroupID = mappingRetryRemoval(currentMapping, userID)
+				if !sourceReviewed {
+					sourceGroupID = retrySourceGroupID
+				}
 			}
 			summary := targetSummaryForGroup(summaries, targetGroupID)
 			if summary == nil {
@@ -2054,6 +2152,9 @@ func buildTargetChangeSummaries(req PreviewRequest, plan *Plan) []TargetChangeSu
 			}
 			fact := userFacts[userID]
 			summary.Members = append(summary.Members, MemberChange{UserID: userID, RelayUserID: fact.RelayUserID, Action: "remove", FromGroupID: targetGroupID, ToGroupID: sourceGroupID})
+			if unreviewedSource {
+				continue
+			}
 			if sourceGroupID > 0 && !hasActiveSubscription(fact, sourceGroupID) {
 				summary.Subscriptions = append(summary.Subscriptions, SubscriptionChange{UserID: userID, RelayUserID: fact.RelayUserID, Action: "add", GroupID: sourceGroupID})
 			}
@@ -2061,7 +2162,12 @@ func buildTargetChangeSummaries(req PreviewRequest, plan *Plan) []TargetChangeSu
 				summary.Subscriptions = append(summary.Subscriptions, SubscriptionChange{UserID: userID, RelayUserID: fact.RelayUserID, Action: "remove", GroupID: targetGroupID})
 			}
 			if sourceGroupID > 0 {
-				if count := relationshipAPIKeyCount(fact, targetGroupID); count > 0 {
+				reviewedAPIKeyIDs, reviewedAPIKeySet := mappingRetryRemovalAPIKeySet(currentMapping, userID)
+				count := relationshipAPIKeyCount(fact, targetGroupID)
+				if reviewedAPIKeySet {
+					count = relationshipAPIKeyCountForIDs(fact, targetGroupID, reviewedAPIKeyIDs)
+				}
+				if count > 0 {
 					summary.APIKeys = append(summary.APIKeys, APIKeyChange{UserID: userID, RelayUserID: fact.RelayUserID, Action: "move", Count: count, FromGroupID: targetGroupID, ToGroupID: sourceGroupID})
 				}
 			}
@@ -2126,6 +2232,18 @@ func mappingRetryRemoval(mapping *relationshipMappingFact, userID int) (int64, i
 	return 0, 0
 }
 
+func mappingRetryRemovalAPIKeySet(mapping *relationshipMappingFact, userID int) ([]int64, bool) {
+	if mapping == nil {
+		return nil, false
+	}
+	for _, retry := range mapping.RetryRemovals {
+		if retry.UserID == userID {
+			return retry.ReviewedAPIKeyIDs, retry.ReviewedAPIKeySet
+		}
+	}
+	return nil, false
+}
+
 func mappingMemberSource(mapping *relationshipMappingFact, userID int) int64 {
 	if mapping == nil {
 		return 0
@@ -2154,6 +2272,16 @@ func relationshipAPIKeyCount(user relationshipUserFact, groupID int64) int {
 	count := 0
 	for _, key := range user.APIKeys {
 		if key.GroupID == groupID {
+			count++
+		}
+	}
+	return count
+}
+
+func relationshipAPIKeyCountForIDs(user relationshipUserFact, groupID int64, keyIDs []int64) int {
+	count := 0
+	for _, key := range user.APIKeys {
+		if key.GroupID == groupID && slices.Contains(keyIDs, key.ID) {
 			count++
 		}
 	}
@@ -3160,23 +3288,54 @@ func (s *Service) Replan(ctx context.Context, mappingID int, selected []int, ass
 	if err != nil {
 		return nil, fmt.Errorf("load relay group mapping: %w", err)
 	}
-	memberSources = memberSourcesWithRemovalRetries(row.OperationState, memberSources, removedUserIDs)
+	memberSources, allowUnreviewedRemovalSources, err := memberSourcesWithRemovalRetries(row.OperationState, memberSources, removedUserIDs)
+	if err != nil {
+		return nil, fmt.Errorf("restore removal retry source: %w", err)
+	}
 	memberActions = memberActionsWithRetries(row.OperationState, memberActions)
-	return s.Preview(ctx, PreviewRequest{ProviderID: row.ProviderID, DepartmentID: row.DepartmentExternalID, Platform: row.Platform, TemplateGroupID: row.TemplateGroupID, SourceGroupID: row.SourceGroupID, WeeklyCostTarget: row.WeeklyCostTarget, GroupCount: len(row.GroupIds), SelectedUserIDs: selected, Assignments: assignments, MemberSources: memberSources, RemovedUserIDs: removedUserIDs, MemberActions: memberActions, AdoptRelayUserIDs: adoptRelayUserIDs, ExistingMappingID: mappingID})
+	return s.Preview(ctx, PreviewRequest{ProviderID: row.ProviderID, DepartmentID: row.DepartmentExternalID, Platform: row.Platform, TemplateGroupID: row.TemplateGroupID, SourceGroupID: row.SourceGroupID, WeeklyCostTarget: row.WeeklyCostTarget, GroupCount: len(row.GroupIds), SelectedUserIDs: selected, Assignments: assignments, MemberSources: memberSources, RemovedUserIDs: removedUserIDs, MemberActions: memberActions, AdoptRelayUserIDs: adoptRelayUserIDs, ExistingMappingID: mappingID, allowUnreviewedRemovalSources: allowUnreviewedRemovalSources})
 }
 
-func memberSourcesWithRemovalRetries(operationState map[string]map[string]string, memberSources map[string]int64, removedUserIDs []int) map[string]int64 {
+func memberSourcesWithRemovalRetries(operationState map[string]map[string]string, memberSources map[string]int64, removedUserIDs []int) (map[string]int64, map[int]bool, error) {
 	memberSources = cloneInt64Map(memberSources)
+	allowUnreviewed := make(map[int]bool)
 	for _, userID := range removedUserIDs {
 		key := strconv.Itoa(userID)
-		if memberSources[key] > 0 {
-			continue
-		}
 		if entry := operationState["member:"+key]; entry != nil && entry["action"] == "remove" && operationStateNeedsRetry(operationState, "member:"+key) {
-			memberSources[key], _ = strconv.ParseInt(entry["source_group_id"], 10, 64)
+			if entry["source_reviewed"] == "true" || entry["source_group_id"] != "" {
+				sourceGroupID := int64(0)
+				if entry["source_group_id"] != "" {
+					var err error
+					sourceGroupID, err = strconv.ParseInt(entry["source_group_id"], 10, 64)
+					if err != nil {
+						return nil, nil, fmt.Errorf("stored removal source for user %d is invalid", userID)
+					}
+				}
+				if reviewedSourceGroupID, reviewed := memberSources[key]; reviewed && reviewedSourceGroupID != sourceGroupID {
+					return nil, nil, fmt.Errorf("removal source for user %d cannot change while retry is pending", userID)
+				}
+				memberSources[key] = sourceGroupID
+			} else if _, reviewed := memberSources[key]; !reviewed {
+				allowUnreviewed[userID] = true
+			}
 		}
 	}
-	return memberSources
+	return memberSources, allowUnreviewed, nil
+}
+
+func reviewedRemovalSource(mapping *Mapping, reviewedSources map[string]int64, userID int) (int64, bool) {
+	key := strconv.Itoa(userID)
+	if sourceGroupID, reviewed := reviewedSources[key]; reviewed {
+		return sourceGroupID, true
+	}
+	if sourceGroupID, reviewed := mapping.MemberSources[key]; reviewed {
+		return sourceGroupID, true
+	}
+	if previous := mapping.OperationState["member:"+key]; previous != nil && (previous["source_reviewed"] == "true" || previous["source_group_id"] != "") {
+		sourceGroupID, _ := strconv.ParseInt(previous["source_group_id"], 10, 64)
+		return sourceGroupID, true
+	}
+	return 0, false
 }
 
 func memberActionsWithRetries(operationState map[string]map[string]string, memberActions map[string]MemberAction) map[string]MemberAction {
@@ -3231,7 +3390,10 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	}
 	req.GroupCount = len(mapping.GroupIDs)
 	req.ExistingMappingID = mappingID
-	req.MemberSources = memberSourcesWithRemovalRetries(mapping.OperationState, req.MemberSources, req.RemovedUserIDs)
+	req.MemberSources, _, err = memberSourcesWithRemovalRetries(mapping.OperationState, req.MemberSources, req.RemovedUserIDs)
+	if err != nil {
+		return nil, fmt.Errorf("restore removal retry source for execution: %w", err)
+	}
 	req.MemberActions = memberActionsWithRetries(mapping.OperationState, req.MemberActions)
 	plan, err := s.Preview(ctx, req.PreviewRequest)
 	if err != nil {
@@ -3339,22 +3501,29 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	for _, userID := range req.RemovedUserIDs {
 		key := strconv.Itoa(userID)
 		targetGroupID := oldAssignments[key]
-		sourceGroupID := oldSources[key]
+		sourceGroupID, _ := reviewedRemovalSource(mapping, req.MemberSources, userID)
 		if targetGroupID <= 0 {
 			if previous := mapping.OperationState["member:"+key]; previous != nil && previous["action"] == "remove" && operationStateNeedsRetry(mapping.OperationState, "member:"+key) {
 				targetGroupID, _ = strconv.ParseInt(previous["target_group_id"], 10, 64)
-				sourceGroupID, _ = strconv.ParseInt(previous["source_group_id"], 10, 64)
 			}
 		}
 		if targetGroupID <= 0 {
 			continue
 		}
-		member := completedSubscriptionFromState(mapping.OperationState, "member:"+key, MemberResult{Action: "remove", UserID: userID, TargetGroupID: targetGroupID, Subscription: "skipped", SourceRemoval: "skipped"})
+		member := completedMemberStepsFromState(mapping.OperationState, "member:"+key, MemberResult{Action: "remove", UserID: userID, TargetGroupID: targetGroupID, Subscription: "skipped", SourceRemoval: "skipped"})
 		candidate := candidateByUserID(plan.Candidates, userID)
 		if candidate == nil || candidate.RelayUserID <= 0 {
 			member.Error = "managed user has no valid Relay mapping"
 			memberResults = append(memberResults, member)
 			continue
+		}
+		if !member.reviewedAPIKeys.Frozen {
+			for _, key := range candidate.relationshipAPIKeys {
+				if key.GroupID == targetGroupID {
+					member.reviewedAPIKeys.IDs = append(member.reviewedAPIKeys.IDs, key.ID)
+				}
+			}
+			member.reviewedAPIKeys.Frozen = true
 		}
 		if sourceGroupID > 0 {
 			member = executeMemberMigration(ctx, assigner, remover, binder, candidate, sourceGroupID, targetGroupID, member)
@@ -3401,9 +3570,9 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 					fromGroupID = mapping.SourceGroupID
 				}
 			}
-			member := MemberResult{UserID: userID, TargetGroupID: targetID, Subscription: "skipped", SourceRemoval: "skipped"}
+			member := MemberResult{Action: action.Mode, UserID: userID, TargetGroupID: targetID, Subscription: "skipped", SourceRemoval: "skipped"}
 			if retry {
-				member = completedSubscriptionFromState(mapping.OperationState, "member:"+key, member)
+				member = completedMemberStepsFromState(mapping.OperationState, "member:"+key, member)
 			}
 			if reason := blockedTargets[targetID]; reason != "" {
 				member.Error = reason
@@ -3464,6 +3633,7 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 			}
 		}
 	}
+	verifyRemovalRelationshipReadback(ctx, p, plan, mapping, req.MemberSources, memberResults)
 	state := executionState(req.OperationKey, groupResults, memberResults)
 	mergeAccountResultsIntoState(state, accountResults)
 	for _, member := range memberResults {
@@ -3472,13 +3642,9 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 		}
 		key := strconv.Itoa(member.UserID)
 		if entry := state["member:"+key]; entry != nil {
-			sourceGroupID := oldSources[key]
-			if sourceGroupID <= 0 {
-				if previous := mapping.OperationState["member:"+key]; previous != nil {
-					sourceGroupID, _ = strconv.ParseInt(previous["source_group_id"], 10, 64)
-				}
-			}
-			if sourceGroupID > 0 {
+			sourceGroupID, sourceReviewed := reviewedRemovalSource(mapping, req.MemberSources, member.UserID)
+			if sourceReviewed {
+				entry["source_reviewed"] = "true"
 				entry["source_group_id"] = strconv.FormatInt(sourceGroupID, 10)
 			}
 		}
@@ -3795,6 +3961,9 @@ func executionState(operationKey string, groups []GroupResult, members []MemberR
 		if len(member.APIKeys) > 0 {
 			entry["api_keys"] = strings.Join(member.APIKeys, ",")
 		}
+		if member.Action == "remove" && member.reviewedAPIKeys.Frozen {
+			entry["reviewed_api_key_ids"] = formatAPIKeyIDs(member.reviewedAPIKeys.IDs)
+		}
 		if member.Error != "" {
 			entry["error"] = member.Error
 			state["operation"]["status"] = "needs_retry"
@@ -3811,34 +3980,49 @@ func executionState(operationKey string, groups []GroupResult, members []MemberR
 	return state
 }
 
-func completedSubscriptionFromState(state map[string]map[string]string, key string, member MemberResult) MemberResult {
+func completedMemberStepsFromState(state map[string]map[string]string, key string, member MemberResult) MemberResult {
 	entry := state[key]
+	if entry["action"] != member.Action {
+		return member
+	}
 	targetGroupID, err := strconv.ParseInt(entry["target_group_id"], 10, 64)
-	if err == nil && targetGroupID == member.TargetGroupID && entry["subscription"] == "succeeded" {
-		member.Subscription = "succeeded"
+	if err == nil && targetGroupID == member.TargetGroupID {
+		member.reviewedAPIKeys = reviewedAPIKeySelectionFromState(entry)
+		if entry["subscription"] == "succeeded" {
+			member.Subscription = "succeeded"
+		}
+		if entry["source_removal"] == "succeeded" {
+			member.SourceRemoval = "succeeded"
+		}
+		if entry["api_keys"] != "" {
+			_, member.APIKeys = completedAPIKeySteps(strings.Split(entry["api_keys"], ","))
+		}
 	}
 	return member
 }
 
 func executeMemberMigration(ctx context.Context, assigner subscriptionAssigner, remover subscriptionRemover, binder relay.APIKeyGroupBinder, candidate *Candidate, targetGroupID, fromGroupID int64, member MemberResult) MemberResult {
 	if member.Subscription != "succeeded" {
-		if assigner == nil {
+		if hasActiveSubscription(relationshipUserFact{Subscriptions: candidate.relationshipSubscriptions}, targetGroupID) {
+			member.Subscription = "unchanged"
+		} else if assigner == nil {
 			member.Error = "relay provider does not support subscription assignment"
 			return member
-		}
-		if err := assigner.AssignSubscriptionForUser(ctx, candidate.RelayUserID, targetGroupID, defaultValidityDays); err != nil && !isAlreadyAssignedError(err) {
+		} else if err := assigner.AssignSubscriptionForUser(ctx, candidate.RelayUserID, targetGroupID, defaultValidityDays); err != nil && !isAlreadyAssignedError(err) {
 			member.Error = err.Error()
 			return member
+		} else {
+			member.Subscription = "succeeded"
 		}
-		member.Subscription = "succeeded"
 	}
 	if fromGroupID <= 0 || fromGroupID == targetGroupID {
 		return member
 	}
 	if binder != nil {
+		completedKeyIDs, _ := completedAPIKeySteps(member.APIKeys)
 		apiKeyError := false
 		for _, key := range candidate.relationshipAPIKeys {
-			if key.GroupID != fromGroupID {
+			if key.GroupID != fromGroupID || completedKeyIDs[key.ID] || (member.reviewedAPIKeys.Frozen && !slices.Contains(member.reviewedAPIKeys.IDs, key.ID)) {
 				continue
 			}
 			if bindErr := binder.BindAPIKeyToGroup(ctx, key.ID, targetGroupID); bindErr != nil {
@@ -3853,6 +4037,9 @@ func executeMemberMigration(ctx context.Context, assigner subscriptionAssigner, 
 			return member
 		}
 	}
+	if member.SourceRemoval == "succeeded" {
+		return member
+	}
 	if remover == nil {
 		member.SourceRemoval = "skipped"
 		return member
@@ -3864,6 +4051,247 @@ func executeMemberMigration(ctx context.Context, assigner subscriptionAssigner, 
 	}
 	member.SourceRemoval = "succeeded"
 	return member
+}
+
+type apiKeyStepResult struct {
+	raw       string
+	keyID     int64
+	succeeded bool
+}
+
+func completedAPIKeySteps(results []string) (map[int64]bool, []string) {
+	latest := make(map[int64]apiKeyStepResult)
+	order := make([]int64, 0, len(results))
+	for _, result := range results {
+		keyID, status, ok := parseAPIKeyStep(result)
+		if !ok {
+			continue
+		}
+		if _, exists := latest[keyID]; !exists {
+			order = append(order, keyID)
+		}
+		latest[keyID] = apiKeyStepResult{raw: result, keyID: keyID, succeeded: status == "succeeded"}
+	}
+	completed := make(map[int64]bool)
+	kept := make([]string, 0, len(latest))
+	for _, keyID := range order {
+		step := latest[keyID]
+		if !step.succeeded {
+			continue
+		}
+		completed[step.keyID] = true
+		kept = append(kept, step.raw)
+	}
+	return completed, kept
+}
+
+func recordedAPIKeyStepIDs(results []string) []int64 {
+	seen := make(map[int64]struct{}, len(results))
+	for _, result := range results {
+		keyID, _, ok := parseAPIKeyStep(result)
+		if ok {
+			seen[keyID] = struct{}{}
+		}
+	}
+	ids := make([]int64, 0, len(seen))
+	for keyID := range seen {
+		ids = append(ids, keyID)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids
+}
+
+func reviewedAPIKeySelectionFromState(entry map[string]string) reviewedAPIKeySelection {
+	if entry == nil {
+		return reviewedAPIKeySelection{}
+	}
+	raw, frozen := entry["reviewed_api_key_ids"]
+	ids := parseAPIKeyIDs(raw)
+	if !frozen {
+		ids = recordedAPIKeyStepIDs(strings.Split(entry["api_keys"], ","))
+		frozen = len(ids) > 0
+	}
+	return reviewedAPIKeySelection{IDs: ids, Frozen: frozen}
+}
+
+func mergeAPIKeyIDs(left, right []int64) []int64 {
+	seen := make(map[int64]struct{}, len(left)+len(right))
+	for _, ids := range [][]int64{left, right} {
+		for _, keyID := range ids {
+			if keyID > 0 {
+				seen[keyID] = struct{}{}
+			}
+		}
+	}
+	merged := make([]int64, 0, len(seen))
+	for keyID := range seen {
+		merged = append(merged, keyID)
+	}
+	sort.Slice(merged, func(i, j int) bool { return merged[i] < merged[j] })
+	return merged
+}
+
+func parseAPIKeyIDs(value string) []int64 {
+	seen := make(map[int64]struct{})
+	for _, raw := range strings.Split(value, ",") {
+		keyID, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if err == nil && keyID > 0 {
+			seen[keyID] = struct{}{}
+		}
+	}
+	ids := make([]int64, 0, len(seen))
+	for keyID := range seen {
+		ids = append(ids, keyID)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids
+}
+
+func formatAPIKeyIDs(ids []int64) string {
+	values := make([]string, 0, len(ids))
+	for _, keyID := range ids {
+		if keyID > 0 {
+			values = append(values, strconv.FormatInt(keyID, 10))
+		}
+	}
+	return strings.Join(values, ",")
+}
+
+func parseAPIKeyStep(result string) (int64, string, bool) {
+	parts := strings.SplitN(result, ":", 3)
+	if len(parts) < 2 {
+		return 0, "", false
+	}
+	keyID, err := strconv.ParseInt(parts[0], 10, 64)
+	return keyID, parts[1], err == nil && keyID > 0
+}
+
+func verifyRemovalRelationshipReadback(ctx context.Context, provider relay.Provider, plan *Plan, mapping *Mapping, reviewedSources map[string]int64, members []MemberResult) {
+	removedIndexes := make([]int, 0)
+	candidates := make(map[int]*Candidate, len(plan.Candidates))
+	for index := range plan.Candidates {
+		candidates[plan.Candidates[index].UserID] = &plan.Candidates[index]
+	}
+	for index := range members {
+		if members[index].Action == "remove" && members[index].Error == "" {
+			removedIndexes = append(removedIndexes, index)
+		}
+	}
+	if len(removedIndexes) == 0 {
+		return
+	}
+
+	relationships := make(map[int64]relay.UserRelationship, len(removedIndexes))
+	if reader, ok := provider.(relay.UserRelationshipSnapshotReader); ok {
+		items, err := reader.ListUserRelationships(ctx)
+		if err != nil {
+			markRemovalReadbackUnavailable(members, removedIndexes)
+			return
+		}
+		for _, item := range items {
+			relationships[item.User.ID] = item
+		}
+	} else if reader, ok := provider.(relay.UserSubscriptionLister); ok {
+		for _, index := range removedIndexes {
+			candidate := candidates[members[index].UserID]
+			if candidate == nil {
+				continue
+			}
+			subscriptions, err := reader.ListUserSubscriptions(ctx, candidate.RelayUserID)
+			if err != nil {
+				markRemovalReadbackUnavailable(members, removedIndexes)
+				return
+			}
+			relationships[candidate.RelayUserID] = relay.UserRelationship{User: relay.User{ID: candidate.RelayUserID}, Subscriptions: subscriptions}
+		}
+	} else {
+		markRemovalReadbackUnavailable(members, removedIndexes)
+		return
+	}
+
+	for _, index := range removedIndexes {
+		member := &members[index]
+		candidate := candidates[member.UserID]
+		if candidate == nil {
+			member.Error = "relationship readback failed: managed user disappeared"
+			continue
+		}
+		problems := make([]string, 0, 3)
+		relationship, found := relationships[candidate.RelayUserID]
+		if !found {
+			member.Error = "relationship readback failed: Relay user is unavailable"
+			continue
+		}
+		facts := relationshipUserFact{RelayUserID: candidate.RelayUserID}
+		for _, subscription := range relationship.Subscriptions {
+			if subscription.GroupID <= 0 && subscription.Group != nil {
+				subscription.GroupID = subscription.Group.ID
+			}
+			facts.Subscriptions = append(facts.Subscriptions, relationshipSubscriptionFromRelay(subscription))
+		}
+		sourceGroupID, _ := reviewedRemovalSource(mapping, reviewedSources, member.UserID)
+		if sourceGroupID > 0 && !hasActiveSubscription(facts, sourceGroupID) {
+			member.Subscription = "failed"
+			problems = append(problems, fmt.Sprintf("Source Group %d subscription is not active", sourceGroupID))
+		}
+		for _, subscription := range facts.Subscriptions {
+			if subscription.GroupID == member.TargetGroupID {
+				member.SourceRemoval = "failed"
+				problems = append(problems, fmt.Sprintf("Target Group %d subscription still exists", member.TargetGroupID))
+				break
+			}
+		}
+
+		expectedKeyGroupID := member.TargetGroupID
+		if sourceGroupID > 0 {
+			expectedKeyGroupID = sourceGroupID
+		}
+		expectedKeyIDs := make(map[int64]struct{})
+		if entry := mapping.OperationState[fmt.Sprintf("member:%d", member.UserID)]; entry != nil {
+			for _, keyID := range reviewedAPIKeySelectionFromState(entry).IDs {
+				expectedKeyIDs[keyID] = struct{}{}
+			}
+		}
+		for _, keyID := range member.reviewedAPIKeys.IDs {
+			expectedKeyIDs[keyID] = struct{}{}
+		}
+		for _, keyID := range recordedAPIKeyStepIDs(member.APIKeys) {
+			expectedKeyIDs[keyID] = struct{}{}
+		}
+		if !member.reviewedAPIKeys.Frozen {
+			for _, key := range candidate.relationshipAPIKeys {
+				if key.GroupID == member.TargetGroupID {
+					expectedKeyIDs[key.ID] = struct{}{}
+				}
+			}
+		}
+		if len(expectedKeyIDs) > 0 {
+			keys, err := provider.ListUserAPIKeys(ctx, candidate.RelayUserID)
+			if err != nil {
+				problems = append(problems, "API Key relationship readback is unavailable")
+			} else {
+				actualKeyGroups := make(map[int64]int64, len(keys))
+				for _, key := range keys {
+					actualKeyGroups[key.ID] = apiKeyGroupID(key)
+				}
+				for keyID := range expectedKeyIDs {
+					if actualKeyGroups[keyID] != expectedKeyGroupID {
+						member.APIKeys = append(member.APIKeys, fmt.Sprintf("%d:failed:relationship readback mismatch", keyID))
+						problems = append(problems, fmt.Sprintf("API Key %d is not bound to Group %d", keyID, expectedKeyGroupID))
+					}
+				}
+			}
+		}
+		if len(problems) > 0 {
+			member.Error = "relationship readback failed: " + strings.Join(problems, "; ")
+		}
+	}
+}
+
+func markRemovalReadbackUnavailable(members []MemberResult, indexes []int) {
+	for _, index := range indexes {
+		members[index].Error = "relationship readback failed: subscription relationships are unavailable"
+	}
 }
 
 func isAlreadyAssignedError(err error) bool {
@@ -4017,7 +4445,10 @@ func validateMemberSourceGroups(memberSources map[string]int64, groups []relay.G
 		if err != nil || userID <= 0 {
 			return fmt.Errorf("member source user id %q is invalid", rawUserID)
 		}
-		if groupID <= 0 {
+		if groupID < 0 {
+			return fmt.Errorf("member source group for user %d must be non-negative", userID)
+		}
+		if groupID == 0 {
 			continue
 		}
 		if _, err := findSourceGroup(groups, groupID, platform); err != nil {
@@ -4248,7 +4679,7 @@ func loadCandidateRelayFacts(ctx context.Context, p relay.Provider, requestFacts
 	}()
 	go func() {
 		defer workers.Done()
-		keys, err := requestFacts.userAPIKeys(ctx, p, userID)
+		keys, err := requestFacts.activeUserAPIKeys(ctx, p, userID)
 		facts.keyErr = err
 		if err != nil {
 			return

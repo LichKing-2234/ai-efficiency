@@ -401,6 +401,41 @@ func TestRecordCheckpointBindsToolUsageEventsForWorkspaceWindow(t *testing.T) {
 	}
 }
 
+func TestRecordCompactCheckpointDoesNotBindLegacyToolUsageEvents(t *testing.T) {
+	t.Parallel()
+
+	client, ctx, userID, fullName, _ := createCheckpointTestRepo(t)
+	defer client.Close()
+	repo := client.RepoConfig.Query().OnlyX(ctx)
+	usage := client.ToolUsageEvent.Create().
+		SetTool("codex").
+		SetWorkspaceID("ws-compact").
+		SetRepoConfigID(repo.ID).
+		SetUserID(userID).
+		SetToolSessionID("session-compact").
+		SetToolEventID("event-compact").
+		SetObservedStartAt(time.Unix(160, 0).UTC()).
+		SetObservedEndAt(time.Unix(161, 0).UTC()).
+		SetUsageUnit("token").
+		SetInputTokens(10).
+		SetOutputTokens(5).
+		SetDedupeKey("codex:compact-unbound").
+		SaveX(ctx)
+
+	if err := NewService(client).RecordCompactCheckpointForUser(ctx, userID, CommitCheckpointRequest{
+		EventID: "cp-compact", RepoFullName: fullName, WorkspaceID: "ws-compact", CommitSHA: "compact-sha",
+		ParentSHAs: []string{"base-sha"}, BindingSource: "unbound", CapturedAt: ptrTime(time.Unix(200, 0).UTC()),
+	}); err != nil {
+		t.Fatalf("RecordCompactCheckpointForUser: %v", err)
+	}
+	if checkpoint := client.CommitCheckpoint.Query().Where(commitcheckpoint.EventIDEQ("cp-compact")).OnlyX(ctx); checkpoint.UserID == nil || *checkpoint.UserID != userID {
+		t.Fatalf("compact checkpoint owner = %v, want %d", checkpoint.UserID, userID)
+	}
+	if got := client.ToolUsageEvent.GetX(ctx, usage.ID).CommitCheckpointID; got != nil {
+		t.Fatalf("compact checkpoint bound legacy tool usage to %d", *got)
+	}
+}
+
 func TestRecordCheckpointForUser_AutoCreatesRepoOnRemoteMiss(t *testing.T) {
 	t.Parallel()
 

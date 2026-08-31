@@ -1220,6 +1220,57 @@ func (u recoveringV2Uploader) AttributionProtocol() client.AttributionProtocol {
 
 func (u recoveringV2Uploader) RelayProviderID() int { return u.providerID }
 
+func TestRunPendingSyncPassDeliversCurrentCheckpointBeforeV2(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	now := time.Now().UTC()
+	execCtx := ExecutionContext{
+		WorkspaceID: "ws-v2-before-legacy", RepoRoot: t.TempDir(), ServerURL: "https://ae.example.com",
+		AuthSubject: "user:1", RepoConfigID: 9, RepoKey: "github.com/example/repo", DurableReplay: true,
+	}
+	group := client.AttributionV2ClaimGroup{
+		SchemaVersion: 2, GroupID: "group-v2-before-legacy", RelayProviderID: 7,
+		TokenSource: client.AttributionV2TokenSourceRelayOfficial, RequestIDs: []string{"request-v2-before-legacy"}, EvidenceDigest: "evidence-v2-before-legacy",
+		CommitAllocations: []client.AttributionV2CommitAllocation{{
+			Sequence: 1, RepoConfigID: execCtx.RepoConfigID, RepoKey: execCtx.RepoKey, WorkspaceID: execCtx.WorkspaceID,
+			CheckpointEventID: "event-v2", CommitSHA: strings.Repeat("a", 40), EvidenceDigest: "evidence-v2-before-legacy",
+		}},
+	}
+	if err := attributionlocal.SaveV2ClaimState(&attributionlocal.V2ClaimState{
+		Version: 1, Claims: []attributionlocal.V2ClaimCandidate{{LocalKey: "local-v2-before-legacy", Group: group, FirstSeenAt: now}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	queue, err := NewWorkspaceQueue(execCtx.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := queue.Enqueue(HookEvent{
+		Kind: "post-commit", EventID: "event-v2", WorkspaceID: execCtx.WorkspaceID,
+		ServerURL: execCtx.ServerURL, AuthSubject: execCtx.AuthSubject, RepoConfigID: execCtx.RepoConfigID, RepoKey: execCtx.RepoKey,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	backend := &acknowledgingV2ClaimClient{}
+	checkpointBeforeV2 := false
+	legacy := &fakeUploader{onCall: func() { checkpointBeforeV2 = backend.calls == 0 }}
+	uploader := recoveringV2Uploader{
+		acknowledgingV2Uploader: acknowledgingV2Uploader{fakeUploader: legacy, client: backend},
+		providerID:              7,
+	}
+	task := &SyncTask{WorkspaceID: execCtx.WorkspaceID, V2Triggers: []V2SyncTrigger{{Kind: "post-commit", EventID: "event-v2", CommitSHA: strings.Repeat("a", 40), CapturedAt: now, RelayProviderID: 7}}}
+
+	if err := runPendingSyncPass(context.Background(), execCtx, uploader, task); err != nil {
+		t.Fatal(err)
+	}
+	if !checkpointBeforeV2 || backend.calls != 1 || len(legacy.events) != 1 {
+		t.Fatalf("delivery order: v2_calls=%d checkpoint_calls=%d checkpoint_before_v2=%t", backend.calls, len(legacy.events), checkpointBeforeV2)
+	}
+	if items, err := queue.List(); err != nil || len(items) != 0 {
+		t.Fatalf("legacy queue after pass = %+v, %v", items, err)
+	}
+}
+
 func TestRunPendingSyncTaskMigratesAndRecoversDeletedLegacyWorktree(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

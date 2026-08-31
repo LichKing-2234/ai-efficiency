@@ -2,10 +2,9 @@ package quotareset
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"math"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,7 +21,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/systemsetting"
 	entuser "github.com/ai-efficiency/backend/ent/user"
-	"github.com/ai-efficiency/backend/internal/directorysync"
+	"github.com/ai-efficiency/backend/internal/directoryfacts"
 	"github.com/ai-efficiency/backend/internal/relay"
 )
 
@@ -288,13 +287,14 @@ func (s *Service) ListAdmin(ctx context.Context, params ListParams) (*RequestLis
 }
 
 func (s *Service) ListApproverConfigs(ctx context.Context) (*ApproverConfigListResponse, error) {
-	sourceID, ok, err := directorysync.CurrentSourceID(ctx, s.client)
+	view, ok, err := directoryfacts.New(s.client).Current(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
 		return &ApproverConfigListResponse{Items: []ApproverConfig{}}, nil
 	}
+	sourceID := view.Snapshot().SourceID
 	rows, err := s.client.QuotaResetApproverConfig.Query().
 		Where(quotaresetapproverconfig.DirectorySourceIDEQ(sourceID)).
 		Order(ent.Asc(quotaresetapproverconfig.FieldDepartmentDisplayPath), ent.Asc(quotaresetapproverconfig.FieldApproverUserID)).
@@ -323,13 +323,14 @@ func (s *Service) ListApproverCandidates(ctx context.Context, sourceID int, depa
 }
 
 func (s *Service) SaveApproverConfigs(ctx context.Context, input SaveApproverConfigsInput) (*ApproverConfigListResponse, error) {
-	sourceID, ok, err := directorysync.CurrentSourceID(ctx, s.client)
+	view, ok, err := directoryfacts.New(s.client).Current(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
 		return nil, ErrDirectoryUnavailable
 	}
+	sourceID := view.Snapshot().SourceID
 	items := normalizeApproverConfigInputs(input.Items)
 	if err := s.validateApproverConfigs(ctx, sourceID, items); err != nil {
 		return nil, err
@@ -1069,18 +1070,27 @@ func (s *Service) approverCandidates(ctx context.Context, sourceID int, departme
 		return nil, nil, err
 	}
 	departmentExternalID = strings.TrimSpace(departmentExternalID)
-	representativeIDs := facts.representativesByDept[departmentExternalID]
+	representativeIDs := facts.directory.RepresentativesByDepartment()[departmentExternalID]
+	representativeSet := make(map[string]struct{}, len(representativeIDs))
+	for _, externalID := range representativeIDs {
+		representativeSet[externalID] = struct{}{}
+	}
 	mappedRepresentativeIDs := map[string]struct{}{}
 	candidates := make([]ApproverCandidate, 0)
-	for userID, member := range facts.membersByUserID {
-		if _, belongs := facts.departmentIDsByMember[member.ID][departmentExternalID]; !belongs {
+	seenUsers := map[int]struct{}{}
+	for _, member := range facts.directory.Members() {
+		user := facts.directory.UserForMember(member)
+		if user == nil {
 			continue
 		}
-		user := facts.usersByID[userID]
-		if !workflowCandidateUsable(user, member) {
+		if _, seen := seenUsers[user.ID]; seen {
 			continue
 		}
-		_, representative := representativeIDs[member.ExternalID]
+		if !slices.Contains(facts.directory.DepartmentIDsForMember(member), departmentExternalID) || !workflowCandidateUsable(user, &member) {
+			continue
+		}
+		seenUsers[user.ID] = struct{}{}
+		_, representative := representativeSet[member.ExternalID]
 		if representative {
 			mappedRepresentativeIDs[member.ExternalID] = struct{}{}
 		}
@@ -1099,11 +1109,11 @@ func (s *Service) approverCandidates(ctx context.Context, sourceID int, departme
 		return left < right || (left == right && candidates[i].UserID < candidates[j].UserID)
 	})
 	unmatched := make([]UnmatchedApproverRepresentative, 0)
-	for externalID := range representativeIDs {
+	for _, externalID := range representativeIDs {
 		if _, mapped := mappedRepresentativeIDs[externalID]; mapped {
 			continue
 		}
-		member := facts.membersByExternalID[externalID]
+		member := facts.directory.MemberByExternalID(externalID)
 		item := UnmatchedApproverRepresentative{DirectoryMemberExternalID: externalID}
 		if member != nil {
 			item.DisplayName = strings.TrimSpace(member.DisplayName)
@@ -1136,11 +1146,11 @@ func (s *Service) validateApproverConfigs(ctx context.Context, sourceID int, ite
 		if departmentID == "" || item.ApproverUserID <= 0 {
 			continue
 		}
-		member := facts.membersByUserID[item.ApproverUserID]
-		user := facts.usersByID[item.ApproverUserID]
+		member := facts.directory.MemberForUser(item.ApproverUserID)
+		user := facts.directory.User(item.ApproverUserID)
 		belongs := false
 		if member != nil {
-			_, belongs = facts.departmentIDsByMember[member.ID][departmentID]
+			belongs = slices.Contains(facts.directory.DepartmentIDsForMember(*member), departmentID)
 		}
 		if !belongs || !workflowCandidateUsable(user, member) {
 			return fmt.Errorf("%w: approver_user_id %d is not an active member of department %s", ErrInvalidApproverConfig, item.ApproverUserID, departmentID)
@@ -1150,87 +1160,14 @@ func (s *Service) validateApproverConfigs(ctx context.Context, sourceID int, ite
 }
 
 func (s *Service) currentWorkflowDirectoryFacts(ctx context.Context, sourceID int) (*workflowDirectoryFacts, error) {
-	currentSourceID, ok, err := directorysync.CurrentSourceID(ctx, s.client)
+	view, ok, err := directoryfacts.New(s.client).Current(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("current directory source: %w", err)
 	}
-	if !ok || sourceID != currentSourceID {
+	if !ok || sourceID != view.Snapshot().SourceID {
 		return nil, ErrDirectoryUnavailable
 	}
-	return NewApproverResolver(s.client).loadWorkflowDirectoryFacts(ctx, sourceID)
-}
-
-func representativeExternalIDsByDepartment(departments []*ent.DirectoryDepartment, members []*ent.DirectoryMember) map[string]map[string]struct{} {
-	representatives := make(map[string]map[string]struct{}, len(departments))
-	add := func(departmentID, representativeExternalID string) {
-		departmentID = strings.TrimSpace(departmentID)
-		representativeExternalID = strings.TrimSpace(representativeExternalID)
-		if departmentID == "" || representativeExternalID == "" {
-			return
-		}
-		if representatives[departmentID] == nil {
-			representatives[departmentID] = map[string]struct{}{}
-		}
-		representatives[departmentID][representativeExternalID] = struct{}{}
-	}
-	for _, department := range departments {
-		if department == nil {
-			continue
-		}
-		for _, representativeExternalID := range quotaResetMetadataStringValues(department.Metadata["representative_external_ids"]) {
-			add(department.ExternalID, representativeExternalID)
-		}
-	}
-	for _, member := range members {
-		if member == nil {
-			continue
-		}
-		for _, departmentID := range quotaResetMetadataStringValues(member.Metadata["leader_department_ids"]) {
-			add(departmentID, member.ExternalID)
-		}
-	}
-	return representatives
-}
-
-func quotaResetMetadataStringValues(value any) []string {
-	switch typed := value.(type) {
-	case nil:
-		return nil
-	case []string:
-		return compactQuotaResetStrings(typed)
-	case []any:
-		values := make([]string, 0, len(typed))
-		for _, item := range typed {
-			values = append(values, quotaResetMetadataScalarString(item))
-		}
-		return compactQuotaResetStrings(values)
-	case string:
-		return compactQuotaResetStrings(strings.Split(typed, ","))
-	default:
-		return compactQuotaResetStrings([]string{quotaResetMetadataScalarString(typed)})
-	}
-}
-
-func quotaResetMetadataScalarString(value any) string {
-	switch typed := value.(type) {
-	case nil:
-		return ""
-	case json.Number:
-		return strings.TrimSpace(typed.String())
-	case float64:
-		if math.Trunc(typed) == typed {
-			return strconv.FormatInt(int64(typed), 10)
-		}
-		return strings.TrimSpace(strconv.FormatFloat(typed, 'f', -1, 64))
-	case float32:
-		value := float64(typed)
-		if math.Trunc(value) == value {
-			return strconv.FormatInt(int64(value), 10)
-		}
-		return strings.TrimSpace(strconv.FormatFloat(value, 'f', -1, 32))
-	default:
-		return strings.TrimSpace(fmt.Sprint(typed))
-	}
+	return NewApproverResolver(s.client).loadWorkflowDirectoryFacts(ctx, view)
 }
 
 func compactQuotaResetStrings(values []string) []string {

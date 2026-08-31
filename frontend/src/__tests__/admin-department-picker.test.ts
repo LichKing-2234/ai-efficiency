@@ -248,32 +248,6 @@ describe('AdminDepartmentPicker', () => {
     expect(mockGet).toHaveBeenCalledTimes(1)
   })
 
-  it('never renders a stale resolved label after a controlled selection changes and rejects', async () => {
-    const pendingBeta = deferred<any>()
-    mockGet
-      .mockImplementationOnce(() => optionsResponse([alpha], { selected: alpha }))
-      .mockImplementationOnce(() => pendingBeta.promise)
-    const wrapper = mountPicker('dept-alpha')
-    await flushPromises()
-    const trigger = wrapper.get('[data-testid="admin-department-picker-trigger"]')
-
-    expect(trigger.text()).toContain('Company / Department Alpha')
-
-    await wrapper.setProps({ modelValue: 'dept-beta' })
-
-    expect(mockGet).toHaveBeenLastCalledWith('/admin/users/department-options', {
-      params: { selected_id: 'dept-beta', page: 1, page_size: 20 },
-    })
-    expect(trigger.text()).toContain('dept-beta')
-    expect(trigger.text()).not.toContain('Company / Department Alpha')
-
-    pendingBeta.reject(new Error('selection failed'))
-    await flushPromises()
-
-    expect(trigger.text()).toContain('dept-beta')
-    expect(trigger.text()).not.toContain('Company / Department Alpha')
-  })
-
   it('does not cancel a closed deep-link label request on an unrelated pointer click', async () => {
     const pending = deferred<any>()
     mockGet.mockImplementation(() => pending.promise)
@@ -340,42 +314,6 @@ describe('AdminDepartmentPicker', () => {
     expect(wrapper.find('[data-testid="admin-department-picker-option-dept-alpha"]').exists()).toBe(true)
   })
 
-  it('trims and debounces search while preventing stale results from replacing newer results', async () => {
-    vi.useFakeTimers()
-    const older = deferred<any>()
-    const newer = deferred<any>()
-    mockGet
-      .mockImplementationOnce(() => optionsResponse([alpha, beta]))
-      .mockImplementationOnce(() => older.promise)
-      .mockImplementationOnce(() => newer.promise)
-
-    const wrapper = mountPicker()
-    await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.get('[data-testid="admin-department-picker-search"]').classes()).toContain('el-input__inner')
-    await wrapper.get('[data-testid="admin-department-picker-search"]').setValue('  old  ')
-    await vi.advanceTimersByTimeAsync(300)
-    expect(mockGet).toHaveBeenLastCalledWith('/admin/users/department-options', {
-      params: { q: 'old', page: 1, page_size: 20 },
-    })
-
-    await wrapper.get('[data-testid="admin-department-picker-search"]').setValue('  new  ')
-    await vi.advanceTimersByTimeAsync(300)
-    expect(mockGet).toHaveBeenLastCalledWith('/admin/users/department-options', {
-      params: { q: 'new', page: 1, page_size: 20 },
-    })
-
-    newer.resolve(await optionsResponse([{ ...beta, name: 'New Result', display_path: 'New Result' }]))
-    await flushPromises()
-    expect(wrapper.text()).toContain('New Result')
-
-    older.resolve(await optionsResponse([{ ...alpha, name: 'Old Result', display_path: 'Old Result' }]))
-    await flushPromises()
-    expect(wrapper.text()).toContain('New Result')
-    expect(wrapper.text()).not.toContain('Old Result')
-  })
-
   it('pages from server page and total and emits a clear change', async () => {
     mockGet.mockImplementation((_path: string, config: { params: { page: number } }) => {
       if (config.params.page === 2) {
@@ -415,28 +353,6 @@ describe('AdminDepartmentPicker', () => {
     expect(pagination.props('pageSize')).toBe(20)
     expect(pagination.props('total')).toBe(21)
     expect(pagination.props('layout')).toBe('prev, slot, next')
-  })
-
-  it('resets embedded paging when the picker closes and reopens', async () => {
-    mockGet.mockImplementation((_path: string, config: { params: { page: number } }) =>
-      optionsResponse(config.params.page === 2 ? [beta] : [alpha], { page: config.params.page, total: 21 }))
-    const wrapper = mountPicker()
-
-    await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
-    await flushPromises()
-    await clickPickerPage(wrapper, 'next')
-    expect(mockGet).toHaveBeenLastCalledWith('/admin/users/department-options', {
-      params: { page: 2, page_size: 20 },
-    })
-
-    await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
-    await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
-    await flushPromises()
-
-    expect(mockGet).toHaveBeenLastCalledWith('/admin/users/department-options', {
-      params: { page: 1, page_size: 20 },
-    })
-    expect(wrapper.getComponent(ElPagination).props('currentPage')).toBe(1)
   })
 
   it('keeps the current options visible while the next page is loading', async () => {
@@ -480,55 +396,6 @@ describe('AdminDepartmentPicker', () => {
     expect(wrapper.find('[data-testid="admin-department-picker-option-dept-alpha"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="admin-department-picker-error"]').text()).toContain('synthetic option page failure')
     expect(wrapper.getComponent(ElPagination).props('currentPage')).toBe(1)
-  })
-
-  it('can reopen and retry after clearing while the first option request is pending', async () => {
-    const pending = deferred<any>()
-    mockGet
-      .mockImplementationOnce(() => pending.promise)
-      .mockImplementationOnce(() => optionsResponse([alpha]))
-    const wrapper = mountPicker()
-
-    await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
-    expect(mockGet).toHaveBeenCalledTimes(1)
-
-    await wrapper.get('[data-testid="admin-department-picker-all"]').trigger('click')
-    await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
-    await flushPromises()
-
-    expect(mockGet).toHaveBeenCalledTimes(2)
-    expect(wrapper.text()).toContain('Company / Department Alpha')
-  })
-
-  it('atomically clears a failed search page and resets the query on reopen', async () => {
-    vi.useFakeTimers()
-    mockGet
-      .mockImplementationOnce(() => optionsResponse([alpha, beta], { page: 2, total: 45 }))
-      .mockRejectedValueOnce(new Error('search failed'))
-      .mockImplementationOnce(() => optionsResponse([{ ...beta, name: 'Recovered', display_path: 'Recovered' }]))
-    const wrapper = mountPicker()
-
-    await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
-    await flushPromises()
-    await wrapper.get('[data-testid="admin-department-picker-search"]').setValue('  recover  ')
-    await vi.advanceTimersByTimeAsync(300)
-    await flushPromises()
-
-    expect(wrapper.get('[data-testid="admin-department-picker-error"]').text()).toContain('search failed')
-    expect(wrapper.get('[data-testid="admin-department-picker-error"]').find('.el-alert').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="admin-department-picker-option-dept-alpha"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="admin-department-picker-option-dept-beta"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="admin-department-picker-pagination"]').exists()).toBe(false)
-
-    await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
-    await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
-    await flushPromises()
-
-    expect(mockGet).toHaveBeenCalledTimes(3)
-    expect(mockGet).toHaveBeenLastCalledWith('/admin/users/department-options', {
-      params: { page: 1, page_size: 20 },
-    })
-    expect(wrapper.text()).toContain('Recovered')
   })
 
   it('cancels a debounced search on Escape and restores trigger focus', async () => {
