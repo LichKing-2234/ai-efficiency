@@ -105,6 +105,11 @@ SELECT local_day,total_tokens,direct_tokens,shared_tokens,credit_usage,direct_cr
 		return nil, fmt.Errorf("load v2 overview readiness: %w", err)
 	}
 	result.Ratio = v2Ratio(ratioCommitted, ratioCoverage, denominator)
+	totalCredit, err := s.queryV2CreditDenominatorSQL(ctx, scope, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("load v2 credit denominator: %w", err)
+	}
+	result.CreditRatio = v2CreditRatio(committedCredit, totalCredit, result.Coverage)
 	return result, nil
 }
 
@@ -132,6 +137,29 @@ func (s *Service) queryV2ScopeTotalsSQL(ctx context.Context, scope *v2Scope, fro
 		return 0, 0, 0, false, false, false, fmt.Errorf("query v2 scope totals: %w", err)
 	}
 	return committed, committedCredit, ratio, gap, ratioGap, providerMismatch, nil
+}
+
+// queryV2CreditDenominatorSQL sums the credit this scope reported in the window.
+//
+// Its source is deliberately different from the Token denominator's. Tokens are
+// counted from the gateway's billing record, which no client can influence.
+// Credit never reaches the gateway — the agents that bill in it do not route
+// through the relay — so the only account of it is what the CLI collected and
+// uploaded. The ratio built on it therefore measures how much of the credit this
+// machine reported reached a commit, and cannot see credit the agent never
+// reported. V2CreditRatio says so in its own type rather than borrowing V2Ratio.
+func (s *Service) queryV2CreditDenominatorSQL(ctx context.Context, scope *v2Scope, from, to time.Time) (float64, error) {
+	if len(scope.userIDs) == 0 {
+		return 0, nil
+	}
+	args := []any{from, to}
+	users := appendSQLInts(&args, sortedIntKeys(scope.userIDs))
+	statement := fmt.Sprintf(`SELECT COALESCE(SUM(credit_usage),0)::double precision FROM tool_usage_events WHERE observed_start_at >= $1 AND observed_start_at < $2 AND user_id IN (%s)`, users)
+	var total float64
+	if err := s.v2DB.QueryRowContext(ctx, statement, args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("query v2 credit denominator: %w", err)
+	}
+	return total, nil
 }
 
 func (s *Service) queryV2RepositoriesSQL(ctx context.Context, actorUserID int, scope *v2Scope, from, to time.Time, query V2PageQuery) (*V2Page[V2RepositoryRow], error) {
@@ -178,11 +206,12 @@ func (s *Service) queryV2RepositoriesSQL(ctx context.Context, actorUserID int, s
         COALESCE(SUM(CASE WHEN pr.has_shared THEN pr.credit_usage ELSE 0 END),0)::double precision shared_credit
  FROM pool_repo pr JOIN repo_configs r ON r.id=pr.repo_config_id GROUP BY pr.repo_config_id,r.full_name
 ), scope_total AS (
- SELECT COALESCE(SUM(total_tokens),0)::bigint total_tokens FROM attribution_usage_pools
+ SELECT COALESCE(SUM(total_tokens),0)::bigint total_tokens,
+        COALESCE(SUM(credit_usage),0)::double precision total_credit FROM attribution_usage_pools
 	 WHERE ledger_epoch=$1 AND bucket_start_utc >= $2 AND bucket_start_utc < $3 AND user_id IN (%s) AND relay_provider_id > 0
 	   AND EXISTS (SELECT 1 FROM attribution_usage_pool_commits counted WHERE counted.pool_id=attribution_usage_pools.id AND counted.relation_kind IN ('direct','shared'))
 )
-SELECT repo_config_id,repo_name,direct_tokens,shared_tokens,direct_credit,shared_credit,scope_total.total_tokens
+SELECT repo_config_id,repo_name,direct_tokens,shared_tokens,direct_credit,shared_credit,scope_total.total_tokens,scope_total.total_credit
 FROM repo_totals CROSS JOIN scope_total WHERE repo_name ILIKE %s ESCAPE '\' %s
 ORDER BY %s LIMIT %d`, users, users, searchPlaceholder, cursorWhere, order, v2PageSize+1)
 	rows, err := s.v2DB.QueryContext(ctx, statement, args...)
@@ -194,12 +223,17 @@ ORDER BY %s LIMIT %d`, users, users, searchPlaceholder, cursorWhere, order, v2Pa
 	for rows.Next() {
 		var row V2RepositoryRow
 		var total int64
-		if err := rows.Scan(&row.RepoConfigID, &row.Name, &row.DirectTokens, &row.SharedTokens, &row.DirectCredit, &row.SharedCredit, &total); err != nil {
+		var totalCredit float64
+		if err := rows.Scan(&row.RepoConfigID, &row.Name, &row.DirectTokens, &row.SharedTokens, &row.DirectCredit, &row.SharedCredit, &total, &totalCredit); err != nil {
 			return nil, fmt.Errorf("scan v2 repositories: %w", err)
 		}
 		if total > 0 {
 			share := float64(row.DirectTokens) * 100 / float64(total)
 			row.DirectShare = &share
+		}
+		if totalCredit > 0 {
+			creditShare := row.DirectCredit * 100 / totalCredit
+			row.CreditShare = &creditShare
 		}
 		items = append(items, row)
 	}
