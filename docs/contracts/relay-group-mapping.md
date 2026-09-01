@@ -367,9 +367,25 @@ After dispatch, incomplete execution retains active ownership and records an
 interrupted Operation without changing captured Mapping fields or revisions.
 Steps whose effects have request-bound proof retain `readback_verified` evidence;
 other dispatched steps remain unknown rather than being guessed or replayed by
-another ordinary Confirm. Resume/Restore endpoints and alignment UI, durable
-legacy migration, and deterministic cross-restart delivery tests remain owned by
-their dependent delivery issues.
+another ordinary Confirm.
+
+The recovery service now creates an independent Resume or Restore attempt and
+converges each immutable effect through fresh Relay readback. Before any recovery
+mutation it verifies every referenced Group, Account, and frozen reviewed API Key;
+an exact missing resource transitions the Operation, attempt, and affected step to
+`blocked_external` without another write or replacement. Transient provider errors
+leave the Operation interrupted. Existing Target rename, reviewed Account
+add/remove/priority, member subscription, and frozen API-Key movements support
+both directions. New Group creation remains Resume-only. Reviewed API-Key IDs are
+stored as a sorted immutable set, including an explicit empty set, and unrelated
+subscriptions, API Keys, and Account bindings are never selected for mutation.
+
+Only complete target readback promotes every affected Mapping revision and closes
+Resume as `applied`; promotion, terminal attempt evidence, and ownership release
+commit in one local transaction. Complete baseline readback closes Restore as
+`restored` while leaving every Mapping baseline and revision unchanged. HTTP
+recovery surfaces and alignment UI, durable legacy migration, and deterministic
+cross-restart delivery tests remain owned by their dependent delivery issues.
 
 Destination and source mapping changes commit in one local transaction. A local
 persistence failure rolls back every affected mapping and returns structured

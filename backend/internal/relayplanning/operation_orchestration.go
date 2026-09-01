@@ -252,23 +252,41 @@ func buildDurableStepPlans(plan *Plan) []durableStepPlan {
 	}
 	for _, target := range plan.TargetSummaries {
 		if target.Rename != nil {
-			steps = append(steps, durableStepPlan{Key: fmt.Sprintf("target:%d:rename", target.Index), Action: "rename", RelationshipType: "group", Direction: relationshipoperationstep.DirectionTarget, TargetGroupID: target.TargetGroupID, ExpectedResult: map[string]any{"name": target.Rename.ToName}, ResumeSupported: true, RestoreSupported: true})
+			steps = append(steps, durableStepPlan{Key: fmt.Sprintf("target:%d:rename", target.Index), Action: "rename", RelationshipType: "group", Direction: relationshipoperationstep.DirectionTarget, TargetGroupID: target.TargetGroupID, ExpectedResult: map[string]any{"target_name": target.Rename.ToName, "baseline_name": target.Rename.FromName}, ResumeSupported: true, RestoreSupported: true})
 		}
 		for _, account := range target.Accounts {
-			steps = append(steps, durableStepPlan{Key: fmt.Sprintf("target:%d:account:%d:%s", target.Index, account.AccountID, account.Action), Action: account.Action, RelationshipType: "account_group", Direction: relationshipoperationstep.DirectionTarget, TargetGroupID: target.TargetGroupID, ReviewedResourceIDs: []int64{account.AccountID}, ReviewedPriority: account.NewPriority, ExpectedResult: map[string]any{"priority": account.NewPriority}, ResumeSupported: true, RestoreSupported: true})
+			steps = append(steps, durableStepPlan{Key: fmt.Sprintf("target:%d:account:%d:%s", target.Index, account.AccountID, account.Action), Action: account.Action, RelationshipType: "account_group", Direction: relationshipoperationstep.DirectionTarget, TargetGroupID: target.TargetGroupID, ReviewedResourceIDs: []int64{account.AccountID}, ReviewedPriority: account.NewPriority, ExpectedResult: map[string]any{"target_priority": account.NewPriority, "baseline_priority": account.OldPriority}, ResumeSupported: true, RestoreSupported: true})
 		}
 		for _, member := range target.Members {
 			steps = append(steps, durableStepPlan{Key: fmt.Sprintf("target:%d:member:%d:%s", target.Index, member.UserID, member.Action), Action: member.Action, RelationshipType: "managed_member", Direction: relationshipoperationstep.DirectionTarget, LocalUserID: member.UserID, RelayUserID: member.RelayUserID, SourceGroupID: member.FromGroupID, TargetGroupID: member.ToGroupID, ExpectedResult: map[string]any{"target_group_id": member.ToGroupID}, ResumeSupported: true, RestoreSupported: true})
 		}
 		for _, subscription := range target.Subscriptions {
-			steps = append(steps, durableStepPlan{Key: fmt.Sprintf("target:%d:subscription:%d:%s:%d", target.Index, subscription.RelayUserID, subscription.Action, subscription.GroupID), Action: subscription.Action, RelationshipType: "subscription", Direction: relationshipoperationstep.DirectionTarget, LocalUserID: subscription.UserID, RelayUserID: subscription.RelayUserID, TargetGroupID: subscription.GroupID, ExpectedResult: map[string]any{"active": subscription.Action == "add"}, ResumeSupported: true, RestoreSupported: true})
+			steps = append(steps, durableStepPlan{Key: fmt.Sprintf("target:%d:subscription:%d:%s:%d", target.Index, subscription.RelayUserID, subscription.Action, subscription.GroupID), Action: subscription.Action, RelationshipType: "subscription", Direction: relationshipoperationstep.DirectionTarget, LocalUserID: subscription.UserID, RelayUserID: subscription.RelayUserID, TargetGroupID: subscription.GroupID, ExpectedResult: map[string]any{"target_active": subscription.Action == "add", "baseline_active": subscription.Action != "add"}, ResumeSupported: true, RestoreSupported: true})
 		}
 		for _, key := range target.APIKeys {
-			steps = append(steps, durableStepPlan{Key: fmt.Sprintf("target:%d:api-keys:%d:%d:%d", target.Index, key.RelayUserID, key.FromGroupID, key.ToGroupID), Action: "move", RelationshipType: "api_keys", Direction: relationshipoperationstep.DirectionTarget, LocalUserID: key.UserID, RelayUserID: key.RelayUserID, SourceGroupID: key.FromGroupID, TargetGroupID: key.ToGroupID, ExpectedResult: map[string]any{"count": key.Count, "group_id": key.ToGroupID}, ResumeSupported: true, RestoreSupported: true})
+			ids := reviewedAPIKeyIDs(plan.relationshipSnapshot, key.RelayUserID, key.FromGroupID, key.ToGroupID)
+			steps = append(steps, durableStepPlan{Key: fmt.Sprintf("target:%d:api-keys:%d:%d:%d", target.Index, key.RelayUserID, key.FromGroupID, key.ToGroupID), Action: "move", RelationshipType: "api_keys", Direction: relationshipoperationstep.DirectionTarget, LocalUserID: key.UserID, RelayUserID: key.RelayUserID, SourceGroupID: key.FromGroupID, TargetGroupID: key.ToGroupID, ReviewedResourceIDs: ids, ExpectedResult: map[string]any{"target_group_id": key.ToGroupID, "baseline_group_id": key.FromGroupID}, ResumeSupported: true, RestoreSupported: true})
 		}
 	}
 	sort.Slice(steps, func(i, j int) bool { return steps[i].Key < steps[j].Key })
 	return steps
+}
+
+func reviewedAPIKeyIDs(snapshot relationshipSnapshot, relayUserID, sourceGroupID, targetGroupID int64) []int64 {
+	ids := []int64{}
+	for _, user := range snapshot.Users {
+		if user.RelayUserID != relayUserID {
+			continue
+		}
+		for _, key := range user.APIKeys {
+			if key.GroupID == sourceGroupID || key.GroupID == targetGroupID {
+				ids = append(ids, key.ID)
+			}
+		}
+		break
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids
 }
 
 func jsonObject(value any) map[string]any {
