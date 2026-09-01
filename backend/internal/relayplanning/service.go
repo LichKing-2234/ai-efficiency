@@ -528,6 +528,7 @@ type MemberResult struct {
 	APIKeys         []string `json:"api_keys,omitempty"`
 	Error           string   `json:"error,omitempty"`
 	reviewedAPIKeys reviewedAPIKeySelection
+	stepIdentity    string
 }
 
 type AccountResult struct {
@@ -548,6 +549,23 @@ type MappingPersistenceResult struct {
 type MappingPersistenceError struct {
 	Cause   error
 	Results []MappingPersistenceResult
+}
+
+type LegacyOperationConflictError struct {
+	Reason string
+}
+
+func (e *LegacyOperationConflictError) Error() string {
+	if e.Reason == "incomplete_identity" {
+		return "legacy operation identity is incomplete; manual intervention is required"
+	}
+	if e.Reason == "active_operation" {
+		return "mapping changes are blocked while a legacy operation is unresolved"
+	}
+	if e.Reason == "readback_mismatch" {
+		return "legacy operation readback no longer matches its reviewed resources; manual intervention is required"
+	}
+	return "legacy operation can only resume its exact reviewed direction"
 }
 
 func (e *MappingPersistenceError) Error() string {
@@ -1445,6 +1463,12 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 	mapping, err := s.saveMapping(ctx, plan, groupIDList, state)
 	if err != nil {
 		return nil, fmt.Errorf("save group mapping: %w", err)
+	}
+	if mapping.Status == "needs_retry" {
+		mapping, err = s.persistInitialLegacyRetryIntent(ctx, mapping, plan, req)
+		if err != nil {
+			return nil, fmt.Errorf("persist initial legacy retry intent: %w", err)
+		}
 	}
 	updatedMapping := *mapping
 	currentAccounts, readbackErr := accountReader.ListAccountsForPlatform(ctx, plan.Platform)
@@ -2903,6 +2927,13 @@ func (s *Service) ExecuteMappingRenewal(ctx context.Context, id int, req Mapping
 	if len(req.Members) == 0 {
 		return nil, fmt.Errorf("at least one reviewed mapping member is required")
 	}
+	row, err := s.client.RelayGroupMapping.Get(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("load relay group mapping: %w", err)
+	}
+	if err := blockUnrelatedLegacyMutation(row); err != nil {
+		return nil, err
+	}
 	preview, err := s.PreviewMappingRenewal(ctx, id, MappingRenewalPreviewRequest{RenewalDays: &req.RenewalDays})
 	if err != nil {
 		return nil, fmt.Errorf("refresh mapping renewal preview: %w", err)
@@ -3111,6 +3142,9 @@ func (s *Service) AdoptCurrentAccounts(ctx context.Context, id int) (*Mapping, e
 	if err != nil {
 		return nil, fmt.Errorf("load relay group mapping: %w", err)
 	}
+	if err := blockUnrelatedLegacyMutation(row); err != nil {
+		return nil, err
+	}
 	if s.resolver == nil {
 		return nil, fmt.Errorf("relay provider resolver is unavailable")
 	}
@@ -3212,6 +3246,9 @@ func (s *Service) SaveDesiredAccounts(ctx context.Context, id int, desired map[s
 	if err != nil {
 		return nil, fmt.Errorf("load relay group mapping: %w", err)
 	}
+	if err := blockUnrelatedLegacyMutation(row); err != nil {
+		return nil, err
+	}
 	provider, err := s.resolver.Resolve(ctx, row.ProviderID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve relay provider: %w", err)
@@ -3279,6 +3316,9 @@ func (s *Service) Rebind(ctx context.Context, id int, departmentID string, templ
 	row, err := s.client.RelayGroupMapping.Get(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("load relay group mapping: %w", err)
+	}
+	if err := blockUnrelatedLegacyMutation(row); err != nil {
+		return nil, err
 	}
 	if templateGroupID <= 0 {
 		templateGroupID = row.TemplateGroupID
@@ -3499,6 +3539,256 @@ func memberActionsWithRetries(operationState map[string]map[string]string, membe
 	return result
 }
 
+const legacyIntentVersion = 1
+
+type legacyTargetIntent struct {
+	Index           int             `json:"index"`
+	TargetGroupID   int64           `json:"target_group_id,omitempty"`
+	TargetGroupName string          `json:"target_group_name"`
+	ExpectedStatus  string          `json:"expected_status"`
+	Accounts        []AccountIntent `json:"accounts"`
+}
+
+type legacyMemberIntent struct {
+	Action           string  `json:"action"`
+	RelationshipType string  `json:"relationship_type"`
+	LocalUserID      int     `json:"local_user_id"`
+	RelayUserID      int64   `json:"relay_user_id"`
+	TargetIndex      int     `json:"target_index"`
+	SourceGroupID    int64   `json:"source_group_id,omitempty"`
+	TargetGroupID    int64   `json:"target_group_id,omitempty"`
+	APIKeyIDs        []int64 `json:"api_key_ids"`
+	ExpectedResult   string  `json:"expected_result"`
+}
+
+type legacyReplanIntent struct {
+	Version         int                  `json:"version"`
+	MappingID       int                  `json:"mapping_id"`
+	ProviderID      int                  `json:"provider_id"`
+	Platform        string               `json:"platform"`
+	TemplateGroupID int64                `json:"template_group_id"`
+	SourceGroupID   int64                `json:"source_group_id,omitempty"`
+	Targets         []legacyTargetIntent `json:"targets"`
+	Members         []legacyMemberIntent `json:"members"`
+	AdoptRelayUsers []int64              `json:"adopt_relay_users"`
+}
+
+func buildLegacyReplanIntent(mapping *Mapping, plan *Plan, req ExecuteRequest) (string, map[int]legacyMemberIntent, error) {
+	intent := legacyReplanIntent{
+		Version: legacyIntentVersion, MappingID: mapping.ID, ProviderID: mapping.ProviderID,
+		Platform: strings.ToLower(strings.TrimSpace(mapping.Platform)), TemplateGroupID: mapping.TemplateGroupID,
+		SourceGroupID: mapping.SourceGroupID, AdoptRelayUsers: append([]int64(nil), req.AdoptRelayUserIDs...),
+	}
+	sort.Slice(intent.AdoptRelayUsers, func(i, j int) bool { return intent.AdoptRelayUsers[i] < intent.AdoptRelayUsers[j] })
+	memberIntents := make(map[int]legacyMemberIntent)
+	pendingTargets := pendingCreationTargetIDs(mapping.OperationState)
+	for _, assignment := range plan.Assignments {
+		targetGroupID := assignment.TargetGroupID
+		if _, pending := pendingTargets[targetGroupID]; pending {
+			targetGroupID = 0
+		}
+		accounts := append([]AccountIntent(nil), assignment.DesiredAccounts...)
+		sort.Slice(accounts, func(i, j int) bool {
+			return accounts[i].Priority < accounts[j].Priority || (accounts[i].Priority == accounts[j].Priority && accounts[i].AccountID < accounts[j].AccountID)
+		})
+		intent.Targets = append(intent.Targets, legacyTargetIntent{Index: assignment.Index, TargetGroupID: targetGroupID, TargetGroupName: strings.TrimSpace(assignment.TargetGroupName), ExpectedStatus: "active", Accounts: accounts})
+		for _, userID := range assignment.UserIDs {
+			candidate := candidateByUserID(plan.Candidates, userID)
+			if candidate == nil || candidate.RelayUserID <= 0 {
+				return "", nil, fmt.Errorf("build legacy intent: user %d has no verified Relay identity", userID)
+			}
+			key := strconv.Itoa(userID)
+			stateKey := "member:" + key
+			entry := mapping.OperationState[stateKey]
+			action := req.MemberActions[key].Mode
+			fromGroupID := int64(0)
+			if operationStateNeedsRetry(mapping.OperationState, stateKey) {
+				fromGroupID, _ = strconv.ParseInt(entry["from_group_id"], 10, 64)
+			}
+			if fromGroupID <= 0 && action == "move_here" {
+				fromGroupID = plannedMemberFromGroup(plan, userID, assignment.TargetGroupID)
+			}
+			if fromGroupID <= 0 {
+				fromGroupID = mapping.MemberAssignments[key]
+				if fromGroupID <= 0 && candidate.SourceMember {
+					fromGroupID = mapping.SourceGroupID
+				}
+			}
+			if action == "add_additionally" {
+				fromGroupID = 0
+			}
+			if action == "" {
+				switch {
+				case fromGroupID > 0 && fromGroupID != assignment.TargetGroupID:
+					action = "migrate"
+				case fromGroupID == assignment.TargetGroupID:
+					action = "retain"
+				default:
+					action = "add"
+				}
+			}
+			intentSourceGroupID := fromGroupID
+			expectedResult := "target_active;source_absent;reviewed_keys_on_target"
+			if action == "retain" || action == "add" || action == "add_additionally" {
+				intentSourceGroupID = 0
+				expectedResult = "target_active"
+			}
+			selection := frozenLegacyAPIKeys(entry, candidate.relationshipAPIKeys, intentSourceGroupID)
+			memberIntents[userID] = legacyMemberIntent{
+				Action: action, RelationshipType: "managed_member", LocalUserID: userID, RelayUserID: candidate.RelayUserID,
+				TargetIndex: assignment.Index, SourceGroupID: intentSourceGroupID, TargetGroupID: targetGroupID,
+				APIKeyIDs: selection.IDs, ExpectedResult: expectedResult,
+			}
+		}
+	}
+	for _, userID := range req.RemovedUserIDs {
+		candidate := candidateByUserID(plan.Candidates, userID)
+		if candidate == nil || candidate.RelayUserID <= 0 {
+			return "", nil, fmt.Errorf("build legacy intent: removed user %d has no verified Relay identity", userID)
+		}
+		key := strconv.Itoa(userID)
+		entry := mapping.OperationState["member:"+key]
+		targetGroupID := mapping.MemberAssignments[key]
+		if targetGroupID <= 0 {
+			targetGroupID, _ = strconv.ParseInt(entry["target_group_id"], 10, 64)
+		}
+		sourceGroupID, _ := reviewedRemovalSource(mapping, req.MemberSources, userID)
+		selection := frozenLegacyAPIKeys(entry, candidate.relationshipAPIKeys, targetGroupID)
+		memberIntents[userID] = legacyMemberIntent{
+			Action: "remove", RelationshipType: "managed_member", LocalUserID: userID, RelayUserID: candidate.RelayUserID,
+			TargetIndex: -1, SourceGroupID: sourceGroupID, TargetGroupID: targetGroupID,
+			APIKeyIDs: selection.IDs, ExpectedResult: "target_absent;source_active_if_reviewed;reviewed_keys_on_source",
+		}
+	}
+	userIDs := make([]int, 0, len(memberIntents))
+	for userID := range memberIntents {
+		userIDs = append(userIDs, userID)
+	}
+	sort.Ints(userIDs)
+	for _, userID := range userIDs {
+		intent.Members = append(intent.Members, memberIntents[userID])
+	}
+	encoded, err := json.Marshal(intent)
+	if err != nil {
+		return "", nil, fmt.Errorf("encode legacy operation intent: %w", err)
+	}
+	sum := sha256.Sum256(encoded)
+	return fmt.Sprintf("v%d:%x", legacyIntentVersion, sum), memberIntents, nil
+}
+
+func plannedMemberFromGroup(plan *Plan, userID int, targetGroupID int64) int64 {
+	for _, target := range plan.TargetSummaries {
+		if target.TargetGroupID != targetGroupID {
+			continue
+		}
+		for _, member := range target.Members {
+			if member.UserID == userID && member.FromGroupID > 0 {
+				return member.FromGroupID
+			}
+		}
+	}
+	return 0
+}
+
+func frozenLegacyAPIKeys(entry map[string]string, current []relationshipAPIKeyFact, fromGroupID int64) reviewedAPIKeySelection {
+	if entry != nil {
+		if _, frozen := entry["reviewed_api_key_ids"]; frozen {
+			return reviewedAPIKeySelection{IDs: parseAPIKeyIDs(entry["reviewed_api_key_ids"]), Frozen: true}
+		}
+		if ids := recordedAPIKeyStepIDs(strings.Split(entry["api_keys"], ",")); len(ids) > 0 {
+			return reviewedAPIKeySelection{IDs: ids, Frozen: true}
+		}
+	}
+	ids := make([]int64, 0)
+	for _, key := range current {
+		if key.GroupID == fromGroupID && key.ID > 0 {
+			ids = append(ids, key.ID)
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return reviewedAPIKeySelection{IDs: ids, Frozen: true}
+}
+
+func (s *Service) persistInitialLegacyRetryIntent(ctx context.Context, mapping *Mapping, plan *Plan, req ExecuteRequest) (*Mapping, error) {
+	intentHash, members, err := buildLegacyReplanIntent(mapping, plan, req)
+	if err != nil {
+		return nil, err
+	}
+	state := cloneOperationState(mapping.OperationState)
+	state["operation"]["intent_hash"] = intentHash
+	for userID, intent := range members {
+		entry := state["member:"+strconv.Itoa(userID)]
+		if entry == nil {
+			continue
+		}
+		entry["step_identity"] = legacyMemberStepIdentity(intent)
+		entry["reviewed_api_key_ids"] = formatAPIKeyIDs(intent.APIKeyIDs)
+	}
+	row, err := s.client.RelayGroupMapping.UpdateOneID(mapping.ID).SetOperationState(state).SetStatus(operationStatus(state)).Save(ctx)
+	if err != nil {
+		return nil, err
+	}
+	updated := mappingFromEnt(row)
+	return &updated, nil
+}
+
+func legacyMemberStepIdentity(intent legacyMemberIntent) string {
+	encoded, _ := json.Marshal(intent)
+	sum := sha256.Sum256(encoded)
+	return fmt.Sprintf("v%d:%x", legacyIntentVersion, sum)
+}
+
+func validateLegacyRetryIntent(mapping *Mapping, intentHash string) error {
+	if mapping.Status != "needs_retry" && operationStatus(mapping.OperationState) != "needs_retry" {
+		return nil
+	}
+	stored := mapping.OperationState["operation"]["intent_hash"]
+	if stored == "" {
+		return &LegacyOperationConflictError{Reason: "incomplete_identity"}
+	}
+	if stored != intentHash {
+		return &LegacyOperationConflictError{Reason: "edited_direction"}
+	}
+	for key, entry := range mapping.OperationState {
+		if strings.HasPrefix(key, "member:") && operationStateNeedsRetry(mapping.OperationState, key) && entry["step_identity"] == "" {
+			return &LegacyOperationConflictError{Reason: "incomplete_identity"}
+		}
+	}
+	return nil
+}
+
+func validateLegacyRetryReadback(mapping *Mapping, plan *Plan, members map[int]legacyMemberIntent) error {
+	if mapping.Status != "needs_retry" && operationStatus(mapping.OperationState) != "needs_retry" {
+		return nil
+	}
+	for userID, intent := range members {
+		candidate := candidateByUserID(plan.Candidates, userID)
+		if candidate == nil {
+			return &LegacyOperationConflictError{Reason: "readback_mismatch"}
+		}
+		for _, keyID := range intent.APIKeyIDs {
+			found := false
+			for _, key := range candidate.relationshipAPIKeys {
+				if key.ID == keyID && (key.GroupID == intent.SourceGroupID || key.GroupID == intent.TargetGroupID) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return &LegacyOperationConflictError{Reason: "readback_mismatch"}
+			}
+		}
+	}
+	return nil
+}
+
+func blockUnrelatedLegacyMutation(row *ent.RelayGroupMapping) error {
+	if row != nil && (row.Status == "needs_retry" || operationStatus(row.OperationState) == "needs_retry") {
+		return &LegacyOperationConflictError{Reason: "active_operation"}
+	}
+	return nil
+}
+
 // ExecuteReplan preserves every existing Target ID while applying the reviewed
 // member matrix and creating appended proposed Targets. Existing Target
 // retirement and deactivation remain outside this operation.
@@ -3509,6 +3799,9 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	}
 	if strings.TrimSpace(req.OperationKey) == "" {
 		return nil, fmt.Errorf("operation_key is required")
+	}
+	if (mapping.Status == "needs_retry" || operationStatus(mapping.OperationState) == "needs_retry") && mapping.OperationState["operation"]["intent_hash"] == "" {
+		return nil, &LegacyOperationConflictError{Reason: "incomplete_identity"}
 	}
 	if req.ProviderID == 0 {
 		req.ProviderID = mapping.ProviderID
@@ -3555,6 +3848,16 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 			Differences:         differences,
 		}
 	}
+	intentHash, memberIntents, err := buildLegacyReplanIntent(mapping, plan, req)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateLegacyRetryIntent(mapping, intentHash); err != nil {
+		return nil, err
+	}
+	if err := validateLegacyRetryReadback(mapping, plan, memberIntents); err != nil {
+		return nil, err
+	}
 	p, err := s.resolver.Resolve(ctx, mapping.ProviderID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve relay provider for replan: %w", err)
@@ -3585,7 +3888,7 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 			var createErr error
 			result, createErr = duplicateAndRenameProposedTarget(ctx, proposedDuplicator, proposedRenamer, plan.TemplateGroupID, creationKey, mapping.GroupIDs, assignment, func(checkpoint GroupResult) error {
 				mapping.GroupIDs = append(mapping.GroupIDs, checkpoint.ID)
-				return s.checkpointCreatedReplanTarget(ctx, mapping, plan, checkpoint, req.OperationKey)
+				return s.checkpointCreatedReplanTarget(ctx, mapping, plan, checkpoint, req.OperationKey, intentHash)
 			})
 			if createErr != nil {
 				return nil, fmt.Errorf("checkpoint proposed target %d: %w", assignment.Index, createErr)
@@ -3673,21 +3976,15 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 		if targetGroupID <= 0 {
 			continue
 		}
-		member := completedMemberStepsFromState(mapping.OperationState, "member:"+key, MemberResult{Action: "remove", UserID: userID, TargetGroupID: targetGroupID, Subscription: "skipped", SourceRemoval: "skipped"})
+		intent := memberIntents[userID]
+		member := MemberResult{Action: "remove", UserID: userID, TargetGroupID: targetGroupID, Subscription: "skipped", SourceRemoval: "skipped", reviewedAPIKeys: reviewedAPIKeySelection{IDs: append([]int64(nil), intent.APIKeyIDs...), Frozen: true}, stepIdentity: legacyMemberStepIdentity(intent)}
 		candidate := candidateByUserID(plan.Candidates, userID)
 		if candidate == nil || candidate.RelayUserID <= 0 {
 			member.Error = "managed user has no valid Relay mapping"
 			memberResults = append(memberResults, member)
 			continue
 		}
-		if !member.reviewedAPIKeys.Frozen {
-			for _, key := range candidate.relationshipAPIKeys {
-				if key.GroupID == targetGroupID {
-					member.reviewedAPIKeys.IDs = append(member.reviewedAPIKeys.IDs, key.ID)
-				}
-			}
-			member.reviewedAPIKeys.Frozen = true
-		}
+		member = completedMemberStepsFromState(mapping.OperationState, "member:"+key, member, candidate, intent)
 		if sourceGroupID > 0 {
 			member = executeMemberMigration(ctx, assigner, remover, binder, candidate, sourceGroupID, targetGroupID, member)
 		} else if remover == nil {
@@ -3733,9 +4030,10 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 					fromGroupID = mapping.SourceGroupID
 				}
 			}
-			member := MemberResult{Action: action.Mode, UserID: userID, TargetGroupID: targetID, Subscription: "skipped", SourceRemoval: "skipped"}
+			intent := memberIntents[userID]
+			member := MemberResult{Action: action.Mode, UserID: userID, TargetGroupID: targetID, Subscription: "skipped", SourceRemoval: "skipped", reviewedAPIKeys: reviewedAPIKeySelection{IDs: append([]int64(nil), intent.APIKeyIDs...), Frozen: true}, stepIdentity: legacyMemberStepIdentity(intent)}
 			if retry {
-				member = completedMemberStepsFromState(mapping.OperationState, "member:"+key, member)
+				member = completedMemberStepsFromState(mapping.OperationState, "member:"+key, member, candidate, intent)
 			}
 			if reason := blockedTargets[targetID]; reason != "" {
 				member.Error = reason
@@ -3798,6 +4096,7 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	}
 	verifyRemovalRelationshipReadback(ctx, p, plan, mapping, req.MemberSources, memberResults)
 	state := executionState(req.OperationKey, groupResults, memberResults)
+	state["operation"]["intent_hash"] = intentHash
 	mergeAccountResultsIntoState(state, accountResults)
 	for _, member := range memberResults {
 		if member.Action != "remove" || member.UserID <= 0 {
@@ -3844,6 +4143,7 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 		delete(mutation.assignments, strconv.Itoa(transfer.userID))
 		delete(mutation.sources, strconv.Itoa(transfer.userID))
 		transferState := executionState(req.OperationKey, nil, []MemberResult{transfer.result})
+		transferState["operation"]["intent_hash"] = intentHash
 		if entry := transferState[fmt.Sprintf("member:%d", transfer.userID)]; entry != nil {
 			entry["from_mapping_id"] = strconv.Itoa(transfer.mapping.ID)
 			if fromGroupID := transfer.mapping.MemberAssignments[strconv.Itoa(transfer.userID)]; fromGroupID > 0 {
@@ -3913,8 +4213,9 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	return &ExecutionResult{Plan: plan, Groups: groupResults, Accounts: accountResults, Members: memberResults, Mappings: mappingResults, Mapping: resultMapping}, nil
 }
 
-func (s *Service) checkpointCreatedReplanTarget(ctx context.Context, mapping *Mapping, plan *Plan, result GroupResult, operationKey string) error {
+func (s *Service) checkpointCreatedReplanTarget(ctx context.Context, mapping *Mapping, plan *Plan, result GroupResult, operationKey, intentHash string) error {
 	checkpoint := executionState(operationKey, []GroupResult{result}, nil)
+	checkpoint["operation"]["intent_hash"] = intentHash
 	checkpoint["operation"]["status"] = operationStatus(checkpoint)
 	operationState := mergeOperationState(mapping.OperationState, checkpoint)
 	desiredAccounts := desiredAccountsForGroupIDs(plan.Assignments, mapping.GroupIDs)
@@ -4147,8 +4448,11 @@ func executionState(operationKey string, groups []GroupResult, members []MemberR
 		if len(member.APIKeys) > 0 {
 			entry["api_keys"] = strings.Join(member.APIKeys, ",")
 		}
-		if member.Action == "remove" && member.reviewedAPIKeys.Frozen {
+		if member.reviewedAPIKeys.Frozen {
 			entry["reviewed_api_key_ids"] = formatAPIKeyIDs(member.reviewedAPIKeys.IDs)
+		}
+		if member.stepIdentity != "" {
+			entry["step_identity"] = member.stepIdentity
 		}
 		if member.Error != "" {
 			entry["error"] = member.Error
@@ -4166,25 +4470,48 @@ func executionState(operationKey string, groups []GroupResult, members []MemberR
 	return state
 }
 
-func completedMemberStepsFromState(state map[string]map[string]string, key string, member MemberResult) MemberResult {
+func completedMemberStepsFromState(state map[string]map[string]string, key string, member MemberResult, candidate *Candidate, intent legacyMemberIntent) MemberResult {
 	entry := state[key]
-	if entry["action"] != member.Action {
+	if entry["step_identity"] == "" || entry["step_identity"] != member.stepIdentity {
 		return member
 	}
-	targetGroupID, err := strconv.ParseInt(entry["target_group_id"], 10, 64)
-	if err == nil && targetGroupID == member.TargetGroupID {
-		member.reviewedAPIKeys = reviewedAPIKeySelectionFromState(entry)
-		if entry["subscription"] == "succeeded" {
-			member.Subscription = "succeeded"
+	subscriptionGroupID := intent.TargetGroupID
+	removedGroupID := intent.SourceGroupID
+	expectedKeyGroupID := intent.TargetGroupID
+	if intent.Action == "remove" {
+		subscriptionGroupID = intent.SourceGroupID
+		removedGroupID = intent.TargetGroupID
+		expectedKeyGroupID = intent.SourceGroupID
+	}
+	facts := relationshipUserFact{Subscriptions: candidate.relationshipSubscriptions}
+	if entry["subscription"] == "succeeded" && (subscriptionGroupID <= 0 || hasActiveSubscription(facts, subscriptionGroupID)) {
+		member.Subscription = "succeeded"
+	}
+	if entry["source_removal"] == "succeeded" && (removedGroupID <= 0 || !hasActiveSubscription(facts, removedGroupID)) {
+		member.SourceRemoval = "succeeded"
+	}
+	completed, results := completedAPIKeySteps(strings.Split(entry["api_keys"], ","))
+	for _, keyID := range intent.APIKeyIDs {
+		if !completed[keyID] {
+			continue
 		}
-		if entry["source_removal"] == "succeeded" {
-			member.SourceRemoval = "succeeded"
-		}
-		if entry["api_keys"] != "" {
-			_, member.APIKeys = completedAPIKeySteps(strings.Split(entry["api_keys"], ","))
+		for _, current := range candidate.relationshipAPIKeys {
+			if current.ID == keyID && current.GroupID == expectedKeyGroupID {
+				member.APIKeys = append(member.APIKeys, apiKeyResultForID(results, keyID))
+				break
+			}
 		}
 	}
 	return member
+}
+
+func apiKeyResultForID(results []string, keyID int64) string {
+	for _, result := range results {
+		if parsedID, _, ok := parseAPIKeyStep(result); ok && parsedID == keyID {
+			return result
+		}
+	}
+	return strconv.FormatInt(keyID, 10) + ":succeeded"
 }
 
 func executeMemberMigration(ctx context.Context, assigner subscriptionAssigner, remover subscriptionRemover, binder relay.APIKeyGroupBinder, candidate *Candidate, targetGroupID, fromGroupID int64, member MemberResult) MemberResult {

@@ -110,6 +110,110 @@ func TestExecutionStateRetainsRetryableStepErrors(t *testing.T) {
 	}
 }
 
+func TestLegacyReplanIntentBindsExactReviewedDirection(t *testing.T) {
+	build := func() (*Mapping, *Plan, ExecuteRequest) {
+		mapping := &Mapping{ID: 7, ProviderID: 9, Platform: "openai", TemplateGroupID: 10, SourceGroupID: 20, GroupIDs: []int64{101, 102}, MemberAssignments: map[string]int64{"1": 101}, MemberSources: map[string]int64{"1": 20}, OperationState: map[string]map[string]string{}}
+		plan := &Plan{Candidates: []Candidate{{UserID: 1, RelayUserID: 42, CurrentGroupIDs: []int64{101}, relationshipAPIKeys: []relationshipAPIKeyFact{{ID: 501, GroupID: 101}}}}, Assignments: []Assignment{
+			{Index: 0, TargetGroupID: 101, TargetGroupName: "Group Alpha", DesiredAccounts: []AccountIntent{{AccountID: 11, Priority: 1}}},
+			{Index: 1, TargetGroupID: 102, TargetGroupName: "Group Beta", UserIDs: []int{1}, DesiredAccounts: []AccountIntent{{AccountID: 12, Priority: 1}}},
+		}}
+		return mapping, plan, ExecuteRequest{PreviewRequest: PreviewRequest{Assignments: plan.Assignments, MemberActions: map[string]MemberAction{}}}
+	}
+	baseMapping, basePlan, baseReq := build()
+	baseHash, baseMembers, err := buildLegacyReplanIntent(baseMapping, basePlan, baseReq)
+	if err != nil {
+		t.Fatalf("build base legacy intent: %v", err)
+	}
+	if got := baseMembers[1]; got.Action != "migrate" || got.SourceGroupID != 101 || got.TargetGroupID != 102 || fmt.Sprint(got.APIKeyIDs) != "[501]" {
+		t.Fatalf("base member intent = %+v, want exact 101 -> 102 migration for Key 501", got)
+	}
+	tests := []struct {
+		name   string
+		mutate func(*Mapping, *Plan, *ExecuteRequest)
+	}{
+		{name: "action", mutate: func(_ *Mapping, _ *Plan, req *ExecuteRequest) {
+			req.MemberActions["1"] = MemberAction{Mode: "add_additionally"}
+		}},
+		{name: "source", mutate: func(mapping *Mapping, _ *Plan, _ *ExecuteRequest) { mapping.MemberAssignments["1"] = 20 }},
+		{name: "target", mutate: func(_ *Mapping, plan *Plan, _ *ExecuteRequest) { plan.Assignments[1].TargetGroupID = 103 }},
+		{name: "local identity", mutate: func(mapping *Mapping, plan *Plan, _ *ExecuteRequest) {
+			mapping.MemberAssignments = map[string]int64{"2": 101}
+			plan.Assignments[1].UserIDs = []int{2}
+			plan.Candidates[0].UserID = 2
+		}},
+		{name: "Relay identity", mutate: func(_ *Mapping, plan *Plan, _ *ExecuteRequest) { plan.Candidates[0].RelayUserID = 43 }},
+		{name: "reviewed API Key set", mutate: func(_ *Mapping, plan *Plan, _ *ExecuteRequest) { plan.Candidates[0].relationshipAPIKeys[0].ID = 502 }},
+		{name: "Account priority", mutate: func(_ *Mapping, plan *Plan, _ *ExecuteRequest) { plan.Assignments[1].DesiredAccounts[0].Priority = 2 }},
+		{name: "Target name", mutate: func(_ *Mapping, plan *Plan, _ *ExecuteRequest) { plan.Assignments[1].TargetGroupName = "Group Gamma" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mapping, plan, req := build()
+			tt.mutate(mapping, plan, &req)
+			hash, _, err := buildLegacyReplanIntent(mapping, plan, req)
+			if err != nil {
+				t.Fatalf("build changed intent: %v", err)
+			}
+			if hash == baseHash {
+				t.Fatalf("changed %s retained intent hash %q", tt.name, hash)
+			}
+		})
+	}
+	changedExpected := baseMembers[1]
+	changedExpected.ExpectedResult = "different"
+	if legacyMemberStepIdentity(changedExpected) == legacyMemberStepIdentity(baseMembers[1]) {
+		t.Fatal("changed expected result retained member step identity")
+	}
+	changedRelationship := baseMembers[1]
+	changedRelationship.RelationshipType = "different"
+	if legacyMemberStepIdentity(changedRelationship) == legacyMemberStepIdentity(baseMembers[1]) {
+		t.Fatal("changed relationship type retained member step identity")
+	}
+}
+
+func TestLegacyReplanIntentStaysStableAcrossExactRetryAndFreezesEmptyKeys(t *testing.T) {
+	mapping := &Mapping{ID: 7, ProviderID: 9, Platform: "openai", TemplateGroupID: 10, SourceGroupID: 20, GroupIDs: []int64{101, 102}, MemberAssignments: map[string]int64{"1": 101}, OperationState: map[string]map[string]string{}}
+	plan := &Plan{Candidates: []Candidate{{UserID: 1, RelayUserID: 42, relationshipAPIKeys: []relationshipAPIKeyFact{{ID: 501, GroupID: 101}}}}, Assignments: []Assignment{{Index: 0, TargetGroupID: 101, TargetGroupName: "Group Alpha"}, {Index: 1, TargetGroupID: 102, TargetGroupName: "Group Beta", UserIDs: []int{1}}}}
+	req := ExecuteRequest{PreviewRequest: PreviewRequest{Assignments: plan.Assignments}}
+	initialHash, _, err := buildLegacyReplanIntent(mapping, plan, req)
+	if err != nil {
+		t.Fatalf("build initial intent: %v", err)
+	}
+	mapping.Status = "needs_retry"
+	mapping.MemberAssignments["1"] = 102
+	mapping.OperationState = map[string]map[string]string{
+		"operation": {"status": "needs_retry", "intent_hash": initialHash},
+		"member:1":  {"from_group_id": "101", "reviewed_api_key_ids": "501", "subscription": "succeeded", "source_removal": "failed", "error": "synthetic retry"},
+	}
+	plan.Candidates[0].relationshipAPIKeys = []relationshipAPIKeyFact{{ID: 501, GroupID: 102}, {ID: 502, GroupID: 101}}
+	retryHash, retryMembers, err := buildLegacyReplanIntent(mapping, plan, req)
+	if err != nil {
+		t.Fatalf("build retry intent: %v", err)
+	}
+	if retryHash != initialHash || fmt.Sprint(retryMembers[1].APIKeyIDs) != "[501]" {
+		t.Fatalf("retry hash/Keys = %q/%v, want %q/[501]", retryHash, retryMembers[1].APIKeyIDs, initialHash)
+	}
+	state := executionState("empty-keys", nil, []MemberResult{{UserID: 2, reviewedAPIKeys: reviewedAPIKeySelection{Frozen: true}}})
+	if value, exists := state["member:2"]["reviewed_api_key_ids"]; !exists || value != "" {
+		t.Fatalf("explicit empty reviewed Key set = %q/%v, want present empty value", value, exists)
+	}
+}
+
+func TestLegacyRetryValidationRejectsIncompleteMemberIdentityAndAllowsActiveMapping(t *testing.T) {
+	mapping := &Mapping{Status: "needs_retry", OperationState: map[string]map[string]string{
+		"operation": {"status": "needs_retry", "intent_hash": "v1:reviewed"},
+		"member:1":  {"subscription": "failed", "error": "synthetic retry"},
+	}}
+	err := validateLegacyRetryIntent(mapping, "v1:reviewed")
+	var conflict *LegacyOperationConflictError
+	if !errors.As(err, &conflict) || conflict.Reason != "incomplete_identity" {
+		t.Fatalf("incomplete member identity error = %v, want incomplete_identity", err)
+	}
+	if err := blockUnrelatedLegacyMutation(&ent.RelayGroupMapping{Status: "active"}); err != nil {
+		t.Fatalf("active Mapping mutation blocked: %v", err)
+	}
+}
+
 func TestOperationStateRetryPrefersOriginalSourceForFailedMigration(t *testing.T) {
 	state := map[string]map[string]string{
 		"member:7": {"subscription": "succeeded", "source_removal": "failed"},
@@ -798,6 +902,7 @@ func TestExecuteReplanRetriesFailedAPIKeyMoveFromPreviousTarget(t *testing.T) {
 
 	fake.mu.Lock()
 	fake.bindFailures = 0
+	fake.subscriptions = append(fake.subscriptions, relay.UserSubscription{UserID: 1001, GroupID: 102, Status: "active"})
 	fake.mu.Unlock()
 	retryRequest := ExecuteRequest{
 		PreviewRequest: PreviewRequest{Assignments: []Assignment{
@@ -856,14 +961,16 @@ func TestExecuteReplanRetriesFailedAPIKeyMoveFromPreviousTarget(t *testing.T) {
 		t.Fatalf("changed-target Replan() error = %v", err)
 	}
 	changedTargetRequest.ExpectedRelationshipFingerprint = preview.RelationshipFingerprint
-	if _, err := service.ExecuteReplan(ctx, mappingRow.ID, changedTargetRequest); err != nil {
-		t.Fatalf("changed-target ExecuteReplan() error = %v", err)
+	_, err = service.ExecuteReplan(ctx, mappingRow.ID, changedTargetRequest)
+	var conflict *LegacyOperationConflictError
+	if !errors.As(err, &conflict) || conflict.Reason != "edited_direction" {
+		t.Fatalf("changed-target ExecuteReplan() error = %v, want edited-direction conflict", err)
 	}
-	if fake.assignmentCalls != 2 {
-		t.Fatalf("subscription assignments after changed-target retry = %d, want new Target assigned", fake.assignmentCalls)
+	if fake.assignmentCalls != 1 || len(fake.bound) != 1 {
+		t.Fatalf("writes after changed-target retry = assignments:%d keys:%v, want no new writes", fake.assignmentCalls, fake.bound)
 	}
-	if fmt.Sprint(fake.assignmentValidityDays) != "[365 365]" {
-		t.Fatalf("subscription validity after changed-target retry = %v, want each new Target assigned for 365 days", fake.assignmentValidityDays)
+	if fmt.Sprint(fake.assignmentValidityDays) != "[365]" {
+		t.Fatalf("subscription validity after changed-target retry = %v, want no new assignment", fake.assignmentValidityDays)
 	}
 }
 

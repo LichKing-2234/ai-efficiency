@@ -1111,6 +1111,47 @@ func TestRelayPlanningAdoptCurrentAccountsInitializesDesiredStateWithoutRelayWri
 	}
 }
 
+func TestRelayPlanningUnresolvedLegacyOperationBlocksUnrelatedMappingMutations(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().SetName("relay-planning-legacy-lock-test").SetDisplayName("Relay Planning Legacy Lock Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-admin-key").SetEnabled(true).SaveX(ctx)
+	mapping := client.RelayGroupMapping.Create().
+		SetProviderID(providerConfig.ID).SetDepartmentExternalID("dept-alpha").SetDepartmentName("Department Alpha").SetPlatform("openai").
+		SetTemplateGroupID(10).SetSourceGroupID(20).SetGroupIds([]int64{101}).SetMemberAssignments(map[string]int64{"1": 101}).
+		SetStatus("needs_retry").SetOperationState(map[string]map[string]string{"operation": {"status": "needs_retry"}, "member:1": {"error": "synthetic unresolved operation"}}).
+		SetWeeklyCostTarget(2500).SaveX(ctx)
+	handler := NewRelayPlanningHandler(relayplanning.NewService(client, nil, nil))
+	router := gin.New()
+	router.POST("/admin/relay-planning/mappings/:id/accounts/adopt", handler.AdoptCurrentAccounts)
+	router.PUT("/admin/relay-planning/mappings/:id/accounts", handler.SaveDesiredAccounts)
+	router.PUT("/admin/relay-planning/mappings/:id/rebind", handler.Rebind)
+	router.POST("/admin/relay-planning/mappings/:id/renewal/execute", handler.ExecuteMappingRenewal)
+	base := fmt.Sprintf("/admin/relay-planning/mappings/%d", mapping.ID)
+	tests := []struct {
+		name, method, path, payload string
+	}{
+		{name: "Adopt Accounts", method: http.MethodPost, path: base + "/accounts/adopt"},
+		{name: "Save Accounts", method: http.MethodPut, path: base + "/accounts", payload: `{"desired_accounts":{"101":[]}}`},
+		{name: "Rebind", method: http.MethodPut, path: base + "/rebind", payload: `{"department_id":"dept-beta","template_group_id":10,"source_group_id":20,"group_ids":[101]}`},
+		{name: "Renewal Confirm", method: http.MethodPost, path: base + "/renewal/execute", payload: `{"renewal_days":365,"expected_relationship_fingerprint":"reviewed","operation_key":"renew-blocked","members":[{"user_id":1,"target_group_id":101,"planned_action":"extend"}]}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			request := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.payload))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "blocked while a legacy operation is unresolved") {
+				t.Fatalf("status/body = %d/%s, want unresolved-operation block", response.Code, response.Body.String())
+			}
+		})
+	}
+	persisted := client.RelayGroupMapping.GetX(ctx, mapping.ID)
+	if persisted.Status != "needs_retry" || persisted.DepartmentExternalID != "dept-alpha" || persisted.AccountManagementInitialized {
+		t.Fatalf("blocked Mapping changed = status:%s department:%s accounts:%v", persisted.Status, persisted.DepartmentExternalID, persisted.AccountManagementInitialized)
+	}
+}
+
 func TestRelayPlanningListMappingsUsesRelationshipSnapshot(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -2445,8 +2486,8 @@ func TestRelayPlanningLegacyRemovalRetryCanReviewSource(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "stale_relay_plan") || len(provider.events) != 0 {
-		t.Fatalf("legacy retry execute = status:%d events:%v body:%s, want safe stale-plan rejection before Relay writes", response.Code, provider.events, response.Body.String())
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "legacy_operation_conflict") || !strings.Contains(response.Body.String(), "incomplete_identity") || len(provider.events) != 0 {
+		t.Fatalf("legacy retry execute = status:%d events:%v body:%s, want incomplete-identity conflict before Relay writes", response.Code, provider.events, response.Body.String())
 	}
 }
 
@@ -2673,6 +2714,30 @@ func TestRelayPlanningExplicitRemovalRetryDoesNotRepeatCompletedWrites(t *testin
 	}
 	writesAfterFirstExecute := append([]string(nil), provider.events...)
 	provider.relationshipReadbackError = nil
+	reversePreviewPayload := fmt.Sprintf(`{"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d]}]}`, alice.ID, alice.ID)
+	reverseFingerprint := previewRelayPlanningFingerprint(t, router, path, reversePreviewPayload)
+	reverseExecutePayload := fmt.Sprintf(`{"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d]}],"expected_relationship_fingerprint":%q,"operation_key":"remove-readback-reverse"}`, alice.ID, alice.ID, reverseFingerprint)
+	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(reverseExecutePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	var reverseConflict struct {
+		Details struct {
+			ErrorCode string `json:"error_code"`
+			Reason    string `json:"reason"`
+			Retryable bool   `json:"retryable"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &reverseConflict); err != nil {
+		t.Fatalf("decode reverse retry conflict: %v", err)
+	}
+	if response.Code != http.StatusConflict || reverseConflict.Details.ErrorCode != "legacy_operation_conflict" || reverseConflict.Details.Reason != "edited_direction" || reverseConflict.Details.Retryable {
+		t.Fatalf("reverse retry = status:%d details:%+v body:%s, want non-retryable edited-direction conflict", response.Code, reverseConflict.Details, response.Body.String())
+	}
+	if !reflect.DeepEqual(provider.events, writesAfterFirstExecute) {
+		t.Fatalf("reverse retry writes = %v, want no writes after %v", provider.events, writesAfterFirstExecute)
+	}
+
 	changedRetryPayload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[]}],"removed_user_ids":[%d],"member_sources":{"%d":0}}`, alice.ID, alice.ID)
 	request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(changedRetryPayload))
 	request.Header.Set("Content-Type", "application/json")
@@ -2708,8 +2773,8 @@ func TestRelayPlanningExplicitRemovalRetryDoesNotRepeatCompletedWrites(t *testin
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || client.RelayGroupMapping.GetX(ctx, mapping.ID).Status != "needs_retry" {
-		t.Fatalf("drifted completed Key retry = status:%d mapping:%s body:%s, want readback retry", response.Code, client.RelayGroupMapping.GetX(ctx, mapping.ID).Status, response.Body.String())
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "readback_mismatch") || client.RelayGroupMapping.GetX(ctx, mapping.ID).Status != "needs_retry" {
+		t.Fatalf("drifted completed Key retry = status:%d mapping:%s body:%s, want readback-mismatch conflict", response.Code, client.RelayGroupMapping.GetX(ctx, mapping.ID).Status, response.Body.String())
 	}
 	if !reflect.DeepEqual(provider.events, writesAfterFirstExecute) {
 		t.Fatalf("drifted completed Key retry writes = %v, want no repeats after %v", provider.events, writesAfterFirstExecute)
@@ -2720,8 +2785,8 @@ func TestRelayPlanningExplicitRemovalRetryDoesNotRepeatCompletedWrites(t *testin
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || client.RelayGroupMapping.GetX(ctx, mapping.ID).Status != "needs_retry" {
-		t.Fatalf("repeated drifted Key retry = status:%d mapping:%s body:%s, want readback retry", response.Code, client.RelayGroupMapping.GetX(ctx, mapping.ID).Status, response.Body.String())
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "readback_mismatch") || client.RelayGroupMapping.GetX(ctx, mapping.ID).Status != "needs_retry" {
+		t.Fatalf("repeated drifted Key retry = status:%d mapping:%s body:%s, want stable readback-mismatch conflict", response.Code, client.RelayGroupMapping.GetX(ctx, mapping.ID).Status, response.Body.String())
 	}
 	if !reflect.DeepEqual(provider.events, writesAfterFirstExecute) {
 		t.Fatalf("repeated drifted Key retry writes = %v, want no repeats after %v", provider.events, writesAfterFirstExecute)
@@ -2910,6 +2975,8 @@ FOR EACH ROW EXECUTE FUNCTION reject_source_mapping_update();`, mappingA.ID)
 	retryState["operation"]["status"] = "needs_retry"
 	retryState[fmt.Sprintf("member:%d", alice.ID)]["error"] = "synthetic persistence failure"
 	client.RelayGroupMapping.UpdateOneID(mappingB.ID).SetOperationState(retryState).SetStatus("needs_retry").SaveX(ctx)
+	provider.subscriptions[42] = []relay.UserSubscription{{UserID: 42, GroupID: 202, Status: "active"}}
+	provider.keys[42][0].GroupID = 202
 	provider.events = nil
 	retryPreviewPayload := fmt.Sprintf(`{"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d]}]}`, alice.ID, alice.ID)
 	retryRequest := httptest.NewRequest(http.MethodPost, previewPath, strings.NewReader(retryPreviewPayload))
