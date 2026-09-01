@@ -42,6 +42,9 @@ jobs:
       - name: Test backend
         working-directory: backend
         run: go test ./...
+      - name: Race test Relay Planning delivery safety
+        working-directory: backend
+        run: go test -race ./internal/relayplanning -run '^TestPhase2' -count=1
 
   ae-cli:
     runs-on: ubuntu-latest

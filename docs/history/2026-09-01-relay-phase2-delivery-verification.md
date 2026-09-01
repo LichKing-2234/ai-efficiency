@@ -57,9 +57,11 @@ An immediate unchanged rerun against the same Vite process passed 126/126.
 
 The local focused database and race run is environment-blocked because the
 local PostgreSQL service reports `could not write init file`; no local database
-or container data was deleted to bypass that condition. The Hosted PR checks
-are the authoritative PostgreSQL-backed execution evidence and will be recorded
-here before merge.
+or container data was deleted to bypass that condition. PR #461's first Hosted
+backend run passed the PostgreSQL-backed full suite, including
+`internal/relayplanning`, in CI run `33529490732`. The current CI contract also
+runs the `TestPhase2` delivery matrix under Go's race detector; that current-head
+result remains required before merge.
 
 ## Remaining Resume-only Effects
 
