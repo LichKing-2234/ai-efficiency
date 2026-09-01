@@ -34,6 +34,10 @@ import (
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestevent"
+	"github.com/ai-efficiency/backend/ent/relationshipoperation"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationattempt"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationmapping"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationstep"
 	"github.com/ai-efficiency/backend/ent/relaygroupmapping"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
@@ -77,6 +81,10 @@ const (
 	TypeQuotaResetNotificationSetting = "QuotaResetNotificationSetting"
 	TypeQuotaResetRequest             = "QuotaResetRequest"
 	TypeQuotaResetRequestEvent        = "QuotaResetRequestEvent"
+	TypeRelationshipOperation         = "RelationshipOperation"
+	TypeRelationshipOperationAttempt  = "RelationshipOperationAttempt"
+	TypeRelationshipOperationMapping  = "RelationshipOperationMapping"
+	TypeRelationshipOperationStep     = "RelationshipOperationStep"
 	TypeRelayGroupMapping             = "RelayGroupMapping"
 	TypeRelayProvider                 = "RelayProvider"
 	TypeRepoConfig                    = "RepoConfig"
@@ -30411,39 +30419,5064 @@ func (m *QuotaResetRequestEventMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown QuotaResetRequestEvent edge %s", name)
 }
 
+// RelationshipOperationMutation represents an operation that mutates the RelationshipOperation nodes in the graph.
+type RelationshipOperationMutation struct {
+	config
+	op                         Op
+	typ                        string
+	id                         *int
+	operation_key              *string
+	provider_id                *int
+	addprovider_id             *int
+	platform                   *string
+	lifecycle                  *relationshipoperation.Lifecycle
+	baseline_snapshot          *map[string]interface{}
+	target_snapshot            *map[string]interface{}
+	baseline_fingerprint       *string
+	target_fingerprint         *string
+	supported_directions       *[]string
+	appendsupported_directions []string
+	initiated_by_user_id       *int
+	addinitiated_by_user_id    *int
+	terminal_result            *map[string]interface{}
+	external_blocker           *map[string]interface{}
+	created_at                 *time.Time
+	updated_at                 *time.Time
+	completed_at               *time.Time
+	clearedFields              map[string]struct{}
+	mappings                   map[int]struct{}
+	removedmappings            map[int]struct{}
+	clearedmappings            bool
+	steps                      map[int]struct{}
+	removedsteps               map[int]struct{}
+	clearedsteps               bool
+	attempts                   map[int]struct{}
+	removedattempts            map[int]struct{}
+	clearedattempts            bool
+	done                       bool
+	oldValue                   func(context.Context) (*RelationshipOperation, error)
+	predicates                 []predicate.RelationshipOperation
+}
+
+var _ ent.Mutation = (*RelationshipOperationMutation)(nil)
+
+// relationshipoperationOption allows management of the mutation configuration using functional options.
+type relationshipoperationOption func(*RelationshipOperationMutation)
+
+// newRelationshipOperationMutation creates new mutation for the RelationshipOperation entity.
+func newRelationshipOperationMutation(c config, op Op, opts ...relationshipoperationOption) *RelationshipOperationMutation {
+	m := &RelationshipOperationMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeRelationshipOperation,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withRelationshipOperationID sets the ID field of the mutation.
+func withRelationshipOperationID(id int) relationshipoperationOption {
+	return func(m *RelationshipOperationMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *RelationshipOperation
+		)
+		m.oldValue = func(ctx context.Context) (*RelationshipOperation, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().RelationshipOperation.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withRelationshipOperation sets the old RelationshipOperation of the mutation.
+func withRelationshipOperation(node *RelationshipOperation) relationshipoperationOption {
+	return func(m *RelationshipOperationMutation) {
+		m.oldValue = func(context.Context) (*RelationshipOperation, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m RelationshipOperationMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m RelationshipOperationMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *RelationshipOperationMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *RelationshipOperationMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().RelationshipOperation.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetOperationKey sets the "operation_key" field.
+func (m *RelationshipOperationMutation) SetOperationKey(s string) {
+	m.operation_key = &s
+}
+
+// OperationKey returns the value of the "operation_key" field in the mutation.
+func (m *RelationshipOperationMutation) OperationKey() (r string, exists bool) {
+	v := m.operation_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOperationKey returns the old "operation_key" field's value of the RelationshipOperation entity.
+// If the RelationshipOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMutation) OldOperationKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOperationKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOperationKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOperationKey: %w", err)
+	}
+	return oldValue.OperationKey, nil
+}
+
+// ResetOperationKey resets all changes to the "operation_key" field.
+func (m *RelationshipOperationMutation) ResetOperationKey() {
+	m.operation_key = nil
+}
+
+// SetProviderID sets the "provider_id" field.
+func (m *RelationshipOperationMutation) SetProviderID(i int) {
+	m.provider_id = &i
+	m.addprovider_id = nil
+}
+
+// ProviderID returns the value of the "provider_id" field in the mutation.
+func (m *RelationshipOperationMutation) ProviderID() (r int, exists bool) {
+	v := m.provider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderID returns the old "provider_id" field's value of the RelationshipOperation entity.
+// If the RelationshipOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMutation) OldProviderID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderID: %w", err)
+	}
+	return oldValue.ProviderID, nil
+}
+
+// AddProviderID adds i to the "provider_id" field.
+func (m *RelationshipOperationMutation) AddProviderID(i int) {
+	if m.addprovider_id != nil {
+		*m.addprovider_id += i
+	} else {
+		m.addprovider_id = &i
+	}
+}
+
+// AddedProviderID returns the value that was added to the "provider_id" field in this mutation.
+func (m *RelationshipOperationMutation) AddedProviderID() (r int, exists bool) {
+	v := m.addprovider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetProviderID resets all changes to the "provider_id" field.
+func (m *RelationshipOperationMutation) ResetProviderID() {
+	m.provider_id = nil
+	m.addprovider_id = nil
+}
+
+// SetPlatform sets the "platform" field.
+func (m *RelationshipOperationMutation) SetPlatform(s string) {
+	m.platform = &s
+}
+
+// Platform returns the value of the "platform" field in the mutation.
+func (m *RelationshipOperationMutation) Platform() (r string, exists bool) {
+	v := m.platform
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPlatform returns the old "platform" field's value of the RelationshipOperation entity.
+// If the RelationshipOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMutation) OldPlatform(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPlatform is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPlatform requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPlatform: %w", err)
+	}
+	return oldValue.Platform, nil
+}
+
+// ResetPlatform resets all changes to the "platform" field.
+func (m *RelationshipOperationMutation) ResetPlatform() {
+	m.platform = nil
+}
+
+// SetLifecycle sets the "lifecycle" field.
+func (m *RelationshipOperationMutation) SetLifecycle(r relationshipoperation.Lifecycle) {
+	m.lifecycle = &r
+}
+
+// Lifecycle returns the value of the "lifecycle" field in the mutation.
+func (m *RelationshipOperationMutation) Lifecycle() (r relationshipoperation.Lifecycle, exists bool) {
+	v := m.lifecycle
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLifecycle returns the old "lifecycle" field's value of the RelationshipOperation entity.
+// If the RelationshipOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMutation) OldLifecycle(ctx context.Context) (v relationshipoperation.Lifecycle, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLifecycle is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLifecycle requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLifecycle: %w", err)
+	}
+	return oldValue.Lifecycle, nil
+}
+
+// ResetLifecycle resets all changes to the "lifecycle" field.
+func (m *RelationshipOperationMutation) ResetLifecycle() {
+	m.lifecycle = nil
+}
+
+// SetBaselineSnapshot sets the "baseline_snapshot" field.
+func (m *RelationshipOperationMutation) SetBaselineSnapshot(value map[string]interface{}) {
+	m.baseline_snapshot = &value
+}
+
+// BaselineSnapshot returns the value of the "baseline_snapshot" field in the mutation.
+func (m *RelationshipOperationMutation) BaselineSnapshot() (r map[string]interface{}, exists bool) {
+	v := m.baseline_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBaselineSnapshot returns the old "baseline_snapshot" field's value of the RelationshipOperation entity.
+// If the RelationshipOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMutation) OldBaselineSnapshot(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBaselineSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBaselineSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBaselineSnapshot: %w", err)
+	}
+	return oldValue.BaselineSnapshot, nil
+}
+
+// ResetBaselineSnapshot resets all changes to the "baseline_snapshot" field.
+func (m *RelationshipOperationMutation) ResetBaselineSnapshot() {
+	m.baseline_snapshot = nil
+}
+
+// SetTargetSnapshot sets the "target_snapshot" field.
+func (m *RelationshipOperationMutation) SetTargetSnapshot(value map[string]interface{}) {
+	m.target_snapshot = &value
+}
+
+// TargetSnapshot returns the value of the "target_snapshot" field in the mutation.
+func (m *RelationshipOperationMutation) TargetSnapshot() (r map[string]interface{}, exists bool) {
+	v := m.target_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTargetSnapshot returns the old "target_snapshot" field's value of the RelationshipOperation entity.
+// If the RelationshipOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMutation) OldTargetSnapshot(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTargetSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTargetSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTargetSnapshot: %w", err)
+	}
+	return oldValue.TargetSnapshot, nil
+}
+
+// ResetTargetSnapshot resets all changes to the "target_snapshot" field.
+func (m *RelationshipOperationMutation) ResetTargetSnapshot() {
+	m.target_snapshot = nil
+}
+
+// SetBaselineFingerprint sets the "baseline_fingerprint" field.
+func (m *RelationshipOperationMutation) SetBaselineFingerprint(s string) {
+	m.baseline_fingerprint = &s
+}
+
+// BaselineFingerprint returns the value of the "baseline_fingerprint" field in the mutation.
+func (m *RelationshipOperationMutation) BaselineFingerprint() (r string, exists bool) {
+	v := m.baseline_fingerprint
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBaselineFingerprint returns the old "baseline_fingerprint" field's value of the RelationshipOperation entity.
+// If the RelationshipOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMutation) OldBaselineFingerprint(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBaselineFingerprint is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBaselineFingerprint requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBaselineFingerprint: %w", err)
+	}
+	return oldValue.BaselineFingerprint, nil
+}
+
+// ResetBaselineFingerprint resets all changes to the "baseline_fingerprint" field.
+func (m *RelationshipOperationMutation) ResetBaselineFingerprint() {
+	m.baseline_fingerprint = nil
+}
+
+// SetTargetFingerprint sets the "target_fingerprint" field.
+func (m *RelationshipOperationMutation) SetTargetFingerprint(s string) {
+	m.target_fingerprint = &s
+}
+
+// TargetFingerprint returns the value of the "target_fingerprint" field in the mutation.
+func (m *RelationshipOperationMutation) TargetFingerprint() (r string, exists bool) {
+	v := m.target_fingerprint
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTargetFingerprint returns the old "target_fingerprint" field's value of the RelationshipOperation entity.
+// If the RelationshipOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMutation) OldTargetFingerprint(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTargetFingerprint is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTargetFingerprint requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTargetFingerprint: %w", err)
+	}
+	return oldValue.TargetFingerprint, nil
+}
+
+// ResetTargetFingerprint resets all changes to the "target_fingerprint" field.
+func (m *RelationshipOperationMutation) ResetTargetFingerprint() {
+	m.target_fingerprint = nil
+}
+
+// SetSupportedDirections sets the "supported_directions" field.
+func (m *RelationshipOperationMutation) SetSupportedDirections(s []string) {
+	m.supported_directions = &s
+	m.appendsupported_directions = nil
+}
+
+// SupportedDirections returns the value of the "supported_directions" field in the mutation.
+func (m *RelationshipOperationMutation) SupportedDirections() (r []string, exists bool) {
+	v := m.supported_directions
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSupportedDirections returns the old "supported_directions" field's value of the RelationshipOperation entity.
+// If the RelationshipOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMutation) OldSupportedDirections(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSupportedDirections is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSupportedDirections requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSupportedDirections: %w", err)
+	}
+	return oldValue.SupportedDirections, nil
+}
+
+// AppendSupportedDirections adds s to the "supported_directions" field.
+func (m *RelationshipOperationMutation) AppendSupportedDirections(s []string) {
+	m.appendsupported_directions = append(m.appendsupported_directions, s...)
+}
+
+// AppendedSupportedDirections returns the list of values that were appended to the "supported_directions" field in this mutation.
+func (m *RelationshipOperationMutation) AppendedSupportedDirections() ([]string, bool) {
+	if len(m.appendsupported_directions) == 0 {
+		return nil, false
+	}
+	return m.appendsupported_directions, true
+}
+
+// ResetSupportedDirections resets all changes to the "supported_directions" field.
+func (m *RelationshipOperationMutation) ResetSupportedDirections() {
+	m.supported_directions = nil
+	m.appendsupported_directions = nil
+}
+
+// SetInitiatedByUserID sets the "initiated_by_user_id" field.
+func (m *RelationshipOperationMutation) SetInitiatedByUserID(i int) {
+	m.initiated_by_user_id = &i
+	m.addinitiated_by_user_id = nil
+}
+
+// InitiatedByUserID returns the value of the "initiated_by_user_id" field in the mutation.
+func (m *RelationshipOperationMutation) InitiatedByUserID() (r int, exists bool) {
+	v := m.initiated_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInitiatedByUserID returns the old "initiated_by_user_id" field's value of the RelationshipOperation entity.
+// If the RelationshipOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMutation) OldInitiatedByUserID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInitiatedByUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInitiatedByUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInitiatedByUserID: %w", err)
+	}
+	return oldValue.InitiatedByUserID, nil
+}
+
+// AddInitiatedByUserID adds i to the "initiated_by_user_id" field.
+func (m *RelationshipOperationMutation) AddInitiatedByUserID(i int) {
+	if m.addinitiated_by_user_id != nil {
+		*m.addinitiated_by_user_id += i
+	} else {
+		m.addinitiated_by_user_id = &i
+	}
+}
+
+// AddedInitiatedByUserID returns the value that was added to the "initiated_by_user_id" field in this mutation.
+func (m *RelationshipOperationMutation) AddedInitiatedByUserID() (r int, exists bool) {
+	v := m.addinitiated_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetInitiatedByUserID resets all changes to the "initiated_by_user_id" field.
+func (m *RelationshipOperationMutation) ResetInitiatedByUserID() {
+	m.initiated_by_user_id = nil
+	m.addinitiated_by_user_id = nil
+}
+
+// SetTerminalResult sets the "terminal_result" field.
+func (m *RelationshipOperationMutation) SetTerminalResult(value map[string]interface{}) {
+	m.terminal_result = &value
+}
+
+// TerminalResult returns the value of the "terminal_result" field in the mutation.
+func (m *RelationshipOperationMutation) TerminalResult() (r map[string]interface{}, exists bool) {
+	v := m.terminal_result
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTerminalResult returns the old "terminal_result" field's value of the RelationshipOperation entity.
+// If the RelationshipOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMutation) OldTerminalResult(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTerminalResult is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTerminalResult requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTerminalResult: %w", err)
+	}
+	return oldValue.TerminalResult, nil
+}
+
+// ClearTerminalResult clears the value of the "terminal_result" field.
+func (m *RelationshipOperationMutation) ClearTerminalResult() {
+	m.terminal_result = nil
+	m.clearedFields[relationshipoperation.FieldTerminalResult] = struct{}{}
+}
+
+// TerminalResultCleared returns if the "terminal_result" field was cleared in this mutation.
+func (m *RelationshipOperationMutation) TerminalResultCleared() bool {
+	_, ok := m.clearedFields[relationshipoperation.FieldTerminalResult]
+	return ok
+}
+
+// ResetTerminalResult resets all changes to the "terminal_result" field.
+func (m *RelationshipOperationMutation) ResetTerminalResult() {
+	m.terminal_result = nil
+	delete(m.clearedFields, relationshipoperation.FieldTerminalResult)
+}
+
+// SetExternalBlocker sets the "external_blocker" field.
+func (m *RelationshipOperationMutation) SetExternalBlocker(value map[string]interface{}) {
+	m.external_blocker = &value
+}
+
+// ExternalBlocker returns the value of the "external_blocker" field in the mutation.
+func (m *RelationshipOperationMutation) ExternalBlocker() (r map[string]interface{}, exists bool) {
+	v := m.external_blocker
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExternalBlocker returns the old "external_blocker" field's value of the RelationshipOperation entity.
+// If the RelationshipOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMutation) OldExternalBlocker(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExternalBlocker is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExternalBlocker requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExternalBlocker: %w", err)
+	}
+	return oldValue.ExternalBlocker, nil
+}
+
+// ClearExternalBlocker clears the value of the "external_blocker" field.
+func (m *RelationshipOperationMutation) ClearExternalBlocker() {
+	m.external_blocker = nil
+	m.clearedFields[relationshipoperation.FieldExternalBlocker] = struct{}{}
+}
+
+// ExternalBlockerCleared returns if the "external_blocker" field was cleared in this mutation.
+func (m *RelationshipOperationMutation) ExternalBlockerCleared() bool {
+	_, ok := m.clearedFields[relationshipoperation.FieldExternalBlocker]
+	return ok
+}
+
+// ResetExternalBlocker resets all changes to the "external_blocker" field.
+func (m *RelationshipOperationMutation) ResetExternalBlocker() {
+	m.external_blocker = nil
+	delete(m.clearedFields, relationshipoperation.FieldExternalBlocker)
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *RelationshipOperationMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *RelationshipOperationMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the RelationshipOperation entity.
+// If the RelationshipOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *RelationshipOperationMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *RelationshipOperationMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *RelationshipOperationMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the RelationshipOperation entity.
+// If the RelationshipOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *RelationshipOperationMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetCompletedAt sets the "completed_at" field.
+func (m *RelationshipOperationMutation) SetCompletedAt(t time.Time) {
+	m.completed_at = &t
+}
+
+// CompletedAt returns the value of the "completed_at" field in the mutation.
+func (m *RelationshipOperationMutation) CompletedAt() (r time.Time, exists bool) {
+	v := m.completed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCompletedAt returns the old "completed_at" field's value of the RelationshipOperation entity.
+// If the RelationshipOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMutation) OldCompletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCompletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCompletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCompletedAt: %w", err)
+	}
+	return oldValue.CompletedAt, nil
+}
+
+// ClearCompletedAt clears the value of the "completed_at" field.
+func (m *RelationshipOperationMutation) ClearCompletedAt() {
+	m.completed_at = nil
+	m.clearedFields[relationshipoperation.FieldCompletedAt] = struct{}{}
+}
+
+// CompletedAtCleared returns if the "completed_at" field was cleared in this mutation.
+func (m *RelationshipOperationMutation) CompletedAtCleared() bool {
+	_, ok := m.clearedFields[relationshipoperation.FieldCompletedAt]
+	return ok
+}
+
+// ResetCompletedAt resets all changes to the "completed_at" field.
+func (m *RelationshipOperationMutation) ResetCompletedAt() {
+	m.completed_at = nil
+	delete(m.clearedFields, relationshipoperation.FieldCompletedAt)
+}
+
+// AddMappingIDs adds the "mappings" edge to the RelationshipOperationMapping entity by ids.
+func (m *RelationshipOperationMutation) AddMappingIDs(ids ...int) {
+	if m.mappings == nil {
+		m.mappings = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.mappings[ids[i]] = struct{}{}
+	}
+}
+
+// ClearMappings clears the "mappings" edge to the RelationshipOperationMapping entity.
+func (m *RelationshipOperationMutation) ClearMappings() {
+	m.clearedmappings = true
+}
+
+// MappingsCleared reports if the "mappings" edge to the RelationshipOperationMapping entity was cleared.
+func (m *RelationshipOperationMutation) MappingsCleared() bool {
+	return m.clearedmappings
+}
+
+// RemoveMappingIDs removes the "mappings" edge to the RelationshipOperationMapping entity by IDs.
+func (m *RelationshipOperationMutation) RemoveMappingIDs(ids ...int) {
+	if m.removedmappings == nil {
+		m.removedmappings = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.mappings, ids[i])
+		m.removedmappings[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedMappings returns the removed IDs of the "mappings" edge to the RelationshipOperationMapping entity.
+func (m *RelationshipOperationMutation) RemovedMappingsIDs() (ids []int) {
+	for id := range m.removedmappings {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// MappingsIDs returns the "mappings" edge IDs in the mutation.
+func (m *RelationshipOperationMutation) MappingsIDs() (ids []int) {
+	for id := range m.mappings {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetMappings resets all changes to the "mappings" edge.
+func (m *RelationshipOperationMutation) ResetMappings() {
+	m.mappings = nil
+	m.clearedmappings = false
+	m.removedmappings = nil
+}
+
+// AddStepIDs adds the "steps" edge to the RelationshipOperationStep entity by ids.
+func (m *RelationshipOperationMutation) AddStepIDs(ids ...int) {
+	if m.steps == nil {
+		m.steps = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.steps[ids[i]] = struct{}{}
+	}
+}
+
+// ClearSteps clears the "steps" edge to the RelationshipOperationStep entity.
+func (m *RelationshipOperationMutation) ClearSteps() {
+	m.clearedsteps = true
+}
+
+// StepsCleared reports if the "steps" edge to the RelationshipOperationStep entity was cleared.
+func (m *RelationshipOperationMutation) StepsCleared() bool {
+	return m.clearedsteps
+}
+
+// RemoveStepIDs removes the "steps" edge to the RelationshipOperationStep entity by IDs.
+func (m *RelationshipOperationMutation) RemoveStepIDs(ids ...int) {
+	if m.removedsteps == nil {
+		m.removedsteps = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.steps, ids[i])
+		m.removedsteps[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedSteps returns the removed IDs of the "steps" edge to the RelationshipOperationStep entity.
+func (m *RelationshipOperationMutation) RemovedStepsIDs() (ids []int) {
+	for id := range m.removedsteps {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// StepsIDs returns the "steps" edge IDs in the mutation.
+func (m *RelationshipOperationMutation) StepsIDs() (ids []int) {
+	for id := range m.steps {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetSteps resets all changes to the "steps" edge.
+func (m *RelationshipOperationMutation) ResetSteps() {
+	m.steps = nil
+	m.clearedsteps = false
+	m.removedsteps = nil
+}
+
+// AddAttemptIDs adds the "attempts" edge to the RelationshipOperationAttempt entity by ids.
+func (m *RelationshipOperationMutation) AddAttemptIDs(ids ...int) {
+	if m.attempts == nil {
+		m.attempts = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.attempts[ids[i]] = struct{}{}
+	}
+}
+
+// ClearAttempts clears the "attempts" edge to the RelationshipOperationAttempt entity.
+func (m *RelationshipOperationMutation) ClearAttempts() {
+	m.clearedattempts = true
+}
+
+// AttemptsCleared reports if the "attempts" edge to the RelationshipOperationAttempt entity was cleared.
+func (m *RelationshipOperationMutation) AttemptsCleared() bool {
+	return m.clearedattempts
+}
+
+// RemoveAttemptIDs removes the "attempts" edge to the RelationshipOperationAttempt entity by IDs.
+func (m *RelationshipOperationMutation) RemoveAttemptIDs(ids ...int) {
+	if m.removedattempts == nil {
+		m.removedattempts = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.attempts, ids[i])
+		m.removedattempts[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedAttempts returns the removed IDs of the "attempts" edge to the RelationshipOperationAttempt entity.
+func (m *RelationshipOperationMutation) RemovedAttemptsIDs() (ids []int) {
+	for id := range m.removedattempts {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// AttemptsIDs returns the "attempts" edge IDs in the mutation.
+func (m *RelationshipOperationMutation) AttemptsIDs() (ids []int) {
+	for id := range m.attempts {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetAttempts resets all changes to the "attempts" edge.
+func (m *RelationshipOperationMutation) ResetAttempts() {
+	m.attempts = nil
+	m.clearedattempts = false
+	m.removedattempts = nil
+}
+
+// Where appends a list predicates to the RelationshipOperationMutation builder.
+func (m *RelationshipOperationMutation) Where(ps ...predicate.RelationshipOperation) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the RelationshipOperationMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *RelationshipOperationMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.RelationshipOperation, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *RelationshipOperationMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *RelationshipOperationMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (RelationshipOperation).
+func (m *RelationshipOperationMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *RelationshipOperationMutation) Fields() []string {
+	fields := make([]string, 0, 15)
+	if m.operation_key != nil {
+		fields = append(fields, relationshipoperation.FieldOperationKey)
+	}
+	if m.provider_id != nil {
+		fields = append(fields, relationshipoperation.FieldProviderID)
+	}
+	if m.platform != nil {
+		fields = append(fields, relationshipoperation.FieldPlatform)
+	}
+	if m.lifecycle != nil {
+		fields = append(fields, relationshipoperation.FieldLifecycle)
+	}
+	if m.baseline_snapshot != nil {
+		fields = append(fields, relationshipoperation.FieldBaselineSnapshot)
+	}
+	if m.target_snapshot != nil {
+		fields = append(fields, relationshipoperation.FieldTargetSnapshot)
+	}
+	if m.baseline_fingerprint != nil {
+		fields = append(fields, relationshipoperation.FieldBaselineFingerprint)
+	}
+	if m.target_fingerprint != nil {
+		fields = append(fields, relationshipoperation.FieldTargetFingerprint)
+	}
+	if m.supported_directions != nil {
+		fields = append(fields, relationshipoperation.FieldSupportedDirections)
+	}
+	if m.initiated_by_user_id != nil {
+		fields = append(fields, relationshipoperation.FieldInitiatedByUserID)
+	}
+	if m.terminal_result != nil {
+		fields = append(fields, relationshipoperation.FieldTerminalResult)
+	}
+	if m.external_blocker != nil {
+		fields = append(fields, relationshipoperation.FieldExternalBlocker)
+	}
+	if m.created_at != nil {
+		fields = append(fields, relationshipoperation.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, relationshipoperation.FieldUpdatedAt)
+	}
+	if m.completed_at != nil {
+		fields = append(fields, relationshipoperation.FieldCompletedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *RelationshipOperationMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case relationshipoperation.FieldOperationKey:
+		return m.OperationKey()
+	case relationshipoperation.FieldProviderID:
+		return m.ProviderID()
+	case relationshipoperation.FieldPlatform:
+		return m.Platform()
+	case relationshipoperation.FieldLifecycle:
+		return m.Lifecycle()
+	case relationshipoperation.FieldBaselineSnapshot:
+		return m.BaselineSnapshot()
+	case relationshipoperation.FieldTargetSnapshot:
+		return m.TargetSnapshot()
+	case relationshipoperation.FieldBaselineFingerprint:
+		return m.BaselineFingerprint()
+	case relationshipoperation.FieldTargetFingerprint:
+		return m.TargetFingerprint()
+	case relationshipoperation.FieldSupportedDirections:
+		return m.SupportedDirections()
+	case relationshipoperation.FieldInitiatedByUserID:
+		return m.InitiatedByUserID()
+	case relationshipoperation.FieldTerminalResult:
+		return m.TerminalResult()
+	case relationshipoperation.FieldExternalBlocker:
+		return m.ExternalBlocker()
+	case relationshipoperation.FieldCreatedAt:
+		return m.CreatedAt()
+	case relationshipoperation.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case relationshipoperation.FieldCompletedAt:
+		return m.CompletedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *RelationshipOperationMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case relationshipoperation.FieldOperationKey:
+		return m.OldOperationKey(ctx)
+	case relationshipoperation.FieldProviderID:
+		return m.OldProviderID(ctx)
+	case relationshipoperation.FieldPlatform:
+		return m.OldPlatform(ctx)
+	case relationshipoperation.FieldLifecycle:
+		return m.OldLifecycle(ctx)
+	case relationshipoperation.FieldBaselineSnapshot:
+		return m.OldBaselineSnapshot(ctx)
+	case relationshipoperation.FieldTargetSnapshot:
+		return m.OldTargetSnapshot(ctx)
+	case relationshipoperation.FieldBaselineFingerprint:
+		return m.OldBaselineFingerprint(ctx)
+	case relationshipoperation.FieldTargetFingerprint:
+		return m.OldTargetFingerprint(ctx)
+	case relationshipoperation.FieldSupportedDirections:
+		return m.OldSupportedDirections(ctx)
+	case relationshipoperation.FieldInitiatedByUserID:
+		return m.OldInitiatedByUserID(ctx)
+	case relationshipoperation.FieldTerminalResult:
+		return m.OldTerminalResult(ctx)
+	case relationshipoperation.FieldExternalBlocker:
+		return m.OldExternalBlocker(ctx)
+	case relationshipoperation.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case relationshipoperation.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case relationshipoperation.FieldCompletedAt:
+		return m.OldCompletedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown RelationshipOperation field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RelationshipOperationMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case relationshipoperation.FieldOperationKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOperationKey(v)
+		return nil
+	case relationshipoperation.FieldProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderID(v)
+		return nil
+	case relationshipoperation.FieldPlatform:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPlatform(v)
+		return nil
+	case relationshipoperation.FieldLifecycle:
+		v, ok := value.(relationshipoperation.Lifecycle)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLifecycle(v)
+		return nil
+	case relationshipoperation.FieldBaselineSnapshot:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBaselineSnapshot(v)
+		return nil
+	case relationshipoperation.FieldTargetSnapshot:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTargetSnapshot(v)
+		return nil
+	case relationshipoperation.FieldBaselineFingerprint:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBaselineFingerprint(v)
+		return nil
+	case relationshipoperation.FieldTargetFingerprint:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTargetFingerprint(v)
+		return nil
+	case relationshipoperation.FieldSupportedDirections:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSupportedDirections(v)
+		return nil
+	case relationshipoperation.FieldInitiatedByUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInitiatedByUserID(v)
+		return nil
+	case relationshipoperation.FieldTerminalResult:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTerminalResult(v)
+		return nil
+	case relationshipoperation.FieldExternalBlocker:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExternalBlocker(v)
+		return nil
+	case relationshipoperation.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case relationshipoperation.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case relationshipoperation.FieldCompletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCompletedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperation field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *RelationshipOperationMutation) AddedFields() []string {
+	var fields []string
+	if m.addprovider_id != nil {
+		fields = append(fields, relationshipoperation.FieldProviderID)
+	}
+	if m.addinitiated_by_user_id != nil {
+		fields = append(fields, relationshipoperation.FieldInitiatedByUserID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *RelationshipOperationMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case relationshipoperation.FieldProviderID:
+		return m.AddedProviderID()
+	case relationshipoperation.FieldInitiatedByUserID:
+		return m.AddedInitiatedByUserID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RelationshipOperationMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case relationshipoperation.FieldProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProviderID(v)
+		return nil
+	case relationshipoperation.FieldInitiatedByUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddInitiatedByUserID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperation numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *RelationshipOperationMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(relationshipoperation.FieldTerminalResult) {
+		fields = append(fields, relationshipoperation.FieldTerminalResult)
+	}
+	if m.FieldCleared(relationshipoperation.FieldExternalBlocker) {
+		fields = append(fields, relationshipoperation.FieldExternalBlocker)
+	}
+	if m.FieldCleared(relationshipoperation.FieldCompletedAt) {
+		fields = append(fields, relationshipoperation.FieldCompletedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *RelationshipOperationMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *RelationshipOperationMutation) ClearField(name string) error {
+	switch name {
+	case relationshipoperation.FieldTerminalResult:
+		m.ClearTerminalResult()
+		return nil
+	case relationshipoperation.FieldExternalBlocker:
+		m.ClearExternalBlocker()
+		return nil
+	case relationshipoperation.FieldCompletedAt:
+		m.ClearCompletedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperation nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *RelationshipOperationMutation) ResetField(name string) error {
+	switch name {
+	case relationshipoperation.FieldOperationKey:
+		m.ResetOperationKey()
+		return nil
+	case relationshipoperation.FieldProviderID:
+		m.ResetProviderID()
+		return nil
+	case relationshipoperation.FieldPlatform:
+		m.ResetPlatform()
+		return nil
+	case relationshipoperation.FieldLifecycle:
+		m.ResetLifecycle()
+		return nil
+	case relationshipoperation.FieldBaselineSnapshot:
+		m.ResetBaselineSnapshot()
+		return nil
+	case relationshipoperation.FieldTargetSnapshot:
+		m.ResetTargetSnapshot()
+		return nil
+	case relationshipoperation.FieldBaselineFingerprint:
+		m.ResetBaselineFingerprint()
+		return nil
+	case relationshipoperation.FieldTargetFingerprint:
+		m.ResetTargetFingerprint()
+		return nil
+	case relationshipoperation.FieldSupportedDirections:
+		m.ResetSupportedDirections()
+		return nil
+	case relationshipoperation.FieldInitiatedByUserID:
+		m.ResetInitiatedByUserID()
+		return nil
+	case relationshipoperation.FieldTerminalResult:
+		m.ResetTerminalResult()
+		return nil
+	case relationshipoperation.FieldExternalBlocker:
+		m.ResetExternalBlocker()
+		return nil
+	case relationshipoperation.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case relationshipoperation.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case relationshipoperation.FieldCompletedAt:
+		m.ResetCompletedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperation field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *RelationshipOperationMutation) AddedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.mappings != nil {
+		edges = append(edges, relationshipoperation.EdgeMappings)
+	}
+	if m.steps != nil {
+		edges = append(edges, relationshipoperation.EdgeSteps)
+	}
+	if m.attempts != nil {
+		edges = append(edges, relationshipoperation.EdgeAttempts)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *RelationshipOperationMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case relationshipoperation.EdgeMappings:
+		ids := make([]ent.Value, 0, len(m.mappings))
+		for id := range m.mappings {
+			ids = append(ids, id)
+		}
+		return ids
+	case relationshipoperation.EdgeSteps:
+		ids := make([]ent.Value, 0, len(m.steps))
+		for id := range m.steps {
+			ids = append(ids, id)
+		}
+		return ids
+	case relationshipoperation.EdgeAttempts:
+		ids := make([]ent.Value, 0, len(m.attempts))
+		for id := range m.attempts {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *RelationshipOperationMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.removedmappings != nil {
+		edges = append(edges, relationshipoperation.EdgeMappings)
+	}
+	if m.removedsteps != nil {
+		edges = append(edges, relationshipoperation.EdgeSteps)
+	}
+	if m.removedattempts != nil {
+		edges = append(edges, relationshipoperation.EdgeAttempts)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *RelationshipOperationMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case relationshipoperation.EdgeMappings:
+		ids := make([]ent.Value, 0, len(m.removedmappings))
+		for id := range m.removedmappings {
+			ids = append(ids, id)
+		}
+		return ids
+	case relationshipoperation.EdgeSteps:
+		ids := make([]ent.Value, 0, len(m.removedsteps))
+		for id := range m.removedsteps {
+			ids = append(ids, id)
+		}
+		return ids
+	case relationshipoperation.EdgeAttempts:
+		ids := make([]ent.Value, 0, len(m.removedattempts))
+		for id := range m.removedattempts {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *RelationshipOperationMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.clearedmappings {
+		edges = append(edges, relationshipoperation.EdgeMappings)
+	}
+	if m.clearedsteps {
+		edges = append(edges, relationshipoperation.EdgeSteps)
+	}
+	if m.clearedattempts {
+		edges = append(edges, relationshipoperation.EdgeAttempts)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *RelationshipOperationMutation) EdgeCleared(name string) bool {
+	switch name {
+	case relationshipoperation.EdgeMappings:
+		return m.clearedmappings
+	case relationshipoperation.EdgeSteps:
+		return m.clearedsteps
+	case relationshipoperation.EdgeAttempts:
+		return m.clearedattempts
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *RelationshipOperationMutation) ClearEdge(name string) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown RelationshipOperation unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *RelationshipOperationMutation) ResetEdge(name string) error {
+	switch name {
+	case relationshipoperation.EdgeMappings:
+		m.ResetMappings()
+		return nil
+	case relationshipoperation.EdgeSteps:
+		m.ResetSteps()
+		return nil
+	case relationshipoperation.EdgeAttempts:
+		m.ResetAttempts()
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperation edge %s", name)
+}
+
+// RelationshipOperationAttemptMutation represents an operation that mutates the RelationshipOperationAttempt nodes in the graph.
+type RelationshipOperationAttemptMutation struct {
+	config
+	op                      Op
+	typ                     string
+	id                      *int
+	attempt_number          *int
+	addattempt_number       *int
+	direction               *relationshipoperationattempt.Direction
+	status                  *relationshipoperationattempt.Status
+	initiated_by_user_id    *int
+	addinitiated_by_user_id *int
+	result                  *map[string]interface{}
+	error_message           *string
+	created_at              *time.Time
+	started_at              *time.Time
+	completed_at            *time.Time
+	clearedFields           map[string]struct{}
+	operation               *int
+	clearedoperation        bool
+	done                    bool
+	oldValue                func(context.Context) (*RelationshipOperationAttempt, error)
+	predicates              []predicate.RelationshipOperationAttempt
+}
+
+var _ ent.Mutation = (*RelationshipOperationAttemptMutation)(nil)
+
+// relationshipoperationattemptOption allows management of the mutation configuration using functional options.
+type relationshipoperationattemptOption func(*RelationshipOperationAttemptMutation)
+
+// newRelationshipOperationAttemptMutation creates new mutation for the RelationshipOperationAttempt entity.
+func newRelationshipOperationAttemptMutation(c config, op Op, opts ...relationshipoperationattemptOption) *RelationshipOperationAttemptMutation {
+	m := &RelationshipOperationAttemptMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeRelationshipOperationAttempt,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withRelationshipOperationAttemptID sets the ID field of the mutation.
+func withRelationshipOperationAttemptID(id int) relationshipoperationattemptOption {
+	return func(m *RelationshipOperationAttemptMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *RelationshipOperationAttempt
+		)
+		m.oldValue = func(ctx context.Context) (*RelationshipOperationAttempt, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().RelationshipOperationAttempt.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withRelationshipOperationAttempt sets the old RelationshipOperationAttempt of the mutation.
+func withRelationshipOperationAttempt(node *RelationshipOperationAttempt) relationshipoperationattemptOption {
+	return func(m *RelationshipOperationAttemptMutation) {
+		m.oldValue = func(context.Context) (*RelationshipOperationAttempt, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m RelationshipOperationAttemptMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m RelationshipOperationAttemptMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *RelationshipOperationAttemptMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *RelationshipOperationAttemptMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().RelationshipOperationAttempt.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetOperationID sets the "operation_id" field.
+func (m *RelationshipOperationAttemptMutation) SetOperationID(i int) {
+	m.operation = &i
+}
+
+// OperationID returns the value of the "operation_id" field in the mutation.
+func (m *RelationshipOperationAttemptMutation) OperationID() (r int, exists bool) {
+	v := m.operation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOperationID returns the old "operation_id" field's value of the RelationshipOperationAttempt entity.
+// If the RelationshipOperationAttempt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationAttemptMutation) OldOperationID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOperationID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOperationID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOperationID: %w", err)
+	}
+	return oldValue.OperationID, nil
+}
+
+// ResetOperationID resets all changes to the "operation_id" field.
+func (m *RelationshipOperationAttemptMutation) ResetOperationID() {
+	m.operation = nil
+}
+
+// SetAttemptNumber sets the "attempt_number" field.
+func (m *RelationshipOperationAttemptMutation) SetAttemptNumber(i int) {
+	m.attempt_number = &i
+	m.addattempt_number = nil
+}
+
+// AttemptNumber returns the value of the "attempt_number" field in the mutation.
+func (m *RelationshipOperationAttemptMutation) AttemptNumber() (r int, exists bool) {
+	v := m.attempt_number
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAttemptNumber returns the old "attempt_number" field's value of the RelationshipOperationAttempt entity.
+// If the RelationshipOperationAttempt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationAttemptMutation) OldAttemptNumber(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAttemptNumber is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAttemptNumber requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAttemptNumber: %w", err)
+	}
+	return oldValue.AttemptNumber, nil
+}
+
+// AddAttemptNumber adds i to the "attempt_number" field.
+func (m *RelationshipOperationAttemptMutation) AddAttemptNumber(i int) {
+	if m.addattempt_number != nil {
+		*m.addattempt_number += i
+	} else {
+		m.addattempt_number = &i
+	}
+}
+
+// AddedAttemptNumber returns the value that was added to the "attempt_number" field in this mutation.
+func (m *RelationshipOperationAttemptMutation) AddedAttemptNumber() (r int, exists bool) {
+	v := m.addattempt_number
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAttemptNumber resets all changes to the "attempt_number" field.
+func (m *RelationshipOperationAttemptMutation) ResetAttemptNumber() {
+	m.attempt_number = nil
+	m.addattempt_number = nil
+}
+
+// SetDirection sets the "direction" field.
+func (m *RelationshipOperationAttemptMutation) SetDirection(r relationshipoperationattempt.Direction) {
+	m.direction = &r
+}
+
+// Direction returns the value of the "direction" field in the mutation.
+func (m *RelationshipOperationAttemptMutation) Direction() (r relationshipoperationattempt.Direction, exists bool) {
+	v := m.direction
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDirection returns the old "direction" field's value of the RelationshipOperationAttempt entity.
+// If the RelationshipOperationAttempt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationAttemptMutation) OldDirection(ctx context.Context) (v relationshipoperationattempt.Direction, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDirection is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDirection requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDirection: %w", err)
+	}
+	return oldValue.Direction, nil
+}
+
+// ResetDirection resets all changes to the "direction" field.
+func (m *RelationshipOperationAttemptMutation) ResetDirection() {
+	m.direction = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *RelationshipOperationAttemptMutation) SetStatus(r relationshipoperationattempt.Status) {
+	m.status = &r
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *RelationshipOperationAttemptMutation) Status() (r relationshipoperationattempt.Status, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the RelationshipOperationAttempt entity.
+// If the RelationshipOperationAttempt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationAttemptMutation) OldStatus(ctx context.Context) (v relationshipoperationattempt.Status, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *RelationshipOperationAttemptMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetInitiatedByUserID sets the "initiated_by_user_id" field.
+func (m *RelationshipOperationAttemptMutation) SetInitiatedByUserID(i int) {
+	m.initiated_by_user_id = &i
+	m.addinitiated_by_user_id = nil
+}
+
+// InitiatedByUserID returns the value of the "initiated_by_user_id" field in the mutation.
+func (m *RelationshipOperationAttemptMutation) InitiatedByUserID() (r int, exists bool) {
+	v := m.initiated_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInitiatedByUserID returns the old "initiated_by_user_id" field's value of the RelationshipOperationAttempt entity.
+// If the RelationshipOperationAttempt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationAttemptMutation) OldInitiatedByUserID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInitiatedByUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInitiatedByUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInitiatedByUserID: %w", err)
+	}
+	return oldValue.InitiatedByUserID, nil
+}
+
+// AddInitiatedByUserID adds i to the "initiated_by_user_id" field.
+func (m *RelationshipOperationAttemptMutation) AddInitiatedByUserID(i int) {
+	if m.addinitiated_by_user_id != nil {
+		*m.addinitiated_by_user_id += i
+	} else {
+		m.addinitiated_by_user_id = &i
+	}
+}
+
+// AddedInitiatedByUserID returns the value that was added to the "initiated_by_user_id" field in this mutation.
+func (m *RelationshipOperationAttemptMutation) AddedInitiatedByUserID() (r int, exists bool) {
+	v := m.addinitiated_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetInitiatedByUserID resets all changes to the "initiated_by_user_id" field.
+func (m *RelationshipOperationAttemptMutation) ResetInitiatedByUserID() {
+	m.initiated_by_user_id = nil
+	m.addinitiated_by_user_id = nil
+}
+
+// SetResult sets the "result" field.
+func (m *RelationshipOperationAttemptMutation) SetResult(value map[string]interface{}) {
+	m.result = &value
+}
+
+// Result returns the value of the "result" field in the mutation.
+func (m *RelationshipOperationAttemptMutation) Result() (r map[string]interface{}, exists bool) {
+	v := m.result
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResult returns the old "result" field's value of the RelationshipOperationAttempt entity.
+// If the RelationshipOperationAttempt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationAttemptMutation) OldResult(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResult is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResult requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResult: %w", err)
+	}
+	return oldValue.Result, nil
+}
+
+// ClearResult clears the value of the "result" field.
+func (m *RelationshipOperationAttemptMutation) ClearResult() {
+	m.result = nil
+	m.clearedFields[relationshipoperationattempt.FieldResult] = struct{}{}
+}
+
+// ResultCleared returns if the "result" field was cleared in this mutation.
+func (m *RelationshipOperationAttemptMutation) ResultCleared() bool {
+	_, ok := m.clearedFields[relationshipoperationattempt.FieldResult]
+	return ok
+}
+
+// ResetResult resets all changes to the "result" field.
+func (m *RelationshipOperationAttemptMutation) ResetResult() {
+	m.result = nil
+	delete(m.clearedFields, relationshipoperationattempt.FieldResult)
+}
+
+// SetErrorMessage sets the "error_message" field.
+func (m *RelationshipOperationAttemptMutation) SetErrorMessage(s string) {
+	m.error_message = &s
+}
+
+// ErrorMessage returns the value of the "error_message" field in the mutation.
+func (m *RelationshipOperationAttemptMutation) ErrorMessage() (r string, exists bool) {
+	v := m.error_message
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorMessage returns the old "error_message" field's value of the RelationshipOperationAttempt entity.
+// If the RelationshipOperationAttempt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationAttemptMutation) OldErrorMessage(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorMessage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorMessage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorMessage: %w", err)
+	}
+	return oldValue.ErrorMessage, nil
+}
+
+// ResetErrorMessage resets all changes to the "error_message" field.
+func (m *RelationshipOperationAttemptMutation) ResetErrorMessage() {
+	m.error_message = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *RelationshipOperationAttemptMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *RelationshipOperationAttemptMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the RelationshipOperationAttempt entity.
+// If the RelationshipOperationAttempt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationAttemptMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *RelationshipOperationAttemptMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetStartedAt sets the "started_at" field.
+func (m *RelationshipOperationAttemptMutation) SetStartedAt(t time.Time) {
+	m.started_at = &t
+}
+
+// StartedAt returns the value of the "started_at" field in the mutation.
+func (m *RelationshipOperationAttemptMutation) StartedAt() (r time.Time, exists bool) {
+	v := m.started_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStartedAt returns the old "started_at" field's value of the RelationshipOperationAttempt entity.
+// If the RelationshipOperationAttempt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationAttemptMutation) OldStartedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStartedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStartedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStartedAt: %w", err)
+	}
+	return oldValue.StartedAt, nil
+}
+
+// ClearStartedAt clears the value of the "started_at" field.
+func (m *RelationshipOperationAttemptMutation) ClearStartedAt() {
+	m.started_at = nil
+	m.clearedFields[relationshipoperationattempt.FieldStartedAt] = struct{}{}
+}
+
+// StartedAtCleared returns if the "started_at" field was cleared in this mutation.
+func (m *RelationshipOperationAttemptMutation) StartedAtCleared() bool {
+	_, ok := m.clearedFields[relationshipoperationattempt.FieldStartedAt]
+	return ok
+}
+
+// ResetStartedAt resets all changes to the "started_at" field.
+func (m *RelationshipOperationAttemptMutation) ResetStartedAt() {
+	m.started_at = nil
+	delete(m.clearedFields, relationshipoperationattempt.FieldStartedAt)
+}
+
+// SetCompletedAt sets the "completed_at" field.
+func (m *RelationshipOperationAttemptMutation) SetCompletedAt(t time.Time) {
+	m.completed_at = &t
+}
+
+// CompletedAt returns the value of the "completed_at" field in the mutation.
+func (m *RelationshipOperationAttemptMutation) CompletedAt() (r time.Time, exists bool) {
+	v := m.completed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCompletedAt returns the old "completed_at" field's value of the RelationshipOperationAttempt entity.
+// If the RelationshipOperationAttempt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationAttemptMutation) OldCompletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCompletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCompletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCompletedAt: %w", err)
+	}
+	return oldValue.CompletedAt, nil
+}
+
+// ClearCompletedAt clears the value of the "completed_at" field.
+func (m *RelationshipOperationAttemptMutation) ClearCompletedAt() {
+	m.completed_at = nil
+	m.clearedFields[relationshipoperationattempt.FieldCompletedAt] = struct{}{}
+}
+
+// CompletedAtCleared returns if the "completed_at" field was cleared in this mutation.
+func (m *RelationshipOperationAttemptMutation) CompletedAtCleared() bool {
+	_, ok := m.clearedFields[relationshipoperationattempt.FieldCompletedAt]
+	return ok
+}
+
+// ResetCompletedAt resets all changes to the "completed_at" field.
+func (m *RelationshipOperationAttemptMutation) ResetCompletedAt() {
+	m.completed_at = nil
+	delete(m.clearedFields, relationshipoperationattempt.FieldCompletedAt)
+}
+
+// ClearOperation clears the "operation" edge to the RelationshipOperation entity.
+func (m *RelationshipOperationAttemptMutation) ClearOperation() {
+	m.clearedoperation = true
+	m.clearedFields[relationshipoperationattempt.FieldOperationID] = struct{}{}
+}
+
+// OperationCleared reports if the "operation" edge to the RelationshipOperation entity was cleared.
+func (m *RelationshipOperationAttemptMutation) OperationCleared() bool {
+	return m.clearedoperation
+}
+
+// OperationIDs returns the "operation" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// OperationID instead. It exists only for internal usage by the builders.
+func (m *RelationshipOperationAttemptMutation) OperationIDs() (ids []int) {
+	if id := m.operation; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetOperation resets all changes to the "operation" edge.
+func (m *RelationshipOperationAttemptMutation) ResetOperation() {
+	m.operation = nil
+	m.clearedoperation = false
+}
+
+// Where appends a list predicates to the RelationshipOperationAttemptMutation builder.
+func (m *RelationshipOperationAttemptMutation) Where(ps ...predicate.RelationshipOperationAttempt) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the RelationshipOperationAttemptMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *RelationshipOperationAttemptMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.RelationshipOperationAttempt, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *RelationshipOperationAttemptMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *RelationshipOperationAttemptMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (RelationshipOperationAttempt).
+func (m *RelationshipOperationAttemptMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *RelationshipOperationAttemptMutation) Fields() []string {
+	fields := make([]string, 0, 10)
+	if m.operation != nil {
+		fields = append(fields, relationshipoperationattempt.FieldOperationID)
+	}
+	if m.attempt_number != nil {
+		fields = append(fields, relationshipoperationattempt.FieldAttemptNumber)
+	}
+	if m.direction != nil {
+		fields = append(fields, relationshipoperationattempt.FieldDirection)
+	}
+	if m.status != nil {
+		fields = append(fields, relationshipoperationattempt.FieldStatus)
+	}
+	if m.initiated_by_user_id != nil {
+		fields = append(fields, relationshipoperationattempt.FieldInitiatedByUserID)
+	}
+	if m.result != nil {
+		fields = append(fields, relationshipoperationattempt.FieldResult)
+	}
+	if m.error_message != nil {
+		fields = append(fields, relationshipoperationattempt.FieldErrorMessage)
+	}
+	if m.created_at != nil {
+		fields = append(fields, relationshipoperationattempt.FieldCreatedAt)
+	}
+	if m.started_at != nil {
+		fields = append(fields, relationshipoperationattempt.FieldStartedAt)
+	}
+	if m.completed_at != nil {
+		fields = append(fields, relationshipoperationattempt.FieldCompletedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *RelationshipOperationAttemptMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case relationshipoperationattempt.FieldOperationID:
+		return m.OperationID()
+	case relationshipoperationattempt.FieldAttemptNumber:
+		return m.AttemptNumber()
+	case relationshipoperationattempt.FieldDirection:
+		return m.Direction()
+	case relationshipoperationattempt.FieldStatus:
+		return m.Status()
+	case relationshipoperationattempt.FieldInitiatedByUserID:
+		return m.InitiatedByUserID()
+	case relationshipoperationattempt.FieldResult:
+		return m.Result()
+	case relationshipoperationattempt.FieldErrorMessage:
+		return m.ErrorMessage()
+	case relationshipoperationattempt.FieldCreatedAt:
+		return m.CreatedAt()
+	case relationshipoperationattempt.FieldStartedAt:
+		return m.StartedAt()
+	case relationshipoperationattempt.FieldCompletedAt:
+		return m.CompletedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *RelationshipOperationAttemptMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case relationshipoperationattempt.FieldOperationID:
+		return m.OldOperationID(ctx)
+	case relationshipoperationattempt.FieldAttemptNumber:
+		return m.OldAttemptNumber(ctx)
+	case relationshipoperationattempt.FieldDirection:
+		return m.OldDirection(ctx)
+	case relationshipoperationattempt.FieldStatus:
+		return m.OldStatus(ctx)
+	case relationshipoperationattempt.FieldInitiatedByUserID:
+		return m.OldInitiatedByUserID(ctx)
+	case relationshipoperationattempt.FieldResult:
+		return m.OldResult(ctx)
+	case relationshipoperationattempt.FieldErrorMessage:
+		return m.OldErrorMessage(ctx)
+	case relationshipoperationattempt.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case relationshipoperationattempt.FieldStartedAt:
+		return m.OldStartedAt(ctx)
+	case relationshipoperationattempt.FieldCompletedAt:
+		return m.OldCompletedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown RelationshipOperationAttempt field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RelationshipOperationAttemptMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case relationshipoperationattempt.FieldOperationID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOperationID(v)
+		return nil
+	case relationshipoperationattempt.FieldAttemptNumber:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAttemptNumber(v)
+		return nil
+	case relationshipoperationattempt.FieldDirection:
+		v, ok := value.(relationshipoperationattempt.Direction)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDirection(v)
+		return nil
+	case relationshipoperationattempt.FieldStatus:
+		v, ok := value.(relationshipoperationattempt.Status)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case relationshipoperationattempt.FieldInitiatedByUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInitiatedByUserID(v)
+		return nil
+	case relationshipoperationattempt.FieldResult:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResult(v)
+		return nil
+	case relationshipoperationattempt.FieldErrorMessage:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorMessage(v)
+		return nil
+	case relationshipoperationattempt.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case relationshipoperationattempt.FieldStartedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStartedAt(v)
+		return nil
+	case relationshipoperationattempt.FieldCompletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCompletedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperationAttempt field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *RelationshipOperationAttemptMutation) AddedFields() []string {
+	var fields []string
+	if m.addattempt_number != nil {
+		fields = append(fields, relationshipoperationattempt.FieldAttemptNumber)
+	}
+	if m.addinitiated_by_user_id != nil {
+		fields = append(fields, relationshipoperationattempt.FieldInitiatedByUserID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *RelationshipOperationAttemptMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case relationshipoperationattempt.FieldAttemptNumber:
+		return m.AddedAttemptNumber()
+	case relationshipoperationattempt.FieldInitiatedByUserID:
+		return m.AddedInitiatedByUserID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RelationshipOperationAttemptMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case relationshipoperationattempt.FieldAttemptNumber:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAttemptNumber(v)
+		return nil
+	case relationshipoperationattempt.FieldInitiatedByUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddInitiatedByUserID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperationAttempt numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *RelationshipOperationAttemptMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(relationshipoperationattempt.FieldResult) {
+		fields = append(fields, relationshipoperationattempt.FieldResult)
+	}
+	if m.FieldCleared(relationshipoperationattempt.FieldStartedAt) {
+		fields = append(fields, relationshipoperationattempt.FieldStartedAt)
+	}
+	if m.FieldCleared(relationshipoperationattempt.FieldCompletedAt) {
+		fields = append(fields, relationshipoperationattempt.FieldCompletedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *RelationshipOperationAttemptMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *RelationshipOperationAttemptMutation) ClearField(name string) error {
+	switch name {
+	case relationshipoperationattempt.FieldResult:
+		m.ClearResult()
+		return nil
+	case relationshipoperationattempt.FieldStartedAt:
+		m.ClearStartedAt()
+		return nil
+	case relationshipoperationattempt.FieldCompletedAt:
+		m.ClearCompletedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperationAttempt nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *RelationshipOperationAttemptMutation) ResetField(name string) error {
+	switch name {
+	case relationshipoperationattempt.FieldOperationID:
+		m.ResetOperationID()
+		return nil
+	case relationshipoperationattempt.FieldAttemptNumber:
+		m.ResetAttemptNumber()
+		return nil
+	case relationshipoperationattempt.FieldDirection:
+		m.ResetDirection()
+		return nil
+	case relationshipoperationattempt.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case relationshipoperationattempt.FieldInitiatedByUserID:
+		m.ResetInitiatedByUserID()
+		return nil
+	case relationshipoperationattempt.FieldResult:
+		m.ResetResult()
+		return nil
+	case relationshipoperationattempt.FieldErrorMessage:
+		m.ResetErrorMessage()
+		return nil
+	case relationshipoperationattempt.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case relationshipoperationattempt.FieldStartedAt:
+		m.ResetStartedAt()
+		return nil
+	case relationshipoperationattempt.FieldCompletedAt:
+		m.ResetCompletedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperationAttempt field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *RelationshipOperationAttemptMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.operation != nil {
+		edges = append(edges, relationshipoperationattempt.EdgeOperation)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *RelationshipOperationAttemptMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case relationshipoperationattempt.EdgeOperation:
+		if id := m.operation; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *RelationshipOperationAttemptMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *RelationshipOperationAttemptMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *RelationshipOperationAttemptMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedoperation {
+		edges = append(edges, relationshipoperationattempt.EdgeOperation)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *RelationshipOperationAttemptMutation) EdgeCleared(name string) bool {
+	switch name {
+	case relationshipoperationattempt.EdgeOperation:
+		return m.clearedoperation
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *RelationshipOperationAttemptMutation) ClearEdge(name string) error {
+	switch name {
+	case relationshipoperationattempt.EdgeOperation:
+		m.ClearOperation()
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperationAttempt unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *RelationshipOperationAttemptMutation) ResetEdge(name string) error {
+	switch name {
+	case relationshipoperationattempt.EdgeOperation:
+		m.ResetOperation()
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperationAttempt edge %s", name)
+}
+
+// RelationshipOperationMappingMutation represents an operation that mutates the RelationshipOperationMapping nodes in the graph.
+type RelationshipOperationMappingMutation struct {
+	config
+	op                   Op
+	typ                  string
+	id                   *int
+	role                 *relationshipoperationmapping.Role
+	baseline_revision    *int64
+	addbaseline_revision *int64
+	baseline_snapshot    *map[string]interface{}
+	active               *bool
+	created_at           *time.Time
+	released_at          *time.Time
+	clearedFields        map[string]struct{}
+	operation            *int
+	clearedoperation     bool
+	mapping              *int
+	clearedmapping       bool
+	done                 bool
+	oldValue             func(context.Context) (*RelationshipOperationMapping, error)
+	predicates           []predicate.RelationshipOperationMapping
+}
+
+var _ ent.Mutation = (*RelationshipOperationMappingMutation)(nil)
+
+// relationshipoperationmappingOption allows management of the mutation configuration using functional options.
+type relationshipoperationmappingOption func(*RelationshipOperationMappingMutation)
+
+// newRelationshipOperationMappingMutation creates new mutation for the RelationshipOperationMapping entity.
+func newRelationshipOperationMappingMutation(c config, op Op, opts ...relationshipoperationmappingOption) *RelationshipOperationMappingMutation {
+	m := &RelationshipOperationMappingMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeRelationshipOperationMapping,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withRelationshipOperationMappingID sets the ID field of the mutation.
+func withRelationshipOperationMappingID(id int) relationshipoperationmappingOption {
+	return func(m *RelationshipOperationMappingMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *RelationshipOperationMapping
+		)
+		m.oldValue = func(ctx context.Context) (*RelationshipOperationMapping, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().RelationshipOperationMapping.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withRelationshipOperationMapping sets the old RelationshipOperationMapping of the mutation.
+func withRelationshipOperationMapping(node *RelationshipOperationMapping) relationshipoperationmappingOption {
+	return func(m *RelationshipOperationMappingMutation) {
+		m.oldValue = func(context.Context) (*RelationshipOperationMapping, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m RelationshipOperationMappingMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m RelationshipOperationMappingMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *RelationshipOperationMappingMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *RelationshipOperationMappingMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().RelationshipOperationMapping.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetOperationID sets the "operation_id" field.
+func (m *RelationshipOperationMappingMutation) SetOperationID(i int) {
+	m.operation = &i
+}
+
+// OperationID returns the value of the "operation_id" field in the mutation.
+func (m *RelationshipOperationMappingMutation) OperationID() (r int, exists bool) {
+	v := m.operation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOperationID returns the old "operation_id" field's value of the RelationshipOperationMapping entity.
+// If the RelationshipOperationMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMappingMutation) OldOperationID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOperationID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOperationID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOperationID: %w", err)
+	}
+	return oldValue.OperationID, nil
+}
+
+// ResetOperationID resets all changes to the "operation_id" field.
+func (m *RelationshipOperationMappingMutation) ResetOperationID() {
+	m.operation = nil
+}
+
+// SetMappingID sets the "mapping_id" field.
+func (m *RelationshipOperationMappingMutation) SetMappingID(i int) {
+	m.mapping = &i
+}
+
+// MappingID returns the value of the "mapping_id" field in the mutation.
+func (m *RelationshipOperationMappingMutation) MappingID() (r int, exists bool) {
+	v := m.mapping
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMappingID returns the old "mapping_id" field's value of the RelationshipOperationMapping entity.
+// If the RelationshipOperationMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMappingMutation) OldMappingID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMappingID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMappingID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMappingID: %w", err)
+	}
+	return oldValue.MappingID, nil
+}
+
+// ResetMappingID resets all changes to the "mapping_id" field.
+func (m *RelationshipOperationMappingMutation) ResetMappingID() {
+	m.mapping = nil
+}
+
+// SetRole sets the "role" field.
+func (m *RelationshipOperationMappingMutation) SetRole(r relationshipoperationmapping.Role) {
+	m.role = &r
+}
+
+// Role returns the value of the "role" field in the mutation.
+func (m *RelationshipOperationMappingMutation) Role() (r relationshipoperationmapping.Role, exists bool) {
+	v := m.role
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRole returns the old "role" field's value of the RelationshipOperationMapping entity.
+// If the RelationshipOperationMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMappingMutation) OldRole(ctx context.Context) (v relationshipoperationmapping.Role, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRole is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRole requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRole: %w", err)
+	}
+	return oldValue.Role, nil
+}
+
+// ResetRole resets all changes to the "role" field.
+func (m *RelationshipOperationMappingMutation) ResetRole() {
+	m.role = nil
+}
+
+// SetBaselineRevision sets the "baseline_revision" field.
+func (m *RelationshipOperationMappingMutation) SetBaselineRevision(i int64) {
+	m.baseline_revision = &i
+	m.addbaseline_revision = nil
+}
+
+// BaselineRevision returns the value of the "baseline_revision" field in the mutation.
+func (m *RelationshipOperationMappingMutation) BaselineRevision() (r int64, exists bool) {
+	v := m.baseline_revision
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBaselineRevision returns the old "baseline_revision" field's value of the RelationshipOperationMapping entity.
+// If the RelationshipOperationMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMappingMutation) OldBaselineRevision(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBaselineRevision is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBaselineRevision requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBaselineRevision: %w", err)
+	}
+	return oldValue.BaselineRevision, nil
+}
+
+// AddBaselineRevision adds i to the "baseline_revision" field.
+func (m *RelationshipOperationMappingMutation) AddBaselineRevision(i int64) {
+	if m.addbaseline_revision != nil {
+		*m.addbaseline_revision += i
+	} else {
+		m.addbaseline_revision = &i
+	}
+}
+
+// AddedBaselineRevision returns the value that was added to the "baseline_revision" field in this mutation.
+func (m *RelationshipOperationMappingMutation) AddedBaselineRevision() (r int64, exists bool) {
+	v := m.addbaseline_revision
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetBaselineRevision resets all changes to the "baseline_revision" field.
+func (m *RelationshipOperationMappingMutation) ResetBaselineRevision() {
+	m.baseline_revision = nil
+	m.addbaseline_revision = nil
+}
+
+// SetBaselineSnapshot sets the "baseline_snapshot" field.
+func (m *RelationshipOperationMappingMutation) SetBaselineSnapshot(value map[string]interface{}) {
+	m.baseline_snapshot = &value
+}
+
+// BaselineSnapshot returns the value of the "baseline_snapshot" field in the mutation.
+func (m *RelationshipOperationMappingMutation) BaselineSnapshot() (r map[string]interface{}, exists bool) {
+	v := m.baseline_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBaselineSnapshot returns the old "baseline_snapshot" field's value of the RelationshipOperationMapping entity.
+// If the RelationshipOperationMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMappingMutation) OldBaselineSnapshot(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBaselineSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBaselineSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBaselineSnapshot: %w", err)
+	}
+	return oldValue.BaselineSnapshot, nil
+}
+
+// ResetBaselineSnapshot resets all changes to the "baseline_snapshot" field.
+func (m *RelationshipOperationMappingMutation) ResetBaselineSnapshot() {
+	m.baseline_snapshot = nil
+}
+
+// SetActive sets the "active" field.
+func (m *RelationshipOperationMappingMutation) SetActive(b bool) {
+	m.active = &b
+}
+
+// Active returns the value of the "active" field in the mutation.
+func (m *RelationshipOperationMappingMutation) Active() (r bool, exists bool) {
+	v := m.active
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldActive returns the old "active" field's value of the RelationshipOperationMapping entity.
+// If the RelationshipOperationMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMappingMutation) OldActive(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldActive is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldActive requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldActive: %w", err)
+	}
+	return oldValue.Active, nil
+}
+
+// ResetActive resets all changes to the "active" field.
+func (m *RelationshipOperationMappingMutation) ResetActive() {
+	m.active = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *RelationshipOperationMappingMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *RelationshipOperationMappingMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the RelationshipOperationMapping entity.
+// If the RelationshipOperationMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMappingMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *RelationshipOperationMappingMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetReleasedAt sets the "released_at" field.
+func (m *RelationshipOperationMappingMutation) SetReleasedAt(t time.Time) {
+	m.released_at = &t
+}
+
+// ReleasedAt returns the value of the "released_at" field in the mutation.
+func (m *RelationshipOperationMappingMutation) ReleasedAt() (r time.Time, exists bool) {
+	v := m.released_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReleasedAt returns the old "released_at" field's value of the RelationshipOperationMapping entity.
+// If the RelationshipOperationMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationMappingMutation) OldReleasedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReleasedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReleasedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReleasedAt: %w", err)
+	}
+	return oldValue.ReleasedAt, nil
+}
+
+// ClearReleasedAt clears the value of the "released_at" field.
+func (m *RelationshipOperationMappingMutation) ClearReleasedAt() {
+	m.released_at = nil
+	m.clearedFields[relationshipoperationmapping.FieldReleasedAt] = struct{}{}
+}
+
+// ReleasedAtCleared returns if the "released_at" field was cleared in this mutation.
+func (m *RelationshipOperationMappingMutation) ReleasedAtCleared() bool {
+	_, ok := m.clearedFields[relationshipoperationmapping.FieldReleasedAt]
+	return ok
+}
+
+// ResetReleasedAt resets all changes to the "released_at" field.
+func (m *RelationshipOperationMappingMutation) ResetReleasedAt() {
+	m.released_at = nil
+	delete(m.clearedFields, relationshipoperationmapping.FieldReleasedAt)
+}
+
+// ClearOperation clears the "operation" edge to the RelationshipOperation entity.
+func (m *RelationshipOperationMappingMutation) ClearOperation() {
+	m.clearedoperation = true
+	m.clearedFields[relationshipoperationmapping.FieldOperationID] = struct{}{}
+}
+
+// OperationCleared reports if the "operation" edge to the RelationshipOperation entity was cleared.
+func (m *RelationshipOperationMappingMutation) OperationCleared() bool {
+	return m.clearedoperation
+}
+
+// OperationIDs returns the "operation" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// OperationID instead. It exists only for internal usage by the builders.
+func (m *RelationshipOperationMappingMutation) OperationIDs() (ids []int) {
+	if id := m.operation; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetOperation resets all changes to the "operation" edge.
+func (m *RelationshipOperationMappingMutation) ResetOperation() {
+	m.operation = nil
+	m.clearedoperation = false
+}
+
+// ClearMapping clears the "mapping" edge to the RelayGroupMapping entity.
+func (m *RelationshipOperationMappingMutation) ClearMapping() {
+	m.clearedmapping = true
+	m.clearedFields[relationshipoperationmapping.FieldMappingID] = struct{}{}
+}
+
+// MappingCleared reports if the "mapping" edge to the RelayGroupMapping entity was cleared.
+func (m *RelationshipOperationMappingMutation) MappingCleared() bool {
+	return m.clearedmapping
+}
+
+// MappingIDs returns the "mapping" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// MappingID instead. It exists only for internal usage by the builders.
+func (m *RelationshipOperationMappingMutation) MappingIDs() (ids []int) {
+	if id := m.mapping; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetMapping resets all changes to the "mapping" edge.
+func (m *RelationshipOperationMappingMutation) ResetMapping() {
+	m.mapping = nil
+	m.clearedmapping = false
+}
+
+// Where appends a list predicates to the RelationshipOperationMappingMutation builder.
+func (m *RelationshipOperationMappingMutation) Where(ps ...predicate.RelationshipOperationMapping) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the RelationshipOperationMappingMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *RelationshipOperationMappingMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.RelationshipOperationMapping, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *RelationshipOperationMappingMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *RelationshipOperationMappingMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (RelationshipOperationMapping).
+func (m *RelationshipOperationMappingMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *RelationshipOperationMappingMutation) Fields() []string {
+	fields := make([]string, 0, 8)
+	if m.operation != nil {
+		fields = append(fields, relationshipoperationmapping.FieldOperationID)
+	}
+	if m.mapping != nil {
+		fields = append(fields, relationshipoperationmapping.FieldMappingID)
+	}
+	if m.role != nil {
+		fields = append(fields, relationshipoperationmapping.FieldRole)
+	}
+	if m.baseline_revision != nil {
+		fields = append(fields, relationshipoperationmapping.FieldBaselineRevision)
+	}
+	if m.baseline_snapshot != nil {
+		fields = append(fields, relationshipoperationmapping.FieldBaselineSnapshot)
+	}
+	if m.active != nil {
+		fields = append(fields, relationshipoperationmapping.FieldActive)
+	}
+	if m.created_at != nil {
+		fields = append(fields, relationshipoperationmapping.FieldCreatedAt)
+	}
+	if m.released_at != nil {
+		fields = append(fields, relationshipoperationmapping.FieldReleasedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *RelationshipOperationMappingMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case relationshipoperationmapping.FieldOperationID:
+		return m.OperationID()
+	case relationshipoperationmapping.FieldMappingID:
+		return m.MappingID()
+	case relationshipoperationmapping.FieldRole:
+		return m.Role()
+	case relationshipoperationmapping.FieldBaselineRevision:
+		return m.BaselineRevision()
+	case relationshipoperationmapping.FieldBaselineSnapshot:
+		return m.BaselineSnapshot()
+	case relationshipoperationmapping.FieldActive:
+		return m.Active()
+	case relationshipoperationmapping.FieldCreatedAt:
+		return m.CreatedAt()
+	case relationshipoperationmapping.FieldReleasedAt:
+		return m.ReleasedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *RelationshipOperationMappingMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case relationshipoperationmapping.FieldOperationID:
+		return m.OldOperationID(ctx)
+	case relationshipoperationmapping.FieldMappingID:
+		return m.OldMappingID(ctx)
+	case relationshipoperationmapping.FieldRole:
+		return m.OldRole(ctx)
+	case relationshipoperationmapping.FieldBaselineRevision:
+		return m.OldBaselineRevision(ctx)
+	case relationshipoperationmapping.FieldBaselineSnapshot:
+		return m.OldBaselineSnapshot(ctx)
+	case relationshipoperationmapping.FieldActive:
+		return m.OldActive(ctx)
+	case relationshipoperationmapping.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case relationshipoperationmapping.FieldReleasedAt:
+		return m.OldReleasedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown RelationshipOperationMapping field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RelationshipOperationMappingMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case relationshipoperationmapping.FieldOperationID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOperationID(v)
+		return nil
+	case relationshipoperationmapping.FieldMappingID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMappingID(v)
+		return nil
+	case relationshipoperationmapping.FieldRole:
+		v, ok := value.(relationshipoperationmapping.Role)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRole(v)
+		return nil
+	case relationshipoperationmapping.FieldBaselineRevision:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBaselineRevision(v)
+		return nil
+	case relationshipoperationmapping.FieldBaselineSnapshot:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBaselineSnapshot(v)
+		return nil
+	case relationshipoperationmapping.FieldActive:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetActive(v)
+		return nil
+	case relationshipoperationmapping.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case relationshipoperationmapping.FieldReleasedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReleasedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperationMapping field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *RelationshipOperationMappingMutation) AddedFields() []string {
+	var fields []string
+	if m.addbaseline_revision != nil {
+		fields = append(fields, relationshipoperationmapping.FieldBaselineRevision)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *RelationshipOperationMappingMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case relationshipoperationmapping.FieldBaselineRevision:
+		return m.AddedBaselineRevision()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RelationshipOperationMappingMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case relationshipoperationmapping.FieldBaselineRevision:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddBaselineRevision(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperationMapping numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *RelationshipOperationMappingMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(relationshipoperationmapping.FieldReleasedAt) {
+		fields = append(fields, relationshipoperationmapping.FieldReleasedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *RelationshipOperationMappingMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *RelationshipOperationMappingMutation) ClearField(name string) error {
+	switch name {
+	case relationshipoperationmapping.FieldReleasedAt:
+		m.ClearReleasedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperationMapping nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *RelationshipOperationMappingMutation) ResetField(name string) error {
+	switch name {
+	case relationshipoperationmapping.FieldOperationID:
+		m.ResetOperationID()
+		return nil
+	case relationshipoperationmapping.FieldMappingID:
+		m.ResetMappingID()
+		return nil
+	case relationshipoperationmapping.FieldRole:
+		m.ResetRole()
+		return nil
+	case relationshipoperationmapping.FieldBaselineRevision:
+		m.ResetBaselineRevision()
+		return nil
+	case relationshipoperationmapping.FieldBaselineSnapshot:
+		m.ResetBaselineSnapshot()
+		return nil
+	case relationshipoperationmapping.FieldActive:
+		m.ResetActive()
+		return nil
+	case relationshipoperationmapping.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case relationshipoperationmapping.FieldReleasedAt:
+		m.ResetReleasedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperationMapping field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *RelationshipOperationMappingMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.operation != nil {
+		edges = append(edges, relationshipoperationmapping.EdgeOperation)
+	}
+	if m.mapping != nil {
+		edges = append(edges, relationshipoperationmapping.EdgeMapping)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *RelationshipOperationMappingMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case relationshipoperationmapping.EdgeOperation:
+		if id := m.operation; id != nil {
+			return []ent.Value{*id}
+		}
+	case relationshipoperationmapping.EdgeMapping:
+		if id := m.mapping; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *RelationshipOperationMappingMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *RelationshipOperationMappingMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *RelationshipOperationMappingMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.clearedoperation {
+		edges = append(edges, relationshipoperationmapping.EdgeOperation)
+	}
+	if m.clearedmapping {
+		edges = append(edges, relationshipoperationmapping.EdgeMapping)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *RelationshipOperationMappingMutation) EdgeCleared(name string) bool {
+	switch name {
+	case relationshipoperationmapping.EdgeOperation:
+		return m.clearedoperation
+	case relationshipoperationmapping.EdgeMapping:
+		return m.clearedmapping
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *RelationshipOperationMappingMutation) ClearEdge(name string) error {
+	switch name {
+	case relationshipoperationmapping.EdgeOperation:
+		m.ClearOperation()
+		return nil
+	case relationshipoperationmapping.EdgeMapping:
+		m.ClearMapping()
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperationMapping unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *RelationshipOperationMappingMutation) ResetEdge(name string) error {
+	switch name {
+	case relationshipoperationmapping.EdgeOperation:
+		m.ResetOperation()
+		return nil
+	case relationshipoperationmapping.EdgeMapping:
+		m.ResetMapping()
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperationMapping edge %s", name)
+}
+
+// RelationshipOperationStepMutation represents an operation that mutates the RelationshipOperationStep nodes in the graph.
+type RelationshipOperationStepMutation struct {
+	config
+	op                          Op
+	typ                         string
+	id                          *int
+	step_key                    *string
+	action                      *string
+	relationship_type           *string
+	direction                   *relationshipoperationstep.Direction
+	local_user_id               *int
+	addlocal_user_id            *int
+	relay_user_id               *int64
+	addrelay_user_id            *int64
+	source_group_id             *int64
+	addsource_group_id          *int64
+	target_group_id             *int64
+	addtarget_group_id          *int64
+	reviewed_resource_ids       *[]int64
+	appendreviewed_resource_ids []int64
+	reviewed_priority           *int
+	addreviewed_priority        *int
+	reviewed_status             *string
+	expected_result             *map[string]interface{}
+	resume_supported            *bool
+	restore_supported           *bool
+	lifecycle                   *relationshipoperationstep.Lifecycle
+	latest_verified_effect      *map[string]interface{}
+	created_at                  *time.Time
+	updated_at                  *time.Time
+	clearedFields               map[string]struct{}
+	operation                   *int
+	clearedoperation            bool
+	done                        bool
+	oldValue                    func(context.Context) (*RelationshipOperationStep, error)
+	predicates                  []predicate.RelationshipOperationStep
+}
+
+var _ ent.Mutation = (*RelationshipOperationStepMutation)(nil)
+
+// relationshipoperationstepOption allows management of the mutation configuration using functional options.
+type relationshipoperationstepOption func(*RelationshipOperationStepMutation)
+
+// newRelationshipOperationStepMutation creates new mutation for the RelationshipOperationStep entity.
+func newRelationshipOperationStepMutation(c config, op Op, opts ...relationshipoperationstepOption) *RelationshipOperationStepMutation {
+	m := &RelationshipOperationStepMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeRelationshipOperationStep,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withRelationshipOperationStepID sets the ID field of the mutation.
+func withRelationshipOperationStepID(id int) relationshipoperationstepOption {
+	return func(m *RelationshipOperationStepMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *RelationshipOperationStep
+		)
+		m.oldValue = func(ctx context.Context) (*RelationshipOperationStep, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().RelationshipOperationStep.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withRelationshipOperationStep sets the old RelationshipOperationStep of the mutation.
+func withRelationshipOperationStep(node *RelationshipOperationStep) relationshipoperationstepOption {
+	return func(m *RelationshipOperationStepMutation) {
+		m.oldValue = func(context.Context) (*RelationshipOperationStep, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m RelationshipOperationStepMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m RelationshipOperationStepMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *RelationshipOperationStepMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *RelationshipOperationStepMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().RelationshipOperationStep.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetOperationID sets the "operation_id" field.
+func (m *RelationshipOperationStepMutation) SetOperationID(i int) {
+	m.operation = &i
+}
+
+// OperationID returns the value of the "operation_id" field in the mutation.
+func (m *RelationshipOperationStepMutation) OperationID() (r int, exists bool) {
+	v := m.operation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOperationID returns the old "operation_id" field's value of the RelationshipOperationStep entity.
+// If the RelationshipOperationStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationStepMutation) OldOperationID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOperationID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOperationID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOperationID: %w", err)
+	}
+	return oldValue.OperationID, nil
+}
+
+// ResetOperationID resets all changes to the "operation_id" field.
+func (m *RelationshipOperationStepMutation) ResetOperationID() {
+	m.operation = nil
+}
+
+// SetStepKey sets the "step_key" field.
+func (m *RelationshipOperationStepMutation) SetStepKey(s string) {
+	m.step_key = &s
+}
+
+// StepKey returns the value of the "step_key" field in the mutation.
+func (m *RelationshipOperationStepMutation) StepKey() (r string, exists bool) {
+	v := m.step_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStepKey returns the old "step_key" field's value of the RelationshipOperationStep entity.
+// If the RelationshipOperationStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationStepMutation) OldStepKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStepKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStepKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStepKey: %w", err)
+	}
+	return oldValue.StepKey, nil
+}
+
+// ResetStepKey resets all changes to the "step_key" field.
+func (m *RelationshipOperationStepMutation) ResetStepKey() {
+	m.step_key = nil
+}
+
+// SetAction sets the "action" field.
+func (m *RelationshipOperationStepMutation) SetAction(s string) {
+	m.action = &s
+}
+
+// Action returns the value of the "action" field in the mutation.
+func (m *RelationshipOperationStepMutation) Action() (r string, exists bool) {
+	v := m.action
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAction returns the old "action" field's value of the RelationshipOperationStep entity.
+// If the RelationshipOperationStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationStepMutation) OldAction(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAction is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAction requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAction: %w", err)
+	}
+	return oldValue.Action, nil
+}
+
+// ResetAction resets all changes to the "action" field.
+func (m *RelationshipOperationStepMutation) ResetAction() {
+	m.action = nil
+}
+
+// SetRelationshipType sets the "relationship_type" field.
+func (m *RelationshipOperationStepMutation) SetRelationshipType(s string) {
+	m.relationship_type = &s
+}
+
+// RelationshipType returns the value of the "relationship_type" field in the mutation.
+func (m *RelationshipOperationStepMutation) RelationshipType() (r string, exists bool) {
+	v := m.relationship_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRelationshipType returns the old "relationship_type" field's value of the RelationshipOperationStep entity.
+// If the RelationshipOperationStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationStepMutation) OldRelationshipType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRelationshipType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRelationshipType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRelationshipType: %w", err)
+	}
+	return oldValue.RelationshipType, nil
+}
+
+// ResetRelationshipType resets all changes to the "relationship_type" field.
+func (m *RelationshipOperationStepMutation) ResetRelationshipType() {
+	m.relationship_type = nil
+}
+
+// SetDirection sets the "direction" field.
+func (m *RelationshipOperationStepMutation) SetDirection(r relationshipoperationstep.Direction) {
+	m.direction = &r
+}
+
+// Direction returns the value of the "direction" field in the mutation.
+func (m *RelationshipOperationStepMutation) Direction() (r relationshipoperationstep.Direction, exists bool) {
+	v := m.direction
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDirection returns the old "direction" field's value of the RelationshipOperationStep entity.
+// If the RelationshipOperationStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationStepMutation) OldDirection(ctx context.Context) (v relationshipoperationstep.Direction, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDirection is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDirection requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDirection: %w", err)
+	}
+	return oldValue.Direction, nil
+}
+
+// ResetDirection resets all changes to the "direction" field.
+func (m *RelationshipOperationStepMutation) ResetDirection() {
+	m.direction = nil
+}
+
+// SetLocalUserID sets the "local_user_id" field.
+func (m *RelationshipOperationStepMutation) SetLocalUserID(i int) {
+	m.local_user_id = &i
+	m.addlocal_user_id = nil
+}
+
+// LocalUserID returns the value of the "local_user_id" field in the mutation.
+func (m *RelationshipOperationStepMutation) LocalUserID() (r int, exists bool) {
+	v := m.local_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLocalUserID returns the old "local_user_id" field's value of the RelationshipOperationStep entity.
+// If the RelationshipOperationStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationStepMutation) OldLocalUserID(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLocalUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLocalUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLocalUserID: %w", err)
+	}
+	return oldValue.LocalUserID, nil
+}
+
+// AddLocalUserID adds i to the "local_user_id" field.
+func (m *RelationshipOperationStepMutation) AddLocalUserID(i int) {
+	if m.addlocal_user_id != nil {
+		*m.addlocal_user_id += i
+	} else {
+		m.addlocal_user_id = &i
+	}
+}
+
+// AddedLocalUserID returns the value that was added to the "local_user_id" field in this mutation.
+func (m *RelationshipOperationStepMutation) AddedLocalUserID() (r int, exists bool) {
+	v := m.addlocal_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearLocalUserID clears the value of the "local_user_id" field.
+func (m *RelationshipOperationStepMutation) ClearLocalUserID() {
+	m.local_user_id = nil
+	m.addlocal_user_id = nil
+	m.clearedFields[relationshipoperationstep.FieldLocalUserID] = struct{}{}
+}
+
+// LocalUserIDCleared returns if the "local_user_id" field was cleared in this mutation.
+func (m *RelationshipOperationStepMutation) LocalUserIDCleared() bool {
+	_, ok := m.clearedFields[relationshipoperationstep.FieldLocalUserID]
+	return ok
+}
+
+// ResetLocalUserID resets all changes to the "local_user_id" field.
+func (m *RelationshipOperationStepMutation) ResetLocalUserID() {
+	m.local_user_id = nil
+	m.addlocal_user_id = nil
+	delete(m.clearedFields, relationshipoperationstep.FieldLocalUserID)
+}
+
+// SetRelayUserID sets the "relay_user_id" field.
+func (m *RelationshipOperationStepMutation) SetRelayUserID(i int64) {
+	m.relay_user_id = &i
+	m.addrelay_user_id = nil
+}
+
+// RelayUserID returns the value of the "relay_user_id" field in the mutation.
+func (m *RelationshipOperationStepMutation) RelayUserID() (r int64, exists bool) {
+	v := m.relay_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRelayUserID returns the old "relay_user_id" field's value of the RelationshipOperationStep entity.
+// If the RelationshipOperationStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationStepMutation) OldRelayUserID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRelayUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRelayUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRelayUserID: %w", err)
+	}
+	return oldValue.RelayUserID, nil
+}
+
+// AddRelayUserID adds i to the "relay_user_id" field.
+func (m *RelationshipOperationStepMutation) AddRelayUserID(i int64) {
+	if m.addrelay_user_id != nil {
+		*m.addrelay_user_id += i
+	} else {
+		m.addrelay_user_id = &i
+	}
+}
+
+// AddedRelayUserID returns the value that was added to the "relay_user_id" field in this mutation.
+func (m *RelationshipOperationStepMutation) AddedRelayUserID() (r int64, exists bool) {
+	v := m.addrelay_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearRelayUserID clears the value of the "relay_user_id" field.
+func (m *RelationshipOperationStepMutation) ClearRelayUserID() {
+	m.relay_user_id = nil
+	m.addrelay_user_id = nil
+	m.clearedFields[relationshipoperationstep.FieldRelayUserID] = struct{}{}
+}
+
+// RelayUserIDCleared returns if the "relay_user_id" field was cleared in this mutation.
+func (m *RelationshipOperationStepMutation) RelayUserIDCleared() bool {
+	_, ok := m.clearedFields[relationshipoperationstep.FieldRelayUserID]
+	return ok
+}
+
+// ResetRelayUserID resets all changes to the "relay_user_id" field.
+func (m *RelationshipOperationStepMutation) ResetRelayUserID() {
+	m.relay_user_id = nil
+	m.addrelay_user_id = nil
+	delete(m.clearedFields, relationshipoperationstep.FieldRelayUserID)
+}
+
+// SetSourceGroupID sets the "source_group_id" field.
+func (m *RelationshipOperationStepMutation) SetSourceGroupID(i int64) {
+	m.source_group_id = &i
+	m.addsource_group_id = nil
+}
+
+// SourceGroupID returns the value of the "source_group_id" field in the mutation.
+func (m *RelationshipOperationStepMutation) SourceGroupID() (r int64, exists bool) {
+	v := m.source_group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourceGroupID returns the old "source_group_id" field's value of the RelationshipOperationStep entity.
+// If the RelationshipOperationStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationStepMutation) OldSourceGroupID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourceGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourceGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourceGroupID: %w", err)
+	}
+	return oldValue.SourceGroupID, nil
+}
+
+// AddSourceGroupID adds i to the "source_group_id" field.
+func (m *RelationshipOperationStepMutation) AddSourceGroupID(i int64) {
+	if m.addsource_group_id != nil {
+		*m.addsource_group_id += i
+	} else {
+		m.addsource_group_id = &i
+	}
+}
+
+// AddedSourceGroupID returns the value that was added to the "source_group_id" field in this mutation.
+func (m *RelationshipOperationStepMutation) AddedSourceGroupID() (r int64, exists bool) {
+	v := m.addsource_group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearSourceGroupID clears the value of the "source_group_id" field.
+func (m *RelationshipOperationStepMutation) ClearSourceGroupID() {
+	m.source_group_id = nil
+	m.addsource_group_id = nil
+	m.clearedFields[relationshipoperationstep.FieldSourceGroupID] = struct{}{}
+}
+
+// SourceGroupIDCleared returns if the "source_group_id" field was cleared in this mutation.
+func (m *RelationshipOperationStepMutation) SourceGroupIDCleared() bool {
+	_, ok := m.clearedFields[relationshipoperationstep.FieldSourceGroupID]
+	return ok
+}
+
+// ResetSourceGroupID resets all changes to the "source_group_id" field.
+func (m *RelationshipOperationStepMutation) ResetSourceGroupID() {
+	m.source_group_id = nil
+	m.addsource_group_id = nil
+	delete(m.clearedFields, relationshipoperationstep.FieldSourceGroupID)
+}
+
+// SetTargetGroupID sets the "target_group_id" field.
+func (m *RelationshipOperationStepMutation) SetTargetGroupID(i int64) {
+	m.target_group_id = &i
+	m.addtarget_group_id = nil
+}
+
+// TargetGroupID returns the value of the "target_group_id" field in the mutation.
+func (m *RelationshipOperationStepMutation) TargetGroupID() (r int64, exists bool) {
+	v := m.target_group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTargetGroupID returns the old "target_group_id" field's value of the RelationshipOperationStep entity.
+// If the RelationshipOperationStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationStepMutation) OldTargetGroupID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTargetGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTargetGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTargetGroupID: %w", err)
+	}
+	return oldValue.TargetGroupID, nil
+}
+
+// AddTargetGroupID adds i to the "target_group_id" field.
+func (m *RelationshipOperationStepMutation) AddTargetGroupID(i int64) {
+	if m.addtarget_group_id != nil {
+		*m.addtarget_group_id += i
+	} else {
+		m.addtarget_group_id = &i
+	}
+}
+
+// AddedTargetGroupID returns the value that was added to the "target_group_id" field in this mutation.
+func (m *RelationshipOperationStepMutation) AddedTargetGroupID() (r int64, exists bool) {
+	v := m.addtarget_group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearTargetGroupID clears the value of the "target_group_id" field.
+func (m *RelationshipOperationStepMutation) ClearTargetGroupID() {
+	m.target_group_id = nil
+	m.addtarget_group_id = nil
+	m.clearedFields[relationshipoperationstep.FieldTargetGroupID] = struct{}{}
+}
+
+// TargetGroupIDCleared returns if the "target_group_id" field was cleared in this mutation.
+func (m *RelationshipOperationStepMutation) TargetGroupIDCleared() bool {
+	_, ok := m.clearedFields[relationshipoperationstep.FieldTargetGroupID]
+	return ok
+}
+
+// ResetTargetGroupID resets all changes to the "target_group_id" field.
+func (m *RelationshipOperationStepMutation) ResetTargetGroupID() {
+	m.target_group_id = nil
+	m.addtarget_group_id = nil
+	delete(m.clearedFields, relationshipoperationstep.FieldTargetGroupID)
+}
+
+// SetReviewedResourceIds sets the "reviewed_resource_ids" field.
+func (m *RelationshipOperationStepMutation) SetReviewedResourceIds(i []int64) {
+	m.reviewed_resource_ids = &i
+	m.appendreviewed_resource_ids = nil
+}
+
+// ReviewedResourceIds returns the value of the "reviewed_resource_ids" field in the mutation.
+func (m *RelationshipOperationStepMutation) ReviewedResourceIds() (r []int64, exists bool) {
+	v := m.reviewed_resource_ids
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReviewedResourceIds returns the old "reviewed_resource_ids" field's value of the RelationshipOperationStep entity.
+// If the RelationshipOperationStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationStepMutation) OldReviewedResourceIds(ctx context.Context) (v []int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReviewedResourceIds is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReviewedResourceIds requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReviewedResourceIds: %w", err)
+	}
+	return oldValue.ReviewedResourceIds, nil
+}
+
+// AppendReviewedResourceIds adds i to the "reviewed_resource_ids" field.
+func (m *RelationshipOperationStepMutation) AppendReviewedResourceIds(i []int64) {
+	m.appendreviewed_resource_ids = append(m.appendreviewed_resource_ids, i...)
+}
+
+// AppendedReviewedResourceIds returns the list of values that were appended to the "reviewed_resource_ids" field in this mutation.
+func (m *RelationshipOperationStepMutation) AppendedReviewedResourceIds() ([]int64, bool) {
+	if len(m.appendreviewed_resource_ids) == 0 {
+		return nil, false
+	}
+	return m.appendreviewed_resource_ids, true
+}
+
+// ResetReviewedResourceIds resets all changes to the "reviewed_resource_ids" field.
+func (m *RelationshipOperationStepMutation) ResetReviewedResourceIds() {
+	m.reviewed_resource_ids = nil
+	m.appendreviewed_resource_ids = nil
+}
+
+// SetReviewedPriority sets the "reviewed_priority" field.
+func (m *RelationshipOperationStepMutation) SetReviewedPriority(i int) {
+	m.reviewed_priority = &i
+	m.addreviewed_priority = nil
+}
+
+// ReviewedPriority returns the value of the "reviewed_priority" field in the mutation.
+func (m *RelationshipOperationStepMutation) ReviewedPriority() (r int, exists bool) {
+	v := m.reviewed_priority
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReviewedPriority returns the old "reviewed_priority" field's value of the RelationshipOperationStep entity.
+// If the RelationshipOperationStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationStepMutation) OldReviewedPriority(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReviewedPriority is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReviewedPriority requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReviewedPriority: %w", err)
+	}
+	return oldValue.ReviewedPriority, nil
+}
+
+// AddReviewedPriority adds i to the "reviewed_priority" field.
+func (m *RelationshipOperationStepMutation) AddReviewedPriority(i int) {
+	if m.addreviewed_priority != nil {
+		*m.addreviewed_priority += i
+	} else {
+		m.addreviewed_priority = &i
+	}
+}
+
+// AddedReviewedPriority returns the value that was added to the "reviewed_priority" field in this mutation.
+func (m *RelationshipOperationStepMutation) AddedReviewedPriority() (r int, exists bool) {
+	v := m.addreviewed_priority
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearReviewedPriority clears the value of the "reviewed_priority" field.
+func (m *RelationshipOperationStepMutation) ClearReviewedPriority() {
+	m.reviewed_priority = nil
+	m.addreviewed_priority = nil
+	m.clearedFields[relationshipoperationstep.FieldReviewedPriority] = struct{}{}
+}
+
+// ReviewedPriorityCleared returns if the "reviewed_priority" field was cleared in this mutation.
+func (m *RelationshipOperationStepMutation) ReviewedPriorityCleared() bool {
+	_, ok := m.clearedFields[relationshipoperationstep.FieldReviewedPriority]
+	return ok
+}
+
+// ResetReviewedPriority resets all changes to the "reviewed_priority" field.
+func (m *RelationshipOperationStepMutation) ResetReviewedPriority() {
+	m.reviewed_priority = nil
+	m.addreviewed_priority = nil
+	delete(m.clearedFields, relationshipoperationstep.FieldReviewedPriority)
+}
+
+// SetReviewedStatus sets the "reviewed_status" field.
+func (m *RelationshipOperationStepMutation) SetReviewedStatus(s string) {
+	m.reviewed_status = &s
+}
+
+// ReviewedStatus returns the value of the "reviewed_status" field in the mutation.
+func (m *RelationshipOperationStepMutation) ReviewedStatus() (r string, exists bool) {
+	v := m.reviewed_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReviewedStatus returns the old "reviewed_status" field's value of the RelationshipOperationStep entity.
+// If the RelationshipOperationStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationStepMutation) OldReviewedStatus(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReviewedStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReviewedStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReviewedStatus: %w", err)
+	}
+	return oldValue.ReviewedStatus, nil
+}
+
+// ClearReviewedStatus clears the value of the "reviewed_status" field.
+func (m *RelationshipOperationStepMutation) ClearReviewedStatus() {
+	m.reviewed_status = nil
+	m.clearedFields[relationshipoperationstep.FieldReviewedStatus] = struct{}{}
+}
+
+// ReviewedStatusCleared returns if the "reviewed_status" field was cleared in this mutation.
+func (m *RelationshipOperationStepMutation) ReviewedStatusCleared() bool {
+	_, ok := m.clearedFields[relationshipoperationstep.FieldReviewedStatus]
+	return ok
+}
+
+// ResetReviewedStatus resets all changes to the "reviewed_status" field.
+func (m *RelationshipOperationStepMutation) ResetReviewedStatus() {
+	m.reviewed_status = nil
+	delete(m.clearedFields, relationshipoperationstep.FieldReviewedStatus)
+}
+
+// SetExpectedResult sets the "expected_result" field.
+func (m *RelationshipOperationStepMutation) SetExpectedResult(value map[string]interface{}) {
+	m.expected_result = &value
+}
+
+// ExpectedResult returns the value of the "expected_result" field in the mutation.
+func (m *RelationshipOperationStepMutation) ExpectedResult() (r map[string]interface{}, exists bool) {
+	v := m.expected_result
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExpectedResult returns the old "expected_result" field's value of the RelationshipOperationStep entity.
+// If the RelationshipOperationStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationStepMutation) OldExpectedResult(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExpectedResult is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExpectedResult requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExpectedResult: %w", err)
+	}
+	return oldValue.ExpectedResult, nil
+}
+
+// ResetExpectedResult resets all changes to the "expected_result" field.
+func (m *RelationshipOperationStepMutation) ResetExpectedResult() {
+	m.expected_result = nil
+}
+
+// SetResumeSupported sets the "resume_supported" field.
+func (m *RelationshipOperationStepMutation) SetResumeSupported(b bool) {
+	m.resume_supported = &b
+}
+
+// ResumeSupported returns the value of the "resume_supported" field in the mutation.
+func (m *RelationshipOperationStepMutation) ResumeSupported() (r bool, exists bool) {
+	v := m.resume_supported
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResumeSupported returns the old "resume_supported" field's value of the RelationshipOperationStep entity.
+// If the RelationshipOperationStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationStepMutation) OldResumeSupported(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResumeSupported is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResumeSupported requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResumeSupported: %w", err)
+	}
+	return oldValue.ResumeSupported, nil
+}
+
+// ResetResumeSupported resets all changes to the "resume_supported" field.
+func (m *RelationshipOperationStepMutation) ResetResumeSupported() {
+	m.resume_supported = nil
+}
+
+// SetRestoreSupported sets the "restore_supported" field.
+func (m *RelationshipOperationStepMutation) SetRestoreSupported(b bool) {
+	m.restore_supported = &b
+}
+
+// RestoreSupported returns the value of the "restore_supported" field in the mutation.
+func (m *RelationshipOperationStepMutation) RestoreSupported() (r bool, exists bool) {
+	v := m.restore_supported
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRestoreSupported returns the old "restore_supported" field's value of the RelationshipOperationStep entity.
+// If the RelationshipOperationStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationStepMutation) OldRestoreSupported(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRestoreSupported is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRestoreSupported requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRestoreSupported: %w", err)
+	}
+	return oldValue.RestoreSupported, nil
+}
+
+// ResetRestoreSupported resets all changes to the "restore_supported" field.
+func (m *RelationshipOperationStepMutation) ResetRestoreSupported() {
+	m.restore_supported = nil
+}
+
+// SetLifecycle sets the "lifecycle" field.
+func (m *RelationshipOperationStepMutation) SetLifecycle(r relationshipoperationstep.Lifecycle) {
+	m.lifecycle = &r
+}
+
+// Lifecycle returns the value of the "lifecycle" field in the mutation.
+func (m *RelationshipOperationStepMutation) Lifecycle() (r relationshipoperationstep.Lifecycle, exists bool) {
+	v := m.lifecycle
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLifecycle returns the old "lifecycle" field's value of the RelationshipOperationStep entity.
+// If the RelationshipOperationStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationStepMutation) OldLifecycle(ctx context.Context) (v relationshipoperationstep.Lifecycle, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLifecycle is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLifecycle requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLifecycle: %w", err)
+	}
+	return oldValue.Lifecycle, nil
+}
+
+// ResetLifecycle resets all changes to the "lifecycle" field.
+func (m *RelationshipOperationStepMutation) ResetLifecycle() {
+	m.lifecycle = nil
+}
+
+// SetLatestVerifiedEffect sets the "latest_verified_effect" field.
+func (m *RelationshipOperationStepMutation) SetLatestVerifiedEffect(value map[string]interface{}) {
+	m.latest_verified_effect = &value
+}
+
+// LatestVerifiedEffect returns the value of the "latest_verified_effect" field in the mutation.
+func (m *RelationshipOperationStepMutation) LatestVerifiedEffect() (r map[string]interface{}, exists bool) {
+	v := m.latest_verified_effect
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLatestVerifiedEffect returns the old "latest_verified_effect" field's value of the RelationshipOperationStep entity.
+// If the RelationshipOperationStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationStepMutation) OldLatestVerifiedEffect(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLatestVerifiedEffect is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLatestVerifiedEffect requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLatestVerifiedEffect: %w", err)
+	}
+	return oldValue.LatestVerifiedEffect, nil
+}
+
+// ClearLatestVerifiedEffect clears the value of the "latest_verified_effect" field.
+func (m *RelationshipOperationStepMutation) ClearLatestVerifiedEffect() {
+	m.latest_verified_effect = nil
+	m.clearedFields[relationshipoperationstep.FieldLatestVerifiedEffect] = struct{}{}
+}
+
+// LatestVerifiedEffectCleared returns if the "latest_verified_effect" field was cleared in this mutation.
+func (m *RelationshipOperationStepMutation) LatestVerifiedEffectCleared() bool {
+	_, ok := m.clearedFields[relationshipoperationstep.FieldLatestVerifiedEffect]
+	return ok
+}
+
+// ResetLatestVerifiedEffect resets all changes to the "latest_verified_effect" field.
+func (m *RelationshipOperationStepMutation) ResetLatestVerifiedEffect() {
+	m.latest_verified_effect = nil
+	delete(m.clearedFields, relationshipoperationstep.FieldLatestVerifiedEffect)
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *RelationshipOperationStepMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *RelationshipOperationStepMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the RelationshipOperationStep entity.
+// If the RelationshipOperationStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationStepMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *RelationshipOperationStepMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *RelationshipOperationStepMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *RelationshipOperationStepMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the RelationshipOperationStep entity.
+// If the RelationshipOperationStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelationshipOperationStepMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *RelationshipOperationStepMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// ClearOperation clears the "operation" edge to the RelationshipOperation entity.
+func (m *RelationshipOperationStepMutation) ClearOperation() {
+	m.clearedoperation = true
+	m.clearedFields[relationshipoperationstep.FieldOperationID] = struct{}{}
+}
+
+// OperationCleared reports if the "operation" edge to the RelationshipOperation entity was cleared.
+func (m *RelationshipOperationStepMutation) OperationCleared() bool {
+	return m.clearedoperation
+}
+
+// OperationIDs returns the "operation" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// OperationID instead. It exists only for internal usage by the builders.
+func (m *RelationshipOperationStepMutation) OperationIDs() (ids []int) {
+	if id := m.operation; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetOperation resets all changes to the "operation" edge.
+func (m *RelationshipOperationStepMutation) ResetOperation() {
+	m.operation = nil
+	m.clearedoperation = false
+}
+
+// Where appends a list predicates to the RelationshipOperationStepMutation builder.
+func (m *RelationshipOperationStepMutation) Where(ps ...predicate.RelationshipOperationStep) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the RelationshipOperationStepMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *RelationshipOperationStepMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.RelationshipOperationStep, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *RelationshipOperationStepMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *RelationshipOperationStepMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (RelationshipOperationStep).
+func (m *RelationshipOperationStepMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *RelationshipOperationStepMutation) Fields() []string {
+	fields := make([]string, 0, 19)
+	if m.operation != nil {
+		fields = append(fields, relationshipoperationstep.FieldOperationID)
+	}
+	if m.step_key != nil {
+		fields = append(fields, relationshipoperationstep.FieldStepKey)
+	}
+	if m.action != nil {
+		fields = append(fields, relationshipoperationstep.FieldAction)
+	}
+	if m.relationship_type != nil {
+		fields = append(fields, relationshipoperationstep.FieldRelationshipType)
+	}
+	if m.direction != nil {
+		fields = append(fields, relationshipoperationstep.FieldDirection)
+	}
+	if m.local_user_id != nil {
+		fields = append(fields, relationshipoperationstep.FieldLocalUserID)
+	}
+	if m.relay_user_id != nil {
+		fields = append(fields, relationshipoperationstep.FieldRelayUserID)
+	}
+	if m.source_group_id != nil {
+		fields = append(fields, relationshipoperationstep.FieldSourceGroupID)
+	}
+	if m.target_group_id != nil {
+		fields = append(fields, relationshipoperationstep.FieldTargetGroupID)
+	}
+	if m.reviewed_resource_ids != nil {
+		fields = append(fields, relationshipoperationstep.FieldReviewedResourceIds)
+	}
+	if m.reviewed_priority != nil {
+		fields = append(fields, relationshipoperationstep.FieldReviewedPriority)
+	}
+	if m.reviewed_status != nil {
+		fields = append(fields, relationshipoperationstep.FieldReviewedStatus)
+	}
+	if m.expected_result != nil {
+		fields = append(fields, relationshipoperationstep.FieldExpectedResult)
+	}
+	if m.resume_supported != nil {
+		fields = append(fields, relationshipoperationstep.FieldResumeSupported)
+	}
+	if m.restore_supported != nil {
+		fields = append(fields, relationshipoperationstep.FieldRestoreSupported)
+	}
+	if m.lifecycle != nil {
+		fields = append(fields, relationshipoperationstep.FieldLifecycle)
+	}
+	if m.latest_verified_effect != nil {
+		fields = append(fields, relationshipoperationstep.FieldLatestVerifiedEffect)
+	}
+	if m.created_at != nil {
+		fields = append(fields, relationshipoperationstep.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, relationshipoperationstep.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *RelationshipOperationStepMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case relationshipoperationstep.FieldOperationID:
+		return m.OperationID()
+	case relationshipoperationstep.FieldStepKey:
+		return m.StepKey()
+	case relationshipoperationstep.FieldAction:
+		return m.Action()
+	case relationshipoperationstep.FieldRelationshipType:
+		return m.RelationshipType()
+	case relationshipoperationstep.FieldDirection:
+		return m.Direction()
+	case relationshipoperationstep.FieldLocalUserID:
+		return m.LocalUserID()
+	case relationshipoperationstep.FieldRelayUserID:
+		return m.RelayUserID()
+	case relationshipoperationstep.FieldSourceGroupID:
+		return m.SourceGroupID()
+	case relationshipoperationstep.FieldTargetGroupID:
+		return m.TargetGroupID()
+	case relationshipoperationstep.FieldReviewedResourceIds:
+		return m.ReviewedResourceIds()
+	case relationshipoperationstep.FieldReviewedPriority:
+		return m.ReviewedPriority()
+	case relationshipoperationstep.FieldReviewedStatus:
+		return m.ReviewedStatus()
+	case relationshipoperationstep.FieldExpectedResult:
+		return m.ExpectedResult()
+	case relationshipoperationstep.FieldResumeSupported:
+		return m.ResumeSupported()
+	case relationshipoperationstep.FieldRestoreSupported:
+		return m.RestoreSupported()
+	case relationshipoperationstep.FieldLifecycle:
+		return m.Lifecycle()
+	case relationshipoperationstep.FieldLatestVerifiedEffect:
+		return m.LatestVerifiedEffect()
+	case relationshipoperationstep.FieldCreatedAt:
+		return m.CreatedAt()
+	case relationshipoperationstep.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *RelationshipOperationStepMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case relationshipoperationstep.FieldOperationID:
+		return m.OldOperationID(ctx)
+	case relationshipoperationstep.FieldStepKey:
+		return m.OldStepKey(ctx)
+	case relationshipoperationstep.FieldAction:
+		return m.OldAction(ctx)
+	case relationshipoperationstep.FieldRelationshipType:
+		return m.OldRelationshipType(ctx)
+	case relationshipoperationstep.FieldDirection:
+		return m.OldDirection(ctx)
+	case relationshipoperationstep.FieldLocalUserID:
+		return m.OldLocalUserID(ctx)
+	case relationshipoperationstep.FieldRelayUserID:
+		return m.OldRelayUserID(ctx)
+	case relationshipoperationstep.FieldSourceGroupID:
+		return m.OldSourceGroupID(ctx)
+	case relationshipoperationstep.FieldTargetGroupID:
+		return m.OldTargetGroupID(ctx)
+	case relationshipoperationstep.FieldReviewedResourceIds:
+		return m.OldReviewedResourceIds(ctx)
+	case relationshipoperationstep.FieldReviewedPriority:
+		return m.OldReviewedPriority(ctx)
+	case relationshipoperationstep.FieldReviewedStatus:
+		return m.OldReviewedStatus(ctx)
+	case relationshipoperationstep.FieldExpectedResult:
+		return m.OldExpectedResult(ctx)
+	case relationshipoperationstep.FieldResumeSupported:
+		return m.OldResumeSupported(ctx)
+	case relationshipoperationstep.FieldRestoreSupported:
+		return m.OldRestoreSupported(ctx)
+	case relationshipoperationstep.FieldLifecycle:
+		return m.OldLifecycle(ctx)
+	case relationshipoperationstep.FieldLatestVerifiedEffect:
+		return m.OldLatestVerifiedEffect(ctx)
+	case relationshipoperationstep.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case relationshipoperationstep.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown RelationshipOperationStep field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RelationshipOperationStepMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case relationshipoperationstep.FieldOperationID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOperationID(v)
+		return nil
+	case relationshipoperationstep.FieldStepKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStepKey(v)
+		return nil
+	case relationshipoperationstep.FieldAction:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAction(v)
+		return nil
+	case relationshipoperationstep.FieldRelationshipType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRelationshipType(v)
+		return nil
+	case relationshipoperationstep.FieldDirection:
+		v, ok := value.(relationshipoperationstep.Direction)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDirection(v)
+		return nil
+	case relationshipoperationstep.FieldLocalUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLocalUserID(v)
+		return nil
+	case relationshipoperationstep.FieldRelayUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRelayUserID(v)
+		return nil
+	case relationshipoperationstep.FieldSourceGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourceGroupID(v)
+		return nil
+	case relationshipoperationstep.FieldTargetGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTargetGroupID(v)
+		return nil
+	case relationshipoperationstep.FieldReviewedResourceIds:
+		v, ok := value.([]int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReviewedResourceIds(v)
+		return nil
+	case relationshipoperationstep.FieldReviewedPriority:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReviewedPriority(v)
+		return nil
+	case relationshipoperationstep.FieldReviewedStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReviewedStatus(v)
+		return nil
+	case relationshipoperationstep.FieldExpectedResult:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExpectedResult(v)
+		return nil
+	case relationshipoperationstep.FieldResumeSupported:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResumeSupported(v)
+		return nil
+	case relationshipoperationstep.FieldRestoreSupported:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRestoreSupported(v)
+		return nil
+	case relationshipoperationstep.FieldLifecycle:
+		v, ok := value.(relationshipoperationstep.Lifecycle)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLifecycle(v)
+		return nil
+	case relationshipoperationstep.FieldLatestVerifiedEffect:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLatestVerifiedEffect(v)
+		return nil
+	case relationshipoperationstep.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case relationshipoperationstep.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperationStep field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *RelationshipOperationStepMutation) AddedFields() []string {
+	var fields []string
+	if m.addlocal_user_id != nil {
+		fields = append(fields, relationshipoperationstep.FieldLocalUserID)
+	}
+	if m.addrelay_user_id != nil {
+		fields = append(fields, relationshipoperationstep.FieldRelayUserID)
+	}
+	if m.addsource_group_id != nil {
+		fields = append(fields, relationshipoperationstep.FieldSourceGroupID)
+	}
+	if m.addtarget_group_id != nil {
+		fields = append(fields, relationshipoperationstep.FieldTargetGroupID)
+	}
+	if m.addreviewed_priority != nil {
+		fields = append(fields, relationshipoperationstep.FieldReviewedPriority)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *RelationshipOperationStepMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case relationshipoperationstep.FieldLocalUserID:
+		return m.AddedLocalUserID()
+	case relationshipoperationstep.FieldRelayUserID:
+		return m.AddedRelayUserID()
+	case relationshipoperationstep.FieldSourceGroupID:
+		return m.AddedSourceGroupID()
+	case relationshipoperationstep.FieldTargetGroupID:
+		return m.AddedTargetGroupID()
+	case relationshipoperationstep.FieldReviewedPriority:
+		return m.AddedReviewedPriority()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RelationshipOperationStepMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case relationshipoperationstep.FieldLocalUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLocalUserID(v)
+		return nil
+	case relationshipoperationstep.FieldRelayUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRelayUserID(v)
+		return nil
+	case relationshipoperationstep.FieldSourceGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSourceGroupID(v)
+		return nil
+	case relationshipoperationstep.FieldTargetGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTargetGroupID(v)
+		return nil
+	case relationshipoperationstep.FieldReviewedPriority:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddReviewedPriority(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperationStep numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *RelationshipOperationStepMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(relationshipoperationstep.FieldLocalUserID) {
+		fields = append(fields, relationshipoperationstep.FieldLocalUserID)
+	}
+	if m.FieldCleared(relationshipoperationstep.FieldRelayUserID) {
+		fields = append(fields, relationshipoperationstep.FieldRelayUserID)
+	}
+	if m.FieldCleared(relationshipoperationstep.FieldSourceGroupID) {
+		fields = append(fields, relationshipoperationstep.FieldSourceGroupID)
+	}
+	if m.FieldCleared(relationshipoperationstep.FieldTargetGroupID) {
+		fields = append(fields, relationshipoperationstep.FieldTargetGroupID)
+	}
+	if m.FieldCleared(relationshipoperationstep.FieldReviewedPriority) {
+		fields = append(fields, relationshipoperationstep.FieldReviewedPriority)
+	}
+	if m.FieldCleared(relationshipoperationstep.FieldReviewedStatus) {
+		fields = append(fields, relationshipoperationstep.FieldReviewedStatus)
+	}
+	if m.FieldCleared(relationshipoperationstep.FieldLatestVerifiedEffect) {
+		fields = append(fields, relationshipoperationstep.FieldLatestVerifiedEffect)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *RelationshipOperationStepMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *RelationshipOperationStepMutation) ClearField(name string) error {
+	switch name {
+	case relationshipoperationstep.FieldLocalUserID:
+		m.ClearLocalUserID()
+		return nil
+	case relationshipoperationstep.FieldRelayUserID:
+		m.ClearRelayUserID()
+		return nil
+	case relationshipoperationstep.FieldSourceGroupID:
+		m.ClearSourceGroupID()
+		return nil
+	case relationshipoperationstep.FieldTargetGroupID:
+		m.ClearTargetGroupID()
+		return nil
+	case relationshipoperationstep.FieldReviewedPriority:
+		m.ClearReviewedPriority()
+		return nil
+	case relationshipoperationstep.FieldReviewedStatus:
+		m.ClearReviewedStatus()
+		return nil
+	case relationshipoperationstep.FieldLatestVerifiedEffect:
+		m.ClearLatestVerifiedEffect()
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperationStep nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *RelationshipOperationStepMutation) ResetField(name string) error {
+	switch name {
+	case relationshipoperationstep.FieldOperationID:
+		m.ResetOperationID()
+		return nil
+	case relationshipoperationstep.FieldStepKey:
+		m.ResetStepKey()
+		return nil
+	case relationshipoperationstep.FieldAction:
+		m.ResetAction()
+		return nil
+	case relationshipoperationstep.FieldRelationshipType:
+		m.ResetRelationshipType()
+		return nil
+	case relationshipoperationstep.FieldDirection:
+		m.ResetDirection()
+		return nil
+	case relationshipoperationstep.FieldLocalUserID:
+		m.ResetLocalUserID()
+		return nil
+	case relationshipoperationstep.FieldRelayUserID:
+		m.ResetRelayUserID()
+		return nil
+	case relationshipoperationstep.FieldSourceGroupID:
+		m.ResetSourceGroupID()
+		return nil
+	case relationshipoperationstep.FieldTargetGroupID:
+		m.ResetTargetGroupID()
+		return nil
+	case relationshipoperationstep.FieldReviewedResourceIds:
+		m.ResetReviewedResourceIds()
+		return nil
+	case relationshipoperationstep.FieldReviewedPriority:
+		m.ResetReviewedPriority()
+		return nil
+	case relationshipoperationstep.FieldReviewedStatus:
+		m.ResetReviewedStatus()
+		return nil
+	case relationshipoperationstep.FieldExpectedResult:
+		m.ResetExpectedResult()
+		return nil
+	case relationshipoperationstep.FieldResumeSupported:
+		m.ResetResumeSupported()
+		return nil
+	case relationshipoperationstep.FieldRestoreSupported:
+		m.ResetRestoreSupported()
+		return nil
+	case relationshipoperationstep.FieldLifecycle:
+		m.ResetLifecycle()
+		return nil
+	case relationshipoperationstep.FieldLatestVerifiedEffect:
+		m.ResetLatestVerifiedEffect()
+		return nil
+	case relationshipoperationstep.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case relationshipoperationstep.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperationStep field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *RelationshipOperationStepMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.operation != nil {
+		edges = append(edges, relationshipoperationstep.EdgeOperation)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *RelationshipOperationStepMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case relationshipoperationstep.EdgeOperation:
+		if id := m.operation; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *RelationshipOperationStepMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *RelationshipOperationStepMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *RelationshipOperationStepMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedoperation {
+		edges = append(edges, relationshipoperationstep.EdgeOperation)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *RelationshipOperationStepMutation) EdgeCleared(name string) bool {
+	switch name {
+	case relationshipoperationstep.EdgeOperation:
+		return m.clearedoperation
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *RelationshipOperationStepMutation) ClearEdge(name string) error {
+	switch name {
+	case relationshipoperationstep.EdgeOperation:
+		m.ClearOperation()
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperationStep unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *RelationshipOperationStepMutation) ResetEdge(name string) error {
+	switch name {
+	case relationshipoperationstep.EdgeOperation:
+		m.ResetOperation()
+		return nil
+	}
+	return fmt.Errorf("unknown RelationshipOperationStep edge %s", name)
+}
+
 // RelayGroupMappingMutation represents an operation that mutates the RelayGroupMapping nodes in the graph.
 type RelayGroupMappingMutation struct {
 	config
-	op                             Op
-	typ                            string
-	id                             *int
-	provider_id                    *int
-	addprovider_id                 *int
-	department_external_id         *string
-	department_name                *string
-	platform                       *string
-	template_group_id              *int64
-	addtemplate_group_id           *int64
-	template_group_name            *string
-	source_group_id                *int64
-	addsource_group_id             *int64
-	source_group_name              *string
-	group_ids                      *[]int64
-	appendgroup_ids                []int64
-	member_assignments             *map[string]int64
-	member_sources                 *map[string]int64
-	account_management_initialized *bool
-	desired_accounts               *map[string][]map[string]int64
-	operation_state                *map[string]map[string]string
-	status                         *string
-	weekly_cost_target             *float64
-	addweekly_cost_target          *float64
-	created_at                     *time.Time
-	updated_at                     *time.Time
-	clearedFields                  map[string]struct{}
-	done                           bool
-	oldValue                       func(context.Context) (*RelayGroupMapping, error)
-	predicates                     []predicate.RelayGroupMapping
+	op                                     Op
+	typ                                    string
+	id                                     *int
+	provider_id                            *int
+	addprovider_id                         *int
+	department_external_id                 *string
+	department_name                        *string
+	platform                               *string
+	template_group_id                      *int64
+	addtemplate_group_id                   *int64
+	template_group_name                    *string
+	source_group_id                        *int64
+	addsource_group_id                     *int64
+	source_group_name                      *string
+	group_ids                              *[]int64
+	appendgroup_ids                        []int64
+	member_assignments                     *map[string]int64
+	member_sources                         *map[string]int64
+	account_management_initialized         *bool
+	desired_accounts                       *map[string][]map[string]int64
+	operation_state                        *map[string]map[string]string
+	baseline_revision                      *int64
+	addbaseline_revision                   *int64
+	status                                 *string
+	weekly_cost_target                     *float64
+	addweekly_cost_target                  *float64
+	created_at                             *time.Time
+	updated_at                             *time.Time
+	clearedFields                          map[string]struct{}
+	relationship_operation_mappings        map[int]struct{}
+	removedrelationship_operation_mappings map[int]struct{}
+	clearedrelationship_operation_mappings bool
+	done                                   bool
+	oldValue                               func(context.Context) (*RelayGroupMapping, error)
+	predicates                             []predicate.RelayGroupMapping
 }
 
 var _ ent.Mutation = (*RelayGroupMappingMutation)(nil)
@@ -31123,6 +36156,62 @@ func (m *RelayGroupMappingMutation) ResetOperationState() {
 	m.operation_state = nil
 }
 
+// SetBaselineRevision sets the "baseline_revision" field.
+func (m *RelayGroupMappingMutation) SetBaselineRevision(i int64) {
+	m.baseline_revision = &i
+	m.addbaseline_revision = nil
+}
+
+// BaselineRevision returns the value of the "baseline_revision" field in the mutation.
+func (m *RelayGroupMappingMutation) BaselineRevision() (r int64, exists bool) {
+	v := m.baseline_revision
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBaselineRevision returns the old "baseline_revision" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldBaselineRevision(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBaselineRevision is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBaselineRevision requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBaselineRevision: %w", err)
+	}
+	return oldValue.BaselineRevision, nil
+}
+
+// AddBaselineRevision adds i to the "baseline_revision" field.
+func (m *RelayGroupMappingMutation) AddBaselineRevision(i int64) {
+	if m.addbaseline_revision != nil {
+		*m.addbaseline_revision += i
+	} else {
+		m.addbaseline_revision = &i
+	}
+}
+
+// AddedBaselineRevision returns the value that was added to the "baseline_revision" field in this mutation.
+func (m *RelayGroupMappingMutation) AddedBaselineRevision() (r int64, exists bool) {
+	v := m.addbaseline_revision
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetBaselineRevision resets all changes to the "baseline_revision" field.
+func (m *RelayGroupMappingMutation) ResetBaselineRevision() {
+	m.baseline_revision = nil
+	m.addbaseline_revision = nil
+}
+
 // SetStatus sets the "status" field.
 func (m *RelayGroupMappingMutation) SetStatus(s string) {
 	m.status = &s
@@ -31287,6 +36376,60 @@ func (m *RelayGroupMappingMutation) ResetUpdatedAt() {
 	m.updated_at = nil
 }
 
+// AddRelationshipOperationMappingIDs adds the "relationship_operation_mappings" edge to the RelationshipOperationMapping entity by ids.
+func (m *RelayGroupMappingMutation) AddRelationshipOperationMappingIDs(ids ...int) {
+	if m.relationship_operation_mappings == nil {
+		m.relationship_operation_mappings = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.relationship_operation_mappings[ids[i]] = struct{}{}
+	}
+}
+
+// ClearRelationshipOperationMappings clears the "relationship_operation_mappings" edge to the RelationshipOperationMapping entity.
+func (m *RelayGroupMappingMutation) ClearRelationshipOperationMappings() {
+	m.clearedrelationship_operation_mappings = true
+}
+
+// RelationshipOperationMappingsCleared reports if the "relationship_operation_mappings" edge to the RelationshipOperationMapping entity was cleared.
+func (m *RelayGroupMappingMutation) RelationshipOperationMappingsCleared() bool {
+	return m.clearedrelationship_operation_mappings
+}
+
+// RemoveRelationshipOperationMappingIDs removes the "relationship_operation_mappings" edge to the RelationshipOperationMapping entity by IDs.
+func (m *RelayGroupMappingMutation) RemoveRelationshipOperationMappingIDs(ids ...int) {
+	if m.removedrelationship_operation_mappings == nil {
+		m.removedrelationship_operation_mappings = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.relationship_operation_mappings, ids[i])
+		m.removedrelationship_operation_mappings[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedRelationshipOperationMappings returns the removed IDs of the "relationship_operation_mappings" edge to the RelationshipOperationMapping entity.
+func (m *RelayGroupMappingMutation) RemovedRelationshipOperationMappingsIDs() (ids []int) {
+	for id := range m.removedrelationship_operation_mappings {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// RelationshipOperationMappingsIDs returns the "relationship_operation_mappings" edge IDs in the mutation.
+func (m *RelayGroupMappingMutation) RelationshipOperationMappingsIDs() (ids []int) {
+	for id := range m.relationship_operation_mappings {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetRelationshipOperationMappings resets all changes to the "relationship_operation_mappings" edge.
+func (m *RelayGroupMappingMutation) ResetRelationshipOperationMappings() {
+	m.relationship_operation_mappings = nil
+	m.clearedrelationship_operation_mappings = false
+	m.removedrelationship_operation_mappings = nil
+}
+
 // Where appends a list predicates to the RelayGroupMappingMutation builder.
 func (m *RelayGroupMappingMutation) Where(ps ...predicate.RelayGroupMapping) {
 	m.predicates = append(m.predicates, ps...)
@@ -31321,7 +36464,7 @@ func (m *RelayGroupMappingMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RelayGroupMappingMutation) Fields() []string {
-	fields := make([]string, 0, 18)
+	fields := make([]string, 0, 19)
 	if m.provider_id != nil {
 		fields = append(fields, relaygroupmapping.FieldProviderID)
 	}
@@ -31363,6 +36506,9 @@ func (m *RelayGroupMappingMutation) Fields() []string {
 	}
 	if m.operation_state != nil {
 		fields = append(fields, relaygroupmapping.FieldOperationState)
+	}
+	if m.baseline_revision != nil {
+		fields = append(fields, relaygroupmapping.FieldBaselineRevision)
 	}
 	if m.status != nil {
 		fields = append(fields, relaygroupmapping.FieldStatus)
@@ -31412,6 +36558,8 @@ func (m *RelayGroupMappingMutation) Field(name string) (ent.Value, bool) {
 		return m.DesiredAccounts()
 	case relaygroupmapping.FieldOperationState:
 		return m.OperationState()
+	case relaygroupmapping.FieldBaselineRevision:
+		return m.BaselineRevision()
 	case relaygroupmapping.FieldStatus:
 		return m.Status()
 	case relaygroupmapping.FieldWeeklyCostTarget:
@@ -31457,6 +36605,8 @@ func (m *RelayGroupMappingMutation) OldField(ctx context.Context, name string) (
 		return m.OldDesiredAccounts(ctx)
 	case relaygroupmapping.FieldOperationState:
 		return m.OldOperationState(ctx)
+	case relaygroupmapping.FieldBaselineRevision:
+		return m.OldBaselineRevision(ctx)
 	case relaygroupmapping.FieldStatus:
 		return m.OldStatus(ctx)
 	case relaygroupmapping.FieldWeeklyCostTarget:
@@ -31572,6 +36722,13 @@ func (m *RelayGroupMappingMutation) SetField(name string, value ent.Value) error
 		}
 		m.SetOperationState(v)
 		return nil
+	case relaygroupmapping.FieldBaselineRevision:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBaselineRevision(v)
+		return nil
 	case relaygroupmapping.FieldStatus:
 		v, ok := value.(string)
 		if !ok {
@@ -31617,6 +36774,9 @@ func (m *RelayGroupMappingMutation) AddedFields() []string {
 	if m.addsource_group_id != nil {
 		fields = append(fields, relaygroupmapping.FieldSourceGroupID)
 	}
+	if m.addbaseline_revision != nil {
+		fields = append(fields, relaygroupmapping.FieldBaselineRevision)
+	}
 	if m.addweekly_cost_target != nil {
 		fields = append(fields, relaygroupmapping.FieldWeeklyCostTarget)
 	}
@@ -31634,6 +36794,8 @@ func (m *RelayGroupMappingMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedTemplateGroupID()
 	case relaygroupmapping.FieldSourceGroupID:
 		return m.AddedSourceGroupID()
+	case relaygroupmapping.FieldBaselineRevision:
+		return m.AddedBaselineRevision()
 	case relaygroupmapping.FieldWeeklyCostTarget:
 		return m.AddedWeeklyCostTarget()
 	}
@@ -31665,6 +36827,13 @@ func (m *RelayGroupMappingMutation) AddField(name string, value ent.Value) error
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddSourceGroupID(v)
+		return nil
+	case relaygroupmapping.FieldBaselineRevision:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddBaselineRevision(v)
 		return nil
 	case relaygroupmapping.FieldWeeklyCostTarget:
 		v, ok := value.(float64)
@@ -31742,6 +36911,9 @@ func (m *RelayGroupMappingMutation) ResetField(name string) error {
 	case relaygroupmapping.FieldOperationState:
 		m.ResetOperationState()
 		return nil
+	case relaygroupmapping.FieldBaselineRevision:
+		m.ResetBaselineRevision()
+		return nil
 	case relaygroupmapping.FieldStatus:
 		m.ResetStatus()
 		return nil
@@ -31760,49 +36932,85 @@ func (m *RelayGroupMappingMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *RelayGroupMappingMutation) AddedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 1)
+	if m.relationship_operation_mappings != nil {
+		edges = append(edges, relaygroupmapping.EdgeRelationshipOperationMappings)
+	}
 	return edges
 }
 
 // AddedIDs returns all IDs (to other nodes) that were added for the given edge
 // name in this mutation.
 func (m *RelayGroupMappingMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case relaygroupmapping.EdgeRelationshipOperationMappings:
+		ids := make([]ent.Value, 0, len(m.relationship_operation_mappings))
+		for id := range m.relationship_operation_mappings {
+			ids = append(ids, id)
+		}
+		return ids
+	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *RelayGroupMappingMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 1)
+	if m.removedrelationship_operation_mappings != nil {
+		edges = append(edges, relaygroupmapping.EdgeRelationshipOperationMappings)
+	}
 	return edges
 }
 
 // RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
 // the given name in this mutation.
 func (m *RelayGroupMappingMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case relaygroupmapping.EdgeRelationshipOperationMappings:
+		ids := make([]ent.Value, 0, len(m.removedrelationship_operation_mappings))
+		for id := range m.removedrelationship_operation_mappings {
+			ids = append(ids, id)
+		}
+		return ids
+	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *RelayGroupMappingMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 1)
+	if m.clearedrelationship_operation_mappings {
+		edges = append(edges, relaygroupmapping.EdgeRelationshipOperationMappings)
+	}
 	return edges
 }
 
 // EdgeCleared returns a boolean which indicates if the edge with the given name
 // was cleared in this mutation.
 func (m *RelayGroupMappingMutation) EdgeCleared(name string) bool {
+	switch name {
+	case relaygroupmapping.EdgeRelationshipOperationMappings:
+		return m.clearedrelationship_operation_mappings
+	}
 	return false
 }
 
 // ClearEdge clears the value of the edge with the given name. It returns an error
 // if that edge is not defined in the schema.
 func (m *RelayGroupMappingMutation) ClearEdge(name string) error {
+	switch name {
+	}
 	return fmt.Errorf("unknown RelayGroupMapping unique edge %s", name)
 }
 
 // ResetEdge resets all changes to the edge with the given name in this mutation.
 // It returns an error if the edge is not defined in the schema.
 func (m *RelayGroupMappingMutation) ResetEdge(name string) error {
+	switch name {
+	case relaygroupmapping.EdgeRelationshipOperationMappings:
+		m.ResetRelationshipOperationMappings()
+		return nil
+	}
 	return fmt.Errorf("unknown RelayGroupMapping edge %s", name)
 }
 

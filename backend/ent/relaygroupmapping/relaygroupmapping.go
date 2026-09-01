@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 )
 
 const (
@@ -41,6 +42,8 @@ const (
 	FieldDesiredAccounts = "desired_accounts"
 	// FieldOperationState holds the string denoting the operation_state field in the database.
 	FieldOperationState = "operation_state"
+	// FieldBaselineRevision holds the string denoting the baseline_revision field in the database.
+	FieldBaselineRevision = "baseline_revision"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
 	// FieldWeeklyCostTarget holds the string denoting the weekly_cost_target field in the database.
@@ -49,8 +52,17 @@ const (
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
+	// EdgeRelationshipOperationMappings holds the string denoting the relationship_operation_mappings edge name in mutations.
+	EdgeRelationshipOperationMappings = "relationship_operation_mappings"
 	// Table holds the table name of the relaygroupmapping in the database.
 	Table = "relay_group_mappings"
+	// RelationshipOperationMappingsTable is the table that holds the relationship_operation_mappings relation/edge.
+	RelationshipOperationMappingsTable = "relationship_operation_mappings"
+	// RelationshipOperationMappingsInverseTable is the table name for the RelationshipOperationMapping entity.
+	// It exists in this package in order to avoid circular dependency with the "relationshipoperationmapping" package.
+	RelationshipOperationMappingsInverseTable = "relationship_operation_mappings"
+	// RelationshipOperationMappingsColumn is the table column denoting the relationship_operation_mappings relation/edge.
+	RelationshipOperationMappingsColumn = "mapping_id"
 )
 
 // Columns holds all SQL columns for relaygroupmapping fields.
@@ -70,6 +82,7 @@ var Columns = []string{
 	FieldAccountManagementInitialized,
 	FieldDesiredAccounts,
 	FieldOperationState,
+	FieldBaselineRevision,
 	FieldStatus,
 	FieldWeeklyCostTarget,
 	FieldCreatedAt,
@@ -111,6 +124,10 @@ var (
 	DefaultDesiredAccounts map[string][]map[string]int64
 	// DefaultOperationState holds the default value on creation for the "operation_state" field.
 	DefaultOperationState map[string]map[string]string
+	// DefaultBaselineRevision holds the default value on creation for the "baseline_revision" field.
+	DefaultBaselineRevision int64
+	// BaselineRevisionValidator is a validator for the "baseline_revision" field. It is called by the builders before save.
+	BaselineRevisionValidator func(int64) error
 	// DefaultStatus holds the default value on creation for the "status" field.
 	DefaultStatus string
 	// DefaultWeeklyCostTarget holds the default value on creation for the "weekly_cost_target" field.
@@ -176,6 +193,11 @@ func ByAccountManagementInitialized(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAccountManagementInitialized, opts...).ToFunc()
 }
 
+// ByBaselineRevision orders the results by the baseline_revision field.
+func ByBaselineRevision(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBaselineRevision, opts...).ToFunc()
+}
+
 // ByStatus orders the results by the status field.
 func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
@@ -194,4 +216,25 @@ func ByCreatedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByUpdatedAt orders the results by the updated_at field.
 func ByUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUpdatedAt, opts...).ToFunc()
+}
+
+// ByRelationshipOperationMappingsCount orders the results by relationship_operation_mappings count.
+func ByRelationshipOperationMappingsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newRelationshipOperationMappingsStep(), opts...)
+	}
+}
+
+// ByRelationshipOperationMappings orders the results by relationship_operation_mappings terms.
+func ByRelationshipOperationMappings(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newRelationshipOperationMappingsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+func newRelationshipOperationMappingsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(RelationshipOperationMappingsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, RelationshipOperationMappingsTable, RelationshipOperationMappingsColumn),
+	)
 }

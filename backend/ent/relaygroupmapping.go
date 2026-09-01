@@ -46,6 +46,8 @@ type RelayGroupMapping struct {
 	DesiredAccounts map[string][]map[string]int64 `json:"desired_accounts,omitempty"`
 	// OperationState holds the value of the "operation_state" field.
 	OperationState map[string]map[string]string `json:"operation_state,omitempty"`
+	// BaselineRevision holds the value of the "baseline_revision" field.
+	BaselineRevision int64 `json:"baseline_revision,omitempty"`
 	// Status holds the value of the "status" field.
 	Status string `json:"status,omitempty"`
 	// WeeklyCostTarget holds the value of the "weekly_cost_target" field.
@@ -53,8 +55,29 @@ type RelayGroupMapping struct {
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
-	UpdatedAt    time.Time `json:"updated_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	// Edges holds the relations/edges for other nodes in the graph.
+	// The values are being populated by the RelayGroupMappingQuery when eager-loading is set.
+	Edges        RelayGroupMappingEdges `json:"edges"`
 	selectValues sql.SelectValues
+}
+
+// RelayGroupMappingEdges holds the relations/edges for other nodes in the graph.
+type RelayGroupMappingEdges struct {
+	// RelationshipOperationMappings holds the value of the relationship_operation_mappings edge.
+	RelationshipOperationMappings []*RelationshipOperationMapping `json:"relationship_operation_mappings,omitempty"`
+	// loadedTypes holds the information for reporting if a
+	// type was loaded (or requested) in eager-loading or not.
+	loadedTypes [1]bool
+}
+
+// RelationshipOperationMappingsOrErr returns the RelationshipOperationMappings value or an error if the edge
+// was not loaded in eager-loading.
+func (e RelayGroupMappingEdges) RelationshipOperationMappingsOrErr() ([]*RelationshipOperationMapping, error) {
+	if e.loadedTypes[0] {
+		return e.RelationshipOperationMappings, nil
+	}
+	return nil, &NotLoadedError{edge: "relationship_operation_mappings"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -68,7 +91,7 @@ func (*RelayGroupMapping) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case relaygroupmapping.FieldWeeklyCostTarget:
 			values[i] = new(sql.NullFloat64)
-		case relaygroupmapping.FieldID, relaygroupmapping.FieldProviderID, relaygroupmapping.FieldTemplateGroupID, relaygroupmapping.FieldSourceGroupID:
+		case relaygroupmapping.FieldID, relaygroupmapping.FieldProviderID, relaygroupmapping.FieldTemplateGroupID, relaygroupmapping.FieldSourceGroupID, relaygroupmapping.FieldBaselineRevision:
 			values[i] = new(sql.NullInt64)
 		case relaygroupmapping.FieldDepartmentExternalID, relaygroupmapping.FieldDepartmentName, relaygroupmapping.FieldPlatform, relaygroupmapping.FieldTemplateGroupName, relaygroupmapping.FieldSourceGroupName, relaygroupmapping.FieldStatus:
 			values[i] = new(sql.NullString)
@@ -189,6 +212,12 @@ func (rgm *RelayGroupMapping) assignValues(columns []string, values []any) error
 					return fmt.Errorf("unmarshal field operation_state: %w", err)
 				}
 			}
+		case relaygroupmapping.FieldBaselineRevision:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field baseline_revision", values[i])
+			} else if value.Valid {
+				rgm.BaselineRevision = value.Int64
+			}
 		case relaygroupmapping.FieldStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field status", values[i])
@@ -224,6 +253,11 @@ func (rgm *RelayGroupMapping) assignValues(columns []string, values []any) error
 // This includes values selected through modifiers, order, etc.
 func (rgm *RelayGroupMapping) Value(name string) (ent.Value, error) {
 	return rgm.selectValues.Get(name)
+}
+
+// QueryRelationshipOperationMappings queries the "relationship_operation_mappings" edge of the RelayGroupMapping entity.
+func (rgm *RelayGroupMapping) QueryRelationshipOperationMappings() *RelationshipOperationMappingQuery {
+	return NewRelayGroupMappingClient(rgm.config).QueryRelationshipOperationMappings(rgm)
 }
 
 // Update returns a builder for updating this RelayGroupMapping.
@@ -290,6 +324,9 @@ func (rgm *RelayGroupMapping) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("operation_state=")
 	builder.WriteString(fmt.Sprintf("%v", rgm.OperationState))
+	builder.WriteString(", ")
+	builder.WriteString("baseline_revision=")
+	builder.WriteString(fmt.Sprintf("%v", rgm.BaselineRevision))
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(rgm.Status)

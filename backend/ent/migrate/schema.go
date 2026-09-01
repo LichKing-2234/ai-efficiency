@@ -1028,6 +1028,189 @@ var (
 			},
 		},
 	}
+	// RelationshipOperationsColumns holds the columns for the "relationship_operations" table.
+	RelationshipOperationsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "operation_key", Type: field.TypeString},
+		{Name: "provider_id", Type: field.TypeInt},
+		{Name: "platform", Type: field.TypeString},
+		{Name: "lifecycle", Type: field.TypeEnum, Enums: []string{"applying", "interrupted", "resuming", "restoring", "applied", "restored", "blocked_external"}, Default: "applying"},
+		{Name: "baseline_snapshot", Type: field.TypeJSON},
+		{Name: "target_snapshot", Type: field.TypeJSON},
+		{Name: "baseline_fingerprint", Type: field.TypeString},
+		{Name: "target_fingerprint", Type: field.TypeString},
+		{Name: "supported_directions", Type: field.TypeJSON},
+		{Name: "initiated_by_user_id", Type: field.TypeInt},
+		{Name: "terminal_result", Type: field.TypeJSON, Nullable: true},
+		{Name: "external_blocker", Type: field.TypeJSON, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "completed_at", Type: field.TypeTime, Nullable: true},
+	}
+	// RelationshipOperationsTable holds the schema information for the "relationship_operations" table.
+	RelationshipOperationsTable = &schema.Table{
+		Name:       "relationship_operations",
+		Columns:    RelationshipOperationsColumns,
+		PrimaryKey: []*schema.Column{RelationshipOperationsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "relationshipoperation_operation_key",
+				Unique:  true,
+				Columns: []*schema.Column{RelationshipOperationsColumns[1]},
+			},
+			{
+				Name:    "relationshipoperation_lifecycle_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{RelationshipOperationsColumns[4], RelationshipOperationsColumns[13]},
+			},
+			{
+				Name:    "relationshipoperation_provider_id_platform_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{RelationshipOperationsColumns[2], RelationshipOperationsColumns[3], RelationshipOperationsColumns[13]},
+			},
+		},
+	}
+	// RelationshipOperationAttemptsColumns holds the columns for the "relationship_operation_attempts" table.
+	RelationshipOperationAttemptsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "attempt_number", Type: field.TypeInt},
+		{Name: "direction", Type: field.TypeEnum, Enums: []string{"initial", "resume", "restore"}},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"planned", "running", "succeeded", "failed", "interrupted", "blocked_external"}, Default: "planned"},
+		{Name: "initiated_by_user_id", Type: field.TypeInt},
+		{Name: "result", Type: field.TypeJSON, Nullable: true},
+		{Name: "error_message", Type: field.TypeString, Default: ""},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "started_at", Type: field.TypeTime, Nullable: true},
+		{Name: "completed_at", Type: field.TypeTime, Nullable: true},
+		{Name: "operation_id", Type: field.TypeInt},
+	}
+	// RelationshipOperationAttemptsTable holds the schema information for the "relationship_operation_attempts" table.
+	RelationshipOperationAttemptsTable = &schema.Table{
+		Name:       "relationship_operation_attempts",
+		Columns:    RelationshipOperationAttemptsColumns,
+		PrimaryKey: []*schema.Column{RelationshipOperationAttemptsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "relationship_operation_attempts_relationship_operations_attempts",
+				Columns:    []*schema.Column{RelationshipOperationAttemptsColumns[10]},
+				RefColumns: []*schema.Column{RelationshipOperationsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "relationshipoperationattempt_operation_id_attempt_number",
+				Unique:  true,
+				Columns: []*schema.Column{RelationshipOperationAttemptsColumns[10], RelationshipOperationAttemptsColumns[1]},
+			},
+			{
+				Name:    "relationshipoperationattempt_operation_id_direction_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{RelationshipOperationAttemptsColumns[10], RelationshipOperationAttemptsColumns[2], RelationshipOperationAttemptsColumns[7]},
+			},
+		},
+	}
+	// RelationshipOperationMappingsColumns holds the columns for the "relationship_operation_mappings" table.
+	RelationshipOperationMappingsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "role", Type: field.TypeEnum, Enums: []string{"primary", "source", "destination", "affected"}},
+		{Name: "baseline_revision", Type: field.TypeInt64},
+		{Name: "baseline_snapshot", Type: field.TypeJSON},
+		{Name: "active", Type: field.TypeBool, Default: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "released_at", Type: field.TypeTime, Nullable: true},
+		{Name: "operation_id", Type: field.TypeInt},
+		{Name: "mapping_id", Type: field.TypeInt},
+	}
+	// RelationshipOperationMappingsTable holds the schema information for the "relationship_operation_mappings" table.
+	RelationshipOperationMappingsTable = &schema.Table{
+		Name:       "relationship_operation_mappings",
+		Columns:    RelationshipOperationMappingsColumns,
+		PrimaryKey: []*schema.Column{RelationshipOperationMappingsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "relationship_operation_mappings_relationship_operations_mappings",
+				Columns:    []*schema.Column{RelationshipOperationMappingsColumns[7]},
+				RefColumns: []*schema.Column{RelationshipOperationsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "relationship_operation_mappings_relay_group_mappings_relationship_operation_mappings",
+				Columns:    []*schema.Column{RelationshipOperationMappingsColumns[8]},
+				RefColumns: []*schema.Column{RelayGroupMappingsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "relationshipoperationmapping_operation_id_mapping_id",
+				Unique:  true,
+				Columns: []*schema.Column{RelationshipOperationMappingsColumns[7], RelationshipOperationMappingsColumns[8]},
+			},
+			{
+				Name:    "relationshipoperationmapping_active_mapping_unique",
+				Unique:  true,
+				Columns: []*schema.Column{RelationshipOperationMappingsColumns[8]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "active",
+				},
+			},
+			{
+				Name:    "relationshipoperationmapping_operation_id_active",
+				Unique:  false,
+				Columns: []*schema.Column{RelationshipOperationMappingsColumns[7], RelationshipOperationMappingsColumns[4]},
+			},
+		},
+	}
+	// RelationshipOperationStepsColumns holds the columns for the "relationship_operation_steps" table.
+	RelationshipOperationStepsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "step_key", Type: field.TypeString},
+		{Name: "action", Type: field.TypeString},
+		{Name: "relationship_type", Type: field.TypeString},
+		{Name: "direction", Type: field.TypeEnum, Enums: []string{"target", "baseline"}},
+		{Name: "local_user_id", Type: field.TypeInt, Nullable: true},
+		{Name: "relay_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "source_group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "target_group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "reviewed_resource_ids", Type: field.TypeJSON},
+		{Name: "reviewed_priority", Type: field.TypeInt, Nullable: true},
+		{Name: "reviewed_status", Type: field.TypeString, Nullable: true},
+		{Name: "expected_result", Type: field.TypeJSON},
+		{Name: "resume_supported", Type: field.TypeBool},
+		{Name: "restore_supported", Type: field.TypeBool},
+		{Name: "lifecycle", Type: field.TypeEnum, Enums: []string{"planned", "dispatched", "readback_verified", "failed", "blocked_external"}, Default: "planned"},
+		{Name: "latest_verified_effect", Type: field.TypeJSON, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "operation_id", Type: field.TypeInt},
+	}
+	// RelationshipOperationStepsTable holds the schema information for the "relationship_operation_steps" table.
+	RelationshipOperationStepsTable = &schema.Table{
+		Name:       "relationship_operation_steps",
+		Columns:    RelationshipOperationStepsColumns,
+		PrimaryKey: []*schema.Column{RelationshipOperationStepsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "relationship_operation_steps_relationship_operations_steps",
+				Columns:    []*schema.Column{RelationshipOperationStepsColumns[19]},
+				RefColumns: []*schema.Column{RelationshipOperationsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "relationshipoperationstep_operation_id_step_key",
+				Unique:  true,
+				Columns: []*schema.Column{RelationshipOperationStepsColumns[19], RelationshipOperationStepsColumns[1]},
+			},
+			{
+				Name:    "relationshipoperationstep_operation_id_lifecycle",
+				Unique:  false,
+				Columns: []*schema.Column{RelationshipOperationStepsColumns[19], RelationshipOperationStepsColumns[15]},
+			},
+		},
+	}
 	// RelayGroupMappingsColumns holds the columns for the "relay_group_mappings" table.
 	RelayGroupMappingsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -1045,6 +1228,7 @@ var (
 		{Name: "account_management_initialized", Type: field.TypeBool, Default: false},
 		{Name: "desired_accounts", Type: field.TypeJSON},
 		{Name: "operation_state", Type: field.TypeJSON},
+		{Name: "baseline_revision", Type: field.TypeInt64, Default: 1},
 		{Name: "status", Type: field.TypeString, Default: "active"},
 		{Name: "weekly_cost_target", Type: field.TypeFloat64, Default: 0},
 		{Name: "created_at", Type: field.TypeTime},
@@ -1467,6 +1651,10 @@ var (
 		QuotaResetNotificationSettingsTable,
 		QuotaResetRequestsTable,
 		QuotaResetRequestEventsTable,
+		RelationshipOperationsTable,
+		RelationshipOperationAttemptsTable,
+		RelationshipOperationMappingsTable,
+		RelationshipOperationStepsTable,
 		RelayGroupMappingsTable,
 		RelayProvidersTable,
 		RepoConfigsTable,
@@ -1491,6 +1679,10 @@ func init() {
 	PrAttributionRunsTable.ForeignKeys[0].RefTable = PrRecordsTable
 	PrRecordsTable.ForeignKeys[0].RefTable = PrAttributionRunsTable
 	PrRecordsTable.ForeignKeys[1].RefTable = RepoConfigsTable
+	RelationshipOperationAttemptsTable.ForeignKeys[0].RefTable = RelationshipOperationsTable
+	RelationshipOperationMappingsTable.ForeignKeys[0].RefTable = RelationshipOperationsTable
+	RelationshipOperationMappingsTable.ForeignKeys[1].RefTable = RelayGroupMappingsTable
+	RelationshipOperationStepsTable.ForeignKeys[0].RefTable = RelationshipOperationsTable
 	RepoConfigsTable.ForeignKeys[0].RefTable = ScmProvidersTable
 	ReportingInstallationsTable.ForeignKeys[0].RefTable = UsersTable
 	ScmProvidersTable.ForeignKeys[0].RefTable = CredentialsTable

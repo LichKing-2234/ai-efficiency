@@ -37,6 +37,10 @@ import (
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestevent"
+	"github.com/ai-efficiency/backend/ent/relationshipoperation"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationattempt"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationmapping"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationstep"
 	"github.com/ai-efficiency/backend/ent/relaygroupmapping"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
@@ -98,6 +102,14 @@ type Client struct {
 	QuotaResetRequest *QuotaResetRequestClient
 	// QuotaResetRequestEvent is the client for interacting with the QuotaResetRequestEvent builders.
 	QuotaResetRequestEvent *QuotaResetRequestEventClient
+	// RelationshipOperation is the client for interacting with the RelationshipOperation builders.
+	RelationshipOperation *RelationshipOperationClient
+	// RelationshipOperationAttempt is the client for interacting with the RelationshipOperationAttempt builders.
+	RelationshipOperationAttempt *RelationshipOperationAttemptClient
+	// RelationshipOperationMapping is the client for interacting with the RelationshipOperationMapping builders.
+	RelationshipOperationMapping *RelationshipOperationMappingClient
+	// RelationshipOperationStep is the client for interacting with the RelationshipOperationStep builders.
+	RelationshipOperationStep *RelationshipOperationStepClient
 	// RelayGroupMapping is the client for interacting with the RelayGroupMapping builders.
 	RelayGroupMapping *RelayGroupMappingClient
 	// RelayProvider is the client for interacting with the RelayProvider builders.
@@ -151,6 +163,10 @@ func (c *Client) init() {
 	c.QuotaResetNotificationSetting = NewQuotaResetNotificationSettingClient(c.config)
 	c.QuotaResetRequest = NewQuotaResetRequestClient(c.config)
 	c.QuotaResetRequestEvent = NewQuotaResetRequestEventClient(c.config)
+	c.RelationshipOperation = NewRelationshipOperationClient(c.config)
+	c.RelationshipOperationAttempt = NewRelationshipOperationAttemptClient(c.config)
+	c.RelationshipOperationMapping = NewRelationshipOperationMappingClient(c.config)
+	c.RelationshipOperationStep = NewRelationshipOperationStepClient(c.config)
 	c.RelayGroupMapping = NewRelayGroupMappingClient(c.config)
 	c.RelayProvider = NewRelayProviderClient(c.config)
 	c.RepoConfig = NewRepoConfigClient(c.config)
@@ -275,6 +291,10 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		QuotaResetNotificationSetting: NewQuotaResetNotificationSettingClient(cfg),
 		QuotaResetRequest:             NewQuotaResetRequestClient(cfg),
 		QuotaResetRequestEvent:        NewQuotaResetRequestEventClient(cfg),
+		RelationshipOperation:         NewRelationshipOperationClient(cfg),
+		RelationshipOperationAttempt:  NewRelationshipOperationAttemptClient(cfg),
+		RelationshipOperationMapping:  NewRelationshipOperationMappingClient(cfg),
+		RelationshipOperationStep:     NewRelationshipOperationStepClient(cfg),
 		RelayGroupMapping:             NewRelayGroupMappingClient(cfg),
 		RelayProvider:                 NewRelayProviderClient(cfg),
 		RepoConfig:                    NewRepoConfigClient(cfg),
@@ -326,6 +346,10 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		QuotaResetNotificationSetting: NewQuotaResetNotificationSettingClient(cfg),
 		QuotaResetRequest:             NewQuotaResetRequestClient(cfg),
 		QuotaResetRequestEvent:        NewQuotaResetRequestEventClient(cfg),
+		RelationshipOperation:         NewRelationshipOperationClient(cfg),
+		RelationshipOperationAttempt:  NewRelationshipOperationAttemptClient(cfg),
+		RelationshipOperationMapping:  NewRelationshipOperationMappingClient(cfg),
+		RelationshipOperationStep:     NewRelationshipOperationStepClient(cfg),
 		RelayGroupMapping:             NewRelayGroupMappingClient(cfg),
 		RelayProvider:                 NewRelayProviderClient(cfg),
 		RepoConfig:                    NewRepoConfigClient(cfg),
@@ -371,10 +395,11 @@ func (c *Client) Use(hooks ...Hook) {
 		c.DirectoryMemberDepartment, c.DirectoryOffboardingAction, c.DirectorySource,
 		c.DirectorySyncRun, c.PRCommitUsageSnapshot, c.PRSyncJob, c.PrAttributionRun,
 		c.PrRecord, c.QuotaResetApproverConfig, c.QuotaResetNotificationSetting,
-		c.QuotaResetRequest, c.QuotaResetRequestEvent, c.RelayGroupMapping,
-		c.RelayProvider, c.RepoConfig, c.ReportingInstallation, c.ScmProvider,
-		c.SystemSetting, c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User,
-		c.WebhookDeadLetter,
+		c.QuotaResetRequest, c.QuotaResetRequestEvent, c.RelationshipOperation,
+		c.RelationshipOperationAttempt, c.RelationshipOperationMapping,
+		c.RelationshipOperationStep, c.RelayGroupMapping, c.RelayProvider,
+		c.RepoConfig, c.ReportingInstallation, c.ScmProvider, c.SystemSetting,
+		c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Use(hooks...)
 	}
@@ -390,10 +415,11 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.DirectoryMemberDepartment, c.DirectoryOffboardingAction, c.DirectorySource,
 		c.DirectorySyncRun, c.PRCommitUsageSnapshot, c.PRSyncJob, c.PrAttributionRun,
 		c.PrRecord, c.QuotaResetApproverConfig, c.QuotaResetNotificationSetting,
-		c.QuotaResetRequest, c.QuotaResetRequestEvent, c.RelayGroupMapping,
-		c.RelayProvider, c.RepoConfig, c.ReportingInstallation, c.ScmProvider,
-		c.SystemSetting, c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User,
-		c.WebhookDeadLetter,
+		c.QuotaResetRequest, c.QuotaResetRequestEvent, c.RelationshipOperation,
+		c.RelationshipOperationAttempt, c.RelationshipOperationMapping,
+		c.RelationshipOperationStep, c.RelayGroupMapping, c.RelayProvider,
+		c.RepoConfig, c.ReportingInstallation, c.ScmProvider, c.SystemSetting,
+		c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -446,6 +472,14 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.QuotaResetRequest.mutate(ctx, m)
 	case *QuotaResetRequestEventMutation:
 		return c.QuotaResetRequestEvent.mutate(ctx, m)
+	case *RelationshipOperationMutation:
+		return c.RelationshipOperation.mutate(ctx, m)
+	case *RelationshipOperationAttemptMutation:
+		return c.RelationshipOperationAttempt.mutate(ctx, m)
+	case *RelationshipOperationMappingMutation:
+		return c.RelationshipOperationMapping.mutate(ctx, m)
+	case *RelationshipOperationStepMutation:
+		return c.RelationshipOperationStep.mutate(ctx, m)
 	case *RelayGroupMappingMutation:
 		return c.RelayGroupMapping.mutate(ctx, m)
 	case *RelayProviderMutation:
@@ -3655,6 +3689,650 @@ func (c *QuotaResetRequestEventClient) mutate(ctx context.Context, m *QuotaReset
 	}
 }
 
+// RelationshipOperationClient is a client for the RelationshipOperation schema.
+type RelationshipOperationClient struct {
+	config
+}
+
+// NewRelationshipOperationClient returns a client for the RelationshipOperation from the given config.
+func NewRelationshipOperationClient(c config) *RelationshipOperationClient {
+	return &RelationshipOperationClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `relationshipoperation.Hooks(f(g(h())))`.
+func (c *RelationshipOperationClient) Use(hooks ...Hook) {
+	c.hooks.RelationshipOperation = append(c.hooks.RelationshipOperation, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `relationshipoperation.Intercept(f(g(h())))`.
+func (c *RelationshipOperationClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RelationshipOperation = append(c.inters.RelationshipOperation, interceptors...)
+}
+
+// Create returns a builder for creating a RelationshipOperation entity.
+func (c *RelationshipOperationClient) Create() *RelationshipOperationCreate {
+	mutation := newRelationshipOperationMutation(c.config, OpCreate)
+	return &RelationshipOperationCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RelationshipOperation entities.
+func (c *RelationshipOperationClient) CreateBulk(builders ...*RelationshipOperationCreate) *RelationshipOperationCreateBulk {
+	return &RelationshipOperationCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RelationshipOperationClient) MapCreateBulk(slice any, setFunc func(*RelationshipOperationCreate, int)) *RelationshipOperationCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RelationshipOperationCreateBulk{err: fmt.Errorf("calling to RelationshipOperationClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RelationshipOperationCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RelationshipOperationCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RelationshipOperation.
+func (c *RelationshipOperationClient) Update() *RelationshipOperationUpdate {
+	mutation := newRelationshipOperationMutation(c.config, OpUpdate)
+	return &RelationshipOperationUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RelationshipOperationClient) UpdateOne(ro *RelationshipOperation) *RelationshipOperationUpdateOne {
+	mutation := newRelationshipOperationMutation(c.config, OpUpdateOne, withRelationshipOperation(ro))
+	return &RelationshipOperationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RelationshipOperationClient) UpdateOneID(id int) *RelationshipOperationUpdateOne {
+	mutation := newRelationshipOperationMutation(c.config, OpUpdateOne, withRelationshipOperationID(id))
+	return &RelationshipOperationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RelationshipOperation.
+func (c *RelationshipOperationClient) Delete() *RelationshipOperationDelete {
+	mutation := newRelationshipOperationMutation(c.config, OpDelete)
+	return &RelationshipOperationDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RelationshipOperationClient) DeleteOne(ro *RelationshipOperation) *RelationshipOperationDeleteOne {
+	return c.DeleteOneID(ro.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RelationshipOperationClient) DeleteOneID(id int) *RelationshipOperationDeleteOne {
+	builder := c.Delete().Where(relationshipoperation.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RelationshipOperationDeleteOne{builder}
+}
+
+// Query returns a query builder for RelationshipOperation.
+func (c *RelationshipOperationClient) Query() *RelationshipOperationQuery {
+	return &RelationshipOperationQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRelationshipOperation},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RelationshipOperation entity by its id.
+func (c *RelationshipOperationClient) Get(ctx context.Context, id int) (*RelationshipOperation, error) {
+	return c.Query().Where(relationshipoperation.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RelationshipOperationClient) GetX(ctx context.Context, id int) *RelationshipOperation {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryMappings queries the mappings edge of a RelationshipOperation.
+func (c *RelationshipOperationClient) QueryMappings(ro *RelationshipOperation) *RelationshipOperationMappingQuery {
+	query := (&RelationshipOperationMappingClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := ro.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(relationshipoperation.Table, relationshipoperation.FieldID, id),
+			sqlgraph.To(relationshipoperationmapping.Table, relationshipoperationmapping.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, relationshipoperation.MappingsTable, relationshipoperation.MappingsColumn),
+		)
+		fromV = sqlgraph.Neighbors(ro.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QuerySteps queries the steps edge of a RelationshipOperation.
+func (c *RelationshipOperationClient) QuerySteps(ro *RelationshipOperation) *RelationshipOperationStepQuery {
+	query := (&RelationshipOperationStepClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := ro.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(relationshipoperation.Table, relationshipoperation.FieldID, id),
+			sqlgraph.To(relationshipoperationstep.Table, relationshipoperationstep.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, relationshipoperation.StepsTable, relationshipoperation.StepsColumn),
+		)
+		fromV = sqlgraph.Neighbors(ro.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryAttempts queries the attempts edge of a RelationshipOperation.
+func (c *RelationshipOperationClient) QueryAttempts(ro *RelationshipOperation) *RelationshipOperationAttemptQuery {
+	query := (&RelationshipOperationAttemptClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := ro.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(relationshipoperation.Table, relationshipoperation.FieldID, id),
+			sqlgraph.To(relationshipoperationattempt.Table, relationshipoperationattempt.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, relationshipoperation.AttemptsTable, relationshipoperation.AttemptsColumn),
+		)
+		fromV = sqlgraph.Neighbors(ro.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *RelationshipOperationClient) Hooks() []Hook {
+	return c.hooks.RelationshipOperation
+}
+
+// Interceptors returns the client interceptors.
+func (c *RelationshipOperationClient) Interceptors() []Interceptor {
+	return c.inters.RelationshipOperation
+}
+
+func (c *RelationshipOperationClient) mutate(ctx context.Context, m *RelationshipOperationMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RelationshipOperationCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RelationshipOperationUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RelationshipOperationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RelationshipOperationDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RelationshipOperation mutation op: %q", m.Op())
+	}
+}
+
+// RelationshipOperationAttemptClient is a client for the RelationshipOperationAttempt schema.
+type RelationshipOperationAttemptClient struct {
+	config
+}
+
+// NewRelationshipOperationAttemptClient returns a client for the RelationshipOperationAttempt from the given config.
+func NewRelationshipOperationAttemptClient(c config) *RelationshipOperationAttemptClient {
+	return &RelationshipOperationAttemptClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `relationshipoperationattempt.Hooks(f(g(h())))`.
+func (c *RelationshipOperationAttemptClient) Use(hooks ...Hook) {
+	c.hooks.RelationshipOperationAttempt = append(c.hooks.RelationshipOperationAttempt, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `relationshipoperationattempt.Intercept(f(g(h())))`.
+func (c *RelationshipOperationAttemptClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RelationshipOperationAttempt = append(c.inters.RelationshipOperationAttempt, interceptors...)
+}
+
+// Create returns a builder for creating a RelationshipOperationAttempt entity.
+func (c *RelationshipOperationAttemptClient) Create() *RelationshipOperationAttemptCreate {
+	mutation := newRelationshipOperationAttemptMutation(c.config, OpCreate)
+	return &RelationshipOperationAttemptCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RelationshipOperationAttempt entities.
+func (c *RelationshipOperationAttemptClient) CreateBulk(builders ...*RelationshipOperationAttemptCreate) *RelationshipOperationAttemptCreateBulk {
+	return &RelationshipOperationAttemptCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RelationshipOperationAttemptClient) MapCreateBulk(slice any, setFunc func(*RelationshipOperationAttemptCreate, int)) *RelationshipOperationAttemptCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RelationshipOperationAttemptCreateBulk{err: fmt.Errorf("calling to RelationshipOperationAttemptClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RelationshipOperationAttemptCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RelationshipOperationAttemptCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RelationshipOperationAttempt.
+func (c *RelationshipOperationAttemptClient) Update() *RelationshipOperationAttemptUpdate {
+	mutation := newRelationshipOperationAttemptMutation(c.config, OpUpdate)
+	return &RelationshipOperationAttemptUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RelationshipOperationAttemptClient) UpdateOne(roa *RelationshipOperationAttempt) *RelationshipOperationAttemptUpdateOne {
+	mutation := newRelationshipOperationAttemptMutation(c.config, OpUpdateOne, withRelationshipOperationAttempt(roa))
+	return &RelationshipOperationAttemptUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RelationshipOperationAttemptClient) UpdateOneID(id int) *RelationshipOperationAttemptUpdateOne {
+	mutation := newRelationshipOperationAttemptMutation(c.config, OpUpdateOne, withRelationshipOperationAttemptID(id))
+	return &RelationshipOperationAttemptUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RelationshipOperationAttempt.
+func (c *RelationshipOperationAttemptClient) Delete() *RelationshipOperationAttemptDelete {
+	mutation := newRelationshipOperationAttemptMutation(c.config, OpDelete)
+	return &RelationshipOperationAttemptDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RelationshipOperationAttemptClient) DeleteOne(roa *RelationshipOperationAttempt) *RelationshipOperationAttemptDeleteOne {
+	return c.DeleteOneID(roa.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RelationshipOperationAttemptClient) DeleteOneID(id int) *RelationshipOperationAttemptDeleteOne {
+	builder := c.Delete().Where(relationshipoperationattempt.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RelationshipOperationAttemptDeleteOne{builder}
+}
+
+// Query returns a query builder for RelationshipOperationAttempt.
+func (c *RelationshipOperationAttemptClient) Query() *RelationshipOperationAttemptQuery {
+	return &RelationshipOperationAttemptQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRelationshipOperationAttempt},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RelationshipOperationAttempt entity by its id.
+func (c *RelationshipOperationAttemptClient) Get(ctx context.Context, id int) (*RelationshipOperationAttempt, error) {
+	return c.Query().Where(relationshipoperationattempt.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RelationshipOperationAttemptClient) GetX(ctx context.Context, id int) *RelationshipOperationAttempt {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryOperation queries the operation edge of a RelationshipOperationAttempt.
+func (c *RelationshipOperationAttemptClient) QueryOperation(roa *RelationshipOperationAttempt) *RelationshipOperationQuery {
+	query := (&RelationshipOperationClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := roa.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(relationshipoperationattempt.Table, relationshipoperationattempt.FieldID, id),
+			sqlgraph.To(relationshipoperation.Table, relationshipoperation.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, relationshipoperationattempt.OperationTable, relationshipoperationattempt.OperationColumn),
+		)
+		fromV = sqlgraph.Neighbors(roa.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *RelationshipOperationAttemptClient) Hooks() []Hook {
+	return c.hooks.RelationshipOperationAttempt
+}
+
+// Interceptors returns the client interceptors.
+func (c *RelationshipOperationAttemptClient) Interceptors() []Interceptor {
+	return c.inters.RelationshipOperationAttempt
+}
+
+func (c *RelationshipOperationAttemptClient) mutate(ctx context.Context, m *RelationshipOperationAttemptMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RelationshipOperationAttemptCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RelationshipOperationAttemptUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RelationshipOperationAttemptUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RelationshipOperationAttemptDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RelationshipOperationAttempt mutation op: %q", m.Op())
+	}
+}
+
+// RelationshipOperationMappingClient is a client for the RelationshipOperationMapping schema.
+type RelationshipOperationMappingClient struct {
+	config
+}
+
+// NewRelationshipOperationMappingClient returns a client for the RelationshipOperationMapping from the given config.
+func NewRelationshipOperationMappingClient(c config) *RelationshipOperationMappingClient {
+	return &RelationshipOperationMappingClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `relationshipoperationmapping.Hooks(f(g(h())))`.
+func (c *RelationshipOperationMappingClient) Use(hooks ...Hook) {
+	c.hooks.RelationshipOperationMapping = append(c.hooks.RelationshipOperationMapping, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `relationshipoperationmapping.Intercept(f(g(h())))`.
+func (c *RelationshipOperationMappingClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RelationshipOperationMapping = append(c.inters.RelationshipOperationMapping, interceptors...)
+}
+
+// Create returns a builder for creating a RelationshipOperationMapping entity.
+func (c *RelationshipOperationMappingClient) Create() *RelationshipOperationMappingCreate {
+	mutation := newRelationshipOperationMappingMutation(c.config, OpCreate)
+	return &RelationshipOperationMappingCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RelationshipOperationMapping entities.
+func (c *RelationshipOperationMappingClient) CreateBulk(builders ...*RelationshipOperationMappingCreate) *RelationshipOperationMappingCreateBulk {
+	return &RelationshipOperationMappingCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RelationshipOperationMappingClient) MapCreateBulk(slice any, setFunc func(*RelationshipOperationMappingCreate, int)) *RelationshipOperationMappingCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RelationshipOperationMappingCreateBulk{err: fmt.Errorf("calling to RelationshipOperationMappingClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RelationshipOperationMappingCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RelationshipOperationMappingCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RelationshipOperationMapping.
+func (c *RelationshipOperationMappingClient) Update() *RelationshipOperationMappingUpdate {
+	mutation := newRelationshipOperationMappingMutation(c.config, OpUpdate)
+	return &RelationshipOperationMappingUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RelationshipOperationMappingClient) UpdateOne(rom *RelationshipOperationMapping) *RelationshipOperationMappingUpdateOne {
+	mutation := newRelationshipOperationMappingMutation(c.config, OpUpdateOne, withRelationshipOperationMapping(rom))
+	return &RelationshipOperationMappingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RelationshipOperationMappingClient) UpdateOneID(id int) *RelationshipOperationMappingUpdateOne {
+	mutation := newRelationshipOperationMappingMutation(c.config, OpUpdateOne, withRelationshipOperationMappingID(id))
+	return &RelationshipOperationMappingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RelationshipOperationMapping.
+func (c *RelationshipOperationMappingClient) Delete() *RelationshipOperationMappingDelete {
+	mutation := newRelationshipOperationMappingMutation(c.config, OpDelete)
+	return &RelationshipOperationMappingDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RelationshipOperationMappingClient) DeleteOne(rom *RelationshipOperationMapping) *RelationshipOperationMappingDeleteOne {
+	return c.DeleteOneID(rom.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RelationshipOperationMappingClient) DeleteOneID(id int) *RelationshipOperationMappingDeleteOne {
+	builder := c.Delete().Where(relationshipoperationmapping.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RelationshipOperationMappingDeleteOne{builder}
+}
+
+// Query returns a query builder for RelationshipOperationMapping.
+func (c *RelationshipOperationMappingClient) Query() *RelationshipOperationMappingQuery {
+	return &RelationshipOperationMappingQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRelationshipOperationMapping},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RelationshipOperationMapping entity by its id.
+func (c *RelationshipOperationMappingClient) Get(ctx context.Context, id int) (*RelationshipOperationMapping, error) {
+	return c.Query().Where(relationshipoperationmapping.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RelationshipOperationMappingClient) GetX(ctx context.Context, id int) *RelationshipOperationMapping {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryOperation queries the operation edge of a RelationshipOperationMapping.
+func (c *RelationshipOperationMappingClient) QueryOperation(rom *RelationshipOperationMapping) *RelationshipOperationQuery {
+	query := (&RelationshipOperationClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := rom.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(relationshipoperationmapping.Table, relationshipoperationmapping.FieldID, id),
+			sqlgraph.To(relationshipoperation.Table, relationshipoperation.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, relationshipoperationmapping.OperationTable, relationshipoperationmapping.OperationColumn),
+		)
+		fromV = sqlgraph.Neighbors(rom.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryMapping queries the mapping edge of a RelationshipOperationMapping.
+func (c *RelationshipOperationMappingClient) QueryMapping(rom *RelationshipOperationMapping) *RelayGroupMappingQuery {
+	query := (&RelayGroupMappingClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := rom.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(relationshipoperationmapping.Table, relationshipoperationmapping.FieldID, id),
+			sqlgraph.To(relaygroupmapping.Table, relaygroupmapping.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, relationshipoperationmapping.MappingTable, relationshipoperationmapping.MappingColumn),
+		)
+		fromV = sqlgraph.Neighbors(rom.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *RelationshipOperationMappingClient) Hooks() []Hook {
+	return c.hooks.RelationshipOperationMapping
+}
+
+// Interceptors returns the client interceptors.
+func (c *RelationshipOperationMappingClient) Interceptors() []Interceptor {
+	return c.inters.RelationshipOperationMapping
+}
+
+func (c *RelationshipOperationMappingClient) mutate(ctx context.Context, m *RelationshipOperationMappingMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RelationshipOperationMappingCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RelationshipOperationMappingUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RelationshipOperationMappingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RelationshipOperationMappingDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RelationshipOperationMapping mutation op: %q", m.Op())
+	}
+}
+
+// RelationshipOperationStepClient is a client for the RelationshipOperationStep schema.
+type RelationshipOperationStepClient struct {
+	config
+}
+
+// NewRelationshipOperationStepClient returns a client for the RelationshipOperationStep from the given config.
+func NewRelationshipOperationStepClient(c config) *RelationshipOperationStepClient {
+	return &RelationshipOperationStepClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `relationshipoperationstep.Hooks(f(g(h())))`.
+func (c *RelationshipOperationStepClient) Use(hooks ...Hook) {
+	c.hooks.RelationshipOperationStep = append(c.hooks.RelationshipOperationStep, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `relationshipoperationstep.Intercept(f(g(h())))`.
+func (c *RelationshipOperationStepClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RelationshipOperationStep = append(c.inters.RelationshipOperationStep, interceptors...)
+}
+
+// Create returns a builder for creating a RelationshipOperationStep entity.
+func (c *RelationshipOperationStepClient) Create() *RelationshipOperationStepCreate {
+	mutation := newRelationshipOperationStepMutation(c.config, OpCreate)
+	return &RelationshipOperationStepCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RelationshipOperationStep entities.
+func (c *RelationshipOperationStepClient) CreateBulk(builders ...*RelationshipOperationStepCreate) *RelationshipOperationStepCreateBulk {
+	return &RelationshipOperationStepCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RelationshipOperationStepClient) MapCreateBulk(slice any, setFunc func(*RelationshipOperationStepCreate, int)) *RelationshipOperationStepCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RelationshipOperationStepCreateBulk{err: fmt.Errorf("calling to RelationshipOperationStepClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RelationshipOperationStepCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RelationshipOperationStepCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RelationshipOperationStep.
+func (c *RelationshipOperationStepClient) Update() *RelationshipOperationStepUpdate {
+	mutation := newRelationshipOperationStepMutation(c.config, OpUpdate)
+	return &RelationshipOperationStepUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RelationshipOperationStepClient) UpdateOne(ros *RelationshipOperationStep) *RelationshipOperationStepUpdateOne {
+	mutation := newRelationshipOperationStepMutation(c.config, OpUpdateOne, withRelationshipOperationStep(ros))
+	return &RelationshipOperationStepUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RelationshipOperationStepClient) UpdateOneID(id int) *RelationshipOperationStepUpdateOne {
+	mutation := newRelationshipOperationStepMutation(c.config, OpUpdateOne, withRelationshipOperationStepID(id))
+	return &RelationshipOperationStepUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RelationshipOperationStep.
+func (c *RelationshipOperationStepClient) Delete() *RelationshipOperationStepDelete {
+	mutation := newRelationshipOperationStepMutation(c.config, OpDelete)
+	return &RelationshipOperationStepDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RelationshipOperationStepClient) DeleteOne(ros *RelationshipOperationStep) *RelationshipOperationStepDeleteOne {
+	return c.DeleteOneID(ros.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RelationshipOperationStepClient) DeleteOneID(id int) *RelationshipOperationStepDeleteOne {
+	builder := c.Delete().Where(relationshipoperationstep.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RelationshipOperationStepDeleteOne{builder}
+}
+
+// Query returns a query builder for RelationshipOperationStep.
+func (c *RelationshipOperationStepClient) Query() *RelationshipOperationStepQuery {
+	return &RelationshipOperationStepQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRelationshipOperationStep},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RelationshipOperationStep entity by its id.
+func (c *RelationshipOperationStepClient) Get(ctx context.Context, id int) (*RelationshipOperationStep, error) {
+	return c.Query().Where(relationshipoperationstep.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RelationshipOperationStepClient) GetX(ctx context.Context, id int) *RelationshipOperationStep {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryOperation queries the operation edge of a RelationshipOperationStep.
+func (c *RelationshipOperationStepClient) QueryOperation(ros *RelationshipOperationStep) *RelationshipOperationQuery {
+	query := (&RelationshipOperationClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := ros.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(relationshipoperationstep.Table, relationshipoperationstep.FieldID, id),
+			sqlgraph.To(relationshipoperation.Table, relationshipoperation.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, relationshipoperationstep.OperationTable, relationshipoperationstep.OperationColumn),
+		)
+		fromV = sqlgraph.Neighbors(ros.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *RelationshipOperationStepClient) Hooks() []Hook {
+	return c.hooks.RelationshipOperationStep
+}
+
+// Interceptors returns the client interceptors.
+func (c *RelationshipOperationStepClient) Interceptors() []Interceptor {
+	return c.inters.RelationshipOperationStep
+}
+
+func (c *RelationshipOperationStepClient) mutate(ctx context.Context, m *RelationshipOperationStepMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RelationshipOperationStepCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RelationshipOperationStepUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RelationshipOperationStepUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RelationshipOperationStepDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RelationshipOperationStep mutation op: %q", m.Op())
+	}
+}
+
 // RelayGroupMappingClient is a client for the RelayGroupMapping schema.
 type RelayGroupMappingClient struct {
 	config
@@ -3761,6 +4439,22 @@ func (c *RelayGroupMappingClient) GetX(ctx context.Context, id int) *RelayGroupM
 		panic(err)
 	}
 	return obj
+}
+
+// QueryRelationshipOperationMappings queries the relationship_operation_mappings edge of a RelayGroupMapping.
+func (c *RelayGroupMappingClient) QueryRelationshipOperationMappings(rgm *RelayGroupMapping) *RelationshipOperationMappingQuery {
+	query := (&RelationshipOperationMappingClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := rgm.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(relaygroupmapping.Table, relaygroupmapping.FieldID, id),
+			sqlgraph.To(relationshipoperationmapping.Table, relationshipoperationmapping.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, relaygroupmapping.RelationshipOperationMappingsTable, relaygroupmapping.RelationshipOperationMappingsColumn),
+		)
+		fromV = sqlgraph.Neighbors(rgm.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
 }
 
 // Hooks returns the client hooks.
@@ -5299,8 +5993,9 @@ type (
 		DirectoryMemberDepartment, DirectoryOffboardingAction, DirectorySource,
 		DirectorySyncRun, PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord,
 		QuotaResetApproverConfig, QuotaResetNotificationSetting, QuotaResetRequest,
-		QuotaResetRequestEvent, RelayGroupMapping, RelayProvider, RepoConfig,
-		ReportingInstallation, ScmProvider, SystemSetting,
+		QuotaResetRequestEvent, RelationshipOperation, RelationshipOperationAttempt,
+		RelationshipOperationMapping, RelationshipOperationStep, RelayGroupMapping,
+		RelayProvider, RepoConfig, ReportingInstallation, ScmProvider, SystemSetting,
 		TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
 		WebhookDeadLetter []ent.Hook
 	}
@@ -5311,8 +6006,9 @@ type (
 		DirectoryMemberDepartment, DirectoryOffboardingAction, DirectorySource,
 		DirectorySyncRun, PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord,
 		QuotaResetApproverConfig, QuotaResetNotificationSetting, QuotaResetRequest,
-		QuotaResetRequestEvent, RelayGroupMapping, RelayProvider, RepoConfig,
-		ReportingInstallation, ScmProvider, SystemSetting,
+		QuotaResetRequestEvent, RelationshipOperation, RelationshipOperationAttempt,
+		RelationshipOperationMapping, RelationshipOperationStep, RelayGroupMapping,
+		RelayProvider, RepoConfig, ReportingInstallation, ScmProvider, SystemSetting,
 		TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
 		WebhookDeadLetter []ent.Interceptor
 	}

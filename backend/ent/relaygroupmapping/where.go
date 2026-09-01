@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/ai-efficiency/backend/ent/predicate"
 )
 
@@ -97,6 +98,11 @@ func SourceGroupName(v string) predicate.RelayGroupMapping {
 // AccountManagementInitialized applies equality check predicate on the "account_management_initialized" field. It's identical to AccountManagementInitializedEQ.
 func AccountManagementInitialized(v bool) predicate.RelayGroupMapping {
 	return predicate.RelayGroupMapping(sql.FieldEQ(FieldAccountManagementInitialized, v))
+}
+
+// BaselineRevision applies equality check predicate on the "baseline_revision" field. It's identical to BaselineRevisionEQ.
+func BaselineRevision(v int64) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldEQ(FieldBaselineRevision, v))
 }
 
 // Status applies equality check predicate on the "status" field. It's identical to StatusEQ.
@@ -574,6 +580,46 @@ func AccountManagementInitializedNEQ(v bool) predicate.RelayGroupMapping {
 	return predicate.RelayGroupMapping(sql.FieldNEQ(FieldAccountManagementInitialized, v))
 }
 
+// BaselineRevisionEQ applies the EQ predicate on the "baseline_revision" field.
+func BaselineRevisionEQ(v int64) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldEQ(FieldBaselineRevision, v))
+}
+
+// BaselineRevisionNEQ applies the NEQ predicate on the "baseline_revision" field.
+func BaselineRevisionNEQ(v int64) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldNEQ(FieldBaselineRevision, v))
+}
+
+// BaselineRevisionIn applies the In predicate on the "baseline_revision" field.
+func BaselineRevisionIn(vs ...int64) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldIn(FieldBaselineRevision, vs...))
+}
+
+// BaselineRevisionNotIn applies the NotIn predicate on the "baseline_revision" field.
+func BaselineRevisionNotIn(vs ...int64) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldNotIn(FieldBaselineRevision, vs...))
+}
+
+// BaselineRevisionGT applies the GT predicate on the "baseline_revision" field.
+func BaselineRevisionGT(v int64) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldGT(FieldBaselineRevision, v))
+}
+
+// BaselineRevisionGTE applies the GTE predicate on the "baseline_revision" field.
+func BaselineRevisionGTE(v int64) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldGTE(FieldBaselineRevision, v))
+}
+
+// BaselineRevisionLT applies the LT predicate on the "baseline_revision" field.
+func BaselineRevisionLT(v int64) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldLT(FieldBaselineRevision, v))
+}
+
+// BaselineRevisionLTE applies the LTE predicate on the "baseline_revision" field.
+func BaselineRevisionLTE(v int64) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldLTE(FieldBaselineRevision, v))
+}
+
 // StatusEQ applies the EQ predicate on the "status" field.
 func StatusEQ(v string) predicate.RelayGroupMapping {
 	return predicate.RelayGroupMapping(sql.FieldEQ(FieldStatus, v))
@@ -757,6 +803,29 @@ func UpdatedAtLT(v time.Time) predicate.RelayGroupMapping {
 // UpdatedAtLTE applies the LTE predicate on the "updated_at" field.
 func UpdatedAtLTE(v time.Time) predicate.RelayGroupMapping {
 	return predicate.RelayGroupMapping(sql.FieldLTE(FieldUpdatedAt, v))
+}
+
+// HasRelationshipOperationMappings applies the HasEdge predicate on the "relationship_operation_mappings" edge.
+func HasRelationshipOperationMappings() predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, RelationshipOperationMappingsTable, RelationshipOperationMappingsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasRelationshipOperationMappingsWith applies the HasEdge predicate on the "relationship_operation_mappings" edge with a given conditions (other predicates).
+func HasRelationshipOperationMappingsWith(preds ...predicate.RelationshipOperationMapping) predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(func(s *sql.Selector) {
+		step := newRelationshipOperationMappingsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
 }
 
 // And groups predicates with the AND operator between them.
