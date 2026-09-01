@@ -96,9 +96,51 @@ export interface RelayPlanningMapping {
 	desired_accounts: Record<string, RelayPlanningAccountIntent[]>
 	account_pools: RelayPlanningTargetAccountPool[]
   operation_state?: Record<string, Record<string, string>>
+	baseline_revision?: number
+	alignment?: 'aligned' | 'drifted' | 'operating'
+	alignment_differences?: string[]
+	active_operation?: RelayPlanningOperation
   department_suggestions?: Array<{ id: string; name: string }>
   warnings?: string[]
   updated_at: string
+}
+
+export interface RelayPlanningOperationStep {
+	id: number
+	step_key: string
+	action: string
+	relationship_type: string
+	lifecycle: 'planned' | 'dispatched' | 'readback_verified' | 'failed' | 'blocked_external'
+	reviewed_resource_ids: number[]
+	resume_supported: boolean
+	restore_supported: boolean
+}
+
+export interface RelayPlanningOperation {
+	id: number
+	lifecycle: 'applying' | 'interrupted' | 'resuming' | 'restoring' | 'applied' | 'restored' | 'blocked_external'
+	supported_directions: Array<'resume' | 'restore'>
+	affected_mapping_ids: number[]
+	attempt_count: number
+	steps: RelayPlanningOperationStep[]
+	external_blocker?: { resource_type: string; resource_id: number; relationship: string }
+}
+
+export interface RelayPlanningRecoveryPreview {
+	operation: RelayPlanningOperation
+	direction: 'resume' | 'restore'
+	baseline_revisions: Record<string, number>
+	relationship_fingerprint: string
+	resume_only: boolean
+	external_blocker?: { resource_type: string; resource_id: number; relationship: string }
+	observed_facts: Array<Record<string, unknown>>
+}
+
+export interface RelayPlanningRecoveryResult {
+	operation_id: number
+	direction: 'resume' | 'restore'
+	lifecycle: 'applied' | 'restored'
+	attempt_id: number
 }
 
 export type RelayPlanningContainment =
@@ -269,6 +311,18 @@ export function listRelayGroupMappings(providerId?: number) {
   return client.get<ApiResponse<{ items: RelayPlanningMapping[] }>>('/admin/relay-planning/mappings', {
     params: providerId ? { provider_id: providerId } : undefined,
   })
+}
+
+export function getRelayPlanningOperation(operationId: number) {
+	return client.get<ApiResponse<RelayPlanningOperation>>(`/admin/relay-planning/operations/${operationId}`)
+}
+
+export function previewRelayPlanningRecovery(operationId: number, direction: 'resume' | 'restore') {
+	return client.post<ApiResponse<RelayPlanningRecoveryPreview>>(`/admin/relay-planning/operations/${operationId}/recovery/preview`, { direction })
+}
+
+export function confirmRelayPlanningRecovery(operationId: number, data: { direction: 'resume' | 'restore'; expected_baseline_revisions: Record<string, number>; expected_relationship_fingerprint: string }) {
+	return client.post<ApiResponse<RelayPlanningRecoveryResult>>(`/admin/relay-planning/operations/${operationId}/recovery/confirm`, data)
 }
 
 export function previewRelayMappingRenewal(id: number, data: { renewal_days: number }) {

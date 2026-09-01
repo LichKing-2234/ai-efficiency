@@ -11,6 +11,7 @@ vi.mock('@/api/adminUsers', () => ({
 vi.mock('@/api/relayPlanning', async (importOriginal) => ({
 	...(await importOriginal<typeof import('@/api/relayPlanning')>()),
 	adoptCurrentRelayAccounts: vi.fn(),
+	confirmRelayPlanningRecovery: vi.fn(),
 	executeRelayPlan: vi.fn(),
   executeRelayMappingRenewal: vi.fn(),
   executeRelayReplan: vi.fn(),
@@ -18,6 +19,7 @@ vi.mock('@/api/relayPlanning', async (importOriginal) => ({
   previewRelayMappingRenewal: vi.fn(),
   previewRelayPlan: vi.fn(),
   previewRelayReplan: vi.fn(),
+	previewRelayPlanningRecovery: vi.fn(),
 	rebindRelayGroupMapping: vi.fn(),
 	saveRelayDesiredAccounts: vi.fn(),
 	searchRelayPlanningAccounts: vi.fn(),
@@ -135,6 +137,24 @@ const existingMapping = {
 	updated_at: '2026-08-31T00:00:00Z',
 }
 
+const interruptedOperation = {
+	id: 77,
+	lifecycle: 'interrupted',
+	supported_directions: ['resume', 'restore'],
+	affected_mapping_ids: [9],
+	attempt_count: 1,
+	steps: [{ id: 1, step_key: 'target:0:api-keys:101:42:12345678901234567890', action: 'move', relationship_type: 'api_keys', lifecycle: 'dispatched', reviewed_resource_ids: [501], resume_supported: true, restore_supported: true }],
+}
+
+const recoveryPreview = {
+	operation: interruptedOperation,
+	direction: 'resume',
+	baseline_revisions: { '9': 1 },
+	relationship_fingerprint: 'sha256:recovery-preview',
+	resume_only: false,
+	observed_facts: [],
+}
+
 function existingMappingConflict() {
 	return {
 		response: { status: 409, data: { details: { error_code: 'existing_mapping', mapping_id: 9 } } },
@@ -162,6 +182,8 @@ async function mountView(initialMappings: any[] = [], wide = false) {
   })
 	relayPlanning.listRelayGroupMappings.mockResolvedValue({ data: { data: { items: initialMappings } } })
 	relayPlanning.previewRelayMappingRenewal.mockImplementation((_id: number, data: { renewal_days: number }) => Promise.resolve({ data: { data: structuredClone({ ...renewalPreview, renewal_days: data.renewal_days }) } }))
+	relayPlanning.previewRelayPlanningRecovery.mockImplementation((_id: number, direction: 'resume' | 'restore') => Promise.resolve({ data: { data: structuredClone({ ...recoveryPreview, direction }) } }))
+	relayPlanning.confirmRelayPlanningRecovery.mockResolvedValue({ data: { data: { operation_id: 77, direction: 'resume', lifecycle: 'applied', attempt_id: 2 } } })
   relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: structuredClone(plan) } })
 	relayPlanning.searchRelayPlanningUsers.mockResolvedValue({
     data: { data: { items: [], total: 0, page: 1, page_size: 20 } },
@@ -1452,7 +1474,7 @@ describe('RelayPlanningView', () => {
 		expect((wrapper.get('[data-testid="candidate-target-2"]').element as HTMLSelectElement).value).toBe('')
 	})
 
-		it('opens one centered Rebind form and locks the final submission', async () => {
+	it('opens one centered Rebind form and locks the final submission', async () => {
 		const mapping = {
 			id: 9,
 			provider_id: 7,
@@ -1502,6 +1524,44 @@ describe('RelayPlanningView', () => {
 
 		resolveRebind({ data: { data: mapping } })
 		await flushPromises()
+	})
+
+	it('reviews and confirms explicit durable recovery commands on the mobile mapping card', async () => {
+		const mapping = { ...structuredClone(existingMapping), baseline_revision: 1, alignment: 'operating', alignment_differences: [], active_operation: structuredClone(interruptedOperation) }
+		const { wrapper, relayPlanning } = await mountView([mapping], false)
+		expect(wrapper.find('[data-testid="mapping-card-layout"]').exists()).toBe(true)
+		expect(wrapper.text()).toContain('Operating')
+		expect(wrapper.text()).toContain('Interrupted')
+		expect(wrapper.find('[data-testid="resume-operation-9"]').exists()).toBe(true)
+		expect(wrapper.find('[data-testid="restore-operation-9"]').exists()).toBe(true)
+		expect(wrapper.get('[data-testid="replan-mapping-9"]').attributes('disabled')).toBeDefined()
+
+		await wrapper.get('[data-testid="resume-operation-9"]').trigger('click')
+		await flushPromises()
+		expect(relayPlanning.previewRelayPlanningRecovery).toHaveBeenCalledWith(77, 'resume')
+		expect(wrapper.get('[data-testid="recovery-dialog"]').text()).toContain('target:0:api-keys:101:42:12345678901234567890')
+
+		await wrapper.get('[data-testid="confirm-recovery"]').trigger('click')
+		await flushPromises()
+		expect(relayPlanning.confirmRelayPlanningRecovery).toHaveBeenCalledWith(77, {
+			direction: 'resume',
+			expected_baseline_revisions: { '9': 1 },
+			expected_relationship_fingerprint: 'sha256:recovery-preview',
+		})
+	})
+
+	it('shows exact external blocker without a recovery or generic retry command', async () => {
+		const blocked = {
+			...structuredClone(interruptedOperation),
+			lifecycle: 'blocked_external',
+			external_blocker: { resource_type: 'api_key', resource_id: 501, relationship: 'api-key-move' },
+		}
+		const mapping = { ...structuredClone(existingMapping), baseline_revision: 1, alignment: 'operating', alignment_differences: [], active_operation: blocked }
+		const { wrapper } = await mountView([mapping], false)
+		expect(wrapper.find('[data-testid="mapping-external-blocker-9"]').exists()).toBe(true)
+		expect(wrapper.find('[data-testid="resume-operation-9"]').exists()).toBe(false)
+		expect(wrapper.find('[data-testid="restore-operation-9"]').exists()).toBe(false)
+		expect(wrapper.text()).not.toContain('Retry')
 	})
 
 })

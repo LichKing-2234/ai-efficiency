@@ -89,4 +89,7 @@ declare module 'vue' {
     UserUsageDashboard: typeof import('./components/user/usage/UserUsageDashboard.vue')['default']
     UserUsageSubjectSelector: typeof import('./components/user/usage/UserUsageSubjectSelector.vue')['default']
   }
+  export interface GlobalDirectives {
+    vLoading: typeof import('element-plus/es')['ElLoadingDirective']
+  }
 }

@@ -9,11 +9,13 @@ import { relayPlanningMessages } from '@/locales/relayPlanning'
 import { listAdminUserSubscriptionOptions } from '@/api/adminUsers'
 import {
 	adoptCurrentRelayAccounts,
+	confirmRelayPlanningRecovery,
   executeRelayMappingRenewal,
   executeRelayPlan,
   executeRelayReplan,
   listRelayGroupMappings,
-  previewRelayMappingRenewal,
+	previewRelayMappingRenewal,
+	previewRelayPlanningRecovery,
   previewRelayPlan,
   previewRelayReplan,
   rebindRelayGroupMapping,
@@ -25,6 +27,7 @@ import {
   type RelayPlanningAccountIntent,
 	type RelayPlanningRequest,
 	type RelayPlanningMapping,
+	type RelayPlanningRecoveryPreview,
 	type RelayPlanningMappingRenewalExecution,
 	type RelayPlanningMappingRenewalMember,
 	type RelayPlanningMappingRenewalReviewedMember,
@@ -73,6 +76,13 @@ const accountSearchTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const accountSearchRequestIDs = new Map<string, number>()
 const searchDelayMS = 300
 const providers = ref<Array<{ id: number; name: string; display_name: string; groups: Array<{ group_id: string; group_name: string; platform: string }> }>>([])
+const recoveryDialogOpen = ref(false)
+const recoveryMapping = ref<RelayPlanningMapping | null>(null)
+const recoveryDirection = ref<'resume' | 'restore'>('resume')
+const recoveryPreview = ref<RelayPlanningRecoveryPreview | null>(null)
+const recoveryLoading = ref(false)
+const recoveryConfirming = ref(false)
+const recoveryError = ref('')
 
 const form = reactive({
   provider_id: 0,
@@ -180,7 +190,70 @@ function containmentTitle(mapping: RelayPlanningMapping) {
 }
 
 function mappingLocked(mapping: RelayPlanningMapping) {
-	return containmentMode(mapping) !== 'none'
+	return containmentMode(mapping) !== 'none' || mapping.alignment === 'operating' || mapping.alignment === 'drifted'
+}
+
+function alignmentText(mapping: RelayPlanningMapping) {
+	return t(mapping.alignment === 'operating' ? 'relayPlanning.alignmentOperating' : mapping.alignment === 'drifted' ? 'relayPlanning.alignmentDrifted' : 'relayPlanning.alignmentAligned')
+}
+
+function operationLifecycleText(mapping: RelayPlanningMapping) {
+	const lifecycle = mapping.active_operation?.lifecycle
+	if (!lifecycle) return ''
+	const keys = {
+		applying: 'relayPlanning.lifecycleApplying', interrupted: 'relayPlanning.lifecycleInterrupted', resuming: 'relayPlanning.lifecycleResuming', restoring: 'relayPlanning.lifecycleRestoring', applied: 'relayPlanning.lifecycleApplied', restored: 'relayPlanning.lifecycleRestored', blocked_external: 'relayPlanning.lifecycleBlockedExternal',
+	} as const
+	return t(keys[lifecycle])
+}
+
+function replanLocked(mapping: RelayPlanningMapping) {
+	return containmentMode(mapping) === 'manual_intervention' || mapping.alignment === 'operating' || mapping.alignment === 'drifted'
+}
+
+function recoveryAvailable(mapping: RelayPlanningMapping, direction: 'resume' | 'restore') {
+	return mapping.active_operation?.lifecycle === 'interrupted' && mapping.active_operation.supported_directions.includes(direction)
+}
+
+async function reviewRecovery(mapping: RelayPlanningMapping, direction: 'resume' | 'restore') {
+	if (!mapping.active_operation || recoveryLoading.value) return
+	recoveryMapping.value = mapping
+	recoveryDirection.value = direction
+	recoveryPreview.value = null
+	recoveryError.value = ''
+	recoveryDialogOpen.value = true
+	recoveryLoading.value = true
+	try {
+		recoveryPreview.value = (await previewRelayPlanningRecovery(mapping.active_operation.id, direction)).data.data ?? null
+	} catch (requestError) {
+		recoveryError.value = requestErrorMessage(requestError, t('relayPlanning.recoveryPreviewFailed'))
+	} finally {
+		recoveryLoading.value = false
+	}
+}
+
+async function confirmRecovery() {
+	const preview = recoveryPreview.value
+	if (!preview || preview.external_blocker || recoveryConfirming.value) return
+	recoveryConfirming.value = true
+	recoveryError.value = ''
+	try {
+		await confirmRelayPlanningRecovery(preview.operation.id, {
+			direction: preview.direction,
+			expected_baseline_revisions: preview.baseline_revisions,
+			expected_relationship_fingerprint: preview.relationship_fingerprint,
+		})
+		ElMessage.success(t(preview.direction === 'resume' ? 'relayPlanning.resumeCompleted' : 'relayPlanning.restoreCompleted'))
+		recoveryDialogOpen.value = false
+		await loadMappings()
+	} catch (requestError) {
+		const typed = requestError as { response?: { status?: number; data?: { details?: { current_preview?: RelayPlanningRecoveryPreview }; message?: string } } }
+		if (typed.response?.status === 409 && typed.response.data?.details?.current_preview) {
+			recoveryPreview.value = typed.response.data.details.current_preview
+		}
+		recoveryError.value = requestErrorMessage(requestError, t('relayPlanning.recoveryConfirmFailed'))
+	} finally {
+		recoveryConfirming.value = false
+	}
 }
 
 function translateWarning(warning: string): string {
@@ -1057,12 +1130,14 @@ onBeforeUnmount(() => {
         <el-empty v-if="!mappings.length" :description="t('relayPlanning.noMappings')" />
         <div v-if="mappings.length && !wideContentLayout" data-testid="mapping-card-layout" class="space-y-3">
           <article v-for="mapping in paginatedMappings" :key="mapping.id" class="rounded-md border border-slate-200 p-3">
-            <div class="flex items-start justify-between gap-3"><div class="min-w-0"><div class="break-words font-medium text-slate-900">{{ mapping.department_name || mapping.department_id }}</div><div class="text-xs text-slate-500">{{ mapping.platform }}</div></div><el-tag :type="mapping.warnings?.length || mapping.status === 'needs_retry' ? 'warning' : 'success'">{{ mappingStatusText(mapping) }}</el-tag></div>
+            <div class="flex items-start justify-between gap-3"><div class="min-w-0"><div class="break-words font-medium text-slate-900">{{ mapping.department_name || mapping.department_id }}</div><div class="text-xs text-slate-500">{{ mapping.platform }}</div></div><span class="flex shrink-0 flex-wrap justify-end gap-1"><el-tag :type="mapping.alignment === 'drifted' ? 'danger' : mapping.alignment === 'operating' ? 'warning' : 'success'">{{ alignmentText(mapping) }}</el-tag><el-tag v-if="mapping.active_operation" type="info">{{ operationLifecycleText(mapping) }}</el-tag><el-tag v-if="mapping.status === 'needs_retry'" type="warning">{{ t('relayPlanning.needsRetry') }}</el-tag></span></div>
             <dl class="mt-3 space-y-2 text-sm"><div><dt class="text-xs text-slate-500">{{ t('relayPlanning.templateGroup') }}</dt><dd class="break-words">{{ mapping.template_group_name || '-' }} (#{{ mapping.template_group_id }})</dd></div><div><dt class="text-xs text-slate-500">{{ t('relayPlanning.migrationSource') }}</dt><dd class="break-words">{{ mapping.source_group_name }} (#{{ mapping.source_group_id }})</dd></div><div><dt class="text-xs text-slate-500">{{ t('relayPlanning.managedGroups') }}</dt><dd class="break-words">{{ mapping.group_ids.join(', ') || '-' }}</dd></div></dl>
             <div v-if="mapping.warnings?.length" class="mt-2 break-words text-xs text-amber-700">{{ mapping.warnings.map(translateWarning).join('; ') }}</div>
-			<el-alert v-if="mappingLocked(mapping)" :data-testid="`mapping-containment-${mapping.id}`" class="mt-2" type="warning" :closable="false" show-icon :title="containmentTitle(mapping)" :description="t(containmentMode(mapping) === 'resume_exact' ? 'relayPlanning.exactResumeHelp' : 'relayPlanning.manualInterventionHelp')" />
+			<el-alert v-if="containmentMode(mapping) !== 'none'" :data-testid="`mapping-containment-${mapping.id}`" class="mt-2" type="warning" :closable="false" show-icon :title="containmentTitle(mapping)" :description="t(containmentMode(mapping) === 'resume_exact' ? 'relayPlanning.exactResumeHelp' : 'relayPlanning.manualInterventionHelp')" />
+			<el-alert v-else-if="mapping.alignment === 'drifted'" :data-testid="`mapping-drift-${mapping.id}`" class="mt-2" type="error" :closable="false" show-icon :title="t('relayPlanning.alignmentDrifted')" :description="mapping.alignment_differences?.map(translateWarning).join('; ')" />
+			<el-alert v-if="mapping.active_operation?.lifecycle === 'blocked_external'" :data-testid="`mapping-external-blocker-${mapping.id}`" class="mt-2" type="error" :closable="false" show-icon :title="t('relayPlanning.externalBlocker')" :description="t('relayPlanning.externalBlockerDetail', { type: mapping.active_operation.external_blocker?.resource_type || '-', id: mapping.active_operation.external_blocker?.resource_id || '-' })" />
             <div v-if="mapping.department_suggestions?.length" class="mt-2 text-xs text-slate-500">{{ t('relayPlanning.departmentSuggestions') }}: {{ mapping.department_suggestions.map(departmentSuggestionLabel).join(', ') }}</div>
-            <div class="mt-3 flex flex-wrap gap-2"><el-button :data-testid="`replan-mapping-${mapping.id}`" size="small" type="primary" :disabled="containmentMode(mapping) === 'manual_intervention'" @click="replan(mapping)">{{ t(containmentMode(mapping) === 'resume_exact' ? 'relayPlanning.continueExactOperation' : 'relayPlanning.replan') }}</el-button><el-button :data-testid="`renew-mapping-${mapping.id}`" size="small" :icon="Calendar" :loading="renewalLoadingID === mapping.id" :disabled="mappingLocked(mapping) || (renewalLoadingID !== null && renewalLoadingID !== mapping.id)" @click="renewMapping(mapping)">{{ t('relayPlanning.renewSubscriptions') }}</el-button><el-button :data-testid="`rebind-mapping-${mapping.id}`" size="small" :loading="rebindPendingID === mapping.id" :disabled="mappingLocked(mapping) || (rebindPendingID !== null && rebindPendingID !== mapping.id)" @click="rebind(mapping)">{{ t('relayPlanning.rebind') }}</el-button><el-button :data-testid="`manage-accounts-${mapping.id}`" size="small" :disabled="mappingLocked(mapping)" @click="manageAccounts(mapping)">{{ t('relayPlanning.manageAccounts') }}</el-button></div>
+            <div class="mt-3 flex flex-wrap gap-2"><el-button v-if="recoveryAvailable(mapping, 'resume')" :data-testid="`resume-operation-${mapping.id}`" size="small" type="primary" :loading="recoveryLoading && recoveryMapping?.id === mapping.id" @click="reviewRecovery(mapping, 'resume')">{{ t('relayPlanning.continueToTarget') }}</el-button><el-button v-if="recoveryAvailable(mapping, 'restore')" :data-testid="`restore-operation-${mapping.id}`" size="small" type="warning" plain :loading="recoveryLoading && recoveryMapping?.id === mapping.id" @click="reviewRecovery(mapping, 'restore')">{{ t('relayPlanning.restoreBaseline') }}</el-button><el-button :data-testid="`replan-mapping-${mapping.id}`" size="small" type="primary" :disabled="replanLocked(mapping)" @click="replan(mapping)">{{ t(containmentMode(mapping) === 'resume_exact' ? 'relayPlanning.continueExactOperation' : 'relayPlanning.replan') }}</el-button><el-button :data-testid="`renew-mapping-${mapping.id}`" size="small" :icon="Calendar" :loading="renewalLoadingID === mapping.id" :disabled="mappingLocked(mapping) || (renewalLoadingID !== null && renewalLoadingID !== mapping.id)" @click="renewMapping(mapping)">{{ t('relayPlanning.renewSubscriptions') }}</el-button><el-button :data-testid="`rebind-mapping-${mapping.id}`" size="small" :loading="rebindPendingID === mapping.id" :disabled="mappingLocked(mapping) || (rebindPendingID !== null && rebindPendingID !== mapping.id)" @click="rebind(mapping)">{{ t('relayPlanning.rebind') }}</el-button><el-button :data-testid="`manage-accounts-${mapping.id}`" size="small" :disabled="mappingLocked(mapping)" @click="manageAccounts(mapping)">{{ t('relayPlanning.manageAccounts') }}</el-button></div>
           </article>
         </div>
         <el-table v-else-if="mappings.length" data-testid="mapping-table-layout" :data="paginatedMappings" stripe>
@@ -1071,8 +1146,8 @@ onBeforeUnmount(() => {
           <el-table-column :label="t('relayPlanning.templateGroup')" min-width="160"><template #default="scope">{{ scope.row.template_group_name || '-' }} (#{{ scope.row.template_group_id }})</template></el-table-column>
           <el-table-column :label="t('relayPlanning.migrationSource')" min-width="160"><template #default="scope">{{ scope.row.source_group_name }} (#{{ scope.row.source_group_id }})</template></el-table-column>
           <el-table-column :label="t('relayPlanning.managedGroups')" min-width="180"><template #default="scope">{{ scope.row.group_ids.join(', ') }}</template></el-table-column>
-          <el-table-column :label="t('relayPlanning.status')" min-width="210"><template #default="scope"><el-tag :type="scope.row.warnings?.length || scope.row.status === 'needs_retry' ? 'warning' : 'success'">{{ mappingStatusText(scope.row as RelayPlanningMapping) }}</el-tag><div v-if="mappingLocked(scope.row as RelayPlanningMapping)" :data-testid="`mapping-containment-${scope.row.id}`" class="mt-1 break-words text-xs font-medium text-amber-700">{{ containmentTitle(scope.row as RelayPlanningMapping) }}</div><div v-if="scope.row.warnings?.length" class="mt-1 break-words text-xs text-amber-700">{{ scope.row.warnings.map(translateWarning).join('; ') }}</div><div v-if="scope.row.department_suggestions?.length" class="mt-1 break-words text-xs text-slate-500">{{ t('relayPlanning.departmentSuggestions') }}: {{ scope.row.department_suggestions.map(departmentSuggestionLabel).join(', ') }}</div></template></el-table-column>
-          <el-table-column :label="t('relayPlanning.actions')" min-width="400"><template #default="scope"><el-button :data-testid="`replan-mapping-${scope.row.id}`" link type="primary" :disabled="containmentMode(scope.row as RelayPlanningMapping) === 'manual_intervention'" @click="replan(scope.row as RelayPlanningMapping)">{{ t(containmentMode(scope.row as RelayPlanningMapping) === 'resume_exact' ? 'relayPlanning.continueExactOperation' : 'relayPlanning.replan') }}</el-button><el-button :data-testid="`renew-mapping-${scope.row.id}`" link type="primary" :icon="Calendar" :loading="renewalLoadingID === scope.row.id" :disabled="mappingLocked(scope.row as RelayPlanningMapping) || (renewalLoadingID !== null && renewalLoadingID !== scope.row.id)" @click="renewMapping(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.renewSubscriptions') }}</el-button><el-button :data-testid="`rebind-mapping-${scope.row.id}`" link type="primary" :loading="rebindPendingID === scope.row.id" :disabled="mappingLocked(scope.row as RelayPlanningMapping) || (rebindPendingID !== null && rebindPendingID !== scope.row.id)" @click="rebind(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.rebind') }}</el-button><el-button :data-testid="`manage-accounts-${scope.row.id}`" link type="primary" :disabled="mappingLocked(scope.row as RelayPlanningMapping)" @click="manageAccounts(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.manageAccounts') }}</el-button></template></el-table-column>
+          <el-table-column :label="t('relayPlanning.status')" min-width="210"><template #default="scope"><span class="flex flex-wrap gap-1"><el-tag :type="scope.row.alignment === 'drifted' ? 'danger' : scope.row.alignment === 'operating' ? 'warning' : 'success'">{{ alignmentText(scope.row as RelayPlanningMapping) }}</el-tag><el-tag v-if="scope.row.active_operation" type="info">{{ operationLifecycleText(scope.row as RelayPlanningMapping) }}</el-tag><el-tag v-if="scope.row.status === 'needs_retry'" type="warning">{{ t('relayPlanning.needsRetry') }}</el-tag></span><div v-if="containmentMode(scope.row as RelayPlanningMapping) !== 'none'" :data-testid="`mapping-containment-${scope.row.id}`" class="mt-1 break-words text-xs font-medium text-amber-700">{{ containmentTitle(scope.row as RelayPlanningMapping) }}</div><div v-else-if="scope.row.alignment === 'drifted'" :data-testid="`mapping-drift-${scope.row.id}`" class="mt-1 break-words text-xs font-medium text-red-700">{{ scope.row.alignment_differences?.map(translateWarning).join('; ') }}</div><div v-if="scope.row.warnings?.length" class="mt-1 break-words text-xs text-amber-700">{{ scope.row.warnings.map(translateWarning).join('; ') }}</div><div v-if="scope.row.department_suggestions?.length" class="mt-1 break-words text-xs text-slate-500">{{ t('relayPlanning.departmentSuggestions') }}: {{ scope.row.department_suggestions.map(departmentSuggestionLabel).join(', ') }}</div></template></el-table-column>
+          <el-table-column :label="t('relayPlanning.actions')" min-width="440"><template #default="scope"><el-button v-if="recoveryAvailable(scope.row as RelayPlanningMapping, 'resume')" :data-testid="`resume-operation-${scope.row.id}`" link type="primary" @click="reviewRecovery(scope.row as RelayPlanningMapping, 'resume')">{{ t('relayPlanning.continueToTarget') }}</el-button><el-button v-if="recoveryAvailable(scope.row as RelayPlanningMapping, 'restore')" :data-testid="`restore-operation-${scope.row.id}`" link type="warning" @click="reviewRecovery(scope.row as RelayPlanningMapping, 'restore')">{{ t('relayPlanning.restoreBaseline') }}</el-button><el-button :data-testid="`replan-mapping-${scope.row.id}`" link type="primary" :disabled="replanLocked(scope.row as RelayPlanningMapping)" @click="replan(scope.row as RelayPlanningMapping)">{{ t(containmentMode(scope.row as RelayPlanningMapping) === 'resume_exact' ? 'relayPlanning.continueExactOperation' : 'relayPlanning.replan') }}</el-button><el-button :data-testid="`renew-mapping-${scope.row.id}`" link type="primary" :icon="Calendar" :loading="renewalLoadingID === scope.row.id" :disabled="mappingLocked(scope.row as RelayPlanningMapping) || (renewalLoadingID !== null && renewalLoadingID !== scope.row.id)" @click="renewMapping(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.renewSubscriptions') }}</el-button><el-button :data-testid="`rebind-mapping-${scope.row.id}`" link type="primary" :loading="rebindPendingID === scope.row.id" :disabled="mappingLocked(scope.row as RelayPlanningMapping) || (rebindPendingID !== null && rebindPendingID !== scope.row.id)" @click="rebind(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.rebind') }}</el-button><el-button :data-testid="`manage-accounts-${scope.row.id}`" link type="primary" :disabled="mappingLocked(scope.row as RelayPlanningMapping)" @click="manageAccounts(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.manageAccounts') }}</el-button></template></el-table-column>
         </el-table>
         <el-pagination v-if="mappings.length > mappingPageSize" data-testid="mapping-pagination" class="mt-4 justify-end" size="small" background :layout="desktopPagination ? 'prev, pager, next' : 'prev, slot, next'" :pager-count="5" :current-page="mappingPage" :page-size="mappingPageSize" :total="mappings.length" @current-change="mappingPage = $event">
           <span v-if="!desktopPagination" class="px-1 text-xs text-slate-500">{{ baseT('pagination.pageOf', { page: mappingPage, pages: Math.ceil(mappings.length / mappingPageSize) }) }}</span>
@@ -1239,6 +1314,43 @@ onBeforeUnmount(() => {
 			<template #footer>
 	          <el-button :disabled="executing" @click="closeConfirmation">{{ t('relayPlanning.cancel') }}</el-button>
           <el-button data-testid="confirm-execution" type="danger" :loading="executing" @click="executeConfirmed">{{ t(activeMappingID ? 'relayPlanning.applyReviewedChanges' : 'relayPlanning.createAndMigrate') }}</el-button>
+			</template>
+		</el-dialog>
+
+		<el-dialog
+			v-model="recoveryDialogOpen"
+			data-testid="recovery-dialog"
+			:title="t(recoveryDirection === 'resume' ? 'relayPlanning.continueToTarget' : 'relayPlanning.restoreBaseline')"
+			append-to-body
+			align-center
+			width="min(100%, 38rem)"
+			:show-close="!recoveryConfirming"
+			:close-on-click-modal="!recoveryConfirming"
+			:close-on-press-escape="!recoveryConfirming"
+		>
+			<div v-loading="recoveryLoading" class="min-h-24">
+				<el-alert v-if="recoveryError" data-testid="recovery-error" type="error" :closable="false" show-icon :title="recoveryError" />
+				<template v-if="recoveryPreview">
+					<el-alert v-if="recoveryPreview.resume_only" class="mb-3" type="warning" :closable="false" show-icon :title="t('relayPlanning.resumeOnly')" />
+					<el-alert v-if="recoveryPreview.external_blocker" data-testid="recovery-external-blocker" class="mb-3" type="error" :closable="false" show-icon :title="t('relayPlanning.externalBlocker')" :description="t('relayPlanning.externalBlockerDetail', { type: recoveryPreview.external_blocker.resource_type, id: recoveryPreview.external_blocker.resource_id })" />
+					<dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+						<dt class="text-slate-500">{{ t('relayPlanning.operation') }}</dt><dd class="break-all font-medium text-slate-900">#{{ recoveryPreview.operation.id }}</dd>
+						<dt class="text-slate-500">{{ t('relayPlanning.direction') }}</dt><dd class="font-medium text-slate-900">{{ t(recoveryPreview.direction === 'resume' ? 'relayPlanning.continueToTarget' : 'relayPlanning.restoreBaseline') }}</dd>
+						<dt class="text-slate-500">{{ t('relayPlanning.affectedMappings') }}</dt><dd class="break-all font-medium text-slate-900">{{ recoveryPreview.operation.affected_mapping_ids.join(', ') }}</dd>
+					</dl>
+					<div class="mt-4 max-h-64 divide-y divide-slate-200 overflow-y-auto border-y border-slate-200">
+						<div v-for="step in recoveryPreview.operation.steps" :key="step.id" class="flex flex-wrap items-start justify-between gap-3 py-3 text-sm">
+							<span class="min-w-0"><span class="block break-all font-medium text-slate-900">{{ step.step_key }}</span><span class="block break-words text-xs text-slate-500">{{ step.relationship_type }} · {{ step.action }}</span></span>
+							<el-tag size="small" :type="step.lifecycle === 'blocked_external' || step.lifecycle === 'failed' ? 'danger' : step.lifecycle === 'readback_verified' ? 'success' : 'info'">{{ step.lifecycle }}</el-tag>
+						</div>
+					</div>
+				</template>
+			</div>
+			<template #footer>
+				<div class="flex flex-wrap justify-end gap-2">
+					<el-button :disabled="recoveryConfirming" @click="recoveryDialogOpen = false">{{ t('relayPlanning.cancel') }}</el-button>
+					<el-button data-testid="confirm-recovery" :type="recoveryDirection === 'restore' ? 'warning' : 'primary'" :loading="recoveryConfirming" :disabled="!recoveryPreview || Boolean(recoveryPreview.external_blocker)" @click="confirmRecovery">{{ t('relayPlanning.confirmRecovery') }}</el-button>
+				</div>
 			</template>
 		</el-dialog>
 
