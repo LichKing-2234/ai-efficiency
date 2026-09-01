@@ -126,6 +126,29 @@ zero-change Replan Baseline:
 - Remaining Target capacity never selects or places another candidate.
 - Relay-only unmanaged members start unselected; adoption remains explicit.
 
+A saved Managed Mapping Member is evaluated against the expected Target before
+new-candidate Migration Source eligibility. When the expected Target
+subscription is active, leaving the Source is the healthy result of the prior
+migration and produces neither the per-member Source warning nor the generic
+no-eligible-member warning. This exception applies only to the saved roster;
+newly reviewed migrations and removals that restore a saved Source still
+require their reviewed Source relationship.
+
+Replan also compares saved members with request-bound managed relationship
+facts when that member has no unresolved legacy operation. A missing expected
+Target subscription is managed relationship drift.
+When legacy operation state identifies an exact API Key whose completed move
+established the saved Target, that Key being absent from the expected Target is
+also managed relationship drift. Replan keeps the saved member visible and
+selected, reports the categorized drift, and blocks Confirm before any Relay
+write. It does not infer ownership of unrelated API Keys when no exact reviewed
+Key identity is available.
+
+An unresolved legacy member operation remains under the existing retry
+contract instead of being reclassified as static baseline drift. Phase 1 still
+removes the inapplicable Source-candidate warning for that saved member; exact
+directional retry containment is handled separately from baseline health.
+
 Only explicit add, move, remove, target-only/source selection, or unmanaged
 adoption changes the executable roster. Initial-mapping auto-placement does not
 carry into Replan.

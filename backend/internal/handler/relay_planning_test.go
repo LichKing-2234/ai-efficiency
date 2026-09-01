@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1850,6 +1851,140 @@ func TestRelayPlanningReplanUsesSharedRelationshipSnapshot(t *testing.T) {
 	}
 	if fmt.Sprint(provider.assigned) != "[900:101:365]" {
 		t.Fatalf("adoption assignment = %v, want Relay-only member ensured for 365 days", provider.assigned)
+	}
+}
+
+func TestRelayPlanningReplanDistinguishesMigratedBaselineFromTargetDrift(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().
+		SetName("relay-planning-baseline-health-test").
+		SetDisplayName("Relay Planning Baseline Health Test").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetEnabled(true).
+		SaveX(ctx)
+	createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
+	alice := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource("ldap").SetRelayUserID(42).SaveX(ctx)
+	mapping := client.RelayGroupMapping.Create().
+		SetProviderID(providerConfig.ID).
+		SetDepartmentExternalID("dept-alpha").
+		SetDepartmentName("Department Alpha").
+		SetPlatform("openai").
+		SetTemplateGroupID(10).
+		SetSourceGroupID(20).
+		SetGroupIds([]int64{101}).
+		SetMemberAssignments(map[string]int64{fmt.Sprint(alice.ID): 101}).
+		SetMemberSources(map[string]int64{fmt.Sprint(alice.ID): 20}).
+		SetAccountManagementInitialized(true).
+		SetDesiredAccounts(map[string][]map[string]int64{"101": {{"account_id": 11, "priority": 1}}}).
+		SetWeeklyCostTarget(2500).
+		SaveX(ctx)
+	provider := &relayPlanningSearchProvider{
+		users:    map[int64]*relay.User{42: {ID: 42, Username: "alice", Email: alice.Email}},
+		groups:   []relay.Group{{ID: 10, Name: "Template", Platform: "openai"}, {ID: 20, Name: "Source", Platform: "openai"}, {ID: 101, Name: "Target", Platform: "openai"}},
+		accounts: []relay.Account{{ID: 11, Name: "Account Alpha", Platform: "openai", Type: "oauth", Status: "active", Schedulable: true, GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 101, Priority: 1}}}},
+		subscriptions: map[int64][]relay.UserSubscription{
+			42: {{UserID: 42, GroupID: 101, Status: "active"}},
+		},
+		keys:         map[int64][]relay.APIKey{42: {{ID: 501, UserID: 42, GroupID: 101, Status: "active"}}},
+		mutateWrites: true,
+	}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	router := gin.New()
+	handler := NewRelayPlanningHandler(service)
+	router.POST("/admin/relay-planning/mappings/:id/replan", handler.Replan)
+	router.POST("/admin/relay-planning/mappings/:id/replan/execute", handler.ReplanExecute)
+	path := fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID)
+
+	request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("aligned Replan status = %d, want 200, body=%s", response.Code, response.Body.String())
+	}
+	var aligned struct {
+		Data relayplanning.Plan `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &aligned); err != nil {
+		t.Fatalf("decode aligned Replan: %v", err)
+	}
+	for _, warning := range aligned.Data.Warnings {
+		if strings.Contains(warning, "source group") || strings.Contains(warning, "no eligible member") {
+			t.Fatalf("aligned migrated baseline warnings = %v, want no Source eligibility warning", aligned.Data.Warnings)
+		}
+	}
+	if len(aligned.Data.Assignments) != 1 || !reflect.DeepEqual(aligned.Data.Assignments[0].UserIDs, []int{alice.ID}) {
+		t.Fatalf("aligned Replan assignments = %+v, want saved member selected on Target 101", aligned.Data.Assignments)
+	}
+
+	provider.subscriptions[42] = nil
+	provider.keys[42] = nil
+	provider.events = nil
+	request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("drifted Replan status = %d, want readable 200, body=%s", response.Code, response.Body.String())
+	}
+	var drifted struct {
+		Data relayplanning.Plan `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &drifted); err != nil {
+		t.Fatalf("decode drifted Replan: %v", err)
+	}
+	if !slices.Contains(drifted.Data.Warnings, fmt.Sprintf("user %d is missing the expected managed Target subscription", alice.ID)) {
+		t.Fatalf("Target drift warnings = %v, want categorized managed Target subscription warning", drifted.Data.Warnings)
+	}
+	payload := fmt.Sprintf(`{"assignments":[{"index":0,"target_group_id":101,"user_ids":[%d]}],"expected_relationship_fingerprint":%q,"operation_key":"target-drift"}`, alice.ID, drifted.Data.RelationshipFingerprint)
+	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("drifted Confirm status = %d, want 409 before Relay writes, body=%s", response.Code, response.Body.String())
+	}
+	if len(provider.events) != 0 {
+		t.Fatalf("drifted Confirm wrote Relay state: %v", provider.events)
+	}
+
+	client.RelayGroupMapping.UpdateOneID(mapping.ID).
+		SetOperationState(map[string]map[string]string{
+			"operation":                        {"key": "completed-migration", "status": "succeeded"},
+			fmt.Sprintf("member:%d", alice.ID): {"target_group_id": "101", "subscription": "succeeded", "api_keys": "501:succeeded", "source_removal": "succeeded"},
+		}).
+		SaveX(ctx)
+	provider.subscriptions[42] = []relay.UserSubscription{{UserID: 42, GroupID: 101, Status: "active"}}
+	provider.keys[42] = []relay.APIKey{{ID: 501, UserID: 42, GroupID: 20, Status: "active"}}
+	provider.events = nil
+	request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("API-Key drift Replan status = %d, want readable 200, body=%s", response.Code, response.Body.String())
+	}
+	var keyDrift struct {
+		Data relayplanning.Plan `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &keyDrift); err != nil {
+		t.Fatalf("decode API-Key drift Replan: %v", err)
+	}
+	if !slices.Contains(keyDrift.Data.Warnings, fmt.Sprintf("user %d has a reviewed API Key outside the expected managed Target", alice.ID)) {
+		t.Fatalf("API-Key drift warnings = %v, want categorized managed Target API-Key warning", keyDrift.Data.Warnings)
+	}
+	payload = fmt.Sprintf(`{"assignments":[{"index":0,"target_group_id":101,"user_ids":[%d]}],"expected_relationship_fingerprint":%q,"operation_key":"api-key-drift"}`, alice.ID, keyDrift.Data.RelationshipFingerprint)
+	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("API-Key drift Confirm status = %d, want 409 before Relay writes, body=%s", response.Code, response.Body.String())
+	}
+	if len(provider.events) != 0 {
+		t.Fatalf("API-Key drift Confirm wrote Relay state: %v", provider.events)
 	}
 }
 

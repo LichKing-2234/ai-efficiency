@@ -817,6 +817,9 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	if err != nil {
 		return nil, fmt.Errorf("build relay planning candidates: %w", err)
 	}
+	if mapping != nil {
+		classifyManagedRosterCandidates(mapping, candidates)
+	}
 	eligible := make([]Candidate, 0, len(candidates))
 	selectedProvided := len(selected) > 0
 	for index := range candidates {
@@ -899,7 +902,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		return nil, fmt.Errorf("assign relay planning Accounts: %w", err)
 	}
 	warnings := make([]string, 0)
-	if len(eligible) == 0 {
+	if len(eligible) == 0 && (mapping == nil || len(mapping.MemberAssignments) == 0) {
 		warnings = append(warnings, "no eligible member has a valid relay mapping and source-group membership")
 	}
 	if req.WeeklyCostTarget > 0 {
@@ -1144,6 +1147,12 @@ func replanRosterBlockerMessages(blocker replanRosterBlocker) (warning, differen
 	switch blocker.Reason {
 	case replanRosterUnavailableIdentity:
 		return fmt.Sprintf("user %d has no relay mapping", blocker.UserID), replanRosterUnavailableDifference(blocker.Reason)
+	case replanRosterUnavailableSubscription:
+		return fmt.Sprintf("subscription relationships for user %d are unavailable", blocker.UserID), replanRosterUnavailableDifference(blocker.Reason)
+	case replanRosterMissingTargetSubscription:
+		return fmt.Sprintf("user %d is missing the expected managed Target subscription", blocker.UserID), replanRosterUnavailableDifference(blocker.Reason)
+	case replanRosterMismatchedTargetAPIKey:
+		return fmt.Sprintf("user %d has a reviewed API Key outside the expected managed Target", blocker.UserID), replanRosterUnavailableDifference(blocker.Reason)
 	default:
 		return "", ""
 	}
@@ -1168,9 +1177,57 @@ func replanRosterUnavailableDifference(reason replanRosterUnavailableReason) str
 	switch reason {
 	case replanRosterUnavailableSubscription:
 		return "subscription relationships changed"
+	case replanRosterMissingTargetSubscription:
+		return "managed Target subscription relationships changed"
+	case replanRosterMismatchedTargetAPIKey:
+		return "managed Target API Key relationships changed"
 	default:
 		return "Relay user mappings changed or are no longer available"
 	}
+}
+
+func classifyManagedRosterCandidates(mapping *ent.RelayGroupMapping, candidates []Candidate) {
+	for index := range candidates {
+		candidate := &candidates[index]
+		expectedTargetID := mapping.MemberAssignments[strconv.Itoa(candidate.UserID)]
+		if expectedTargetID <= 0 {
+			continue
+		}
+		candidate.Warnings = slices.DeleteFunc(candidate.Warnings, func(warning string) bool {
+			return warning == "user is not a member of the selected source group"
+		})
+		stateKey := "member:" + strconv.Itoa(candidate.UserID)
+		if candidate.replanUnavailableReason != 0 || operationStateNeedsRetry(mapping.OperationState, stateKey) {
+			continue
+		}
+		if !slices.Contains(candidate.CurrentGroupIDs, expectedTargetID) {
+			candidate.replanUnavailableReason = replanRosterMissingTargetSubscription
+			continue
+		}
+		entry := mapping.OperationState[stateKey]
+		entryTargetID, _ := strconv.ParseInt(entry["target_group_id"], 10, 64)
+		completedKeyIDs, _ := completedAPIKeySteps(strings.Split(entry["api_keys"], ","))
+		if entry["action"] != "remove" && entryTargetID == expectedTargetID && !reviewedAPIKeysMatchTarget(completedKeyIDs, candidate.relationshipAPIKeys, expectedTargetID) {
+			candidate.replanUnavailableReason = replanRosterMismatchedTargetAPIKey
+			continue
+		}
+	}
+}
+
+func reviewedAPIKeysMatchTarget(reviewed map[int64]bool, current []relationshipAPIKeyFact, targetGroupID int64) bool {
+	for keyID := range reviewed {
+		matched := false
+		for _, key := range current {
+			if key.ID == keyID && key.GroupID == targetGroupID {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	return true
 }
 
 func addUnmanagedCapacity(assignments []Assignment, unmanaged []UnmanagedMember) {

@@ -46,6 +46,8 @@ type replanRosterUnavailableReason uint8
 const (
 	replanRosterUnavailableIdentity replanRosterUnavailableReason = iota + 1
 	replanRosterUnavailableSubscription
+	replanRosterMissingTargetSubscription
+	replanRosterMismatchedTargetAPIKey
 )
 
 type replanRosterBlocker struct {
@@ -117,7 +119,7 @@ func reviewReplanRoster(input replanRosterInput) (replanRosterResult, error) {
 					return replanRosterResult{}, &replanRosterMemberError{UserID: userID, Reason: replanRosterUnavailableIdentity}
 				}
 				if !member.Assignable {
-					if savedGroupID, saved := input.SavedAssignments[userID]; saved && member.UnavailableReason == replanRosterUnavailableIdentity && savedGroupID > 0 {
+					if savedGroupID, saved := input.SavedAssignments[userID]; saved && member.UnavailableReason != 0 && savedGroupID > 0 {
 						continue
 					}
 					reason := member.UnavailableReason
@@ -146,13 +148,17 @@ func reviewReplanRoster(input replanRosterInput) (replanRosterResult, error) {
 			continue
 		}
 		member, found := members[userID]
-		blocked := !found || member.UnavailableReason == replanRosterUnavailableIdentity
+		blocked := !found || member.UnavailableReason != 0
 		if blocked {
 			result.Targets[targetIndex].UserIDs = append(result.Targets[targetIndex].UserIDs, userID)
 			if found {
 				result.Targets[targetIndex].TotalCost += member.RangeCost
 			}
-			result.Blockers = append(result.Blockers, replanRosterBlocker{UserID: userID, Reason: replanRosterUnavailableIdentity})
+			reason := replanRosterUnavailableIdentity
+			if found && member.UnavailableReason != 0 {
+				reason = member.UnavailableReason
+			}
+			result.Blockers = append(result.Blockers, replanRosterBlocker{UserID: userID, Reason: reason})
 		} else if !input.HasReview {
 			result.Targets[targetIndex].UserIDs = append(result.Targets[targetIndex].UserIDs, userID)
 			result.Targets[targetIndex].TotalCost += member.RangeCost

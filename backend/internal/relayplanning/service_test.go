@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -617,6 +618,71 @@ func TestLoadCandidateRelayFactsFallsBackWhenSubscriptionReadFails(t *testing.T)
 	facts := loadCandidateRelayFacts(context.Background(), candidateFactsFallbackProvider{}, newPlanningRequestFacts(), nil, 101, relay.Group{ID: 42, Platform: "openai"}, "openai")
 	if facts.groupErr != nil || !facts.eligible {
 		t.Fatalf("candidate fallback facts = %#v, want eligible allowed-group result", facts)
+	}
+}
+
+func TestClassifyManagedRosterCandidatesUsesOnlyManagedTargetEvidence(t *testing.T) {
+	mapping := &ent.RelayGroupMapping{
+		MemberAssignments: map[string]int64{"1": 101},
+		OperationState: map[string]map[string]string{
+			"member:1": {"target_group_id": "101", "api_keys": "501:succeeded"},
+		},
+	}
+	tests := []struct {
+		name       string
+		candidate  Candidate
+		wantReason replanRosterUnavailableReason
+		wantSource bool
+	}{
+		{
+			name: "aligned managed member",
+			candidate: Candidate{UserID: 1, CurrentGroupIDs: []int64{101}, Warnings: []string{
+				"user is not a member of the selected source group",
+				"30-day usage is unknown; capacity may be underestimated",
+			}, relationshipAPIKeys: []relationshipAPIKeyFact{{ID: 501, GroupID: 101}}},
+		},
+		{
+			name:       "missing managed Target subscription",
+			candidate:  Candidate{UserID: 1, Warnings: []string{"user is not a member of the selected source group"}, relationshipAPIKeys: []relationshipAPIKeyFact{{ID: 501, GroupID: 101}}},
+			wantReason: replanRosterMissingTargetSubscription,
+		},
+		{
+			name:       "reviewed API Key outside managed Target",
+			candidate:  Candidate{UserID: 1, CurrentGroupIDs: []int64{101}, relationshipAPIKeys: []relationshipAPIKeyFact{{ID: 501, GroupID: 20}}},
+			wantReason: replanRosterMismatchedTargetAPIKey,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			candidates := []Candidate{tt.candidate}
+			classifyManagedRosterCandidates(mapping, candidates)
+			if candidates[0].replanUnavailableReason != tt.wantReason {
+				t.Fatalf("reason = %v, want %v", candidates[0].replanUnavailableReason, tt.wantReason)
+			}
+			gotSource := slices.Contains(candidates[0].Warnings, "user is not a member of the selected source group")
+			if gotSource != tt.wantSource {
+				t.Fatalf("Source warning present = %v, want %v; warnings=%v", gotSource, tt.wantSource, candidates[0].Warnings)
+			}
+		})
+	}
+
+	noOwnedKeyEvidence := &ent.RelayGroupMapping{MemberAssignments: map[string]int64{"1": 101}}
+	candidates := []Candidate{{UserID: 1, CurrentGroupIDs: []int64{101}, relationshipAPIKeys: []relationshipAPIKeyFact{{ID: 999, GroupID: 20}}}}
+	classifyManagedRosterCandidates(noOwnedKeyEvidence, candidates)
+	if candidates[0].replanUnavailableReason != 0 {
+		t.Fatalf("unreviewed API Key produced managed drift reason %v", candidates[0].replanUnavailableReason)
+	}
+
+	unresolved := &ent.RelayGroupMapping{
+		MemberAssignments: map[string]int64{"1": 101},
+		OperationState: map[string]map[string]string{
+			"member:1": {"target_group_id": "101", "subscription": "failed", "error": "synthetic retry"},
+		},
+	}
+	candidates = []Candidate{{UserID: 1, Warnings: []string{"user is not a member of the selected source group"}}}
+	classifyManagedRosterCandidates(unresolved, candidates)
+	if candidates[0].replanUnavailableReason != 0 || slices.Contains(candidates[0].Warnings, "user is not a member of the selected source group") {
+		t.Fatalf("unresolved legacy member = reason:%v warnings:%v, want retry classification deferred without Source warning", candidates[0].replanUnavailableReason, candidates[0].Warnings)
 	}
 }
 
