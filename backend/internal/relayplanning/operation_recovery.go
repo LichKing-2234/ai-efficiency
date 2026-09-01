@@ -114,6 +114,7 @@ func (s *Service) Recover(ctx context.Context, req RecoveryRequest) (*RecoveryRe
 	}
 	lifecycle := relationshipoperation.LifecycleRestored
 	if err := s.finishRecovery(ctx, operation.ID, attempt.ID, lifecycle, req.Direction); err != nil {
+		_ = s.failRecoveryAttempt(ctx, operation.ID, attempt.ID, err)
 		return nil, err
 	}
 	return &RecoveryResult{OperationID: operation.ID, Direction: req.Direction, Lifecycle: string(lifecycle), AttemptID: attempt.ID}, nil
