@@ -311,29 +311,32 @@ type UnmanagedMember struct {
 }
 
 type Mapping struct {
-	ID                           int                          `json:"id"`
-	ProviderID                   int                          `json:"provider_id"`
-	DepartmentID                 string                       `json:"department_id"`
-	DepartmentName               string                       `json:"department_name"`
-	Platform                     string                       `json:"platform"`
-	TemplateGroupID              int64                        `json:"template_group_id"`
-	TemplateGroupName            string                       `json:"template_group_name"`
-	SourceGroupID                int64                        `json:"source_group_id"`
-	SourceGroupName              string                       `json:"source_group_name"`
-	GroupIDs                     []int64                      `json:"group_ids"`
-	Status                       string                       `json:"status"`
-	WeeklyCostTarget             float64                      `json:"weekly_cost_target"`
-	MemberAssignments            map[string]int64             `json:"member_assignments,omitempty"`
-	MemberSources                map[string]int64             `json:"member_sources,omitempty"`
-	AccountManagementInitialized bool                         `json:"account_management_initialized"`
-	DesiredAccounts              map[string][]AccountIntent   `json:"desired_accounts"`
-	AccountPools                 []TargetAccountPool          `json:"account_pools"`
-	OperationState               map[string]map[string]string `json:"operation_state,omitempty"`
-	BaselineRevision             int64                        `json:"baseline_revision"`
-	UnmanagedMembers             []UnmanagedMember            `json:"unmanaged_members,omitempty"`
-	DepartmentSuggestions        []DepartmentSuggestion       `json:"department_suggestions,omitempty"`
-	Warnings                     []string                     `json:"warnings,omitempty"`
-	UpdatedAt                    time.Time                    `json:"updated_at"`
+	ID                           int                           `json:"id"`
+	ProviderID                   int                           `json:"provider_id"`
+	DepartmentID                 string                        `json:"department_id"`
+	DepartmentName               string                        `json:"department_name"`
+	Platform                     string                        `json:"platform"`
+	TemplateGroupID              int64                         `json:"template_group_id"`
+	TemplateGroupName            string                        `json:"template_group_name"`
+	SourceGroupID                int64                         `json:"source_group_id"`
+	SourceGroupName              string                        `json:"source_group_name"`
+	GroupIDs                     []int64                       `json:"group_ids"`
+	Status                       string                        `json:"status"`
+	WeeklyCostTarget             float64                       `json:"weekly_cost_target"`
+	MemberAssignments            map[string]int64              `json:"member_assignments,omitempty"`
+	MemberSources                map[string]int64              `json:"member_sources,omitempty"`
+	AccountManagementInitialized bool                          `json:"account_management_initialized"`
+	DesiredAccounts              map[string][]AccountIntent    `json:"desired_accounts"`
+	AccountPools                 []TargetAccountPool           `json:"account_pools"`
+	OperationState               map[string]map[string]string  `json:"operation_state,omitempty"`
+	BaselineRevision             int64                         `json:"baseline_revision"`
+	Alignment                    string                        `json:"alignment"`
+	AlignmentDifferences         []string                      `json:"alignment_differences,omitempty"`
+	ActiveOperation              *RelationshipOperationSummary `json:"active_operation,omitempty"`
+	UnmanagedMembers             []UnmanagedMember             `json:"unmanaged_members,omitempty"`
+	DepartmentSuggestions        []DepartmentSuggestion        `json:"department_suggestions,omitempty"`
+	Warnings                     []string                      `json:"warnings,omitempty"`
+	UpdatedAt                    time.Time                     `json:"updated_at"`
 }
 
 type MappingRenewalPreviewRequest struct {
@@ -2641,6 +2644,9 @@ func (s *Service) ListMappings(ctx context.Context, providerID int) ([]Mapping, 
 	}
 	for index := range out {
 		out[index].Warnings = uniqueStrings(out[index].Warnings)
+	}
+	if err := s.decorateMappingOperationState(ctx, out); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

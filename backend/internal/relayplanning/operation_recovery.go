@@ -68,6 +68,7 @@ func (s *Service) Recover(ctx context.Context, req RecoveryRequest) (*RecoveryRe
 	if err != nil {
 		return nil, fmt.Errorf("load Relationship Operation steps: %w", err)
 	}
+	resolveRecoveryStepGroupIDs(steps)
 	for _, step := range steps {
 		if req.Direction == RecoveryResume && !step.ResumeSupported || req.Direction == RecoveryRestore && !step.RestoreSupported {
 			return nil, fmt.Errorf("step %q does not support %s", step.StepKey, req.Direction)
@@ -118,6 +119,31 @@ func (s *Service) Recover(ctx context.Context, req RecoveryRequest) (*RecoveryRe
 		return nil, err
 	}
 	return &RecoveryResult{OperationID: operation.ID, Direction: req.Direction, Lifecycle: string(lifecycle), AttemptID: attempt.ID}, nil
+}
+
+func resolveRecoveryStepGroupIDs(steps []*ent.RelationshipOperationStep) {
+	created := map[string]int64{}
+	for _, step := range steps {
+		if step.RelationshipType == "group" && step.Action == "create" {
+			created[recoveryTargetPrefix(step.StepKey)] = int64Value(step.LatestVerifiedEffect["group_id"])
+		}
+	}
+	for _, step := range steps {
+		if int64PointerValue(step.TargetGroupID) > 0 {
+			continue
+		}
+		if groupID := created[recoveryTargetPrefix(step.StepKey)]; groupID > 0 {
+			step.TargetGroupID = &groupID
+		}
+	}
+}
+
+func recoveryTargetPrefix(stepKey string) string {
+	parts := strings.SplitN(stepKey, ":", 3)
+	if len(parts) < 2 || parts[0] != "target" {
+		return ""
+	}
+	return parts[0] + ":" + parts[1]
 }
 
 func preflightRecoveryResources(ctx context.Context, provider relay.Provider, platform string, steps []*ent.RelationshipOperationStep) (*ent.RelationshipOperationStep, *ExternalRecoveryBlockerError, error) {

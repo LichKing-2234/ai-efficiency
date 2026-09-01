@@ -383,9 +383,27 @@ subscriptions, API Keys, and Account bindings are never selected for mutation.
 Only complete target readback promotes every affected Mapping revision and closes
 Resume as `applied`; promotion, terminal attempt evidence, and ownership release
 commit in one local transaction. Complete baseline readback closes Restore as
-`restored` while leaving every Mapping baseline and revision unchanged. HTTP
-recovery surfaces and alignment UI, durable legacy migration, and deterministic
-cross-restart delivery tests remain owned by their dependent delivery issues.
+`restored` while leaving every Mapping baseline and revision unchanged.
+
+Mapping list reads now expose Alignment independently as `aligned`, `drifted`, or
+`operating`, with safe categorized differences and an active Operation summary.
+They remain read-only. The Operation read surface exposes only lifecycle,
+supported directions, affected Mapping IDs, attempt count, immutable step
+summaries, reviewed resource IDs, and a safe external blocker. Recovery Preview
+performs fresh Relay readback without mutation and binds the reviewed direction,
+every affected baseline revision, safe observed facts, and blocker state into a
+relationship fingerprint. Recovery Confirm requires that exact Operation,
+direction, revision map, and fingerprint; changed facts return categorized HTTP
+409 with the current Preview before any write.
+
+The Relay Planning UI displays Alignment separately from Operation Lifecycle,
+locks ordinary edits while operating or drifted, and provides distinct `Continue
+to Target` and `Restore Baseline` review commands only when supported. Resume-only
+effects are disclosed. `blocked_external` shows the exact safe resource type and
+ID with no recovery or generic retry command. Legacy compatibility state remains
+explicitly labeled and retains its Phase 1 exact-continuation behavior. Durable
+legacy migration and deterministic cross-restart delivery tests remain owned by
+their dependent delivery issues.
 
 Destination and source mapping changes commit in one local transaction. A local
 persistence failure rolls back every affected mapping and returns structured

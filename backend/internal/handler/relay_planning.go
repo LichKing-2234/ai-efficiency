@@ -100,6 +100,78 @@ func (h *RelayPlanningHandler) ListMappings(c *gin.Context) {
 	pkg.Success(c, gin.H{"items": items})
 }
 
+func (h *RelayPlanningHandler) GetOperation(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("operation_id"))
+	if err != nil || id <= 0 {
+		pkg.Error(c, http.StatusBadRequest, "invalid operation id")
+		return
+	}
+	result, err := h.service.GetRelationshipOperation(c.Request.Context(), id)
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	pkg.Success(c, result)
+}
+
+func (h *RelayPlanningHandler) PreviewRecovery(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("operation_id"))
+	if err != nil || id <= 0 {
+		pkg.Error(c, http.StatusBadRequest, "invalid operation id")
+		return
+	}
+	var req struct {
+		Direction relayplanning.RecoveryDirection `json:"direction"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid recovery preview request")
+		return
+	}
+	result, err := h.service.PreviewRecovery(c.Request.Context(), id, req.Direction)
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	pkg.Success(c, result)
+}
+
+func (h *RelayPlanningHandler) ConfirmRecovery(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("operation_id"))
+	if err != nil || id <= 0 {
+		pkg.Error(c, http.StatusBadRequest, "invalid operation id")
+		return
+	}
+	var req struct {
+		Direction                       relayplanning.RecoveryDirection `json:"direction"`
+		ExpectedBaselineRevisions       map[string]int64                `json:"expected_baseline_revisions"`
+		ExpectedRelationshipFingerprint string                          `json:"expected_relationship_fingerprint"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid recovery confirmation request")
+		return
+	}
+	request := relayplanning.RecoveryConfirmRequest{OperationID: id, Direction: req.Direction, ExpectedBaselineRevisions: req.ExpectedBaselineRevisions, ExpectedRelationshipFingerprint: req.ExpectedRelationshipFingerprint}
+	if actor := appauth.GetUserContext(c); actor != nil {
+		request.InitiatedByUserID = actor.UserID
+	}
+	result, err := h.service.ConfirmRecovery(c.Request.Context(), request)
+	if err != nil {
+		var stale *relayplanning.StaleRecoveryError
+		if errors.As(err, &stale) {
+			pkg.ErrorWithDetails(c, http.StatusConflict, stale.Error(), gin.H{"error_code": "stale_recovery_preview", "reason": stale.Reason, "current_preview": stale.Current})
+			return
+		}
+		var blocker *relayplanning.ExternalRecoveryBlockerError
+		if errors.As(err, &blocker) {
+			pkg.ErrorWithDetails(c, http.StatusConflict, blocker.Error(), gin.H{"error_code": "relationship_operation_blocked_external", "resource_type": blocker.ResourceType, "resource_id": blocker.ResourceID, "relationship": blocker.Relationship, "retryable": false})
+			return
+		}
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	pkg.Success(c, result)
+}
+
 func (h *RelayPlanningHandler) PreviewMappingRenewal(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
