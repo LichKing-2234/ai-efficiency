@@ -2731,8 +2731,8 @@ func TestRelayPlanningExplicitRemovalRetryDoesNotRepeatCompletedWrites(t *testin
 	if err := json.Unmarshal(response.Body.Bytes(), &reverseConflict); err != nil {
 		t.Fatalf("decode reverse retry conflict: %v", err)
 	}
-	if response.Code != http.StatusConflict || reverseConflict.Details.ErrorCode != "relationship_operation_active" || reverseConflict.Details.Retryable {
-		t.Fatalf("reverse retry = status:%d details:%+v body:%s, want active-operation conflict", response.Code, reverseConflict.Details, response.Body.String())
+	if response.Code != http.StatusConflict || reverseConflict.Details.ErrorCode != "stale_relay_plan" || reverseConflict.Details.Retryable {
+		t.Fatalf("reverse retry = status:%d details:%+v body:%s, want stale zero-write conflict", response.Code, reverseConflict.Details, response.Body.String())
 	}
 	if !reflect.DeepEqual(provider.events, writesAfterFirstExecute) {
 		t.Fatalf("reverse retry writes = %v, want no writes after %v", provider.events, writesAfterFirstExecute)
