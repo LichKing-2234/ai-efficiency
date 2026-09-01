@@ -355,11 +355,21 @@ released historical ownership. Snapshots, fingerprints, directional identity,
 reviewed resources, supported directions, and attempt direction are stored
 independently from legacy `operation_state`.
 
-This is a storage boundary only. Current Confirm/Retry execution does not yet
-create or orchestrate these entities, and Mapping baseline promotion still
-follows the legacy runtime described above. Persist-before-dispatch, lifecycle
-orchestration, Resume/Restore, alignment APIs, migration, and restart/concurrency
-guarantees remain pending their dependent delivery issues.
+Confirm now creates the Operation, every affected-Mapping ownership row, the
+complete immutable step graph, and the initial attempt in one local transaction
+before resolving the Relay provider or issuing a Relay write. An ordinary
+Confirm cannot acquire any Mapping already owned by a non-terminal Operation;
+other Mappings remain independently available. A successful execution promotes
+all affected Mapping baselines with revision compare-and-swap and releases
+ownership atomically with the terminal Operation and attempt evidence.
+
+After dispatch, incomplete execution retains active ownership and records an
+interrupted Operation without changing captured Mapping fields or revisions.
+Steps whose effects have request-bound proof retain `readback_verified` evidence;
+other dispatched steps remain unknown rather than being guessed or replayed by
+another ordinary Confirm. Resume/Restore endpoints and alignment UI, durable
+legacy migration, and deterministic cross-restart delivery tests remain owned by
+their dependent delivery issues.
 
 Destination and source mapping changes commit in one local transaction. A local
 persistence failure rolls back every affected mapping and returns structured
