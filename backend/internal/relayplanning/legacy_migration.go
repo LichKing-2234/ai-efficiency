@@ -160,19 +160,9 @@ func (s *Service) migrateExactLegacyMapping(ctx context.Context, mapping *Mappin
 		return nil, "reviewed_resource_readback_mismatch", nil
 	}
 	baseline := reconstructLegacyBaseline(*mapping, members)
-	steps := buildDurableStepPlans(plan)
+	steps := legacyDurableStepPlans(members)
 	if len(steps) == 0 {
 		return nil, "missing_effect_graph", nil
-	}
-	for index := range steps {
-		steps[index].RestoreSupported = false
-		if steps[index].RelationshipType == "api_keys" {
-			for _, intent := range members {
-				if intent.RelayUserID == steps[index].RelayUserID && intent.SourceGroupID == steps[index].SourceGroupID && intent.TargetGroupID == steps[index].TargetGroupID {
-					steps[index].ReviewedResourceIDs = append([]int64(nil), intent.APIKeyIDs...)
-				}
-			}
-		}
 	}
 	tx, err := s.client.Tx(ctx)
 	if err != nil {
@@ -195,6 +185,38 @@ func (s *Service) migrateExactLegacyMapping(ctx context.Context, mapping *Mappin
 	}
 	operation, err := s.client.RelationshipOperation.Get(ctx, execution.operationID)
 	return operation, "", err
+}
+
+func legacyDurableStepPlans(members map[int]legacyMemberIntent) []durableStepPlan {
+	userIDs := make([]int, 0, len(members))
+	for userID := range members {
+		userIDs = append(userIDs, userID)
+	}
+	sort.Ints(userIDs)
+	steps := []durableStepPlan{}
+	for _, userID := range userIDs {
+		intent := members[userID]
+		prefix := fmt.Sprintf("legacy:member:%d", userID)
+		steps = append(steps, durableStepPlan{Key: prefix + ":intent", Action: intent.Action, RelationshipType: "managed_member", Direction: "target", LocalUserID: userID, RelayUserID: intent.RelayUserID, SourceGroupID: intent.SourceGroupID, TargetGroupID: intent.TargetGroupID, ReviewedResourceIDs: append([]int64(nil), intent.APIKeyIDs...), ExpectedResult: map[string]any{"target_group_id": intent.TargetGroupID, "baseline_group_id": intent.SourceGroupID}, ResumeSupported: true})
+		if intent.Action == "remove" {
+			steps = append(steps, durableStepPlan{Key: prefix + ":subscription:target", Action: "remove", RelationshipType: "subscription", Direction: "target", LocalUserID: userID, RelayUserID: intent.RelayUserID, TargetGroupID: intent.TargetGroupID, ReviewedResourceIDs: []int64{}, ExpectedResult: map[string]any{"target_active": false, "baseline_active": true}, ResumeSupported: true})
+			if intent.SourceGroupID > 0 {
+				steps = append(steps, durableStepPlan{Key: prefix + ":subscription:source", Action: "add", RelationshipType: "subscription", Direction: "target", LocalUserID: userID, RelayUserID: intent.RelayUserID, TargetGroupID: intent.SourceGroupID, ReviewedResourceIDs: []int64{}, ExpectedResult: map[string]any{"target_active": true, "baseline_active": false}, ResumeSupported: true})
+			}
+			if len(intent.APIKeyIDs) > 0 {
+				steps = append(steps, durableStepPlan{Key: prefix + ":api-keys", Action: "move", RelationshipType: "api_keys", Direction: "target", LocalUserID: userID, RelayUserID: intent.RelayUserID, SourceGroupID: intent.TargetGroupID, TargetGroupID: intent.SourceGroupID, ReviewedResourceIDs: append([]int64(nil), intent.APIKeyIDs...), ExpectedResult: map[string]any{"target_group_id": intent.SourceGroupID, "baseline_group_id": intent.TargetGroupID}, ResumeSupported: true})
+			}
+			continue
+		}
+		steps = append(steps, durableStepPlan{Key: prefix + ":subscription:target", Action: "add", RelationshipType: "subscription", Direction: "target", LocalUserID: userID, RelayUserID: intent.RelayUserID, TargetGroupID: intent.TargetGroupID, ReviewedResourceIDs: []int64{}, ExpectedResult: map[string]any{"target_active": true, "baseline_active": false}, ResumeSupported: true})
+		if intent.SourceGroupID > 0 {
+			steps = append(steps, durableStepPlan{Key: prefix + ":subscription:source", Action: "remove", RelationshipType: "subscription", Direction: "target", LocalUserID: userID, RelayUserID: intent.RelayUserID, TargetGroupID: intent.SourceGroupID, ReviewedResourceIDs: []int64{}, ExpectedResult: map[string]any{"target_active": false, "baseline_active": true}, ResumeSupported: true})
+		}
+		if len(intent.APIKeyIDs) > 0 {
+			steps = append(steps, durableStepPlan{Key: prefix + ":api-keys", Action: "move", RelationshipType: "api_keys", Direction: "target", LocalUserID: userID, RelayUserID: intent.RelayUserID, SourceGroupID: intent.SourceGroupID, TargetGroupID: intent.TargetGroupID, ReviewedResourceIDs: append([]int64(nil), intent.APIKeyIDs...), ExpectedResult: map[string]any{"target_group_id": intent.TargetGroupID, "baseline_group_id": intent.SourceGroupID}, ResumeSupported: true})
+		}
+	}
+	return steps
 }
 
 func reconstructLegacyBaseline(mapping Mapping, members map[int]legacyMemberIntent) Mapping {
