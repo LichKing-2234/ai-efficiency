@@ -76,6 +76,28 @@ func TestReviewReplanRosterKeepsUnavailableSavedMemberAndBlocksExecution(t *test
 	}
 }
 
+func TestReviewReplanRosterKeepsManagedRelationshipDriftVisibleAndBlocking(t *testing.T) {
+	result, err := reviewReplanRoster(replanRosterInput{
+		Targets:          availableReplanRosterTargets(101),
+		SavedAssignments: map[int]int64{1: 101},
+		Members: []replanRosterMember{{
+			UserID:            1,
+			Assignable:        true,
+			UnavailableReason: replanRosterMissingTargetSubscription,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("reviewReplanRoster() error = %v", err)
+	}
+	if got := result.Targets[0].UserIDs; !reflect.DeepEqual(got, []int{1}) {
+		t.Fatalf("drifted saved roster = %v, want member [1] retained", got)
+	}
+	want := []replanRosterBlocker{{UserID: 1, Reason: replanRosterMissingTargetSubscription}}
+	if !reflect.DeepEqual(result.Blockers, want) {
+		t.Fatalf("blockers = %v, want %v", result.Blockers, want)
+	}
+}
+
 func TestReviewReplanRosterAppliesExplicitEditsWithoutDroppingUnavailableSavedMember(t *testing.T) {
 	result, err := reviewReplanRoster(replanRosterInput{
 		Targets: availableReplanRosterTargets(101, 102),
