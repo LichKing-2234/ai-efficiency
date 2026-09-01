@@ -19,7 +19,8 @@ import {
   rebindRelayGroupMapping,
   saveRelayDesiredAccounts,
   searchRelayPlanningAccounts,
-  searchRelayPlanningUsers,
+	searchRelayPlanningUsers,
+	relayPlanningContainment,
   type RelayPlanningAccount,
   type RelayPlanningAccountIntent,
 	type RelayPlanningRequest,
@@ -105,6 +106,7 @@ const {
 	plan,
 	lastExecution,
 	activeMappingID,
+	reviewLocked,
 	selectedUserIDs,
 	selectedUnmanagedRelayIDs,
 	removedUserIDs,
@@ -167,6 +169,19 @@ const targetNameErrors = computed(() => Object.fromEntries(Object.entries(review
 				: 'relayPlanning.targetNameOccupied'),
 ])))
 const failedRenewalMembers = computed(() => renewalExecution.value?.members.filter((member) => member.status === 'failed') ?? [])
+const activeMapping = computed(() => mappings.value.find((mapping) => mapping.id === activeMappingID.value) ?? null)
+
+function containmentMode(mapping: RelayPlanningMapping) {
+	return relayPlanningContainment(mapping).mode
+}
+
+function containmentTitle(mapping: RelayPlanningMapping) {
+	return t(containmentMode(mapping) === 'resume_exact' ? 'relayPlanning.exactResumeAvailable' : 'relayPlanning.manualInterventionRequired')
+}
+
+function mappingLocked(mapping: RelayPlanningMapping) {
+	return containmentMode(mapping) !== 'none'
+}
 
 function translateWarning(warning: string): string {
   void locale.value
@@ -351,6 +366,7 @@ function applyRenewalPreview(next: RelayPlanningMappingRenewalPreview, selectAll
 }
 
 async function renewMapping(mapping: RelayPlanningMapping) {
+	if (mappingLocked(mapping)) return
 	if (renewalLoadingID.value !== null) return
 	renewalLoadingID.value = mapping.id
 	renewalMappingID.value = mapping.id
@@ -528,6 +544,7 @@ function formatRenewalDate(value?: string): string {
 }
 
 function manageAccounts(mapping: RelayPlanningMapping) {
+	if (mappingLocked(mapping)) return
 	accountMappingID.value = accountMappingID.value === mapping.id ? null : mapping.id
 	if (accountMappingID.value === mapping.id) initializeAccountDraft(mapping)
 }
@@ -553,6 +570,7 @@ function replaceMapping(next: RelayPlanningMapping) {
 }
 
 async function adoptCurrentAccounts(mapping: RelayPlanningMapping) {
+	if (mappingLocked(mapping)) return
 	accountSaving.value = true
 	try {
 		const response = await adoptCurrentRelayAccounts(mapping.id)
@@ -590,7 +608,7 @@ function scheduleAccountSearch(key: string, providerID: number, platform: string
 }
 
 function scheduleManagedAccountSearch(mapping: RelayPlanningMapping | null, targetGroupID: number, value: string | number) {
-	if (!mapping) return
+	if (!mapping || mappingLocked(mapping)) return
 	scheduleAccountSearch(accountSearchKey(mapping.id, targetGroupID), mapping.provider_id, mapping.platform, value)
 }
 
@@ -605,7 +623,7 @@ function searchAccountPage(key: string, providerID: number, platform: string, pa
 }
 
 function searchManagedAccountPage(mapping: RelayPlanningMapping | null, targetGroupID: number, page: number) {
-	if (!mapping) return
+	if (!mapping || mappingLocked(mapping)) return
 	searchAccountPage(accountSearchKey(mapping.id, targetGroupID), mapping.provider_id, mapping.platform, page)
 }
 
@@ -627,6 +645,8 @@ async function runAccountSearch(key: string, providerID: number, platform: strin
 }
 
 function addAccountToTarget(mappingID: number, targetGroupID: number, account: RelayPlanningAccount) {
+	const mapping = mappings.value.find((item) => item.id === mappingID)
+	if (!mapping || mappingLocked(mapping)) return
 	const groupKey = String(targetGroupID)
 	const items = accountDrafts[mappingID]?.[groupKey]
 	if (!items || items.some((item) => item.id === account.id)) return
@@ -638,6 +658,8 @@ function addAccountToTarget(mappingID: number, targetGroupID: number, account: R
 }
 
 function reorderAccounts(mappingID: number, targetGroupID: number, accountID: number, offset: number) {
+	const mapping = mappings.value.find((item) => item.id === mappingID)
+	if (!mapping || mappingLocked(mapping)) return
 	const items = accountDrafts[mappingID]?.[String(targetGroupID)]
 	if (!items) return
 	const index = items.findIndex((item) => item.id === accountID)
@@ -648,6 +670,8 @@ function reorderAccounts(mappingID: number, targetGroupID: number, accountID: nu
 }
 
 function removeAccountFromTarget(mappingID: number, targetGroupID: number, accountID: number) {
+	const mapping = mappings.value.find((item) => item.id === mappingID)
+	if (!mapping || mappingLocked(mapping)) return
 	const items = accountDrafts[mappingID]?.[String(targetGroupID)]
 	if (!items) return
 	accountDrafts[mappingID][String(targetGroupID)] = items.filter((item) => item.id !== accountID)
@@ -655,6 +679,7 @@ function removeAccountFromTarget(mappingID: number, targetGroupID: number, accou
 }
 
 async function saveDesiredAccounts(mapping: RelayPlanningMapping) {
+	if (mappingLocked(mapping)) return
 	const desired: Record<string, RelayPlanningAccountIntent[]> = {}
 	for (const groupID of mapping.group_ids) {
 		desired[String(groupID)] = (accountDrafts[mapping.id]?.[String(groupID)] ?? []).map((account, index) => ({ account_id: account.id, priority: index + 1 }))
@@ -732,6 +757,7 @@ async function executeConfirmed() {
 }
 
 async function replan(mapping: RelayPlanningMapping) {
+	if (containmentMode(mapping) === 'manual_intervention') return
   try {
     const openedPlan = await openReviewedReplan(mapping)
 		if (!openedPlan) return
@@ -747,6 +773,7 @@ async function replan(mapping: RelayPlanningMapping) {
 }
 
 function rebind(mapping: RelayPlanningMapping) {
+	if (mappingLocked(mapping)) return
 	if (rebindPendingID.value !== null) return
 	rebindMappingID.value = mapping.id
 	rebindContext.provider_id = mapping.provider_id
@@ -860,12 +887,14 @@ onBeforeUnmount(() => {
         </div>
         <div class="mt-4 flex flex-wrap gap-2">
           <el-button data-testid="preview-allocation" type="primary" :loading="loading" @click="preview">{{ t('relayPlanning.preview') }}</el-button>
-          <el-button v-if="plan" data-testid="open-execution-confirmation" :icon="Check" type="success" :loading="confirming" :disabled="plan.group_count === 0 || hasTargetNameErrors || hasUnreviewedRemovalSources || (!activeMappingID && selectedUserIDs.size === 0 && selectedUnmanagedRelayIDs.size === 0)" @click="requestExecution">{{ t('relayPlanning.confirmExecute') }}</el-button>
+          <el-button v-if="plan" data-testid="open-execution-confirmation" :icon="Check" type="success" :loading="confirming" :disabled="plan.group_count === 0 || hasTargetNameErrors || hasUnreviewedRemovalSources || (!activeMappingID && selectedUserIDs.size === 0 && selectedUnmanagedRelayIDs.size === 0)" @click="requestExecution">{{ t(reviewLocked ? 'relayPlanning.continueExactOperation' : 'relayPlanning.confirmExecute') }}</el-button>
         </div>
         <el-alert v-if="error" class="mt-4" type="error" :closable="false" :title="error" />
       </section>
 
       <section v-if="plan" class="space-y-4">
+		<el-alert v-if="reviewLocked && activeMapping" data-testid="legacy-review-lock" type="warning" :closable="false" show-icon :title="containmentTitle(activeMapping)" :description="t('relayPlanning.exactResumeLockedHelp')" />
+		<fieldset class="contents" :disabled="reviewLocked" :aria-disabled="reviewLocked">
         <div class="grid gap-4 sm:grid-cols-3">
           <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-xs text-slate-500">{{ t('relayPlanning.plannedGroups') }}</div><div class="mt-1 text-2xl font-semibold">{{ plan.group_count }}</div><div v-if="plan.group_count !== plan.recommended_group_count" class="mt-1 text-xs text-slate-500">{{ t('relayPlanning.recommended') }}: {{ plan.recommended_group_count }}</div></div>
           <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-xs text-slate-500">{{ t('relayPlanning.selectedEligibleMembers') }}</div><div class="mt-1 text-2xl font-semibold">{{ displayedEligibleMemberCount }}</div></div>
@@ -1003,6 +1032,7 @@ onBeforeUnmount(() => {
             </label>
           </div>
         </div>
+		</fieldset>
       </section>
 
 		<section v-if="lastExecution" class="border-y border-slate-200 bg-white py-4">
@@ -1029,9 +1059,10 @@ onBeforeUnmount(() => {
           <article v-for="mapping in paginatedMappings" :key="mapping.id" class="rounded-md border border-slate-200 p-3">
             <div class="flex items-start justify-between gap-3"><div class="min-w-0"><div class="break-words font-medium text-slate-900">{{ mapping.department_name || mapping.department_id }}</div><div class="text-xs text-slate-500">{{ mapping.platform }}</div></div><el-tag :type="mapping.warnings?.length || mapping.status === 'needs_retry' ? 'warning' : 'success'">{{ mappingStatusText(mapping) }}</el-tag></div>
             <dl class="mt-3 space-y-2 text-sm"><div><dt class="text-xs text-slate-500">{{ t('relayPlanning.templateGroup') }}</dt><dd class="break-words">{{ mapping.template_group_name || '-' }} (#{{ mapping.template_group_id }})</dd></div><div><dt class="text-xs text-slate-500">{{ t('relayPlanning.migrationSource') }}</dt><dd class="break-words">{{ mapping.source_group_name }} (#{{ mapping.source_group_id }})</dd></div><div><dt class="text-xs text-slate-500">{{ t('relayPlanning.managedGroups') }}</dt><dd class="break-words">{{ mapping.group_ids.join(', ') || '-' }}</dd></div></dl>
-            <div v-if="mapping.warnings?.length" class="mt-2 text-xs text-amber-700">{{ mapping.warnings.map(translateWarning).join('; ') }}</div>
+            <div v-if="mapping.warnings?.length" class="mt-2 break-words text-xs text-amber-700">{{ mapping.warnings.map(translateWarning).join('; ') }}</div>
+			<el-alert v-if="mappingLocked(mapping)" :data-testid="`mapping-containment-${mapping.id}`" class="mt-2" type="warning" :closable="false" show-icon :title="containmentTitle(mapping)" :description="t(containmentMode(mapping) === 'resume_exact' ? 'relayPlanning.exactResumeHelp' : 'relayPlanning.manualInterventionHelp')" />
             <div v-if="mapping.department_suggestions?.length" class="mt-2 text-xs text-slate-500">{{ t('relayPlanning.departmentSuggestions') }}: {{ mapping.department_suggestions.map(departmentSuggestionLabel).join(', ') }}</div>
-            <div class="mt-3 flex flex-wrap gap-2"><el-button :data-testid="`replan-mapping-${mapping.id}`" size="small" type="primary" @click="replan(mapping)">{{ t('relayPlanning.replan') }}</el-button><el-button :data-testid="`renew-mapping-${mapping.id}`" size="small" :icon="Calendar" :loading="renewalLoadingID === mapping.id" :disabled="renewalLoadingID !== null && renewalLoadingID !== mapping.id" @click="renewMapping(mapping)">{{ t('relayPlanning.renewSubscriptions') }}</el-button><el-button :data-testid="`rebind-mapping-${mapping.id}`" size="small" :loading="rebindPendingID === mapping.id" :disabled="rebindPendingID !== null && rebindPendingID !== mapping.id" @click="rebind(mapping)">{{ t('relayPlanning.rebind') }}</el-button><el-button :data-testid="`manage-accounts-${mapping.id}`" size="small" @click="manageAccounts(mapping)">{{ t('relayPlanning.manageAccounts') }}</el-button></div>
+            <div class="mt-3 flex flex-wrap gap-2"><el-button :data-testid="`replan-mapping-${mapping.id}`" size="small" type="primary" :disabled="containmentMode(mapping) === 'manual_intervention'" @click="replan(mapping)">{{ t(containmentMode(mapping) === 'resume_exact' ? 'relayPlanning.continueExactOperation' : 'relayPlanning.replan') }}</el-button><el-button :data-testid="`renew-mapping-${mapping.id}`" size="small" :icon="Calendar" :loading="renewalLoadingID === mapping.id" :disabled="mappingLocked(mapping) || (renewalLoadingID !== null && renewalLoadingID !== mapping.id)" @click="renewMapping(mapping)">{{ t('relayPlanning.renewSubscriptions') }}</el-button><el-button :data-testid="`rebind-mapping-${mapping.id}`" size="small" :loading="rebindPendingID === mapping.id" :disabled="mappingLocked(mapping) || (rebindPendingID !== null && rebindPendingID !== mapping.id)" @click="rebind(mapping)">{{ t('relayPlanning.rebind') }}</el-button><el-button :data-testid="`manage-accounts-${mapping.id}`" size="small" :disabled="mappingLocked(mapping)" @click="manageAccounts(mapping)">{{ t('relayPlanning.manageAccounts') }}</el-button></div>
           </article>
         </div>
         <el-table v-else-if="mappings.length" data-testid="mapping-table-layout" :data="paginatedMappings" stripe>
@@ -1040,8 +1071,8 @@ onBeforeUnmount(() => {
           <el-table-column :label="t('relayPlanning.templateGroup')" min-width="160"><template #default="scope">{{ scope.row.template_group_name || '-' }} (#{{ scope.row.template_group_id }})</template></el-table-column>
           <el-table-column :label="t('relayPlanning.migrationSource')" min-width="160"><template #default="scope">{{ scope.row.source_group_name }} (#{{ scope.row.source_group_id }})</template></el-table-column>
           <el-table-column :label="t('relayPlanning.managedGroups')" min-width="180"><template #default="scope">{{ scope.row.group_ids.join(', ') }}</template></el-table-column>
-          <el-table-column :label="t('relayPlanning.status')" min-width="150"><template #default="scope"><el-tag :type="scope.row.warnings?.length || scope.row.status === 'needs_retry' ? 'warning' : 'success'">{{ mappingStatusText(scope.row as RelayPlanningMapping) }}</el-tag><div v-if="scope.row.warnings?.length" class="mt-1 text-xs text-amber-700">{{ scope.row.warnings.map(translateWarning).join('; ') }}</div><div v-if="scope.row.department_suggestions?.length" class="mt-1 text-xs text-slate-500">{{ t('relayPlanning.departmentSuggestions') }}: {{ scope.row.department_suggestions.map(departmentSuggestionLabel).join(', ') }}</div></template></el-table-column>
-          <el-table-column :label="t('relayPlanning.actions')" min-width="360"><template #default="scope"><el-button :data-testid="`replan-mapping-${scope.row.id}`" link type="primary" @click="replan(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.replan') }}</el-button><el-button :data-testid="`renew-mapping-${scope.row.id}`" link type="primary" :icon="Calendar" :loading="renewalLoadingID === scope.row.id" :disabled="renewalLoadingID !== null && renewalLoadingID !== scope.row.id" @click="renewMapping(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.renewSubscriptions') }}</el-button><el-button :data-testid="`rebind-mapping-${scope.row.id}`" link type="primary" :loading="rebindPendingID === scope.row.id" :disabled="rebindPendingID !== null && rebindPendingID !== scope.row.id" @click="rebind(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.rebind') }}</el-button><el-button :data-testid="`manage-accounts-${scope.row.id}`" link type="primary" @click="manageAccounts(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.manageAccounts') }}</el-button></template></el-table-column>
+          <el-table-column :label="t('relayPlanning.status')" min-width="210"><template #default="scope"><el-tag :type="scope.row.warnings?.length || scope.row.status === 'needs_retry' ? 'warning' : 'success'">{{ mappingStatusText(scope.row as RelayPlanningMapping) }}</el-tag><div v-if="mappingLocked(scope.row as RelayPlanningMapping)" :data-testid="`mapping-containment-${scope.row.id}`" class="mt-1 break-words text-xs font-medium text-amber-700">{{ containmentTitle(scope.row as RelayPlanningMapping) }}</div><div v-if="scope.row.warnings?.length" class="mt-1 break-words text-xs text-amber-700">{{ scope.row.warnings.map(translateWarning).join('; ') }}</div><div v-if="scope.row.department_suggestions?.length" class="mt-1 break-words text-xs text-slate-500">{{ t('relayPlanning.departmentSuggestions') }}: {{ scope.row.department_suggestions.map(departmentSuggestionLabel).join(', ') }}</div></template></el-table-column>
+          <el-table-column :label="t('relayPlanning.actions')" min-width="400"><template #default="scope"><el-button :data-testid="`replan-mapping-${scope.row.id}`" link type="primary" :disabled="containmentMode(scope.row as RelayPlanningMapping) === 'manual_intervention'" @click="replan(scope.row as RelayPlanningMapping)">{{ t(containmentMode(scope.row as RelayPlanningMapping) === 'resume_exact' ? 'relayPlanning.continueExactOperation' : 'relayPlanning.replan') }}</el-button><el-button :data-testid="`renew-mapping-${scope.row.id}`" link type="primary" :icon="Calendar" :loading="renewalLoadingID === scope.row.id" :disabled="mappingLocked(scope.row as RelayPlanningMapping) || (renewalLoadingID !== null && renewalLoadingID !== scope.row.id)" @click="renewMapping(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.renewSubscriptions') }}</el-button><el-button :data-testid="`rebind-mapping-${scope.row.id}`" link type="primary" :loading="rebindPendingID === scope.row.id" :disabled="mappingLocked(scope.row as RelayPlanningMapping) || (rebindPendingID !== null && rebindPendingID !== scope.row.id)" @click="rebind(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.rebind') }}</el-button><el-button :data-testid="`manage-accounts-${scope.row.id}`" link type="primary" :disabled="mappingLocked(scope.row as RelayPlanningMapping)" @click="manageAccounts(scope.row as RelayPlanningMapping)">{{ t('relayPlanning.manageAccounts') }}</el-button></template></el-table-column>
         </el-table>
         <el-pagination v-if="mappings.length > mappingPageSize" data-testid="mapping-pagination" class="mt-4 justify-end" size="small" background :layout="desktopPagination ? 'prev, pager, next' : 'prev, slot, next'" :pager-count="5" :current-page="mappingPage" :page-size="mappingPageSize" :total="mappings.length" @current-change="mappingPage = $event">
           <span v-if="!desktopPagination" class="px-1 text-xs text-slate-500">{{ baseT('pagination.pageOf', { page: mappingPage, pages: Math.ceil(mappings.length / mappingPageSize) }) }}</span>
@@ -1050,8 +1081,8 @@ onBeforeUnmount(() => {
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div><div class="text-sm font-semibold text-slate-900">{{ t('relayPlanning.accountRelationships') }}</div><div class="text-xs text-slate-500">{{ accountMapping.department_name }} · {{ accountMapping.platform }}</div></div>
 			<div class="flex gap-2">
-				<el-button v-if="!accountMapping.account_management_initialized" :data-testid="`adopt-current-accounts-${accountMapping.id}`" type="primary" :loading="accountSaving" @click="adoptCurrentAccounts(accountMapping)">{{ t('relayPlanning.adoptCurrent') }}</el-button>
-				<el-button v-else :data-testid="`save-desired-accounts-${accountMapping.id}`" type="primary" :loading="accountSaving" @click="saveDesiredAccounts(accountMapping)">{{ t('relayPlanning.saveDesiredAccounts') }}</el-button>
+				<el-button v-if="!accountMapping.account_management_initialized" :data-testid="`adopt-current-accounts-${accountMapping.id}`" type="primary" :loading="accountSaving" :disabled="mappingLocked(accountMapping)" @click="adoptCurrentAccounts(accountMapping)">{{ t('relayPlanning.adoptCurrent') }}</el-button>
+				<el-button v-else :data-testid="`save-desired-accounts-${accountMapping.id}`" type="primary" :loading="accountSaving" :disabled="mappingLocked(accountMapping)" @click="saveDesiredAccounts(accountMapping)">{{ t('relayPlanning.saveDesiredAccounts') }}</el-button>
 			</div>
           </div>
           <el-alert v-if="!accountMapping.account_management_initialized" class="mt-3" type="info" :closable="false" :title="t('relayPlanning.accountsUninitialized')" />
@@ -1071,20 +1102,20 @@ onBeforeUnmount(() => {
 						<div v-for="(account, accountIndex) in accountDrafts[accountMapping.id][String(pool.target_group_id)]" :key="account.id" class="flex items-center justify-between gap-3 border-t border-slate-100 pt-2 text-sm first:border-0 first:pt-0">
 							<span class="min-w-0"><span class="block break-words font-medium">{{ account.name }} (#{{ account.id }})</span><span class="block text-xs" :class="account.status !== 'active' || !account.schedulable ? 'text-amber-700' : 'text-slate-500'">{{ account.type }} · {{ account.status }} · {{ account.schedulable ? t('relayPlanning.schedulable') : t('relayPlanning.notSchedulable') }}</span></span>
 							<span class="flex shrink-0 gap-1">
-								<el-tooltip :content="t('relayPlanning.moveUp')"><el-button :data-testid="`move-account-up-${accountMapping.id}-${pool.target_group_id}-${account.id}`" circle size="small" :icon="CaretTop" :disabled="accountIndex === 0" :aria-label="t('relayPlanning.moveUp')" @click="reorderAccounts(accountMapping.id, pool.target_group_id, account.id, -1)" /></el-tooltip>
-								<el-tooltip :content="t('relayPlanning.moveDown')"><el-button circle size="small" :icon="CaretBottom" :disabled="accountIndex === accountDrafts[accountMapping.id][String(pool.target_group_id)].length - 1" :aria-label="t('relayPlanning.moveDown')" @click="reorderAccounts(accountMapping.id, pool.target_group_id, account.id, 1)" /></el-tooltip>
-								<el-tooltip :content="t('relayPlanning.remove')"><el-button circle size="small" type="danger" plain :icon="Delete" :aria-label="t('relayPlanning.remove')" @click="removeAccountFromTarget(accountMapping.id, pool.target_group_id, account.id)" /></el-tooltip>
+								<el-tooltip :content="t('relayPlanning.moveUp')"><el-button :data-testid="`move-account-up-${accountMapping.id}-${pool.target_group_id}-${account.id}`" circle size="small" :icon="CaretTop" :disabled="mappingLocked(accountMapping) || accountIndex === 0" :aria-label="t('relayPlanning.moveUp')" @click="reorderAccounts(accountMapping.id, pool.target_group_id, account.id, -1)" /></el-tooltip>
+								<el-tooltip :content="t('relayPlanning.moveDown')"><el-button circle size="small" :icon="CaretBottom" :disabled="mappingLocked(accountMapping) || accountIndex === accountDrafts[accountMapping.id][String(pool.target_group_id)].length - 1" :aria-label="t('relayPlanning.moveDown')" @click="reorderAccounts(accountMapping.id, pool.target_group_id, account.id, 1)" /></el-tooltip>
+								<el-tooltip :content="t('relayPlanning.remove')"><el-button circle size="small" type="danger" plain :icon="Delete" :disabled="mappingLocked(accountMapping)" :aria-label="t('relayPlanning.remove')" @click="removeAccountFromTarget(accountMapping.id, pool.target_group_id, account.id)" /></el-tooltip>
 							</span>
 						</div>
 					</div>
 					<el-empty v-else :description="t('relayPlanning.noDesiredAccounts')" :image-size="48" />
-						<el-input :data-testid="`account-search-${accountMapping.id}-${pool.target_group_id}`" :model-value="accountSearchQueries[accountSearchKey(accountMapping.id, pool.target_group_id)] || ''" :loading="accountSearchLoading[accountSearchKey(accountMapping.id, pool.target_group_id)]" clearable class="mt-3" :placeholder="t('relayPlanning.searchAccounts')" @input="(value) => scheduleManagedAccountSearch(accountMapping, pool.target_group_id, value)" />
+						<el-input :data-testid="`account-search-${accountMapping.id}-${pool.target_group_id}`" :model-value="accountSearchQueries[accountSearchKey(accountMapping.id, pool.target_group_id)] || ''" :loading="accountSearchLoading[accountSearchKey(accountMapping.id, pool.target_group_id)]" :disabled="mappingLocked(accountMapping)" clearable class="mt-3" :placeholder="t('relayPlanning.searchAccounts')" @input="(value) => scheduleManagedAccountSearch(accountMapping, pool.target_group_id, value)" />
 						<el-alert v-if="accountSearchErrors[accountSearchKey(accountMapping.id, pool.target_group_id)]" class="mt-2" type="error" :closable="false" show-icon :title="accountSearchErrors[accountSearchKey(accountMapping.id, pool.target_group_id)]" />
 						<el-button v-if="accountSearchErrors[accountSearchKey(accountMapping.id, pool.target_group_id)]" class="mt-1 !ml-0" size="small" type="primary" link @click="searchManagedAccountPage(accountMapping, pool.target_group_id, accountSearchPages[accountSearchKey(accountMapping.id, pool.target_group_id)]?.page ?? 1)">{{ t('relayPlanning.retry') }}</el-button>
 						<div v-if="accountSearchResults[accountSearchKey(accountMapping.id, pool.target_group_id)]?.length" class="mt-2 divide-y divide-slate-100 border-y border-slate-100">
 						<div v-for="account in accountSearchResults[accountSearchKey(accountMapping.id, pool.target_group_id)]" :key="account.id" class="flex items-center justify-between gap-3 py-2 text-sm">
 							<span class="min-w-0"><span class="block truncate font-medium">{{ account.name }} (#{{ account.id }})</span><span class="block truncate text-xs" :class="account.status !== 'active' || !account.schedulable ? 'text-amber-700' : 'text-slate-500'">{{ account.type }} · {{ account.status }} · {{ account.schedulable ? t('relayPlanning.schedulable') : t('relayPlanning.notSchedulable') }}</span></span>
-							<el-tooltip :content="t('relayPlanning.add')"><el-button :data-testid="`add-account-${accountMapping.id}-${pool.target_group_id}-${account.id}`" circle size="small" type="primary" :icon="Plus" :disabled="accountDrafts[accountMapping.id]?.[String(pool.target_group_id)]?.some((item) => item.id === account.id)" :aria-label="t('relayPlanning.add')" @click="addAccountToTarget(accountMapping.id, pool.target_group_id, account)" /></el-tooltip>
+							<el-tooltip :content="t('relayPlanning.add')"><el-button :data-testid="`add-account-${accountMapping.id}-${pool.target_group_id}-${account.id}`" circle size="small" type="primary" :icon="Plus" :disabled="mappingLocked(accountMapping) || accountDrafts[accountMapping.id]?.[String(pool.target_group_id)]?.some((item) => item.id === account.id)" :aria-label="t('relayPlanning.add')" @click="addAccountToTarget(accountMapping.id, pool.target_group_id, account)" /></el-tooltip>
 						</div>
 						<el-pagination
 							v-if="accountSearchPages[accountSearchKey(accountMapping.id, pool.target_group_id)]?.total > accountSearchPages[accountSearchKey(accountMapping.id, pool.target_group_id)]?.page_size"
@@ -1097,7 +1128,7 @@ onBeforeUnmount(() => {
 							:current-page="accountSearchPages[accountSearchKey(accountMapping.id, pool.target_group_id)].page"
 							:page-size="accountSearchPages[accountSearchKey(accountMapping.id, pool.target_group_id)].page_size"
 							:total="accountSearchPages[accountSearchKey(accountMapping.id, pool.target_group_id)].total"
-							:disabled="accountSearchLoading[accountSearchKey(accountMapping.id, pool.target_group_id)]"
+							:disabled="mappingLocked(accountMapping) || accountSearchLoading[accountSearchKey(accountMapping.id, pool.target_group_id)]"
 							@current-change="(page) => searchManagedAccountPage(accountMapping, pool.target_group_id, page)"
 						>
 							<span v-if="!desktopPagination" class="px-1 text-xs text-slate-500">{{ baseT('pagination.pageOf', { page: accountSearchPages[accountSearchKey(accountMapping.id, pool.target_group_id)].page, pages: Math.ceil(accountSearchPages[accountSearchKey(accountMapping.id, pool.target_group_id)].total / accountSearchPages[accountSearchKey(accountMapping.id, pool.target_group_id)].page_size) }) }}</span>

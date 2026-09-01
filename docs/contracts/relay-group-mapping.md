@@ -338,6 +338,14 @@ Account edits, Rebind, and Mapping Renewal Confirm remain blocked while the
 legacy operation is unresolved. This is Phase 1 containment only: it does not
 provide Restore, an event history, or the durable Relationship Operation model.
 
+The current UI presents unresolved legacy state as either `Continue exact
+operation` when complete intent and step identities exist, or `Manual
+intervention required` when they do not. Exact continuation opens the saved
+review read-only: member, Account, rename, Rebind, renewal, and search/edit
+controls are disabled while explicit Confirm remains available for the unchanged
+direction. Manual-intervention state exposes no Confirm path. Neither state
+renders a Restore command or claims the Phase 2 lifecycle model.
+
 Destination and source mapping changes commit in one local transaction. A local
 persistence failure rolls back every affected mapping and returns structured
 `failed`, `rolled_back`, and `skipped` results rather than a half-saved transfer.

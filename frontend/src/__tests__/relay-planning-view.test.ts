@@ -8,7 +8,8 @@ vi.mock('@/api/adminUsers', () => ({
   listAdminUserSubscriptionOptions: vi.fn(),
 }))
 
-vi.mock('@/api/relayPlanning', () => ({
+vi.mock('@/api/relayPlanning', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@/api/relayPlanning')>()),
 	adoptCurrentRelayAccounts: vi.fn(),
 	executeRelayPlan: vi.fn(),
   executeRelayMappingRenewal: vi.fn(),
@@ -1368,8 +1369,9 @@ describe('RelayPlanningView', () => {
 			status: 'needs_retry',
 			member_assignments: { '2': 101 },
 			operation_state: {
-				'member:1': { action: 'remove', source_reviewed: 'true', source_group_id: '0', source_removal: 'failed', error: 'synthetic removal failure' },
-				'member:2': { action: 'move_here', from_mapping_id: '8', source_removal: 'failed', error: 'synthetic move failure' },
+				operation: { status: 'needs_retry', key: 'retry-1', intent_hash: 'v1:reviewed' },
+				'member:1': { action: 'remove', source_reviewed: 'true', source_group_id: '0', source_removal: 'failed', error: 'synthetic removal failure', step_identity: 'v1:remove' },
+				'member:2': { action: 'move_here', from_mapping_id: '8', source_removal: 'failed', error: 'synthetic move failure', step_identity: 'v1:move' },
 			},
 		}
 		const replan = structuredClone({
@@ -1391,7 +1393,34 @@ describe('RelayPlanningView', () => {
 			member_actions: { '2': { mode: 'move_here', from_mapping_id: 8 } },
 		})
 		expect(wrapper.text()).toContain('Move here')
+		expect(wrapper.get('[data-testid="legacy-review-lock"]').text()).toContain('Exact operation can continue')
+		expect(wrapper.get('fieldset[aria-disabled="true"]').attributes('disabled')).toBeDefined()
+		expect(wrapper.get('[data-testid="open-execution-confirmation"]').attributes('disabled')).toBeUndefined()
+		expect(wrapper.text()).not.toContain('Restore')
 		expect(wrapper.get('[data-testid="removed-member-source-1"]').attributes('disabled')).toBeDefined()
+	})
+
+	it('requires manual intervention for incomplete legacy state and exposes no hidden actions', async () => {
+		const mapping = {
+			...structuredClone(renewalMapping),
+			status: 'needs_retry',
+			operation_state: { operation: { status: 'needs_retry' }, 'member:1': { subscription: 'failed', error: 'synthetic legacy failure' } },
+		}
+		const { wrapper, relayPlanning } = await mountView([mapping])
+		const containment = wrapper.get('[data-testid="mapping-containment-9"]')
+		expect(containment.text()).toContain('Manual intervention required')
+		for (const testID of ['replan-mapping-9', 'renew-mapping-9', 'rebind-mapping-9', 'manage-accounts-9']) {
+			expect(wrapper.get(`[data-testid="${testID}"]`).attributes('disabled')).toBeDefined()
+			await wrapper.get(`[data-testid="${testID}"]`).trigger('click')
+		}
+		expect(relayPlanning.previewRelayReplan).not.toHaveBeenCalled()
+		expect(relayPlanning.previewRelayMappingRenewal).not.toHaveBeenCalled()
+		expect(wrapper.text()).not.toContain('Restore')
+
+		const wide = await mountView([mapping], true)
+		expect(wide.wrapper.find('[data-testid="mapping-table-layout"]').exists()).toBe(true)
+		expect(wide.wrapper.get('[data-testid="mapping-containment-9"]').text()).toContain('Manual intervention required')
+		expect(wide.wrapper.get('[data-testid="replan-mapping-9"]').attributes('disabled')).toBeDefined()
 	})
 
 	it('renders only the last confirmed Replan roster as selected', async () => {
