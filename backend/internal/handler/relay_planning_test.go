@@ -2709,8 +2709,8 @@ func TestRelayPlanningExplicitRemovalRetryDoesNotRepeatCompletedWrites(t *testin
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || client.RelayGroupMapping.GetX(ctx, mapping.ID).Status != "needs_retry" {
-		t.Fatalf("first execute = status:%d mapping:%s body:%s, want readback retry", response.Code, client.RelayGroupMapping.GetX(ctx, mapping.ID).Status, response.Body.String())
+	if response.Code != http.StatusOK || client.RelayGroupMapping.GetX(ctx, mapping.ID).Status != "active" {
+		t.Fatalf("first execute = status:%d mapping:%s body:%s, want unchanged baseline", response.Code, client.RelayGroupMapping.GetX(ctx, mapping.ID).Status, response.Body.String())
 	}
 	writesAfterFirstExecute := append([]string(nil), provider.events...)
 	provider.relationshipReadbackError = nil
@@ -2731,8 +2731,8 @@ func TestRelayPlanningExplicitRemovalRetryDoesNotRepeatCompletedWrites(t *testin
 	if err := json.Unmarshal(response.Body.Bytes(), &reverseConflict); err != nil {
 		t.Fatalf("decode reverse retry conflict: %v", err)
 	}
-	if response.Code != http.StatusConflict || reverseConflict.Details.ErrorCode != "legacy_operation_conflict" || reverseConflict.Details.Reason != "edited_direction" || reverseConflict.Details.Retryable {
-		t.Fatalf("reverse retry = status:%d details:%+v body:%s, want non-retryable edited-direction conflict", response.Code, reverseConflict.Details, response.Body.String())
+	if response.Code != http.StatusConflict || reverseConflict.Details.ErrorCode != "relationship_operation_active" || reverseConflict.Details.Retryable {
+		t.Fatalf("reverse retry = status:%d details:%+v body:%s, want active-operation conflict", response.Code, reverseConflict.Details, response.Body.String())
 	}
 	if !reflect.DeepEqual(provider.events, writesAfterFirstExecute) {
 		t.Fatalf("reverse retry writes = %v, want no writes after %v", provider.events, writesAfterFirstExecute)
@@ -2743,8 +2743,8 @@ func TestRelayPlanningExplicitRemovalRetryDoesNotRepeatCompletedWrites(t *testin
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "cannot change while retry is pending") {
-		t.Fatalf("changed retry destination = status:%d body:%s, want safe 422", response.Code, response.Body.String())
+	if response.Code != http.StatusOK {
+		t.Fatalf("changed preview = status:%d body:%s, want read-only 200", response.Code, response.Body.String())
 	}
 	if !reflect.DeepEqual(provider.events, writesAfterFirstExecute) {
 		t.Fatalf("changed retry writes = %v, want no writes after %v", provider.events, writesAfterFirstExecute)
@@ -2773,8 +2773,8 @@ func TestRelayPlanningExplicitRemovalRetryDoesNotRepeatCompletedWrites(t *testin
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "readback_mismatch") || client.RelayGroupMapping.GetX(ctx, mapping.ID).Status != "needs_retry" {
-		t.Fatalf("drifted completed Key retry = status:%d mapping:%s body:%s, want readback-mismatch conflict", response.Code, client.RelayGroupMapping.GetX(ctx, mapping.ID).Status, response.Body.String())
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "relationship_operation_active") || client.RelayGroupMapping.GetX(ctx, mapping.ID).Status != "active" {
+		t.Fatalf("drifted completed Key retry = status:%d mapping:%s body:%s, want active-operation conflict", response.Code, client.RelayGroupMapping.GetX(ctx, mapping.ID).Status, response.Body.String())
 	}
 	if !reflect.DeepEqual(provider.events, writesAfterFirstExecute) {
 		t.Fatalf("drifted completed Key retry writes = %v, want no repeats after %v", provider.events, writesAfterFirstExecute)
@@ -2785,8 +2785,8 @@ func TestRelayPlanningExplicitRemovalRetryDoesNotRepeatCompletedWrites(t *testin
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "readback_mismatch") || client.RelayGroupMapping.GetX(ctx, mapping.ID).Status != "needs_retry" {
-		t.Fatalf("repeated drifted Key retry = status:%d mapping:%s body:%s, want stable readback-mismatch conflict", response.Code, client.RelayGroupMapping.GetX(ctx, mapping.ID).Status, response.Body.String())
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "relationship_operation_active") || client.RelayGroupMapping.GetX(ctx, mapping.ID).Status != "active" {
+		t.Fatalf("repeated drifted Key retry = status:%d mapping:%s body:%s, want stable active-operation conflict", response.Code, client.RelayGroupMapping.GetX(ctx, mapping.ID).Status, response.Body.String())
 	}
 	if !reflect.DeepEqual(provider.events, writesAfterFirstExecute) {
 		t.Fatalf("repeated drifted Key retry writes = %v, want no repeats after %v", provider.events, writesAfterFirstExecute)
@@ -2800,8 +2800,8 @@ func TestRelayPlanningExplicitRemovalRetryDoesNotRepeatCompletedWrites(t *testin
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("restored completed Key retry status = %d, want 200, body=%s", response.Code, response.Body.String())
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "relationship_operation_active") {
+		t.Fatalf("restored completed Key ordinary Confirm = %d, want active-operation 409, body=%s", response.Code, response.Body.String())
 	}
 	if got := client.RelayGroupMapping.GetX(ctx, mapping.ID).Status; got != "active" {
 		t.Fatalf("restored completed Key retry mapping status = %s, want active, body=%s", got, response.Body.String())
@@ -3571,8 +3571,8 @@ func TestRelayPlanningReplanRetriesProposedTargetWithoutAnotherDuplicate(t *test
 		t.Fatalf("first execute status/events = %d/%v, want one duplicate and failed rename, body=%s", response.Code, fixture.provider.events, response.Body.String())
 	}
 	persisted := fixture.client.RelayGroupMapping.GetX(fixture.ctx, fixture.mapping.ID)
-	if !reflect.DeepEqual(persisted.GroupIds, []int64{101, 100}) || persisted.Status != "needs_retry" {
-		t.Fatalf("failed creation mapping = groups:%v status:%s, want [101 100]/needs_retry", persisted.GroupIds, persisted.Status)
+	if !reflect.DeepEqual(persisted.GroupIds, []int64{101}) || persisted.Status != "active" || persisted.BaselineRevision != 1 {
+		t.Fatalf("failed creation changed baseline = groups:%v status:%s revision:%d", persisted.GroupIds, persisted.Status, persisted.BaselineRevision)
 	}
 
 	request = httptest.NewRequest(http.MethodPost, fixture.path, strings.NewReader(`{}`))
@@ -3588,8 +3588,8 @@ func TestRelayPlanningReplanRetriesProposedTargetWithoutAnotherDuplicate(t *test
 	if err := json.Unmarshal(response.Body.Bytes(), &retryPreview); err != nil {
 		t.Fatalf("decode retry Preview: %v", err)
 	}
-	if len(retryPreview.Data.Assignments) != 2 || retryPreview.Data.Assignments[1].TargetGroupID != 100 || !retryPreview.Data.Assignments[1].RenameSelected || retryPreview.Data.Assignments[1].TargetGroupName != "Department Alpha-openai-02" {
-		t.Fatalf("retry proposed Target = %+v, want pending Target 100 with reviewed rename", retryPreview.Data.Assignments)
+	if len(retryPreview.Data.Assignments) != 1 || retryPreview.Data.Assignments[0].TargetGroupID != 101 {
+		t.Fatalf("post-interruption preview = %+v, want unchanged Mapping baseline", retryPreview.Data.Assignments)
 	}
 	retryAssignments, err := json.Marshal(retryPreview.Data.Assignments)
 	if err != nil {
@@ -3602,12 +3602,11 @@ func TestRelayPlanningReplanRetriesProposedTargetWithoutAnotherDuplicate(t *test
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	fixture.router.ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("retry Execute status = %d, want 200, body=%s", response.Code, response.Body.String())
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "relationship_operation_active") {
+		t.Fatalf("ordinary Confirm status = %d, want active-operation 409, body=%s", response.Code, response.Body.String())
 	}
-	wantEvents := "[rename:100:Department Alpha-openai-02 account:11:100:1 group-status:100:active]"
-	if fmt.Sprint(fixture.provider.events) != wantEvents {
-		t.Fatalf("retry events = %v, want %s without another duplicate", fixture.provider.events, wantEvents)
+	if len(fixture.provider.events) != 0 {
+		t.Fatalf("blocked ordinary Confirm events = %v, want no Relay writes", fixture.provider.events)
 	}
 	persisted = fixture.client.RelayGroupMapping.GetX(fixture.ctx, fixture.mapping.ID)
 	if persisted.Status != "active" {
@@ -3647,13 +3646,12 @@ FOR EACH ROW EXECUTE FUNCTION reject_final_replan_target_update();`
 		t.Fatalf("persistence failure status = %d, want 422, body=%s", response.Code, response.Body.String())
 	}
 	persisted := fixture.client.RelayGroupMapping.GetX(fixture.ctx, fixture.mapping.ID)
-	groupState := persisted.OperationState["group:1"]
-	if !reflect.DeepEqual(persisted.GroupIds, []int64{101, 100}) || persisted.Status != "needs_retry" || groupState["target_group_id"] != "100" || groupState["creation"] != "pending" {
-		t.Fatalf("creation checkpoint = groups:%v status:%s state:%v, want durable Target 100 pending retry", persisted.GroupIds, persisted.Status, groupState)
+	if !reflect.DeepEqual(persisted.GroupIds, []int64{101}) || persisted.Status != "active" || persisted.BaselineRevision != 1 || len(persisted.OperationState) != 0 {
+		t.Fatalf("persistence failure changed baseline = groups:%v status:%s revision:%d state:%v", persisted.GroupIds, persisted.Status, persisted.BaselineRevision, persisted.OperationState)
 	}
 	desired := persisted.DesiredAccounts["100"]
-	if len(desired) != 1 || desired[0]["account_id"] != 11 {
-		t.Fatalf("checkpoint desired Accounts = %+v, want Template Account 11", desired)
+	if len(desired) != 0 {
+		t.Fatalf("persistence failure promoted desired Accounts = %+v", desired)
 	}
 	if _, err := rawDB.ExecContext(fixture.ctx, `DROP TRIGGER reject_final_replan_target_update ON relay_group_mappings; DROP FUNCTION reject_final_replan_target_update()`); err != nil {
 		t.Fatalf("remove final Mapping failure trigger: %v", err)
@@ -3672,8 +3670,8 @@ FOR EACH ROW EXECUTE FUNCTION reject_final_replan_target_update();`
 	if err := json.Unmarshal(response.Body.Bytes(), &retryPreview); err != nil {
 		t.Fatalf("decode retry Preview: %v", err)
 	}
-	if len(retryPreview.Data.Assignments) != 2 || retryPreview.Data.Assignments[1].TargetGroupID != 100 {
-		t.Fatalf("retry assignments = %+v, want durable Target 100", retryPreview.Data.Assignments)
+	if len(retryPreview.Data.Assignments) != 1 || retryPreview.Data.Assignments[0].TargetGroupID != 101 {
+		t.Fatalf("post-failure assignments = %+v, want unchanged Mapping baseline", retryPreview.Data.Assignments)
 	}
 	retryAssignments, err := json.Marshal(retryPreview.Data.Assignments)
 	if err != nil {
@@ -3685,8 +3683,8 @@ FOR EACH ROW EXECUTE FUNCTION reject_final_replan_target_update();`
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	fixture.router.ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("retry Execute status = %d, want 200, body=%s", response.Code, response.Body.String())
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "relationship_operation_active") {
+		t.Fatalf("ordinary Confirm status = %d, want active-operation 409, body=%s", response.Code, response.Body.String())
 	}
 	if containsRelayPlanningEvent(fixture.provider.events, "duplicate:100") {
 		t.Fatalf("retry events = %v, must not duplicate the checkpointed Target", fixture.provider.events)
@@ -3745,7 +3743,7 @@ func TestRelayPlanningRenameFailureDoesNotBlockAccountsAndReplanRestoresRetry(t 
 	if err := json.Unmarshal(response.Body.Bytes(), &firstBody); err != nil {
 		t.Fatalf("decode first execute: %v", err)
 	}
-	if len(firstBody.Data.Groups) != 1 || firstBody.Data.Groups[0].Rename != "failed" || len(firstBody.Data.Accounts) != 1 || firstBody.Data.Accounts[0].Status != "succeeded" || firstBody.Data.Mapping == nil || firstBody.Data.Mapping.Status != "needs_retry" {
+	if len(firstBody.Data.Groups) != 1 || firstBody.Data.Groups[0].Rename != "failed" || len(firstBody.Data.Accounts) != 1 || firstBody.Data.Accounts[0].Status != "succeeded" || firstBody.Data.Mapping == nil || firstBody.Data.Mapping.Status != "active" || firstBody.Data.Mapping.BaselineRevision != 1 {
 		t.Fatalf("first execute result = %+v, want independent rename failure and Account success", firstBody.Data)
 	}
 
@@ -3762,20 +3760,23 @@ func TestRelayPlanningRenameFailureDoesNotBlockAccountsAndReplanRestoresRetry(t 
 	if err := json.Unmarshal(response.Body.Bytes(), &retryPreview); err != nil {
 		t.Fatalf("decode retry preview: %v", err)
 	}
-	if len(retryPreview.Data.Assignments) != 1 || !retryPreview.Data.Assignments[0].RenameSelected || retryPreview.Data.Assignments[0].TargetGroupName != "Reviewed Target" {
-		t.Fatalf("retry assignment = %+v, want unresolved rename restored", retryPreview.Data.Assignments)
+	if len(retryPreview.Data.Assignments) != 1 || retryPreview.Data.Assignments[0].RenameSelected || retryPreview.Data.Assignments[0].TargetGroupName != "Legacy Target" {
+		t.Fatalf("post-interruption assignment = %+v, want unchanged Mapping baseline", retryPreview.Data.Assignments)
 	}
 
 	delete(provider.renameFailures, int64(101))
 	provider.events = nil
-	retryAssignments := `[{"index":0,"target_group_name":"Reviewed Target","rename_selected":true,"user_ids":[]}]`
+	retryAssignments, err := json.Marshal(retryPreview.Data.Assignments)
+	if err != nil {
+		t.Fatalf("marshal post-interruption assignments: %v", err)
+	}
 	retryPayload := fmt.Sprintf(`{"assignments":%s,"expected_relationship_fingerprint":%q,"operation_key":"rename-retry-2"}`, retryAssignments, retryPreview.Data.RelationshipFingerprint)
 	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(retryPayload))
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || fmt.Sprint(provider.events) != "[rename:101:Reviewed Target]" {
-		t.Fatalf("retry status/events = %d/%v, want rename only, body=%s", response.Code, provider.events, response.Body.String())
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "relationship_operation_active") || len(provider.events) != 0 {
+		t.Fatalf("ordinary Confirm status/events = %d/%v, want active-operation 409 without writes, body=%s", response.Code, provider.events, response.Body.String())
 	}
 	updated := client.RelayGroupMapping.GetX(ctx, mapping.ID)
 	if updated.Status != "active" {
@@ -3812,8 +3813,8 @@ func TestRelayPlanningRetriesNewTargetAfterRenameWithoutDuplicatingAgain(t *test
 		t.Fatalf("first execute status/events = %d/%v, body=%s", response.Code, provider.events, response.Body.String())
 	}
 	mapping := client.RelayGroupMapping.Query().OnlyX(ctx)
-	if fmt.Sprint(mapping.GroupIds) != "[100]" || mapping.Status != "needs_retry" {
-		t.Fatalf("failed creation mapping = groups:%v status:%s", mapping.GroupIds, mapping.Status)
+	if len(mapping.GroupIds) != 0 || mapping.Status != "active" || mapping.BaselineRevision != 1 {
+		t.Fatalf("failed creation changed baseline = groups:%v status:%s revision:%d", mapping.GroupIds, mapping.Status, mapping.BaselineRevision)
 	}
 
 	path := fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID)
@@ -3833,22 +3834,24 @@ func TestRelayPlanningRetriesNewTargetAfterRenameWithoutDuplicatingAgain(t *test
 	delete(provider.renameFailures, int64(100))
 	provider.accountFailures = map[int64]error{100: errors.New("synthetic create account failure")}
 	provider.events = nil
-	retryAssignments := `[{"index":0,"target_group_name":"Reviewed Target","rename_selected":true,"user_ids":[]}]`
+	retryAssignments, err := json.Marshal(retryPreview.Data.Assignments)
+	if err != nil {
+		t.Fatalf("marshal post-interruption assignments: %v", err)
+	}
 	retryPayload := fmt.Sprintf(`{"assignments":%s,"expected_relationship_fingerprint":%q,"operation_key":"create-rename-retry-2"}`, retryAssignments, retryPreview.Data.RelationshipFingerprint)
 	request = httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(retryPayload))
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("retry execute status = %d, want 200, body=%s", response.Code, response.Body.String())
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "relationship_operation_active") {
+		t.Fatalf("ordinary Confirm status = %d, want active-operation 409, body=%s", response.Code, response.Body.String())
 	}
-	wantEvents := "[rename:100:Reviewed Target account:11:100:1]"
-	if fmt.Sprint(provider.events) != wantEvents {
-		t.Fatalf("first retry events = %v, want %s without activation or another duplicate", provider.events, wantEvents)
+	if len(provider.events) != 0 {
+		t.Fatalf("blocked ordinary Confirm events = %v, want none", provider.events)
 	}
 	mapping = client.RelayGroupMapping.GetX(ctx, mapping.ID)
-	if mapping.Status != "needs_retry" {
-		t.Fatalf("mapping status after Account failure = %q, want needs_retry", mapping.Status)
+	if mapping.Status != "active" || mapping.BaselineRevision != 1 {
+		t.Fatalf("mapping baseline after blocked Confirm = status:%q revision:%d", mapping.Status, mapping.BaselineRevision)
 	}
 
 	request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
@@ -3868,12 +3871,11 @@ func TestRelayPlanningRetriesNewTargetAfterRenameWithoutDuplicatingAgain(t *test
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("Account retry execute status = %d, want 200, body=%s", response.Code, response.Body.String())
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "relationship_operation_active") {
+		t.Fatalf("repeated ordinary Confirm status = %d, want active-operation 409, body=%s", response.Code, response.Body.String())
 	}
-	wantEvents = "[account:11:100:1 group-status:100:active]"
-	if fmt.Sprint(provider.events) != wantEvents {
-		t.Fatalf("second retry events = %v, want %s without rename or another duplicate", provider.events, wantEvents)
+	if len(provider.events) != 0 {
+		t.Fatalf("repeated blocked Confirm events = %v, want none", provider.events)
 	}
 }
 
@@ -4553,8 +4555,8 @@ func TestRelayPlanningFailedRemovalRemainsRetryable(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("retry execute status = %d, want 200, body=%s", response.Code, response.Body.String())
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "relationship_operation_active") {
+		t.Fatalf("ordinary Confirm status = %d, want active-operation 409, body=%s", response.Code, response.Body.String())
 	}
 	if retried := client.RelayGroupMapping.GetX(ctx, mapping.ID); retried.Status != "active" {
 		t.Fatalf("retry mapping status = %s, want active", retried.Status)

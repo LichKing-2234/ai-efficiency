@@ -193,13 +193,7 @@ func persistDurableExecution(ctx context.Context, client *ent.Client, mappings [
 			Save(ctx)
 		if err != nil {
 			if ent.IsConstraintError(err) {
-				owner, ownerErr := client.RelationshipOperationMapping.Query().Where(
-					relationshipoperationmapping.MappingIDEQ(mapping.ID),
-					relationshipoperationmapping.ActiveEQ(true),
-				).Only(ctx)
-				if ownerErr == nil {
-					return nil, &ActiveRelationshipOperationError{MappingID: owner.MappingID}
-				}
+				return nil, &ActiveRelationshipOperationError{MappingID: mapping.ID}
 			}
 			return nil, fmt.Errorf("persist Relationship Operation ownership for Mapping %d: %w", mapping.ID, err)
 		}
