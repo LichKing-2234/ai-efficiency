@@ -100,6 +100,29 @@ func (h *RelayPlanningHandler) ListMappings(c *gin.Context) {
 	pkg.Success(c, gin.H{"items": items})
 }
 
+func (h *RelayPlanningHandler) AuditLegacyMigration(c *gin.Context) {
+	report, err := h.service.AuditLegacyOperations(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	pkg.Success(c, report)
+}
+
+func (h *RelayPlanningHandler) ApplyLegacyMigration(c *gin.Context) {
+	actor := appauth.GetUserContext(c)
+	if actor == nil || actor.UserID <= 0 {
+		pkg.Error(c, http.StatusUnauthorized, "authenticated administrator is required")
+		return
+	}
+	report, err := h.service.MigrateLegacyOperations(c.Request.Context(), relayplanning.LegacyMigrationRequest{Apply: true, InitiatedByUserID: actor.UserID})
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	pkg.Success(c, report)
+}
+
 func (h *RelayPlanningHandler) GetOperation(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("operation_id"))
 	if err != nil || id <= 0 {

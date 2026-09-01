@@ -528,6 +528,8 @@ func setupRouter(
 			relayPlanningGroup.POST("/preview", relayPlanningHandler.Preview)
 			relayPlanningGroup.POST("/execute", relayPlanningHandler.Execute)
 			relayPlanningGroup.GET("/mappings", relayPlanningHandler.ListMappings)
+			relayPlanningGroup.GET("/legacy-migration/audit", relayPlanningHandler.AuditLegacyMigration)
+			relayPlanningGroup.POST("/legacy-migration/apply", relayPlanningHandler.ApplyLegacyMigration)
 			relayPlanningGroup.GET("/operations/:operation_id", relayPlanningHandler.GetOperation)
 			relayPlanningGroup.POST("/operations/:operation_id/recovery/preview", relayPlanningHandler.PreviewRecovery)
 			relayPlanningGroup.POST("/operations/:operation_id/recovery/confirm", relayPlanningHandler.ConfirmRecovery)

@@ -401,9 +401,26 @@ locks ordinary edits while operating or drifted, and provides distinct `Continue
 to Target` and `Restore Baseline` review commands only when supported. Resume-only
 effects are disclosed. `blocked_external` shows the exact safe resource type and
 ID with no recovery or generic retry command. Legacy compatibility state remains
-explicitly labeled and retains its Phase 1 exact-continuation behavior. Durable
-legacy migration and deterministic cross-restart delivery tests remain owned by
-their dependent delivery issues.
+explicitly labeled and retains its Phase 1 exact-continuation behavior.
+
+The admin-only legacy migration audit reports safe Mapping IDs and counts for
+aligned, reconstructible-candidate, ambiguous, and already-owned rows without
+writing local or Relay state. Apply requires the authenticated administrator and
+reuses the current read-only Replan reconstruction, full legacy intent hash,
+per-member step identity, frozen reviewed API-Key set, and fresh Relay readback.
+Only an exact member-only retry becomes an interrupted Resume-only Relationship
+Operation. Its reconstructed baseline follows the proven Source/Target direction,
+and its immutable steps retain exact reviewed resources. Aligned rows remain at
+baseline revision 1 with no synthetic Operation history.
+
+Missing or mismatched intent/step identity, missing frozen resources, malformed
+state, unsupported Group/Account/adoption effects, and cross-Mapping/additional
+ownership are never guessed. Apply creates a `blocked_external` manual-review
+owner with a safe category and no supported recovery direction. Migration never
+changes the Mapping's legacy `operation_state`, never copies raw provider errors
+or credentials into its report, and performs no Relay mutation. New recovery
+attempts use the durable model rather than merging into legacy JSON. Deterministic
+cross-restart delivery tests remain owned by the final dependent issue.
 
 Destination and source mapping changes commit in one local transaction. A local
 persistence failure rolls back every affected mapping and returns structured
