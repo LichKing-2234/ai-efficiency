@@ -2785,8 +2785,8 @@ func TestRelayPlanningExplicitRemovalRetryDoesNotRepeatCompletedWrites(t *testin
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "relationship_operation_active") || client.RelayGroupMapping.GetX(ctx, mapping.ID).Status != "active" {
-		t.Fatalf("repeated drifted Key retry = status:%d mapping:%s body:%s, want stable active-operation conflict", response.Code, client.RelayGroupMapping.GetX(ctx, mapping.ID).Status, response.Body.String())
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "stale_relay_plan") || client.RelayGroupMapping.GetX(ctx, mapping.ID).Status != "active" {
+		t.Fatalf("repeated drifted Key retry = status:%d mapping:%s body:%s, want stable stale zero-write conflict", response.Code, client.RelayGroupMapping.GetX(ctx, mapping.ID).Status, response.Body.String())
 	}
 	if !reflect.DeepEqual(provider.events, writesAfterFirstExecute) {
 		t.Fatalf("repeated drifted Key retry writes = %v, want no repeats after %v", provider.events, writesAfterFirstExecute)
