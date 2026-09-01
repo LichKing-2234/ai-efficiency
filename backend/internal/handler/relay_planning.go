@@ -277,6 +277,15 @@ func writeRelayPlanningExecutionError(c *gin.Context, err error) {
 		})
 		return
 	}
+	var legacy *relayplanning.LegacyOperationConflictError
+	if errors.As(err, &legacy) {
+		pkg.ErrorWithDetails(c, http.StatusConflict, legacy.Error(), gin.H{
+			"error_code": "legacy_operation_conflict",
+			"reason":     legacy.Reason,
+			"retryable":  false,
+		})
+		return
+	}
 	pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 }
 

@@ -315,9 +315,28 @@ Target/member/adopted-user steps, including status, source/previous Target, and
 safe error text. Replan restores unfinished explicit removal/move intent and the
 actual previous Target needed for API-Key retry. Successful steps are not
 submitted again; unresolved steps use a fresh Preview fingerprint and explicit
-Confirm. A completed member step is reusable only when both its saved action and
-Target match the current retry; a completed forward migration cannot satisfy a
-later removal merely because both reference the same Target.
+Confirm.
+
+While a legacy operation is unresolved, its versioned intent binds the Mapping,
+Provider and Platform, Target identity and reviewed name, Account IDs and
+priorities, member action, local and Relay identities, Source and Target IDs,
+the frozen reviewed API-Key ID set, and the expected relationship result. The
+API-Key set is frozen before dispatch and preserves an explicit empty set, so a
+retry never discovers and mutates a newly created Key. A retry may continue
+only when that complete reviewed direction matches. Reverse or edited intent is
+rejected as non-retryable `legacy_operation_conflict` before any Relay write;
+older `needs_retry` state without complete identity is likewise blocked for
+manual intervention rather than guessed.
+
+Each completed member step also stores its exact identity. Reuse requires both
+that identity and fresh request-bound Relay readback proving the expected Target
+subscription, Source removal, and reviewed API-Key bindings. State that merely
+says `succeeded` cannot override contradictory readback. A reviewed Key that is
+missing or observed on neither the reviewed Source nor Target stops recovery as
+`readback_mismatch` before another write. Adopt Accounts, saved
+Account edits, Rebind, and Mapping Renewal Confirm remain blocked while the
+legacy operation is unresolved. This is Phase 1 containment only: it does not
+provide Restore, an event history, or the durable Relationship Operation model.
 
 Destination and source mapping changes commit in one local transaction. A local
 persistence failure rolls back every affected mapping and returns structured
