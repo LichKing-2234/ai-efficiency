@@ -2800,8 +2800,8 @@ func TestRelayPlanningExplicitRemovalRetryDoesNotRepeatCompletedWrites(t *testin
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "relationship_operation_active") {
-		t.Fatalf("restored completed Key ordinary Confirm = %d, want active-operation 409, body=%s", response.Code, response.Body.String())
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "stale_relay_plan") {
+		t.Fatalf("partially restored ordinary Confirm = %d, want stale zero-write 409, body=%s", response.Code, response.Body.String())
 	}
 	if got := client.RelayGroupMapping.GetX(ctx, mapping.ID).Status; got != "active" {
 		t.Fatalf("restored completed Key retry mapping status = %s, want active, body=%s", got, response.Body.String())
