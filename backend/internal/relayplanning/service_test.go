@@ -15,6 +15,10 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/directorysource"
 	"github.com/ai-efficiency/backend/ent/directorysyncrun"
+	"github.com/ai-efficiency/backend/ent/relationshipoperation"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationattempt"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationmapping"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationstep"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/teamusage"
@@ -794,7 +798,7 @@ func int64Pointer(value int64) *int64 {
 	return &value
 }
 
-func TestExecuteReplanRetriesFailedAPIKeyMoveFromPreviousTarget(t *testing.T) {
+func TestExecuteReplanPersistsDurableOperationBeforeWriteAndBlocksConcurrentConfirm(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	providerRow, err := client.RelayProvider.Create().
@@ -870,6 +874,15 @@ func TestExecuteReplanRetriesFailedAPIKeyMoveFromPreviousTarget(t *testing.T) {
 		SetStatus("active").
 		SetWeeklyCostTarget(2500).
 		SaveX(ctx)
+	durableBeforeWrite := false
+	fake.beforeWrite = func() {
+		operation := client.RelationshipOperation.Query().OnlyX(ctx)
+		owner := client.RelationshipOperationMapping.Query().Where(relationshipoperationmapping.OperationIDEQ(operation.ID), relationshipoperationmapping.ActiveEQ(true)).OnlyX(ctx)
+		steps := client.RelationshipOperationStep.Query().Where(relationshipoperationstep.OperationIDEQ(operation.ID), relationshipoperationstep.LifecycleEQ(relationshipoperationstep.LifecycleDispatched)).CountX(ctx)
+		attempt := client.RelationshipOperationAttempt.Query().Where(relationshipoperationattempt.OperationIDEQ(operation.ID)).OnlyX(ctx)
+		current := client.RelayGroupMapping.GetX(ctx, mappingRow.ID)
+		durableBeforeWrite = owner.MappingID == mappingRow.ID && steps > 0 && attempt.Status == relationshipoperationattempt.StatusRunning && current.BaselineRevision == 1 && current.MemberAssignments[fmt.Sprint(user.ID)] == 101
+	}
 
 	replanRequest := ExecuteRequest{
 		PreviewRequest: PreviewRequest{Assignments: []Assignment{
@@ -893,6 +906,9 @@ func TestExecuteReplanRetriesFailedAPIKeyMoveFromPreviousTarget(t *testing.T) {
 	if len(first.Members[0].APIKeys) != 1 || !strings.Contains(first.Members[0].APIKeys[0], "failed") {
 		t.Fatalf("first replan API keys = %#v, want failed move", first.Members[0].APIKeys)
 	}
+	if !durableBeforeWrite {
+		t.Fatal("durable Operation/ownership/dispatched steps/running attempt were not visible before the first Relay write")
+	}
 	if fake.assignmentCalls != 1 {
 		t.Fatalf("subscription assignments after first attempt = %d, want 1", fake.assignmentCalls)
 	}
@@ -900,10 +916,14 @@ func TestExecuteReplanRetriesFailedAPIKeyMoveFromPreviousTarget(t *testing.T) {
 		t.Fatalf("subscription validity after first attempt = %v, want [365]", fake.assignmentValidityDays)
 	}
 
-	fake.mu.Lock()
-	fake.bindFailures = 0
-	fake.subscriptions = append(fake.subscriptions, relay.UserSubscription{UserID: 1001, GroupID: 102, Status: "active"})
-	fake.mu.Unlock()
+	interrupted := client.RelationshipOperation.Query().OnlyX(ctx)
+	if interrupted.Lifecycle != relationshipoperation.LifecycleInterrupted {
+		t.Fatalf("Operation lifecycle = %q, want interrupted", interrupted.Lifecycle)
+	}
+	unchanged := client.RelayGroupMapping.GetX(ctx, mappingRow.ID)
+	if unchanged.BaselineRevision != 1 || unchanged.MemberAssignments[fmt.Sprint(user.ID)] != 101 {
+		t.Fatalf("partial operation changed baseline: revision=%d assignments=%v", unchanged.BaselineRevision, unchanged.MemberAssignments)
+	}
 	retryRequest := ExecuteRequest{
 		PreviewRequest: PreviewRequest{Assignments: []Assignment{
 			{Index: 0, UserIDs: []int{}},
@@ -916,61 +936,16 @@ func TestExecuteReplanRetriesFailedAPIKeyMoveFromPreviousTarget(t *testing.T) {
 		t.Fatalf("retry Replan() error = %v", err)
 	}
 	retryRequest.ExpectedRelationshipFingerprint = preview.RelationshipFingerprint
-	second, err := service.ExecuteReplan(ctx, mappingRow.ID, retryRequest)
-	if err != nil {
-		t.Fatalf("retry ExecuteReplan() error = %v", err)
-	}
-	if len(second.Members) != 1 || second.Members[0].Error != "" {
-		t.Fatalf("retry replan members = %#v, want success", second.Members)
-	}
-	if len(second.Members[0].APIKeys) != 1 || !strings.Contains(second.Members[0].APIKeys[0], "succeeded") {
-		t.Fatalf("retry replan API keys = %#v, want successful move from previous target", second.Members[0].APIKeys)
-	}
-	if len(fake.bound) != 1 || fake.bound[0] != "501:102" {
-		t.Fatalf("bound API keys = %#v, want [501:102]", fake.bound)
+	_, err = service.ExecuteReplan(ctx, mappingRow.ID, retryRequest)
+	var active *ActiveRelationshipOperationError
+	if !errors.As(err, &active) || active.MappingID != mappingRow.ID {
+		t.Fatalf("concurrent Confirm error = %v, want active Relationship Operation conflict", err)
 	}
 	if fake.assignmentCalls != 1 {
-		t.Fatalf("subscription assignments after retry = %d, want successful step not repeated", fake.assignmentCalls)
+		t.Fatalf("subscription assignments after blocked Confirm = %d, want 1", fake.assignmentCalls)
 	}
 	if fmt.Sprint(fake.assignmentValidityDays) != "[365]" {
-		t.Fatalf("subscription validity after retry = %v, want successful 365-day step not repeated", fake.assignmentValidityDays)
-	}
-
-	updated := client.RelayGroupMapping.GetX(ctx, mappingRow.ID)
-	retryState := updated.OperationState
-	retryState["operation"]["status"] = "needs_retry"
-	retryEntry := retryState[fmt.Sprintf("member:%d", user.ID)]
-	retryEntry["subscription"] = "succeeded"
-	retryEntry["source_removal"] = "failed"
-	retryEntry["error"] = "synthetic source removal failure"
-	retryEntry["from_group_id"] = "102"
-	retryEntry["target_group_id"] = "102"
-	client.RelayGroupMapping.UpdateOneID(mappingRow.ID).SetOperationState(retryState).SetStatus("needs_retry").SaveX(ctx)
-	fake.mu.Lock()
-	fake.subscriptions = []relay.UserSubscription{{UserID: 1001, GroupID: 20, Status: "active"}, {UserID: 1001, GroupID: 102, Status: "active"}}
-	fake.mu.Unlock()
-	changedTargetRequest := ExecuteRequest{
-		PreviewRequest: PreviewRequest{Assignments: []Assignment{
-			{Index: 0, UserIDs: []int{user.ID}},
-			{Index: 1, UserIDs: []int{}},
-		}},
-		OperationKey: "replan-op-3",
-	}
-	preview, err = service.Replan(ctx, mappingRow.ID, nil, changedTargetRequest.Assignments, nil, nil, nil, nil)
-	if err != nil {
-		t.Fatalf("changed-target Replan() error = %v", err)
-	}
-	changedTargetRequest.ExpectedRelationshipFingerprint = preview.RelationshipFingerprint
-	_, err = service.ExecuteReplan(ctx, mappingRow.ID, changedTargetRequest)
-	var conflict *LegacyOperationConflictError
-	if !errors.As(err, &conflict) || conflict.Reason != "edited_direction" {
-		t.Fatalf("changed-target ExecuteReplan() error = %v, want edited-direction conflict", err)
-	}
-	if fake.assignmentCalls != 1 || len(fake.bound) != 1 {
-		t.Fatalf("writes after changed-target retry = assignments:%d keys:%v, want no new writes", fake.assignmentCalls, fake.bound)
-	}
-	if fmt.Sprint(fake.assignmentValidityDays) != "[365]" {
-		t.Fatalf("subscription validity after changed-target retry = %v, want no new assignment", fake.assignmentValidityDays)
+		t.Fatalf("subscription validity after blocked Confirm = %v, want [365]", fake.assignmentValidityDays)
 	}
 }
 
@@ -1015,6 +990,8 @@ type replanRetryProvider struct {
 	bound                  []string
 	assignmentCalls        int
 	assignmentValidityDays []int
+	beforeWrite            func()
+	writeOnce              sync.Once
 }
 
 type relayPlanningProviderResolver func(context.Context, int) (relay.Provider, error)
@@ -1058,6 +1035,11 @@ func (p *replanRetryProvider) GetUsageStats(context.Context, int64, time.Time, t
 }
 
 func (p *replanRetryProvider) AssignSubscriptionForUser(_ context.Context, _, _ int64, validityDays int) error {
+	p.writeOnce.Do(func() {
+		if p.beforeWrite != nil {
+			p.beforeWrite()
+		}
+	})
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.assignmentCalls++

@@ -2667,11 +2667,11 @@ func TestRelayPlanningExplicitRemovalRetainsRetryWhenWriteReadbackDoesNotMatch(t
 		t.Fatalf("member results = %+v, want relationship readback failure", body.Data.Members)
 	}
 	persisted := client.RelayGroupMapping.GetX(ctx, mapping.ID)
-	if persisted.Status != "needs_retry" {
-		t.Fatalf("mapping status = %s, want needs_retry", persisted.Status)
+	if persisted.Status != "active" {
+		t.Fatalf("mapping status = %s, want unchanged active baseline", persisted.Status)
 	}
-	if _, exists := persisted.MemberAssignments[fmt.Sprint(alice.ID)]; exists {
-		t.Fatalf("removed member remains in desired mapping: %v", persisted.MemberAssignments)
+	if persisted.MemberAssignments[fmt.Sprint(alice.ID)] != 101 || persisted.BaselineRevision != 1 {
+		t.Fatalf("partial removal changed baseline: assignments=%v revision=%d", persisted.MemberAssignments, persisted.BaselineRevision)
 	}
 }
 
@@ -2852,7 +2852,7 @@ func TestRelayPlanningExplicitRemovalWithoutSavedSourceOnlyRemovesTargetSubscrip
 
 func TestRelayPlanningMoveHereTransfersOneManagedTargetAndUpdatesBothMappings(t *testing.T) {
 	ctx := context.Background()
-	client, dsn := testdb.OpenWithDSN(t)
+	client := testdb.Open(t)
 	providerConfig := client.RelayProvider.Create().SetName("relay-planning-transfer-test").SetDisplayName("Relay Planning Transfer Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-admin-key").SetEnabled(true).SaveX(ctx)
 	source, run := createRelayPlanningHandlerDirectory(t, ctx, client, "dept-beta")
 	alice := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource("ldap").SetRelayUserID(42).SaveX(ctx)
@@ -2884,61 +2884,9 @@ func TestRelayPlanningMoveHereTransfersOneManagedTargetAndUpdatesBothMappings(t 
 	previewPayload := fmt.Sprintf(`{"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d]}],"member_actions":{"%d":{"mode":"move_here","from_mapping_id":%d}}}`, alice.ID, alice.ID, alice.ID, mappingA.ID)
 	fingerprint := previewRelayPlanningFingerprint(t, router, previewPath, previewPayload)
 	payload := fmt.Sprintf(`{"selected_user_ids":[%d],"assignments":[{"index":0,"user_ids":[%d]}],"member_actions":{"%d":{"mode":"move_here","from_mapping_id":%d}},"expected_relationship_fingerprint":%q,"operation_key":"transfer-1"}`, alice.ID, alice.ID, alice.ID, mappingA.ID, fingerprint)
-	rawDB, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatalf("open raw test database: %v", err)
-	}
-	defer rawDB.Close()
-	triggerSQL := fmt.Sprintf(`
-CREATE FUNCTION reject_source_mapping_update() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-  IF NEW.id = %d THEN
-    RAISE EXCEPTION 'synthetic source mapping persistence failure';
-  END IF;
-  RETURN NEW;
-END;
-$$;
-CREATE TRIGGER reject_source_mapping_update BEFORE UPDATE ON relay_group_mappings
-FOR EACH ROW EXECUTE FUNCTION reject_source_mapping_update();`, mappingA.ID)
-	if _, err := rawDB.ExecContext(ctx, triggerSQL); err != nil {
-		t.Fatalf("install source mapping failure trigger: %v", err)
-	}
 	request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/relay-planning/mappings/%d/replan/execute", mappingB.ID), strings.NewReader(payload))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
-	router.ServeHTTP(response, request)
-	if response.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("persistence failure status = %d, want 422, body=%s", response.Code, response.Body.String())
-	}
-	failedA := client.RelayGroupMapping.GetX(ctx, mappingA.ID)
-	failedB := client.RelayGroupMapping.GetX(ctx, mappingB.ID)
-	if failedA.MemberAssignments[fmt.Sprint(alice.ID)] != 101 || failedB.MemberAssignments[fmt.Sprint(alice.ID)] != 0 {
-		t.Fatalf("mapping assignments after failed persistence = A:%v B:%v, want atomic rollback", failedA.MemberAssignments, failedB.MemberAssignments)
-	}
-	var persistenceFailure struct {
-		Details struct {
-			ErrorCode string `json:"error_code"`
-			Retryable bool   `json:"retryable"`
-			Mappings  []struct {
-				MappingID int    `json:"mapping_id"`
-				Role      string `json:"role"`
-				Status    string `json:"status"`
-			} `json:"mappings"`
-		} `json:"details"`
-	}
-	if err := json.Unmarshal(response.Body.Bytes(), &persistenceFailure); err != nil {
-		t.Fatalf("decode persistence failure: %v", err)
-	}
-	if persistenceFailure.Details.ErrorCode != "mapping_persistence_failed" || !persistenceFailure.Details.Retryable || len(persistenceFailure.Details.Mappings) != 2 {
-		t.Fatalf("persistence failure details = %+v, want retryable destination/source results", persistenceFailure.Details)
-	}
-	if _, err := rawDB.ExecContext(ctx, `DROP TRIGGER reject_source_mapping_update ON relay_group_mappings; DROP FUNCTION reject_source_mapping_update()`); err != nil {
-		t.Fatalf("remove source mapping failure trigger: %v", err)
-	}
-	provider.events = nil
-	request = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/relay-planning/mappings/%d/replan/execute", mappingB.ID), strings.NewReader(payload))
-	request.Header.Set("Content-Type", "application/json")
-	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("transfer status = %d, want 200, body=%s", response.Code, response.Body.String())
@@ -4573,8 +4521,8 @@ func TestRelayPlanningFailedRemovalRemainsRetryable(t *testing.T) {
 		t.Fatalf("execute status = %d, want 200, body=%s", response.Code, response.Body.String())
 	}
 	persisted := client.RelayGroupMapping.GetX(ctx, mapping.ID)
-	if _, stillDesired := persisted.MemberAssignments[fmt.Sprint(alice.ID)]; stillDesired || persisted.MemberAssignments[fmt.Sprint(bob.ID)] != 101 || persisted.Status != "needs_retry" {
-		t.Fatalf("failed removal persistence = assignments:%v status:%s, want updated desired state and retry metadata", persisted.MemberAssignments, persisted.Status)
+	if persisted.MemberAssignments[fmt.Sprint(alice.ID)] != 101 || persisted.MemberAssignments[fmt.Sprint(bob.ID)] != 101 || persisted.Status != "active" || persisted.BaselineRevision != 1 {
+		t.Fatalf("failed removal changed baseline = assignments:%v status:%s revision:%d", persisted.MemberAssignments, persisted.Status, persisted.BaselineRevision)
 	}
 	request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(previewPayload))
 	request.Header.Set("Content-Type", "application/json")

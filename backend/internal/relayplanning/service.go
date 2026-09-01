@@ -329,6 +329,7 @@ type Mapping struct {
 	DesiredAccounts              map[string][]AccountIntent   `json:"desired_accounts"`
 	AccountPools                 []TargetAccountPool          `json:"account_pools"`
 	OperationState               map[string]map[string]string `json:"operation_state,omitempty"`
+	BaselineRevision             int64                        `json:"baseline_revision"`
 	UnmanagedMembers             []UnmanagedMember            `json:"unmanaged_members,omitempty"`
 	DepartmentSuggestions        []DepartmentSuggestion       `json:"department_suggestions,omitempty"`
 	Warnings                     []string                     `json:"warnings,omitempty"`
@@ -461,6 +462,7 @@ type ExecuteRequest struct {
 	PreviewRequest
 	OperationKey                    string `json:"operation_key"`
 	ExpectedRelationshipFingerprint string `json:"expected_relationship_fingerprint"`
+	InitiatedByUserID               int    `json:"-"`
 }
 
 type StalePlanError struct {
@@ -1335,6 +1337,14 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 	if err := validateRelationshipFingerprint(req.ExpectedRelationshipFingerprint, plan); err != nil {
 		return nil, fmt.Errorf("validate relay plan relationship fingerprint: %w", err)
 	}
+	durable, initialMapping, err := s.beginInitialDurableExecution(ctx, plan, req)
+	if err != nil {
+		return nil, err
+	}
+	defer durable.interrupt(ctx)
+	if err := durable.dispatch(ctx); err != nil {
+		return nil, err
+	}
 	p, err := s.resolver.Resolve(ctx, req.ProviderID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve relay provider: %w", err)
@@ -1460,15 +1470,47 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 	}
 	state := executionState(req.OperationKey, groupResults, memberResults)
 	mergeAccountResultsIntoState(state, accountResults)
-	mapping, err := s.saveMapping(ctx, plan, groupIDList, state)
+	applied := operationStatus(state) == "active"
+	var mapping *Mapping
+	if applied {
+		tx, txErr := s.client.Tx(ctx)
+		if txErr != nil {
+			err = txErr
+		} else {
+			mapping, err = saveMappingWithClient(ctx, tx.Client(), plan, groupIDList, state)
+			var count int
+			if err == nil {
+				count, err = tx.Client().RelayGroupMapping.Update().
+					Where(relaygroupmapping.IDEQ(mapping.ID), relaygroupmapping.BaselineRevisionEQ(initialMapping.BaselineRevision)).
+					AddBaselineRevision(1).
+					Save(ctx)
+			}
+			if err == nil && count != 1 {
+				err = fmt.Errorf("Mapping baseline revision changed during execution")
+			}
+			if err == nil {
+				row, loadErr := tx.Client().RelayGroupMapping.Get(ctx, mapping.ID)
+				if loadErr != nil {
+					err = loadErr
+				} else {
+					updated := mappingFromEnt(row)
+					mapping = &updated
+				}
+			}
+			if err == nil {
+				err = tx.Commit()
+			} else {
+				_ = tx.Rollback()
+			}
+		}
+	} else {
+		mapping = initialMapping
+	}
 	if err != nil {
 		return nil, fmt.Errorf("save group mapping: %w", err)
 	}
-	if mapping.Status == "needs_retry" {
-		mapping, err = s.persistInitialLegacyRetryIntent(ctx, mapping, plan, req)
-		if err != nil {
-			return nil, fmt.Errorf("persist initial legacy retry intent: %w", err)
-		}
+	if err := durable.finish(ctx, applied, map[string]any{"mapping_id": mapping.ID, "status": mapping.Status}); err != nil {
+		return nil, fmt.Errorf("finish Relationship Operation: %w", err)
 	}
 	updatedMapping := *mapping
 	currentAccounts, readbackErr := accountReader.ListAccountsForPlatform(ctx, plan.Platform)
@@ -3858,6 +3900,14 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	if err := validateLegacyRetryReadback(mapping, plan, memberIntents); err != nil {
 		return nil, err
 	}
+	durable, err := s.beginReplanDurableExecution(ctx, *mapping, plan, req)
+	if err != nil {
+		return nil, err
+	}
+	defer durable.interrupt(ctx)
+	if err := durable.dispatch(ctx); err != nil {
+		return nil, err
+	}
 	p, err := s.resolver.Resolve(ctx, mapping.ProviderID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve relay provider for replan: %w", err)
@@ -3888,7 +3938,7 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 			var createErr error
 			result, createErr = duplicateAndRenameProposedTarget(ctx, proposedDuplicator, proposedRenamer, plan.TemplateGroupID, creationKey, mapping.GroupIDs, assignment, func(checkpoint GroupResult) error {
 				mapping.GroupIDs = append(mapping.GroupIDs, checkpoint.ID)
-				return s.checkpointCreatedReplanTarget(ctx, mapping, plan, checkpoint, req.OperationKey, intentHash)
+				return durable.verifyStep(ctx, fmt.Sprintf("target:%d:create", checkpoint.Index), map[string]any{"group_id": checkpoint.ID, "name": checkpoint.CurrentName})
 			})
 			if createErr != nil {
 				return nil, fmt.Errorf("checkpoint proposed target %d: %w", assignment.Index, createErr)
@@ -4128,6 +4178,7 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 		assignments map[string]int64
 		sources     map[string]int64
 		state       map[string]map[string]string
+		revision    int64
 	}
 	sourceMutations := make(map[int]*sourceMappingMutation)
 	for _, transfer := range transferUpdates {
@@ -4137,6 +4188,7 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 				assignments: cloneInt64Map(transfer.mapping.MemberAssignments),
 				sources:     cloneInt64Map(transfer.mapping.MemberSources),
 				state:       cloneOperationState(transfer.mapping.OperationState),
+				revision:    transfer.mapping.BaselineRevision,
 			}
 			sourceMutations[transfer.mapping.ID] = mutation
 		}
@@ -4161,6 +4213,16 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	mappingResults[0] = MappingPersistenceResult{MappingID: mapping.ID, Role: "destination", Status: "pending"}
 	for _, sourceID := range sourceIDs {
 		mappingResults = append(mappingResults, MappingPersistenceResult{MappingID: sourceID, Role: "source", Status: "pending"})
+	}
+	applied := operationStatus(state) == "active"
+	if !applied {
+		for index := range mappingResults {
+			mappingResults[index].Status = "skipped"
+		}
+		if err := durable.finish(ctx, false, map[string]any{"mapping_id": mapping.ID, "status": "interrupted"}); err != nil {
+			return nil, fmt.Errorf("finish interrupted Relationship Operation: %w", err)
+		}
+		return &ExecutionResult{Plan: plan, Groups: groupResults, Accounts: accountResults, Members: memberResults, Mappings: mappingResults, Mapping: mapping}, nil
 	}
 	tx, err := s.client.Tx(ctx)
 	if err != nil {
@@ -4188,16 +4250,37 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	if err != nil {
 		return nil, rollback(0, err)
 	}
+	resultCount, err := tx.Client().RelayGroupMapping.Update().
+		Where(relaygroupmapping.IDEQ(resultMapping.ID), relaygroupmapping.BaselineRevisionEQ(mapping.BaselineRevision)).
+		AddBaselineRevision(1).
+		Save(ctx)
+	if err != nil {
+		return nil, rollback(0, fmt.Errorf("advance destination Mapping baseline revision: %w", err))
+	}
+	if resultCount != 1 {
+		return nil, rollback(0, fmt.Errorf("destination Mapping baseline revision changed during execution"))
+	}
+	resultRow, err := tx.Client().RelayGroupMapping.Get(ctx, resultMapping.ID)
+	if err != nil {
+		return nil, rollback(0, fmt.Errorf("reload destination Mapping: %w", err))
+	}
+	updatedResultMapping := mappingFromEnt(resultRow)
+	resultMapping = &updatedResultMapping
 	for index, sourceID := range sourceIDs {
 		mutation := sourceMutations[sourceID]
-		_, updateErr := tx.Client().RelayGroupMapping.UpdateOneID(sourceID).
+		updatedSources, updateErr := tx.Client().RelayGroupMapping.Update().
+			Where(relaygroupmapping.IDEQ(sourceID), relaygroupmapping.BaselineRevisionEQ(mutation.revision)).
 			SetMemberAssignments(mutation.assignments).
 			SetMemberSources(mutation.sources).
 			SetOperationState(mutation.state).
 			SetStatus(operationStatus(mutation.state)).
+			AddBaselineRevision(1).
 			Save(ctx)
 		if updateErr != nil {
 			return nil, rollback(index+1, fmt.Errorf("save source mapping %d transfer state: %w", sourceID, updateErr))
+		}
+		if updatedSources != 1 {
+			return nil, rollback(index+1, fmt.Errorf("source Mapping %d baseline revision changed during execution", sourceID))
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -4210,31 +4293,10 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	for index := range mappingResults {
 		mappingResults[index].Status = "succeeded"
 	}
-	return &ExecutionResult{Plan: plan, Groups: groupResults, Accounts: accountResults, Members: memberResults, Mappings: mappingResults, Mapping: resultMapping}, nil
-}
-
-func (s *Service) checkpointCreatedReplanTarget(ctx context.Context, mapping *Mapping, plan *Plan, result GroupResult, operationKey, intentHash string) error {
-	checkpoint := executionState(operationKey, []GroupResult{result}, nil)
-	checkpoint["operation"]["intent_hash"] = intentHash
-	checkpoint["operation"]["status"] = operationStatus(checkpoint)
-	operationState := mergeOperationState(mapping.OperationState, checkpoint)
-	desiredAccounts := desiredAccountsForGroupIDs(plan.Assignments, mapping.GroupIDs)
-	row, err := s.client.RelayGroupMapping.UpdateOneID(mapping.ID).
-		SetGroupIds(append([]int64(nil), mapping.GroupIDs...)).
-		SetAccountManagementInitialized(true).
-		SetDesiredAccounts(accountIntentsToStorage(desiredAccounts)).
-		SetOperationState(operationState).
-		SetStatus("needs_retry").
-		Save(ctx)
-	if err != nil {
-		return fmt.Errorf("persist created target checkpoint: %w", err)
+	if err := durable.finish(ctx, true, map[string]any{"mapping_id": mapping.ID, "status": "applied"}); err != nil {
+		return nil, fmt.Errorf("finish applied Relationship Operation: %w", err)
 	}
-	mapping.AccountManagementInitialized = true
-	mapping.DesiredAccounts = desiredAccounts
-	mapping.OperationState = operationState
-	mapping.Status = row.Status
-	mapping.UpdatedAt = row.UpdatedAt
-	return nil
+	return &ExecutionResult{Plan: plan, Groups: groupResults, Accounts: accountResults, Members: memberResults, Mappings: mappingResults, Mapping: resultMapping}, nil
 }
 
 func (s *Service) resolveMoveSource(ctx context.Context, destination Mapping, userID int, action MemberAction) (*ent.RelayGroupMapping, int64, error) {
@@ -5474,7 +5536,7 @@ func desiredAccountsForGroupIDs(assignments []Assignment, groupIDs []int64) map[
 }
 
 func mappingFromEnt(row *ent.RelayGroupMapping) Mapping {
-	return Mapping{ID: row.ID, ProviderID: row.ProviderID, DepartmentID: row.DepartmentExternalID, DepartmentName: row.DepartmentName, Platform: row.Platform, TemplateGroupID: row.TemplateGroupID, TemplateGroupName: row.TemplateGroupName, SourceGroupID: row.SourceGroupID, SourceGroupName: row.SourceGroupName, GroupIDs: append([]int64(nil), row.GroupIds...), Status: row.Status, WeeklyCostTarget: row.WeeklyCostTarget, MemberAssignments: cloneInt64Map(row.MemberAssignments), MemberSources: cloneInt64Map(row.MemberSources), AccountManagementInitialized: row.AccountManagementInitialized, DesiredAccounts: accountIntentsFromStorage(row.DesiredAccounts), OperationState: cloneOperationState(row.OperationState), UpdatedAt: row.UpdatedAt}
+	return Mapping{ID: row.ID, ProviderID: row.ProviderID, DepartmentID: row.DepartmentExternalID, DepartmentName: row.DepartmentName, Platform: row.Platform, TemplateGroupID: row.TemplateGroupID, TemplateGroupName: row.TemplateGroupName, SourceGroupID: row.SourceGroupID, SourceGroupName: row.SourceGroupName, GroupIDs: append([]int64(nil), row.GroupIds...), Status: row.Status, WeeklyCostTarget: row.WeeklyCostTarget, MemberAssignments: cloneInt64Map(row.MemberAssignments), MemberSources: cloneInt64Map(row.MemberSources), AccountManagementInitialized: row.AccountManagementInitialized, DesiredAccounts: accountIntentsFromStorage(row.DesiredAccounts), OperationState: cloneOperationState(row.OperationState), BaselineRevision: row.BaselineRevision, UpdatedAt: row.UpdatedAt}
 }
 
 func accountIntentsFromStorage(stored map[string][]map[string]int64) map[string][]AccountIntent {

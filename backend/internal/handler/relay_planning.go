@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	appauth "github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relayplanning"
 	"github.com/gin-gonic/gin"
@@ -78,6 +79,9 @@ func (h *RelayPlanningHandler) Execute(c *gin.Context) {
 		return
 	}
 	req.ExistingMappingID = 0
+	if actor := appauth.GetUserContext(c); actor != nil {
+		req.InitiatedByUserID = actor.UserID
+	}
 	result, err := h.service.Execute(c.Request.Context(), req)
 	if err != nil {
 		writeRelayPlanningExecutionError(c, err)
@@ -245,6 +249,9 @@ func (h *RelayPlanningHandler) ReplanExecute(c *gin.Context) {
 	if req.ExistingMappingID == 0 {
 		req.ExistingMappingID = id
 	}
+	if actor := appauth.GetUserContext(c); actor != nil {
+		req.InitiatedByUserID = actor.UserID
+	}
 	result, err := h.service.ExecuteReplan(c.Request.Context(), id, req)
 	if err != nil {
 		writeRelayPlanningExecutionError(c, err)
@@ -263,6 +270,15 @@ func writeRelayPlanningExecutionError(c *gin.Context, err error) {
 			"error_code": "mapping_persistence_failed",
 			"retryable":  true,
 			"mappings":   persistence.Results,
+		})
+		return
+	}
+	var activeOperation *relayplanning.ActiveRelationshipOperationError
+	if errors.As(err, &activeOperation) {
+		pkg.ErrorWithDetails(c, http.StatusConflict, activeOperation.Error(), gin.H{
+			"error_code": "relationship_operation_active",
+			"mapping_id": activeOperation.MappingID,
+			"retryable":  false,
 		})
 		return
 	}
