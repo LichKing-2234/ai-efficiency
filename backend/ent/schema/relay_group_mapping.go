@@ -2,6 +2,7 @@ package schema
 
 import (
 	"entgo.io/ent"
+	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 )
@@ -29,10 +30,17 @@ func (RelayGroupMapping) Fields() []ent.Field {
 		field.Bool("account_management_initialized").Default(false),
 		field.JSON("desired_accounts", map[string][]map[string]int64{}).Default(map[string][]map[string]int64{}),
 		field.JSON("operation_state", map[string]map[string]string{}).Default(map[string]map[string]string{}),
+		field.Int64("baseline_revision").Default(1).Positive(),
 		field.String("status").Default("active"),
 		field.Float("weekly_cost_target").Default(0),
 		field.Time("created_at").Immutable().Default(timeNow),
 		field.Time("updated_at").Default(timeNow).UpdateDefault(timeNow),
+	}
+}
+
+func (RelayGroupMapping) Edges() []ent.Edge {
+	return []ent.Edge{
+		edge.To("relationship_operation_mappings", RelationshipOperationMapping.Type),
 	}
 }
 

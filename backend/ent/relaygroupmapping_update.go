@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/predicate"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationmapping"
 	"github.com/ai-efficiency/backend/ent/relaygroupmapping"
 )
 
@@ -212,6 +213,27 @@ func (rgmu *RelayGroupMappingUpdate) SetOperationState(m map[string]map[string]s
 	return rgmu
 }
 
+// SetBaselineRevision sets the "baseline_revision" field.
+func (rgmu *RelayGroupMappingUpdate) SetBaselineRevision(i int64) *RelayGroupMappingUpdate {
+	rgmu.mutation.ResetBaselineRevision()
+	rgmu.mutation.SetBaselineRevision(i)
+	return rgmu
+}
+
+// SetNillableBaselineRevision sets the "baseline_revision" field if the given value is not nil.
+func (rgmu *RelayGroupMappingUpdate) SetNillableBaselineRevision(i *int64) *RelayGroupMappingUpdate {
+	if i != nil {
+		rgmu.SetBaselineRevision(*i)
+	}
+	return rgmu
+}
+
+// AddBaselineRevision adds i to the "baseline_revision" field.
+func (rgmu *RelayGroupMappingUpdate) AddBaselineRevision(i int64) *RelayGroupMappingUpdate {
+	rgmu.mutation.AddBaselineRevision(i)
+	return rgmu
+}
+
 // SetStatus sets the "status" field.
 func (rgmu *RelayGroupMappingUpdate) SetStatus(s string) *RelayGroupMappingUpdate {
 	rgmu.mutation.SetStatus(s)
@@ -253,9 +275,45 @@ func (rgmu *RelayGroupMappingUpdate) SetUpdatedAt(t time.Time) *RelayGroupMappin
 	return rgmu
 }
 
+// AddRelationshipOperationMappingIDs adds the "relationship_operation_mappings" edge to the RelationshipOperationMapping entity by IDs.
+func (rgmu *RelayGroupMappingUpdate) AddRelationshipOperationMappingIDs(ids ...int) *RelayGroupMappingUpdate {
+	rgmu.mutation.AddRelationshipOperationMappingIDs(ids...)
+	return rgmu
+}
+
+// AddRelationshipOperationMappings adds the "relationship_operation_mappings" edges to the RelationshipOperationMapping entity.
+func (rgmu *RelayGroupMappingUpdate) AddRelationshipOperationMappings(r ...*RelationshipOperationMapping) *RelayGroupMappingUpdate {
+	ids := make([]int, len(r))
+	for i := range r {
+		ids[i] = r[i].ID
+	}
+	return rgmu.AddRelationshipOperationMappingIDs(ids...)
+}
+
 // Mutation returns the RelayGroupMappingMutation object of the builder.
 func (rgmu *RelayGroupMappingUpdate) Mutation() *RelayGroupMappingMutation {
 	return rgmu.mutation
+}
+
+// ClearRelationshipOperationMappings clears all "relationship_operation_mappings" edges to the RelationshipOperationMapping entity.
+func (rgmu *RelayGroupMappingUpdate) ClearRelationshipOperationMappings() *RelayGroupMappingUpdate {
+	rgmu.mutation.ClearRelationshipOperationMappings()
+	return rgmu
+}
+
+// RemoveRelationshipOperationMappingIDs removes the "relationship_operation_mappings" edge to RelationshipOperationMapping entities by IDs.
+func (rgmu *RelayGroupMappingUpdate) RemoveRelationshipOperationMappingIDs(ids ...int) *RelayGroupMappingUpdate {
+	rgmu.mutation.RemoveRelationshipOperationMappingIDs(ids...)
+	return rgmu
+}
+
+// RemoveRelationshipOperationMappings removes "relationship_operation_mappings" edges to RelationshipOperationMapping entities.
+func (rgmu *RelayGroupMappingUpdate) RemoveRelationshipOperationMappings(r ...*RelationshipOperationMapping) *RelayGroupMappingUpdate {
+	ids := make([]int, len(r))
+	for i := range r {
+		ids[i] = r[i].ID
+	}
+	return rgmu.RemoveRelationshipOperationMappingIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -304,6 +362,11 @@ func (rgmu *RelayGroupMappingUpdate) check() error {
 	if v, ok := rgmu.mutation.Platform(); ok {
 		if err := relaygroupmapping.PlatformValidator(v); err != nil {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "RelayGroupMapping.platform": %w`, err)}
+		}
+	}
+	if v, ok := rgmu.mutation.BaselineRevision(); ok {
+		if err := relaygroupmapping.BaselineRevisionValidator(v); err != nil {
+			return &ValidationError{Name: "baseline_revision", err: fmt.Errorf(`ent: validator failed for field "RelayGroupMapping.baseline_revision": %w`, err)}
 		}
 	}
 	return nil
@@ -377,6 +440,12 @@ func (rgmu *RelayGroupMappingUpdate) sqlSave(ctx context.Context) (n int, err er
 	if value, ok := rgmu.mutation.OperationState(); ok {
 		_spec.SetField(relaygroupmapping.FieldOperationState, field.TypeJSON, value)
 	}
+	if value, ok := rgmu.mutation.BaselineRevision(); ok {
+		_spec.SetField(relaygroupmapping.FieldBaselineRevision, field.TypeInt64, value)
+	}
+	if value, ok := rgmu.mutation.AddedBaselineRevision(); ok {
+		_spec.AddField(relaygroupmapping.FieldBaselineRevision, field.TypeInt64, value)
+	}
 	if value, ok := rgmu.mutation.Status(); ok {
 		_spec.SetField(relaygroupmapping.FieldStatus, field.TypeString, value)
 	}
@@ -388,6 +457,51 @@ func (rgmu *RelayGroupMappingUpdate) sqlSave(ctx context.Context) (n int, err er
 	}
 	if value, ok := rgmu.mutation.UpdatedAt(); ok {
 		_spec.SetField(relaygroupmapping.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if rgmu.mutation.RelationshipOperationMappingsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   relaygroupmapping.RelationshipOperationMappingsTable,
+			Columns: []string{relaygroupmapping.RelationshipOperationMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(relationshipoperationmapping.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rgmu.mutation.RemovedRelationshipOperationMappingsIDs(); len(nodes) > 0 && !rgmu.mutation.RelationshipOperationMappingsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   relaygroupmapping.RelationshipOperationMappingsTable,
+			Columns: []string{relaygroupmapping.RelationshipOperationMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(relationshipoperationmapping.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rgmu.mutation.RelationshipOperationMappingsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   relaygroupmapping.RelationshipOperationMappingsTable,
+			Columns: []string{relaygroupmapping.RelationshipOperationMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(relationshipoperationmapping.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, rgmu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -592,6 +706,27 @@ func (rgmuo *RelayGroupMappingUpdateOne) SetOperationState(m map[string]map[stri
 	return rgmuo
 }
 
+// SetBaselineRevision sets the "baseline_revision" field.
+func (rgmuo *RelayGroupMappingUpdateOne) SetBaselineRevision(i int64) *RelayGroupMappingUpdateOne {
+	rgmuo.mutation.ResetBaselineRevision()
+	rgmuo.mutation.SetBaselineRevision(i)
+	return rgmuo
+}
+
+// SetNillableBaselineRevision sets the "baseline_revision" field if the given value is not nil.
+func (rgmuo *RelayGroupMappingUpdateOne) SetNillableBaselineRevision(i *int64) *RelayGroupMappingUpdateOne {
+	if i != nil {
+		rgmuo.SetBaselineRevision(*i)
+	}
+	return rgmuo
+}
+
+// AddBaselineRevision adds i to the "baseline_revision" field.
+func (rgmuo *RelayGroupMappingUpdateOne) AddBaselineRevision(i int64) *RelayGroupMappingUpdateOne {
+	rgmuo.mutation.AddBaselineRevision(i)
+	return rgmuo
+}
+
 // SetStatus sets the "status" field.
 func (rgmuo *RelayGroupMappingUpdateOne) SetStatus(s string) *RelayGroupMappingUpdateOne {
 	rgmuo.mutation.SetStatus(s)
@@ -633,9 +768,45 @@ func (rgmuo *RelayGroupMappingUpdateOne) SetUpdatedAt(t time.Time) *RelayGroupMa
 	return rgmuo
 }
 
+// AddRelationshipOperationMappingIDs adds the "relationship_operation_mappings" edge to the RelationshipOperationMapping entity by IDs.
+func (rgmuo *RelayGroupMappingUpdateOne) AddRelationshipOperationMappingIDs(ids ...int) *RelayGroupMappingUpdateOne {
+	rgmuo.mutation.AddRelationshipOperationMappingIDs(ids...)
+	return rgmuo
+}
+
+// AddRelationshipOperationMappings adds the "relationship_operation_mappings" edges to the RelationshipOperationMapping entity.
+func (rgmuo *RelayGroupMappingUpdateOne) AddRelationshipOperationMappings(r ...*RelationshipOperationMapping) *RelayGroupMappingUpdateOne {
+	ids := make([]int, len(r))
+	for i := range r {
+		ids[i] = r[i].ID
+	}
+	return rgmuo.AddRelationshipOperationMappingIDs(ids...)
+}
+
 // Mutation returns the RelayGroupMappingMutation object of the builder.
 func (rgmuo *RelayGroupMappingUpdateOne) Mutation() *RelayGroupMappingMutation {
 	return rgmuo.mutation
+}
+
+// ClearRelationshipOperationMappings clears all "relationship_operation_mappings" edges to the RelationshipOperationMapping entity.
+func (rgmuo *RelayGroupMappingUpdateOne) ClearRelationshipOperationMappings() *RelayGroupMappingUpdateOne {
+	rgmuo.mutation.ClearRelationshipOperationMappings()
+	return rgmuo
+}
+
+// RemoveRelationshipOperationMappingIDs removes the "relationship_operation_mappings" edge to RelationshipOperationMapping entities by IDs.
+func (rgmuo *RelayGroupMappingUpdateOne) RemoveRelationshipOperationMappingIDs(ids ...int) *RelayGroupMappingUpdateOne {
+	rgmuo.mutation.RemoveRelationshipOperationMappingIDs(ids...)
+	return rgmuo
+}
+
+// RemoveRelationshipOperationMappings removes "relationship_operation_mappings" edges to RelationshipOperationMapping entities.
+func (rgmuo *RelayGroupMappingUpdateOne) RemoveRelationshipOperationMappings(r ...*RelationshipOperationMapping) *RelayGroupMappingUpdateOne {
+	ids := make([]int, len(r))
+	for i := range r {
+		ids[i] = r[i].ID
+	}
+	return rgmuo.RemoveRelationshipOperationMappingIDs(ids...)
 }
 
 // Where appends a list predicates to the RelayGroupMappingUpdate builder.
@@ -697,6 +868,11 @@ func (rgmuo *RelayGroupMappingUpdateOne) check() error {
 	if v, ok := rgmuo.mutation.Platform(); ok {
 		if err := relaygroupmapping.PlatformValidator(v); err != nil {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "RelayGroupMapping.platform": %w`, err)}
+		}
+	}
+	if v, ok := rgmuo.mutation.BaselineRevision(); ok {
+		if err := relaygroupmapping.BaselineRevisionValidator(v); err != nil {
+			return &ValidationError{Name: "baseline_revision", err: fmt.Errorf(`ent: validator failed for field "RelayGroupMapping.baseline_revision": %w`, err)}
 		}
 	}
 	return nil
@@ -787,6 +963,12 @@ func (rgmuo *RelayGroupMappingUpdateOne) sqlSave(ctx context.Context) (_node *Re
 	if value, ok := rgmuo.mutation.OperationState(); ok {
 		_spec.SetField(relaygroupmapping.FieldOperationState, field.TypeJSON, value)
 	}
+	if value, ok := rgmuo.mutation.BaselineRevision(); ok {
+		_spec.SetField(relaygroupmapping.FieldBaselineRevision, field.TypeInt64, value)
+	}
+	if value, ok := rgmuo.mutation.AddedBaselineRevision(); ok {
+		_spec.AddField(relaygroupmapping.FieldBaselineRevision, field.TypeInt64, value)
+	}
 	if value, ok := rgmuo.mutation.Status(); ok {
 		_spec.SetField(relaygroupmapping.FieldStatus, field.TypeString, value)
 	}
@@ -798,6 +980,51 @@ func (rgmuo *RelayGroupMappingUpdateOne) sqlSave(ctx context.Context) (_node *Re
 	}
 	if value, ok := rgmuo.mutation.UpdatedAt(); ok {
 		_spec.SetField(relaygroupmapping.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if rgmuo.mutation.RelationshipOperationMappingsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   relaygroupmapping.RelationshipOperationMappingsTable,
+			Columns: []string{relaygroupmapping.RelationshipOperationMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(relationshipoperationmapping.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rgmuo.mutation.RemovedRelationshipOperationMappingsIDs(); len(nodes) > 0 && !rgmuo.mutation.RelationshipOperationMappingsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   relaygroupmapping.RelationshipOperationMappingsTable,
+			Columns: []string{relaygroupmapping.RelationshipOperationMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(relationshipoperationmapping.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rgmuo.mutation.RelationshipOperationMappingsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   relaygroupmapping.RelationshipOperationMappingsTable,
+			Columns: []string{relaygroupmapping.RelationshipOperationMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(relationshipoperationmapping.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	_node = &RelayGroupMapping{config: rgmuo.config}
 	_spec.Assign = _node.assignValues

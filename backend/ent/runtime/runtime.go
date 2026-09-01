@@ -27,6 +27,10 @@ import (
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestevent"
+	"github.com/ai-efficiency/backend/ent/relationshipoperation"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationattempt"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationmapping"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationstep"
 	"github.com/ai-efficiency/backend/ent/relaygroupmapping"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
@@ -780,6 +784,114 @@ func init() {
 	quotaresetrequesteventDescCreatedAt := quotaresetrequesteventFields[5].Descriptor()
 	// quotaresetrequestevent.DefaultCreatedAt holds the default value on creation for the created_at field.
 	quotaresetrequestevent.DefaultCreatedAt = quotaresetrequesteventDescCreatedAt.Default.(func() time.Time)
+	relationshipoperationFields := schema.RelationshipOperation{}.Fields()
+	_ = relationshipoperationFields
+	// relationshipoperationDescOperationKey is the schema descriptor for operation_key field.
+	relationshipoperationDescOperationKey := relationshipoperationFields[0].Descriptor()
+	// relationshipoperation.OperationKeyValidator is a validator for the "operation_key" field. It is called by the builders before save.
+	relationshipoperation.OperationKeyValidator = relationshipoperationDescOperationKey.Validators[0].(func(string) error)
+	// relationshipoperationDescProviderID is the schema descriptor for provider_id field.
+	relationshipoperationDescProviderID := relationshipoperationFields[1].Descriptor()
+	// relationshipoperation.ProviderIDValidator is a validator for the "provider_id" field. It is called by the builders before save.
+	relationshipoperation.ProviderIDValidator = relationshipoperationDescProviderID.Validators[0].(func(int) error)
+	// relationshipoperationDescPlatform is the schema descriptor for platform field.
+	relationshipoperationDescPlatform := relationshipoperationFields[2].Descriptor()
+	// relationshipoperation.PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
+	relationshipoperation.PlatformValidator = relationshipoperationDescPlatform.Validators[0].(func(string) error)
+	// relationshipoperationDescBaselineFingerprint is the schema descriptor for baseline_fingerprint field.
+	relationshipoperationDescBaselineFingerprint := relationshipoperationFields[6].Descriptor()
+	// relationshipoperation.BaselineFingerprintValidator is a validator for the "baseline_fingerprint" field. It is called by the builders before save.
+	relationshipoperation.BaselineFingerprintValidator = relationshipoperationDescBaselineFingerprint.Validators[0].(func(string) error)
+	// relationshipoperationDescTargetFingerprint is the schema descriptor for target_fingerprint field.
+	relationshipoperationDescTargetFingerprint := relationshipoperationFields[7].Descriptor()
+	// relationshipoperation.TargetFingerprintValidator is a validator for the "target_fingerprint" field. It is called by the builders before save.
+	relationshipoperation.TargetFingerprintValidator = relationshipoperationDescTargetFingerprint.Validators[0].(func(string) error)
+	// relationshipoperationDescInitiatedByUserID is the schema descriptor for initiated_by_user_id field.
+	relationshipoperationDescInitiatedByUserID := relationshipoperationFields[9].Descriptor()
+	// relationshipoperation.InitiatedByUserIDValidator is a validator for the "initiated_by_user_id" field. It is called by the builders before save.
+	relationshipoperation.InitiatedByUserIDValidator = relationshipoperationDescInitiatedByUserID.Validators[0].(func(int) error)
+	// relationshipoperationDescCreatedAt is the schema descriptor for created_at field.
+	relationshipoperationDescCreatedAt := relationshipoperationFields[12].Descriptor()
+	// relationshipoperation.DefaultCreatedAt holds the default value on creation for the created_at field.
+	relationshipoperation.DefaultCreatedAt = relationshipoperationDescCreatedAt.Default.(func() time.Time)
+	// relationshipoperationDescUpdatedAt is the schema descriptor for updated_at field.
+	relationshipoperationDescUpdatedAt := relationshipoperationFields[13].Descriptor()
+	// relationshipoperation.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	relationshipoperation.DefaultUpdatedAt = relationshipoperationDescUpdatedAt.Default.(func() time.Time)
+	// relationshipoperation.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	relationshipoperation.UpdateDefaultUpdatedAt = relationshipoperationDescUpdatedAt.UpdateDefault.(func() time.Time)
+	relationshipoperationattemptFields := schema.RelationshipOperationAttempt{}.Fields()
+	_ = relationshipoperationattemptFields
+	// relationshipoperationattemptDescOperationID is the schema descriptor for operation_id field.
+	relationshipoperationattemptDescOperationID := relationshipoperationattemptFields[0].Descriptor()
+	// relationshipoperationattempt.OperationIDValidator is a validator for the "operation_id" field. It is called by the builders before save.
+	relationshipoperationattempt.OperationIDValidator = relationshipoperationattemptDescOperationID.Validators[0].(func(int) error)
+	// relationshipoperationattemptDescAttemptNumber is the schema descriptor for attempt_number field.
+	relationshipoperationattemptDescAttemptNumber := relationshipoperationattemptFields[1].Descriptor()
+	// relationshipoperationattempt.AttemptNumberValidator is a validator for the "attempt_number" field. It is called by the builders before save.
+	relationshipoperationattempt.AttemptNumberValidator = relationshipoperationattemptDescAttemptNumber.Validators[0].(func(int) error)
+	// relationshipoperationattemptDescInitiatedByUserID is the schema descriptor for initiated_by_user_id field.
+	relationshipoperationattemptDescInitiatedByUserID := relationshipoperationattemptFields[4].Descriptor()
+	// relationshipoperationattempt.InitiatedByUserIDValidator is a validator for the "initiated_by_user_id" field. It is called by the builders before save.
+	relationshipoperationattempt.InitiatedByUserIDValidator = relationshipoperationattemptDescInitiatedByUserID.Validators[0].(func(int) error)
+	// relationshipoperationattemptDescErrorMessage is the schema descriptor for error_message field.
+	relationshipoperationattemptDescErrorMessage := relationshipoperationattemptFields[6].Descriptor()
+	// relationshipoperationattempt.DefaultErrorMessage holds the default value on creation for the error_message field.
+	relationshipoperationattempt.DefaultErrorMessage = relationshipoperationattemptDescErrorMessage.Default.(string)
+	// relationshipoperationattemptDescCreatedAt is the schema descriptor for created_at field.
+	relationshipoperationattemptDescCreatedAt := relationshipoperationattemptFields[7].Descriptor()
+	// relationshipoperationattempt.DefaultCreatedAt holds the default value on creation for the created_at field.
+	relationshipoperationattempt.DefaultCreatedAt = relationshipoperationattemptDescCreatedAt.Default.(func() time.Time)
+	relationshipoperationmappingFields := schema.RelationshipOperationMapping{}.Fields()
+	_ = relationshipoperationmappingFields
+	// relationshipoperationmappingDescOperationID is the schema descriptor for operation_id field.
+	relationshipoperationmappingDescOperationID := relationshipoperationmappingFields[0].Descriptor()
+	// relationshipoperationmapping.OperationIDValidator is a validator for the "operation_id" field. It is called by the builders before save.
+	relationshipoperationmapping.OperationIDValidator = relationshipoperationmappingDescOperationID.Validators[0].(func(int) error)
+	// relationshipoperationmappingDescMappingID is the schema descriptor for mapping_id field.
+	relationshipoperationmappingDescMappingID := relationshipoperationmappingFields[1].Descriptor()
+	// relationshipoperationmapping.MappingIDValidator is a validator for the "mapping_id" field. It is called by the builders before save.
+	relationshipoperationmapping.MappingIDValidator = relationshipoperationmappingDescMappingID.Validators[0].(func(int) error)
+	// relationshipoperationmappingDescBaselineRevision is the schema descriptor for baseline_revision field.
+	relationshipoperationmappingDescBaselineRevision := relationshipoperationmappingFields[3].Descriptor()
+	// relationshipoperationmapping.BaselineRevisionValidator is a validator for the "baseline_revision" field. It is called by the builders before save.
+	relationshipoperationmapping.BaselineRevisionValidator = relationshipoperationmappingDescBaselineRevision.Validators[0].(func(int64) error)
+	// relationshipoperationmappingDescActive is the schema descriptor for active field.
+	relationshipoperationmappingDescActive := relationshipoperationmappingFields[5].Descriptor()
+	// relationshipoperationmapping.DefaultActive holds the default value on creation for the active field.
+	relationshipoperationmapping.DefaultActive = relationshipoperationmappingDescActive.Default.(bool)
+	// relationshipoperationmappingDescCreatedAt is the schema descriptor for created_at field.
+	relationshipoperationmappingDescCreatedAt := relationshipoperationmappingFields[6].Descriptor()
+	// relationshipoperationmapping.DefaultCreatedAt holds the default value on creation for the created_at field.
+	relationshipoperationmapping.DefaultCreatedAt = relationshipoperationmappingDescCreatedAt.Default.(func() time.Time)
+	relationshipoperationstepFields := schema.RelationshipOperationStep{}.Fields()
+	_ = relationshipoperationstepFields
+	// relationshipoperationstepDescOperationID is the schema descriptor for operation_id field.
+	relationshipoperationstepDescOperationID := relationshipoperationstepFields[0].Descriptor()
+	// relationshipoperationstep.OperationIDValidator is a validator for the "operation_id" field. It is called by the builders before save.
+	relationshipoperationstep.OperationIDValidator = relationshipoperationstepDescOperationID.Validators[0].(func(int) error)
+	// relationshipoperationstepDescStepKey is the schema descriptor for step_key field.
+	relationshipoperationstepDescStepKey := relationshipoperationstepFields[1].Descriptor()
+	// relationshipoperationstep.StepKeyValidator is a validator for the "step_key" field. It is called by the builders before save.
+	relationshipoperationstep.StepKeyValidator = relationshipoperationstepDescStepKey.Validators[0].(func(string) error)
+	// relationshipoperationstepDescAction is the schema descriptor for action field.
+	relationshipoperationstepDescAction := relationshipoperationstepFields[2].Descriptor()
+	// relationshipoperationstep.ActionValidator is a validator for the "action" field. It is called by the builders before save.
+	relationshipoperationstep.ActionValidator = relationshipoperationstepDescAction.Validators[0].(func(string) error)
+	// relationshipoperationstepDescRelationshipType is the schema descriptor for relationship_type field.
+	relationshipoperationstepDescRelationshipType := relationshipoperationstepFields[3].Descriptor()
+	// relationshipoperationstep.RelationshipTypeValidator is a validator for the "relationship_type" field. It is called by the builders before save.
+	relationshipoperationstep.RelationshipTypeValidator = relationshipoperationstepDescRelationshipType.Validators[0].(func(string) error)
+	// relationshipoperationstepDescCreatedAt is the schema descriptor for created_at field.
+	relationshipoperationstepDescCreatedAt := relationshipoperationstepFields[17].Descriptor()
+	// relationshipoperationstep.DefaultCreatedAt holds the default value on creation for the created_at field.
+	relationshipoperationstep.DefaultCreatedAt = relationshipoperationstepDescCreatedAt.Default.(func() time.Time)
+	// relationshipoperationstepDescUpdatedAt is the schema descriptor for updated_at field.
+	relationshipoperationstepDescUpdatedAt := relationshipoperationstepFields[18].Descriptor()
+	// relationshipoperationstep.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	relationshipoperationstep.DefaultUpdatedAt = relationshipoperationstepDescUpdatedAt.Default.(func() time.Time)
+	// relationshipoperationstep.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	relationshipoperationstep.UpdateDefaultUpdatedAt = relationshipoperationstepDescUpdatedAt.UpdateDefault.(func() time.Time)
 	relaygroupmappingFields := schema.RelayGroupMapping{}.Fields()
 	_ = relaygroupmappingFields
 	// relaygroupmappingDescDepartmentExternalID is the schema descriptor for department_external_id field.
@@ -830,20 +942,26 @@ func init() {
 	relaygroupmappingDescOperationState := relaygroupmappingFields[13].Descriptor()
 	// relaygroupmapping.DefaultOperationState holds the default value on creation for the operation_state field.
 	relaygroupmapping.DefaultOperationState = relaygroupmappingDescOperationState.Default.(map[string]map[string]string)
+	// relaygroupmappingDescBaselineRevision is the schema descriptor for baseline_revision field.
+	relaygroupmappingDescBaselineRevision := relaygroupmappingFields[14].Descriptor()
+	// relaygroupmapping.DefaultBaselineRevision holds the default value on creation for the baseline_revision field.
+	relaygroupmapping.DefaultBaselineRevision = relaygroupmappingDescBaselineRevision.Default.(int64)
+	// relaygroupmapping.BaselineRevisionValidator is a validator for the "baseline_revision" field. It is called by the builders before save.
+	relaygroupmapping.BaselineRevisionValidator = relaygroupmappingDescBaselineRevision.Validators[0].(func(int64) error)
 	// relaygroupmappingDescStatus is the schema descriptor for status field.
-	relaygroupmappingDescStatus := relaygroupmappingFields[14].Descriptor()
+	relaygroupmappingDescStatus := relaygroupmappingFields[15].Descriptor()
 	// relaygroupmapping.DefaultStatus holds the default value on creation for the status field.
 	relaygroupmapping.DefaultStatus = relaygroupmappingDescStatus.Default.(string)
 	// relaygroupmappingDescWeeklyCostTarget is the schema descriptor for weekly_cost_target field.
-	relaygroupmappingDescWeeklyCostTarget := relaygroupmappingFields[15].Descriptor()
+	relaygroupmappingDescWeeklyCostTarget := relaygroupmappingFields[16].Descriptor()
 	// relaygroupmapping.DefaultWeeklyCostTarget holds the default value on creation for the weekly_cost_target field.
 	relaygroupmapping.DefaultWeeklyCostTarget = relaygroupmappingDescWeeklyCostTarget.Default.(float64)
 	// relaygroupmappingDescCreatedAt is the schema descriptor for created_at field.
-	relaygroupmappingDescCreatedAt := relaygroupmappingFields[16].Descriptor()
+	relaygroupmappingDescCreatedAt := relaygroupmappingFields[17].Descriptor()
 	// relaygroupmapping.DefaultCreatedAt holds the default value on creation for the created_at field.
 	relaygroupmapping.DefaultCreatedAt = relaygroupmappingDescCreatedAt.Default.(func() time.Time)
 	// relaygroupmappingDescUpdatedAt is the schema descriptor for updated_at field.
-	relaygroupmappingDescUpdatedAt := relaygroupmappingFields[17].Descriptor()
+	relaygroupmappingDescUpdatedAt := relaygroupmappingFields[18].Descriptor()
 	// relaygroupmapping.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	relaygroupmapping.DefaultUpdatedAt = relaygroupmappingDescUpdatedAt.Default.(func() time.Time)
 	// relaygroupmapping.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

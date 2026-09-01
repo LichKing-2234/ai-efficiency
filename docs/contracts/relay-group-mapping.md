@@ -346,6 +346,21 @@ controls are disabled while explicit Confirm remains available for the unchanged
 direction. Manual-intervention state exposes no Confirm path. Neither state
 renders a Restore command or claims the Phase 2 lifecycle model.
 
+The PostgreSQL schema now provides independent `relationship_operations`,
+affected-Mapping ownership, immutable directional steps, and attempt records.
+Each Mapping also has a monotonic `baseline_revision`, defaulting existing and
+new rows to revision 1. Active ownership is partial-unique by Mapping, so the
+storage layer can represent at most one non-terminal owner while retaining
+released historical ownership. Snapshots, fingerprints, directional identity,
+reviewed resources, supported directions, and attempt direction are stored
+independently from legacy `operation_state`.
+
+This is a storage boundary only. Current Confirm/Retry execution does not yet
+create or orchestrate these entities, and Mapping baseline promotion still
+follows the legacy runtime described above. Persist-before-dispatch, lifecycle
+orchestration, Resume/Restore, alignment APIs, migration, and restart/concurrency
+guarantees remain pending their dependent delivery issues.
+
 Destination and source mapping changes commit in one local transaction. A local
 persistence failure rolls back every affected mapping and returns structured
 `failed`, `rolled_back`, and `skipped` results rather than a half-saved transfer.

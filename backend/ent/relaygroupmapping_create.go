@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationmapping"
 	"github.com/ai-efficiency/backend/ent/relaygroupmapping"
 )
 
@@ -152,6 +153,20 @@ func (rgmc *RelayGroupMappingCreate) SetOperationState(m map[string]map[string]s
 	return rgmc
 }
 
+// SetBaselineRevision sets the "baseline_revision" field.
+func (rgmc *RelayGroupMappingCreate) SetBaselineRevision(i int64) *RelayGroupMappingCreate {
+	rgmc.mutation.SetBaselineRevision(i)
+	return rgmc
+}
+
+// SetNillableBaselineRevision sets the "baseline_revision" field if the given value is not nil.
+func (rgmc *RelayGroupMappingCreate) SetNillableBaselineRevision(i *int64) *RelayGroupMappingCreate {
+	if i != nil {
+		rgmc.SetBaselineRevision(*i)
+	}
+	return rgmc
+}
+
 // SetStatus sets the "status" field.
 func (rgmc *RelayGroupMappingCreate) SetStatus(s string) *RelayGroupMappingCreate {
 	rgmc.mutation.SetStatus(s)
@@ -206,6 +221,21 @@ func (rgmc *RelayGroupMappingCreate) SetNillableUpdatedAt(t *time.Time) *RelayGr
 		rgmc.SetUpdatedAt(*t)
 	}
 	return rgmc
+}
+
+// AddRelationshipOperationMappingIDs adds the "relationship_operation_mappings" edge to the RelationshipOperationMapping entity by IDs.
+func (rgmc *RelayGroupMappingCreate) AddRelationshipOperationMappingIDs(ids ...int) *RelayGroupMappingCreate {
+	rgmc.mutation.AddRelationshipOperationMappingIDs(ids...)
+	return rgmc
+}
+
+// AddRelationshipOperationMappings adds the "relationship_operation_mappings" edges to the RelationshipOperationMapping entity.
+func (rgmc *RelayGroupMappingCreate) AddRelationshipOperationMappings(r ...*RelationshipOperationMapping) *RelayGroupMappingCreate {
+	ids := make([]int, len(r))
+	for i := range r {
+		ids[i] = r[i].ID
+	}
+	return rgmc.AddRelationshipOperationMappingIDs(ids...)
 }
 
 // Mutation returns the RelayGroupMappingMutation object of the builder.
@@ -283,6 +313,10 @@ func (rgmc *RelayGroupMappingCreate) defaults() {
 		v := relaygroupmapping.DefaultOperationState
 		rgmc.mutation.SetOperationState(v)
 	}
+	if _, ok := rgmc.mutation.BaselineRevision(); !ok {
+		v := relaygroupmapping.DefaultBaselineRevision
+		rgmc.mutation.SetBaselineRevision(v)
+	}
 	if _, ok := rgmc.mutation.Status(); !ok {
 		v := relaygroupmapping.DefaultStatus
 		rgmc.mutation.SetStatus(v)
@@ -354,6 +388,14 @@ func (rgmc *RelayGroupMappingCreate) check() error {
 	}
 	if _, ok := rgmc.mutation.OperationState(); !ok {
 		return &ValidationError{Name: "operation_state", err: errors.New(`ent: missing required field "RelayGroupMapping.operation_state"`)}
+	}
+	if _, ok := rgmc.mutation.BaselineRevision(); !ok {
+		return &ValidationError{Name: "baseline_revision", err: errors.New(`ent: missing required field "RelayGroupMapping.baseline_revision"`)}
+	}
+	if v, ok := rgmc.mutation.BaselineRevision(); ok {
+		if err := relaygroupmapping.BaselineRevisionValidator(v); err != nil {
+			return &ValidationError{Name: "baseline_revision", err: fmt.Errorf(`ent: validator failed for field "RelayGroupMapping.baseline_revision": %w`, err)}
+		}
 	}
 	if _, ok := rgmc.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "RelayGroupMapping.status"`)}
@@ -449,6 +491,10 @@ func (rgmc *RelayGroupMappingCreate) createSpec() (*RelayGroupMapping, *sqlgraph
 		_spec.SetField(relaygroupmapping.FieldOperationState, field.TypeJSON, value)
 		_node.OperationState = value
 	}
+	if value, ok := rgmc.mutation.BaselineRevision(); ok {
+		_spec.SetField(relaygroupmapping.FieldBaselineRevision, field.TypeInt64, value)
+		_node.BaselineRevision = value
+	}
 	if value, ok := rgmc.mutation.Status(); ok {
 		_spec.SetField(relaygroupmapping.FieldStatus, field.TypeString, value)
 		_node.Status = value
@@ -464,6 +510,22 @@ func (rgmc *RelayGroupMappingCreate) createSpec() (*RelayGroupMapping, *sqlgraph
 	if value, ok := rgmc.mutation.UpdatedAt(); ok {
 		_spec.SetField(relaygroupmapping.FieldUpdatedAt, field.TypeTime, value)
 		_node.UpdatedAt = value
+	}
+	if nodes := rgmc.mutation.RelationshipOperationMappingsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   relaygroupmapping.RelationshipOperationMappingsTable,
+			Columns: []string{relaygroupmapping.RelationshipOperationMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(relationshipoperationmapping.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
 }
