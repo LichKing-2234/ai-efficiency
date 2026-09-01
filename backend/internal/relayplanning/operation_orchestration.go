@@ -320,7 +320,10 @@ func (execution *durableExecution) finish(ctx context.Context, applied bool, res
 		return cause
 	}
 	if applied {
-		if _, err := tx.RelationshipOperationStep.Update().Where(relationshipoperationstep.OperationIDEQ(execution.operationID)).SetLifecycle(relationshipoperationstep.LifecycleReadbackVerified).SetLatestVerifiedEffect(result).Save(ctx); err != nil {
+		if _, err := tx.RelationshipOperationStep.Update().Where(
+			relationshipoperationstep.OperationIDEQ(execution.operationID),
+			relationshipoperationstep.LifecycleNEQ(relationshipoperationstep.LifecycleReadbackVerified),
+		).SetLifecycle(relationshipoperationstep.LifecycleReadbackVerified).SetLatestVerifiedEffect(result).Save(ctx); err != nil {
 			return rollback(err)
 		}
 		if _, err := tx.RelationshipOperationMapping.Update().Where(relationshipoperationmapping.OperationIDEQ(execution.operationID)).SetActive(false).SetReleasedAt(now).Save(ctx); err != nil {

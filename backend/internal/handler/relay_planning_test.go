@@ -21,6 +21,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/directorysource"
 	"github.com/ai-efficiency/backend/ent/directorysyncrun"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationstep"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/relayplanning"
 	"github.com/ai-efficiency/backend/internal/testdb"
@@ -3815,6 +3816,10 @@ func TestRelayPlanningRetriesNewTargetAfterRenameWithoutDuplicatingAgain(t *test
 	mapping := client.RelayGroupMapping.Query().OnlyX(ctx)
 	if len(mapping.GroupIds) != 0 || mapping.Status != "active" || mapping.BaselineRevision != 1 {
 		t.Fatalf("failed creation changed baseline = groups:%v status:%s revision:%d", mapping.GroupIds, mapping.Status, mapping.BaselineRevision)
+	}
+	createdStep := client.RelationshipOperationStep.Query().Where(relationshipoperationstep.StepKeyEQ("target:0:create")).OnlyX(ctx)
+	if createdStep.Lifecycle != relationshipoperationstep.LifecycleReadbackVerified || fmt.Sprint(createdStep.LatestVerifiedEffect["group_id"]) != "100" {
+		t.Fatalf("created Target step = lifecycle:%s effect:%v, want readback-verified Group 100", createdStep.Lifecycle, createdStep.LatestVerifiedEffect)
 	}
 
 	path := fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID)

@@ -1373,7 +1373,9 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 	accountResults := make([]AccountResult, 0)
 	for index := 0; index < plan.GroupCount; index++ {
 		assignment := &plan.Assignments[index]
-		result, createErr := duplicateAndRenameProposedTarget(ctx, duplicator, renamer, plan.TemplateGroupID, fmt.Sprintf("%s-%d", req.OperationKey, index), nil, assignment, nil)
+		result, createErr := duplicateAndRenameProposedTarget(ctx, duplicator, renamer, plan.TemplateGroupID, fmt.Sprintf("%s-%d", req.OperationKey, index), nil, assignment, func(checkpoint GroupResult) error {
+			return durable.verifyStep(ctx, fmt.Sprintf("target:%d:create", checkpoint.Index), map[string]any{"group_id": checkpoint.ID, "name": checkpoint.CurrentName})
+		})
 		if createErr != nil {
 			return nil, fmt.Errorf("create target %d: %w", index, createErr)
 		}
