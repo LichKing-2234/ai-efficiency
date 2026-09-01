@@ -385,6 +385,17 @@ Resume as `applied`; promotion, terminal attempt evidence, and ownership release
 commit in one local transaction. Complete baseline readback closes Restore as
 `restored` while leaving every Mapping baseline and revision unchanged.
 
+Affected Mapping ownership is acquired in ascending Mapping ID order. Concurrent
+Operations therefore either own their complete affected set or fail before a
+Relay mutation; unrelated Mappings remain writable. Promotion updates every
+owned Mapping in one PostgreSQL transaction. On restart, if every owned Mapping
+is still at its captured revision, recovery performs the normal promotion. If
+every owned Mapping is exactly at captured revision plus one and its persisted
+relationships exactly equal the reviewed Target, recovery closes only the
+missing terminal attempt and ownership evidence. Mixed revisions, later
+revisions, or mismatched persisted relationships fail closed instead of applying
+a second promotion or accepting ambiguous state.
+
 Mapping list reads now expose Alignment independently as `aligned`, `drifted`, or
 `operating`, with safe categorized differences and an active Operation summary.
 They remain read-only. The Operation read surface exposes only lifecycle,
@@ -420,7 +431,9 @@ owner with a safe category and no supported recovery direction. Migration never
 changes the Mapping's legacy `operation_state`, never copies raw provider errors
 or credentials into its report, and performs no Relay mutation. New recovery
 attempts use the durable model rather than merging into legacy JSON. Deterministic
-cross-restart delivery tests remain owned by the final dependent issue.
+cross-restart delivery tests cover every managed write boundary, dropped-response
+readback, direction-isolated attempts, stable cross-Mapping ownership, and atomic
+multi-Mapping promotion.
 
 Destination and source mapping changes commit in one local transaction. A local
 persistence failure rolls back every affected mapping and returns structured

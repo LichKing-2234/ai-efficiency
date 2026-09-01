@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -479,6 +480,13 @@ func (s *Service) promoteRecoveryTarget(ctx context.Context, operation *ent.Rela
 		groupIDs[index] = plan.Assignments[index].TargetGroupID
 	}
 	state := map[string]map[string]string{"operation": {"key": operation.OperationKey, "status": "succeeded"}}
+	alreadyPromoted, err := s.recoveryTargetAlreadyPromoted(ctx, owners, &plan, groupIDs)
+	if err != nil {
+		return err
+	}
+	if alreadyPromoted {
+		return s.finishRecovery(ctx, operation.ID, attemptID, relationshipoperation.LifecycleApplied, RecoveryResume)
+	}
 	tx, err := s.client.Tx(ctx)
 	if err != nil {
 		return err
@@ -536,6 +544,76 @@ func (s *Service) promoteRecoveryTarget(ctx context.Context, operation *ent.Rela
 		return rollback(err)
 	}
 	return tx.Commit()
+}
+
+func (s *Service) recoveryTargetAlreadyPromoted(ctx context.Context, owners []*ent.RelationshipOperationMapping, plan *Plan, groupIDs []int64) (bool, error) {
+	current := make(map[int]Mapping, len(owners))
+	baselineCount, promotedCount := 0, 0
+	for _, owner := range owners {
+		row, err := s.client.RelayGroupMapping.Get(ctx, owner.MappingID)
+		if err != nil {
+			return false, err
+		}
+		current[owner.MappingID] = mappingFromEnt(row)
+		switch row.BaselineRevision {
+		case owner.BaselineRevision:
+			baselineCount++
+		case owner.BaselineRevision + 1:
+			promotedCount++
+		default:
+			return false, fmt.Errorf("Mapping %d baseline revision changed outside the Operation", owner.MappingID)
+		}
+	}
+	if baselineCount == len(owners) {
+		return false, nil
+	}
+	if promotedCount != len(owners) {
+		return false, fmt.Errorf("Relationship Operation baseline promotion is incomplete")
+	}
+	expectedAssignments := map[string]int64{}
+	expectedSources := map[string]int64{}
+	for _, assignment := range plan.Assignments {
+		if assignment.Index < 0 || assignment.Index >= len(groupIDs) || groupIDs[assignment.Index] <= 0 {
+			continue
+		}
+		for _, userID := range assignment.UserIDs {
+			key := strconv.Itoa(userID)
+			expectedAssignments[key] = groupIDs[assignment.Index]
+			if candidate := candidateByUserID(plan.Candidates, userID); candidate != nil && candidate.SourceGroupID > 0 {
+				expectedSources[key] = candidate.SourceGroupID
+			}
+		}
+	}
+	targetUsers := map[string]struct{}{}
+	for userID := range expectedAssignments {
+		targetUsers[userID] = struct{}{}
+	}
+	for _, owner := range owners {
+		mapping := current[owner.MappingID]
+		if owner.MappingID == plan.MappingID {
+			if !reflect.DeepEqual(mapping.GroupIDs, groupIDs) || !reflect.DeepEqual(mapping.MemberAssignments, expectedAssignments) || !reflect.DeepEqual(mapping.MemberSources, expectedSources) {
+				return false, fmt.Errorf("promoted primary Mapping does not match the reviewed Target")
+			}
+			if plan.AccountsReviewed && !reflect.DeepEqual(mapping.DesiredAccounts, desiredAccountsForGroupIDs(plan.Assignments, groupIDs)) {
+				return false, fmt.Errorf("promoted Account baseline does not match the reviewed Target")
+			}
+			continue
+		}
+		var baseline Mapping
+		if err := decodeJSONMap(owner.BaselineSnapshot, &baseline); err != nil {
+			return false, err
+		}
+		expected := cloneInt64Map(baseline.MemberAssignments)
+		expectedMemberSources := cloneInt64Map(baseline.MemberSources)
+		for userID := range targetUsers {
+			delete(expected, userID)
+			delete(expectedMemberSources, userID)
+		}
+		if !reflect.DeepEqual(mapping.MemberAssignments, expected) || !reflect.DeepEqual(mapping.MemberSources, expectedMemberSources) {
+			return false, fmt.Errorf("promoted affected Mapping %d does not match the reviewed Target", owner.MappingID)
+		}
+	}
+	return true, nil
 }
 
 func (s *Service) finishRecovery(ctx context.Context, operationID, attemptID int, lifecycle relationshipoperation.Lifecycle, direction RecoveryDirection) error {

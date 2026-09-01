@@ -15,3 +15,4 @@ removed files are not redirected or guaranteed.
 | [Retired Session and Update Directions](./retired-session-and-update-directions.md) | Superseded Platform Session, local proxy, installer, and update directions |
 | [Team Usage Performance Experiments](./team-usage-experiments.md) | Experiment sequence and measurements that led to the current loading contracts |
 | [Attribution V2 Cutover and Legacy Cleanup](./attribution-v2-cutover.md) | Production cutover, qualification, conservation, and legacy-removal evidence |
+| [Relay Planning Phase 2 Delivery Verification](./2026-09-01-relay-phase2-delivery-verification.md) | Durable recovery interruption, concurrency, migration, and release-gate evidence |

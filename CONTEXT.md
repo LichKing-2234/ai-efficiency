@@ -19,3 +19,7 @@ _Avoid_: Candidate pool, suggested members
 **Unavailable Replan Target**:
 A target Group ID saved by the Replan Baseline that is absent from the current Relay Group facts. Replan keeps the saved Target and its roster visible as non-executable drift until a later fresh Preview observes the Target again.
 _Avoid_: Deleted target, replacement target
+
+**Relationship Operation**:
+A durable, admin-reviewed Relay Planning change with immutable directional steps, affected-Mapping ownership, independent execution attempts, and verified terminal readback. Resume converges to the reviewed Target and promotes the Replan Baseline; Restore converges to the captured baseline without changing it.
+_Avoid_: Retry state, Relay transaction
