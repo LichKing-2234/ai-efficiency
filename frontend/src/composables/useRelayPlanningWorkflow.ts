@@ -57,6 +57,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
   const plan = ref<RelayPlanningPlan | null>(null)
   const lastExecution = ref<RelayPlanningExecution | null>(null)
   const activeMappingID = ref<number | null>(null)
+	const reviewLocked = ref(false)
   const activeMappingMemberAssignments = ref<Record<string, number>>({})
   const activeMappingMemberSources = ref<Record<string, number>>({})
   const selectedUserIDs = ref<Set<number>>(new Set())
@@ -92,7 +93,9 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
   }
 
   function markPlanEdited() {
+		if (reviewLocked.value) return false
     invalidatePlanRequests()
+		return true
   }
 
   const displayedEligibleMemberCount = computed(() => plan.value?.candidates.filter((candidate) => (
@@ -262,6 +265,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
       if (!isCurrentPlanRequest(generation)) return
       applyPlan(nextPlan)
       activeMappingID.value = null
+		reviewLocked.value = false
       activeMappingMemberAssignments.value = {}
       activeMappingMemberSources.value = {}
       selectedUnmanagedRelayIDs.value = new Set()
@@ -296,6 +300,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
       if (!isCurrentPlanRequest(generation)) return null
       applyPlan(nextPlan)
       activeMappingID.value = mapping.id
+		reviewLocked.value = mapping.status === 'needs_retry'
       activeMappingMemberAssignments.value = { ...(mapping.member_assignments ?? {}) }
       activeMappingMemberSources.value = { ...(mapping.member_sources ?? {}) }
       selectedUnmanagedRelayIDs.value = new Set()
@@ -321,7 +326,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
   function setTargetName(targetIndex: number, name: string) {
     const assignment = plan.value?.assignments.find((item) => item.index === targetIndex)
     if (!assignment || assignment.target_group_name === name) return
-    markPlanEdited()
+    if (!markPlanEdited()) return
     assignment.target_group_name = name
   }
 
@@ -362,7 +367,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
 
   function addSuggestedGroup() {
 		if (!plan.value) return
-    markPlanEdited()
+    if (!markPlanEdited()) return
     const index = plan.value.assignments.length
     const accounts = suggestedGroupAccountDefaults.value.map((account) => ({ ...account }))
     plan.value.assignments.push({
@@ -384,7 +389,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
 		if (!plan.value || plan.value.assignments.length <= 1) return
 		const target = plan.value.assignments.find((assignment) => assignment.index === targetIndex)
 		if (!target || (activeMappingID.value && target.target_group_id)) return
-    markPlanEdited()
+    if (!markPlanEdited()) return
     clearReviewedSearchState()
     options.onPlanApplied?.()
     plan.value.assignments = plan.value.assignments
@@ -402,7 +407,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
   function moveCandidate(userID: number, targetIndex: number | null) {
     if (!plan.value) return
     if (candidateAssignmentIndex(userID) === targetIndex) return
-    markPlanEdited()
+    if (!markPlanEdited()) return
     for (const assignment of plan.value.assignments) {
       assignment.user_ids = (assignment.user_ids ?? []).filter((id) => id !== userID)
     }
@@ -452,18 +457,18 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
 		if (removedUserIDs.value.has(userID)) {
 			if (lockedRemovalSourceUserIDs.value.has(userID)) return
 			if (removalSources.value[key] === groupID) return
-			markPlanEdited()
+			if (!markPlanEdited()) return
 			removalSources.value = { ...removalSources.value, [key]: groupID }
 			return
 		}
 		if (Number(memberSources.value[key] || 0) === groupID) return
-    markPlanEdited()
+    if (!markPlanEdited()) return
 		memberSources.value = { ...memberSources.value, [key]: groupID }
   }
 
   function toggleUnmanagedRelayUser(relayUserID: number, checked: boolean) {
     if (selectedUnmanagedRelayIDs.value.has(relayUserID) === checked) return
-    markPlanEdited()
+    if (!markPlanEdited()) return
     const next = new Set(selectedUnmanagedRelayIDs.value)
     if (checked) next.add(relayUserID)
     else next.delete(relayUserID)
@@ -474,7 +479,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     const assignment = plan.value?.assignments.find((item) => item.index === targetIndex)
     if (!assignment?.target_group_id || assignment.target_unavailable) return
     if (Boolean(assignment.rename_selected) === checked) return
-    markPlanEdited()
+    if (!markPlanEdited()) return
     assignment.rename_selected = checked
     assignment.target_group_name = checked
       ? assignment.suggested_target_group_name || assignment.current_target_group_name || ''
@@ -488,7 +493,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
       && (!assignment.rename_selected || assignment.target_group_name !== (assignment.suggested_target_group_name || assignment.current_target_group_name || ''))
     ))
     if (assignments.length === 0) return
-    markPlanEdited()
+    if (!markPlanEdited()) return
     for (const assignment of assignments) {
       assignment.rename_selected = true
       assignment.target_group_name = assignment.suggested_target_group_name || assignment.current_target_group_name || ''
@@ -505,7 +510,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
   function addPreviewAccount(targetIndex: number, account: RelayPlanningAccount) {
     const assignment = plan.value?.assignments.find((item) => item.index === targetIndex)
     if (!assignment || assignment.accounts.some((item) => item.id === account.id)) return
-    markPlanEdited()
+    if (!markPlanEdited()) return
     assignment.accounts.push({ ...account, priority: assignment.accounts.length + 1 })
     syncPreviewAccountPriorities(targetIndex)
     const search = previewAccountSearch(targetIndex)
@@ -518,7 +523,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     const index = assignment.accounts.findIndex((account) => account.id === accountID)
     const nextIndex = index + offset
     if (index < 0 || nextIndex < 0 || nextIndex >= assignment.accounts.length) return
-    markPlanEdited()
+    if (!markPlanEdited()) return
     ;[assignment.accounts[index], assignment.accounts[nextIndex]] = [assignment.accounts[nextIndex], assignment.accounts[index]]
     syncPreviewAccountPriorities(targetIndex)
   }
@@ -526,7 +531,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
   function removePreviewAccount(targetIndex: number, accountID: number) {
     const assignment = plan.value?.assignments.find((item) => item.index === targetIndex)
     if (!assignment || !assignment.accounts.some((account) => account.id === accountID)) return
-    markPlanEdited()
+    if (!markPlanEdited()) return
     assignment.accounts = assignment.accounts.filter((account) => account.id !== accountID)
     syncPreviewAccountPriorities(targetIndex)
   }
@@ -534,7 +539,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
   function setMemberAction(userID: number, mode: RelayPlanningMemberAction['mode']) {
     const current = memberActions.value[String(userID)]
     if (!current || current.mode === mode) return
-    markPlanEdited()
+    if (!markPlanEdited()) return
     memberActions.value = {
       ...memberActions.value,
       [String(userID)]: { ...current, mode },
@@ -542,7 +547,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
   }
 
   async function addSearchedUser(targetIndex: number, item: RelayPlanningUserSearchItem) {
-    if (!plan.value || !item.selectable) return
+		if (!plan.value || !item.selectable || reviewLocked.value) return
     const assignments = assignmentPayload()
     for (const assignment of assignments) {
       assignment.user_ids = assignment.user_ids.filter((userID) => userID !== item.user_id)
@@ -799,6 +804,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     plan.value = null
     lastExecution.value = null
     activeMappingID.value = null
+		reviewLocked.value = false
     activeMappingMemberAssignments.value = {}
     activeMappingMemberSources.value = {}
     selectedUserIDs.value = new Set()
@@ -832,6 +838,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     plan,
     lastExecution,
     activeMappingID,
+		reviewLocked,
     selectedUserIDs,
     selectedUnmanagedRelayIDs,
     removedUserIDs,

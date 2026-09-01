@@ -945,4 +945,27 @@ describe('useRelayPlanningWorkflow', () => {
     expect(workflow.managedAssignmentsByUser.value).not.toHaveProperty('2')
     workflow.dispose()
   })
+
+	it('locks every reviewed edit while an exact legacy retry is open', async () => {
+		const options = workflowOptions()
+		options.previewReplan.mockResolvedValue(reviewedPlan({ mapping_id: 9, assignments: [{ ...reviewedPlan().assignments[0], target_group_id: 101, user_ids: [1] }] }))
+		const workflow = useRelayPlanningWorkflow(options)
+		await workflow.openReplan(relayMapping({
+			status: 'needs_retry',
+			member_assignments: { '1': 101 },
+			operation_state: { operation: { status: 'needs_retry', intent_hash: 'v1:reviewed' } },
+		}))
+		const before = JSON.parse(JSON.stringify(workflow.plan.value))
+		workflow.setTargetName(0, 'Edited Target')
+		workflow.addSuggestedGroup()
+		workflow.moveCandidate(1, null)
+		workflow.toggleTargetRename(0, true)
+		workflow.addPreviewAccount(0, { id: 99, name: 'Account Locked', platform: 'openai', type: 'oauth', status: 'active', schedulable: true })
+		await workflow.addSearchedUser(0, { user_id: 2, relay_user_id: 102, username: 'bob', email: 'bob@example.org', selectable: true })
+
+		expect(workflow.reviewLocked.value).toBe(true)
+		expect(workflow.plan.value).toEqual(before)
+		expect(options.previewReplan).toHaveBeenCalledTimes(1)
+		workflow.dispose()
+	})
 })

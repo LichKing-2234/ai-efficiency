@@ -101,6 +101,26 @@ export interface RelayPlanningMapping {
   updated_at: string
 }
 
+export type RelayPlanningContainment =
+	| { mode: 'none' }
+	| { mode: 'resume_exact'; operation_key?: string }
+	| { mode: 'manual_intervention'; reason: 'incomplete_identity' }
+
+function operationEntryNeedsRetry(entry: Record<string, string>): boolean {
+	return Boolean(entry.error || entry.status === 'failed' || entry.subscription === 'failed' || entry.source_removal === 'failed' || entry.api_keys?.includes(':failed:'))
+}
+
+export function relayPlanningContainment(mapping: RelayPlanningMapping): RelayPlanningContainment {
+	if (mapping.status !== 'needs_retry') return { mode: 'none' }
+	const state = mapping.operation_state ?? {}
+	const operation = state.operation ?? {}
+	const retryMembers = Object.entries(state).filter(([key, entry]) => key.startsWith('member:') && operationEntryNeedsRetry(entry))
+	if (!operation.intent_hash || retryMembers.some(([, entry]) => !entry.step_identity)) {
+		return { mode: 'manual_intervention', reason: 'incomplete_identity' }
+	}
+	return { mode: 'resume_exact', ...(operation.key ? { operation_key: operation.key } : {}) }
+}
+
 export interface RelayPlanningMappingRenewalPreview {
 	mapping_id: number
 	provider_id: number
