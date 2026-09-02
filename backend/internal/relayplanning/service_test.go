@@ -77,9 +77,9 @@ func TestAssignCandidateDispositionsDistinguishesRetainedAndReviewedChanges(t *t
 		OperationState:    map[string]map[string]string{"member:6": {"status": "failed"}},
 	}
 	candidates := []Candidate{
-		{UserID: 1, CanAdd: true, CurrentGroupIDs: []int64{101}, SourceGroupID: 20},
+		{UserID: 1, CanAdd: true, CurrentGroupIDs: []int64{101}, SourceGroupID: 20, Warnings: []string{"user is not a member of the selected source group", "no migratable AE-managed API key"}},
 		{UserID: 2, CanAdd: true},
-		{UserID: 3, CanAdd: true, SourceGroupID: 20},
+		{UserID: 3, CanAdd: true, SourceGroupID: 20, Warnings: []string{"no migratable AE-managed API key"}},
 		{UserID: 4, CanAdd: true},
 		{UserID: 5},
 		{UserID: 6, CanAdd: true, CurrentGroupIDs: []int64{101}, SourceGroupID: 20},
@@ -97,6 +97,9 @@ func TestAssignCandidateDispositionsDistinguishesRetainedAndReviewedChanges(t *t
 	}
 	if !candidates[0].CanRetain || candidates[5].CanRetain || candidates[6].CanRetain {
 		t.Fatalf("can_retain facts = %v/%v/%v, want aligned only", candidates[0].CanRetain, candidates[5].CanRetain, candidates[6].CanRetain)
+	}
+	if len(candidates[0].Warnings) != 0 || !slices.Contains(candidates[2].Warnings, "no migratable AE-managed API key") {
+		t.Fatalf("disposition warnings = retained:%v migration:%v, want retained migration warnings removed and migration warning preserved", candidates[0].Warnings, candidates[2].Warnings)
 	}
 }
 

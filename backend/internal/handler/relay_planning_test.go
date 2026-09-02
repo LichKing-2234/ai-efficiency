@@ -3929,24 +3929,26 @@ func TestRelayPlanningReplanIncludesSavedExternalMember(t *testing.T) {
 	source, run := createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
 	alice := createRelayPlanningDirectoryUser(t, ctx, client, source, run, "dept-alpha", "alice", "alice@example.com", 42)
 	bob := client.User.Create().SetUsername("bob").SetEmail("bob@example.org").SetAuthSource("ldap").SetRelayUserID(43).SaveX(ctx)
+	frank := client.User.Create().SetUsername("frank").SetEmail("frank@example.org").SetAuthSource("ldap").SetRelayUserID(46).SaveX(ctx)
 	carol := createRelayPlanningDirectoryUser(t, ctx, client, source, run, "dept-alpha", "carol", "carol@example.net", 44)
 	dana := createRelayPlanningDirectoryUser(t, ctx, client, source, run, "dept-alpha", "dana", "dana@example.edu", 45)
 	erin := createRelayPlanningDirectoryUser(t, ctx, client, source, run, "dept-alpha", "erin", "erin@example.com", 0)
 	mapping := client.RelayGroupMapping.Create().
 		SetProviderID(providerConfig.ID).SetDepartmentExternalID("dept-alpha").SetDepartmentName("Department Alpha").SetPlatform("openai").
 		SetTemplateGroupID(10).SetTemplateGroupName("Group Alpha").SetSourceGroupID(20).SetSourceGroupName("Group Beta").SetGroupIds([]int64{101}).
-		SetMemberAssignments(map[string]int64{fmt.Sprint(bob.ID): 101}).SetMemberSources(map[string]int64{fmt.Sprint(bob.ID): 30}).SetWeeklyCostTarget(2500).SaveX(ctx)
+		SetMemberAssignments(map[string]int64{fmt.Sprint(bob.ID): 101, fmt.Sprint(frank.ID): 101}).SetMemberSources(map[string]int64{fmt.Sprint(bob.ID): 30, fmt.Sprint(frank.ID): 20}).SetWeeklyCostTarget(2500).SaveX(ctx)
 	provider := &relayPlanningSearchProvider{
 		users: map[int64]*relay.User{
 			42: {ID: 42, Username: "alice", Email: alice.Email},
 			43: {ID: 43, Username: "bob", Email: bob.Email},
+			46: {ID: 46, Username: "frank", Email: frank.Email},
 			44: {ID: 44, Username: "carol", Email: carol.Email},
 			45: {ID: 45, Username: "dana", Email: dana.Email},
 		},
 		groups:            []relay.Group{{ID: 10, Name: "Group Alpha", Platform: "openai"}, {ID: 20, Name: "Group Beta", Platform: "openai"}, {ID: 30, Name: "Group Gamma", Platform: "openai"}, {ID: 101, Name: "Group Target", Platform: "openai"}},
-		subscriptions:     map[int64][]relay.UserSubscription{42: {{UserID: 42, GroupID: 20, Status: "active"}}, 43: {{UserID: 43, GroupID: 30, Status: "active"}, {UserID: 43, GroupID: 101, Status: "active"}}, 44: {}, 45: {{UserID: 45, GroupID: 20, Status: "active"}}},
-		keys:              map[int64][]relay.APIKey{42: {}, 43: {}, 44: {}, 45: {}},
-		relationshipPages: [][]int64{{42, 43}, {44, 45}},
+		subscriptions:     map[int64][]relay.UserSubscription{42: {{UserID: 42, GroupID: 20, Status: "active"}}, 43: {{UserID: 43, GroupID: 30, Status: "active"}, {UserID: 43, GroupID: 101, Status: "active"}}, 44: {}, 45: {{UserID: 45, GroupID: 20, Status: "active"}}, 46: {{UserID: 46, GroupID: 20, Status: "active"}, {UserID: 46, GroupID: 101, Status: "active"}}},
+		keys:              map[int64][]relay.APIKey{42: {}, 43: {}, 44: {}, 45: {}, 46: {}},
+		relationshipPages: [][]int64{{42, 43, 46}, {44, 45}},
 	}
 	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
 	router := gin.New()
@@ -3979,11 +3981,14 @@ func TestRelayPlanningReplanIncludesSavedExternalMember(t *testing.T) {
 	if candidate, ok := candidates[alice.ID]; !ok || candidate.Selected || candidate.Disposition != "available" {
 		t.Fatalf("additional department candidate = %+v, want present and unselected among %+v", candidate, plan.Candidates)
 	}
-	if candidate, ok := candidates[bob.ID]; !ok || !candidate.Selected || candidate.SourceGroupID != 30 || candidate.Disposition != "retained" {
-		t.Fatalf("saved external member = %+v, want selected with Source Group 30 among candidates %+v", candidate, plan.Candidates)
+	if candidate, ok := candidates[bob.ID]; !ok || !candidate.Selected || candidate.SourceGroupID != 30 || candidate.Disposition != "retained" || slices.Contains(candidate.Warnings, "user is not a member of the selected source group") {
+		t.Fatalf("saved external member = %+v, want retained without Source warning among candidates %+v", candidate, plan.Candidates)
 	}
-	if len(plan.Assignments) != 1 || plan.Assignments[0].TargetGroupID != 101 || len(plan.Assignments[0].UserIDs) != 1 || plan.Assignments[0].UserIDs[0] != bob.ID {
-		t.Fatalf("assignments = %+v, want only saved external user %d in Target Group 101", plan.Assignments, bob.ID)
+	if candidate, ok := candidates[frank.ID]; !ok || !candidate.Selected || candidate.SourceGroupID != 20 || candidate.Disposition != "retained" || slices.Contains(candidate.Warnings, "no migratable AE-managed API key") {
+		t.Fatalf("saved Source member = %+v, want retained without API Key migration warning among candidates %+v", candidate, plan.Candidates)
+	}
+	if len(plan.Assignments) != 1 || plan.Assignments[0].TargetGroupID != 101 || !reflect.DeepEqual(plan.Assignments[0].UserIDs, []int{bob.ID, frank.ID}) {
+		t.Fatalf("assignments = %+v, want saved external users %d/%d in Target Group 101", plan.Assignments, bob.ID, frank.ID)
 	}
 	if len(plan.TargetSummaries) != 1 || len(plan.TargetSummaries[0].Members) > 0 || len(plan.TargetSummaries[0].Subscriptions) > 0 || len(plan.TargetSummaries[0].APIKeys) > 0 {
 		t.Fatalf("unchanged external member produced effects: %+v", plan.TargetSummaries)
@@ -4000,11 +4005,11 @@ func TestRelayPlanningReplanIncludesSavedExternalMember(t *testing.T) {
 	if provider.userReads.Load() != 0 || provider.subscriptionReads.Load() != 0 || provider.directoryReads.Load() != 0 {
 		t.Fatalf("legacy Replan reads = users:%d subscriptions:%d directory:%d, want 0/0/0", provider.userReads.Load(), provider.subscriptionReads.Load(), provider.directoryReads.Load())
 	}
-	if provider.keyReads.Load() != 4 {
+	if provider.keyReads.Load() != 5 {
 		t.Fatalf("API Key reads = %d, want once for each Relay-mapped relevant user", provider.keyReads.Load())
 	}
 	operationsBefore := client.RelationshipOperation.Query().CountX(ctx)
-	executePayload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[%d]}],"expected_relationship_fingerprint":%q,"operation_key":"unchanged-external-member-1"}`, bob.ID, plan.RelationshipFingerprint)
+	executePayload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[%d,%d]}],"expected_relationship_fingerprint":%q,"operation_key":"unchanged-external-member-1"}`, bob.ID, frank.ID, plan.RelationshipFingerprint)
 	request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/relay-planning/mappings/%d/replan/execute", mapping.ID), strings.NewReader(executePayload))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
@@ -4025,14 +4030,19 @@ func TestRelayPlanningReplanIncludesSavedExternalMember(t *testing.T) {
 	if operationsAfter := client.RelationshipOperation.Query().CountX(ctx); operationsAfter != operationsBefore {
 		t.Fatalf("zero-change Replan durable operation count = %d, want unchanged %d", operationsAfter, operationsBefore)
 	}
-	reviewed := replan(fmt.Sprintf(`{"assignments":[{"index":0,"target_group_id":101,"user_ids":[%d,%d,%d]}],"member_sources":{"%d":0}}`, bob.ID, carol.ID, dana.ID, carol.ID))
+	reviewed := replan(fmt.Sprintf(`{"assignments":[{"index":0,"target_group_id":101,"user_ids":[%d,%d,%d,%d]}],"member_sources":{"%d":0}}`, bob.ID, frank.ID, carol.ID, dana.ID, carol.ID))
 	dispositions := make(map[int]string, len(reviewed.Candidates))
 	for _, candidate := range reviewed.Candidates {
 		dispositions[candidate.UserID] = candidate.Disposition
 	}
-	wantDispositions := map[int]string{bob.ID: "retained", carol.ID: "target_only", dana.ID: "migration", alice.ID: "available", erin.ID: "excluded"}
+	wantDispositions := map[int]string{bob.ID: "retained", frank.ID: "retained", carol.ID: "target_only", dana.ID: "migration", alice.ID: "available", erin.ID: "excluded"}
 	if !reflect.DeepEqual(dispositions, wantDispositions) {
 		t.Fatalf("reviewed API dispositions = %v, want %v", dispositions, wantDispositions)
+	}
+	for _, candidate := range reviewed.Candidates {
+		if candidate.UserID == dana.ID && !slices.Contains(candidate.Warnings, "no migratable AE-managed API key") {
+			t.Fatalf("migration candidate warnings = %v, want missing migratable API Key warning", candidate.Warnings)
+		}
 	}
 }
 
