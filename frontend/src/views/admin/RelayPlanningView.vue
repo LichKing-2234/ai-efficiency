@@ -23,8 +23,9 @@ import {
   searchRelayPlanningAccounts,
 	searchRelayPlanningUsers,
 	relayPlanningContainment,
-  type RelayPlanningAccount,
-  type RelayPlanningAccountIntent,
+	type RelayPlanningAccount,
+	type RelayPlanningAccountIntent,
+	type RelayPlanningCandidate,
 	type RelayPlanningRequest,
 	type RelayPlanningMapping,
 	type RelayPlanningRecoveryPreview,
@@ -290,6 +291,25 @@ function translateWarning(warning: string): string {
   const targetMatch = warning.match(/^(.*) exceeds the planning target$/)
   if (targetMatch) return t('relayPlanning.warningExceedsTarget', { group: targetMatch[1] })
   return warning
+}
+
+function candidateDispositionText(candidate: unknown): string {
+	const disposition = (candidate as RelayPlanningCandidate).disposition
+	const keys = {
+		retained: 'relayPlanning.dispositionRetained',
+		target_only: 'relayPlanning.dispositionTargetOnly',
+		migration: 'relayPlanning.dispositionMigration',
+		available: 'relayPlanning.dispositionAvailable',
+		excluded: 'relayPlanning.excluded',
+	} as const
+	return t(keys[disposition])
+}
+
+function candidateDispositionTag(candidate: unknown): 'success' | 'warning' | 'info' {
+	const disposition = (candidate as RelayPlanningCandidate).disposition
+	if (disposition === 'retained') return 'success'
+	if (disposition === 'target_only' || disposition === 'migration') return 'warning'
+	return 'info'
 }
 
 function translateMappingStatus(status: string): string {
@@ -985,9 +1005,9 @@ onBeforeUnmount(() => {
                 <el-checkbox :model-value="selectedUserIDs.has(candidate.user_id)" :disabled="!candidate.can_add" @change="(value) => toggleCandidate(candidate.user_id, value === true)" />
               </div>
               <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs"><div><dt class="text-slate-500">{{ t('relayPlanning.cost30d') }}</dt><dd class="font-medium">{{ candidate.usage_known === false ? t('relayPlanning.unknown') : `$${candidate.range_cost.toFixed(2)}` }}</dd></div><div><dt class="text-slate-500">{{ t('relayPlanning.tokens30d') }}</dt><dd class="font-medium">{{ candidate.usage_known === false ? t('relayPlanning.unknown') : candidate.range_tokens }}</dd></div><div><dt class="text-slate-500">{{ t('relayPlanning.globalRank') }}</dt><dd class="font-medium">{{ candidate.global_token_rank || '-' }}</dd></div><div><dt class="text-slate-500">{{ t('relayPlanning.keys') }}</dt><dd class="font-medium">{{ candidate.migratable_key_count }}</dd></div></dl>
-              <div v-if="selectedUserIDs.has(candidate.user_id)" class="mt-3"><el-select :model-value="memberSources[String(candidate.user_id)] ?? 0" class="w-full" @change="(value) => setMemberSource(candidate.user_id, Number(value || 0))"><el-option :label="t('relayPlanning.targetOnly')" :value="0" /><el-option v-for="item in groups" :key="item.group_id" :label="`${item.group_name} (#${item.group_id})`" :value="Number(item.group_id)" /></el-select></div>
+              <div v-if="selectedUserIDs.has(candidate.user_id)" class="mt-3"><span v-if="candidate.disposition === 'retained'" :data-testid="`candidate-source-${candidate.user_id}`" class="text-xs text-slate-600">{{ candidateDispositionText(candidate) }}</span><el-select v-else :data-testid="`candidate-source-${candidate.user_id}`" :model-value="memberSources[String(candidate.user_id)] ?? 0" class="w-full" @change="(value) => setMemberSource(candidate.user_id, Number(value || 0))"><el-option :label="t('relayPlanning.targetOnly')" :value="0" /><el-option v-for="item in groups" :key="item.group_id" :label="`${item.group_name} (#${item.group_id})`" :value="Number(item.group_id)" /></el-select></div>
               <div class="mt-3"><el-select v-if="candidate.can_add" :data-testid="`candidate-target-${candidate.user_id}`" :model-value="candidateAssignmentIndex(candidate.user_id)" class="w-full" clearable :placeholder="t('relayPlanning.unassigned')" @change="(value) => moveCandidate(candidate.user_id, value === null || value === undefined || value === '' ? null : Number(value))"><el-option v-for="assignment in plan.assignments" :key="assignment.index" :label="assignment.target_group_name || `${t('relayPlanning.group')} ${assignment.index + 1}`" :value="assignment.index" /></el-select><span v-else class="text-xs text-slate-400">{{ t('relayPlanning.notAvailable') }}</span></div>
-              <div class="mt-2"><el-tag :type="candidate.eligible ? 'success' : candidate.can_add ? 'warning' : 'info'">{{ candidate.eligible ? t('relayPlanning.eligible') : candidate.can_add ? t('relayPlanning.addOnly') : t('relayPlanning.excluded') }}</el-tag><div v-if="candidate.warnings?.length" class="mt-1 text-xs text-amber-700">{{ candidate.warnings.map(translateWarning).join('; ') }}</div></div>
+              <div class="mt-2"><el-tag :type="candidateDispositionTag(candidate)">{{ candidateDispositionText(candidate) }}</el-tag><div v-if="candidate.warnings?.length" class="mt-1 text-xs text-amber-700">{{ candidate.warnings.map(translateWarning).join('; ') }}</div></div>
             </article>
           </div>
           <el-table v-else data-testid="candidate-table-layout" :data="plan.candidates" stripe>
@@ -999,8 +1019,8 @@ onBeforeUnmount(() => {
             <el-table-column prop="global_token_rank" :label="t('relayPlanning.globalRank')" width="110" />
             <el-table-column prop="migratable_key_count" :label="t('relayPlanning.keys')" width="80" />
             <el-table-column :label="t('relayPlanning.target')" min-width="170"><template #default="scope"><el-select v-if="scope.row.can_add" :data-testid="`candidate-target-${scope.row.user_id}`" :model-value="candidateAssignmentIndex(scope.row.user_id)" clearable :placeholder="t('relayPlanning.unassigned')" @change="(value) => moveCandidate(scope.row.user_id, value === null || value === undefined || value === '' ? null : Number(value))"><el-option v-for="assignment in plan.assignments" :key="assignment.index" :label="assignment.target_group_name || `${t('relayPlanning.group')} ${assignment.index + 1}`" :value="assignment.index" /></el-select><span v-else class="text-xs text-slate-400">{{ t('relayPlanning.notAvailable') }}</span></template></el-table-column>
-            <el-table-column :label="t('relayPlanning.sourceGroup')" min-width="180"><template #default="scope"><el-select v-if="selectedUserIDs.has(scope.row.user_id)" :model-value="memberSources[String(scope.row.user_id)] ?? 0" @change="(value) => setMemberSource(scope.row.user_id, Number(value || 0))"><el-option :label="t('relayPlanning.targetOnly')" :value="0" /><el-option v-for="item in groups" :key="item.group_id" :label="`${item.group_name} (#${item.group_id})`" :value="Number(item.group_id)" /></el-select><span v-else>-</span></template></el-table-column>
-            <el-table-column :label="t('relayPlanning.status')" min-width="180"><template #default="scope"><el-tag :type="scope.row.eligible ? 'success' : scope.row.can_add ? 'warning' : 'info'">{{ scope.row.eligible ? t('relayPlanning.eligible') : scope.row.can_add ? t('relayPlanning.addOnly') : t('relayPlanning.excluded') }}</el-tag><div v-if="scope.row.warnings?.length" class="mt-1 text-xs text-amber-700">{{ scope.row.warnings.map(translateWarning).join('; ') }}</div></template></el-table-column>
+            <el-table-column :label="t('relayPlanning.sourceGroup')" min-width="180"><template #default="scope"><span v-if="scope.row.disposition === 'retained'" :data-testid="`candidate-source-${scope.row.user_id}`" class="text-xs text-slate-600">{{ candidateDispositionText(scope.row) }}</span><el-select v-else-if="selectedUserIDs.has(scope.row.user_id)" :data-testid="`candidate-source-${scope.row.user_id}`" :model-value="memberSources[String(scope.row.user_id)] ?? 0" @change="(value) => setMemberSource(scope.row.user_id, Number(value || 0))"><el-option :label="t('relayPlanning.targetOnly')" :value="0" /><el-option v-for="item in groups" :key="item.group_id" :label="`${item.group_name} (#${item.group_id})`" :value="Number(item.group_id)" /></el-select><span v-else>-</span></template></el-table-column>
+            <el-table-column :label="t('relayPlanning.status')" min-width="180"><template #default="scope"><el-tag :type="candidateDispositionTag(scope.row)">{{ candidateDispositionText(scope.row) }}</el-tag><div v-if="scope.row.warnings?.length" class="mt-1 text-xs text-amber-700">{{ scope.row.warnings.map(translateWarning).join('; ') }}</div></template></el-table-column>
           </el-table>
         </div>
         <div class="rounded-lg border border-slate-200 bg-white p-4">

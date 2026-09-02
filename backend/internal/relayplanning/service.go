@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"reflect"
 	"slices"
 	"sort"
 	"strconv"
@@ -206,6 +207,7 @@ type Candidate struct {
 	CanAdd                    bool     `json:"can_add"`
 	Selected                  bool     `json:"selected"`
 	Eligible                  bool     `json:"eligible"`
+	Disposition               string   `json:"disposition"`
 	Warnings                  []string `json:"warnings,omitempty"`
 	relationshipSubscriptions []relationshipSubscriptionFact
 	relationshipAPIKeys       []relationshipAPIKeyFact
@@ -966,6 +968,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 			_, plan.Candidates[index].Selected = assigned[plan.Candidates[index].UserID]
 		}
 	}
+	assignCandidateDispositions(mapping, plan.Candidates, plan.Assignments)
 	plan.DepartmentName = departmentName
 	if req.ExistingMappingID > 0 {
 		plan.MappingID = req.ExistingMappingID
@@ -976,6 +979,31 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	}
 	plan.TargetSummaries = buildTargetChangeSummaries(req, plan)
 	return plan, nil
+}
+
+func assignCandidateDispositions(mapping *ent.RelayGroupMapping, candidates []Candidate, assignments []Assignment) {
+	assignedTargets := make(map[int]int64)
+	for _, assignment := range assignments {
+		for _, userID := range assignment.UserIDs {
+			assignedTargets[userID] = assignment.TargetGroupID
+		}
+	}
+	for index := range candidates {
+		candidate := &candidates[index]
+		targetID, selected := assignedTargets[candidate.UserID]
+		switch {
+		case !selected && candidate.CanAdd:
+			candidate.Disposition = "available"
+		case !selected:
+			candidate.Disposition = "excluded"
+		case mapping != nil && mapping.MemberAssignments[strconv.Itoa(candidate.UserID)] == targetID && targetID > 0 && slices.Contains(candidate.CurrentGroupIDs, targetID) && candidate.replanUnavailableReason == 0 && !operationStateNeedsRetry(mapping.OperationState, "member:"+strconv.Itoa(candidate.UserID)):
+			candidate.Disposition = "retained"
+		case candidate.SourceGroupID > 0:
+			candidate.Disposition = "migration"
+		default:
+			candidate.Disposition = "target_only"
+		}
+	}
 }
 
 func restoreRenameRetries(operationState map[string]map[string]string, assignments []Assignment) {
@@ -3908,6 +3936,16 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	if err := validateLegacyRetryReadback(mapping, plan, memberIntents); err != nil {
 		return nil, err
 	}
+	if isZeroChangeReplan(*mapping, plan, req) {
+		return &ExecutionResult{
+			Plan:     plan,
+			Groups:   []GroupResult{},
+			Accounts: []AccountResult{},
+			Members:  []MemberResult{},
+			Mappings: []MappingPersistenceResult{{MappingID: mapping.ID, Role: "destination", Status: "unchanged"}},
+			Mapping:  mapping,
+		}, nil
+	}
 	durable, err := s.beginReplanDurableExecution(ctx, *mapping, plan, req)
 	if err != nil {
 		return nil, err
@@ -4305,6 +4343,38 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 		return nil, fmt.Errorf("finish applied Relationship Operation: %w", err)
 	}
 	return &ExecutionResult{Plan: plan, Groups: groupResults, Accounts: accountResults, Members: memberResults, Mappings: mappingResults, Mapping: resultMapping}, nil
+}
+
+func isZeroChangeReplan(mapping Mapping, plan *Plan, req ExecuteRequest) bool {
+	if plan == nil || len(buildDurableStepPlans(plan)) > 0 || len(req.AdoptRelayUserIDs) > 0 || len(req.RemovedUserIDs) > 0 || len(req.MemberActions) > 0 {
+		return false
+	}
+	if mapping.ProviderID != plan.ProviderID || mapping.DepartmentID != plan.DepartmentID || mapping.DepartmentName != plan.DepartmentName || mapping.Platform != plan.Platform || mapping.TemplateGroupID != plan.TemplateGroupID || mapping.TemplateGroupName != plan.TemplateGroupName || mapping.SourceGroupID != plan.SourceGroupID || mapping.SourceGroupName != plan.SourceGroupName || mapping.WeeklyCostTarget != plan.WeeklyCostTarget {
+		return false
+	}
+	groupIDs := make([]int64, len(plan.Assignments))
+	assignments := make(map[string]int64)
+	sources := make(map[string]int64)
+	for _, assignment := range plan.Assignments {
+		if assignment.Index < 0 || assignment.Index >= len(groupIDs) || assignment.TargetGroupID <= 0 {
+			return false
+		}
+		groupIDs[assignment.Index] = assignment.TargetGroupID
+		for _, userID := range assignment.UserIDs {
+			key := strconv.Itoa(userID)
+			assignments[key] = assignment.TargetGroupID
+			if candidate := candidateByUserID(plan.Candidates, userID); candidate != nil && candidate.SourceGroupID > 0 {
+				sources[key] = candidate.SourceGroupID
+			}
+		}
+	}
+	if !reflect.DeepEqual(mapping.GroupIDs, groupIDs) || !reflect.DeepEqual(mapping.MemberAssignments, assignments) || !reflect.DeepEqual(mapping.MemberSources, sources) {
+		return false
+	}
+	if plan.AccountsReviewed && (!mapping.AccountManagementInitialized || !reflect.DeepEqual(mapping.DesiredAccounts, desiredAccountsForGroupIDs(plan.Assignments, groupIDs))) {
+		return false
+	}
+	return true
 }
 
 func (s *Service) resolveMoveSource(ctx context.Context, destination Mapping, userID int, action MemberAction) (*ent.RelayGroupMapping, int64, error) {

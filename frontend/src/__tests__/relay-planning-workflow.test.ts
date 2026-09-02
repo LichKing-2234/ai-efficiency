@@ -39,6 +39,7 @@ function reviewedPlan(overrides: Partial<RelayPlanningPlan> = {}): RelayPlanning
       can_add: true,
       selected: true,
       eligible: true,
+		disposition: 'migration',
     }],
     assignments: [{
       index: 0,

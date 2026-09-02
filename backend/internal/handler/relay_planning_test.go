@@ -3971,10 +3971,10 @@ func TestRelayPlanningReplanIncludesSavedExternalMember(t *testing.T) {
 	for _, candidate := range plan.Candidates {
 		candidates[candidate.UserID] = candidate
 	}
-	if candidate, ok := candidates[alice.ID]; !ok || candidate.Selected {
+	if candidate, ok := candidates[alice.ID]; !ok || candidate.Selected || candidate.Disposition != "available" {
 		t.Fatalf("additional department candidate = %+v, want present and unselected among %+v", candidate, plan.Candidates)
 	}
-	if candidate, ok := candidates[bob.ID]; !ok || !candidate.Selected || candidate.SourceGroupID != 30 {
+	if candidate, ok := candidates[bob.ID]; !ok || !candidate.Selected || candidate.SourceGroupID != 30 || candidate.Disposition != "retained" {
 		t.Fatalf("saved external member = %+v, want selected with Source Group 30 among candidates %+v", candidate, plan.Candidates)
 	}
 	if len(plan.Assignments) != 1 || plan.Assignments[0].TargetGroupID != 101 || len(plan.Assignments[0].UserIDs) != 1 || plan.Assignments[0].UserIDs[0] != bob.ID {
@@ -4008,6 +4008,13 @@ func TestRelayPlanningReplanIncludesSavedExternalMember(t *testing.T) {
 	}
 	if len(provider.assigned) != 0 {
 		t.Fatalf("unchanged replan assignments = %v, want existing subscription untouched", provider.assigned)
+	}
+	if len(provider.events) != 0 || len(provider.removed) != 0 || len(provider.bound) != 0 || provider.accountUpdates != 0 {
+		t.Fatalf("unchanged replan Relay writes = events:%v removed:%v bound:%v account_updates:%d, want none", provider.events, provider.removed, provider.bound, provider.accountUpdates)
+	}
+	persisted := client.RelayGroupMapping.GetX(ctx, mapping.ID)
+	if persisted.BaselineRevision != mapping.BaselineRevision || !reflect.DeepEqual(persisted.MemberAssignments, mapping.MemberAssignments) || !reflect.DeepEqual(persisted.MemberSources, mapping.MemberSources) {
+		t.Fatalf("unchanged replan mapping = revision:%d assignments:%v sources:%v, want revision:%d assignments:%v sources:%v", persisted.BaselineRevision, persisted.MemberAssignments, persisted.MemberSources, mapping.BaselineRevision, mapping.MemberAssignments, mapping.MemberSources)
 	}
 }
 

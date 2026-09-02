@@ -225,6 +225,15 @@ AI Efficiency-managed API Keys from the reviewed Source to the Target, and
 removes the Source subscription. A target-only addition ensures only the Target
 subscription. Every new subscription assigned by this workflow uses 365 days.
 
+Replan Preview exposes one relationship disposition for every local candidate:
+`retained` means the saved Target and observed active Target agree;
+`target_only` means a selected new candidate will receive only the Target
+subscription; `migration` means the selected candidate has a reviewed Source;
+`available` means the candidate remains unassigned but can be selected; and
+`excluded` means the candidate cannot currently be assigned. A retained member
+is not presented as a new Source or Target operation, even when it no longer
+belongs to its historical Migration Source.
+
 An explicit Managed Mapping Member removal deletes the desired assignment
 immediately in reviewed state:
 
