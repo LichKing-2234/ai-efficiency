@@ -232,7 +232,10 @@ subscription; `migration` means the selected candidate has a reviewed Source;
 `available` means the candidate remains unassigned but can be selected; and
 `excluded` means the candidate cannot currently be assigned. A retained member
 is not presented as a new Source or Target operation, even when it no longer
-belongs to its historical Migration Source.
+belongs to its historical Migration Source. The accompanying `can_retain` fact
+is authoritative across browser edits: it is true only when the saved Target is
+observed and neither relationship unavailability nor member retry state blocks
+retention.
 
 An explicit Managed Mapping Member removal deletes the desired assignment
 immediately in reviewed state:

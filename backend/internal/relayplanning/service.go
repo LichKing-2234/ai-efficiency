@@ -207,6 +207,7 @@ type Candidate struct {
 	CanAdd                    bool     `json:"can_add"`
 	Selected                  bool     `json:"selected"`
 	Eligible                  bool     `json:"eligible"`
+	CanRetain                 bool     `json:"can_retain"`
 	Disposition               string   `json:"disposition"`
 	Warnings                  []string `json:"warnings,omitempty"`
 	relationshipSubscriptions []relationshipSubscriptionFact
@@ -991,12 +992,17 @@ func assignCandidateDispositions(mapping *ent.RelayGroupMapping, candidates []Ca
 	for index := range candidates {
 		candidate := &candidates[index]
 		targetID, selected := assignedTargets[candidate.UserID]
+		baselineTargetID := int64(0)
+		if mapping != nil {
+			baselineTargetID = mapping.MemberAssignments[strconv.Itoa(candidate.UserID)]
+			candidate.CanRetain = baselineTargetID > 0 && slices.Contains(candidate.CurrentGroupIDs, baselineTargetID) && candidate.replanUnavailableReason == 0 && !operationStateNeedsRetry(mapping.OperationState, "member:"+strconv.Itoa(candidate.UserID))
+		}
 		switch {
 		case !selected && candidate.CanAdd:
 			candidate.Disposition = "available"
 		case !selected:
 			candidate.Disposition = "excluded"
-		case mapping != nil && mapping.MemberAssignments[strconv.Itoa(candidate.UserID)] == targetID && targetID > 0 && slices.Contains(candidate.CurrentGroupIDs, targetID) && candidate.replanUnavailableReason == 0 && !operationStateNeedsRetry(mapping.OperationState, "member:"+strconv.Itoa(candidate.UserID)):
+		case candidate.CanRetain && baselineTargetID == targetID:
 			candidate.Disposition = "retained"
 		case candidate.SourceGroupID > 0:
 			candidate.Disposition = "migration"

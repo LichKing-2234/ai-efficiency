@@ -72,7 +72,8 @@ func TestValidateAssignmentsAllowsExplicitNonSourceMemberOnce(t *testing.T) {
 
 func TestAssignCandidateDispositionsDistinguishesRetainedAndReviewedChanges(t *testing.T) {
 	mapping := &ent.RelayGroupMapping{
-		MemberAssignments: map[string]int64{"1": 101},
+		MemberAssignments: map[string]int64{"1": 101, "6": 101, "7": 101},
+		OperationState:    map[string]map[string]string{"member:6": {"status": "failed"}},
 	}
 	candidates := []Candidate{
 		{UserID: 1, CanAdd: true, CurrentGroupIDs: []int64{101}, SourceGroupID: 20},
@@ -80,16 +81,21 @@ func TestAssignCandidateDispositionsDistinguishesRetainedAndReviewedChanges(t *t
 		{UserID: 3, CanAdd: true, SourceGroupID: 20},
 		{UserID: 4, CanAdd: true},
 		{UserID: 5},
+		{UserID: 6, CanAdd: true, CurrentGroupIDs: []int64{101}, SourceGroupID: 20},
+		{UserID: 7, CanAdd: true, CurrentGroupIDs: []int64{101}, SourceGroupID: 20, replanUnavailableReason: replanRosterUnavailableSubscription},
 	}
 	assignments := []Assignment{{Index: 0, TargetGroupID: 101, UserIDs: []int{1, 2, 3}}}
 
 	assignCandidateDispositions(mapping, candidates, assignments)
 
-	want := []string{"retained", "target_only", "migration", "available", "excluded"}
+	want := []string{"retained", "target_only", "migration", "available", "excluded", "available", "available"}
 	for index := range candidates {
 		if candidates[index].Disposition != want[index] {
 			t.Fatalf("candidate %d disposition = %q, want %q", candidates[index].UserID, candidates[index].Disposition, want[index])
 		}
+	}
+	if !candidates[0].CanRetain || candidates[5].CanRetain || candidates[6].CanRetain {
+		t.Fatalf("can_retain facts = %v/%v/%v, want aligned only", candidates[0].CanRetain, candidates[5].CanRetain, candidates[6].CanRetain)
 	}
 }
 

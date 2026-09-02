@@ -51,6 +51,7 @@ const plan = {
     can_add: true,
     selected: true,
     eligible: true,
+		can_retain: false,
 		disposition: 'migration',
   }],
 	assignments: [{
@@ -262,10 +263,11 @@ describe('RelayPlanningView', () => {
 		const dispositionPlan = structuredClone({
 			...plan,
 			candidates: [
-				{ ...plan.candidates[0], disposition: 'retained', source_group_id: 42 },
+				{ ...plan.candidates[0], can_retain: true, disposition: 'retained', source_group_id: 42 },
 				{ ...plan.candidates[0], user_id: 2, relay_user_id: 102, username: 'bob', email: 'bob@example.org', disposition: 'target_only', source_member: false, source_group_id: 0 },
 				{ ...plan.candidates[0], user_id: 3, relay_user_id: 103, username: 'carol', email: 'carol@example.net', disposition: 'migration' },
 				{ ...plan.candidates[0], user_id: 4, relay_user_id: 104, username: 'dana', email: 'dana@example.edu', disposition: 'available', selected: false, eligible: false },
+				{ ...plan.candidates[0], user_id: 5, relay_user_id: 0, username: 'erin', email: 'erin@example.com', can_add: false, disposition: 'excluded', selected: false, eligible: false },
 			],
 			assignments: [{ ...plan.assignments[0], user_ids: [1, 2, 3] }],
 		})
@@ -278,6 +280,7 @@ describe('RelayPlanningView', () => {
 		expect(wrapper.get(`[data-testid="${layout}"]`).text()).toContain('Add target binding')
 		expect(wrapper.get(`[data-testid="${layout}"]`).text()).toContain('Migrate binding')
 		expect(wrapper.get(`[data-testid="${layout}"]`).text()).toContain('Available for assignment')
+		expect(wrapper.get(`[data-testid="${layout}"]`).text()).toContain('Excluded')
 		expect(wrapper.get('[data-testid="candidate-source-1"]').text()).toBe('Retain existing binding')
 	})
 

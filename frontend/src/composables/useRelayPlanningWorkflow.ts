@@ -433,7 +433,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
 			const baselineTarget = Number(activeMappingMemberAssignments.value[String(userID)] || 0)
 			candidate.disposition = targetIndex === null
 				? candidate.can_add ? 'available' : 'excluded'
-				: baselineTarget > 0 && targetID === baselineTarget && candidate.current_group_ids?.includes(targetID)
+				: candidate.can_retain && baselineTarget > 0 && targetID === baselineTarget
 					? 'retained'
 					: Number(memberSources.value[String(userID)] ?? candidate.source_group_id ?? 0) > 0 ? 'migration' : 'target_only'
 		}
