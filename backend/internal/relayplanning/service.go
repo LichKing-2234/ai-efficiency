@@ -5140,6 +5140,9 @@ func (s *Service) buildCandidates(ctx context.Context, p relay.Provider, request
 
 func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestFacts *planningRequestFacts, u *ent.User, source relay.Group, platform, departmentWarning string, globalStats map[int64]relay.TeamUserUsageStats, ranks map[int64]int) Candidate {
 	candidate := Candidate{UserID: u.ID, Username: u.Username, Email: u.Email, Eligible: false, Selected: true, replanUnavailableReason: replanRosterUnavailableIdentity}
+	if departmentWarning != "" {
+		candidate.Warnings = append(candidate.Warnings, departmentWarning)
+	}
 	if u.RelayUserID == nil || *u.RelayUserID <= 0 {
 		candidate.Warnings = append(candidate.Warnings, fmt.Sprintf("user %d has no relay mapping", u.ID))
 		return candidate
@@ -5196,9 +5199,6 @@ func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestF
 	}
 	if !candidate.UsageKnown {
 		candidate.Warnings = append(candidate.Warnings, "30-day usage is unknown; capacity may be underestimated")
-	}
-	if departmentWarning != "" {
-		candidate.Warnings = append(candidate.Warnings, departmentWarning)
 	}
 	candidate.Selected = candidate.Eligible
 	return candidate
@@ -5311,13 +5311,16 @@ func loadCandidateRelayFacts(ctx context.Context, p relay.Provider, requestFacts
 
 func (s *Service) departmentMembershipWarnings(ctx context.Context, users []*ent.User, selectedDepartment string) (map[int]string, error) {
 	warnings := make(map[int]string)
+	selectedDepartment = strings.TrimSpace(selectedDepartment)
+	if len(users) == 0 || selectedDepartment == "" {
+		return warnings, nil
+	}
 	view, found, err := directoryfacts.New(s.client).Current(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load directory snapshot for department membership: %w", err)
 	}
-	selectedDepartment = strings.TrimSpace(selectedDepartment)
-	if !found || len(users) == 0 || selectedDepartment == "" {
-		return warnings, nil
+	if !found {
+		return nil, fmt.Errorf("current successful directory snapshot is unavailable")
 	}
 	query := directoryfacts.Query{
 		IncludeMemberships: true,
@@ -5331,12 +5334,10 @@ func (s *Service) departmentMembershipWarnings(ctx context.Context, users []*ent
 		}
 		usersByID[u.ID] = u
 		candidateUserIDs = append(candidateUserIDs, u.ID)
+		query.MemberUserIDs = append(query.MemberUserIDs, u.ID)
 		if email := directoryfacts.NormalizeEmail(u.Email); email != "" {
 			query.MemberEmails = append(query.MemberEmails, email)
 			userIDsByEmail[email] = append(userIDsByEmail[email], u.ID)
-		}
-		if u.RelayUserID != nil {
-			query.MemberUserIDs = append(query.MemberUserIDs, u.ID)
 		}
 	}
 	facts, err := view.Load(ctx, query)
