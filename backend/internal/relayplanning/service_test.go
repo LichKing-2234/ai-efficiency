@@ -252,6 +252,17 @@ func (departmentWarningPreviewProvider) ListUserAPIKeys(context.Context, int64) 
 	return nil, nil
 }
 
+func (departmentWarningPreviewProvider) ListPlatformGroups(context.Context) ([]relay.Group, error) {
+	return []relay.Group{
+		{ID: 42, Name: "Group Source", Platform: "openai"},
+		{ID: 84, Name: "Group Template", Platform: "openai"},
+	}, nil
+}
+
+func (departmentWarningPreviewProvider) ListAccountsForPlatform(context.Context, string) ([]relay.Account, error) {
+	return []relay.Account{}, nil
+}
+
 func (departmentWarningPreviewProvider) GetBatchUserUsageStats(_ context.Context, userIDs []int64, _ relay.TeamUsageSummaryParams) (map[int64]relay.TeamUserUsageStats, error) {
 	stats := make(map[int64]relay.TeamUserUsageStats, len(userIDs))
 	for _, userID := range userIDs {
@@ -264,7 +275,6 @@ func (departmentWarningPreviewProvider) GetBatchUserUsageStats(_ context.Context
 func TestPreviewDepartmentMembershipWarningUsesCurrentEffectiveHierarchy(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
-	service := NewService(client, nil, nil)
 	selectedDepartment := "dept-selected"
 	source, currentRun := createRelayPlanningDirectorySnapshot(t, ctx, client, selectedDepartment)
 	selected := client.DirectoryDepartment.Query().Where(
@@ -314,20 +324,38 @@ func TestPreviewDepartmentMembershipWarningUsesCurrentEffectiveHierarchy(t *test
 	for _, user := range users {
 		provider.users[int64(*user.RelayUserID)] = &relay.User{ID: int64(*user.RelayUserID), Username: user.Username, Email: user.Email}
 	}
-	candidates, err := service.buildCandidates(ctx, provider, newPlanningRequestFacts(), 0, 0, users, relay.Group{ID: 42, Platform: "openai"}, nil, nil, "openai", selectedDepartment)
+	providerRow := client.RelayProvider.Create().
+		SetName("relay-planning-department-warning").
+		SetDisplayName("Relay Planning Department Warning").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetRelayType("sub2api").
+		SaveX(ctx)
+	service := NewService(client, relayPlanningProviderResolver(func(context.Context, int) (relay.Provider, error) {
+		return provider, nil
+	}), nil)
+	selectedUserIDs := make([]int, 0, len(users))
+	for _, user := range users {
+		selectedUserIDs = append(selectedUserIDs, user.ID)
+	}
+	request := PreviewRequest{
+		ProviderID: providerRow.ID, DepartmentID: selectedDepartment, Platform: "openai",
+		TemplateGroupID: 84, SourceGroupID: 42, WeeklyCostTarget: 100, GroupCount: 1, SelectedUserIDs: selectedUserIDs,
+	}
+	plan, err := service.Preview(ctx, request)
 	if err != nil {
-		t.Fatalf("buildCandidates() error = %v", err)
+		t.Fatalf("Preview() error = %v", err)
 	}
-	encoded, err := json.Marshal(candidates)
+	encoded, err := json.Marshal(plan)
 	if err != nil {
-		t.Fatalf("marshal Preview candidates: %v", err)
+		t.Fatalf("marshal Preview: %v", err)
 	}
-	var responseCandidates []Candidate
-	if err := json.Unmarshal(encoded, &responseCandidates); err != nil {
-		t.Fatalf("unmarshal Preview candidates: %v", err)
+	var responsePlan Plan
+	if err := json.Unmarshal(encoded, &responsePlan); err != nil {
+		t.Fatalf("unmarshal Preview: %v", err)
 	}
-	byUserID := make(map[int]Candidate, len(responseCandidates))
-	for _, candidate := range responseCandidates {
+	byUserID := make(map[int]Candidate, len(responsePlan.Candidates))
+	for _, candidate := range responsePlan.Candidates {
 		byUserID[candidate.UserID] = candidate
 	}
 	for index, tt := range tests {
@@ -347,8 +375,8 @@ func TestPreviewDepartmentMembershipWarningUsesCurrentEffectiveHierarchy(t *test
 	if err := client.Close(); err != nil {
 		t.Fatalf("close directory facts database: %v", err)
 	}
-	if _, err := service.buildCandidates(ctx, provider, newPlanningRequestFacts(), 0, 0, users, relay.Group{ID: 42, Platform: "openai"}, nil, nil, "openai", selectedDepartment); err == nil || !strings.Contains(err.Error(), "load candidate department memberships") {
-		t.Fatalf("buildCandidates() directory read error = %v, want propagated Preview error", err)
+	if _, err := service.Preview(ctx, request); err == nil || !strings.Contains(err.Error(), "load candidate department memberships") {
+		t.Fatalf("Preview() directory read error = %v, want propagated Preview error", err)
 	}
 }
 
