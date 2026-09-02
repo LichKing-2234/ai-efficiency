@@ -1275,7 +1275,7 @@ func reviewedAPIKeysMatchTarget(reviewed map[int64]bool, current []relationshipA
 	for keyID := range reviewed {
 		matched := false
 		for _, key := range current {
-			if key.ID == keyID && (strings.EqualFold(key.Status, "inactive") || key.GroupID == targetGroupID) {
+			if key.ID == keyID && (strings.EqualFold(key.Status, "inactive") || (strings.EqualFold(key.Status, "active") && key.GroupID == targetGroupID)) {
 				matched = true
 				break
 			}

@@ -1002,6 +1002,11 @@ func TestClassifyManagedRosterCandidatesUsesOnlyManagedTargetEvidence(t *testing
 			wantReason: replanRosterMismatchedTargetAPIKey,
 		},
 		{
+			name:       "reviewed API Key with unknown status on managed Target",
+			candidate:  Candidate{UserID: 1, CurrentGroupIDs: []int64{101}, relationshipObservedAPIKeys: []relationshipAPIKeyFact{{ID: 501, GroupID: 101}}},
+			wantReason: replanRosterMismatchedTargetAPIKey,
+		},
+		{
 			name:       "reviewed API Key missing from current facts",
 			candidate:  Candidate{UserID: 1, CurrentGroupIDs: []int64{101}},
 			wantReason: replanRosterMismatchedTargetAPIKey,
