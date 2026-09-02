@@ -936,6 +936,9 @@ func TestLoadCandidateRelayFactsUsesSubscriptionsAndRunsIndependentReadsConcurre
 	if len(facts.relationshipAPIKeys) != 1 || facts.relationshipAPIKeys[0].ID != 7 {
 		t.Fatalf("candidate API Key facts = %#v, want only active key 7", facts.relationshipAPIKeys)
 	}
+	if len(facts.relationshipObservedAPIKeys) != 2 || facts.relationshipObservedAPIKeys[0].ID != 7 || facts.relationshipObservedAPIKeys[0].Status != "active" || facts.relationshipObservedAPIKeys[1].ID != 8 || facts.relationshipObservedAPIKeys[1].Status != "inactive" {
+		t.Fatalf("observed candidate API Key facts = %#v, want active key 7 and inactive key 8", facts.relationshipObservedAPIKeys)
+	}
 	if len(facts.currentGroupIDs) != 1 || facts.currentGroupIDs[0] != 84 {
 		t.Fatalf("current group IDs = %#v, want [84]", facts.currentGroupIDs)
 	}
@@ -980,16 +983,35 @@ func TestClassifyManagedRosterCandidatesUsesOnlyManagedTargetEvidence(t *testing
 			candidate: Candidate{UserID: 1, CurrentGroupIDs: []int64{101}, Warnings: []string{
 				"user is not a member of the selected source group",
 				"30-day usage is unknown; capacity may be underestimated",
-			}, relationshipAPIKeys: []relationshipAPIKeyFact{{ID: 501, GroupID: 101}}},
+			}, relationshipAPIKeys: []relationshipAPIKeyFact{{ID: 501, GroupID: 101}}, relationshipObservedAPIKeys: []relationshipAPIKeyFact{{ID: 501, GroupID: 101, Status: "active"}}},
+		},
+		{
+			name:      "inactive reviewed API Key remains aligned",
+			candidate: Candidate{UserID: 1, CurrentGroupIDs: []int64{101}, relationshipObservedAPIKeys: []relationshipAPIKeyFact{{ID: 501, GroupID: 101, Status: "inactive"}}},
 		},
 		{
 			name:       "missing managed Target subscription",
-			candidate:  Candidate{UserID: 1, Warnings: []string{"user is not a member of the selected source group"}, relationshipAPIKeys: []relationshipAPIKeyFact{{ID: 501, GroupID: 101}}},
+			candidate:  Candidate{UserID: 1, Warnings: []string{"user is not a member of the selected source group"}, relationshipObservedAPIKeys: []relationshipAPIKeyFact{{ID: 501, GroupID: 101, Status: "active"}}},
 			wantReason: replanRosterMissingTargetSubscription,
 		},
 		{
 			name:       "reviewed API Key outside managed Target",
-			candidate:  Candidate{UserID: 1, CurrentGroupIDs: []int64{101}, relationshipAPIKeys: []relationshipAPIKeyFact{{ID: 501, GroupID: 20}}},
+			candidate:  Candidate{UserID: 1, CurrentGroupIDs: []int64{101}, relationshipObservedAPIKeys: []relationshipAPIKeyFact{{ID: 501, GroupID: 20, Status: "active"}}},
+			wantReason: replanRosterMismatchedTargetAPIKey,
+		},
+		{
+			name:       "reviewed API Key with unknown status outside managed Target",
+			candidate:  Candidate{UserID: 1, CurrentGroupIDs: []int64{101}, relationshipObservedAPIKeys: []relationshipAPIKeyFact{{ID: 501, GroupID: 20}}},
+			wantReason: replanRosterMismatchedTargetAPIKey,
+		},
+		{
+			name:       "reviewed API Key with unknown status on managed Target",
+			candidate:  Candidate{UserID: 1, CurrentGroupIDs: []int64{101}, relationshipObservedAPIKeys: []relationshipAPIKeyFact{{ID: 501, GroupID: 101}}},
+			wantReason: replanRosterMismatchedTargetAPIKey,
+		},
+		{
+			name:       "reviewed API Key missing from current facts",
+			candidate:  Candidate{UserID: 1, CurrentGroupIDs: []int64{101}},
 			wantReason: replanRosterMismatchedTargetAPIKey,
 		},
 	}

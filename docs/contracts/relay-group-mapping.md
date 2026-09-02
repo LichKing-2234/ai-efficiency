@@ -246,7 +246,12 @@ is authoritative across browser edits: it is true only when the saved Target is
 observed and neither relationship unavailability nor member retry state blocks
 retention. Because retention performs no Source or API Key migration, retained
 members omit Source-membership and missing-migratable-Key warnings; those
-warnings remain available for reviewed migration candidates.
+warnings remain available for reviewed migration candidates. A historically
+reviewed API Key that is currently inactive no longer
+blocks retention. A reviewed Key that is still active but moved away from the
+saved Target, or whose current relationship cannot be found, remains fail-closed
+managed relationship drift. Relationship fingerprints include the current Key
+status so an active/inactive transition invalidates an older Preview.
 
 An explicit Managed Mapping Member removal deletes the desired assignment
 immediately in reviewed state:
@@ -304,7 +309,8 @@ The current fingerprint carries separate canonical hashes for:
 - mapping and persisted retry state;
 - local-to-Relay user identity;
 - subscription Group/status relationships;
-- eligible API-Key ID/Group bindings.
+- active executable API-Key ID/Group bindings, plus current status and Group
+  facts for historically reviewed Keys.
 
 Credentials, API-Key values, private Account configuration, and raw Provider
 payloads are excluded. Usage, rank, cost, and freshness are advisory and also

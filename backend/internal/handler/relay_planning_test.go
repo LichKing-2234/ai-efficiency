@@ -3936,7 +3936,9 @@ func TestRelayPlanningReplanIncludesSavedExternalMember(t *testing.T) {
 	mapping := client.RelayGroupMapping.Create().
 		SetProviderID(providerConfig.ID).SetDepartmentExternalID("dept-alpha").SetDepartmentName("Department Alpha").SetPlatform("openai").
 		SetTemplateGroupID(10).SetTemplateGroupName("Group Alpha").SetSourceGroupID(20).SetSourceGroupName("Group Beta").SetGroupIds([]int64{101}).
-		SetMemberAssignments(map[string]int64{fmt.Sprint(bob.ID): 101, fmt.Sprint(frank.ID): 101}).SetMemberSources(map[string]int64{fmt.Sprint(bob.ID): 30, fmt.Sprint(frank.ID): 20}).SetWeeklyCostTarget(2500).SaveX(ctx)
+		SetMemberAssignments(map[string]int64{fmt.Sprint(bob.ID): 101, fmt.Sprint(frank.ID): 101}).SetMemberSources(map[string]int64{fmt.Sprint(bob.ID): 30, fmt.Sprint(frank.ID): 20}).
+		SetOperationState(map[string]map[string]string{"member:" + fmt.Sprint(bob.ID): {"target_group_id": "101", "api_keys": "501:succeeded,502:succeeded", "subscription": "succeeded", "source_removal": "succeeded"}}).
+		SetWeeklyCostTarget(2500).SaveX(ctx)
 	provider := &relayPlanningSearchProvider{
 		users: map[int64]*relay.User{
 			42: {ID: 42, Username: "alice", Email: alice.Email},
@@ -3947,7 +3949,7 @@ func TestRelayPlanningReplanIncludesSavedExternalMember(t *testing.T) {
 		},
 		groups:            []relay.Group{{ID: 10, Name: "Group Alpha", Platform: "openai"}, {ID: 20, Name: "Group Beta", Platform: "openai"}, {ID: 30, Name: "Group Gamma", Platform: "openai"}, {ID: 101, Name: "Group Target", Platform: "openai"}},
 		subscriptions:     map[int64][]relay.UserSubscription{42: {{UserID: 42, GroupID: 20, Status: "active"}}, 43: {{UserID: 43, GroupID: 30, Status: "active"}, {UserID: 43, GroupID: 101, Status: "active"}}, 44: {}, 45: {{UserID: 45, GroupID: 20, Status: "active"}}, 46: {{UserID: 46, GroupID: 20, Status: "active"}, {UserID: 46, GroupID: 101, Status: "active"}}},
-		keys:              map[int64][]relay.APIKey{42: {}, 43: {}, 44: {}, 45: {}, 46: {}},
+		keys:              map[int64][]relay.APIKey{42: {}, 43: {{ID: 501, UserID: 43, GroupID: 101, Status: "active"}, {ID: 502, UserID: 43, GroupID: 101, Status: "inactive"}}, 44: {}, 45: {}, 46: {}},
 		relationshipPages: [][]int64{{42, 43, 46}, {44, 45}},
 	}
 	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
@@ -4043,6 +4045,27 @@ func TestRelayPlanningReplanIncludesSavedExternalMember(t *testing.T) {
 		if candidate.UserID == dana.ID && !slices.Contains(candidate.Warnings, "no migratable AE-managed API key") {
 			t.Fatalf("migration candidate warnings = %v, want missing migratable API Key warning", candidate.Warnings)
 		}
+	}
+	findCandidate := func(candidates []relayplanning.Candidate, userID int) relayplanning.Candidate {
+		for _, candidate := range candidates {
+			if candidate.UserID == userID {
+				return candidate
+			}
+		}
+		return relayplanning.Candidate{}
+	}
+	provider.keys[43][1].Status = "active"
+	provider.keys[43][1].GroupID = 999
+	activeDrift := replan(`{}`)
+	activeCandidate := findCandidate(activeDrift.Candidates, bob.ID)
+	if activeCandidate.CanRetain || activeCandidate.Disposition == "retained" || activeDrift.RelationshipFingerprint == plan.RelationshipFingerprint {
+		t.Fatalf("active reviewed Key drift = candidate:%+v fingerprint:%q, want blocked changed Preview", activeCandidate, activeDrift.RelationshipFingerprint)
+	}
+	provider.keys[43] = provider.keys[43][:1]
+	missingDrift := replan(`{}`)
+	missingCandidate := findCandidate(missingDrift.Candidates, bob.ID)
+	if missingCandidate.CanRetain || missingCandidate.Disposition == "retained" || missingDrift.RelationshipFingerprint == plan.RelationshipFingerprint {
+		t.Fatalf("missing reviewed Key drift = candidate:%+v fingerprint:%q, want blocked changed Preview", missingCandidate, missingDrift.RelationshipFingerprint)
 	}
 }
 
