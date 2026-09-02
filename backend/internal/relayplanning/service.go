@@ -1875,11 +1875,24 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 		}
 		for userID := range affectedUserIDs {
 			key := strconv.Itoa(userID)
-			if targetGroupID := mapping.MemberAssignments[key]; targetGroupID > 0 {
+			targetGroupID := mapping.MemberAssignments[key]
+			if targetGroupID > 0 {
 				fact.Members = append(fact.Members, relationshipMappingMemberFact{UserID: userID, TargetGroupID: targetGroupID, SourceGroupID: mapping.MemberSources[key]})
 			}
 			stateKey := "member:" + key
 			entry := mapping.OperationState[stateKey]
+			entryTargetID, _ := strconv.ParseInt(entry["target_group_id"], 10, 64)
+			if mapping.ID == req.ExistingMappingID && targetGroupID > 0 && entry["action"] != "remove" && entryTargetID == targetGroupID {
+				completed, _ := completedAPIKeySteps(strings.Split(entry["api_keys"], ","))
+				selection := reviewedAPIKeySelection{Frozen: len(completed) > 0}
+				for keyID := range completed {
+					selection.IDs = append(selection.IDs, keyID)
+				}
+				sort.Slice(selection.IDs, func(i, j int) bool { return selection.IDs[i] < selection.IDs[j] })
+				if selection.Frozen {
+					reviewedAPIKeysByUser[userID] = selection
+				}
+			}
 			if entry != nil && entry["action"] == "move_here" && operationStateNeedsRetry(mapping.OperationState, stateKey) {
 				fromMappingID, mappingErr := strconv.Atoi(entry["from_mapping_id"])
 				fromGroupID, groupErr := strconv.ParseInt(entry["from_group_id"], 10, 64)
