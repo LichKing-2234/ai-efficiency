@@ -19,11 +19,10 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
-	"github.com/ai-efficiency/backend/ent/directorymember"
-	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
 	"github.com/ai-efficiency/backend/ent/relaygroupmapping"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/adminusers"
+	"github.com/ai-efficiency/backend/internal/directoryfacts"
 	"github.com/ai-efficiency/backend/internal/directorysync"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/teamusage"
@@ -5136,6 +5135,10 @@ func validateMemberSourceGroups(memberSources map[string]int64, groups []relay.G
 }
 
 func (s *Service) buildCandidates(ctx context.Context, p relay.Provider, requestFacts *planningRequestFacts, providerID int, providerVersion int64, users []*ent.User, source relay.Group, groups []relay.Group, memberSources map[string]int64, platform, departmentID string) ([]Candidate, error) {
+	departmentWarnings, err := s.departmentMembershipWarnings(ctx, users, departmentID)
+	if err != nil {
+		return nil, fmt.Errorf("load candidate department memberships: %w", err)
+	}
 	allUsers, err := s.client.User.Query().Where(user.RelayUserIDNotNil()).Order(ent.Asc(user.FieldID)).Limit(maxPlanningUsers).All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load users for global token ranking: %w", err)
@@ -5200,7 +5203,7 @@ func (s *Service) buildCandidates(ctx context.Context, p relay.Provider, request
 						}
 					}
 				}
-				out[job.index] = s.buildCandidate(ctx, p, requestFacts, job.user, candidateSource, platform, departmentID, globalStats, ranks)
+				out[job.index] = s.buildCandidate(ctx, p, requestFacts, job.user, candidateSource, platform, departmentWarnings[job.user.ID], globalStats, ranks)
 			}
 		}()
 	}
@@ -5211,8 +5214,11 @@ func (s *Service) buildCandidates(ctx context.Context, p relay.Provider, request
 	return out, nil
 }
 
-func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestFacts *planningRequestFacts, u *ent.User, source relay.Group, platform, departmentID string, globalStats map[int64]relay.TeamUserUsageStats, ranks map[int64]int) Candidate {
+func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestFacts *planningRequestFacts, u *ent.User, source relay.Group, platform, departmentWarning string, globalStats map[int64]relay.TeamUserUsageStats, ranks map[int64]int) Candidate {
 	candidate := Candidate{UserID: u.ID, Username: u.Username, Email: u.Email, Eligible: false, Selected: true, replanUnavailableReason: replanRosterUnavailableIdentity}
+	if departmentWarning != "" {
+		candidate.Warnings = append(candidate.Warnings, departmentWarning)
+	}
 	if u.RelayUserID == nil || *u.RelayUserID <= 0 {
 		candidate.Warnings = append(candidate.Warnings, fmt.Sprintf("user %d has no relay mapping", u.ID))
 		return candidate
@@ -5269,9 +5275,6 @@ func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestF
 	}
 	if !candidate.UsageKnown {
 		candidate.Warnings = append(candidate.Warnings, "30-day usage is unknown; capacity may be underestimated")
-	}
-	if conflict, conflictErr := s.hasDepartmentConflict(ctx, u, departmentID); conflictErr == nil && conflict {
-		candidate.Warnings = append(candidate.Warnings, "user belongs to multiple departments")
 	}
 	candidate.Selected = candidate.Eligible
 	return candidate
@@ -5382,41 +5385,81 @@ func loadCandidateRelayFacts(ctx context.Context, p relay.Provider, requestFacts
 	return facts
 }
 
-func (s *Service) hasDepartmentConflict(ctx context.Context, u *ent.User, selectedDepartment string) (bool, error) {
-	snapshot, found, err := directorysync.CurrentSnapshot(ctx, s.client)
+func (s *Service) departmentMembershipWarnings(ctx context.Context, users []*ent.User, selectedDepartment string) (map[int]string, error) {
+	warnings := make(map[int]string)
+	selectedDepartment = strings.TrimSpace(selectedDepartment)
+	if len(users) == 0 || selectedDepartment == "" {
+		return warnings, nil
+	}
+	view, found, err := directoryfacts.New(s.client).Current(ctx)
 	if err != nil {
-		return false, fmt.Errorf("load directory snapshot for department conflict: %w", err)
+		return nil, fmt.Errorf("load directory snapshot for department membership: %w", err)
 	}
-	if !found || u == nil {
-		return false, nil
+	if !found {
+		return nil, fmt.Errorf("current successful directory snapshot is unavailable")
 	}
-	memberQuery := s.client.DirectoryMember.Query().Where(directorymember.SourceIDEQ(snapshot.SourceID))
-	if u.RelayUserID != nil {
-		memberQuery = memberQuery.Where(directorymember.Or(directorymember.MatchedUserIDEQ(u.ID), directorymember.EmailNormalizedEQ(strings.ToLower(strings.TrimSpace(u.Email)))))
-	} else {
-		memberQuery = memberQuery.Where(directorymember.EmailNormalizedEQ(strings.ToLower(strings.TrimSpace(u.Email))))
+	query := directoryfacts.Query{
+		IncludeMemberships: true,
 	}
-	members, err := memberQuery.All(ctx)
+	candidateUserIDs := make([]int, 0, len(users))
+	usersByID := make(map[int]*ent.User, len(users))
+	userIDsByEmail := make(map[string][]int, len(users))
+	for _, u := range users {
+		if u == nil {
+			continue
+		}
+		usersByID[u.ID] = u
+		candidateUserIDs = append(candidateUserIDs, u.ID)
+		query.MemberUserIDs = append(query.MemberUserIDs, u.ID)
+		if email := directoryfacts.NormalizeEmail(u.Email); email != "" {
+			query.MemberEmails = append(query.MemberEmails, email)
+			userIDsByEmail[email] = append(userIDsByEmail[email], u.ID)
+		}
+	}
+	facts, err := view.Load(ctx, query)
 	if err != nil {
-		return false, fmt.Errorf("load directory members for department conflict: %w", err)
+		return nil, fmt.Errorf("load current directory memberships: %w", err)
 	}
-	departments := make(map[string]struct{})
-	for _, member := range members {
-		if strings.TrimSpace(member.DepartmentExternalID) != "" {
-			departments[member.DepartmentExternalID] = struct{}{}
+	departmentsByUser := make(map[int]map[string]struct{}, len(users))
+	for _, member := range facts.Members() {
+		matchedUserIDs := append([]int(nil), userIDsByEmail[directoryfacts.NormalizeEmail(member.EmailNormalized)]...)
+		if member.MatchedUserID != nil && usersByID[*member.MatchedUserID] != nil {
+			matchedUserIDs = append(matchedUserIDs, *member.MatchedUserID)
 		}
-		membershipRows, membershipErr := s.client.DirectoryMemberDepartment.Query().Where(directorymemberdepartment.DirectoryMemberIDEQ(member.ID), directorymemberdepartment.SourceIDEQ(snapshot.SourceID)).All(ctx)
-		if membershipErr != nil {
-			return false, fmt.Errorf("load directory memberships for department conflict: %w", membershipErr)
-		}
-		for _, row := range membershipRows {
-			departments[row.DepartmentExternalID] = struct{}{}
+		for _, departmentID := range facts.DepartmentIDsForMember(member) {
+			departmentID = strings.TrimSpace(departmentID)
+			for _, userID := range matchedUserIDs {
+				if departmentID == "" {
+					continue
+				}
+				if departmentsByUser[userID] == nil {
+					departmentsByUser[userID] = make(map[string]struct{})
+				}
+				departmentsByUser[userID][departmentID] = struct{}{}
+			}
 		}
 	}
-	if selectedDepartment != "" {
-		delete(departments, selectedDepartment)
+	snapshot := view.Snapshot()
+	selectedUsers, err := directoryfacts.New(s.client).LocalUsers(ctx, &snapshot, directoryfacts.LocalUserQuery{
+		UserIDs: candidateUserIDs, DepartmentID: selectedDepartment, Limit: len(candidateUserIDs),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("load selected department subtree users: %w", err)
 	}
-	return len(departments) > 0, nil
+	insideSelectedSubtree := make(map[int]struct{}, len(selectedUsers.IDs))
+	for _, userID := range selectedUsers.IDs {
+		insideSelectedSubtree[userID] = struct{}{}
+	}
+	for userID, departments := range departmentsByUser {
+		if len(departments) >= 2 {
+			warnings[userID] = "user belongs to multiple departments"
+			continue
+		}
+		if _, ok := insideSelectedSubtree[userID]; !ok {
+			warnings[userID] = "user is not in the selected department"
+		}
+	}
+	return warnings, nil
 }
 
 func (s *Service) loadUsageStats(ctx context.Context, p relay.Provider, providerID int, providerVersion int64, ids []int64) (map[int64]relay.TeamUserUsageStats, error) {
