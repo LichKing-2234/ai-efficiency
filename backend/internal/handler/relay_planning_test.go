@@ -21,6 +21,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/directorysource"
 	"github.com/ai-efficiency/backend/ent/directorysyncrun"
+	"github.com/ai-efficiency/backend/ent/relationshipoperation"
 	"github.com/ai-efficiency/backend/ent/relationshipoperationstep"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/relayplanning"
@@ -58,6 +59,7 @@ type relayPlanningSearchProvider struct {
 	bound                     []string
 	mutateWrites              bool
 	writeAcksOnly             bool
+	accountWriteAcksOnly      bool
 	accounts                  []relay.Account
 	accountError              error
 	accountReads              int
@@ -563,6 +565,9 @@ func (p *relayPlanningSearchProvider) SetAccountGroupRelationship(_ context.Cont
 	p.events = append(p.events, fmt.Sprintf("account:%d:%d:%d", accountID, groupID, priority))
 	if err := p.accountFailures[groupID]; err != nil {
 		return err
+	}
+	if p.accountWriteAcksOnly {
+		return nil
 	}
 	for index := range p.accounts {
 		if p.accounts[index].ID != accountID {
@@ -1111,6 +1116,95 @@ func TestRelayPlanningAdoptCurrentAccountsInitializesDesiredStateWithoutRelayWri
 	persisted := client.RelayGroupMapping.GetX(ctx, mapping.ID)
 	if !persisted.AccountManagementInitialized {
 		t.Fatal("adopted account state was not persisted")
+	}
+}
+
+func TestRelayPlanningReplanDoesNotPromoteBaselineWithoutAccountReadback(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().SetName("relay-planning-account-readback-test").SetDisplayName("Relay Planning Account Readback Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-admin-key").SetEnabled(true).SaveX(ctx)
+	createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
+	mapping := client.RelayGroupMapping.Create().SetProviderID(providerConfig.ID).SetDepartmentExternalID("dept-alpha").SetDepartmentName("Department Alpha").SetPlatform("openai").SetTemplateGroupID(10).SetGroupIds([]int64{101}).SetAccountManagementInitialized(true).SetDesiredAccounts(map[string][]map[string]int64{"101": {{"account_id": 11, "priority": 1}}}).SetWeeklyCostTarget(2500).SaveX(ctx)
+	provider := &relayPlanningSearchProvider{
+		groups: []relay.Group{{ID: 10, Name: "Template", Platform: "openai"}, {ID: 101, Name: "Target", Platform: "openai"}},
+		accounts: []relay.Account{
+			{ID: 11, Name: "Account Alpha", Platform: "openai", GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 101, Priority: 1}}},
+			{ID: 12, Name: "Account Beta", Platform: "openai"},
+		},
+		mutateWrites:         true,
+		accountWriteAcksOnly: true,
+	}
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	handler := NewRelayPlanningHandler(service)
+	router := gin.New()
+	router.POST("/admin/relay-planning/mappings/:id/replan", handler.Replan)
+	router.POST("/admin/relay-planning/mappings/:id/replan/execute", handler.ReplanExecute)
+	path := fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID)
+	review := `{"assignments":[{"index":0,"target_group_id":101,"user_ids":[],"desired_accounts":[{"account_id":12,"priority":1}]}]}`
+	fingerprint := previewRelayPlanningFingerprint(t, router, path, review)
+	payload := fmt.Sprintf(`{"assignments":[{"index":0,"target_group_id":101,"user_ids":[],"desired_accounts":[{"account_id":12,"priority":1}]}],"expected_relationship_fingerprint":%q,"operation_key":"account-readback-1"}`, fingerprint)
+	request := httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code == http.StatusOK {
+		t.Fatalf("status = 200, want failed account readback to block completion, body=%s", response.Body.String())
+	}
+	persisted := client.RelayGroupMapping.GetX(ctx, mapping.ID)
+	if persisted.BaselineRevision != 1 || persisted.DesiredAccounts["101"][0]["account_id"] != 11 {
+		t.Fatalf("failed readback promoted baseline: revision=%d desired=%v", persisted.BaselineRevision, persisted.DesiredAccounts)
+	}
+	operation := client.RelationshipOperation.Query().OnlyX(ctx)
+	if operation.Lifecycle != "interrupted" {
+		t.Fatalf("Operation lifecycle = %q, want interrupted", operation.Lifecycle)
+	}
+}
+
+func TestRelayPlanningReplanRollsBackBaselineWhenTerminalEvidenceFails(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerConfig := client.RelayProvider.Create().SetName("relay-planning-terminal-test").SetDisplayName("Relay Planning Terminal Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-admin-key").SetEnabled(true).SaveX(ctx)
+	createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
+	mapping := client.RelayGroupMapping.Create().SetProviderID(providerConfig.ID).SetDepartmentExternalID("dept-alpha").SetDepartmentName("Department Alpha").SetPlatform("openai").SetTemplateGroupID(10).SetGroupIds([]int64{101}).SetAccountManagementInitialized(true).SetDesiredAccounts(map[string][]map[string]int64{"101": {{"account_id": 11, "priority": 1}}}).SetWeeklyCostTarget(2500).SaveX(ctx)
+	provider := &relayPlanningSearchProvider{
+		groups:   []relay.Group{{ID: 10, Name: "Template", Platform: "openai"}, {ID: 101, Name: "Target", Platform: "openai"}},
+		accounts: []relay.Account{{ID: 11, Name: "Account Alpha", Platform: "openai", GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 101, Priority: 1}}}, {ID: 12, Name: "Account Beta", Platform: "openai"}},
+	}
+	client.Use(func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, mutation ent.Mutation) (ent.Value, error) {
+			operation, ok := mutation.(*ent.RelationshipOperationMutation)
+			if ok {
+				if lifecycle, changed := operation.Lifecycle(); changed && lifecycle == relationshipoperation.LifecycleApplied {
+					return nil, errors.New("synthetic terminal evidence failure")
+				}
+			}
+			return next.Mutate(ctx, mutation)
+		})
+	})
+	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	handler := NewRelayPlanningHandler(service)
+	router := gin.New()
+	router.POST("/admin/relay-planning/mappings/:id/replan", handler.Replan)
+	router.POST("/admin/relay-planning/mappings/:id/replan/execute", handler.ReplanExecute)
+	path := fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID)
+	review := `{"assignments":[{"index":0,"target_group_id":101,"user_ids":[],"desired_accounts":[{"account_id":12,"priority":1}]}]}`
+	fingerprint := previewRelayPlanningFingerprint(t, router, path, review)
+	payload := fmt.Sprintf(`{"assignments":[{"index":0,"target_group_id":101,"user_ids":[],"desired_accounts":[{"account_id":12,"priority":1}]}],"expected_relationship_fingerprint":%q,"operation_key":"terminal-failure-1"}`, fingerprint)
+	request := httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code == http.StatusOK {
+		t.Fatalf("status = 200, want terminal evidence failure, body=%s", response.Body.String())
+	}
+	persisted := client.RelayGroupMapping.GetX(ctx, mapping.ID)
+	if persisted.BaselineRevision != 1 || persisted.DesiredAccounts["101"][0]["account_id"] != 11 {
+		t.Fatalf("terminal failure promoted baseline: revision=%d desired=%v", persisted.BaselineRevision, persisted.DesiredAccounts)
+	}
+	operation := client.RelationshipOperation.Query().OnlyX(ctx)
+	owner := client.RelationshipOperationMapping.Query().OnlyX(ctx)
+	if operation.Lifecycle != relationshipoperation.LifecycleInterrupted || !owner.Active {
+		t.Fatalf("terminal failure state = lifecycle:%q owner_active:%v, want recoverable ownership", operation.Lifecycle, owner.Active)
 	}
 }
 
@@ -2976,6 +3070,7 @@ func TestRelayPlanningAddAdditionallyPreservesExistingManagedRelationship(t *tes
 		accounts:      []relay.Account{{ID: 11, Name: "Account Alpha", Platform: "openai", GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 101, Priority: 1}, {GroupID: 202, Priority: 2}}}},
 		subscriptions: map[int64][]relay.UserSubscription{42: {{UserID: 42, GroupID: 101, Status: "active"}}},
 		keys:          map[int64][]relay.APIKey{42: {{ID: 501, UserID: 42, GroupID: 101, Status: "active"}}},
+		mutateWrites:  true,
 	}
 	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
 	handler := NewRelayPlanningHandler(service)
@@ -3558,6 +3653,41 @@ func TestRelayPlanningReplanCreatesProposedTargetOnConfirm(t *testing.T) {
 	desired := persisted.DesiredAccounts["100"]
 	if len(desired) != 1 || desired[0]["account_id"] != 11 || desired[0]["priority"] != 1 {
 		t.Fatalf("proposed Target desired Accounts = %+v, want Template Account 11/1", desired)
+	}
+	steps := fixture.client.RelationshipOperationStep.Query().AllX(fixture.ctx)
+	seen := map[string]bool{}
+	for _, step := range steps {
+		if step.Lifecycle != relationshipoperationstep.LifecycleReadbackVerified || step.LatestVerifiedEffect["mapping_id"] != nil {
+			t.Fatalf("step %q = lifecycle:%s effect:%v, want resource-specific verified evidence", step.StepKey, step.Lifecycle, step.LatestVerifiedEffect)
+		}
+		seen[step.RelationshipType] = true
+		switch step.RelationshipType {
+		case "group":
+			if step.LatestVerifiedEffect["group_id"] == nil || step.LatestVerifiedEffect["name"] == nil {
+				t.Fatalf("Group step evidence = %v", step.LatestVerifiedEffect)
+			}
+		case "account_group":
+			if step.LatestVerifiedEffect["account_id"] == nil || step.LatestVerifiedEffect["group_id"] == nil || step.LatestVerifiedEffect["priority"] == nil {
+				t.Fatalf("Account step evidence = %v", step.LatestVerifiedEffect)
+			}
+		case "managed_member":
+			if step.LatestVerifiedEffect["local_user_id"] == nil || step.LatestVerifiedEffect["relay_user_id"] == nil || step.LatestVerifiedEffect["target_group_id"] == nil || step.LatestVerifiedEffect["action"] == nil {
+				t.Fatalf("Managed Mapping Member step evidence = %v", step.LatestVerifiedEffect)
+			}
+		case "subscription":
+			if step.LatestVerifiedEffect["relay_user_id"] == nil || step.LatestVerifiedEffect["group_id"] == nil || step.LatestVerifiedEffect["active"] == nil {
+				t.Fatalf("subscription step evidence = %v", step.LatestVerifiedEffect)
+			}
+		case "api_keys":
+			if step.LatestVerifiedEffect["reviewed_api_key_ids"] == nil || step.LatestVerifiedEffect["group_id"] == nil {
+				t.Fatalf("API Key step evidence = %v", step.LatestVerifiedEffect)
+			}
+		}
+	}
+	for _, relationshipType := range []string{"group", "account_group", "managed_member", "subscription", "api_keys"} {
+		if !seen[relationshipType] {
+			t.Fatalf("missing verified %s step among %+v", relationshipType, steps)
+		}
 	}
 }
 
@@ -4216,6 +4346,7 @@ func TestRelayPlanningReplanKeepsUnavailableSavedTargetAndBlocksMixedConfirm(t *
 		},
 		keys:              map[int64][]relay.APIKey{42: {}, 43: {}, 44: {}},
 		relationshipPages: [][]int64{{42, 43, 44}},
+		mutateWrites:      true,
 	}
 	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
 	router := gin.New()

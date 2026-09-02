@@ -1388,7 +1388,7 @@ func (p *replanRetryProvider) GetUsageStats(context.Context, int64, time.Time, t
 	return &relay.UsageStats{TotalTokens: 100, TotalCost: 10}, nil
 }
 
-func (p *replanRetryProvider) AssignSubscriptionForUser(_ context.Context, _, _ int64, validityDays int) error {
+func (p *replanRetryProvider) AssignSubscriptionForUser(_ context.Context, userID, groupID int64, validityDays int) error {
 	p.writeOnce.Do(func() {
 		if p.beforeWrite != nil {
 			p.beforeWrite()
@@ -1398,6 +1398,12 @@ func (p *replanRetryProvider) AssignSubscriptionForUser(_ context.Context, _, _ 
 	defer p.mu.Unlock()
 	p.assignmentCalls++
 	p.assignmentValidityDays = append(p.assignmentValidityDays, validityDays)
+	for _, subscription := range p.subscriptions {
+		if subscription.UserID == userID && subscription.GroupID == groupID && subscription.Status == "active" {
+			return nil
+		}
+	}
+	p.subscriptions = append(p.subscriptions, relay.UserSubscription{UserID: userID, GroupID: groupID, Status: "active"})
 	return nil
 }
 

@@ -276,7 +276,14 @@ func (s *Service) convergeRecoveryStep(ctx context.Context, provider relay.Provi
 	var err error
 	switch step.RelationshipType {
 	case "managed_member":
-		effect = map[string]any{"direction": string(direction)}
+		effect = map[string]any{
+			"direction":       string(direction),
+			"action":          step.Action,
+			"local_user_id":   intPointerValue(step.LocalUserID),
+			"relay_user_id":   int64PointerValue(step.RelayUserID),
+			"source_group_id": int64PointerValue(step.SourceGroupID),
+			"target_group_id": int64PointerValue(step.TargetGroupID),
+		}
 	case "group":
 		effect, err = recoverGroupStep(ctx, provider, step, desiredSide)
 	case "account_group":
@@ -316,6 +323,20 @@ func recoverGroupStep(ctx context.Context, provider relay.Provider, step *ent.Re
 		return nil, &ExternalRecoveryBlockerError{ResourceType: "group", ResourceID: groupID, Relationship: step.StepKey}
 	}
 	if step.Action == "create" {
+		want := stringValue(step.ExpectedResult["name"])
+		if group.Name != want {
+			renamer, ok := provider.(relay.GroupRenamer)
+			if !ok {
+				return nil, fmt.Errorf("Relay provider does not support Group rename")
+			}
+			if _, err := renamer.RenameGroup(ctx, group.ID, want); err != nil {
+				return nil, err
+			}
+			group, err = reader.GetGroup(ctx, group.ID)
+			if err != nil || group == nil || group.Name != want {
+				return nil, fmt.Errorf("Group create readback did not match")
+			}
+		}
 		return map[string]any{"group_id": group.ID, "name": group.Name}, nil
 	}
 	want := stringValue(step.ExpectedResult[side+"_name"])
@@ -415,6 +436,9 @@ func recoverAPIKeyStep(ctx context.Context, provider relay.Provider, step *ent.R
 		return nil, fmt.Errorf("Relay provider does not support API Key binding")
 	}
 	want := int64Value(step.ExpectedResult[side+"_group_id"])
+	if want == 0 && side == "target" {
+		want = int64PointerValue(step.TargetGroupID)
+	}
 	relayUserID := int64PointerValue(step.RelayUserID)
 	keys, err := provider.ListUserAPIKeys(ctx, relayUserID)
 	if err != nil {
@@ -534,13 +558,7 @@ func (s *Service) promoteRecoveryTarget(ctx context.Context, operation *ent.Rela
 	}
 	now := time.Now().UTC()
 	resultFact := map[string]any{"direction": string(RecoveryResume), "status": string(relationshipoperation.LifecycleApplied)}
-	if _, err := tx.RelationshipOperationMapping.Update().Where(relationshipoperationmapping.OperationIDEQ(operation.ID)).SetActive(false).SetReleasedAt(now).Save(ctx); err != nil {
-		return rollback(err)
-	}
-	if _, err := tx.RelationshipOperation.UpdateOneID(operation.ID).SetLifecycle(relationshipoperation.LifecycleApplied).SetTerminalResult(resultFact).SetCompletedAt(now).Save(ctx); err != nil {
-		return rollback(err)
-	}
-	if _, err := tx.RelationshipOperationAttempt.UpdateOneID(attemptID).SetStatus(relationshipoperationattempt.StatusSucceeded).SetResult(resultFact).SetCompletedAt(now).Save(ctx); err != nil {
+	if err := finishRecoveryWithClient(ctx, tx.Client(), operation.ID, attemptID, relationshipoperation.LifecycleApplied, RecoveryResume, resultFact, now); err != nil {
 		return rollback(err)
 	}
 	return tx.Commit()
@@ -623,17 +641,27 @@ func (s *Service) finishRecovery(ctx context.Context, operationID, attemptID int
 		return err
 	}
 	result := map[string]any{"direction": string(direction), "status": string(lifecycle)}
-	if _, err = tx.RelationshipOperationMapping.Update().Where(relationshipoperationmapping.OperationIDEQ(operationID)).SetActive(false).SetReleasedAt(now).Save(ctx); err == nil {
-		_, err = tx.RelationshipOperation.UpdateOneID(operationID).SetLifecycle(lifecycle).SetTerminalResult(result).SetCompletedAt(now).Save(ctx)
-	}
-	if err == nil {
-		_, err = tx.RelationshipOperationAttempt.UpdateOneID(attemptID).SetStatus(relationshipoperationattempt.StatusSucceeded).SetResult(result).SetCompletedAt(now).Save(ctx)
-	}
-	if err != nil {
+	if err := finishRecoveryWithClient(ctx, tx.Client(), operationID, attemptID, lifecycle, direction, result, now); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
 	return tx.Commit()
+}
+
+func finishRecoveryWithClient(ctx context.Context, client *ent.Client, operationID, attemptID int, lifecycle relationshipoperation.Lifecycle, direction RecoveryDirection, result map[string]any, now time.Time) error {
+	if err := validateVerifiedOperationSteps(ctx, client, operationID, direction); err != nil {
+		return err
+	}
+	if _, err := client.RelationshipOperationMapping.Update().Where(relationshipoperationmapping.OperationIDEQ(operationID)).SetActive(false).SetReleasedAt(now).Save(ctx); err != nil {
+		return fmt.Errorf("release recovery ownership: %w", err)
+	}
+	if _, err := client.RelationshipOperation.UpdateOneID(operationID).SetLifecycle(lifecycle).SetTerminalResult(result).SetCompletedAt(now).Save(ctx); err != nil {
+		return fmt.Errorf("complete recovery Operation: %w", err)
+	}
+	if _, err := client.RelationshipOperationAttempt.UpdateOneID(attemptID).SetStatus(relationshipoperationattempt.StatusSucceeded).SetResult(result).SetCompletedAt(now).Save(ctx); err != nil {
+		return fmt.Errorf("complete recovery attempt: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) failRecoveryAttempt(ctx context.Context, operationID, attemptID int, cause error) error {
@@ -738,6 +766,13 @@ func int64Value(value any) int64 {
 }
 
 func int64PointerValue(value *int64) int64 {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func intPointerValue(value *int) int {
 	if value == nil {
 		return 0
 	}

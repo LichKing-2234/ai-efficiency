@@ -1513,6 +1513,14 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 	state := executionState(req.OperationKey, groupResults, memberResults)
 	mergeAccountResultsIntoState(state, accountResults)
 	applied := operationStatus(state) == "active"
+	if applied {
+		if verifyErr := s.verifyInitialOperationSteps(ctx, p, durable, plan.Platform); verifyErr != nil {
+			if finishErr := durable.finishInterrupted(ctx, map[string]any{"mapping_id": initialMapping.ID, "status": "interrupted"}); finishErr != nil {
+				return nil, errors.Join(verifyErr, finishErr)
+			}
+			return nil, verifyErr
+		}
+	}
 	var mapping *Mapping
 	if applied {
 		tx, txErr := s.client.Tx(ctx)
@@ -1540,7 +1548,13 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 				}
 			}
 			if err == nil {
+				err = durable.finishApplied(ctx, tx.Client(), map[string]any{"mapping_id": mapping.ID, "status": mapping.Status}, time.Now().UTC())
+			}
+			if err == nil {
 				err = tx.Commit()
+				if err == nil {
+					durable.finished = true
+				}
 			} else {
 				_ = tx.Rollback()
 			}
@@ -1551,8 +1565,10 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 	if err != nil {
 		return nil, fmt.Errorf("save group mapping: %w", err)
 	}
-	if err := durable.finish(ctx, applied, map[string]any{"mapping_id": mapping.ID, "status": mapping.Status}); err != nil {
-		return nil, fmt.Errorf("finish Relationship Operation: %w", err)
+	if !applied {
+		if err := durable.finishInterrupted(ctx, map[string]any{"mapping_id": mapping.ID, "status": mapping.Status}); err != nil {
+			return nil, fmt.Errorf("finish Relationship Operation: %w", err)
+		}
 	}
 	updatedMapping := *mapping
 	currentAccounts, readbackErr := accountReader.ListAccountsForPlatform(ctx, plan.Platform)
@@ -4293,11 +4309,19 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 		mappingResults = append(mappingResults, MappingPersistenceResult{MappingID: sourceID, Role: "source", Status: "pending"})
 	}
 	applied := operationStatus(state) == "active"
+	if applied {
+		if verifyErr := s.verifyInitialOperationSteps(ctx, p, durable, plan.Platform); verifyErr != nil {
+			if finishErr := durable.finishInterrupted(ctx, map[string]any{"mapping_id": mapping.ID, "status": "interrupted"}); finishErr != nil {
+				return nil, errors.Join(verifyErr, finishErr)
+			}
+			return nil, verifyErr
+		}
+	}
 	if !applied {
 		for index := range mappingResults {
 			mappingResults[index].Status = "skipped"
 		}
-		if err := durable.finish(ctx, false, map[string]any{"mapping_id": mapping.ID, "status": "interrupted"}); err != nil {
+		if err := durable.finishInterrupted(ctx, map[string]any{"mapping_id": mapping.ID, "status": "interrupted"}); err != nil {
 			return nil, fmt.Errorf("finish interrupted Relationship Operation: %w", err)
 		}
 		return &ExecutionResult{Plan: plan, Groups: groupResults, Accounts: accountResults, Members: memberResults, Mappings: mappingResults, Mapping: mapping}, nil
@@ -4361,6 +4385,9 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 			return nil, rollback(index+1, fmt.Errorf("source Mapping %d baseline revision changed during execution", sourceID))
 		}
 	}
+	if err := durable.finishApplied(ctx, tx.Client(), map[string]any{"mapping_id": mapping.ID, "status": "applied"}, time.Now().UTC()); err != nil {
+		return nil, rollback(len(mappingResults)-1, err)
+	}
 	if err := tx.Commit(); err != nil {
 		_ = tx.Rollback()
 		for index := range mappingResults {
@@ -4368,11 +4395,9 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 		}
 		return nil, &MappingPersistenceError{Cause: err, Results: mappingResults}
 	}
+	durable.finished = true
 	for index := range mappingResults {
 		mappingResults[index].Status = "succeeded"
-	}
-	if err := durable.finish(ctx, true, map[string]any{"mapping_id": mapping.ID, "status": "applied"}); err != nil {
-		return nil, fmt.Errorf("finish applied Relationship Operation: %w", err)
 	}
 	return &ExecutionResult{Plan: plan, Groups: groupResults, Accounts: accountResults, Members: memberResults, Mappings: mappingResults, Mapping: resultMapping}, nil
 }
