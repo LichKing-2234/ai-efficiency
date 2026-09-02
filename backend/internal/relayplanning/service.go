@@ -1004,6 +1004,9 @@ func assignCandidateDispositions(mapping *ent.RelayGroupMapping, candidates []Ca
 			candidate.Disposition = "excluded"
 		case candidate.CanRetain && baselineTargetID == targetID:
 			candidate.Disposition = "retained"
+			candidate.Warnings = slices.DeleteFunc(candidate.Warnings, func(warning string) bool {
+				return warning == "user is not a member of the selected source group" || warning == "no migratable AE-managed API key"
+			})
 		case candidate.SourceGroupID > 0:
 			candidate.Disposition = "migration"
 		default:
