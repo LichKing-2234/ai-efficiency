@@ -244,7 +244,9 @@ is not presented as a new Source or Target operation, even when it no longer
 belongs to its historical Migration Source. The accompanying `can_retain` fact
 is authoritative across browser edits: it is true only when the saved Target is
 observed and neither relationship unavailability nor member retry state blocks
-retention.
+retention. Because retention performs no Source or API Key migration, retained
+members omit Source-membership and missing-migratable-Key warnings; those
+warnings remain available for reviewed migration candidates.
 
 An explicit Managed Mapping Member removal deletes the desired assignment
 immediately in reviewed state:
