@@ -306,7 +306,8 @@ The current fingerprint carries separate canonical hashes for:
 - mapping and persisted retry state;
 - local-to-Relay user identity;
 - subscription Group/status relationships;
-- eligible API-Key ID/Group bindings.
+- active executable API-Key ID/Group bindings, plus current status and Group
+  facts for historically reviewed Keys.
 
 Credentials, API-Key values, private Account configuration, and raw Provider
 payloads are excluded. Usage, rank, cost, and freshness are advisory and also
