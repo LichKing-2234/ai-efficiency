@@ -262,6 +262,7 @@ function translateWarning(warning: string): string {
   if (warning === 'user is not a member of the selected source group') return t('relayPlanning.warningNotSourceMember')
   if (warning === 'no migratable AE-managed API key') return t('relayPlanning.warningNoMigratableKey')
   if (warning === '30-day usage is unknown; capacity may be underestimated') return t('relayPlanning.warningUnknownUsage')
+  if (warning === 'user is not in the selected department') return t('relayPlanning.warningNotSelectedDepartment')
   if (warning === 'user belongs to multiple departments') return t('relayPlanning.warningMultipleDepartments')
   if (warning.includes(' has no relay mapping')) return t('relayPlanning.warningNoRelayMapping', { user: warning.replace(/ has no relay mapping$/, '') })
   if (warning.startsWith('relay groups unavailable: ')) return `${t('relayPlanning.warningRelayGroupsUnavailable')}: ${warning.slice('relay groups unavailable: '.length)}`

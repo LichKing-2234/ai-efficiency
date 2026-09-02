@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorysource"
 	"github.com/ai-efficiency/backend/ent/directorysyncrun"
 	"github.com/ai-efficiency/backend/ent/relationshipoperation"
@@ -231,6 +232,69 @@ func TestPreviewDoesNotCreateDefaultGroupForNonSourceOnlyCandidates(t *testing.T
 	recommended, count := resolveGroupCount(PreviewRequest{WeeklyCostTarget: 2500}, nil)
 	if recommended != 0 || count != 0 {
 		t.Fatalf("empty eligible recommendation = %d/%d, want 0/0", recommended, count)
+	}
+}
+
+func TestPreviewDepartmentMembershipWarningUsesCurrentEffectiveHierarchy(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	service := NewService(client, nil, nil)
+	selectedDepartment := "dept-selected"
+	source, currentRun := createRelayPlanningDirectorySnapshot(t, ctx, client, selectedDepartment)
+	selected := client.DirectoryDepartment.Query().Where(
+		directorydepartment.SourceIDEQ(source.ID),
+		directorydepartment.ExternalIDEQ(selectedDepartment),
+	).OnlyX(ctx)
+	client.DirectoryDepartment.UpdateOne(selected).SetEffectiveParentExternalID("").SaveX(ctx)
+	client.DirectoryDepartment.Create().SetSourceID(source.ID).SetExternalID("dept-child").SetName("Department Child").SetPath("synthetic/dept-selected/dept-child").SetEffectiveParentExternalID(selectedDepartment).SetLastSeenRunID(currentRun.ID).SaveX(ctx)
+	client.DirectoryDepartment.Create().SetSourceID(source.ID).SetExternalID("dept-outside").SetName("Department Outside").SetPath("synthetic/dept-outside").SetEffectiveParentExternalID("").SetLastSeenRunID(currentRun.ID).SaveX(ctx)
+
+	staleRun := client.DirectorySyncRun.Create().SetSourceID(source.ID).SetMode(directorysyncrun.ModeApply).SetStatus(directorysyncrun.StatusCompleted).SetPhase(directorysyncrun.PhaseCompleted).SetCompletedAt(time.Now().UTC().Add(-time.Hour)).SaveX(ctx)
+
+	tests := []struct {
+		name         string
+		email        string
+		memberships  []string
+		duplicate    bool
+		staleOutside bool
+		wantWarning  string
+	}{
+		{name: "selected department", email: "alice@example.com", memberships: []string{selectedDepartment}},
+		{name: "descendant department", email: "bob@example.org", memberships: []string{"dept-child"}},
+		{name: "outside selected subtree", email: "carol@example.net", memberships: []string{"dept-outside"}, wantWarning: "user is not in the selected department"},
+		{name: "duplicate current membership", email: "dana@example.edu", memberships: []string{"dept-child"}, duplicate: true},
+		{name: "multiple effective memberships", email: "erin@example.com", memberships: []string{selectedDepartment, "dept-outside"}, wantWarning: "user belongs to multiple departments"},
+		{name: "stale membership ignored", email: "frank@example.org", memberships: []string{selectedDepartment}, staleOutside: true},
+	}
+	users := make([]*ent.User, 0, len(tests))
+	for index, tt := range tests {
+		user := client.User.Create().SetUsername(fmt.Sprintf("candidate-%d", index)).SetEmail(tt.email).SetAuthSource(entuser.AuthSourceLdap).SetRelayUserID(1000 + index).SaveX(ctx)
+		users = append(users, user)
+		createMember := func(externalID string, runID int, memberships []string) {
+			member := client.DirectoryMember.Create().SetSourceID(source.ID).SetExternalID(externalID).SetEmailNormalized(tt.email).SetDisplayName(user.Username).SetDepartmentExternalID(memberships[0]).SetMatchedUserID(user.ID).SetLastSeenRunID(runID).SaveX(ctx)
+			for _, departmentID := range memberships {
+				client.DirectoryMemberDepartment.Create().SetSourceID(source.ID).SetDirectoryMemberID(member.ID).SetDepartmentExternalID(departmentID).SetLastSeenRunID(runID).SaveX(ctx)
+			}
+		}
+		createMember(fmt.Sprintf("member-%d", index), currentRun.ID, tt.memberships)
+		if tt.duplicate {
+			createMember(fmt.Sprintf("member-%d-duplicate", index), currentRun.ID, tt.memberships)
+		}
+		if tt.staleOutside {
+			createMember(fmt.Sprintf("member-%d-stale", index), staleRun.ID, []string{"dept-outside"})
+		}
+	}
+	warnings, err := service.departmentMembershipWarnings(ctx, users, selectedDepartment)
+	if err != nil {
+		t.Fatalf("departmentMembershipWarnings() error = %v", err)
+	}
+	for index, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := warnings[users[index].ID]
+			if got != tt.wantWarning {
+				t.Fatalf("departmentMembershipWarnings() = %q, want %q", got, tt.wantWarning)
+			}
+		})
 	}
 }
 
