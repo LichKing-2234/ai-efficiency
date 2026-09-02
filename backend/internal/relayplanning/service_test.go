@@ -1053,7 +1053,7 @@ func int64Pointer(value int64) *int64 {
 	return &value
 }
 
-func TestExecuteReplanPersistsDurableOperationBeforeWriteAndBlocksConcurrentConfirm(t *testing.T) {
+func TestExecuteReplanVerifiesInactiveReviewedAPIKeyBeforePromotingBaseline(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	providerRow, err := client.RelayProvider.Create().
@@ -1104,8 +1104,11 @@ func TestExecuteReplanPersistsDurableOperationBeforeWriteAndBlocksConcurrentConf
 			{UserID: 1001, GroupID: 20, Status: "active"},
 			{UserID: 1001, GroupID: 101, Status: "active"},
 		},
-		keys:         []relay.APIKey{{ID: 501, UserID: 1001, GroupID: 101, Status: "active"}},
-		bindFailures: 1,
+		keys: []relay.APIKey{
+			{ID: 501, UserID: 1001, GroupID: 101, Status: "inactive"},
+			{ID: 502, UserID: 1001, GroupID: 101, Status: "active"},
+		},
+		discardBindingKeyID: 502,
 	}
 	resolver := relayPlanningProviderResolver(func(_ context.Context, providerID int) (relay.Provider, error) {
 		if providerID != providerRow.ID {
@@ -1126,6 +1129,15 @@ func TestExecuteReplanPersistsDurableOperationBeforeWriteAndBlocksConcurrentConf
 		SetGroupIds([]int64{101, 102}).
 		SetMemberAssignments(map[string]int64{fmt.Sprint(user.ID): 101}).
 		SetMemberSources(map[string]int64{fmt.Sprint(user.ID): 20}).
+		SetOperationState(map[string]map[string]string{
+			"member:" + fmt.Sprint(user.ID): {
+				"api_keys":             "501:succeeded,502:succeeded",
+				"reviewed_api_key_ids": "501,502",
+				"subscription":         "succeeded",
+				"source_removal":       "succeeded",
+				"target_group_id":      "101",
+			},
+		}).
 		SetStatus("active").
 		SetWeeklyCostTarget(2500).
 		SaveX(ctx)
@@ -1156,10 +1168,13 @@ func TestExecuteReplanPersistsDurableOperationBeforeWriteAndBlocksConcurrentConf
 		t.Fatalf("first ExecuteReplan() error = %v", err)
 	}
 	if len(first.Members) != 1 || first.Members[0].Error == "" {
-		t.Fatalf("first replan members = %#v, want API key failure", first.Members)
+		t.Fatalf("first replan members = %#v, want API key readback failure", first.Members)
 	}
-	if len(first.Members[0].APIKeys) != 1 || !strings.Contains(first.Members[0].APIKeys[0], "failed") {
-		t.Fatalf("first replan API keys = %#v, want failed move", first.Members[0].APIKeys)
+	if len(first.Members[0].APIKeys) != 2 || !strings.Contains(strings.Join(first.Members[0].APIKeys, ","), "502:failed:readback mismatch") {
+		t.Fatalf("first replan API keys = %#v, want partial readback failure", first.Members[0].APIKeys)
+	}
+	if fmt.Sprint(fake.bound) != "[501:102 502:102]" {
+		t.Fatalf("API key bindings = %v, want exact mixed-status frozen set", fake.bound)
 	}
 	if !durableBeforeWrite {
 		t.Fatal("durable Operation/ownership/dispatched steps/running attempt were not visible before the first Relay write")
@@ -1204,6 +1219,78 @@ func TestExecuteReplanPersistsDurableOperationBeforeWriteAndBlocksConcurrentConf
 	}
 }
 
+func TestExecuteReplanPersistsExactInactiveReviewedAPIKeyEvidence(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerRow := client.RelayProvider.Create().
+		SetName("relay-planning-evidence-test").
+		SetDisplayName("Relay Planning Evidence Test").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetRelayType("sub2api").
+		SaveX(ctx)
+	departmentID := "dept-evidence"
+	source, run := createRelayPlanningDirectorySnapshot(t, ctx, client, departmentID)
+	user := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource(entuser.AuthSourceLdap).SetRelayUserID(1002).SaveX(ctx)
+	member := client.DirectoryMember.Create().SetSourceID(source.ID).SetExternalID("member-alice").SetEmailNormalized(user.Email).SetDisplayName(user.Username).SetDepartmentExternalID(departmentID).SetMatchedUserID(user.ID).SetLastSeenRunID(run.ID).SaveX(ctx)
+	client.DirectoryMemberDepartment.Create().SetSourceID(source.ID).SetDirectoryMemberID(member.ID).SetMemberExternalID(member.ExternalID).SetMemberEmailNormalized(member.EmailNormalized).SetDepartmentExternalID(departmentID).SetLastSeenRunID(run.ID).SaveX(ctx)
+	peer := client.User.Create().SetUsername("bob").SetEmail("bob@example.org").SetAuthSource(entuser.AuthSourceLdap).SetRelayUserID(1003).SaveX(ctx)
+	peerMember := client.DirectoryMember.Create().SetSourceID(source.ID).SetExternalID("member-bob").SetEmailNormalized(peer.Email).SetDisplayName(peer.Username).SetDepartmentExternalID(departmentID).SetMatchedUserID(peer.ID).SetLastSeenRunID(run.ID).SaveX(ctx)
+	client.DirectoryMemberDepartment.Create().SetSourceID(source.ID).SetDirectoryMemberID(peerMember.ID).SetMemberExternalID(peerMember.ExternalID).SetMemberEmailNormalized(peerMember.EmailNormalized).SetDepartmentExternalID(departmentID).SetLastSeenRunID(run.ID).SaveX(ctx)
+
+	fake := &replanRetryProvider{
+		groups: []relay.Group{
+			{ID: 10, Name: "Template", Platform: "openai"},
+			{ID: 20, Name: "Source", Platform: "openai"},
+			{ID: 101, Name: "Target A", Platform: "openai"},
+			{ID: 102, Name: "Target B", Platform: "openai"},
+		},
+		relayUsers: map[int64]relay.User{
+			1002: {ID: 1002, Username: "alice", Email: "alice@example.com"},
+			1003: {ID: 1003, Username: "bob", Email: "bob@example.org"},
+		},
+		subscriptions: []relay.UserSubscription{
+			{UserID: 1002, GroupID: 20, Status: "active"}, {UserID: 1002, GroupID: 101, Status: "active"},
+			{UserID: 1003, GroupID: 20, Status: "active"}, {UserID: 1003, GroupID: 102, Status: "active"},
+		},
+		keys: []relay.APIKey{
+			{ID: 501, UserID: 1002, GroupID: 101, Status: "inactive"},
+			{ID: 502, UserID: 1003, GroupID: 102, Status: "active"},
+		},
+	}
+	service := NewService(client, relayPlanningProviderResolver(func(context.Context, int) (relay.Provider, error) { return fake, nil }), nil)
+	mapping := client.RelayGroupMapping.Create().SetProviderID(providerRow.ID).SetDepartmentExternalID(departmentID).SetDepartmentName("Department Evidence").SetPlatform("openai").SetTemplateGroupID(10).SetTemplateGroupName("Template").SetSourceGroupID(20).SetSourceGroupName("Source").SetGroupIds([]int64{101, 102}).SetMemberAssignments(map[string]int64{fmt.Sprint(user.ID): 101, fmt.Sprint(peer.ID): 102}).SetMemberSources(map[string]int64{fmt.Sprint(user.ID): 20, fmt.Sprint(peer.ID): 20}).SetOperationState(map[string]map[string]string{
+		"member:" + fmt.Sprint(user.ID): {"api_keys": "501:succeeded", "reviewed_api_key_ids": "501", "subscription": "succeeded", "source_removal": "succeeded", "target_group_id": "101"},
+		"member:" + fmt.Sprint(peer.ID): {"api_keys": "502:succeeded", "reviewed_api_key_ids": "502", "subscription": "succeeded", "source_removal": "succeeded", "target_group_id": "102"},
+	}).SetStatus("active").SetWeeklyCostTarget(2500).SaveX(ctx)
+
+	request := ExecuteRequest{PreviewRequest: PreviewRequest{Assignments: []Assignment{{Index: 0, UserIDs: []int{peer.ID}}, {Index: 1, UserIDs: []int{user.ID}}}}, OperationKey: "replan-evidence-op"}
+	preview, err := service.Replan(ctx, mapping.ID, nil, request.Assignments, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Replan() error = %v", err)
+	}
+	request.ExpectedRelationshipFingerprint = preview.RelationshipFingerprint
+	result, err := service.ExecuteReplan(ctx, mapping.ID, request)
+	if err != nil {
+		t.Fatalf("ExecuteReplan() error = %v", err)
+	}
+	if result.Mapping.BaselineRevision != 2 || result.Mapping.MemberAssignments[fmt.Sprint(user.ID)] != 102 || result.Mapping.MemberAssignments[fmt.Sprint(peer.ID)] != 101 {
+		t.Fatalf("promoted Mapping = revision:%d assignments:%v", result.Mapping.BaselineRevision, result.Mapping.MemberAssignments)
+	}
+	if fmt.Sprint(fake.bound) != "[502:101 501:102]" {
+		t.Fatalf("API key bindings = %v, want both sides of the member swap", fake.bound)
+	}
+	steps := client.RelationshipOperationStep.Query().Where(relationshipoperationstep.RelationshipTypeEQ("api_keys")).AllX(ctx)
+	if len(steps) != 2 {
+		t.Fatalf("API key steps = %d, want 2", len(steps))
+	}
+	for _, step := range steps {
+		if step.Lifecycle != relationshipoperationstep.LifecycleReadbackVerified || len(step.ReviewedResourceIds) != 1 || int64Value(step.LatestVerifiedEffect["group_id"]) != int64PointerValue(step.TargetGroupID) {
+			t.Fatalf("API key step = lifecycle:%s resources:%v effect:%v, want exact reviewed Key and Target evidence", step.Lifecycle, step.ReviewedResourceIds, step.LatestVerifiedEffect)
+		}
+	}
+}
+
 func createRelayPlanningDirectorySnapshot(t *testing.T, ctx context.Context, client *ent.Client, departmentID string) (*ent.DirectorySource, *ent.DirectorySyncRun) {
 	t.Helper()
 	now := time.Now().UTC()
@@ -1239,9 +1326,11 @@ type replanRetryProvider struct {
 	relay.Provider
 	mu                     sync.Mutex
 	groups                 []relay.Group
+	relayUsers             map[int64]relay.User
 	subscriptions          []relay.UserSubscription
 	keys                   []relay.APIKey
 	bindFailures           int
+	discardBindingKeyID    int64
 	bound                  []string
 	assignmentCalls        int
 	assignmentValidityDays []int
@@ -1260,6 +1349,10 @@ func (p *replanRetryProvider) ListPlatformGroups(context.Context) ([]relay.Group
 }
 
 func (p *replanRetryProvider) GetUser(_ context.Context, userID int64) (*relay.User, error) {
+	if user, ok := p.relayUsers[userID]; ok {
+		copy := user
+		return &copy, nil
+	}
 	return &relay.User{ID: userID, Username: "alice", Email: "alice@example.com"}, nil
 }
 
@@ -1275,10 +1368,16 @@ func (p *replanRetryProvider) ListUserSubscriptions(_ context.Context, userID in
 	return items, nil
 }
 
-func (p *replanRetryProvider) ListUserAPIKeys(context.Context, int64) ([]relay.APIKey, error) {
+func (p *replanRetryProvider) ListUserAPIKeys(_ context.Context, userID int64) ([]relay.APIKey, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return append([]relay.APIKey(nil), p.keys...), nil
+	items := make([]relay.APIKey, 0, len(p.keys))
+	for _, key := range p.keys {
+		if key.UserID == 0 || key.UserID == userID {
+			items = append(items, key)
+		}
+	}
+	return items, nil
 }
 
 func (p *replanRetryProvider) ListAccountsForPlatform(context.Context, string) ([]relay.Account, error) {
@@ -1324,7 +1423,7 @@ func (p *replanRetryProvider) BindAPIKeyToGroup(_ context.Context, keyID, groupI
 		return errors.New("synthetic key move failure")
 	}
 	for index := range p.keys {
-		if p.keys[index].ID == keyID {
+		if p.keys[index].ID == keyID && p.discardBindingKeyID != keyID {
 			p.keys[index].GroupID = groupID
 		}
 	}

@@ -233,6 +233,12 @@ A source-backed addition ensures the Target subscription, moves eligible
 AI Efficiency-managed API Keys from the reviewed Source to the Target, and
 removes the Source subscription. A target-only addition ensures only the Target
 subscription. Every new subscription assigned by this workflow uses 365 days.
+Once an API-Key ID enters the frozen reviewed movement set, execution uses that
+exact set even if a Key becomes inactive. Initial Confirm reads every reviewed
+Key after binding and verifies its actual Target Group before removing the
+Source subscription or promoting the Mapping baseline. A missing Key, failed
+readback, or Key still outside the reviewed Target interrupts the Relationship
+Operation and leaves the prior baseline authoritative.
 
 Replan Preview exposes one relationship disposition for every local candidate:
 `retained` means the saved Target and observed active Target agree;

@@ -873,6 +873,7 @@ func TestRelayPlanningExecuteUsesOnlyEachUsersExplicitSource(t *testing.T) {
 			42: {UserID: 42, RangeActualCost: &cost, RangeTotalTokens: &tokens},
 			43: {UserID: 43, RangeActualCost: &cost, RangeTotalTokens: &tokens},
 		},
+		mutateWrites: true,
 	}
 	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
 	handler := NewRelayPlanningHandler(service)
@@ -931,6 +932,7 @@ func TestRelayPlanningCreateInheritsTemplateAccountsAndAppliesReviewedOverride(t
 		subscriptions: map[int64][]relay.UserSubscription{42: {{UserID: 42, GroupID: 20, Status: "active"}}},
 		keys:          map[int64][]relay.APIKey{42: {{ID: 501, UserID: 42, GroupID: 20, Status: "active"}}},
 		usage:         map[int64]relay.TeamUserUsageStats{42: {UserID: 42, RangeActualCost: &cost, RangeTotalTokens: &tokens}},
+		mutateWrites:  true,
 	}
 	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
 	handler := NewRelayPlanningHandler(service)
@@ -2875,6 +2877,7 @@ func TestRelayPlanningMoveHereTransfersOneManagedTargetAndUpdatesBothMappings(t 
 		subscriptions: map[int64][]relay.UserSubscription{42: {{UserID: 42, GroupID: 101, Status: "active"}}},
 		keys:          map[int64][]relay.APIKey{42: {{ID: 501, UserID: 42, GroupID: 101, Status: "active"}}},
 		usage:         map[int64]relay.TeamUserUsageStats{42: {UserID: 42, RangeActualCost: &cost, RangeTotalTokens: &tokens}},
+		mutateWrites:  true,
 	}
 	service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
 	handler := NewRelayPlanningHandler(service)

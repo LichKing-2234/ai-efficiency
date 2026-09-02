@@ -1475,9 +1475,9 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 				continue
 			}
 			if candidate.SourceGroupID > 0 {
-				member = executeMemberMigration(ctx, assigner, remover, binder, candidate, targetID, candidate.SourceGroupID, member)
+				member = executeMemberMigration(ctx, p, assigner, remover, binder, candidate, targetID, candidate.SourceGroupID, member)
 			} else {
-				member = executeMemberMigration(ctx, assigner, nil, nil, candidate, targetID, 0, member)
+				member = executeMemberMigration(ctx, p, assigner, nil, nil, candidate, targetID, 0, member)
 			}
 			memberResults = append(memberResults, member)
 		}
@@ -4105,7 +4105,7 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 		}
 		member = completedMemberStepsFromState(mapping.OperationState, "member:"+key, member, candidate, intent)
 		if sourceGroupID > 0 {
-			member = executeMemberMigration(ctx, assigner, remover, binder, candidate, sourceGroupID, targetGroupID, member)
+			member = executeMemberMigration(ctx, p, assigner, remover, binder, candidate, sourceGroupID, targetGroupID, member)
 		} else if remover == nil {
 			member.Error = "relay provider does not support subscription removal"
 		} else if removeErr := remover.RemoveSubscriptionForUser(ctx, candidate.RelayUserID, targetGroupID); removeErr != nil && !isNotFoundError(removeErr) {
@@ -4171,19 +4171,28 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 					candidate.SourceGroupID = sourceGroupID
 				}
 				member.Action = "move_here"
-				member = executeMemberMigration(ctx, assigner, remover, binder, candidate, targetID, fromGroupID, member)
+				member = executeMemberMigration(ctx, p, assigner, remover, binder, candidate, targetID, fromGroupID, member)
 				transferUpdates = append(transferUpdates, transferUpdate{mapping: transferSource, userID: userID, result: member})
 			} else if action.Mode == "add_additionally" {
 				candidate.SourceGroupID = 0
 				member.Action = "add_additionally"
-				member = executeMemberMigration(ctx, assigner, nil, nil, candidate, targetID, 0, member)
+				member = executeMemberMigration(ctx, p, assigner, nil, nil, candidate, targetID, 0, member)
 			} else if !retry && fromGroupID == targetID {
 				member.Subscription = "unchanged"
 				member.SourceRemoval = "skipped"
 			} else if candidate.SourceMember {
-				member = executeMemberMigration(ctx, assigner, remover, binder, candidate, targetID, fromGroupID, member)
+				member = executeMemberMigration(ctx, p, assigner, remover, binder, candidate, targetID, fromGroupID, member)
 			} else {
-				member = executeMemberMigration(ctx, assigner, nil, nil, candidate, targetID, 0, member)
+				member = executeMemberMigration(ctx, p, assigner, nil, nil, candidate, targetID, 0, member)
+			}
+			if member.Error == "" && plannedAPIKeyChange(plan, assignment.Index, candidate.RelayUserID, fromGroupID, targetID) {
+				stepKey := fmt.Sprintf("target:%d:api-keys:%d:%d:%d", assignment.Index, candidate.RelayUserID, fromGroupID, targetID)
+				if verifyErr := durable.verifyStep(ctx, stepKey, map[string]any{
+					"reviewed_api_key_ids": append([]int64(nil), member.reviewedAPIKeys.IDs...),
+					"group_id":             targetID,
+				}); verifyErr != nil {
+					return nil, verifyErr
+				}
 			}
 			memberFromGroups[key] = fromGroupID
 			memberResults = append(memberResults, member)
@@ -4366,6 +4375,20 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 		return nil, fmt.Errorf("finish applied Relationship Operation: %w", err)
 	}
 	return &ExecutionResult{Plan: plan, Groups: groupResults, Accounts: accountResults, Members: memberResults, Mappings: mappingResults, Mapping: resultMapping}, nil
+}
+
+func plannedAPIKeyChange(plan *Plan, targetIndex int, relayUserID, fromGroupID, targetGroupID int64) bool {
+	for _, target := range plan.TargetSummaries {
+		if target.Index != targetIndex {
+			continue
+		}
+		for _, change := range target.APIKeys {
+			if change.RelayUserID == relayUserID && change.FromGroupID == fromGroupID && change.ToGroupID == targetGroupID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func isZeroChangeReplan(mapping Mapping, plan *Plan, req ExecuteRequest) bool {
@@ -4677,7 +4700,7 @@ func apiKeyResultForID(results []string, keyID int64) string {
 	return strconv.FormatInt(keyID, 10) + ":succeeded"
 }
 
-func executeMemberMigration(ctx context.Context, assigner subscriptionAssigner, remover subscriptionRemover, binder relay.APIKeyGroupBinder, candidate *Candidate, targetGroupID, fromGroupID int64, member MemberResult) MemberResult {
+func executeMemberMigration(ctx context.Context, provider relay.Provider, assigner subscriptionAssigner, remover subscriptionRemover, binder relay.APIKeyGroupBinder, candidate *Candidate, targetGroupID, fromGroupID int64, member MemberResult) MemberResult {
 	if member.Subscription != "succeeded" {
 		if hasActiveSubscription(relationshipUserFact{Subscriptions: candidate.relationshipSubscriptions}, targetGroupID) {
 			member.Subscription = "unchanged"
@@ -4694,13 +4717,23 @@ func executeMemberMigration(ctx context.Context, assigner subscriptionAssigner, 
 	if fromGroupID <= 0 || fromGroupID == targetGroupID {
 		return member
 	}
+	if binder == nil && member.reviewedAPIKeys.Frozen && len(member.reviewedAPIKeys.IDs) > 0 {
+		member.Error = "relay provider does not support API key binding"
+		return member
+	}
 	if binder != nil {
 		completedKeyIDs, _ := completedAPIKeySteps(member.APIKeys)
 		apiKeyError := false
-		for _, key := range candidate.relationshipAPIKeys {
+		keys := candidate.relationshipAPIKeys
+		if member.reviewedAPIKeys.Frozen {
+			keys = candidate.relationshipObservedAPIKeys
+		}
+		reviewedIDs := make([]int64, 0, len(keys))
+		for _, key := range keys {
 			if key.GroupID != fromGroupID || completedKeyIDs[key.ID] || (member.reviewedAPIKeys.Frozen && !slices.Contains(member.reviewedAPIKeys.IDs, key.ID)) {
 				continue
 			}
+			reviewedIDs = append(reviewedIDs, key.ID)
 			if bindErr := binder.BindAPIKeyToGroup(ctx, key.ID, targetGroupID); bindErr != nil {
 				member.APIKeys = append(member.APIKeys, fmt.Sprintf("%d:failed:%s", key.ID, bindErr))
 				apiKeyError = true
@@ -4711,6 +4744,40 @@ func executeMemberMigration(ctx context.Context, assigner subscriptionAssigner, 
 		if apiKeyError {
 			member.Error = "one or more API keys could not be moved"
 			return member
+		}
+		if member.reviewedAPIKeys.Frozen {
+			reviewedIDs = append([]int64(nil), member.reviewedAPIKeys.IDs...)
+		}
+		if len(reviewedIDs) > 0 {
+			current, readErr := provider.ListUserAPIKeys(ctx, candidate.RelayUserID)
+			if readErr != nil {
+				member.Error = "API key readback failed"
+				return member
+			}
+			currentByID := make(map[int64]relay.APIKey, len(current))
+			for _, key := range current {
+				currentByID[key.ID] = key
+			}
+			for _, keyID := range reviewedIDs {
+				key, found := currentByID[keyID]
+				if !found || apiKeyGroupID(key) != targetGroupID {
+					result := fmt.Sprintf("%d:failed:readback mismatch", keyID)
+					index := slices.IndexFunc(member.APIKeys, func(value string) bool {
+						parsedID, _, ok := parseAPIKeyStep(value)
+						return ok && parsedID == keyID
+					})
+					if index >= 0 {
+						member.APIKeys[index] = result
+					} else {
+						member.APIKeys = append(member.APIKeys, result)
+					}
+					apiKeyError = true
+				}
+			}
+			if apiKeyError {
+				member.Error = "API key readback did not match the reviewed target"
+				return member
+			}
 		}
 	}
 	if member.SourceRemoval == "succeeded" {
