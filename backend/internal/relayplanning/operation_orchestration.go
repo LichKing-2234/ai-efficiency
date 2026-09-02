@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/relationshipoperationattempt"
 	"github.com/ai-efficiency/backend/ent/relationshipoperationmapping"
 	"github.com/ai-efficiency/backend/ent/relationshipoperationstep"
+	"github.com/ai-efficiency/backend/internal/relay"
 )
 
 type ActiveRelationshipOperationError struct {
@@ -327,7 +329,23 @@ func (execution *durableExecution) verifyStep(ctx context.Context, key string, e
 	return nil
 }
 
-func (execution *durableExecution) finish(ctx context.Context, applied bool, result map[string]any) error {
+func (s *Service) verifyInitialOperationSteps(ctx context.Context, provider relay.Provider, execution *durableExecution, platform string) error {
+	steps, err := execution.client.RelationshipOperationStep.Query().Where(
+		relationshipoperationstep.OperationIDEQ(execution.operationID),
+	).All(ctx)
+	if err != nil {
+		return fmt.Errorf("load Relationship Operation steps for initial readback: %w", err)
+	}
+	resolveRecoveryStepGroupIDs(steps)
+	for _, step := range steps {
+		if err := s.convergeRecoveryStep(ctx, provider, step, RecoveryResume, platform); err != nil {
+			return fmt.Errorf("verify initial Relationship Operation step %q: %w", step.StepKey, err)
+		}
+	}
+	return nil
+}
+
+func (execution *durableExecution) finishInterrupted(ctx context.Context, result map[string]any) error {
 	now := time.Now().UTC()
 	tx, err := execution.client.Tx(ctx)
 	if err != nil {
@@ -337,35 +355,145 @@ func (execution *durableExecution) finish(ctx context.Context, applied bool, res
 		_ = tx.Rollback()
 		return cause
 	}
-	if applied {
-		if _, err := tx.RelationshipOperationStep.Update().Where(
-			relationshipoperationstep.OperationIDEQ(execution.operationID),
-			relationshipoperationstep.LifecycleNEQ(relationshipoperationstep.LifecycleReadbackVerified),
-		).SetLifecycle(relationshipoperationstep.LifecycleReadbackVerified).SetLatestVerifiedEffect(result).Save(ctx); err != nil {
-			return rollback(err)
-		}
-		if _, err := tx.RelationshipOperationMapping.Update().Where(relationshipoperationmapping.OperationIDEQ(execution.operationID)).SetActive(false).SetReleasedAt(now).Save(ctx); err != nil {
-			return rollback(err)
-		}
-		if _, err := tx.RelationshipOperation.UpdateOneID(execution.operationID).SetLifecycle(relationshipoperation.LifecycleApplied).SetTerminalResult(result).SetCompletedAt(now).Save(ctx); err != nil {
-			return rollback(err)
-		}
-		if _, err := tx.RelationshipOperationAttempt.UpdateOneID(execution.attemptID).SetStatus(relationshipoperationattempt.StatusSucceeded).SetResult(result).SetCompletedAt(now).Save(ctx); err != nil {
-			return rollback(err)
-		}
-	} else {
-		if _, err := tx.RelationshipOperation.UpdateOneID(execution.operationID).SetLifecycle(relationshipoperation.LifecycleInterrupted).Save(ctx); err != nil {
-			return rollback(err)
-		}
-		if _, err := tx.RelationshipOperationAttempt.UpdateOneID(execution.attemptID).SetStatus(relationshipoperationattempt.StatusFailed).SetResult(result).SetCompletedAt(now).Save(ctx); err != nil {
-			return rollback(err)
-		}
+	if _, err := tx.RelationshipOperation.UpdateOneID(execution.operationID).SetLifecycle(relationshipoperation.LifecycleInterrupted).Save(ctx); err != nil {
+		return rollback(fmt.Errorf("interrupt Relationship Operation: %w", err))
+	}
+	if _, err := tx.RelationshipOperationAttempt.UpdateOneID(execution.attemptID).SetStatus(relationshipoperationattempt.StatusFailed).SetResult(result).SetCompletedAt(now).Save(ctx); err != nil {
+		return rollback(fmt.Errorf("fail Relationship Operation attempt: %w", err))
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit Relationship Operation finish transaction: %w", err)
 	}
 	execution.finished = true
 	return nil
+}
+
+func (execution *durableExecution) finishApplied(ctx context.Context, client *ent.Client, result map[string]any, now time.Time) error {
+	if err := validateVerifiedOperationSteps(ctx, client, execution.operationID, RecoveryResume); err != nil {
+		return err
+	}
+	if _, err := client.RelationshipOperationMapping.Update().Where(relationshipoperationmapping.OperationIDEQ(execution.operationID)).SetActive(false).SetReleasedAt(now).Save(ctx); err != nil {
+		return fmt.Errorf("release Relationship Operation ownership: %w", err)
+	}
+	if _, err := client.RelationshipOperation.UpdateOneID(execution.operationID).SetLifecycle(relationshipoperation.LifecycleApplied).SetTerminalResult(result).SetCompletedAt(now).Save(ctx); err != nil {
+		return fmt.Errorf("apply Relationship Operation: %w", err)
+	}
+	if _, err := client.RelationshipOperationAttempt.UpdateOneID(execution.attemptID).SetStatus(relationshipoperationattempt.StatusSucceeded).SetResult(result).SetCompletedAt(now).Save(ctx); err != nil {
+		return fmt.Errorf("complete Relationship Operation attempt: %w", err)
+	}
+	return nil
+}
+
+func validateVerifiedOperationSteps(ctx context.Context, client *ent.Client, operationID int, direction RecoveryDirection) error {
+	steps, err := client.RelationshipOperationStep.Query().Where(relationshipoperationstep.OperationIDEQ(operationID)).All(ctx)
+	if err != nil {
+		return fmt.Errorf("load terminal Relationship Operation steps: %w", err)
+	}
+	resolveRecoveryStepGroupIDs(steps)
+	side := "target"
+	if direction == RecoveryRestore {
+		side = "baseline"
+	}
+	for _, step := range steps {
+		if step.Lifecycle != relationshipoperationstep.LifecycleReadbackVerified {
+			return fmt.Errorf("Relationship Operation step %q is not readback verified", step.StepKey)
+		}
+		effect := step.LatestVerifiedEffect
+		groupID := int64PointerValue(step.TargetGroupID)
+		valid := false
+		switch step.RelationshipType {
+		case "group":
+			wantName := stringValue(step.ExpectedResult[side+"_name"])
+			if step.Action == "create" {
+				wantName = stringValue(step.ExpectedResult["name"])
+			}
+			effectGroupID, hasGroupID := int64Evidence(effect, "group_id")
+			effectName, hasName := stringEvidence(effect, "name")
+			valid = hasGroupID && effectGroupID > 0 && hasName && effectName == wantName
+		case "account_group":
+			accountID, hasAccountID := int64Evidence(effect, "account_id")
+			effectGroupID, hasGroupID := int64Evidence(effect, "group_id")
+			priority, hasPriority := int64Evidence(effect, "priority")
+			valid = len(step.ReviewedResourceIds) == 1 && hasAccountID && accountID == step.ReviewedResourceIds[0] && hasGroupID && effectGroupID == groupID && hasPriority && int(priority) == intValue(step.ExpectedResult[side+"_priority"])
+		case "subscription":
+			relayUserID, hasRelayUserID := int64Evidence(effect, "relay_user_id")
+			effectGroupID, hasGroupID := int64Evidence(effect, "group_id")
+			active, hasActive := boolEvidence(effect, "active")
+			valid = hasRelayUserID && relayUserID == int64PointerValue(step.RelayUserID) && hasGroupID && effectGroupID == groupID && hasActive && active == boolValue(step.ExpectedResult[side+"_active"])
+		case "api_keys":
+			wantGroupID := int64Value(step.ExpectedResult[side+"_group_id"])
+			if wantGroupID == 0 && side == "target" {
+				wantGroupID = groupID
+			}
+			reviewedIDs, hasReviewedIDs := int64SliceEvidence(effect, "reviewed_api_key_ids")
+			effectGroupID, hasGroupID := int64Evidence(effect, "group_id")
+			valid = hasReviewedIDs && reflect.DeepEqual(reviewedIDs, step.ReviewedResourceIds) && hasGroupID && effectGroupID == wantGroupID
+		case "managed_member":
+			effectDirection, hasDirection := stringEvidence(effect, "direction")
+			action, hasAction := stringEvidence(effect, "action")
+			localUserID, hasLocalUserID := int64Evidence(effect, "local_user_id")
+			relayUserID, hasRelayUserID := int64Evidence(effect, "relay_user_id")
+			sourceGroupID, hasSourceGroupID := int64Evidence(effect, "source_group_id")
+			targetGroupID, hasTargetGroupID := int64Evidence(effect, "target_group_id")
+			valid = hasDirection && effectDirection == string(direction) && hasAction && action == step.Action && hasLocalUserID && int(localUserID) == intPointerValue(step.LocalUserID) && hasRelayUserID && relayUserID == int64PointerValue(step.RelayUserID) && hasSourceGroupID && sourceGroupID == int64PointerValue(step.SourceGroupID) && hasTargetGroupID && targetGroupID == groupID
+		}
+		if !valid {
+			return fmt.Errorf("Relationship Operation step %q has mismatched readback evidence", step.StepKey)
+		}
+	}
+	return nil
+}
+
+func int64Evidence(effect map[string]any, key string) (int64, bool) {
+	value, exists := effect[key]
+	if !exists {
+		return 0, false
+	}
+	return int64EvidenceValue(value)
+}
+
+func int64EvidenceValue(value any) (int64, bool) {
+	switch value.(type) {
+	case int, int64, float64, json.Number:
+		return int64Value(value), true
+	default:
+		return 0, false
+	}
+}
+
+func stringEvidence(effect map[string]any, key string) (string, bool) {
+	value, exists := effect[key]
+	result, ok := value.(string)
+	return result, exists && ok
+}
+
+func boolEvidence(effect map[string]any, key string) (bool, bool) {
+	value, exists := effect[key]
+	result, ok := value.(bool)
+	return result, exists && ok
+}
+
+func int64SliceEvidence(effect map[string]any, key string) ([]int64, bool) {
+	value, exists := effect[key]
+	if !exists {
+		return nil, false
+	}
+	items, ok := value.([]any)
+	if !ok {
+		if typed, ok := value.([]int64); ok {
+			return append([]int64(nil), typed...), true
+		}
+		return nil, false
+	}
+	result := make([]int64, len(items))
+	for index, item := range items {
+		value, ok := int64EvidenceValue(item)
+		if !ok {
+			return nil, false
+		}
+		result[index] = value
+	}
+	return result, true
 }
 
 func (execution *durableExecution) interrupt(ctx context.Context) {

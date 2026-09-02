@@ -193,6 +193,65 @@ func TestRecoverBlocksOnMissingReviewedAPIKeyWithoutAnotherWrite(t *testing.T) {
 	}
 }
 
+func TestRecoverRejectsMismatchedStepEvidenceBeforeTerminalCompletion(t *testing.T) {
+	tests := []struct {
+		name             string
+		relationshipType string
+		action           string
+		effect           map[string]any
+	}{
+		{name: "mapping-level API Key evidence", relationshipType: "api_keys", action: "move", effect: map[string]any{"mapping_id": 1, "status": "applied"}},
+		{name: "Account evidence missing priority", relationshipType: "account_group", action: "update", effect: map[string]any{"account_id": 11, "group_id": 102}},
+		{name: "subscription removal evidence missing false active", relationshipType: "subscription", action: "remove", effect: map[string]any{"relay_user_id": 42, "group_id": 101}},
+		{name: "Managed Mapping Member evidence missing source", relationshipType: "managed_member", action: "move", effect: map[string]any{"direction": "resume", "action": "move", "local_user_id": 1, "relay_user_id": 42, "target_group_id": 102}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := testdb.Open(t)
+			service, _, mapping, operation := createRecoveryFixture(t, ctx, client, false)
+			corrupted := false
+			client.Use(func(next ent.Mutator) ent.Mutator {
+				return ent.MutateFunc(func(ctx context.Context, mutation ent.Mutation) (ent.Value, error) {
+					value, err := next.Mutate(ctx, mutation)
+					step, ok := mutation.(*ent.RelationshipOperationStepMutation)
+					if err != nil || !ok || corrupted {
+						return value, err
+					}
+					lifecycle, lifecycleChanged := step.Lifecycle()
+					stepID, hasID := step.ID()
+					if !lifecycleChanged || lifecycle != relationshipoperationstep.LifecycleReadbackVerified || !hasID {
+						return value, nil
+					}
+					persisted, loadErr := client.RelationshipOperationStep.Get(ctx, stepID)
+					if loadErr != nil {
+						return nil, loadErr
+					}
+					if persisted.RelationshipType != tt.relationshipType || persisted.Action != tt.action {
+						return value, nil
+					}
+					corrupted = true
+					if _, corruptErr := client.RelationshipOperationStep.UpdateOneID(stepID).SetLatestVerifiedEffect(tt.effect).Save(ctx); corruptErr != nil {
+						return nil, corruptErr
+					}
+					return value, nil
+				})
+			})
+
+			_, err := service.Recover(ctx, RecoveryRequest{OperationID: operation.ID, Direction: RecoveryResume, InitiatedByUserID: 1})
+			if err == nil || !corrupted {
+				t.Fatalf("Recover() error = %v, corrupted=%v, want mismatched evidence rejection", err, corrupted)
+			}
+			unchanged := client.RelayGroupMapping.GetX(ctx, mapping.ID)
+			owner := client.RelationshipOperationMapping.Query().Where(relationshipoperationmapping.OperationIDEQ(operation.ID)).OnlyX(ctx)
+			failed := client.RelationshipOperation.GetX(ctx, operation.ID)
+			if unchanged.BaselineRevision != 1 || unchanged.MemberAssignments["1"] != 101 || !owner.Active || failed.Lifecycle != relationshipoperation.LifecycleInterrupted {
+				t.Fatalf("failed terminal state = revision:%d assignments:%v owner_active:%v lifecycle:%q", unchanged.BaselineRevision, unchanged.MemberAssignments, owner.Active, failed.Lifecycle)
+			}
+		})
+	}
+}
+
 func createRecoveryFixture(t *testing.T, ctx context.Context, client *ent.Client, observedTarget bool) (*Service, *recoveryProvider, *ent.RelayGroupMapping, *ent.RelationshipOperation) {
 	t.Helper()
 	user := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource("ldap").SetRelayUserID(42).SaveX(ctx)
@@ -205,6 +264,7 @@ func createRecoveryFixture(t *testing.T, ctx context.Context, client *ent.Client
 	client.RelationshipOperationStep.Create().SetOperationID(operation.ID).SetStepKey("subscription-add-target").SetAction("add").SetRelationshipType("subscription").SetDirection(relationshipoperationstep.DirectionTarget).SetLocalUserID(user.ID).SetRelayUserID(42).SetTargetGroupID(102).SetReviewedResourceIds([]int64{}).SetExpectedResult(map[string]any{"target_active": true, "baseline_active": false}).SetResumeSupported(true).SetRestoreSupported(true).SetLifecycle(relationshipoperationstep.LifecycleDispatched).SaveX(ctx)
 	client.RelationshipOperationStep.Create().SetOperationID(operation.ID).SetStepKey("subscription-remove-source").SetAction("remove").SetRelationshipType("subscription").SetDirection(relationshipoperationstep.DirectionTarget).SetLocalUserID(user.ID).SetRelayUserID(42).SetTargetGroupID(101).SetReviewedResourceIds([]int64{}).SetExpectedResult(map[string]any{"target_active": false, "baseline_active": true}).SetResumeSupported(true).SetRestoreSupported(true).SetLifecycle(relationshipoperationstep.LifecycleDispatched).SaveX(ctx)
 	client.RelationshipOperationStep.Create().SetOperationID(operation.ID).SetStepKey("api-key-move").SetAction("move").SetRelationshipType("api_keys").SetDirection(relationshipoperationstep.DirectionTarget).SetLocalUserID(user.ID).SetRelayUserID(42).SetSourceGroupID(101).SetTargetGroupID(102).SetReviewedResourceIds([]int64{501}).SetExpectedResult(map[string]any{"target_group_id": 102, "baseline_group_id": 101}).SetResumeSupported(true).SetRestoreSupported(true).SetLifecycle(relationshipoperationstep.LifecycleDispatched).SaveX(ctx)
+	client.RelationshipOperationStep.Create().SetOperationID(operation.ID).SetStepKey("managed-member-move").SetAction("move").SetRelationshipType("managed_member").SetDirection(relationshipoperationstep.DirectionTarget).SetLocalUserID(user.ID).SetRelayUserID(42).SetSourceGroupID(101).SetTargetGroupID(102).SetReviewedResourceIds([]int64{}).SetExpectedResult(map[string]any{"target_group_id": 102}).SetResumeSupported(true).SetRestoreSupported(true).SetLifecycle(relationshipoperationstep.LifecycleDispatched).SaveX(ctx)
 	client.RelationshipOperationStep.Create().SetOperationID(operation.ID).SetStepKey("target-rename").SetAction("rename").SetRelationshipType("group").SetDirection(relationshipoperationstep.DirectionTarget).SetTargetGroupID(102).SetReviewedResourceIds([]int64{}).SetExpectedResult(map[string]any{"target_name": "Reviewed Target", "baseline_name": "Baseline Target"}).SetResumeSupported(true).SetRestoreSupported(true).SetLifecycle(relationshipoperationstep.LifecycleDispatched).SaveX(ctx)
 	client.RelationshipOperationStep.Create().SetOperationID(operation.ID).SetStepKey("account-priority").SetAction("update").SetRelationshipType("account_group").SetDirection(relationshipoperationstep.DirectionTarget).SetTargetGroupID(102).SetReviewedResourceIds([]int64{11}).SetExpectedResult(map[string]any{"target_priority": 2, "baseline_priority": 1}).SetResumeSupported(true).SetRestoreSupported(true).SetLifecycle(relationshipoperationstep.LifecycleDispatched).SaveX(ctx)
 	client.RelationshipOperationAttempt.Create().SetOperationID(operation.ID).SetAttemptNumber(1).SetDirection(relationshipoperationattempt.DirectionInitial).SetInitiatedByUserID(user.ID).SetStatus(relationshipoperationattempt.StatusFailed).SaveX(ctx)

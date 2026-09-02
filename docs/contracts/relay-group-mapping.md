@@ -404,6 +404,17 @@ Steps whose effects have request-bound proof retain `readback_verified` evidence
 other dispatched steps remain unknown rather than being guessed or replayed by
 another ordinary Confirm.
 
+Initial Confirm converges every immutable Step through the same resource-level
+readback used by recovery before it may promote a Mapping baseline. Group,
+Account relationship, subscription, and API-Key Steps store evidence specific
+to the reviewed resource; the Managed Mapping Member Step stores its exact
+directional identity while its external effects are proven by the corresponding
+subscription and API-Key Steps. Terminal completion rejects any remaining
+planned, dispatched, or failed Step instead of relabeling it as verified.
+Baseline promotion, terminal Operation and attempt evidence, and ownership
+release commit in one PostgreSQL transaction. Any readback or terminal-write
+failure leaves the prior baseline authoritative and the Operation recoverable.
+
 The recovery service now creates an independent Resume or Restore attempt and
 converges each immutable effect through fresh Relay readback. Before any recovery
 mutation it verifies every referenced Group, Account, and frozen reviewed API Key;
