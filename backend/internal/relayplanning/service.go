@@ -191,29 +191,30 @@ type UserSearchPage struct {
 }
 
 type Candidate struct {
-	UserID                    int      `json:"user_id"`
-	RelayUserID               int64    `json:"relay_user_id"`
-	Username                  string   `json:"username"`
-	Email                     string   `json:"email"`
-	RangeCost                 float64  `json:"range_cost"`
-	RangeTokens               int64    `json:"range_tokens"`
-	UsageKnown                bool     `json:"usage_known"`
-	GlobalTokenRank           int      `json:"global_token_rank"`
-	CurrentGroupIDs           []int64  `json:"current_group_ids,omitempty"`
-	MigratableKeyCount        int      `json:"migratable_key_count"`
-	SourceMember              bool     `json:"source_member"`
-	SourceGroupID             int64    `json:"source_group_id,omitempty"`
-	CanAdd                    bool     `json:"can_add"`
-	Selected                  bool     `json:"selected"`
-	Eligible                  bool     `json:"eligible"`
-	CanRetain                 bool     `json:"can_retain"`
-	Disposition               string   `json:"disposition"`
-	Warnings                  []string `json:"warnings,omitempty"`
-	relationshipSubscriptions []relationshipSubscriptionFact
-	relationshipAPIKeys       []relationshipAPIKeyFact
-	relationshipGroupErr      error
-	relationshipKeyErr        error
-	replanUnavailableReason   replanRosterUnavailableReason
+	UserID                      int      `json:"user_id"`
+	RelayUserID                 int64    `json:"relay_user_id"`
+	Username                    string   `json:"username"`
+	Email                       string   `json:"email"`
+	RangeCost                   float64  `json:"range_cost"`
+	RangeTokens                 int64    `json:"range_tokens"`
+	UsageKnown                  bool     `json:"usage_known"`
+	GlobalTokenRank             int      `json:"global_token_rank"`
+	CurrentGroupIDs             []int64  `json:"current_group_ids,omitempty"`
+	MigratableKeyCount          int      `json:"migratable_key_count"`
+	SourceMember                bool     `json:"source_member"`
+	SourceGroupID               int64    `json:"source_group_id,omitempty"`
+	CanAdd                      bool     `json:"can_add"`
+	Selected                    bool     `json:"selected"`
+	Eligible                    bool     `json:"eligible"`
+	CanRetain                   bool     `json:"can_retain"`
+	Disposition                 string   `json:"disposition"`
+	Warnings                    []string `json:"warnings,omitempty"`
+	relationshipSubscriptions   []relationshipSubscriptionFact
+	relationshipAPIKeys         []relationshipAPIKeyFact
+	relationshipObservedAPIKeys []relationshipAPIKeyFact
+	relationshipGroupErr        error
+	relationshipKeyErr          error
+	replanUnavailableReason     replanRosterUnavailableReason
 }
 
 type Assignment struct {
@@ -1263,7 +1264,7 @@ func classifyManagedRosterCandidates(mapping *ent.RelayGroupMapping, candidates 
 		entry := mapping.OperationState[stateKey]
 		entryTargetID, _ := strconv.ParseInt(entry["target_group_id"], 10, 64)
 		completedKeyIDs, _ := completedAPIKeySteps(strings.Split(entry["api_keys"], ","))
-		if entry["action"] != "remove" && entryTargetID == expectedTargetID && !reviewedAPIKeysMatchTarget(completedKeyIDs, candidate.relationshipAPIKeys, expectedTargetID) {
+		if entry["action"] != "remove" && entryTargetID == expectedTargetID && !reviewedAPIKeysMatchTarget(completedKeyIDs, candidate.relationshipObservedAPIKeys, expectedTargetID) {
 			candidate.replanUnavailableReason = replanRosterMismatchedTargetAPIKey
 			continue
 		}
@@ -1274,7 +1275,7 @@ func reviewedAPIKeysMatchTarget(reviewed map[int64]bool, current []relationshipA
 	for keyID := range reviewed {
 		matched := false
 		for _, key := range current {
-			if key.ID == keyID && key.GroupID == targetGroupID {
+			if key.ID == keyID && (strings.EqualFold(key.Status, "inactive") || key.GroupID == targetGroupID) {
 				matched = true
 				break
 			}
@@ -1775,8 +1776,9 @@ type relationshipRenewalDriftFact struct {
 }
 
 type relationshipAPIKeyFact struct {
-	ID      int64 `json:"id"`
-	GroupID int64 `json:"group_id"`
+	ID      int64  `json:"id"`
+	GroupID int64  `json:"group_id"`
+	Status  string `json:"status,omitempty"`
 }
 
 func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Provider, requestFacts *planningRequestFacts, req PreviewRequest, plan *Plan, groups []relay.Group) (string, error) {
@@ -2067,7 +2069,7 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 				groupID := apiKeyGroupID(key)
 				_, relevantGroup := relevantGroupIDs[groupID]
 				if (reviewedAPIKeys.Frozen && slices.Contains(reviewedAPIKeys.IDs, key.ID)) || (!reviewedAPIKeys.Frozen && relevantGroup) {
-					userFacts[index].APIKeys = append(userFacts[index].APIKeys, relationshipAPIKeyFact{ID: key.ID, GroupID: groupID})
+					userFacts[index].APIKeys = append(userFacts[index].APIKeys, relationshipAPIKeyFact{ID: key.ID, GroupID: groupID, Status: strings.ToLower(strings.TrimSpace(key.Status))})
 				}
 			}
 		}
@@ -2084,7 +2086,7 @@ func (s *Service) relationshipFingerprint(ctx context.Context, provider relay.Pr
 				if !slices.Contains(reviewedAPIKeys.IDs, key.ID) {
 					continue
 				}
-				fact := relationshipAPIKeyFact{ID: key.ID, GroupID: apiKeyGroupID(key)}
+				fact := relationshipAPIKeyFact{ID: key.ID, GroupID: apiKeyGroupID(key), Status: strings.ToLower(strings.TrimSpace(key.Status))}
 				if keyIndex, exists := indexes[key.ID]; exists {
 					userFacts[index].APIKeys[keyIndex] = fact
 				} else {
@@ -5253,6 +5255,7 @@ func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestF
 	candidate.GlobalTokenRank = ranks[candidate.RelayUserID]
 	candidate.relationshipSubscriptions = facts.relationshipSubscriptions
 	candidate.relationshipAPIKeys = facts.relationshipAPIKeys
+	candidate.relationshipObservedAPIKeys = facts.relationshipObservedAPIKeys
 	candidate.relationshipGroupErr = facts.groupErr
 	candidate.relationshipKeyErr = facts.keyErr
 	if facts.groupErr != nil {
@@ -5281,13 +5284,14 @@ func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestF
 }
 
 type candidateRelayFacts struct {
-	eligible                  bool
-	canAdd                    bool
-	currentGroupIDs           []int64
-	migratableKeyCount        int
-	relationshipSubscriptions []relationshipSubscriptionFact
-	relationshipAPIKeys       []relationshipAPIKeyFact
-	groupErr, keyErr          error
+	eligible                    bool
+	canAdd                      bool
+	currentGroupIDs             []int64
+	migratableKeyCount          int
+	relationshipSubscriptions   []relationshipSubscriptionFact
+	relationshipAPIKeys         []relationshipAPIKeyFact
+	relationshipObservedAPIKeys []relationshipAPIKeyFact
+	groupErr, keyErr            error
 }
 
 func loadCandidateRelayFacts(ctx context.Context, p relay.Provider, requestFacts *planningRequestFacts, relationship *relay.UserRelationship, userID int64, source relay.Group, platform string) candidateRelayFacts {
@@ -5359,16 +5363,24 @@ func loadCandidateRelayFacts(ctx context.Context, p relay.Provider, requestFacts
 	}()
 	go func() {
 		defer workers.Done()
-		keys, err := requestFacts.activeUserAPIKeys(ctx, p, userID)
+		keys, err := requestFacts.userAPIKeys(ctx, p, userID)
 		facts.keyErr = err
 		if err != nil {
 			return
 		}
 		for _, key := range keys {
-			if groupID := apiKeyGroupID(key); groupID > 0 {
-				facts.relationshipAPIKeys = append(facts.relationshipAPIKeys, relationshipAPIKeyFact{ID: key.ID, GroupID: groupID})
+			groupID := apiKeyGroupID(key)
+			status := strings.ToLower(strings.TrimSpace(key.Status))
+			if key.ID > 0 {
+				facts.relationshipObservedAPIKeys = append(facts.relationshipObservedAPIKeys, relationshipAPIKeyFact{ID: key.ID, GroupID: groupID, Status: status})
 			}
-			if source.ID > 0 && apiKeyGroupID(key) == source.ID {
+			if !strings.EqualFold(status, "active") {
+				continue
+			}
+			if groupID > 0 {
+				facts.relationshipAPIKeys = append(facts.relationshipAPIKeys, relationshipAPIKeyFact{ID: key.ID, GroupID: groupID, Status: status})
+			}
+			if source.ID > 0 && groupID == source.ID {
 				facts.migratableKeyCount++
 			}
 		}
@@ -5381,6 +5393,10 @@ func loadCandidateRelayFacts(ctx context.Context, p relay.Provider, requestFacts
 	sort.Slice(facts.relationshipAPIKeys, func(i, j int) bool {
 		left, right := facts.relationshipAPIKeys[i], facts.relationshipAPIKeys[j]
 		return left.ID < right.ID || (left.ID == right.ID && left.GroupID < right.GroupID)
+	})
+	sort.Slice(facts.relationshipObservedAPIKeys, func(i, j int) bool {
+		left, right := facts.relationshipObservedAPIKeys[i], facts.relationshipObservedAPIKeys[j]
+		return left.ID < right.ID || (left.ID == right.ID && (left.GroupID < right.GroupID || (left.GroupID == right.GroupID && left.Status < right.Status)))
 	})
 	return facts
 }

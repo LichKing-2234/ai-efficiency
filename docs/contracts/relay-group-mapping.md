@@ -244,7 +244,11 @@ is not presented as a new Source or Target operation, even when it no longer
 belongs to its historical Migration Source. The accompanying `can_retain` fact
 is authoritative across browser edits: it is true only when the saved Target is
 observed and neither relationship unavailability nor member retry state blocks
-retention.
+retention. A historically reviewed API Key that is currently inactive no longer
+blocks retention. A reviewed Key that is still active but moved away from the
+saved Target, or whose current relationship cannot be found, remains fail-closed
+managed relationship drift. Relationship fingerprints include the current Key
+status so an active/inactive transition invalidates an older Preview.
 
 An explicit Managed Mapping Member removal deletes the desired assignment
 immediately in reviewed state:
