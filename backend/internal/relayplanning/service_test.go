@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorysource"
 	"github.com/ai-efficiency/backend/ent/directorysyncrun"
 	"github.com/ai-efficiency/backend/ent/relationshipoperation"
@@ -231,6 +232,182 @@ func TestPreviewDoesNotCreateDefaultGroupForNonSourceOnlyCandidates(t *testing.T
 	recommended, count := resolveGroupCount(PreviewRequest{WeeklyCostTarget: 2500}, nil)
 	if recommended != 0 || count != 0 {
 		t.Fatalf("empty eligible recommendation = %d/%d, want 0/0", recommended, count)
+	}
+}
+
+type departmentWarningPreviewProvider struct {
+	relay.Provider
+	users map[int64]*relay.User
+}
+
+func (p departmentWarningPreviewProvider) GetUser(_ context.Context, userID int64) (*relay.User, error) {
+	return p.users[userID], nil
+}
+
+func (departmentWarningPreviewProvider) ListUserSubscriptions(context.Context, int64) ([]relay.UserSubscription, error) {
+	return []relay.UserSubscription{{GroupID: 42, Status: "active"}}, nil
+}
+
+func (departmentWarningPreviewProvider) ListUserAPIKeys(context.Context, int64) ([]relay.APIKey, error) {
+	return nil, nil
+}
+
+func (departmentWarningPreviewProvider) ListPlatformGroups(context.Context) ([]relay.Group, error) {
+	return []relay.Group{
+		{ID: 42, Name: "Group Source", Platform: "openai"},
+		{ID: 84, Name: "Group Template", Platform: "openai"},
+	}, nil
+}
+
+func (departmentWarningPreviewProvider) ListAccountsForPlatform(context.Context, string) ([]relay.Account, error) {
+	return []relay.Account{}, nil
+}
+
+func (departmentWarningPreviewProvider) GetBatchUserUsageStats(_ context.Context, userIDs []int64, _ relay.TeamUsageSummaryParams) (map[int64]relay.TeamUserUsageStats, error) {
+	stats := make(map[int64]relay.TeamUserUsageStats, len(userIDs))
+	for _, userID := range userIDs {
+		cost, tokens := 1.0, int64(1)
+		stats[userID] = relay.TeamUserUsageStats{UserID: userID, RangeActualCost: &cost, RangeTotalTokens: &tokens}
+	}
+	return stats, nil
+}
+
+func TestPreviewDepartmentMembershipWarningUsesCurrentEffectiveHierarchy(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	selectedDepartment := "dept-selected"
+	source, currentRun := createRelayPlanningDirectorySnapshot(t, ctx, client, selectedDepartment)
+	selected := client.DirectoryDepartment.Query().Where(
+		directorydepartment.SourceIDEQ(source.ID),
+		directorydepartment.ExternalIDEQ(selectedDepartment),
+	).OnlyX(ctx)
+	client.DirectoryDepartment.UpdateOne(selected).SetEffectiveParentExternalID("").SaveX(ctx)
+	client.DirectoryDepartment.Create().SetSourceID(source.ID).SetExternalID("dept-child").SetName("Department Child").SetPath("synthetic/dept-selected/dept-child").SetEffectiveParentExternalID(selectedDepartment).SetLastSeenRunID(currentRun.ID).SaveX(ctx)
+	client.DirectoryDepartment.Create().SetSourceID(source.ID).SetExternalID("dept-outside").SetName("Department Outside").SetPath("synthetic/dept-outside").SetEffectiveParentExternalID("").SetLastSeenRunID(currentRun.ID).SaveX(ctx)
+
+	staleRun := client.DirectorySyncRun.Create().SetSourceID(source.ID).SetMode(directorysyncrun.ModeApply).SetStatus(directorysyncrun.StatusCompleted).SetPhase(directorysyncrun.PhaseCompleted).SetCompletedAt(time.Now().UTC().Add(-time.Hour)).SaveX(ctx)
+
+	tests := []struct {
+		name         string
+		email        string
+		memberEmail  string
+		memberships  []string
+		noRelay      bool
+		duplicate    bool
+		staleOutside bool
+		wantWarning  string
+	}{
+		{name: "selected department", email: "alice@example.com", memberships: []string{selectedDepartment}},
+		{name: "descendant department", email: "bob@example.org", memberships: []string{"dept-child"}},
+		{name: "outside selected subtree", email: "carol@example.net", memberships: []string{"dept-outside"}, wantWarning: "user is not in the selected department"},
+		{name: "duplicate current membership", email: "dana@example.edu", memberships: []string{"dept-child"}, duplicate: true},
+		{name: "multiple effective memberships", email: "erin@example.com", memberships: []string{selectedDepartment, "dept-outside"}, wantWarning: "user belongs to multiple departments"},
+		{name: "stale membership ignored", email: "frank@example.org", memberships: []string{selectedDepartment}, staleOutside: true},
+		{name: "matched local user without relay identity", email: "grace@example.net", memberEmail: "directory-grace@example.org", memberships: []string{"dept-outside"}, noRelay: true, wantWarning: "user is not in the selected department"},
+	}
+	users := make([]*ent.User, 0, len(tests))
+	for index, tt := range tests {
+		userBuilder := client.User.Create().SetUsername(fmt.Sprintf("candidate-%d", index)).SetEmail(tt.email).SetAuthSource(entuser.AuthSourceLdap)
+		if !tt.noRelay {
+			userBuilder.SetRelayUserID(1000 + index)
+		}
+		user := userBuilder.SaveX(ctx)
+		users = append(users, user)
+		memberEmail := tt.memberEmail
+		if memberEmail == "" {
+			memberEmail = tt.email
+		}
+		member := client.DirectoryMember.Create().SetSourceID(source.ID).SetExternalID(fmt.Sprintf("member-%d", index)).SetEmailNormalized(memberEmail).SetDisplayName(user.Username).SetDepartmentExternalID(tt.memberships[0]).SetMatchedUserID(user.ID).SetLastSeenRunID(currentRun.ID).SaveX(ctx)
+		if tt.duplicate || len(tt.memberships) > 1 {
+			// Explicit membership supersedes the identical primary fallback without creating a second effective membership.
+			for _, departmentID := range tt.memberships {
+				client.DirectoryMemberDepartment.Create().SetSourceID(source.ID).SetDirectoryMemberID(member.ID).SetMemberExternalID(member.ExternalID).SetMemberEmailNormalized(member.EmailNormalized).SetDepartmentExternalID(departmentID).SetLastSeenRunID(currentRun.ID).SaveX(ctx)
+			}
+		}
+		if tt.staleOutside {
+			client.DirectoryMemberDepartment.Create().SetSourceID(source.ID).SetDirectoryMemberID(member.ID).SetMemberExternalID(member.ExternalID).SetMemberEmailNormalized(member.EmailNormalized).SetDepartmentExternalID("dept-outside").SetLastSeenRunID(staleRun.ID).SaveX(ctx)
+		}
+	}
+	provider := departmentWarningPreviewProvider{users: make(map[int64]*relay.User, len(users))}
+	for _, user := range users {
+		if user.RelayUserID == nil {
+			continue
+		}
+		provider.users[int64(*user.RelayUserID)] = &relay.User{ID: int64(*user.RelayUserID), Username: user.Username, Email: user.Email}
+	}
+	providerRow := client.RelayProvider.Create().
+		SetName("relay-planning-department-warning").
+		SetDisplayName("Relay Planning Department Warning").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetRelayType("sub2api").
+		SaveX(ctx)
+	service := NewService(client, relayPlanningProviderResolver(func(context.Context, int) (relay.Provider, error) {
+		return provider, nil
+	}), nil)
+	selectedUserIDs := make([]int, 0, len(users))
+	for _, user := range users {
+		selectedUserIDs = append(selectedUserIDs, user.ID)
+	}
+	request := PreviewRequest{
+		ProviderID: providerRow.ID, DepartmentID: selectedDepartment, Platform: "openai",
+		TemplateGroupID: 84, SourceGroupID: 42, WeeklyCostTarget: 100, GroupCount: 1, SelectedUserIDs: selectedUserIDs,
+	}
+	plan, err := service.Preview(ctx, request)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	encoded, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("marshal Preview: %v", err)
+	}
+	var responsePlan Plan
+	if err := json.Unmarshal(encoded, &responsePlan); err != nil {
+		t.Fatalf("unmarshal Preview: %v", err)
+	}
+	byUserID := make(map[int]Candidate, len(responsePlan.Candidates))
+	for _, candidate := range responsePlan.Candidates {
+		byUserID[candidate.UserID] = candidate
+	}
+	for index, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			candidate := byUserID[users[index].ID]
+			got := ""
+			for _, warning := range candidate.Warnings {
+				if warning == "user is not in the selected department" || warning == "user belongs to multiple departments" {
+					got = warning
+				}
+			}
+			if got != tt.wantWarning {
+				t.Fatalf("serialized Preview department warning = %q, want %q; warnings=%v", got, tt.wantWarning, candidate.Warnings)
+			}
+		})
+	}
+}
+
+func TestPreviewFailsWithoutCurrentSuccessfulDirectorySnapshot(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	user := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource(entuser.AuthSourceLdap).SetRelayUserID(1001).SaveX(ctx)
+	provider := departmentWarningPreviewProvider{users: map[int64]*relay.User{
+		1001: {ID: 1001, Username: user.Username, Email: user.Email},
+	}}
+	providerRow := client.RelayProvider.Create().
+		SetName("relay-planning-missing-directory-snapshot").
+		SetDisplayName("Relay Planning Missing Directory Snapshot").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetRelayType("sub2api").
+		SaveX(ctx)
+	service := NewService(client, relayPlanningProviderResolver(func(context.Context, int) (relay.Provider, error) {
+		return provider, nil
+	}), nil)
+	_, err := service.Preview(ctx, PreviewRequest{
+		ProviderID: providerRow.ID, DepartmentID: "dept-selected", Platform: "openai",
+		TemplateGroupID: 84, SourceGroupID: 42, WeeklyCostTarget: 100, GroupCount: 1, SelectedUserIDs: []int{user.ID},
+	})
+	if err == nil || !strings.Contains(err.Error(), "current successful directory snapshot is unavailable") {
+		t.Fatalf("Preview() error = %v, want missing current successful snapshot", err)
 	}
 }
 

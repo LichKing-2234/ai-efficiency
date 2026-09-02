@@ -111,6 +111,7 @@ type DepartmentAggregate struct {
 }
 
 type LocalUserQuery struct {
+	UserIDs      []int
 	Search       string
 	DepartmentID string
 	AccessStatus string

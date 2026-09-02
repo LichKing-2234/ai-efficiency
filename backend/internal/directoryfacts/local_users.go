@@ -21,6 +21,9 @@ func (s *Store) LocalUsers(ctx context.Context, snapshot *Snapshot, request Loca
 		return LocalUserPage{}, fmt.Errorf("directory facts reader is not configured")
 	}
 	query := s.client.User.Query()
+	if userIDs := positiveInts(request.UserIDs); len(userIDs) > 0 {
+		query = query.Where(entuser.IDIn(userIDs...))
+	}
 	if accessStatus := strings.TrimSpace(request.AccessStatus); accessStatus != "" {
 		var err error
 		query, err = adminuseraccess.ApplyFilter(query, accessStatus)

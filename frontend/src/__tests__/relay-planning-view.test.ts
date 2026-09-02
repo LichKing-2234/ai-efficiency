@@ -161,7 +161,7 @@ function existingMappingConflict() {
 	}
 }
 
-async function mountView(initialMappings: any[] = [], wide = false) {
+async function mountView(initialMappings: any[] = [], wide = false, previewPlan = plan) {
 	const mediaQuery = {
 		matches: wide,
 		media: '(min-width: 1280px)',
@@ -184,7 +184,7 @@ async function mountView(initialMappings: any[] = [], wide = false) {
 	relayPlanning.previewRelayMappingRenewal.mockImplementation((_id: number, data: { renewal_days: number }) => Promise.resolve({ data: { data: structuredClone({ ...renewalPreview, renewal_days: data.renewal_days }) } }))
 	relayPlanning.previewRelayPlanningRecovery.mockImplementation((_id: number, direction: 'resume' | 'restore') => Promise.resolve({ data: { data: structuredClone({ ...recoveryPreview, direction }) } }))
 	relayPlanning.confirmRelayPlanningRecovery.mockResolvedValue({ data: { data: { operation_id: 77, direction: 'resume', lifecycle: 'applied', attempt_id: 2 } } })
-  relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: structuredClone(plan) } })
+  relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: structuredClone(previewPlan) } })
 	relayPlanning.searchRelayPlanningUsers.mockResolvedValue({
     data: { data: { items: [], total: 0, page: 1, page_size: 20 } },
 	})
@@ -252,6 +252,35 @@ describe('RelayPlanningView', () => {
 		expect(matchMedia).toHaveBeenCalledWith('(min-width: 1280px)')
 		expect(wrapper.find('[data-testid="candidate-table-layout"]').exists()).toBe(true)
 		expect(wrapper.find('[data-testid="candidate-card-layout"]').exists()).toBe(false)
+	})
+
+	it.each([
+		{ wide: false, layout: 'candidate-card-layout' },
+		{ wide: true, layout: 'candidate-table-layout' },
+	])('renders all department membership dispositions in the $layout', async ({ wide, layout }) => {
+		const previewPlan: any = structuredClone(plan)
+		previewPlan.candidates = [
+			{ userID: 1, username: 'selected', email: 'selected@example.com' },
+			{ userID: 2, username: 'descendant', email: 'descendant@example.org' },
+			{ userID: 3, username: 'outside', email: 'outside@example.net', warning: 'user is not in the selected department' },
+			{ userID: 4, username: 'multiple', email: 'multiple@example.edu', warning: 'user belongs to multiple departments' },
+		].map((item) => ({
+			...structuredClone(plan.candidates[0]),
+			user_id: item.userID,
+			relay_user_id: 100 + item.userID,
+			username: item.username,
+			email: item.email,
+			selected: item.userID === 1,
+			warnings: item.warning ? [item.warning] : undefined,
+		}))
+		const { wrapper } = await mountView([], wide, previewPlan)
+		await fillAndPreview(wrapper)
+
+		const candidateLayout = wrapper.get(`[data-testid="${layout}"]`)
+		expect(candidateLayout.find('[data-testid="candidate-warning-1"]').exists()).toBe(false)
+		expect(candidateLayout.find('[data-testid="candidate-warning-2"]').exists()).toBe(false)
+		expect(candidateLayout.get('[data-testid="candidate-warning-3"]').text()).toBe('User is not in the selected department')
+		expect(candidateLayout.get('[data-testid="candidate-warning-4"]').text()).toBe('User belongs to multiple departments')
 	})
 
 	it('previews managed subscription renewal from both responsive mapping layouts', async () => {
