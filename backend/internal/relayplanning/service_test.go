@@ -313,22 +313,19 @@ func TestPreviewDepartmentMembershipWarningUsesCurrentEffectiveHierarchy(t *test
 		}
 		user := userBuilder.SaveX(ctx)
 		users = append(users, user)
-		createMember := func(externalID string, runID int, memberships []string) {
-			memberEmail := tt.memberEmail
-			if memberEmail == "" {
-				memberEmail = tt.email
-			}
-			member := client.DirectoryMember.Create().SetSourceID(source.ID).SetExternalID(externalID).SetEmailNormalized(memberEmail).SetDisplayName(user.Username).SetDepartmentExternalID(memberships[0]).SetMatchedUserID(user.ID).SetLastSeenRunID(runID).SaveX(ctx)
-			for _, departmentID := range memberships {
-				client.DirectoryMemberDepartment.Create().SetSourceID(source.ID).SetDirectoryMemberID(member.ID).SetDepartmentExternalID(departmentID).SetLastSeenRunID(runID).SaveX(ctx)
-			}
+		memberEmail := tt.memberEmail
+		if memberEmail == "" {
+			memberEmail = tt.email
 		}
-		createMember(fmt.Sprintf("member-%d", index), currentRun.ID, tt.memberships)
-		if tt.duplicate {
-			createMember(fmt.Sprintf("member-%d-duplicate", index), currentRun.ID, tt.memberships)
+		member := client.DirectoryMember.Create().SetSourceID(source.ID).SetExternalID(fmt.Sprintf("member-%d", index)).SetEmailNormalized(memberEmail).SetDisplayName(user.Username).SetDepartmentExternalID(tt.memberships[0]).SetMatchedUserID(user.ID).SetLastSeenRunID(currentRun.ID).SaveX(ctx)
+		if tt.duplicate || len(tt.memberships) > 1 {
+			// Explicit membership supersedes the identical primary fallback without creating a second effective membership.
+			for _, departmentID := range tt.memberships {
+				client.DirectoryMemberDepartment.Create().SetSourceID(source.ID).SetDirectoryMemberID(member.ID).SetMemberExternalID(member.ExternalID).SetMemberEmailNormalized(member.EmailNormalized).SetDepartmentExternalID(departmentID).SetLastSeenRunID(currentRun.ID).SaveX(ctx)
+			}
 		}
 		if tt.staleOutside {
-			createMember(fmt.Sprintf("member-%d-stale", index), staleRun.ID, []string{"dept-outside"})
+			client.DirectoryMemberDepartment.Create().SetSourceID(source.ID).SetDirectoryMemberID(member.ID).SetMemberExternalID(member.ExternalID).SetMemberEmailNormalized(member.EmailNormalized).SetDepartmentExternalID("dept-outside").SetLastSeenRunID(staleRun.ID).SaveX(ctx)
 		}
 	}
 	provider := departmentWarningPreviewProvider{users: make(map[int64]*relay.User, len(users))}
