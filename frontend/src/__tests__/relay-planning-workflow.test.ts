@@ -39,6 +39,8 @@ function reviewedPlan(overrides: Partial<RelayPlanningPlan> = {}): RelayPlanning
       can_add: true,
       selected: true,
       eligible: true,
+		can_retain: false,
+		disposition: 'migration',
     }],
     assignments: [{
       index: 0,
@@ -624,6 +626,25 @@ describe('useRelayPlanningWorkflow', () => {
     }))
     workflow.dispose()
   })
+
+	it.each(['unavailable', 'retry'])('does not restore retained after moving an authoritative %s member away and back', async () => {
+		const options = workflowOptions()
+		const mapping = relayMapping({ member_assignments: { '1': 101 }, member_sources: { '1': 42 } })
+		const replan = reviewedPlan({
+			mapping_id: 9,
+			candidates: [{ ...reviewedPlan().candidates[0], can_retain: false, disposition: 'migration', current_group_ids: [101] }],
+			assignments: [{ ...reviewedPlan().assignments[0], target_group_id: 101, user_ids: [1] }],
+		})
+		options.previewReplan.mockResolvedValue(structuredClone(replan))
+		const workflow = useRelayPlanningWorkflow(options)
+
+		await workflow.openReplan(mapping)
+		workflow.moveCandidate(1, null)
+		workflow.moveCandidate(1, 0)
+
+		expect(workflow.plan.value?.candidates[0].disposition).toBe('migration')
+		workflow.dispose()
+	})
 
 	 it('requires a reviewed Source before removing a legacy managed member', async () => {
 		 const options = workflowOptions()

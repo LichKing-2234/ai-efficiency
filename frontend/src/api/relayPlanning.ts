@@ -17,6 +17,8 @@ export interface RelayPlanningCandidate {
   can_add: boolean
   selected: boolean
   eligible: boolean
+	can_retain: boolean
+	disposition: 'retained' | 'target_only' | 'migration' | 'available' | 'excluded'
   warnings?: string[]
 }
 

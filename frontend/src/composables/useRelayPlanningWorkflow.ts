@@ -426,7 +426,17 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
 			delete nextRemovalSources[String(userID)]
     }
     removedUserIDs.value = nextRemoved
-		removalSources.value = nextRemovalSources
+    removalSources.value = nextRemovalSources
+		const candidate = plan.value.candidates.find((item) => item.user_id === userID)
+		if (candidate) {
+			const targetID = targetIndex === null ? 0 : Number(plan.value.assignments[targetIndex]?.target_group_id || 0)
+			const baselineTarget = Number(activeMappingMemberAssignments.value[String(userID)] || 0)
+			candidate.disposition = targetIndex === null
+				? candidate.can_add ? 'available' : 'excluded'
+				: candidate.can_retain && baselineTarget > 0 && targetID === baselineTarget
+					? 'retained'
+					: Number(memberSources.value[String(userID)] ?? candidate.source_group_id ?? 0) > 0 ? 'migration' : 'target_only'
+		}
     recalculateAssignments()
   }
 
@@ -464,6 +474,8 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
 		if (Number(memberSources.value[key] || 0) === groupID) return
     if (!markPlanEdited()) return
 		memberSources.value = { ...memberSources.value, [key]: groupID }
+		const candidate = plan.value?.candidates.find((item) => item.user_id === userID)
+		if (candidate) candidate.disposition = groupID > 0 ? 'migration' : 'target_only'
   }
 
   function toggleUnmanagedRelayUser(relayUserID: number, checked: boolean) {

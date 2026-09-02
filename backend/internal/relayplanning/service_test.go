@@ -71,6 +71,59 @@ func TestValidateAssignmentsAllowsExplicitNonSourceMemberOnce(t *testing.T) {
 	}
 }
 
+func TestAssignCandidateDispositionsDistinguishesRetainedAndReviewedChanges(t *testing.T) {
+	mapping := &ent.RelayGroupMapping{
+		MemberAssignments: map[string]int64{"1": 101, "6": 101, "7": 101},
+		OperationState:    map[string]map[string]string{"member:6": {"status": "failed"}},
+	}
+	candidates := []Candidate{
+		{UserID: 1, CanAdd: true, CurrentGroupIDs: []int64{101}, SourceGroupID: 20},
+		{UserID: 2, CanAdd: true},
+		{UserID: 3, CanAdd: true, SourceGroupID: 20},
+		{UserID: 4, CanAdd: true},
+		{UserID: 5},
+		{UserID: 6, CanAdd: true, CurrentGroupIDs: []int64{101}, SourceGroupID: 20},
+		{UserID: 7, CanAdd: true, CurrentGroupIDs: []int64{101}, SourceGroupID: 20, replanUnavailableReason: replanRosterUnavailableSubscription},
+	}
+	assignments := []Assignment{{Index: 0, TargetGroupID: 101, UserIDs: []int{1, 2, 3}}}
+
+	assignCandidateDispositions(mapping, candidates, assignments)
+
+	want := []string{"retained", "target_only", "migration", "available", "excluded", "available", "available"}
+	for index := range candidates {
+		if candidates[index].Disposition != want[index] {
+			t.Fatalf("candidate %d disposition = %q, want %q", candidates[index].UserID, candidates[index].Disposition, want[index])
+		}
+	}
+	if !candidates[0].CanRetain || candidates[5].CanRetain || candidates[6].CanRetain {
+		t.Fatalf("can_retain facts = %v/%v/%v, want aligned only", candidates[0].CanRetain, candidates[5].CanRetain, candidates[6].CanRetain)
+	}
+}
+
+func TestZeroChangeReplanRequiresIdenticalPersistedRelationshipState(t *testing.T) {
+	mapping := Mapping{
+		ID: 9, ProviderID: 7, DepartmentID: "dept-alpha", DepartmentName: "Department Alpha", Platform: "openai",
+		TemplateGroupID: 10, TemplateGroupName: "Template", SourceGroupID: 20, SourceGroupName: "Source",
+		GroupIDs: []int64{101}, MemberAssignments: map[string]int64{"1": 101}, MemberSources: map[string]int64{"1": 20},
+		AccountManagementInitialized: true, DesiredAccounts: map[string][]AccountIntent{"101": {{AccountID: 11, Priority: 1}}}, WeeklyCostTarget: 2500,
+	}
+	plan := &Plan{
+		ProviderID: 7, DepartmentID: "dept-alpha", DepartmentName: "Department Alpha", Platform: "openai",
+		TemplateGroupID: 10, TemplateGroupName: "Template", SourceGroupID: 20, SourceGroupName: "Source", WeeklyCostTarget: 2500,
+		Candidates:      []Candidate{{UserID: 1, SourceGroupID: 20}},
+		Assignments:     []Assignment{{Index: 0, TargetGroupID: 101, UserIDs: []int{1}, DesiredAccounts: []AccountIntent{{AccountID: 11, Priority: 1}}}},
+		TargetSummaries: []TargetChangeSummary{{Index: 0}}, AccountsReviewed: true,
+	}
+	if !isZeroChangeReplan(mapping, plan, ExecuteRequest{}) {
+		t.Fatal("identical Replan was not recognized as zero-change")
+	}
+	changed := *plan
+	changed.WeeklyCostTarget = 3000
+	if isZeroChangeReplan(mapping, &changed, ExecuteRequest{}) {
+		t.Fatal("changed Mapping cost was treated as zero-change")
+	}
+}
+
 func TestValidateAssignmentsRejectsDuplicateMember(t *testing.T) {
 	_, err := validateAssignments([]Assignment{{Index: 0, UserIDs: []int{1}}, {Index: 1, UserIDs: []int{1}}}, []Candidate{{UserID: 1, CanAdd: true}}, 2)
 	if err == nil || !strings.Contains(err.Error(), "assigned more than once") {
