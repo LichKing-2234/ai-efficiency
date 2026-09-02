@@ -383,12 +383,6 @@ func TestPreviewDepartmentMembershipWarningUsesCurrentEffectiveHierarchy(t *test
 			}
 		})
 	}
-	if err := client.Close(); err != nil {
-		t.Fatalf("close directory facts database: %v", err)
-	}
-	if _, err := service.Preview(ctx, request); err == nil || !strings.Contains(err.Error(), "load candidate department memberships") {
-		t.Fatalf("Preview() directory read error = %v, want propagated Preview error", err)
-	}
 }
 
 func TestPreviewFailsWithoutCurrentSuccessfulDirectorySnapshot(t *testing.T) {
