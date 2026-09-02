@@ -5059,7 +5059,10 @@ func validateMemberSourceGroups(memberSources map[string]int64, groups []relay.G
 }
 
 func (s *Service) buildCandidates(ctx context.Context, p relay.Provider, requestFacts *planningRequestFacts, providerID int, providerVersion int64, users []*ent.User, source relay.Group, groups []relay.Group, memberSources map[string]int64, platform, departmentID string) ([]Candidate, error) {
-	departmentWarnings, _ := s.departmentMembershipWarnings(ctx, users, departmentID)
+	departmentWarnings, err := s.departmentMembershipWarnings(ctx, users, departmentID)
+	if err != nil {
+		return nil, fmt.Errorf("load candidate department memberships: %w", err)
+	}
 	allUsers, err := s.client.User.Query().Where(user.RelayUserIDNotNil()).Order(ent.Asc(user.FieldID)).Limit(maxPlanningUsers).All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load users for global token ranking: %w", err)
@@ -5317,9 +5320,9 @@ func (s *Service) departmentMembershipWarnings(ctx context.Context, users []*ent
 		return warnings, nil
 	}
 	query := directoryfacts.Query{
-		AllDepartments:     true,
 		IncludeMemberships: true,
 	}
+	candidateUserIDs := make([]int, 0, len(users))
 	usersByID := make(map[int]*ent.User, len(users))
 	userIDsByEmail := make(map[string][]int, len(users))
 	for _, u := range users {
@@ -5327,6 +5330,7 @@ func (s *Service) departmentMembershipWarnings(ctx context.Context, users []*ent
 			continue
 		}
 		usersByID[u.ID] = u
+		candidateUserIDs = append(candidateUserIDs, u.ID)
 		if email := directoryfacts.NormalizeEmail(u.Email); email != "" {
 			query.MemberEmails = append(query.MemberEmails, email)
 			userIDsByEmail[email] = append(userIDsByEmail[email], u.ID)
@@ -5358,19 +5362,24 @@ func (s *Service) departmentMembershipWarnings(ctx context.Context, users []*ent
 			}
 		}
 	}
-	allowed := make(map[string]struct{})
-	for _, departmentID := range facts.Hierarchy().SubtreeIDs(selectedDepartment) {
-		allowed[departmentID] = struct{}{}
+	snapshot := view.Snapshot()
+	selectedUsers, err := directoryfacts.New(s.client).LocalUsers(ctx, &snapshot, directoryfacts.LocalUserQuery{
+		UserIDs: candidateUserIDs, DepartmentID: selectedDepartment, Limit: len(candidateUserIDs),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("load selected department subtree users: %w", err)
+	}
+	insideSelectedSubtree := make(map[int]struct{}, len(selectedUsers.IDs))
+	for _, userID := range selectedUsers.IDs {
+		insideSelectedSubtree[userID] = struct{}{}
 	}
 	for userID, departments := range departmentsByUser {
 		if len(departments) >= 2 {
 			warnings[userID] = "user belongs to multiple departments"
 			continue
 		}
-		for departmentID := range departments {
-			if _, ok := allowed[departmentID]; !ok {
-				warnings[userID] = "user is not in the selected department"
-			}
+		if _, ok := insideSelectedSubtree[userID]; !ok {
+			warnings[userID] = "user is not in the selected department"
 		}
 	}
 	return warnings, nil

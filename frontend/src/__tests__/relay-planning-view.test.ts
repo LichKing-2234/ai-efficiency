@@ -257,13 +257,30 @@ describe('RelayPlanningView', () => {
 	it.each([
 		{ wide: false, layout: 'candidate-card-layout' },
 		{ wide: true, layout: 'candidate-table-layout' },
-	])('renders the precise selected-department warning in the $layout', async ({ wide, layout }) => {
+	])('renders all department membership dispositions in the $layout', async ({ wide, layout }) => {
 		const previewPlan: any = structuredClone(plan)
-		previewPlan.candidates[0].warnings = ['user is not in the selected department']
+		previewPlan.candidates = [
+			{ userID: 1, username: 'selected', email: 'selected@example.com' },
+			{ userID: 2, username: 'descendant', email: 'descendant@example.org' },
+			{ userID: 3, username: 'outside', email: 'outside@example.net', warning: 'user is not in the selected department' },
+			{ userID: 4, username: 'multiple', email: 'multiple@example.edu', warning: 'user belongs to multiple departments' },
+		].map((item) => ({
+			...structuredClone(plan.candidates[0]),
+			user_id: item.userID,
+			relay_user_id: 100 + item.userID,
+			username: item.username,
+			email: item.email,
+			selected: item.userID === 1,
+			warnings: item.warning ? [item.warning] : undefined,
+		}))
 		const { wrapper } = await mountView([], wide, previewPlan)
 		await fillAndPreview(wrapper)
 
-		expect(wrapper.get(`[data-testid="${layout}"]`).text()).toContain('User is not in the selected department')
+		const candidateLayout = wrapper.get(`[data-testid="${layout}"]`)
+		expect(candidateLayout.find('[data-testid="candidate-warning-1"]').exists()).toBe(false)
+		expect(candidateLayout.find('[data-testid="candidate-warning-2"]').exists()).toBe(false)
+		expect(candidateLayout.get('[data-testid="candidate-warning-3"]').text()).toBe('User is not in the selected department')
+		expect(candidateLayout.get('[data-testid="candidate-warning-4"]').text()).toBe('User belongs to multiple departments')
 	})
 
 	it('previews managed subscription renewal from both responsive mapping layouts', async () => {

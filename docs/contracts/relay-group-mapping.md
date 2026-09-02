@@ -68,11 +68,13 @@ Candidate behavior depends on the reviewed source:
   through a client-supplied ID.
 
 Candidate department warnings use only the latest successful Directory apply
-snapshot and its effective hierarchy. One unique membership in the selected
-department or its subtree produces no warning. One unique membership outside
-that subtree is reported as outside the selected department. Only two or more
-unique effective memberships are reported as multiple departments; duplicate
-representations of the same membership do not create a conflict.
+snapshot and a candidate-bounded read of its effective hierarchy. One unique
+membership in the selected department or its subtree produces no warning. One
+unique membership outside that subtree is reported as outside the selected
+department. Only two or more unique effective memberships are reported as
+multiple departments; duplicate representations of the same membership do not
+create a conflict. Preview fails when these current facts cannot be read rather
+than silently omitting a department warning.
 
 The initial Preview recommends a Target count, then treats reviewed assignments
 as authoritative. The administrator may add empty proposed Targets or remove

@@ -235,6 +235,32 @@ func TestPreviewDoesNotCreateDefaultGroupForNonSourceOnlyCandidates(t *testing.T
 	}
 }
 
+type departmentWarningPreviewProvider struct {
+	relay.Provider
+	users map[int64]*relay.User
+}
+
+func (p departmentWarningPreviewProvider) GetUser(_ context.Context, userID int64) (*relay.User, error) {
+	return p.users[userID], nil
+}
+
+func (departmentWarningPreviewProvider) ListUserSubscriptions(context.Context, int64) ([]relay.UserSubscription, error) {
+	return []relay.UserSubscription{{GroupID: 42, Status: "active"}}, nil
+}
+
+func (departmentWarningPreviewProvider) ListUserAPIKeys(context.Context, int64) ([]relay.APIKey, error) {
+	return nil, nil
+}
+
+func (departmentWarningPreviewProvider) GetBatchUserUsageStats(_ context.Context, userIDs []int64, _ relay.TeamUsageSummaryParams) (map[int64]relay.TeamUserUsageStats, error) {
+	stats := make(map[int64]relay.TeamUserUsageStats, len(userIDs))
+	for _, userID := range userIDs {
+		cost, tokens := 1.0, int64(1)
+		stats[userID] = relay.TeamUserUsageStats{UserID: userID, RangeActualCost: &cost, RangeTotalTokens: &tokens}
+	}
+	return stats, nil
+}
+
 func TestPreviewDepartmentMembershipWarningUsesCurrentEffectiveHierarchy(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -284,17 +310,45 @@ func TestPreviewDepartmentMembershipWarningUsesCurrentEffectiveHierarchy(t *test
 			createMember(fmt.Sprintf("member-%d-stale", index), staleRun.ID, []string{"dept-outside"})
 		}
 	}
-	warnings, err := service.departmentMembershipWarnings(ctx, users, selectedDepartment)
+	provider := departmentWarningPreviewProvider{users: make(map[int64]*relay.User, len(users))}
+	for _, user := range users {
+		provider.users[int64(*user.RelayUserID)] = &relay.User{ID: int64(*user.RelayUserID), Username: user.Username, Email: user.Email}
+	}
+	candidates, err := service.buildCandidates(ctx, provider, newPlanningRequestFacts(), 0, 0, users, relay.Group{ID: 42, Platform: "openai"}, nil, nil, "openai", selectedDepartment)
 	if err != nil {
-		t.Fatalf("departmentMembershipWarnings() error = %v", err)
+		t.Fatalf("buildCandidates() error = %v", err)
+	}
+	encoded, err := json.Marshal(candidates)
+	if err != nil {
+		t.Fatalf("marshal Preview candidates: %v", err)
+	}
+	var responseCandidates []Candidate
+	if err := json.Unmarshal(encoded, &responseCandidates); err != nil {
+		t.Fatalf("unmarshal Preview candidates: %v", err)
+	}
+	byUserID := make(map[int]Candidate, len(responseCandidates))
+	for _, candidate := range responseCandidates {
+		byUserID[candidate.UserID] = candidate
 	}
 	for index, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := warnings[users[index].ID]
+			candidate := byUserID[users[index].ID]
+			got := ""
+			for _, warning := range candidate.Warnings {
+				if warning == "user is not in the selected department" || warning == "user belongs to multiple departments" {
+					got = warning
+				}
+			}
 			if got != tt.wantWarning {
-				t.Fatalf("departmentMembershipWarnings() = %q, want %q", got, tt.wantWarning)
+				t.Fatalf("serialized Preview department warning = %q, want %q; warnings=%v", got, tt.wantWarning, candidate.Warnings)
 			}
 		})
+	}
+	if err := client.Close(); err != nil {
+		t.Fatalf("close directory facts database: %v", err)
+	}
+	if _, err := service.buildCandidates(ctx, provider, newPlanningRequestFacts(), 0, 0, users, relay.Group{ID: 42, Platform: "openai"}, nil, nil, "openai", selectedDepartment); err == nil || !strings.Contains(err.Error(), "load candidate department memberships") {
+		t.Fatalf("buildCandidates() directory read error = %v, want propagated Preview error", err)
 	}
 }
 
