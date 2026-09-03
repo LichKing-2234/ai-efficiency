@@ -3,6 +3,8 @@ package attributionlocal
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -22,29 +24,33 @@ func ParseClaudeJSONL(path, workspaceRoot string) ([]LocalToolUsageEvent, error)
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
+	// A session line carrying a large tool result routinely exceeds bufio.Scanner's
+	// default 64 KiB token, and Scanner cannot resume past one: it stops and reports
+	// bufio.ErrTooLong, which the workspace scan turns into a skipped file. On the
+	// machine this was measured against, that silently dropped 13 of the 25 session
+	// files belonging to one repository. bufio.Reader grows to whatever a line
+	// needs, so an oversized line costs memory rather than the rest of the session.
+	reader := bufio.NewReader(f)
 
+	// consider folds one line into best. It is a closure so that an unusable line
+	// can return without skipping the end-of-file check the read loop owns.
+	consider := func(line string) {
 		var row map[string]any
 		if err := json.Unmarshal([]byte(line), &row); err != nil {
-			continue
+			return
 		}
 		if strings.TrimSpace(asString(row["type"])) != "assistant" {
-			continue
+			return
 		}
 		if !sameWorkspacePath(asString(row["cwd"]), workspaceRoot) {
-			continue
+			return
 		}
 
 		msg, _ := row["message"].(map[string]any)
 		msgID := strings.TrimSpace(asString(msg["id"]))
 		sessionID := strings.TrimSpace(asString(row["sessionId"]))
 		if msgID == "" || sessionID == "" {
-			continue
+			return
 		}
 
 		usage, _ := msg["usage"].(map[string]any)
@@ -76,8 +82,18 @@ func ParseClaudeJSONL(path, workspaceRoot string) ([]LocalToolUsageEvent, error)
 			best[cur.event.DedupeKey] = cur
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
+
+	for {
+		raw, readErr := reader.ReadString('\n')
+		if line := strings.TrimSpace(raw); line != "" {
+			consider(line)
+		}
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				break
+			}
+			return nil, readErr
+		}
 	}
 
 	out := make([]LocalToolUsageEvent, 0, len(best))

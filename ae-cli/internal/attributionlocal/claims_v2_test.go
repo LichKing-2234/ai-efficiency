@@ -1119,8 +1119,13 @@ func TestScanCodexV2ClaimsRejectsAmbiguousExecWrappedPatches(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(claims) != 1 || claims[0].GapReason != "missing_structured_mutation" || len(UploadableV2ClaimGroups(claims)) != 0 {
+			if len(claims) != 1 || len(UploadableV2ClaimGroups(claims)) != 0 || len(claims[0].Group.CommitAllocations) != 0 {
 				t.Fatalf("ambiguous wrapped patch was accepted: %+v", claims)
+			}
+			// Refused, and refused visibly: an apply_patch attempt we do not accept
+			// reports its own reason so wrapper drift stays countable.
+			if claims[0].GapReason != v2GapUnrecognizedPatchWrapper {
+				t.Fatalf("ambiguous wrapped patch gap reason = %q, want %q", claims[0].GapReason, v2GapUnrecognizedPatchWrapper)
 			}
 		})
 	}
@@ -1553,4 +1558,106 @@ func scanV2ClaimsForTest(paths []string, opts V2ClaimScanOptions, threadID strin
 		})
 	}
 	return scanCodexV2ClaimsWithEvidence(context.Background(), paths, opts, evidence)
+}
+
+func TestScanCodexV2ClaimsAcceptsAnchoredThreeStatementApplyPatch(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	home := t.TempDir()
+	writeV2JSONL(t, filepath.Join(home, ".codex", "sessions", "session.jsonl"),
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "thread-three"}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-three"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{
+			"type": "custom_tool_call", "name": "exec",
+			"input": "const patch = \"*** Begin Patch\\n*** Add File: feature.go\\n+package feature\\n*** End Patch\";\nconst result = await tools.apply_patch(patch);\ntext(result);",
+		}},
+	)
+	writeV2RequestLog(t, home, map[string]string{"thread-three/request-three": "turn-three"})
+
+	claims, err := ScanCodexV2ClaimsFromHome(context.Background(), home, V2ClaimScanOptions{
+		RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
+		WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-three",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 1 || claims[0].GapReason != "" || len(UploadableV2ClaimGroups(claims)) != 1 {
+		t.Fatalf("three-statement apply_patch claim = %+v, want one uploadable deterministic claim", claims)
+	}
+}
+
+func TestScanCodexV2ClaimsAcceptsWrappedApplyPatchWithRenamedIdentifier(t *testing.T) {
+	repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+	home := t.TempDir()
+	writeV2JSONL(t, filepath.Join(home, ".codex", "sessions", "session.jsonl"),
+		map[string]any{"type": "session_meta", "payload": map[string]any{"id": "thread-renamed"}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-renamed"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{
+			"type": "custom_tool_call", "name": "exec",
+			"input": "const p = \"*** Begin Patch\\n*** Add File: feature.go\\n+package feature\\n*** End Patch\";\ntext(await tools.apply_patch(p));",
+		}},
+	)
+	writeV2RequestLog(t, home, map[string]string{"thread-renamed/request-renamed": "turn-renamed"})
+
+	claims, err := ScanCodexV2ClaimsFromHome(context.Background(), home, V2ClaimScanOptions{
+		RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
+		WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-renamed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 1 || claims[0].GapReason != "" || len(UploadableV2ClaimGroups(claims)) != 1 {
+		t.Fatalf("renamed-identifier apply_patch claim = %+v, want one uploadable deterministic claim", claims)
+	}
+}
+
+// A wrapper that is recognisably an apply_patch attempt but does not satisfy the
+// accepted grammar must report its own gap reason, so grammar drift is countable
+// instead of collapsing into the generic "no mutation at all" bucket.
+func TestScanCodexV2ClaimsReportsUnrecognizedPatchWrapper(t *testing.T) {
+	patch := `"*** Begin Patch\n*** Add File: feature.go\n+package feature\n*** End Patch"`
+	cases := map[string]string{
+		"three-statement result mismatch": "const patch = " + patch + ";\nconst result = await tools.apply_patch(patch);\ntext(other);",
+		"three-statement property access": "const patch = " + patch + ";\nconst result = await tools.apply_patch(patch);\ntext(result.output);",
+		"trailing control flow":           "const patch = " + patch + ";\nconst result = await tools.apply_patch(patch);\ntext(result);\nif (result) {}",
+	}
+	for name, input := range cases {
+		t.Run(name, func(t *testing.T) {
+			repo, commit := v2ClaimRepo(t, "feature.go", "package feature\n")
+			home := t.TempDir()
+			writeV2JSONL(t, filepath.Join(home, ".codex", "sessions", "session.jsonl"),
+				map[string]any{"type": "session_meta", "payload": map[string]any{"id": "thread-unrecognized"}},
+				map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "turn-unrecognized"}},
+				map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "exec", "input": input}},
+			)
+			writeV2RequestLog(t, home, map[string]string{"thread-unrecognized/request-unrecognized": "turn-unrecognized"})
+			claims, err := ScanCodexV2ClaimsFromHome(context.Background(), home, V2ClaimScanOptions{
+				RepoRoot: repo, CommitSHA: commit, RelayProviderID: 7, RepoConfigID: 8,
+				WorkspaceID: "workspace-8", CheckpointEventID: "checkpoint-unrecognized",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(claims) != 1 || claims[0].GapReason != v2GapUnrecognizedPatchWrapper {
+				t.Fatalf("unrecognized wrapper claim = %+v, want gap reason %q", claims, v2GapUnrecognizedPatchWrapper)
+			}
+			if len(UploadableV2ClaimGroups(claims)) != 0 {
+				t.Fatalf("unrecognized wrapper produced an uploadable claim, want none")
+			}
+		})
+	}
+}
+
+func TestV2DeliverySummaryCountsUnrecognizedPatchWrapper(t *testing.T) {
+	state := &V2ClaimState{Claims: []V2ClaimCandidate{
+		{GapReason: v2GapUnrecognizedPatchWrapper},
+		{GapReason: v2GapUnrecognizedPatchWrapper},
+		{GapReason: v2GapMissingRequestID},
+	}}
+	summary := SummarizeV2ClaimDelivery(state)
+	if summary.UnrecognizedPatchWrapper != 2 {
+		t.Fatalf("UnrecognizedPatchWrapper = %d, want 2", summary.UnrecognizedPatchWrapper)
+	}
+	if summary.MissingRequestID != 1 {
+		t.Fatalf("MissingRequestID = %d, want 1", summary.MissingRequestID)
+	}
 }

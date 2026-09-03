@@ -170,14 +170,21 @@ func printV2ClaimDeliveryStatus(out io.Writer) error {
 	state, err := attributionlocal.LoadV2ClaimState()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			fmt.Fprintln(out, "V2 Claim Delivery: pending=0 conflict=0 upgrade_required=0 accepted=0 missing_request_id=0 ambiguous_request_evidence=0 request_evidence_expired=0")
+			fmt.Fprintln(out, "V2 Claim Delivery: pending=0 conflict=0 upgrade_required=0 accepted=0")
+			fmt.Fprintln(out, "V2 Claim Gaps: missing_request_id=0 ambiguous_request_evidence=0 request_evidence_expired=0 unrecognized_patch_wrapper=0 invalid_local_usage=0 missing_local_usage=0 missing_structured_mutation=0 invalid_structured_mutation=0 commit_content_mismatch=0")
 			return nil
 		}
 		return fmt.Errorf("load v2 claim delivery state: %w", err)
 	}
 	summary := attributionlocal.SummarizeV2ClaimDelivery(state)
-	fmt.Fprintf(out, "V2 Claim Delivery: pending=%d conflict=%d upgrade_required=%d accepted=%d missing_request_id=%d ambiguous_request_evidence=%d request_evidence_expired=%d\n",
-		summary.Pending, summary.Conflict, summary.UpgradeRequired, summary.Accepted, summary.MissingRequestID, summary.AmbiguousRequestEvidence, summary.RequestEvidenceExpired)
+	fmt.Fprintf(out, "V2 Claim Delivery: pending=%d conflict=%d upgrade_required=%d accepted=%d\n",
+		summary.Pending, summary.Conflict, summary.UpgradeRequired, summary.Accepted)
+	// Every reason a claim can fail, on one line. Five of these were bare
+	// literals that nothing counted, so a machine holding thousands of them
+	// reported only zeros and read as healthy.
+	fmt.Fprintf(out, "V2 Claim Gaps: missing_request_id=%d ambiguous_request_evidence=%d request_evidence_expired=%d unrecognized_patch_wrapper=%d invalid_local_usage=%d missing_local_usage=%d missing_structured_mutation=%d invalid_structured_mutation=%d commit_content_mismatch=%d\n",
+		summary.MissingRequestID, summary.AmbiguousRequestEvidence, summary.RequestEvidenceExpired, summary.UnrecognizedPatchWrapper,
+		summary.InvalidLocalUsage, summary.MissingLocalUsage, summary.MissingStructuredMutation, summary.InvalidStructuredMutation, summary.CommitContentMismatch)
 	return nil
 }
 

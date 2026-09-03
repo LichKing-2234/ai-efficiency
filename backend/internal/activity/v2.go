@@ -58,7 +58,7 @@ func (s *Service) V2Overview(ctx context.Context, actorUserID int, query V2Query
 	if compareErr != nil {
 		return result, nil
 	}
-	_, previousCommitted, _, previousGap, providerMismatch, compareErr := s.queryV2ScopeTotalsSQL(ctx, scope, previousFrom, previousTo, previousDenominator)
+	_, _, previousCommitted, _, previousGap, providerMismatch, compareErr := s.queryV2ScopeTotalsSQL(ctx, scope, previousFrom, previousTo, previousDenominator)
 	if compareErr != nil || previousGap || providerMismatch {
 		return result, nil
 	}
@@ -286,6 +286,36 @@ func v2Ratio(committed int64, coverage V2Coverage, d V2Denominator) V2Ratio {
 	} else if committed == 0 {
 		r.State = "true_zero_committed"
 	} else {
+		r.State = "exact"
+	}
+	return r
+}
+
+// v2CreditRatio mirrors v2Ratio's states so a reader can switch units without
+// learning a second vocabulary. It has no freshness gate: the Token denominator
+// comes from an external system that can lag, and reports when it has, while the
+// credit denominator is this platform's own table and is as current as the last
+// upload. That is a weaker guarantee, not a stronger one — it says nothing about
+// credit the agent never reported — and V2CreditRatio's doc comment carries it.
+func v2CreditRatio(committed, total float64, coverage V2Coverage) V2CreditRatio {
+	r := V2CreditRatio{State: "denominator_unavailable", CommittedCredit: committed}
+	if committed < 0 || total < 0 || committed > total {
+		return r
+	}
+	value := total
+	r.TotalCredit = &value
+	if total == 0 {
+		r.State = "complete_zero_usage"
+		return r
+	}
+	percent := committed * 100 / total
+	r.Percent = &percent
+	switch {
+	case coverage.LowerBound:
+		r.State = "lower_bound"
+	case committed == 0:
+		r.State = "true_zero_committed"
+	default:
 		r.State = "exact"
 	}
 	return r
