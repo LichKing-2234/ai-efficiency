@@ -1038,6 +1038,7 @@ func TestRelayPlanningAdoptCurrentAccountsInitializesDesiredStateWithoutRelayWri
 		SetAdminAPIKey("test-admin-key").
 		SetEnabled(true).
 		SaveX(ctx)
+	createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
 	mapping := client.RelayGroupMapping.Create().
 		SetProviderID(providerConfig.ID).
 		SetDepartmentExternalID("dept-alpha").
@@ -1087,6 +1088,9 @@ func TestRelayPlanningAdoptCurrentAccountsInitializesDesiredStateWithoutRelayWri
 	if !containsRelayPlanningWarning(listed.Warnings, "target group 101 has multiple Accounts") || !containsRelayPlanningWarning(listed.Warnings, "account 11 is reused across target groups 101, 102") {
 		t.Fatalf("Account warnings = %v, want multi-Account and reused-Account warnings", listed.Warnings)
 	}
+	if listed.Alignment != "aligned" || len(listed.AlignmentDifferences) != 0 {
+		t.Fatalf("Account advisories changed alignment = %s differences=%v", listed.Alignment, listed.AlignmentDifferences)
+	}
 
 	request = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/relay-planning/mappings/%d/accounts/adopt", mapping.ID), nil)
 	response = httptest.NewRecorder()
@@ -1116,6 +1120,22 @@ func TestRelayPlanningAdoptCurrentAccountsInitializesDesiredStateWithoutRelayWri
 	persisted := client.RelayGroupMapping.GetX(ctx, mapping.ID)
 	if !persisted.AccountManagementInitialized {
 		t.Fatal("adopted account state was not persisted")
+	}
+
+	provider.accounts[1].GroupRelationships = nil
+	request = httptest.NewRequest(http.MethodGet, "/admin/relay-planning/mappings", nil)
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &listBody) != nil {
+		t.Fatalf("drifted list status = %d, body=%s", response.Code, response.Body.String())
+	}
+	listed = listBody.Data.Items[0]
+	wantDrift := "target group 101 account relationships drifted"
+	if listed.Alignment != "drifted" || fmt.Sprint(listed.AlignmentDifferences) != fmt.Sprint([]string{wantDrift}) {
+		t.Fatalf("Account drift alignment = %s differences=%v", listed.Alignment, listed.AlignmentDifferences)
+	}
+	if containsRelayPlanningWarning(listed.Warnings, wantDrift) || !containsRelayPlanningWarning(listed.Warnings, "target group 101 has multiple Accounts") {
+		t.Fatalf("Account drift warnings = %v, want advisories without duplicated drift", listed.Warnings)
 	}
 }
 
@@ -1306,8 +1326,8 @@ func TestRelayPlanningListMappingsUsesRelationshipSnapshot(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode mapping list: %v", err)
 	}
-	if len(body.Data.Items) != 2 || !containsRelayPlanningWarning(body.Data.Items[0].Warnings, "unmanaged relay member 900 in target group 101") {
-		t.Fatalf("mapping warnings = %+v, want batch-derived unmanaged member warning", body.Data.Items)
+	if len(body.Data.Items) != 2 || !containsRelayPlanningWarning(body.Data.Items[0].AlignmentDifferences, "unmanaged relay member 900 in target group 101") {
+		t.Fatalf("mapping alignment = %+v, want batch-derived unmanaged member difference", body.Data.Items)
 	}
 	if got := provider.relationshipReads.Load(); got != 1 {
 		t.Fatalf("relationship snapshot reads = %d, want 1", got)
@@ -4806,14 +4826,14 @@ func TestRelayPlanningReusesAccountAcrossTargetsWithFreshSnapshots(t *testing.T)
 	}
 }
 
-func TestRelayPlanningEmptyAccountPoolDeactivatesTarget(t *testing.T) {
+func TestRelayPlanningExplicitEmptyAccountPoolRemovesSavedRelationship(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	providerConfig := client.RelayProvider.Create().SetName("relay-planning-empty-account-test").SetDisplayName("Relay Planning Empty Account Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-admin-key").SetEnabled(true).SaveX(ctx)
 	createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
 	mapping := client.RelayGroupMapping.Create().
 		SetProviderID(providerConfig.ID).SetDepartmentExternalID("dept-alpha").SetDepartmentName("Department Alpha").SetPlatform("openai").SetTemplateGroupID(10).
-		SetGroupIds([]int64{101}).SetAccountManagementInitialized(true).SetDesiredAccounts(map[string][]map[string]int64{"101": {}}).SetWeeklyCostTarget(2500).SaveX(ctx)
+		SetGroupIds([]int64{101}).SetAccountManagementInitialized(true).SetDesiredAccounts(map[string][]map[string]int64{"101": {{"account_id": 11, "priority": 1}}}).SetWeeklyCostTarget(2500).SaveX(ctx)
 	provider := &relayPlanningSearchProvider{
 		groups:   []relay.Group{{ID: 10, Name: "Group Alpha", Platform: "openai"}, {ID: 101, Name: "Group Target", Platform: "openai"}},
 		accounts: []relay.Account{{ID: 11, Name: "Account Alpha", Platform: "openai", GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 101, Priority: 1}}}},
@@ -4824,9 +4844,9 @@ func TestRelayPlanningEmptyAccountPoolDeactivatesTarget(t *testing.T) {
 	router.POST("/admin/relay-planning/mappings/:id/replan", handler.Replan)
 	router.POST("/admin/relay-planning/mappings/:id/replan/execute", handler.ReplanExecute)
 	path := fmt.Sprintf("/admin/relay-planning/mappings/%d/replan", mapping.ID)
-	payload := `{"assignments":[{"index":0,"user_ids":[]}]}`
+	payload := `{"assignments":[{"index":0,"user_ids":[],"desired_accounts":[]}]}`
 	fingerprint := previewRelayPlanningFingerprint(t, router, path, payload)
-	executePayload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[]}],"expected_relationship_fingerprint":%q,"operation_key":"empty-account-1"}`, fingerprint)
+	executePayload := fmt.Sprintf(`{"assignments":[{"index":0,"user_ids":[],"desired_accounts":[]}],"expected_relationship_fingerprint":%q,"operation_key":"empty-account-1"}`, fingerprint)
 	request := httptest.NewRequest(http.MethodPost, path+"/execute", strings.NewReader(executePayload))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
@@ -4834,8 +4854,15 @@ func TestRelayPlanningEmptyAccountPoolDeactivatesTarget(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("execute status = %d, want 200, body=%s", response.Code, response.Body.String())
 	}
-	if !containsRelayPlanningEvent(provider.events, "group-status:101:inactive") {
-		t.Fatalf("events = %v, want Target Group deactivation", provider.events)
+	if !containsRelayPlanningEvent(provider.events, "account:11:101:0") || !containsRelayPlanningEvent(provider.events, "group-status:101:inactive") {
+		t.Fatalf("events = %v, want Account removal and Target Group deactivation", provider.events)
+	}
+	if desired := client.RelayGroupMapping.GetX(ctx, mapping.ID).DesiredAccounts["101"]; len(desired) != 0 {
+		t.Fatalf("persisted desired Accounts = %v, want explicit empty list", desired)
+	}
+	snapshot, err := json.Marshal(client.RelationshipOperation.Query().OnlyX(ctx).TargetSnapshot)
+	if err != nil || !strings.Contains(string(snapshot), `"desired_accounts":[]`) {
+		t.Fatalf("durable target snapshot = %s, want explicit empty Account list", snapshot)
 	}
 }
 

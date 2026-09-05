@@ -245,7 +245,7 @@ export interface RelayPlanningAccountSearchPage {
 
 export interface RelayPlanningExecution {
   plan: RelayPlanningPlan
-  groups: Array<{ index: number; id?: number; name?: string; current_name?: string; status: string; rename?: string; error?: string }>
+  groups: Array<{ index: number; id?: number; name?: string; current_name?: string; status: string; rename?: string; creation?: 'completed' | 'pending' | 'failed'; error?: string }>
 	accounts: Array<{ target_group_id: number; account_id?: number; desired_priority?: number; status: string; error?: string }>
   members: Array<{ user_id?: number; relay_user_id?: number; target_group_id?: number; subscription: string; source_removal: string; api_keys?: string[]; error?: string }>
   mappings?: Array<{ mapping_id: number; role: 'destination' | 'source'; status: string; error?: string }>

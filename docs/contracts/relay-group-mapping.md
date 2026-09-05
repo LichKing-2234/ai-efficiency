@@ -453,8 +453,10 @@ relationship fingerprint. Recovery Confirm requires that exact Operation,
 direction, revision map, and fingerprint; changed facts return categorized HTTP
 409 with the current Preview before any write.
 
-The Relay Planning UI displays Alignment separately from Operation Lifecycle,
-locks ordinary edits while operating or drifted, and provides distinct `Continue
+The Relay Planning UI displays Alignment separately from Operation Lifecycle.
+Operating Mappings remain locked. An unowned drifted Mapping may open the
+existing Replan review to reconcile Relay with its saved baseline; its other
+maintenance actions remain locked. Active Operations provide distinct `Continue
 to Target` and `Restore Baseline` review commands only when supported. Resume-only
 effects are disclosed. `blocked_external` shows the exact safe resource type and
 ID with no recovery or generic retry command. Legacy compatibility state remains
