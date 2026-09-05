@@ -62,7 +62,7 @@ func (e *StaleRecoveryError) Error() string { return "Relay recovery facts chang
 
 func (s *Service) decorateMappingOperationState(ctx context.Context, mappings []Mapping) error {
 	for index := range mappings {
-		mappings[index].AlignmentDifferences = safeAlignmentDifferences(mappings[index].Warnings)
+		mappings[index].AlignmentDifferences, mappings[index].Warnings = classifyMappingWarnings(mappings[index].Warnings)
 		mappings[index].Alignment = "aligned"
 		if len(mappings[index].AlignmentDifferences) > 0 {
 			mappings[index].Alignment = "drifted"
@@ -104,19 +104,21 @@ func (s *Service) decorateMappingOperationState(ctx context.Context, mappings []
 	return nil
 }
 
-func safeAlignmentDifferences(warnings []string) []string {
-	result := make([]string, 0, len(warnings))
+func classifyMappingWarnings(warnings []string) (differences, advisories []string) {
 	for _, warning := range warnings {
 		switch {
+		case strings.Contains(warning, " has multiple Accounts"),
+			strings.Contains(warning, " is reused across target groups "):
+			advisories = append(advisories, warning)
 		case strings.Contains(warning, "account relationships are unavailable"):
-			result = append(result, "Account relationship readback is unavailable")
+			differences = append(differences, "Account relationship readback is unavailable")
 		case strings.Contains(warning, "relay groups are unavailable"), strings.Contains(warning, "relationship snapshot"):
-			result = append(result, "Relay relationship readback is unavailable")
+			differences = append(differences, "Relay relationship readback is unavailable")
 		default:
-			result = append(result, warning)
+			differences = append(differences, warning)
 		}
 	}
-	return uniqueStrings(result)
+	return uniqueStrings(differences), uniqueStrings(advisories)
 }
 
 func (s *Service) relationshipOperationSummary(ctx context.Context, operationID int) (*RelationshipOperationSummary, error) {

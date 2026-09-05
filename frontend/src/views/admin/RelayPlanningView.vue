@@ -208,7 +208,7 @@ function operationLifecycleText(mapping: RelayPlanningMapping) {
 }
 
 function replanLocked(mapping: RelayPlanningMapping) {
-	return containmentMode(mapping) === 'manual_intervention' || mapping.alignment === 'operating' || mapping.alignment === 'drifted'
+	return containmentMode(mapping) === 'manual_intervention' || mapping.alignment === 'operating'
 }
 
 function recoveryAvailable(mapping: RelayPlanningMapping, direction: 'resume' | 'restore') {
@@ -329,6 +329,10 @@ function renameResultText(status?: string): string {
 	if (status === 'succeeded') return t('relayPlanning.renameSucceeded')
 	if (status === 'failed') return t('relayPlanning.renameNeedsRetry')
 	return t('relayPlanning.renameSkipped')
+}
+
+function creationResultText(status: 'completed' | 'pending' | 'failed'): string {
+	return t(`relayPlanning.creation${status === 'completed' ? 'Completed' : status === 'pending' ? 'Pending' : 'Failed'}`)
 }
 
 function summaryUser(userID?: number, relayUserID?: number): string {
@@ -1140,8 +1144,8 @@ onBeforeUnmount(() => {
 			</div>
 			<div class="divide-y divide-slate-200">
 				<div v-for="group in lastExecution.groups" :key="group.index" class="flex flex-wrap items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
-					<div class="min-w-0"><div class="break-words text-sm font-medium text-slate-900">{{ group.name || t('relayPlanning.groupNumber', { id: group.id ?? group.index + 1 }) }}</div><div v-if="group.current_name && group.current_name !== group.name" class="break-words text-xs text-slate-500">{{ group.current_name }} -> {{ group.name }}</div><div v-if="group.error" class="mt-1 break-words text-xs text-red-600">{{ group.error }}</div></div>
-					<el-tag :type="group.rename === 'failed' ? 'danger' : group.rename === 'succeeded' ? 'success' : 'info'">{{ renameResultText(group.rename) }}</el-tag>
+					<div class="min-w-0"><div class="break-words text-sm font-medium text-slate-900">{{ group.name || t('relayPlanning.groupNumber', { id: group.id ?? group.index + 1 }) }}</div><div v-if="group.creation" class="break-words text-xs text-slate-500">{{ t('relayPlanning.templateGroup') }}: {{ lastExecution.plan.template_group_name }}</div><div v-else-if="group.current_name && group.current_name !== group.name" class="break-words text-xs text-slate-500">{{ group.current_name }} -> {{ group.name }}</div><div v-if="group.error" class="mt-1 break-words text-xs text-red-600">{{ group.error }}</div></div>
+					<el-tag :type="group.creation === 'failed' || (!group.creation && group.rename === 'failed') ? 'danger' : group.creation === 'completed' || (!group.creation && group.rename === 'succeeded') ? 'success' : 'info'">{{ group.creation ? creationResultText(group.creation) : renameResultText(group.rename) }}</el-tag>
 				</div>
 			</div>
 		</section>

@@ -896,6 +896,35 @@ describe('RelayPlanningView', () => {
 		expect(wrapper.text()).toContain('synthetic rename failure')
 	})
 
+	it('renders created Target lifecycle without temporary copy names', async () => {
+		const { wrapper, relayPlanning } = await mountView()
+		await fillAndPreview(wrapper)
+		await wrapper.get('[data-testid="open-execution-confirmation"]').trigger('click')
+		await flushPromises()
+		relayPlanning.executeRelayPlan.mockResolvedValue({ data: { data: {
+			plan: structuredClone(plan),
+			groups: [
+				{ index: 0, id: 101, name: 'SDK Framework-openai-01', current_name: 'Group Alpha (Copy)', status: 'succeeded', rename: 'succeeded', creation: 'completed' },
+				{ index: 1, id: 102, name: 'SDK Framework-openai-02', current_name: 'Group Alpha (Copy 2)', status: 'failed', rename: 'failed', creation: 'pending', error: 'synthetic rename failure' },
+				{ index: 2, name: 'SDK Framework-openai-03', status: 'failed', rename: 'skipped', creation: 'failed', error: 'synthetic copy failure' },
+			],
+			accounts: [],
+			members: [],
+		} } })
+
+		await wrapper.get('[data-testid="confirm-execution"]').trigger('click')
+		await flushPromises()
+
+		expect(wrapper.text()).toContain('Template Group: Group Alpha')
+		expect(wrapper.text()).toContain('Created')
+		expect(wrapper.text()).toContain('Creation pending')
+		expect(wrapper.text()).toContain('Creation failed')
+		expect(wrapper.text()).toContain('synthetic rename failure')
+		expect(wrapper.text()).toContain('synthetic copy failure')
+		expect(wrapper.text()).not.toContain('Group Alpha (Copy)')
+		expect(wrapper.text()).not.toContain('Rename succeeded')
+	})
+
 	it('keeps an unavailable saved Target reviewable without requiring a synthetic name', async () => {
 		const mapping = {
 			...structuredClone(renewalMapping),
@@ -1504,6 +1533,26 @@ describe('RelayPlanningView', () => {
 		expect(wide.wrapper.find('[data-testid="mapping-table-layout"]').exists()).toBe(true)
 		expect(wide.wrapper.get('[data-testid="mapping-containment-9"]').text()).toContain('Manual intervention required')
 		expect(wide.wrapper.get('[data-testid="replan-mapping-9"]').attributes('disabled')).toBeDefined()
+	})
+
+	it.each([false, true])('opens standard Replan for unowned Account drift (wide: %s)', async (wide) => {
+		const mapping = {
+			...structuredClone(existingMapping),
+			alignment: 'drifted',
+			alignment_differences: ['target group 101 account relationships drifted'],
+			warnings: ['target group 101 has multiple Accounts'],
+		}
+		const replan = structuredClone({ ...plan, mapping_id: 9, assignments: [{ ...plan.assignments[0], target_group_id: 101 }] })
+		const { wrapper, relayPlanning } = await mountView([mapping], wide)
+		relayPlanning.previewRelayReplan.mockResolvedValue({ data: { data: replan } })
+
+		const button = wrapper.get('[data-testid="replan-mapping-9"]')
+		expect(button.attributes('disabled')).toBeUndefined()
+		expect(wrapper.text().match(/target group 101 account relationships drifted/g)).toHaveLength(1)
+		expect(wrapper.text().match(/Target Group #101 has multiple Accounts/g)).toHaveLength(1)
+		await button.trigger('click')
+		await flushPromises()
+		expect(relayPlanning.previewRelayReplan).toHaveBeenCalledWith(9, {})
 	})
 
 	it('renders only the last confirmed Replan roster as selected', async () => {

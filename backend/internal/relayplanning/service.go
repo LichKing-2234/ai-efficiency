@@ -231,6 +231,17 @@ type Assignment struct {
 	Accounts                 []TargetAccount `json:"accounts,omitempty"`
 }
 
+func (assignment Assignment) MarshalJSON() ([]byte, error) {
+	type assignmentJSON Assignment
+	if assignment.DesiredAccounts == nil {
+		return json.Marshal(assignmentJSON(assignment))
+	}
+	return json.Marshal(struct {
+		assignmentJSON
+		DesiredAccounts []AccountIntent `json:"desired_accounts"`
+	}{assignmentJSON(assignment), assignment.DesiredAccounts})
+}
+
 type Plan struct {
 	ProviderID                int                   `json:"provider_id"`
 	DepartmentID              string                `json:"department_id"`
@@ -1160,7 +1171,7 @@ func assignmentsFromReplanRoster(roster replanRosterResult, reviewed []Assignmen
 		for _, assignment := range reviewed {
 			var desiredAccounts []AccountIntent
 			if assignment.DesiredAccounts != nil {
-				desiredAccounts = append([]AccountIntent(nil), assignment.DesiredAccounts...)
+				desiredAccounts = slices.Clone(assignment.DesiredAccounts)
 			}
 			assignments[assignment.Index] = Assignment{
 				Index:           assignment.Index,
@@ -1428,7 +1439,7 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 			groupResults = append(groupResults, result)
 			continue
 		}
-		desiredAccounts[strconv.FormatInt(result.ID, 10)] = append([]AccountIntent(nil), assignment.DesiredAccounts...)
+		desiredAccounts[strconv.FormatInt(result.ID, 10)] = slices.Clone(assignment.DesiredAccounts)
 		accountMapping := Mapping{ProviderID: plan.ProviderID, Platform: plan.Platform, GroupIDs: []int64{result.ID}, AccountManagementInitialized: true, DesiredAccounts: desiredAccounts}
 		groupAccountResults, blocked := s.applyDesiredAccountRelationships(ctx, p, accountMapping, nil)
 		accountResults = append(accountResults, groupAccountResults...)
@@ -1646,7 +1657,7 @@ func assignPreviewAccounts(result accountListResult, platform string, templateGr
 }
 
 func normalizePreviewAccountIntents(intents []AccountIntent, available map[int64]relay.Account, platform string) ([]AccountIntent, []TargetAccount, error) {
-	normalized := append([]AccountIntent(nil), intents...)
+	normalized := slices.Clone(intents)
 	sort.SliceStable(normalized, func(i, j int) bool { return normalized[i].Priority < normalized[j].Priority })
 	selected := make([]TargetAccount, 0, len(normalized))
 	seenAccounts := make(map[int64]struct{}, len(normalized))
@@ -3413,7 +3424,7 @@ func (s *Service) SaveDesiredAccounts(ctx context.Context, id int, desired map[s
 			seenAccounts[intent.AccountID] = struct{}{}
 			seenPriorities[intent.Priority] = struct{}{}
 		}
-		normalized[groupID] = append([]AccountIntent(nil), intents...)
+		normalized[groupID] = slices.Clone(intents)
 		sort.SliceStable(normalized[groupID], func(i, j int) bool { return normalized[groupID][i].Priority < normalized[groupID][j].Priority })
 	}
 	row, err = row.Update().SetAccountManagementInitialized(true).SetDesiredAccounts(accountIntentsToStorage(normalized)).Save(ctx)
@@ -5182,7 +5193,7 @@ func validateAssignments(assignments []Assignment, candidates []Candidate, count
 		seenIndexes[assignment.Index] = struct{}{}
 		var desiredAccounts []AccountIntent
 		if assignment.DesiredAccounts != nil {
-			desiredAccounts = append([]AccountIntent(nil), assignment.DesiredAccounts...)
+			desiredAccounts = slices.Clone(assignment.DesiredAccounts)
 		}
 		validated[assignment.Index] = Assignment{Index: assignment.Index, TargetGroupID: assignment.TargetGroupID, TargetGroupName: strings.TrimSpace(assignment.TargetGroupName), RenameSelected: assignment.RenameSelected, UserIDs: make([]int, 0, len(assignment.UserIDs)), DesiredAccounts: desiredAccounts}
 		for _, userID := range assignment.UserIDs {
@@ -5781,7 +5792,7 @@ func desiredAccountsForGroupIDs(assignments []Assignment, groupIDs []int64) map[
 		if assignment.Index < 0 || assignment.Index >= len(groupIDs) || groupIDs[assignment.Index] <= 0 {
 			continue
 		}
-		desired[strconv.FormatInt(groupIDs[assignment.Index], 10)] = append([]AccountIntent(nil), assignment.DesiredAccounts...)
+		desired[strconv.FormatInt(groupIDs[assignment.Index], 10)] = slices.Clone(assignment.DesiredAccounts)
 	}
 	return desired
 }
@@ -5816,7 +5827,7 @@ func accountPools(mapping Mapping, accounts []relay.Account) []TargetAccountPool
 	pools := make([]TargetAccountPool, 0, len(mapping.GroupIDs))
 	for _, targetGroupID := range mapping.GroupIDs {
 		key := strconv.FormatInt(targetGroupID, 10)
-		pool := TargetAccountPool{TargetGroupID: targetGroupID, Current: []TargetAccount{}, Desired: append([]AccountIntent(nil), mapping.DesiredAccounts[key]...)}
+		pool := TargetAccountPool{TargetGroupID: targetGroupID, Current: []TargetAccount{}, Desired: slices.Clone(mapping.DesiredAccounts[key])}
 		for _, account := range accounts {
 			if !strings.EqualFold(strings.TrimSpace(account.Platform), strings.TrimSpace(mapping.Platform)) {
 				continue
