@@ -109,6 +109,11 @@ func TotalTokens(v int64) predicate.AttributionUsagePool {
 	return predicate.AttributionUsagePool(sql.FieldEQ(FieldTotalTokens, v))
 }
 
+// CreditUsage applies equality check predicate on the "credit_usage" field. It's identical to CreditUsageEQ.
+func CreditUsage(v float64) predicate.AttributionUsagePool {
+	return predicate.AttributionUsagePool(sql.FieldEQ(FieldCreditUsage, v))
+}
+
 // RequestCount applies equality check predicate on the "request_count" field. It's identical to RequestCountEQ.
 func RequestCount(v int) predicate.AttributionUsagePool {
 	return predicate.AttributionUsagePool(sql.FieldEQ(FieldRequestCount, v))
@@ -642,6 +647,46 @@ func TotalTokensLT(v int64) predicate.AttributionUsagePool {
 // TotalTokensLTE applies the LTE predicate on the "total_tokens" field.
 func TotalTokensLTE(v int64) predicate.AttributionUsagePool {
 	return predicate.AttributionUsagePool(sql.FieldLTE(FieldTotalTokens, v))
+}
+
+// CreditUsageEQ applies the EQ predicate on the "credit_usage" field.
+func CreditUsageEQ(v float64) predicate.AttributionUsagePool {
+	return predicate.AttributionUsagePool(sql.FieldEQ(FieldCreditUsage, v))
+}
+
+// CreditUsageNEQ applies the NEQ predicate on the "credit_usage" field.
+func CreditUsageNEQ(v float64) predicate.AttributionUsagePool {
+	return predicate.AttributionUsagePool(sql.FieldNEQ(FieldCreditUsage, v))
+}
+
+// CreditUsageIn applies the In predicate on the "credit_usage" field.
+func CreditUsageIn(vs ...float64) predicate.AttributionUsagePool {
+	return predicate.AttributionUsagePool(sql.FieldIn(FieldCreditUsage, vs...))
+}
+
+// CreditUsageNotIn applies the NotIn predicate on the "credit_usage" field.
+func CreditUsageNotIn(vs ...float64) predicate.AttributionUsagePool {
+	return predicate.AttributionUsagePool(sql.FieldNotIn(FieldCreditUsage, vs...))
+}
+
+// CreditUsageGT applies the GT predicate on the "credit_usage" field.
+func CreditUsageGT(v float64) predicate.AttributionUsagePool {
+	return predicate.AttributionUsagePool(sql.FieldGT(FieldCreditUsage, v))
+}
+
+// CreditUsageGTE applies the GTE predicate on the "credit_usage" field.
+func CreditUsageGTE(v float64) predicate.AttributionUsagePool {
+	return predicate.AttributionUsagePool(sql.FieldGTE(FieldCreditUsage, v))
+}
+
+// CreditUsageLT applies the LT predicate on the "credit_usage" field.
+func CreditUsageLT(v float64) predicate.AttributionUsagePool {
+	return predicate.AttributionUsagePool(sql.FieldLT(FieldCreditUsage, v))
+}
+
+// CreditUsageLTE applies the LTE predicate on the "credit_usage" field.
+func CreditUsageLTE(v float64) predicate.AttributionUsagePool {
+	return predicate.AttributionUsagePool(sql.FieldLTE(FieldCreditUsage, v))
 }
 
 // RequestCountEQ applies the EQ predicate on the "request_count" field.

@@ -68,6 +68,11 @@ var updatePostInstallCmd = &cobra.Command{
 	Hidden: true,
 	Args:   cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// An upgrade is the only moment that reaches a developer who logged in
+		// before Pilot became this CLI's usage source. It reports rather than
+		// installs: running another project's installer is not something an
+		// upgrade should do behind someone's back.
+		notePilotStatus(cmd.OutOrStdout(), cmd.ErrOrStderr())
 		return cleanupLegacyCodexOTLPAfterUpdate()
 	},
 }

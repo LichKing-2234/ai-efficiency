@@ -38,6 +38,31 @@ type kiroCLIHistoryItem struct {
 	} `json:"request_metadata"`
 }
 
+// kiroCLIHistoryRequestCount counts the model requests a conversations_v2 row
+// records.
+//
+// user_turn_metadata.requests drops the final answer step: a captured Kiro CLI
+// turn with three history entries and three usage_info credit records only
+// listed two entries in requests. history[] is the complete request backbone and
+// stays index-aligned with user_turn_metadata.usage_info, so it is the source
+// consistent with the credits this parser already sums per conversation row.
+func kiroCLIHistoryRequestCount(history []kiroCLIHistoryItem) int {
+	count := 0
+	for _, item := range history {
+		if strings.TrimSpace(item.RequestMetadata.RequestID) != "" ||
+			strings.TrimSpace(item.RequestMetadata.MessageID) != "" ||
+			strings.TrimSpace(item.Assistant.Response.MessageID) != "" {
+			count++
+		}
+	}
+	if count == 0 {
+		// Never report zero for a row that carried history; fall back to the
+		// history length rather than inventing a number.
+		count = len(history)
+	}
+	return count
+}
+
 func ParseKiroCLISQLite(path, workspaceRoot string) ([]LocalToolUsageEvent, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -92,10 +117,7 @@ func ParseKiroCLISQLite(path, workspaceRoot string) ([]LocalToolUsageEvent, erro
 				credits += usage.Value
 			}
 		}
-		requestCount := len(doc.UserTurnMetadata.Requests)
-		if requestCount == 0 {
-			requestCount = 1
-		}
+		requestCount := kiroCLIHistoryRequestCount(doc.History)
 
 		observedStart := parseUnixMillis(latest.RequestMetadata.RequestStartTimestamp)
 		observedEnd := parseUnixMillis(latest.RequestMetadata.StreamEndTimestamp)

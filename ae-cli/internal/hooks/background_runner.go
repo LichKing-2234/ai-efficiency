@@ -15,6 +15,7 @@ import (
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/client"
+	"github.com/ai-efficiency/ae-cli/internal/pilot"
 )
 
 var syncTaskLeaseTTL = time.Hour
@@ -22,7 +23,7 @@ var syncTaskSpawnCooldown = 30 * time.Second
 var syncTaskRunTimeout = 5 * time.Minute
 var machineSyncOwnerTimeout = 10 * time.Minute
 var v2ClaimProgressBatchSize = 64
-var scanCodexV2ClaimSource = func(scan *attributionlocal.CodexV2ClaimScan, ctx context.Context, sourceKey string, options []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
+var scanCodexV2ClaimSource = func(scan v2ClaimSource, ctx context.Context, sourceKey string, options []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error) {
 	return scan.ScanSource(ctx, sourceKey, options)
 }
 
@@ -413,7 +414,22 @@ func runPendingSyncPass(ctx context.Context, execCtx ExecutionContext, uploader 
 		if err := protocol.Validate(); err != nil {
 			return err
 		}
-		return runV2ClaimSync(ctx, uploader, execCtx, task, protocol)
+		claimErr := runV2ClaimSync(ctx, uploader, execCtx, task, protocol)
+		// The usage surface uploads alongside the claims rather than instead of
+		// them. Returning after the claim sync — the previous shape — meant a
+		// compact machine never uploaded a tool usage event at all: dashboards
+		// starved while claims flowed, and nothing reported it. Usage also does
+		// not wait on the claim sync's own preconditions — it needs no relay
+		// provider — so a claim-side failure leaves it running.
+		if syncClient == nil {
+			return claimErr
+		}
+		usageErr := runAttributionSync(ctx, attributionlocal.RunOptions{
+			WorkspaceRoot: execCtx.RepoRoot, WorkspaceID: execCtx.WorkspaceID, ServerURL: execCtx.ServerURL,
+			AuthSubject: execCtx.AuthSubject, RepoConfigID: execCtx.RepoConfigID, RepoKey: execCtx.RepoKey,
+			DurableReplay: execCtx.DurableReplay, ManagedUpload: true,
+		}, syncClient)
+		return errors.Join(claimErr, usageErr)
 	}
 	if syncClient == nil {
 		return fmt.Errorf("sync uploader does not expose tool usage client")
@@ -454,10 +470,19 @@ func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionCon
 			CheckpointEventID: trigger.EventID,
 		})
 	}
+	// Commits whose evidence had not arrived when their own scan ran are retried
+	// here, so a scan can have work to do even when this task carries no trigger
+	// of its own.
+	pendingCommits, err := LoadV2UnprovenCommits(execCtx.WorkspaceID)
+	if err != nil {
+		return syncTaskFailure(SyncTaskFailureStageLocalState, "pending claim commits could not be loaded", err)
+	}
+	options = appendUnprovenCommitOptions(options, pendingCommits)
+
 	if len(options) > 0 {
-		scan, err := attributionlocal.PrepareCodexV2ClaimScan(ctx, "", time.Now().UTC().Add(-90*24*time.Hour))
+		scan, err := prepareV2ClaimSource(ctx, time.Now().UTC().Add(-v2ClaimSourceWindow))
 		if err != nil {
-			return syncTaskFailure(SyncTaskFailureStageSourceDiscovery, "local Codex evidence discovery failed", err)
+			return syncTaskFailure(SyncTaskFailureStageSourceDiscovery, "local claim evidence discovery failed", err)
 		}
 		contextID, err := v2ClaimScanContextID(options[0])
 		if err != nil {
@@ -482,6 +507,7 @@ func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionCon
 			return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim progress could not be saved", err)
 		}
 		completed := v2CompletedSourceSet(progress.CompletedUnits)
+		provenCommits := map[string]struct{}{}
 		type scannedSource struct {
 			sourceKey    string
 			pendingUnits []string
@@ -507,6 +533,9 @@ func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionCon
 				}
 			}
 			for _, source := range batch {
+				for key := range provenCommitKeys(source.candidates) {
+					provenCommits[key] = struct{}{}
+				}
 				turnKeys := attributionlocal.MergeV2ClaimTurnKeys(progress.SourceTurnKeys[source.sourceKey], attributionlocal.V2ClaimTurnKeys(source.candidates))
 				progress.SourceTurnKeys[source.sourceKey] = turnKeys
 				progress.SourceEvidenceKeys[source.sourceKey] = scan.SourceEvidenceKey(turnKeys)
@@ -568,6 +597,11 @@ func runV2ClaimSync(ctx context.Context, uploader Uploader, execCtx ExecutionCon
 			return err
 		}
 		progress.Complete = true
+		// Saved apart from progress, which finishV2ClaimScan deletes below.
+		now := time.Now().UTC()
+		if err := SaveV2UnprovenCommits(execCtx.WorkspaceID, mergeUnprovenCommits(pendingCommits, options, provenCommits, now), now); err != nil {
+			return syncTaskFailure(SyncTaskFailureStageLocalState, "pending claim commits could not be saved", err)
+		}
 		if err := SaveV2ClaimScanProgress(progress); err != nil {
 			return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim progress could not be saved", err)
 		}
@@ -660,4 +694,59 @@ func finishV2ClaimScan(workspaceID string, scanned bool) error {
 		return syncTaskFailure(SyncTaskFailureStageLocalState, "local claim progress could not be cleared", err)
 	}
 	return nil
+}
+
+// v2ClaimSource is the claim evidence a machine holds locally. Two readers
+// satisfy it: LoongSuite Pilot, which covers every agent it instruments, and
+// the Codex session files, which are all a machine without Pilot has.
+type v2ClaimSource interface {
+	SourceKeys() []string
+	SourceEvidenceKey(turnKeys []string) string
+	FinalizeCandidates(candidates []attributionlocal.V2ClaimCandidate)
+	ScanSource(ctx context.Context, sourceKey string, options []attributionlocal.V2ClaimScanOptions) ([]attributionlocal.V2ClaimCandidate, error)
+}
+
+// v2ClaimSourceWindow bounds how far back a claim source is read. It matches the
+// retention the Codex reader already used.
+const v2ClaimSourceWindow = 90 * 24 * time.Hour
+
+// prepareV2ClaimSource picks the claim source this machine has.
+//
+// Pilot is preferred wherever it is collecting, for the same reason the usage
+// surface prefers it: it covers every agent, while the Codex session files cover
+// one. A machine without Pilot, or one whose collector has stopped, falls back
+// to the Codex reader rather than losing the claims it can still prove.
+func prepareV2ClaimSource(ctx context.Context, cutoff time.Time) (v2ClaimSource, error) {
+	if (pilot.Checker{}).Running() {
+		scan, err := attributionlocal.PrepareLocalV2ClaimScan("", cutoff)
+		if err == nil && len(scan.SourceKeys()) > 0 {
+			return scan, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return attributionlocal.PrepareCodexV2ClaimScan(ctx, "", cutoff)
+}
+
+// appendUnprovenCommitOptions adds the commits still waiting on evidence to the
+// ones this task asked about, without repeating any the task already carries.
+func appendUnprovenCommitOptions(options []attributionlocal.V2ClaimScanOptions, pending []V2UnprovenCommit) []attributionlocal.V2ClaimScanOptions {
+	if len(pending) == 0 {
+		return options
+	}
+	seen := make(map[string]struct{}, len(options))
+	for _, option := range options {
+		seen[unprovenCommitKey(option)] = struct{}{}
+	}
+	for _, item := range pending {
+		option := item.scanOptions()
+		key := unprovenCommitKey(option)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		options = append(options, option)
+	}
+	return options
 }
