@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -37,6 +38,47 @@ func TestNormalizeRequestKeepsTemplateAndSourceIndependent(t *testing.T) {
 	got = normalizeRequest(PreviewRequest{TemplateGroupID: 84})
 	if got.TemplateGroupID != 84 || got.SourceGroupID != 0 {
 		t.Fatalf("source-free request did not remain target-only: %#v", got)
+	}
+}
+
+func TestMergeDepartmentIDsKeepsSourceHistory(t *testing.T) {
+	got := mergeDepartmentIDs([]string{"dept-b", "dept-a", "dept-b"}, "dept-c")
+	want := []string{"dept-a", "dept-b", "dept-c"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("mergeDepartmentIDs() = %#v, want %#v", got, want)
+	}
+}
+
+func TestMergeGroupIDsPreservesDistinctTargetGroups(t *testing.T) {
+	got := mergeGroupIDs([]int64{101, 102}, []int64{102, 103})
+	want := []int64{101, 102, 103}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("mergeGroupIDs() = %#v, want %#v", got, want)
+	}
+}
+
+func TestMappingAssignmentsFromPlanKeepsTargetGroupOwnership(t *testing.T) {
+	assignments, sources := mappingAssignmentsFromPlan(&Plan{
+		Candidates:  []Candidate{{UserID: 7, SourceGroupID: 20}, {UserID: 8}},
+		Assignments: []Assignment{{Index: 0, UserIDs: []int{7}}, {Index: 1, UserIDs: []int{8}}},
+	}, []int64{101, 102})
+	if !reflect.DeepEqual(assignments, map[string]int64{"7": 101, "8": 102}) {
+		t.Fatalf("assignments = %#v", assignments)
+	}
+	if !reflect.DeepEqual(sources, map[string]int64{"7": 20}) {
+		t.Fatalf("sources = %#v", sources)
+	}
+}
+
+func TestDepartmentMigrationOnlySkipsRelayChanges(t *testing.T) {
+	mapping := Mapping{DepartmentID: "dept-old", GroupIDs: []int64{101}, MemberAssignments: map[string]int64{"7": 101}}
+	plan := &Plan{DepartmentID: "dept-new", Assignments: []Assignment{{Index: 0, TargetGroupID: 101, UserIDs: []int{7}}}}
+	if !departmentMigrationOnly(mapping, ExecuteRequest{PreviewRequest: PreviewRequest{DepartmentID: "dept-new"}}, plan) {
+		t.Fatal("unchanged assignments with a new department should be Relay-neutral")
+	}
+	plan.Assignments[0].UserIDs = nil
+	if departmentMigrationOnly(mapping, ExecuteRequest{PreviewRequest: PreviewRequest{DepartmentID: "dept-new"}}, plan) {
+		t.Fatal("removing a managed member must remain a Relay operation")
 	}
 }
 

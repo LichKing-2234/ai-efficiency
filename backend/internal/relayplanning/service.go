@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -256,6 +257,7 @@ type Mapping struct {
 	DesiredAccounts              map[string][]AccountIntent   `json:"desired_accounts"`
 	AccountPools                 []TargetAccountPool          `json:"account_pools"`
 	OperationState               map[string]map[string]string `json:"operation_state,omitempty"`
+	SourceDepartmentIDs          []string                     `json:"source_department_ids,omitempty"`
 	UnmanagedMembers             []UnmanagedMember            `json:"unmanaged_members,omitempty"`
 	DepartmentSuggestions        []DepartmentSuggestion       `json:"department_suggestions,omitempty"`
 	Warnings                     []string                     `json:"warnings,omitempty"`
@@ -707,6 +709,31 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		}
 	}
 	plan.DepartmentName = departmentName
+	if mapping != nil && req.DepartmentID != mapping.DepartmentExternalID {
+		if destination, destinationErr := s.client.RelayGroupMapping.Query().Where(
+			relaygroupmapping.ProviderIDEQ(mapping.ProviderID),
+			relaygroupmapping.DepartmentExternalIDEQ(req.DepartmentID),
+			relaygroupmapping.PlatformEQ(mapping.Platform),
+		).Only(ctx); destinationErr == nil {
+			for _, groupID := range mapping.GroupIds {
+				if containsInt64(destination.GroupIds, groupID) {
+					plan.Warnings = append(plan.Warnings, fmt.Sprintf("target group %d is already managed by destination mapping", groupID))
+				}
+			}
+			for userID := range mapping.MemberAssignments {
+				if _, exists := destination.MemberAssignments[userID]; exists {
+					plan.Warnings = append(plan.Warnings, fmt.Sprintf("member %s is already managed by destination mapping", userID))
+				}
+			}
+			if destination.TemplateGroupID != mapping.TemplateGroupID || destination.SourceGroupID != mapping.SourceGroupID {
+				plan.Warnings = append(plan.Warnings, "mapping template or migration source conflicts with destination mapping")
+			}
+			if destination.AccountManagementInitialized != mapping.AccountManagementInitialized || !reflect.DeepEqual(destination.DesiredAccounts, mapping.DesiredAccounts) {
+				plan.Warnings = append(plan.Warnings, "mapping Account configuration conflicts with destination mapping")
+			}
+			plan.Warnings = uniqueStrings(plan.Warnings)
+		}
+	}
 	if req.ExistingMappingID > 0 {
 		plan.MappingID = req.ExistingMappingID
 	}
@@ -2272,6 +2299,7 @@ func (s *Service) Rebind(ctx context.Context, id int, departmentID string, templ
 	row, err = s.client.RelayGroupMapping.UpdateOneID(id).
 		SetDepartmentExternalID(departmentID).
 		SetDepartmentName(departmentName).
+		SetSourceDepartmentIds(mergeDepartmentIDs(append(append([]string(nil), row.SourceDepartmentIds...), row.DepartmentExternalID), departmentID)).
 		SetTemplateGroupID(templateGroupID).
 		SetTemplateGroupName(template.Name).
 		SetSourceGroupID(sourceGroupID).
@@ -2363,14 +2391,18 @@ func (s *Service) departmentSuggestions(ctx context.Context, providerID int, pla
 	return suggestions
 }
 
-func (s *Service) Replan(ctx context.Context, mappingID int, selected []int, assignments []Assignment, memberSources map[string]int64, removedUserIDs []int, memberActions map[string]MemberAction, adoptRelayUserIDs []int64) (*Plan, error) {
+func (s *Service) Replan(ctx context.Context, mappingID int, selected []int, assignments []Assignment, memberSources map[string]int64, removedUserIDs []int, memberActions map[string]MemberAction, adoptRelayUserIDs []int64, departmentIDs ...string) (*Plan, error) {
 	row, err := s.client.RelayGroupMapping.Get(ctx, mappingID)
 	if err != nil {
 		return nil, fmt.Errorf("load relay group mapping: %w", err)
 	}
 	memberSources = memberSourcesWithRemovalRetries(row.OperationState, memberSources, removedUserIDs)
 	memberActions = memberActionsWithRetries(row.OperationState, memberActions)
-	return s.Preview(ctx, PreviewRequest{ProviderID: row.ProviderID, DepartmentID: row.DepartmentExternalID, Platform: row.Platform, TemplateGroupID: row.TemplateGroupID, SourceGroupID: row.SourceGroupID, WeeklyCostTarget: row.WeeklyCostTarget, GroupCount: len(row.GroupIds), SelectedUserIDs: selected, Assignments: assignments, MemberSources: memberSources, RemovedUserIDs: removedUserIDs, MemberActions: memberActions, AdoptRelayUserIDs: adoptRelayUserIDs, ExistingMappingID: mappingID})
+	departmentID := row.DepartmentExternalID
+	if len(departmentIDs) > 0 && strings.TrimSpace(departmentIDs[0]) != "" {
+		departmentID = strings.TrimSpace(departmentIDs[0])
+	}
+	return s.Preview(ctx, PreviewRequest{ProviderID: row.ProviderID, DepartmentID: departmentID, Platform: row.Platform, TemplateGroupID: row.TemplateGroupID, SourceGroupID: row.SourceGroupID, WeeklyCostTarget: row.WeeklyCostTarget, GroupCount: len(row.GroupIds), SelectedUserIDs: selected, Assignments: assignments, MemberSources: memberSources, RemovedUserIDs: removedUserIDs, MemberActions: memberActions, AdoptRelayUserIDs: adoptRelayUserIDs, ExistingMappingID: mappingID})
 }
 
 func memberSourcesWithRemovalRetries(operationState map[string]map[string]string, memberSources map[string]int64, removedUserIDs []int) map[string]int64 {
@@ -2425,6 +2457,7 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	if req.DepartmentID == "" {
 		req.DepartmentID = mapping.DepartmentID
 	}
+	req.DepartmentID = strings.TrimSpace(req.DepartmentID)
 	if req.Platform == "" {
 		req.Platform = mapping.Platform
 	}
@@ -2450,6 +2483,9 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 	}
 	if err := validateRelationshipFingerprint(req.ExpectedRelationshipFingerprint, plan); err != nil {
 		return nil, fmt.Errorf("validate relay replan relationship fingerprint: %w", err)
+	}
+	if departmentMigrationOnly(*mapping, req, plan) {
+		return s.persistDepartmentMigration(ctx, mapping, plan, req.OperationKey)
 	}
 	p, err := s.resolver.Resolve(ctx, mapping.ProviderID)
 	if err != nil {
@@ -2754,9 +2790,13 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 		}
 		return &MappingPersistenceError{Cause: cause, Results: mappingResults}
 	}
-	resultMapping, err := saveMappingWithClient(ctx, tx.Client(), plan, append([]int64(nil), mapping.GroupIDs...), state)
+	resultMapping, err := saveReplannedMappingWithClient(ctx, tx.Client(), mapping, plan, append([]int64(nil), mapping.GroupIDs...), state)
 	if err != nil {
 		return nil, rollback(0, err)
+	}
+	if resultMapping.ID != mapping.ID {
+		mappingResults[0].MappingID = resultMapping.ID
+		mappingResults = append(mappingResults, MappingPersistenceResult{MappingID: mapping.ID, Role: "source", Status: "pending"})
 	}
 	for index, sourceID := range sourceIDs {
 		mutation := sourceMutations[sourceID]
@@ -2781,6 +2821,92 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 		mappingResults[index].Status = "succeeded"
 	}
 	return &ExecutionResult{Plan: plan, Groups: groupResults, Accounts: accountResults, Members: memberResults, Mappings: mappingResults, Mapping: resultMapping}, nil
+}
+
+func departmentMigrationOnly(mapping Mapping, req ExecuteRequest, plan *Plan) bool {
+	if strings.TrimSpace(req.DepartmentID) == "" || strings.TrimSpace(req.DepartmentID) == strings.TrimSpace(mapping.DepartmentID) {
+		return false
+	}
+	if len(req.RemovedUserIDs) > 0 || len(req.MemberActions) > 0 || len(req.AdoptRelayUserIDs) > 0 {
+		return false
+	}
+	for _, assignment := range plan.Assignments {
+		if assignment.RenameSelected {
+			return false
+		}
+		for _, userID := range assignment.UserIDs {
+			if mapping.MemberAssignments[strconv.Itoa(userID)] != assignment.TargetGroupID {
+				return false
+			}
+		}
+	}
+	for userID, groupID := range mapping.MemberAssignments {
+		found := false
+		for _, assignment := range plan.Assignments {
+			if containsInt(assignment.UserIDs, atoiOrZero(userID)) && assignment.TargetGroupID == groupID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	if plan.AccountsReviewed {
+		if !mapping.AccountManagementInitialized || !reflect.DeepEqual(mapping.DesiredAccounts, accountIntentsFromStorage(planDesiredAccounts(plan))) {
+			return false
+		}
+	} else if mapping.AccountManagementInitialized && !reflect.DeepEqual(mapping.DesiredAccounts, accountIntentsFromStorage(planDesiredAccounts(plan))) {
+		return false
+	}
+	return true
+}
+
+func planDesiredAccounts(plan *Plan) map[string][]map[string]int64 {
+	result := make(map[string][]map[string]int64)
+	for _, assignment := range plan.Assignments {
+		if assignment.TargetGroupID <= 0 {
+			continue
+		}
+		items := make([]map[string]int64, 0, len(assignment.DesiredAccounts))
+		for _, intent := range assignment.DesiredAccounts {
+			items = append(items, map[string]int64{"account_id": intent.AccountID, "priority": int64(intent.Priority)})
+		}
+		result[strconv.FormatInt(assignment.TargetGroupID, 10)] = items
+	}
+	return result
+}
+
+func containsInt(items []int, target int) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
+func atoiOrZero(value string) int {
+	parsed, _ := strconv.Atoi(value)
+	return parsed
+}
+
+func (s *Service) persistDepartmentMigration(ctx context.Context, mapping *Mapping, plan *Plan, operationKey string) (*ExecutionResult, error) {
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("start department migration transaction: %w", err)
+	}
+	state := executionState(operationKey, nil, nil)
+	resultMapping, saveErr := saveReplannedMappingWithClient(ctx, tx.Client(), mapping, plan, append([]int64(nil), mapping.GroupIDs...), state)
+	if saveErr != nil {
+		_ = tx.Rollback()
+		return nil, &MappingPersistenceError{Cause: saveErr, Results: []MappingPersistenceResult{{MappingID: mapping.ID, Role: "destination", Status: "failed", Error: saveErr.Error()}}}
+	}
+	if commitErr := tx.Commit(); commitErr != nil {
+		_ = tx.Rollback()
+		return nil, &MappingPersistenceError{Cause: commitErr, Results: []MappingPersistenceResult{{MappingID: mapping.ID, Role: "destination", Status: "failed", Error: commitErr.Error()}}}
+	}
+	return &ExecutionResult{Plan: plan, Mappings: []MappingPersistenceResult{{MappingID: resultMapping.ID, Role: "destination", Status: "succeeded"}}, Mapping: resultMapping}, nil
 }
 
 func (s *Service) resolveMoveSource(ctx context.Context, destination Mapping, userID int, action MemberAction) (*ent.RelayGroupMapping, int64, error) {
@@ -3649,6 +3775,128 @@ func (s *Service) saveMapping(ctx context.Context, plan *Plan, groupIDs []int64,
 	return saveMappingWithClient(ctx, s.client, plan, groupIDs, state)
 }
 
+func saveReplannedMappingWithClient(ctx context.Context, client *ent.Client, current *Mapping, plan *Plan, groupIDs []int64, state map[string]map[string]string) (*Mapping, error) {
+	if strings.TrimSpace(plan.DepartmentID) == strings.TrimSpace(current.DepartmentID) {
+		return saveMappingWithClient(ctx, client, plan, groupIDs, state)
+	}
+	target, err := client.RelayGroupMapping.Query().Where(
+		relaygroupmapping.ProviderIDEQ(current.ProviderID),
+		relaygroupmapping.DepartmentExternalIDEQ(plan.DepartmentID),
+		relaygroupmapping.PlatformEQ(current.Platform),
+	).Only(ctx)
+	if ent.IsNotFound(err) {
+		assignments, sources := mappingAssignmentsFromPlan(plan, groupIDs)
+		updated, updateErr := client.RelayGroupMapping.UpdateOneID(current.ID).
+			SetDepartmentExternalID(plan.DepartmentID).
+			SetDepartmentName(plan.DepartmentName).
+			SetSourceDepartmentIds(mergeDepartmentIDs(append(append([]string(nil), current.SourceDepartmentIDs...), current.DepartmentID), plan.DepartmentID)).
+			SetTemplateGroupID(plan.TemplateGroupID).
+			SetTemplateGroupName(plan.TemplateGroupName).
+			SetSourceGroupID(plan.SourceGroupID).
+			SetSourceGroupName(plan.SourceGroupName).
+			SetGroupIds(groupIDs).
+			SetMemberAssignments(assignments).
+			SetMemberSources(sources).
+			SetOperationState(mergeOperationState(current.OperationState, state)).
+			SetWeeklyCostTarget(plan.WeeklyCostTarget).
+			SetStatus(operationStatus(mergeOperationState(current.OperationState, state))).
+			Save(ctx)
+		if updateErr != nil {
+			return nil, fmt.Errorf("persist migrated relay group mapping: %w", updateErr)
+		}
+		return &Mapping{ID: updated.ID, ProviderID: updated.ProviderID, DepartmentID: updated.DepartmentExternalID, DepartmentName: updated.DepartmentName, SourceDepartmentIDs: mergeDepartmentIDs(updated.SourceDepartmentIds, updated.DepartmentExternalID), Platform: updated.Platform, TemplateGroupID: updated.TemplateGroupID, TemplateGroupName: updated.TemplateGroupName, SourceGroupID: updated.SourceGroupID, SourceGroupName: updated.SourceGroupName, GroupIDs: append([]int64(nil), updated.GroupIds...), Status: updated.Status, WeeklyCostTarget: updated.WeeklyCostTarget, MemberAssignments: cloneInt64Map(updated.MemberAssignments), MemberSources: cloneInt64Map(updated.MemberSources), AccountManagementInitialized: updated.AccountManagementInitialized, DesiredAccounts: accountIntentsFromStorage(updated.DesiredAccounts), OperationState: cloneOperationState(updated.OperationState), UpdatedAt: updated.UpdatedAt}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load destination relay group mapping: %w", err)
+	}
+	if target.ID == current.ID {
+		return nil, fmt.Errorf("destination relay group mapping resolves to source mapping")
+	}
+	mergedGroups := mergeGroupIDs(target.GroupIds, groupIDs)
+	currentAssignments, currentSources := mappingAssignmentsFromPlan(plan, groupIDs)
+	mergedAssignments := cloneInt64Map(target.MemberAssignments)
+	for userID, groupID := range currentAssignments {
+		if _, exists := mergedAssignments[userID]; !exists {
+			mergedAssignments[userID] = groupID
+		}
+	}
+	mergedSources := cloneInt64Map(target.MemberSources)
+	for userID, groupID := range currentSources {
+		if _, exists := mergedSources[userID]; !exists {
+			mergedSources[userID] = groupID
+		}
+	}
+	mergedState := mergeOperationState(target.OperationState, mergeOperationState(current.OperationState, state))
+	mergedDesired := mergeDesiredAccounts(target.DesiredAccounts, accountIntentsToStorage(current.DesiredAccounts))
+	updated, updateErr := target.Update().
+		SetSourceDepartmentIds(mergeDepartmentIDs(append(append(append(append([]string(nil), target.SourceDepartmentIds...), target.DepartmentExternalID), current.SourceDepartmentIDs...), current.DepartmentID), plan.DepartmentID)).
+		SetGroupIds(mergedGroups).
+		SetMemberAssignments(mergedAssignments).
+		SetMemberSources(mergedSources).
+		SetOperationState(mergedState).
+		SetStatus(operationStatus(mergedState)).
+		SetAccountManagementInitialized(target.AccountManagementInitialized || current.AccountManagementInitialized || plan.AccountsReviewed).
+		SetDesiredAccounts(mergedDesired).
+		Save(ctx)
+	if updateErr != nil {
+		return nil, fmt.Errorf("persist merged relay group mapping: %w", updateErr)
+	}
+	if deleteErr := client.RelayGroupMapping.DeleteOneID(current.ID).Exec(ctx); deleteErr != nil {
+		return nil, fmt.Errorf("remove migrated relay group mapping: %w", deleteErr)
+	}
+	merged := mappingFromEnt(updated)
+	return &merged, nil
+}
+
+func mappingAssignmentsFromPlan(plan *Plan, groupIDs []int64) (map[string]int64, map[string]int64) {
+	assignments := make(map[string]int64)
+	sources := make(map[string]int64)
+	for _, assignment := range plan.Assignments {
+		if assignment.Index < 0 || assignment.Index >= len(groupIDs) || groupIDs[assignment.Index] <= 0 {
+			continue
+		}
+		for _, userID := range assignment.UserIDs {
+			key := strconv.Itoa(userID)
+			assignments[key] = groupIDs[assignment.Index]
+			if candidate := candidateByUserID(plan.Candidates, userID); candidate != nil && candidate.SourceGroupID > 0 {
+				sources[key] = candidate.SourceGroupID
+			}
+		}
+	}
+	return assignments, sources
+}
+
+func mergeGroupIDs(groups ...[]int64) []int64 {
+	seen := make(map[int64]struct{})
+	result := make([]int64, 0)
+	for _, groupList := range groups {
+		for _, groupID := range groupList {
+			if groupID <= 0 {
+				continue
+			}
+			if _, exists := seen[groupID]; exists {
+				continue
+			}
+			seen[groupID] = struct{}{}
+			result = append(result, groupID)
+		}
+	}
+	return result
+}
+
+func mergeDesiredAccounts(left, right map[string][]map[string]int64) map[string][]map[string]int64 {
+	merged := make(map[string][]map[string]int64, len(left)+len(right))
+	for key, values := range left {
+		merged[key] = append([]map[string]int64(nil), values...)
+	}
+	for key, values := range right {
+		if _, exists := merged[key]; !exists {
+			merged[key] = append([]map[string]int64(nil), values...)
+		}
+	}
+	return merged
+}
+
 func saveMappingWithClient(ctx context.Context, client *ent.Client, plan *Plan, groupIDs []int64, state map[string]map[string]string) (*Mapping, error) {
 	memberAssignments := make(map[string]int64)
 	memberSources := make(map[string]int64)
@@ -3671,14 +3919,14 @@ func saveMappingWithClient(ctx context.Context, client *ent.Client, plan *Plan, 
 		relaygroupmapping.PlatformEQ(plan.Platform),
 	).Only(ctx)
 	if ent.IsNotFound(err) {
-		create := client.RelayGroupMapping.Create().SetProviderID(plan.ProviderID).SetDepartmentExternalID(plan.DepartmentID).SetDepartmentName(plan.DepartmentName).SetPlatform(plan.Platform).SetTemplateGroupID(plan.TemplateGroupID).SetTemplateGroupName(plan.TemplateGroupName).SetSourceGroupID(plan.SourceGroupID).SetSourceGroupName(plan.SourceGroupName).SetGroupIds(groupIDs).SetMemberAssignments(memberAssignments).SetMemberSources(memberSources).SetOperationState(cloneOperationState(state)).SetWeeklyCostTarget(plan.WeeklyCostTarget).SetStatus(operationStatus(state))
+		create := client.RelayGroupMapping.Create().SetProviderID(plan.ProviderID).SetDepartmentExternalID(plan.DepartmentID).SetDepartmentName(plan.DepartmentName).SetSourceDepartmentIds([]string{plan.DepartmentID}).SetPlatform(plan.Platform).SetTemplateGroupID(plan.TemplateGroupID).SetTemplateGroupName(plan.TemplateGroupName).SetSourceGroupID(plan.SourceGroupID).SetSourceGroupName(plan.SourceGroupName).SetGroupIds(groupIDs).SetMemberAssignments(memberAssignments).SetMemberSources(memberSources).SetOperationState(cloneOperationState(state)).SetWeeklyCostTarget(plan.WeeklyCostTarget).SetStatus(operationStatus(state))
 		if plan.AccountsReviewed {
 			create.SetAccountManagementInitialized(true).SetDesiredAccounts(accountIntentsToStorage(desiredAccounts))
 		}
 		row, err = create.Save(ctx)
 	} else if err == nil {
 		mergedState := mergeOperationState(row.OperationState, state)
-		update := row.Update().SetDepartmentName(plan.DepartmentName).SetTemplateGroupID(plan.TemplateGroupID).SetTemplateGroupName(plan.TemplateGroupName).SetSourceGroupID(plan.SourceGroupID).SetSourceGroupName(plan.SourceGroupName).SetGroupIds(groupIDs).SetMemberAssignments(memberAssignments).SetMemberSources(memberSources).SetOperationState(mergedState).SetWeeklyCostTarget(plan.WeeklyCostTarget).SetStatus(operationStatus(mergedState))
+		update := row.Update().SetDepartmentName(plan.DepartmentName).SetSourceDepartmentIds(mergeDepartmentIDs(row.SourceDepartmentIds, plan.DepartmentID)).SetTemplateGroupID(plan.TemplateGroupID).SetTemplateGroupName(plan.TemplateGroupName).SetSourceGroupID(plan.SourceGroupID).SetSourceGroupName(plan.SourceGroupName).SetGroupIds(groupIDs).SetMemberAssignments(memberAssignments).SetMemberSources(memberSources).SetOperationState(mergedState).SetWeeklyCostTarget(plan.WeeklyCostTarget).SetStatus(operationStatus(mergedState))
 		if plan.AccountsReviewed {
 			update.SetAccountManagementInitialized(true).SetDesiredAccounts(accountIntentsToStorage(desiredAccounts))
 		}
@@ -3703,7 +3951,25 @@ func desiredAccountsForGroupIDs(assignments []Assignment, groupIDs []int64) map[
 }
 
 func mappingFromEnt(row *ent.RelayGroupMapping) Mapping {
-	return Mapping{ID: row.ID, ProviderID: row.ProviderID, DepartmentID: row.DepartmentExternalID, DepartmentName: row.DepartmentName, Platform: row.Platform, TemplateGroupID: row.TemplateGroupID, TemplateGroupName: row.TemplateGroupName, SourceGroupID: row.SourceGroupID, SourceGroupName: row.SourceGroupName, GroupIDs: append([]int64(nil), row.GroupIds...), Status: row.Status, WeeklyCostTarget: row.WeeklyCostTarget, MemberAssignments: cloneInt64Map(row.MemberAssignments), MemberSources: cloneInt64Map(row.MemberSources), AccountManagementInitialized: row.AccountManagementInitialized, DesiredAccounts: accountIntentsFromStorage(row.DesiredAccounts), OperationState: cloneOperationState(row.OperationState), UpdatedAt: row.UpdatedAt}
+	return Mapping{ID: row.ID, ProviderID: row.ProviderID, DepartmentID: row.DepartmentExternalID, DepartmentName: row.DepartmentName, SourceDepartmentIDs: mergeDepartmentIDs(row.SourceDepartmentIds, row.DepartmentExternalID), Platform: row.Platform, TemplateGroupID: row.TemplateGroupID, TemplateGroupName: row.TemplateGroupName, SourceGroupID: row.SourceGroupID, SourceGroupName: row.SourceGroupName, GroupIDs: append([]int64(nil), row.GroupIds...), Status: row.Status, WeeklyCostTarget: row.WeeklyCostTarget, MemberAssignments: cloneInt64Map(row.MemberAssignments), MemberSources: cloneInt64Map(row.MemberSources), AccountManagementInitialized: row.AccountManagementInitialized, DesiredAccounts: accountIntentsFromStorage(row.DesiredAccounts), OperationState: cloneOperationState(row.OperationState), UpdatedAt: row.UpdatedAt}
+}
+
+func mergeDepartmentIDs(existing []string, departmentID string) []string {
+	seen := make(map[string]struct{}, len(existing)+1)
+	result := make([]string, 0, len(existing)+1)
+	for _, value := range append(append([]string(nil), existing...), departmentID) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func accountIntentsFromStorage(stored map[string][]map[string]int64) map[string][]AccountIntent {

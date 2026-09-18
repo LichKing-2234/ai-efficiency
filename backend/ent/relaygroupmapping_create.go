@@ -46,6 +46,12 @@ func (rgmc *RelayGroupMappingCreate) SetNillableDepartmentName(s *string) *Relay
 	return rgmc
 }
 
+// SetSourceDepartmentIds sets the "source_department_ids" field.
+func (rgmc *RelayGroupMappingCreate) SetSourceDepartmentIds(s []string) *RelayGroupMappingCreate {
+	rgmc.mutation.SetSourceDepartmentIds(s)
+	return rgmc
+}
+
 // SetPlatform sets the "platform" field.
 func (rgmc *RelayGroupMappingCreate) SetPlatform(s string) *RelayGroupMappingCreate {
 	rgmc.mutation.SetPlatform(s)
@@ -404,6 +410,10 @@ func (rgmc *RelayGroupMappingCreate) createSpec() (*RelayGroupMapping, *sqlgraph
 	if value, ok := rgmc.mutation.DepartmentName(); ok {
 		_spec.SetField(relaygroupmapping.FieldDepartmentName, field.TypeString, value)
 		_node.DepartmentName = value
+	}
+	if value, ok := rgmc.mutation.SourceDepartmentIds(); ok {
+		_spec.SetField(relaygroupmapping.FieldSourceDepartmentIds, field.TypeJSON, value)
+		_node.SourceDepartmentIds = value
 	}
 	if value, ok := rgmc.mutation.Platform(); ok {
 		_spec.SetField(relaygroupmapping.FieldPlatform, field.TypeString, value)

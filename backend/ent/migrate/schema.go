@@ -1034,6 +1034,7 @@ var (
 		{Name: "provider_id", Type: field.TypeInt},
 		{Name: "department_external_id", Type: field.TypeString},
 		{Name: "department_name", Type: field.TypeString, Default: ""},
+		{Name: "source_department_ids", Type: field.TypeJSON, Nullable: true},
 		{Name: "platform", Type: field.TypeString},
 		{Name: "template_group_id", Type: field.TypeInt64, Default: 0},
 		{Name: "template_group_name", Type: field.TypeString, Default: ""},
@@ -1059,12 +1060,12 @@ var (
 			{
 				Name:    "relaygroupmapping_provider_id_department_external_id_platform",
 				Unique:  true,
-				Columns: []*schema.Column{RelayGroupMappingsColumns[1], RelayGroupMappingsColumns[2], RelayGroupMappingsColumns[4]},
+				Columns: []*schema.Column{RelayGroupMappingsColumns[1], RelayGroupMappingsColumns[2], RelayGroupMappingsColumns[5]},
 			},
 			{
 				Name:    "relaygroupmapping_provider_id_source_group_id",
 				Unique:  false,
-				Columns: []*schema.Column{RelayGroupMappingsColumns[1], RelayGroupMappingsColumns[7]},
+				Columns: []*schema.Column{RelayGroupMappingsColumns[1], RelayGroupMappingsColumns[8]},
 			},
 		},
 	}

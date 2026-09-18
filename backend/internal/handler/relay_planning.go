@@ -158,6 +158,7 @@ func (h *RelayPlanningHandler) Replan(c *gin.Context) {
 		return
 	}
 	var req struct {
+		DepartmentID      string                                `json:"department_id"`
 		SelectedUserIDs   []int                                 `json:"selected_user_ids"`
 		Assignments       []relayplanning.Assignment            `json:"assignments"`
 		MemberSources     map[string]int64                      `json:"member_sources"`
@@ -169,7 +170,7 @@ func (h *RelayPlanningHandler) Replan(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "invalid replan request")
 		return
 	}
-	plan, err := h.service.Replan(c.Request.Context(), id, req.SelectedUserIDs, req.Assignments, req.MemberSources, req.RemovedUserIDs, req.MemberActions, req.AdoptRelayUserIDs)
+	plan, err := h.service.Replan(c.Request.Context(), id, req.SelectedUserIDs, req.Assignments, req.MemberSources, req.RemovedUserIDs, req.MemberActions, req.AdoptRelayUserIDs, req.DepartmentID)
 	if err != nil {
 		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 		return

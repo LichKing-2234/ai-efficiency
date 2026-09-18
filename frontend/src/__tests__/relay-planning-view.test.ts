@@ -900,7 +900,7 @@ describe('RelayPlanningView', () => {
 		await wrapper.get('[data-testid="replan-mapping-9"]').trigger('click')
 		await flushPromises()
 
-		expect(relayPlanning.previewRelayReplan).toHaveBeenCalledWith(9, { removed_user_ids: [1] })
+	expect(relayPlanning.previewRelayReplan).toHaveBeenCalledWith(9, { department_id: 'dept-alpha', removed_user_ids: [1] })
 	})
 
 	it('restores a failed Move Here action when reopening Replan', async () => {
@@ -934,7 +934,7 @@ describe('RelayPlanningView', () => {
 		await wrapper.get('[data-testid="replan-mapping-9"]').trigger('click')
 		await flushPromises()
 
-		expect(relayPlanning.previewRelayReplan).toHaveBeenCalledWith(9, { member_actions: { '1': { mode: 'move_here', from_mapping_id: 8 } } })
+	expect(relayPlanning.previewRelayReplan).toHaveBeenCalledWith(9, { department_id: 'dept-alpha', member_actions: { '1': { mode: 'move_here', from_mapping_id: 8 } } })
 		expect(wrapper.text()).toContain('Move here')
 		expect(wrapper.text()).toContain('Add additionally')
 	})

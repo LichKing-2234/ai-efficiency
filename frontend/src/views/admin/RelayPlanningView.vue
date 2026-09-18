@@ -100,6 +100,10 @@ const rebindGroups = computed(() => (providers.value.find((item) => item.id === 
 const targetNameErrors = computed(() => Object.fromEntries((plan.value?.assignments ?? []).map((assignment) => [assignment.index, validateTargetName(assignment.index)])))
 const hasTargetNameErrors = computed(() => Object.values(targetNameErrors.value).some(Boolean))
 
+function handleDepartmentChange() {
+	if (!activeMappingID.value) resetPlan()
+}
+
 function translateWarning(warning: string): string {
   void locale.value
   if (warning === 'no eligible member has a valid relay mapping and source-group membership') return t('relayPlanning.warningNoEligible')
@@ -121,6 +125,12 @@ function translateWarning(warning: string): string {
   if (warning === 'mapping contains an invalid target group') return t('relayPlanning.warningInvalidTargetGroup')
   const invalidDepartment = warning.match(/^department (.+) is unavailable$/)
   if (invalidDepartment) return t('relayPlanning.warningUnavailableDepartment', { department: invalidDepartment[1] })
+  const duplicateTarget = warning.match(/^target group (\d+) is already managed by destination mapping$/)
+  if (duplicateTarget) return t('relayPlanning.warningDuplicateMigrationTarget', { group: duplicateTarget[1] })
+  const duplicateMember = warning.match(/^member (\d+) is already managed by destination mapping$/)
+  if (duplicateMember) return t('relayPlanning.warningDuplicateMigrationMember', { user: duplicateMember[1] })
+  if (warning === 'mapping template or migration source conflicts with destination mapping') return t('relayPlanning.warningMigrationConfigConflict')
+  if (warning === 'mapping Account configuration conflicts with destination mapping') return t('relayPlanning.warningMigrationAccountConflict')
   const capacity = warning.match(/^user (\d+) exceeds remaining planning capacity$/)
   if (capacity) return t('relayPlanning.warningRemainingCapacity', { user: capacity[1] })
   const unmanagedRelay = warning.match(/^unmanaged relay member (\d+) in target group (\d+)$/)
@@ -655,6 +665,7 @@ async function addSearchedUser(targetIndex: number, item: RelayPlanningUserSearc
 		memberActions.value[String(item.user_id)] ??= { mode: 'move_here', from_mapping_id: managedAssignments[0].mapping_id }
 	}
   const request = {
+    department_id: form.department_id,
     selected_user_ids: Array.from(selected).sort((left, right) => left - right),
     assignments,
     member_sources: memberSourcesPayload(selected),
@@ -667,7 +678,6 @@ async function addSearchedUser(targetIndex: number, item: RelayPlanningUserSearc
       ? await previewRelayReplan(activeMappingID.value, request)
       : await previewRelayPlan({
           provider_id: plan.value.provider_id,
-          department_id: plan.value.department_id,
           platform: plan.value.platform,
           template_group_id: plan.value.template_group_id,
           source_group_id: plan.value.source_group_id,
@@ -690,7 +700,7 @@ async function requestExecution() {
   try {
     const selected_user_ids = Array.from(selectedUserIDs.value)
     const response = activeMappingID.value
-		? await previewRelayReplan(activeMappingID.value, { selected_user_ids, assignments: assignmentPayload(), member_sources: memberSourcesPayload(), removed_user_ids: Array.from(removedUserIDs.value), member_actions: memberActions.value, adopt_relay_user_ids: Array.from(selectedUnmanagedRelayIDs.value) })
+		? await previewRelayReplan(activeMappingID.value, { department_id: form.department_id, selected_user_ids, assignments: assignmentPayload(), member_sources: memberSourcesPayload(), removed_user_ids: Array.from(removedUserIDs.value), member_actions: memberActions.value, adopt_relay_user_ids: Array.from(selectedUnmanagedRelayIDs.value) })
       : await previewRelayPlan({
           provider_id: plan.value.provider_id,
           department_id: plan.value.department_id,
@@ -761,6 +771,7 @@ async function replan(mapping: RelayPlanningMapping) {
     const retryRemovedUserIDs = retryRemovalUserIDs(mapping)
     const retryActions = retryMemberActions(mapping)
     const retryRequest = {
+      department_id: mapping.department_id,
       ...(retryRemovedUserIDs.length ? { removed_user_ids: retryRemovedUserIDs } : {}),
       ...(Object.keys(retryActions).length ? { member_actions: retryActions } : {}),
     }
@@ -898,7 +909,7 @@ onBeforeUnmount(clearSearchState)
               class="w-full"
               :allow-all="false"
               :placeholder="t('relayPlanning.selectDepartment')"
-              @change="resetPlan"
+              @change="handleDepartmentChange"
             />
           </el-form-item>
           <el-form-item :label="t('relayPlanning.platform')" class="!mb-0">
