@@ -756,7 +756,10 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     try {
       const reviewedRequest = reviewedState()
       const nextPlan = activeMappingID.value
-        ? await options.previewReplan(activeMappingID.value, reviewedRequest)
+        ? await options.previewReplan(activeMappingID.value, {
+            department_id: plan.value.department_id,
+            ...reviewedRequest,
+          })
         : await options.previewInitial({
             provider_id: plan.value.provider_id,
             department_id: plan.value.department_id,

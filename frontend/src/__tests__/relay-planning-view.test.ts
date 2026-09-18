@@ -651,6 +651,14 @@ describe('RelayPlanningView', () => {
 		relayPlanning.previewRelayReplan
 			.mockResolvedValueOnce({ data: { data: replan } })
 			.mockResolvedValueOnce({ data: { data: migrated } })
+			.mockResolvedValueOnce({ data: { data: migrated } })
+		relayPlanning.executeRelayReplan.mockResolvedValue({ data: { data: {
+			plan: migrated,
+			groups: [],
+			accounts: [],
+			members: [],
+			mapping: { ...mapping, department_id: 'dept-beta', department_name: 'SDK Runtime' },
+		} } })
 
 		await wrapper.get('[data-testid="replan-mapping-9"]').trigger('click')
 		await flushPromises()
@@ -663,6 +671,14 @@ describe('RelayPlanningView', () => {
 		expect(relayPlanning.previewRelayReplan).toHaveBeenLastCalledWith(9, expect.objectContaining({ department_id: 'dept-beta' }))
 		expect(wrapper.find('[data-testid="suggested-group-0"]').exists()).toBe(true)
 		expect(wrapper.get('[data-testid="department-select"]').text()).toContain('SDK Runtime')
+
+		await wrapper.get('[data-testid="open-execution-confirmation"]').trigger('click')
+		await flushPromises()
+		expect(relayPlanning.previewRelayReplan).toHaveBeenLastCalledWith(9, expect.objectContaining({ department_id: 'dept-beta' }))
+
+		await wrapper.get('[data-testid="confirm-execution"]').trigger('click')
+		await flushPromises()
+		expect(relayPlanning.executeRelayReplan).toHaveBeenCalledWith(9, expect.objectContaining({ department_id: 'dept-beta' }))
 	})
 
 	it('refreshes a stale Mapping list and opens the conflicting Mapping Replan', async () => {
