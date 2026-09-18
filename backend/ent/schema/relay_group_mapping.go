@@ -19,6 +19,7 @@ func (RelayGroupMapping) Fields() []ent.Field {
 		field.Int("provider_id"),
 		field.String("department_external_id").NotEmpty(),
 		field.String("department_name").Default(""),
+		field.JSON("source_department_ids", []string{}).Optional(),
 		field.String("platform").NotEmpty(),
 		field.Int64("template_group_id").Default(0),
 		field.String("template_group_name").Default(""),

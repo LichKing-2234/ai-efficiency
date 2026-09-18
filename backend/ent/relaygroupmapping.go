@@ -24,6 +24,8 @@ type RelayGroupMapping struct {
 	DepartmentExternalID string `json:"department_external_id,omitempty"`
 	// DepartmentName holds the value of the "department_name" field.
 	DepartmentName string `json:"department_name,omitempty"`
+	// SourceDepartmentIds holds the value of the "source_department_ids" field.
+	SourceDepartmentIds []string `json:"source_department_ids,omitempty"`
 	// Platform holds the value of the "platform" field.
 	Platform string `json:"platform,omitempty"`
 	// TemplateGroupID holds the value of the "template_group_id" field.
@@ -85,7 +87,7 @@ func (*RelayGroupMapping) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case relaygroupmapping.FieldGroupIds, relaygroupmapping.FieldMemberAssignments, relaygroupmapping.FieldMemberSources, relaygroupmapping.FieldDesiredAccounts, relaygroupmapping.FieldOperationState:
+		case relaygroupmapping.FieldSourceDepartmentIds, relaygroupmapping.FieldGroupIds, relaygroupmapping.FieldMemberAssignments, relaygroupmapping.FieldMemberSources, relaygroupmapping.FieldDesiredAccounts, relaygroupmapping.FieldOperationState:
 			values[i] = new([]byte)
 		case relaygroupmapping.FieldAccountManagementInitialized:
 			values[i] = new(sql.NullBool)
@@ -135,6 +137,14 @@ func (rgm *RelayGroupMapping) assignValues(columns []string, values []any) error
 				return fmt.Errorf("unexpected type %T for field department_name", values[i])
 			} else if value.Valid {
 				rgm.DepartmentName = value.String
+			}
+		case relaygroupmapping.FieldSourceDepartmentIds:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field source_department_ids", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &rgm.SourceDepartmentIds); err != nil {
+					return fmt.Errorf("unmarshal field source_department_ids: %w", err)
+				}
 			}
 		case relaygroupmapping.FieldPlatform:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -291,6 +301,9 @@ func (rgm *RelayGroupMapping) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("department_name=")
 	builder.WriteString(rgm.DepartmentName)
+	builder.WriteString(", ")
+	builder.WriteString("source_department_ids=")
+	builder.WriteString(fmt.Sprintf("%v", rgm.SourceDepartmentIds))
 	builder.WriteString(", ")
 	builder.WriteString("platform=")
 	builder.WriteString(rgm.Platform)

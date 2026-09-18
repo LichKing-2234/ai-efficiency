@@ -295,6 +295,16 @@ func DepartmentNameContainsFold(v string) predicate.RelayGroupMapping {
 	return predicate.RelayGroupMapping(sql.FieldContainsFold(FieldDepartmentName, v))
 }
 
+// SourceDepartmentIdsIsNil applies the IsNil predicate on the "source_department_ids" field.
+func SourceDepartmentIdsIsNil() predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldIsNull(FieldSourceDepartmentIds))
+}
+
+// SourceDepartmentIdsNotNil applies the NotNil predicate on the "source_department_ids" field.
+func SourceDepartmentIdsNotNil() predicate.RelayGroupMapping {
+	return predicate.RelayGroupMapping(sql.FieldNotNull(FieldSourceDepartmentIds))
+}
+
 // PlatformEQ applies the EQ predicate on the "platform" field.
 func PlatformEQ(v string) predicate.RelayGroupMapping {
 	return predicate.RelayGroupMapping(sql.FieldEQ(FieldPlatform, v))

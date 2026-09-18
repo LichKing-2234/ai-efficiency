@@ -20,6 +20,8 @@ const (
 	FieldDepartmentExternalID = "department_external_id"
 	// FieldDepartmentName holds the string denoting the department_name field in the database.
 	FieldDepartmentName = "department_name"
+	// FieldSourceDepartmentIds holds the string denoting the source_department_ids field in the database.
+	FieldSourceDepartmentIds = "source_department_ids"
 	// FieldPlatform holds the string denoting the platform field in the database.
 	FieldPlatform = "platform"
 	// FieldTemplateGroupID holds the string denoting the template_group_id field in the database.
@@ -71,6 +73,7 @@ var Columns = []string{
 	FieldProviderID,
 	FieldDepartmentExternalID,
 	FieldDepartmentName,
+	FieldSourceDepartmentIds,
 	FieldPlatform,
 	FieldTemplateGroupID,
 	FieldTemplateGroupName,

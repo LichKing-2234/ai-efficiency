@@ -98,6 +98,7 @@ export interface RelayPlanningMapping {
 	desired_accounts: Record<string, RelayPlanningAccountIntent[]>
 	account_pools: RelayPlanningTargetAccountPool[]
   operation_state?: Record<string, Record<string, string>>
+  source_department_ids?: string[]
 	baseline_revision?: number
 	alignment?: 'aligned' | 'drifted' | 'operating'
 	alignment_differences?: string[]
@@ -347,7 +348,7 @@ export function saveRelayDesiredAccounts(id: number, desiredAccounts: Record<str
 	return client.put<ApiResponse<RelayPlanningMapping>>(`/admin/relay-planning/mappings/${id}/accounts`, { desired_accounts: desiredAccounts })
 }
 
-export function previewRelayReplan(id: number, data: { selected_user_ids?: number[]; assignments?: RelayPlanningAssignment[]; member_sources?: Record<string, number>; removed_user_ids?: number[]; member_actions?: Record<string, RelayPlanningMemberAction>; adopt_relay_user_ids?: number[] }) {
+export function previewRelayReplan(id: number, data: { department_id?: string; selected_user_ids?: number[]; assignments?: RelayPlanningAssignment[]; member_sources?: Record<string, number>; removed_user_ids?: number[]; member_actions?: Record<string, RelayPlanningMemberAction>; adopt_relay_user_ids?: number[] }) {
   return client.post<ApiResponse<RelayPlanningPlan>>(`/admin/relay-planning/mappings/${id}/replan`, data)
 }
 

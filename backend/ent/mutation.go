@@ -35449,6 +35449,8 @@ type RelayGroupMappingMutation struct {
 	addprovider_id                         *int
 	department_external_id                 *string
 	department_name                        *string
+	source_department_ids                  *[]string
+	appendsource_department_ids            []string
 	platform                               *string
 	template_group_id                      *int64
 	addtemplate_group_id                   *int64
@@ -35703,6 +35705,71 @@ func (m *RelayGroupMappingMutation) OldDepartmentName(ctx context.Context) (v st
 // ResetDepartmentName resets all changes to the "department_name" field.
 func (m *RelayGroupMappingMutation) ResetDepartmentName() {
 	m.department_name = nil
+}
+
+// SetSourceDepartmentIds sets the "source_department_ids" field.
+func (m *RelayGroupMappingMutation) SetSourceDepartmentIds(s []string) {
+	m.source_department_ids = &s
+	m.appendsource_department_ids = nil
+}
+
+// SourceDepartmentIds returns the value of the "source_department_ids" field in the mutation.
+func (m *RelayGroupMappingMutation) SourceDepartmentIds() (r []string, exists bool) {
+	v := m.source_department_ids
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourceDepartmentIds returns the old "source_department_ids" field's value of the RelayGroupMapping entity.
+// If the RelayGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayGroupMappingMutation) OldSourceDepartmentIds(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourceDepartmentIds is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourceDepartmentIds requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourceDepartmentIds: %w", err)
+	}
+	return oldValue.SourceDepartmentIds, nil
+}
+
+// AppendSourceDepartmentIds adds s to the "source_department_ids" field.
+func (m *RelayGroupMappingMutation) AppendSourceDepartmentIds(s []string) {
+	m.appendsource_department_ids = append(m.appendsource_department_ids, s...)
+}
+
+// AppendedSourceDepartmentIds returns the list of values that were appended to the "source_department_ids" field in this mutation.
+func (m *RelayGroupMappingMutation) AppendedSourceDepartmentIds() ([]string, bool) {
+	if len(m.appendsource_department_ids) == 0 {
+		return nil, false
+	}
+	return m.appendsource_department_ids, true
+}
+
+// ClearSourceDepartmentIds clears the value of the "source_department_ids" field.
+func (m *RelayGroupMappingMutation) ClearSourceDepartmentIds() {
+	m.source_department_ids = nil
+	m.appendsource_department_ids = nil
+	m.clearedFields[relaygroupmapping.FieldSourceDepartmentIds] = struct{}{}
+}
+
+// SourceDepartmentIdsCleared returns if the "source_department_ids" field was cleared in this mutation.
+func (m *RelayGroupMappingMutation) SourceDepartmentIdsCleared() bool {
+	_, ok := m.clearedFields[relaygroupmapping.FieldSourceDepartmentIds]
+	return ok
+}
+
+// ResetSourceDepartmentIds resets all changes to the "source_department_ids" field.
+func (m *RelayGroupMappingMutation) ResetSourceDepartmentIds() {
+	m.source_department_ids = nil
+	m.appendsource_department_ids = nil
+	delete(m.clearedFields, relaygroupmapping.FieldSourceDepartmentIds)
 }
 
 // SetPlatform sets the "platform" field.
@@ -36464,7 +36531,7 @@ func (m *RelayGroupMappingMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RelayGroupMappingMutation) Fields() []string {
-	fields := make([]string, 0, 19)
+	fields := make([]string, 0, 20)
 	if m.provider_id != nil {
 		fields = append(fields, relaygroupmapping.FieldProviderID)
 	}
@@ -36473,6 +36540,9 @@ func (m *RelayGroupMappingMutation) Fields() []string {
 	}
 	if m.department_name != nil {
 		fields = append(fields, relaygroupmapping.FieldDepartmentName)
+	}
+	if m.source_department_ids != nil {
+		fields = append(fields, relaygroupmapping.FieldSourceDepartmentIds)
 	}
 	if m.platform != nil {
 		fields = append(fields, relaygroupmapping.FieldPlatform)
@@ -36536,6 +36606,8 @@ func (m *RelayGroupMappingMutation) Field(name string) (ent.Value, bool) {
 		return m.DepartmentExternalID()
 	case relaygroupmapping.FieldDepartmentName:
 		return m.DepartmentName()
+	case relaygroupmapping.FieldSourceDepartmentIds:
+		return m.SourceDepartmentIds()
 	case relaygroupmapping.FieldPlatform:
 		return m.Platform()
 	case relaygroupmapping.FieldTemplateGroupID:
@@ -36583,6 +36655,8 @@ func (m *RelayGroupMappingMutation) OldField(ctx context.Context, name string) (
 		return m.OldDepartmentExternalID(ctx)
 	case relaygroupmapping.FieldDepartmentName:
 		return m.OldDepartmentName(ctx)
+	case relaygroupmapping.FieldSourceDepartmentIds:
+		return m.OldSourceDepartmentIds(ctx)
 	case relaygroupmapping.FieldPlatform:
 		return m.OldPlatform(ctx)
 	case relaygroupmapping.FieldTemplateGroupID:
@@ -36644,6 +36718,13 @@ func (m *RelayGroupMappingMutation) SetField(name string, value ent.Value) error
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetDepartmentName(v)
+		return nil
+	case relaygroupmapping.FieldSourceDepartmentIds:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourceDepartmentIds(v)
 		return nil
 	case relaygroupmapping.FieldPlatform:
 		v, ok := value.(string)
@@ -36849,7 +36930,11 @@ func (m *RelayGroupMappingMutation) AddField(name string, value ent.Value) error
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
 func (m *RelayGroupMappingMutation) ClearedFields() []string {
-	return nil
+	var fields []string
+	if m.FieldCleared(relaygroupmapping.FieldSourceDepartmentIds) {
+		fields = append(fields, relaygroupmapping.FieldSourceDepartmentIds)
+	}
+	return fields
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
@@ -36862,6 +36947,11 @@ func (m *RelayGroupMappingMutation) FieldCleared(name string) bool {
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
 func (m *RelayGroupMappingMutation) ClearField(name string) error {
+	switch name {
+	case relaygroupmapping.FieldSourceDepartmentIds:
+		m.ClearSourceDepartmentIds()
+		return nil
+	}
 	return fmt.Errorf("unknown RelayGroupMapping nullable field %s", name)
 }
 
@@ -36877,6 +36967,9 @@ func (m *RelayGroupMappingMutation) ResetField(name string) error {
 		return nil
 	case relaygroupmapping.FieldDepartmentName:
 		m.ResetDepartmentName()
+		return nil
+	case relaygroupmapping.FieldSourceDepartmentIds:
+		m.ResetSourceDepartmentIds()
 		return nil
 	case relaygroupmapping.FieldPlatform:
 		m.ResetPlatform()

@@ -79,6 +79,24 @@ func (rgmu *RelayGroupMappingUpdate) SetNillableDepartmentName(s *string) *Relay
 	return rgmu
 }
 
+// SetSourceDepartmentIds sets the "source_department_ids" field.
+func (rgmu *RelayGroupMappingUpdate) SetSourceDepartmentIds(s []string) *RelayGroupMappingUpdate {
+	rgmu.mutation.SetSourceDepartmentIds(s)
+	return rgmu
+}
+
+// AppendSourceDepartmentIds appends s to the "source_department_ids" field.
+func (rgmu *RelayGroupMappingUpdate) AppendSourceDepartmentIds(s []string) *RelayGroupMappingUpdate {
+	rgmu.mutation.AppendSourceDepartmentIds(s)
+	return rgmu
+}
+
+// ClearSourceDepartmentIds clears the value of the "source_department_ids" field.
+func (rgmu *RelayGroupMappingUpdate) ClearSourceDepartmentIds() *RelayGroupMappingUpdate {
+	rgmu.mutation.ClearSourceDepartmentIds()
+	return rgmu
+}
+
 // SetPlatform sets the "platform" field.
 func (rgmu *RelayGroupMappingUpdate) SetPlatform(s string) *RelayGroupMappingUpdate {
 	rgmu.mutation.SetPlatform(s)
@@ -396,6 +414,17 @@ func (rgmu *RelayGroupMappingUpdate) sqlSave(ctx context.Context) (n int, err er
 	if value, ok := rgmu.mutation.DepartmentName(); ok {
 		_spec.SetField(relaygroupmapping.FieldDepartmentName, field.TypeString, value)
 	}
+	if value, ok := rgmu.mutation.SourceDepartmentIds(); ok {
+		_spec.SetField(relaygroupmapping.FieldSourceDepartmentIds, field.TypeJSON, value)
+	}
+	if value, ok := rgmu.mutation.AppendedSourceDepartmentIds(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, relaygroupmapping.FieldSourceDepartmentIds, value)
+		})
+	}
+	if rgmu.mutation.SourceDepartmentIdsCleared() {
+		_spec.ClearField(relaygroupmapping.FieldSourceDepartmentIds, field.TypeJSON)
+	}
 	if value, ok := rgmu.mutation.Platform(); ok {
 		_spec.SetField(relaygroupmapping.FieldPlatform, field.TypeString, value)
 	}
@@ -569,6 +598,24 @@ func (rgmuo *RelayGroupMappingUpdateOne) SetNillableDepartmentName(s *string) *R
 	if s != nil {
 		rgmuo.SetDepartmentName(*s)
 	}
+	return rgmuo
+}
+
+// SetSourceDepartmentIds sets the "source_department_ids" field.
+func (rgmuo *RelayGroupMappingUpdateOne) SetSourceDepartmentIds(s []string) *RelayGroupMappingUpdateOne {
+	rgmuo.mutation.SetSourceDepartmentIds(s)
+	return rgmuo
+}
+
+// AppendSourceDepartmentIds appends s to the "source_department_ids" field.
+func (rgmuo *RelayGroupMappingUpdateOne) AppendSourceDepartmentIds(s []string) *RelayGroupMappingUpdateOne {
+	rgmuo.mutation.AppendSourceDepartmentIds(s)
+	return rgmuo
+}
+
+// ClearSourceDepartmentIds clears the value of the "source_department_ids" field.
+func (rgmuo *RelayGroupMappingUpdateOne) ClearSourceDepartmentIds() *RelayGroupMappingUpdateOne {
+	rgmuo.mutation.ClearSourceDepartmentIds()
 	return rgmuo
 }
 
@@ -918,6 +965,17 @@ func (rgmuo *RelayGroupMappingUpdateOne) sqlSave(ctx context.Context) (_node *Re
 	}
 	if value, ok := rgmuo.mutation.DepartmentName(); ok {
 		_spec.SetField(relaygroupmapping.FieldDepartmentName, field.TypeString, value)
+	}
+	if value, ok := rgmuo.mutation.SourceDepartmentIds(); ok {
+		_spec.SetField(relaygroupmapping.FieldSourceDepartmentIds, field.TypeJSON, value)
+	}
+	if value, ok := rgmuo.mutation.AppendedSourceDepartmentIds(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, relaygroupmapping.FieldSourceDepartmentIds, value)
+		})
+	}
+	if rgmuo.mutation.SourceDepartmentIdsCleared() {
+		_spec.ClearField(relaygroupmapping.FieldSourceDepartmentIds, field.TypeJSON)
 	}
 	if value, ok := rgmuo.mutation.Platform(); ok {
 		_spec.SetField(relaygroupmapping.FieldPlatform, field.TypeString, value)
