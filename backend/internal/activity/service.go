@@ -11,12 +11,9 @@ import (
 
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/directorydepartment"
-	"github.com/ai-efficiency/backend/ent/directorymember"
-	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
 	"github.com/ai-efficiency/backend/ent/prsyncjob"
 	"github.com/ai-efficiency/backend/ent/user"
-	"github.com/ai-efficiency/backend/internal/directorysync"
+	"github.com/ai-efficiency/backend/internal/directoryfacts"
 	"github.com/ai-efficiency/backend/internal/representativescope"
 )
 
@@ -47,6 +44,7 @@ type ServiceOptions struct {
 
 type Service struct {
 	client        *ent.Client
+	facts         directoryfacts.Reader
 	scope         ScopeResolver
 	cursorSecret  []byte
 	v2LedgerEpoch string
@@ -62,7 +60,7 @@ func NewService(client *ent.Client, options ServiceOptions) *Service {
 		scopeResolver = representativescope.New(client)
 	}
 	return &Service{
-		client: client, scope: scopeResolver, cursorSecret: []byte(options.CursorSecret),
+		client: client, facts: directoryfacts.New(client), scope: scopeResolver, cursorSecret: []byte(options.CursorSecret),
 		v2LedgerEpoch: strings.TrimSpace(options.V2LedgerEpoch), v2CutoverAt: options.V2CutoverAt.UTC(),
 		v2Denominator: options.V2Denominator, v2DB: options.V2DB, now: time.Now,
 	}
@@ -84,66 +82,59 @@ func (s *Service) resolveAuthorization(ctx context.Context, actorUserID int) (*a
 		return nil, fmt.Errorf("load activity actor: %w", err)
 	}
 	authorization := &authorizationScope{AllowedUserIDs: map[int]struct{}{actor.ID: {}}, Teams: map[string]Team{}}
-	snapshot, hasSnapshot, err := directorysync.CurrentSnapshot(ctx, s.client)
-	if err != nil {
-		return nil, fmt.Errorf("resolve activity directory snapshot: %w", err)
-	}
-	if hasSnapshot {
+	if actor.Role == user.RoleAdmin {
+		authorization.Admin = true
+		view, ok, err := s.facts.Current(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("resolve activity directory snapshot: %w", err)
+		}
+		if !ok {
+			return authorization, nil
+		}
+		snapshot := view.Snapshot()
 		authorization.Version = fmt.Sprintf("directory:%d:%d", snapshot.SourceID, snapshot.RunID)
 		authorization.SourceID = snapshot.SourceID
 		authorization.RunID = snapshot.RunID
-	}
-	if actor.Role == user.RoleAdmin {
-		authorization.Admin = true
-		if !hasSnapshot {
-			return authorization, nil
-		}
-		departments, err := s.client.DirectoryDepartment.Query().Where(
-			directorydepartment.SourceIDEQ(snapshot.SourceID),
-			directorydepartment.LastSeenRunIDEQ(snapshot.RunID),
-		).All(ctx)
+		facts, err := view.Load(ctx, directoryfacts.Query{
+			AllDepartments:     true,
+			AllMembers:         true,
+			ActiveMembersOnly:  true,
+			IncludeMemberships: true,
+			AllUsers:           true,
+		})
 		if err != nil {
-			return nil, fmt.Errorf("load current Admin activity teams: %w", err)
+			return nil, fmt.Errorf("load current Admin activity directory facts: %w", err)
 		}
-		for _, department := range departments {
+		for _, department := range facts.Departments() {
 			authorization.Teams[department.ExternalID] = Team{
 				ExternalID: department.ExternalID, ParentExternalID: department.EffectiveParentExternalID,
-				Name: department.Name, DisplayPath: department.Path,
+				Name: department.Name, DisplayPath: department.Path, MemberCount: facts.DepartmentStats(department.ExternalID).MemberCount,
 			}
 		}
-		members, memberships, err := s.currentDirectoryMembers(ctx, snapshot.SourceID, snapshot.RunID)
-		if err != nil {
-			return nil, err
-		}
-		memberCounts := adminActivityTeamMemberCounts(departments, members, memberships)
-		for externalID, count := range memberCounts {
-			team := authorization.Teams[externalID]
-			team.MemberCount = count
-			authorization.Teams[externalID] = team
-		}
-		usersByID, usersByEmail, err := s.usersByIdentity(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, member := range members {
-			if matched := matchedUser(member, usersByID, usersByEmail); matched != nil {
+		for _, member := range facts.Members() {
+			if matched := facts.UserForMember(member); matched != nil {
 				authorization.AllowedUserIDs[matched.ID] = struct{}{}
 			}
 		}
 		return authorization, nil
 	}
-	if s.scope == nil || !hasSnapshot {
+	if s.scope == nil {
 		return authorization, nil
 	}
 	representativeScope, err := s.scope.Resolve(ctx, actor.ID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve representative activity scope: %w", err)
 	}
-	if representativeScope == nil || !representativeScope.IsRepresentative {
+	if representativeScope == nil {
+		return authorization, nil
+	}
+	authorization.Version = representativeScope.Version
+	authorization.SourceID = representativeScope.DirectorySourceID
+	authorization.RunID = representativeScope.DirectoryRunID
+	if !representativeScope.IsRepresentative {
 		return authorization, nil
 	}
 	authorization.Representative = true
-	authorization.Version = representativeScope.Version
 	for _, department := range representativeScope.MemberTreeDepartments {
 		authorization.Teams[department.ExternalID] = Team{
 			ExternalID: department.ExternalID, ParentExternalID: department.ParentExternalID,
@@ -159,27 +150,32 @@ func (s *Service) resolveAuthorization(ctx context.Context, actorUserID int) (*a
 }
 
 func (s *Service) loadCurrentTeamMembers(ctx context.Context, authorization *authorizationScope, teamExternalID string) ([]MemberIdentity, error) {
-	members, memberships, err := s.currentDirectoryMembers(ctx, authorization.SourceID, authorization.RunID)
+	view := s.facts.At(directoryfacts.Snapshot{SourceID: authorization.SourceID, RunID: authorization.RunID})
+	facts, err := view.Load(ctx, directoryfacts.Query{
+		AllMembers:         true,
+		ActiveMembersOnly:  true,
+		IncludeMemberships: true,
+		AllUsers:           true,
+	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load current activity member facts: %w", err)
 	}
 	memberIDs := map[int]struct{}{}
 	departmentsByMember := map[int][]string{}
-	for _, membership := range memberships {
-		departmentsByMember[membership.DirectoryMemberID] = appendUniqueString(departmentsByMember[membership.DirectoryMemberID], membership.DepartmentExternalID)
-		if membership.DepartmentExternalID == teamExternalID {
-			memberIDs[membership.DirectoryMemberID] = struct{}{}
+	for _, member := range facts.Members() {
+		departmentIDs := facts.ExplicitDepartmentIDsForMember(member)
+		departmentsByMember[member.ID] = departmentIDs
+		for _, departmentID := range departmentIDs {
+			if departmentID == teamExternalID {
+				memberIDs[member.ID] = struct{}{}
+			}
 		}
 	}
 	if len(memberIDs) == 0 {
 		return []MemberIdentity{}, nil
 	}
-	usersByID, usersByEmail, err := s.usersByIdentity(ctx)
-	if err != nil {
-		return nil, err
-	}
 	identities := make([]MemberIdentity, 0, len(memberIDs))
-	for _, member := range members {
+	for _, member := range facts.Members() {
 		if _, selected := memberIDs[member.ID]; !selected {
 			continue
 		}
@@ -187,7 +183,7 @@ func (s *Service) loadCurrentTeamMembers(ctx context.Context, authorization *aut
 			DirectoryMemberExternalID: member.ExternalID, DisplayName: member.DisplayName,
 			Email: member.EmailNormalized, DepartmentExternalIDs: departmentsByMember[member.ID],
 		}
-		if matched := matchedUser(member, usersByID, usersByEmail); matched != nil {
+		if matched := facts.UserForMember(member); matched != nil {
 			if _, allowed := authorization.AllowedUserIDs[matched.ID]; !allowed {
 				continue
 			}
@@ -203,101 +199,6 @@ func (s *Service) loadCurrentTeamMembers(ctx context.Context, authorization *aut
 		return identities[i].DirectoryMemberExternalID < identities[j].DirectoryMemberExternalID
 	})
 	return identities, nil
-}
-
-func (s *Service) currentDirectoryMembers(ctx context.Context, sourceID, runID int) ([]*ent.DirectoryMember, []*ent.DirectoryMemberDepartment, error) {
-	members, err := s.client.DirectoryMember.Query().Where(
-		directorymember.SourceIDEQ(sourceID), directorymember.LastSeenRunIDEQ(runID), directorymember.StatusEQ("active"),
-	).All(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("load current activity members: %w", err)
-	}
-	memberships, err := s.client.DirectoryMemberDepartment.Query().Where(
-		directorymemberdepartment.SourceIDEQ(sourceID), directorymemberdepartment.LastSeenRunIDEQ(runID),
-	).All(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("load current activity member departments: %w", err)
-	}
-	return members, memberships, nil
-}
-
-func (s *Service) usersByIdentity(ctx context.Context) (map[int]*ent.User, map[string]*ent.User, error) {
-	users, err := s.client.User.Query().All(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("load activity users: %w", err)
-	}
-	byID, byEmail := make(map[int]*ent.User, len(users)), make(map[string]*ent.User, len(users))
-	for _, item := range users {
-		byID[item.ID] = item
-		byEmail[strings.ToLower(strings.TrimSpace(item.Email))] = item
-	}
-	return byID, byEmail, nil
-}
-
-func matchedUser(member *ent.DirectoryMember, byID map[int]*ent.User, byEmail map[string]*ent.User) *ent.User {
-	if member.MatchedUserID != nil {
-		if matched := byID[*member.MatchedUserID]; matched != nil {
-			return matched
-		}
-	}
-	return byEmail[strings.ToLower(strings.TrimSpace(member.EmailNormalized))]
-}
-
-func adminActivityTeamMemberCounts(departments []*ent.DirectoryDepartment, members []*ent.DirectoryMember, memberships []*ent.DirectoryMemberDepartment) map[string]int {
-	known, parents := map[string]struct{}{}, map[string]string{}
-	for _, department := range departments {
-		known[department.ExternalID] = struct{}{}
-		if department.EffectiveParentExternalID != nil {
-			parents[department.ExternalID] = strings.TrimSpace(*department.EffectiveParentExternalID)
-		}
-	}
-	active, direct := map[int]struct{}{}, map[int]map[string]struct{}{}
-	add := func(memberID int, departmentID string) {
-		departmentID = strings.TrimSpace(departmentID)
-		if memberID <= 0 {
-			return
-		}
-		if _, ok := known[departmentID]; !ok {
-			return
-		}
-		if direct[memberID] == nil {
-			direct[memberID] = map[string]struct{}{}
-		}
-		direct[memberID][departmentID] = struct{}{}
-	}
-	for _, member := range members {
-		active[member.ID] = struct{}{}
-		add(member.ID, member.DepartmentExternalID)
-	}
-	for _, membership := range memberships {
-		if _, ok := active[membership.DirectoryMemberID]; ok {
-			add(membership.DirectoryMemberID, membership.DepartmentExternalID)
-		}
-	}
-	byDepartment := map[string]map[int]struct{}{}
-	for memberID, departmentIDs := range direct {
-		seen := map[string]struct{}{}
-		for departmentID := range departmentIDs {
-			for current := departmentID; current != ""; current = parents[current] {
-				if _, ok := known[current]; !ok {
-					break
-				}
-				if _, duplicate := seen[current]; duplicate {
-					break
-				}
-				seen[current] = struct{}{}
-				if byDepartment[current] == nil {
-					byDepartment[current] = map[int]struct{}{}
-				}
-				byDepartment[current][memberID] = struct{}{}
-			}
-		}
-	}
-	counts := make(map[string]int, len(known))
-	for departmentID := range known {
-		counts[departmentID] = len(byDepartment[departmentID])
-	}
-	return counts
 }
 
 func (s *Service) currentTime() time.Time {

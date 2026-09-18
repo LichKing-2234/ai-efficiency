@@ -598,12 +598,20 @@ func printMachineSyncTaskStatus(out io.Writer) error {
 }
 
 func printMachineSyncTaskStatusAt(out io.Writer, now time.Time) error {
-	summary, err := hooks.SummarizeMachineSyncTasks(now)
+	machine, err := hooks.SummarizeMachineSyncTasks(now)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "Machine Sync Tasks: queued=%d running=%d yielded=%d recoverable=%d terminal=%d expiring=%d\n",
-		summary.Queued, summary.Running, summary.Yielded, summary.Recoverable, summary.Terminal, summary.Expiring)
+		machine.Queued, machine.Running, machine.Yielded, machine.Recoverable, machine.Terminal, machine.Expiring)
+	quarantine, err := hooks.LoadSyntheticFixtureQuarantineSummary()
+	if err != nil {
+		return err
+	}
+	if quarantine.Workspaces > 0 || quarantine.UnresolvedEvents > 0 {
+		fmt.Fprintf(out, "Synthetic Fixture Quarantine: workspaces=%d unresolved=%d migrated_at=%s\n",
+			quarantine.Workspaces, quarantine.UnresolvedEvents, quarantine.MigratedAt.UTC().Format(time.RFC3339))
+	}
 	return nil
 }
 

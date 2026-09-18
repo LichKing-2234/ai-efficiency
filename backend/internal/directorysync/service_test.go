@@ -1239,6 +1239,7 @@ func TestServiceListDepartmentsReturnsDisplayPathAndFiltersByIt(t *testing.T) {
 		SetSourceID(source.ID).
 		SetExternalID("1684207").
 		SetParentExternalID("1684075").
+		SetEffectiveParentExternalID("1684075").
 		SetName("Team One").
 		SetPath("1.488797.1684075.1684077.1684207").
 		SetLastSeenRunID(run.ID).

@@ -181,8 +181,11 @@ func TestSummarizeV2ClaimDeliveryExcludesCompletedAudit(t *testing.T) {
 	state := &V2ClaimState{Claims: []V2ClaimCandidate{
 		{Group: client.AttributionV2ClaimGroup{GroupID: "completed"}, GroupAcknowledged: true},
 		{Group: client.AttributionV2ClaimGroup{GroupID: "pending", RequestIDs: []string{"req-1"}}},
+		{Group: client.AttributionV2ClaimGroup{GroupID: "missing"}, GapReason: v2GapMissingRequestID},
+		{Group: client.AttributionV2ClaimGroup{GroupID: "ambiguous"}, GapReason: v2GapAmbiguousRequestEvidence},
+		{Group: client.AttributionV2ClaimGroup{GroupID: "expired"}, GapReason: v2GapRequestEvidenceExpired},
 	}}
-	if summary := SummarizeV2ClaimDelivery(state); summary.Pending != 1 || summary.Conflict != 0 || summary.UpgradeRequired != 0 {
+	if summary := SummarizeV2ClaimDelivery(state); summary.Pending != 1 || summary.Accepted != 1 || summary.Conflict != 0 || summary.UpgradeRequired != 0 || summary.MissingRequestID != 1 || summary.AmbiguousRequestEvidence != 1 || summary.RequestEvidenceExpired != 1 {
 		t.Fatalf("delivery summary = %+v", summary)
 	}
 }

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId } from 'vue'
 import type { Directive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import AdminDepartmentPicker from '@/components/admin/AdminDepartmentPicker.vue'
 import { useMediaQuery } from '@/composables/useMediaQuery'
+import { useAdminUsersWorkflow } from '@/composables/useAdminUsersWorkflow'
 import DepartmentTreeToggle from '@/components/DepartmentTreeToggle.vue'
 import {
   disableAdminUserAccess,
@@ -18,9 +19,9 @@ import {
 } from '@/api/adminUsers'
 import { useI18n } from '@/i18n'
 import { authSourceLabel, subscriptionResultStatusLabel, userRoleLabel } from '@/utils/displayLabels'
+import { FULL_PAGE_SIZES } from '@/utils/pagination'
 import type {
   AdminAssignableSubscriptionProvider,
-  AdminDepartmentChildrenResponse,
   AdminDirectoryDepartmentSummary,
   AdminManageSubscriptionsRequest,
   AdminManageSubscriptionsResultRow,
@@ -30,18 +31,6 @@ import type {
   AdminUser,
   AdminUserAccessStatus,
 } from '@/types'
-
-type LoadedDepartmentChildren = {
-  items: AdminDirectoryDepartmentSummary[]
-  page: number
-  page_size: number
-  total: number
-}
-
-type VisibleDepartmentRow = {
-  department: AdminDirectoryDepartmentSummary
-  depth: number
-}
 
 function markAdminUserRow(element: HTMLElement) {
   element.closest('tr')?.setAttribute('data-admin-user-row', '')
@@ -60,18 +49,8 @@ const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const departmentFilterLabelID = useId()
-const loading = ref(false)
-const error = ref('')
-const rows = ref<AdminUser[]>([])
-const total = ref(0)
 const desktopUserRows = useMediaQuery('(min-width: 1440px)')
-const rootDepartments = ref<LoadedDepartmentChildren | null>(null)
-const childrenByParentID = ref<Map<string, LoadedDepartmentChildren>>(new Map())
-const departmentsLoading = ref(false)
-const departmentsError = ref('')
-const expandedDepartmentIds = ref<Set<string>>(new Set())
-const departmentChildrenLoadingIDs = ref<Set<string>>(new Set())
-const departmentChildrenErrors = ref<Map<string, string>>(new Map())
+const desktopPagination = useMediaQuery('(min-width: 768px)')
 const subscriptionProviders = ref<AdminAssignableSubscriptionProvider[]>([])
 const subscriptionOptionsLoading = ref(false)
 const subscriptionOptionsError = ref('')
@@ -103,7 +82,6 @@ const disableAccessDialog = reactive<{
   message: '',
   messageType: '',
 })
-const selectedUserIds = ref<Set<number>>(new Set())
 const disableAccessConfirmInput = ref<{ input?: HTMLInputElement } | null>(null)
 const subscriptionJob = ref<AdminSubscriptionJob | null>(null)
 const subscriptionPanelExpanded = ref(false)
@@ -132,31 +110,74 @@ const subscriptionForm = reactive<{
 })
 const subscriptionPanelForcedOpen = computed(() => subscriptionForm.loading)
 const subscriptionToolsVisible = computed(() => subscriptionPanelExpanded.value || subscriptionPanelForcedOpen.value)
-let searchTimer: number | undefined
 let subscriptionJobPollTimer: number | undefined
-let userRequestGeneration = 0
-let rootDepartmentRequestGeneration = 0
-let childDepartmentRequestGeneration = 0
 
-const filters = reactive({
-  view: queryString('view') === 'departments' ? 'departments' : 'users',
-  q: queryString('q'),
-  department_id: queryString('department_id'),
-  access_status: queryString('access_status'),
-  page: queryNumber('page', 1),
-  page_size: queryNumber('page_size', 20),
+const adminUsersWorkflow = useAdminUsersWorkflow({
+  route,
+  router,
+  loadUsers: async (params) => {
+    const response = await listAdminUsers(params)
+    return response.data.data ?? { items: [], total: 0, page: params.page ?? 1, page_size: params.page_size ?? 20 }
+  },
+  loadDepartmentChildren: async (params) => {
+    const response = await listAdminUserDepartmentChildren(params)
+    return response.data.data ?? {
+      items: [],
+      parent_department_id: params.parent_department_id ?? '',
+      total: 0,
+      page: params.page ?? 1,
+      page_size: params.page_size ?? 25,
+    }
+  },
+  userLoadError: (err: any) => err.response?.data?.message || err.message || t('adminUsers.loadFailed'),
+  departmentLoadError: (err: any) => err.response?.data?.message || err.message || t('adminUsers.departmentsLoadFailed'),
+  onTargetContextChange: clearSubscriptionFeedback,
 })
+const {
+  rows,
+  total,
+  loading,
+  error,
+  filters,
+  rootDepartments,
+  departmentsLoading,
+  departmentsError,
+  selectedUserIds,
+  selectedCount,
+  allVisibleSelected,
+  visibleSelectionIndeterminate,
+  totalPages,
+  pageStart,
+  pageEnd,
+  showUserPagination,
+  activeViewLoading,
+  visibleDepartmentRows,
+  showRootDepartmentPagination,
+  setSearchQuery,
+  applySearch,
+  changeDepartmentFilter,
+  changeAccessStatusFilter,
+  setView: setAdminUsersView,
+  refreshActiveView,
+  openDepartmentUsers,
+  changePageSize,
+  changePage,
+  departmentExpanded,
+  departmentHasChildren,
+  toggleDepartment,
+  departmentChildrenLoading,
+  departmentChildrenError,
+  departmentChildrenEmpty,
+  canLoadMoreDepartmentChildren,
+  loadMoreDepartmentChildren,
+  changeRootDepartmentPage,
+  setUserSelected,
+  setAllVisibleSelected,
+  buildBulkTarget,
+} = adminUsersWorkflow
 
-const totalPages = computed(() => Math.max(1, Math.ceil(total.value / filters.page_size)))
-const canGoPrev = computed(() => filters.page > 1)
-const canGoNext = computed(() => filters.page < totalPages.value)
-const activeViewLoading = computed(() => filters.view === 'departments' ? departmentsLoading.value : loading.value)
 const showMobileUserRows = computed(() => filters.view === 'users' && rows.value.length > 0 && !desktopUserRows.value)
 const showDesktopUserRows = computed(() => filters.view === 'users' && rows.value.length > 0 && desktopUserRows.value)
-const selectedUserIdList = computed(() => Array.from(selectedUserIds.value))
-const selectedCount = computed(() => selectedUserIdList.value.length)
-const allVisibleSelected = computed(() => rows.value.length > 0 && rows.value.every((row) => selectedUserIds.value.has(row.id)))
-const visibleSelectionIndeterminate = computed(() => rows.value.some((row) => selectedUserIds.value.has(row.id)) && !allVisibleSelected.value)
 const bulkGroups = computed(() => subscriptionProviders.value.find((provider) => provider.id === subscriptionForm.provider_id)?.groups ?? [])
 const bulkUsesDays = computed(() => subscriptionForm.operation === 'add' || subscriptionForm.operation === 'extend')
 const bulkRequiresRemoveConfirmation = computed(() => subscriptionForm.operation === 'remove')
@@ -170,20 +191,6 @@ const disableAccessConfirmMatches = computed(() => {
   return disableAccessDialog.confirmEmail.trim().toLowerCase() === disableAccessDialog.user.email.trim().toLowerCase()
 })
 const disableAccessCompleted = computed(() => disableAccessDialog.messageType === 'success')
-const visibleDepartmentRows = computed<VisibleDepartmentRow[]>(() => flattenLoadedDepartmentRows(
-  rootDepartments.value?.items ?? [],
-  childrenByParentID.value,
-  expandedDepartmentIds.value,
-))
-const rootDepartmentTotalPages = computed(() => Math.max(
-  1,
-  Math.ceil((rootDepartments.value?.total ?? 0) / (rootDepartments.value?.page_size ?? 25)),
-))
-const canGoPreviousRootDepartmentPage = computed(() => (rootDepartments.value?.page ?? 1) > 1)
-const canGoNextRootDepartmentPage = computed(() => {
-  const current = rootDepartments.value
-  return current != null && current.page * current.page_size < current.total
-})
 const canSubmitSubscriptionManagement = computed(() => {
   if (subscriptionForm.loading || !subscriptionForm.provider_id || !subscriptionForm.group_id) return false
   if (subscriptionForm.scope === 'selected' && selectedCount.value === 0) return false
@@ -192,146 +199,6 @@ const canSubmitSubscriptionManagement = computed(() => {
   if (subscriptionForm.operation === 'reset_quota' && !subscriptionForm.confirmResetQuota) return false
   return true
 })
-
-async function loadUsers() {
-  const generation = ++userRequestGeneration
-  loading.value = true
-  error.value = ''
-	try {
-    const params = {
-      q: filters.q,
-      ...(filters.department_id ? { department_id: filters.department_id } : {}),
-      ...(filters.access_status ? { access_status: filters.access_status } : {}),
-      page: filters.page,
-      page_size: filters.page_size,
-    }
-    const res = await listAdminUsers(params)
-    if (generation !== userRequestGeneration) return
-    const data = res.data.data
-    rows.value = data?.items ?? []
-    total.value = data?.total ?? 0
-    filters.page = data?.page ?? filters.page
-    filters.page_size = data?.page_size ?? filters.page_size
-    replaceAdminUsersQuery()
-  } catch (err: any) {
-    if (generation !== userRequestGeneration) return
-    error.value = err.response?.data?.message || err.message || t('adminUsers.loadFailed')
-    rows.value = []
-    total.value = 0
-  } finally {
-    if (generation === userRequestGeneration) loading.value = false
-  }
-}
-
-function loadedDepartmentPage(
-  data: AdminDepartmentChildrenResponse | undefined,
-  requestedPage: number,
-): LoadedDepartmentChildren {
-  return {
-    items: data?.items ?? [],
-    page: data?.page ?? requestedPage,
-    page_size: data?.page_size ?? 25,
-    total: data?.total ?? 0,
-  }
-}
-
-function flattenLoadedDepartmentRows(
-  roots: AdminDirectoryDepartmentSummary[],
-  children: Map<string, LoadedDepartmentChildren>,
-  expandedIDs: Set<string>,
-) {
-  const visible: VisibleDepartmentRow[] = []
-  const visited = new Set<string>()
-
-  const visit = (departments: AdminDirectoryDepartmentSummary[], depth: number) => {
-    for (const department of departments) {
-      if (visited.has(department.external_id)) continue
-      visited.add(department.external_id)
-      visible.push({ department, depth })
-      if (!expandedIDs.has(department.external_id)) continue
-      visit(children.get(department.external_id)?.items ?? [], depth + 1)
-    }
-  }
-
-  visit(roots, 0)
-  return visible
-}
-
-async function loadRootDepartments(page = 1) {
-  if (departmentsLoading.value) return
-  const generation = ++rootDepartmentRequestGeneration
-  departmentsLoading.value = true
-  departmentsError.value = ''
-  try {
-    const res = await listAdminUserDepartmentChildren({ page, page_size: 25 })
-    if (generation !== rootDepartmentRequestGeneration) return
-    rootDepartments.value = loadedDepartmentPage(res.data.data, page)
-  } catch (err: any) {
-    if (generation !== rootDepartmentRequestGeneration) return
-    rootDepartments.value = null
-    departmentsError.value = err.response?.data?.message || err.message || t('adminUsers.departmentsLoadFailed')
-  } finally {
-    if (generation === rootDepartmentRequestGeneration) departmentsLoading.value = false
-  }
-}
-
-function mergeDepartmentItems(
-  existing: AdminDirectoryDepartmentSummary[],
-  incoming: AdminDirectoryDepartmentSummary[],
-) {
-  const seen = new Set<string>()
-  const merged: AdminDirectoryDepartmentSummary[] = []
-  for (const item of [...existing, ...incoming]) {
-    if (seen.has(item.external_id)) continue
-    seen.add(item.external_id)
-    merged.push(item)
-  }
-  return merged
-}
-
-async function loadDepartmentChildren(parentDepartmentID: string, page = 1, append = false) {
-  if (departmentChildrenLoadingIDs.value.has(parentDepartmentID)) return
-  const generation = childDepartmentRequestGeneration
-  departmentChildrenLoadingIDs.value = new Set(departmentChildrenLoadingIDs.value).add(parentDepartmentID)
-  const nextErrors = new Map(departmentChildrenErrors.value)
-  nextErrors.delete(parentDepartmentID)
-  departmentChildrenErrors.value = nextErrors
-  try {
-    const res = await listAdminUserDepartmentChildren({
-      parent_department_id: parentDepartmentID,
-      page,
-      page_size: 25,
-    })
-    if (generation !== childDepartmentRequestGeneration) return
-    const loaded = loadedDepartmentPage(res.data.data, page)
-    const current = childrenByParentID.value.get(parentDepartmentID)
-    if (append && current) loaded.items = mergeDepartmentItems(current.items, loaded.items)
-    const nextChildren = new Map(childrenByParentID.value)
-    nextChildren.set(parentDepartmentID, loaded)
-    childrenByParentID.value = nextChildren
-  } catch (err: any) {
-    if (generation !== childDepartmentRequestGeneration) return
-    const errors = new Map(departmentChildrenErrors.value)
-    errors.set(
-      parentDepartmentID,
-      err.response?.data?.message || err.message || t('adminUsers.departmentsLoadFailed'),
-    )
-    departmentChildrenErrors.value = errors
-  } finally {
-    if (generation !== childDepartmentRequestGeneration) return
-    const loadingIDs = new Set(departmentChildrenLoadingIDs.value)
-    loadingIDs.delete(parentDepartmentID)
-    departmentChildrenLoadingIDs.value = loadingIDs
-  }
-}
-
-function invalidateDepartmentChildren() {
-  childDepartmentRequestGeneration += 1
-  childrenByParentID.value = new Map()
-  expandedDepartmentIds.value = new Set()
-  departmentChildrenLoadingIDs.value = new Set()
-  departmentChildrenErrors.value = new Map()
-}
 
 async function loadSubscriptionOptions() {
   subscriptionOptionsLoading.value = true
@@ -348,97 +215,8 @@ async function loadSubscriptionOptions() {
   }
 }
 
-function queryString(key: string) {
-  const value = route.query[key]
-  return typeof value === 'string' ? value : ''
-}
-
-function queryNumber(key: string, fallback: number) {
-  const value = Number(queryString(key))
-  return Number.isFinite(value) && value > 0 ? value : fallback
-}
-
-function replaceAdminUsersQuery() {
-  const query: Record<string, string> = {}
-  if (filters.view === 'departments') query.view = 'departments'
-  if (filters.q.trim()) query.q = filters.q.trim()
-  if (filters.department_id.trim()) query.department_id = filters.department_id.trim()
-  if (filters.access_status.trim()) query.access_status = filters.access_status.trim()
-  if (filters.page > 1) query.page = String(filters.page)
-  if (filters.page_size !== 20) query.page_size = String(filters.page_size)
-  void router.replace({ query })
-}
-
-function clearSearchTimer() {
-  if (searchTimer) {
-    window.clearTimeout(searchTimer)
-    searchTimer = undefined
-  }
-}
-
-async function applySearch() {
-  clearSearchTimer()
-  filters.page = 1
-  await loadUsers()
-}
-
-async function changeDepartmentFilter() {
-  filters.page = 1
-  clearSubscriptionFeedback()
-  await loadUsers()
-}
-
-async function changeAccessStatusFilter() {
-  filters.page = 1
-  clearSubscriptionFeedback()
-  await loadUsers()
-}
-
-async function setAdminUsersView(view: 'users' | 'departments') {
-  filters.view = view
-  filters.page = 1
-  replaceAdminUsersQuery()
-  if (view === 'departments' && rootDepartments.value === null && !departmentsLoading.value) {
-    await loadRootDepartments(1)
-  }
-}
-
 function handleAdminUsersViewChange(view: string | number | boolean | undefined) {
   if (view === 'users' || view === 'departments') void setAdminUsersView(view)
-}
-
-async function refreshActiveView() {
-  if (filters.view === 'departments') {
-    invalidateDepartmentChildren()
-    await loadRootDepartments(rootDepartments.value?.page ?? 1)
-    return
-  }
-  await loadUsers()
-}
-
-async function openDepartmentUsers(department: AdminDirectoryDepartmentSummary) {
-  filters.view = 'users'
-  filters.department_id = department.external_id
-  filters.page = 1
-  clearSubscriptionFeedback()
-  await loadUsers()
-}
-
-async function changePageSize() {
-  filters.page = 1
-  await loadUsers()
-}
-
-async function previousPage() {
-  if (!canGoPrev.value) return
-  filters.page -= 1
-  await loadUsers()
-}
-
-async function nextPage() {
-  if (!canGoNext.value) return
-  filters.page += 1
-  await loadUsers()
 }
 
 function formatDate(value?: string | null) {
@@ -514,66 +292,6 @@ function departmentIndentStyle(depthValue: number) {
 
 function departmentAriaLevel(depthValue: number) {
   return String(departmentDepth(depthValue) + 1)
-}
-
-function departmentExpanded(department: AdminDirectoryDepartmentSummary) {
-  return expandedDepartmentIds.value.has(department.external_id)
-}
-
-function departmentHasChildren(department: AdminDirectoryDepartmentSummary) {
-  return department.has_children || department.child_count > 0
-}
-
-async function toggleDepartment(department: AdminDirectoryDepartmentSummary) {
-  if (!departmentHasChildren(department)) return
-  const next = new Set(expandedDepartmentIds.value)
-  if (next.has(department.external_id)) {
-    next.delete(department.external_id)
-    expandedDepartmentIds.value = next
-    return
-  } else {
-    next.add(department.external_id)
-  }
-  expandedDepartmentIds.value = next
-  if (!childrenByParentID.value.has(department.external_id)) {
-    await loadDepartmentChildren(department.external_id, 1)
-  }
-}
-
-function departmentChildrenLoading(departmentID: string) {
-  return departmentChildrenLoadingIDs.value.has(departmentID)
-}
-
-function departmentChildrenError(departmentID: string) {
-  return departmentChildrenErrors.value.get(departmentID) ?? ''
-}
-
-function departmentChildrenEmpty(departmentID: string) {
-  const loaded = childrenByParentID.value.get(departmentID)
-  return loaded != null && loaded.items.length === 0
-}
-
-function canLoadMoreDepartmentChildren(departmentID: string) {
-  const loaded = childrenByParentID.value.get(departmentID)
-  return loaded != null && loaded.page * loaded.page_size < loaded.total
-}
-
-async function loadMoreDepartmentChildren(departmentID: string) {
-  const loaded = childrenByParentID.value.get(departmentID)
-  if (!loaded || loaded.page * loaded.page_size >= loaded.total) return
-  await loadDepartmentChildren(departmentID, loaded.page + 1, true)
-}
-
-async function previousRootDepartmentPage() {
-  const current = rootDepartments.value
-  if (!current || current.page <= 1 || departmentsLoading.value) return
-  await loadRootDepartments(current.page - 1)
-}
-
-async function nextRootDepartmentPage() {
-  const current = rootDepartments.value
-  if (!current || current.page * current.page_size >= current.total || departmentsLoading.value) return
-  await loadRootDepartments(current.page + 1)
 }
 
 function subtreeMemberCountLabel(department: AdminDirectoryDepartmentSummary) {
@@ -734,30 +452,6 @@ function setSubscriptionOperation(value: string) {
   }
 }
 
-function setUserSelected(userId: number, checked: boolean) {
-  const next = new Set(selectedUserIds.value)
-  if (checked) {
-    next.add(userId)
-  } else {
-    next.delete(userId)
-  }
-  selectedUserIds.value = next
-  clearSubscriptionFeedback()
-}
-
-function setAllVisibleSelected(checked: boolean) {
-  const next = new Set(selectedUserIds.value)
-  for (const row of rows.value) {
-    if (checked) {
-      next.add(row.id)
-    } else {
-      next.delete(row.id)
-    }
-  }
-  selectedUserIds.value = next
-  clearSubscriptionFeedback()
-}
-
 function scopeSummaryLabel() {
   if (subscriptionForm.scope === 'selected') {
     return t('adminUsers.selectedUsersCount', { count: selectedCount.value })
@@ -784,15 +478,7 @@ async function submitSubscriptionManagement() {
     operation: subscriptionForm.operation,
     provider_id: subscriptionForm.provider_id,
     group_id: subscriptionForm.group_id,
-  }
-  if (subscriptionForm.scope === 'selected') {
-    payload.user_ids = selectedUserIdList.value
-  } else if (subscriptionForm.scope === 'current_filter') {
-    payload.filters = {
-      q: filters.q.trim(),
-      department_id: filters.department_id.trim(),
-      access_status: filters.access_status.trim(),
-    }
+    ...buildBulkTarget(subscriptionForm.scope),
   }
   if (subscriptionForm.operation === 'add') {
     payload.validity_days = subscriptionForm.days
@@ -927,28 +613,13 @@ async function confirmDisableAccess() {
   }
 }
 
-watch(
-		() => filters.q,
-  () => {
-    userRequestGeneration += 1
-    clearSearchTimer()
-    searchTimer = window.setTimeout(() => {
-      void applySearch()
-    }, 300)
-	}
-)
-
 onMounted(() => {
-  void loadUsers()
-  if (filters.view === 'departments') void loadRootDepartments(1)
+  void adminUsersWorkflow.start()
   void loadSubscriptionOptions()
   void recoverLatestSubscriptionJob()
 })
 onBeforeUnmount(() => {
-  userRequestGeneration += 1
-  rootDepartmentRequestGeneration += 1
-  childDepartmentRequestGeneration += 1
-  clearSearchTimer()
+  adminUsersWorkflow.dispose()
   stopSubscriptionJobPolling()
 })
 </script>
@@ -987,21 +658,22 @@ onBeforeUnmount(() => {
       </ElRadioGroup>
 
       <div v-if="filters.view === 'users'" class="order-3 rounded-lg bg-white p-4 shadow">
-        <div data-testid="admin-users-filter-grid" class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_220px_180px_120px_auto]">
+        <div data-testid="admin-users-filter-grid" class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_220px_180px_auto]">
           <label data-testid="admin-users-search-field" class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ t('adminUsers.search') }}
             <ElInput
-              v-model="filters.q"
+              :model-value="filters.q"
               data-testid="admin-users-search"
               class="mt-1 w-full"
               :placeholder="t('adminUsers.searchPlaceholder')"
+              @update:model-value="setSearchQuery(String($event))"
               @keyup.enter="applySearch"
             />
           </label>
 	          <div class="text-xs font-medium uppercase tracking-wide text-gray-500">
 	            <span :id="departmentFilterLabelID" data-testid="admin-users-department-label">{{ t('adminUsers.department') }}</span>
 	            <AdminDepartmentPicker
-	              v-model="filters.department_id"
+	              :model-value="filters.department_id"
 	              :labelled-by="departmentFilterLabelID"
 	              @change="changeDepartmentFilter"
 	            />
@@ -1009,33 +681,17 @@ onBeforeUnmount(() => {
           <div class="text-xs font-medium uppercase tracking-wide text-gray-500">
             <span>{{ t('adminUsers.accessStatus') }}</span>
             <ElSelect
-              v-model="filters.access_status"
+              :model-value="filters.access_status"
               data-testid="admin-users-access-status-filter"
               class="mt-1 w-full"
               :teleported="false"
               :aria-label="t('adminUsers.accessStatus')"
-              @change="changeAccessStatusFilter"
+              @change="changeAccessStatusFilter(String($event))"
             >
               <ElOption data-testid="admin-users-access-status-option-all" value="" :label="t('adminUsers.allAccessStatuses')" />
               <ElOption data-testid="admin-users-access-status-option-configured" value="configured" :label="t('adminUsers.configured')" />
               <ElOption data-testid="admin-users-access-status-option-disabled" value="disabled" :label="t('adminUsers.disabled')" />
               <ElOption data-testid="admin-users-access-status-option-missing-credential" value="missing_credential" :label="t('adminUsers.missingRelayCredential')" />
-            </ElSelect>
-          </div>
-          <div class="text-xs font-medium uppercase tracking-wide text-gray-500">
-            <span>{{ t('adminUsers.pageSize') }}</span>
-            <ElSelect
-              v-model="filters.page_size"
-              data-testid="admin-users-page-size"
-              class="mt-1 w-full"
-              :teleported="false"
-              :aria-label="t('adminUsers.pageSize')"
-              @change="changePageSize"
-            >
-              <ElOption data-testid="admin-users-page-size-option-10" :value="10" label="10" />
-              <ElOption data-testid="admin-users-page-size-option-20" :value="20" label="20" />
-              <ElOption data-testid="admin-users-page-size-option-50" :value="50" label="50" />
-              <ElOption data-testid="admin-users-page-size-option-100" :value="100" label="100" />
             </ElSelect>
           </div>
           <div class="flex items-end">
@@ -1229,29 +885,12 @@ onBeforeUnmount(() => {
       <div v-if="filters.view === 'departments'" class="order-4 rounded-lg bg-white p-5 shadow">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('adminUsers.departments') }}</h2>
-	        <div class="flex items-center gap-2 text-xs text-gray-500">
-	          <span>{{ rootDepartments?.total ?? 0 }} {{ t('adminUsers.totalSuffix') }}</span>
-	          <ElButton
-	            data-testid="admin-users-department-roots-prev"
-	            :disabled="departmentsLoading || !canGoPreviousRootDepartmentPage"
-	            @click="previousRootDepartmentPage"
-	          >
-	            {{ t('adminUsers.prev') }}
-	          </ElButton>
-	          <span>{{ t('adminUsers.page') }} {{ rootDepartments?.page ?? 1 }} / {{ rootDepartmentTotalPages }}</span>
-	          <ElButton
-	            data-testid="admin-users-department-roots-next"
-	            :disabled="departmentsLoading || !canGoNextRootDepartmentPage"
-	            @click="nextRootDepartmentPage"
-	          >
-	            {{ t('adminUsers.next') }}
-	          </ElButton>
-	        </div>
+          <span class="text-xs text-gray-500">{{ rootDepartments?.total ?? 0 }} {{ t('adminUsers.totalSuffix') }}</span>
         </div>
         <ElAlert v-if="departmentsError" class="mt-3" type="error" :closable="false" show-icon :title="departmentsError" />
-        <div v-if="departmentsLoading" class="mt-3 text-sm text-gray-500">{{ t('adminUsers.loading') }}</div>
+        <div v-if="departmentsLoading && !rootDepartments" class="mt-3 text-sm text-gray-500">{{ t('adminUsers.loading') }}</div>
         <div v-else-if="visibleDepartmentRows.length === 0" class="mt-3 text-sm text-gray-400">{{ t('adminUsers.noDepartments') }}</div>
-	        <div v-else class="mt-3 overflow-hidden rounded-md border border-gray-200" role="tree">
+		        <div v-else class="mt-3 overflow-hidden rounded-md border border-gray-200" role="tree">
 	          <div
 	            v-for="visibleRow in visibleDepartmentRows"
 	            :key="visibleRow.department.external_id"
@@ -1297,10 +936,10 @@ onBeforeUnmount(() => {
 	                v-else-if="departmentExpanded(visibleRow.department) && departmentChildrenEmpty(visibleRow.department.external_id)"
 	                :data-testid="`admin-users-department-children-empty-${visibleRow.department.external_id}`"
 	                class="mt-1 text-xs text-gray-400"
-	              >
-	                {{ t('adminUsers.noDepartments') }}
-	              </div>
-	            </div>
+		              >
+		                {{ t('adminUsers.noDepartments') }}
+		              </div>
+		            </div>
             <div class="flex shrink-0 flex-wrap items-center gap-2 text-xs text-gray-600">
               <span class="rounded-full bg-gray-100 px-2 py-0.5">{{ memberCountLabel(visibleRow.department.member_count) }}</span>
               <span class="rounded-full bg-slate-50 px-2 py-0.5 text-slate-700">{{ subtreeMemberCountLabel(visibleRow.department) }}</span>
@@ -1320,42 +959,43 @@ onBeforeUnmount(() => {
 		            @keydown.enter.prevent.stop="loadMoreDepartmentChildren(visibleRow.department.external_id)"
 		            @keydown.space.prevent.stop="loadMoreDepartmentChildren(visibleRow.department.external_id)"
 	          >
-	            {{ t('adminUsers.next') }}
+		            {{ t('teamUsage.loadMoreDepartments') }}
 	          </ElButton>
-            </div>
-	          </div>
-	        </div>
+			          </div>
+			        </div>
+        </div>
+        <div v-if="showRootDepartmentPagination" class="mt-4 flex justify-end border-t border-slate-200 pt-4">
+          <ElPagination
+            data-testid="admin-users-department-pagination"
+            size="small"
+            background
+            :layout="desktopPagination ? 'prev, pager, next' : 'prev, slot, next'"
+            :pager-count="5"
+            :current-page="rootDepartments?.page ?? 1"
+            :page-size="rootDepartments?.page_size ?? 25"
+            :total="rootDepartments?.total ?? 0"
+            :disabled="departmentsLoading"
+            @current-change="changeRootDepartmentPage"
+          >
+            <span v-if="!desktopPagination" class="px-1 text-xs text-gray-500">
+              {{ t('pagination.pageOf', {
+                page: rootDepartments?.page ?? 1,
+                pages: Math.max(1, Math.ceil((rootDepartments?.total ?? 0) / (rootDepartments?.page_size ?? 25))),
+              }) }}
+            </span>
+          </ElPagination>
+        </div>
       </div>
 
       <div v-if="filters.view === 'users'" data-testid="admin-users-list-panel" class="order-4 rounded-lg bg-white p-5 shadow">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('adminUsers.localUsers') }}</h2>
-          <div class="flex items-center gap-2 text-xs text-gray-500">
-            <span>{{ total }} {{ t('adminUsers.totalSuffix') }}</span>
-            <ElButton
-              data-testid="admin-users-prev-page"
-              :disabled="!canGoPrev || loading"
-              @click="previousPage"
-            >
-              {{ t('adminUsers.prev') }}
-            </ElButton>
-            <span>{{ t('adminUsers.page') }} {{ filters.page }} / {{ totalPages }}</span>
-            <ElButton
-              data-testid="admin-users-next-page"
-              :disabled="!canGoNext || loading"
-              @click="nextPage"
-            >
-              {{ t('adminUsers.next') }}
-            </ElButton>
-          </div>
-        </div>
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('adminUsers.localUsers') }}</h2>
 
-	        <div v-if="showMobileUserRows" data-admin-user-list="mobile" class="mt-3 space-y-3">
+	        <div v-if="showMobileUserRows" data-admin-user-list="mobile" class="mt-3 divide-y divide-slate-200 border-y border-slate-200">
 	          <div
 	            v-for="row in rows"
 	            :key="row.id"
 	            data-admin-user-row
-	            class="rounded-lg border border-gray-100 bg-white p-4 shadow-sm"
+	            class="bg-white py-4"
 	          >
             <div class="flex items-start justify-between gap-3">
               <label class="flex min-w-0 items-start gap-3">
@@ -1531,8 +1171,38 @@ onBeforeUnmount(() => {
               </template>
             </ElTableColumn>
           </ElTable>
-        </div>
+	        </div>
 	        <ElEmpty v-if="!error && rows.length === 0" class="mt-3" :description="t('adminUsers.empty')" />
+        <div
+          v-if="showUserPagination"
+          class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4"
+        >
+          <span
+            v-if="desktopPagination"
+            data-testid="admin-users-page-range"
+            class="text-sm text-slate-500"
+          >
+            {{ t('pagination.range', { start: pageStart, end: pageEnd, total }) }}
+          </span>
+          <ElPagination
+            data-testid="admin-users-pagination"
+            class="ml-auto"
+            background
+            :current-page="filters.page"
+            :page-size="filters.page_size"
+            :page-sizes="FULL_PAGE_SIZES"
+            :total="total"
+            :pager-count="5"
+            :disabled="loading"
+            :layout="desktopPagination ? 'sizes, prev, pager, next' : 'prev, slot, next'"
+            @current-change="changePage"
+            @size-change="changePageSize"
+          >
+            <span v-if="!desktopPagination" class="px-2 text-sm text-slate-600">
+              {{ t('pagination.pageOf', { page: filters.page, pages: totalPages }) }}
+            </span>
+          </ElPagination>
+        </div>
       </div>
     </div>
 

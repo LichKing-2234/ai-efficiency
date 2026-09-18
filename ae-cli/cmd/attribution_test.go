@@ -59,6 +59,7 @@ func TestReconcileCodexOTLPConfigPreservesUserManagedExporter(t *testing.T) {
 func TestAttributionEnableFormalProtocolDoesNotClaimV1Baseline(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("GIT_CONFIG_GLOBAL", home+"/.gitconfig")
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

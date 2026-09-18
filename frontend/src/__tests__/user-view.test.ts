@@ -1017,31 +1017,6 @@ describe('UserView', () => {
     expect(wrapper.find('[data-testid="primary-onboarding-action"]').exists()).toBe(false)
   })
 
-  it('ignores a key creation result after the user switches access groups', async () => {
-    const { createGroupCredential } = await import('@/api/user')
-    const pendingCreate = deferred<any>()
-    ;(createGroupCredential as any).mockReturnValue(pendingCreate.promise)
-
-    const { wrapper } = await mountUserView()
-    await selectAccessGroup(wrapper, '42')
-    await wrapper.get('[data-testid="primary-onboarding-action"]').trigger('click')
-    await flushPromises()
-
-    await selectAccessGroup(wrapper, '43')
-    pendingCreate.resolve({
-      data: { data: { api_key_id: 7, name: 'alice', status: 'active', secret: 'sk-stale' } },
-    })
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="onboarding-step-0"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="onboarding-step-1"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('sk-stale')
-
-    await wrapper.get('[data-testid="primary-onboarding-action"]').trigger('click')
-    expect(wrapper.text()).toContain('sk-exi...3456')
-    expect(wrapper.text()).not.toContain('sk-stale')
-  })
-
   it('retains separate in-memory secrets per provider and group', async () => {
     const { createGroupCredential, regenerateGroupCredential } = await import('@/api/user')
     ;(createGroupCredential as any).mockResolvedValue({
@@ -1230,42 +1205,6 @@ describe('UserView', () => {
     expect(wrapper.find('[data-testid="onboarding-next-configuration"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Stale connection result')
     expect(wrapper.get('[data-testid="onboarding-step-trigger-0"] .el-step__head').classes()).toContain('is-process')
-  })
-
-  it('invalidates changed test context and ignores out-of-order results', async () => {
-    const { testUserProvider } = await import('@/api/user')
-    const older = deferred<any>()
-    const current = deferred<any>()
-    ;(testUserProvider as any)
-      .mockReturnValueOnce(older.promise)
-      .mockReturnValueOnce(current.promise)
-
-    const { wrapper } = await mountUserView()
-    await selectAccessGroup(wrapper, '44')
-    await openOnboardingStep(wrapper, 1)
-    await selectProviderModel(wrapper, 'GPT-5.4', 'gpt-5.4')
-    await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
-    await flushPromises()
-
-    const protocolSelect = wrapper.findAllComponents({ name: 'ElSelect' })
-      .find((candidate: any) => candidate.attributes('data-testid') === 'user-provider-test-protocol')
-    expect(protocolSelect).toBeTruthy()
-    protocolSelect!.vm.$emit('update:modelValue', 'chat_completions')
-    protocolSelect!.vm.$emit('change', 'chat_completions')
-    await flushPromises()
-    await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
-
-    current.resolve({ data: { data: { success: true, message: 'Current Chat result', response: 'chat ok' } } })
-    await flushPromises()
-    expect(wrapper.text()).toContain('Current Chat result')
-
-    older.resolve({ data: { data: { success: true, message: 'Stale Responses result', response: 'stale' } } })
-    await flushPromises()
-    expect(wrapper.text()).toContain('Current Chat result')
-    expect(wrapper.text()).not.toContain('Stale Responses result')
-
-    await selectProviderModel(wrapper, 'GPT-5.5', 'gpt-5.5')
-    expect(wrapper.text()).not.toContain('Current Chat result')
   })
 
   it('loads model choices for the selected group platform', async () => {

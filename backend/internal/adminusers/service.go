@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/predicate"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/adminuseraccess"
-	"github.com/ai-efficiency/backend/internal/directorysync"
+	"github.com/ai-efficiency/backend/internal/directoryfacts"
 )
 
 var ErrInvalidAccessStatus = errors.New("invalid admin user access status")
@@ -46,29 +44,46 @@ type Page struct {
 
 type Service struct {
 	client *ent.Client
+	facts  directoryfacts.Reader
 }
 
 type resolvedSource struct {
 	id    int
+	runID int
+	view  directoryfacts.View
 	found bool
 }
 
 func NewService(client *ent.Client) *Service {
-	return &Service{client: client}
+	return &Service{client: client, facts: directoryfacts.New(client)}
 }
 
 func (s *Service) List(ctx context.Context, request ListRequest) (*Page, error) {
 	request = normalizeListRequest(request)
 	filters := normalizeFilters(request.Filters)
-	query, err := s.baseUsersQuery(filters)
-	if err != nil {
-		return nil, err
-	}
 	source, err := s.currentSource(ctx)
 	if err != nil {
 		return nil, err
 	}
-	query = applyDepartmentFilter(query, filters.DepartmentID, source)
+	var snapshot *directoryfacts.Snapshot
+	if source.found {
+		value := source.view.Snapshot()
+		snapshot = &value
+	}
+	selection, err := s.facts.LocalUsers(ctx, snapshot, directoryfacts.LocalUserQuery{
+		Search:       filters.Query,
+		DepartmentID: filters.DepartmentID,
+		AccessStatus: filters.AccessStatus,
+		Page:         request.Page,
+		Limit:        request.PageSize,
+		IncludeTotal: true,
+	})
+	if err != nil {
+		if errors.Is(err, directoryfacts.ErrInvalidLocalUserAccessStatus) {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidAccessStatus, err)
+		}
+		return nil, err
+	}
 
 	page := &Page{
 		Users:               []*ent.User{},
@@ -77,24 +92,12 @@ func (s *Service) List(ctx context.Context, request ListRequest) (*Page, error) 
 		DepartmentsByUserID: map[int]*Department{},
 		OffboardingByUserID: map[int]adminuseraccess.OffboardingFact{},
 	}
-	total, err := query.Clone().Count(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("count admin users: %w", err)
-	}
-	page.Total = total
-	pageCount := total / request.PageSize
-	if total%request.PageSize != 0 {
-		pageCount++
-	}
-	if total == 0 || request.Page-1 >= pageCount {
+	page.Total = selection.Total
+	if len(selection.IDs) == 0 {
 		return page, nil
 	}
-
-	offset := (request.Page - 1) * request.PageSize
-	users, err := query.
+	users, err := s.client.User.Query().Where(entuser.IDIn(selection.IDs...)).
 		Order(ent.Asc(entuser.FieldID)).
-		Limit(request.PageSize).
-		Offset(offset).
 		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list admin users: %w", err)
@@ -115,13 +118,35 @@ func (s *Service) Targets(ctx context.Context, filters Filters, limit int) ([]*e
 	if limit <= 0 {
 		return nil, fmt.Errorf("limit must be positive")
 	}
-	query, err := s.filteredUsersQuery(ctx, normalizeFilters(filters))
+	filters = normalizeFilters(filters)
+	var snapshot *directoryfacts.Snapshot
+	if filters.DepartmentID != "" {
+		source, err := s.currentSource(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if source.found {
+			value := source.view.Snapshot()
+			snapshot = &value
+		}
+	}
+	selection, err := s.facts.LocalUsers(ctx, snapshot, directoryfacts.LocalUserQuery{
+		Search:       filters.Query,
+		DepartmentID: filters.DepartmentID,
+		AccessStatus: filters.AccessStatus,
+		Limit:        limit,
+	})
 	if err != nil {
+		if errors.Is(err, directoryfacts.ErrInvalidLocalUserAccessStatus) {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidAccessStatus, err)
+		}
 		return nil, err
 	}
-	users, err := query.
+	if len(selection.IDs) == 0 {
+		return []*ent.User{}, nil
+	}
+	users, err := s.client.User.Query().Where(entuser.IDIn(selection.IDs...)).
 		Order(ent.Asc(entuser.FieldID)).
-		Limit(limit).
 		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list admin user targets: %w", err)
@@ -129,52 +154,16 @@ func (s *Service) Targets(ctx context.Context, filters Filters, limit int) ([]*e
 	return users, nil
 }
 
-func (s *Service) filteredUsersQuery(ctx context.Context, filters Filters) (*ent.UserQuery, error) {
-	query, err := s.baseUsersQuery(filters)
-	if err != nil {
-		return nil, err
-	}
-	if filters.DepartmentID == "" {
-		return query, nil
-	}
-	source, err := s.currentSource(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return applyDepartmentFilter(query, filters.DepartmentID, source), nil
-}
-
-func (s *Service) baseUsersQuery(filters Filters) (*ent.UserQuery, error) {
-	query := s.client.User.Query()
-	if filters.AccessStatus != "" {
-		var err error
-		query, err = adminuseraccess.ApplyFilter(query, filters.AccessStatus)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrInvalidAccessStatus, err)
-		}
-	}
-	if filters.Query != "" {
-		query = query.Where(searchPredicate(filters.Query))
-	}
-	return query, nil
-}
-
-func applyDepartmentFilter(query *ent.UserQuery, departmentID string, source resolvedSource) *ent.UserQuery {
-	if departmentID == "" {
-		return query
-	}
-	if !source.found {
-		return query.Where(entuser.IDEQ(0))
-	}
-	return query.Where(departmentUserPredicate(source.id, departmentID))
-}
-
 func (s *Service) currentSource(ctx context.Context) (resolvedSource, error) {
-	sourceID, found, err := directorysync.CurrentSourceID(ctx, s.client)
+	view, found, err := s.facts.Current(ctx)
 	if err != nil {
 		return resolvedSource{}, fmt.Errorf("resolve current directory source: %w", err)
 	}
-	return resolvedSource{id: sourceID, found: found}, nil
+	if !found {
+		return resolvedSource{}, nil
+	}
+	snapshot := view.Snapshot()
+	return resolvedSource{id: snapshot.SourceID, runID: snapshot.RunID, view: view, found: true}, nil
 }
 
 func normalizeFilters(filters Filters) Filters {
@@ -196,17 +185,6 @@ func normalizeListRequest(request ListRequest) ListRequest {
 		request.PageSize = 100
 	}
 	return request
-}
-
-func searchPredicate(query string) predicate.User {
-	predicates := []predicate.User{
-		entuser.UsernameContainsFold(query),
-		entuser.EmailContainsFold(query),
-	}
-	if value, err := strconv.Atoi(query); err == nil {
-		predicates = append(predicates, entuser.IDEQ(value), entuser.RelayUserIDEQ(value))
-	}
-	return entuser.Or(predicates...)
 }
 
 func userIDs(users []*ent.User) []int {

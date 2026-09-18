@@ -42,6 +42,9 @@ jobs:
       - name: Test backend
         working-directory: backend
         run: go test ./...
+      - name: Race test Relay Planning delivery safety
+        working-directory: backend
+        run: go test -race ./internal/relayplanning -run '^TestPhase2' -count=1
 
   ae-cli:
     runs-on: ubuntu-latest
@@ -67,7 +70,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '20.20.2'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
       - name: Install frontend dependencies
@@ -84,6 +87,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Validate documentation path policy
+        run: bash test/documentation-path-policy-test.sh
       - name: Validate release workflow contracts
         run: bash test/release-workflow-contract-test.sh
       - name: Validate PowerShell installer

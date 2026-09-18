@@ -31,7 +31,7 @@ ai-efficiency/
 ├── frontend/   # Vue frontend
 ├── ae-cli/     # CLI runtime and commands
 ├── deploy/     # Deployment assets
-├── docs/       # Architecture and specs
+├── docs/       # Architecture, current contracts, and history
 ├── AGENTS.md   # Agent working rules
 └── CLAUDE.md   # Lightweight navigation notes
 ```
@@ -39,7 +39,8 @@ ai-efficiency/
 ## Key Documents
 
 - Architecture overview: [`docs/architecture.md`](docs/architecture.md)
-- Current topic specs: `docs/superpowers/specs/`
+- Current behavior contracts: [`docs/contracts/`](docs/contracts/README.md)
+- Historical rationale and evidence: [`docs/history/`](docs/history/README.md)
 - CLI install and usage: [`ae-cli/README.md`](ae-cli/README.md)
 - Deployment guide: [`deploy/README.md`](deploy/README.md)
 - License: [`LICENSE`](LICENSE)
@@ -47,12 +48,16 @@ ai-efficiency/
 
 ## Source Of Truth
 
-When code, specs, and historical documents disagree, prefer:
+When code, contracts, and architecture documents disagree, prefer:
 
 1. Current code
-2. The newest relevant spec in `docs/superpowers/specs/`
+2. The relevant current contract in [`docs/contracts/`](docs/contracts/README.md)
 3. [`docs/architecture.md`](docs/architecture.md)
-4. Historical baseline documents
+
+GitHub Issues own unimplemented target state and work status. ADRs preserve
+independently useful architectural rationale, tracked root `CONTEXT.md` owns
+domain vocabulary when present, and `docs/history/` is never current behavior
+or backlog.
 
 ## Development
 
@@ -79,7 +84,7 @@ This project is open-sourced under the MIT License. See [`LICENSE`](LICENSE).
 
 - This README is the primary English entry point.
 - For current runtime boundaries and module responsibilities, read [`docs/architecture.md`](docs/architecture.md).
-- For feature-level behavior, prefer the latest spec over historical plans.
+- For feature-level current behavior, read the relevant contract; GitHub Issues own unimplemented target state.
 
 ## Star History
 

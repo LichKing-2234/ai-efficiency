@@ -131,6 +131,8 @@ import { createQuotaResetRequest, getQuotaResetOptions } from '@/api/quotaReset'
 import { getUserUsageDashboard, getUserUsageGroupPoolUsage, getUserUsageGroupQuotas } from '@/api/userUsage'
 import { getTeamUsageSubjectDashboard, updateTeamUsageRateMultiplier } from '@/api/teamUsage'
 import { useI18n } from '@/i18n'
+import { readUsageWindowPreference, writeUsageWindowPreference } from '@/utils/usageWindowPreference'
+import type { UsageWindow } from '@/utils/usageWindowPreference'
 import type {
   QuotaResetOptionGroup,
   SubjectSubscriptionGroup,
@@ -150,8 +152,6 @@ const SelectedSubjectSubscriptionRows = defineAsyncComponent(() => import('@/com
 const loadQuotaResetRequestModal = () => import('@/components/quota-reset/QuotaResetRequestModal.vue')
 const QuotaResetRequestModal = defineAsyncComponent(loadQuotaResetRequestModal)
 
-type RangeOption = 'today' | '7d' | '30d'
-
 const props = withDefaults(defineProps<{
   embedded?: boolean
   homeMode?: boolean
@@ -164,8 +164,9 @@ const props = withDefaults(defineProps<{
   initialSnapshot: null,
 })
 
-const selectedRange = ref<RangeOption>('30d')
-const snapshotRange = ref<RangeOption>('30d')
+const initialRange = readUsageWindowPreference()
+const selectedRange = ref<UsageWindow>(initialRange)
+const snapshotRange = ref<UsageWindow>(initialRange)
 const snapshot = ref<UserUsageDashboardSnapshot | null>(props.initialSnapshot)
 const personalQuotas = ref<UserUsageGroupQuotaState | null>(props.initialSnapshot?.group_quotas ?? null)
 const personalPoolUsage = ref<UserUsageGroupPoolUsageState | null>(null)
@@ -206,7 +207,7 @@ const dashboardSubtitle = computed(() => {
 const selectedMemberSubject = computed(() => props.memberRoute ? memberRouteSubject.value : null)
 const canRequestQuotaReset = computed(() => !props.memberRoute && (currentGroupQuotas.value?.groups?.length ?? 0) > 0)
 
-function rangeLabel(range: RangeOption) {
+function rangeLabel(range: UsageWindow) {
   if (range === 'today') return t('usageDashboard.today')
   if (range === '7d') return t('usageDashboard.sevenDays')
   return t('usageDashboard.thirtyDays')
@@ -219,7 +220,7 @@ function formatDate(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
-function buildParams(range: RangeOption): UserUsageDashboardParams {
+function buildParams(range: UsageWindow): UserUsageDashboardParams {
   const end = new Date()
   const start = new Date(end)
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -258,7 +259,7 @@ function loadDashboard(): Promise<void> {
     : loadPersonalDashboard(generation, requestedRange)
 }
 
-async function loadMemberDashboard(generation: number, requestedRange: RangeOption) {
+async function loadMemberDashboard(generation: number, requestedRange: UsageWindow) {
   usageLoading.value = true
   quotaLoading.value = false
   usageErrorMessage.value = ''
@@ -284,7 +285,7 @@ async function loadMemberDashboard(generation: number, requestedRange: RangeOpti
   }
 }
 
-async function loadPersonalDashboard(generation: number, requestedRange: RangeOption) {
+async function loadPersonalDashboard(generation: number, requestedRange: UsageWindow) {
   const params = buildParams(requestedRange)
   const nextUsageController = new AbortController()
   const nextQuotaController = new AbortController()
@@ -348,8 +349,9 @@ async function loadPersonalDashboard(generation: number, requestedRange: RangeOp
   await Promise.allSettled([usageTask, quotaTask, poolTask])
 }
 
-function selectRange(range: RangeOption) {
+function selectRange(range: UsageWindow) {
   selectedRange.value = range
+  writeUsageWindowPreference(range)
   void loadDashboard()
 }
 

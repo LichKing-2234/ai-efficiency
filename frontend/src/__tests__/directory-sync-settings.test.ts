@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElPagination } from 'element-plus'
 import DirectorySyncSettings from '@/components/settings/DirectorySyncSettings.vue'
 import { setLocale } from '@/i18n'
 import { useWorkItemsStore } from '@/stores/workItems'
@@ -39,6 +39,11 @@ function deferred<T>() {
     reject = promiseReject
   })
   return { promise, resolve, reject }
+}
+
+function runPageButton(wrapper: ReturnType<typeof mount>, direction: 'prev' | 'next') {
+  const label = direction === 'prev' ? 'Go to previous page' : 'Go to next page'
+  return wrapper.get(`[data-testid="directory-run-pagination"] button[aria-label="${label}"]`)
 }
 
 function runSummary(overrides: Record<string, unknown> = {}) {
@@ -417,8 +422,13 @@ auth:
     expect(wrapper.get('[data-testid="directory-run-row-219"]').text()).toContain('#219')
     expect(wrapper.text()).not.toContain('#200')
     expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 1 of 3')
+    const pagination = wrapper.getComponent(ElPagination)
+    expect(pagination.props('currentPage')).toBe(1)
+    expect(pagination.props('pageSize')).toBe(20)
+    expect(pagination.props('total')).toBe(41)
+    expect(pagination.props('layout')).toBe('prev, pager, next')
 
-    await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+    await runPageButton(wrapper, 'next').trigger('click')
     await flushPromises()
 
     expect(api.listDirectoryRuns).toHaveBeenNthCalledWith(2, 1, { limit: 20, offset: 20 })
@@ -426,7 +436,7 @@ auth:
     expect(wrapper.text()).not.toContain('#220')
     expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 2 of 3')
 
-    await wrapper.get('[data-testid="directory-run-prev"]').trigger('click')
+    await runPageButton(wrapper, 'prev').trigger('click')
     await flushPromises()
 
     expect(api.listDirectoryRuns).toHaveBeenNthCalledWith(3, 1, { limit: 20, offset: 0 })
@@ -569,13 +579,13 @@ auth:
         .mockResolvedValueOnce(apiResponse(pageOne))
     })
 
-    await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+    await runPageButton(wrapper, 'next').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('#240')
 
-    await wrapper.get('[data-testid="directory-run-prev"]').trigger('click')
-    expect(wrapper.get('[data-testid="directory-run-next"]').attributes('disabled')).toBeDefined()
-    await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+    await runPageButton(wrapper, 'prev').trigger('click')
+    expect(runPageButton(wrapper, 'next').attributes('disabled')).toBeDefined()
+    await runPageButton(wrapper, 'next').trigger('click')
     await flushPromises()
     expect(api.listDirectoryRuns).toHaveBeenCalledTimes(3)
 
@@ -585,7 +595,7 @@ auth:
     expect(wrapper.text()).toContain('#259')
     expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 1 of 3')
 
-    await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+    await runPageButton(wrapper, 'next').trigger('click')
     await flushPromises()
 
     expect(api.listDirectoryRuns).toHaveBeenNthCalledWith(4, 1, { limit: 20, offset: 20 })
@@ -820,7 +830,7 @@ auth:
     })
 
     try {
-      await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+      await runPageButton(wrapper, 'next').trigger('click')
       expect(api.listDirectoryRuns.mock.calls.map((call: any[]) => call[1].offset)).toEqual([0, 20])
 
       await vi.runOnlyPendingTimersAsync()
@@ -887,7 +897,7 @@ auth:
     workItemsApi.getWorkItemCounts.mockReset().mockReturnValueOnce(refreshCounts.promise)
 
     try {
-      await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+      await runPageButton(wrapper, 'next').trigger('click')
       await flushPromises()
       await wrapper.get(`[data-testid="directory-run-row-${terminalB.id}"]`).trigger('click')
       await flushPromises()
@@ -935,7 +945,7 @@ auth:
       })
     })
 
-    const next = wrapper.get('[data-testid="directory-run-next"]')
+    const next = runPageButton(wrapper, 'next')
     await next.trigger('click')
     expect(next.attributes('disabled')).toBeDefined()
     await next.trigger('click')
@@ -946,12 +956,12 @@ auth:
 
     expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 1 of 4')
     expect(wrapper.find(`[data-testid="directory-run-row-${pageZeroRun.id}"]`).exists()).toBe(true)
-    expect(wrapper.get('[data-testid="directory-run-prev"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('[data-testid="directory-run-next"]').attributes('disabled')).toBeUndefined()
+    expect(runPageButton(wrapper, 'prev').attributes('disabled')).toBeDefined()
+    expect(runPageButton(wrapper, 'next').attributes('disabled')).toBeUndefined()
 
-    await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+    await wrapper.get('[data-testid="directory-run-history-retry"]').trigger('click')
     expect(api.listDirectoryRuns).toHaveBeenLastCalledWith(1, { limit: 20, offset: 20 })
-    expect(wrapper.get('[data-testid="directory-run-next"]').attributes('disabled')).toBeDefined()
+    expect(runPageButton(wrapper, 'next').attributes('disabled')).toBeDefined()
 
     retryPageOne.resolve(apiResponse(runPage([pageOneRun], { total: 61, page: 1 })))
     await flushPromises()
@@ -1000,10 +1010,10 @@ auth:
     try {
       const actionSelector = action === 'preview' ? '[data-testid="directory-preview"]' : '[data-testid="directory-run-now"]'
       await wrapper.get(actionSelector).trigger('click')
-      await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+      await runPageButton(wrapper, 'next').trigger('click')
 
       expect(api.listDirectoryRuns).toHaveBeenCalledTimes(2)
-      expect(wrapper.get('[data-testid="directory-run-next"]').attributes('disabled')).toBeDefined()
+      expect(runPageButton(wrapper, 'next').attributes('disabled')).toBeDefined()
 
       actionResponse.resolve(apiResponse(createdRun))
       await flushPromises()
@@ -1082,7 +1092,7 @@ auth:
     try {
       const actionSelector = action === 'preview' ? '[data-testid="directory-preview"]' : '[data-testid="directory-run-now"]'
       await wrapper.get(actionSelector).trigger('click')
-      await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+      await runPageButton(wrapper, 'next').trigger('click')
 
       expect(api.listDirectoryRuns).toHaveBeenCalledTimes(2)
 
@@ -1266,7 +1276,7 @@ auth:
     })
 
     try {
-      await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+      await runPageButton(wrapper, 'next').trigger('click')
       await flushPromises()
 
       expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 2 of 3')
@@ -1335,10 +1345,10 @@ auth:
 
     try {
       const actionSelector = action === 'preview' ? '[data-testid="directory-preview"]' : '[data-testid="directory-run-now"]'
-      await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+      await runPageButton(wrapper, 'next').trigger('click')
 
       expect(api.listDirectoryRuns).toHaveBeenCalledTimes(2)
-      expect(wrapper.get('[data-testid="directory-run-next"]').attributes('disabled')).toBeDefined()
+      expect(runPageButton(wrapper, 'next').attributes('disabled')).toBeDefined()
 
       await wrapper.get(actionSelector).trigger('click')
       await flushPromises()
@@ -1346,7 +1356,7 @@ auth:
       expect(api.getDirectoryRun).toHaveBeenCalledTimes(1)
       expect(api.getDirectoryRun).toHaveBeenCalledWith(newerRun.id)
       expect(vi.getTimerCount()).toBe(1)
-      expect(wrapper.get('[data-testid="directory-run-next"]').attributes('disabled')).toBeUndefined()
+      expect(runPageButton(wrapper, 'next').attributes('disabled')).toBeUndefined()
 
       staleOrdinaryPage.resolve(apiResponse(runPage([stalePageRun], { total: 1, page: 1 })))
       await flushPromises()
@@ -1355,7 +1365,7 @@ auth:
       expect(wrapper.find(`[data-testid="directory-run-row-${initialRun.id}"]`).exists()).toBe(true)
       expect(wrapper.find(`[data-testid="directory-run-row-${stalePageRun.id}"]`).exists()).toBe(false)
       expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 1 of 3')
-      expect(wrapper.get('[data-testid="directory-run-next"]').attributes('disabled')).toBeUndefined()
+      expect(runPageButton(wrapper, 'next').attributes('disabled')).toBeUndefined()
 
       await vi.runOnlyPendingTimersAsync()
       await flushPromises()
@@ -1427,7 +1437,7 @@ auth:
       expect(wrapper.find(`[data-testid="directory-run-row-${initialRun.id}"]`).exists()).toBe(true)
       expect(wrapper.find(`[data-testid="directory-run-row-${staleRecoveryRun.id}"]`).exists()).toBe(false)
       expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 1 of 3')
-      expect(wrapper.get('[data-testid="directory-run-next"]').attributes('disabled')).toBeUndefined()
+      expect(runPageButton(wrapper, 'next').attributes('disabled')).toBeUndefined()
 
       await vi.runOnlyPendingTimersAsync()
       await flushPromises()
@@ -1510,8 +1520,8 @@ auth:
       await vi.runOnlyPendingTimersAsync()
       expect(api.getDirectoryRun).toHaveBeenCalledWith(activeB.id)
 
-      await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
-      expect(wrapper.get('[data-testid="directory-run-next"]').attributes('disabled')).toBeDefined()
+      await runPageButton(wrapper, 'next').trigger('click')
+      expect(runPageButton(wrapper, 'next').attributes('disabled')).toBeDefined()
 
       if (outcome === 'success') {
         actionResponse.resolve(apiResponse(runSummary({
@@ -1808,7 +1818,7 @@ auth:
     })
 
     try {
-      await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+      await runPageButton(wrapper, 'next').trigger('click')
       await flushPromises()
       await vi.runOnlyPendingTimersAsync()
       await flushPromises()

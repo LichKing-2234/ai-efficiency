@@ -72,6 +72,18 @@ type QuotaResetRequest func(*sql.Selector)
 // QuotaResetRequestEvent is the predicate function for quotaresetrequestevent builders.
 type QuotaResetRequestEvent func(*sql.Selector)
 
+// RelationshipOperation is the predicate function for relationshipoperation builders.
+type RelationshipOperation func(*sql.Selector)
+
+// RelationshipOperationAttempt is the predicate function for relationshipoperationattempt builders.
+type RelationshipOperationAttempt func(*sql.Selector)
+
+// RelationshipOperationMapping is the predicate function for relationshipoperationmapping builders.
+type RelationshipOperationMapping func(*sql.Selector)
+
+// RelationshipOperationStep is the predicate function for relationshipoperationstep builders.
+type RelationshipOperationStep func(*sql.Selector)
+
 // RelayGroupMapping is the predicate function for relaygroupmapping builders.
 type RelayGroupMapping func(*sql.Selector)
 

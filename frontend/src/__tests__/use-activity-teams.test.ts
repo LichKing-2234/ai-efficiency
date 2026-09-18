@@ -50,4 +50,36 @@ describe('useActivityTeams', () => {
     expect(api.getTeamUsageOrganization).toHaveBeenNthCalledWith(2, expect.objectContaining({ parent_department_external_id: 'engineering' }))
     wrapper.unmount()
   })
+
+  it('retries the failed root department cursor without discarding loaded teams', async () => {
+    const api = await import('@/api/teamUsage')
+    vi.mocked(api.getTeamUsageOrganization)
+      .mockResolvedValueOnce({
+        data: { data: { departments: [department('engineering', 'Engineering')], members: [], next_department_cursor: 'root-page-2' } },
+      } as any)
+      .mockRejectedValueOnce(new Error('synthetic root page failure'))
+      .mockResolvedValueOnce({
+        data: { data: { departments: [department('product', 'Product')], members: [] } },
+      } as any)
+
+    let activityTeams!: ReturnType<typeof useActivityTeams>
+    const wrapper = mount(defineComponent({
+      setup() {
+        activityTeams = useActivityTeams()
+        return () => null
+      },
+    }))
+    await flushPromises()
+
+    activityTeams.loadMoreDepartments(null)
+    await flushPromises()
+    expect(activityTeams.rootBranch.value?.departments.map((team) => team.department_external_id)).toEqual(['engineering'])
+    expect(activityTeams.rootBranch.value?.error).toBe(true)
+
+    activityTeams.retryBranch(null)
+    await flushPromises()
+    expect(api.getTeamUsageOrganization).toHaveBeenNthCalledWith(3, expect.objectContaining({ department_cursor: 'root-page-2' }))
+    expect(activityTeams.rootBranch.value?.departments.map((team) => team.department_external_id)).toEqual(['engineering', 'product'])
+    wrapper.unmount()
+  })
 })

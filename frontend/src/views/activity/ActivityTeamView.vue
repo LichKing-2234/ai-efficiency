@@ -2,7 +2,7 @@
 import { RouterLink, useRoute } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import ActivityAnalytics from '@/components/activity/ActivityAnalytics.vue'
-import CursorPager from '@/components/activity/CursorPager.vue'
+import CursorPager from '@/components/CursorPager.vue'
 import { useActivityTeam } from '@/composables/useActivityTeam'
 import { useI18n } from '@/i18n'
 import { activityV2Text } from '@/components/activity/activityV2Text'
@@ -78,6 +78,7 @@ function memberKey(userID: number, directoryID?: string) {
             :has-previous="memberPageIndex > 0"
             :has-next="Boolean(team.members.next_cursor)"
             :loading="loading || memberLoading"
+            :loading-label="t('settings.loading')"
             :previous-label="t('activity.previousPage')"
             :next-label="t('activity.nextPage')"
             test-i-d-prefix="activity-team-members"

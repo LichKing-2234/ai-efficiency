@@ -22,8 +22,8 @@ function department(id: string, name: string, parent?: string, memberCount = 5, 
   }
 }
 
-function organizationPage(departments: ReturnType<typeof department>[]) {
-  return { data: { data: { departments, members: [] } } } as any
+function organizationPage(departments: ReturnType<typeof department>[], nextDepartmentCursor?: string) {
+  return { data: { data: { departments, members: [], next_department_cursor: nextDepartmentCursor } } } as any
 }
 
 async function mountView() {
@@ -108,5 +108,50 @@ describe('ActivityTeamsView', () => {
     expect(wrapper.get('[data-testid="activity-team-team-alpha"]').attributes('href')).toBe('/activity/teams/team-alpha')
     expect(wrapper.get('[data-testid="activity-team-team-beta"]').attributes('href')).toBe('/activity/teams/team-beta')
     expect(api.getTeamUsageOrganization).toHaveBeenNthCalledWith(2, expect.objectContaining({ parent_department_external_id: 'engineering' }))
+  })
+
+  it('keeps root teams visible and retries a failed incremental page in place', async () => {
+    const api = await import('@/api/teamUsage')
+    vi.mocked(api.getTeamUsageOrganization)
+      .mockResolvedValueOnce(organizationPage([department('engineering', 'Engineering')], 'root-page-2'))
+      .mockRejectedValueOnce(new Error('synthetic root page failure'))
+      .mockResolvedValueOnce(organizationPage([department('product', 'Product')]))
+
+    const { wrapper } = await mountView()
+    await wrapper.get('[data-testid="activity-teams-more-root"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Engineering')
+    expect(wrapper.get('[data-testid="activity-teams-error-root"]').text()).toContain('Teams are temporarily unavailable.')
+    await wrapper.get('[data-testid="activity-teams-retry-root"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Engineering')
+    expect(wrapper.text()).toContain('Product')
+    expect(api.getTeamUsageOrganization).toHaveBeenNthCalledWith(3, expect.objectContaining({ department_cursor: 'root-page-2' }))
+  })
+
+  it('keeps child teams visible and retries a failed branch page in place', async () => {
+    const api = await import('@/api/teamUsage')
+    vi.mocked(api.getTeamUsageOrganization)
+      .mockResolvedValueOnce(organizationPage([department('engineering', 'Engineering', undefined, 13, true)]))
+      .mockResolvedValueOnce(organizationPage([department('team-alpha', 'Team Alpha', 'engineering')], 'engineering-page-2'))
+      .mockRejectedValueOnce(new Error('synthetic branch page failure'))
+      .mockResolvedValueOnce(organizationPage([department('team-beta', 'Team Beta', 'engineering')]))
+
+    const { wrapper } = await mountView()
+    await wrapper.get('[data-testid="activity-team-toggle-engineering"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="activity-teams-more-engineering"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Team Alpha')
+    expect(wrapper.get('[data-testid="activity-teams-error-engineering"]').text()).toContain('Teams are temporarily unavailable.')
+    await wrapper.get('[data-testid="activity-teams-retry-engineering"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Team Alpha')
+    expect(wrapper.text()).toContain('Team Beta')
+    expect(api.getTeamUsageOrganization).toHaveBeenNthCalledWith(4, expect.objectContaining({ department_cursor: 'engineering-page-2' }))
   })
 })

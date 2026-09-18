@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/ai-efficiency/ae-cli/internal/hooks"
 )
 
 func initRepoWithCommitForCmdTests(t *testing.T) string {
@@ -25,6 +27,36 @@ func initRepoWithCommitForCmdTests(t *testing.T) string {
 	runGit(t, dir, "add", ".")
 	runGit(t, dir, "commit", "-m", "init")
 	return dir
+}
+
+func TestCmdGitFixtureDoesNotRunInheritedGlobalHook(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GIT_CONFIG_GLOBAL", home+"/.gitconfig")
+	capture := home + "/unexpected-post-commit"
+	t.Setenv("AE_TEST_GLOBAL_HOOK_CAPTURE", capture)
+	fakeCLI := home + "/ae-cli"
+	if err := os.WriteFile(fakeCLI, []byte("#!/bin/sh\n: >\"$AE_TEST_GLOBAL_HOOK_CAPTURE\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AE_CLI_BIN", fakeCLI)
+	hooksDir := home + "/global-hooks"
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(hooksDir+"/post-commit", []byte(hooks.RenderManagedHookScript("post-commit", "fixture-isolation")), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, home, "config", "--global", "core.hooksPath", hooksDir)
+
+	initRepoWithCommitForCmdTests(t)
+
+	if _, err := os.Stat(capture); !os.IsNotExist(err) {
+		t.Fatalf("command fixture ran inherited global hook: %v", err)
+	}
+	if _, err := os.Stat(home + "/.ae-cli/state"); !os.IsNotExist(err) {
+		t.Fatalf("command fixture wrote outer AE state: %v", err)
+	}
 }
 
 func runGit(t *testing.T, dir string, args ...string) {

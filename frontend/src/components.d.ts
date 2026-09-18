@@ -22,7 +22,7 @@ declare module 'vue' {
     AppSidebar: typeof import('./components/AppSidebar.vue')['default']
     AuthShell: typeof import('./components/AuthShell.vue')['default']
     CodePlatformSettings: typeof import('./components/settings/CodePlatformSettings.vue')['default']
-    CursorPager: typeof import('./components/activity/CursorPager.vue')['default']
+    CursorPager: typeof import('./components/CursorPager.vue')['default']
     DepartmentTreeToggle: typeof import('./components/DepartmentTreeToggle.vue')['default']
     DeploymentRuntimeSettings: typeof import('./components/settings/DeploymentRuntimeSettings.vue')['default']
     DirectorySyncSettings: typeof import('./components/settings/DirectorySyncSettings.vue')['default']
@@ -88,5 +88,8 @@ declare module 'vue' {
     UsageTrendChart: typeof import('./components/user/usage/UsageTrendChart.vue')['default']
     UserUsageDashboard: typeof import('./components/user/usage/UserUsageDashboard.vue')['default']
     UserUsageSubjectSelector: typeof import('./components/user/usage/UserUsageSubjectSelector.vue')['default']
+  }
+  export interface GlobalDirectives {
+    vLoading: typeof import('element-plus/es')['ElLoadingDirective']
   }
 }

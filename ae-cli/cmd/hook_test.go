@@ -96,7 +96,7 @@ func TestHookPostCommitCommandUsesBoundedContextAndPersistsV2Trigger(t *testing.
 	}
 }
 
-func TestHookBackgroundSyncRunsWithoutHookTimeout(t *testing.T) {
+func TestHookBackgroundSyncUsesBoundedDetachedOwner(t *testing.T) {
 	repo := initRepoWithCommitForCmdTests(t)
 
 	home := t.TempDir()
@@ -104,16 +104,16 @@ func TestHookBackgroundSyncRunsWithoutHookTimeout(t *testing.T) {
 	writeTestToken(t, home, "user:123")
 	writePositiveEligibility(t, home, "github.com/acme/repo", 123)
 
-	origRun := runBackgroundSyncTask
-	var ctxErr error
-	runBackgroundSyncTask = func(ctx context.Context, execCtx hooks.ExecutionContext, uploader hooks.Uploader) error {
-		ctxErr = ctx.Err()
+	origRun := runDetachedBackgroundSyncTask
+	var called bool
+	runDetachedBackgroundSyncTask = func(execCtx hooks.ExecutionContext, uploader hooks.Uploader) error {
+		called = true
 		if execCtx.RepoConfigID != 123 {
 			t.Fatalf("repo_config_id = %d, want 123", execCtx.RepoConfigID)
 		}
 		return nil
 	}
-	t.Cleanup(func() { runBackgroundSyncTask = origRun })
+	t.Cleanup(func() { runDetachedBackgroundSyncTask = origRun })
 
 	wd, err := os.Getwd()
 	if err != nil {
@@ -127,8 +127,8 @@ func TestHookBackgroundSyncRunsWithoutHookTimeout(t *testing.T) {
 	if err := hookBackgroundSyncCmd.RunE(hookBackgroundSyncCmd, nil); err != nil {
 		t.Fatalf("hook background-sync RunE: %v", err)
 	}
-	if ctxErr != nil {
-		t.Fatalf("background sync context err = %v, want nil", ctxErr)
+	if !called {
+		t.Fatal("bounded detached owner was not called")
 	}
 }
 

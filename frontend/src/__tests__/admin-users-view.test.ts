@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
-import { ElDialog, ElMessage } from 'element-plus'
+import { ElDialog, ElMessage, ElPagination } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import AdminUsersView from '@/views/admin/AdminUsersView.vue'
 import { setLocale } from '@/i18n'
@@ -106,6 +106,21 @@ async function selectElementRadio(wrapper: VueWrapper, radioTestID: string) {
     : control.get('input[type="radio"]')
   await input.setValue()
   await flushPromises()
+}
+
+async function changeAdminUsersPageSize(wrapper: VueWrapper, pageSize: number) {
+  wrapper.getComponent(ElPagination).vm.$emit('size-change', pageSize)
+  await flushPromises()
+}
+
+async function clickAdminUsersPage(wrapper: VueWrapper, direction: 'prev' | 'next') {
+  await paginationButton(wrapper, 'admin-users-pagination', direction).trigger('click')
+  await flushPromises()
+}
+
+function paginationButton(wrapper: VueWrapper, testID: string, direction: 'prev' | 'next') {
+  const label = direction === 'prev' ? 'Go to previous page' : 'Go to next page'
+  return wrapper.get(`[data-testid="${testID}"] button[aria-label="${label}"]`)
 }
 
 function userRow(id: number, username: string) {
@@ -500,8 +515,7 @@ describe('AdminUsersView', () => {
     expect(wrapper.get('[data-admin-user-list="desktop"]').find('.el-table').exists()).toBe(true)
     expect(wrapper.find('.el-tag').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('encrypted-relay-password-ciphertext')
-    expect(wrapper.text()).toContain('120 total')
-    expect(wrapper.text()).toContain('Page 1 / 6')
+    expect(wrapper.get('[data-testid="admin-users-page-range"]').text()).toBe('Showing 1-20 of 120')
 	  })
 
   it('puts the user list before collapsed subscription tools in the visual workflow', async () => {
@@ -594,116 +608,11 @@ describe('AdminUsersView', () => {
     expect(listAdminUserDepartmentChildren).not.toHaveBeenCalled()
   })
 
-  it('keeps the newer user response when two list requests resolve out of order', async () => {
-    const older = deferred<any>()
-    const newer = deferred<any>()
-    let requestCount = 0
-    const { wrapper, router, listAdminUsers } = await mountAdminUsersView(
-      '/admin/users',
-      () => requestCount++ === 0 ? older.promise : newer.promise,
-    )
-    const replace = vi.spyOn(router, 'replace')
-
-    expect(wrapper.get('[data-testid="admin-users-access-status-filter"]').classes()).toContain('el-select')
-    await selectElementOption(wrapper, 'admin-users-access-status-filter', 'admin-users-access-status-option-disabled')
-    expect(listAdminUsers).toHaveBeenCalledTimes(2)
-
-    newer.resolve({ items: [userRow(2, 'newer')], total: 1, page: 1, page_size: 20 })
-    await flushPromises()
-    expect(wrapper.text()).toContain('newer@example.com')
-    expect(replace).toHaveBeenCalledTimes(1)
-
-    older.resolve({ items: [userRow(1, 'older')], total: 999, page: 3, page_size: 50 })
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('newer@example.com')
-    expect(wrapper.text()).not.toContain('older@example.com')
-    expect(wrapper.text()).toContain('1 total')
-    expect(wrapper.text()).toContain('Page 1 / 1')
-    expect(router.currentRoute.value.query.page).toBeUndefined()
-    expect(router.currentRoute.value.query.page_size).toBeUndefined()
-    expect(replace).toHaveBeenCalledTimes(1)
-  })
-
-  it('keeps user loading active when an older request finishes before the latest request', async () => {
-    const older = deferred<any>()
-    const newer = deferred<any>()
-    let requestCount = 0
-    const { wrapper } = await mountAdminUsersView(
-      '/admin/users',
-      () => requestCount++ === 0 ? older.promise : newer.promise,
-    )
-
-    await selectElementOption(wrapper, 'admin-users-access-status-filter', 'admin-users-access-status-option-disabled')
-    older.resolve({ items: [userRow(1, 'older')], total: 1, page: 1, page_size: 20 })
-    await flushPromises()
-
-    const refresh = wrapper.get('[data-testid="admin-users-refresh"]')
-    expect(refresh.text()).toContain('Loading...')
-    expect((refresh.element as HTMLButtonElement).disabled).toBe(true)
-    expect(wrapper.text()).not.toContain('older@example.com')
-
-    newer.resolve({ items: [userRow(2, 'newer')], total: 1, page: 1, page_size: 20 })
-    await flushPromises()
-    expect(refresh.text()).toContain('Refresh')
-    expect(wrapper.text()).toContain('newer@example.com')
-  })
-
-  it('invalidates a pending user request as soon as a debounced query changes', async () => {
-    vi.useFakeTimers()
-    const older = deferred<any>()
-    const newer = deferred<any>()
-    let requestCount = 0
-    const { wrapper, router, listAdminUsers } = await mountAdminUsersView(
-      '/admin/users',
-      () => requestCount++ === 0 ? older.promise : newer.promise,
-    )
-    const replace = vi.spyOn(router, 'replace')
-
-    await wrapper.get('[data-testid="admin-users-search"]').setValue('new query')
-    expect(listAdminUsers).toHaveBeenCalledTimes(1)
-
-    older.resolve({ items: [userRow(1, 'older')], total: 999, page: 4, page_size: 50 })
-    await flushPromises()
-
-    const refresh = wrapper.get('[data-testid="admin-users-refresh"]')
-    expect(wrapper.text()).not.toContain('older@example.com')
-    expect(refresh.text()).toContain('Loading...')
-    expect((refresh.element as HTMLButtonElement).disabled).toBe(true)
-    expect(replace).not.toHaveBeenCalled()
-
-    await vi.advanceTimersByTimeAsync(300)
-    expect(listAdminUsers).toHaveBeenCalledTimes(2)
-    expect((listAdminUsers as any).mock.calls.at(-1)[0]).toEqual({ q: 'new query', page: 1, page_size: 20 })
-
-    newer.resolve({ items: [userRow(2, 'newer')], total: 1, page: 1, page_size: 20 })
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('newer@example.com')
-    expect(refresh.text()).toContain('Refresh')
-    expect((refresh.element as HTMLButtonElement).disabled).toBe(false)
-    expect(replace).toHaveBeenCalledTimes(1)
-    expect(router.currentRoute.value.query.q).toBe('new query')
-  })
-
-  it('invalidates a pending user request on unmount before it can replace the route query', async () => {
-    const pending = deferred<any>()
-    const { wrapper, router } = await mountAdminUsersView('/admin/users', () => pending.promise)
-    const replace = vi.spyOn(router, 'replace')
-
-    wrapper.unmount()
-    pending.resolve({ items: [userRow(1, 'late')], total: 1, page: 4, page_size: 50 })
-    await flushPromises()
-
-    expect(replace).not.toHaveBeenCalled()
-  })
-
   it('filters users by access status and keeps the filter in the URL', async () => {
     const { wrapper, router, listAdminUsers } = await mountAdminUsersView()
 
     const auditedSelects = [
       ['admin-users-access-status-filter', 'Access status'],
-      ['admin-users-page-size', 'Page Size'],
       ['subscription-scope', 'Scope'],
       ['subscription-operation', 'Operation'],
       ['subscription-provider', 'Select provider'],
@@ -794,202 +703,11 @@ describe('AdminUsersView', () => {
       page_size: 20,
     })
     expect(listAdminUserDepartmentChildren).toHaveBeenCalledTimes(1)
-  })
 
-  it('keeps a failed root request retryable and deduplicates department-tab activation while pending', async () => {
-    const { wrapper, listAdminUserDepartmentChildren } = await mountAdminUsersView()
-    const failed = deferred<any>()
-    ;(listAdminUserDepartmentChildren as any).mockReset()
-    ;(listAdminUserDepartmentChildren as any).mockImplementation(() => failed.promise)
-
-    await selectElementRadio(wrapper, 'admin-users-view-departments')
-    await selectElementRadio(wrapper, 'admin-users-view-departments')
-    expect(listAdminUserDepartmentChildren).toHaveBeenCalledTimes(1)
-
-    failed.reject(new Error('root request failed'))
+    router.back()
     await flushPromises()
-    expect(wrapper.text()).toContain('root request failed')
-
-    ;(listAdminUserDepartmentChildren as any).mockReset()
-    ;(listAdminUserDepartmentChildren as any).mockResolvedValue({
-      data: {
-        data: {
-          items: rootDepartments,
-          parent_department_id: '',
-          total: rootDepartments.length,
-          page: 1,
-          page_size: 25,
-        },
-      },
-    })
-    await selectElementRadio(wrapper, 'admin-users-view-users')
-    await selectElementRadio(wrapper, 'admin-users-view-departments')
-    await flushPromises()
-
-    expect(listAdminUserDepartmentChildren).toHaveBeenCalledTimes(1)
-    expect(listAdminUserDepartmentChildren).toHaveBeenCalledWith({ page: 1, page_size: 25 })
-    expect(wrapper.text()).toContain('Department Alpha')
-    expect(wrapper.text()).not.toContain('root request failed')
-  })
-
-  it('refreshes only the active users or root-departments collection', async () => {
-    const { wrapper, listAdminUserDepartmentChildren, listAdminUsers } = await mountAdminUsersView()
-    await selectElementRadio(wrapper, 'admin-users-view-departments')
-    await flushPromises()
-    ;(listAdminUserDepartmentChildren as any).mockClear()
-    ;(listAdminUsers as any).mockClear()
-
-    await wrapper.get('[data-testid="admin-users-refresh"]').trigger('click')
-    await flushPromises()
-    expect(listAdminUserDepartmentChildren).toHaveBeenCalledTimes(1)
-    expect(listAdminUserDepartmentChildren).toHaveBeenCalledWith({ page: 1, page_size: 25 })
-    expect(listAdminUsers).not.toHaveBeenCalled()
-
-    await selectElementRadio(wrapper, 'admin-users-view-users')
-    await wrapper.get('[data-testid="admin-users-refresh"]').trigger('click')
-    await flushPromises()
-    expect(listAdminUsers).toHaveBeenCalledTimes(1)
-    expect(listAdminUserDepartmentChildren).toHaveBeenCalledTimes(1)
-  })
-
-  it('clears cached children on department refresh and reloads them only after re-expansion', async () => {
-    const oldChild = {
-      ...childDepartments['dept-alpha'][0],
-      external_id: 'dept-alpha-old-team',
-      name: 'Old Team',
-      display_path: 'Department Alpha / Old Team',
-    }
-    const freshChild = {
-      ...childDepartments['dept-alpha'][0],
-      external_id: 'dept-alpha-fresh-team',
-      name: 'Fresh Team',
-      display_path: 'Department Alpha / Fresh Team',
-    }
-    const { wrapper, listAdminUserDepartmentChildren } = await mountAdminUsersView()
-    let alphaRequests = 0
-    ;(listAdminUserDepartmentChildren as any).mockReset()
-    ;(listAdminUserDepartmentChildren as any).mockImplementation((params: any) => {
-      const items = params.parent_department_id === 'dept-alpha'
-        ? [alphaRequests++ === 0 ? oldChild : freshChild]
-        : rootDepartments
-      return Promise.resolve({
-        data: {
-          data: {
-            items,
-            parent_department_id: params.parent_department_id ?? '',
-            total: items.length,
-            page: params.page ?? 1,
-            page_size: 25,
-          },
-        },
-      })
-    })
-
-    await selectElementRadio(wrapper, 'admin-users-view-departments')
-    await flushPromises()
-    await wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-old-team"]').exists()).toBe(true)
-
-    await wrapper.get('[data-testid="admin-users-refresh"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-old-team"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').attributes('aria-label')).toBe('Expand department')
-    expect((listAdminUserDepartmentChildren as any).mock.calls.filter(
-      ([params]: any[]) => params.parent_department_id === 'dept-alpha',
-    )).toHaveLength(1)
-
-    await wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').trigger('click')
-    await flushPromises()
-
-    expect((listAdminUserDepartmentChildren as any).mock.calls.filter(
-      ([params]: any[]) => params.parent_department_id === 'dept-alpha',
-    )).toHaveLength(2)
-    expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-fresh-team"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-old-team"]').exists()).toBe(false)
-  })
-
-  it('ignores a child response started before refresh and requests that parent again', async () => {
-    const staleChild = {
-      ...childDepartments['dept-alpha'][0],
-      external_id: 'dept-alpha-stale-team',
-      name: 'Stale Team',
-      display_path: 'Department Alpha / Stale Team',
-    }
-    const freshChild = {
-      ...childDepartments['dept-alpha'][0],
-      external_id: 'dept-alpha-new-team',
-      name: 'New Team',
-      display_path: 'Department Alpha / New Team',
-    }
-    const pendingChild = deferred<any>()
-    const { wrapper, listAdminUserDepartmentChildren } = await mountAdminUsersView()
-
-    await selectElementRadio(wrapper, 'admin-users-view-departments')
-    await flushPromises()
-    ;(listAdminUserDepartmentChildren as any).mockReset()
-    let alphaRequests = 0
-    ;(listAdminUserDepartmentChildren as any).mockImplementation((params: any) => {
-      if (params.parent_department_id === 'dept-alpha') {
-        alphaRequests += 1
-        if (alphaRequests === 1) return pendingChild.promise
-        return Promise.resolve({
-          data: {
-            data: {
-              items: [freshChild],
-              parent_department_id: 'dept-alpha',
-              total: 1,
-              page: 1,
-              page_size: 25,
-            },
-          },
-        })
-      }
-      return Promise.resolve({
-        data: {
-          data: {
-            items: rootDepartments,
-            parent_department_id: '',
-            total: rootDepartments.length,
-            page: params.page ?? 1,
-            page_size: 25,
-          },
-        },
-      })
-    })
-
-    await wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').trigger('click')
-    expect(alphaRequests).toBe(1)
-
-    await wrapper.get('[data-testid="admin-users-refresh"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').attributes('aria-label')).toBe('Expand department')
-    expect(alphaRequests).toBe(1)
-
-    pendingChild.resolve({
-      data: {
-        data: {
-          items: [staleChild],
-          parent_department_id: 'dept-alpha',
-          total: 1,
-          page: 1,
-          page_size: 25,
-        },
-      },
-    })
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-stale-team"]').exists()).toBe(false)
-
-    await wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').trigger('click')
-    await flushPromises()
-
-    expect(alphaRequests).toBe(2)
-    expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-new-team"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-stale-team"]').exists()).toBe(false)
+    expect(router.currentRoute.value.query.view).toBe('departments')
+    expect(router.currentRoute.value.query.department_id).toBeUndefined()
   })
 
   it('loads only one parent immediate page and renders hierarchy and subtree counts', async () => {
@@ -1027,8 +745,8 @@ describe('AdminUsersView', () => {
     expect(alphaToggle.classes()).toContain('is-circle')
   })
 
-  it('caches collapsed child pages and hides raw source paths from labels', async () => {
-    const { wrapper, listAdminUserDepartmentChildren } = await mountAdminUsersView()
+  it('hides raw source paths from expanded department labels', async () => {
+    const { wrapper } = await mountAdminUsersView()
 
     expect(wrapper.html()).toContain('Department Alpha')
     expect(wrapper.html()).not.toContain('1.781448')
@@ -1045,19 +763,6 @@ describe('AdminUsersView', () => {
     expect(wrapper.html()).toContain('Department Gamma')
     expect(wrapper.html()).not.toContain('1.781448.1683962')
 
-    await wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-team-one"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').attributes('aria-label')).toBe('Expand department')
-
-    await wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-team-one"]').exists()).toBe(true)
-    expect((listAdminUserDepartmentChildren as any).mock.calls.filter(
-      ([params]: any[]) => params.parent_department_id === 'dept-alpha',
-    )).toHaveLength(1)
   })
 
   it('keeps keyboard activation on the department toggle scoped to expansion', async () => {
@@ -1097,64 +802,19 @@ describe('AdminUsersView', () => {
     expect(wrapper.find('[data-admin-user-list="desktop"]').exists()).toBe(false)
   })
 
-  it('uses server root paging and appends deduplicated child continuation pages', async () => {
-    const extraChild = {
-      ...childDepartments['dept-alpha'][0],
-      external_id: 'dept-alpha-team-two',
-      name: 'Team Two',
-      display_path: 'Department Alpha / Team Two',
-    }
-    const { wrapper, listAdminUserDepartmentChildren } = await mountAdminUsersView(
+  it('uses compact indexed pagination for root departments', async () => {
+    const { wrapper } = await mountAdminUsersView(
       '/admin/users?view=departments',
       undefined,
       false,
-      (params) => {
-        if (!params.parent_department_id) {
-          if (params.page === 2) {
-            return { items: [rootDepartments[1]], total: 26, page: 2, page_size: 25, parent_department_id: '' }
-          }
-          return { items: [rootDepartments[0]], total: 26, page: 1, page_size: 25, parent_department_id: '' }
-        }
-        if (params.parent_department_id === 'dept-alpha' && params.page === 2) {
-          return {
-            items: [childDepartments['dept-alpha'][0], extraChild],
-            total: 26,
-            page: 2,
-            page_size: 25,
-            parent_department_id: 'dept-alpha',
-          }
-        }
-        return {
-          items: childDepartments['dept-alpha'],
-          total: 26,
-          page: 1,
-          page_size: 25,
-          parent_department_id: 'dept-alpha',
-        }
-      },
+      () => ({ items: [rootDepartments[0]], total: 26, page: 1, page_size: 25, parent_department_id: '' }),
     )
 
-    await wrapper.get('[data-testid="admin-users-department-roots-next"]').trigger('click')
-    await flushPromises()
-    expect(listAdminUserDepartmentChildren).toHaveBeenLastCalledWith({ page: 2, page_size: 25 })
-    expect(wrapper.find('[data-testid="admin-users-department-open-dept-beta"]').exists()).toBe(true)
-
-    await wrapper.get('[data-testid="admin-users-department-roots-prev"]').trigger('click')
-    await flushPromises()
-    expect(listAdminUserDepartmentChildren).toHaveBeenLastCalledWith({ page: 1, page_size: 25 })
-
-    await wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').trigger('click')
-    await flushPromises()
-    await wrapper.get('[data-testid="admin-users-department-load-more-dept-alpha"]').trigger('click')
-    await flushPromises()
-
-    expect(listAdminUserDepartmentChildren).toHaveBeenLastCalledWith({
-      parent_department_id: 'dept-alpha',
-      page: 2,
-      page_size: 25,
-    })
-    expect(wrapper.findAll('[data-testid="admin-users-department-open-dept-alpha-team-one"]')).toHaveLength(1)
-    expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-team-two"]').exists()).toBe(true)
+    const pagination = wrapper.getComponent(ElPagination)
+    expect(pagination.attributes('data-testid')).toBe('admin-users-department-pagination')
+    expect(pagination.props('pageSize')).toBe(25)
+    expect(pagination.props('total')).toBe(26)
+    expect(pagination.props('layout')).toBe('prev, pager, next')
   })
 
   it('renders stable empty state for an unknown parent child page', async () => {
@@ -1237,9 +897,10 @@ describe('AdminUsersView', () => {
       page_size: 100,
     }))
 
-    expect(matchMediaController.matchMedia).toHaveBeenCalledTimes(1)
+    expect(matchMediaController.matchMedia).toHaveBeenCalledTimes(2)
     expect(matchMediaController.matchMedia).toHaveBeenCalledWith('(min-width: 1440px)')
-    expect(matchMediaController.addEventListener).toHaveBeenCalledTimes(1)
+    expect(matchMediaController.matchMedia).toHaveBeenCalledWith('(min-width: 768px)')
+    expect(matchMediaController.addEventListener).toHaveBeenCalledTimes(2)
     expect(wrapper.find('[data-admin-user-list="desktop"]').exists()).toBe(true)
     expect(wrapper.find('[data-admin-user-list="mobile"]').exists()).toBe(false)
     expect(wrapper.findAll('[data-admin-user-row]')).toHaveLength(100)
@@ -1273,8 +934,8 @@ describe('AdminUsersView', () => {
     const { wrapper } = await mountAdminUsersView()
 
     const filters = wrapper.get('[data-testid="admin-users-filter-grid"]')
-    expect(filters.classes()).toContain('xl:grid-cols-[minmax(0,1fr)_220px_180px_120px_auto]')
-    expect(filters.classes()).not.toContain('lg:grid-cols-[minmax(0,1fr)_220px_180px_120px_auto]')
+    expect(filters.classes()).toContain('xl:grid-cols-[minmax(0,1fr)_220px_180px_auto]')
+    expect(filters.classes()).not.toContain('lg:grid-cols-[minmax(0,1fr)_220px_180px_auto]')
   })
 
   it('swaps viewports without reloading or duplicating selection and removes the exact listener', async () => {
@@ -1285,7 +946,7 @@ describe('AdminUsersView', () => {
       page: 1,
       page_size: 100,
     }))
-    const listener = matchMediaController.addEventListener.mock.calls[0][1]
+    const listeners = matchMediaController.addEventListener.mock.calls.map((call) => call[1])
 
     await setElementCheckbox(wrapper, 'select-user-1')
     matchMediaController.change(false)
@@ -1313,8 +974,10 @@ describe('AdminUsersView', () => {
     expect(viewRoundTripSelectAll.attributes('aria-checked')).toBe('mixed')
 
     wrapper.unmount()
-    expect(matchMediaController.removeEventListener).toHaveBeenCalledTimes(1)
-    expect(matchMediaController.removeEventListener).toHaveBeenCalledWith('change', listener)
+    expect(matchMediaController.removeEventListener).toHaveBeenCalledTimes(2)
+    for (const listener of listeners) {
+      expect(matchMediaController.removeEventListener).toHaveBeenCalledWith('change', listener)
+    }
   })
 
 	  it('renders the primary admin users workflow in Chinese', async () => {
@@ -1341,42 +1004,18 @@ describe('AdminUsersView', () => {
     expect((listAdminUsers as any).mock.calls.at(-1)[0]).toEqual({ q: 'alice@example.com', page: 1, page_size: 20 })
   })
 
-  it('debounces user search and sends only the latest value', async () => {
-    vi.useFakeTimers()
-    const { wrapper, listAdminUsers } = await mountAdminUsersView()
+  it('renders the approved full-page indexed pagination contract', async () => {
+    const { wrapper } = await mountAdminUsersView('/admin/users', (params) => ({
+      items: [userRow(1, 'user-1')],
+      total: 45,
+      page: params?.page ?? 1,
+      page_size: params?.page_size ?? 20,
+    }))
 
-    await wrapper.get('[data-testid="admin-users-search"]').setValue('ali')
-    await wrapper.get('[data-testid="admin-users-search"]').setValue('alice')
-    await vi.advanceTimersByTimeAsync(299)
-    expect(listAdminUsers).toHaveBeenCalledTimes(1)
-
-    await vi.advanceTimersByTimeAsync(1)
-    await flushPromises()
-    expect(listAdminUsers).toHaveBeenCalledTimes(2)
-    expect((listAdminUsers as any).mock.calls.at(-1)[0]).toEqual({ q: 'alice', page: 1, page_size: 20 })
-  })
-
-  it('updates page size and next page params', async () => {
-    const { wrapper, listAdminUsers } = await mountAdminUsersView()
-
-    expect(wrapper.get('[data-testid="admin-users-page-size"]').classes()).toContain('el-select')
-    await selectElementOption(wrapper, 'admin-users-page-size', 'admin-users-page-size-option-50')
-    expect((listAdminUsers as any).mock.calls.at(-1)[0]).toEqual({ q: '', page: 1, page_size: 50 })
-
-    await wrapper.get('[data-testid="admin-users-next-page"]').trigger('click')
-    await flushPromises()
-    expect((listAdminUsers as any).mock.calls.at(-1)[0]).toEqual({ q: '', page: 2, page_size: 50 })
-  })
-
-  it('restores and persists search pagination state in the URL query', async () => {
-    const { wrapper, router, listAdminUsers } = await mountAdminUsersView('/admin/users?q=alice&page=2&page_size=50')
-
-    expect((listAdminUsers as any).mock.calls[0][0]).toEqual({ q: 'alice', page: 2, page_size: 50 })
-
-    await selectElementOption(wrapper, 'admin-users-page-size', 'admin-users-page-size-option-20')
-
-    expect(router.currentRoute.value.query.q).toBe('alice')
-    expect(router.currentRoute.value.query.page_size).toBeUndefined()
+    const pagination = wrapper.getComponent(ElPagination)
+    expect(pagination.props('pageSizes')).toEqual([20, 50, 100])
+    expect(pagination.props('total')).toBe(45)
+    expect(wrapper.get('[data-testid="admin-users-page-range"]').text()).toBe('Showing 1-20 of 45')
   })
 
   it('copies encrypted ciphertext without calling reveal', async () => {
@@ -1667,11 +1306,9 @@ describe('AdminUsersView', () => {
       page_size: params?.page_size ?? 20,
     }))
 
-    await wrapper.get('[data-testid="admin-users-next-page"]').trigger('click')
-    await flushPromises()
+    await clickAdminUsersPage(wrapper, 'next')
     await setElementCheckbox(wrapper, 'select-user-9')
-    await wrapper.get('[data-testid="admin-users-prev-page"]').trigger('click')
-    await flushPromises()
+    await clickAdminUsersPage(wrapper, 'prev')
     await setElementCheckbox(wrapper, 'select-user-7')
     await selectElementOption(wrapper, 'subscription-provider', 'subscription-provider-option-3')
     await selectElementOption(wrapper, 'subscription-group', 'subscription-group-option-42')

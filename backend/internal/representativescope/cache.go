@@ -17,7 +17,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const scopeCacheSchemaVersion = 2
+const scopeCacheSchemaVersion = 3
 
 var scopeCacheNamespaceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
 
@@ -353,7 +353,7 @@ func (c *Cache) valueTTL() time.Duration {
 
 func scopeCacheKey(namespace string, guard scopeGuard) string {
 	return fmt.Sprintf(
-		"ae:%s:representative-scope:v2:actor:%d:directory-source:%d:directory-run:%d:role:%s",
+		"ae:%s:representative-scope:v3:actor:%d:directory-source:%d:directory-run:%d:role:%s",
 		namespace,
 		guard.ActorUserID,
 		guard.DirectorySourceID,

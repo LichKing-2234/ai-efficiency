@@ -34,11 +34,10 @@ const (
 var ErrSyncTaskAlreadyRunning = errors.New("sync task already running")
 
 var syncTaskRunnerAlive = syncTaskProcessAlive
-
 var machineSyncLockPollInterval = 25 * time.Millisecond
 
 const (
-	syncTaskVersion        = 2
+	syncTaskVersion        = 3
 	v2SyncTriggerRetention = 90 * 24 * time.Hour
 	v2SyncTriggerExpiring  = 7 * 24 * time.Hour
 )
@@ -112,6 +111,11 @@ func syncTaskFailure(stage SyncTaskFailureStage, reason string, err error) error
 type V2SyncTrigger struct {
 	Kind            string    `json:"kind"`
 	EventID         string    `json:"event_id"`
+	ServerURL       string    `json:"server_url,omitempty"`
+	AuthSubject     string    `json:"auth_subject,omitempty"`
+	RepoConfigID    int       `json:"repo_config_id,omitempty"`
+	RepoKey         string    `json:"repo_key,omitempty"`
+	WorkspaceID     string    `json:"workspace_id,omitempty"`
 	CommitSHA       string    `json:"commit_sha,omitempty"`
 	Branch          string    `json:"branch,omitempty"`
 	RewriteType     string    `json:"rewrite_type,omitempty"`
@@ -214,6 +218,9 @@ func SummarizeMachineSyncTasks(now time.Time) (MachineSyncTaskSummary, error) {
 
 func MigrateMachineSyncBacklog(binding SyncTaskMigrationBinding, now time.Time) (MachineSyncTaskMigrationSummary, error) {
 	var summary MachineSyncTaskMigrationSummary
+	if _, err := QuarantineSyntheticFixtureBacklog(binding, now); err != nil {
+		return summary, fmt.Errorf("quarantine synthetic fixture backlog: %w", err)
+	}
 	if strings.TrimSpace(binding.ServerURL) == "" || strings.TrimSpace(binding.AuthSubject) == "" || binding.RelayProviderID <= 0 {
 		return summary, nil
 	}
@@ -251,19 +258,7 @@ func migrateSyncTask(workspaceID string, relayProviderID int, now time.Time) (bo
 		if task.Version > syncTaskVersion {
 			return nil
 		}
-		triggers := append([]V2SyncTrigger(nil), task.V2Triggers...)
-		if len(triggers) == 0 && strings.TrimSpace(task.TriggerEventID) != "" {
-			triggers = append(triggers, V2SyncTrigger{
-				Kind: task.TriggerKind, EventID: task.TriggerEventID, CommitSHA: task.TriggerCommitSHA,
-				Branch: task.TriggerBranch, CapturedAt: task.LastRequestedAt,
-			})
-		}
-		for index := range triggers {
-			if triggers[index].RelayProviderID == 0 {
-				triggers[index].RelayProviderID = relayProviderID
-			}
-		}
-		triggers, err = mergeV2SyncTriggers(nil, triggers)
+		triggers, err := upgradedSyncTaskTriggers(*task, relayProviderID)
 		if err != nil {
 			if diagnosticErr := markSyncTaskMigrationRecovery(task, now); diagnosticErr != nil {
 				return fmt.Errorf("save legacy trigger migration diagnostic: %w", diagnosticErr)
@@ -505,6 +500,21 @@ func UpsertPendingSyncTask(next SyncTask) error {
 			return err
 		}
 		if current != nil {
+			if current.Version < syncTaskVersion {
+				providerID := 0
+				for _, trigger := range next.V2Triggers {
+					if trigger.RelayProviderID > 0 {
+						providerID = trigger.RelayProviderID
+						break
+					}
+				}
+				upgraded, upgradeErr := upgradedSyncTaskTriggers(*current, providerID)
+				if upgradeErr != nil {
+					return upgradeErr
+				}
+				current.Version = syncTaskVersion
+				current.V2Triggers = upgraded
+			}
 			var mergeErr error
 			next.V2Triggers, mergeErr = mergeV2SyncTriggers(current.V2Triggers, next.V2Triggers)
 			if mergeErr != nil {
@@ -541,6 +551,37 @@ func UpsertPendingSyncTask(next SyncTask) error {
 		}
 		return SaveSyncTask(next)
 	})
+}
+
+func upgradedSyncTaskTriggers(task SyncTask, relayProviderID int) ([]V2SyncTrigger, error) {
+	triggers := append([]V2SyncTrigger(nil), task.V2Triggers...)
+	if len(triggers) == 0 && strings.TrimSpace(task.TriggerEventID) != "" {
+		triggers = append(triggers, V2SyncTrigger{
+			Kind: task.TriggerKind, EventID: task.TriggerEventID, CommitSHA: task.TriggerCommitSHA,
+			Branch: task.TriggerBranch, CapturedAt: task.LastRequestedAt,
+		})
+	}
+	for index := range triggers {
+		if triggers[index].RelayProviderID == 0 {
+			triggers[index].RelayProviderID = relayProviderID
+		}
+		if strings.TrimSpace(triggers[index].ServerURL) == "" {
+			triggers[index].ServerURL = task.ServerURL
+		}
+		if strings.TrimSpace(triggers[index].AuthSubject) == "" {
+			triggers[index].AuthSubject = task.AuthSubject
+		}
+		if triggers[index].RepoConfigID == 0 {
+			triggers[index].RepoConfigID = task.RepoConfigID
+		}
+		if strings.TrimSpace(triggers[index].RepoKey) == "" {
+			triggers[index].RepoKey = task.RepoKey
+		}
+		if strings.TrimSpace(triggers[index].WorkspaceID) == "" {
+			triggers[index].WorkspaceID = task.WorkspaceID
+		}
+	}
+	return mergeV2SyncTriggers(nil, triggers)
 }
 
 func AppendV2SyncTrigger(workspaceID string, trigger V2SyncTrigger) error {
@@ -594,6 +635,11 @@ func mergeV2SyncTriggers(existing, incoming []V2SyncTrigger) ([]V2SyncTrigger, e
 func sameV2SyncTrigger(left, right V2SyncTrigger) bool {
 	return strings.TrimSpace(left.Kind) == strings.TrimSpace(right.Kind) &&
 		strings.TrimSpace(left.EventID) == strings.TrimSpace(right.EventID) &&
+		normalizeHookServerURL(left.ServerURL) == normalizeHookServerURL(right.ServerURL) &&
+		strings.TrimSpace(left.AuthSubject) == strings.TrimSpace(right.AuthSubject) &&
+		left.RepoConfigID == right.RepoConfigID &&
+		strings.TrimSpace(left.RepoKey) == strings.TrimSpace(right.RepoKey) &&
+		strings.TrimSpace(left.WorkspaceID) == strings.TrimSpace(right.WorkspaceID) &&
 		strings.TrimSpace(left.CommitSHA) == strings.TrimSpace(right.CommitSHA) &&
 		strings.TrimSpace(left.Branch) == strings.TrimSpace(right.Branch) &&
 		strings.TrimSpace(left.RewriteType) == strings.TrimSpace(right.RewriteType) &&
@@ -809,17 +855,17 @@ func CompleteSyncTaskPass(task *SyncTask, passGeneration int, now time.Time) (bo
 		if current.RunnerPID != task.RunnerPID || current.RunnerPID == 0 {
 			return ErrSyncTaskAlreadyRunning
 		}
-		if current.RequestGeneration > passGeneration {
-			processed := make(map[string]struct{}, len(task.V2Triggers))
-			for _, trigger := range task.V2Triggers {
-				processed[trigger.EventID] = struct{}{}
+		processed := make(map[string]struct{}, len(task.V2Triggers))
+		for _, trigger := range task.V2Triggers {
+			processed[trigger.EventID] = struct{}{}
+		}
+		remaining := current.V2Triggers[:0]
+		for _, trigger := range current.V2Triggers {
+			if _, ok := processed[trigger.EventID]; !ok {
+				remaining = append(remaining, trigger)
 			}
-			remaining := current.V2Triggers[:0]
-			for _, trigger := range current.V2Triggers {
-				if _, ok := processed[trigger.EventID]; !ok {
-					remaining = append(remaining, trigger)
-				}
-			}
+		}
+		if len(remaining) > 0 || current.RequestGeneration > passGeneration {
 			current.V2Triggers = remaining
 			completed := now.UTC()
 			current.LastCompletedAt = &completed
@@ -827,7 +873,10 @@ func CompleteSyncTaskPass(task *SyncTask, passGeneration int, now time.Time) (bo
 			current.LastFailureStage = ""
 			current.LastFailureReason = ""
 			current.FirstFailureAt = nil
-			current.RemainingTriggerCount = 0
+			current.RemainingTriggerCount = len(remaining)
+			current.Status = SyncTaskStatusPending
+			current.RunnerPID = 0
+			current.LeaseExpiresAt = nil
 			*task = *current
 			return SaveSyncTask(*current)
 		}
@@ -873,16 +922,25 @@ func withSyncTaskLock(workspaceID string, now time.Time, fn func() error) error 
 	return ErrSyncTaskAlreadyRunning
 }
 
-func withMachineSyncRunLock(ctx context.Context, fn func() error) error {
+func withMachineSyncRunLock(ctx context.Context, execCtx ExecutionContext, fn func() error) error {
 	lockPath := filepath.Join(attributionlocal.AttributionRootDir(), "machine-sync.run.lock")
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
 		return fmt.Errorf("create machine sync lock dir: %w", err)
 	}
+	waiting := false
 	for {
+		if err := ctx.Err(); err != nil {
+			if waiting {
+				_ = releaseMachineSyncWakeRequest(execCtx, os.Getpid())
+			}
+			return err
+		}
 		file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err == nil {
 			_, _ = fmt.Fprintf(file, "%d\n", os.Getpid())
 			_ = file.Close()
+			_ = os.Remove(filepath.Join(attributionlocal.AttributionRootDir(), "machine-sync.wake"))
+			_ = os.Remove(machineSyncWakeRequestPath(execCtx))
 			defer func() { _ = os.Remove(lockPath) }()
 			return fn()
 		}
@@ -893,12 +951,89 @@ func withMachineSyncRunLock(ctx context.Context, fn func() error) error {
 			_ = os.Remove(lockPath)
 			continue
 		}
+		if !waiting {
+			claimed, err := claimMachineSyncWakeRequest(execCtx)
+			if err != nil {
+				return err
+			}
+			if !claimed {
+				return ErrSyncTaskAlreadyRunning
+			}
+			waiting = true
+		}
 		select {
 		case <-ctx.Done():
+			_ = releaseMachineSyncWakeRequest(execCtx, os.Getpid())
 			return ctx.Err()
 		case <-time.After(machineSyncLockPollInterval):
 		}
 	}
+}
+
+func machineSyncWakeRequestPath(execCtx ExecutionContext) string {
+	scope := normalizeHookServerURL(execCtx.ServerURL) + "\x1f" + strings.TrimSpace(execCtx.AuthSubject)
+	return filepath.Join(attributionlocal.AttributionRootDir(), "machine-sync-wakes", sha256Hex(scope)+".json")
+}
+
+func claimMachineSyncWakeRequest(execCtx ExecutionContext) (bool, error) {
+	if normalizeHookServerURL(execCtx.ServerURL) == "" || strings.TrimSpace(execCtx.AuthSubject) == "" || strings.TrimSpace(execCtx.RepoRoot) == "" {
+		return false, fmt.Errorf("machine sync wake requires server, owner, and repository")
+	}
+	path := machineSyncWakeRequestPath(execCtx)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return false, err
+	}
+	for range 2 {
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			_, _ = fmt.Fprintf(file, "%d\n", os.Getpid())
+			if err := file.Close(); err != nil {
+				_ = os.Remove(path)
+				return false, err
+			}
+			return true, nil
+		}
+		if !os.IsExist(err) {
+			return false, err
+		}
+		payload, readErr := os.ReadFile(path)
+		pid, parseErr := strconv.Atoi(strings.TrimSpace(string(payload)))
+		if readErr == nil && parseErr == nil && pid > 0 {
+			if syncTaskRunnerAlive(pid) {
+				return false, nil
+			}
+			_ = os.Remove(path)
+			continue
+		}
+		info, statErr := os.Stat(path)
+		if statErr == nil && time.Since(info.ModTime()) <= machineSyncOwnerTimeout {
+			return false, nil
+		}
+		if statErr != nil && !os.IsNotExist(statErr) {
+			return false, statErr
+		}
+		_ = os.Remove(path)
+	}
+	return false, nil
+}
+
+func releaseMachineSyncWakeRequest(execCtx ExecutionContext, pid int) error {
+	path := machineSyncWakeRequestPath(execCtx)
+	payload, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	ownerPID, err := strconv.Atoi(strings.TrimSpace(string(payload)))
+	if err != nil || ownerPID != pid {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func machineSyncRunLockIsStale(path string) bool {

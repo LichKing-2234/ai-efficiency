@@ -273,6 +273,54 @@ func (f QuotaResetRequestEventFunc) Mutate(ctx context.Context, m ent.Mutation) 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.QuotaResetRequestEventMutation", m)
 }
 
+// The RelationshipOperationFunc type is an adapter to allow the use of ordinary
+// function as RelationshipOperation mutator.
+type RelationshipOperationFunc func(context.Context, *ent.RelationshipOperationMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RelationshipOperationFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RelationshipOperationMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RelationshipOperationMutation", m)
+}
+
+// The RelationshipOperationAttemptFunc type is an adapter to allow the use of ordinary
+// function as RelationshipOperationAttempt mutator.
+type RelationshipOperationAttemptFunc func(context.Context, *ent.RelationshipOperationAttemptMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RelationshipOperationAttemptFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RelationshipOperationAttemptMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RelationshipOperationAttemptMutation", m)
+}
+
+// The RelationshipOperationMappingFunc type is an adapter to allow the use of ordinary
+// function as RelationshipOperationMapping mutator.
+type RelationshipOperationMappingFunc func(context.Context, *ent.RelationshipOperationMappingMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RelationshipOperationMappingFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RelationshipOperationMappingMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RelationshipOperationMappingMutation", m)
+}
+
+// The RelationshipOperationStepFunc type is an adapter to allow the use of ordinary
+// function as RelationshipOperationStep mutator.
+type RelationshipOperationStepFunc func(context.Context, *ent.RelationshipOperationStepMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RelationshipOperationStepFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RelationshipOperationStepMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RelationshipOperationStepMutation", m)
+}
+
 // The RelayGroupMappingFunc type is an adapter to allow the use of ordinary
 // function as RelayGroupMapping mutator.
 type RelayGroupMappingFunc func(context.Context, *ent.RelayGroupMappingMutation) (ent.Value, error)

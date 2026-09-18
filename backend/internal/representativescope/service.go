@@ -3,21 +3,11 @@ package representativescope
 import (
 	"context"
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/directorydepartment"
-	"github.com/ai-efficiency/backend/ent/directorymember"
-	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
-	"github.com/ai-efficiency/backend/internal/directorysync"
-	"github.com/ai-efficiency/backend/internal/directorytree"
-)
-
-const (
-	DepartmentRepresentativeIDsKey = "representative_external_ids"
-	MemberLeaderDepartmentIDsKey   = "leader_department_ids"
+	"github.com/ai-efficiency/backend/internal/directoryfacts"
 )
 
 type Subject struct {
@@ -46,6 +36,8 @@ type DepartmentScope struct {
 
 type Scope struct {
 	Version                  string                         `json:"version"`
+	DirectorySourceID        int                            `json:"directory_source_id"`
+	DirectoryRunID           int                            `json:"directory_run_id"`
 	ActorUserID              int                            `json:"actor_user_id"`
 	ActorMemberExternalID    string                         `json:"actor_member_external_id"`
 	IsRepresentative         bool                           `json:"is_representative"`
@@ -79,14 +71,15 @@ func (s Scope) AllowedUserIDs() []int {
 type Service struct {
 	client *ent.Client
 	cache  *Cache
+	facts  directoryfacts.Reader
 }
 
 func New(client *ent.Client) *Service {
-	return &Service{client: client}
+	return &Service{client: client, facts: directoryfacts.New(client)}
 }
 
 func NewWithCache(client *ent.Client, cache *Cache) *Service {
-	return &Service{client: client, cache: cache}
+	return &Service{client: client, cache: cache, facts: directoryfacts.New(client)}
 }
 
 func (s *Service) Resolve(ctx context.Context, actorUserID int) (*Scope, error) {
@@ -97,7 +90,7 @@ func (s *Service) Resolve(ctx context.Context, actorUserID int) (*Scope, error) 
 		return nil, fmt.Errorf("representative scope actor ID must be positive")
 	}
 	for {
-		guard, actor, ok, err := s.currentGuard(ctx, actorUserID)
+		guard, actor, view, ok, err := s.currentGuard(ctx, actorUserID)
 		if err != nil {
 			return nil, err
 		}
@@ -106,7 +99,7 @@ func (s *Service) Resolve(ctx context.Context, actorUserID int) (*Scope, error) 
 		}
 
 		loader := func(loadCtx context.Context) (*Scope, error) {
-			return s.loadAuthoritativeScope(loadCtx, guard.DirectorySourceID, actor)
+			return s.loadAuthoritativeScope(loadCtx, view, actor)
 		}
 		var scope *Scope
 		if s.cache == nil {
@@ -121,7 +114,7 @@ func (s *Service) Resolve(ctx context.Context, actorUserID int) (*Scope, error) 
 			return nil, err
 		}
 
-		currentGuard, _, current, err := s.currentGuard(ctx, actorUserID)
+		currentGuard, _, _, current, err := s.currentGuard(ctx, actorUserID)
 		if err != nil {
 			return nil, err
 		}
@@ -134,54 +127,41 @@ func (s *Service) Resolve(ctx context.Context, actorUserID int) (*Scope, error) 
 	}
 }
 
-func (s *Service) currentGuard(ctx context.Context, actorUserID int) (scopeGuard, *ent.User, bool, error) {
+func (s *Service) currentGuard(ctx context.Context, actorUserID int) (scopeGuard, *ent.User, directoryfacts.View, bool, error) {
 	actor, err := s.client.User.Get(ctx, actorUserID)
 	if err != nil {
-		return scopeGuard{}, nil, false, fmt.Errorf("get actor user: %w", err)
+		return scopeGuard{}, nil, nil, false, fmt.Errorf("get actor user: %w", err)
 	}
-	snapshot, ok, err := directorysync.CurrentSnapshot(ctx, s.client)
+	view, ok, err := s.facts.Current(ctx)
 	if err != nil {
-		return scopeGuard{}, nil, false, fmt.Errorf("resolve current directory snapshot: %w", err)
+		return scopeGuard{}, nil, nil, false, fmt.Errorf("resolve current directory snapshot: %w", err)
 	}
 	if !ok {
-		return scopeGuard{}, actor, false, nil
+		return scopeGuard{}, actor, nil, false, nil
 	}
+	snapshot := view.Snapshot()
 	return scopeGuard{
 		ActorUserID:       actor.ID,
 		ActorRole:         string(actor.Role),
 		DirectorySourceID: snapshot.SourceID,
 		DirectoryRunID:    snapshot.RunID,
-	}, actor, true, nil
+	}, actor, view, true, nil
 }
 
-func (s *Service) loadAuthoritativeScope(ctx context.Context, sourceID int, actor *ent.User) (*Scope, error) {
+func (s *Service) loadAuthoritativeScope(ctx context.Context, view directoryfacts.View, actor *ent.User) (*Scope, error) {
 	if actor == nil {
 		return nil, fmt.Errorf("representative scope actor is required")
 	}
-	members, err := s.client.DirectoryMember.Query().
-		Where(directorymember.SourceIDEQ(sourceID)).
-		All(ctx)
+	facts, err := view.Load(ctx, directoryfacts.Query{
+		AllDepartments:     true,
+		AllMembers:         true,
+		IncludeMemberships: true,
+		AllUsers:           true,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("query directory members: %w", err)
+		return nil, fmt.Errorf("load current representative directory facts: %w", err)
 	}
-	memberships, err := s.client.DirectoryMemberDepartment.Query().
-		Where(directorymemberdepartment.SourceIDEQ(sourceID)).
-		All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("query directory member departments: %w", err)
-	}
-	departments, err := s.client.DirectoryDepartment.Query().
-		Where(directorydepartment.SourceIDEQ(sourceID)).
-		All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("query directory departments: %w", err)
-	}
-	users, err := s.client.User.Query().All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("query users: %w", err)
-	}
-
-	return buildScope(actor, users, members, memberships, departments), nil
+	return buildScope(actor, facts), nil
 }
 
 func (s Scope) CanManageTarget(targetUserID int) (bool, string) {
@@ -231,24 +211,23 @@ func (s Scope) hasMemberSubject(targetUserID int) bool {
 	return false
 }
 
-func buildScope(actor *ent.User, users []*ent.User, members []*ent.DirectoryMember, memberships []*ent.DirectoryMemberDepartment, departments []*ent.DirectoryDepartment) *Scope {
+func buildScope(actor *ent.User, facts *directoryfacts.Facts) *Scope {
+	snapshot := facts.Snapshot()
 	scope := &Scope{
+		DirectorySourceID:      snapshot.SourceID,
+		DirectoryRunID:         snapshot.RunID,
 		ActorUserID:            actor.ID,
 		RepresentedSubtreeIDs:  map[string]map[string]struct{}{},
 		TargetRepresentedRoots: map[int][]string{},
 	}
-
-	usersByID, usersByEmail := indexUsers(users)
-	memberDepartmentIDs := indexMemberDepartmentIDs(memberships)
-	actorMember := findActorMember(actor, members)
+	actorMember := facts.MemberForUser(actor.ID)
 	if actorMember == nil {
 		return scope
 	}
 	scope.ActorMemberExternalID = strings.TrimSpace(actorMember.ExternalID)
 
-	tree := directorytree.New(departments)
-	memberRepresentedRoots := representedRootsByMemberExternalID(departments, members)
-	actorRoots := compactStrings(memberRepresentedRoots[scope.ActorMemberExternalID])
+	tree := facts.Hierarchy()
+	actorRoots := compactStrings(facts.RepresentativeRoots(scope.ActorMemberExternalID))
 	if len(actorRoots) == 0 {
 		return scope
 	}
@@ -263,20 +242,20 @@ func buildScope(actor *ent.User, users []*ent.User, members []*ent.DirectoryMemb
 		for _, departmentID := range subtreeIDs {
 			allowedDepartments[departmentID] = struct{}{}
 		}
-		scope.Departments = append(scope.Departments, departmentScope(root, tree, members, memberDepartmentIDs, usersByID, usersByEmail))
+		scope.Departments = append(scope.Departments, departmentScope(root, facts))
 	}
-	scope.MemberTreeDepartments = memberTreeDepartments(scope.MemberTreeRootIDs, tree, members, memberDepartmentIDs, usersByID, usersByEmail)
+	scope.MemberTreeDepartments = memberTreeDepartments(scope.MemberTreeRootIDs, facts)
 	sort.Slice(scope.Departments, func(i, j int) bool {
 		return scope.Departments[i].DisplayPath < scope.Departments[j].DisplayPath
 	})
 
-	scope.Subjects = buildSubjects(actor.ID, members, memberDepartmentIDs, usersByID, usersByEmail, allowedDepartments, tree, false)
-	scope.OverviewSubjects = buildSubjects(actor.ID, members, memberDepartmentIDs, usersByID, usersByEmail, allowedDepartments, tree, true)
-	scope.TargetRepresentedRoots = buildTargetRepresentedRoots(members, usersByID, usersByEmail, memberRepresentedRoots)
+	scope.Subjects = buildSubjects(actor.ID, facts, allowedDepartments, false)
+	scope.OverviewSubjects = buildSubjects(actor.ID, facts, allowedDepartments, true)
+	scope.TargetRepresentedRoots = buildTargetRepresentedRoots(facts)
 	return scope
 }
 
-func largestRepresentedRoots(roots []string, tree *directorytree.Tree) []string {
+func largestRepresentedRoots(roots []string, tree *directoryfacts.Hierarchy) []string {
 	rootSet := stringSet(roots)
 	largest := make([]string, 0, len(roots))
 	for _, root := range roots {
@@ -306,7 +285,8 @@ func largestRepresentedRoots(roots []string, tree *directorytree.Tree) []string 
 	return compactStrings(largest)
 }
 
-func memberTreeDepartments(roots []string, tree *directorytree.Tree, members []*ent.DirectoryMember, memberDepartmentIDs map[int][]string, usersByID map[int]*ent.User, usersByEmail map[string]*ent.User) []DepartmentScope {
+func memberTreeDepartments(roots []string, facts *directoryfacts.Facts) []DepartmentScope {
+	tree := facts.Hierarchy()
 	allowed := map[string]struct{}{}
 	for _, root := range roots {
 		for _, departmentID := range tree.SubtreeIDs(root) {
@@ -315,121 +295,17 @@ func memberTreeDepartments(roots []string, tree *directorytree.Tree, members []*
 	}
 	out := make([]DepartmentScope, 0, len(allowed))
 	for _, department := range tree.Ordered() {
-		if department == nil {
-			continue
-		}
 		if _, ok := allowed[department.ExternalID]; !ok {
 			continue
 		}
-		out = append(out, departmentScope(department.ExternalID, tree, members, memberDepartmentIDs, usersByID, usersByEmail))
+		out = append(out, departmentScope(department.ExternalID, facts))
 	}
 	return out
 }
 
-func indexMemberDepartmentIDs(memberships []*ent.DirectoryMemberDepartment) map[int][]string {
-	out := map[int][]string{}
-	for _, membership := range memberships {
-		if membership == nil {
-			continue
-		}
-		memberID := membership.DirectoryMemberID
-		if memberID <= 0 {
-			continue
-		}
-		out[memberID] = appendUniqueStrings(out[memberID], membership.DepartmentExternalID)
-	}
-	for memberID := range out {
-		sort.Strings(out[memberID])
-	}
-	return out
-}
-
-func indexUsers(users []*ent.User) (map[int]*ent.User, map[string]*ent.User) {
-	byID := make(map[int]*ent.User, len(users))
-	byEmail := make(map[string]*ent.User, len(users))
-	for _, user := range users {
-		if user == nil {
-			continue
-		}
-		byID[user.ID] = user
-		email := normalizeEmail(user.Email)
-		if email != "" {
-			byEmail[email] = user
-		}
-	}
-	return byID, byEmail
-}
-
-func findActorMember(actor *ent.User, members []*ent.DirectoryMember) *ent.DirectoryMember {
-	for _, member := range members {
-		if member == nil || member.MatchedUserID == nil {
-			continue
-		}
-		if *member.MatchedUserID == actor.ID {
-			return member
-		}
-	}
-	actorEmail := normalizeEmail(actor.Email)
-	for _, member := range members {
-		if member == nil {
-			continue
-		}
-		if normalizeEmail(member.EmailNormalized) == actorEmail {
-			return member
-		}
-	}
-	return nil
-}
-
-func representedRootsByMemberExternalID(departments []*ent.DirectoryDepartment, members []*ent.DirectoryMember) map[string][]string {
-	roots := map[string][]string{}
-	add := func(memberExternalID, departmentID string) {
-		memberExternalID = strings.TrimSpace(memberExternalID)
-		departmentID = strings.TrimSpace(departmentID)
-		if memberExternalID == "" || departmentID == "" {
-			return
-		}
-		roots[memberExternalID] = append(roots[memberExternalID], departmentID)
-	}
-
-	for _, department := range departments {
-		if department == nil {
-			continue
-		}
-		for _, memberExternalID := range metadataStringValues(department.Metadata[DepartmentRepresentativeIDsKey]) {
-			add(memberExternalID, department.ExternalID)
-		}
-	}
-	for _, member := range members {
-		if member == nil {
-			continue
-		}
-		for _, departmentID := range metadataStringValues(member.Metadata[MemberLeaderDepartmentIDsKey]) {
-			add(member.ExternalID, departmentID)
-		}
-	}
-	for memberExternalID, departmentIDs := range roots {
-		roots[memberExternalID] = compactStrings(departmentIDs)
-	}
-	return roots
-}
-
-func departmentScope(root string, tree *directorytree.Tree, members []*ent.DirectoryMember, memberDepartmentIDs map[int][]string, usersByID map[int]*ent.User, usersByEmail map[string]*ent.User) DepartmentScope {
-	subtreeIDs := stringSet(tree.SubtreeIDs(root))
-	memberCount := 0
-	matchedUserIDs := map[int]struct{}{}
-	for _, member := range members {
-		if member == nil {
-			continue
-		}
-		if !memberBelongsToAnyDepartment(member, memberDepartmentIDs, subtreeIDs) {
-			continue
-		}
-		memberCount++
-		if user := resolveMemberUser(member, usersByID, usersByEmail); user != nil {
-			matchedUserIDs[user.ID] = struct{}{}
-		}
-	}
+func departmentScope(root string, facts *directoryfacts.Facts) DepartmentScope {
+	tree := facts.Hierarchy()
+	stats := facts.DepartmentStats(root)
 	return DepartmentScope{
 		ExternalID:         root,
 		ParentExternalID:   departmentParentExternalID(root, tree),
@@ -437,52 +313,42 @@ func departmentScope(root string, tree *directorytree.Tree, members []*ent.Direc
 		DisplayPath:        tree.DisplayPath(root),
 		Depth:              tree.Depth(root),
 		ChildCount:         tree.ChildCount(root),
-		SubtreeMemberCount: memberCount,
-		MatchedUserCount:   len(matchedUserIDs),
+		SubtreeMemberCount: stats.MemberCount,
+		MatchedUserCount:   stats.MatchedUserCount,
 	}
 }
 
-func departmentParentExternalID(root string, tree *directorytree.Tree) *string {
+func departmentParentExternalID(root string, tree *directoryfacts.Hierarchy) *string {
 	if tree == nil {
 		return nil
 	}
-	for _, department := range tree.Ordered() {
-		if department == nil || department.ExternalID != root {
-			continue
-		}
-		parent := directorytree.ParentExternalID(department)
-		if parent == "" {
-			return nil
-		}
-		return &parent
+	parent := tree.ParentID(root)
+	if parent == "" {
+		return nil
 	}
-	return nil
+	return &parent
 }
 
-func departmentName(root string, tree *directorytree.Tree) string {
-	displayPath := tree.DisplayPath(root)
-	if displayPath == "" {
-		return root
+func departmentName(root string, tree *directoryfacts.Hierarchy) string {
+	if tree != nil {
+		if department := tree.Department(root); department != nil {
+			if name := strings.TrimSpace(department.Name); name != "" {
+				return name
+			}
+		}
 	}
-	parts := strings.Split(displayPath, " / ")
-	name := strings.TrimSpace(parts[len(parts)-1])
-	if name == "" {
-		return root
-	}
-	return name
+	return root
 }
 
-func buildSubjects(actorUserID int, members []*ent.DirectoryMember, memberDepartmentIDs map[int][]string, usersByID map[int]*ent.User, usersByEmail map[string]*ent.User, allowedDepartments map[string]struct{}, tree *directorytree.Tree, includeActor bool) []Subject {
+func buildSubjects(actorUserID int, facts *directoryfacts.Facts, allowedDepartments map[string]struct{}, includeActor bool) []Subject {
+	tree := facts.Hierarchy()
 	subjectsByKey := map[string]Subject{}
-	for _, member := range members {
-		if member == nil {
-			continue
-		}
-		departmentIDs := filterAllowedMemberDepartments(memberDepartmentIDsForMember(member, memberDepartmentIDs), allowedDepartments)
+	for _, member := range facts.Members() {
+		departmentIDs := filterAllowedMemberDepartments(facts.DepartmentIDsForMember(member), allowedDepartments)
 		if len(departmentIDs) == 0 {
 			continue
 		}
-		localUser := resolveMemberUser(member, usersByID, usersByEmail)
+		localUser := facts.UserForMember(member)
 		isActor := localUser != nil && localUser.ID == actorUserID
 		if isActor && !includeActor {
 			continue
@@ -501,7 +367,7 @@ func buildSubjects(actorUserID int, members []*ent.DirectoryMember, memberDepart
 			subject.RelayUserID = localUser.RelayUserID
 			subject.Selectable = !isActor && localUser.RelayUserID != nil
 		}
-		key := subjectIdentityKey(localUser, member)
+		key := subjectIdentityKey(localUser, &member)
 		if existing, ok := subjectsByKey[key]; ok {
 			existing.DepartmentExternalIDs = appendUniqueStrings(existing.DepartmentExternalIDs, subject.DepartmentExternalIDs...)
 			if existing.DepartmentExternalID == "" && len(existing.DepartmentExternalIDs) > 0 {
@@ -532,7 +398,7 @@ func buildSubjects(actorUserID int, members []*ent.DirectoryMember, memberDepart
 	return subjects
 }
 
-func subjectIdentityKey(localUser *ent.User, member *ent.DirectoryMember) string {
+func subjectIdentityKey(localUser *directoryfacts.User, member *directoryfacts.Member) string {
 	if localUser != nil {
 		return fmt.Sprintf("user:%d", localUser.ID)
 	}
@@ -543,22 +409,11 @@ func subjectIdentityKey(localUser *ent.User, member *ent.DirectoryMember) string
 	if externalID != "" {
 		return "directory:" + externalID
 	}
-	email := normalizeEmail(member.EmailNormalized)
+	email := directoryfacts.NormalizeEmail(member.EmailNormalized)
 	if email != "" {
 		return "email:" + email
 	}
 	return fmt.Sprintf("member:%d", member.ID)
-}
-
-func memberDepartmentIDsForMember(member *ent.DirectoryMember, indexed map[int][]string) []string {
-	if member == nil {
-		return nil
-	}
-	departmentIDs := appendUniqueStrings(indexed[member.ID])
-	if len(departmentIDs) == 0 {
-		departmentIDs = appendUniqueStrings(departmentIDs, member.DepartmentExternalID)
-	}
-	return departmentIDs
 }
 
 func filterAllowedMemberDepartments(departmentIDs []string, allowedDepartments map[string]struct{}) []string {
@@ -576,26 +431,14 @@ func filterAllowedMemberDepartments(departmentIDs []string, allowedDepartments m
 	return out
 }
 
-func memberBelongsToAnyDepartment(member *ent.DirectoryMember, indexed map[int][]string, allowed map[string]struct{}) bool {
-	for _, departmentID := range memberDepartmentIDsForMember(member, indexed) {
-		if _, ok := allowed[departmentID]; ok {
-			return true
-		}
-	}
-	return false
-}
-
-func buildTargetRepresentedRoots(members []*ent.DirectoryMember, usersByID map[int]*ent.User, usersByEmail map[string]*ent.User, memberRepresentedRoots map[string][]string) map[int][]string {
+func buildTargetRepresentedRoots(facts *directoryfacts.Facts) map[int][]string {
 	out := map[int][]string{}
-	for _, member := range members {
-		if member == nil {
-			continue
-		}
-		roots := memberRepresentedRoots[strings.TrimSpace(member.ExternalID)]
+	for _, member := range facts.Members() {
+		roots := facts.RepresentativeRoots(member.ExternalID)
 		if len(roots) == 0 {
 			continue
 		}
-		localUser := resolveMemberUser(member, usersByID, usersByEmail)
+		localUser := facts.UserForMember(member)
 		if localUser == nil {
 			continue
 		}
@@ -604,23 +447,9 @@ func buildTargetRepresentedRoots(members []*ent.DirectoryMember, usersByID map[i
 	return out
 }
 
-func resolveMemberUser(member *ent.DirectoryMember, usersByID map[int]*ent.User, usersByEmail map[string]*ent.User) *ent.User {
-	if member == nil {
-		return nil
-	}
-	if member.MatchedUserID != nil && *member.MatchedUserID > 0 {
-		if user := usersByID[*member.MatchedUserID]; user != nil {
-			return user
-		}
-	}
-	return usersByEmail[normalizeEmail(member.EmailNormalized)]
-}
-
-func subjectDisplayName(localUser *ent.User, member *ent.DirectoryMember) string {
-	if member != nil {
-		if name := strings.TrimSpace(member.DisplayName); name != "" {
-			return name
-		}
+func subjectDisplayName(localUser *directoryfacts.User, member directoryfacts.Member) string {
+	if name := strings.TrimSpace(member.DisplayName); name != "" {
+		return name
 	}
 	if localUser != nil {
 		if username := strings.TrimSpace(localUser.Username); username != "" {
@@ -630,24 +459,19 @@ func subjectDisplayName(localUser *ent.User, member *ent.DirectoryMember) string
 			return email
 		}
 	}
-	if member != nil {
-		if email := strings.TrimSpace(member.EmailNormalized); email != "" {
-			return email
-		}
+	if email := strings.TrimSpace(member.EmailNormalized); email != "" {
+		return email
 	}
 	return ""
 }
 
-func subjectEmail(localUser *ent.User, member *ent.DirectoryMember) string {
+func subjectEmail(localUser *directoryfacts.User, member directoryfacts.Member) string {
 	if localUser != nil {
 		if email := strings.TrimSpace(localUser.Email); email != "" {
 			return email
 		}
 	}
-	if member != nil {
-		return strings.TrimSpace(member.EmailNormalized)
-	}
-	return ""
+	return strings.TrimSpace(member.EmailNormalized)
 }
 
 func stringSet(values []string) map[string]struct{} {
@@ -660,49 +484,6 @@ func stringSet(values []string) map[string]struct{} {
 		out[value] = struct{}{}
 	}
 	return out
-}
-
-func normalizeEmail(email string) string {
-	return strings.ToLower(strings.TrimSpace(email))
-}
-
-func metadataStringValues(value any) []string {
-	switch typed := value.(type) {
-	case nil:
-		return nil
-	case []string:
-		return compactStrings(typed)
-	case []any:
-		out := make([]string, 0, len(typed))
-		for _, item := range typed {
-			out = append(out, metadataScalarString(item))
-		}
-		return compactStrings(out)
-	case string:
-		return compactStrings(strings.Split(typed, ","))
-	default:
-		return compactStrings([]string{metadataScalarString(typed)})
-	}
-}
-
-func metadataScalarString(value any) string {
-	switch typed := value.(type) {
-	case nil:
-		return ""
-	case float64:
-		if math.Trunc(typed) == typed {
-			return fmt.Sprintf("%.0f", typed)
-		}
-		return strings.TrimSpace(fmt.Sprint(typed))
-	case float32:
-		value := float64(typed)
-		if math.Trunc(value) == value {
-			return fmt.Sprintf("%.0f", value)
-		}
-		return strings.TrimSpace(fmt.Sprint(typed))
-	default:
-		return strings.TrimSpace(fmt.Sprint(typed))
-	}
 }
 
 func compactStrings(values []string) []string {

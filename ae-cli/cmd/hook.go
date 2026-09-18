@@ -24,6 +24,7 @@ var hookCmd = &cobra.Command{
 var hookCommandTimeout = 10 * time.Second
 var hookEligibilityResolveTimeout = 2 * time.Second
 var runBackgroundSyncTask = hooks.RunPendingSyncTask
+var runDetachedBackgroundSyncTask = hooks.RunDetachedPendingSyncTask
 
 var newHookUploader = func() hooks.Uploader {
 	if reportingConfig, ok := loadEnabledReportingConfig(); ok {
@@ -139,7 +140,7 @@ var hookBackgroundSyncCmd = &cobra.Command{
 		if !ok {
 			return nil
 		}
-		return runBackgroundSyncTask(context.Background(), execCtx, newHookUploader())
+		return runDetachedBackgroundSyncTask(execCtx, newHookUploader())
 	},
 }
 

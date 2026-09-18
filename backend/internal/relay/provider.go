@@ -187,8 +187,22 @@ type UserSubscriptionDirectoryProvider interface {
 	ListUsersWithActiveSubscriptions(ctx context.Context) ([]User, map[int64][]int64, error)
 }
 
+// UserRelationshipSnapshotReader returns one request-scoped, provider-wide
+// identity and subscription snapshot. Implementations must read every page.
+type UserRelationshipSnapshotReader interface {
+	ListUserRelationships(ctx context.Context) ([]UserRelationship, error)
+}
+
 type UserSubscriptionLister interface {
 	ListUserSubscriptions(ctx context.Context, relayUserID int64) ([]UserSubscription, error)
+}
+
+// IdempotentUserSubscriptionWriter is an optional admin write capability for
+// callers that must safely replay one exact subscription mutation.
+type IdempotentUserSubscriptionWriter interface {
+	AssignSubscriptionForUserWithOperationKey(ctx context.Context, relayUserID, groupID int64, validityDays int, operationKey string) error
+	ExtendSubscriptionForUserWithOperationKey(ctx context.Context, relayUserID, groupID int64, days int, operationKey string) error
+	ExtendSubscriptionByIDWithOperationKey(ctx context.Context, subscriptionID int64, days int, operationKey string) error
 }
 
 type UserSubscriptionQuotaResetter interface {

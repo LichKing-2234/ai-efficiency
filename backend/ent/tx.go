@@ -56,6 +56,14 @@ type Tx struct {
 	QuotaResetRequest *QuotaResetRequestClient
 	// QuotaResetRequestEvent is the client for interacting with the QuotaResetRequestEvent builders.
 	QuotaResetRequestEvent *QuotaResetRequestEventClient
+	// RelationshipOperation is the client for interacting with the RelationshipOperation builders.
+	RelationshipOperation *RelationshipOperationClient
+	// RelationshipOperationAttempt is the client for interacting with the RelationshipOperationAttempt builders.
+	RelationshipOperationAttempt *RelationshipOperationAttemptClient
+	// RelationshipOperationMapping is the client for interacting with the RelationshipOperationMapping builders.
+	RelationshipOperationMapping *RelationshipOperationMappingClient
+	// RelationshipOperationStep is the client for interacting with the RelationshipOperationStep builders.
+	RelationshipOperationStep *RelationshipOperationStepClient
 	// RelayGroupMapping is the client for interacting with the RelayGroupMapping builders.
 	RelayGroupMapping *RelayGroupMappingClient
 	// RelayProvider is the client for interacting with the RelayProvider builders.
@@ -229,6 +237,10 @@ func (tx *Tx) init() {
 	tx.QuotaResetNotificationSetting = NewQuotaResetNotificationSettingClient(tx.config)
 	tx.QuotaResetRequest = NewQuotaResetRequestClient(tx.config)
 	tx.QuotaResetRequestEvent = NewQuotaResetRequestEventClient(tx.config)
+	tx.RelationshipOperation = NewRelationshipOperationClient(tx.config)
+	tx.RelationshipOperationAttempt = NewRelationshipOperationAttemptClient(tx.config)
+	tx.RelationshipOperationMapping = NewRelationshipOperationMappingClient(tx.config)
+	tx.RelationshipOperationStep = NewRelationshipOperationStepClient(tx.config)
 	tx.RelayGroupMapping = NewRelayGroupMappingClient(tx.config)
 	tx.RelayProvider = NewRelayProviderClient(tx.config)
 	tx.RepoConfig = NewRepoConfigClient(tx.config)

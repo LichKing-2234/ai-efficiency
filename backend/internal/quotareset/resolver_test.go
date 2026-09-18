@@ -513,14 +513,15 @@ func createQuotaResetDirectorySource(t *testing.T, ctx context.Context, client *
 
 func createQuotaResetDepartment(t *testing.T, ctx context.Context, client *ent.Client, sourceID int, externalID, name string, parent *string) *ent.DirectoryDepartment {
 	t.Helper()
+	runID := quotaResetSourceRunID(t, ctx, client, sourceID)
 	create := client.DirectoryDepartment.Create().
 		SetSourceID(sourceID).
 		SetExternalID(externalID).
 		SetName(name).
 		SetPath(name).
-		SetLastSeenRunID(1)
+		SetLastSeenRunID(runID)
 	if parent != nil {
-		create.SetParentExternalID(*parent)
+		create.SetParentExternalID(*parent).SetEffectiveParentExternalID(*parent)
 	}
 	department, err := create.Save(ctx)
 	if err != nil {
@@ -552,13 +553,14 @@ func createQuotaResetUser(t *testing.T, ctx context.Context, client *ent.Client,
 
 func createQuotaResetMember(t *testing.T, ctx context.Context, client *ent.Client, sourceID int, externalID, email, departmentID string, matchedUserID *int) *ent.DirectoryMember {
 	t.Helper()
+	runID := quotaResetSourceRunID(t, ctx, client, sourceID)
 	create := client.DirectoryMember.Create().
 		SetSourceID(sourceID).
 		SetExternalID(externalID).
 		SetEmailNormalized(strings.ToLower(strings.TrimSpace(email))).
 		SetDisplayName(externalID).
 		SetDepartmentExternalID(departmentID).
-		SetLastSeenRunID(1)
+		SetLastSeenRunID(runID)
 	if matchedUserID != nil {
 		create.SetMatchedUserID(*matchedUserID)
 	}
@@ -567,6 +569,22 @@ func createQuotaResetMember(t *testing.T, ctx context.Context, client *ent.Clien
 		t.Fatalf("create member %s: %v", externalID, err)
 	}
 	return member
+}
+
+func quotaResetSourceRunID(t *testing.T, ctx context.Context, client *ent.Client, sourceID int) int {
+	t.Helper()
+	source, err := client.DirectorySource.Get(ctx, sourceID)
+	if err != nil {
+		t.Fatalf("get directory source %d: %v", sourceID, err)
+	}
+	if source.LastSuccessfulRunID != nil {
+		return *source.LastSuccessfulRunID
+	}
+	if source.LastRunID != nil {
+		return *source.LastRunID
+	}
+	t.Fatalf("directory source %d has no run", sourceID)
+	return 0
 }
 
 func createQuotaResetMemberInDepartment(t *testing.T, ctx context.Context, client *ent.Client, sourceID int, externalID string, user *ent.User, departmentID string) *ent.DirectoryMember {

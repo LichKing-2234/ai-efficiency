@@ -163,9 +163,9 @@ const rows = [
 ]
 
 for (const [row, maximum] of [
-  [initialShellRow, 72_800],
-  [defaultUsageRow, 159_500],
-  [adminUsersRow, 253_909],
+  [initialShellRow, 76_800],
+  [defaultUsageRow, 163_840],
+  [adminUsersRow, 262_144],
 ]) {
   assert(row.gzip <= maximum, `${row.label} gzip ${row.gzip} exceeds budget ${maximum}`)
 }

@@ -17,6 +17,8 @@ export interface RelayPlanningCandidate {
   can_add: boolean
   selected: boolean
   eligible: boolean
+	can_retain: boolean
+	disposition: 'retained' | 'target_only' | 'migration' | 'available' | 'excluded'
   warnings?: string[]
 }
 
@@ -25,6 +27,7 @@ export interface RelayPlanningAssignment {
   total_cost: number
   user_ids: number[]
   target_group_id?: number
+  target_unavailable?: boolean
   target_group_name?: string
 	current_target_group_name?: string
 	suggested_target_group_name?: string
@@ -55,6 +58,7 @@ export interface RelayPlanningPlan {
   group_count: number
   candidates: RelayPlanningCandidate[]
   assignments: RelayPlanningAssignment[]
+	template_accounts: RelayPlanningAccount[]
 	unmanaged_members?: RelayPlanningUnmanagedMember[]
 	target_summaries: RelayPlanningTargetSummary[]
 	warnings?: string[]
@@ -95,9 +99,119 @@ export interface RelayPlanningMapping {
 	account_pools: RelayPlanningTargetAccountPool[]
   operation_state?: Record<string, Record<string, string>>
   source_department_ids?: string[]
+	baseline_revision?: number
+	alignment?: 'aligned' | 'drifted' | 'operating'
+	alignment_differences?: string[]
+	active_operation?: RelayPlanningOperation
   department_suggestions?: Array<{ id: string; name: string }>
   warnings?: string[]
   updated_at: string
+}
+
+export interface RelayPlanningOperationStep {
+	id: number
+	step_key: string
+	action: string
+	relationship_type: string
+	lifecycle: 'planned' | 'dispatched' | 'readback_verified' | 'failed' | 'blocked_external'
+	reviewed_resource_ids: number[]
+	resume_supported: boolean
+	restore_supported: boolean
+}
+
+export interface RelayPlanningOperation {
+	id: number
+	lifecycle: 'applying' | 'interrupted' | 'resuming' | 'restoring' | 'applied' | 'restored' | 'blocked_external'
+	supported_directions: Array<'resume' | 'restore'>
+	affected_mapping_ids: number[]
+	attempt_count: number
+	steps: RelayPlanningOperationStep[]
+	external_blocker?: { resource_type: string; resource_id: number; relationship: string }
+}
+
+export interface RelayPlanningRecoveryPreview {
+	operation: RelayPlanningOperation
+	direction: 'resume' | 'restore'
+	baseline_revisions: Record<string, number>
+	relationship_fingerprint: string
+	resume_only: boolean
+	external_blocker?: { resource_type: string; resource_id: number; relationship: string }
+	observed_facts: Array<Record<string, unknown>>
+}
+
+export interface RelayPlanningRecoveryResult {
+	operation_id: number
+	direction: 'resume' | 'restore'
+	lifecycle: 'applied' | 'restored'
+	attempt_id: number
+}
+
+export type RelayPlanningContainment =
+	| { mode: 'none' }
+	| { mode: 'resume_exact'; operation_key?: string }
+	| { mode: 'manual_intervention'; reason: 'incomplete_identity' }
+
+function operationEntryNeedsRetry(entry: Record<string, string>): boolean {
+	return Boolean(entry.error || entry.status === 'failed' || entry.subscription === 'failed' || entry.source_removal === 'failed' || entry.api_keys?.includes(':failed:'))
+}
+
+export function relayPlanningContainment(mapping: RelayPlanningMapping): RelayPlanningContainment {
+	if (mapping.status !== 'needs_retry') return { mode: 'none' }
+	const state = mapping.operation_state ?? {}
+	const operation = state.operation ?? {}
+	const retryMembers = Object.entries(state).filter(([key, entry]) => key.startsWith('member:') && operationEntryNeedsRetry(entry))
+	if (!operation.intent_hash || retryMembers.some(([, entry]) => !entry.step_identity)) {
+		return { mode: 'manual_intervention', reason: 'incomplete_identity' }
+	}
+	return { mode: 'resume_exact', ...(operation.key ? { operation_key: operation.key } : {}) }
+}
+
+export interface RelayPlanningMappingRenewalPreview {
+	mapping_id: number
+	provider_id: number
+	platform: string
+	renewal_days: number
+	members: RelayPlanningMappingRenewalMember[]
+	generated_at: string
+	relationship_fingerprint: string
+}
+
+export interface RelayPlanningMappingRenewalMember {
+	user_id: number
+	relay_user_id: number
+	username: string
+	email: string
+	expected_target_group_id: number
+	expected_target_group_name: string
+	status: 'active' | 'expired' | 'missing' | 'suspended'
+	current_expiry?: string
+	planned_action: 'extend' | 'renew' | 'create' | 'skip'
+	resulting_expiry?: string
+	drift?: Array<{ group_id: number; group_name: string; status: string; expires_at?: string }>
+}
+
+export interface RelayPlanningMappingRenewalReviewedMember {
+	user_id: number
+	target_group_id: number
+	planned_action: RelayPlanningMappingRenewalMember['planned_action']
+}
+
+export interface RelayPlanningMappingRenewalExecution {
+	mapping_id: number
+	renewal_days: number
+	operation_key: string
+	members: RelayPlanningMappingRenewalMemberResult[]
+	preview?: RelayPlanningMappingRenewalPreview
+	preview_error?: string
+}
+
+export interface RelayPlanningMappingRenewalMemberResult {
+	user_id: number
+	relay_user_id: number
+	target_group_id: number
+	action: RelayPlanningMappingRenewalMember['planned_action']
+	status: 'succeeded' | 'skipped' | 'failed'
+	error?: string
 }
 
 export interface RelayPlanningAccountIntent {
@@ -132,7 +246,7 @@ export interface RelayPlanningAccountSearchPage {
 
 export interface RelayPlanningExecution {
   plan: RelayPlanningPlan
-  groups: Array<{ index: number; id?: number; name?: string; current_name?: string; status: string; rename?: string; error?: string }>
+  groups: Array<{ index: number; id?: number; name?: string; current_name?: string; status: string; rename?: string; creation?: 'completed' | 'pending' | 'failed'; error?: string }>
 	accounts: Array<{ target_group_id: number; account_id?: number; desired_priority?: number; status: string; error?: string }>
   members: Array<{ user_id?: number; relay_user_id?: number; target_group_id?: number; subscription: string; source_removal: string; api_keys?: string[]; error?: string }>
   mappings?: Array<{ mapping_id: number; role: 'destination' | 'source'; status: string; error?: string }>
@@ -200,6 +314,26 @@ export function listRelayGroupMappings(providerId?: number) {
   return client.get<ApiResponse<{ items: RelayPlanningMapping[] }>>('/admin/relay-planning/mappings', {
     params: providerId ? { provider_id: providerId } : undefined,
   })
+}
+
+export function getRelayPlanningOperation(operationId: number) {
+	return client.get<ApiResponse<RelayPlanningOperation>>(`/admin/relay-planning/operations/${operationId}`)
+}
+
+export function previewRelayPlanningRecovery(operationId: number, direction: 'resume' | 'restore') {
+	return client.post<ApiResponse<RelayPlanningRecoveryPreview>>(`/admin/relay-planning/operations/${operationId}/recovery/preview`, { direction })
+}
+
+export function confirmRelayPlanningRecovery(operationId: number, data: { direction: 'resume' | 'restore'; expected_baseline_revisions: Record<string, number>; expected_relationship_fingerprint: string }) {
+	return client.post<ApiResponse<RelayPlanningRecoveryResult>>(`/admin/relay-planning/operations/${operationId}/recovery/confirm`, data)
+}
+
+export function previewRelayMappingRenewal(id: number, data: { renewal_days: number }) {
+	return client.post<ApiResponse<RelayPlanningMappingRenewalPreview>>(`/admin/relay-planning/mappings/${id}/renewal/preview`, data)
+}
+
+export function executeRelayMappingRenewal(id: number, data: { renewal_days: number; members: RelayPlanningMappingRenewalReviewedMember[]; expected_relationship_fingerprint: string; operation_key: string; retry: boolean }) {
+	return client.post<ApiResponse<RelayPlanningMappingRenewalExecution>>(`/admin/relay-planning/mappings/${id}/renewal/execute`, data)
 }
 
 export function rebindRelayGroupMapping(id: number, data: { department_id?: string; template_group_id?: number; source_group_id?: number; group_ids: number[]; status?: string }) {

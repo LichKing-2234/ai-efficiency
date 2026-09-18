@@ -20,5 +20,6 @@ export function useActivityTeams() {
     branchFor: organization.branchFor,
     ensureBranch: organization.ensureBranch,
     loadMoreDepartments: organization.loadMoreDepartments,
+    retryBranch: organization.retryBranch,
   }
 }

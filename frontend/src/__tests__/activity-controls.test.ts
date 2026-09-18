@@ -9,6 +9,18 @@ describe('Activity controls', () => {
     vi.clearAllMocks()
   })
 
+  it('keeps Activity ranges independent from the AI Usage window preference', async () => {
+    localStorage.setItem('ae.usage.window', 'today')
+    const wrapper = mount(ActivityDateRange, {
+      props: { from: '2026-08-01', to: '2026-08-08' },
+    })
+
+    expect((wrapper.get('[data-testid="activity-range-30"] input').element as HTMLInputElement).checked).toBe(true)
+    await wrapper.get('[data-testid="activity-range-7"]').trigger('click')
+
+    expect(localStorage.getItem('ae.usage.window')).toBe('today')
+  })
+
   it('uses Element Plus range controls while preserving the exclusive custom end date', async () => {
     const wrapper = mount(ActivityDateRange, {
       props: {

@@ -367,6 +367,41 @@ func TestPrintMachineSyncTaskStatusAggregatesWithoutIdentifiers(t *testing.T) {
 	}
 }
 
+func TestPrintMachineSyncTaskStatusReportsSyntheticFixtureQuarantine(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	now := time.Now().UTC()
+	if err := reporting.Save("", &reporting.Config{
+		Version: 1, InstallationID: "11111111-1111-4111-8111-111111111111", ServerURL: "https://ae.example.com",
+		AuthSubject: "user:1", RelayProviderID: 17, ReporterToken: "reporter-token", ReportingEnabled: true,
+		Protocol: client.AttributionProtocol{LedgerEpoch: client.AttributionLedgerEpochShadowV2, V1WritePolicy: client.AttributionV1WritePolicyAccept},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := hooks.SaveSyncTask(hooks.SyncTask{
+		WorkspaceID: "synthetic-workspace", RepoRoot: "/deleted/test-fixture", RepoKey: "repo-host.example.com/org/repo",
+		ServerURL: "https://ae.example.com", AuthSubject: "user:1",
+		Status: hooks.SyncTaskStatusPending, LastRequestedAt: now, LastError: "repository unavailable",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	if err := printMachineSyncTaskStatus(&output); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"Machine Sync Tasks: queued=0 running=0 yielded=0 recoverable=0 terminal=0 expiring=0",
+		"Synthetic Fixture Quarantine: workspaces=1 unresolved=0 migrated_at=",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("machine status missing %q:\n%s", want, output.String())
+		}
+	}
+	if strings.Contains(output.String(), "synthetic-workspace") || strings.Contains(output.String(), "repo-host.example.com") {
+		t.Fatalf("machine status leaked synthetic identifiers: %s", output.String())
+	}
+}
+
 func ptrCmdTime(value time.Time) *time.Time { return &value }
 
 func TestSyncStatusShowsUnresolvedAndDeadLetterCounts(t *testing.T) {

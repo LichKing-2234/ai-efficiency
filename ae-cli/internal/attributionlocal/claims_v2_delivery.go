@@ -17,9 +17,13 @@ const (
 )
 
 type V2DeliverySummary struct {
-	Pending         int
-	Conflict        int
-	UpgradeRequired int
+	Pending                  int
+	Conflict                 int
+	UpgradeRequired          int
+	Accepted                 int
+	MissingRequestID         int
+	AmbiguousRequestEvidence int
+	RequestEvidenceExpired   int
 }
 
 func UpdateV2ClaimState(ctx context.Context, fn func(*V2ClaimState) error) error {
@@ -49,7 +53,17 @@ func SummarizeV2ClaimDelivery(state *V2ClaimState) V2DeliverySummary {
 		default:
 			if v2ClaimUploadable(claim) {
 				summary.Pending++
+			} else if claim.GroupAcknowledged && claim.GapReason == "" {
+				summary.Accepted++
 			}
+		}
+		switch claim.GapReason {
+		case v2GapMissingRequestID:
+			summary.MissingRequestID++
+		case v2GapAmbiguousRequestEvidence:
+			summary.AmbiguousRequestEvidence++
+		case v2GapRequestEvidenceExpired:
+			summary.RequestEvidenceExpired++
 		}
 	}
 	return summary

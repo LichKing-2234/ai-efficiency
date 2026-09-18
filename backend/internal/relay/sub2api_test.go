@@ -1280,6 +1280,88 @@ func TestListUsersWithActiveSubscriptionsUsesBatchDirectoryFacts(t *testing.T) {
 	}
 }
 
+func TestListUserRelationshipsReadsEveryPageAndPreservesCompleteSubscriptions(t *testing.T) {
+	pages := make([]string, 0, 2)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("include_subscriptions"); got != "true" {
+			t.Fatalf("include_subscriptions = %q, want true", got)
+		}
+		page := r.URL.Query().Get("page")
+		pages = append(pages, page)
+		pageNumber := 1
+		item := map[string]any{
+			"id": 11, "email": "alice@example.com", "username": "alice", "role": "user",
+			"subscriptions": []any{
+				map[string]any{"id": 71, "user_id": 11, "status": "active", "group_id": 101, "expires_at": "2026-09-01T00:00:00Z", "group": map[string]any{"id": 101, "name": "Group Alpha", "platform": "openai"}},
+				map[string]any{"id": 72, "user_id": 11, "status": "suspended", "group_id": 102, "expires_at": "2026-10-01T00:00:00Z"},
+			},
+		}
+		if page == "2" {
+			pageNumber = 2
+			item = map[string]any{
+				"id": 12, "email": "bob@example.org", "username": "bob", "role": "admin",
+				"subscriptions": []any{map[string]any{"id": 73, "user_id": 12, "status": "expired", "group_id": 103, "expires_at": "2026-08-01T00:00:00Z"}},
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data":    map[string]any{"items": []any{item}, "page": pageNumber, "page_size": 200, "pages": 2, "total": 2},
+		})
+	})
+
+	provider := newTestProvider(t, mux)
+	reader, ok := provider.(relay.UserRelationshipSnapshotReader)
+	if !ok {
+		t.Fatal("provider does not implement UserRelationshipSnapshotReader")
+	}
+	relationships, err := reader.ListUserRelationships(context.Background())
+	if err != nil {
+		t.Fatalf("ListUserRelationships() error = %v", err)
+	}
+	if got, want := pages, []string{"1", "2"}; !cmp.Equal(got, want) {
+		t.Fatalf("pages = %#v, want %#v", got, want)
+	}
+	want := []relay.UserRelationship{
+		{User: relay.User{ID: 11, Email: "alice@example.com", Username: "alice", Role: "user", AllowedGroups: []relay.Group{{ID: 101, Name: "Group Alpha", Platform: "openai"}}}, Subscriptions: []relay.UserSubscription{
+			{ID: 71, UserID: 11, GroupID: 101, Status: "active", ExpiresAt: time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC), Group: &relay.Group{ID: 101, Name: "Group Alpha", Platform: "openai"}},
+			{ID: 72, UserID: 11, GroupID: 102, Status: "suspended", ExpiresAt: time.Date(2026, time.October, 1, 0, 0, 0, 0, time.UTC)},
+		}},
+		{User: relay.User{ID: 12, Email: "bob@example.org", Username: "bob", Role: "admin", AllowedGroups: []relay.Group{}}, Subscriptions: []relay.UserSubscription{
+			{ID: 73, UserID: 12, GroupID: 103, Status: "expired", ExpiresAt: time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)},
+		}},
+	}
+	if !cmp.Equal(relationships, want) {
+		t.Fatalf("relationships mismatch (-want +got):\n%s", cmp.Diff(want, relationships))
+	}
+}
+
+func TestListUserSubscriptionsPreservesRenewalRelationshipFacts(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users/11/subscriptions", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":[{"id":71,"user_id":11,"group_id":101,"status":"active","starts_at":"2026-08-01T00:00:00Z","expires_at":"2026-09-01T00:00:00Z","notes":"provider-private"}]}`))
+	})
+
+	provider := newTestProvider(t, mux)
+	lister, ok := provider.(relay.UserSubscriptionLister)
+	if !ok {
+		t.Fatal("provider does not implement UserSubscriptionLister")
+	}
+	subscriptions, err := lister.ListUserSubscriptions(context.Background(), 11)
+	if err != nil {
+		t.Fatalf("ListUserSubscriptions() error = %v", err)
+	}
+	expiresAt := time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC)
+	if got, want := subscriptions, []relay.UserSubscription{{ID: 71, UserID: 11, GroupID: 101, Status: "active", ExpiresAt: expiresAt}}; !cmp.Equal(got, want) {
+		t.Fatalf("subscriptions mismatch (-want +got):\n%s", cmp.Diff(want, got))
+	}
+}
+
 func TestProviderWideDirectoryContractUsesFixedQueryAndAuthoritativePages(t *testing.T) {
 	pageBodies := map[string][]byte{
 		"1": []byte(`{"success":true,"data":{"items":[{"id":11},{"id":12}],"page":1,"page_size":1000,"pages":2,"total":3}}`),
@@ -2112,6 +2194,49 @@ func TestExtendSubscriptionForUserFindsExistingSubscriptionAndPostsDays(t *testi
 	}
 	if extendBody["days"] != float64(7) {
 		t.Fatalf("unexpected extend body: %+v", extendBody)
+	}
+}
+
+func TestIdempotentUserSubscriptionWriterPropagatesOperationKeys(t *testing.T) {
+	var assignKey string
+	var extendKeys []string
+	var discoveryReads int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/subscriptions/assign", func(w http.ResponseWriter, r *http.Request) {
+		assignKey = r.Header.Get("Idempotency-Key")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"id":77,"status":"active"}}`))
+	})
+	mux.HandleFunc("/api/v1/admin/users/42/subscriptions", func(w http.ResponseWriter, r *http.Request) {
+		discoveryReads++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":[{"id":77,"user_id":42,"group_id":5,"status":"active"}]}`))
+	})
+	mux.HandleFunc("/api/v1/admin/subscriptions/77/extend", func(w http.ResponseWriter, r *http.Request) {
+		extendKeys = append(extendKeys, r.Header.Get("Idempotency-Key"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"id":77,"status":"active"}}`))
+	})
+
+	provider := newTestProvider(t, mux)
+	writer, ok := provider.(relay.IdempotentUserSubscriptionWriter)
+	if !ok {
+		t.Fatal("provider does not implement IdempotentUserSubscriptionWriter")
+	}
+	if err := writer.AssignSubscriptionForUserWithOperationKey(context.Background(), 42, 5, 365, "mapping-renewal-create"); err != nil {
+		t.Fatalf("assign with operation key: %v", err)
+	}
+	if err := writer.ExtendSubscriptionForUserWithOperationKey(context.Background(), 42, 5, 365, "mapping-renewal-extend"); err != nil {
+		t.Fatalf("extend with operation key: %v", err)
+	}
+	if err := writer.ExtendSubscriptionByIDWithOperationKey(context.Background(), 77, 30, "mapping-renewal-reviewed-extend"); err != nil {
+		t.Fatalf("extend reviewed subscription with operation key: %v", err)
+	}
+	if assignKey != "mapping-renewal-create" || !cmp.Equal(extendKeys, []string{"mapping-renewal-extend", "mapping-renewal-reviewed-extend"}) {
+		t.Fatalf("operation keys = assign:%q extend:%q, want propagated keys", assignKey, extendKeys)
+	}
+	if discoveryReads != 1 {
+		t.Fatalf("subscription discovery reads = %d, want only the compatibility user/group extension read", discoveryReads)
 	}
 }
 

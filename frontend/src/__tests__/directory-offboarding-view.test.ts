@@ -2,10 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
-import { ElDialog } from 'element-plus'
+import { ElDialog, ElPagination } from 'element-plus'
 import DirectoryOffboardingView from '@/views/admin/DirectoryOffboardingView.vue'
 import { setLocale } from '@/i18n'
 import { useWorkItemsStore } from '@/stores/workItems'
+import { withTeleportedContent } from './helpers/teleport'
 
 vi.mock('@/api/directory', () => ({
   listDirectoryOffboardingCandidates: vi.fn(),
@@ -24,6 +25,16 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+async function clickOffboardingPage(wrapper: ReturnType<typeof mount>, direction: 'prev' | 'next') {
+  await offboardingPageButton(wrapper, direction).trigger('click')
+  await flushPromises()
+}
+
+function offboardingPageButton(wrapper: ReturnType<typeof mount>, direction: 'prev' | 'next') {
+  const label = direction === 'prev' ? 'Go to previous page' : 'Go to next page'
+  return wrapper.get(`[data-testid="offboarding-pagination"] button[aria-label="${label}"]`)
+}
+
 function candidate(userID: number, username: string, email: string) {
   return {
     user_id: userID,
@@ -39,13 +50,13 @@ function candidate(userID: number, username: string, email: string) {
   }
 }
 
-function candidatePage(items: ReturnType<typeof candidate>[], page = 1, total = items.length) {
+function candidatePage(items: ReturnType<typeof candidate>[], page = 1, total = items.length, pageSize = 20) {
   return {
     data: {
       data: {
         items,
         page,
-        page_size: 20,
+        page_size: pageSize,
         total,
       },
     },
@@ -76,7 +87,7 @@ function createRouterForOffboarding() {
   })
 }
 
-async function mountOffboarding(configureMocks?: (api: any) => void) {
+async function mountOffboarding(configureMocks?: (api: any) => void, path = '/admin/directory/offboarding') {
   const api = await import('@/api/directory') as any
   api.listDirectoryOffboardingCandidates.mockResolvedValue(candidatePage([
     candidate(7, 'bob', 'bob@example.org'),
@@ -87,19 +98,18 @@ async function mountOffboarding(configureMocks?: (api: any) => void) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const router = createRouterForOffboarding()
-  await router.push('/admin/directory/offboarding')
+  await router.push(path)
   await router.isReady()
-  const wrapper = mount(DirectoryOffboardingView, {
+  const wrapper = withTeleportedContent(mount(DirectoryOffboardingView, {
     global: {
       plugins: [pinia, router],
       stubs: {
-        teleport: true,
         AppLayout: { template: '<div><slot /></div>' },
       },
     },
-  })
+  }))
   await flushPromises()
-  return { wrapper, api, workItems: useWorkItemsStore(pinia) }
+  return { wrapper, api, router, workItems: useWorkItemsStore(pinia) }
 }
 
 describe('DirectoryOffboardingView', () => {
@@ -127,13 +137,17 @@ describe('DirectoryOffboardingView', () => {
   })
 
   it('attaches search, candidates, and pagination to one work surface', async () => {
-    const { wrapper } = await mountOffboarding()
+    const { wrapper } = await mountOffboarding((api) => {
+      api.listDirectoryOffboardingCandidates.mockResolvedValue(candidatePage([
+        candidate(7, 'bob', 'bob@example.org'),
+      ], 1, 21))
+    })
 
     const surface = wrapper.get('[data-testid="offboarding-work-surface"]')
     expect(surface.classes()).toContain('max-w-5xl')
     expect(surface.find('[data-testid="offboarding-search"]').exists()).toBe(true)
     expect(surface.find('[data-testid="offboarding-candidate-7"]').exists()).toBe(true)
-    expect(surface.find('[data-testid="offboarding-page-status"]').exists()).toBe(true)
+    expect(surface.find('[data-testid="offboarding-pagination"]').exists()).toBe(true)
     expect(surface.get('[data-testid="offboarding-candidate-grid"]').classes()).not.toContain('max-w-2xl')
   })
 
@@ -226,29 +240,51 @@ describe('DirectoryOffboardingView', () => {
       })
     })
 
-    expect([
-      wrapper.get('[data-testid="offboarding-prev-page"]'),
-      wrapper.get('[data-testid="offboarding-next-page"]'),
-    ].every((button) => button.classes().includes('el-button'))).toBe(true)
-    expect(wrapper.get('[data-testid="offboarding-prev-page"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('[data-testid="offboarding-next-page"]').attributes('disabled')).toBeUndefined()
-    expect(wrapper.get('[data-testid="offboarding-page-status"]').text()).toContain('Page 1 / 2')
-    expect(wrapper.text()).toContain('21 total')
+    expect(offboardingPageButton(wrapper, 'prev').attributes('disabled')).toBeDefined()
+    expect(offboardingPageButton(wrapper, 'next').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-testid="offboarding-page-range"]').text()).toBe('Showing 1-20 of 21')
 
-    await wrapper.get('[data-testid="offboarding-next-page"]').trigger('click')
-    await flushPromises()
+    await clickOffboardingPage(wrapper, 'next')
 
     expect(api.listDirectoryOffboardingCandidates).toHaveBeenLastCalledWith({ q: '', page: 2, page_size: 20 })
-    expect(wrapper.get('[data-testid="offboarding-prev-page"]').attributes('disabled')).toBeUndefined()
-    expect(wrapper.get('[data-testid="offboarding-next-page"]').attributes('disabled')).toBeDefined()
+    expect(offboardingPageButton(wrapper, 'prev').attributes('disabled')).toBeUndefined()
+    expect(offboardingPageButton(wrapper, 'next').attributes('disabled')).toBeDefined()
 
     await wrapper.get('input[type="search"]').setValue(' alice ')
     await wrapper.get('[data-testid="offboarding-search"]').trigger('click')
     await flushPromises()
 
     expect(api.listDirectoryOffboardingCandidates).toHaveBeenLastCalledWith({ q: 'alice', page: 1, page_size: 20 })
-    expect(wrapper.get('[data-testid="offboarding-page-status"]').text()).toContain('Page 1 / 1')
+    expect(wrapper.find('[data-testid="offboarding-pagination"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('alice@example.com')
+  })
+
+  it('uses the full-page indexed pagination contract', async () => {
+    const { wrapper, api, router } = await mountOffboarding((api) => {
+      api.listDirectoryOffboardingCandidates.mockImplementation(({ page, page_size }: { page: number; page_size: number }) =>
+        Promise.resolve(candidatePage([candidate(7, 'bob', 'bob@example.org')], page, 120, page_size)))
+    }, '/admin/directory/offboarding?page_size=50')
+
+    const pagination = wrapper.getComponent(ElPagination)
+    expect(pagination.props('pageSizes')).toEqual([20, 50, 100])
+    expect(wrapper.get('[data-testid="offboarding-page-range"]').text()).toBe('Showing 1-50 of 120')
+    expect(api.listDirectoryOffboardingCandidates).toHaveBeenCalledWith({ q: '', page: 1, page_size: 50 })
+    expect(router.currentRoute.value.query.page_size).toBe('50')
+  })
+
+  it('reloads candidates when browser history restores an earlier query', async () => {
+    const { api, router } = await mountOffboarding((api) => {
+      api.listDirectoryOffboardingCandidates.mockImplementation(({ page, page_size }: { page: number; page_size: number }) =>
+        Promise.resolve(candidatePage([candidate(page, `user-${page}`, `user-${page}@example.com`)], page, 120, page_size)))
+    }, '/admin/directory/offboarding?q=alice')
+
+    await router.push('/admin/directory/offboarding?q=bob&page=2&page_size=50')
+    await flushPromises()
+    expect(api.listDirectoryOffboardingCandidates).toHaveBeenLastCalledWith({ q: 'bob', page: 2, page_size: 50 })
+
+    router.back()
+    await flushPromises()
+    expect(api.listDirectoryOffboardingCandidates).toHaveBeenLastCalledWith({ q: 'alice', page: 1, page_size: 20 })
   })
 
   it('clamps the last page and waits for one generation-safe count refresh after disable', async () => {
@@ -271,8 +307,7 @@ describe('DirectoryOffboardingView', () => {
 
     await workItems.loadCounts()
     const previousLoad = workItems.loadCounts({ force: true })
-    await wrapper.get('[data-testid="offboarding-next-page"]').trigger('click')
-    await flushPromises()
+    await clickOffboardingPage(wrapper, 'next')
     await wrapper.get('[data-testid="disable-relay-user-8"]').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="confirm-email-8"]').setValue('  CAROL@example.com ')

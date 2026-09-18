@@ -4,6 +4,7 @@ package ent
 
 import (
 	"context"
+	"database/sql/driver"
 	"fmt"
 	"math"
 
@@ -12,16 +13,18 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/predicate"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationmapping"
 	"github.com/ai-efficiency/backend/ent/relaygroupmapping"
 )
 
 // RelayGroupMappingQuery is the builder for querying RelayGroupMapping entities.
 type RelayGroupMappingQuery struct {
 	config
-	ctx        *QueryContext
-	order      []relaygroupmapping.OrderOption
-	inters     []Interceptor
-	predicates []predicate.RelayGroupMapping
+	ctx                               *QueryContext
+	order                             []relaygroupmapping.OrderOption
+	inters                            []Interceptor
+	predicates                        []predicate.RelayGroupMapping
+	withRelationshipOperationMappings *RelationshipOperationMappingQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -56,6 +59,28 @@ func (rgmq *RelayGroupMappingQuery) Unique(unique bool) *RelayGroupMappingQuery 
 func (rgmq *RelayGroupMappingQuery) Order(o ...relaygroupmapping.OrderOption) *RelayGroupMappingQuery {
 	rgmq.order = append(rgmq.order, o...)
 	return rgmq
+}
+
+// QueryRelationshipOperationMappings chains the current query on the "relationship_operation_mappings" edge.
+func (rgmq *RelayGroupMappingQuery) QueryRelationshipOperationMappings() *RelationshipOperationMappingQuery {
+	query := (&RelationshipOperationMappingClient{config: rgmq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := rgmq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := rgmq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(relaygroupmapping.Table, relaygroupmapping.FieldID, selector),
+			sqlgraph.To(relationshipoperationmapping.Table, relationshipoperationmapping.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, relaygroupmapping.RelationshipOperationMappingsTable, relaygroupmapping.RelationshipOperationMappingsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(rgmq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
 }
 
 // First returns the first RelayGroupMapping entity from the query.
@@ -245,15 +270,27 @@ func (rgmq *RelayGroupMappingQuery) Clone() *RelayGroupMappingQuery {
 		return nil
 	}
 	return &RelayGroupMappingQuery{
-		config:     rgmq.config,
-		ctx:        rgmq.ctx.Clone(),
-		order:      append([]relaygroupmapping.OrderOption{}, rgmq.order...),
-		inters:     append([]Interceptor{}, rgmq.inters...),
-		predicates: append([]predicate.RelayGroupMapping{}, rgmq.predicates...),
+		config:                            rgmq.config,
+		ctx:                               rgmq.ctx.Clone(),
+		order:                             append([]relaygroupmapping.OrderOption{}, rgmq.order...),
+		inters:                            append([]Interceptor{}, rgmq.inters...),
+		predicates:                        append([]predicate.RelayGroupMapping{}, rgmq.predicates...),
+		withRelationshipOperationMappings: rgmq.withRelationshipOperationMappings.Clone(),
 		// clone intermediate query.
 		sql:  rgmq.sql.Clone(),
 		path: rgmq.path,
 	}
+}
+
+// WithRelationshipOperationMappings tells the query-builder to eager-load the nodes that are connected to
+// the "relationship_operation_mappings" edge. The optional arguments are used to configure the query builder of the edge.
+func (rgmq *RelayGroupMappingQuery) WithRelationshipOperationMappings(opts ...func(*RelationshipOperationMappingQuery)) *RelayGroupMappingQuery {
+	query := (&RelationshipOperationMappingClient{config: rgmq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	rgmq.withRelationshipOperationMappings = query
+	return rgmq
 }
 
 // GroupBy is used to group vertices by one or more fields/columns.
@@ -332,8 +369,11 @@ func (rgmq *RelayGroupMappingQuery) prepareQuery(ctx context.Context) error {
 
 func (rgmq *RelayGroupMappingQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*RelayGroupMapping, error) {
 	var (
-		nodes = []*RelayGroupMapping{}
-		_spec = rgmq.querySpec()
+		nodes       = []*RelayGroupMapping{}
+		_spec       = rgmq.querySpec()
+		loadedTypes = [1]bool{
+			rgmq.withRelationshipOperationMappings != nil,
+		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
 		return (*RelayGroupMapping).scanValues(nil, columns)
@@ -341,6 +381,7 @@ func (rgmq *RelayGroupMappingQuery) sqlAll(ctx context.Context, hooks ...queryHo
 	_spec.Assign = func(columns []string, values []any) error {
 		node := &RelayGroupMapping{config: rgmq.config}
 		nodes = append(nodes, node)
+		node.Edges.loadedTypes = loadedTypes
 		return node.assignValues(columns, values)
 	}
 	for i := range hooks {
@@ -352,7 +393,47 @@ func (rgmq *RelayGroupMappingQuery) sqlAll(ctx context.Context, hooks ...queryHo
 	if len(nodes) == 0 {
 		return nodes, nil
 	}
+	if query := rgmq.withRelationshipOperationMappings; query != nil {
+		if err := rgmq.loadRelationshipOperationMappings(ctx, query, nodes,
+			func(n *RelayGroupMapping) { n.Edges.RelationshipOperationMappings = []*RelationshipOperationMapping{} },
+			func(n *RelayGroupMapping, e *RelationshipOperationMapping) {
+				n.Edges.RelationshipOperationMappings = append(n.Edges.RelationshipOperationMappings, e)
+			}); err != nil {
+			return nil, err
+		}
+	}
 	return nodes, nil
+}
+
+func (rgmq *RelayGroupMappingQuery) loadRelationshipOperationMappings(ctx context.Context, query *RelationshipOperationMappingQuery, nodes []*RelayGroupMapping, init func(*RelayGroupMapping), assign func(*RelayGroupMapping, *RelationshipOperationMapping)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*RelayGroupMapping)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(relationshipoperationmapping.FieldMappingID)
+	}
+	query.Where(predicate.RelationshipOperationMapping(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(relaygroupmapping.RelationshipOperationMappingsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.MappingID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "mapping_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
 }
 
 func (rgmq *RelayGroupMappingQuery) sqlCount(ctx context.Context) (int, error) {

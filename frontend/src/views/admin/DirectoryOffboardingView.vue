@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
+import { useMediaQuery } from '@/composables/useMediaQuery'
 import { disableDirectoryRelayUser, listDirectoryOffboardingCandidates } from '@/api/directory'
 import { useI18n } from '@/i18n'
 import { directoryOffboardingMessages } from '@/locales/directoryOffboarding'
@@ -9,15 +10,18 @@ import { useWorkItemsStore } from '@/stores/workItems'
 import type { DirectoryOffboardingCandidate } from '@/types'
 import { authSourceLabel, offboardingReasonLabel, offboardingStatusLabel } from '@/utils/displayLabels'
 import { createFeatureTranslator } from '@/utils/featureI18n'
+import { FULL_PAGE_SIZES, fullPageSize, positivePage } from '@/utils/pagination'
 
 const route = useRoute()
+const router = useRouter()
 const { locale, t: baseT } = useI18n()
 const t = createFeatureTranslator(locale, baseT, 'directoryOffboarding.', directoryOffboardingMessages)
 const workItems = useWorkItemsStore()
 const candidates = ref<DirectoryOffboardingCandidate[]>([])
 const q = ref(typeof route.query.q === 'string' ? route.query.q : '')
-const page = ref(1)
-const pageSize = 20
+const page = ref(positivePage(route.query.page))
+const pageSize = ref(fullPageSize(route.query.page_size))
+const desktopPagination = useMediaQuery('(min-width: 768px)', true)
 const total = ref(0)
 const confirmations = ref<Record<number, string>>({})
 const loading = ref(false)
@@ -27,55 +31,94 @@ const disablingUserID = ref<number | null>(null)
 const disableError = ref('')
 const message = ref('')
 const error = ref('')
+let requestGeneration = 0
 
 const hasCandidates = computed(() => candidates.value.length > 0)
-const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
-const canGoPrevious = computed(() => page.value > 1)
-const canGoNext = computed(() => page.value < totalPages.value)
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
+const pageStart = computed(() => total.value === 0 ? 0 : ((page.value - 1) * pageSize.value) + 1)
+const pageEnd = computed(() => Math.min(total.value, page.value * pageSize.value))
+const showPagination = computed(() => hasCandidates.value && total.value > pageSize.value)
 const disableConfirmationMatches = computed(() => (
   selectedCandidate.value ? confirmed(selectedCandidate.value) : false
 ))
 
 onMounted(loadCandidates)
 
-async function loadCandidates(allowPageClamp = true) {
+async function loadCandidates(allowPageClamp = true, pushHistory = false) {
+  const generation = ++requestGeneration
   loading.value = true
   error.value = ''
   try {
-    const params = { q: q.value.trim(), page: page.value, page_size: pageSize }
+    const params = { q: q.value.trim(), page: page.value, page_size: pageSize.value }
     const res = await listDirectoryOffboardingCandidates(params)
+    if (generation !== requestGeneration) return undefined
     const data = res.data.data
     candidates.value = data?.items ?? []
     total.value = data?.total ?? candidates.value.length
     page.value = data?.page ?? page.value
-    const lastPage = Math.max(1, Math.ceil(total.value / pageSize))
+    pageSize.value = data?.page_size ?? pageSize.value
+    const lastPage = Math.max(1, Math.ceil(total.value / pageSize.value))
     if (allowPageClamp && page.value > lastPage) {
       page.value = lastPage
-      await loadCandidates(false)
+      return loadCandidates(false, pushHistory)
     }
+    syncQuery(pushHistory)
+    return true
   } catch (e: any) {
+    if (generation !== requestGeneration) return undefined
     error.value = e?.response?.data?.message || e?.message || t('directoryOffboarding.loadFailed')
+    return false
   } finally {
-    loading.value = false
+    if (generation === requestGeneration) loading.value = false
   }
+}
+
+function syncQuery(pushHistory = false) {
+  const query: Record<string, string> = {}
+  if (q.value.trim()) query.q = q.value.trim()
+  if (page.value > 1) query.page = String(page.value)
+  if (pageSize.value !== 20) query.page_size = String(pageSize.value)
+  if (pushHistory) void router.push({ query })
+  else void router.replace({ query })
 }
 
 async function searchCandidates() {
   page.value = 1
-  await loadCandidates()
+  await loadCandidates(true, true)
 }
 
-async function previousPage() {
-  if (!canGoPrevious.value || loading.value) return
-  page.value -= 1
-  await loadCandidates()
+async function changePage(nextPage: number) {
+  if (nextPage < 1 || nextPage > totalPages.value || nextPage === page.value || loading.value) return
+  const previousPage = page.value
+  page.value = nextPage
+  if (await loadCandidates(true, true) === false) page.value = previousPage
 }
 
-async function nextPage() {
-  if (!canGoNext.value || loading.value) return
-  page.value += 1
-  await loadCandidates()
+async function changePageSize(nextPageSize: number) {
+  const previousPage = page.value
+  const previousPageSize = pageSize.value
+  page.value = 1
+  pageSize.value = nextPageSize
+  if (await loadCandidates(true, true) === false) {
+    page.value = previousPage
+    pageSize.value = previousPageSize
+  }
 }
+
+watch(
+  () => route.fullPath,
+  () => {
+    if (route.path !== '/admin/directory/offboarding') return
+    const nextQuery = typeof route.query.q === 'string' ? route.query.q : ''
+    const nextPage = positivePage(route.query.page)
+    const nextPageSize = fullPageSize(route.query.page_size)
+    if (q.value === nextQuery && page.value === nextPage && pageSize.value === nextPageSize) return
+    q.value = nextQuery
+    page.value = nextPage
+    pageSize.value = nextPageSize
+    void loadCandidates()
+  },
+)
 
 function confirmed(candidate: DirectoryOffboardingCandidate) {
   return (confirmations.value[candidate.user_id] || '').trim().toLowerCase() === candidate.email.trim().toLowerCase()
@@ -126,7 +169,7 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
     })
     message.value = t('directoryOffboarding.disabled', { email: candidate.email })
     const remainingTotal = Math.max(0, total.value - 1)
-    page.value = Math.min(page.value, Math.max(1, Math.ceil(remainingTotal / pageSize)))
+    page.value = Math.min(page.value, Math.max(1, Math.ceil(remainingTotal / pageSize.value)))
     workItems.invalidateCounts()
     await Promise.all([
       loadCandidates(),
@@ -189,11 +232,10 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
               {{ t('adminUsers.search') }}
             </ElButton>
           </div>
-          <span class="shrink-0 text-xs text-gray-500">{{ total }} {{ t('adminUsers.totalSuffix') }}</span>
         </div>
 
         <div class="p-4">
-          <ElSkeleton v-if="loading" :rows="3" animated />
+          <ElSkeleton v-if="loading && !hasCandidates" :rows="3" animated />
           <ElEmpty v-else-if="!error && !hasCandidates" :description="t('directoryOffboarding.empty')" />
           <div
             v-else
@@ -264,22 +306,31 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
           </ElCard>
           </div>
         </div>
-        <div class="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 px-4 py-3 text-xs text-gray-500">
-        <ElButton
-          data-testid="offboarding-prev-page"
-          :disabled="!canGoPrevious || loading"
-          @click="previousPage"
+        <div
+          v-if="showPagination"
+          class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3"
         >
-          {{ t('adminUsers.prev') }}
-        </ElButton>
-        <span data-testid="offboarding-page-status">{{ t('adminUsers.page') }} {{ page }} / {{ totalPages }}</span>
-        <ElButton
-          data-testid="offboarding-next-page"
-          :disabled="!canGoNext || loading"
-          @click="nextPage"
-        >
-          {{ t('adminUsers.next') }}
-        </ElButton>
+          <span data-testid="offboarding-page-range" class="hidden text-sm text-slate-500 md:block">
+            {{ baseT('pagination.range', { start: pageStart, end: pageEnd, total }) }}
+          </span>
+          <ElPagination
+            data-testid="offboarding-pagination"
+            class="ml-auto"
+            background
+            :current-page="page"
+            :page-size="pageSize"
+            :page-sizes="FULL_PAGE_SIZES"
+            :total="total"
+            :pager-count="5"
+            :disabled="loading"
+            :layout="desktopPagination ? 'sizes, prev, pager, next' : 'prev, slot, next'"
+            @current-change="changePage"
+            @size-change="changePageSize"
+          >
+            <span v-if="!desktopPagination" class="px-2 text-sm text-slate-600">
+              {{ baseT('pagination.pageOf', { page, pages: totalPages }) }}
+            </span>
+          </ElPagination>
         </div>
       </section>
 

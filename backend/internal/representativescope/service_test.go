@@ -18,20 +18,6 @@ import (
 	redis "github.com/redis/go-redis/v9"
 )
 
-func TestIndexMemberDepartmentIDsSortsStablePrimaryDepartment(t *testing.T) {
-	memberships := []*ent.DirectoryMemberDepartment{
-		{DirectoryMemberID: 7, DepartmentExternalID: "department-zeta"},
-		{DirectoryMemberID: 7, DepartmentExternalID: "department-alpha"},
-		{DirectoryMemberID: 7, DepartmentExternalID: "department-beta"},
-	}
-
-	got := indexMemberDepartmentIDs(memberships)[7]
-	want := []string{"department-alpha", "department-beta", "department-zeta"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("member department IDs = %#v, want stable order %#v", got, want)
-	}
-}
-
 func TestResolveRepresentativeScopeFromDepartmentMetadataIncludesSubtree(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()
@@ -789,14 +775,15 @@ func createScopeSourceWithCompletedAt(t *testing.T, client *ent.Client, current 
 
 func createScopeDepartment(t *testing.T, client *ent.Client, sourceID int, externalID, name string, parent *string, metadata map[string]any) *ent.DirectoryDepartment {
 	t.Helper()
+	runID := scopeSourceRunID(t, client, sourceID)
 	create := client.DirectoryDepartment.Create().
 		SetSourceID(sourceID).
 		SetExternalID(externalID).
 		SetName(name).
 		SetPath(name).
-		SetLastSeenRunID(1)
+		SetLastSeenRunID(runID)
 	if parent != nil {
-		create.SetParentExternalID(*parent)
+		create.SetParentExternalID(*parent).SetEffectiveParentExternalID(*parent)
 	}
 	if metadata != nil {
 		create.SetMetadata(metadata)
@@ -810,13 +797,14 @@ func createScopeDepartment(t *testing.T, client *ent.Client, sourceID int, exter
 
 func createScopeMember(t *testing.T, client *ent.Client, sourceID int, externalID, email, departmentID string, matchedUserID *int, metadata map[string]any) *ent.DirectoryMember {
 	t.Helper()
+	runID := scopeSourceRunID(t, client, sourceID)
 	create := client.DirectoryMember.Create().
 		SetSourceID(sourceID).
 		SetExternalID(externalID).
 		SetEmailNormalized(strings.ToLower(strings.TrimSpace(email))).
 		SetDisplayName(externalID).
 		SetDepartmentExternalID(departmentID).
-		SetLastSeenRunID(1)
+		SetLastSeenRunID(runID)
 	if matchedUserID != nil {
 		create.SetMatchedUserID(*matchedUserID)
 	}
@@ -828,6 +816,22 @@ func createScopeMember(t *testing.T, client *ent.Client, sourceID int, externalI
 		t.Fatalf("create member %s: %v", externalID, err)
 	}
 	return member
+}
+
+func scopeSourceRunID(t *testing.T, client *ent.Client, sourceID int) int {
+	t.Helper()
+	source, err := client.DirectorySource.Get(context.Background(), sourceID)
+	if err != nil {
+		t.Fatalf("get directory source %d: %v", sourceID, err)
+	}
+	if source.LastSuccessfulRunID != nil {
+		return *source.LastSuccessfulRunID
+	}
+	if source.LastRunID != nil {
+		return *source.LastRunID
+	}
+	t.Fatalf("directory source %d has no run", sourceID)
+	return 0
 }
 
 func createScopeMemberDepartment(t *testing.T, client *ent.Client, sourceID int, member *ent.DirectoryMember, departmentID string) {

@@ -34,6 +34,10 @@ import (
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestevent"
+	"github.com/ai-efficiency/backend/ent/relationshipoperation"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationattempt"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationmapping"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationstep"
 	"github.com/ai-efficiency/backend/ent/relaygroupmapping"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
@@ -126,6 +130,10 @@ func checkColumn(table, column string) error {
 			quotaresetnotificationsetting.Table: quotaresetnotificationsetting.ValidColumn,
 			quotaresetrequest.Table:             quotaresetrequest.ValidColumn,
 			quotaresetrequestevent.Table:        quotaresetrequestevent.ValidColumn,
+			relationshipoperation.Table:         relationshipoperation.ValidColumn,
+			relationshipoperationattempt.Table:  relationshipoperationattempt.ValidColumn,
+			relationshipoperationmapping.Table:  relationshipoperationmapping.ValidColumn,
+			relationshipoperationstep.Table:     relationshipoperationstep.ValidColumn,
 			relaygroupmapping.Table:             relaygroupmapping.ValidColumn,
 			relayprovider.Table:                 relayprovider.ValidColumn,
 			repoconfig.Table:                    repoconfig.ValidColumn,
