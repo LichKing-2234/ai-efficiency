@@ -632,6 +632,39 @@ describe('RelayPlanningView', () => {
 		expect(wrapper.find('[data-testid="remove-suggested-group-0"]').exists()).toBe(false)
 	})
 
+	it('keeps Replan active and previews the new department when its binding changes', async () => {
+		const mapping = structuredClone(existingMapping)
+		const replan = structuredClone({
+			...plan,
+			mapping_id: 9,
+			assignments: [{ ...plan.assignments[0], target_group_id: 101, user_ids: [1] }],
+		})
+		const migrated = structuredClone({ ...replan, department_id: 'dept-beta', department_name: 'SDK Runtime' })
+		const { wrapper, relayPlanning } = await mountView([mapping])
+		const adminUsers = await import('@/api/adminUsers') as any
+		adminUsers.listAdminUserDepartmentOptions.mockResolvedValue({
+			data: { data: { items: [
+				{ external_id: 'dept-alpha', name: 'SDK Framework', display_path: 'Engineering / SDK Framework' },
+				{ external_id: 'dept-beta', name: 'SDK Runtime', display_path: 'Engineering / SDK Runtime' },
+			] } },
+		})
+		relayPlanning.previewRelayReplan
+			.mockResolvedValueOnce({ data: { data: replan } })
+			.mockResolvedValueOnce({ data: { data: migrated } })
+
+		await wrapper.get('[data-testid="replan-mapping-9"]').trigger('click')
+		await flushPromises()
+		const picker = wrapper.get('[data-testid="department-select"]')
+		await picker.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
+		await flushPromises()
+		await picker.get('[data-testid="admin-department-picker-option-dept-beta"]').trigger('click')
+		await flushPromises()
+
+		expect(relayPlanning.previewRelayReplan).toHaveBeenLastCalledWith(9, expect.objectContaining({ department_id: 'dept-beta' }))
+		expect(wrapper.find('[data-testid="suggested-group-0"]').exists()).toBe(true)
+		expect(wrapper.get('[data-testid="department-select"]').text()).toContain('SDK Runtime')
+	})
+
 	it('refreshes a stale Mapping list and opens the conflicting Mapping Replan', async () => {
 		const mapping = structuredClone(existingMapping)
 		const replan = structuredClone({

@@ -13,7 +13,8 @@ import type {
 } from '@/api/relayPlanning'
 
 export interface RelayPlanningReviewedPreviewRequest {
-  selected_user_ids?: number[]
+	department_id?: string
+	selected_user_ids?: number[]
   assignments?: RelayPlanningAssignment[]
   member_sources?: Record<string, number>
   removed_user_ids?: number[]
@@ -320,6 +321,23 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     } catch (error) {
       if (isCurrentPlanRequest(generation)) throw error
       return null
+    }
+  }
+
+  async function changeReplanDepartment(departmentID: string) {
+    if (!activeMappingID.value || !plan.value || reviewLocked.value) return
+    const generation = invalidatePlanRequests()
+    loading.value = true
+    try {
+      const nextPlan = await options.previewReplan(activeMappingID.value, {
+        department_id: departmentID.trim(),
+        ...reviewedState(),
+      })
+      if (isCurrentPlanRequest(generation) && nextPlan) applyPlan(nextPlan)
+    } catch (error) {
+      if (isCurrentPlanRequest(generation)) throw error
+    } finally {
+      if (isCurrentPlanRequest(generation)) loading.value = false
     }
   }
 
@@ -870,6 +888,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     hasUnreviewedRemovalSources,
     preview,
     openReplan,
+	changeReplanDepartment,
     requestConfirmation,
     executeConfirmed,
     closeConfirmation,

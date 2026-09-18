@@ -134,6 +134,7 @@ const {
 	hasUnreviewedRemovalSources,
 	preview: previewReviewedPlan,
 	openReplan: openReviewedReplan,
+	changeReplanDepartment,
 	requestConfirmation: requestReviewedConfirmation,
 	executeConfirmed: executeReviewedPlan,
 	closeConfirmation,
@@ -819,6 +820,18 @@ function resetPlan() {
 	error.value = ''
 }
 
+async function handleDepartmentChange() {
+	if (!activeMappingID.value) {
+		resetPlan()
+		return
+	}
+	try {
+		await changeReplanDepartment(String(form.department_id || ''))
+	} catch (err: any) {
+		ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.refreshPlanFailed'))
+	}
+}
+
 async function addSearchedUser(targetIndex: number, item: RelayPlanningUserSearchItem) {
 	try {
 		await addSearchedUserToReview(targetIndex, item)
@@ -961,7 +974,7 @@ onBeforeUnmount(() => {
               class="w-full"
               :allow-all="false"
               :placeholder="t('relayPlanning.selectDepartment')"
-              @change="resetPlan"
+              @change="handleDepartmentChange"
             />
           </el-form-item>
           <el-form-item :label="t('relayPlanning.platform')" class="!mb-0">
