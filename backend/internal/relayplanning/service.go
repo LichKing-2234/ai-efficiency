@@ -19,6 +19,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
+	"github.com/ai-efficiency/backend/ent/relationshipoperationmapping"
 	"github.com/ai-efficiency/backend/ent/relaygroupmapping"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/adminusers"
@@ -2807,18 +2808,9 @@ func (facts *mappingDirectoryFacts) suggestions(rows []*ent.RelayGroupMapping, m
 	if facts == nil {
 		return nil
 	}
-	bound := make(map[string]struct{})
-	for _, row := range rows {
-		if row.ProviderID == mapping.ProviderID && strings.EqualFold(strings.TrimSpace(row.Platform), strings.TrimSpace(mapping.Platform)) {
-			bound[row.DepartmentExternalID] = struct{}{}
-		}
-	}
 	out := make([]DepartmentSuggestion, 0, len(facts.departments))
 	for _, department := range facts.departments {
 		if department.ID == mapping.DepartmentID {
-			continue
-		}
-		if _, exists := bound[department.ID]; exists {
 			continue
 		}
 		out = append(out, department)
@@ -3590,17 +3582,6 @@ func (s *Service) departmentSuggestions(ctx context.Context, providerID int, pla
 	if err != nil || !found {
 		return nil
 	}
-	mappings, err := s.client.RelayGroupMapping.Query().Where(
-		relaygroupmapping.ProviderIDEQ(providerID),
-		relaygroupmapping.PlatformEQ(platform),
-	).All(ctx)
-	if err != nil {
-		return nil
-	}
-	bound := make(map[string]struct{}, len(mappings))
-	for _, mapping := range mappings {
-		bound[mapping.DepartmentExternalID] = struct{}{}
-	}
 	departments, err := s.client.DirectoryDepartment.Query().Where(directorydepartment.SourceIDEQ(snapshot.SourceID)).Order(ent.Asc(directorydepartment.FieldName)).Limit(50).All(ctx)
 	if err != nil {
 		return nil
@@ -3608,9 +3589,6 @@ func (s *Service) departmentSuggestions(ctx context.Context, providerID int, pla
 	suggestions := make([]DepartmentSuggestion, 0, len(departments))
 	for _, department := range departments {
 		if department.ExternalID == currentID {
-			continue
-		}
-		if _, exists := bound[department.ExternalID]; exists {
 			continue
 		}
 		suggestions = append(suggestions, DepartmentSuggestion{ID: department.ExternalID, Name: department.Name})
@@ -5792,6 +5770,60 @@ func (s *Service) saveMapping(ctx context.Context, plan *Plan, groupIDs []int64,
 	return saveMappingWithClient(ctx, s.client, plan, groupIDs, state)
 }
 
+// transferHistoricalOperationOwnership keeps released Relationship Operation
+// evidence addressable when a source Mapping is merged into a destination
+// Mapping. The ownership rows use an immutable mapping_id, so they must be
+// recreated before the source Mapping can be removed.
+func transferHistoricalOperationOwnership(ctx context.Context, client *ent.Client, sourceMappingID, destinationMappingID int) error {
+	if sourceMappingID <= 0 || destinationMappingID <= 0 || sourceMappingID == destinationMappingID {
+		return nil
+	}
+	owners, err := client.RelationshipOperationMapping.Query().Where(
+		relationshipoperationmapping.MappingIDEQ(sourceMappingID),
+	).All(ctx)
+	if err != nil {
+		return fmt.Errorf("load historical Relationship Operation ownership for Mapping %d: %w", sourceMappingID, err)
+	}
+	for _, owner := range owners {
+		if owner.Active {
+			return fmt.Errorf("Mapping %d has active Relationship Operation %d", sourceMappingID, owner.OperationID)
+		}
+	}
+	for _, owner := range owners {
+		existing, queryErr := client.RelationshipOperationMapping.Query().Where(
+			relationshipoperationmapping.OperationIDEQ(owner.OperationID),
+			relationshipoperationmapping.MappingIDEQ(destinationMappingID),
+		).Only(ctx)
+		switch {
+		case queryErr == nil:
+			if existing.Active {
+				return fmt.Errorf("destination Mapping %d has active Relationship Operation %d", destinationMappingID, owner.OperationID)
+			}
+		case ent.IsNotFound(queryErr):
+			create := client.RelationshipOperationMapping.Create().
+				SetOperationID(owner.OperationID).
+				SetMappingID(destinationMappingID).
+				SetRole(owner.Role).
+				SetBaselineRevision(owner.BaselineRevision).
+				SetBaselineSnapshot(owner.BaselineSnapshot).
+				SetActive(false).
+				SetCreatedAt(owner.CreatedAt)
+			if owner.ReleasedAt != nil {
+				create.SetReleasedAt(*owner.ReleasedAt)
+			}
+			if _, createErr := create.Save(ctx); createErr != nil {
+				return fmt.Errorf("transfer Relationship Operation %d ownership to Mapping %d: %w", owner.OperationID, destinationMappingID, createErr)
+			}
+		default:
+			return fmt.Errorf("check destination ownership for Relationship Operation %d: %w", owner.OperationID, queryErr)
+		}
+		if deleteErr := client.RelationshipOperationMapping.DeleteOneID(owner.ID).Exec(ctx); deleteErr != nil {
+			return fmt.Errorf("remove historical Relationship Operation %d ownership: %w", owner.OperationID, deleteErr)
+		}
+	}
+	return nil
+}
+
 func saveReplannedMappingWithClient(ctx context.Context, client *ent.Client, current *Mapping, plan *Plan, groupIDs []int64, state map[string]map[string]string) (*Mapping, error) {
 	if strings.TrimSpace(plan.DepartmentID) == strings.TrimSpace(current.DepartmentID) {
 		return saveMappingWithClient(ctx, client, plan, groupIDs, state)
@@ -5857,6 +5889,9 @@ func saveReplannedMappingWithClient(ctx context.Context, client *ent.Client, cur
 		Save(ctx)
 	if updateErr != nil {
 		return nil, fmt.Errorf("persist merged relay group mapping: %w", updateErr)
+	}
+	if ownershipErr := transferHistoricalOperationOwnership(ctx, client, current.ID, target.ID); ownershipErr != nil {
+		return nil, ownershipErr
 	}
 	if deleteErr := client.RelayGroupMapping.DeleteOneID(current.ID).Exec(ctx); deleteErr != nil {
 		return nil, fmt.Errorf("remove migrated relay group mapping: %w", deleteErr)
