@@ -75,6 +75,108 @@ func TestMergeGroupIDsPreservesDistinctTargetGroups(t *testing.T) {
 	}
 }
 
+func TestMappingDirectorySuggestionsIncludeBoundDestinationForMigration(t *testing.T) {
+	facts := &mappingDirectoryFacts{departments: []DepartmentSuggestion{
+		{ID: "dept-destination", Name: "Department Destination"},
+		{ID: "dept-other", Name: "Department Other"},
+	}}
+	rows := []*ent.RelayGroupMapping{
+		{ProviderID: 7, Platform: "openai", DepartmentExternalID: "dept-destination"},
+		{ProviderID: 7, Platform: "openai", DepartmentExternalID: "dept-source"},
+	}
+
+	got := facts.suggestions(rows, Mapping{ProviderID: 7, Platform: "openai", DepartmentID: "dept-source"})
+	if len(got) != 2 || got[0].ID != "dept-destination" || got[1].ID != "dept-other" {
+		t.Fatalf("department suggestions = %#v, want bound destination and other department", got)
+	}
+}
+
+func TestSaveReplannedMappingTransfersHistoricalOperationOwnership(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	provider := client.RelayProvider.Create().
+		SetName("relay-replan-history-transfer").
+		SetDisplayName("Relay Replan History Transfer").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SaveX(ctx)
+	sourceRow := client.RelayGroupMapping.Create().
+		SetProviderID(provider.ID).
+		SetDepartmentExternalID("dept-source").
+		SetDepartmentName("Department Source").
+		SetPlatform("openai").
+		SetTemplateGroupID(10).
+		SetTemplateGroupName("Template").
+		SetSourceGroupID(20).
+		SetSourceGroupName("Source").
+		SetGroupIds([]int64{101}).
+		SetMemberAssignments(map[string]int64{"7": 101}).
+		SetMemberSources(map[string]int64{"7": 20}).
+		SetBaselineRevision(2).
+		SaveX(ctx)
+	targetRow := client.RelayGroupMapping.Create().
+		SetProviderID(provider.ID).
+		SetDepartmentExternalID("dept-destination").
+		SetDepartmentName("Department Destination").
+		SetPlatform("openai").
+		SetTemplateGroupID(10).
+		SetTemplateGroupName("Template").
+		SetSourceGroupID(20).
+		SetSourceGroupName("Source").
+		SetGroupIds([]int64{102}).
+		SetMemberAssignments(map[string]int64{"8": 102}).
+		SetBaselineRevision(3).
+		SaveX(ctx)
+	operation := client.RelationshipOperation.Create().
+		SetOperationKey("relay-replan-history-transfer-op").
+		SetProviderID(provider.ID).
+		SetPlatform("openai").
+		SetBaselineSnapshot(map[string]any{"mapping_id": sourceRow.ID}).
+		SetTargetSnapshot(map[string]any{"mapping_id": sourceRow.ID}).
+		SetBaselineFingerprint("baseline").
+		SetTargetFingerprint("target").
+		SetSupportedDirections([]string{"resume"}).
+		SetInitiatedByUserID(1).
+		SaveX(ctx)
+	client.RelationshipOperationMapping.Create().
+		SetOperationID(operation.ID).
+		SetMappingID(sourceRow.ID).
+		SetRole(relationshipoperationmapping.RolePrimary).
+		SetBaselineRevision(sourceRow.BaselineRevision).
+		SetBaselineSnapshot(map[string]any{"mapping_id": sourceRow.ID}).
+		SetActive(false).
+		SaveX(ctx)
+
+	current := mappingFromEnt(sourceRow)
+	plan := &Plan{
+		ProviderID: provider.ID, DepartmentID: "dept-destination", DepartmentName: "Department Destination", Platform: "openai",
+		TemplateGroupID: 10, TemplateGroupName: "Template", SourceGroupID: 20, SourceGroupName: "Source",
+		Assignments: []Assignment{{Index: 0, TargetGroupID: 101, UserIDs: []int{7}}},
+		Candidates:  []Candidate{{UserID: 7, SourceGroupID: 20}},
+	}
+	merged, err := saveReplannedMappingWithClient(ctx, client, &current, plan, []int64{101}, executionState("history-transfer", nil, nil))
+	if err != nil {
+		t.Fatalf("saveReplannedMappingWithClient() error = %v", err)
+	}
+	if merged.ID != targetRow.ID {
+		t.Fatalf("merged mapping ID = %d, want destination %d", merged.ID, targetRow.ID)
+	}
+	if _, err := client.RelayGroupMapping.Get(ctx, sourceRow.ID); !ent.IsNotFound(err) {
+		t.Fatalf("source mapping lookup error = %v, want source mapping deleted", err)
+	}
+	owner, err := client.RelationshipOperationMapping.Query().Where(relationshipoperationmapping.OperationIDEQ(operation.ID)).Only(ctx)
+	if err != nil {
+		t.Fatalf("load transferred operation ownership: %v", err)
+	}
+	if owner.MappingID != targetRow.ID || owner.Active {
+		t.Fatalf("transferred owner = mapping:%d active:%v, want destination inactive owner", owner.MappingID, owner.Active)
+	}
+	updatedTarget := client.RelayGroupMapping.GetX(ctx, targetRow.ID)
+	if !reflect.DeepEqual(updatedTarget.GroupIds, []int64{102, 101}) {
+		t.Fatalf("destination groups = %#v, want merged groups", updatedTarget.GroupIds)
+	}
+}
+
 func TestMappingAssignmentsFromPlanKeepsTargetGroupOwnership(t *testing.T) {
 	assignments, sources := mappingAssignmentsFromPlan(&Plan{
 		Candidates:  []Candidate{{UserID: 7, SourceGroupID: 20}, {UserID: 8}},

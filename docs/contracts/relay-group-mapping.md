@@ -124,6 +124,14 @@ change the reviewed member matrix and selected Target names/Accounts, and it may
 append empty proposed Targets without Relay Group IDs. It does not remove,
 replace, deactivate, or automatically reshuffle existing Target Groups.
 
+When the selected Replan department already has a Mapping for the same
+Provider and Platform, the confirmed operation merges the source Mapping into
+that destination Mapping. Target Group IDs, reviewed member assignments,
+Account intent, operation state, and source-department history are combined;
+duplicate Groups and members are retained once. Released Relationship Operation
+ownership records are rehomed to the destination before the source Mapping is
+removed, so historical recovery evidence remains addressable.
+
 Opening Replan reconstructs the last confirmed `member_assignments` as the
 zero-change Replan Baseline:
 
@@ -199,8 +207,9 @@ and Target IDs against the selected Platform before persistence. It performs no
 background member move or Relay relationship rewrite.
 
 If a saved department is absent from the current Directory snapshot, mapping
-reads preserve the relationship, mark it unavailable, and offer unmapped same-
-Platform departments as explicit Rebind choices.
+reads preserve the relationship, mark it unavailable, and offer same-Platform
+departments as explicit Rebind choices. A department already used by another
+Mapping remains selectable for Replan merge when it is the intended destination.
 
 ## Account Relationships
 
