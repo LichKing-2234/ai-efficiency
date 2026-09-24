@@ -3,9 +3,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { ElDialog } from 'element-plus'
 import QuotaResetRequestModal from '@/components/quota-reset/QuotaResetRequestModal.vue'
 import { setLocale } from '@/i18n'
+import type { QuotaResetOptionGroup } from '@/types'
 import { cleanupTeleportedContent, withTeleportedContent } from './helpers/teleport'
 
-const groups = [
+const groups: QuotaResetOptionGroup[] = [
   {
     group_id: '42',
     group_name: 'Group Alpha',
@@ -13,6 +14,7 @@ const groups = [
     daily_usage_usd: 10,
     weekly_usage_usd: 20,
     monthly_usage_usd: 30,
+    daily_limit_usd: 100,
   },
   {
     group_id: '43',
@@ -21,13 +23,17 @@ const groups = [
     daily_usage_usd: 40,
     weekly_usage_usd: 50,
     monthly_usage_usd: 60,
+    weekly_limit_usd: 200,
   },
 ]
 
-async function mountModal(locale: 'en-US' | 'zh-CN' = 'en-US') {
+async function mountModal(
+  locale: 'en-US' | 'zh-CN' = 'en-US',
+  modalGroups = groups,
+) {
   setLocale(locale)
   const wrapper = withTeleportedContent(mount(QuotaResetRequestModal, {
-    props: { open: true, groups, submitting: false },
+    props: { open: true, groups: modalGroups, submitting: false },
   }))
   await flushPromises()
   return wrapper
@@ -38,7 +44,7 @@ function selectInput(wrapper: Awaited<ReturnType<typeof mountModal>>) {
 }
 
 async function selectGroup(wrapper: Awaited<ReturnType<typeof mountModal>>, groupID: string) {
-  await wrapper.get('[data-testid="quota-reset-group-select"] .el-select__wrapper').trigger('click')
+  await wrapper.get('[data-testid="quota-reset-group-select"]').trigger('click')
   await flushPromises()
   await wrapper.get(`[data-testid="quota-reset-group-option-${groupID}"]`).trigger('click')
   await flushPromises()
@@ -99,5 +105,39 @@ describe('QuotaResetRequestModal', () => {
     const wrapper = await mountModal('zh-CN')
     expect(wrapper.text()).toContain('接入组')
     expect(wrapper.text()).not.toContain('订阅组')
+  })
+
+  it('only offers access groups with at least one positive limit', async () => {
+    const wrapper = await mountModal('en-US', [
+      groups[0],
+      {
+        ...groups[1],
+        daily_limit_usd: null,
+        weekly_limit_usd: 0,
+        monthly_limit_usd: -1,
+      },
+    ])
+
+    await wrapper.get('[data-testid="quota-reset-group-select"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="quota-reset-group-option-42"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="quota-reset-group-option-43"]').exists()).toBe(false)
+  })
+
+  it('explains when no access group can request a reset and disables submit', async () => {
+    const wrapper = await mountModal('en-US', [
+      {
+        ...groups[0],
+        daily_limit_usd: null,
+        weekly_limit_usd: 0,
+        monthly_limit_usd: -1,
+      },
+    ])
+
+    expect(wrapper.text()).toContain('No quota-limited access groups are available for reset.')
+    expect(wrapper.get('[data-testid="quota-reset-submit"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="quota-reset-submit"]').trigger('click')
+    expect(wrapper.emitted('submit')).toBeUndefined()
   })
 })

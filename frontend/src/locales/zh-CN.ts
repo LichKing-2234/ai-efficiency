@@ -201,6 +201,8 @@ const zhCN = {
   'quotaReset.reasonPlaceholder': '说明为什么需要重置该额度。',
   'quotaReset.reasonRequired': '需要填写申请原因',
   'quotaReset.groupRequired': '需要选择接入组',
+  'quotaReset.noEligibleGroups': '暂无可申请重置的限额接入组。',
+  'quotaReset.subscriptionLimitRequired': '该接入组没有配置正数额度，无法申请重置。',
   'quotaReset.submitRequest': '提交申请',
   'quotaReset.optionsLoadFailed': '加载接入组失败',
   'quotaReset.requestSubmitted': '额度重置申请已提交',

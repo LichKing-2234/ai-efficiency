@@ -202,6 +202,8 @@ const enUS = {
   'quotaReset.reasonPlaceholder': 'Explain why this quota needs to be reset.',
   'quotaReset.reasonRequired': 'Reason is required',
   'quotaReset.groupRequired': 'Access group is required',
+  'quotaReset.noEligibleGroups': 'No quota-limited access groups are available for reset.',
+  'quotaReset.subscriptionLimitRequired': 'This access group has no configured positive quota and cannot be reset.',
   'quotaReset.submitRequest': 'Submit request',
   'quotaReset.optionsLoadFailed': 'Failed to load access groups',
   'quotaReset.requestSubmitted': 'Quota reset request submitted',

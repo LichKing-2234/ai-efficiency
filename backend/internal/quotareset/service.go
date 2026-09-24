@@ -74,6 +74,9 @@ func (s *Service) Options(ctx context.Context, userID int) (*OptionsResponse, er
 	}
 	options := make([]SubscriptionOption, 0, len(subscriptions))
 	for _, subscription := range subscriptions {
+		if !hasPositiveSubscriptionGroupLimit(subscription) {
+			continue
+		}
 		options = append(options, subscriptionOption(subscription))
 	}
 	sort.SliceStable(options, func(i, j int) bool {
@@ -102,6 +105,9 @@ func (s *Service) CreateRequest(ctx context.Context, input CreateRequestInput) (
 	subscription, err := findSubscription(subscriptions, input.GroupID)
 	if err != nil {
 		return nil, err
+	}
+	if !hasPositiveSubscriptionGroupLimit(subscription) {
+		return nil, ErrSubscriptionLimitRequired
 	}
 	if err := activeRequestExists(ctx, s.client, requester.ID, providerRow.ID, input.GroupID); err != nil {
 		return nil, err
@@ -576,6 +582,18 @@ func findSubscription(subscriptions []relay.UserSubscription, groupID string) (r
 		}
 	}
 	return relay.UserSubscription{}, ErrInactiveSubscription
+}
+
+func hasPositiveSubscriptionGroupLimit(subscription relay.UserSubscription) bool {
+	group := subscription.Group
+	if group == nil || subscription.GroupID <= 0 || group.ID <= 0 || group.ID != subscription.GroupID {
+		return false
+	}
+	return positiveLimit(group.DailyLimitUSD) || positiveLimit(group.WeeklyLimitUSD) || positiveLimit(group.MonthlyLimitUSD)
+}
+
+func positiveLimit(value *float64) bool {
+	return value != nil && *value > 0
 }
 
 func activeRequestExists(ctx context.Context, client *ent.Client, requesterUserID int, providerID int, groupID string) error {

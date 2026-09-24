@@ -226,8 +226,8 @@ describe('i18n locale loading', () => {
       ...Object.keys(directoryOffboardingMessages['zh-CN']),
     ].sort()
 
-    expect(englishKeys).toHaveLength(1241)
-    expect(chineseKeys).toHaveLength(1241)
+    expect(englishKeys).toHaveLength(1243)
+    expect(chineseKeys).toHaveLength(1243)
     expect(englishKeys).toContain('activity.title')
     expect(englishKeys).toContain('pagination.range')
     expect(englishKeys).toContain('pagination.pageOf')
@@ -236,6 +236,8 @@ describe('i18n locale loading', () => {
     expect(englishKeys).toContain('relayPlanning.confirmPlan')
     expect(englishKeys).toContain('relayPlanning.stalePlan')
     expect(englishKeys).toContain('relayPlanning.accountChanges')
+    expect(englishKeys).toContain('quotaReset.noEligibleGroups')
+    expect(englishKeys).toContain('quotaReset.subscriptionLimitRequired')
     expect(englishKeys).toContain('relayPlanning.addSuggestedGroup')
     expect(englishKeys).toContain('relayPlanning.removeSuggestedGroup')
     expect(chineseKeys).toEqual(englishKeys)

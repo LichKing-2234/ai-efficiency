@@ -65,6 +65,11 @@ A subscription reset timestamp appears only when the matching window returns a
 valid reset. API-key quota rows and subscriptions without that timestamp retain
 their Used/Quota presentation but do not claim a reset.
 
+Quota reset request eligibility is evaluated separately from the selected Usage
+window: an active subscription group may request a reset when any one of its
+daily, weekly, or monthly limits is positive. API-key limits and OAuth account
+pool utilization never make a subscription group eligible for reset.
+
 Quota and used values stay in Relay/subscription enforcement units. Missing
 limits are shown as unlimited or unconfigured according to the source facts;
 the frontend does not manufacture a limit.

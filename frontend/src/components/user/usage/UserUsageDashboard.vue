@@ -380,8 +380,12 @@ async function submitQuotaResetRequest(payload: { group_id: string; reason: stri
     await createQuotaResetRequest(payload)
     quotaResetModalOpen.value = false
     ElMessage.success(t('quotaReset.requestSubmitted'))
-  } catch {
-    ElMessage.error(t('quotaReset.requestSubmitFailed'))
+  } catch (error: any) {
+    if (error?.response?.data?.message === 'subscription_limit_required') {
+      ElMessage.error(t('quotaReset.subscriptionLimitRequired'))
+    } else {
+      ElMessage.error(t('quotaReset.requestSubmitFailed'))
+    }
   } finally {
     quotaResetSubmitting.value = false
   }
