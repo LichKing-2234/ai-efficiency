@@ -45,6 +45,114 @@ func TestCreateRequestRequiresActiveSubscriptionAndReason(t *testing.T) {
 	}
 }
 
+func TestOptionsOnlyIncludesActiveSubscriptionsWithPositiveGroupLimit(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	zero := float64(0)
+	negative := float64(-1)
+	daily := float64(10)
+	weekly := float64(20)
+	monthly := float64(30)
+	fake := &fakeQuotaResetProvider{subscriptions: []relay.UserSubscription{
+		activeQuotaResetSubscriptionWithGroup(42, &relay.Group{ID: 42, Name: "Unlimited", Platform: "openai"}),
+		activeQuotaResetSubscriptionWithGroup(43, &relay.Group{ID: 43, Name: "Zero", Platform: "openai", DailyLimitUSD: &zero, WeeklyLimitUSD: &negative}),
+		activeQuotaResetSubscriptionWithGroup(44, &relay.Group{ID: 44, Name: "Daily", Platform: "openai", DailyLimitUSD: &daily}),
+		activeQuotaResetSubscriptionWithGroup(45, &relay.Group{ID: 45, Name: "Weekly", Platform: "openai", WeeklyLimitUSD: &weekly}),
+		activeQuotaResetSubscriptionWithGroup(46, &relay.Group{ID: 46, Name: "Monthly", Platform: "openai", MonthlyLimitUSD: &monthly}),
+		activeQuotaResetSubscriptionWithGroup(47, nil),
+		{GroupID: 48, Status: "inactive", Group: &relay.Group{ID: 48, Name: "Inactive", Platform: "openai", DailyLimitUSD: &daily}},
+	}}
+	svc := NewService(client, fakeProviderResolver(provider.ID, fake), NewApproverResolver(client), nil)
+
+	options, err := svc.Options(ctx, requester.ID)
+	if err != nil {
+		t.Fatalf("Options() error = %v", err)
+	}
+	got := make([]string, 0, len(options.Groups))
+	for _, option := range options.Groups {
+		got = append(got, option.GroupID)
+	}
+	if want := []string{"44", "46", "45"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("option group IDs = %#v, want %#v", got, want)
+	}
+}
+
+func TestOptionsFailsWhenSubscriptionFactsCannotBeRead(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	readErr := errors.New("synthetic subscription read failure")
+	fake := &fakeQuotaResetProvider{subscriptionsErr: readErr}
+	svc := NewService(client, fakeProviderResolver(provider.ID, fake), NewApproverResolver(client), nil)
+
+	_, err := svc.Options(ctx, requester.ID)
+	if !errors.Is(err, readErr) {
+		t.Fatalf("Options() error = %v, want wrapped %v", err, readErr)
+	}
+}
+
+func TestCreateRequestRejectsSubscriptionWithoutPositiveGroupLimit(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	zero := float64(0)
+	negative := float64(-1)
+	fake := &fakeQuotaResetProvider{subscriptions: []relay.UserSubscription{
+		activeQuotaResetSubscriptionWithGroup(42, nil),
+		activeQuotaResetSubscriptionWithGroup(43, &relay.Group{ID: 43, Name: "Zero", Platform: "openai", DailyLimitUSD: &zero, WeeklyLimitUSD: &negative}),
+		activeQuotaResetSubscriptionWithGroup(44, &relay.Group{ID: 44, Name: "Mixed non-positive", Platform: "openai", DailyLimitUSD: &negative, WeeklyLimitUSD: &zero}),
+	}}
+	svc := NewService(client, fakeProviderResolver(provider.ID, fake), NewApproverResolver(client), nil)
+
+	for _, groupID := range []string{"42", "43", "44"} {
+		t.Run(groupID, func(t *testing.T) {
+			_, err := svc.CreateRequest(ctx, CreateRequestInput{RequesterUserID: requester.ID, GroupID: groupID, Reason: "Need reset for a build investigation"})
+			if !errors.Is(err, ErrSubscriptionLimitRequired) {
+				t.Fatalf("CreateRequest() error = %v, want %v", err, ErrSubscriptionLimitRequired)
+			}
+		})
+	}
+	if count := client.QuotaResetRequest.Query().CountX(ctx); count != 0 {
+		t.Fatalf("request count = %d, want 0", count)
+	}
+}
+
+func TestCreateRequestAllowsWeeklyOrMonthlyPositiveLimit(t *testing.T) {
+	for _, tc := range []struct {
+		caseName  string
+		groupID   int64
+		groupName string
+		window    string
+	}{
+		{caseName: "weekly", groupID: 45, groupName: "Weekly", window: "weekly"},
+		{caseName: "monthly", groupID: 46, groupName: "Monthly", window: "monthly"},
+	} {
+		t.Run(tc.caseName, func(t *testing.T) {
+			ctx := context.Background()
+			client := testdb.Open(t)
+			requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+			provider := createQuotaResetRelayProvider(t, ctx, client)
+			limit := float64(20)
+			group := &relay.Group{ID: tc.groupID, Name: tc.groupName, Platform: "openai"}
+			if tc.window == "weekly" {
+				group.WeeklyLimitUSD = &limit
+			} else {
+				group.MonthlyLimitUSD = &limit
+			}
+			fake := &fakeQuotaResetProvider{subscriptions: []relay.UserSubscription{activeQuotaResetSubscriptionWithGroup(tc.groupID, group)}}
+			svc := NewService(client, fakeProviderResolver(provider.ID, fake), NewApproverResolver(client), nil)
+
+			if _, err := svc.CreateRequest(ctx, CreateRequestInput{RequesterUserID: requester.ID, GroupID: fmt.Sprint(tc.groupID), Reason: "Need reset for a build investigation"}); err != nil {
+				t.Fatalf("CreateRequest() error = %v", err)
+			}
+		})
+	}
+}
+
 func TestCreateRequestInvalidatesWorkItemCountsWithRequestAndEvents(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -2254,14 +2362,15 @@ func fakeProviderResolver(wantID int, provider relay.Provider) ProviderResolver 
 
 type fakeQuotaResetProvider struct {
 	relay.Provider
-	mu            sync.Mutex
-	subscriptions []relay.UserSubscription
-	resetErr      error
-	resetBlockFor time.Duration
-	resetFunc     func(context.Context, int64, int64) error
-	resetUserID   int64
-	resetGroupID  int64
-	resetCalls    int
+	mu               sync.Mutex
+	subscriptions    []relay.UserSubscription
+	subscriptionsErr error
+	resetErr         error
+	resetBlockFor    time.Duration
+	resetFunc        func(context.Context, int64, int64) error
+	resetUserID      int64
+	resetGroupID     int64
+	resetCalls       int
 }
 
 type recordingQuotaResetNotifier struct {
@@ -2283,6 +2392,9 @@ func containsString(values []string, target string) bool {
 }
 
 func (f *fakeQuotaResetProvider) ListUserSubscriptions(_ context.Context, relayUserID int64) ([]relay.UserSubscription, error) {
+	if f.subscriptionsErr != nil {
+		return nil, f.subscriptionsErr
+	}
 	return f.subscriptions, nil
 }
 
@@ -2378,6 +2490,11 @@ func (f *listOnlyQuotaResetProvider) ListUserSubscriptions(_ context.Context, re
 }
 
 func activeQuotaResetSubscription(groupID int64, groupName string) relay.UserSubscription {
+	dailyLimit := float64(100)
+	return activeQuotaResetSubscriptionWithGroup(groupID, &relay.Group{ID: groupID, Name: groupName, Platform: "openai", DailyLimitUSD: &dailyLimit})
+}
+
+func activeQuotaResetSubscriptionWithGroup(groupID int64, group *relay.Group) relay.UserSubscription {
 	return relay.UserSubscription{
 		ID:              groupID * 10,
 		UserID:          1001,
@@ -2386,7 +2503,7 @@ func activeQuotaResetSubscription(groupID int64, groupName string) relay.UserSub
 		DailyUsageUSD:   10,
 		WeeklyUsageUSD:  20,
 		MonthlyUsageUSD: 30,
-		Group:           &relay.Group{ID: groupID, Name: groupName, Platform: "openai"},
+		Group:           group,
 	}
 }
 

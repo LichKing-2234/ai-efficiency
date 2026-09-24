@@ -123,6 +123,22 @@ func TestQuotaResetCreateRequestPassesActorAndBody(t *testing.T) {
 	}
 }
 
+func TestQuotaResetCreateRequestReturnsBadRequestWhenGroupHasNoPositiveLimit(t *testing.T) {
+	env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+		createFn: func(context.Context, quotareset.CreateRequestInput) (*ent.QuotaResetRequest, error) {
+			return nil, quotareset.ErrSubscriptionLimitRequired
+		},
+	})
+
+	rec := performQuotaResetRequest(env.router, http.MethodPost, "/api/v1/user/quota-reset/requests", env.userToken, `{"group_id":"42","reason":"Need reset"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), quotareset.ErrSubscriptionLimitRequired.Error()) {
+		t.Fatalf("body = %s, want %q", rec.Body.String(), quotareset.ErrSubscriptionLimitRequired.Error())
+	}
+}
+
 func TestQuotaResetListAPIsExcludePrivateWorkflowNotificationIDs(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)

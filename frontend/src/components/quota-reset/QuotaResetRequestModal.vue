@@ -19,7 +19,11 @@ const selectedGroupID = ref('')
 const reason = ref('')
 const error = ref('')
 
-const selectedGroup = computed(() => props.groups.find((group) => group.group_id === selectedGroupID.value) ?? null)
+const eligibleGroups = computed(() => props.groups.filter((group) => (
+  [group.daily_limit_usd, group.weekly_limit_usd, group.monthly_limit_usd]
+    .some((limit) => typeof limit === 'number' && limit > 0)
+)))
+const selectedGroup = computed(() => eligibleGroups.value.find((group) => group.group_id === selectedGroupID.value) ?? null)
 
 watch(
   () => props.open,
@@ -34,7 +38,7 @@ watch(
 
 function submit() {
   error.value = ''
-  if (!selectedGroupID.value) {
+  if (!selectedGroupID.value || !selectedGroup.value) {
     error.value = t('quotaReset.groupRequired')
     return
   }
@@ -59,7 +63,16 @@ function submit() {
       <p class="text-sm text-slate-600">{{ t('quotaReset.modalHelp') }}</p>
 
       <div class="mt-5 space-y-4">
+        <ElAlert
+          v-if="eligibleGroups.length === 0"
+          data-testid="quota-reset-no-eligible-groups"
+          type="warning"
+          :closable="false"
+          :title="t('quotaReset.noEligibleGroups')"
+        />
+
         <div
+          v-else
           data-testid="quota-reset-group-field"
           class="rounded-lg border p-3"
           :class="selectedGroupID ? 'border-slate-200 bg-white' : 'border-cyan-200 bg-cyan-50 ring-1 ring-inset ring-cyan-200'"
@@ -79,7 +92,7 @@ function submit() {
             :disabled="props.submitting"
           >
             <ElOption
-              v-for="group in props.groups"
+              v-for="group in eligibleGroups"
               :key="group.group_id"
               :data-testid="`quota-reset-group-option-${group.group_id}`"
               :value="group.group_id"
@@ -96,7 +109,7 @@ function submit() {
           </span>
         </div>
 
-        <label class="block">
+        <label v-if="eligibleGroups.length > 0" class="block">
           <span class="text-sm font-medium text-slate-700">{{ t('quotaReset.reason') }}</span>
           <ElInput
             v-model="reason"
@@ -122,7 +135,7 @@ function submit() {
           data-testid="quota-reset-submit"
           type="primary"
           :loading="props.submitting"
-          :disabled="props.submitting || props.groups.length === 0"
+          :disabled="props.submitting || eligibleGroups.length === 0"
           @click="submit"
         >
           {{ props.submitting ? t('settings.saving') : t('quotaReset.submitRequest') }}

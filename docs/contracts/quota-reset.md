@@ -13,9 +13,19 @@ or delegated rate multipliers.
 ## Request Creation
 
 An authenticated user selects one active subscription group from the enabled
-primary Relay provider and supplies a non-empty reason. The requester must have
-a current Relay binding. One active request may exist for the same requester,
-provider, and group; concurrent creation is protected by the database.
+primary Relay provider and supplies a non-empty reason. The selected group must
+include complete Relay group metadata and have at least one positive daily,
+weekly, or monthly limit. A group whose limits are all missing, zero, or
+negative is not eligible. The requester must have a current Relay binding. One
+active request may exist for the same requester, provider, and group;
+concurrent creation is protected by the database.
+
+The options endpoint returns only eligible groups. When none are eligible, the
+request UI explains that no quota-limited group is available and keeps
+submission disabled. A request creation call repeats the eligibility check
+against the current Relay facts, so an old page or a group whose metadata
+changed after the options read cannot bypass the rule. Missing or unreadable
+group metadata fails closed.
 
 New requests use workflow version 2. Approval routing is resolved from one
 repeatable-read view of the current Directory snapshot and is stored on the
@@ -155,6 +165,9 @@ status. Automatically satisfied steps send no activation notification.
 - User lists show only own requests; approver lists use current or historical
   stored workflow participation; admins use separate fallback routes.
 - Current active subscription membership is revalidated before request/reset.
+- Reset request eligibility is revalidated against complete current group
+  metadata and requires at least one positive subscription limit; API-key
+  limits and OAuth pool utilization do not qualify a group.
 - Directory and Relay capability absence fails closed without changing another
   subscription or provider.
 - Reset state transitions and required events use status/revision predicates;

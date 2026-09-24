@@ -524,6 +524,7 @@ def mock_matrix_api(route, role):
                 "daily_usage_usd": 10,
                 "weekly_usage_usd": 20,
                 "monthly_usage_usd": 30,
+                "daily_limit_usd": 100,
             }],
         },
         "/api/v1/user/team-usage/subjects/7/usage/dashboard": {
