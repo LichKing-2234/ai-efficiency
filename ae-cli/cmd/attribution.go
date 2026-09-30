@@ -39,8 +39,17 @@ var attributionEnableCmd = &cobra.Command{
 		} else if err != nil {
 			return fmt.Errorf("activate reporting: %w", err)
 		}
+		// The same step login performs. Enabling attribution without it leaves
+		// the claim sync returning at its first guard — silently, with no gap
+		// reason and nothing doctor reports — while this command says delivery
+		// is active. Both entry points now have to earn that sentence.
+		relayProviderID := ensureRelayProvider(context.Background(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 		fmt.Fprintf(cmd.OutOrStdout(), "Compact Codex attribution enabled for installation %s.\n", reportingConfig.InstallationID)
-		fmt.Fprintln(cmd.OutOrStdout(), "V2 delivery active; a v1 baseline is not required.")
+		if relayProviderID <= 0 {
+			fmt.Fprintln(cmd.OutOrStdout(), "V2 delivery is not active yet: no relay provider is recorded for this machine.")
+		} else {
+			fmt.Fprintln(cmd.OutOrStdout(), "V2 delivery active; a v1 baseline is not required.")
+		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Global Git hooks: %s\n", globalHookSummary())
 		fmt.Fprintln(cmd.OutOrStdout(), "Codex Request ID source: local Codex logs")
 		return nil

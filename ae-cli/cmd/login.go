@@ -50,6 +50,10 @@ var loginCmd = &cobra.Command{
 					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: login remains valid, but reporting activation is degraded: %v\n", activationErr)
 				}
 				cmd.Println("Already logged in. Use --force to re-login.")
+				// Existing logins are the population that would otherwise never
+				// get Pilot: they have no reason to run login again once it is
+				// working, so the early return has to carry the setup too.
+				completeMachineSetup(context.Background(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 				return nil
 			}
 		}
@@ -88,12 +92,20 @@ var loginCmd = &cobra.Command{
 		if err := auth.WriteToken(tokenPath, token); err != nil {
 			return fmt.Errorf("save token: %w", err)
 		}
+		// Everything after this point speaks as the user who just logged in.
+		// The global client was built before the OAuth flow ran, on whatever
+		// token existed then — on a first login, none — and the machine setup
+		// below lists providers through it. Left stale, that lookup failed
+		// unauthorized on every fresh machine, the relay provider was never
+		// recorded, and commit attribution stayed off until a second login.
+		apiClient = client.New(serverURL, result.AccessToken)
 		if _, activationErr := activateAfterLogin(context.Background(), client.New(serverURL, result.AccessToken), serverURL, token.AuthSubject); activationErr != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: login succeeded, but reporting activation is degraded: %v\n", activationErr)
 		}
 
 		fmt.Fprintf(cmd.OutOrStdout(), "Login successful! Token saved to %s\n", tokenPath)
-		fmt.Fprintln(cmd.OutOrStdout(), "Run 'ae-cli discover' to configure supported local AI tools.")
+		completeMachineSetup(context.Background(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+		fmt.Fprintln(cmd.OutOrStdout(), "Run 'ae-cli discover' to route your AI tools through the relay.")
 		return nil
 	},
 }

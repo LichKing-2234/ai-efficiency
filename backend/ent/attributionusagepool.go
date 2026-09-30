@@ -39,6 +39,8 @@ type AttributionUsagePool struct {
 	CacheReadTokens int64 `json:"cache_read_tokens,omitempty"`
 	// TotalTokens holds the value of the "total_tokens" field.
 	TotalTokens int64 `json:"total_tokens,omitempty"`
+	// CreditUsage holds the value of the "credit_usage" field.
+	CreditUsage float64 `json:"credit_usage,omitempty"`
 	// RequestCount holds the value of the "request_count" field.
 	RequestCount int `json:"request_count,omitempty"`
 	// CoverageGapCount holds the value of the "coverage_gap_count" field.
@@ -55,6 +57,8 @@ func (*AttributionUsagePool) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case attributionusagepool.FieldCreditUsage:
+			values[i] = new(sql.NullFloat64)
 		case attributionusagepool.FieldID, attributionusagepool.FieldRelayProviderID, attributionusagepool.FieldUserID, attributionusagepool.FieldInputTokens, attributionusagepool.FieldOutputTokens, attributionusagepool.FieldCacheCreationTokens, attributionusagepool.FieldCacheReadTokens, attributionusagepool.FieldTotalTokens, attributionusagepool.FieldRequestCount, attributionusagepool.FieldCoverageGapCount:
 			values[i] = new(sql.NullInt64)
 		case attributionusagepool.FieldCanonicalPoolKey, attributionusagepool.FieldLedgerEpoch, attributionusagepool.FieldRequestedModel:
@@ -148,6 +152,12 @@ func (aup *AttributionUsagePool) assignValues(columns []string, values []any) er
 			} else if value.Valid {
 				aup.TotalTokens = value.Int64
 			}
+		case attributionusagepool.FieldCreditUsage:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field credit_usage", values[i])
+			} else if value.Valid {
+				aup.CreditUsage = value.Float64
+			}
 		case attributionusagepool.FieldRequestCount:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field request_count", values[i])
@@ -240,6 +250,9 @@ func (aup *AttributionUsagePool) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("total_tokens=")
 	builder.WriteString(fmt.Sprintf("%v", aup.TotalTokens))
+	builder.WriteString(", ")
+	builder.WriteString("credit_usage=")
+	builder.WriteString(fmt.Sprintf("%v", aup.CreditUsage))
 	builder.WriteString(", ")
 	builder.WriteString("request_count=")
 	builder.WriteString(fmt.Sprintf("%v", aup.RequestCount))

@@ -48,11 +48,17 @@ type V2Ratio struct {
 	PercentagePointChange *float64   `json:"percentage_point_change,omitempty"`
 }
 
+// V2TrendPoint carries the two units side by side. Credit is what agents that
+// do not bill in tokens report — Kiro CLI reports only credit — and is never
+// converted to or from tokens, so a caller reads whichever unit it needs.
 type V2TrendPoint struct {
-	Date           string `json:"date"`
-	DirectTokens   int64  `json:"direct_tokens"`
-	SharedTokens   int64  `json:"shared_tokens"`
-	InvolvedTokens int64  `json:"involved_tokens"`
+	Date           string  `json:"date"`
+	DirectTokens   int64   `json:"direct_tokens"`
+	SharedTokens   int64   `json:"shared_tokens"`
+	InvolvedTokens int64   `json:"involved_tokens"`
+	DirectCredit   float64 `json:"direct_credit"`
+	SharedCredit   float64 `json:"shared_credit"`
+	InvolvedCredit float64 `json:"involved_credit"`
 }
 
 type V2Readiness struct {
@@ -61,6 +67,21 @@ type V2Readiness struct {
 	LatestAcceptedAt *time.Time `json:"latest_accepted_at,omitempty"`
 }
 
+// V2CreditRatio is the credit counterpart of V2Ratio, kept separate because the
+// two are not equally authoritative and must not be read as one number. The
+// Token denominator is the gateway's billing record, which the client cannot
+// influence. The credit denominator is what the agent reported locally, so the
+// ratio measures how much of the credit this machine collected reached a commit
+// — not how much the agent actually spent.
+type V2CreditRatio struct {
+	State           ActivityV2CreditRatioState `json:"state"`
+	CommittedCredit float64                    `json:"committed_credit"`
+	TotalCredit     *float64                   `json:"total_credit,omitempty"`
+	Percent         *float64                   `json:"percent,omitempty"`
+}
+
+type ActivityV2CreditRatioState = string
+
 type V2Overview struct {
 	ContractVersion string         `json:"contract_version"`
 	ScopeVersion    string         `json:"scope_version"`
@@ -68,9 +89,11 @@ type V2Overview struct {
 	ToDate          string         `json:"to"`
 	Timezone        string         `json:"timezone"`
 	CommittedTokens int64          `json:"committed_tokens"`
+	CommittedCredit float64        `json:"committed_credit"`
 	Coverage        V2Coverage     `json:"claim_coverage"`
 	SCMCoverage     SyncCoverage   `json:"scm_coverage"`
 	Ratio           V2Ratio        `json:"ratio"`
+	CreditRatio     V2CreditRatio  `json:"credit_ratio"`
 	Trend           []V2TrendPoint `json:"trend"`
 	Readiness       V2Readiness    `json:"readiness"`
 }
@@ -81,7 +104,11 @@ type V2RepositoryRow struct {
 	DirectTokens int64    `json:"direct_tokens"`
 	DirectShare  *float64 `json:"direct_share,omitempty"`
 	SharedTokens int64    `json:"shared_tokens"`
+	DirectCredit float64  `json:"direct_credit"`
+	SharedCredit float64  `json:"shared_credit"`
+	CreditShare  *float64 `json:"credit_share,omitempty"`
 	TokenChange  *int64   `json:"token_change,omitempty"`
+	CreditChange *float64 `json:"credit_change,omitempty"`
 }
 
 type V2CommitReference struct {
@@ -98,8 +125,10 @@ type V2PullRequestRow struct {
 	URL            string              `json:"url"`
 	Status         string              `json:"status"`
 	InvolvedTokens int64               `json:"involved_tokens"`
+	InvolvedCredit float64             `json:"involved_credit"`
 	OverlapState   string              `json:"overlap_state"`
 	TokenChange    *int64              `json:"token_change,omitempty"`
+	CreditChange   *float64            `json:"credit_change,omitempty"`
 	Commits        []V2CommitReference `json:"commits"`
 }
 

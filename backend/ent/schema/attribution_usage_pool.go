@@ -24,6 +24,10 @@ func (AttributionUsagePool) Fields() []ent.Field {
 		field.Int64("cache_creation_tokens").Default(0),
 		field.Int64("cache_read_tokens").Default(0),
 		field.Int64("total_tokens").Default(0),
+		// Credit is the unit some agents bill in instead of tokens — Kiro CLI
+		// reports only this. It is an independent amount, never converted to or
+		// from tokens; a pool row may carry either or both.
+		field.Float("credit_usage").Default(0),
 		field.Int("request_count").Default(0),
 		field.Int("coverage_gap_count").Default(0),
 		field.Time("created_at").Immutable().Default(timeNow),

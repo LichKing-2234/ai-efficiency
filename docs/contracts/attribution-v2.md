@@ -136,6 +136,70 @@ Repeated terminal rows count once. An explicit same-turn compaction boundary
 may establish one zero-Token baseline restatement; the same contradiction
 without that boundary is invalid.
 
+## Pilot-Sourced Collection
+
+Where LoongSuite Pilot is collecting it is the source for every agent it
+instruments, and `ae-cli` reads its normalized local output instead of that
+agent's own files. Both surfaces — usage events and commit-bound claims — come
+from it, and both are priced from what Pilot observed rather than reconciled
+against the relay: only one of the instrumented agents routes through the relay
+at all, so a reconciled figure would exist for a minority of the traffic and
+force one commit to carry two kinds of number.
+
+A collector that is installed but not collecting hands the source back to the
+per-agent readers. The decision follows the running service, not the presence of
+its output directory, which survives being turned off.
+
+Pilot does not instrument every surface of every agent. Where it reports nothing
+for an agent this platform can read directly — the Kiro CLI store, the Kiro IDE
+surfaces — that reader still runs. It is skipped for an agent Pilot did report,
+because the two number the same consumption in different dedupe namespaces and
+running both would count it twice.
+
+### Repository Scope
+
+A turn is scoped to a repository by what its edits declare, not by where the
+session stood. The paths an edit names are produced by the edit; the workspace
+and Git attributes a collector attaches describe the session's directory, which
+is a different question and a different answer whenever a session runs above or
+beside the repository it edits.
+
+Scope resolves in order, first match deciding:
+
+| Order | Basis | Source | Nature |
+| --- | --- | --- | --- |
+| 1 | The absolute path an edit declares | `file_path`, `path`, or the patch envelope's file headers | Proof |
+| 2 | Collector workspace attributes | Only for events that declare no edit, such as usage-bearing responses | Inference |
+| 3 | The agent's own session record of its working directory | Last resort | Inference |
+
+Rule 1 decides the whole turn in both directions: a turn with an absolute path
+inside the scanned repository is admitted whole, and a turn whose absolute paths
+all lie outside is refused whole. It decides the turn rather than the event
+because only the mutation carries a path while the amount rides on the response;
+deciding events alone would admit the proof and drop the price. A relative path
+resolves inside every repository and therefore proves membership in none.
+
+A turn that edited two repositories is admitted by both scans, binding one
+amount to commits in either under the shared relation, counted once.
+
+### Evidence Arriving After the Commit
+
+Some collectors write an agent's events only when its turn ends, so a developer
+who edits and commits inside one turn commits before the evidence exists. Scan
+progress therefore retains the commits a scan could not prove and every later
+scan retries them; a commit is forgotten once a candidate proves it, and entries
+older than the window a scan reads are dropped because retrying can no longer
+succeed. Agents whose transcripts are tailed continuously are unaffected.
+
+### Credit as an Independent Unit
+
+Some agents bill in credit rather than tokens and report every token field as
+zero. Credit is carried as its own amount on the usage bucket and the usage pool
+and is never converted to or from tokens. A bucket must carry an amount in at
+least one unit. Credit adds across collapsed partitions and grows through the
+same monotonic contribution path tokens use, and Activity reports it as its own
+ratio whose denominator is the reported local usage rather than relay billing.
+
 ## Event-Driven Local Delivery
 
 Managed `post-commit`, `post-rewrite`, and `pre-push` hooks plus manual
