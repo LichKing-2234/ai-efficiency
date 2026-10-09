@@ -824,6 +824,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
         confirmDialogOpen.value = false
         return { kind: 'stale' as const }
       }
+      confirmDialogOpen.value = false
       throw error
     } finally {
       if (isCurrentPlanRequest(generation)) executing.value = false

@@ -20,6 +20,45 @@ type recoveryProvider struct {
 	accounts []relay.Account
 }
 
+type cancelDuringSubscriptionRecoveryProvider struct {
+	*recoveryProvider
+	cancel context.CancelFunc
+}
+
+func (p *cancelDuringSubscriptionRecoveryProvider) ListUserSubscriptions(context.Context, int64) ([]relay.UserSubscription, error) {
+	p.cancel()
+	return nil, context.Canceled
+}
+
+func TestRecoverPersistsFailedStepAfterRelayContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	client := testdb.Open(t)
+	_, base, _, operation := createRecoveryFixture(t, context.Background(), client, false)
+	provider := &cancelDuringSubscriptionRecoveryProvider{recoveryProvider: base, cancel: cancel}
+	service := NewService(client, relayPlanningProviderResolver(func(context.Context, int) (relay.Provider, error) {
+		return provider, nil
+	}), nil)
+
+	if _, err := service.Recover(ctx, RecoveryRequest{OperationID: operation.ID, Direction: RecoveryResume, InitiatedByUserID: 1}); err == nil {
+		t.Fatal("Recover() unexpectedly succeeded after Relay context cancellation")
+	}
+	steps := client.RelationshipOperationStep.Query().Where(relationshipoperationstep.OperationIDEQ(operation.ID)).AllX(context.Background())
+	var subscriptionStep *ent.RelationshipOperationStep
+	for _, step := range steps {
+		if step.RelationshipType == "subscription" && step.Action == "add" {
+			subscriptionStep = step
+			break
+		}
+	}
+	if subscriptionStep == nil || subscriptionStep.Lifecycle != relationshipoperationstep.LifecycleFailed {
+		t.Fatalf("subscription step lifecycle = %v, want failed", subscriptionStep)
+	}
+	if got := client.RelationshipOperation.GetX(context.Background(), operation.ID).Lifecycle; got != relationshipoperation.LifecycleInterrupted {
+		t.Fatalf("operation lifecycle = %q, want interrupted", got)
+	}
+}
+
 func TestBuildDurableStepPlansFreezesReviewedAPIKeysAndResumeOnlyCreation(t *testing.T) {
 	plan := &Plan{
 		Assignments: []Assignment{{Index: 0, TargetGroupName: "Reviewed Target"}},
