@@ -223,15 +223,16 @@ func preflightRecoveryResources(ctx context.Context, provider relay.Provider, pl
 }
 
 func (s *Service) startRecoveryAttempt(ctx context.Context, operation *ent.RelationshipOperation, req RecoveryRequest) (*ent.RelationshipOperationAttempt, error) {
+	dbCtx := context.WithoutCancel(ctx)
 	actorID := req.InitiatedByUserID
 	if actorID <= 0 {
 		actorID = operation.InitiatedByUserID
 	}
-	tx, err := s.client.Tx(ctx)
+	tx, err := s.client.Tx(dbCtx)
 	if err != nil {
 		return nil, err
 	}
-	count, err := tx.RelationshipOperationAttempt.Query().Where(relationshipoperationattempt.OperationIDEQ(operation.ID)).Count(ctx)
+	count, err := tx.RelationshipOperationAttempt.Query().Where(relationshipoperationattempt.OperationIDEQ(operation.ID)).Count(dbCtx)
 	if err != nil {
 		_ = tx.Rollback()
 		return nil, err
@@ -246,13 +247,13 @@ func (s *Service) startRecoveryAttempt(ctx context.Context, operation *ent.Relat
 	updated, err := tx.RelationshipOperation.Update().Where(
 		relationshipoperation.IDEQ(operation.ID),
 		relationshipoperation.LifecycleEQ(relationshipoperation.LifecycleInterrupted),
-	).SetLifecycle(lifecycle).Save(ctx)
+	).SetLifecycle(lifecycle).Save(dbCtx)
 	if err == nil && updated != 1 {
 		err = fmt.Errorf("Relationship Operation recovery is already in progress")
 	}
 	var attempt *ent.RelationshipOperationAttempt
 	if err == nil {
-		attempt, err = tx.RelationshipOperationAttempt.Create().SetOperationID(operation.ID).SetAttemptNumber(count + 1).SetDirection(direction).SetInitiatedByUserID(actorID).SetStatus(relationshipoperationattempt.StatusRunning).SetStartedAt(now).Save(ctx)
+		attempt, err = tx.RelationshipOperationAttempt.Create().SetOperationID(operation.ID).SetAttemptNumber(count + 1).SetDirection(direction).SetInitiatedByUserID(actorID).SetStatus(relationshipoperationattempt.StatusRunning).SetStartedAt(now).Save(dbCtx)
 	}
 	if err != nil {
 		_ = tx.Rollback()
@@ -265,7 +266,8 @@ func (s *Service) startRecoveryAttempt(ctx context.Context, operation *ent.Relat
 }
 
 func (s *Service) convergeRecoveryStep(ctx context.Context, provider relay.Provider, step *ent.RelationshipOperationStep, direction RecoveryDirection, platform string) error {
-	if _, err := s.client.RelationshipOperationStep.UpdateOneID(step.ID).SetLifecycle(relationshipoperationstep.LifecycleDispatched).Save(ctx); err != nil {
+	dbCtx := context.WithoutCancel(ctx)
+	if _, err := s.client.RelationshipOperationStep.UpdateOneID(step.ID).SetLifecycle(relationshipoperationstep.LifecycleDispatched).Save(dbCtx); err != nil {
 		return err
 	}
 	desiredSide := "target"
@@ -296,10 +298,10 @@ func (s *Service) convergeRecoveryStep(ctx context.Context, provider relay.Provi
 		err = fmt.Errorf("unsupported relationship type %q", step.RelationshipType)
 	}
 	if err != nil {
-		_, _ = s.client.RelationshipOperationStep.UpdateOneID(step.ID).SetLifecycle(relationshipoperationstep.LifecycleFailed).Save(context.WithoutCancel(ctx))
+		_, _ = s.client.RelationshipOperationStep.UpdateOneID(step.ID).SetLifecycle(relationshipoperationstep.LifecycleFailed).Save(dbCtx)
 		return err
 	}
-	_, err = s.client.RelationshipOperationStep.UpdateOneID(step.ID).SetLifecycle(relationshipoperationstep.LifecycleReadbackVerified).SetLatestVerifiedEffect(effect).Save(ctx)
+	_, err = s.client.RelationshipOperationStep.UpdateOneID(step.ID).SetLifecycle(relationshipoperationstep.LifecycleReadbackVerified).SetLatestVerifiedEffect(effect).Save(dbCtx)
 	return err
 }
 
@@ -476,15 +478,16 @@ func recoverAPIKeyStep(ctx context.Context, provider relay.Provider, step *ent.R
 }
 
 func (s *Service) promoteRecoveryTarget(ctx context.Context, operation *ent.RelationshipOperation, attemptID int) error {
+	dbCtx := context.WithoutCancel(ctx)
 	var plan Plan
 	if err := decodeJSONMap(operation.TargetSnapshot, &plan); err != nil {
 		return fmt.Errorf("decode recovery target: %w", err)
 	}
-	owners, err := s.client.RelationshipOperationMapping.Query().Where(relationshipoperationmapping.OperationIDEQ(operation.ID)).All(ctx)
+	owners, err := s.client.RelationshipOperationMapping.Query().Where(relationshipoperationmapping.OperationIDEQ(operation.ID)).All(dbCtx)
 	if err != nil {
 		return err
 	}
-	steps, err := s.client.RelationshipOperationStep.Query().Where(relationshipoperationstep.OperationIDEQ(operation.ID)).All(ctx)
+	steps, err := s.client.RelationshipOperationStep.Query().Where(relationshipoperationstep.OperationIDEQ(operation.ID)).All(dbCtx)
 	if err != nil {
 		return err
 	}
@@ -504,19 +507,19 @@ func (s *Service) promoteRecoveryTarget(ctx context.Context, operation *ent.Rela
 		groupIDs[index] = plan.Assignments[index].TargetGroupID
 	}
 	state := map[string]map[string]string{"operation": {"key": operation.OperationKey, "status": "succeeded"}}
-	alreadyPromoted, err := s.recoveryTargetAlreadyPromoted(ctx, owners, &plan, groupIDs)
+	alreadyPromoted, err := s.recoveryTargetAlreadyPromoted(dbCtx, owners, &plan, groupIDs)
 	if err != nil {
 		return err
 	}
 	if alreadyPromoted {
-		return s.finishRecovery(ctx, operation.ID, attemptID, relationshipoperation.LifecycleApplied, RecoveryResume)
+		return s.finishRecovery(dbCtx, operation.ID, attemptID, relationshipoperation.LifecycleApplied, RecoveryResume)
 	}
-	tx, err := s.client.Tx(ctx)
+	tx, err := s.client.Tx(dbCtx)
 	if err != nil {
 		return err
 	}
 	rollback := func(cause error) error { _ = tx.Rollback(); return cause }
-	result, err := saveMappingWithClient(ctx, tx.Client(), &plan, groupIDs, state)
+	result, err := saveMappingWithClient(dbCtx, tx.Client(), &plan, groupIDs, state)
 	if err != nil {
 		return rollback(err)
 	}
@@ -527,7 +530,7 @@ func (s *Service) promoteRecoveryTarget(ctx context.Context, operation *ent.Rela
 			break
 		}
 	}
-	updated, err := tx.RelayGroupMapping.Update().Where(relaygroupmapping.IDEQ(result.ID), relaygroupmapping.BaselineRevisionEQ(primaryRevision)).AddBaselineRevision(1).Save(ctx)
+	updated, err := tx.RelayGroupMapping.Update().Where(relaygroupmapping.IDEQ(result.ID), relaygroupmapping.BaselineRevisionEQ(primaryRevision)).AddBaselineRevision(1).Save(dbCtx)
 	if err != nil || updated != 1 {
 		return rollback(fmt.Errorf("promote recovery target baseline: revision changed"))
 	}
@@ -551,14 +554,14 @@ func (s *Service) promoteRecoveryTarget(ctx context.Context, operation *ent.Rela
 			delete(assignments, userID)
 			delete(sources, userID)
 		}
-		updated, err := tx.RelayGroupMapping.Update().Where(relaygroupmapping.IDEQ(owner.MappingID), relaygroupmapping.BaselineRevisionEQ(owner.BaselineRevision)).SetMemberAssignments(assignments).SetMemberSources(sources).AddBaselineRevision(1).Save(ctx)
+		updated, err := tx.RelayGroupMapping.Update().Where(relaygroupmapping.IDEQ(owner.MappingID), relaygroupmapping.BaselineRevisionEQ(owner.BaselineRevision)).SetMemberAssignments(assignments).SetMemberSources(sources).AddBaselineRevision(1).Save(dbCtx)
 		if err != nil || updated != 1 {
 			return rollback(fmt.Errorf("promote affected Mapping %d: revision changed", owner.MappingID))
 		}
 	}
 	now := time.Now().UTC()
 	resultFact := map[string]any{"direction": string(RecoveryResume), "status": string(relationshipoperation.LifecycleApplied)}
-	if err := finishRecoveryWithClient(ctx, tx.Client(), operation.ID, attemptID, relationshipoperation.LifecycleApplied, RecoveryResume, resultFact, now); err != nil {
+	if err := finishRecoveryWithClient(dbCtx, tx.Client(), operation.ID, attemptID, relationshipoperation.LifecycleApplied, RecoveryResume, resultFact, now); err != nil {
 		return rollback(err)
 	}
 	return tx.Commit()
@@ -635,13 +638,14 @@ func (s *Service) recoveryTargetAlreadyPromoted(ctx context.Context, owners []*e
 }
 
 func (s *Service) finishRecovery(ctx context.Context, operationID, attemptID int, lifecycle relationshipoperation.Lifecycle, direction RecoveryDirection) error {
+	dbCtx := context.WithoutCancel(ctx)
 	now := time.Now().UTC()
-	tx, err := s.client.Tx(ctx)
+	tx, err := s.client.Tx(dbCtx)
 	if err != nil {
 		return err
 	}
 	result := map[string]any{"direction": string(direction), "status": string(lifecycle)}
-	if err := finishRecoveryWithClient(ctx, tx.Client(), operationID, attemptID, lifecycle, direction, result, now); err != nil {
+	if err := finishRecoveryWithClient(dbCtx, tx.Client(), operationID, attemptID, lifecycle, direction, result, now); err != nil {
 		_ = tx.Rollback()
 		return err
 	}

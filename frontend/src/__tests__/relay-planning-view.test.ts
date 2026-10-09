@@ -1245,6 +1245,23 @@ describe('RelayPlanningView', () => {
 		expect(warning).toHaveBeenCalledWith('Relay relationships changed. Review the refreshed plan and confirm again.')
 	})
 
+	it('closes confirmation when execution fails before an operation is applied', async () => {
+		const errorMessage = vi.spyOn(ElMessage, 'error').mockImplementation(() => undefined as any)
+		const { wrapper, relayPlanning } = await mountView()
+		await fillAndPreview(wrapper)
+		await wrapper.get('[data-testid="open-execution-confirmation"]').trigger('click')
+		await flushPromises()
+		relayPlanning.executeRelayPlan.mockRejectedValue({
+			response: { status: 422, data: { message: 'target subscription is required before binding API keys' } },
+		})
+
+		await wrapper.get('[data-testid="confirm-execution"]').trigger('click')
+		await flushPromises()
+
+		expect(wrapper.findComponent(ElDialog).props('modelValue')).toBe(false)
+		expect(errorMessage).toHaveBeenCalledWith('target subscription is required before binding API keys')
+	})
+
 	it('previews without a migration source and adds a searched user to one target', async () => {
     const { wrapper, relayPlanning } = await mountView()
 	    relayPlanning.searchRelayPlanningUsers.mockResolvedValue({
