@@ -1146,7 +1146,7 @@ onBeforeUnmount(() => {
 		</fieldset>
       </section>
 
-		<section v-if="lastExecution" class="border-y border-slate-200 bg-white py-4">
+		<section v-if="lastExecution" class="border-y border-slate-200 bg-white px-4 py-4">
 			<div class="mb-3 text-sm font-semibold text-slate-900">{{ t('relayPlanning.executionResults') }}</div>
 			<el-alert v-if="lastExecution.mapping?.status === 'needs_retry'" data-testid="execution-needs-retry" class="mb-3" type="error" :closable="false" show-icon :title="t('relayPlanning.needsRetry')" />
 			<div v-if="lastExecution.members.some((member) => member.error)" class="mb-3 divide-y divide-red-100 border-y border-red-100">
