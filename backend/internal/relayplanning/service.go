@@ -2388,13 +2388,14 @@ func buildTargetChangeSummaries(req PreviewRequest, plan *Plan) []TargetChangeSu
 		for _, accountID := range orderedAccountIDs {
 			oldPriority, currentExists := current[accountID]
 			_, desiredExists := desired[accountID]
+			// An equal reviewed priority expresses no preference, so an existing
+			// binding is never reordered: Relay keeps the precedence it already
+			// holds and only membership is reviewed. Nothing else to plan.
 			switch {
 			case !currentExists && desiredExists:
 				summaries[index].Accounts = append(summaries[index].Accounts, AccountChange{AccountID: accountID, Action: "add", NewPriority: accountPriority})
 			case currentExists && !desiredExists:
 				summaries[index].Accounts = append(summaries[index].Accounts, AccountChange{AccountID: accountID, Action: "remove", OldPriority: oldPriority})
-			case oldPriority != accountPriority:
-				summaries[index].Accounts = append(summaries[index].Accounts, AccountChange{AccountID: accountID, Action: "reorder", OldPriority: oldPriority, NewPriority: accountPriority})
 			}
 		}
 	}
@@ -3315,7 +3316,9 @@ func (s *Service) AdoptCurrentAccounts(ctx context.Context, id int) (*Mapping, e
 		key := strconv.FormatInt(pool.TargetGroupID, 10)
 		desired[key] = make([]map[string]int64, 0, len(pool.Current))
 		for _, account := range pool.Current {
-			desired[key] = append(desired[key], map[string]int64{"account_id": account.ID, "priority": int64(account.Priority)})
+			// Adopt persists reviewed state without a Relay write, so it records the
+			// equal reviewed priority rather than Relay's current precedence.
+			desired[key] = append(desired[key], map[string]int64{"account_id": account.ID, "priority": int64(accountPriority)})
 		}
 	}
 	row, err = row.Update().SetAccountManagementInitialized(true).SetDesiredAccounts(desired).Save(ctx)
@@ -4650,7 +4653,10 @@ func (s *Service) applyDesiredAccountRelationships(ctx context.Context, provider
 				desiredPointer = intPointer(desiredPriority)
 				result.DesiredPriority = desiredPointer
 			}
-			if (desiredExists && currentPriority == desiredPriority) || (!desiredExists && currentPriority == 0) {
+			// Membership decides whether Relay needs a write. An equal reviewed
+			// priority expresses no preference, so an existing binding keeps the
+			// precedence Relay already holds and is left untouched.
+			if (desiredExists && currentPriority > 0) || (!desiredExists && currentPriority == 0) {
 				results = append(results, result)
 				continue
 			}
