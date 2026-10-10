@@ -125,7 +125,9 @@ func StableProtocolCapabilities(group Group) ProtocolCapabilities {
 		}
 	}
 	switch strings.ToLower(strings.TrimSpace(group.Platform)) {
-	case "openai":
+	// DeepSeek groups are served through the OpenAI gateway, so they share the
+	// OpenAI protocol set; Messages stays gated behind message dispatch.
+	case "openai", "deepseek":
 		supported := []string{ProtocolResponses, ProtocolChatCompletions}
 		if group.AllowMessagesDispatch {
 			supported = append(supported, ProtocolMessages)

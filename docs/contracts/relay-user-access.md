@@ -146,6 +146,7 @@ Stable Connection Test capabilities are centralized in the backend:
 | Group platform | Recommended | Supported protocols |
 | --- | --- | --- |
 | OpenAI | Responses | Responses, Chat Completions, and Messages only when message dispatch is enabled |
+| DeepSeek | Responses | Responses, Chat Completions, and Messages only when message dispatch is enabled |
 | Anthropic or Claude | Messages | Messages, Responses, Chat Completions |
 | Gemini | GenerateContent | GenerateContent, Chat Completions |
 | Antigravity | Messages | Messages, Antigravity GenerateContent |
