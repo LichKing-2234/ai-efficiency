@@ -232,6 +232,18 @@ member migration only for that Target. A Target-local Account failure is kept
 as retry state while other Targets may continue after the complete preflight
 has passed.
 
+Relay priorities are one positional ordering across every Group bound to an
+Account, so a reviewed priority indexes that per-Account order rather than the
+Target Group alone. A Target Group can therefore occupy at most the position
+`other bound Groups + 1`, and a reviewed priority beyond that bound is not
+expressible on Relay. Such a write binds the relationship at the first position
+instead of rejecting an otherwise valid reviewed plan; the first position is
+also the only binding a Group makes when the Account had no other relationship.
+A removal passes no reviewed priority and drops the binding. Because Relay
+stores the applied precedence rather than the reviewed number, the reviewed
+order stays the control-plane source of truth while drift detection compares the
+ordering Relay actually holds.
+
 Group-configuration compatibility is shown only when the Provider exposes a
 privacy-safe fact. AI Efficiency does not infer compatibility from credentials,
 private Account configuration, status, or schedulability.

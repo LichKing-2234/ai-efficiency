@@ -2513,18 +2513,17 @@ func (s *sub2apiRelay) SetAccountGroupRelationship(ctx context.Context, accountI
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Priority < ordered[j].Priority })
 	groupIDs := make([]int64, 0, len(ordered)+1)
 	for _, relationship := range ordered {
-		if relationship.GroupID > 0 && relationship.GroupID != groupID {
-			groupIDs = append(groupIDs, relationship.GroupID)
+		if relationship.GroupID <= 0 || relationship.GroupID == groupID {
+			continue
 		}
+		groupIDs = append(groupIDs, relationship.GroupID)
 	}
 	if desiredPriority != nil {
-		if *desiredPriority <= 0 || *desiredPriority > len(groupIDs)+1 {
-			return fmt.Errorf("relay: set account group relationship: priority must be between 1 and %d", len(groupIDs)+1)
-		}
-		index := *desiredPriority - 1
-		groupIDs = append(groupIDs, 0)
-		copy(groupIDs[index+1:], groupIDs[index:])
-		groupIDs[index] = groupID
+		// Relay priorities are one positional ordering across every group bound
+		// to the account, so a reviewed priority can exceed what the account can
+		// express. Bind the relationship at the first position instead of
+		// rejecting an otherwise valid reviewed plan.
+		groupIDs = append([]int64{groupID}, groupIDs...)
 	}
 	payload, err := json.Marshal(map[string][]int64{"group_ids": groupIDs})
 	if err != nil {

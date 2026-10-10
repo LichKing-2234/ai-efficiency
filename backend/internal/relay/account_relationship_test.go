@@ -74,19 +74,21 @@ func TestSetAccountGroupRelationshipPreservesUnrelatedBindingsAndVerifies(t *tes
 		switch r.Method {
 		case http.MethodGet:
 			getCount++
-			relationships := []any{
+			if getCount > 1 {
+				// The reviewed priority 3 is forced to the first position, which
+				// shifts the unrelated bindings down without dropping them.
+				writeOriginEnvelope(w, map[string]any{"id": 11, "platform": "openai", "account_groups": []any{
+					map[string]any{"account_id": 11, "group_id": 101, "priority": 1},
+					map[string]any{"account_id": 11, "group_id": 9, "priority": 2},
+					map[string]any{"account_id": 11, "group_id": 8, "priority": 3},
+				}})
+				return
+			}
+			writeOriginEnvelope(w, map[string]any{"id": 11, "platform": "openai", "account_groups": []any{
 				map[string]any{"account_id": 11, "group_id": 9, "priority": 1},
 				map[string]any{"account_id": 11, "group_id": 101, "priority": 2},
 				map[string]any{"account_id": 11, "group_id": 8, "priority": 3},
-			}
-			if getCount > 1 {
-				relationships = []any{
-					map[string]any{"account_id": 11, "group_id": 9, "priority": 1},
-					map[string]any{"account_id": 11, "group_id": 8, "priority": 2},
-					map[string]any{"account_id": 11, "group_id": 101, "priority": 3},
-				}
-			}
-			writeOriginEnvelope(w, map[string]any{"id": 11, "platform": "openai", "account_groups": relationships})
+			}})
 		case http.MethodPut:
 			var payload map[string]json.RawMessage
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -99,7 +101,7 @@ func TestSetAccountGroupRelationshipPreservesUnrelatedBindingsAndVerifies(t *tes
 			if err := json.Unmarshal(payload["group_ids"], &groupIDs); err != nil {
 				t.Fatalf("decode group_ids: %v", err)
 			}
-			if diff := cmp.Diff([]int64{9, 8, 101}, groupIDs); diff != "" {
+			if diff := cmp.Diff([]int64{101, 9, 8}, groupIDs); diff != "" {
 				t.Fatalf("group_ids mismatch (-want +got):\n%s", diff)
 			}
 			writeOriginEnvelope(w, map[string]any{"id": 11})
@@ -115,6 +117,111 @@ func TestSetAccountGroupRelationshipPreservesUnrelatedBindingsAndVerifies(t *tes
 		{GroupID: 101, Priority: 2},
 		{GroupID: 8, Priority: 3},
 	}, &priority)
+	if err != nil {
+		t.Fatalf("SetAccountGroupRelationship() error = %v", err)
+	}
+	if getCount != 2 {
+		t.Fatalf("account GET count = %d, want read and verification", getCount)
+	}
+}
+
+// TestSetAccountGroupRelationshipForcesFirstPositionWhenPriorityIsUnreachable
+// covers the drift that froze Relationship Operation 85: account 26 held only
+// two groups, so the reviewed priority 3 could never be expressed and the
+// reorder was rejected instead of binding the relationship.
+func TestSetAccountGroupRelationshipForcesFirstPositionWhenPriorityIsUnreachable(t *testing.T) {
+	getCount := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/accounts/26", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			getCount++
+			if getCount > 1 {
+				writeOriginEnvelope(w, map[string]any{"id": 26, "platform": "openai", "account_groups": []any{
+					map[string]any{"account_id": 26, "group_id": 20, "priority": 1},
+					map[string]any{"account_id": 26, "group_id": 2, "priority": 2},
+				}})
+				return
+			}
+			writeOriginEnvelope(w, map[string]any{"id": 26, "platform": "openai", "account_groups": []any{
+				map[string]any{"account_id": 26, "group_id": 2, "priority": 1},
+				map[string]any{"account_id": 26, "group_id": 20, "priority": 2},
+			}})
+		case http.MethodPut:
+			var payload map[string]json.RawMessage
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode update payload: %v", err)
+			}
+			var groupIDs []int64
+			if err := json.Unmarshal(payload["group_ids"], &groupIDs); err != nil {
+				t.Fatalf("decode group_ids: %v", err)
+			}
+			if diff := cmp.Diff([]int64{20, 2}, groupIDs); diff != "" {
+				t.Fatalf("group_ids mismatch (-want +got):\n%s", diff)
+			}
+			writeOriginEnvelope(w, map[string]any{"id": 26})
+		default:
+			t.Fatalf("unexpected method %s", r.Method)
+		}
+	})
+
+	updater := newTestProvider(t, mux).(relay.AccountRelationshipUpdater)
+	priority := 3
+	err := updater.SetAccountGroupRelationship(context.Background(), 26, 20, []relay.AccountGroupRelationship{
+		{GroupID: 2, Priority: 1},
+		{GroupID: 20, Priority: 2},
+	}, &priority)
+	if err != nil {
+		t.Fatalf("SetAccountGroupRelationship() error = %v, want nil for an unreachable reviewed priority", err)
+	}
+	if getCount != 2 {
+		t.Fatalf("account GET count = %d, want read and verification", getCount)
+	}
+}
+
+// TestSetAccountGroupRelationshipRemovesWithoutDesiredPriority covers the
+// removal path: a nil reviewed priority must drop the group instead of binding
+// it, which is what keeps a `remove` step from re-adding an account.
+func TestSetAccountGroupRelationshipRemovesWithoutDesiredPriority(t *testing.T) {
+	getCount := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/accounts/11", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			getCount++
+			if getCount > 1 {
+				writeOriginEnvelope(w, map[string]any{"id": 11, "platform": "openai", "account_groups": []any{
+					map[string]any{"account_id": 11, "group_id": 9, "priority": 1},
+				}})
+				return
+			}
+			writeOriginEnvelope(w, map[string]any{"id": 11, "platform": "openai", "account_groups": []any{
+				map[string]any{"account_id": 11, "group_id": 9, "priority": 1},
+				map[string]any{"account_id": 11, "group_id": 101, "priority": 2},
+			}})
+		case http.MethodPut:
+			var payload map[string]json.RawMessage
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode update payload: %v", err)
+			}
+			var groupIDs []int64
+			if err := json.Unmarshal(payload["group_ids"], &groupIDs); err != nil {
+				t.Fatalf("decode group_ids: %v", err)
+			}
+			if diff := cmp.Diff([]int64{9}, groupIDs); diff != "" {
+				t.Fatalf("group_ids mismatch (-want +got):\n%s", diff)
+			}
+			writeOriginEnvelope(w, map[string]any{"id": 11})
+		default:
+			t.Fatalf("unexpected method %s", r.Method)
+		}
+	})
+
+	updater := newTestProvider(t, mux).(relay.AccountRelationshipUpdater)
+	err := updater.SetAccountGroupRelationship(context.Background(), 11, 101, []relay.AccountGroupRelationship{
+		{GroupID: 9, Priority: 1},
+		{GroupID: 101, Priority: 2},
+	}, nil)
 	if err != nil {
 		t.Fatalf("SetAccountGroupRelationship() error = %v", err)
 	}
