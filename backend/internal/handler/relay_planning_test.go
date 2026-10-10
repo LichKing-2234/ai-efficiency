@@ -1107,9 +1107,15 @@ func TestRelayPlanningAdoptCurrentAccountsInitializesDesiredStateWithoutRelayWri
 	if !adoptBody.Data.AccountManagementInitialized || adoptBody.Data.AccountPools[0].Drift {
 		t.Fatalf("adopted mapping = %+v, want initialized matching state", adoptBody.Data)
 	}
-	wantDesired := []relayplanning.AccountIntent{{AccountID: 12, Priority: 1}, {AccountID: 11, Priority: 2}}
-	if got := adoptBody.Data.DesiredAccounts["101"]; fmt.Sprint(got) != fmt.Sprint(wantDesired) {
-		t.Fatalf("desired accounts = %+v, want %+v", got, wantDesired)
+	wantDesired := map[int64]int{11: 1, 12: 1}
+	gotDesiredIntents := adoptBody.Data.DesiredAccounts["101"]
+	if len(gotDesiredIntents) != len(wantDesired) {
+		t.Fatalf("desired accounts = %+v, want %+v", gotDesiredIntents, wantDesired)
+	}
+	for _, intent := range gotDesiredIntents {
+		if wantDesired[intent.AccountID] != intent.Priority {
+			t.Fatalf("desired accounts = %+v, want every adopted Account at priority 1", gotDesiredIntents)
+		}
 	}
 	if got := adoptBody.Data.DesiredAccounts["102"]; fmt.Sprint(got) != fmt.Sprint([]relayplanning.AccountIntent{{AccountID: 11, Priority: 1}}) {
 		t.Fatalf("Target 102 desired accounts = %+v, want reused Account 11", got)
@@ -2211,7 +2217,7 @@ func TestRelayPlanningSearchAndSaveDesiredAccountsKeepsRelayReadOnly(t *testing.
 	if err := json.Unmarshal(response.Body.Bytes(), &saveBody); err != nil {
 		t.Fatalf("decode saved mapping: %v", err)
 	}
-	want := []relayplanning.AccountIntent{{AccountID: 12, Priority: 1}, {AccountID: 11, Priority: 2}}
+	want := []relayplanning.AccountIntent{{AccountID: 11, Priority: 1}, {AccountID: 12, Priority: 1}}
 	if !saveBody.Data.AccountManagementInitialized || fmt.Sprint(saveBody.Data.DesiredAccounts["101"]) != fmt.Sprint(want) {
 		t.Fatalf("saved desired accounts = %+v, want %+v", saveBody.Data, want)
 	}
@@ -2231,15 +2237,17 @@ func TestRelayPlanningSearchAndSaveDesiredAccountsKeepsRelayReadOnly(t *testing.
 	if err := json.Unmarshal(response.Body.Bytes(), &previewBody); err != nil {
 		t.Fatalf("decode replan preview: %v", err)
 	}
-	if len(previewBody.Data.TargetSummaries) != 1 || len(previewBody.Data.TargetSummaries[0].Accounts) != 3 {
-		t.Fatalf("Account summary = %+v, want add/remove/reorder", previewBody.Data.TargetSummaries)
+	if len(previewBody.Data.TargetSummaries) != 1 || len(previewBody.Data.TargetSummaries[0].Accounts) != 2 {
+		t.Fatalf("Account summary = %+v, want add/remove", previewBody.Data.TargetSummaries)
 	}
 	actions := map[int64]string{}
 	for _, change := range previewBody.Data.TargetSummaries[0].Accounts {
 		actions[change.AccountID] = change.Action
 	}
-	if fmt.Sprint(actions) != "map[11:reorder 12:add 14:remove]" {
-		t.Fatalf("Account summary actions = %v, want Account 11 reorder, 12 add, 14 remove", actions)
+	// Account 11 already holds the target binding and an equal reviewed priority
+	// expresses no preference, so no reorder is planned for it.
+	if fmt.Sprint(actions) != "map[12:add 14:remove]" {
+		t.Fatalf("Account summary actions = %v, want Account 12 add and 14 remove", actions)
 	}
 }
 
@@ -4821,7 +4829,7 @@ func TestRelayPlanningReusesAccountAcrossTargetsWithFreshSnapshots(t *testing.T)
 			t.Fatalf("Account reuse results = %+v, want both target updates to use fresh snapshots", body.Data.Accounts)
 		}
 	}
-	if !containsRelayPlanningEvent(provider.events, "account:11:101:1") || !containsRelayPlanningEvent(provider.events, "account:11:102:2") {
+	if !containsRelayPlanningEvent(provider.events, "account:11:101:1") || !containsRelayPlanningEvent(provider.events, "account:11:102:1") {
 		t.Fatalf("Account events = %v, want successful updates for both targets", provider.events)
 	}
 }

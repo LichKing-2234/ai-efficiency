@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { Calendar, CaretBottom, CaretTop, Check, Delete, Plus, Refresh, Setting, Switch } from '@element-plus/icons-vue'
+import { Calendar, Check, Delete, Plus, Refresh, Setting, Switch } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import AppLayout from '@/components/AppLayout.vue'
 import AdminDepartmentPicker from '@/components/admin/AdminDepartmentPicker.vue'
@@ -39,6 +39,9 @@ import {
 import { createFeatureTranslator } from '@/utils/featureI18n'
 import { useMediaQuery, useWideContentLayout } from '@/composables/useMediaQuery'
 import { useRelayPlanningWorkflow } from '@/composables/useRelayPlanningWorkflow'
+
+// Accounts sharing a target carry no scheduling preference over each other.
+const ACCOUNT_PRIORITY = 1
 
 const { t: baseT, locale } = useI18n()
 const t = createFeatureTranslator(locale, baseT, 'relayPlanning.', relayPlanningMessages)
@@ -151,7 +154,6 @@ const {
 	toggleUnmanagedRelayUser,
 	setTargetName,
 	addPreviewAccount: addAccountToPreviewTarget,
-	movePreviewAccount: reorderPreviewAccounts,
 	removePreviewAccount: removeAccountFromPreviewTarget,
 	setMemberAction,
 	scheduleUserSearch,
@@ -749,23 +751,11 @@ function addAccountToTarget(mappingID: number, targetGroupID: number, account: R
 	const groupKey = String(targetGroupID)
 	const items = accountDrafts[mappingID]?.[groupKey]
 	if (!items || items.some((item) => item.id === account.id)) return
-	items.push({ ...account, priority: items.length + 1 })
+	items.push({ ...account, priority: ACCOUNT_PRIORITY })
 	const searchKey = accountSearchKey(mappingID, targetGroupID)
 	accountSearchQueries[searchKey] = ''
 	accountSearchResults[searchKey] = []
 	delete accountSearchPages[searchKey]
-}
-
-function reorderAccounts(mappingID: number, targetGroupID: number, accountID: number, offset: number) {
-	const mapping = mappings.value.find((item) => item.id === mappingID)
-	if (!mapping || mappingLocked(mapping)) return
-	const items = accountDrafts[mappingID]?.[String(targetGroupID)]
-	if (!items) return
-	const index = items.findIndex((item) => item.id === accountID)
-	const nextIndex = index + offset
-	if (index < 0 || nextIndex < 0 || nextIndex >= items.length) return
-	;[items[index], items[nextIndex]] = [items[nextIndex], items[index]]
-	items.forEach((item, itemIndex) => { item.priority = itemIndex + 1 })
 }
 
 function removeAccountFromTarget(mappingID: number, targetGroupID: number, accountID: number) {
@@ -774,14 +764,14 @@ function removeAccountFromTarget(mappingID: number, targetGroupID: number, accou
 	const items = accountDrafts[mappingID]?.[String(targetGroupID)]
 	if (!items) return
 	accountDrafts[mappingID][String(targetGroupID)] = items.filter((item) => item.id !== accountID)
-	accountDrafts[mappingID][String(targetGroupID)].forEach((item, index) => { item.priority = index + 1 })
+	accountDrafts[mappingID][String(targetGroupID)].forEach((item) => { item.priority = ACCOUNT_PRIORITY })
 }
 
 async function saveDesiredAccounts(mapping: RelayPlanningMapping) {
 	if (mappingLocked(mapping)) return
 	const desired: Record<string, RelayPlanningAccountIntent[]> = {}
 	for (const groupID of mapping.group_ids) {
-		desired[String(groupID)] = (accountDrafts[mapping.id]?.[String(groupID)] ?? []).map((account, index) => ({ account_id: account.id, priority: index + 1 }))
+		desired[String(groupID)] = (accountDrafts[mapping.id]?.[String(groupID)] ?? []).map((account) => ({ account_id: account.id, priority: ACCOUNT_PRIORITY }))
 	}
 	accountSaving.value = true
 	try {
@@ -1056,11 +1046,9 @@ onBeforeUnmount(() => {
 				<div class="mt-3 border-t border-slate-200 pt-3">
 					<div class="text-xs font-semibold text-slate-500">{{ t('relayPlanning.desiredAccounts') }}</div>
 					<div v-if="assignment.accounts.length" class="mt-2 space-y-2">
-						<div v-for="(account, accountIndex) in assignment.accounts" :key="account.id" class="flex items-center justify-between gap-3 text-sm">
+						<div v-for="account in assignment.accounts" :key="account.id" class="flex items-center justify-between gap-3 text-sm">
 							<span class="min-w-0"><span class="block break-words font-medium">{{ account.name }} (#{{ account.id }})</span><span class="block text-xs" :class="account.status !== 'active' || !account.schedulable ? 'text-amber-700' : 'text-slate-500'">{{ account.type }} · {{ account.status }} · {{ account.schedulable ? t('relayPlanning.schedulable') : t('relayPlanning.notSchedulable') }}</span></span>
 							<span class="flex shrink-0 gap-1">
-								<el-tooltip :content="t('relayPlanning.moveUp')"><el-button circle size="small" :icon="CaretTop" :disabled="accountIndex === 0" :aria-label="t('relayPlanning.moveUp')" @click="reorderPreviewAccounts(assignment.index, account.id, -1)" /></el-tooltip>
-								<el-tooltip :content="t('relayPlanning.moveDown')"><el-button circle size="small" :icon="CaretBottom" :disabled="accountIndex === assignment.accounts.length - 1" :aria-label="t('relayPlanning.moveDown')" @click="reorderPreviewAccounts(assignment.index, account.id, 1)" /></el-tooltip>
 								<el-tooltip :content="t('relayPlanning.remove')"><el-button :data-testid="`remove-target-account-${assignment.index}-${account.id}`" circle size="small" type="danger" plain :icon="Delete" :aria-label="t('relayPlanning.remove')" @click="removeAccountFromPreviewTarget(assignment.index, account.id)" /></el-tooltip>
 							</span>
 						</div>
@@ -1212,11 +1200,9 @@ onBeforeUnmount(() => {
 				<template v-if="accountMapping.account_management_initialized">
 					<div class="mt-4 text-xs font-semibold text-slate-500">{{ t('relayPlanning.desiredAccounts') }}</div>
 					<div v-if="accountDrafts[accountMapping.id]?.[String(pool.target_group_id)]?.length" class="mt-2 space-y-2">
-						<div v-for="(account, accountIndex) in accountDrafts[accountMapping.id][String(pool.target_group_id)]" :key="account.id" class="flex items-center justify-between gap-3 border-t border-slate-100 pt-2 text-sm first:border-0 first:pt-0">
+						<div v-for="account in accountDrafts[accountMapping.id][String(pool.target_group_id)]" :key="account.id" class="flex items-center justify-between gap-3 border-t border-slate-100 pt-2 text-sm first:border-0 first:pt-0">
 							<span class="min-w-0"><span class="block break-words font-medium">{{ account.name }} (#{{ account.id }})</span><span class="block text-xs" :class="account.status !== 'active' || !account.schedulable ? 'text-amber-700' : 'text-slate-500'">{{ account.type }} · {{ account.status }} · {{ account.schedulable ? t('relayPlanning.schedulable') : t('relayPlanning.notSchedulable') }}</span></span>
 							<span class="flex shrink-0 gap-1">
-								<el-tooltip :content="t('relayPlanning.moveUp')"><el-button :data-testid="`move-account-up-${accountMapping.id}-${pool.target_group_id}-${account.id}`" circle size="small" :icon="CaretTop" :disabled="mappingLocked(accountMapping) || accountIndex === 0" :aria-label="t('relayPlanning.moveUp')" @click="reorderAccounts(accountMapping.id, pool.target_group_id, account.id, -1)" /></el-tooltip>
-								<el-tooltip :content="t('relayPlanning.moveDown')"><el-button circle size="small" :icon="CaretBottom" :disabled="mappingLocked(accountMapping) || accountIndex === accountDrafts[accountMapping.id][String(pool.target_group_id)].length - 1" :aria-label="t('relayPlanning.moveDown')" @click="reorderAccounts(accountMapping.id, pool.target_group_id, account.id, 1)" /></el-tooltip>
 								<el-tooltip :content="t('relayPlanning.remove')"><el-button circle size="small" type="danger" plain :icon="Delete" :disabled="mappingLocked(accountMapping)" :aria-label="t('relayPlanning.remove')" @click="removeAccountFromTarget(accountMapping.id, pool.target_group_id, account.id)" /></el-tooltip>
 							</span>
 						</div>

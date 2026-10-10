@@ -225,12 +225,24 @@ preserves every unrelated Account-to-Group binding. It re-reads current Account
 relationships before mutation so the same Account may be safely reused by
 multiple Targets.
 
-Existing equal priorities are preserved until an administrator edits the order;
-an edited order becomes consecutive priorities. An explicit empty Account list
-removes that Target's remaining Account bindings, makes it inactive, and blocks
-member migration only for that Target. A Target-local Account failure is kept
-as retry state while other Targets may continue after the complete preflight
-has passed.
+Accounts sharing a Target carry no scheduling preference over each other, so
+every managed Account relationship is reviewed and stored at priority 1. An
+administrator edit changes Target membership, not an ordering; AI Efficiency no
+longer emits or compares a per-Account sequence, and a reviewed pool of several
+Accounts needs the same single position for each of them. An explicit empty
+Account list removes that Target's remaining Account bindings, makes it
+inactive, and blocks member migration only for that Target. A Target-local
+Account failure is kept as retry state while other Targets may continue after
+the complete preflight has passed.
+
+Relay priorities are one positional ordering across every Group bound to an
+Account, so the Target Group's position is decided together with the Account's
+other Groups rather than by a per-Target number. A write therefore binds the
+relationship at the first position and leaves unrelated bindings behind it in
+order. A removal passes no reviewed priority and drops the binding. Because
+Relay stores the applied precedence rather than a reviewed number, and every
+reviewed priority is 1, drift detection compares only Account membership: which
+Accounts are bound to the Target Group, never the order Relay happens to hold.
 
 Group-configuration compatibility is shown only when the Provider exposes a
 privacy-safe fact. AI Efficiency does not infer compatibility from credentials,

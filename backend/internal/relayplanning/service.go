@@ -36,6 +36,11 @@ const (
 	defaultRenewalDays  = 365
 	maxRenewalDays      = 36500
 	maxGroupNameRunes   = 100
+	// accountPriority is the only reviewed Account priority AI Efficiency
+	// issues. Accounts sharing a Target carry no scheduling preference over each
+	// other, and Relay holds the applied precedence rather than a reviewed
+	// number, so every managed Account relationship is reviewed at 1.
+	accountPriority = 1
 )
 
 type ProviderResolver interface {
@@ -1627,14 +1632,11 @@ func accountIntentsForGroup(accounts []relay.Account, platform string, groupID i
 			continue
 		}
 		if priority := accountRelationshipPriority(account.GroupRelationships, groupID); priority > 0 {
-			intents = append(intents, AccountIntent{AccountID: account.ID, Priority: priority})
+			intents = append(intents, AccountIntent{AccountID: account.ID, Priority: accountPriority})
 		}
 	}
 	sort.SliceStable(intents, func(i, j int) bool {
-		if intents[i].Priority == intents[j].Priority {
-			return intents[i].AccountID < intents[j].AccountID
-		}
-		return intents[i].Priority < intents[j].Priority
+		return intents[i].AccountID < intents[j].AccountID
 	})
 	return intents
 }
@@ -2359,7 +2361,7 @@ func buildTargetChangeSummaries(req PreviewRequest, plan *Plan) []TargetChangeSu
 			continue
 		}
 		current := make(map[int64]int)
-		desired := make(map[int64]int)
+		desired := make(map[int64]struct{})
 		targetGroupID := summaries[index].TargetGroupID
 		for _, account := range snapshot.Accounts {
 			for _, relationship := range account.Relationships {
@@ -2369,7 +2371,7 @@ func buildTargetChangeSummaries(req PreviewRequest, plan *Plan) []TargetChangeSu
 			}
 		}
 		for _, intent := range plan.Assignments[index].DesiredAccounts {
-			desired[intent.AccountID] = intent.Priority
+			desired[intent.AccountID] = struct{}{}
 		}
 		accountIDs := make(map[int64]struct{}, len(current)+len(desired))
 		for accountID := range current {
@@ -2385,14 +2387,15 @@ func buildTargetChangeSummaries(req PreviewRequest, plan *Plan) []TargetChangeSu
 		sort.Slice(orderedAccountIDs, func(i, j int) bool { return orderedAccountIDs[i] < orderedAccountIDs[j] })
 		for _, accountID := range orderedAccountIDs {
 			oldPriority, currentExists := current[accountID]
-			newPriority, desiredExists := desired[accountID]
+			_, desiredExists := desired[accountID]
+			// An equal reviewed priority expresses no preference, so an existing
+			// binding is never reordered: Relay keeps the precedence it already
+			// holds and only membership is reviewed. Nothing else to plan.
 			switch {
 			case !currentExists && desiredExists:
-				summaries[index].Accounts = append(summaries[index].Accounts, AccountChange{AccountID: accountID, Action: "add", NewPriority: newPriority})
+				summaries[index].Accounts = append(summaries[index].Accounts, AccountChange{AccountID: accountID, Action: "add", NewPriority: accountPriority})
 			case currentExists && !desiredExists:
 				summaries[index].Accounts = append(summaries[index].Accounts, AccountChange{AccountID: accountID, Action: "remove", OldPriority: oldPriority})
-			case oldPriority != newPriority:
-				summaries[index].Accounts = append(summaries[index].Accounts, AccountChange{AccountID: accountID, Action: "reorder", OldPriority: oldPriority, NewPriority: newPriority})
 			}
 		}
 	}
@@ -3313,7 +3316,9 @@ func (s *Service) AdoptCurrentAccounts(ctx context.Context, id int) (*Mapping, e
 		key := strconv.FormatInt(pool.TargetGroupID, 10)
 		desired[key] = make([]map[string]int64, 0, len(pool.Current))
 		for _, account := range pool.Current {
-			desired[key] = append(desired[key], map[string]int64{"account_id": account.ID, "priority": int64(account.Priority)})
+			// Adopt persists reviewed state without a Relay write, so it records the
+			// equal reviewed priority rather than Relay's current precedence.
+			desired[key] = append(desired[key], map[string]int64{"account_id": account.ID, "priority": int64(accountPriority)})
 		}
 	}
 	row, err = row.Update().SetAccountManagementInitialized(true).SetDesiredAccounts(desired).Save(ctx)
@@ -3425,7 +3430,7 @@ func (s *Service) SaveDesiredAccounts(ctx context.Context, id int, desired map[s
 			return nil, fmt.Errorf("target group %s is not managed by this mapping", groupID)
 		}
 		seenAccounts := make(map[int64]struct{}, len(intents))
-		seenPriorities := make(map[int]struct{}, len(intents))
+		reviewed := make([]AccountIntent, 0, len(intents))
 		for _, intent := range intents {
 			if _, ok := validAccounts[intent.AccountID]; !ok {
 				return nil, fmt.Errorf("account %d is unavailable on platform %s", intent.AccountID, row.Platform)
@@ -3433,17 +3438,11 @@ func (s *Service) SaveDesiredAccounts(ctx context.Context, id int, desired map[s
 			if _, duplicate := seenAccounts[intent.AccountID]; duplicate {
 				return nil, fmt.Errorf("account %d is duplicated for target group %s", intent.AccountID, groupID)
 			}
-			if intent.Priority <= 0 || intent.Priority > len(intents) {
-				return nil, fmt.Errorf("target group %s account priorities must be contiguous from 1", groupID)
-			}
-			if _, duplicate := seenPriorities[intent.Priority]; duplicate {
-				return nil, fmt.Errorf("target group %s account priority %d is duplicated", groupID, intent.Priority)
-			}
 			seenAccounts[intent.AccountID] = struct{}{}
-			seenPriorities[intent.Priority] = struct{}{}
+			reviewed = append(reviewed, AccountIntent{AccountID: intent.AccountID, Priority: accountPriority})
 		}
-		normalized[groupID] = slices.Clone(intents)
-		sort.SliceStable(normalized[groupID], func(i, j int) bool { return normalized[groupID][i].Priority < normalized[groupID][j].Priority })
+		sort.SliceStable(reviewed, func(i, j int) bool { return reviewed[i].AccountID < reviewed[j].AccountID })
+		normalized[groupID] = reviewed
 	}
 	row, err = row.Update().SetAccountManagementInitialized(true).SetDesiredAccounts(accountIntentsToStorage(normalized)).Save(ctx)
 	if err != nil {
@@ -3985,16 +3984,26 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 		return nil, &StalePlanError{ExpectedFingerprint: req.ExpectedRelationshipFingerprint, CurrentFingerprint: plan.RelationshipFingerprint, RefreshedPlan: plan, Differences: differences}
 	}
 	intentHash, memberIntents, err := buildLegacyReplanIntent(mapping, plan, req)
-	if err != nil { return nil, err }
-	if err := validateLegacyRetryIntent(mapping, intentHash); err != nil { return nil, err }
-	if err := validateLegacyRetryReadback(mapping, plan, memberIntents); err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
+	if err := validateLegacyRetryIntent(mapping, intentHash); err != nil {
+		return nil, err
+	}
+	if err := validateLegacyRetryReadback(mapping, plan, memberIntents); err != nil {
+		return nil, err
+	}
 	if isZeroChangeReplan(*mapping, plan, req) {
 		return &ExecutionResult{Plan: plan, Groups: []GroupResult{}, Accounts: []AccountResult{}, Members: []MemberResult{}, Mappings: []MappingPersistenceResult{{MappingID: mapping.ID, Role: "destination", Status: "unchanged"}}, Mapping: mapping}, nil
 	}
 	durable, err := s.beginReplanDurableExecution(ctx, *mapping, plan, req)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer durable.interrupt(ctx)
-	if err := durable.dispatch(ctx); err != nil { return nil, err }
+	if err := durable.dispatch(ctx); err != nil {
+		return nil, err
+	}
 	p, err := s.resolver.Resolve(ctx, mapping.ProviderID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve relay provider for replan: %w", err)
@@ -4362,10 +4371,16 @@ func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteR
 			Where(relaygroupmapping.IDEQ(resultMapping.ID), relaygroupmapping.BaselineRevisionEQ(mapping.BaselineRevision)).
 			AddBaselineRevision(1).
 			Save(ctx)
-		if err != nil { return nil, rollback(0, fmt.Errorf("advance destination Mapping baseline revision: %w", err)) }
-		if resultCount != 1 { return nil, rollback(0, fmt.Errorf("destination Mapping baseline revision changed during execution")) }
+		if err != nil {
+			return nil, rollback(0, fmt.Errorf("advance destination Mapping baseline revision: %w", err))
+		}
+		if resultCount != 1 {
+			return nil, rollback(0, fmt.Errorf("destination Mapping baseline revision changed during execution"))
+		}
 		resultRow, err := tx.Client().RelayGroupMapping.Get(ctx, resultMapping.ID)
-		if err != nil { return nil, rollback(0, fmt.Errorf("reload destination Mapping: %w", err)) }
+		if err != nil {
+			return nil, rollback(0, fmt.Errorf("reload destination Mapping: %w", err))
+		}
 		updatedResultMapping := mappingFromEnt(resultRow)
 		resultMapping = &updatedResultMapping
 	}
@@ -4415,18 +4430,27 @@ func departmentMigrationOnly(mapping Mapping, req ExecuteRequest, plan *Plan) bo
 			return false
 		}
 		for _, userID := range assignment.UserIDs {
-			if mapping.MemberAssignments[strconv.Itoa(userID)] != assignment.TargetGroupID { return false }
+			if mapping.MemberAssignments[strconv.Itoa(userID)] != assignment.TargetGroupID {
+				return false
+			}
 		}
 	}
 	for userID, groupID := range mapping.MemberAssignments {
 		found := false
 		for _, assignment := range plan.Assignments {
-			if containsInt(assignment.UserIDs, atoiOrZero(userID)) && assignment.TargetGroupID == groupID { found = true; break }
+			if containsInt(assignment.UserIDs, atoiOrZero(userID)) && assignment.TargetGroupID == groupID {
+				found = true
+				break
+			}
 		}
-		if !found { return false }
+		if !found {
+			return false
+		}
 	}
 	if plan.AccountsReviewed {
-		if !mapping.AccountManagementInitialized || !reflect.DeepEqual(mapping.DesiredAccounts, accountIntentsFromStorage(planDesiredAccounts(plan))) { return false }
+		if !mapping.AccountManagementInitialized || !reflect.DeepEqual(mapping.DesiredAccounts, accountIntentsFromStorage(planDesiredAccounts(plan))) {
+			return false
+		}
 	} else if mapping.AccountManagementInitialized && !reflect.DeepEqual(mapping.DesiredAccounts, accountIntentsFromStorage(planDesiredAccounts(plan))) {
 		return false
 	}
@@ -4436,16 +4460,24 @@ func departmentMigrationOnly(mapping Mapping, req ExecuteRequest, plan *Plan) bo
 func planDesiredAccounts(plan *Plan) map[string][]map[string]int64 {
 	result := make(map[string][]map[string]int64)
 	for _, assignment := range plan.Assignments {
-		if assignment.TargetGroupID <= 0 { continue }
+		if assignment.TargetGroupID <= 0 {
+			continue
+		}
 		items := make([]map[string]int64, 0, len(assignment.DesiredAccounts))
-		for _, intent := range assignment.DesiredAccounts { items = append(items, map[string]int64{"account_id": intent.AccountID, "priority": int64(intent.Priority)}) }
+		for _, intent := range assignment.DesiredAccounts {
+			items = append(items, map[string]int64{"account_id": intent.AccountID, "priority": int64(intent.Priority)})
+		}
 		result[strconv.FormatInt(assignment.TargetGroupID, 10)] = items
 	}
 	return result
 }
 
 func containsInt(items []int, target int) bool {
-	for _, item := range items { if item == target { return true } }
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
 	return false
 }
 
@@ -4453,35 +4485,65 @@ func atoiOrZero(value string) int { parsed, _ := strconv.Atoi(value); return par
 
 func (s *Service) persistDepartmentMigration(ctx context.Context, mapping *Mapping, plan *Plan, operationKey string) (*ExecutionResult, error) {
 	tx, err := s.client.Tx(ctx)
-	if err != nil { return nil, fmt.Errorf("start department migration transaction: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("start department migration transaction: %w", err)
+	}
 	state := executionState(operationKey, nil, nil)
 	resultMapping, saveErr := saveReplannedMappingWithClient(ctx, tx.Client(), mapping, plan, append([]int64(nil), mapping.GroupIDs...), state)
-	if saveErr != nil { _ = tx.Rollback(); return nil, &MappingPersistenceError{Cause: saveErr, Results: []MappingPersistenceResult{{MappingID: mapping.ID, Role: "destination", Status: "failed", Error: saveErr.Error()}}} }
-	if commitErr := tx.Commit(); commitErr != nil { _ = tx.Rollback(); return nil, &MappingPersistenceError{Cause: commitErr, Results: []MappingPersistenceResult{{MappingID: mapping.ID, Role: "destination", Status: "failed", Error: commitErr.Error()}}} }
+	if saveErr != nil {
+		_ = tx.Rollback()
+		return nil, &MappingPersistenceError{Cause: saveErr, Results: []MappingPersistenceResult{{MappingID: mapping.ID, Role: "destination", Status: "failed", Error: saveErr.Error()}}}
+	}
+	if commitErr := tx.Commit(); commitErr != nil {
+		_ = tx.Rollback()
+		return nil, &MappingPersistenceError{Cause: commitErr, Results: []MappingPersistenceResult{{MappingID: mapping.ID, Role: "destination", Status: "failed", Error: commitErr.Error()}}}
+	}
 	return &ExecutionResult{Plan: plan, Mappings: []MappingPersistenceResult{{MappingID: resultMapping.ID, Role: "destination", Status: "succeeded"}}, Mapping: resultMapping}, nil
 }
 
 func plannedAPIKeyChange(plan *Plan, targetIndex int, relayUserID, fromGroupID, targetGroupID int64) bool {
 	for _, target := range plan.TargetSummaries {
-		if target.Index != targetIndex { continue }
+		if target.Index != targetIndex {
+			continue
+		}
 		for _, change := range target.APIKeys {
-			if change.RelayUserID == relayUserID && change.FromGroupID == fromGroupID && change.ToGroupID == targetGroupID { return true }
+			if change.RelayUserID == relayUserID && change.FromGroupID == fromGroupID && change.ToGroupID == targetGroupID {
+				return true
+			}
 		}
 	}
 	return false
 }
 
 func isZeroChangeReplan(mapping Mapping, plan *Plan, req ExecuteRequest) bool {
-	if plan == nil || len(buildDurableStepPlans(plan)) > 0 || len(req.AdoptRelayUserIDs) > 0 || len(req.RemovedUserIDs) > 0 || len(req.MemberActions) > 0 { return false }
-	if mapping.ProviderID != plan.ProviderID || mapping.DepartmentID != plan.DepartmentID || mapping.DepartmentName != plan.DepartmentName || mapping.Platform != plan.Platform || mapping.TemplateGroupID != plan.TemplateGroupID || mapping.TemplateGroupName != plan.TemplateGroupName || mapping.SourceGroupID != plan.SourceGroupID || mapping.SourceGroupName != plan.SourceGroupName || mapping.WeeklyCostTarget != plan.WeeklyCostTarget { return false }
-	groupIDs := make([]int64, len(plan.Assignments)); assignments := make(map[string]int64); sources := make(map[string]int64)
-	for _, assignment := range plan.Assignments {
-		if assignment.Index < 0 || assignment.Index >= len(groupIDs) || assignment.TargetGroupID <= 0 { return false }
-		groupIDs[assignment.Index] = assignment.TargetGroupID
-		for _, userID := range assignment.UserIDs { key := strconv.Itoa(userID); assignments[key] = assignment.TargetGroupID; if candidate := candidateByUserID(plan.Candidates, userID); candidate != nil && candidate.SourceGroupID > 0 { sources[key] = candidate.SourceGroupID } }
+	if plan == nil || len(buildDurableStepPlans(plan)) > 0 || len(req.AdoptRelayUserIDs) > 0 || len(req.RemovedUserIDs) > 0 || len(req.MemberActions) > 0 {
+		return false
 	}
-	if !reflect.DeepEqual(mapping.GroupIDs, groupIDs) || !reflect.DeepEqual(mapping.MemberAssignments, assignments) || !reflect.DeepEqual(mapping.MemberSources, sources) { return false }
-	if plan.AccountsReviewed && (!mapping.AccountManagementInitialized || !reflect.DeepEqual(mapping.DesiredAccounts, desiredAccountsForGroupIDs(plan.Assignments, groupIDs))) { return false }
+	if mapping.ProviderID != plan.ProviderID || mapping.DepartmentID != plan.DepartmentID || mapping.DepartmentName != plan.DepartmentName || mapping.Platform != plan.Platform || mapping.TemplateGroupID != plan.TemplateGroupID || mapping.TemplateGroupName != plan.TemplateGroupName || mapping.SourceGroupID != plan.SourceGroupID || mapping.SourceGroupName != plan.SourceGroupName || mapping.WeeklyCostTarget != plan.WeeklyCostTarget {
+		return false
+	}
+	groupIDs := make([]int64, len(plan.Assignments))
+	assignments := make(map[string]int64)
+	sources := make(map[string]int64)
+	for _, assignment := range plan.Assignments {
+		if assignment.Index < 0 || assignment.Index >= len(groupIDs) || assignment.TargetGroupID <= 0 {
+			return false
+		}
+		groupIDs[assignment.Index] = assignment.TargetGroupID
+		for _, userID := range assignment.UserIDs {
+			key := strconv.Itoa(userID)
+			assignments[key] = assignment.TargetGroupID
+			if candidate := candidateByUserID(plan.Candidates, userID); candidate != nil && candidate.SourceGroupID > 0 {
+				sources[key] = candidate.SourceGroupID
+			}
+		}
+	}
+	if !reflect.DeepEqual(mapping.GroupIDs, groupIDs) || !reflect.DeepEqual(mapping.MemberAssignments, assignments) || !reflect.DeepEqual(mapping.MemberSources, sources) {
+		return false
+	}
+	if plan.AccountsReviewed && (!mapping.AccountManagementInitialized || !reflect.DeepEqual(mapping.DesiredAccounts, desiredAccountsForGroupIDs(plan.Assignments, groupIDs))) {
+		return false
+	}
 	return true
 }
 
@@ -4553,12 +4615,12 @@ func (s *Service) applyDesiredAccountRelationships(ctx context.Context, provider
 		}
 		desiredByID := make(map[int64]int, len(desired))
 		for _, intent := range desired {
-			desiredByID[intent.AccountID] = intent.Priority
+			desiredByID[intent.AccountID] = accountPriority
 			if _, ok := accountsByID[intent.AccountID]; !ok {
 				reason := fmt.Sprintf("desired account %d is unavailable on platform %s", intent.AccountID, mapping.Platform)
 				blocked[targetGroupID] = reason
 				targetFailed = true
-				results = append(results, AccountResult{TargetGroupID: targetGroupID, AccountID: intent.AccountID, DesiredPriority: intPointer(intent.Priority), Status: "failed", Error: reason})
+				results = append(results, AccountResult{TargetGroupID: targetGroupID, AccountID: intent.AccountID, DesiredPriority: intPointer(accountPriority), Status: "failed", Error: reason})
 			}
 		}
 		if targetFailed {
@@ -4591,7 +4653,10 @@ func (s *Service) applyDesiredAccountRelationships(ctx context.Context, provider
 				desiredPointer = intPointer(desiredPriority)
 				result.DesiredPriority = desiredPointer
 			}
-			if (desiredExists && currentPriority == desiredPriority) || (!desiredExists && currentPriority == 0) {
+			// Membership decides whether Relay needs a write. An equal reviewed
+			// priority expresses no preference, so an existing binding keeps the
+			// precedence Relay already holds and is left untouched.
+			if (desiredExists && currentPriority > 0) || (!desiredExists && currentPriority == 0) {
 				results = append(results, result)
 				continue
 			}
@@ -6011,8 +6076,12 @@ func mergeDepartmentIDs(existing []string, departmentID string) []string {
 	result := make([]string, 0, len(existing)+1)
 	for _, value := range append(append([]string(nil), existing...), departmentID) {
 		value = strings.TrimSpace(value)
-		if value == "" { continue }
-		if _, ok := seen[value]; ok { continue }
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
 		seen[value] = struct{}{}
 		result = append(result, value)
 	}
@@ -6127,8 +6196,20 @@ func sameAccountIntents(left, right []AccountIntent) bool {
 	if len(left) != len(right) {
 		return false
 	}
-	for index := range left {
-		if left[index] != right[index] {
+	// Every managed Account relationship is reviewed at the same priority, so
+	// the number carries no meaning and only membership can drift.
+	leftIDs := make([]int64, len(left))
+	for index, intent := range left {
+		leftIDs[index] = intent.AccountID
+	}
+	rightIDs := make([]int64, len(right))
+	for index, intent := range right {
+		rightIDs[index] = intent.AccountID
+	}
+	sort.Slice(leftIDs, func(i, j int) bool { return leftIDs[i] < leftIDs[j] })
+	sort.Slice(rightIDs, func(i, j int) bool { return rightIDs[i] < rightIDs[j] })
+	for index := range leftIDs {
+		if leftIDs[index] != rightIDs[index] {
 			return false
 		}
 	}

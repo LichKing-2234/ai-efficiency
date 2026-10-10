@@ -135,7 +135,6 @@ describe('useRelayPlanningWorkflow', () => {
       status: 'active',
       schedulable: true,
     } satisfies RelayPlanningAccount)
-    workflow.movePreviewAccount(0, 12, -1)
 
     expect(options.executeInitial).not.toHaveBeenCalled()
     expect(options.executeReplan).not.toHaveBeenCalled()
@@ -150,9 +149,11 @@ describe('useRelayPlanningWorkflow', () => {
       assignments: [expect.objectContaining({
         target_group_name: 'Reviewed Target',
         user_ids: [1],
+        // Accounts sharing a target carry no scheduling preference over each
+        // other, so both are reviewed at the same priority.
         desired_accounts: [
+          { account_id: 11, priority: 1 },
           { account_id: 12, priority: 1 },
-          { account_id: 11, priority: 2 },
         ],
       })],
     }))

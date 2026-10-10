@@ -1433,7 +1433,7 @@ describe('RelayPlanningView', () => {
 		expect(relayPlanning.saveRelayDesiredAccounts).not.toHaveBeenCalled()
 	})
 
-	it('searches, adds, reorders, and saves desired Accounts without applying Relay changes', async () => {
+	it('searches, adds, and saves desired Accounts at equal priority without applying Relay changes', async () => {
 		const mapping = {
 			id: 9,
 			provider_id: 7,
@@ -1475,12 +1475,11 @@ describe('RelayPlanningView', () => {
 			expect(wrapper.text()).toContain('Account Page Two')
 
 			await wrapper.get('[data-testid="add-account-9-101-32"]').trigger('click')
-			await wrapper.get('[data-testid="move-account-up-9-101-32"]').trigger('click')
 		await wrapper.get('[data-testid="save-desired-accounts-9"]').trigger('click')
 		await flushPromises()
 
 			expect(relayPlanning.saveRelayDesiredAccounts).toHaveBeenCalledWith(9, {
-				'101': [{ account_id: 32, priority: 1 }, { account_id: 11, priority: 2 }],
+				'101': [{ account_id: 11, priority: 1 }, { account_id: 32, priority: 1 }],
 		})
 		expect(relayPlanning.executeRelayReplan).not.toHaveBeenCalled()
 	})
