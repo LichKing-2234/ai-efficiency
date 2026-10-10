@@ -12,6 +12,10 @@ import type {
   RelayPlanningUserSearchPage,
 } from '@/api/relayPlanning'
 
+// Accounts sharing a target carry no scheduling preference over each other, so
+// AI Efficiency reviews and submits every account relationship at this priority.
+const ACCOUNT_PRIORITY = 1
+
 export interface RelayPlanningReviewedPreviewRequest {
 	department_id?: string
 	selected_user_ids?: number[]
@@ -530,32 +534,23 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     }
   }
 
+  // Accounts sharing a target carry no scheduling preference over each other,
+  // so every reviewed Account is submitted at the same priority.
   function syncPreviewAccountPriorities(targetIndex: number) {
     const assignment = plan.value?.assignments.find((item) => item.index === targetIndex)
     if (!assignment) return
-    assignment.accounts.forEach((account, index) => { account.priority = index + 1 })
-    assignment.desired_accounts = assignment.accounts.map((account, index) => ({ account_id: account.id, priority: index + 1 }))
+    assignment.accounts.forEach((account) => { account.priority = ACCOUNT_PRIORITY })
+    assignment.desired_accounts = assignment.accounts.map((account) => ({ account_id: account.id, priority: ACCOUNT_PRIORITY }))
   }
 
   function addPreviewAccount(targetIndex: number, account: RelayPlanningAccount) {
     const assignment = plan.value?.assignments.find((item) => item.index === targetIndex)
     if (!assignment || assignment.accounts.some((item) => item.id === account.id)) return
     if (!markPlanEdited()) return
-    assignment.accounts.push({ ...account, priority: assignment.accounts.length + 1 })
+    assignment.accounts.push({ ...account, priority: ACCOUNT_PRIORITY })
     syncPreviewAccountPriorities(targetIndex)
     const search = previewAccountSearch(targetIndex)
     Object.assign(search, emptySearchState<RelayPlanningAccount>())
-  }
-
-  function movePreviewAccount(targetIndex: number, accountID: number, offset: number) {
-    const assignment = plan.value?.assignments.find((item) => item.index === targetIndex)
-    if (!assignment) return
-    const index = assignment.accounts.findIndex((account) => account.id === accountID)
-    const nextIndex = index + offset
-    if (index < 0 || nextIndex < 0 || nextIndex >= assignment.accounts.length) return
-    if (!markPlanEdited()) return
-    ;[assignment.accounts[index], assignment.accounts[nextIndex]] = [assignment.accounts[nextIndex], assignment.accounts[index]]
-    syncPreviewAccountPriorities(targetIndex)
   }
 
   function removePreviewAccount(targetIndex: number, accountID: number) {
@@ -909,7 +904,6 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     setMemberSource,
     toggleUnmanagedRelayUser,
     addPreviewAccount,
-    movePreviewAccount,
     removePreviewAccount,
     setMemberAction,
     addSearchedUser,
