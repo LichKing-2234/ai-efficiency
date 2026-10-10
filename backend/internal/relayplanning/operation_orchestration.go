@@ -257,7 +257,11 @@ func buildDurableStepPlans(plan *Plan) []durableStepPlan {
 			steps = append(steps, durableStepPlan{Key: fmt.Sprintf("target:%d:rename", target.Index), Action: "rename", RelationshipType: "group", Direction: relationshipoperationstep.DirectionTarget, TargetGroupID: target.TargetGroupID, ExpectedResult: map[string]any{"target_name": target.Rename.ToName, "baseline_name": target.Rename.FromName}, ResumeSupported: true, RestoreSupported: true})
 		}
 		for _, account := range target.Accounts {
-			steps = append(steps, durableStepPlan{Key: fmt.Sprintf("target:%d:account:%d:%s", target.Index, account.AccountID, account.Action), Action: account.Action, RelationshipType: "account_group", Direction: relationshipoperationstep.DirectionTarget, TargetGroupID: target.TargetGroupID, ReviewedResourceIDs: []int64{account.AccountID}, ReviewedPriority: account.NewPriority, ExpectedResult: map[string]any{"target_priority": account.NewPriority, "baseline_priority": account.OldPriority}, ResumeSupported: true, RestoreSupported: true})
+			// Relay holds the applied precedence rather than a reviewed number, and
+			// a reviewed priority above the first position is not expressible for
+			// every Account, so every managed Account step records priority 1. The
+			// baseline stays as observed for restore and audit.
+			steps = append(steps, durableStepPlan{Key: fmt.Sprintf("target:%d:account:%d:%s", target.Index, account.AccountID, account.Action), Action: account.Action, RelationshipType: "account_group", Direction: relationshipoperationstep.DirectionTarget, TargetGroupID: target.TargetGroupID, ReviewedResourceIDs: []int64{account.AccountID}, ReviewedPriority: accountPriority, ExpectedResult: map[string]any{"target_priority": accountPriority, "baseline_priority": account.OldPriority}, ResumeSupported: true, RestoreSupported: true})
 		}
 		for _, member := range target.Members {
 			steps = append(steps, durableStepPlan{Key: fmt.Sprintf("target:%d:member:%d:%s", target.Index, member.UserID, member.Action), Action: member.Action, RelationshipType: "managed_member", Direction: relationshipoperationstep.DirectionTarget, LocalUserID: member.UserID, RelayUserID: member.RelayUserID, SourceGroupID: member.FromGroupID, TargetGroupID: member.ToGroupID, ExpectedResult: map[string]any{"target_group_id": member.ToGroupID}, ResumeSupported: true, RestoreSupported: true})
