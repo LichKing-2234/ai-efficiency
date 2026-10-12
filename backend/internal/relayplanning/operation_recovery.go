@@ -491,7 +491,8 @@ func (s *Service) promoteRecoveryTarget(ctx context.Context, operation *ent.Rela
 	if err != nil {
 		return err
 	}
-	for _, assignment := range plan.Assignments {
+	for index := range plan.Assignments {
+		assignment := &plan.Assignments[index]
 		if assignment.TargetGroupID != 0 {
 			continue
 		}
@@ -500,6 +501,11 @@ func (s *Service) promoteRecoveryTarget(ctx context.Context, operation *ent.Rela
 			if step.StepKey == key {
 				assignment.TargetGroupID = int64Value(step.LatestVerifiedEffect["group_id"])
 			}
+		}
+		if assignment.TargetGroupID <= 0 {
+			// A proposed target without verified creation evidence must not be
+			// promoted as Group 0; leave the Operation resumable instead.
+			return fmt.Errorf("recovery target %q has no verified created Group", key)
 		}
 	}
 	groupIDs := make([]int64, len(plan.Assignments))

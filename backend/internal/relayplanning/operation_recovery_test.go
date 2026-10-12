@@ -3,6 +3,7 @@ package relayplanning
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -208,6 +209,54 @@ func TestRecoverResumePromotesTargetOnlyAfterVerifiedReadback(t *testing.T) {
 	assertRecoveryTerminalState(t, ctx, client, operation.ID, relationshipoperation.LifecycleApplied, relationshipoperationattempt.DirectionResume)
 }
 
+func TestRecoverResumePromotesVerifiedCreatedTargetGroupID(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	service, _, mapping, operation, aliceID, bobID := createCreatedTargetRecoveryFixture(t, ctx, client)
+
+	result, err := service.Recover(ctx, RecoveryRequest{OperationID: operation.ID, Direction: RecoveryResume, InitiatedByUserID: 1})
+	if err != nil {
+		t.Fatalf("Recover(resume) error = %v", err)
+	}
+	if result.Lifecycle != string(relationshipoperation.LifecycleApplied) {
+		t.Fatalf("resume lifecycle = %q, want applied", result.Lifecycle)
+	}
+	promoted := client.RelayGroupMapping.GetX(ctx, mapping.ID)
+	if fmt.Sprint(promoted.GroupIds) != "[101 102]" {
+		t.Fatalf("promoted Group IDs = %v, want the verified created Group 102 instead of 0", promoted.GroupIds)
+	}
+	if promoted.MemberAssignments[fmt.Sprint(aliceID)] != 101 || promoted.MemberAssignments[fmt.Sprint(bobID)] != 102 {
+		t.Fatalf("promoted member assignments = %v, want retained %d in 101 and created-target member %d in 102", promoted.MemberAssignments, aliceID, bobID)
+	}
+	if promoted.MemberSources[fmt.Sprint(bobID)] != 101 {
+		t.Fatalf("promoted member sources = %v, want created-target member %d sourced from 101", promoted.MemberSources, bobID)
+	}
+	if desired := promoted.DesiredAccounts["102"]; len(desired) != 1 || desired[0]["account_id"] != 12 {
+		t.Fatalf("promoted desired accounts for Group 102 = %v, want Account 12", desired)
+	}
+	if promoted.BaselineRevision != 2 {
+		t.Fatalf("promoted baseline revision = %d, want 2", promoted.BaselineRevision)
+	}
+	assertRecoveryTerminalState(t, ctx, client, operation.ID, relationshipoperation.LifecycleApplied, relationshipoperationattempt.DirectionResume)
+}
+
+func TestPromoteRecoveryTargetRefusesUnverifiedCreatedTargetGroupID(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	service, _, mapping, operation, _, _ := createCreatedTargetRecoveryFixture(t, ctx, client)
+	client.RelationshipOperationStep.Update().Where(relationshipoperationstep.OperationIDEQ(operation.ID), relationshipoperationstep.StepKeyEQ("target:1:create")).ClearLatestVerifiedEffect().SaveX(ctx)
+	attempt := client.RelationshipOperationAttempt.Query().Where(relationshipoperationattempt.OperationIDEQ(operation.ID)).OnlyX(ctx)
+
+	err := service.promoteRecoveryTarget(ctx, operation, attempt.ID)
+	if err == nil || !strings.Contains(err.Error(), "no verified created Group") {
+		t.Fatalf("promoteRecoveryTarget() error = %v, want refusal to promote an unverified created target", err)
+	}
+	unchanged := client.RelayGroupMapping.GetX(ctx, mapping.ID)
+	if fmt.Sprint(unchanged.GroupIds) != "[101]" || unchanged.BaselineRevision != 1 {
+		t.Fatalf("unverified created target changed the Mapping: ids=%v revision=%d", unchanged.GroupIds, unchanged.BaselineRevision)
+	}
+}
+
 func TestRecoverBlocksOnMissingReviewedAPIKeyWithoutAnotherWrite(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -325,6 +374,52 @@ func createRecoveryFixture(t *testing.T, ctx context.Context, client *ent.Client
 	}
 	service := NewService(client, relayPlanningProviderResolver(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
 	return service, provider, mapping, operation
+}
+
+// createCreatedTargetRecoveryFixture interrupts an Operation whose frozen plan
+// still carries Group 0 for a target the Relay created before the interruption,
+// mirroring the production incident that persisted a Mapping with Group 0.
+func createCreatedTargetRecoveryFixture(t *testing.T, ctx context.Context, client *ent.Client) (*Service, *recoveryProvider, *ent.RelayGroupMapping, *ent.RelationshipOperation, int, int) {
+	t.Helper()
+	alice := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource("ldap").SetRelayUserID(42).SaveX(ctx)
+	bob := client.User.Create().SetUsername("bob").SetEmail("bob@example.com").SetAuthSource("ldap").SetRelayUserID(43).SaveX(ctx)
+	providerRow := client.RelayProvider.Create().SetName("recovery-created-target").SetDisplayName("Recovery Created Target").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-admin-key").SaveX(ctx)
+	mapping := client.RelayGroupMapping.Create().SetProviderID(providerRow.ID).SetDepartmentExternalID("dept-alpha").SetDepartmentName("Department Alpha").SetPlatform("openai").SetTemplateGroupID(10).SetSourceGroupID(101).SetGroupIds([]int64{101}).SetMemberAssignments(map[string]int64{fmt.Sprint(alice.ID): 101}).SetMemberSources(map[string]int64{fmt.Sprint(alice.ID): 101}).SetWeeklyCostTarget(2500).SaveX(ctx)
+	target := Plan{
+		ProviderID: providerRow.ID, DepartmentID: "dept-alpha", DepartmentName: "Department Alpha", Platform: "openai",
+		TemplateGroupID: 10, SourceGroupID: 101, WeeklyCostTarget: 2500, MappingID: mapping.ID, AccountsReviewed: true,
+		Assignments: []Assignment{
+			{Index: 0, TargetGroupID: 101, TargetGroupName: "Baseline Target", CurrentTargetGroupName: "Baseline Target", UserIDs: []int{alice.ID}, DesiredAccounts: []AccountIntent{{AccountID: 11, Priority: 1}}},
+			{Index: 1, TargetGroupName: "Created Target", UserIDs: []int{bob.ID}, DesiredAccounts: []AccountIntent{{AccountID: 12, Priority: 1}}},
+		},
+		Candidates: []Candidate{{UserID: alice.ID, RelayUserID: 42, SourceGroupID: 101}, {UserID: bob.ID, RelayUserID: 43, SourceGroupID: 101}},
+	}
+	baseline := Mapping{ID: mapping.ID, ProviderID: mapping.ProviderID, DepartmentID: mapping.DepartmentExternalID, DepartmentName: mapping.DepartmentName, Platform: mapping.Platform, TemplateGroupID: mapping.TemplateGroupID, SourceGroupID: mapping.SourceGroupID, GroupIDs: append([]int64(nil), mapping.GroupIds...), MemberAssignments: map[string]int64{fmt.Sprint(alice.ID): 101}, MemberSources: map[string]int64{fmt.Sprint(alice.ID): 101}, BaselineRevision: 1}
+	operation := client.RelationshipOperation.Create().SetOperationKey("recovery-created-target-op").SetProviderID(providerRow.ID).SetPlatform("openai").SetLifecycle(relationshipoperation.LifecycleInterrupted).SetBaselineSnapshot(map[string]any{"mappings": []Mapping{baseline}}).SetTargetSnapshot(jsonObject(target)).SetBaselineFingerprint("baseline").SetTargetFingerprint("target").SetSupportedDirections([]string{"resume", "restore"}).SetInitiatedByUserID(alice.ID).SaveX(ctx)
+	client.RelationshipOperationMapping.Create().SetOperationID(operation.ID).SetMappingID(mapping.ID).SetRole(relationshipoperationmapping.RolePrimary).SetBaselineRevision(1).SetBaselineSnapshot(jsonObject(baseline)).SaveX(ctx)
+	// The create step keeps the verified effect recorded by the interrupted attempt;
+	// the remaining steps still reference the target as Group 0, as the durable plan froze it.
+	client.RelationshipOperationStep.Create().SetOperationID(operation.ID).SetStepKey("target:1:create").SetAction("create").SetRelationshipType("group").SetDirection(relationshipoperationstep.DirectionTarget).SetReviewedResourceIds([]int64{}).SetExpectedResult(map[string]any{"name": "Created Target"}).SetLatestVerifiedEffect(map[string]any{"group_id": 102, "name": "Created Target"}).SetResumeSupported(true).SetRestoreSupported(false).SetLifecycle(relationshipoperationstep.LifecycleDispatched).SaveX(ctx)
+	client.RelationshipOperationStep.Create().SetOperationID(operation.ID).SetStepKey(fmt.Sprintf("target:1:member:%d:move", bob.ID)).SetAction("move").SetRelationshipType("managed_member").SetDirection(relationshipoperationstep.DirectionTarget).SetLocalUserID(bob.ID).SetRelayUserID(43).SetSourceGroupID(101).SetReviewedResourceIds([]int64{}).SetExpectedResult(map[string]any{"target_group_id": 0}).SetResumeSupported(true).SetRestoreSupported(true).SetLifecycle(relationshipoperationstep.LifecycleDispatched).SaveX(ctx)
+	client.RelationshipOperationStep.Create().SetOperationID(operation.ID).SetStepKey("target:1:subscription:43:add:0").SetAction("add").SetRelationshipType("subscription").SetDirection(relationshipoperationstep.DirectionTarget).SetLocalUserID(bob.ID).SetRelayUserID(43).SetReviewedResourceIds([]int64{}).SetExpectedResult(map[string]any{"target_active": true, "baseline_active": false}).SetResumeSupported(true).SetRestoreSupported(true).SetLifecycle(relationshipoperationstep.LifecycleDispatched).SaveX(ctx)
+	client.RelationshipOperationStep.Create().SetOperationID(operation.ID).SetStepKey("target:1:subscription:43:remove:101").SetAction("remove").SetRelationshipType("subscription").SetDirection(relationshipoperationstep.DirectionTarget).SetLocalUserID(bob.ID).SetRelayUserID(43).SetTargetGroupID(101).SetReviewedResourceIds([]int64{}).SetExpectedResult(map[string]any{"target_active": false, "baseline_active": true}).SetResumeSupported(true).SetRestoreSupported(true).SetLifecycle(relationshipoperationstep.LifecycleDispatched).SaveX(ctx)
+	client.RelationshipOperationStep.Create().SetOperationID(operation.ID).SetStepKey("target:1:api-keys:43:101:0").SetAction("move").SetRelationshipType("api_keys").SetDirection(relationshipoperationstep.DirectionTarget).SetLocalUserID(bob.ID).SetRelayUserID(43).SetSourceGroupID(101).SetReviewedResourceIds([]int64{601}).SetExpectedResult(map[string]any{"baseline_group_id": 101}).SetResumeSupported(true).SetRestoreSupported(true).SetLifecycle(relationshipoperationstep.LifecycleDispatched).SaveX(ctx)
+	client.RelationshipOperationStep.Create().SetOperationID(operation.ID).SetStepKey("target:1:account:12:add").SetAction("add").SetRelationshipType("account_group").SetDirection(relationshipoperationstep.DirectionTarget).SetReviewedResourceIds([]int64{12}).SetExpectedResult(map[string]any{"target_priority": 1, "baseline_priority": 0}).SetResumeSupported(true).SetRestoreSupported(true).SetLifecycle(relationshipoperationstep.LifecycleDispatched).SaveX(ctx)
+	client.RelationshipOperationAttempt.Create().SetOperationID(operation.ID).SetAttemptNumber(1).SetDirection(relationshipoperationattempt.DirectionInitial).SetInitiatedByUserID(alice.ID).SetStatus(relationshipoperationattempt.StatusFailed).SaveX(ctx)
+
+	provider := &recoveryProvider{
+		replanRetryProvider: &replanRetryProvider{
+			subscriptions: []relay.UserSubscription{{UserID: 42, GroupID: 101, Status: "active"}, {UserID: 43, GroupID: 102, Status: "active"}},
+			keys:          []relay.APIKey{{ID: 601, UserID: 43, GroupID: 102, Status: "active"}},
+		},
+		groups: []relay.Group{{ID: 101, Name: "Baseline Target", Platform: "openai"}, {ID: 102, Name: "Created Target", Platform: "openai"}},
+		accounts: []relay.Account{
+			{ID: 11, Platform: "openai", GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 101, Priority: 1}}},
+			{ID: 12, Platform: "openai", GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 102, Priority: 1}}},
+		},
+	}
+	service := NewService(client, relayPlanningProviderResolver(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+	return service, provider, mapping, operation, alice.ID, bob.ID
 }
 
 func assertRecoveryGroupAndAccount(t *testing.T, provider *recoveryProvider, name string, priority int) {
