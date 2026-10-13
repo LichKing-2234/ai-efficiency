@@ -159,3 +159,13 @@ client.interceptors.response.use(
 )
 
 export default client
+
+// Durable Relay relationship operations keep running after the browser request
+// deadline, so a client-side timeout only means the response was abandoned, not
+// that the operation failed.
+export function isRequestTimeout(error: unknown): boolean {
+  const typed = error as { code?: string; message?: string } | null | undefined
+  if (!typed) return false
+  if (typed.code === 'ECONNABORTED' || typed.code === 'ETIMEDOUT') return true
+  return /timeout of \d+ms exceeded/i.test(typed.message ?? '')
+}

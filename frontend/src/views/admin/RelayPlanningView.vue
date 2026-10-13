@@ -37,6 +37,7 @@ import {
   type RelayPlanningUserSearchItem,
 } from '@/api/relayPlanning'
 import { createFeatureTranslator } from '@/utils/featureI18n'
+import { isRequestTimeout } from '@/api/client'
 import { useMediaQuery, useWideContentLayout } from '@/composables/useMediaQuery'
 import { useRelayPlanningWorkflow } from '@/composables/useRelayPlanningWorkflow'
 
@@ -52,6 +53,9 @@ const error = ref('')
 const mappings = ref<RelayPlanningMapping[]>([])
 const mappingPage = ref(1)
 const mappingPageSize = 10
+const operationPollIntervalMs = 5000
+let operationPollTimer: number | null = null
+let operationPollInFlight = false
 const renewalDialogOpen = ref(false)
 const renewalLoadingID = ref<number | null>(null)
 const renewalPreviewLoading = ref(false)
@@ -250,6 +254,17 @@ async function confirmRecovery() {
 		recoveryDialogOpen.value = false
 		await loadMappings()
 	} catch (requestError) {
+		if (isRequestTimeout(requestError)) {
+			// The recovery may still be running server-side; refresh and let the
+			// operation poller report the real outcome instead of a false failure.
+			await loadMappings().catch(() => {})
+			const refreshed = mappings.value.find((item) => item.id === recoveryMapping.value?.id)
+			if (refreshed && isOperatingMapping(refreshed)) {
+				ElMessage.info(t('relayPlanning.operationStillRunning'))
+				recoveryDialogOpen.value = false
+				return
+			}
+		}
 		const typed = requestError as { response?: { status?: number; data?: { details?: { current_preview?: RelayPlanningRecoveryPreview }; message?: string } } }
 		if (typed.response?.status === 409 && typed.response.data?.details?.current_preview) {
 			recoveryPreview.value = typed.response.data.details.current_preview
@@ -424,6 +439,38 @@ async function loadMappings() {
   const response = await listRelayGroupMappings(form.provider_id || undefined)
   mappings.value = response.data.data?.items ?? []
   mappingPage.value = Math.min(mappingPage.value, Math.max(1, Math.ceil(mappings.value.length / mappingPageSize)))
+  scheduleOperationPoll()
+}
+
+// A non-terminal Relationship Operation keeps owning its Mapping. Durable Relay
+// work can outlive the browser request that started it, so an `operating`
+// Mapping is polled until the operation reaches a terminal lifecycle instead of
+// being left frozen on a stale snapshot.
+function isOperatingMapping(mapping: RelayPlanningMapping): boolean {
+  return mapping.alignment === 'operating' || Boolean(mapping.active_operation && !['applied', 'restored', 'interrupted', 'blocked_external'].includes(mapping.active_operation.lifecycle))
+}
+
+function scheduleOperationPoll() {
+  if (operationPollTimer !== null) return
+  if (!mappings.value.some(isOperatingMapping)) return
+  operationPollTimer = window.setTimeout(pollOperatingMappings, operationPollIntervalMs)
+}
+
+async function pollOperatingMappings() {
+  operationPollTimer = null
+  if (operationPollInFlight) {
+    scheduleOperationPoll()
+    return
+  }
+  operationPollInFlight = true
+  try {
+    await loadMappings()
+  } catch {
+    // Keep the last known Mapping snapshot; the next poll retries.
+  } finally {
+    operationPollInFlight = false
+    scheduleOperationPoll()
+  }
 }
 
 function existingMappingFor(request: RelayPlanningRequest) {
@@ -845,6 +892,13 @@ async function executeConfirmed() {
 	try {
 		const outcome = await executeReviewedPlan()
 		if (outcome.kind === 'empty' || outcome.kind === 'superseded') return
+		if (outcome.kind === 'detached') {
+			// The durable operation outlived the browser request; its Mapping stays
+			// `operating` until the poller sees a terminal lifecycle.
+			await loadMappings().catch(() => {})
+			ElMessage.info(t('relayPlanning.operationStillRunning'))
+			return
+		}
 		if (outcome.kind === 'stale') {
       ElMessage.warning(t('relayPlanning.stalePlan'))
       return
@@ -929,6 +983,10 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+	if (operationPollTimer !== null) {
+		window.clearTimeout(operationPollTimer)
+		operationPollTimer = null
+	}
 	disposeReviewedPlan()
 	clearManagedAccountSearchState()
 })

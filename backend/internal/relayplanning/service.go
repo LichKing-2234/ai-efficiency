@@ -1403,6 +1403,8 @@ func duplicateAndRenameProposedTarget(
 }
 
 func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionResult, error) {
+	ctx, cancel := OperationContext(ctx)
+	defer cancel()
 	if strings.TrimSpace(req.OperationKey) == "" {
 		return nil, fmt.Errorf("operation_key is required")
 	}
@@ -3061,6 +3063,8 @@ func (s *Service) currentTime() time.Time {
 }
 
 func (s *Service) ExecuteMappingRenewal(ctx context.Context, id int, req MappingRenewalExecuteRequest) (*MappingRenewalExecution, error) {
+	ctx, cancel := OperationContext(ctx)
+	defer cancel()
 	if id <= 0 {
 		return nil, fmt.Errorf("mapping id is required")
 	}
@@ -3929,6 +3933,8 @@ func blockUnrelatedLegacyMutation(row *ent.RelayGroupMapping) error {
 // member matrix and creating appended proposed Targets. Existing Target
 // retirement and deactivation remain outside this operation.
 func (s *Service) ExecuteReplan(ctx context.Context, mappingID int, req ExecuteRequest) (*ExecutionResult, error) {
+	ctx, cancel := OperationContext(ctx)
+	defer cancel()
 	mapping, err := s.GetMapping(ctx, mappingID)
 	if err != nil {
 		return nil, fmt.Errorf("load mapping for replan execution: %w", err)

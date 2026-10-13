@@ -36,6 +36,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/redisruntime"
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/ai-efficiency/backend/internal/relayplanning"
 	"github.com/ai-efficiency/backend/internal/relayruntime"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/representativescope"
@@ -238,6 +239,16 @@ func main() {
 		logger.Fatal("drop legacy attribution identity indexes", zap.Error(err))
 	}
 	logger.Info("database schema migrated")
+	settledOperations, err := relayplanning.SettleAbandonedOperations(
+		context.Background(),
+		entClient,
+		relayplanning.OperationExecutionBudget+relayplanning.OperationSettlementMargin,
+	)
+	if err != nil {
+		logger.Warn("settle abandoned Relay relationship operations", zap.Error(err))
+	} else if settledOperations > 0 {
+		logger.Info("settled abandoned Relay relationship operations", zap.Int("operations", settledOperations))
+	}
 	workItemsRevisionStore := workitems.NewRevisionStore(entClient)
 	if err := workItemsRevisionStore.Ensure(context.Background()); err != nil {
 		logger.Fatal("initialize work item counts revision", zap.Error(err))

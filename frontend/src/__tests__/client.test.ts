@@ -88,7 +88,7 @@ vi.mock('axios', () => {
   }
 })
 
-import client from '@/api/client'
+import client, { isRequestTimeout } from '@/api/client'
 import { installAuthNavigationGuards } from '@/router/authGuard'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -865,5 +865,16 @@ describe('Axios client interceptors', () => {
       expect(auth.user).toEqual(alice)
       expect(window.location.href).not.toContain('/repos')
     })
+  })
+})
+
+describe('isRequestTimeout', () => {
+  it('recognises the abandoned-response timeout that leaves a durable operation running', () => {
+    expect(isRequestTimeout({ code: 'ECONNABORTED', message: 'timeout of 45000ms exceeded' })).toBe(true)
+    expect(isRequestTimeout({ message: 'timeout of 45000ms exceeded' })).toBe(true)
+    expect(isRequestTimeout({ code: 'ETIMEDOUT' })).toBe(true)
+    expect(isRequestTimeout({ response: { status: 422, data: { message: 'target subscription is required' } } })).toBe(false)
+    expect(isRequestTimeout(new Error('Network Error'))).toBe(false)
+    expect(isRequestTimeout(undefined)).toBe(false)
   })
 })

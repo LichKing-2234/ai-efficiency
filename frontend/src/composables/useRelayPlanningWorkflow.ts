@@ -11,6 +11,7 @@ import type {
   RelayPlanningUserSearchItem,
   RelayPlanningUserSearchPage,
 } from '@/api/relayPlanning'
+import { isRequestTimeout } from '@/api/client'
 
 // Accounts sharing a target carry no scheduling preference over each other, so
 // AI Efficiency reviews and submits every account relationship at this priority.
@@ -820,6 +821,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
         return { kind: 'stale' as const }
       }
       confirmDialogOpen.value = false
+      if (isRequestTimeout(error)) return { kind: 'detached' as const }
       throw error
     } finally {
       if (isCurrentPlanRequest(generation)) executing.value = false
