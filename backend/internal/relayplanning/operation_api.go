@@ -205,6 +205,8 @@ func (s *Service) PreviewRecovery(ctx context.Context, operationID int, directio
 }
 
 func (s *Service) ConfirmRecovery(ctx context.Context, req RecoveryConfirmRequest) (*RecoveryResult, error) {
+	ctx, cancel := OperationContext(ctx)
+	defer cancel()
 	current, err := s.PreviewRecovery(ctx, req.OperationID, req.Direction)
 	if err != nil {
 		return nil, err

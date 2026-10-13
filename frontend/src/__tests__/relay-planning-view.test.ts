@@ -1262,6 +1262,50 @@ describe('RelayPlanningView', () => {
 		expect(errorMessage).toHaveBeenCalledWith('target subscription is required before binding API keys')
 	})
 
+	it('treats an execute request timeout as a durable operation that keeps running', async () => {
+		const infoMessage = vi.spyOn(ElMessage, 'info').mockImplementation(() => undefined as any)
+		const errorMessage = vi.spyOn(ElMessage, 'error').mockImplementation(() => undefined as any)
+		const { wrapper, relayPlanning } = await mountView()
+		await fillAndPreview(wrapper)
+		await wrapper.get('[data-testid="open-execution-confirmation"]').trigger('click')
+		await flushPromises()
+		relayPlanning.executeRelayPlan.mockRejectedValue({
+			code: 'ECONNABORTED',
+			message: 'timeout of 45000ms exceeded',
+		})
+
+		await wrapper.get('[data-testid="confirm-execution"]').trigger('click')
+		await flushPromises()
+
+		expect(errorMessage).not.toHaveBeenCalled()
+		expect(infoMessage).toHaveBeenCalledWith(expect.stringContaining('durable Relationship Operation'))
+	})
+
+	it('polls mappings until a durable Relationship Operation settles', async () => {
+		vi.useFakeTimers()
+		try {
+			const operatingMapping = {
+				...existingMapping,
+				alignment: 'operating',
+				active_operation: { ...interruptedOperation, lifecycle: 'applying' },
+			}
+			const settledMapping = { ...existingMapping, alignment: 'aligned', active_operation: undefined }
+			const { wrapper, relayPlanning } = await mountView([operatingMapping])
+			await flushPromises()
+			expect(relayPlanning.listRelayGroupMappings).toHaveBeenCalledTimes(1)
+
+			relayPlanning.listRelayGroupMappings.mockResolvedValue({ data: { data: { items: [settledMapping] } } })
+			await vi.advanceTimersByTimeAsync(5000)
+			expect(relayPlanning.listRelayGroupMappings).toHaveBeenCalledTimes(2)
+
+			await vi.advanceTimersByTimeAsync(15000)
+			expect(relayPlanning.listRelayGroupMappings).toHaveBeenCalledTimes(2)
+			wrapper.unmount()
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
 	it('previews without a migration source and adds a searched user to one target', async () => {
     const { wrapper, relayPlanning } = await mountView()
 	    relayPlanning.searchRelayPlanningUsers.mockResolvedValue({
