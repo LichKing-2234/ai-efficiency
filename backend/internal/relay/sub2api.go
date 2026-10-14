@@ -2189,6 +2189,11 @@ type sub2apiAccountSummary struct {
 		GroupID  int64 `json:"group_id"`
 		Priority int   `json:"priority"`
 	} `json:"account_groups"`
+	// Only plan_type is read out of the credential blob. Keep it that way; the
+	// rest of the blob is credential material.
+	Credentials struct {
+		PlanType string `json:"plan_type"`
+	} `json:"credentials"`
 }
 
 type sub2apiUsageProgress struct {
@@ -2585,7 +2590,7 @@ func (s *sub2apiRelay) getAccountRelationshipSnapshot(ctx context.Context, accou
 }
 
 func safeAccountFromSub2API(item sub2apiAccountSummary) Account {
-	account := Account{ID: item.ID, Name: item.Name, Platform: item.Platform, Type: item.Type, Status: item.Status, Schedulable: item.Schedulable, GroupRelationships: make([]AccountGroupRelationship, 0, len(item.AccountGroups))}
+	account := Account{ID: item.ID, Name: item.Name, Platform: item.Platform, Type: item.Type, Status: item.Status, Schedulable: item.Schedulable, PlanType: item.Credentials.PlanType, GroupRelationships: make([]AccountGroupRelationship, 0, len(item.AccountGroups))}
 	for _, relationship := range item.AccountGroups {
 		account.GroupRelationships = append(account.GroupRelationships, AccountGroupRelationship{GroupID: relationship.GroupID, Priority: relationship.Priority})
 	}

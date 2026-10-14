@@ -351,6 +351,8 @@ const enUS = {
   'usageDashboard.poolUsageReset': 'Next pool reset',
   'usageDashboard.poolUsageAsOf': 'Snapshot as of {value}',
   'usageDashboard.poolUsageLoading': 'Loading pool snapshot...',
+  'usageDashboard.poolUsageAccounts': 'Upstream accounts',
+  'usageDashboard.poolUsageMembers': 'Pool members ({count})',
   'teamUsage.title': 'Team Usage',
   'teamUsage.topMembers': 'Usage Trends',
   'teamUsage.teamTrend': 'Team trend',

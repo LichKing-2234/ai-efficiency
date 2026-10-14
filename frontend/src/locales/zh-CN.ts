@@ -350,6 +350,8 @@ const zhCN = {
   'usageDashboard.poolUsageReset': '号池下一次重置',
   'usageDashboard.poolUsageAsOf': '快照时间：{value}',
   'usageDashboard.poolUsageLoading': '正在加载号池快照...',
+  'usageDashboard.poolUsageAccounts': '上游账号',
+  'usageDashboard.poolUsageMembers': '同池成员（{count} 人）',
   'teamUsage.title': '团队用量',
   'teamUsage.topMembers': '用量趋势',
   'teamUsage.teamTrend': '团队趋势',
