@@ -96,6 +96,13 @@ describe('userSetupReview command builders', () => {
     expect(buildManualConfigSnippets({
       providerName: 'prod',
       baseUrl: 'https://prod.example.com',
+      platform: 'deepseek',
+      apiKey: 'sk-deepseek',
+    }).map((snippet) => snippet.path)).toEqual(['~/.codex/config.toml', '~/.codex/auth.json'])
+
+    expect(buildManualConfigSnippets({
+      providerName: 'prod',
+      baseUrl: 'https://prod.example.com',
       platform: 'anthropic',
       apiKey: 'sk-claude',
     }).map((snippet) => snippet.path)).toEqual(['~/.claude/settings.json'])
@@ -285,6 +292,7 @@ describe('userSetupReview command builders', () => {
 
   it('maps supported platforms to CC Switch apps', () => {
     expect(resolveCCSwitchAppForPlatform('openai')).toBe('codex')
+    expect(resolveCCSwitchAppForPlatform('deepseek')).toBe('codex')
     expect(resolveCCSwitchAppForPlatform('anthropic')).toBe('claude')
     expect(resolveCCSwitchAppForPlatform('gemini')).toBe('gemini')
     expect(resolveCCSwitchAppForPlatform('unknown')).toBeNull()
@@ -292,6 +300,7 @@ describe('userSetupReview command builders', () => {
 
   it('resolves CC Switch apps by ordinary versus Agent group', () => {
     expect(resolveCCSwitchAppsForGroup('openai', 'Group Alpha')).toEqual(['codex'])
+    expect(resolveCCSwitchAppsForGroup('deepseek', 'Group Alpha')).toEqual(['codex'])
     expect(resolveCCSwitchAppsForGroup('anthropic', 'Group Beta')).toEqual(['claude'])
     expect(resolveCCSwitchAppsForGroup('gemini', 'Group Delta')).toEqual(['gemini'])
     expect(resolveCCSwitchAppsForGroup('openai', 'Agentopenai')).toEqual(['hermes', 'openclaw'])
@@ -446,6 +455,7 @@ describe('userSetupReview command builders', () => {
 
   it('maps provider platforms to discover tool names', () => {
     expect(resolveDiscoverToolForPlatform('openai')).toBe('codex')
+    expect(resolveDiscoverToolForPlatform('deepseek')).toBe('codex')
     expect(resolveDiscoverToolForPlatform(' Anthropic ')).toBe('claude')
     expect(resolveDiscoverToolForPlatform('GEMINI')).toBe('gemini')
     expect(resolveDiscoverToolForPlatform('unknown')).toBeNull()
