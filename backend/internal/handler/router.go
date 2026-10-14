@@ -15,6 +15,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
+	"github.com/ai-efficiency/backend/internal/opsmonitoring"
 	"github.com/ai-efficiency/backend/internal/personalusage"
 	"github.com/ai-efficiency/backend/internal/quotareset"
 	"github.com/ai-efficiency/backend/internal/relayplanning"
@@ -55,6 +56,7 @@ type RouterOptions struct {
 	AttributionSetupAvailable     bool
 	AttributionReadinessAvailable bool
 	ActivityCache                 *activity.Cache
+	OpsMonitoringCache            *opsmonitoring.Cache
 	Release                       string
 	RequestTimeout                time.Duration
 }
@@ -275,6 +277,7 @@ func setupRouter(
 	userSetupHandler := NewUserSetupHandler(userSetupService)
 	adminUsersHandler := NewAdminUsersHandler(entClient, encryptionKey)
 	var relayPlanningHandler *RelayPlanningHandler
+	var opsMonitoringHandler *OpsMonitoringHandler
 	var offboardingCounter interface {
 		CountOffboardingCandidates(context.Context, int) (int, error)
 	}
@@ -292,6 +295,7 @@ func setupRouter(
 		adminUsersHandler = NewAdminUsersHandler(entClient, encryptionKey, providerHandler)
 		adminUsersHandler.logger = providerHandler.logger
 		relayPlanningHandler = NewRelayPlanningHandler(relayplanning.NewService(entClient, providerHandler, options.TeamUsagePrewarmReader))
+		opsMonitoringHandler = NewOpsMonitoringHandler(opsmonitoring.NewService(providerHandler, options.OpsMonitoringCache))
 		quotaResetService := quotareset.NewService(
 			entClient,
 			providerHandler,
@@ -540,6 +544,16 @@ func setupRouter(
 			relayPlanningGroup.PUT("/mappings/:id/accounts", relayPlanningHandler.SaveDesiredAccounts)
 			relayPlanningGroup.POST("/mappings/:id/replan", relayPlanningHandler.Replan)
 			relayPlanningGroup.POST("/mappings/:id/replan/execute", relayPlanningHandler.ReplanExecute)
+		}
+	}
+
+	if opsMonitoringHandler != nil {
+		opsMonitoringGroup := protected.Group("/admin/ops-monitoring")
+		opsMonitoringGroup.Use(auth.RequireAdmin())
+		{
+			opsMonitoringGroup.GET("/groups", opsMonitoringHandler.ListGroups)
+			opsMonitoringGroup.GET("/groups/:group_id/accounts", opsMonitoringHandler.ListGroupAccounts)
+			opsMonitoringGroup.POST("/proxies/:proxy_id/test", opsMonitoringHandler.TestProxy)
 		}
 	}
 

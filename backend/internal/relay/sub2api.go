@@ -1931,6 +1931,8 @@ func (s *sub2apiRelay) ListPlatformGroups(ctx context.Context) ([]Group, error) 
 		IsExclusive           bool   `json:"is_exclusive"`
 		SubscriptionType      string `json:"subscription_type"`
 		AllowMessagesDispatch bool   `json:"allow_messages_dispatch"`
+		AccountCount          int    `json:"account_count"`
+		ActiveAccountCount    int    `json:"active_account_count"`
 	}
 	type pageData struct {
 		Items []groupItem `json:"items"`
@@ -1976,6 +1978,8 @@ func (s *sub2apiRelay) ListPlatformGroups(ctx context.Context) ([]Group, error) 
 				IsExclusive:           item.IsExclusive,
 				SubscriptionType:      strings.TrimSpace(item.SubscriptionType),
 				AllowMessagesDispatch: item.AllowMessagesDispatch,
+				AccountCount:          item.AccountCount,
+				ActiveAccountCount:    item.ActiveAccountCount,
 			})
 		}
 
@@ -1984,6 +1988,180 @@ func (s *sub2apiRelay) ListPlatformGroups(ctx context.Context) ([]Group, error) 
 		}
 	}
 	return groups, nil
+}
+
+// ReadGroupOpsHealth returns one group's upstream ops overview for an explicit
+// UTC window. The upstream `window` parameter is ignored by the provider, so the
+// caller must always express the window as start_time/end_time.
+func (s *sub2apiRelay) ReadGroupOpsHealth(ctx context.Context, groupID int64, start, end time.Time) (*GroupOpsHealth, error) {
+	if groupID <= 0 {
+		return nil, fmt.Errorf("relay: read group ops health: group id is required")
+	}
+	if !end.After(start) {
+		return nil, fmt.Errorf("relay: read group ops health: window end must be after start")
+	}
+
+	query := url.Values{}
+	query.Set("group_id", strconv.FormatInt(groupID, 10))
+	query.Set("start_time", start.UTC().Format(time.RFC3339))
+	query.Set("end_time", end.UTC().Format(time.RFC3339))
+
+	resp, err := s.doAdminRequest(ctx, http.MethodGet, "/api/v1/admin/ops/dashboard/overview?"+query.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("relay: read group ops health for group %d: %w", groupID, err)
+	}
+	body, readErr := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if readErr != nil {
+		return nil, fmt.Errorf("relay: read group ops health for group %d: read body: %w", groupID, readErr)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: read group ops health for group %d: unexpected status %d%s", groupID, resp.StatusCode, relayErrorMessageSuffixFromData(body))
+	}
+
+	var result struct {
+		Code int             `json:"code"`
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("relay: read group ops health for group %d: decode: %w", groupID, err)
+	}
+	if result.Code != 0 || len(result.Data) == 0 {
+		return nil, fmt.Errorf("relay: read group ops health for group %d: request failed%s", groupID, relayErrorMessageSuffixFromData(body))
+	}
+
+	// Every overview field, platform included, stays in Overview untouched: the
+	// group directory remains the display authority for platform.
+	return &GroupOpsHealth{
+		GroupID:  groupID,
+		Overview: result.Data,
+	}, nil
+}
+
+// ListGroupAccounts returns the privacy-safe account projection for one group,
+// including each account's proxy binding. Provider credentials are never
+// decoded.
+func (s *sub2apiRelay) ListGroupAccounts(ctx context.Context, groupID int64) ([]GroupAccount, error) {
+	if groupID <= 0 {
+		return nil, fmt.Errorf("relay: list group accounts: group id is required")
+	}
+
+	type proxyItem struct {
+		ID       int64  `json:"id"`
+		Name     string `json:"name"`
+		Protocol string `json:"protocol"`
+		Host     string `json:"host"`
+		Port     int    `json:"port"`
+		Status   string `json:"status"`
+	}
+	type accountItem struct {
+		ID          int64      `json:"id"`
+		Name        string     `json:"name"`
+		Platform    string     `json:"platform"`
+		Type        string     `json:"type"`
+		Status      string     `json:"status"`
+		Schedulable bool       `json:"schedulable"`
+		ProxyID     *int64     `json:"proxy_id"`
+		Proxy       *proxyItem `json:"proxy"`
+	}
+	type pageData struct {
+		Items []accountItem `json:"items"`
+		Page  int           `json:"page"`
+		Pages int           `json:"pages"`
+	}
+
+	var accounts []GroupAccount
+	for page := 1; ; page++ {
+		query := url.Values{}
+		query.Set("page", strconv.Itoa(page))
+		query.Set("page_size", "200")
+		query.Set("group", strconv.FormatInt(groupID, 10))
+
+		resp, err := s.doAdminRequest(ctx, http.MethodGet, "/api/v1/admin/accounts?"+query.Encode(), nil)
+		if err != nil {
+			return nil, fmt.Errorf("relay: list group accounts for group %d: %w", groupID, err)
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("relay: list group accounts for group %d: read body: %w", groupID, readErr)
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("relay: list group accounts for group %d: unexpected status %d%s", groupID, resp.StatusCode, relayErrorMessageSuffixFromData(body))
+		}
+
+		var result struct {
+			Code int      `json:"code"`
+			Data pageData `json:"data"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil {
+			return nil, fmt.Errorf("relay: list group accounts for group %d: decode: %w", groupID, err)
+		}
+		if result.Code != 0 {
+			return nil, fmt.Errorf("relay: list group accounts for group %d: request failed%s", groupID, relayErrorMessageSuffixFromData(body))
+		}
+
+		for _, item := range result.Data.Items {
+			account := GroupAccount{
+				AccountID:   item.ID,
+				Name:        strings.TrimSpace(item.Name),
+				Platform:    strings.TrimSpace(item.Platform),
+				Type:        strings.TrimSpace(item.Type),
+				Status:      strings.TrimSpace(item.Status),
+				Schedulable: item.Schedulable,
+				ProxyID:     item.ProxyID,
+			}
+			if item.Proxy != nil {
+				account.Proxy = &GroupProxy{
+					ID:       item.Proxy.ID,
+					Name:     strings.TrimSpace(item.Proxy.Name),
+					Protocol: strings.TrimSpace(item.Proxy.Protocol),
+					Host:     strings.TrimSpace(item.Proxy.Host),
+					Port:     item.Proxy.Port,
+					Status:   strings.TrimSpace(item.Proxy.Status),
+				}
+			}
+			accounts = append(accounts, account)
+		}
+
+		if result.Data.Pages <= 1 || page >= result.Data.Pages {
+			break
+		}
+	}
+	return accounts, nil
+}
+
+// TestProxy runs one upstream egress probe. An unreachable proxy is a probe
+// result (`success: false`), not a transport error.
+func (s *sub2apiRelay) TestProxy(ctx context.Context, proxyID int64) (*ProxyEgressCheck, error) {
+	if proxyID <= 0 {
+		return nil, fmt.Errorf("relay: test proxy: proxy id is required")
+	}
+
+	resp, err := s.doAdminRequest(ctx, http.MethodPost, fmt.Sprintf("/api/v1/admin/proxies/%d/test", proxyID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("relay: test proxy %d: %w", proxyID, err)
+	}
+	body, readErr := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if readErr != nil {
+		return nil, fmt.Errorf("relay: test proxy %d: read body: %w", proxyID, readErr)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: test proxy %d: unexpected status %d%s", proxyID, resp.StatusCode, relayErrorMessageSuffixFromData(body))
+	}
+
+	var result struct {
+		Code int              `json:"code"`
+		Data ProxyEgressCheck `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("relay: test proxy %d: decode: %w", proxyID, err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("relay: test proxy %d: request failed%s", proxyID, relayErrorMessageSuffixFromData(body))
+	}
+	return &result.Data, nil
 }
 
 func (s *sub2apiRelay) GetGroup(ctx context.Context, groupID int64) (*Group, error) {

@@ -34,6 +34,7 @@ function createTestRouter(initialPath = '/') {
       { path: '/admin/users', component: { template: '<div>Admin Users</div>' } },
       { path: '/admin/directory/offboarding', component: { template: '<div>Offboarding</div>' } },
       { path: '/admin/relay-planning', component: { template: '<div>Relay Planning</div>' } },
+      { path: '/admin/ops-monitoring', component: { template: '<div>Ops Monitoring</div>' } },
       { path: '/settings', component: { template: '<div>Settings</div>' } },
       { path: '/login', component: { template: '<div>Login</div>' } },
     ],
@@ -312,8 +313,10 @@ describe('AppSidebar', () => {
     const links = wrapper.findAll('a')
     const offboardingLink = links.find((l) => l.text() === 'Offboarding Review')
     const relayPlanningLink = links.find((l) => l.text() === 'Relay Planning')
+    const opsMonitoringLink = links.find((l) => l.text() === 'Ops Monitoring')
     expect(offboardingLink?.attributes('href')).toBe('/admin/directory/offboarding')
     expect(relayPlanningLink?.attributes('href')).toBe('/admin/relay-planning')
+    expect(opsMonitoringLink?.attributes('href')).toBe('/admin/ops-monitoring')
   })
 
   it('hides Users & Access link for regular users', async () => {

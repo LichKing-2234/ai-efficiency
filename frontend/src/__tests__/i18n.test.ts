@@ -3,6 +3,7 @@ import enUS from '@/locales/en-US'
 import zhCN from '@/locales/zh-CN'
 import { relayPlanningMessages } from '@/locales/relayPlanning'
 import { directoryOffboardingMessages } from '@/locales/directoryOffboarding'
+import { opsMonitoringMessages } from '@/locales/opsMonitoring'
 import { createI18nControllerForTest, type Locale } from '@/i18n'
 import type { Messages } from '@/locales/en-US'
 
@@ -219,15 +220,17 @@ describe('i18n locale loading', () => {
       ...Object.keys(enUS),
       ...Object.keys(relayPlanningMessages['en-US']),
       ...Object.keys(directoryOffboardingMessages['en-US']),
+      ...Object.keys(opsMonitoringMessages['en-US']),
     ].sort()
     const chineseKeys = [
       ...Object.keys(zhCN),
       ...Object.keys(relayPlanningMessages['zh-CN']),
       ...Object.keys(directoryOffboardingMessages['zh-CN']),
+      ...Object.keys(opsMonitoringMessages['zh-CN']),
     ].sort()
 
-    expect(englishKeys).toHaveLength(1246)
-    expect(chineseKeys).toHaveLength(1246)
+    expect(englishKeys).toHaveLength(1307)
+    expect(chineseKeys).toHaveLength(1307)
     expect(englishKeys).toContain('activity.title')
     expect(englishKeys).toContain('pagination.range')
     expect(englishKeys).toContain('pagination.pageOf')
@@ -240,6 +243,9 @@ describe('i18n locale loading', () => {
     expect(englishKeys).toContain('quotaReset.subscriptionLimitRequired')
     expect(englishKeys).toContain('relayPlanning.addSuggestedGroup')
     expect(englishKeys).toContain('relayPlanning.removeSuggestedGroup')
+    expect(englishKeys).toContain('opsMonitoring.title')
+    expect(englishKeys).toContain('opsMonitoring.failedGroups')
+    expect(englishKeys).toContain('opsMonitoring.refreshEgressIp')
     expect(chineseKeys).toEqual(englishKeys)
   })
 

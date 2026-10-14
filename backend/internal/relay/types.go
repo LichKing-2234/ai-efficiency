@@ -79,6 +79,10 @@ type Group struct {
 	DailyLimitUSD         *float64 `json:"daily_limit_usd,omitempty"`
 	WeeklyLimitUSD        *float64 `json:"weekly_limit_usd,omitempty"`
 	MonthlyLimitUSD       *float64 `json:"monthly_limit_usd,omitempty"`
+	// AccountCount and ActiveAccountCount are upstream group directory facts,
+	// populated only by directory listings that request them.
+	AccountCount       int `json:"account_count,omitempty"`
+	ActiveAccountCount int `json:"active_account_count,omitempty"`
 }
 
 // Account is the privacy-safe account relationship projection used by Relay
@@ -99,6 +103,52 @@ type Account struct {
 type AccountGroupRelationship struct {
 	GroupID  int64 `json:"group_id"`
 	Priority int   `json:"priority"`
+}
+
+// GroupOpsHealth is one group's upstream ops-monitoring overview. Overview is
+// the provider's response object passed through verbatim: this platform shows
+// upstream metrics and never recomputes them, so the raw payload — not a
+// re-modelled subset — is the contract.
+type GroupOpsHealth struct {
+	GroupID  int64           `json:"group_id"`
+	Overview json.RawMessage `json:"overview"`
+}
+
+// GroupProxy is the privacy-safe proxy projection of one account. Credentials
+// and private configuration are intentionally absent.
+type GroupProxy struct {
+	ID       int64  `json:"proxy_id"`
+	Name     string `json:"name"`
+	Protocol string `json:"protocol"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Status   string `json:"status"`
+}
+
+// GroupAccount is the privacy-safe account projection for one group's
+// operator-facing account list, including the account's proxy binding.
+type GroupAccount struct {
+	AccountID   int64       `json:"account_id"`
+	Name        string      `json:"name"`
+	Platform    string      `json:"platform"`
+	Type        string      `json:"type"`
+	Status      string      `json:"status"`
+	Schedulable bool        `json:"schedulable"`
+	ProxyID     *int64      `json:"proxy_id"`
+	Proxy       *GroupProxy `json:"proxy"`
+}
+
+// ProxyEgressCheck is the measured egress identity of one proxy. It is an
+// active upstream probe result and is never inferred from configuration.
+type ProxyEgressCheck struct {
+	Success     bool   `json:"success"`
+	Message     string `json:"message"`
+	LatencyMS   int64  `json:"latency_ms"`
+	IPAddress   string `json:"ip_address"`
+	City        string `json:"city"`
+	Region      string `json:"region"`
+	Country     string `json:"country"`
+	CountryCode string `json:"country_code"`
 }
 
 const (

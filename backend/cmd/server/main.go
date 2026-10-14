@@ -30,6 +30,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/httpclient"
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
+	"github.com/ai-efficiency/backend/internal/opsmonitoring"
 	"github.com/ai-efficiency/backend/internal/personalusage"
 	"github.com/ai-efficiency/backend/internal/prsync"
 	"github.com/ai-efficiency/backend/internal/prusage"
@@ -360,6 +361,10 @@ func main() {
 	if err != nil {
 		logger.Fatal("initialize Activity cache", zap.Error(err))
 	}
+	opsMonitoringCache, err := opsmonitoring.NewCache(redisStore, opsmonitoring.CacheOptions{Namespace: cfg.Redis.Namespace})
+	if err != nil {
+		logger.Fatal("initialize Ops Monitoring cache", zap.Error(err))
+	}
 	teamUsageSnapshotCache, err := teamusage.NewSnapshotCache(
 		redisStore,
 		teamusage.SnapshotCacheOptions{
@@ -563,6 +568,7 @@ func main() {
 			AttributionSetupAvailable:     cfg.Attribution.SetupAvailable,
 			AttributionReadinessAvailable: cfg.Attribution.ReadinessAvailable,
 			ActivityCache:                 activityCache,
+			OpsMonitoringCache:            opsMonitoringCache,
 			Release:                       versionInfo.Version,
 			RequestTimeout:                time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
 		},
