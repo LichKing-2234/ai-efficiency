@@ -23,3 +23,15 @@ _Avoid_: Deleted target, replacement target
 **Relationship Operation**:
 A durable, admin-reviewed Relay Planning change with immutable directional steps, affected-Mapping ownership, independent execution attempts, and verified terminal readback. Resume converges to the reviewed Target and promotes the Replan Baseline; Restore converges to the captured baseline without changing it.
 _Avoid_: Retry state, Relay transaction
+
+**Sub2API Group**:
+The Sub2API routing group whose per-group health the Ops Monitoring surface displays. It is an upstream routing target, not a user-selectable Access Group and not a Relay Group Mapping target.
+_Avoid_: Access Group, Target Group, department group
+
+**Group Health Snapshot**:
+The verbatim Sub2API ops overview for one Sub2API Group over one explicit time window, shown as returned. The platform never recomputes it.
+_Avoid_: computed health score, derived metric
+
+**Ops Monitoring**:
+The admin-only read-only surface that presents Group Health Snapshots for every Sub2API Group at once, with no alerting and no relationship or account mutations.
+_Avoid_: Relay Planning, dashboard, alerting

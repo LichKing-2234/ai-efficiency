@@ -109,6 +109,12 @@ const router = createRouter({
       meta: { requireAdmin: true },
     },
     {
+      path: '/admin/ops-monitoring',
+      name: 'ops-monitoring',
+      component: () => import('@/router/opsMonitoringRoute').then(({ loadOpsMonitoringView }) => loadOpsMonitoringView()),
+      meta: { requireAdmin: true },
+    },
+    {
       path: '/admin/directory/offboarding',
       name: 'DirectoryOffboarding',
       component: () => import('@/views/admin/DirectoryOffboardingView.vue'),

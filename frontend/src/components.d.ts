@@ -65,6 +65,7 @@ declare module 'vue' {
     ElTag: typeof import('element-plus/es')['ElTag']
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
     LineChartCanvas: typeof import('./components/charts/LineChartCanvas.vue')['default']
+    OpsMonitoringGroupDetail: typeof import('./components/admin/OpsMonitoringGroupDetail.vue')['default']
     OrganizationLoginSettings: typeof import('./components/settings/OrganizationLoginSettings.vue')['default']
     QuotaResetApprovalSettings: typeof import('./components/settings/QuotaResetApprovalSettings.vue')['default']
     QuotaResetDecisionDialog: typeof import('./components/quota-reset/QuotaResetDecisionDialog.vue')['default']

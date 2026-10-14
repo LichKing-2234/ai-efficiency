@@ -3816,8 +3816,8 @@ func TestListPlatformGroupsReturnsActivePlatformSummaries(t *testing.T) {
 		t.Fatalf("ListPlatformGroups() unexpected error: %v", err)
 	}
 	if diff := cmp.Diff([]relay.Group{
-		{ID: 5, Name: "Group Gamma", Platform: "anthropic"},
-		{ID: 6, Name: "Group Alpha", Platform: "openai", AllowMessagesDispatch: true},
+		{ID: 5, Name: "Group Gamma", Platform: "anthropic", AccountCount: 4, ActiveAccountCount: 3},
+		{ID: 6, Name: "Group Alpha", Platform: "openai", AllowMessagesDispatch: true, AccountCount: 14, ActiveAccountCount: 13},
 	}, groups); diff != "" {
 		t.Fatalf("groups mismatch (-want +got):\n%s", diff)
 	}

@@ -92,6 +92,15 @@ type GroupReader interface {
 	GetGroup(ctx context.Context, groupID int64) (*Group, error)
 }
 
+// GroupOpsHealthReader exposes upstream ops-monitoring facts for one group over
+// one explicit time window. Every returned metric is passed through verbatim:
+// callers display upstream facts and never recompute them.
+type GroupOpsHealthReader interface {
+	ReadGroupOpsHealth(ctx context.Context, groupID int64, start, end time.Time) (*GroupOpsHealth, error)
+	ListGroupAccounts(ctx context.Context, groupID int64) ([]GroupAccount, error)
+	TestProxy(ctx context.Context, proxyID int64) (*ProxyEgressCheck, error)
+}
+
 // AccountRelationshipReader exposes only the safe account metadata needed to
 // inspect group relationships for one platform.
 type AccountRelationshipReader interface {

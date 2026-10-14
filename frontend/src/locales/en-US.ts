@@ -1,5 +1,6 @@
 import type { RelayPlanningMessageKey } from './relayPlanning'
 import type { DirectoryOffboardingMessageKey } from './directoryOffboarding'
+import type { OpsMonitoringMessageKey } from './opsMonitoring'
 
 const enUS = {
   'app.title': 'AI Efficiency',
@@ -49,6 +50,7 @@ const enUS = {
   'nav.userManagement': 'Users & Access',
   'nav.directoryOffboarding': 'Offboarding Review',
   'nav.relayPlanning': 'Relay Planning',
+  'nav.opsMonitoring': 'Ops Monitoring',
   'nav.adminConsole': 'Admin Console',
   'nav.adminSection': 'Administration',
   'nav.languageToggle': '中文',
@@ -974,7 +976,7 @@ const enUS = {
   'directorySync.noDocsSamples': 'Synthetic sample responses with email and department fields',
 } as const
 
-export type MessageKey = keyof typeof enUS | RelayPlanningMessageKey | DirectoryOffboardingMessageKey
+export type MessageKey = keyof typeof enUS | RelayPlanningMessageKey | DirectoryOffboardingMessageKey | OpsMonitoringMessageKey
 export type Messages = { readonly [Key in keyof typeof enUS]: string }
 
 export default enUS
