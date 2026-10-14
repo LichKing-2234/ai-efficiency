@@ -18,6 +18,7 @@ type Service struct {
 	resolver      ProviderResolver
 	encryptionKey string
 	cache         *Cache
+	poolContext   *poolContextCache
 }
 
 type resolvedSubject struct {
@@ -34,7 +35,7 @@ type resolvedSubject struct {
 }
 
 func NewService(client *ent.Client, resolver ProviderResolver, encryptionKey string, cache *Cache) *Service {
-	return &Service{client: client, resolver: resolver, encryptionKey: encryptionKey, cache: cache}
+	return &Service{client: client, resolver: resolver, encryptionKey: encryptionKey, cache: cache, poolContext: &poolContextCache{}}
 }
 
 func (s *Service) Dashboard(ctx context.Context, request Request) (*Snapshot, error) {
@@ -153,6 +154,7 @@ func (s *Service) GroupPoolUsage(ctx context.Context, request Request) (*GroupPo
 	if err != nil {
 		return unavailablePoolUsageResponse(), nil
 	}
+	s.attachPoolContext(ctx, subject, pool.Groups)
 	return &GroupPoolUsageResponse{
 		PoolUsage: pool,
 		PoolUsageFreshness: PoolUsageFreshness{

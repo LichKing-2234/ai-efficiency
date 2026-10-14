@@ -32,6 +32,14 @@ function resetCountdown(value?: string | null) {
   return t('usageDashboard.resetInDays', { count: Math.ceil(hours / 24) })
 }
 
+// Product names, not copy: the upstream plan tier as the vendor labels it.
+const planTypeLabels: Record<string, string> = { pro: 'Pro 20x', prolite: 'Pro 5x' }
+
+function planTypeLabel(value?: string) {
+  if (!value) return ''
+  return planTypeLabels[value] ?? value
+}
+
 onMounted(() => {
   resetTimer = setInterval(() => {
     now.value = Date.now()
@@ -69,7 +77,7 @@ onBeforeUnmount(() => {
       :id="`usage-pool-details-${item.group_id}`"
       role="tooltip"
       class="text-xs leading-5"
-      style="pointer-events: none; position: absolute; z-index: 20; bottom: calc(100% + 8px); left: 0; width: min(300px, calc(100vw - 48px)); padding: 12px; border-radius: var(--el-border-radius-base); background: var(--el-text-color-primary); color: var(--el-bg-color); box-shadow: var(--el-box-shadow-light)"
+      style="pointer-events: none; position: absolute; z-index: 20; bottom: calc(100% + 8px); left: 0; width: min(340px, calc(100vw - 48px)); padding: 12px; border-radius: var(--el-border-radius-base); background: var(--el-text-color-primary); color: var(--el-bg-color); box-shadow: var(--el-box-shadow-light)"
       :data-testid="`usage-pool-details-${item.group_id}`"
     >
       <div class="flex items-baseline justify-between gap-3">
@@ -86,6 +94,19 @@ onBeforeUnmount(() => {
       <p v-if="item.as_of" class="mt-1 opacity-60">
         {{ t('usageDashboard.poolUsageAsOf', { value: resetDateLabel(item.as_of) }) }}
       </p>
+      <div v-if="item.accounts?.length" class="mt-2">
+        <p class="opacity-75">{{ t('usageDashboard.poolUsageAccounts') }}</p>
+        <ul class="mt-1">
+          <li v-for="account in item.accounts" :key="account.id" class="break-all">
+            #{{ account.id }} {{ account.name }}
+            <template v-if="account.plan_type"> · {{ planTypeLabel(account.plan_type) }}</template>
+          </li>
+        </ul>
+      </div>
+      <div v-if="item.members?.length" class="mt-2">
+        <p class="opacity-75">{{ t('usageDashboard.poolUsageMembers', { count: item.members.length }) }}</p>
+        <p class="mt-1 break-all">{{ item.members.join(' · ') }}</p>
+      </div>
       <span aria-hidden="true" style="position: absolute; top: 100%; left: 16px; width: 0; height: 0; border: 6px solid transparent; border-top-color: var(--el-text-color-primary)"></span>
     </div>
   </div>

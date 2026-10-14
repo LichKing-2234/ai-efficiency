@@ -828,6 +828,12 @@ export interface UserUsageGroupQuotaResponse {
   quota_freshness: UserQuotaFreshness
 }
 
+export interface UserUsageGroupPoolUsageAccount {
+  id: number
+  name: string
+  plan_type?: string
+}
+
 export interface UserUsageGroupPoolUsageItem {
   group_id: string
   status: 'ok' | 'partial' | string
@@ -836,6 +842,10 @@ export interface UserUsageGroupPoolUsageItem {
   total_active_oauth_accounts: number
   next_reset_at?: string | null
   as_of?: string | null
+  /** Mapped pools only: the upstream accounts behind the pool, priority order. */
+  accounts?: UserUsageGroupPoolUsageAccount[]
+  /** Mapped pools only: users observed in the pool, sorted by email. */
+  members?: string[]
 }
 
 export interface UserUsageGroupPoolUsageState {

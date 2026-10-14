@@ -83,7 +83,8 @@ type Group struct {
 
 // Account is the privacy-safe account relationship projection used by Relay
 // planning. Provider credentials and private configuration are intentionally
-// not represented.
+// not represented; PlanType is whitelisted from the credential blob on its own
+// so the projection never carries the blob itself.
 type Account struct {
 	ID                 int64                      `json:"id"`
 	Name               string                     `json:"name"`
@@ -91,6 +92,7 @@ type Account struct {
 	Type               string                     `json:"type"`
 	Status             string                     `json:"status"`
 	Schedulable        bool                       `json:"schedulable"`
+	PlanType           string                     `json:"plan_type,omitempty"`
 	GroupRelationships []AccountGroupRelationship `json:"group_relationships"`
 }
 
@@ -460,6 +462,20 @@ type UserUsageGroupPoolUsageGroupItem struct {
 	TotalActiveOAuthAccounts int        `json:"total_active_oauth_accounts"`
 	NextResetAt              *time.Time `json:"next_reset_at,omitempty"`
 	AsOf                     *time.Time `json:"as_of,omitempty"`
+	// Accounts and Members are not Relay facts. The personal usage service
+	// attaches them for managed pools only, so the tooltip can name the pool's
+	// upstream accounts and the users sharing it.
+	Accounts []UserUsageGroupPoolUsageAccount `json:"accounts,omitempty"`
+	Members  []string                         `json:"members,omitempty"`
+}
+
+// UserUsageGroupPoolUsageAccount is the tooltip projection of one upstream
+// account behind a pool. It carries the display name and plan type only; the
+// managed Account relationship has no per-Account priority to report.
+type UserUsageGroupPoolUsageAccount struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	PlanType string `json:"plan_type,omitempty"`
 }
 
 type TeamUserUsageStats struct {

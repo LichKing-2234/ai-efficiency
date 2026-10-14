@@ -85,6 +85,27 @@ Pool utilization is not the current user's Used/Quota and is not defined as
 `sum(used) / sum(quota)`. Accounts without valid snapshots are omitted. Member
 usage never calls this personal pool endpoint.
 
+## OAuth Pool Detail
+
+A Group the user can reach may be owned by a Relay Group Mapping. For those
+managed pools only, the pool item also carries:
+
+- `accounts[]` — the pool's OAuth accounts as `id`, `name`, and `plan_type`,
+  listed by Account ID. Non-OAuth account types are excluded because the pool
+  metric counts OAuth accounts only. No per-Account priority is reported: a
+  managed Account relationship is reviewed and stored at priority 1, so a
+  per-Account sequence would not describe a real preference.
+- `members[]` — the emails the Relay reports as subscribed to that Group, sorted
+  and de-duplicated. This is observed membership, so it includes a user the
+  Mappings do not manage.
+
+Every other Access Group — the platform Groups with no Mapping row — keeps both
+arrays empty, so the personal page never lists a several-hundred-person platform
+Group. The directory behind them is a provider-wide read, cached for five
+minutes per Provider and Provider version; a user whose pools are all unmanaged
+never triggers it. Enrichment is best effort, and a directory failure leaves the
+pool metrics intact.
+
 ## Representative Scope
 
 Representative authorization is derived from the current Directory facts

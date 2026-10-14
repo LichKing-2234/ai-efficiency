@@ -218,6 +218,11 @@ same-Platform relationships without treating missing desired state as a removal
 instruction. Explicit `Adopt Current` persists the current Account IDs and
 priorities as desired local state and performs no Relay write.
 
+`Account.PlanType` is the one field read out of the credential blob; every other
+credential and provider-private field stays unrepresented. It is a plan-tier
+label for display only and never infers compatibility, capability, or
+schedulability.
+
 After initialization, saved desired Account order is applied only through
 Confirm. Preview edits are reviewed intent, not an immediate Relay or local
 write. Reconciliation changes only the selected Target relationship and

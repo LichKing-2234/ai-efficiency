@@ -1317,6 +1317,8 @@ describe('DashboardView', () => {
               total_active_oauth_accounts: 4,
               next_reset_at: '2099-07-23T00:00:00Z',
               as_of: '2099-07-15T00:00:00Z',
+              accounts: [{ id: 107, name: 'upstream@example.com', plan_type: 'pro', priority: 1 }],
+              members: ['alice@example.com', 'bob@example.org'],
             }],
           },
           pool_usage_freshness: { as_of: '2099-07-15T00:00:00Z', cache_status: 'uncached', source_status: 'ok' },
@@ -1347,6 +1349,12 @@ describe('DashboardView', () => {
       expect(details.text()).toContain('not your personal Used / Quota')
       expect(details.text()).toContain('Next pool reset')
       expect(details.text()).toContain('Snapshot as of')
+      expect(details.text()).toContain('Upstream accounts')
+      expect(details.text()).toContain('#107 upstream@example.com')
+      expect(details.text()).toContain('Pro 20x')
+      expect(details.text()).toContain('Pool members (2)')
+      expect(details.text()).toContain('alice@example.com')
+      expect(details.text()).toContain('bob@example.org')
     })
     wrapper.unmount()
   })
