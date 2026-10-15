@@ -49,6 +49,7 @@ const zhCN = {
   'nav.directoryOffboarding': '离职处理',
   'nav.relayPlanning': 'Relay 分组规划',
   'nav.opsMonitoring': '运维监控',
+  'nav.relayAccounts': 'Relay 账号配置',
   'nav.adminConsole': '管理后台',
   'nav.adminSection': '管理',
   'nav.languageToggle': 'English',

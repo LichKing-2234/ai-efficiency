@@ -54,6 +54,35 @@ func (h *RelayPlanningHandler) SearchAccounts(c *gin.Context) {
 	pkg.Success(c, result)
 }
 
+func (h *RelayPlanningHandler) ListAccountConfigurations(c *gin.Context) {
+	providerID, _ := strconv.Atoi(strings.TrimSpace(c.Query("provider_id")))
+	baselineAccountID, _ := strconv.ParseInt(strings.TrimSpace(c.Query("baseline_account_id")), 10, 64)
+	result, err := h.service.ListAccountConfigurations(c.Request.Context(), relayplanning.ListAccountConfigurationsRequest{
+		ProviderID:        providerID,
+		Platform:          c.Query("platform"),
+		BaselineAccountID: baselineAccountID,
+	})
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	pkg.Success(c, result)
+}
+
+func (h *RelayPlanningHandler) ApplyAccountConfiguration(c *gin.Context) {
+	var req relayplanning.ApplyAccountConfigurationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid account configuration request")
+		return
+	}
+	result, err := h.service.ApplyAccountConfiguration(c.Request.Context(), req)
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	pkg.Success(c, result)
+}
+
 func (h *RelayPlanningHandler) Preview(c *gin.Context) {
 	var req relayplanning.PreviewRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

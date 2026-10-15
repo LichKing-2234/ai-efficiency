@@ -115,6 +115,12 @@ const router = createRouter({
       meta: { requireAdmin: true },
     },
     {
+      path: '/admin/relay-accounts',
+      name: 'AdminRelayAccounts',
+      component: () => import('@/router/relayAccountsRoute').then(({ loadRelayAccountsView }) => loadRelayAccountsView()),
+      meta: { requireAdmin: true },
+    },
+    {
       path: '/admin/directory/offboarding',
       name: 'DirectoryOffboarding',
       component: () => import('@/views/admin/DirectoryOffboardingView.vue'),
