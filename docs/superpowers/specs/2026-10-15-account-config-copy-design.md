@@ -42,8 +42,11 @@ credential keys such as `model_mapping`, and returns `extra`, to an admin API-ke
 caller — only sensitive keys are stripped — so the data is reachable. What is
 missing is authorization in this repository's own terms.
 
-This is surfaced rather than silently widened. Resolving it is Open Item 1 and
-is a precondition for implementation.
+This is surfaced rather than silently widened. It is resolved by
+`docs/adr/0004-allow-listed-account-configuration.md`, which records AI
+Efficiency's authority over an exhaustive allow-list. The two statements that
+carry the old rule must still be amended to name that allow-list; see Open Item 1
+for why that amendment cannot be made on this branch.
 
 ## Spec Relationship
 
@@ -358,16 +361,22 @@ coverage goes in `backend/internal/relayplanning/service_test.go` and
 
 ## Open Items
 
-1. **Authority decision required — blocking.** This design extends write
-   authority beyond ADR-0002 and reads a second credential-blob field,
-   contradicting the explicit instruction quoted in `Status`. Resolution is
-   either (a) a new ADR recording that AI Efficiency may apply an allow-listed
-   account configuration, that credential material is never stored, and why the
-   write is a key-level merge — together with naming the allow-list in place of
-   the current "every other field stays unrepresented" rule at
-   `2026-08-19-relay-group-mapping-contract.md:112-114` and the "Keep it that
-   way" comment at `backend/internal/relay/sub2api.go:2384-2385` — or (b) a
-   decision not to build this. Do not implement before it is resolved.
+1. **Rule amendment outstanding, and it belongs on another branch.** The
+   authority decision is made:
+   `docs/adr/0004-allow-listed-account-configuration.md`. What remains is naming
+   the allow-list in place of the old rule in two places — the "every other
+   credential and private-configuration field stays unrepresented" sentence in
+   the Relay contract, and the "Keep it that way" comment above the narrowed
+   credential decode in `backend/internal/relay/sub2api.go`.
+
+   Neither edit can be made on this branch. Both lines are **uncommitted
+   additions** on `feat/481-relay-replan-department-migration` and do not exist
+   at this branch's base (`git show HEAD:` does not contain them). That in-flight
+   work is at the same time rewriting the contract's `## Status` to declare an
+   accepted Managed Relationship Recovery amendment. Amending those lines from a
+   HEAD-based worktree would conflict, and would weaken a boundary that branch is
+   in the middle of strengthening. Apply the amendment on top of that branch, and
+   tell its owner that this design depends on the change.
 2. **Batch cap.** Pick the maximum number of target accounts per operation.
 3. **Source authority.** Confirm that an administrator may pick any account as
    the source, or restrict the source to accounts with a marker.
