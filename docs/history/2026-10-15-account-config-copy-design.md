@@ -4,10 +4,12 @@
 
 This document records an approved set of scope decisions for copying a narrow,
 allow-listed subset of account-level configuration from one existing Relay
-(Sub2API) account onto other existing accounts. It is a design record only. It
-does not authorize implementation, a pull request, a schema change, staging, a
-production release, or any Relay mutation. Every one of those requires separate
-authorization, consistent with `docs/adr/0002-managed-relay-relationship-operations.md`.
+(Sub2API) account onto other existing accounts, together with the implementation
+of that copy on `feat/account-config-copy`. It authorizes that implementation. It
+does not authorize a schema change, staging, a production release, or any Relay
+mutation beyond the copy endpoint described here. Every one of those requires
+separate authorization, consistent with
+`docs/adr/0002-managed-relay-relationship-operations.md`.
 
 The decisions below were reached by interview on 2026-10-14/15 and supersede an
 earlier "pre-create dormant account rows" direction, which was abandoned by the
@@ -25,16 +27,16 @@ authority beyond ADR-0002's stated scope.
 The read side is worse than merely unaddressed: it contradicts an explicit
 existing instruction.
 
-- `docs/superpowers/specs/2026-08-19-relay-group-mapping-contract.md:112-114`:
-  "`plan_type` is the one field read out of the credential blob and projected as
-  `Account.PlanType`; **every other credential and private-configuration field
-  stays unrepresented**."
-- `backend/internal/relay/sub2api.go:2384-2388` carries the same rule in code:
+- `docs/contracts/relay-group-mapping.md:221-230` carries the rule: `Account.PlanType`
+  is the one field the relationship read takes out of the credential blob, and
+  every other credential and provider-private field stays unrepresented on that
+  path.
+- `backend/internal/relay/sub2api.go:2370` carries the same rule in code:
   "Only plan_type is read out of the credential blob. Keep it that way; the rest
   of the blob is credential material."
-- The same contract at `:202-207` places account configuration outside Mapping
-  authority, and at `:181-182` requires a fingerprint to never contain "Account
-  private configuration".
+- The same contract places account configuration outside Mapping authority and
+  requires a relationship fingerprint to never contain Account private
+  configuration.
 
 This design reads one further credential-blob field, `credentials.model_mapping`,
 and applies it to other accounts. Sub2API's admin API does return non-sensitive
@@ -44,13 +46,13 @@ missing is authorization in this repository's own terms.
 
 This is surfaced rather than silently widened. It is resolved by
 `docs/adr/0004-allow-listed-account-configuration.md`, which records AI
-Efficiency's authority over an exhaustive allow-list. The two statements that
-carry the old rule must still be amended to name that allow-list; see Open Item 1
-for why that amendment cannot be made on this branch.
+Efficiency's authority over an exhaustive allow-list. The contract statement has
+since been amended to name that allow-list and to scope itself to the
+relationship read; the remaining code comment is tracked in the follow-up issue.
 
 ## Spec Relationship
 
-- Read alongside `docs/superpowers/specs/2026-08-19-relay-group-mapping-contract.md`,
+- Read alongside `docs/contracts/relay-group-mapping.md`,
   which remains the contract for account-to-group relationships. This document
   does not change Mapping authority, drift detection, or the Replan Baseline.
 - `backend/internal/relay/provider.go` remains the only Relay boundary. The new
@@ -125,17 +127,27 @@ beside `AccountRelationshipReader`/`AccountRelationshipUpdater`, implemented by
 // AccountConfigurationReader exposes only the allow-listed account-level
 // settings. It never returns credential material.
 type AccountConfigurationReader interface {
-    ReadAccountConfiguration(ctx context.Context, accountIDs []int64) (map[int64]AccountConfiguration, error)
+    ReadAccountConfigurations(ctx context.Context, platform string) (map[int64]AccountConfiguration, error)
+}
+
+// AccountConfigurationApplier merges only allow-listed keys into the stored
+// configuration, leaving every other key in place.
+type AccountConfigurationApplier interface {
+    ApplyAccountConfiguration(ctx context.Context, accountIDs []int64, config AccountConfiguration) error
 }
 ```
 
-`AccountConfiguration` is a closed struct, not a `map[string]any`. It carries
-exactly the allow-list below plus the target's current `Status` and
-`Schedulable` (read-only display facts). The allow-list is enforced in the
-projection, not at the call site: any upstream key outside it is dropped before
-the value leaves `backend/internal/relay`, so a future upstream field cannot
-silently widen the boundary. Tests must assert that a fixture's
-`refresh_token`/`access_token` values never appear in the projection.
+`AccountConfiguration` carries the allow-list and nothing else. It is produced by
+a narrowed wire decode that declares only allow-listed keys, so credential
+material and every other private configuration field stays unmaterialized rather
+than being decoded and then dropped. The allow-listed `extra` values stay as raw
+JSON, so an unexpected upstream type cannot fail the whole read. A second,
+exhaustive key list gates both the projection and the outgoing payload. The two
+are kept in step by `TestAccountConfigurationAllowListMatchesItsWireStruct`,
+which fails when a field or a list entry is added without the other, and
+`TestReadAccountConfigurationsProjectsOnlyAllowListedKeys` asserts with a
+whole-value diff that a poisoned fixture's tokens, `chatgpt_account_id`,
+`codex_fingerprint_seed`, and runtime telemetry keys cannot appear in the result.
 
 Allow-listed credential keys:
 
@@ -224,20 +236,27 @@ Consequences the implementation must handle:
 
 - One apply call for the selected target IDs, because the merge is a single
   statement.
-- Execution is synchronous. The selection is capped at a small batch size
-  (open item: exact number) rather than introducing a persisted job.
+- Execution is synchronous and capped at 100 targets per copy
+  (`MaxAccountConfigurationCopyTargets`), rather than introducing a persisted
+  job.
 
   This follows the repository's own lighter precedent for a bulk admin
   operation. Mapping Renewal states: "Execution is synchronous and reports
   per-member `succeeded`, `skipped`, or `failed` results in the current dialog.
   It does not create a background job or renewal-history entity"
-  (`docs/superpowers/specs/2026-08-19-relay-group-mapping-contract.md:162-170`).
+  (`docs/contracts/relay-group-mapping.md:546-548`).
   `AdminSubscriptionJob` was evaluated and rejected as overkill: it would cost an
   Ent schema, a migration, three routes, and a polling lifecycle for an operation
   that is one SQL statement per batch, and its `MaxTargets = 500` far exceeds any
   realistic account count.
-- Per-target results are reported independently: applied, verified, not-found
-  (read-back absent), or mismatched. There is no batch-level state machine.
+- Per-target results are reported independently, and each verdict comes from a
+  read-back comparison rather than from the write response, because the endpoint
+  reports success for identifiers that do not exist. A target carries whether it
+  converged plus, when it did not, the reason: the account was absent at
+  read-back, or its configuration still differed from the baseline. There is no
+  batch-level state machine.
+- A baseline that carries no allow-listed configuration is rejected before any
+  write, because the copy would otherwise report success while changing nothing.
 - Failure of one target does not abort the others.
 - **No temporary disable/enable window.** An earlier draft disabled scheduling
   around the write. The atomic merge makes a torn state impossible, and the
@@ -261,18 +280,20 @@ allow-listed configuration matches a chosen source.
 A new admin-only surface, `Relay Account Management`, hosted by a new route and
 view rather than added to `RelayPlanningView`:
 
-- Lists Relay accounts with `name`, `#id`, `platform`, `type`, `status`,
-  `schedulable`, and an indicator of whether the allow-listed configuration is
-  present. Server-paginated and searchable, following the
-  `AdminDepartmentPicker` conventions where a paged picker is needed.
-- One account may be designated as the source. Its allow-listed configuration is
-  shown read-only.
-- Targets are multi-selected. A preview shows, key by key, the source value, the
-  target's current value, and whether they differ.
-- Confirmation states plainly what will be written (the key list), that
-  credential material is not read or written, and that the operation is
-  synchronous and unrecorded.
-- Results are per target.
+- Lists every Relay account on the platform with `name`, `#id`, `platform`,
+  `type`, `status`, and `schedulable`. The list is not paginated in this phase;
+  a platform holds tens of accounts, not thousands.
+- The administrator designates one account as the baseline. Its allow-listed
+  configuration is shown read-only, and every other row reports how it deviates:
+  a match, or the counts and names of missing, differing, and target-only keys.
+- Deviation is the primary reading of the screen, because most accounts already
+  share one configuration. A filter shows only the accounts that deviate, and a
+  matching account is not selectable as a target.
+- Targets are multi-selected from the deviating accounts. Confirmation states
+  plainly how many targets, which baseline, that credential material is neither
+  read nor written, and that the operation is synchronous and leaves no record.
+- Results are per target and come from the server's read-back, and the list
+  refreshes afterwards so the new state is visible.
 - The screen carries no create, delete, enable, disable, or authorization action
   in this phase.
 
@@ -355,30 +376,23 @@ coverage goes in `backend/internal/relayplanning/service_test.go` and
   committed.
 - `backend/internal/relay/provider.go`: the two new capability interfaces, since
   that file is the documented Relay surface (`AGENTS.md:239`).
-- Commit label: this change is a 设计文档更新, not a 当前实现变更
-  (`AGENTS.md:141`). Note that `relay` is not in `AGENTS.md`'s listed commit
-  scopes, although the branch's own history uses `feat(relay):`.
+- Commit label: the design-record commits are 设计文档更新 and the implementation
+  commit is a 当前实现变更 (`AGENTS.md:141`). Note that `relay` is not in
+  `AGENTS.md`'s listed commit scopes, although the branch's own history uses
+  `feat(relay):`.
 
-## Open Items
+## Settled During Implementation
 
-1. **Rule amendment outstanding, and it belongs on another branch.** The
-   authority decision is made:
-   `docs/adr/0004-allow-listed-account-configuration.md`. What remains is naming
-   the allow-list in place of the old rule in two places — the "every other
-   credential and private-configuration field stays unrepresented" sentence in
-   the Relay contract, and the "Keep it that way" comment above the narrowed
-   credential decode in `backend/internal/relay/sub2api.go`.
+Recorded here because these were open in the design interview and are now
+decided; the decisions are current behavior, not remaining work.
 
-   Neither edit can be made on this branch. Both lines are **uncommitted
-   additions** on `feat/481-relay-replan-department-migration` and do not exist
-   at this branch's base (`git show HEAD:` does not contain them). That in-flight
-   work is at the same time rewriting the contract's `## Status` to declare an
-   accepted Managed Relationship Recovery amendment. Amending those lines from a
-   HEAD-based worktree would conflict, and would weaken a boundary that branch is
-   in the middle of strengthening. Apply the amendment on top of that branch, and
-   tell its owner that this design depends on the change.
-2. **Batch cap.** Pick the maximum number of target accounts per operation.
-3. **Source authority.** Confirm that an administrator may pick any account as
-   the source, or restrict the source to accounts with a marker.
-4. **Issue.** No GitHub issue exists for this work; the branch is
-   `feat/account-config-copy` without an issue number.
+- A copy is capped at 100 targets (`MaxAccountConfigurationCopyTargets`).
+- The baseline is an explicitly designated account. Any account may be
+  designated, so no marker or source-authority rule is needed.
+- A baseline carrying no allow-listed configuration is rejected before any write,
+  because the copy would otherwise report success while changing nothing.
+
+Remaining work lives in
+[issue #498](https://github.com/LichKing-2234/ai-efficiency/issues/498): the
+service-layer tests for the read-back verdict, and naming the wire struct in the
+relationship credential comment.
