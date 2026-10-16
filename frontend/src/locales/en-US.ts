@@ -51,6 +51,7 @@ const enUS = {
   'nav.directoryOffboarding': 'Offboarding Review',
   'nav.relayPlanning': 'Relay Planning',
   'nav.opsMonitoring': 'Ops Monitoring',
+  'nav.relayAccounts': 'Relay Accounts',
   'nav.adminConsole': 'Admin Console',
   'nav.adminSection': 'Administration',
   'nav.languageToggle': '中文',

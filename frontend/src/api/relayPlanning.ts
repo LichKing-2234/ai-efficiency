@@ -294,6 +294,51 @@ export interface RelayPlanningUserSearchPage {
   page_size: number
 }
 
+export interface RelayPlanningAccountConfiguration {
+  model_mapping?: Record<string, string>
+  extra?: Record<string, unknown>
+}
+
+export interface RelayPlanningAccountConfigurationDiff {
+  matches: boolean
+  missing_keys?: string[]
+  differing_keys?: string[]
+  additional_keys?: string[]
+}
+
+export interface RelayPlanningAccountConfigurationItem {
+  account: RelayPlanningAccount
+  configuration: RelayPlanningAccountConfiguration
+  diff?: RelayPlanningAccountConfigurationDiff
+}
+
+export interface RelayPlanningAccountConfigurationPage {
+  baseline_account_id: number
+  baseline_configuration?: RelayPlanningAccountConfiguration
+  items: RelayPlanningAccountConfigurationItem[]
+  total: number
+}
+
+export interface RelayPlanningAccountConfigurationApplyResult {
+  account_id: number
+  applied: boolean
+  error?: string
+  diff: RelayPlanningAccountConfigurationDiff
+}
+
+export interface RelayPlanningAccountConfigurationApplyResponse {
+  baseline_account_id: number
+  results: RelayPlanningAccountConfigurationApplyResult[]
+}
+
+export function listRelayAccountConfigurations(params: { provider_id: number; platform: string; baseline_account_id?: number }) {
+  return client.get<ApiResponse<RelayPlanningAccountConfigurationPage>>('/admin/relay-planning/account-configurations', { params })
+}
+
+export function applyRelayAccountConfiguration(data: { provider_id: number; platform: string; baseline_account_id: number; target_account_ids: number[] }) {
+  return client.post<ApiResponse<RelayPlanningAccountConfigurationApplyResponse>>('/admin/relay-planning/account-configurations/apply', data)
+}
+
 export function previewRelayPlan(data: RelayPlanningRequest) {
   return client.post<ApiResponse<RelayPlanningPlan>>('/admin/relay-planning/preview', data)
 }

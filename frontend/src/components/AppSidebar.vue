@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from '@/i18n'
 import {
   Bell,
+  CopyDocument,
   DataLine,
   Document,
   House,
@@ -177,6 +178,16 @@ function handleNavigate() {
         >
           <el-icon class="mr-3"><Monitor /></el-icon>
           {{ t('nav.opsMonitoring') }}
+        </RouterLink>
+
+        <RouterLink
+          to="/admin/relay-accounts"
+          class="mt-1 flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
+          :active-class="activeNavigationClass"
+          @click="handleNavigate"
+        >
+          <el-icon class="mr-3"><CopyDocument /></el-icon>
+          {{ t('nav.relayAccounts') }}
         </RouterLink>
 
         <RouterLink

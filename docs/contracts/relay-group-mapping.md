@@ -218,10 +218,16 @@ same-Platform relationships without treating missing desired state as a removal
 instruction. Explicit `Adopt Current` persists the current Account IDs and
 priorities as desired local state and performs no Relay write.
 
-`Account.PlanType` is the one field read out of the credential blob; every other
-credential and provider-private field stays unrepresented. It is a plan-tier
-label for display only and never infers compatibility, capability, or
-schedulability.
+`Account.PlanType` is the one field the relationship read takes out of the
+credential blob; every other credential and provider-private field stays
+unrepresented on that path. It is a plan-tier label for display only and never
+infers compatibility, capability, or schedulability.
+
+The allow-listed account-configuration read is a separate surface that does not
+widen this one. It decodes its own narrowed payload carrying only
+`credentials.model_mapping` and the eleven allow-listed `extra` keys, and
+credential material stays unrepresented there as well;
+`docs/adr/0004-allow-listed-account-configuration.md` records that grant.
 
 After initialization, saved desired Account order is applied only through
 Confirm. Preview edits are reviewed intent, not an immediate Relay or local
