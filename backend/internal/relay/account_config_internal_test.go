@@ -27,3 +27,19 @@ func TestAccountConfigurationAllowListMatchesItsWireStruct(t *testing.T) {
 		}
 	}
 }
+
+// TestAccountConfigurationDefaultsStayInsideTheAllowList keeps a documented
+// provider default from surviving the removal of the key it describes. A default
+// for a key that may no longer leave this package would compare nothing, so the
+// normalization would silently stop applying.
+func TestAccountConfigurationDefaultsStayInsideTheAllowList(t *testing.T) {
+	allowed := make(map[string]struct{}, len(accountConfigurationExtraKeys))
+	for _, key := range accountConfigurationExtraKeys {
+		allowed[key] = struct{}{}
+	}
+	for key := range accountConfigurationExtraDefaults {
+		if _, ok := allowed[key]; !ok {
+			t.Fatalf("default declared for %q, which is not in the allow-list", key)
+		}
+	}
+}

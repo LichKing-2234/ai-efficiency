@@ -120,4 +120,57 @@ func TestCompareAccountConfigurationClassifiesEveryDifference(t *testing.T) {
 			t.Fatalf("Matches = false, want true; diff = %+v", got)
 		}
 	})
+
+	t.Run("an absent key the provider defaults to the baseline value is not missing", func(t *testing.T) {
+		got := relay.CompareAccountConfiguration(
+			relay.AccountConfiguration{Extra: map[string]any{
+				"privacy_mode":                   "training_off",
+				"auto_reset_credit_enabled":      false,
+				"auto_reset_credit_5h_threshold": float64(1),
+				"auto_reset_credit_7d_threshold": float64(1),
+			}},
+			relay.AccountConfiguration{Extra: map[string]any{"privacy_mode": "training_off"}},
+		)
+		if !got.Matches {
+			t.Fatalf("Matches = false, want true; an absent key the provider defaults to the same value is not a difference; diff = %+v", got)
+		}
+	})
+
+	t.Run("an absent key whose baseline value is not the provider default is still missing", func(t *testing.T) {
+		got := relay.CompareAccountConfiguration(
+			relay.AccountConfiguration{Extra: map[string]any{"auto_reset_credit_enabled": true}},
+			relay.AccountConfiguration{Extra: map[string]any{}},
+		)
+		want := []string{"extra.auto_reset_credit_enabled"}
+		if diff := cmp.Diff(want, got.MissingKeys); diff != "" {
+			t.Fatalf("missing keys mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("a target-only key the provider defaults to is not additional", func(t *testing.T) {
+		got := relay.CompareAccountConfiguration(
+			relay.AccountConfiguration{Extra: map[string]any{"privacy_mode": "training_off"}},
+			relay.AccountConfiguration{Extra: map[string]any{
+				"privacy_mode":                   "training_off",
+				"auto_reset_credit_5h_threshold": float64(1),
+			}},
+		)
+		if !got.Matches {
+			t.Fatalf("Matches = false, want true; a target storing the provider default is not a difference; diff = %+v", got)
+		}
+	})
+
+	t.Run("a target-only key that differs from the provider default is additional", func(t *testing.T) {
+		got := relay.CompareAccountConfiguration(
+			relay.AccountConfiguration{Extra: map[string]any{"privacy_mode": "training_off"}},
+			relay.AccountConfiguration{Extra: map[string]any{
+				"privacy_mode":                   "training_off",
+				"auto_reset_credit_5h_threshold": float64(5),
+			}},
+		)
+		want := []string{"extra.auto_reset_credit_5h_threshold"}
+		if diff := cmp.Diff(want, got.AdditionalKeys); diff != "" {
+			t.Fatalf("additional keys mismatch (-want +got):\n%s", diff)
+		}
+	})
 }

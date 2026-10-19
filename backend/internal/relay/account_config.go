@@ -59,6 +59,29 @@ var accountConfigurationExtraKeys = []string{
 	"openai_compact_mode",
 }
 
+// accountConfigurationExtraDefaults records the effective value Sub2API uses for
+// an allow-listed `extra` key the account does not carry. Sub2API's own account
+// form reads these three keys as "enabled only when explicitly true" and as a
+// percentage of the stored threshold, and it persists them only for OAuth
+// accounts, so an account that never carried them behaves exactly like one that
+// stores false/1/1. Comparing raw presence would report such an account as
+// missing configuration that no copy could ever converge, and would make a copy
+// write values the provider itself treats as their absence.
+//
+// Values are float64 because they reach this package through encoding/json.
+var accountConfigurationExtraDefaults = map[string]any{
+	"auto_reset_credit_enabled":      false,
+	"auto_reset_credit_5h_threshold": float64(1),
+	"auto_reset_credit_7d_threshold": float64(1),
+}
+
+// extraDefault returns the provider default for an allow-listed key, if the
+// provider documents one.
+func extraDefault(key string) (any, bool) {
+	value, ok := accountConfigurationExtraDefaults[key]
+	return value, ok
+}
+
 // CompareAccountConfiguration compares one target against a baseline. Keys are
 // reported as "model_mapping" and "extra.<key>", sorted, so callers can show and
 // store them directly.
@@ -81,20 +104,32 @@ func CompareAccountConfiguration(baseline, target AccountConfiguration) AccountC
 
 	for key, want := range baseline.Extra {
 		got, present := target.Extra[key]
-		switch {
-		case !present:
+		if !present {
+			// An absent key the provider defaults to the baseline's value is not a
+			// difference: the account already behaves like the baseline.
+			if def, ok := extraDefault(key); ok && reflect.DeepEqual(want, def) {
+				continue
+			}
 			diff.MissingKeys = append(diff.MissingKeys, accountExtraKeyPrefix+key)
-		case !reflect.DeepEqual(want, got):
+			continue
+		}
+		if !reflect.DeepEqual(want, got) {
 			diff.DifferingKeys = append(diff.DifferingKeys, accountExtraKeyPrefix+key)
 		}
 	}
 
 	// A key the baseline does not carry is never copied, so a target that has one
-	// cannot converge by copying alone. Report it instead of reporting success.
-	for key := range target.Extra {
-		if _, present := baseline.Extra[key]; !present {
-			diff.AdditionalKeys = append(diff.AdditionalKeys, accountExtraKeyPrefix+key)
+	// cannot converge by copying alone. Report it instead of reporting success,
+	// unless it is simply storing the provider default the baseline already
+	// implies by not carrying it.
+	for key, got := range target.Extra {
+		if _, present := baseline.Extra[key]; present {
+			continue
 		}
+		if def, ok := extraDefault(key); ok && reflect.DeepEqual(def, got) {
+			continue
+		}
+		diff.AdditionalKeys = append(diff.AdditionalKeys, accountExtraKeyPrefix+key)
 	}
 
 	sort.Strings(diff.MissingKeys)
