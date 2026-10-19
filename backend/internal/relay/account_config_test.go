@@ -173,4 +173,48 @@ func TestCompareAccountConfigurationClassifiesEveryDifference(t *testing.T) {
 			t.Fatalf("additional keys mismatch (-want +got):\n%s", diff)
 		}
 	})
+
+	t.Run("a key the provider materialises at its own default is not a difference", func(t *testing.T) {
+		// The baseline never carried openai_compact_mode. Applying a copy writes
+		// extra, and Sub2API's bulk update then stores openai_compact_mode="auto"
+		// on the target, so a raw presence comparison would fail the very copy that
+		// converged it.
+		got := relay.CompareAccountConfiguration(
+			relay.AccountConfiguration{Extra: map[string]any{"privacy_mode": "training_off"}},
+			relay.AccountConfiguration{Extra: map[string]any{
+				"privacy_mode":        "training_off",
+				"openai_compact_mode": "auto",
+			}},
+		)
+		if !got.Matches {
+			t.Fatalf("Matches = false, want true; a stored provider default is not a difference; diff = %+v", got)
+		}
+	})
+
+	t.Run("a target-only compact mode the provider does not default to is additional", func(t *testing.T) {
+		got := relay.CompareAccountConfiguration(
+			relay.AccountConfiguration{Extra: map[string]any{"privacy_mode": "training_off"}},
+			relay.AccountConfiguration{Extra: map[string]any{
+				"privacy_mode":        "training_off",
+				"openai_compact_mode": "force_on",
+			}},
+		)
+		want := []string{"extra.openai_compact_mode"}
+		if diff := cmp.Diff(want, got.AdditionalKeys); diff != "" {
+			t.Fatalf("additional keys mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("a baseline compact mode at the provider default is not missing", func(t *testing.T) {
+		got := relay.CompareAccountConfiguration(
+			relay.AccountConfiguration{Extra: map[string]any{
+				"privacy_mode":        "training_off",
+				"openai_compact_mode": "auto",
+			}},
+			relay.AccountConfiguration{Extra: map[string]any{"privacy_mode": "training_off"}},
+		)
+		if !got.Matches {
+			t.Fatalf("Matches = false, want true; an absent key the provider defaults to the same value is not a difference; diff = %+v", got)
+		}
+	})
 }

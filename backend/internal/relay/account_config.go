@@ -60,19 +60,26 @@ var accountConfigurationExtraKeys = []string{
 }
 
 // accountConfigurationExtraDefaults records the effective value Sub2API uses for
-// an allow-listed `extra` key the account does not carry. Sub2API's own account
-// form reads these three keys as "enabled only when explicitly true" and as a
-// percentage of the stored threshold, and it persists them only for OAuth
-// accounts, so an account that never carried them behaves exactly like one that
-// stores false/1/1. Comparing raw presence would report such an account as
-// missing configuration that no copy could ever converge, and would make a copy
-// write values the provider itself treats as their absence.
+// an allow-listed `extra` key the account does not carry.
+//
+// The auto-reset trio is read as "enabled only when explicitly true" with the
+// thresholds stored as a percentage, and Sub2API persists it only for OAuth
+// accounts, so an account that never carried it behaves exactly like one that
+// stores false/1/1. openai_compact_mode defaults to "auto": Sub2API's own account
+// form deletes the key whenever the value is that default, while its bulk update
+// materialises "auto" for OAuth accounts, so a copy both reads accounts that omit
+// it and produces accounts that carry it.
+//
+// Comparing raw presence would report either shape as missing or additional
+// configuration that no copy could ever converge, and would make a copy write
+// values the provider itself treats as their absence.
 //
 // Values are float64 because they reach this package through encoding/json.
 var accountConfigurationExtraDefaults = map[string]any{
 	"auto_reset_credit_enabled":      false,
 	"auto_reset_credit_5h_threshold": float64(1),
 	"auto_reset_credit_7d_threshold": float64(1),
+	"openai_compact_mode":            "auto",
 }
 
 // extraDefault returns the provider default for an allow-listed key, if the
