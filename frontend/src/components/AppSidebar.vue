@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from '@/i18n'
 import {
   Bell,
+  CopyDocument,
   DataLine,
   Document,
   House,
@@ -160,8 +161,32 @@ function handleNavigate() {
         </RouterLink>
 
         <RouterLink
-          to="/admin/relay-planning"
+          to="/repos"
           class="mt-1 flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
+          :active-class="activeNavigationClass"
+          @click="handleNavigate"
+        >
+          <el-icon class="mr-3"><Document /></el-icon>
+          {{ t('nav.codeRepositories') }}
+        </RouterLink>
+
+        <RouterLink
+          to="/settings"
+          class="mt-1 flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
+          :active-class="activeNavigationClass"
+          @click="handleNavigate"
+        >
+          <el-icon class="mr-3"><Setting /></el-icon>
+          {{ t('nav.adminConsole') }}
+        </RouterLink>
+
+        <div data-testid="nav-relay-account-management" class="px-3 pb-2 pt-4 text-[11px] font-semibold uppercase text-gray-500">
+          {{ t('nav.relayAccountManagementSection') }}
+        </div>
+
+        <RouterLink
+          to="/admin/relay-planning"
+          class="flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
           :active-class="activeNavigationClass"
           @click="handleNavigate"
         >
@@ -180,23 +205,13 @@ function handleNavigate() {
         </RouterLink>
 
         <RouterLink
-          to="/repos"
+          to="/admin/relay-accounts"
           class="mt-1 flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
           :active-class="activeNavigationClass"
           @click="handleNavigate"
         >
-          <el-icon class="mr-3"><Document /></el-icon>
-          {{ t('nav.codeRepositories') }}
-        </RouterLink>
-
-        <RouterLink
-          to="/settings"
-          class="mt-1 flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
-          :active-class="activeNavigationClass"
-          @click="handleNavigate"
-        >
-          <el-icon class="mr-3"><Setting /></el-icon>
-          {{ t('nav.adminConsole') }}
+          <el-icon class="mr-3"><CopyDocument /></el-icon>
+          {{ t('nav.relayAccounts') }}
         </RouterLink>
       </div>
     </nav>

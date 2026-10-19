@@ -529,6 +529,8 @@ func setupRouter(
 		{
 			relayPlanningGroup.GET("/users", relayPlanningHandler.SearchUsers)
 			relayPlanningGroup.GET("/accounts", relayPlanningHandler.SearchAccounts)
+			relayPlanningGroup.GET("/account-configurations", relayPlanningHandler.ListAccountConfigurations)
+			relayPlanningGroup.POST("/account-configurations/apply", relayPlanningHandler.ApplyAccountConfiguration)
 			relayPlanningGroup.POST("/preview", relayPlanningHandler.Preview)
 			relayPlanningGroup.POST("/execute", relayPlanningHandler.Execute)
 			relayPlanningGroup.GET("/mappings", relayPlanningHandler.ListMappings)

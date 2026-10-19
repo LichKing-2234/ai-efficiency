@@ -35,6 +35,7 @@ function createTestRouter(initialPath = '/') {
       { path: '/admin/directory/offboarding', component: { template: '<div>Offboarding</div>' } },
       { path: '/admin/relay-planning', component: { template: '<div>Relay Planning</div>' } },
       { path: '/admin/ops-monitoring', component: { template: '<div>Ops Monitoring</div>' } },
+      { path: '/admin/relay-accounts', component: { template: '<div>Relay Accounts</div>' } },
       { path: '/settings', component: { template: '<div>Settings</div>' } },
       { path: '/login', component: { template: '<div>Login</div>' } },
     ],
@@ -313,7 +314,7 @@ describe('AppSidebar', () => {
     const links = wrapper.findAll('a')
     const offboardingLink = links.find((l) => l.text() === 'Offboarding Review')
     const relayPlanningLink = links.find((l) => l.text() === 'Relay Planning')
-    const opsMonitoringLink = links.find((l) => l.text() === 'Ops Monitoring')
+    const opsMonitoringLink = links.find((l) => l.text() === 'Relay Monitoring')
     expect(offboardingLink?.attributes('href')).toBe('/admin/directory/offboarding')
     expect(relayPlanningLink?.attributes('href')).toBe('/admin/relay-planning')
     expect(opsMonitoringLink?.attributes('href')).toBe('/admin/ops-monitoring')
@@ -536,6 +537,49 @@ describe('AppSidebar', () => {
     const settingsLink = wrapper.findAll('a').find((a) => a.text() === 'Admin Console')
     expect(settingsLink).toBeTruthy()
     expect(settingsLink!.classes()).toContain('bg-gray-800')
+  })
+
+  it('groups the Relay account surfaces under one heading', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const { useAuthStore } = await import('@/stores/auth')
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'relay_sso' }
+
+    const wrapper = mount(AppSidebar, {
+      global: { plugins: [pinia, router] },
+    })
+
+    const heading = wrapper.get('[data-testid="nav-relay-account-management"]')
+    expect(heading.text()).toBe('Relay Management')
+
+    const following = Array.from((wrapper.element as HTMLElement).querySelectorAll('a')).filter(
+      (link) => heading.element.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+    expect(following.map((link) => link.textContent?.trim())).toEqual([
+      'Relay Planning',
+      'Relay Monitoring',
+      'Relay Accounts',
+    ])
+    expect(following.map((link) => link.getAttribute('href'))).toEqual([
+      '/admin/relay-planning',
+      '/admin/ops-monitoring',
+      '/admin/relay-accounts',
+    ])
+
+    setLocale('zh-CN')
+    await flushPromises()
+    expect(heading.text()).toBe('Relay 管理')
+    expect(following.map((link) => link.textContent?.trim())).toEqual([
+      'Relay 分组规划',
+      'Relay 监控',
+      'Relay 账号配置',
+    ])
   })
 
   it('switches navigation labels to Chinese for review', async () => {

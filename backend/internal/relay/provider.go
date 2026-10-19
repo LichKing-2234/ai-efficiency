@@ -113,6 +113,20 @@ type AccountRelationshipUpdater interface {
 	SetAccountGroupRelationship(ctx context.Context, accountID, groupID int64, expected []AccountGroupRelationship, desiredPriority *int) error
 }
 
+// AccountConfigurationReader exposes the allow-listed account configuration for
+// one platform. It never returns credential material; see
+// docs/adr/0004-allow-listed-account-configuration.md.
+type AccountConfigurationReader interface {
+	ReadAccountConfigurations(ctx context.Context, platform string) (map[int64]AccountConfiguration, error)
+}
+
+// AccountConfigurationApplier merges an allow-listed account configuration onto
+// existing accounts. The upstream write is a key-level merge, so it can neither
+// carry nor overwrite credential material.
+type AccountConfigurationApplier interface {
+	ApplyAccountConfiguration(ctx context.Context, accountIDs []int64, config AccountConfiguration) error
+}
+
 // GroupDuplicator creates an inactive copy of a source group. The operation
 // key is passed through to the upstream idempotency contract.
 type GroupDuplicator interface {
