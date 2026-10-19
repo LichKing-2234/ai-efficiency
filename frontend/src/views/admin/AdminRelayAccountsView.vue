@@ -27,6 +27,8 @@ const baselineAccountID = ref(0)
 const selectedTargetIDs = ref<Set<number>>(new Set())
 const expandedDiffIDs = ref<Set<number>>(new Set())
 const onlyDeviating = ref(false)
+const accountTypeFilter = ref('')
+const groupFilter = ref('')
 const applyDialogOpen = ref(false)
 const applyResults = ref<RelayPlanningAccountConfigurationApplyResult[] | null>(null)
 
@@ -38,8 +40,21 @@ const form = reactive({
 const provider = computed(() => providers.value.find((item) => item.id === form.provider_id))
 const platforms = computed(() => Array.from(new Set((provider.value?.groups ?? []).map((group) => group.platform).filter(Boolean))))
 const hasBaseline = computed(() => baselineAccountID.value > 0)
-const deviatingItems = computed(() => items.value.filter(isDeviating))
-const visibleItems = computed(() => (hasBaseline.value && onlyDeviating.value ? deviatingItems.value : items.value))
+// The type and group filters narrow the working set, not just the rendering: the
+// deviation count, the select-all action, and the copy targets all follow the
+// filter so an administrator can work one account type or one group at a time.
+const scopedItems = computed(() => items.value.filter((item) => {
+  if (accountTypeFilter.value && item.account.type !== accountTypeFilter.value) return false
+  if (groupFilter.value) {
+    const groups = item.account.group_relationships ?? []
+    if (!groups.some((relationship) => String(relationship.group_id) === groupFilter.value)) return false
+  }
+  return true
+}))
+const accountTypeOptions = computed(() => Array.from(new Set(items.value.map((item) => item.account.type).filter(Boolean))).sort())
+const groupOptions = computed(() => (provider.value?.groups ?? []).filter((group) => !form.platform || group.platform === form.platform))
+const deviatingItems = computed(() => scopedItems.value.filter(isDeviating))
+const visibleItems = computed(() => (hasBaseline.value && onlyDeviating.value ? deviatingItems.value : scopedItems.value))
 const baselineItem = computed(() => items.value.find((item) => item.account.id === baselineAccountID.value) ?? null)
 const baselineLabel = computed(() => {
   if (!hasBaseline.value) return t('relayPlanning.noBaseline')
@@ -114,6 +129,8 @@ function resetView() {
   baselineAccountID.value = 0
   selectedTargetIDs.value = new Set()
   expandedDiffIDs.value = new Set()
+  accountTypeFilter.value = ''
+  groupFilter.value = ''
   items.value = []
   applyResults.value = null
   error.value = ''
@@ -326,6 +343,16 @@ onMounted(async () => {
         <div class="rounded-lg border border-slate-200 bg-white p-4">
           <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+              <div class="flex flex-wrap items-center gap-2">
+                <el-select v-model="accountTypeFilter" data-testid="account-type-filter" size="small" class="w-36" @change="pruneSelection">
+                  <el-option :label="t('relayPlanning.allAccountTypes')" value="" />
+                  <el-option v-for="type in accountTypeOptions" :key="type" :label="type" :value="type" />
+                </el-select>
+                <el-select v-model="groupFilter" data-testid="group-filter" size="small" class="w-44" @change="pruneSelection">
+                  <el-option :label="t('relayPlanning.allGroups')" value="" />
+                  <el-option v-for="group in groupOptions" :key="group.group_id" :label="group.group_name" :value="String(group.group_id)" />
+                </el-select>
+              </div>
               <el-checkbox data-testid="only-deviating-toggle" :model-value="onlyDeviating" :disabled="!hasBaseline" @change="(value) => (onlyDeviating = value === true)">{{ t('relayPlanning.onlyDeviating') }}</el-checkbox>
               <el-checkbox
                 v-if="hasBaseline"

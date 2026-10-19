@@ -13,10 +13,10 @@ vi.mock('@/api/relayPlanning', () => ({
 }))
 
 const accounts = [
-  { id: 11, name: 'Account Alpha', platform: 'openai', type: 'oauth', status: 'active', schedulable: true },
-  { id: 12, name: 'Account Beta', platform: 'openai', type: 'apikey', status: 'active', schedulable: false },
-  { id: 13, name: 'Account Gamma', platform: 'openai', type: 'oauth', status: 'disabled', schedulable: true },
-  { id: 14, name: 'Account Delta', platform: 'openai', type: 'apikey', status: 'active', schedulable: true },
+  { id: 11, name: 'Account Alpha', platform: 'openai', type: 'oauth', status: 'active', schedulable: true, group_relationships: [{ group_id: 42, priority: 0 }] },
+  { id: 12, name: 'Account Beta', platform: 'openai', type: 'apikey', status: 'active', schedulable: false, group_relationships: [{ group_id: 43, priority: 0 }] },
+  { id: 13, name: 'Account Gamma', platform: 'openai', type: 'oauth', status: 'disabled', schedulable: true, group_relationships: [{ group_id: 42, priority: 1 }] },
+  { id: 14, name: 'Account Delta', platform: 'openai', type: 'apikey', status: 'active', schedulable: true, group_relationships: [] },
 ]
 
 const baselinePage = {
@@ -182,6 +182,33 @@ describe('AdminRelayAccountsView', () => {
     expect(wrapper.find('[data-testid="account-row-11"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="account-row-13"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="account-row-12"]').exists()).toBe(true)
+  })
+
+  it('filters the table by account type and narrows the deviation count with it', async () => {
+    const { wrapper } = await mountView()
+    await choosePlatformAndBaseline(wrapper)
+
+    await wrapper.get('[data-testid="account-type-filter"]').setValue('apikey')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="account-row-11"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="account-row-12"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="account-row-13"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="account-row-14"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="deviation-summary"]').text()).toContain('2 account(s) deviate from the baseline')
+  })
+
+  it('filters the table by group membership', async () => {
+    const { wrapper } = await mountView()
+    await choosePlatformAndBaseline(wrapper)
+
+    await wrapper.get('[data-testid="group-filter"]').setValue('42')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="account-row-11"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="account-row-12"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="account-row-13"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="account-row-14"]').exists()).toBe(false)
   })
 
   it('requires the confirmation dialog before calling the apply API', async () => {
