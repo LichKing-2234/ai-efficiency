@@ -54,6 +54,7 @@ const enUS = {
   'nav.relayAccounts': 'Relay Accounts',
   'nav.adminConsole': 'Admin Console',
   'nav.adminSection': 'Administration',
+  'nav.relayAccountManagementSection': 'Relay Account Management',
   'nav.languageToggle': '中文',
   'nav.logout': 'Logout',
   'nav.menu': 'Menu',

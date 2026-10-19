@@ -52,6 +52,7 @@ const zhCN = {
   'nav.relayAccounts': 'Relay 账号配置',
   'nav.adminConsole': '管理后台',
   'nav.adminSection': '管理',
+  'nav.relayAccountManagementSection': 'Relay 账号管理',
   'nav.languageToggle': 'English',
   'nav.logout': '退出',
   'nav.menu': '菜单',
