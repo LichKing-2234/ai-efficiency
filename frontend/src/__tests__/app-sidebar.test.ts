@@ -314,7 +314,7 @@ describe('AppSidebar', () => {
     const links = wrapper.findAll('a')
     const offboardingLink = links.find((l) => l.text() === 'Offboarding Review')
     const relayPlanningLink = links.find((l) => l.text() === 'Relay Planning')
-    const opsMonitoringLink = links.find((l) => l.text() === 'Ops Monitoring')
+    const opsMonitoringLink = links.find((l) => l.text() === 'Relay Monitoring')
     expect(offboardingLink?.attributes('href')).toBe('/admin/directory/offboarding')
     expect(relayPlanningLink?.attributes('href')).toBe('/admin/relay-planning')
     expect(opsMonitoringLink?.attributes('href')).toBe('/admin/ops-monitoring')
@@ -556,20 +556,29 @@ describe('AppSidebar', () => {
     })
 
     const heading = wrapper.get('[data-testid="nav-relay-account-management"]')
-    expect(heading.text()).toBe('Relay Account Management')
+    expect(heading.text()).toBe('Relay Management')
 
     const following = Array.from((wrapper.element as HTMLElement).querySelectorAll('a')).filter(
       (link) => heading.element.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING,
     )
     expect(following.map((link) => link.textContent?.trim())).toEqual([
       'Relay Planning',
-      'Ops Monitoring',
+      'Relay Monitoring',
       'Relay Accounts',
     ])
     expect(following.map((link) => link.getAttribute('href'))).toEqual([
       '/admin/relay-planning',
       '/admin/ops-monitoring',
       '/admin/relay-accounts',
+    ])
+
+    setLocale('zh-CN')
+    await flushPromises()
+    expect(heading.text()).toBe('Relay 管理')
+    expect(following.map((link) => link.textContent?.trim())).toEqual([
+      'Relay 分组规划',
+      'Relay 监控',
+      'Relay 账号配置',
     ])
   })
 
