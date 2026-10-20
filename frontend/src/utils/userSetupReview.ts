@@ -350,7 +350,7 @@ export function buildManualConfigSnippets(input: ManualConfigSnippetInput): Manu
     return buildAgentManualConfigSnippets(input)
   }
   const platform = input.platform.trim().toLowerCase()
-  if (platform === 'openai') {
+  if (isOpenAIProtocolPlatform(platform)) {
     return [
       {
         key: 'codex-config',
@@ -401,9 +401,15 @@ export function buildManualConfigSnippets(input: ManualConfigSnippetInput): Manu
   return []
 }
 
+// DeepSeek groups are served through the OpenAI gateway, so they follow the
+// OpenAI path for every tool-configuration surface.
+function isOpenAIProtocolPlatform(normalizedPlatform: string): boolean {
+  return normalizedPlatform === 'openai' || normalizedPlatform === 'deepseek'
+}
+
 export function resolveCCSwitchAppForPlatform(platform: string): CCSwitchApp | null {
   const normalized = platform.trim().toLowerCase()
-  if (normalized === 'openai') return 'codex'
+  if (isOpenAIProtocolPlatform(normalized)) return 'codex'
   if (normalized === 'anthropic') return 'claude'
   if (normalized === 'gemini') return 'gemini'
   return null
@@ -411,7 +417,7 @@ export function resolveCCSwitchAppForPlatform(platform: string): CCSwitchApp | n
 
 export function resolveDiscoverToolForPlatform(platform: string): DiscoverTool | null {
   const normalized = platform.trim().toLowerCase()
-  if (normalized === 'openai') return 'codex'
+  if (isOpenAIProtocolPlatform(normalized)) return 'codex'
   if (normalized === 'anthropic') return 'claude'
   if (normalized === 'gemini') return 'gemini'
   return null

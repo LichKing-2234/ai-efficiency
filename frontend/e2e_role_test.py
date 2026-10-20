@@ -1791,6 +1791,79 @@ def test_mobile_navigation_drawer(page):
     clear_auth_routes(page)
 
 
+def test_deepseek_group_tool_configuration(page):
+    """Test: a DeepSeek group follows the OpenAI tool-configuration path.
+
+    DeepSeek is served through the Relay's OpenAI gateway, so an ordinary
+    DeepSeek group must offer the same three configuration methods as an OpenAI
+    group, keep CC Switch as the recommended one, and import to Codex.
+    """
+    print("\n🧪 DeepSeek Group — Tool Configuration")
+    do_dev_login(page, role="user")
+
+    # Same provider and group IDs as the shared fixture, so the existing
+    # credential and model mocks still apply; only the platform differs.
+    page.route("**/api/v1/user/providers", lambda route: route.fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps({
+            "code": 0,
+            "data": {
+                "providers": [{
+                    "id": 2,
+                    "name": "example",
+                    "display_name": "Example AI",
+                    "base_url": "https://api.example.com",
+                    "default_model": "deepseek-chat",
+                    "is_primary": True,
+                    "groups": [{
+                        "group_id": "group-alpha",
+                        "group_name": "Group Alpha",
+                        "platform": "deepseek",
+                        "credential": {"state": "missing"},
+                    }],
+                }],
+                "message": "",
+            },
+        }),
+    ))
+
+    page.goto(f"{BASE}/user")
+    page.wait_for_load_state("networkidle")
+
+    page.locator("[data-testid='onboarding-step-button-0']").click()
+    page.locator("[data-testid='group-group-alpha']").wait_for(state="visible")
+    page.locator("[data-testid='primary-onboarding-action']").click()
+    page.locator("[data-testid='onboarding-step-button-2']:not([disabled])").wait_for(state="visible")
+    page.locator("[data-testid='onboarding-step-button-2']").click()
+
+    methods = page.locator("[data-testid='configuration-methods']")
+    methods.wait_for(state="visible")
+    page.wait_for_timeout(250)
+
+    card_count = methods.locator(".el-radio[data-testid^='config-method-']").count()
+    report("DeepSeek group offers all three configuration methods",
+           card_count == 3,
+           f"Configuration method card count: {card_count}")
+
+    cc_switch_method = methods.locator("[data-testid='config-method-ccswitch']")
+    cc_switch_visible = cc_switch_method.count() == 1 and cc_switch_method.is_visible()
+    report("CC Switch method card is offered for a DeepSeek group", cc_switch_visible)
+    if cc_switch_visible:
+        report("CC Switch is the recommended method for a DeepSeek group",
+               "is-checked" in (cc_switch_method.get_attribute("class") or ""),
+               f"Class: {cc_switch_method.get_attribute('class')}")
+
+        import_codex = page.locator("[data-testid='ccswitch-import-codex']")
+        href = import_codex.get_attribute("href") if import_codex.count() == 1 else None
+        report("DeepSeek group imports to Codex",
+               import_codex.count() == 1 and bool(href) and href.startswith("ccswitch://v1/import?"),
+               f"Href: {href}")
+
+    screenshot(page, "deepseek_group_tool_configuration")
+    clear_auth_routes(page)
+
+
 def run_all():
     global passed, failed
 
@@ -1808,6 +1881,7 @@ def run_all():
             ("User Role /admin/users Blocked", lambda: test_user_role_admin_users_blocked(page)),
             ("User Role Repositories Blocked", lambda: test_user_role_repositories_blocked(page)),
             ("Activity Route and Layout", lambda: test_activity_route_layout_and_responsive_style(page)),
+            ("DeepSeek Group Tool Configuration", lambda: test_deepseek_group_tool_configuration(page)),
             ("Mobile Navigation Drawer", lambda: test_mobile_navigation_drawer(page)),
         ]
 
