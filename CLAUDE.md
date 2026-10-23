@@ -9,7 +9,7 @@
 - Unimplemented target state and work status: GitHub Issues
 - Independent architectural rationale: `docs/adr/` when warranted
 - Domain vocabulary: tracked root `CONTEXT.md` when present and relevant
-- Implemented account custodian console (email-derived ownership; two async gated mutations; switch `relay.owner_account_mutations_enabled` / `AE_RELAY_OWNER_ACCOUNT_MUTATIONS_ENABLED`, default off): `docs/superpowers/specs/2026-10-23-account-custodian-console-design.md`
+- Implemented account custodian console (email-derived ownership; two async gated mutations; switch `relay.owner_account_mutations_enabled` / `AE_RELAY_OWNER_ACCOUNT_MUTATIONS_ENABLED`, default off): `docs/contracts/owner-account-console.md`
 - Platform Sessions and the local session proxy are retired
 - Default verification:
   - `cd backend && go test ./...`

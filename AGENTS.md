@@ -38,7 +38,7 @@ AI Efficiency Platform（AI 效能平台）是一个独立于 `sub2api` 的系�
 - 修改 Team Usage prewarm worker、`backend/cmd/prewarmer`、prewarm Redis manifest/generation 或 backend fallback：`docs/contracts/team-usage-prewarm.md`
 - 修改 attribution、checkpoint、hooks 或 collector：`docs/contracts/attribution-v2.md`
 - 修改 Relay Planning、Group mapping、Replan 或 Account 关系：`docs/contracts/relay-group-mapping.md`
-- 修改号主账号控制台、邮箱派生归属或 owner 操作：`docs/architecture.md` 的 Owner Account Console 与 `docs/superpowers/specs/2026-10-23-account-custodian-console-design.md` 的 Implementation notes
+- 修改号主账号控制台、邮箱派生归属或 owner 操作：`docs/contracts/owner-account-console.md`
 - 修改分页、游标、列表响应式或集合导航：`docs/contracts/collection-navigation.md`
 
 执行要求：
@@ -219,7 +219,7 @@ chore(deploy): update Docker Compose configuration
 - `docs/contracts/README.md` — 当前行为合同索引与读取触发条件
 - `docs/history/README.md` — 非权威历史理由与证据索引
 - `docs/ui-guidelines.md` — 当前前端组件库、响应式布局、图表和体积预算合同
-- `docs/superpowers/specs/2026-10-23-account-custodian-console-design.md` — 已实现的「我的账号」号主控制台：邮箱派生归属（`credentials.email` 或 email 形状 `name` 任一匹配）、只读账号事实、异步 owner 操作与审计；mutation 由 `relay.owner_account_mutations_enabled`（`AE_RELAY_OWNER_ACCOUNT_MUTATIONS_ENABLED`，默认关闭）控制
+- `docs/contracts/owner-account-console.md` — 已实现的「我的账号」号主控制台当前合同：邮箱派生归属（`credentials.email` 或 email 形状 `name` 任一匹配）、只读账号事实、异步 owner 操作、门禁与审计；mutation 由 `relay.owner_account_mutations_enabled`（`AE_RELAY_OWNER_ACCOUNT_MUTATIONS_ENABLED`，默认关闭）控制
 - `backend/internal/scm/provider.go` — SCM Provider 统一接口定义
 - `backend/internal/relay/provider.go` — relay Provider 统一接口定义
 - `backend/ent/schema/` — 所有数据模型定义
