@@ -35,3 +35,19 @@ _Avoid_: computed health score, derived metric
 **Ops Monitoring**:
 The admin-only read-only surface that presents Group Health Snapshots for every Sub2API Group at once, with no alerting and no relationship or account mutations.
 _Avoid_: Relay Planning, dashboard, alerting
+
+**Account Custodian (号主)**:
+The local user whose normalized email equals an upstream Sub2API OpenAI account's `credentials.email` or its email-shaped `name`, and therefore may read that account's facts or act on its upstream-scoped capabilities. Either field is sufficient; ownership is derived on every request from `users.email` and is not stored as a registry.
+_Avoid_: Account owner registry, assigned owner
+
+**Owner Account**:
+An OpenAI OAuth account on the primary Relay provider whose normalized `credentials.email` or email-shaped `name` (exactly one `@` with non-empty local and domain parts) equals the current local user's email. Shadow accounts are excluded. Only Owner Accounts appear in 「我的账号」.
+_Avoid_: Custody record, claimed account
+
+**Owner Operation**:
+One asynchronous, audited, non-retried upstream mutation started by an Account Custodian (`reset_credit` or `send_invitation`). It is visible as an operation id and may end `unknown` when the upstream outcome cannot be determined. A quota or referral refresh is recorded as a terminal operation row for audit and freshness but is not an asynchronous mutation.
+_Avoid_: Retry job, quota reset request
+
+**Unknown Owner Operation**:
+An Owner Operation whose upstream call may have executed but whose terminal outcome could not be observed. It is never retried automatically and blocks a repeat until a newer owner-requested observation exists; there is no administrator override.
+_Avoid_: Failed operation, pending retry
