@@ -94,11 +94,12 @@ func configToYAMLMap(cfg *Config) map[string]any {
 			"namespace": cfg.Redis.Namespace,
 		},
 		"relay": map[string]any{
-			"provider":         cfg.Relay.Provider,
-			"url":              cfg.Relay.URL,
-			"admin_api_key":    cfg.Relay.AdminAPIKey,
-			"model":            cfg.Relay.Model,
-			"default_group_id": cfg.Relay.DefaultGroupID,
+			"provider":                        cfg.Relay.Provider,
+			"url":                             cfg.Relay.URL,
+			"admin_api_key":                   cfg.Relay.AdminAPIKey,
+			"model":                           cfg.Relay.Model,
+			"default_group_id":                cfg.Relay.DefaultGroupID,
+			"owner_account_mutations_enabled": cfg.Relay.OwnerAccountMutationsEnabled,
 		},
 		"attribution": map[string]any{
 			"ledger_epoch":        cfg.Attribution.LedgerEpoch,

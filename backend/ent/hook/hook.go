@@ -177,6 +177,18 @@ func (f DirectorySyncRunFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.V
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.DirectorySyncRunMutation", m)
 }
 
+// The OwnerAccountOperationFunc type is an adapter to allow the use of ordinary
+// function as OwnerAccountOperation mutator.
+type OwnerAccountOperationFunc func(context.Context, *ent.OwnerAccountOperationMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f OwnerAccountOperationFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.OwnerAccountOperationMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.OwnerAccountOperationMutation", m)
+}
+
 // The PRCommitUsageSnapshotFunc type is an adapter to allow the use of ordinary
 // function as PRCommitUsageSnapshot mutator.
 type PRCommitUsageSnapshotFunc func(context.Context, *ent.PRCommitUsageSnapshotMutation) (ent.Value, error)

@@ -26,6 +26,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
 	"github.com/ai-efficiency/backend/ent/directorysource"
 	"github.com/ai-efficiency/backend/ent/directorysyncrun"
+	"github.com/ai-efficiency/backend/ent/owneraccountoperation"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/prrecord"
@@ -122,6 +123,7 @@ func checkColumn(table, column string) error {
 			directoryoffboardingaction.Table:    directoryoffboardingaction.ValidColumn,
 			directorysource.Table:               directorysource.ValidColumn,
 			directorysyncrun.Table:              directorysyncrun.ValidColumn,
+			owneraccountoperation.Table:         owneraccountoperation.ValidColumn,
 			prcommitusagesnapshot.Table:         prcommitusagesnapshot.ValidColumn,
 			prsyncjob.Table:                     prsyncjob.ValidColumn,
 			prattributionrun.Table:              prattributionrun.ValidColumn,
