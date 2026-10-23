@@ -71,11 +71,15 @@ func newHTTPServer(addr string, handler http.Handler, cfg config.ServerConfig) *
 type runtimeHTTPClients struct {
 	runtimeRelay  *http.Client
 	providerRelay *http.Client
-	directory     *http.Client
-	settings      *http.Client
-	scm           *http.Client
-	version       *http.Client
-	webhook       *http.Client
+	// accountOperations serves only owner-account account operations, which hold
+	// one upstream call for up to a minute. It keeps its own transport so those
+	// calls cannot exhaust the shared runtime pool.
+	accountOperations *http.Client
+	directory         *http.Client
+	settings          *http.Client
+	scm               *http.Client
+	version           *http.Client
+	webhook           *http.Client
 }
 
 func httpClientOptions(cfg config.HTTPClientConfig) httpclient.Options {
@@ -104,14 +108,20 @@ func newRuntimeHTTPClients(cfg config.HTTPClientConfig, relayWrappers ...httpcli
 	webhookOptions.OverallTimeout = config.QuotaNotificationWebhookTimeoutSeconds * time.Second
 	webhook := httpclient.New(webhookOptions)
 
+	accountOperationsOptions := downstreamOptions
+	accountOperationsOptions.OverallTimeout = 60 * time.Second
+	accountOperationsOptions.ResponseHeaderTimeout = 55 * time.Second
+	accountOperations := httpclient.New(accountOperationsOptions, relayWrappers...)
+
 	return runtimeHTTPClients{
-		runtimeRelay:  relayClient,
-		providerRelay: relayClient,
-		directory:     generalClient,
-		settings:      relayClient,
-		scm:           generalClient,
-		version:       version,
-		webhook:       webhook,
+		runtimeRelay:      relayClient,
+		providerRelay:     relayClient,
+		accountOperations: accountOperations,
+		directory:         generalClient,
+		settings:          relayClient,
+		scm:               generalClient,
+		version:           version,
+		webhook:           webhook,
 	}
 }
 
@@ -198,6 +208,7 @@ func main() {
 		telemetry.WrapDependency(logger, versionInfo.Version, "relay", "http_request", metrics.DependencyObserver()),
 	)
 	defer httpClients.runtimeRelay.CloseIdleConnections()
+	defer httpClients.accountOperations.CloseIdleConnections()
 	defer httpClients.directory.CloseIdleConnections()
 	defer httpClients.version.CloseIdleConnections()
 	defer httpClients.webhook.CloseIdleConnections()
@@ -312,6 +323,17 @@ func main() {
 		Factory: func(row *ent.RelayProvider, adminAPIKey string) (relay.Provider, error) {
 			return relay.NewSub2apiProvider(
 				httpClients.providerRelay,
+				row.BaseURL,
+				adminAPIKey,
+				row.DefaultModel,
+				logger,
+			), nil
+		},
+		// Owner-account mutations resolve through the long-running client: a reset
+		// or invite can legitimately hold one upstream call for about a minute.
+		LongRunningFactory: func(row *ent.RelayProvider, adminAPIKey string) (relay.Provider, error) {
+			return relay.NewSub2apiProvider(
+				httpClients.accountOperations,
 				row.BaseURL,
 				adminAPIKey,
 				row.DefaultModel,
