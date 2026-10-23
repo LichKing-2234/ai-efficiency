@@ -652,6 +652,56 @@ var (
 			},
 		},
 	}
+	// OwnerAccountOperationsColumns holds the columns for the "owner_account_operations" table.
+	OwnerAccountOperationsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "provider_id", Type: field.TypeInt},
+		{Name: "account_id", Type: field.TypeInt64},
+		{Name: "actor_user_id", Type: field.TypeInt},
+		{Name: "action", Type: field.TypeEnum, Enums: []string{"refresh_quota", "refresh_referral", "reset_credit", "send_invitation"}},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"running", "succeeded", "failed", "unknown"}, Default: "running"},
+		{Name: "reason", Type: field.TypeString, Nullable: true},
+		{Name: "invite_email", Type: field.TypeString, Nullable: true},
+		{Name: "upstream_code", Type: field.TypeString, Nullable: true},
+		{Name: "warning_code", Type: field.TypeString, Nullable: true},
+		{Name: "result", Type: field.TypeJSON, Nullable: true},
+		{Name: "heartbeat_at", Type: field.TypeTime, Nullable: true},
+		{Name: "started_at", Type: field.TypeTime, Nullable: true},
+		{Name: "finished_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// OwnerAccountOperationsTable holds the schema information for the "owner_account_operations" table.
+	OwnerAccountOperationsTable = &schema.Table{
+		Name:       "owner_account_operations",
+		Columns:    OwnerAccountOperationsColumns,
+		PrimaryKey: []*schema.Column{OwnerAccountOperationsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "owneraccountoperation_provider_id_account_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{OwnerAccountOperationsColumns[1], OwnerAccountOperationsColumns[2], OwnerAccountOperationsColumns[14]},
+			},
+			{
+				Name:    "owneraccountoperation_actor_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{OwnerAccountOperationsColumns[3], OwnerAccountOperationsColumns[14]},
+			},
+			{
+				Name:    "owneraccountoperation_status_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{OwnerAccountOperationsColumns[5], OwnerAccountOperationsColumns[14]},
+			},
+			{
+				Name:    "owneraccountoperation_running_unique",
+				Unique:  true,
+				Columns: []*schema.Column{OwnerAccountOperationsColumns[1], OwnerAccountOperationsColumns[2]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status = 'running'",
+				},
+			},
+		},
+	}
 	// PrCommitUsageSnapshotsColumns holds the columns for the "pr_commit_usage_snapshots" table.
 	PrCommitUsageSnapshotsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -1644,6 +1694,7 @@ var (
 		DirectoryOffboardingActionsTable,
 		DirectorySourcesTable,
 		DirectorySyncRunsTable,
+		OwnerAccountOperationsTable,
 		PrCommitUsageSnapshotsTable,
 		PrSyncJobsTable,
 		PrAttributionRunsTable,

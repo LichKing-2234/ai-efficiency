@@ -19,6 +19,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
 	"github.com/ai-efficiency/backend/ent/directorysource"
 	"github.com/ai-efficiency/backend/ent/directorysyncrun"
+	"github.com/ai-efficiency/backend/ent/owneraccountoperation"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/prrecord"
@@ -464,6 +465,18 @@ func init() {
 	directorysyncrun.DefaultUpdatedAt = directorysyncrunDescUpdatedAt.Default.(func() time.Time)
 	// directorysyncrun.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	directorysyncrun.UpdateDefaultUpdatedAt = directorysyncrunDescUpdatedAt.UpdateDefault.(func() time.Time)
+	owneraccountoperationFields := schema.OwnerAccountOperation{}.Fields()
+	_ = owneraccountoperationFields
+	// owneraccountoperationDescCreatedAt is the schema descriptor for created_at field.
+	owneraccountoperationDescCreatedAt := owneraccountoperationFields[13].Descriptor()
+	// owneraccountoperation.DefaultCreatedAt holds the default value on creation for the created_at field.
+	owneraccountoperation.DefaultCreatedAt = owneraccountoperationDescCreatedAt.Default.(func() time.Time)
+	// owneraccountoperationDescUpdatedAt is the schema descriptor for updated_at field.
+	owneraccountoperationDescUpdatedAt := owneraccountoperationFields[14].Descriptor()
+	// owneraccountoperation.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	owneraccountoperation.DefaultUpdatedAt = owneraccountoperationDescUpdatedAt.Default.(func() time.Time)
+	// owneraccountoperation.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	owneraccountoperation.UpdateDefaultUpdatedAt = owneraccountoperationDescUpdatedAt.UpdateDefault.(func() time.Time)
 	prcommitusagesnapshotFields := schema.PRCommitUsageSnapshot{}.Fields()
 	_ = prcommitusagesnapshotFields
 	// prcommitusagesnapshotDescCommitSha is the schema descriptor for commit_sha field.

@@ -24,8 +24,18 @@ type OffboardingFact struct {
 	Succeeded    bool
 }
 
+// Disabled is the canonical locally-disabled predicate: a user is inactive when
+// their relay token was revoked, their relay access was disabled, or a
+// disable-relay-user offboarding action succeeded.
+func Disabled(u *ent.User, offboardingSucceeded bool) bool {
+	if u == nil {
+		return true
+	}
+	return u.TokenValidAfter != nil || u.RelayDisabledAt != nil || offboardingSucceeded
+}
+
 func Derive(u *ent.User, relayPassword string, offboardingSucceeded bool) string {
-	if u.TokenValidAfter != nil || u.RelayDisabledAt != nil || offboardingSucceeded {
+	if Disabled(u, offboardingSucceeded) {
 		return StatusDisabled
 	}
 	if strings.TrimSpace(relayPassword) != "" {

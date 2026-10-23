@@ -17,3 +17,4 @@ removed files are not redirected or guaranteed.
 | [Attribution V2 Cutover and Legacy Cleanup](./attribution-v2-cutover.md) | Production cutover, qualification, conservation, and legacy-removal evidence |
 | [Relay Planning Phase 2 Delivery Verification](./2026-09-01-relay-phase2-delivery-verification.md) | Durable recovery interruption, concurrency, migration, and release-gate evidence |
 | [Account Configuration Copy Design](./2026-10-15-account-config-copy-design.md) | Allow-list authority decision, read and write semantics, and the deviation-first review surface for copying account configuration |
+| [Account Custodian Console Design](./2026-10-23-account-custodian-console-design.md) | Upstream fact verification, revision 3 email-derived ownership decision, rejected custody-registry and async/irreversible-operation rationale, and the delivered implementation notes |

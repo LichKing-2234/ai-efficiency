@@ -96,7 +96,7 @@ flowchart LR
 The Vue frontend keeps the existing route contract while grouping pages by user task rather than by backend resource type.
 
 - `My Work`: `/`, `/work-items`, `/usage`, and `/user` provide the ordinary company-user path for personal AI usage, pending work, and setup. `/` redirects to the personal AI Usage page at `/usage`, which now stays focused on usage and quota visibility instead of rendering AI access/setup guide cards. Missing reusable AI access is represented as an `ai_access_setup_count` item in `/work-items`, with `/user` as the detail/remediation target. `/work-items` is the shared pending-work entry and aggregates personal AI access setup, pending quota reset approval work, and admin-only directory offboarding candidates. The sidebar shows a hidden-when-zero `total_count` badge sourced from `/api/v1/work-items/counts`, with admin totals deduplicated as personal AI access setup plus admin quota-reset fallback count plus offboarding count. Personal usage and quota now arrive through independent responses: usage carries explicit freshness and may use an eligible recent snapshot, while `group_quotas` is always a current-request `ok`, `empty`, or `unavailable` section. AI Coding Activity remains the secondary developer analysis path rather than the homepage's primary narrative; Repository integration management appears only for administrators, and legacy `/events` links redirect to `/activity`.
-- `AI Usage`: `/usage` is always the current user's personal AI Usage page and does not expose a choose-person dropdown. Its Today / 7 Days / 30 Days selector shares one browser-profile preference with `/usage/team` and `/usage/members/:user_id`; each view restores that preference before its first request, falls back to 30 days when storage is missing or invalid, and stores an explicit selection independently of request success. Activity date ranges remain URL-owned. Its top tab strip always exposes `/usage/quota-reset`, where users track their own reset requests, handle the current steps assigned to them, review previously processed decisions, and, for admins, decide the active step; the quota reset queue tabs show actionable Work Items counts rather than history totals. Version 2 request details show ordered step progress and durable comments, while approval and rejection both require a comment dialog. The route loads only the active queue on entry, gives requester/approval/admin queues independent request and error state, loads hidden queues on first selection, and refreshes only the active or mutation-affected queues without serving stale history after an authoritative read failure. Representatives use `/usage/team` for subtree-wide trend and member ranking, then open `/usage/members/:user_id` for a focused scoped-member detail page with subscription-group quota rows and delegated multiplier controls. `/usage/team` does not show quota cards, subscription quota rows, or multiplier controls.
+- `AI Usage`: `/usage` is always the current user's personal AI Usage page and does not expose a choose-person dropdown. Its Today / 7 Days / 30 Days selector shares one browser-profile preference with `/usage/team` and `/usage/members/:user_id`; each view restores that preference before its first request, falls back to 30 days when storage is missing or invalid, and stores an explicit selection independently of request success. Activity date ranges remain URL-owned. Its top tab strip always exposes `/usage/quota-reset`, where users track their own reset requests, handle the current steps assigned to them, review previously processed decisions, and, for admins, decide the active step; the quota reset queue tabs show actionable Work Items counts rather than history totals. The same tab strip exposes `/usage/accounts` (「我的账号」) only when `/api/v1/user/owner-accounts/scope` reports a positive matched-account count; a failed scope probe hides the tab rather than showing an error. The owner account page keeps the stacked-card/table responsive split, loads the cached owner directory plus a chunked usage batch, and owns per-section query state, the shared refresh cooldown, unknown-outcome blocking, reset/invite dialogs, and operation history. Version 2 request details show ordered step progress and durable comments, while approval and rejection both require a comment dialog. The route loads only the active queue on entry, gives requester/approval/admin queues independent request and error state, loads hidden queues on first selection, and refreshes only the active or mutation-affected queues without serving stale history after an authoritative read failure. Representatives use `/usage/team` for subtree-wide trend and member ranking, then open `/usage/members/:user_id` for a focused scoped-member detail page with subscription-group quota rows and delegated multiplier controls. `/usage/team` does not show quota cards, subscription quota rows, or multiplier controls.
 - Quota Reset loads only the requester queue on entry. Requester, approval, and admin queues own independent request/error state; hidden queues load on first selection, and mutations refresh only active or affected queues plus the Work Items badge. Authoritative queue history is never replaced by stale data after a read failure.
 - `AI Coding Activity`: `/activity`, `/activity/members/:user_id`, `/activity/teams`, and `/activity/teams/:team_id` own committed-code Token analysis. The backend supplies the scope total, Usage-backed ratio, local-day trend, Repository direct/shared projection, PR involved projection, server search/sort/cursor pages, and filter-safe SCM coverage. The frontend renders the ratio, trend, Repository/PR Top 5, and responsive full lists without deriving aggregate accounting or exposing Request-level operational detail. Repository and PR selection remain shareable in-page `repo_id` / `pr_record_id` filters rather than separate analysis routes. Team member navigation shows identity, department, data availability, and the authorized detail action without personal Token or ranking fields.
 - `Relay Planning`: `/admin/relay-planning` is an explicit admin-only department x Platform workflow. Its initial preview automatically recommends a target Group count from indivisible source members, then lets the administrator add or delete proposed Groups before Confirm while keeping at least one Target. New Target names are reviewed department-leaf and Platform suggestions; Confirm duplicates each Group, renames it, reconciles Accounts, activates it, and only then migrates members. A created Target is checkpointed on its durable step so an interrupted Operation can later align it without promoting the Mapping baseline. Template Group (copy configuration) remains separate from the optional Migration Source Group (old subscription/API Key migration). After Preview, an administrator can search any local user, verify that user's identity through the selected Relay Provider, assign the user to one explicit Target, and choose one same-Platform Source or target-only addition. The frontend's reviewed-plan workflow owns the active Preview, explicit Target/member/Account edits, plan-scoped user and Account searches, canonical request construction, relationship fingerprint, operation key, stale replacement, retry restoration, and Confirm handoff; the route view retains planning inputs, mapping list, renewal, Rebind, saved Account administration, rendering, and explicit user intent. Replan is entered from one mapping, preserves every existing stable Target Group ID and saved department relationship, and can merge mappings that are replanned into the same provider, Platform, and department while retaining source department history, and may append read-only proposed Targets using the same Add Group editor, Template Account defaults, naming, Confirm, and retry lifecycle as initial Preview; it does not remove, deactivate, or silently reshuffle existing Groups. It opens from the Replan Baseline as a zero-change plan, including Managed Mapping Members outside the current department and those whose current local-to-Relay identity is unavailable; a Managed Mapping Member with unavailable identity remains visible in its Replan Roster with a safe warning and blocks the complete Confirm before any Relay write, including otherwise valid edits in the same plan. If a Target Group in the Replan Baseline is absent from current Relay facts, it is an Unavailable Replan Target. Replan keeps it and its Replan Roster visible, proposes no automatic replacement or member relocation, and blocks the complete Confirm until a fresh Preview observes the repaired Target. Other candidates keep the existing usage and ranking presentation but start unselected and unassigned, and remaining target capacity never recommends or places them automatically. It shows current and department-based names for each available managed Target; renames are opt-in per Target or through explicit Apply All and run through the same Confirm/stale/retry gate without changing Group identity or unrelated relationships. Mapping maintenance reads and adopts privacy-safe per-target Account relationships, applies reviewed same-Platform Account pools only through Confirm, and warns about drift, multiple Accounts, reuse, unavailable Groups, unmanaged members, and cross-mapping conflicts. Its list starts independent Group, provider relationship, Account, and Directory reads together; mapped departments are resolved in one bounded query. Mapping Renewal Preview and Replan use one request-scoped provider-wide identity/subscription snapshot, one Group collection, one same-Platform Account collection, and at most one API Key read per relevant user, with no cross-request relationship cache. Explicit removal, `Move Here`, `Add Additionally`, and unmanaged-member adoption remain admin edits that require final confirmation; department changes never trigger them automatically. A removal reuses an already-active saved Source subscription. Legacy Managed Mapping Members without per-member Source provenance must explicitly review a valid same-Platform Source or Target-only destination before Confirm; Template and managed Target Groups are rejected as Sources. The reviewed choice crosses Preview, Execute, and one fresh provider relationship plus affected-user active API Key readback; inactive Keys remain untouched. Any Source, Target, or eligible Key mismatch leaves the captured Mapping baseline and revision unchanged, retains active Operation ownership, and requires the later alignment workflow rather than another ordinary Confirm. Every maintenance Preview carries a compact versioned relationship fingerprint with separate Group, Account, mapping/retry, Relay identity, subscription, and API-Key hashes. Confirm rejects stale categories before any Relay write, while usage changes remain advisory. Mapping Renewal Confirm uses one bounded relationship snapshot for preflight, direct reviewed-subscription mutations with bounded concurrency, and one bounded readback snapshot. Legacy mappings may retain per-Group/member operation state for Phase 1 retry containment, while new Confirm execution records durable steps and attempts independently. Destination and source baseline promotion commits atomically and returns per-mapping persistence results. The read-only preview reuses a valid schema-v3 Team Usage prewarm generation for provider-wide 30-day usage and falls back to exact Relay sources when that generation is absent or invalid; current subscription membership and migratable active API Key facts remain authoritative per candidate. There is no background synchronizer or direct sub2api database coupling.
@@ -570,6 +570,115 @@ second provider client or metadata cache.
   membership and select a current active group API key before cached model
   display metadata can be returned. Provider version changes and revoked
   membership therefore never inherit authority from a warm metadata value.
+- `Manager.OwnerAccounts` is the only owner-account directory entry point. It is
+  keyed by provider ID, persisted configuration version, and platform; a hit is
+  served without an upstream call, concurrent misses collapse into one
+  process-local flight, the result is reused for five minutes, and one load has a
+  ten-second deadline. A failed reload serves the last good directory instead of
+  failing the page, while a caller that has already given up receives its own
+  cancellation rather than stale data. Successful owner refreshes and mutations
+  invalidate the provider's OpenAI entry, and a load that started before an
+  invalidation cannot repopulate pre-mutation snapshots.
+- A separate long-running provider client/factory is used only by the
+  owner-account operation worker: 60-second overall and 55-second
+  response-header timeouts, cached by provider and configuration version. It is
+  isolated from the shared Relay client pool so one minute-long mutation cannot
+  starve ordinary requests, and handlers or services never construct their own
+  clients.
+
+## Owner Account Console
+
+`backend/internal/owneraccount` is the account-owner module. Ownership is derived
+per request from `users.email` and never stored: after trim and lower-case, an
+account matches when its `credentials.email` or its email-shaped `name` (exactly
+one `@` with non-empty local and domain parts) equals the caller's email. Either
+field is sufficient and neither takes precedence. Only `openai`/`oauth` accounts
+on the enabled primary Relay provider are considered, and shadow accounts with a
+parent relation are excluded. A mismatch returns the same `account-not-found`
+result as an unknown id, and a locally disabled or offboarded user receives
+`owner-inactive`. There is no ownership registry, admin ownership page,
+transfer/revoke flow, alias table, plus-address normalization, or fuzzy matching.
+The module's only local write is an operation row.
+
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant Handler as owneraccount handler
+    participant Service as owneraccount service
+    participant Runtime as relayruntime.Manager
+    participant Relay as Relay / sub2api
+    participant DB as PostgreSQL
+
+    Browser->>Handler: POST /api/v1/user/owner-accounts/:id/reset-credit
+    Handler->>Service: ResetCredit (switch, ownership, confirm)
+    Service->>DB: sweep stale rows + gate reads (database time)
+    Service->>DB: insert running operation (single-flight)
+    Service-->>Handler: operation id
+    Handler-->>Browser: 202
+    Service->>Service: detached worker, 65-second deadline
+    Service->>Runtime: ResolveLongRunning
+    Runtime->>Relay: exactly one upstream mutation
+    Service->>DB: heartbeat every 5s + terminal state
+```
+
+The authenticated user surface is thin and mounted under
+`/api/v1/user/owner-accounts`; the only administrator surface is one read-only
+operation list.
+
+| Route | Behavior |
+| --- | --- |
+| `GET /api/v1/user/owner-accounts/scope` | Matched account count plus the global mutation switch, used only for tab visibility |
+| `GET /api/v1/user/owner-accounts` | Full-page list with exact total, `page`/`page_size` 20/50/100, and owner-safe account fields |
+| `POST /api/v1/user/owner-accounts/usage` | Batch usage windows; accepts at most 100 account ids and chunks upstream calls at 20 with a 20-second deadline per chunk |
+| `POST /api/v1/user/owner-accounts/:id/usage/refresh` | One forced usage read; shares the refresh cooldown but writes no operation row |
+| `POST /api/v1/user/owner-accounts/:id/quota/refresh` | One fresh quota observation with a 25-second deadline; writes a terminal refresh row |
+| `POST /api/v1/user/owner-accounts/:id/referral/refresh` | One fresh referral observation with a 25-second deadline; writes a terminal refresh row |
+| `POST /api/v1/user/owner-accounts/:id/reset-credit` | Async reset-credit mutation, `202` plus operation id |
+| `POST /api/v1/user/owner-accounts/:id/invitations` | Async invitation mutation, `202` plus operation id |
+| `GET /api/v1/user/owner-accounts/operations/:operation_id` | Poll one operation owned by the matched account |
+| `GET /api/v1/user/owner-accounts/:id/operations` | Paginated owner-visible operation history |
+| `GET /api/v1/admin/owner-operations` | Admin-only read-only operation list filtered by `page`, `page_size`, `status`, `action`, and `account_id`; no admin mutation or unknown override |
+
+Every refresh action shares one 30-second per-account cooldown derived from the
+latest `refresh_quota` or `refresh_referral` row. Usage refresh checks that
+cooldown but does not start it, because the schema has no usage action. Quota and
+referral refresh failures still write terminal `failed` rows; a successful row is
+what makes the corresponding mutation's freshness precondition satisfiable.
+
+Both mutations require `relay.owner_account_mutations_enabled` (environment
+`AE_RELAY_OWNER_ACCOUNT_MUTATIONS_ENABLED`, default false) plus explicit
+confirmation or consent. Reset requires a quota observation newer than the last
+reset attempt, no older than 15 minutes, reporting at least one unexpired reset
+credit. Invitation requires a referral observation newer than the last invite
+attempt, no older than 10 minutes, with a visible program and remaining capacity.
+Rolling 24-hour caps are five reset attempts and ten invitation attempts per
+account. The database partial unique index is the single-flight authority: at
+most one running mutation per account, and a conflict returns the existing
+operation id. Accepted mutations return `202`; a detached worker performs exactly
+one upstream call with a 65-second deadline, renews a five-second heartbeat, and
+writes one terminal `succeeded`/`failed`/`unknown` state under an independent
+five-second context with at most three write attempts. A panic, deadline,
+cancellation, or ambiguous upstream outcome becomes `unknown`; the upstream call
+is never repeated. Startup sweeps every row whose heartbeat is older than 30
+seconds to `unknown`; list, operation-history, refresh, and mutation paths sweep
+their own account lazily before deciding.
+
+`owner_account_operations` stores provider, upstream account, acting local user,
+action (`refresh_quota`, `refresh_referral`, `reset_credit`, `send_invitation`),
+status, optional reason and invite email, sanitized upstream/warning codes and
+result, heartbeat, and timestamps. Indexes cover per-account history, per-actor
+history, status scans, and the partial unique running row. Every staleness,
+freshness, cooldown, and cap comparison uses database time, and no credentials,
+upstream snapshots, or ownership are persisted.
+
+An `unknown` reset blocks further resets until a quota observation newer than
+that operation exists; an unknown invitation does the same for invitations.
+Neither block clears automatically and neither has an administrator override;
+the owner clears it with a fresh owner-requested refresh. v1 limitations:
+`referral.program_name` is always null because the owner-safe projection has no
+program-name source, and the usage-derived health booleans
+(`reauth_required`, `banned`, `forbidden`) are not populated by the directory
+projection; only `schedulable` and `rate_limit_reset_at` carry upstream values.
 
 ## Performance Observability
 
@@ -817,18 +926,19 @@ flowchart LR
 | Work items | `backend/internal/workitems` | Auth-scoped pending work counters, the PostgreSQL UUID revision, and the namespace/revision/actor/role-isolated Redis read model with bounded authoritative fallback; counts include best-effort relay-derived personal AI access setup plus locally derived quota reset and count-only injected Directory offboarding dependencies |
 | Administrator users | `backend/internal/adminusers`, `backend/internal/adminsubscription` | Caller-owned response presentation and access-management workflows over shared `directoryfacts` reads; effective-subtree eligibility remains identical across count/page/targets, while page-local enrichment, bounded options, immediate-child navigation, and summaries stay source/run-pinned and bounded |
 | Representative scope and team usage | `backend/internal/representativescope`, `backend/internal/readcache`, `backend/internal/teamusage`, `backend/internal/relay` | Resolve representative subtree scope from current directory metadata and member-department memberships, derive and twice-check opaque scope versions, reuse namespace/provider/actor/scope/range-isolated Redis response read models with 144-162 second freshness plus bounded stale-if-error and authoritative fallback, serve Summary, bounded Trend, snapshot-bound paged Members, and parent-bound shallow Organization branches from independent typed lanes, share one bounded 60-second Redis scope origin across eligible cold lanes, enforce delegated subject visibility and ancestor-only multiplier policy, and persist local `team_usage_rate_multiplier_audits` |
+| Account owner console | `backend/internal/owneraccount` | Per-request email-derived ownership, owner-scoped scope/list/usage reads, quota and referral refreshes, the global-switch/fresh-observation/cap/single-flight gates for the two async mutations, the detached heartbeating worker, and read-only operation history; the only local write is `owner_account_operations` |
 | HTTP runtime and telemetry | `backend/internal/httpclient`, `backend/internal/health`, `backend/internal/telemetry`, `backend/internal/middleware` | Bounded reusable downstream transports, parallel deadline-bounded readiness, validated request IDs, normalized request/Relay logs and Prometheus histograms, database/Redis pool collectors, closed application-cache events, fixed-memory Web Vitals aggregation, and the internal-only scrape registry |
 | SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization, and active-PR usage snapshot refresh |
 | Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Explicit repo registration, read-only hook eligibility resolution, deterministic repo binding from configured SCM metadata, bounded SQL inventory aggregation, transactionally versioned optional Redis inventory reads, PR labeling, and dashboard-facing summary inputs |
 | Session and attribution | `backend/internal/checkpoint`, `backend/internal/attributionledger`, `backend/internal/attributionclaim`, `backend/internal/attributionreconcile`, `backend/internal/attributionpool`, `backend/internal/activity`, `backend/internal/attribution`, `backend/internal/prusage` | Minimized and legacy commit checkpoints, reporter-only installation authentication, source-explicit v2 hot claims, HTTP Relay reconciliation, direct WebSocket aggregate materialization, globally deduplicated usage pools, formal pool/Repository/PR/trend/ratio/member-availability reads, and legacy checkpoint-bound PR usage snapshots |
-| API surface | `backend/internal/handler`, `backend/internal/middleware` | HTTP handlers, routing, auth middleware, settings endpoints, representative `/user/team-usage/*` endpoints, quota reset user/admin endpoints including approver candidate lookup, work item count endpoint, protected and rate-limited Web Vitals ingestion, admin team-usage audit, admin-users direct relay-user disablement/subscription jobs, admin relay-planning preview/execute/mapping/replan endpoints, admin relay-account configuration read and copy endpoints, admin ops-monitoring group-snapshot/group-account/proxy-egress read endpoints, and admin directory sync/offboarding endpoints |
+| API surface | `backend/internal/handler`, `backend/internal/middleware` | HTTP handlers, routing, auth middleware, settings endpoints, representative `/user/team-usage/*` endpoints, quota reset user/admin endpoints including approver candidate lookup, work item count endpoint, protected and rate-limited Web Vitals ingestion, admin team-usage audit, admin-users direct relay-user disablement/subscription jobs, admin relay-planning preview/execute/mapping/replan endpoints, admin relay-account configuration read and copy endpoints, admin ops-monitoring group-snapshot/group-account/proxy-egress read endpoints, owner-account user scope/list/usage/refresh/mutation/operation endpoints, the read-only admin owner-operations list, and admin directory sync/offboarding endpoints |
 | Embedded frontend delivery | `backend/internal/web`, `backend/internal/oauth`, `backend/internal/handler` | Resolve embedded files and SPA fallbacks before applying gzip and cache policy, serve browser GET/HEAD consistently, and reuse the embedded index representation for OAuth authorize/device browser entry routes |
 
 ### Frontend
 
 | Area | Paths | Responsibility |
 | --- | --- | --- |
-| Views | `frontend/src/views` | Dashboard, Work Items, personal/member/team AI Coding Activity, Activity-first repository detail with lazy Operations, repos, oauth, personal AI Usage, selected-member usage detail, representative Team Overview, admin users with on-demand department browsing and one responsive user-row tree, admin relay Group planning, read-only admin Ops Monitoring, paginated admin Directory offboarding, and admin/settings pages with immediate affected-mutation count refresh |
+| Views | `frontend/src/views` | Dashboard, Work Items, personal/member/team AI Coding Activity, Activity-first repository detail with lazy Operations, repos, oauth, personal AI Usage, the email-matched owner account console, selected-member usage detail, representative Team Overview, admin users with on-demand department browsing and one responsive user-row tree, admin relay Group planning, read-only admin Ops Monitoring, paginated admin Directory offboarding, and admin/settings pages with immediate affected-mutation count refresh |
 | Access Group onboarding workflow | `frontend/src/composables/useUserOnboardingWorkflow.ts`, `frontend/src/views/UserView.vue`, `frontend/src/api/user.ts`, `frontend/src/utils/userSetupReview.ts` | Own provider/Access Group selection, credential lifecycle, Current Step and explicit navigation, model/protocol state, Connection Test lifecycle, configuration-method selection, and stale-response rejection; API modules retain transport, `userSetupReview.ts` retains deterministic configuration generation, and the view retains rendering, responsive measurement, feedback, confirmations, and explicit user intent |
 | Administrator users workflow | `frontend/src/composables/useAdminUsersWorkflow.ts`, `frontend/src/views/admin/AdminUsersView.vue`, `frontend/src/components/admin/AdminDepartmentPicker.vue` | Own user and root/branch department pages, URL restoration, request invalidation, picker lifecycle, selection, summaries, and bulk-target preparation in one workflow module; the view renders that state and sends explicit administrator intent, while the picker component retains presentation, keyboard, focus, and ARIA behavior |
 | Relay Planning reviewed workflow | `frontend/src/composables/useRelayPlanningWorkflow.ts`, `frontend/src/views/admin/RelayPlanningView.vue`, `frontend/src/api/relayPlanning.ts` | Own the active Preview through explicit Target/member/Account edits, plan-scoped searches, reviewed request construction, fingerprint and operation-key lifecycle, stale replacement, retry restoration, and Confirm/Execute handoff; API modules retain transport, while the view retains inputs, mapping list, renewal, Rebind, saved Account administration, rendering, and explicit administrator intent |

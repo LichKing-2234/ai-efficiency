@@ -40,6 +40,8 @@ type Tx struct {
 	DirectorySource *DirectorySourceClient
 	// DirectorySyncRun is the client for interacting with the DirectorySyncRun builders.
 	DirectorySyncRun *DirectorySyncRunClient
+	// OwnerAccountOperation is the client for interacting with the OwnerAccountOperation builders.
+	OwnerAccountOperation *OwnerAccountOperationClient
 	// PRCommitUsageSnapshot is the client for interacting with the PRCommitUsageSnapshot builders.
 	PRCommitUsageSnapshot *PRCommitUsageSnapshotClient
 	// PRSyncJob is the client for interacting with the PRSyncJob builders.
@@ -229,6 +231,7 @@ func (tx *Tx) init() {
 	tx.DirectoryOffboardingAction = NewDirectoryOffboardingActionClient(tx.config)
 	tx.DirectorySource = NewDirectorySourceClient(tx.config)
 	tx.DirectorySyncRun = NewDirectorySyncRunClient(tx.config)
+	tx.OwnerAccountOperation = NewOwnerAccountOperationClient(tx.config)
 	tx.PRCommitUsageSnapshot = NewPRCommitUsageSnapshotClient(tx.config)
 	tx.PRSyncJob = NewPRSyncJobClient(tx.config)
 	tx.PrAttributionRun = NewPrAttributionRunClient(tx.config)

@@ -2375,13 +2375,34 @@ type sub2apiAccountSummary struct {
 }
 
 type sub2apiUsageProgress struct {
-	Utilization float64    `json:"utilization"`
-	ResetsAt    *time.Time `json:"resets_at"`
+	Utilization float64                  `json:"utilization"`
+	ResetsAt    *time.Time               `json:"resets_at"`
+	WindowStats *sub2apiUsageWindowStats `json:"window_stats"`
+}
+
+// sub2apiUsageWindowStats is the per-window request and cost detail of one usage
+// window. The owner-account console shows it; nothing else reads it.
+type sub2apiUsageWindowStats struct {
+	Requests int64 `json:"requests"`
+	Tokens   int64 `json:"tokens"`
+	// Cost is the account-rate-multiplied total, which the console renders as
+	// "A $". StandardCost is the same total without the account multiplier and is
+	// disclosure-limited to a tooltip.
+	Cost         *float64 `json:"cost"`
+	StandardCost float64  `json:"standard_cost"`
+	UserCost     float64  `json:"user_cost"`
 }
 
 type sub2apiUsageInfo struct {
 	UpdatedAt *time.Time            `json:"updated_at"`
+	FiveHour  *sub2apiUsageProgress `json:"five_hour"`
 	SevenDay  *sub2apiUsageProgress `json:"seven_day"`
+	// Health facts the usage read derives from the upstream answer. They are only
+	// observable from a usage read, not from the account row.
+	NeedsReauth bool   `json:"needs_reauth"`
+	IsBanned    bool   `json:"is_banned"`
+	IsForbidden bool   `json:"is_forbidden"`
+	ErrorCode   string `json:"error_code"`
 }
 
 func (s *sub2apiRelay) ListUserSubscriptions(ctx context.Context, userID int64) ([]UserSubscription, error) {
@@ -2537,7 +2558,7 @@ func (s *sub2apiRelay) ReadGroupOAuthPoolUsage(ctx context.Context, groupIDs []i
 		orderedAccountIDs = append(orderedAccountIDs, accountID)
 	}
 	sort.Slice(orderedAccountIDs, func(i, j int) bool { return orderedAccountIDs[i] < orderedAccountIDs[j] })
-	usageByAccount, err := s.getBatchAccountUsage(ctx, orderedAccountIDs)
+	usageByAccount, _, err := s.getBatchAccountUsage(ctx, orderedAccountIDs, false)
 	if err != nil {
 		return UserUsageGroupPoolUsageState{}, err
 	}
@@ -2827,18 +2848,23 @@ func decodeAccountPage(data json.RawMessage) ([]sub2apiAccountSummary, int, erro
 	return page.Items, page.Pages, nil
 }
 
-func (s *sub2apiRelay) getBatchAccountUsage(ctx context.Context, accountIDs []int64) (map[string]*sub2apiUsageInfo, error) {
-	payload, err := json.Marshal(map[string]any{"account_ids": accountIDs, "force": false})
+// getBatchAccountUsage reads one usage batch. force asks the upstream to re-probe
+// instead of serving its own snapshot. A batch can succeed while individual
+// accounts fail, so those failures are returned per account rather than as a
+// batch error.
+func (s *sub2apiRelay) getBatchAccountUsage(ctx context.Context, accountIDs []int64, force bool) (map[string]*sub2apiUsageInfo, map[string]string, error) {
+	payload, err := json.Marshal(map[string]any{"account_ids": accountIDs, "force": force})
 	if err != nil {
-		return nil, fmt.Errorf("relay: batch OAuth usage: marshal: %w", err)
+		return nil, nil, fmt.Errorf("relay: batch OAuth usage: marshal: %w", err)
 	}
 	resp, err := s.doAdminRequest(ctx, http.MethodPost, "/api/v1/admin/accounts/usage/batch", bytes.NewReader(payload))
 	if err != nil {
-		return nil, fmt.Errorf("relay: batch OAuth usage: %w", err)
+		return nil, nil, fmt.Errorf("relay: batch OAuth usage: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("relay: batch OAuth usage: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+		body, _ := io.ReadAll(resp.Body)
+		return nil, nil, ownerAccountStatusError("relay: batch OAuth usage", resp.StatusCode, body, false)
 	}
 	var result struct {
 		envelopeStatus
@@ -2848,12 +2874,12 @@ func (s *sub2apiRelay) getBatchAccountUsage(ctx context.Context, accountIDs []in
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("relay: batch OAuth usage: decode: %w", err)
+		return nil, nil, fmt.Errorf("relay: batch OAuth usage: decode: %w", err)
 	}
 	if !result.ok() {
-		return nil, fmt.Errorf("relay: batch OAuth usage: request failed%s", result.messageSuffix())
+		return nil, nil, fmt.Errorf("relay: batch OAuth usage: request failed%s", result.messageSuffix())
 	}
-	return result.Data.Usage, nil
+	return result.Data.Usage, result.Data.Errors, nil
 }
 
 func (s *sub2apiRelay) assignDefaultSubscriptionsForUser(ctx context.Context, userID int64) error {

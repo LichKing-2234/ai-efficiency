@@ -65,6 +65,54 @@ func TestNewRuntimeHTTPClientsUsesBoundedIsolatedPoolsAndStrictTimeouts(t *testi
 	t.Cleanup(clients.webhook.CloseIdleConnections)
 }
 
+// TestNewRuntimeHTTPClientsBoundsTheAccountOperationsClientSeparately asserts the
+// client used only by owner-account account operations: a 60s overall budget with a
+// 55s response-header budget, on its own connection pool so a minute-long operation
+// cannot starve the shared runtime client.
+func TestNewRuntimeHTTPClientsBoundsTheAccountOperationsClientSeparately(t *testing.T) {
+	cfg := config.HTTPClientConfig{
+		ConnectTimeoutSeconds:        5,
+		TLSHandshakeTimeoutSeconds:   5,
+		ResponseHeaderTimeoutSeconds: 15,
+		OverallTimeoutSeconds:        30,
+		IdleConnTimeoutSeconds:       90,
+		MaxIdleConns:                 100,
+		MaxIdleConnsPerHost:          20,
+		MaxConnsPerHost:              50,
+	}
+	clients := newRuntimeHTTPClients(cfg)
+	if clients.accountOperations == nil {
+		t.Fatal("account operations client is nil")
+	}
+	if clients.accountOperations.Timeout != 60*time.Second {
+		t.Fatalf("account operations Timeout = %s, want 60s", clients.accountOperations.Timeout)
+	}
+	transport, ok := clients.accountOperations.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("account operations transport = %T, want *http.Transport", clients.accountOperations.Transport)
+	}
+	if transport.ResponseHeaderTimeout != 55*time.Second {
+		t.Fatalf("account operations response header timeout = %s, want 55s", transport.ResponseHeaderTimeout)
+	}
+	if transport.IdleConnTimeout != 90*time.Second || transport.MaxConnsPerHost != 50 {
+		t.Fatal("account operations pool is not bounded as configured")
+	}
+	for name, other := range map[string]*http.Client{
+		"runtime relay": clients.runtimeRelay,
+		"directory":     clients.directory,
+	} {
+		if clients.accountOperations == other || clients.accountOperations.Transport == other.Transport {
+			t.Fatalf("account operations client shares the %s pool", name)
+		}
+	}
+
+	t.Cleanup(clients.runtimeRelay.CloseIdleConnections)
+	t.Cleanup(clients.directory.CloseIdleConnections)
+	t.Cleanup(clients.accountOperations.CloseIdleConnections)
+	t.Cleanup(clients.version.CloseIdleConnections)
+	t.Cleanup(clients.webhook.CloseIdleConnections)
+}
+
 func TestNewRuntimeHTTPClientsPreservesTimeoutOrderAtLowestValidConfiguration(t *testing.T) {
 	for key, value := range map[string]string{
 		"AE_SERVER_READ_HEADER_TIMEOUT_SECONDS":          "1",
@@ -161,6 +209,9 @@ func TestNewRuntimeHTTPClientsWrapsOnlyRelayPool(t *testing.T) {
 		if _, ok := client.Transport.(*runtimeRelayTestTransport); ok {
 			t.Fatalf("%s transport was incorrectly classified as Relay", name)
 		}
+	}
+	if _, ok := clients.accountOperations.Transport.(*runtimeRelayTestTransport); !ok {
+		t.Fatalf("account operations transport = %T, want the Relay telemetry wrapper", clients.accountOperations.Transport)
 	}
 
 	t.Cleanup(clients.runtimeRelay.CloseIdleConnections)

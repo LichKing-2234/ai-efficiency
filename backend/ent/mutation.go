@@ -25,6 +25,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
 	"github.com/ai-efficiency/backend/ent/directorysource"
 	"github.com/ai-efficiency/backend/ent/directorysyncrun"
+	"github.com/ai-efficiency/backend/ent/owneraccountoperation"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/predicate"
@@ -73,6 +74,7 @@ const (
 	TypeDirectoryOffboardingAction    = "DirectoryOffboardingAction"
 	TypeDirectorySource               = "DirectorySource"
 	TypeDirectorySyncRun              = "DirectorySyncRun"
+	TypeOwnerAccountOperation         = "OwnerAccountOperation"
 	TypePRCommitUsageSnapshot         = "PRCommitUsageSnapshot"
 	TypePRSyncJob                     = "PRSyncJob"
 	TypePrAttributionRun              = "PrAttributionRun"
@@ -18097,6 +18099,1345 @@ func (m *DirectorySyncRunMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *DirectorySyncRunMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown DirectorySyncRun edge %s", name)
+}
+
+// OwnerAccountOperationMutation represents an operation that mutates the OwnerAccountOperation nodes in the graph.
+type OwnerAccountOperationMutation struct {
+	config
+	op               Op
+	typ              string
+	id               *int
+	provider_id      *int
+	addprovider_id   *int
+	account_id       *int64
+	addaccount_id    *int64
+	actor_user_id    *int
+	addactor_user_id *int
+	action           *owneraccountoperation.Action
+	status           *owneraccountoperation.Status
+	reason           *string
+	invite_email     *string
+	upstream_code    *string
+	warning_code     *string
+	result           *map[string]interface{}
+	heartbeat_at     *time.Time
+	started_at       *time.Time
+	finished_at      *time.Time
+	created_at       *time.Time
+	updated_at       *time.Time
+	clearedFields    map[string]struct{}
+	done             bool
+	oldValue         func(context.Context) (*OwnerAccountOperation, error)
+	predicates       []predicate.OwnerAccountOperation
+}
+
+var _ ent.Mutation = (*OwnerAccountOperationMutation)(nil)
+
+// owneraccountoperationOption allows management of the mutation configuration using functional options.
+type owneraccountoperationOption func(*OwnerAccountOperationMutation)
+
+// newOwnerAccountOperationMutation creates new mutation for the OwnerAccountOperation entity.
+func newOwnerAccountOperationMutation(c config, op Op, opts ...owneraccountoperationOption) *OwnerAccountOperationMutation {
+	m := &OwnerAccountOperationMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeOwnerAccountOperation,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withOwnerAccountOperationID sets the ID field of the mutation.
+func withOwnerAccountOperationID(id int) owneraccountoperationOption {
+	return func(m *OwnerAccountOperationMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *OwnerAccountOperation
+		)
+		m.oldValue = func(ctx context.Context) (*OwnerAccountOperation, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().OwnerAccountOperation.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withOwnerAccountOperation sets the old OwnerAccountOperation of the mutation.
+func withOwnerAccountOperation(node *OwnerAccountOperation) owneraccountoperationOption {
+	return func(m *OwnerAccountOperationMutation) {
+		m.oldValue = func(context.Context) (*OwnerAccountOperation, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m OwnerAccountOperationMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m OwnerAccountOperationMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *OwnerAccountOperationMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *OwnerAccountOperationMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().OwnerAccountOperation.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetProviderID sets the "provider_id" field.
+func (m *OwnerAccountOperationMutation) SetProviderID(i int) {
+	m.provider_id = &i
+	m.addprovider_id = nil
+}
+
+// ProviderID returns the value of the "provider_id" field in the mutation.
+func (m *OwnerAccountOperationMutation) ProviderID() (r int, exists bool) {
+	v := m.provider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderID returns the old "provider_id" field's value of the OwnerAccountOperation entity.
+// If the OwnerAccountOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *OwnerAccountOperationMutation) OldProviderID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderID: %w", err)
+	}
+	return oldValue.ProviderID, nil
+}
+
+// AddProviderID adds i to the "provider_id" field.
+func (m *OwnerAccountOperationMutation) AddProviderID(i int) {
+	if m.addprovider_id != nil {
+		*m.addprovider_id += i
+	} else {
+		m.addprovider_id = &i
+	}
+}
+
+// AddedProviderID returns the value that was added to the "provider_id" field in this mutation.
+func (m *OwnerAccountOperationMutation) AddedProviderID() (r int, exists bool) {
+	v := m.addprovider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetProviderID resets all changes to the "provider_id" field.
+func (m *OwnerAccountOperationMutation) ResetProviderID() {
+	m.provider_id = nil
+	m.addprovider_id = nil
+}
+
+// SetAccountID sets the "account_id" field.
+func (m *OwnerAccountOperationMutation) SetAccountID(i int64) {
+	m.account_id = &i
+	m.addaccount_id = nil
+}
+
+// AccountID returns the value of the "account_id" field in the mutation.
+func (m *OwnerAccountOperationMutation) AccountID() (r int64, exists bool) {
+	v := m.account_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAccountID returns the old "account_id" field's value of the OwnerAccountOperation entity.
+// If the OwnerAccountOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *OwnerAccountOperationMutation) OldAccountID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAccountID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAccountID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAccountID: %w", err)
+	}
+	return oldValue.AccountID, nil
+}
+
+// AddAccountID adds i to the "account_id" field.
+func (m *OwnerAccountOperationMutation) AddAccountID(i int64) {
+	if m.addaccount_id != nil {
+		*m.addaccount_id += i
+	} else {
+		m.addaccount_id = &i
+	}
+}
+
+// AddedAccountID returns the value that was added to the "account_id" field in this mutation.
+func (m *OwnerAccountOperationMutation) AddedAccountID() (r int64, exists bool) {
+	v := m.addaccount_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAccountID resets all changes to the "account_id" field.
+func (m *OwnerAccountOperationMutation) ResetAccountID() {
+	m.account_id = nil
+	m.addaccount_id = nil
+}
+
+// SetActorUserID sets the "actor_user_id" field.
+func (m *OwnerAccountOperationMutation) SetActorUserID(i int) {
+	m.actor_user_id = &i
+	m.addactor_user_id = nil
+}
+
+// ActorUserID returns the value of the "actor_user_id" field in the mutation.
+func (m *OwnerAccountOperationMutation) ActorUserID() (r int, exists bool) {
+	v := m.actor_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldActorUserID returns the old "actor_user_id" field's value of the OwnerAccountOperation entity.
+// If the OwnerAccountOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *OwnerAccountOperationMutation) OldActorUserID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldActorUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldActorUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldActorUserID: %w", err)
+	}
+	return oldValue.ActorUserID, nil
+}
+
+// AddActorUserID adds i to the "actor_user_id" field.
+func (m *OwnerAccountOperationMutation) AddActorUserID(i int) {
+	if m.addactor_user_id != nil {
+		*m.addactor_user_id += i
+	} else {
+		m.addactor_user_id = &i
+	}
+}
+
+// AddedActorUserID returns the value that was added to the "actor_user_id" field in this mutation.
+func (m *OwnerAccountOperationMutation) AddedActorUserID() (r int, exists bool) {
+	v := m.addactor_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetActorUserID resets all changes to the "actor_user_id" field.
+func (m *OwnerAccountOperationMutation) ResetActorUserID() {
+	m.actor_user_id = nil
+	m.addactor_user_id = nil
+}
+
+// SetAction sets the "action" field.
+func (m *OwnerAccountOperationMutation) SetAction(o owneraccountoperation.Action) {
+	m.action = &o
+}
+
+// Action returns the value of the "action" field in the mutation.
+func (m *OwnerAccountOperationMutation) Action() (r owneraccountoperation.Action, exists bool) {
+	v := m.action
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAction returns the old "action" field's value of the OwnerAccountOperation entity.
+// If the OwnerAccountOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *OwnerAccountOperationMutation) OldAction(ctx context.Context) (v owneraccountoperation.Action, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAction is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAction requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAction: %w", err)
+	}
+	return oldValue.Action, nil
+}
+
+// ResetAction resets all changes to the "action" field.
+func (m *OwnerAccountOperationMutation) ResetAction() {
+	m.action = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *OwnerAccountOperationMutation) SetStatus(o owneraccountoperation.Status) {
+	m.status = &o
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *OwnerAccountOperationMutation) Status() (r owneraccountoperation.Status, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the OwnerAccountOperation entity.
+// If the OwnerAccountOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *OwnerAccountOperationMutation) OldStatus(ctx context.Context) (v owneraccountoperation.Status, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *OwnerAccountOperationMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetReason sets the "reason" field.
+func (m *OwnerAccountOperationMutation) SetReason(s string) {
+	m.reason = &s
+}
+
+// Reason returns the value of the "reason" field in the mutation.
+func (m *OwnerAccountOperationMutation) Reason() (r string, exists bool) {
+	v := m.reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReason returns the old "reason" field's value of the OwnerAccountOperation entity.
+// If the OwnerAccountOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *OwnerAccountOperationMutation) OldReason(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReason: %w", err)
+	}
+	return oldValue.Reason, nil
+}
+
+// ClearReason clears the value of the "reason" field.
+func (m *OwnerAccountOperationMutation) ClearReason() {
+	m.reason = nil
+	m.clearedFields[owneraccountoperation.FieldReason] = struct{}{}
+}
+
+// ReasonCleared returns if the "reason" field was cleared in this mutation.
+func (m *OwnerAccountOperationMutation) ReasonCleared() bool {
+	_, ok := m.clearedFields[owneraccountoperation.FieldReason]
+	return ok
+}
+
+// ResetReason resets all changes to the "reason" field.
+func (m *OwnerAccountOperationMutation) ResetReason() {
+	m.reason = nil
+	delete(m.clearedFields, owneraccountoperation.FieldReason)
+}
+
+// SetInviteEmail sets the "invite_email" field.
+func (m *OwnerAccountOperationMutation) SetInviteEmail(s string) {
+	m.invite_email = &s
+}
+
+// InviteEmail returns the value of the "invite_email" field in the mutation.
+func (m *OwnerAccountOperationMutation) InviteEmail() (r string, exists bool) {
+	v := m.invite_email
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInviteEmail returns the old "invite_email" field's value of the OwnerAccountOperation entity.
+// If the OwnerAccountOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *OwnerAccountOperationMutation) OldInviteEmail(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInviteEmail is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInviteEmail requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInviteEmail: %w", err)
+	}
+	return oldValue.InviteEmail, nil
+}
+
+// ClearInviteEmail clears the value of the "invite_email" field.
+func (m *OwnerAccountOperationMutation) ClearInviteEmail() {
+	m.invite_email = nil
+	m.clearedFields[owneraccountoperation.FieldInviteEmail] = struct{}{}
+}
+
+// InviteEmailCleared returns if the "invite_email" field was cleared in this mutation.
+func (m *OwnerAccountOperationMutation) InviteEmailCleared() bool {
+	_, ok := m.clearedFields[owneraccountoperation.FieldInviteEmail]
+	return ok
+}
+
+// ResetInviteEmail resets all changes to the "invite_email" field.
+func (m *OwnerAccountOperationMutation) ResetInviteEmail() {
+	m.invite_email = nil
+	delete(m.clearedFields, owneraccountoperation.FieldInviteEmail)
+}
+
+// SetUpstreamCode sets the "upstream_code" field.
+func (m *OwnerAccountOperationMutation) SetUpstreamCode(s string) {
+	m.upstream_code = &s
+}
+
+// UpstreamCode returns the value of the "upstream_code" field in the mutation.
+func (m *OwnerAccountOperationMutation) UpstreamCode() (r string, exists bool) {
+	v := m.upstream_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamCode returns the old "upstream_code" field's value of the OwnerAccountOperation entity.
+// If the OwnerAccountOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *OwnerAccountOperationMutation) OldUpstreamCode(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamCode: %w", err)
+	}
+	return oldValue.UpstreamCode, nil
+}
+
+// ClearUpstreamCode clears the value of the "upstream_code" field.
+func (m *OwnerAccountOperationMutation) ClearUpstreamCode() {
+	m.upstream_code = nil
+	m.clearedFields[owneraccountoperation.FieldUpstreamCode] = struct{}{}
+}
+
+// UpstreamCodeCleared returns if the "upstream_code" field was cleared in this mutation.
+func (m *OwnerAccountOperationMutation) UpstreamCodeCleared() bool {
+	_, ok := m.clearedFields[owneraccountoperation.FieldUpstreamCode]
+	return ok
+}
+
+// ResetUpstreamCode resets all changes to the "upstream_code" field.
+func (m *OwnerAccountOperationMutation) ResetUpstreamCode() {
+	m.upstream_code = nil
+	delete(m.clearedFields, owneraccountoperation.FieldUpstreamCode)
+}
+
+// SetWarningCode sets the "warning_code" field.
+func (m *OwnerAccountOperationMutation) SetWarningCode(s string) {
+	m.warning_code = &s
+}
+
+// WarningCode returns the value of the "warning_code" field in the mutation.
+func (m *OwnerAccountOperationMutation) WarningCode() (r string, exists bool) {
+	v := m.warning_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWarningCode returns the old "warning_code" field's value of the OwnerAccountOperation entity.
+// If the OwnerAccountOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *OwnerAccountOperationMutation) OldWarningCode(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWarningCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWarningCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWarningCode: %w", err)
+	}
+	return oldValue.WarningCode, nil
+}
+
+// ClearWarningCode clears the value of the "warning_code" field.
+func (m *OwnerAccountOperationMutation) ClearWarningCode() {
+	m.warning_code = nil
+	m.clearedFields[owneraccountoperation.FieldWarningCode] = struct{}{}
+}
+
+// WarningCodeCleared returns if the "warning_code" field was cleared in this mutation.
+func (m *OwnerAccountOperationMutation) WarningCodeCleared() bool {
+	_, ok := m.clearedFields[owneraccountoperation.FieldWarningCode]
+	return ok
+}
+
+// ResetWarningCode resets all changes to the "warning_code" field.
+func (m *OwnerAccountOperationMutation) ResetWarningCode() {
+	m.warning_code = nil
+	delete(m.clearedFields, owneraccountoperation.FieldWarningCode)
+}
+
+// SetResult sets the "result" field.
+func (m *OwnerAccountOperationMutation) SetResult(value map[string]interface{}) {
+	m.result = &value
+}
+
+// Result returns the value of the "result" field in the mutation.
+func (m *OwnerAccountOperationMutation) Result() (r map[string]interface{}, exists bool) {
+	v := m.result
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResult returns the old "result" field's value of the OwnerAccountOperation entity.
+// If the OwnerAccountOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *OwnerAccountOperationMutation) OldResult(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResult is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResult requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResult: %w", err)
+	}
+	return oldValue.Result, nil
+}
+
+// ClearResult clears the value of the "result" field.
+func (m *OwnerAccountOperationMutation) ClearResult() {
+	m.result = nil
+	m.clearedFields[owneraccountoperation.FieldResult] = struct{}{}
+}
+
+// ResultCleared returns if the "result" field was cleared in this mutation.
+func (m *OwnerAccountOperationMutation) ResultCleared() bool {
+	_, ok := m.clearedFields[owneraccountoperation.FieldResult]
+	return ok
+}
+
+// ResetResult resets all changes to the "result" field.
+func (m *OwnerAccountOperationMutation) ResetResult() {
+	m.result = nil
+	delete(m.clearedFields, owneraccountoperation.FieldResult)
+}
+
+// SetHeartbeatAt sets the "heartbeat_at" field.
+func (m *OwnerAccountOperationMutation) SetHeartbeatAt(t time.Time) {
+	m.heartbeat_at = &t
+}
+
+// HeartbeatAt returns the value of the "heartbeat_at" field in the mutation.
+func (m *OwnerAccountOperationMutation) HeartbeatAt() (r time.Time, exists bool) {
+	v := m.heartbeat_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldHeartbeatAt returns the old "heartbeat_at" field's value of the OwnerAccountOperation entity.
+// If the OwnerAccountOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *OwnerAccountOperationMutation) OldHeartbeatAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldHeartbeatAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldHeartbeatAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldHeartbeatAt: %w", err)
+	}
+	return oldValue.HeartbeatAt, nil
+}
+
+// ClearHeartbeatAt clears the value of the "heartbeat_at" field.
+func (m *OwnerAccountOperationMutation) ClearHeartbeatAt() {
+	m.heartbeat_at = nil
+	m.clearedFields[owneraccountoperation.FieldHeartbeatAt] = struct{}{}
+}
+
+// HeartbeatAtCleared returns if the "heartbeat_at" field was cleared in this mutation.
+func (m *OwnerAccountOperationMutation) HeartbeatAtCleared() bool {
+	_, ok := m.clearedFields[owneraccountoperation.FieldHeartbeatAt]
+	return ok
+}
+
+// ResetHeartbeatAt resets all changes to the "heartbeat_at" field.
+func (m *OwnerAccountOperationMutation) ResetHeartbeatAt() {
+	m.heartbeat_at = nil
+	delete(m.clearedFields, owneraccountoperation.FieldHeartbeatAt)
+}
+
+// SetStartedAt sets the "started_at" field.
+func (m *OwnerAccountOperationMutation) SetStartedAt(t time.Time) {
+	m.started_at = &t
+}
+
+// StartedAt returns the value of the "started_at" field in the mutation.
+func (m *OwnerAccountOperationMutation) StartedAt() (r time.Time, exists bool) {
+	v := m.started_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStartedAt returns the old "started_at" field's value of the OwnerAccountOperation entity.
+// If the OwnerAccountOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *OwnerAccountOperationMutation) OldStartedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStartedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStartedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStartedAt: %w", err)
+	}
+	return oldValue.StartedAt, nil
+}
+
+// ClearStartedAt clears the value of the "started_at" field.
+func (m *OwnerAccountOperationMutation) ClearStartedAt() {
+	m.started_at = nil
+	m.clearedFields[owneraccountoperation.FieldStartedAt] = struct{}{}
+}
+
+// StartedAtCleared returns if the "started_at" field was cleared in this mutation.
+func (m *OwnerAccountOperationMutation) StartedAtCleared() bool {
+	_, ok := m.clearedFields[owneraccountoperation.FieldStartedAt]
+	return ok
+}
+
+// ResetStartedAt resets all changes to the "started_at" field.
+func (m *OwnerAccountOperationMutation) ResetStartedAt() {
+	m.started_at = nil
+	delete(m.clearedFields, owneraccountoperation.FieldStartedAt)
+}
+
+// SetFinishedAt sets the "finished_at" field.
+func (m *OwnerAccountOperationMutation) SetFinishedAt(t time.Time) {
+	m.finished_at = &t
+}
+
+// FinishedAt returns the value of the "finished_at" field in the mutation.
+func (m *OwnerAccountOperationMutation) FinishedAt() (r time.Time, exists bool) {
+	v := m.finished_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFinishedAt returns the old "finished_at" field's value of the OwnerAccountOperation entity.
+// If the OwnerAccountOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *OwnerAccountOperationMutation) OldFinishedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFinishedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFinishedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFinishedAt: %w", err)
+	}
+	return oldValue.FinishedAt, nil
+}
+
+// ClearFinishedAt clears the value of the "finished_at" field.
+func (m *OwnerAccountOperationMutation) ClearFinishedAt() {
+	m.finished_at = nil
+	m.clearedFields[owneraccountoperation.FieldFinishedAt] = struct{}{}
+}
+
+// FinishedAtCleared returns if the "finished_at" field was cleared in this mutation.
+func (m *OwnerAccountOperationMutation) FinishedAtCleared() bool {
+	_, ok := m.clearedFields[owneraccountoperation.FieldFinishedAt]
+	return ok
+}
+
+// ResetFinishedAt resets all changes to the "finished_at" field.
+func (m *OwnerAccountOperationMutation) ResetFinishedAt() {
+	m.finished_at = nil
+	delete(m.clearedFields, owneraccountoperation.FieldFinishedAt)
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *OwnerAccountOperationMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *OwnerAccountOperationMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the OwnerAccountOperation entity.
+// If the OwnerAccountOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *OwnerAccountOperationMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *OwnerAccountOperationMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *OwnerAccountOperationMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *OwnerAccountOperationMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the OwnerAccountOperation entity.
+// If the OwnerAccountOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *OwnerAccountOperationMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *OwnerAccountOperationMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the OwnerAccountOperationMutation builder.
+func (m *OwnerAccountOperationMutation) Where(ps ...predicate.OwnerAccountOperation) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the OwnerAccountOperationMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *OwnerAccountOperationMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.OwnerAccountOperation, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *OwnerAccountOperationMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *OwnerAccountOperationMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (OwnerAccountOperation).
+func (m *OwnerAccountOperationMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *OwnerAccountOperationMutation) Fields() []string {
+	fields := make([]string, 0, 15)
+	if m.provider_id != nil {
+		fields = append(fields, owneraccountoperation.FieldProviderID)
+	}
+	if m.account_id != nil {
+		fields = append(fields, owneraccountoperation.FieldAccountID)
+	}
+	if m.actor_user_id != nil {
+		fields = append(fields, owneraccountoperation.FieldActorUserID)
+	}
+	if m.action != nil {
+		fields = append(fields, owneraccountoperation.FieldAction)
+	}
+	if m.status != nil {
+		fields = append(fields, owneraccountoperation.FieldStatus)
+	}
+	if m.reason != nil {
+		fields = append(fields, owneraccountoperation.FieldReason)
+	}
+	if m.invite_email != nil {
+		fields = append(fields, owneraccountoperation.FieldInviteEmail)
+	}
+	if m.upstream_code != nil {
+		fields = append(fields, owneraccountoperation.FieldUpstreamCode)
+	}
+	if m.warning_code != nil {
+		fields = append(fields, owneraccountoperation.FieldWarningCode)
+	}
+	if m.result != nil {
+		fields = append(fields, owneraccountoperation.FieldResult)
+	}
+	if m.heartbeat_at != nil {
+		fields = append(fields, owneraccountoperation.FieldHeartbeatAt)
+	}
+	if m.started_at != nil {
+		fields = append(fields, owneraccountoperation.FieldStartedAt)
+	}
+	if m.finished_at != nil {
+		fields = append(fields, owneraccountoperation.FieldFinishedAt)
+	}
+	if m.created_at != nil {
+		fields = append(fields, owneraccountoperation.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, owneraccountoperation.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *OwnerAccountOperationMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case owneraccountoperation.FieldProviderID:
+		return m.ProviderID()
+	case owneraccountoperation.FieldAccountID:
+		return m.AccountID()
+	case owneraccountoperation.FieldActorUserID:
+		return m.ActorUserID()
+	case owneraccountoperation.FieldAction:
+		return m.Action()
+	case owneraccountoperation.FieldStatus:
+		return m.Status()
+	case owneraccountoperation.FieldReason:
+		return m.Reason()
+	case owneraccountoperation.FieldInviteEmail:
+		return m.InviteEmail()
+	case owneraccountoperation.FieldUpstreamCode:
+		return m.UpstreamCode()
+	case owneraccountoperation.FieldWarningCode:
+		return m.WarningCode()
+	case owneraccountoperation.FieldResult:
+		return m.Result()
+	case owneraccountoperation.FieldHeartbeatAt:
+		return m.HeartbeatAt()
+	case owneraccountoperation.FieldStartedAt:
+		return m.StartedAt()
+	case owneraccountoperation.FieldFinishedAt:
+		return m.FinishedAt()
+	case owneraccountoperation.FieldCreatedAt:
+		return m.CreatedAt()
+	case owneraccountoperation.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *OwnerAccountOperationMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case owneraccountoperation.FieldProviderID:
+		return m.OldProviderID(ctx)
+	case owneraccountoperation.FieldAccountID:
+		return m.OldAccountID(ctx)
+	case owneraccountoperation.FieldActorUserID:
+		return m.OldActorUserID(ctx)
+	case owneraccountoperation.FieldAction:
+		return m.OldAction(ctx)
+	case owneraccountoperation.FieldStatus:
+		return m.OldStatus(ctx)
+	case owneraccountoperation.FieldReason:
+		return m.OldReason(ctx)
+	case owneraccountoperation.FieldInviteEmail:
+		return m.OldInviteEmail(ctx)
+	case owneraccountoperation.FieldUpstreamCode:
+		return m.OldUpstreamCode(ctx)
+	case owneraccountoperation.FieldWarningCode:
+		return m.OldWarningCode(ctx)
+	case owneraccountoperation.FieldResult:
+		return m.OldResult(ctx)
+	case owneraccountoperation.FieldHeartbeatAt:
+		return m.OldHeartbeatAt(ctx)
+	case owneraccountoperation.FieldStartedAt:
+		return m.OldStartedAt(ctx)
+	case owneraccountoperation.FieldFinishedAt:
+		return m.OldFinishedAt(ctx)
+	case owneraccountoperation.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case owneraccountoperation.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown OwnerAccountOperation field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *OwnerAccountOperationMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case owneraccountoperation.FieldProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderID(v)
+		return nil
+	case owneraccountoperation.FieldAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccountID(v)
+		return nil
+	case owneraccountoperation.FieldActorUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetActorUserID(v)
+		return nil
+	case owneraccountoperation.FieldAction:
+		v, ok := value.(owneraccountoperation.Action)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAction(v)
+		return nil
+	case owneraccountoperation.FieldStatus:
+		v, ok := value.(owneraccountoperation.Status)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case owneraccountoperation.FieldReason:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReason(v)
+		return nil
+	case owneraccountoperation.FieldInviteEmail:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInviteEmail(v)
+		return nil
+	case owneraccountoperation.FieldUpstreamCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamCode(v)
+		return nil
+	case owneraccountoperation.FieldWarningCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWarningCode(v)
+		return nil
+	case owneraccountoperation.FieldResult:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResult(v)
+		return nil
+	case owneraccountoperation.FieldHeartbeatAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetHeartbeatAt(v)
+		return nil
+	case owneraccountoperation.FieldStartedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStartedAt(v)
+		return nil
+	case owneraccountoperation.FieldFinishedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFinishedAt(v)
+		return nil
+	case owneraccountoperation.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case owneraccountoperation.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown OwnerAccountOperation field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *OwnerAccountOperationMutation) AddedFields() []string {
+	var fields []string
+	if m.addprovider_id != nil {
+		fields = append(fields, owneraccountoperation.FieldProviderID)
+	}
+	if m.addaccount_id != nil {
+		fields = append(fields, owneraccountoperation.FieldAccountID)
+	}
+	if m.addactor_user_id != nil {
+		fields = append(fields, owneraccountoperation.FieldActorUserID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *OwnerAccountOperationMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case owneraccountoperation.FieldProviderID:
+		return m.AddedProviderID()
+	case owneraccountoperation.FieldAccountID:
+		return m.AddedAccountID()
+	case owneraccountoperation.FieldActorUserID:
+		return m.AddedActorUserID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *OwnerAccountOperationMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case owneraccountoperation.FieldProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProviderID(v)
+		return nil
+	case owneraccountoperation.FieldAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAccountID(v)
+		return nil
+	case owneraccountoperation.FieldActorUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddActorUserID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown OwnerAccountOperation numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *OwnerAccountOperationMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(owneraccountoperation.FieldReason) {
+		fields = append(fields, owneraccountoperation.FieldReason)
+	}
+	if m.FieldCleared(owneraccountoperation.FieldInviteEmail) {
+		fields = append(fields, owneraccountoperation.FieldInviteEmail)
+	}
+	if m.FieldCleared(owneraccountoperation.FieldUpstreamCode) {
+		fields = append(fields, owneraccountoperation.FieldUpstreamCode)
+	}
+	if m.FieldCleared(owneraccountoperation.FieldWarningCode) {
+		fields = append(fields, owneraccountoperation.FieldWarningCode)
+	}
+	if m.FieldCleared(owneraccountoperation.FieldResult) {
+		fields = append(fields, owneraccountoperation.FieldResult)
+	}
+	if m.FieldCleared(owneraccountoperation.FieldHeartbeatAt) {
+		fields = append(fields, owneraccountoperation.FieldHeartbeatAt)
+	}
+	if m.FieldCleared(owneraccountoperation.FieldStartedAt) {
+		fields = append(fields, owneraccountoperation.FieldStartedAt)
+	}
+	if m.FieldCleared(owneraccountoperation.FieldFinishedAt) {
+		fields = append(fields, owneraccountoperation.FieldFinishedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *OwnerAccountOperationMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *OwnerAccountOperationMutation) ClearField(name string) error {
+	switch name {
+	case owneraccountoperation.FieldReason:
+		m.ClearReason()
+		return nil
+	case owneraccountoperation.FieldInviteEmail:
+		m.ClearInviteEmail()
+		return nil
+	case owneraccountoperation.FieldUpstreamCode:
+		m.ClearUpstreamCode()
+		return nil
+	case owneraccountoperation.FieldWarningCode:
+		m.ClearWarningCode()
+		return nil
+	case owneraccountoperation.FieldResult:
+		m.ClearResult()
+		return nil
+	case owneraccountoperation.FieldHeartbeatAt:
+		m.ClearHeartbeatAt()
+		return nil
+	case owneraccountoperation.FieldStartedAt:
+		m.ClearStartedAt()
+		return nil
+	case owneraccountoperation.FieldFinishedAt:
+		m.ClearFinishedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown OwnerAccountOperation nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *OwnerAccountOperationMutation) ResetField(name string) error {
+	switch name {
+	case owneraccountoperation.FieldProviderID:
+		m.ResetProviderID()
+		return nil
+	case owneraccountoperation.FieldAccountID:
+		m.ResetAccountID()
+		return nil
+	case owneraccountoperation.FieldActorUserID:
+		m.ResetActorUserID()
+		return nil
+	case owneraccountoperation.FieldAction:
+		m.ResetAction()
+		return nil
+	case owneraccountoperation.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case owneraccountoperation.FieldReason:
+		m.ResetReason()
+		return nil
+	case owneraccountoperation.FieldInviteEmail:
+		m.ResetInviteEmail()
+		return nil
+	case owneraccountoperation.FieldUpstreamCode:
+		m.ResetUpstreamCode()
+		return nil
+	case owneraccountoperation.FieldWarningCode:
+		m.ResetWarningCode()
+		return nil
+	case owneraccountoperation.FieldResult:
+		m.ResetResult()
+		return nil
+	case owneraccountoperation.FieldHeartbeatAt:
+		m.ResetHeartbeatAt()
+		return nil
+	case owneraccountoperation.FieldStartedAt:
+		m.ResetStartedAt()
+		return nil
+	case owneraccountoperation.FieldFinishedAt:
+		m.ResetFinishedAt()
+		return nil
+	case owneraccountoperation.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case owneraccountoperation.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown OwnerAccountOperation field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *OwnerAccountOperationMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *OwnerAccountOperationMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *OwnerAccountOperationMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *OwnerAccountOperationMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *OwnerAccountOperationMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *OwnerAccountOperationMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *OwnerAccountOperationMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown OwnerAccountOperation unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *OwnerAccountOperationMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown OwnerAccountOperation edge %s", name)
 }
 
 // PRCommitUsageSnapshotMutation represents an operation that mutates the PRCommitUsageSnapshot nodes in the graph.
