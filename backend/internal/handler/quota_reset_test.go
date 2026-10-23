@@ -218,7 +218,7 @@ func TestQuotaResetListAPIsExcludePrivateWorkflowNotificationIDs(t *testing.T) {
 			if !strings.Contains(rec.Body.String(), `"current_step":0`) {
 				t.Fatalf("response omitted current step zero: %s", rec.Body.String())
 			}
-		assertQuotaResetAPINoPrivateWorkflowData(t, rec.Body.Bytes(), "api-private-requester-wecom", "api-private-future-wecom")
+			assertQuotaResetAPINoPrivateWorkflowData(t, rec.Body.Bytes(), "api-private-requester-wecom", "api-private-future-wecom")
 		})
 	}
 }
