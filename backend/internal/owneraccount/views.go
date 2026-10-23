@@ -90,8 +90,11 @@ type UsageWindowView struct {
 	ResetsAt           *time.Time `json:"resets_at"`
 	Requests           *int64     `json:"requests"`
 	Tokens             *int64     `json:"tokens"`
-	APICostUSD         *float64   `json:"api_cost_usd"`
-	UserCostUSD        *float64   `json:"user_cost_usd"`
+	// APICostUSD is the upstream account-multiplied cost ("A $"), never the
+	// unmultiplied standard cost. StandardCostUSD exists only for the tooltip.
+	APICostUSD      *float64 `json:"api_cost_usd"`
+	StandardCostUSD *float64 `json:"standard_cost_usd"`
+	UserCostUSD     *float64 `json:"user_cost_usd"`
 }
 
 // UsageView is one account's usage windows. ObservedAt is the account's stored
@@ -220,6 +223,56 @@ func quotaViewFromAccount(account relay.OwnerAccount) *QuotaView {
 	return view
 }
 
+// quotaObservationResult is the sanitized quota fact persisted on a succeeded
+// refresh_quota or reset_credit row. It is the only source mutation gates may use
+// for reset credits, so it deliberately omits display-only fields.
+func quotaObservationResult(quota *relay.OpenAIQuota) map[string]any {
+	view := quotaViewFromObservation(quota, false)
+	return map[string]any{
+		"reset_credits_remaining": view.ResetCreditsRemaining,
+		"reset_credit_expiries":   view.ResetCreditExpiries,
+	}
+}
+
+// referralObservationResult is the sanitized eligibility fact persisted on a
+// succeeded refresh_referral or send_invitation row. A nil program id is stored as
+// an empty string so the invitation gate can still tell "no program" from "no
+// observation".
+func referralObservationResult(referral *relay.OwnerAccountReferral) map[string]any {
+	view := referralViewFromSnapshot(referral)
+	if view == nil {
+		return nil
+	}
+	programID := ""
+	if view.ProgramID != nil {
+		programID = *view.ProgramID
+	}
+	result := map[string]any{
+		"eligible":          view.Eligible,
+		"program_id":        programID,
+		"remaining_invites": view.RemainingInvites,
+	}
+	if view.ConsentRequired != nil {
+		result["consent_required"] = *view.ConsentRequired
+	}
+	return result
+}
+
+// mergeObservationResult adds sanitized observation fields to an operation result
+// without dropping the mutation-specific fields the history surface renders.
+func mergeObservationResult(result, observation map[string]any) map[string]any {
+	if len(observation) == 0 {
+		return result
+	}
+	if result == nil {
+		result = make(map[string]any, len(observation))
+	}
+	for key, value := range observation {
+		result[key] = value
+	}
+	return result
+}
+
 func quotaViewFromObservation(quota *relay.OpenAIQuota, autoResetCredit bool) QuotaView {
 	view := QuotaView{AutoResetCredit: autoResetCredit, ResetCreditExpiries: []string{}}
 	if quota == nil {
@@ -283,7 +336,8 @@ func usageWindowView(window *relay.OwnerAccountUsageWindow) UsageWindowView {
 	view.ResetsAt = window.ResetsAt
 	view.Requests = &requests
 	view.Tokens = &tokens
-	view.APICostUSD = &standardCost
+	view.APICostUSD = window.Cost
+	view.StandardCostUSD = &standardCost
 	view.UserCostUSD = &userCost
 	return view
 }
@@ -291,7 +345,7 @@ func usageWindowView(window *relay.OwnerAccountUsageWindow) UsageWindowView {
 func blockedActions(facts *accountOperationFacts) []BlockedActionView {
 	blocked := make([]BlockedActionView, 0, 2)
 	if reset, ok := facts.Latest["reset_credit"]; ok && reset.Status == "unknown" {
-		if facts.QuotaObservedAt == nil || !facts.QuotaObservedAt.After(reset.CreatedAt) {
+		if observed := facts.quotaObservedAt(); observed == nil || !observed.After(reset.CreatedAt) {
 			operationID := reset.ID
 			blocked = append(blocked, BlockedActionView{
 				Action: "reset_credit", Reason: "unknown", OperationID: &operationID,
@@ -299,7 +353,7 @@ func blockedActions(facts *accountOperationFacts) []BlockedActionView {
 		}
 	}
 	if invite, ok := facts.Latest["send_invitation"]; ok && invite.Status == "unknown" {
-		if facts.ReferralObservedAt == nil || !facts.ReferralObservedAt.After(invite.CreatedAt) {
+		if observed := facts.referralObservedAt(); observed == nil || !observed.After(invite.CreatedAt) {
 			operationID := invite.ID
 			blocked = append(blocked, BlockedActionView{
 				Action: "send_invitation", Reason: "unknown", OperationID: &operationID,

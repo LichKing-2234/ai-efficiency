@@ -13,8 +13,14 @@ const props = defineProps<{
     sent?: boolean
     errorCode?: string
   } | null
+  interrupted?: boolean
   unknownReset: boolean
   unknownInvite: boolean
+}>()
+
+const emit = defineEmits<{
+  'retry-poll': []
+  history: []
 }>()
 
 const { t: baseT, locale } = useI18n()
@@ -35,7 +41,28 @@ const t = createFeatureTranslator(locale, baseT, 'ownerAccounts', ownerAccountsM
     </ElAlert>
 
     <ElAlert
-      v-if="operation && operation.status !== 'unknown'"
+      v-if="interrupted"
+      :data-testid="`owner-account-poll-interrupted-${accountId}`"
+      type="warning"
+      :closable="false"
+      show-icon
+      :title="t('ownerAccounts.pollInterruptedTitle')"
+    >
+      <p class="text-sm">{{ t('ownerAccounts.pollInterruptedBody') }}</p>
+      <div class="mt-2 flex flex-wrap gap-2">
+        <ElButton
+          :data-testid="`owner-account-retry-poll-${accountId}`"
+          size="small"
+          @click="emit('retry-poll')"
+        >
+          {{ t('ownerAccounts.retry') }}
+        </ElButton>
+        <ElButton size="small" text @click="emit('history')">{{ t('ownerAccounts.history') }}</ElButton>
+      </div>
+    </ElAlert>
+
+    <ElAlert
+      v-else-if="operation && operation.status !== 'unknown'"
       :data-testid="`owner-account-operation-${accountId}`"
       :type="operation.status === 'succeeded' ? 'success' : operation.status === 'failed' ? 'error' : 'info'"
       :closable="false"

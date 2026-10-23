@@ -505,6 +505,7 @@ func main() {
 	// opts in, and the startup sweep fails closed on abandoned running rows.
 	ownerAccountService, err := owneraccount.NewService(entClient, sqlDB, providerRuntime, logger, owneraccount.Options{
 		MutationsEnabled: cfg.Relay.OwnerAccountMutationsEnabled,
+		Observer:         metrics.OwnerAccountRecorder(),
 	})
 	if err != nil {
 		logger.Fatal("initialize owner account service", zap.Error(err))

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
 	"github.com/ai-efficiency/backend/ent/owneraccountoperation"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/owneraccount"
@@ -107,6 +108,55 @@ func TestOwnerAccountOwnershipMatchingAndInactiveOwner(t *testing.T) {
 			t.Fatalf("service scope error = %v, want owner-inactive", err)
 		}
 	}
+}
+
+// TestOwnerAccountLocallyDisabledPredicates covers every canonical local
+// disable signal: revoked relay token, disabled relay access, and a succeeded
+// disable-relay-user offboarding action.
+func TestOwnerAccountLocallyDisabledPredicates(t *testing.T) {
+	t.Run("token revoked", func(t *testing.T) {
+		env := setupOwnerAccountEnv(t, nil)
+		env.upstream.setAccounts(ownerAccountWire(11, "Alice", "alice@example.com", "openai", "oauth"))
+		if err := env.client.User.UpdateOneID(env.alice.ID).SetTokenValidAfter(time.Now()).Exec(context.Background()); err != nil {
+			t.Fatalf("revoke alice token: %v", err)
+		}
+		// The auth middleware also enforces token validity, so the route may
+		// answer 401 before the service runs. The service predicate itself must
+		// still classify the owner as inactive.
+		inactive := env.request(http.MethodGet, "/api/v1/user/owner-accounts", nil, env.aliceAuth)
+		if inactive.Code != http.StatusUnauthorized && inactive.Code != http.StatusForbidden {
+			t.Fatalf("list status = %d, want 401 or 403", inactive.Code)
+		}
+		if _, err := env.service.Scope(context.Background(), env.alice.ID); err == nil {
+			t.Fatal("service accepted an owner with a revoked relay token")
+		} else {
+			var classified *owneraccount.Error
+			if !errors.As(err, &classified) || classified.Code != "owner-inactive" {
+				t.Fatalf("service scope error = %v, want owner-inactive", err)
+			}
+		}
+	})
+
+	t.Run("offboarding action succeeded", func(t *testing.T) {
+		env := setupOwnerAccountEnv(t, nil)
+		env.upstream.setAccounts(ownerAccountWire(11, "Alice", "alice@example.com", "openai", "oauth"))
+		if _, err := env.client.DirectoryOffboardingAction.Create().
+			SetSourceID(1).
+			SetUserID(env.alice.ID).
+			SetRelayUserID(1001).
+			SetDirectoryRunID(1).
+			SetAction(directoryoffboardingaction.ActionDisableRelayUser).
+			SetStatus(directoryoffboardingaction.StatusSucceeded).
+			SetReason("missing_from_latest_full_company_directory").
+			SetPerformedByUserID(env.admin.ID).
+			Save(context.Background()); err != nil {
+			t.Fatalf("create succeeded offboarding action: %v", err)
+		}
+		inactive := env.request(http.MethodGet, "/api/v1/user/owner-accounts/scope", nil, env.aliceAuth)
+		if inactive.Code != http.StatusForbidden || env.errorCode(t, inactive) != "owner-inactive" {
+			t.Fatalf("scope = %d/%s, want 403/owner-inactive", inactive.Code, env.errorCode(t, inactive))
+		}
+	})
 }
 
 func TestOwnerAccountListShapePaginationAndMutationsFlag(t *testing.T) {
@@ -394,6 +444,48 @@ func TestOwnerAccountUsageBatchChunksAndReportsPartialErrors(t *testing.T) {
 	over := env.request(http.MethodPost, "/api/v1/user/owner-accounts/usage", map[string]any{"account_ids": tooMany}, env.aliceAuth)
 	if over.Code != http.StatusBadRequest {
 		t.Fatalf("over-limit usage status = %d, want 400, body: %s", over.Code, over.Body.String())
+	}
+}
+
+// TestOwnerAccountUsageCostFields proves that A $ comes from the upstream
+// account-multiplied cost and that standard_cost is only exposed separately for
+// the tooltip. When the upstream omits cost, A $ stays null instead of falling
+// back to standard cost.
+func TestOwnerAccountUsageCostFields(t *testing.T) {
+	env := setupOwnerAccountEnv(t, nil)
+	env.upstream.setAccounts(ownerAccountWire(11, "Alice", "alice@example.com", "openai", "oauth"))
+	payload := ownerAccountUsagePayload(42)
+	payload["five_hour"].(map[string]any)["window_stats"] = map[string]any{
+		"requests": 4, "tokens": 900, "cost": 0.75, "standard_cost": 1.25, "user_cost": 0.5,
+	}
+	sevenDay := payload["seven_day"].(map[string]any)
+	delete(sevenDay, "window_stats")
+	env.upstream.setUsage(11, payload)
+
+	w := env.request(http.MethodPost, "/api/v1/user/owner-accounts/usage", map[string]any{
+		"account_ids": []int64{11},
+	}, env.aliceAuth)
+	if w.Code != http.StatusOK {
+		t.Fatalf("usage status = %d, body: %s", w.Code, w.Body.String())
+	}
+	items := env.data(t, w)["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("usage items = %d, want 1", len(items))
+	}
+	usage := items[0].(map[string]any)["usage"].(map[string]any)
+	fiveHour := usage["five_hour"].(map[string]any)
+	if got := fiveHour["api_cost_usd"]; got != float64(0.75) {
+		t.Fatalf("api_cost_usd = %v, want the upstream cost 0.75", got)
+	}
+	if got := fiveHour["standard_cost_usd"]; got != float64(1.25) {
+		t.Fatalf("standard_cost_usd = %v, want 1.25", got)
+	}
+	if got := fiveHour["user_cost_usd"]; got != float64(0.5) {
+		t.Fatalf("user_cost_usd = %v, want 0.5", got)
+	}
+	seven := usage["seven_day"].(map[string]any)
+	if got, ok := seven["api_cost_usd"]; !ok || got != nil {
+		t.Fatalf("api_cost_usd without upstream cost = %v, want null", got)
 	}
 }
 

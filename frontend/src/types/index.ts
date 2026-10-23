@@ -1319,14 +1319,13 @@ export interface WorkItemCounts {
   total_count: number
 }
 
-export type OwnerAccountPlatform = 'openai' | string
-
 export interface OwnerAccountUsageWindow {
   utilization_percent: number | null
   resets_at: string | null
   requests: number | null
   tokens: number | null
   api_cost_usd: number | null
+  standard_cost_usd: number | null
   user_cost_usd: number | null
 }
 
@@ -1374,7 +1373,7 @@ export interface OwnerAccount {
   id: number
   name: string
   email: string | null
-  platform: OwnerAccountPlatform
+  platform: string
   type: string
   status: string
   group_names: string[]

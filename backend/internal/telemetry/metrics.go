@@ -58,6 +58,8 @@ type Metrics struct {
 	attributionReconciliations   *prometheus.CounterVec
 	attributionReconciliationAge *prometheus.HistogramVec
 	attributionLifecycle         *prometheus.CounterVec
+	ownerAccountOperations       *prometheus.CounterVec
+	ownerAccountOperationLatency *prometheus.HistogramVec
 }
 
 func NewMetrics(release string) *Metrics {
@@ -124,6 +126,17 @@ func NewMetrics(release string) *Metrics {
 		attributionReconciliations:   prometheus.NewCounterVec(prometheus.CounterOpts{Namespace: metricsNamespace, Name: "attribution_reconciliations_total", Help: "V2 attribution reconciliation outcomes."}, []string{"outcome", "release"}),
 		attributionReconciliationAge: prometheus.NewHistogramVec(prometheus.HistogramOpts{Namespace: metricsNamespace, Name: "attribution_reconciliation_age_seconds", Help: "Age of v2 Request claims when a reconciliation attempt completes.", Buckets: prometheus.ExponentialBuckets(60, 2, 18)}, []string{"outcome", "release"}),
 		attributionLifecycle:         prometheus.NewCounterVec(prometheus.CounterOpts{Namespace: metricsNamespace, Name: "attribution_lifecycle_total", Help: "V2 attribution finalization and cleanup outcomes."}, []string{"operation", "outcome", "release"}),
+		ownerAccountOperations: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: metricsNamespace,
+			Name:      "owner_account_operations_total",
+			Help:      "Owner account refresh and mutation outcomes, including unknown.",
+		}, []string{"action", "outcome", "release"}),
+		ownerAccountOperationLatency: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: metricsNamespace,
+			Name:      "owner_account_operation_duration_seconds",
+			Help:      "Owner account refresh and mutation duration in seconds.",
+			Buckets:   prometheus.ExponentialBuckets(0.05, 2, 14),
+		}, []string{"action", "outcome", "release"}),
 	}
 	m.registry.MustRegister(
 		m.httpRequests,
@@ -141,6 +154,8 @@ func NewMetrics(release string) *Metrics {
 		m.attributionReconciliations,
 		m.attributionReconciliationAge,
 		m.attributionLifecycle,
+		m.ownerAccountOperations,
+		m.ownerAccountOperationLatency,
 	)
 	return m
 }
@@ -186,6 +201,47 @@ func (r AttributionRecorder) AddAttributionLifecycle(operation, outcome string, 
 		outcome = "unknown"
 	}
 	r.metrics.attributionLifecycle.WithLabelValues(operation, outcome, r.metrics.release).Add(float64(count))
+}
+
+// OwnerAccountRecorder records bounded refresh and mutation outcomes. It never
+// carries per-user or per-account labels.
+type OwnerAccountRecorder struct{ metrics *Metrics }
+
+func (m *Metrics) OwnerAccountRecorder() OwnerAccountRecorder {
+	return OwnerAccountRecorder{metrics: m}
+}
+
+func (r OwnerAccountRecorder) ObserveOwnerAccountOperation(action, outcome string, duration time.Duration) {
+	if !ownerAccountActionAllowed(action) {
+		action = "unknown"
+	}
+	if !ownerAccountOutcomeAllowed(outcome) {
+		outcome = "unknown"
+	}
+	if duration < 0 {
+		duration = 0
+	}
+	labels := []string{action, outcome, r.metrics.release}
+	r.metrics.ownerAccountOperations.WithLabelValues(labels...).Inc()
+	r.metrics.ownerAccountOperationLatency.WithLabelValues(labels...).Observe(duration.Seconds())
+}
+
+func ownerAccountActionAllowed(action string) bool {
+	switch action {
+	case "refresh_quota", "refresh_referral", "reset_credit", "send_invitation":
+		return true
+	default:
+		return false
+	}
+}
+
+func ownerAccountOutcomeAllowed(outcome string) bool {
+	switch outcome {
+	case "succeeded", "failed", "unknown":
+		return true
+	default:
+		return false
+	}
 }
 
 func attributionOutcomeAllowed(outcome string) bool {

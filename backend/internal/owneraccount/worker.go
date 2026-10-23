@@ -86,9 +86,11 @@ func (s *Service) runOperationWorker(request workerRequest) {
 			zap.Int64("account_id", request.accountID),
 			zap.Int("actor_user_id", request.actorUserID),
 			zap.String("status", status),
+			zap.Bool("outcome_unknown", status == statusUnknown),
 			zap.String("upstream_code", upstreamCode),
 			zap.Duration("duration", time.Since(startedAt)),
 		)
+		s.observeOperation(request.action, status, time.Since(startedAt))
 	}()
 
 	stopHeartbeat := s.startHeartbeat(ctx, operationID)
@@ -155,7 +157,11 @@ func (s *Service) performOperation(ctx context.Context, request workerRequest) (
 			warningCode = sanitizeCode(reset.WarningCode)
 			upstreamCode = sanitizeCode(reset.Code)
 		}
-		return true, statusSucceeded, upstreamCode, warningCode, map[string]any{"windows_reset": windowsReset}
+		result := map[string]any{"windows_reset": windowsReset}
+		if reset != nil && reset.Quota != nil {
+			result = mergeObservationResult(result, quotaObservationResult(reset.Quota))
+		}
+		return true, statusSucceeded, upstreamCode, warningCode, result
 	case "send_invitation":
 		manager, ok := provider.(relay.OpenAIReferralManager)
 		if !ok {
@@ -172,7 +178,11 @@ func (s *Service) performOperation(ctx context.Context, request workerRequest) (
 		if invite == nil {
 			return false, statusUnknown, "upstream-outcome-unknown", "", nil
 		}
-		return true, statusSucceeded, "", "", map[string]any{"sent": true}
+		result := map[string]any{"sent": true}
+		if invite.Referral != nil {
+			result = mergeObservationResult(result, referralObservationResult(invite.Referral))
+		}
+		return true, statusSucceeded, "", "", result
 	default:
 		return false, statusFailed, CodeUpstreamUnavailable, "", nil
 	}

@@ -690,7 +690,7 @@ Alert on any `unknown` mutation (potential real spend or duplicate email).
 - **Phase A — read-only.** Directory mapping, tab, usage/quota/referral reads,
   health, operation history. Mutations hidden and global switch off.
 - **Phase B — gated mutations.** Global `relay.owner_account_mutations_enabled`
-  (env `RELAY_OWNER_ACCOUNT_MUTATIONS_ENABLED`, default false); staging test on a
+  (env `AE_RELAY_OWNER_ACCOUNT_MUTATIONS_ENABLED`, default false); staging test on a
   disposable account; unknown alerts before first production action; runbook for
   423 and refresh-then-retry recovery.
 - No migration: only `owner_account_operations` is new; rollback turns off the
@@ -714,7 +714,7 @@ Alert on any `unknown` mutation (potential real spend or duplicate email).
 6. **「预计总费用」.** Excluded in v1; add later only with a reviewed platform
    estimate.
 
-## 18. Pending implementation
+## 18. Delivered implementation checklist
 
 _Delivered by PR #505; retained as the original implementation checklist and
 where the implementation notes above supersede it._

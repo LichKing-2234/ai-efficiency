@@ -38,7 +38,7 @@
         {{ t('ownerAccounts.loading') }}
       </div>
 
-      <div v-if="!wide" data-testid="owner-accounts-cards" class="grid gap-4 xl:grid-cols-2">
+      <div v-if="!wide" data-testid="owner-accounts-cards" class="grid gap-4">
         <article
           v-for="account in accounts"
           :key="account.id"
@@ -101,11 +101,14 @@
                   </dd>
                 </div>
               </dl>
-              <p class="text-xs text-slate-500">
-                {{ quotaFor(account)!.reset_credit_expiries.length
-                  ? t('ownerAccounts.creditExpiry', { time: ownerAccountDateTime(quotaFor(account)!.reset_credit_expiries[0], locale) })
-                  : t('ownerAccounts.creditNoExpiry') }}
-              </p>
+              <div class="text-xs text-slate-500">
+                <p v-for="(expiry, index) in quotaFor(account)!.reset_credit_expiries" :key="`${expiry}-${index}`">
+                  {{ t('ownerAccounts.creditExpiry', { time: ownerAccountDateTime(expiry, locale) }) }}
+                </p>
+                <p v-if="quotaFor(account)!.reset_credit_expiries.length === 0">
+                  {{ t('ownerAccounts.creditNoExpiry') }}
+                </p>
+              </div>
               <p class="text-xs text-slate-500">
                 {{ quotaFor(account)!.observed_at
                   ? t('ownerAccounts.observedAt', { time: ownerAccountDateTime(quotaFor(account)!.observed_at, locale) })
@@ -179,8 +182,11 @@
           <OwnerAccountOperationStatus
             :account-id="account.id"
             :operation="operations[account.id] ?? null"
+            :interrupted="!!interruptedOperations[account.id]"
             :unknown-reset="unknownFor(account, 'reset_credit')"
             :unknown-invite="unknownFor(account, 'send_invitation')"
+            @retry-poll="retryOperationPolling(account.id)"
+            @history="historyForAccount(account.id)"
           />
         </article>
       </div>
@@ -195,73 +201,76 @@
         <ElTableColumn type="expand">
           <template #default="{ row }">
             <div class="p-2">
-              <OwnerAccountHealthFacts :account="asAccount(row)" />
+              <OwnerAccountHealthFacts :account="accountRow(row)" />
             </div>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="t('ownerAccounts.account')" min-width="200">
+        <ElTableColumn :label="t('ownerAccounts.account')" min-width="180">
           <template #default="{ row }">
             <div class="min-w-0">
-              <p class="font-medium text-slate-900">{{ asAccount(row).name }}</p>
-              <p class="break-words text-xs text-slate-500">{{ asAccount(row).email }}</p>
-              <p v-if="asAccount(row).group_names.length" class="text-xs text-slate-500">{{ asAccount(row).group_names.join(', ') }}</p>
+              <p class="font-medium text-slate-900">{{ accountRow(row).name }}</p>
+              <p class="break-words text-xs text-slate-500">{{ accountRow(row).email }}</p>
+              <p v-if="accountRow(row).group_names.length" class="text-xs text-slate-500">{{ accountRow(row).group_names.join(', ') }}</p>
             </div>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="t('ownerAccounts.window5h')" min-width="110">
+        <ElTableColumn :label="t('ownerAccounts.window5h')" min-width="96">
           <template #default="{ row }">
             <div class="text-sm">
-              <p class="font-medium text-slate-900">{{ usageWindowLabel(asAccount(row).id, 'five_hour') }}</p>
-              <p class="text-xs text-slate-500">{{ usageWindowCountdown(asAccount(row).id, 'five_hour') }}</p>
+              <p class="font-medium text-slate-900">{{ usageWindowLabel(accountRow(row).id, 'five_hour') }}</p>
+              <p class="text-xs text-slate-500">{{ usageWindowCountdown(accountRow(row).id, 'five_hour') }}</p>
             </div>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="t('ownerAccounts.window7d')" min-width="110">
+        <ElTableColumn :label="t('ownerAccounts.window7d')" min-width="96">
           <template #default="{ row }">
             <div class="text-sm">
-              <p class="font-medium text-slate-900">{{ usageWindowLabel(asAccount(row).id, 'seven_day') }}</p>
-              <p class="text-xs text-slate-500">{{ usageWindowCountdown(asAccount(row).id, 'seven_day') }}</p>
+              <p class="font-medium text-slate-900">{{ usageWindowLabel(accountRow(row).id, 'seven_day') }}</p>
+              <p class="text-xs text-slate-500">{{ usageWindowCountdown(accountRow(row).id, 'seven_day') }}</p>
             </div>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="t('ownerAccounts.resetCredits')" min-width="110">
+        <ElTableColumn :label="t('ownerAccounts.resetCredits')" min-width="104">
           <template #default="{ row }">
             <div class="text-sm">
-              <p class="font-medium text-slate-900">{{ quotaFor(asAccount(row))?.reset_credits_remaining ?? '-' }}</p>
-              <p class="text-xs text-slate-500">{{ t('ownerAccounts.codexCredits') }}: {{ quotaFor(asAccount(row)) ? codexCreditsLabel(quotaFor(asAccount(row))!) : '-' }}</p>
+              <p class="font-medium text-slate-900">{{ quotaFor(accountRow(row))?.reset_credits_remaining ?? '-' }}</p>
+              <p class="text-xs text-slate-500">{{ t('ownerAccounts.codexCredits') }}: {{ quotaFor(accountRow(row)) ? codexCreditsLabel(quotaFor(accountRow(row))!) : '-' }}</p>
             </div>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="t('ownerAccounts.referral')" min-width="120">
+        <ElTableColumn :label="t('ownerAccounts.referral')" min-width="112">
           <template #default="{ row }">
             <div class="text-sm">
-              <p class="font-medium text-slate-900">{{ referralFor(asAccount(row))?.eligible ? t('ownerAccounts.referralEligible') : t('ownerAccounts.referralIneligible') }}</p>
-              <p class="text-xs text-slate-500">{{ t('ownerAccounts.invitesRemaining', { count: referralFor(asAccount(row))?.remaining_invites ?? 0 }) }}</p>
+              <p class="font-medium text-slate-900">{{ referralFor(accountRow(row))?.eligible ? t('ownerAccounts.referralEligible') : t('ownerAccounts.referralIneligible') }}</p>
+              <p class="text-xs text-slate-500">{{ t('ownerAccounts.invitesRemaining', { count: referralFor(accountRow(row))?.remaining_invites ?? 0 }) }}</p>
             </div>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="t('ownerAccounts.actions')" min-width="280">
+        <ElTableColumn :label="t('ownerAccounts.actions')" min-width="232">
           <template #default="{ row }">
             <OwnerAccountActions
-              :account="asAccount(row)"
-              :quota="quotaFor(asAccount(row))"
-              :referral="referralFor(asAccount(row))"
+              :account="accountRow(row)"
+              :quota="quotaFor(accountRow(row))"
+              :referral="referralFor(accountRow(row))"
               :mutations-enabled="mutationsEnabled"
-              :querying="sectionLoading[asAccount(row).id]?.query === true"
-              :cooldown-active="cooldownActive(asAccount(row).id)"
-              :unknown-reset="unknownFor(asAccount(row), 'reset_credit')"
-              :unknown-invite="unknownFor(asAccount(row), 'send_invitation')"
-              @query="queryAccount(asAccount(row))"
-              @reset="openResetDialog(asAccount(row))"
-              @invite="openInviteDialog(asAccount(row))"
-              @history="openHistory(asAccount(row))"
+              :querying="sectionLoading[accountRow(row).id]?.query === true"
+              :cooldown-active="cooldownActive(accountRow(row).id)"
+              :unknown-reset="unknownFor(accountRow(row), 'reset_credit')"
+              :unknown-invite="unknownFor(accountRow(row), 'send_invitation')"
+              @query="queryAccount(accountRow(row))"
+              @reset="openResetDialog(accountRow(row))"
+              @invite="openInviteDialog(accountRow(row))"
+              @history="openHistory(accountRow(row))"
             />
             <OwnerAccountOperationStatus
               class="mt-2"
-              :account-id="asAccount(row).id"
-              :operation="operations[asAccount(row).id] ?? null"
-              :unknown-reset="unknownFor(asAccount(row), 'reset_credit')"
-              :unknown-invite="unknownFor(asAccount(row), 'send_invitation')"
+              :account-id="accountRow(row).id"
+              :operation="operations[accountRow(row).id] ?? null"
+              :interrupted="!!interruptedOperations[accountRow(row).id]"
+              :unknown-reset="unknownFor(accountRow(row), 'reset_credit')"
+              :unknown-invite="unknownFor(accountRow(row), 'send_invitation')"
+              @retry-poll="retryOperationPolling(accountRow(row).id)"
+              @history="historyForAccount(accountRow(row).id)"
             />
           </template>
         </ElTableColumn>
@@ -394,6 +403,7 @@ type OperationView = {
   errorCode?: string
 }
 const operations = reactive<Record<number, OperationView>>({})
+const interruptedOperations = reactive<Record<number, { operationID: number; action: 'reset_credit' | 'send_invitation' }>>({})
 const unknownBlocks = reactive<Record<number, { reset?: boolean; invite?: boolean }>>({})
 const resetTarget = ref<OwnerAccount | null>(null)
 const resetDialogOpen = ref(false)
@@ -414,6 +424,13 @@ let historyGeneration = 0
 const pollTokens: Record<number, number> = {}
 const pollTimers: Record<number, ReturnType<typeof setTimeout>> = {}
 const now = ref(Date.now())
+// Element Plus types table slot rows as `Record<PropertyKey, any>`, not the data
+// item type. Narrow once at that single boundary instead of scattering casts
+// through every cell.
+function accountRow(row: Record<PropertyKey, any>): OwnerAccount {
+  return row as OwnerAccount
+}
+
 const page = computed(() => positivePage(route.query.page))
 const pageSize = computed(() => fullPageSize(route.query.page_size))
 const initialLoading = computed(() => loading.value && accounts.value.length === 0)
@@ -423,9 +440,6 @@ const rangeEnd = computed(() => (accounts.value.length === 0 ? 0 : rangeStart.va
 let requestGeneration = 0
 let clock: ReturnType<typeof setInterval> | undefined
 
-function asAccount(row: unknown) {
-  return row as OwnerAccount
-}
 
 function usageFor(accountID: number) {
   return usageByAccount.value[accountID] ?? null
@@ -726,6 +740,7 @@ function applyOperationResult(
     error_code?: string | null
   },
 ) {
+  delete interruptedOperations[accountID]
   if (operation.status === 'unknown') {
     markUnknown(accountID, action, operation.id)
     return
@@ -743,6 +758,18 @@ function applyOperationResult(
   }
 }
 
+// A poll that times out or fails is not a server-unknown outcome: the operation
+// may still be running, so the console shows a non-blocking interrupted state and
+// lets the owner retry polling or inspect the history instead of blocking a spend.
+function markPollInterrupted(
+  accountID: number,
+  operationID: number,
+  action: 'reset_credit' | 'send_invitation',
+) {
+  operations[accountID] = { id: operationID, action, status: 'running' }
+  interruptedOperations[accountID] = { operationID, action }
+}
+
 function startOperationPolling(
   accountID: number,
   operationID: number,
@@ -750,11 +777,12 @@ function startOperationPolling(
 ) {
   const token = (pollTokens[accountID] ?? 0) + 1
   pollTokens[accountID] = token
+  delete interruptedOperations[accountID]
   const startedAt = Date.now()
   const tick = async () => {
     if (pollTokens[accountID] !== token) return
     if (Date.now() - startedAt >= 90000) {
-      markUnknown(accountID, action, operationID)
+      markPollInterrupted(accountID, operationID, action)
       return
     }
     try {
@@ -762,7 +790,7 @@ function startOperationPolling(
       if (pollTokens[accountID] !== token) return
       const operation = response.data.data
       if (!operation) {
-        markUnknown(accountID, action, operationID)
+        markPollInterrupted(accountID, operationID, action)
         return
       }
       if (operation.status === 'running') {
@@ -772,10 +800,24 @@ function startOperationPolling(
       applyOperationResult(accountID, action, operation)
     } catch {
       if (pollTokens[accountID] !== token) return
-      markUnknown(accountID, action, operationID)
+      markPollInterrupted(accountID, operationID, action)
     }
   }
   pollTimers[accountID] = setTimeout(tick, 2000)
+}
+
+function retryOperationPolling(accountID: number) {
+  const interrupted = interruptedOperations[accountID]
+  const operation = operations[accountID]
+  const operationID = interrupted?.operationID ?? operation?.id
+  const action = interrupted?.action ?? operation?.action
+  if (!operationID || !action) return
+  startOperationPolling(accountID, operationID, action)
+}
+
+function historyForAccount(accountID: number) {
+  const account = accounts.value.find((item) => item.id === accountID)
+  if (account) openHistory(account)
 }
 
 async function submitReset() {
@@ -803,6 +845,8 @@ function operationErrorMessage(error: unknown) {
   const mapping: Record<string, Parameters<typeof t>[0]> = {
     'refresh-cooldown': 'ownerAccounts.errorRefreshCooldown',
     'reset-freshness-required': 'ownerAccounts.errorFreshness',
+    'invite-freshness-required': 'ownerAccounts.errorInviteFreshness',
+    'compliance-ack-required': 'ownerAccounts.errorComplianceAck',
     'credits-expired': 'ownerAccounts.errorCreditsExpired',
     'actions-disabled': 'ownerAccounts.errorActionsDisabled',
     'consent-required': 'ownerAccounts.errorConsentRequired',

@@ -2383,10 +2383,14 @@ type sub2apiUsageProgress struct {
 // sub2apiUsageWindowStats is the per-window request and cost detail of one usage
 // window. The owner-account console shows it; nothing else reads it.
 type sub2apiUsageWindowStats struct {
-	Requests     int64   `json:"requests"`
-	Tokens       int64   `json:"tokens"`
-	StandardCost float64 `json:"standard_cost"`
-	UserCost     float64 `json:"user_cost"`
+	Requests int64 `json:"requests"`
+	Tokens   int64 `json:"tokens"`
+	// Cost is the account-rate-multiplied total, which the console renders as
+	// "A $". StandardCost is the same total without the account multiplier and is
+	// disclosure-limited to a tooltip.
+	Cost         *float64 `json:"cost"`
+	StandardCost float64  `json:"standard_cost"`
+	UserCost     float64  `json:"user_cost"`
 }
 
 type sub2apiUsageInfo struct {
