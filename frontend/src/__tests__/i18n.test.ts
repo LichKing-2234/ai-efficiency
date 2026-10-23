@@ -4,6 +4,7 @@ import zhCN from '@/locales/zh-CN'
 import { relayPlanningMessages } from '@/locales/relayPlanning'
 import { directoryOffboardingMessages } from '@/locales/directoryOffboarding'
 import { opsMonitoringMessages } from '@/locales/opsMonitoring'
+import { ownerAccountsMessages } from '@/locales/ownerAccounts'
 import { createI18nControllerForTest, type Locale } from '@/i18n'
 import type { Messages } from '@/locales/en-US'
 
@@ -221,16 +222,18 @@ describe('i18n locale loading', () => {
       ...Object.keys(relayPlanningMessages['en-US']),
       ...Object.keys(directoryOffboardingMessages['en-US']),
       ...Object.keys(opsMonitoringMessages['en-US']),
+      ...Object.keys(ownerAccountsMessages['en-US']),
     ].sort()
     const chineseKeys = [
       ...Object.keys(zhCN),
       ...Object.keys(relayPlanningMessages['zh-CN']),
       ...Object.keys(directoryOffboardingMessages['zh-CN']),
       ...Object.keys(opsMonitoringMessages['zh-CN']),
+      ...Object.keys(ownerAccountsMessages['zh-CN']),
     ].sort()
 
-    expect(englishKeys).toHaveLength(1355)
-    expect(chineseKeys).toHaveLength(1355)
+    expect(englishKeys).toHaveLength(1497)
+    expect(chineseKeys).toHaveLength(1497)
     expect(englishKeys).toContain('activity.title')
     expect(englishKeys).toContain('pagination.range')
     expect(englishKeys).toContain('pagination.pageOf')

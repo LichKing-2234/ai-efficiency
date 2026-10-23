@@ -153,13 +153,16 @@ describe('Router Guards', () => {
     const memberUsageRoute = router.getRoutes().find((route) => route.name === 'UsageMember')
     const teamUsageRoute = router.getRoutes().find((route) => route.name === 'UsageTeam')
     const quotaResetRoute = router.getRoutes().find((route) => route.name === 'UsageQuotaReset')
+    const ownerAccountsRoute = router.getRoutes().find((route) => route.name === 'usage-accounts')
     expect(usageRoute?.path).toBe('/usage')
     expect(memberUsageRoute?.path).toBe('/usage/members/:user_id')
     expect(teamUsageRoute?.path).toBe('/usage/team')
     expect(quotaResetRoute?.path).toBe('/usage/quota-reset')
+    expect(ownerAccountsRoute?.path).toBe('/usage/accounts')
     expect(usageRoute?.children.map((child) => child.name)).toEqual([
       'UsageTeam',
       'UsageQuotaReset',
+      'usage-accounts',
     ])
     expect(usageRoute?.children.some((child) => child.name === 'UsageMember')).toBe(false)
   })
