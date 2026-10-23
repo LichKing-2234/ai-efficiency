@@ -56,6 +56,9 @@ relay:
   admin_api_key: ""
   model: "claude-sonnet-4-20250514"
   default_group_id: ""
+  # Owner-initiated upstream writes (consume reset credit, send invitation).
+  # Keep off until the owner account console is verified in staging.
+  owner_account_mutations_enabled: false
 
 attribution:
   ledger_epoch: "shadow_v2"
