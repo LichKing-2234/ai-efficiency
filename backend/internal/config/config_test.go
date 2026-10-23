@@ -860,6 +860,24 @@ func TestDeployExamplesDeclareOwnerAccountMutationsDefaultOff(t *testing.T) {
 	if got := envFileValue(string(envData), "AE_RELAY_OWNER_ACCOUNT_MUTATIONS_ENABLED"); got != "false" {
 		t.Fatalf(".env.example owner account mutations = %q, want false", got)
 	}
+
+	for _, name := range []string{"docker-compose.yml", "docker-compose.bootstrap.yml", "docker-compose.dev.yml", "docker-compose.external.yml", "docker-compose.local.yml"} {
+		data, err := os.ReadFile(filepath.Join(deployDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var compose struct {
+			Services map[string]struct {
+				Environment map[string]string `yaml:"environment"`
+			} `yaml:"services"`
+		}
+		if err := yaml.Unmarshal(data, &compose); err != nil {
+			t.Fatal(err)
+		}
+		if got := compose.Services["backend"].Environment["AE_RELAY_OWNER_ACCOUNT_MUTATIONS_ENABLED"]; got != "${AE_RELAY_OWNER_ACCOUNT_MUTATIONS_ENABLED:-false}" {
+			t.Fatalf("%s owner account mutations = %q, want default-off passthrough", name, got)
+		}
+	}
 }
 
 func envFileValue(content, key string) string {
