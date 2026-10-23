@@ -20,6 +20,14 @@ import (
 const (
 	maximumClientTTL   = 5 * time.Minute
 	maximumMetadataTTL = 5 * time.Minute
+
+	// longRunningOverallTimeout bounds one owner-account account operation end to
+	// end: a reset is bounded at roughly 20 seconds upstream plus 8 seconds of
+	// detached post-processing, and an invite at roughly 20 plus 8 and 3.
+	longRunningOverallTimeout = 60 * time.Second
+	// longRunningResponseHeaderTimeout leaves five seconds of that budget for
+	// reading the response body.
+	longRunningResponseHeaderTimeout = 55 * time.Second
 )
 
 var ErrStaleProviderConfiguration = errors.New("relay provider configuration is stale")
@@ -27,21 +35,28 @@ var ErrStaleProviderConfiguration = errors.New("relay provider configuration is 
 type ProviderFactory func(row *ent.RelayProvider, adminAPIKey string) (relay.Provider, error)
 
 type Options struct {
-	Namespace       string
-	Store           readcache.Store
-	Bus             InvalidationBus
-	ClientTTL       time.Duration
-	MetadataTTL     time.Duration
-	CommandTimeout  time.Duration
-	RefreshTimeout  time.Duration
-	LeaseTTL        time.Duration
-	PollInterval    time.Duration
-	ReleaseTimeout  time.Duration
-	Now             func() time.Time
-	Factory         ProviderFactory
-	NewToken        func() string
-	Sleep           func(context.Context, time.Duration) error
-	MetadataMetrics readcache.Metrics
+	Namespace      string
+	Store          readcache.Store
+	Bus            InvalidationBus
+	ClientTTL      time.Duration
+	MetadataTTL    time.Duration
+	CommandTimeout time.Duration
+	RefreshTimeout time.Duration
+	LeaseTTL       time.Duration
+	PollInterval   time.Duration
+	ReleaseTimeout time.Duration
+	Now            func() time.Time
+	Factory        ProviderFactory
+	// LongRunningFactory builds the provider used only by owner-account account
+	// operations, which hold one upstream call for up to a minute. It is separate
+	// from Factory so those calls cannot starve the shared runtime client pool.
+	LongRunningFactory ProviderFactory
+	// DirectoryLoadTimeout bounds one owner-account directory load. Values above
+	// the hard ceiling are clamped so no configuration can hold a page.
+	DirectoryLoadTimeout time.Duration
+	NewToken             func() string
+	Sleep                func(context.Context, time.Duration) error
+	MetadataMetrics      readcache.Metrics
 }
 
 type clientKey struct {
@@ -60,11 +75,16 @@ type Manager struct {
 	logger        *zap.Logger
 	options       Options
 
-	mu              sync.RWMutex
-	clients         map[clientKey]clientEntry
-	minimumVersion  map[int]int64
-	latestVersion   map[int]int64
-	metadataFlights readcache.FlightGroup[[]byte]
+	mu                 sync.RWMutex
+	clients            map[clientKey]clientEntry
+	longRunningClients map[clientKey]clientEntry
+	minimumVersion     map[int]int64
+	latestVersion      map[int]int64
+	metadataFlights    readcache.FlightGroup[[]byte]
+
+	ownerAccountFlights     readcache.FlightGroup[[]relay.OwnerAccount]
+	ownerAccountDirectories map[ownerAccountDirectoryKey]ownerAccountDirectoryEntry
+	ownerAccountGeneration  map[int]int64
 }
 
 func NewManager(client *ent.Client, encryptionKey string, logger *zap.Logger, options Options) (*Manager, error) {
@@ -110,17 +130,38 @@ func NewManager(client *ent.Client, encryptionKey string, logger *zap.Logger, op
 			return relay.NewSub2apiProvider(client, row.BaseURL, adminAPIKey, row.DefaultModel, logger), nil
 		}
 	}
+	if options.DirectoryLoadTimeout <= 0 || options.DirectoryLoadTimeout > ownerAccountDirectoryLoadDeadline {
+		options.DirectoryLoadTimeout = ownerAccountDirectoryLoadDeadline
+	}
+	if options.LongRunningFactory == nil {
+		client := httpclient.New(httpclient.Options{
+			ConnectTimeout:        5 * time.Second,
+			TLSHandshakeTimeout:   5 * time.Second,
+			ResponseHeaderTimeout: longRunningResponseHeaderTimeout,
+			OverallTimeout:        longRunningOverallTimeout,
+			IdleConnTimeout:       90 * time.Second,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   20,
+			MaxConnsPerHost:       50,
+		})
+		options.LongRunningFactory = func(row *ent.RelayProvider, adminAPIKey string) (relay.Provider, error) {
+			return relay.NewSub2apiProvider(client, row.BaseURL, adminAPIKey, row.DefaultModel, logger), nil
+		}
+	}
 	if options.Store != nil && !namespacePattern.MatchString(options.Namespace) {
 		return nil, fmt.Errorf("invalid Redis namespace %q", options.Namespace)
 	}
 	return &Manager{
-		client:         client,
-		encryptionKey:  strings.TrimSpace(encryptionKey),
-		logger:         logger,
-		options:        options,
-		clients:        make(map[clientKey]clientEntry),
-		minimumVersion: make(map[int]int64),
-		latestVersion:  make(map[int]int64),
+		client:                  client,
+		encryptionKey:           strings.TrimSpace(encryptionKey),
+		logger:                  logger,
+		options:                 options,
+		clients:                 make(map[clientKey]clientEntry),
+		longRunningClients:      make(map[clientKey]clientEntry),
+		minimumVersion:          make(map[int]int64),
+		latestVersion:           make(map[int]int64),
+		ownerAccountDirectories: make(map[ownerAccountDirectoryKey]ownerAccountDirectoryEntry),
+		ownerAccountGeneration:  make(map[int]int64),
 	}, nil
 }
 
@@ -149,7 +190,32 @@ func (m *Manager) Resolve(ctx context.Context, providerID int) (relay.Provider, 
 	return m.ResolveEntity(row)
 }
 
+func (m *Manager) ResolveLongRunning(ctx context.Context, providerID int) (relay.Provider, error) {
+	if m == nil || m.client == nil {
+		return nil, fmt.Errorf("relay runtime is not configured")
+	}
+	if providerID <= 0 {
+		return nil, fmt.Errorf("relay provider ID must be positive")
+	}
+	row, err := m.client.RelayProvider.Get(ctx, providerID)
+	if err != nil {
+		return nil, fmt.Errorf("get relay provider %d: %w", providerID, err)
+	}
+	return m.ResolveLongRunningEntity(row)
+}
+
+// ResolveLongRunningEntity resolves the provider used only by owner-account
+// account operations. It is cached independently, so the long-running client
+// never displaces the shared runtime client of the same provider version.
+func (m *Manager) ResolveLongRunningEntity(row *ent.RelayProvider) (relay.Provider, error) {
+	return m.resolveEntity(row, true)
+}
+
 func (m *Manager) ResolveEntity(row *ent.RelayProvider) (relay.Provider, error) {
+	return m.resolveEntity(row, false)
+}
+
+func (m *Manager) resolveEntity(row *ent.RelayProvider, longRunning bool) (relay.Provider, error) {
 	if m == nil {
 		return nil, fmt.Errorf("relay runtime is not configured")
 	}
@@ -158,11 +224,17 @@ func (m *Manager) ResolveEntity(row *ent.RelayProvider) (relay.Provider, error) 
 	}
 	key := clientKey{providerID: row.ID, version: row.ConfigurationVersion}
 	now := m.options.Now()
+	clients := m.clients
+	factory := m.options.Factory
+	if longRunning {
+		clients = m.longRunningClients
+		factory = m.options.LongRunningFactory
+	}
 
 	m.mu.RLock()
 	minimumVersion := m.minimumVersion[row.ID]
 	latestVersion := m.latestVersion[row.ID]
-	entry, ok := m.clients[key]
+	entry, ok := clients[key]
 	m.mu.RUnlock()
 	if row.ConfigurationVersion < minimumVersion || row.ConfigurationVersion < latestVersion {
 		return nil, fmt.Errorf("%w: provider %d version %d", ErrStaleProviderConfiguration, row.ID, row.ConfigurationVersion)
@@ -176,7 +248,7 @@ func (m *Manager) ResolveEntity(row *ent.RelayProvider) (relay.Provider, error) 
 		m.logger.Warn("relay provider admin key is not encrypted with the current key", zap.Int("provider_id", row.ID), zap.Error(err))
 		adminKey = row.AdminAPIKey
 	}
-	created, err := m.options.Factory(row, adminKey)
+	created, err := factory(row, adminKey)
 	if err != nil {
 		return nil, fmt.Errorf("create relay provider %d version %d: %w", row.ID, row.ConfigurationVersion, err)
 	}
@@ -189,16 +261,16 @@ func (m *Manager) ResolveEntity(row *ent.RelayProvider) (relay.Provider, error) 
 	if row.ConfigurationVersion < m.minimumVersion[row.ID] || row.ConfigurationVersion < m.latestVersion[row.ID] {
 		return nil, fmt.Errorf("%w: provider %d version %d", ErrStaleProviderConfiguration, row.ID, row.ConfigurationVersion)
 	}
-	if current, exists := m.clients[key]; exists && now.Sub(current.createdAt) <= m.options.ClientTTL {
+	if current, exists := clients[key]; exists && now.Sub(current.createdAt) <= m.options.ClientTTL {
 		return current.provider, nil
 	}
-	for existingKey := range m.clients {
+	for existingKey := range clients {
 		if existingKey.providerID == row.ID {
-			delete(m.clients, existingKey)
+			delete(clients, existingKey)
 		}
 	}
 	m.latestVersion[row.ID] = row.ConfigurationVersion
-	m.clients[key] = clientEntry{provider: created, createdAt: now}
+	clients[key] = clientEntry{provider: created, createdAt: now}
 	return created, nil
 }
 
@@ -260,6 +332,11 @@ func (m *Manager) handleInvalidation(event InvalidationEvent) {
 	for key := range m.clients {
 		if key.providerID == event.ProviderID {
 			delete(m.clients, key)
+		}
+	}
+	for key := range m.longRunningClients {
+		if key.providerID == event.ProviderID {
+			delete(m.longRunningClients, key)
 		}
 	}
 }
