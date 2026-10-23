@@ -43,6 +43,7 @@ const router = createRouter({
       children: [
         { path: 'team', name: 'UsageTeam', component: () => import('@/views/TeamOverviewView.vue') },
         { path: 'quota-reset', name: 'UsageQuotaReset', component: () => import('@/views/QuotaResetView.vue') },
+        { path: 'accounts', name: 'usage-accounts', component: () => import('@/views/OwnerAccountsView.vue') },
       ],
     },
     {

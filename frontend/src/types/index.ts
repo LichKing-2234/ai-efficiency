@@ -1318,3 +1318,157 @@ export interface WorkItemCounts {
   offboarding_count: number
   total_count: number
 }
+
+export type OwnerAccountPlatform = 'openai' | string
+
+export interface OwnerAccountUsageWindow {
+  utilization_percent: number | null
+  resets_at: string | null
+  requests: number | null
+  tokens: number | null
+  api_cost_usd: number | null
+  user_cost_usd: number | null
+}
+
+export interface OwnerAccountUsage {
+  five_hour: OwnerAccountUsageWindow
+  seven_day: OwnerAccountUsageWindow
+  observed_at: string | null
+}
+
+export interface OwnerAccountQuota {
+  reset_credits_remaining: number
+  reset_credit_expiries: string[]
+  codex_credits_unlimited: boolean
+  codex_credits_balance: number | null
+  auto_reset_credit: boolean
+  observed_at: string | null
+}
+
+export interface OwnerAccountReferral {
+  eligible: boolean
+  program_id: string | null
+  program_name: string | null
+  remaining_invites: number
+  consent_required: boolean | null
+  observed_at: string | null
+}
+
+export interface OwnerAccountHealth {
+  schedulable: boolean
+  reauth_required: boolean
+  banned: boolean
+  forbidden: boolean
+  rate_limit_reset_at: string | null
+}
+
+export type OwnerAccountMutationAction = 'reset_credit' | 'send_invitation'
+
+export interface OwnerAccountBlockedAction {
+  action: OwnerAccountMutationAction
+  reason: string
+  operation_id?: number | null
+}
+
+export interface OwnerAccount {
+  id: number
+  name: string
+  email: string | null
+  platform: OwnerAccountPlatform
+  type: string
+  status: string
+  group_names: string[]
+  quota: OwnerAccountQuota | null
+  referral: OwnerAccountReferral | null
+  health: OwnerAccountHealth
+  blocked_actions?: OwnerAccountBlockedAction[]
+  refresh_cooldown_until?: string | null
+}
+
+export interface OwnerAccountScopeResponse {
+  account_count: number
+  mutations_enabled: boolean
+}
+
+export interface OwnerAccountListResponse extends PagedResponse<OwnerAccount> {
+  mutations_enabled: boolean
+}
+
+export interface OwnerAccountUsageItem {
+  account_id: number
+  usage: OwnerAccountUsage
+}
+
+export interface OwnerAccountUsageError {
+  account_id: number
+  code: string
+}
+
+export interface OwnerAccountUsageBatchResponse {
+  items: OwnerAccountUsageItem[]
+  errors: OwnerAccountUsageError[]
+}
+
+export interface OwnerAccountUsageBatchParams {
+  account_ids: number[]
+  force?: boolean
+}
+
+export interface OwnerAccountUsageResponse {
+  account_id: number
+  usage: OwnerAccountUsage
+}
+
+export interface OwnerAccountQuotaResponse {
+  account_id: number
+  quota: OwnerAccountQuota
+}
+
+export interface OwnerAccountReferralResponse {
+  account_id: number
+  referral: OwnerAccountReferral
+}
+
+export interface OwnerAccountMutationRequest {
+  confirm: boolean
+  reason?: string
+}
+
+export interface OwnerAccountInvitationRequest {
+  email: string
+  program_id: string | null
+  consent: boolean
+  reason?: string
+}
+
+export interface OwnerAccountOperationAccepted {
+  operation_id: number
+}
+
+export type OwnerAccountOperationAction =
+  | 'refresh_quota'
+  | 'refresh_referral'
+  | 'reset_credit'
+  | 'send_invitation'
+
+export type OwnerAccountOperationStatus = 'running' | 'succeeded' | 'failed' | 'unknown'
+
+export interface OwnerAccountOperationResult {
+  windows_reset?: number
+  sent?: boolean
+}
+
+export interface OwnerAccountOperation {
+  id: number
+  account_id: number
+  action: OwnerAccountOperationAction
+  status: OwnerAccountOperationStatus
+  error_code?: string | null
+  warning_code?: string | null
+  invite_email?: string | null
+  reason?: string | null
+  result?: OwnerAccountOperationResult | null
+  started_at: string
+  finished_at?: string | null
+  created_at?: string
+}
