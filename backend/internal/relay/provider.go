@@ -11,6 +11,19 @@ var (
 	ErrInvalidCredentials          = errors.New("relay: invalid credentials")
 	ErrExtraVerificationRequired   = errors.New("relay: extra verification required")
 	ErrAccountRelationshipsChanged = errors.New("relay: account relationships changed")
+
+	// ErrCapabilityUnsupported reports that the upstream does not implement an
+	// optional capability this adapter knows how to call. It is decided by the
+	// endpoint answering 404/405, not by a type assertion.
+	ErrCapabilityUnsupported = errors.New("relay: capability unsupported")
+	// ErrComplianceAcknowledgementRequired reports Sub2API's administrator
+	// compliance lock (HTTP 423). No retry resolves it; a deployment operator has
+	// to accept the compliance commitment first.
+	ErrComplianceAcknowledgementRequired = errors.New("relay: administrator compliance acknowledgement required")
+	// ErrUpstreamOutcomeUnknown reports a mutation whose upstream effect cannot
+	// be determined. Callers must treat it as "may have happened" and never
+	// retry it.
+	ErrUpstreamOutcomeUnknown = errors.New("relay: upstream mutation outcome unknown")
 )
 
 type userCredentialContextKey struct{}
@@ -125,6 +138,36 @@ type AccountConfigurationReader interface {
 // carry nor overwrite credential material.
 type AccountConfigurationApplier interface {
 	ApplyAccountConfiguration(ctx context.Context, accountIDs []int64, config AccountConfiguration) error
+}
+
+// OwnerAccountDirectoryReader lists every account on one platform through an
+// owner-safe projection. The projection is the boundary that keeps parent
+// identity, notes, proxies, credential material and non-allowlisted extra keys
+// inside the adapter; callers must not be handed the raw account DTO.
+type OwnerAccountDirectoryReader interface {
+	ListOwnerAccounts(ctx context.Context, platform string) ([]OwnerAccount, error)
+}
+
+// OwnerAccountUsageReader reads the 5h and 7d usage windows of explicit
+// accounts in one bounded batch read. `force` asks the upstream to re-probe
+// instead of serving its own cache.
+type OwnerAccountUsageReader interface {
+	ReadOwnerAccountUsage(ctx context.Context, accountIDs []int64, force bool) ([]OwnerAccountUsage, error)
+}
+
+// OpenAIQuotaManager refreshes the quota observation of one account and consumes
+// one of its banked reset credits. The reset is irreversible, so implementations
+// must perform exactly one upstream call per invocation.
+type OpenAIQuotaManager interface {
+	RefreshOpenAIQuota(ctx context.Context, accountID int64) (*OpenAIQuota, error)
+	ConsumeOpenAIResetCredit(ctx context.Context, accountID int64) (*OpenAIResetCreditResult, error)
+}
+
+// OpenAIReferralManager refreshes one account's invitation eligibility and sends
+// one invitation taken from a fresh observation.
+type OpenAIReferralManager interface {
+	RefreshOpenAIReferral(ctx context.Context, accountID int64) (*OpenAIReferral, error)
+	SendOpenAIReferralInvite(ctx context.Context, accountID int64, request OpenAIReferralInviteRequest) (*OpenAIReferralInviteResult, error)
 }
 
 // GroupDuplicator creates an inactive copy of a source group. The operation
