@@ -31,6 +31,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/opsmonitoring"
+	"github.com/ai-efficiency/backend/internal/owneraccount"
 	"github.com/ai-efficiency/backend/internal/personalusage"
 	"github.com/ai-efficiency/backend/internal/prsync"
 	"github.com/ai-efficiency/backend/internal/prusage"
@@ -499,6 +500,23 @@ func main() {
 	if err != nil {
 		logger.Fatal("initialize relay provider handler", zap.Error(err))
 	}
+	// Owner-account console: email-derived ownership, owner-scoped reads and the
+	// gated async mutation surface. Both mutations stay off unless the deployment
+	// opts in, and the startup sweep fails closed on abandoned running rows.
+	ownerAccountService, err := owneraccount.NewService(entClient, sqlDB, providerRuntime, logger, owneraccount.Options{
+		MutationsEnabled: cfg.Relay.OwnerAccountMutationsEnabled,
+	})
+	if err != nil {
+		logger.Fatal("initialize owner account service", zap.Error(err))
+	}
+	ownerAccountSweepCtx, cancelOwnerAccountSweep := context.WithTimeout(context.Background(), 10*time.Second)
+	if swept, sweepErr := ownerAccountService.SweepStaleOperations(ownerAccountSweepCtx); sweepErr != nil {
+		logger.Warn("sweep stale owner account operations", zap.Error(sweepErr))
+	} else if swept > 0 {
+		logger.Info("marked stale owner account operations unknown", zap.Int64("operations", swept))
+	}
+	cancelOwnerAccountSweep()
+
 	directoryService := directorysync.NewService(entClient, directorysync.ServiceOptions{
 		Executor:                  directorysync.NewExecutor(directorysync.ExecutorOptions{HTTPClient: httpClients.directory}),
 		Credentials:               directorysync.NewEntCredentialResolver(entClient, cfg.Encryption.Key),
@@ -591,6 +609,7 @@ func main() {
 			AttributionReadinessAvailable: cfg.Attribution.ReadinessAvailable,
 			ActivityCache:                 activityCache,
 			OpsMonitoringCache:            opsMonitoringCache,
+			OwnerAccounts:                 ownerAccountService,
 			Release:                       versionInfo.Version,
 			RequestTimeout:                time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
 		},
