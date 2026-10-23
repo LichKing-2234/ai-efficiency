@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from '@/i18n'
 import { createFeatureTranslator } from '@/utils/featureI18n'
 import { ownerAccountsMessages } from '@/locales/ownerAccounts'
@@ -21,25 +21,47 @@ const emit = defineEmits<{
 
 const { t: baseT, locale } = useI18n()
 const t = createFeatureTranslator(locale, baseT, 'ownerAccounts', ownerAccountsMessages)
+const REFERRAL_OBSERVATION_MAX_AGE_MS = 10 * 60 * 1000
 const email = ref('')
 const consent = ref(false)
 const emailError = ref('')
+const now = ref(Date.now())
+let freshnessTimer: ReturnType<typeof setInterval> | undefined
 
 watch(
   () => props.open,
   (open) => {
+    if (freshnessTimer) clearInterval(freshnessTimer)
+    freshnessTimer = undefined
     if (!open) return
     email.value = ''
     consent.value = false
     emailError.value = ''
+    now.value = Date.now()
+    // A dialog left open must not keep admitting an observation that aged out.
+    freshnessTimer = setInterval(() => {
+      now.value = Date.now()
+    }, 30000)
   },
   { immediate: true },
 )
 
+onBeforeUnmount(() => {
+  if (freshnessTimer) clearInterval(freshnessTimer)
+})
+
+// The server gate is authoritative; this precondition only stops an obviously
+// stale observation from reaching it.
+const observationStale = computed(() => {
+  const observed = props.referral?.observed_at
+  if (!observed) return false
+  const time = new Date(observed).getTime()
+  return Number.isNaN(time) || now.value - time > REFERRAL_OBSERVATION_MAX_AGE_MS
+})
 const consentRequired = computed(() => props.referral?.consent_required !== false)
 const ready = computed(() => {
   const referral = props.referral
-  if (!referral || !referral.observed_at) return false
+  if (!referral || !referral.observed_at || observationStale.value) return false
   return referral.eligible && !!referral.program_id && referral.remaining_invites > 0
 })
 const canSubmit = computed(() => ready.value && (!consentRequired.value || consent.value))
@@ -74,7 +96,7 @@ function submit() {
         type="warning"
         :closable="false"
         show-icon
-        :title="t('ownerAccounts.invitePrecondition')"
+        :title="observationStale ? t('ownerAccounts.inviteObservationStale') : t('ownerAccounts.invitePrecondition')"
       />
 
       <dl v-if="referral" class="grid gap-1 text-sm">

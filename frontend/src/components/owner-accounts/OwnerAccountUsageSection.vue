@@ -93,7 +93,19 @@ function countdown(value: string | null) {
           </div>
           <div class="flex justify-between gap-2">
             <dt>{{ t('ownerAccounts.apiCost') }}</dt>
-            <dd class="font-medium text-slate-900">{{ ownerAccountCost(usage[window.key].api_cost_usd) }}</dd>
+            <dd
+              :data-testid="`owner-account-usage-api-cost-${window.testid}-${account.id}`"
+              class="font-medium text-slate-900"
+            >
+              <ElTooltip
+                v-if="usage[window.key].standard_cost_usd != null"
+                :content="t('ownerAccounts.standardCost', { cost: ownerAccountCost(usage[window.key].standard_cost_usd) })"
+                placement="top"
+              >
+                <span>{{ ownerAccountCost(usage[window.key].api_cost_usd) }}</span>
+              </ElTooltip>
+              <span v-else>{{ ownerAccountCost(usage[window.key].api_cost_usd) }}</span>
+            </dd>
           </div>
           <div class="flex justify-between gap-2">
             <dt>{{ t('ownerAccounts.userCost') }}</dt>

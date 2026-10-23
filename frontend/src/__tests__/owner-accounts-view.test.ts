@@ -159,7 +159,7 @@ function ownerAccount(id: number, overrides: Record<string, unknown> = {}) {
       codex_credits_unlimited: false,
       codex_credits_balance: 120,
       auto_reset_credit: false,
-      observed_at: '2026-10-23T04:00:00Z',
+      observed_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
     },
     referral: {
       eligible: true,
@@ -167,7 +167,7 @@ function ownerAccount(id: number, overrides: Record<string, unknown> = {}) {
       program_name: 'Program Alpha',
       remaining_invites: 3,
       consent_required: true,
-      observed_at: '2026-10-23T04:00:00Z',
+      observed_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
     },
     health: {
       schedulable: true,
@@ -273,6 +273,7 @@ const usagePayload = {
     requests: 12,
     tokens: 3456,
     api_cost_usd: 1.25,
+    standard_cost_usd: 9.99,
     user_cost_usd: 2.5,
   },
   seven_day: {
@@ -281,6 +282,7 @@ const usagePayload = {
     requests: 98,
     tokens: 987654,
     api_cost_usd: 7.5,
+    standard_cost_usd: 59.99,
     user_cost_usd: 15,
   },
   observed_at: '2026-10-23T11:55:00Z',
@@ -325,9 +327,85 @@ describe('owner account sections', () => {
     expect(usage.text()).toContain('3.46K')
     expect(usage.text()).toContain('A $')
     expect(usage.text()).toContain('1.25')
+    expect(usage.text()).not.toContain('9.99')
     expect(usage.text()).toContain('U $')
     expect(usage.text()).toContain('2.50')
     expect(usage.text()).toContain('Observed')
+    const apiCost = wrapper.get('[data-testid="owner-account-usage-api-cost-5h-1"]')
+    expect(apiCost.findComponent({ name: 'ElTooltip' }).props('content')).toContain('9.99')
+  })
+
+  it('hides A $ instead of substituting standard cost when upstream omits cost', async () => {
+    vi.mocked(getOwnerAccountUsage).mockResolvedValue(usageBatch([{
+      account_id: 1,
+      usage: {
+        ...usagePayload,
+        five_hour: { ...usagePayload.five_hour, api_cost_usd: null, standard_cost_usd: 9.99 },
+      },
+    }]) as any)
+    const { wrapper } = await createHarness('/usage/accounts')
+    await flushPromises()
+
+    const cost = wrapper.get('[data-testid="owner-account-usage-api-cost-5h-1"]')
+    expect(cost.text()).toBe('-')
+    expect(cost.text()).not.toContain('9.99')
+  })
+
+  it('renders every reset-credit expiry instead of only the first', async () => {
+    vi.mocked(listOwnerAccounts).mockResolvedValue(accountPage([
+      ownerAccount(1, {
+        quota: {
+          ...ownerAccount(1).quota,
+          reset_credits_remaining: 2,
+          reset_credit_expiries: ['2027-01-01T00:00:00Z', '2028-01-01T00:00:00Z'],
+        },
+      }),
+    ]) as any)
+    const { wrapper } = await createHarness('/usage/accounts')
+    await flushPromises()
+
+    const card = wrapper.get('[data-testid="owner-account-quota-1"]').text()
+    expect(card).toContain('2027')
+    expect(card).toContain('2028')
+
+    await wrapper.get('[data-testid="owner-account-use-reset-1"]').trigger('click')
+    await flushPromises()
+    const dialog = wrapper.get('[data-testid="owner-account-reset-dialog"]').text()
+    expect(dialog).toContain('2027')
+    expect(dialog).toContain('2028')
+  })
+
+  it('blocks the reset dialog when the quota observation is older than 15 minutes', async () => {
+    const observed = new Date(Date.now() - 16 * 60 * 1000).toISOString()
+    const quota = { ...ownerAccount(1).quota, observed_at: observed }
+    const wrapper = mount(OwnerAccountResetDialog, {
+      props: {
+        open: true,
+        account: ownerAccount(1),
+        usage: usagePayload,
+        quota,
+        submitting: false,
+      },
+      global: { stubs: { teleport: true } },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="owner-account-reset-precondition"]').text()).toContain('older than 15 minutes')
+    expect(wrapper.get('[data-testid="owner-account-reset-confirm"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('maps a compliance acknowledgement failure to a specific message', async () => {
+    vi.mocked(createOwnerAccountReset).mockRejectedValue(axiosError(423, { error_code: 'compliance-ack-required' }))
+    const { wrapper } = await createHarness('/usage/accounts')
+    await flushPromises()
+    await wrapper.get('[data-testid="owner-account-use-reset-1"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="owner-account-reset-ack"] input').setValue(true)
+    await flushPromises()
+    await wrapper.get('[data-testid="owner-account-reset-confirm"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="owner-account-reset-error"]').text()).toContain('compliance acknowledgement')
   })
 
   it('shows a per-section loading state while usage loads', async () => {
@@ -609,7 +687,7 @@ describe('reset credit flow', () => {
     expect(wrapper.find('[data-testid="owner-account-use-reset-1"]').attributes('disabled')).toBeUndefined()
   })
 
-  it('treats a poll that never resolves within 90 seconds as unknown', async () => {
+  it('shows a non-blocking interrupted state instead of a fabricated unknown outcome', async () => {
     vi.mocked(getOwnerAccountOperation).mockResolvedValue({
       data: { data: { id: 77, account_id: 1, action: 'reset_credit', status: 'running', started_at: '2026-10-23T12:00:00Z' } },
     } as any)
@@ -626,8 +704,43 @@ describe('reset credit flow', () => {
     await vi.advanceTimersByTimeAsync(90000)
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="owner-account-unknown-1"]').text()).toContain('may have consumed')
+    expect(wrapper.find('[data-testid="owner-account-unknown-1"]').exists()).toBe(false)
+    const interrupted = wrapper.get('[data-testid="owner-account-poll-interrupted-1"]')
+    expect(interrupted.text()).toContain('not blocked')
     expect(vi.mocked(getOwnerAccountOperation).mock.calls.length).toBeLessThanOrEqual(46)
+    // The server never said unknown, so the action is not blocked.
+    expect(wrapper.get('[data-testid="owner-account-use-reset-1"]').attributes('disabled')).toBeUndefined()
+
+    // Retrying polling recovers the terminal result without a page reload.
+    vi.mocked(getOwnerAccountOperation).mockResolvedValue({
+      data: { data: { id: 77, account_id: 1, action: 'reset_credit', status: 'succeeded', result: { windows_reset: 2 }, started_at: '2026-10-23T12:00:00Z' } },
+    } as any)
+    await wrapper.get('[data-testid="owner-account-retry-poll-1"]').trigger('click')
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="owner-account-operation-1"]').text()).toContain('2 window(s) reset')
+    expect(wrapper.find('[data-testid="owner-account-poll-interrupted-1"]').exists()).toBe(false)
+  })
+
+  it('treats a poll error as interrupted rather than a blocked unknown outcome', async () => {
+    vi.mocked(getOwnerAccountOperation).mockRejectedValue(new Error('network down'))
+    const { wrapper } = await createHarness('/usage/accounts')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="owner-account-use-reset-1"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="owner-account-reset-ack"] input').setValue(true)
+    await flushPromises()
+    await wrapper.get('[data-testid="owner-account-reset-confirm"]').trigger('click')
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="owner-account-unknown-1"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="owner-account-poll-interrupted-1"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="owner-account-use-reset-1"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-testid="owner-account-history-1"]').exists()).toBe(true)
   })
 })
 
@@ -638,7 +751,7 @@ function inviteReferral(overrides: Record<string, unknown> = {}) {
     program_name: 'Program Alpha',
     remaining_invites: 3,
     consent_required: true,
-    observed_at: '2026-10-23T11:58:00Z',
+    observed_at: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
     ...overrides,
   }
 }
@@ -796,6 +909,36 @@ describe('invitation flow', () => {
 
     expect(wrapper.find('[data-testid="owner-account-unknown-1"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="owner-account-invite-1"]').attributes('disabled')).toBeUndefined()
+  })
+  it('blocks the invite dialog when referral eligibility is older than 10 minutes', async () => {
+    const wrapper = mount(OwnerAccountInviteDialog, {
+      props: {
+        open: true,
+        account: ownerAccount(1),
+        referral: inviteReferral({ observed_at: new Date(Date.now() - 11 * 60 * 1000).toISOString() }),
+        submitting: false,
+      },
+      global: { stubs: { teleport: true } },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="owner-account-invite-precondition"]').text()).toContain('older than 10 minutes')
+    expect(wrapper.get('[data-testid="owner-account-invite-confirm"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('maps invite freshness to a specific message', async () => {
+    vi.mocked(createOwnerAccountInvitation).mockRejectedValue(axiosError(409, { error_code: 'invite-freshness-required' }))
+    const { wrapper } = await createHarness('/usage/accounts')
+    await flushPromises()
+    await wrapper.get('[data-testid="owner-account-invite-1"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="owner-account-invite-email"]').setValue('bob@example.org')
+    await wrapper.get('[data-testid="owner-account-invite-consent"] input').setValue(true)
+    await flushPromises()
+    await wrapper.get('[data-testid="owner-account-invite-confirm"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="owner-account-invite-submit-error"]').text()).toContain('Query referral eligibility again')
   })
 })
 

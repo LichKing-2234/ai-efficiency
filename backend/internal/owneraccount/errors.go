@@ -145,46 +145,71 @@ func errRefreshCooldown(retryAfterSeconds int, cooldownUntil string) *Error {
 	return e
 }
 
-// classifyUpstream maps the relay capability sentinels to the stable reason
-// codes the browser understands.
-func classifyUpstream(err error) *Error {
+// upstreamClassification is the one place a relay capability sentinel is mapped
+// onto an HTTP reason code, a sanitized stored operation code and a log-safe
+// class. Callers never see upstream error text.
+type upstreamClassification struct {
+	Status        int
+	Code          string
+	OperationCode string
+	LogClass      string
+	Message       string
+}
+
+func classifyRelayError(err error) upstreamClassification {
 	switch {
 	case errors.Is(err, relay.ErrCapabilityUnsupported):
-		return newError(http.StatusNotImplemented, CodeCapabilityUnsupported, "the relay provider does not support this capability")
+		return upstreamClassification{
+			Status:        http.StatusNotImplemented,
+			Code:          CodeCapabilityUnsupported,
+			OperationCode: CodeCapabilityUnsupported,
+			LogClass:      "capability_unsupported",
+			Message:       "the relay provider does not support this capability",
+		}
 	case errors.Is(err, relay.ErrComplianceAcknowledgementRequired):
-		return newError(http.StatusLocked, CodeComplianceAckRequired, "the relay provider requires administrator compliance acknowledgement")
+		return upstreamClassification{
+			Status:        http.StatusLocked,
+			Code:          CodeComplianceAckRequired,
+			OperationCode: CodeComplianceAckRequired,
+			LogClass:      "compliance_ack_required",
+			Message:       "the relay provider requires administrator compliance acknowledgement",
+		}
+	case errors.Is(err, relay.ErrUpstreamOutcomeUnknown):
+		return upstreamClassification{
+			Status:        http.StatusBadGateway,
+			Code:          CodeUpstreamUnavailable,
+			OperationCode: "upstream-outcome-unknown",
+			LogClass:      "upstream_outcome_unknown",
+			Message:       "the relay provider is unavailable",
+		}
 	default:
-		return newError(http.StatusBadGateway, CodeUpstreamUnavailable, "the relay provider is unavailable")
+		return upstreamClassification{
+			Status:        http.StatusBadGateway,
+			Code:          CodeUpstreamUnavailable,
+			OperationCode: CodeUpstreamUnavailable,
+			LogClass:      "upstream_or_internal",
+			Message:       "the relay provider is unavailable",
+		}
 	}
+}
+
+// classifyUpstream maps a relay failure to the stable reason code the browser
+// understands.
+func classifyUpstream(err error) *Error {
+	classification := classifyRelayError(err)
+	return newError(classification.Status, classification.Code, classification.Message)
 }
 
 // classifyUpstreamCode is the sanitized operation code stored for an upstream
 // failure. It deliberately drops all upstream error text.
 func classifyUpstreamCode(err error) string {
-	switch {
-	case errors.Is(err, relay.ErrCapabilityUnsupported):
-		return CodeCapabilityUnsupported
-	case errors.Is(err, relay.ErrComplianceAcknowledgementRequired):
-		return CodeComplianceAckRequired
-	case errors.Is(err, relay.ErrUpstreamOutcomeUnknown):
-		return "upstream-outcome-unknown"
-	default:
-		return CodeUpstreamUnavailable
-	}
+	return classifyRelayError(err).OperationCode
 }
 
 // logClassify keeps logs free of upstream or database text.
 func logClassify(err error) string {
-	switch {
-	case err == nil:
+	if err == nil {
 		return ""
-	case errors.Is(err, relay.ErrCapabilityUnsupported):
-		return "capability_unsupported"
-	case errors.Is(err, relay.ErrComplianceAcknowledgementRequired):
-		return "compliance_ack_required"
-	case errors.Is(err, relay.ErrUpstreamOutcomeUnknown):
-		return "upstream_outcome_unknown"
-	default:
-		return "upstream_or_internal"
 	}
+	return classifyRelayError(err).LogClass
 }

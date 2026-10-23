@@ -1,6 +1,5 @@
 export const ownerAccountsMessages = {
   'en-US': {
-    'ownerAccounts.tab': 'My Accounts',
     'ownerAccounts.loading': 'Loading your accounts…',
     'ownerAccounts.loadFailed': 'Your accounts are temporarily unavailable.',
     'ownerAccounts.retry': 'Retry',
@@ -18,6 +17,7 @@ export const ownerAccountsMessages = {
     'ownerAccounts.tokens': 'Tokens',
     'ownerAccounts.apiCost': 'A $',
     'ownerAccounts.userCost': 'U $',
+    'ownerAccounts.standardCost': 'Standard cost {cost}',
     'ownerAccounts.observedAt': 'Observed {time}',
     'ownerAccounts.observed': 'Observed',
     'ownerAccounts.observedUnknown': 'Observation time unknown',
@@ -69,6 +69,8 @@ export const ownerAccountsMessages = {
     'ownerAccounts.operationRunning': 'Operation in progress',
     'ownerAccounts.operationProgress': 'Waiting for the upstream result…',
     'ownerAccounts.operationTimedOut': 'No result arrived in time. The outcome is treated as unknown until you query again.',
+    'ownerAccounts.pollInterruptedTitle': 'Result polling was interrupted',
+    'ownerAccounts.pollInterruptedBody': 'The operation may still be running and is not blocked. Check the history or retry polling.',
     'ownerAccounts.operationSucceeded': 'Operation completed.',
     'ownerAccounts.operationFailed': 'The operation failed.',
     'ownerAccounts.resetSucceeded': '{count} window(s) reset.',
@@ -85,6 +87,7 @@ export const ownerAccountsMessages = {
     'ownerAccounts.resetIrreversible': 'A reset cannot be undone and the credit is spent immediately.',
     'ownerAccounts.resetAcknowledge': 'I understand this spends one reset credit and cannot be undone.',
     'ownerAccounts.resetPrecondition': 'Query this account and confirm at least one unexpired credit before continuing.',
+    'ownerAccounts.resetObservationStale': 'The quota observation is older than 15 minutes. Query this account again before using a reset credit.',
     'ownerAccounts.confirmReset': 'Confirm reset',
     'ownerAccounts.cancel': 'Cancel',
     'ownerAccounts.submitting': 'Submitting…',
@@ -100,6 +103,7 @@ export const ownerAccountsMessages = {
     'ownerAccounts.inviteIrreversible': 'A sent invitation cannot be revoked.',
     'ownerAccounts.confirmInvite': 'Send invitation',
     'ownerAccounts.invitePrecondition': 'Query referral eligibility before sending an invitation.',
+    'ownerAccounts.inviteObservationStale': 'Referral eligibility is older than 10 minutes. Query this account again before sending an invitation.',
     'ownerAccounts.historyTitle': 'Operation history',
     'ownerAccounts.historyEmpty': 'No operations yet.',
     'ownerAccounts.historyTime': 'Time',
@@ -122,6 +126,8 @@ export const ownerAccountsMessages = {
     'ownerAccounts.errorGeneric': 'The request failed. Try again.',
     'ownerAccounts.errorRefreshCooldown': 'Refresh is cooling down. Try again later.',
     'ownerAccounts.errorFreshness': 'Query this account again before acting.',
+    'ownerAccounts.errorInviteFreshness': 'Query referral eligibility again before sending an invitation.',
+    'ownerAccounts.errorComplianceAck': 'Upstream requires administrator compliance acknowledgement before invitations can be sent.',
     'ownerAccounts.errorCreditsExpired': 'The reset credit has expired.',
     'ownerAccounts.errorActionsDisabled': 'Account actions are disabled by the platform.',
     'ownerAccounts.errorConsentRequired': 'Explicit consent is required.',
@@ -144,7 +150,6 @@ export const ownerAccountsMessages = {
     'ownerAccounts.notReported': 'Not reported',
   },
   'zh-CN': {
-    'ownerAccounts.tab': '我的账号',
     'ownerAccounts.loading': '正在加载你的账号…',
     'ownerAccounts.loadFailed': '你的账号暂时不可用。',
     'ownerAccounts.retry': '重试',
@@ -162,6 +167,7 @@ export const ownerAccountsMessages = {
     'ownerAccounts.tokens': 'Token',
     'ownerAccounts.apiCost': 'A $',
     'ownerAccounts.userCost': 'U $',
+    'ownerAccounts.standardCost': '标准费用 {cost}',
     'ownerAccounts.observedAt': '观测时间 {time}',
     'ownerAccounts.observed': '观测时间',
     'ownerAccounts.observedUnknown': '观测时间未知',
@@ -213,6 +219,8 @@ export const ownerAccountsMessages = {
     'ownerAccounts.operationRunning': '操作进行中',
     'ownerAccounts.operationProgress': '正在等待上游结果…',
     'ownerAccounts.operationTimedOut': '未能及时获取结果。在你重新查询前，结果视为未知。',
+    'ownerAccounts.pollInterruptedTitle': '结果轮询已中断',
+    'ownerAccounts.pollInterruptedBody': '操作可能仍在进行中，并未被阻断。请查看历史记录或重试轮询。',
     'ownerAccounts.operationSucceeded': '操作已完成。',
     'ownerAccounts.operationFailed': '操作失败。',
     'ownerAccounts.resetSucceeded': '已重置 {count} 个窗口。',
@@ -229,6 +237,7 @@ export const ownerAccountsMessages = {
     'ownerAccounts.resetIrreversible': '重置无法撤销，次数会立即消耗。',
     'ownerAccounts.resetAcknowledge': '我了解这会消耗一次重置次数且不可撤销。',
     'ownerAccounts.resetPrecondition': '请先查询该账号，并确认至少有一次未过期次数。',
+    'ownerAccounts.resetObservationStale': '额度观测已超过 15 分钟，请重新查询该账号后再使用重置次数。',
     'ownerAccounts.confirmReset': '确认重置',
     'ownerAccounts.cancel': '取消',
     'ownerAccounts.submitting': '提交中…',
@@ -244,6 +253,7 @@ export const ownerAccountsMessages = {
     'ownerAccounts.inviteIrreversible': '已发送的邀请无法撤回。',
     'ownerAccounts.confirmInvite': '发送邀请',
     'ownerAccounts.invitePrecondition': '发送邀请前请先查询邀请资格。',
+    'ownerAccounts.inviteObservationStale': '邀请资格观测已超过 10 分钟，请重新查询该账号后再发送邀请。',
     'ownerAccounts.historyTitle': '操作记录',
     'ownerAccounts.historyEmpty': '暂无操作记录。',
     'ownerAccounts.historyTime': '时间',
@@ -266,6 +276,8 @@ export const ownerAccountsMessages = {
     'ownerAccounts.errorGeneric': '请求失败，请重试。',
     'ownerAccounts.errorRefreshCooldown': '刷新过于频繁，请稍后重试。',
     'ownerAccounts.errorFreshness': '请重新查询该账号后再操作。',
+    'ownerAccounts.errorInviteFreshness': '请重新查询邀请资格后再发送邀请。',
+    'ownerAccounts.errorComplianceAck': '上游要求管理员完成合规确认后才能发送邀请。',
     'ownerAccounts.errorCreditsExpired': '重置次数已过期。',
     'ownerAccounts.errorActionsDisabled': '平台已关闭账号操作。',
     'ownerAccounts.errorConsentRequired': '需要显式确认同意。',
@@ -289,4 +301,7 @@ export const ownerAccountsMessages = {
   },
 } as const
 
-export type OwnerAccountsMessageKey = keyof typeof ownerAccountsMessages['en-US']
+// The usage-center tab label lives in the route-split ownerAccountsTab slice so
+// the static /usage closure stays small; keep the shared key contract complete
+// without duplicating the translation here.
+export type OwnerAccountsMessageKey = keyof typeof ownerAccountsMessages['en-US'] | 'ownerAccounts.tab'

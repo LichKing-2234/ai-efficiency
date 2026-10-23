@@ -37,7 +37,7 @@ func TestReadOwnerAccountUsageReportsWindowsHealthAndPerAccountFailures(t *testi
 						"utilization": 12.5,
 						"resets_at":   "2026-10-23T09:00:00Z",
 						"window_stats": map[string]any{
-							"requests": 3, "tokens": 1200, "standard_cost": 1.25, "user_cost": 0.5,
+							"requests": 3, "tokens": 1200, "cost": 0.75, "standard_cost": 1.25, "user_cost": 0.5,
 						},
 					},
 					"seven_day": map[string]any{
@@ -75,6 +75,7 @@ func TestReadOwnerAccountUsageReportsWindowsHealthAndPerAccountFailures(t *testi
 				ResetsAt:     &fiveHourResetAt,
 				Requests:     3,
 				Tokens:       1200,
+				Cost:         float64Ptr(0.75),
 				StandardCost: 1.25,
 				UserCost:     0.5,
 			},
@@ -98,3 +99,5 @@ func TestReadOwnerAccountUsageReportsWindowsHealthAndPerAccountFailures(t *testi
 		t.Fatal("account 12 has an upstream usage error but the batch projection reports none")
 	}
 }
+
+func float64Ptr(value float64) *float64 { return &value }

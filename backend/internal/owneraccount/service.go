@@ -18,6 +18,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
+	"github.com/ai-efficiency/backend/internal/adminuseraccess"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"go.uber.org/zap"
 )
@@ -54,6 +55,12 @@ type ProviderRuntime interface {
 	ResolveLongRunningEntity(row *ent.RelayProvider) (relay.Provider, error)
 }
 
+// OperationObserver receives bounded refresh and mutation outcomes. Implementations
+// must not add per-user or per-account labels.
+type OperationObserver interface {
+	ObserveOwnerAccountOperation(action, outcome string, duration time.Duration)
+}
+
 // Options configures the service. Zero values fall back to the documented
 // product defaults; tests override the timing knobs instead of sleeping.
 type Options struct {
@@ -73,6 +80,7 @@ type Options struct {
 	QuotaReadTimeout         time.Duration
 	ReferralReadTimeout      time.Duration
 	DirectoryReadTimeout     time.Duration
+	Observer                 OperationObserver
 }
 
 // Service implements the owner-account console use cases.
@@ -103,6 +111,15 @@ func NewService(client *ent.Client, db *sql.DB, runtime ProviderRuntime, logger 
 	}
 	options = withDefaults(options)
 	return &Service{client: client, db: db, runtime: runtime, logger: logger, options: options}, nil
+}
+
+// observeOperation forwards one bounded outcome to the optional observer. A nil
+// observer keeps tests and deployments without metrics a no-op.
+func (s *Service) observeOperation(action, outcome string, duration time.Duration) {
+	if s.options.Observer == nil {
+		return
+	}
+	s.options.Observer.ObserveOwnerAccountOperation(action, outcome, duration)
 }
 
 func withDefaults(options Options) Options {
@@ -173,7 +190,11 @@ func (s *Service) loadActor(ctx context.Context, userID int) (*actor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load owner actor: %w", err)
 	}
-	if user.RelayDisabledAt != nil {
+	offboarding, err := adminuseraccess.OffboardingFactsForUsers(ctx, s.client, []int{user.ID})
+	if err != nil {
+		return nil, fmt.Errorf("load owner actor offboarding facts: %w", err)
+	}
+	if adminuseraccess.Disabled(user, offboarding[user.ID].Succeeded) {
 		return nil, errOwnerInactive()
 	}
 	email := normalizeEmail(user.Email)

@@ -113,19 +113,19 @@ func (s *Service) admitMutation(ctx context.Context, plan mutationPlan) (*Accept
 
 	switch plan.action {
 	case "reset_credit":
-		if err := s.requireFreshQuotaObservation(account, accountFacts, now); err != nil {
+		if err := s.requireFreshQuotaObservation(accountFacts, now); err != nil {
 			return nil, err
 		}
-		if err := s.requireResetCapacity(ctx, provider.ID, account.ID, "reset_credit", s.options.ResetDailyCap, now); err != nil {
+		if err := s.requireDailyMutationCapacity(ctx, provider.ID, account.ID, "reset_credit", s.options.ResetDailyCap, now); err != nil {
 			return nil, err
 		}
 	case "send_invitation":
-		programID, err := s.requireFreshReferralObservation(account, accountFacts, now, plan.programID)
+		programID, err := s.requireFreshReferralObservation(accountFacts, now, plan.programID)
 		if err != nil {
 			return nil, err
 		}
 		plan.programID = programID
-		if err := s.requireResetCapacity(ctx, provider.ID, account.ID, "send_invitation", s.options.InvitationDailyCap, now); err != nil {
+		if err := s.requireDailyMutationCapacity(ctx, provider.ID, account.ID, "send_invitation", s.options.InvitationDailyCap, now); err != nil {
 			return nil, err
 		}
 	default:
@@ -156,48 +156,50 @@ func (s *Service) admitMutation(ctx context.Context, plan mutationPlan) (*Accept
 	return &AcceptedOperation{OperationID: operationID}, nil
 }
 
-// requireFreshQuotaObservation enforces the reset precondition: a successful
-// quota observation newer than the last reset attempt, no older than 15 minutes,
-// reporting at least one unexpired credit.
-func (s *Service) requireFreshQuotaObservation(account *relay.OwnerAccount, facts *accountOperationFacts, now time.Time) error {
-	if facts.QuotaObservedAt == nil {
+// requireFreshQuotaObservation enforces the reset precondition from the latest
+// persisted quota observation: it must be newer than the last reset attempt, no
+// older than 15 minutes, and report at least one unexpired credit. The cached
+// directory snapshot is deliberately not consulted.
+func (s *Service) requireFreshQuotaObservation(facts *accountOperationFacts, now time.Time) error {
+	observation := facts.QuotaObservation
+	if observation == nil {
 		return errResetFreshness()
 	}
-	if facts.LastResetAt != nil && !facts.QuotaObservedAt.After(*facts.LastResetAt) {
+	if facts.LastResetAt != nil && !observation.ObservedAt.After(*facts.LastResetAt) {
 		return errResetFreshness()
 	}
-	if now.Sub(*facts.QuotaObservedAt) > s.options.QuotaObservationMaxAge {
+	if now.Sub(observation.ObservedAt) > s.options.QuotaObservationMaxAge {
 		return errResetFreshness()
 	}
-	if liveResetCredits(account, now) <= 0 {
+	if liveResetCredits(observation, now) <= 0 {
 		return errCreditsExpired()
 	}
 	return nil
 }
 
-// requireFreshReferralObservation enforces the invitation precondition: a fresh
-// referral observation newer than the last invitation attempt, no older than 10
-// minutes, with a visible program and remaining capacity. It returns the program
-// id taken from that observation.
-func (s *Service) requireFreshReferralObservation(account *relay.OwnerAccount, facts *accountOperationFacts, now time.Time, requestedProgramID string) (string, error) {
-	if facts.ReferralObservedAt == nil {
+// requireFreshReferralObservation enforces the invitation precondition from the
+// latest persisted referral observation: it must be newer than the last
+// invitation attempt, no older than 10 minutes, with a visible program and
+// remaining capacity. It returns the program id taken from that observation.
+func (s *Service) requireFreshReferralObservation(facts *accountOperationFacts, now time.Time, requestedProgramID string) (string, error) {
+	observation := facts.ReferralObservation
+	if observation == nil {
 		return "", errInviteFreshness()
 	}
-	if facts.LastInviteAt != nil && !facts.ReferralObservedAt.After(*facts.LastInviteAt) {
+	if facts.LastInviteAt != nil && !observation.ObservedAt.After(*facts.LastInviteAt) {
 		return "", errInviteFreshness()
 	}
-	if now.Sub(*facts.ReferralObservedAt) > s.options.InvitationObservationAge {
+	if now.Sub(observation.ObservedAt) > s.options.InvitationObservationAge {
 		return "", errInviteFreshness()
 	}
-	referral := account.Referral
-	if referral == nil || !referral.ShouldShow {
+	if !observation.Eligible {
 		return "", errReferralUnavailable()
 	}
-	programID := strings.TrimSpace(referral.ProgramID)
+	programID := strings.TrimSpace(observation.ProgramID)
 	if programID == "" {
 		return "", errReferralUnavailable()
 	}
-	if referral.AvailableInvites == nil || *referral.AvailableInvites <= 0 {
+	if observation.RemainingInvites <= 0 {
 		return "", errReferralUnavailable()
 	}
 	if requestedProgramID != "" && requestedProgramID != programID {
@@ -206,9 +208,10 @@ func (s *Service) requireFreshReferralObservation(account *relay.OwnerAccount, f
 	return programID, nil
 }
 
-// requireResetCapacity enforces the rolling 24-hour per-account attempt cap. Gate
-// rejections never write rows, so every existing row is an attempt.
-func (s *Service) requireResetCapacity(ctx context.Context, providerID int, accountID int64, action string, limit int, now time.Time) error {
+// requireDailyMutationCapacity enforces the rolling 24-hour per-account attempt
+// cap for either mutation. Gate rejections never write rows, so every existing row
+// is an attempt.
+func (s *Service) requireDailyMutationCapacity(ctx context.Context, providerID int, accountID int64, action string, limit int, now time.Time) error {
 	count, oldest, err := s.countRecentMutations(ctx, providerID, accountID, action)
 	if err != nil {
 		return err
@@ -226,21 +229,22 @@ func (s *Service) requireResetCapacity(ctx context.Context, providerID int, acco
 	return errMutationRateLimited(retryAfter)
 }
 
-// liveResetCredits clamps the cached reset-credit snapshot to the credits whose
-// expiry is still in the future. The adapter already clamps, but the gate repeats
-// it so a stale snapshot can never spend an expired credit.
-func liveResetCredits(account *relay.OwnerAccount, now time.Time) int {
-	if account == nil || account.ResetCredits == nil {
+// liveResetCredits clamps the persisted observation to the credits whose expiry
+// is still in the future. The adapter already clamps at observation time, but the
+// gate repeats it so a credit that expired between the observation and the click
+// can never be spent.
+func liveResetCredits(observation *quotaObservationFacts, now time.Time) int {
+	if observation == nil {
 		return 0
 	}
 	live := 0
-	for _, expiry := range account.ResetCredits.ExpiresAt {
+	for _, expiry := range observation.ResetCreditExpiries {
 		if expiry.After(now) {
 			live++
 		}
 	}
-	if account.ResetCredits.Available < live {
-		return account.ResetCredits.Available
+	if observation.ResetCreditsRemaining < live {
+		return observation.ResetCreditsRemaining
 	}
 	return live
 }

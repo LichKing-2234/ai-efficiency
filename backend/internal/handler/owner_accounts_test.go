@@ -741,7 +741,7 @@ func ownerAccountUsagePayload(utilization int64) map[string]any {
 			"utilization": float64(utilization),
 			"resets_at":   "2026-10-23T09:00:00Z",
 			"window_stats": map[string]any{
-				"requests": 3, "tokens": 1200, "standard_cost": 1.25, "user_cost": 0.5,
+				"requests": 3, "tokens": 1200, "cost": 0.75, "standard_cost": 1.25, "user_cost": 0.5,
 			},
 		},
 		"seven_day": map[string]any{

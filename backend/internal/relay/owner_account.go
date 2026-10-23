@@ -90,12 +90,16 @@ type OwnerAccountUsage struct {
 	Err error
 }
 
-// OwnerAccountUsageWindow is one 5h or 7d usage window.
+// OwnerAccountUsageWindow is one 5h or 7d usage window. Cost is the
+// account-multiplied total shown as "A $"; StandardCost is disclosure-limited to
+// a tooltip. A nil Cost means the upstream did not report one, and the console
+// hides the value rather than substituting standard cost.
 type OwnerAccountUsageWindow struct {
 	Utilization  float64
 	ResetsAt     *time.Time
 	Requests     int64
 	Tokens       int64
+	Cost         *float64
 	StandardCost float64
 	UserCost     float64
 }

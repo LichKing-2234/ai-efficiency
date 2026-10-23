@@ -106,6 +106,7 @@ func TestOwnerAccountResetGates(t *testing.T) {
 			AccountID: 11, Action: owneraccountoperation.ActionRefreshQuota,
 			Status:    owneraccountoperation.StatusSucceeded,
 			CreatedAt: time.Now().UTC().Add(-16 * time.Minute),
+			Result:    ownerAccountQuotaObservation(1, "2999-01-01T00:00:00Z"),
 		})
 		w := resetCredit(t, env, true)
 		if w.Code != http.StatusConflict {
@@ -123,6 +124,7 @@ func TestOwnerAccountResetGates(t *testing.T) {
 		env.seedOperation(t, env.alice.ID, ownerAccountSeed{
 			AccountID: 11, Action: owneraccountoperation.ActionRefreshQuota,
 			Status: owneraccountoperation.StatusSucceeded, CreatedAt: now.Add(-5 * time.Minute),
+			Result: ownerAccountQuotaObservation(1, "2999-01-01T00:00:00Z"),
 		})
 		env.seedOperation(t, env.alice.ID, ownerAccountSeed{
 			AccountID: 11, Action: owneraccountoperation.ActionResetCredit,
@@ -139,9 +141,12 @@ func TestOwnerAccountResetGates(t *testing.T) {
 
 	t.Run("expired reset credit", func(t *testing.T) {
 		env := setupOwnerAccountEnv(t, nil)
+		// The cached directory claims one unexpired credit; the persisted
+		// observation says none, and the gate must trust only the local row.
 		account := ownerAccountResetCredits(
-			ownerAccountWire(11, "Alice", "alice@example.com", "openai", "oauth"), 1, "2000-01-01T00:00:00Z")
+			ownerAccountWire(11, "Alice", "alice@example.com", "openai", "oauth"), 1, "2999-01-01T00:00:00Z")
 		env.upstream.setAccounts(account)
+		env.upstream.setQuota(11, ownerAccountQuotaPayload(0, "2999-01-01T00:00:00Z"))
 		prepareOwnerQuotaObservation(t, env)
 		w := resetCredit(t, env, true)
 		if w.Code != http.StatusConflict {
@@ -150,6 +155,21 @@ func TestOwnerAccountResetGates(t *testing.T) {
 		if got := env.errorCode(t, w); got != "credits-expired" {
 			t.Fatalf("error_code = %q", got)
 		}
+	})
+
+	t.Run("fresh observation wins over a stale cached credit snapshot", func(t *testing.T) {
+		env := setupOwnerAccountEnv(t, nil)
+		// The cached directory has an expired credit only; the fresh persisted
+		// observation reports a live one and must admit the mutation.
+		account := ownerAccountResetCredits(
+			ownerAccountWire(11, "Alice", "alice@example.com", "openai", "oauth"), 1, "2000-01-01T00:00:00Z")
+		env.upstream.setAccounts(account)
+		prepareOwnerQuotaObservation(t, env)
+		w := resetCredit(t, env, true)
+		if w.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want 202, body: %s", w.Code, w.Body.String())
+		}
+		env.waitForOperation(t, env.aliceAuth, int(env.data(t, w)["operation_id"].(float64)), "succeeded")
 	})
 
 	t.Run("rolling daily cap", func(t *testing.T) {
@@ -337,12 +357,28 @@ func TestOwnerAccountInvitationGates(t *testing.T) {
 
 	t.Run("no remaining capacity", func(t *testing.T) {
 		env := setupOwnerAccountEnv(t, nil)
-		env.upstream.setAccounts(ownerAccountReferral(ownerAccountWire(11, "Alice", "alice@example.com", "openai", "oauth"), "program-1", 0))
+		// The cached directory still offers three invitations; the persisted
+		// observation reports none, and the gate must trust only the local row.
+		env.upstream.setAccounts(ownerAccountReferral(ownerAccountWire(11, "Alice", "alice@example.com", "openai", "oauth"), "program-1", 3))
+		env.upstream.setReferral(11, ownerAccountReferralSnapshot("program-1", 0, true))
 		prepareOwnerReferralObservation(t, env)
 		w := inviteOwner(t, env, "program-1")
 		if w.Code != http.StatusConflict || env.errorCode(t, w) != "referral-unavailable" {
 			t.Fatalf("status = %d/%s, want 409/referral-unavailable", w.Code, env.errorCode(t, w))
 		}
+	})
+
+	t.Run("fresh observation wins over a stale cached eligibility snapshot", func(t *testing.T) {
+		env := setupOwnerAccountEnv(t, nil)
+		// The cached directory reports no capacity; the fresh persisted observation
+		// reports three invitations and must admit the mutation.
+		env.upstream.setAccounts(ownerAccountReferral(ownerAccountWire(11, "Alice", "alice@example.com", "openai", "oauth"), "program-1", 0))
+		prepareOwnerReferralObservation(t, env)
+		w := inviteOwner(t, env, "program-1")
+		if w.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want 202, body: %s", w.Code, w.Body.String())
+		}
+		env.waitForOperation(t, env.aliceAuth, int(env.data(t, w)["operation_id"].(float64)), "succeeded")
 	})
 
 	t.Run("rolling daily cap", func(t *testing.T) {
@@ -467,4 +503,17 @@ func queryInvite(t *testing.T, env *ownerAccountTestEnv, operationID int) string
 		return ""
 	}
 	return *row.InviteEmail
+}
+
+// ownerAccountQuotaObservation is the sanitized result a succeeded quota refresh
+// or reset persists; gates read only these fields.
+func ownerAccountQuotaObservation(credits int, expiry string) map[string]any {
+	expiries := make([]string, 0, credits)
+	for index := 0; index < credits; index++ {
+		expiries = append(expiries, expiry)
+	}
+	return map[string]any{
+		"reset_credits_remaining": credits,
+		"reset_credit_expiries":   expiries,
+	}
 }

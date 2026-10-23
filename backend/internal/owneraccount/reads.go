@@ -215,6 +215,9 @@ func (s *Service) RefreshUsage(ctx context.Context, actorUserID int, accountID i
 // RefreshQuota performs one fresh quota observation and records it locally so the
 // reset gate can require an observation newer than the last reset attempt.
 func (s *Service) RefreshQuota(ctx context.Context, actorUserID int, accountID int64) (*QuotaResponse, error) {
+	startedAt := time.Now()
+	outcome := "failed"
+	defer func() { s.observeOperation("refresh_quota", outcome, time.Since(startedAt)) }()
 	provider, account, err := s.ownedAccount(ctx, actorUserID, accountID)
 	if err != nil {
 		return nil, err
@@ -233,17 +236,18 @@ func (s *Service) RefreshQuota(ctx context.Context, actorUserID int, accountID i
 		ProviderID: provider.ID, AccountID: accountID, ActorUserID: actorUserID, Action: "refresh_quota",
 	}
 	if readErr != nil {
-		_, _ = s.insertTerminalOperation(ctx, attempt, "failed", classifyUpstreamCode(readErr))
+		_, _ = s.insertTerminalOperation(ctx, attempt, "failed", classifyUpstreamCode(readErr), nil)
 		s.logger.Info("owner account refresh failed",
 			zap.Int("provider_id", provider.ID), zap.Int64("account_id", accountID),
 			zap.Int("actor_user_id", actorUserID), zap.String("action", "refresh_quota"),
 			zap.String("error_class", logClassify(readErr)))
 		return nil, classifyUpstream(readErr)
 	}
-	if _, err := s.insertTerminalOperation(ctx, attempt, "succeeded", ""); err != nil {
+	if _, err := s.insertTerminalOperation(ctx, attempt, "succeeded", "", quotaObservationResult(quota)); err != nil {
 		return nil, err
 	}
 	s.runtime.InvalidateOwnerAccounts(provider.ID, platformOpenAI)
+	outcome = "succeeded"
 	return &QuotaResponse{AccountID: accountID, Quota: quotaViewFromObservation(quota, account.AutoResetCreditEnabled)}, nil
 }
 
@@ -251,6 +255,9 @@ func (s *Service) RefreshQuota(ctx context.Context, actorUserID int, accountID i
 // so the invitation gate can require an observation newer than the last invite
 // attempt.
 func (s *Service) RefreshReferral(ctx context.Context, actorUserID int, accountID int64) (*ReferralResponse, error) {
+	startedAt := time.Now()
+	outcome := "failed"
+	defer func() { s.observeOperation("refresh_referral", outcome, time.Since(startedAt)) }()
 	provider, _, err := s.ownedAccount(ctx, actorUserID, accountID)
 	if err != nil {
 		return nil, err
@@ -269,17 +276,18 @@ func (s *Service) RefreshReferral(ctx context.Context, actorUserID int, accountI
 		ProviderID: provider.ID, AccountID: accountID, ActorUserID: actorUserID, Action: "refresh_referral",
 	}
 	if readErr != nil {
-		_, _ = s.insertTerminalOperation(ctx, attempt, "failed", classifyUpstreamCode(readErr))
+		_, _ = s.insertTerminalOperation(ctx, attempt, "failed", classifyUpstreamCode(readErr), nil)
 		s.logger.Info("owner account refresh failed",
 			zap.Int("provider_id", provider.ID), zap.Int64("account_id", accountID),
 			zap.Int("actor_user_id", actorUserID), zap.String("action", "refresh_referral"),
 			zap.String("error_class", logClassify(readErr)))
 		return nil, classifyUpstream(readErr)
 	}
-	if _, err := s.insertTerminalOperation(ctx, attempt, "succeeded", ""); err != nil {
+	if _, err := s.insertTerminalOperation(ctx, attempt, "succeeded", "", referralObservationResult(referral)); err != nil {
 		return nil, err
 	}
 	s.runtime.InvalidateOwnerAccounts(provider.ID, platformOpenAI)
+	outcome = "succeeded"
 	return &ReferralResponse{AccountID: accountID, Referral: referralViewFromSnapshot(referral)}, nil
 }
 

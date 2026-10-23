@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from '@/i18n'
 import { createFeatureTranslator } from '@/utils/featureI18n'
 import { ownerAccountsMessages } from '@/locales/ownerAccounts'
@@ -22,21 +22,43 @@ const emit = defineEmits<{
 
 const { t: baseT, locale } = useI18n()
 const t = createFeatureTranslator(locale, baseT, 'ownerAccounts', ownerAccountsMessages)
+const QUOTA_OBSERVATION_MAX_AGE_MS = 15 * 60 * 1000
 const acknowledged = ref(false)
-const now = Date.now()
+const now = ref(Date.now())
+let freshnessTimer: ReturnType<typeof setInterval> | undefined
 
 watch(
   () => props.open,
   (open) => {
-    if (open) acknowledged.value = false
+    if (freshnessTimer) clearInterval(freshnessTimer)
+    freshnessTimer = undefined
+    if (!open) return
+    acknowledged.value = false
+    now.value = Date.now()
+    // A dialog left open must not keep admitting an observation that aged out.
+    freshnessTimer = setInterval(() => {
+      now.value = Date.now()
+    }, 30000)
   },
   { immediate: true },
 )
 
-const hasFreshQuota = computed(() => !!props.quota?.observed_at)
+onBeforeUnmount(() => {
+  if (freshnessTimer) clearInterval(freshnessTimer)
+})
+
+// The server gate is authoritative; this precondition only stops an obviously
+// stale observation from reaching it.
+const observationStale = computed(() => {
+  const observed = props.quota?.observed_at
+  if (!observed) return false
+  const time = new Date(observed).getTime()
+  return Number.isNaN(time) || now.value - time > QUOTA_OBSERVATION_MAX_AGE_MS
+})
+const hasFreshQuota = computed(() => !!props.quota?.observed_at && !observationStale.value)
 const hasCredits = computed(() => (props.quota?.reset_credits_remaining ?? 0) > 0)
 const canSubmit = computed(() => hasFreshQuota.value && hasCredits.value)
-const expiry = computed(() => props.quota?.reset_credit_expiries?.[0] ?? '')
+const expiries = computed(() => props.quota?.reset_credit_expiries ?? [])
 const observation = computed(() => ownerAccountDateTime(props.quota?.observed_at, locale.value))
 </script>
 
@@ -58,7 +80,7 @@ const observation = computed(() => ownerAccountDateTime(props.quota?.observed_at
         type="warning"
         :closable="false"
         show-icon
-        :title="t('ownerAccounts.resetPrecondition')"
+        :title="observationStale ? t('ownerAccounts.resetObservationStale') : t('ownerAccounts.resetPrecondition')"
       />
 
       <div v-if="usage" class="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm">
@@ -92,7 +114,10 @@ const observation = computed(() => ownerAccountDateTime(props.quota?.observed_at
         <div class="flex flex-wrap justify-between gap-2">
           <dt class="text-slate-500">{{ t('ownerAccounts.creditExpiryLabel') }}</dt>
           <dd class="font-medium text-slate-900">
-            {{ expiry ? ownerAccountDateTime(expiry, locale) : t('ownerAccounts.creditNoExpiry') }}
+            <span v-for="(expiry, index) in expiries" :key="`${expiry}-${index}`" class="block">
+              {{ ownerAccountDateTime(expiry, locale) }}
+            </span>
+            <span v-if="expiries.length === 0">{{ t('ownerAccounts.creditNoExpiry') }}</span>
           </dd>
         </div>
       </dl>

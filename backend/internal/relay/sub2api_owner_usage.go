@@ -87,6 +87,7 @@ func projectOwnerAccountUsageWindow(window *sub2apiUsageProgress) *OwnerAccountU
 	if window.WindowStats != nil {
 		out.Requests = window.WindowStats.Requests
 		out.Tokens = window.WindowStats.Tokens
+		out.Cost = window.WindowStats.Cost
 		out.StandardCost = window.WindowStats.StandardCost
 		out.UserCost = window.WindowStats.UserCost
 	}
