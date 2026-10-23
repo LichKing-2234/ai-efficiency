@@ -29,6 +29,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
 	"github.com/ai-efficiency/backend/ent/directorysource"
 	"github.com/ai-efficiency/backend/ent/directorysyncrun"
+	"github.com/ai-efficiency/backend/ent/owneraccountoperation"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/prrecord"
@@ -86,6 +87,8 @@ type Client struct {
 	DirectorySource *DirectorySourceClient
 	// DirectorySyncRun is the client for interacting with the DirectorySyncRun builders.
 	DirectorySyncRun *DirectorySyncRunClient
+	// OwnerAccountOperation is the client for interacting with the OwnerAccountOperation builders.
+	OwnerAccountOperation *OwnerAccountOperationClient
 	// PRCommitUsageSnapshot is the client for interacting with the PRCommitUsageSnapshot builders.
 	PRCommitUsageSnapshot *PRCommitUsageSnapshotClient
 	// PRSyncJob is the client for interacting with the PRSyncJob builders.
@@ -155,6 +158,7 @@ func (c *Client) init() {
 	c.DirectoryOffboardingAction = NewDirectoryOffboardingActionClient(c.config)
 	c.DirectorySource = NewDirectorySourceClient(c.config)
 	c.DirectorySyncRun = NewDirectorySyncRunClient(c.config)
+	c.OwnerAccountOperation = NewOwnerAccountOperationClient(c.config)
 	c.PRCommitUsageSnapshot = NewPRCommitUsageSnapshotClient(c.config)
 	c.PRSyncJob = NewPRSyncJobClient(c.config)
 	c.PrAttributionRun = NewPrAttributionRunClient(c.config)
@@ -283,6 +287,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		DirectoryOffboardingAction:    NewDirectoryOffboardingActionClient(cfg),
 		DirectorySource:               NewDirectorySourceClient(cfg),
 		DirectorySyncRun:              NewDirectorySyncRunClient(cfg),
+		OwnerAccountOperation:         NewOwnerAccountOperationClient(cfg),
 		PRCommitUsageSnapshot:         NewPRCommitUsageSnapshotClient(cfg),
 		PRSyncJob:                     NewPRSyncJobClient(cfg),
 		PrAttributionRun:              NewPrAttributionRunClient(cfg),
@@ -338,6 +343,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		DirectoryOffboardingAction:    NewDirectoryOffboardingActionClient(cfg),
 		DirectorySource:               NewDirectorySourceClient(cfg),
 		DirectorySyncRun:              NewDirectorySyncRunClient(cfg),
+		OwnerAccountOperation:         NewOwnerAccountOperationClient(cfg),
 		PRCommitUsageSnapshot:         NewPRCommitUsageSnapshotClient(cfg),
 		PRSyncJob:                     NewPRSyncJobClient(cfg),
 		PrAttributionRun:              NewPrAttributionRunClient(cfg),
@@ -393,13 +399,14 @@ func (c *Client) Use(hooks ...Hook) {
 		c.AttributionUsagePool, c.AttributionUsagePoolCommit, c.CommitCheckpoint,
 		c.CommitRewrite, c.Credential, c.DirectoryDepartment, c.DirectoryMember,
 		c.DirectoryMemberDepartment, c.DirectoryOffboardingAction, c.DirectorySource,
-		c.DirectorySyncRun, c.PRCommitUsageSnapshot, c.PRSyncJob, c.PrAttributionRun,
-		c.PrRecord, c.QuotaResetApproverConfig, c.QuotaResetNotificationSetting,
-		c.QuotaResetRequest, c.QuotaResetRequestEvent, c.RelationshipOperation,
-		c.RelationshipOperationAttempt, c.RelationshipOperationMapping,
-		c.RelationshipOperationStep, c.RelayGroupMapping, c.RelayProvider,
-		c.RepoConfig, c.ReportingInstallation, c.ScmProvider, c.SystemSetting,
-		c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
+		c.DirectorySyncRun, c.OwnerAccountOperation, c.PRCommitUsageSnapshot,
+		c.PRSyncJob, c.PrAttributionRun, c.PrRecord, c.QuotaResetApproverConfig,
+		c.QuotaResetNotificationSetting, c.QuotaResetRequest, c.QuotaResetRequestEvent,
+		c.RelationshipOperation, c.RelationshipOperationAttempt,
+		c.RelationshipOperationMapping, c.RelationshipOperationStep,
+		c.RelayGroupMapping, c.RelayProvider, c.RepoConfig, c.ReportingInstallation,
+		c.ScmProvider, c.SystemSetting, c.TeamUsageRateMultiplierAudit,
+		c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Use(hooks...)
 	}
@@ -413,13 +420,14 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.AttributionUsagePool, c.AttributionUsagePoolCommit, c.CommitCheckpoint,
 		c.CommitRewrite, c.Credential, c.DirectoryDepartment, c.DirectoryMember,
 		c.DirectoryMemberDepartment, c.DirectoryOffboardingAction, c.DirectorySource,
-		c.DirectorySyncRun, c.PRCommitUsageSnapshot, c.PRSyncJob, c.PrAttributionRun,
-		c.PrRecord, c.QuotaResetApproverConfig, c.QuotaResetNotificationSetting,
-		c.QuotaResetRequest, c.QuotaResetRequestEvent, c.RelationshipOperation,
-		c.RelationshipOperationAttempt, c.RelationshipOperationMapping,
-		c.RelationshipOperationStep, c.RelayGroupMapping, c.RelayProvider,
-		c.RepoConfig, c.ReportingInstallation, c.ScmProvider, c.SystemSetting,
-		c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
+		c.DirectorySyncRun, c.OwnerAccountOperation, c.PRCommitUsageSnapshot,
+		c.PRSyncJob, c.PrAttributionRun, c.PrRecord, c.QuotaResetApproverConfig,
+		c.QuotaResetNotificationSetting, c.QuotaResetRequest, c.QuotaResetRequestEvent,
+		c.RelationshipOperation, c.RelationshipOperationAttempt,
+		c.RelationshipOperationMapping, c.RelationshipOperationStep,
+		c.RelayGroupMapping, c.RelayProvider, c.RepoConfig, c.ReportingInstallation,
+		c.ScmProvider, c.SystemSetting, c.TeamUsageRateMultiplierAudit,
+		c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -456,6 +464,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.DirectorySource.mutate(ctx, m)
 	case *DirectorySyncRunMutation:
 		return c.DirectorySyncRun.mutate(ctx, m)
+	case *OwnerAccountOperationMutation:
+		return c.OwnerAccountOperation.mutate(ctx, m)
 	case *PRCommitUsageSnapshotMutation:
 		return c.PRCommitUsageSnapshot.mutate(ctx, m)
 	case *PRSyncJobMutation:
@@ -2492,6 +2502,139 @@ func (c *DirectorySyncRunClient) mutate(ctx context.Context, m *DirectorySyncRun
 		return (&DirectorySyncRunDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown DirectorySyncRun mutation op: %q", m.Op())
+	}
+}
+
+// OwnerAccountOperationClient is a client for the OwnerAccountOperation schema.
+type OwnerAccountOperationClient struct {
+	config
+}
+
+// NewOwnerAccountOperationClient returns a client for the OwnerAccountOperation from the given config.
+func NewOwnerAccountOperationClient(c config) *OwnerAccountOperationClient {
+	return &OwnerAccountOperationClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `owneraccountoperation.Hooks(f(g(h())))`.
+func (c *OwnerAccountOperationClient) Use(hooks ...Hook) {
+	c.hooks.OwnerAccountOperation = append(c.hooks.OwnerAccountOperation, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `owneraccountoperation.Intercept(f(g(h())))`.
+func (c *OwnerAccountOperationClient) Intercept(interceptors ...Interceptor) {
+	c.inters.OwnerAccountOperation = append(c.inters.OwnerAccountOperation, interceptors...)
+}
+
+// Create returns a builder for creating a OwnerAccountOperation entity.
+func (c *OwnerAccountOperationClient) Create() *OwnerAccountOperationCreate {
+	mutation := newOwnerAccountOperationMutation(c.config, OpCreate)
+	return &OwnerAccountOperationCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of OwnerAccountOperation entities.
+func (c *OwnerAccountOperationClient) CreateBulk(builders ...*OwnerAccountOperationCreate) *OwnerAccountOperationCreateBulk {
+	return &OwnerAccountOperationCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *OwnerAccountOperationClient) MapCreateBulk(slice any, setFunc func(*OwnerAccountOperationCreate, int)) *OwnerAccountOperationCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &OwnerAccountOperationCreateBulk{err: fmt.Errorf("calling to OwnerAccountOperationClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*OwnerAccountOperationCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &OwnerAccountOperationCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for OwnerAccountOperation.
+func (c *OwnerAccountOperationClient) Update() *OwnerAccountOperationUpdate {
+	mutation := newOwnerAccountOperationMutation(c.config, OpUpdate)
+	return &OwnerAccountOperationUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *OwnerAccountOperationClient) UpdateOne(oao *OwnerAccountOperation) *OwnerAccountOperationUpdateOne {
+	mutation := newOwnerAccountOperationMutation(c.config, OpUpdateOne, withOwnerAccountOperation(oao))
+	return &OwnerAccountOperationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *OwnerAccountOperationClient) UpdateOneID(id int) *OwnerAccountOperationUpdateOne {
+	mutation := newOwnerAccountOperationMutation(c.config, OpUpdateOne, withOwnerAccountOperationID(id))
+	return &OwnerAccountOperationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for OwnerAccountOperation.
+func (c *OwnerAccountOperationClient) Delete() *OwnerAccountOperationDelete {
+	mutation := newOwnerAccountOperationMutation(c.config, OpDelete)
+	return &OwnerAccountOperationDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *OwnerAccountOperationClient) DeleteOne(oao *OwnerAccountOperation) *OwnerAccountOperationDeleteOne {
+	return c.DeleteOneID(oao.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *OwnerAccountOperationClient) DeleteOneID(id int) *OwnerAccountOperationDeleteOne {
+	builder := c.Delete().Where(owneraccountoperation.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &OwnerAccountOperationDeleteOne{builder}
+}
+
+// Query returns a query builder for OwnerAccountOperation.
+func (c *OwnerAccountOperationClient) Query() *OwnerAccountOperationQuery {
+	return &OwnerAccountOperationQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeOwnerAccountOperation},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a OwnerAccountOperation entity by its id.
+func (c *OwnerAccountOperationClient) Get(ctx context.Context, id int) (*OwnerAccountOperation, error) {
+	return c.Query().Where(owneraccountoperation.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *OwnerAccountOperationClient) GetX(ctx context.Context, id int) *OwnerAccountOperation {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *OwnerAccountOperationClient) Hooks() []Hook {
+	return c.hooks.OwnerAccountOperation
+}
+
+// Interceptors returns the client interceptors.
+func (c *OwnerAccountOperationClient) Interceptors() []Interceptor {
+	return c.inters.OwnerAccountOperation
+}
+
+func (c *OwnerAccountOperationClient) mutate(ctx context.Context, m *OwnerAccountOperationMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&OwnerAccountOperationCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&OwnerAccountOperationUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&OwnerAccountOperationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&OwnerAccountOperationDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown OwnerAccountOperation mutation op: %q", m.Op())
 	}
 }
 
@@ -5991,9 +6134,10 @@ type (
 		AttributionUsagePool, AttributionUsagePoolCommit, CommitCheckpoint,
 		CommitRewrite, Credential, DirectoryDepartment, DirectoryMember,
 		DirectoryMemberDepartment, DirectoryOffboardingAction, DirectorySource,
-		DirectorySyncRun, PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord,
-		QuotaResetApproverConfig, QuotaResetNotificationSetting, QuotaResetRequest,
-		QuotaResetRequestEvent, RelationshipOperation, RelationshipOperationAttempt,
+		DirectorySyncRun, OwnerAccountOperation, PRCommitUsageSnapshot, PRSyncJob,
+		PrAttributionRun, PrRecord, QuotaResetApproverConfig,
+		QuotaResetNotificationSetting, QuotaResetRequest, QuotaResetRequestEvent,
+		RelationshipOperation, RelationshipOperationAttempt,
 		RelationshipOperationMapping, RelationshipOperationStep, RelayGroupMapping,
 		RelayProvider, RepoConfig, ReportingInstallation, ScmProvider, SystemSetting,
 		TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
@@ -6004,9 +6148,10 @@ type (
 		AttributionUsagePool, AttributionUsagePoolCommit, CommitCheckpoint,
 		CommitRewrite, Credential, DirectoryDepartment, DirectoryMember,
 		DirectoryMemberDepartment, DirectoryOffboardingAction, DirectorySource,
-		DirectorySyncRun, PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord,
-		QuotaResetApproverConfig, QuotaResetNotificationSetting, QuotaResetRequest,
-		QuotaResetRequestEvent, RelationshipOperation, RelationshipOperationAttempt,
+		DirectorySyncRun, OwnerAccountOperation, PRCommitUsageSnapshot, PRSyncJob,
+		PrAttributionRun, PrRecord, QuotaResetApproverConfig,
+		QuotaResetNotificationSetting, QuotaResetRequest, QuotaResetRequestEvent,
+		RelationshipOperation, RelationshipOperationAttempt,
 		RelationshipOperationMapping, RelationshipOperationStep, RelayGroupMapping,
 		RelayProvider, RepoConfig, ReportingInstallation, ScmProvider, SystemSetting,
 		TeamUsageRateMultiplierAudit, ToolUsageEvent, User,

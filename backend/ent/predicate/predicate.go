@@ -48,6 +48,9 @@ type DirectorySource func(*sql.Selector)
 // DirectorySyncRun is the predicate function for directorysyncrun builders.
 type DirectorySyncRun func(*sql.Selector)
 
+// OwnerAccountOperation is the predicate function for owneraccountoperation builders.
+type OwnerAccountOperation func(*sql.Selector)
+
 // PRCommitUsageSnapshot is the predicate function for prcommitusagesnapshot builders.
 type PRCommitUsageSnapshot func(*sql.Selector)
 

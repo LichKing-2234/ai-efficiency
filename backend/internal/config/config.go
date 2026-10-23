@@ -57,6 +57,9 @@ type RelayConfig struct {
 	AdminAPIKey    string `mapstructure:"admin_api_key"`
 	Model          string `mapstructure:"model"`
 	DefaultGroupID string `mapstructure:"default_group_id"`
+	// OwnerAccountMutationsEnabled gates owner-initiated upstream writes
+	// (reset-credit and invitation). It is off unless an operator opts in.
+	OwnerAccountMutationsEnabled bool `mapstructure:"owner_account_mutations_enabled"`
 }
 
 type AttributionConfig struct {
@@ -151,6 +154,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("relay.provider", "sub2api")
 	v.SetDefault("relay.model", "claude-sonnet-4-20250514")
 	v.SetDefault("relay.default_group_id", "")
+	v.SetDefault("relay.owner_account_mutations_enabled", false)
 	v.SetDefault("attribution.ledger_epoch", "shadow_v2")
 	v.SetDefault("attribution.v1_write_policy", "accept")
 	v.SetDefault("attribution.minimum_cli_version", "")
@@ -202,6 +206,7 @@ func Load(path string) (*Config, error) {
 		"relay.admin_api_key",
 		"relay.model",
 		"relay.default_group_id",
+		"relay.owner_account_mutations_enabled",
 		"attribution.ledger_epoch",
 		"attribution.v1_write_policy",
 		"attribution.minimum_cli_version",
