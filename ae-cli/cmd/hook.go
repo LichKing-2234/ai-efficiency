@@ -28,7 +28,20 @@ var runDetachedBackgroundSyncTask = hooks.RunDetachedPendingSyncTask
 
 var newHookUploader = func() hooks.Uploader {
 	if reportingConfig, ok := loadEnabledReportingConfig(); ok {
-		return hooks.NewCompactBackendUploader(client.New(reportingConfig.ServerURL, reportingConfig.ReporterToken), reportingConfig.RelayProviderID, reportingConfig.Protocol)
+		uploader := hooks.NewCompactBackendUploader(client.New(reportingConfig.ServerURL, reportingConfig.ReporterToken), reportingConfig.RelayProviderID, reportingConfig.Protocol)
+		// The usage surface authenticates as the user, not as the reporter: the
+		// usage endpoints sit behind the user session and reject the reporter
+		// credential. Without this attachment a compact machine has no usage
+		// path at all. A machine whose user token has lapsed simply keeps
+		// spooling until the next login.
+		if tf := readTokenFile(""); tf != nil && tf.IsValid() {
+			serverURL := strings.TrimSpace(tf.ServerURL)
+			if serverURL == "" {
+				serverURL = reportingConfig.ServerURL
+			}
+			return uploader.WithToolUsageClient(client.New(serverURL, tf.AccessToken))
+		}
+		return uploader
 	}
 	if apiClient == nil {
 		return hooks.UnsupportedUploader{}

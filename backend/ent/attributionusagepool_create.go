@@ -142,6 +142,20 @@ func (aupc *AttributionUsagePoolCreate) SetNillableTotalTokens(i *int64) *Attrib
 	return aupc
 }
 
+// SetCreditUsage sets the "credit_usage" field.
+func (aupc *AttributionUsagePoolCreate) SetCreditUsage(f float64) *AttributionUsagePoolCreate {
+	aupc.mutation.SetCreditUsage(f)
+	return aupc
+}
+
+// SetNillableCreditUsage sets the "credit_usage" field if the given value is not nil.
+func (aupc *AttributionUsagePoolCreate) SetNillableCreditUsage(f *float64) *AttributionUsagePoolCreate {
+	if f != nil {
+		aupc.SetCreditUsage(*f)
+	}
+	return aupc
+}
+
 // SetRequestCount sets the "request_count" field.
 func (aupc *AttributionUsagePoolCreate) SetRequestCount(i int) *AttributionUsagePoolCreate {
 	aupc.mutation.SetRequestCount(i)
@@ -261,6 +275,10 @@ func (aupc *AttributionUsagePoolCreate) defaults() {
 		v := attributionusagepool.DefaultTotalTokens
 		aupc.mutation.SetTotalTokens(v)
 	}
+	if _, ok := aupc.mutation.CreditUsage(); !ok {
+		v := attributionusagepool.DefaultCreditUsage
+		aupc.mutation.SetCreditUsage(v)
+	}
 	if _, ok := aupc.mutation.RequestCount(); !ok {
 		v := attributionusagepool.DefaultRequestCount
 		aupc.mutation.SetRequestCount(v)
@@ -323,6 +341,9 @@ func (aupc *AttributionUsagePoolCreate) check() error {
 	}
 	if _, ok := aupc.mutation.TotalTokens(); !ok {
 		return &ValidationError{Name: "total_tokens", err: errors.New(`ent: missing required field "AttributionUsagePool.total_tokens"`)}
+	}
+	if _, ok := aupc.mutation.CreditUsage(); !ok {
+		return &ValidationError{Name: "credit_usage", err: errors.New(`ent: missing required field "AttributionUsagePool.credit_usage"`)}
 	}
 	if _, ok := aupc.mutation.RequestCount(); !ok {
 		return &ValidationError{Name: "request_count", err: errors.New(`ent: missing required field "AttributionUsagePool.request_count"`)}
@@ -405,6 +426,10 @@ func (aupc *AttributionUsagePoolCreate) createSpec() (*AttributionUsagePool, *sq
 	if value, ok := aupc.mutation.TotalTokens(); ok {
 		_spec.SetField(attributionusagepool.FieldTotalTokens, field.TypeInt64, value)
 		_node.TotalTokens = value
+	}
+	if value, ok := aupc.mutation.CreditUsage(); ok {
+		_spec.SetField(attributionusagepool.FieldCreditUsage, field.TypeFloat64, value)
+		_node.CreditUsage = value
 	}
 	if value, ok := aupc.mutation.RequestCount(); ok {
 		_spec.SetField(attributionusagepool.FieldRequestCount, field.TypeInt, value)

@@ -16,12 +16,32 @@ type compactCheckpointSender interface {
 
 type CompactBackendUploader struct {
 	client          compactCheckpointSender
+	toolUsage       attributionlocal.BackendClient
 	relayProviderID int
 	protocol        client.AttributionProtocol
 }
 
 func NewCompactBackendUploader(client compactCheckpointSender, relayProviderID int, protocol client.AttributionProtocol) CompactBackendUploader {
 	return CompactBackendUploader{client: client, relayProviderID: relayProviderID, protocol: protocol}
+}
+
+// WithToolUsageClient attaches the client the usage surface uploads through.
+//
+// It is a separate client because the two surfaces authenticate differently.
+// Compact reporting holds a reporter credential, which the usage endpoints do
+// not accept — they sit behind the user session. Without this attachment a
+// compact machine had no usage path at all: the sync pass saw no usage client
+// and every tool usage event stayed on disk, silently, from the day compact
+// reporting was enabled.
+func (u CompactBackendUploader) WithToolUsageClient(toolUsage attributionlocal.BackendClient) CompactBackendUploader {
+	u.toolUsage = toolUsage
+	return u
+}
+
+// ToolUsageClient is what the sync pass uploads usage through, or nil on a
+// machine with no user session to authenticate it.
+func (u CompactBackendUploader) ToolUsageClient() attributionlocal.BackendClient {
+	return u.toolUsage
 }
 
 func (u CompactBackendUploader) V2ClaimClient() attributionlocal.V2ClaimBackendClient {

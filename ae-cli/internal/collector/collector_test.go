@@ -486,3 +486,34 @@ func buildKiroIDESnapshotFixture(t *testing.T, workspaceRoot string) (string, st
 	}
 	return sessionIndexPath, execPath
 }
+
+func TestDefaultPathsResolvesKiroCLIDatabaseAcrossPlatforms(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome)
+	for _, key := range []string{"KIRO_CLI_DB", "KIRO_CLI_DATA_DIR", "XDG_DATA_HOME", "APPDATA", "LOCALAPPDATA"} {
+		t.Setenv(key, "")
+	}
+
+	dbDir := filepath.Join(t.TempDir(), "kiro-cli")
+	if err := os.MkdirAll(dbDir, 0o700); err != nil {
+		t.Fatalf("mkdir kiro-cli dir: %v", err)
+	}
+	dbPath := filepath.Join(dbDir, "data.sqlite3")
+	if err := os.WriteFile(dbPath, []byte(""), 0o600); err != nil {
+		t.Fatalf("write kiro-cli db: %v", err)
+	}
+	t.Setenv("KIRO_CLI_DATA_DIR", dbDir)
+
+	paths := DefaultPaths("/tmp/repo")
+	found := false
+	for _, path := range paths.KiroFiles {
+		if path == dbPath {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("KiroFiles = %v, want it to include %s", paths.KiroFiles, dbPath)
+	}
+}
