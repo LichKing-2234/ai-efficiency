@@ -66,3 +66,17 @@ rather than trusted from its response.
   synchronizer.
 - Implementation, a pull request, and deployment require separate authorization,
   as ADR-0002 also requires.
+
+## Amendment 2026-10-26: reset-credit expiry keys
+
+Sub2API `0.2.18-ccws2` adds two account-level `extra` keys for using OpenAI/Codex
+rate-limit reset credits before they expire:
+`auto_reset_credit_expiry_enabled` and
+`auto_reset_credit_expiry_lead_minutes`. The allow-list grows by those two keys
+(now thirteen) so the existing copy surface carries the expiry setting; the same
+narrowed projection and key-level JSONB merge are used, with no new surface.
+
+Sub2API reads a missing pair as disabled with a ten-minute lead, so those are the
+recorded defaults. #6950 also changed the 5h threshold default from 100% to 0
+(window disabled); the recorded default moves with it, while stored values keep
+their meaning. This is the record the allow-list rule requires for an addition.

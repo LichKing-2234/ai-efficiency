@@ -56,19 +56,23 @@ var accountConfigurationExtraKeys = []string{
 	"auto_reset_credit_enabled",
 	"auto_reset_credit_5h_threshold",
 	"auto_reset_credit_7d_threshold",
+	"auto_reset_credit_expiry_enabled",
+	"auto_reset_credit_expiry_lead_minutes",
 	"openai_compact_mode",
 }
 
 // accountConfigurationExtraDefaults records the effective value Sub2API uses for
 // an allow-listed `extra` key the account does not carry.
 //
-// The auto-reset trio is read as "enabled only when explicitly true" with the
-// thresholds stored as a percentage, and Sub2API persists it only for OAuth
-// accounts, so an account that never carried it behaves exactly like one that
-// stores false/1/1. openai_compact_mode defaults to "auto": Sub2API's own account
-// form deletes the key whenever the value is that default, while its bulk update
-// materialises "auto" for OAuth accounts, so a copy both reads accounts that omit
-// it and produces accounts that carry it.
+// The auto-reset group is read as "enabled only when explicitly true" with the
+// thresholds stored as a ratio (0 disables that window), and Sub2API persists it
+// only for OAuth accounts, so an account that never carried it behaves exactly
+// like one that stores false/0/1 with expiry auto-use off and a ten-minute lead.
+// The expiry switch is independent of the threshold switch; its lead defaults to
+// the same ten-minute minimum Sub2API enforces. openai_compact_mode defaults to
+// "auto": Sub2API's own account form deletes the key whenever the value is that
+// default, while its bulk update materialises "auto" for OAuth accounts, so a
+// copy both reads accounts that omit it and produces accounts that carry it.
 //
 // Comparing raw presence would report either shape as missing or additional
 // configuration that no copy could ever converge, and would make a copy write
@@ -76,10 +80,12 @@ var accountConfigurationExtraKeys = []string{
 //
 // Values are float64 because they reach this package through encoding/json.
 var accountConfigurationExtraDefaults = map[string]any{
-	"auto_reset_credit_enabled":      false,
-	"auto_reset_credit_5h_threshold": float64(1),
-	"auto_reset_credit_7d_threshold": float64(1),
-	"openai_compact_mode":            "auto",
+	"auto_reset_credit_enabled":             false,
+	"auto_reset_credit_5h_threshold":        float64(0),
+	"auto_reset_credit_7d_threshold":        float64(1),
+	"auto_reset_credit_expiry_enabled":      false,
+	"auto_reset_credit_expiry_lead_minutes": float64(10),
+	"openai_compact_mode":                   "auto",
 }
 
 // extraDefault returns the provider default for an allow-listed key, if the
@@ -166,17 +172,19 @@ type sub2apiAccountConfigItem struct {
 // sub2apiAccountConfigExtra declares exactly the allow-listed extra keys. Values
 // stay as raw JSON so an unexpected upstream type cannot fail the whole read.
 type sub2apiAccountConfigExtra struct {
-	PrivacyMode                json.RawMessage `json:"privacy_mode"`
-	LongContextBilling         json.RawMessage `json:"openai_long_context_billing_enabled"`
-	ResponsesWebsocketsV2      json.RawMessage `json:"openai_oauth_responses_websockets_v2_enabled"`
-	ResponsesWebsocketsV2Mode  json.RawMessage `json:"openai_oauth_responses_websockets_v2_mode"`
-	CodexFingerprintMode       json.RawMessage `json:"codex_fingerprint_mode"`
-	CodexCLIOnly               json.RawMessage `json:"codex_cli_only"`
-	CodexCLIOnlyAllowAppServer json.RawMessage `json:"codex_cli_only_allow_app_server"`
-	AutoResetCreditEnabled     json.RawMessage `json:"auto_reset_credit_enabled"`
-	AutoResetCredit5hThreshold json.RawMessage `json:"auto_reset_credit_5h_threshold"`
-	AutoResetCredit7dThreshold json.RawMessage `json:"auto_reset_credit_7d_threshold"`
-	OpenAICompactMode          json.RawMessage `json:"openai_compact_mode"`
+	PrivacyMode                   json.RawMessage `json:"privacy_mode"`
+	LongContextBilling            json.RawMessage `json:"openai_long_context_billing_enabled"`
+	ResponsesWebsocketsV2         json.RawMessage `json:"openai_oauth_responses_websockets_v2_enabled"`
+	ResponsesWebsocketsV2Mode     json.RawMessage `json:"openai_oauth_responses_websockets_v2_mode"`
+	CodexFingerprintMode          json.RawMessage `json:"codex_fingerprint_mode"`
+	CodexCLIOnly                  json.RawMessage `json:"codex_cli_only"`
+	CodexCLIOnlyAllowAppServer    json.RawMessage `json:"codex_cli_only_allow_app_server"`
+	AutoResetCreditEnabled        json.RawMessage `json:"auto_reset_credit_enabled"`
+	AutoResetCredit5hThreshold    json.RawMessage `json:"auto_reset_credit_5h_threshold"`
+	AutoResetCredit7dThreshold    json.RawMessage `json:"auto_reset_credit_7d_threshold"`
+	AutoResetCreditExpiryEnabled  json.RawMessage `json:"auto_reset_credit_expiry_enabled"`
+	AutoResetCreditExpiryLeadMins json.RawMessage `json:"auto_reset_credit_expiry_lead_minutes"`
+	OpenAICompactMode             json.RawMessage `json:"openai_compact_mode"`
 }
 
 // toAllowListedMap renders the declared keys as comparable values, keeping a
