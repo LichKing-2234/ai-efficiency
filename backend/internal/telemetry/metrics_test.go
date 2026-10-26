@@ -202,3 +202,33 @@ func highestFiniteBucket(histogram *dto.Histogram) float64 {
 	}
 	return buckets[len(buckets)-1].GetUpperBound()
 }
+
+func TestMetricsRecordsOwnerAccountOperationEvidence(t *testing.T) {
+	metrics := NewMetrics("test-release")
+	recorder := metrics.OwnerAccountRecorder()
+
+	recorder.ObserveOwnerAccountOperation("reset_credit", "unknown", 65*time.Second)
+	labels := map[string]string{
+		"action":  "reset_credit",
+		"outcome": "unknown",
+		"release": "test-release",
+	}
+	if got := counterValue(t, metrics.Gatherer(), "ai_efficiency_owner_account_operations_total", labels); got != 1 {
+		t.Fatalf("unknown reset count = %v, want 1", got)
+	}
+	duration := histogramValue(t, metrics.Gatherer(), "ai_efficiency_owner_account_operation_duration_seconds", labels)
+	if duration.GetSampleCount() != 1 || math.Abs(duration.GetSampleSum()-65) > 0.000001 {
+		t.Fatalf("reset duration = count %d sum %v, want count 1 sum 65", duration.GetSampleCount(), duration.GetSampleSum())
+	}
+
+	// Unknown labels are bounded rather than creating new series.
+	recorder.ObserveOwnerAccountOperation("alice@example.com", "surprise", -time.Second)
+	normalized := map[string]string{
+		"action":  "unknown",
+		"outcome": "unknown",
+		"release": "test-release",
+	}
+	if got := counterValue(t, metrics.Gatherer(), "ai_efficiency_owner_account_operations_total", normalized); got != 1 {
+		t.Fatalf("normalized count = %v, want 1", got)
+	}
+}

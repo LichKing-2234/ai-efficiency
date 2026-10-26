@@ -37,6 +37,15 @@ func Created(c *gin.Context, data interface{}) {
 	})
 }
 
+// Accepted sends a 202 JSON response with data, used for asynchronous work that
+// the caller must poll.
+func Accepted(c *gin.Context, data interface{}) {
+	c.JSON(http.StatusAccepted, apiResponse{
+		Code: http.StatusAccepted,
+		Data: data,
+	})
+}
+
 // Error sends an error JSON response with the given status code and message.
 func Error(c *gin.Context, code int, msg string) {
 	c.JSON(code, apiResponse{

@@ -31,6 +31,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/opsmonitoring"
+	"github.com/ai-efficiency/backend/internal/owneraccount"
 	"github.com/ai-efficiency/backend/internal/personalusage"
 	"github.com/ai-efficiency/backend/internal/prsync"
 	"github.com/ai-efficiency/backend/internal/prusage"
@@ -71,11 +72,15 @@ func newHTTPServer(addr string, handler http.Handler, cfg config.ServerConfig) *
 type runtimeHTTPClients struct {
 	runtimeRelay  *http.Client
 	providerRelay *http.Client
-	directory     *http.Client
-	settings      *http.Client
-	scm           *http.Client
-	version       *http.Client
-	webhook       *http.Client
+	// accountOperations serves only owner-account account operations, which hold
+	// one upstream call for up to a minute. It keeps its own transport so those
+	// calls cannot exhaust the shared runtime pool.
+	accountOperations *http.Client
+	directory         *http.Client
+	settings          *http.Client
+	scm               *http.Client
+	version           *http.Client
+	webhook           *http.Client
 }
 
 func httpClientOptions(cfg config.HTTPClientConfig) httpclient.Options {
@@ -104,14 +109,20 @@ func newRuntimeHTTPClients(cfg config.HTTPClientConfig, relayWrappers ...httpcli
 	webhookOptions.OverallTimeout = config.QuotaNotificationWebhookTimeoutSeconds * time.Second
 	webhook := httpclient.New(webhookOptions)
 
+	accountOperationsOptions := downstreamOptions
+	accountOperationsOptions.OverallTimeout = 60 * time.Second
+	accountOperationsOptions.ResponseHeaderTimeout = 55 * time.Second
+	accountOperations := httpclient.New(accountOperationsOptions, relayWrappers...)
+
 	return runtimeHTTPClients{
-		runtimeRelay:  relayClient,
-		providerRelay: relayClient,
-		directory:     generalClient,
-		settings:      relayClient,
-		scm:           generalClient,
-		version:       version,
-		webhook:       webhook,
+		runtimeRelay:      relayClient,
+		providerRelay:     relayClient,
+		accountOperations: accountOperations,
+		directory:         generalClient,
+		settings:          relayClient,
+		scm:               generalClient,
+		version:           version,
+		webhook:           webhook,
 	}
 }
 
@@ -198,6 +209,7 @@ func main() {
 		telemetry.WrapDependency(logger, versionInfo.Version, "relay", "http_request", metrics.DependencyObserver()),
 	)
 	defer httpClients.runtimeRelay.CloseIdleConnections()
+	defer httpClients.accountOperations.CloseIdleConnections()
 	defer httpClients.directory.CloseIdleConnections()
 	defer httpClients.version.CloseIdleConnections()
 	defer httpClients.webhook.CloseIdleConnections()
@@ -312,6 +324,17 @@ func main() {
 		Factory: func(row *ent.RelayProvider, adminAPIKey string) (relay.Provider, error) {
 			return relay.NewSub2apiProvider(
 				httpClients.providerRelay,
+				row.BaseURL,
+				adminAPIKey,
+				row.DefaultModel,
+				logger,
+			), nil
+		},
+		// Owner-account mutations resolve through the long-running client: a reset
+		// or invite can legitimately hold one upstream call for about a minute.
+		LongRunningFactory: func(row *ent.RelayProvider, adminAPIKey string) (relay.Provider, error) {
+			return relay.NewSub2apiProvider(
+				httpClients.accountOperations,
 				row.BaseURL,
 				adminAPIKey,
 				row.DefaultModel,
@@ -477,6 +500,24 @@ func main() {
 	if err != nil {
 		logger.Fatal("initialize relay provider handler", zap.Error(err))
 	}
+	// Owner-account console: email-derived ownership, owner-scoped reads and the
+	// gated async mutation surface. Both mutations stay off unless the deployment
+	// opts in, and the startup sweep fails closed on abandoned running rows.
+	ownerAccountService, err := owneraccount.NewService(entClient, sqlDB, providerRuntime, logger, owneraccount.Options{
+		MutationsEnabled: cfg.Relay.OwnerAccountMutationsEnabled,
+		Observer:         metrics.OwnerAccountRecorder(),
+	})
+	if err != nil {
+		logger.Fatal("initialize owner account service", zap.Error(err))
+	}
+	ownerAccountSweepCtx, cancelOwnerAccountSweep := context.WithTimeout(context.Background(), 10*time.Second)
+	if swept, sweepErr := ownerAccountService.SweepStaleOperations(ownerAccountSweepCtx); sweepErr != nil {
+		logger.Warn("sweep stale owner account operations", zap.Error(sweepErr))
+	} else if swept > 0 {
+		logger.Info("marked stale owner account operations unknown", zap.Int64("operations", swept))
+	}
+	cancelOwnerAccountSweep()
+
 	directoryService := directorysync.NewService(entClient, directorysync.ServiceOptions{
 		Executor:                  directorysync.NewExecutor(directorysync.ExecutorOptions{HTTPClient: httpClients.directory}),
 		Credentials:               directorysync.NewEntCredentialResolver(entClient, cfg.Encryption.Key),
@@ -569,6 +610,7 @@ func main() {
 			AttributionReadinessAvailable: cfg.Attribution.ReadinessAvailable,
 			ActivityCache:                 activityCache,
 			OpsMonitoringCache:            opsMonitoringCache,
+			OwnerAccounts:                 ownerAccountService,
 			Release:                       versionInfo.Version,
 			RequestTimeout:                time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
 		},

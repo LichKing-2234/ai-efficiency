@@ -43,6 +43,10 @@ vi.mock('@/api/userUsage', () => ({
   })),
 }))
 
+vi.mock('@/api/ownerAccounts', () => ({
+  getOwnerAccountScope: vi.fn(() => Promise.resolve({ data: { data: { account_count: 0, mutations_enabled: false } } })),
+}))
+
 vi.mock('@/api/teamUsage', () => ({
   getTeamUsageScope: vi.fn(() => Promise.resolve({
     data: {

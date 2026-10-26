@@ -325,6 +325,47 @@ func TestLoadEnvOverride(t *testing.T) {
 	}
 }
 
+func TestLoadOwnerAccountMutationsDisabledByDefault(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Relay.OwnerAccountMutationsEnabled {
+		t.Fatal("relay.owner_account_mutations_enabled = true, want default false")
+	}
+}
+
+func TestLoadOwnerAccountMutationsFromEnvironment(t *testing.T) {
+	t.Setenv("AE_RELAY_OWNER_ACCOUNT_MUTATIONS_ENABLED", "true")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.Relay.OwnerAccountMutationsEnabled {
+		t.Fatal("relay.owner_account_mutations_enabled = false, want env override true")
+	}
+}
+
+func TestLoadOwnerAccountMutationsFromConfigFile(t *testing.T) {
+	cfgFile := filepath.Join(t.TempDir(), "config.yaml")
+	content := `
+relay:
+  owner_account_mutations_enabled: true
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(cfgFile)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.Relay.OwnerAccountMutationsEnabled {
+		t.Fatal("relay.owner_account_mutations_enabled = false, want config file value true")
+	}
+}
+
 func TestLoadRejectsInvalidAttributionCutoverContract(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -793,6 +834,52 @@ func TestDeployExamplesDeclareDefaultAttributionProtocol(t *testing.T) {
 	}
 }
 
+func TestDeployExamplesDeclareOwnerAccountMutationsDefaultOff(t *testing.T) {
+	deployDir := filepath.Clean(filepath.Join("..", "..", "..", "deploy"))
+
+	configData, err := os.ReadFile(filepath.Join(deployDir, "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("read config.example.yaml: %v", err)
+	}
+	var configExample struct {
+		Relay struct {
+			OwnerAccountMutationsEnabled bool `yaml:"owner_account_mutations_enabled"`
+		} `yaml:"relay"`
+	}
+	if err := yaml.Unmarshal(configData, &configExample); err != nil {
+		t.Fatalf("parse config.example.yaml: %v", err)
+	}
+	if configExample.Relay.OwnerAccountMutationsEnabled {
+		t.Fatal("config.example.yaml relay.owner_account_mutations_enabled = true, want default off")
+	}
+
+	envData, err := os.ReadFile(filepath.Join(deployDir, ".env.example"))
+	if err != nil {
+		t.Fatalf("read .env.example: %v", err)
+	}
+	if got := envFileValue(string(envData), "AE_RELAY_OWNER_ACCOUNT_MUTATIONS_ENABLED"); got != "false" {
+		t.Fatalf(".env.example owner account mutations = %q, want false", got)
+	}
+
+	for _, name := range []string{"docker-compose.yml", "docker-compose.bootstrap.yml", "docker-compose.dev.yml", "docker-compose.external.yml", "docker-compose.local.yml"} {
+		data, err := os.ReadFile(filepath.Join(deployDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var compose struct {
+			Services map[string]struct {
+				Environment map[string]string `yaml:"environment"`
+			} `yaml:"services"`
+		}
+		if err := yaml.Unmarshal(data, &compose); err != nil {
+			t.Fatal(err)
+		}
+		if got := compose.Services["backend"].Environment["AE_RELAY_OWNER_ACCOUNT_MUTATIONS_ENABLED"]; got != "${AE_RELAY_OWNER_ACCOUNT_MUTATIONS_ENABLED:-false}" {
+			t.Fatalf("%s owner account mutations = %q, want default-off passthrough", name, got)
+		}
+	}
+}
+
 func envFileValue(content, key string) string {
 	for _, line := range strings.Split(content, "\n") {
 		if name, value, ok := strings.Cut(line, "="); ok && strings.TrimSpace(name) == key {
@@ -922,11 +1009,12 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 			Namespace: "test-blue",
 		},
 		Relay: RelayConfig{
-			Provider:       "sub2api",
-			URL:            "http://relay.example.com",
-			AdminAPIKey:    "admin-live",
-			Model:          "gpt-5.4",
-			DefaultGroupID: "42",
+			Provider:                     "sub2api",
+			URL:                          "http://relay.example.com",
+			AdminAPIKey:                  "admin-live",
+			Model:                        "gpt-5.4",
+			DefaultGroupID:               "42",
+			OwnerAccountMutationsEnabled: true,
 		},
 		Attribution: AttributionConfig{
 			LedgerEpoch:        "formal_v2",
@@ -968,6 +1056,9 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 	}
 	if loaded.Relay.AdminAPIKey != "admin-live" {
 		t.Fatalf("relay.admin_api_key = %q, want %q", loaded.Relay.AdminAPIKey, "admin-live")
+	}
+	if !loaded.Relay.OwnerAccountMutationsEnabled {
+		t.Fatal("relay.owner_account_mutations_enabled = false, want persisted true")
 	}
 	if loaded.Auth.LDAP.BindPassword != "secret" {
 		t.Fatalf("auth.ldap.bind_password = %q, want %q", loaded.Auth.LDAP.BindPassword, "secret")

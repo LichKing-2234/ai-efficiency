@@ -5,20 +5,30 @@ import AppLayout from '@/components/AppLayout.vue'
 import UserUsageDashboard from '@/components/user/usage/UserUsageDashboard.vue'
 import UsageCenterTabs from '@/components/user/usage/UsageCenterTabs.vue'
 import { getTeamUsageScope } from '@/api/teamUsage'
+import { getOwnerAccountScope } from '@/api/ownerAccounts'
 import { useI18n } from '@/i18n'
 
 const route = useRoute()
 const { t } = useI18n()
 const hasTeamUsageScope = ref(false)
+const hasOwnerAccountsScope = ref(false)
 const isMemberUsageRoute = computed(() => route.name === 'UsageMember')
 const isUsageCenterRoute = computed(() => route.matched.some((record) => record.name === 'Usage'))
-const activeTab = computed(() => route.name === 'UsageTeam' ? 'team' : route.name === 'UsageQuotaReset' ? 'quota-reset' : 'personal')
+const activeTab = computed(() => {
+  if (route.name === 'UsageTeam') return 'team'
+  if (route.name === 'UsageQuotaReset') return 'quota-reset'
+  if (route.name === 'usage-accounts') return 'accounts'
+  return 'personal'
+})
 
 onMounted(() => {
   if (!isUsageCenterRoute.value) return
   void getTeamUsageScope()
     .then((response) => { hasTeamUsageScope.value = response.data.data?.is_representative === true })
     .catch(() => { hasTeamUsageScope.value = false })
+  void getOwnerAccountScope()
+    .then((response) => { hasOwnerAccountsScope.value = (response.data.data?.account_count ?? 0) > 0 })
+    .catch(() => { hasOwnerAccountsScope.value = false })
 })
 </script>
 
@@ -32,7 +42,7 @@ onMounted(() => {
         <h1 class="text-2xl font-semibold text-slate-950">{{ t('usageDashboard.title') }}</h1>
         <p class="mt-1 max-w-3xl text-sm text-slate-600">{{ t('usageDashboard.subtitle') }}</p>
       </header>
-      <UsageCenterTabs :active="activeTab" :show-team="hasTeamUsageScope" show-quota-reset />
+      <UsageCenterTabs :active="activeTab" :show-team="hasTeamUsageScope" :show-accounts="hasOwnerAccountsScope" show-quota-reset />
       <UserUsageDashboard v-if="route.name === 'Usage'" embedded home-mode />
       <RouterView v-else />
     </div>

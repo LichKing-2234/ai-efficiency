@@ -16,6 +16,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/opsmonitoring"
+	"github.com/ai-efficiency/backend/internal/owneraccount"
 	"github.com/ai-efficiency/backend/internal/personalusage"
 	"github.com/ai-efficiency/backend/internal/quotareset"
 	"github.com/ai-efficiency/backend/internal/relayplanning"
@@ -57,12 +58,15 @@ type RouterOptions struct {
 	AttributionReadinessAvailable bool
 	ActivityCache                 *activity.Cache
 	OpsMonitoringCache            *opsmonitoring.Cache
-	Release                       string
-	RequestTimeout                time.Duration
+	// OwnerAccounts is the owner-account console service. It is required in
+	// production and may be nil in tests that do not exercise those routes.
+	OwnerAccounts  *owneraccount.Service
+	Release        string
+	RequestTimeout time.Duration
 }
 
 func validateRouterDependencies(providerHandler *ProviderHandler, options RouterOptions) error {
-	missing := make([]string, 0, 14)
+	missing := make([]string, 0, 16)
 	if providerHandler == nil || providerHandler.runtime == nil {
 		missing = append(missing, "provider runtime")
 	}
@@ -104,6 +108,9 @@ func validateRouterDependencies(providerHandler *ProviderHandler, options Router
 	}
 	if options.WebVitalsHandler == nil {
 		missing = append(missing, "Web Vitals handler")
+	}
+	if options.OwnerAccounts == nil {
+		missing = append(missing, "owner account service")
 	}
 	if strings.TrimSpace(options.Release) == "" {
 		missing = append(missing, "release")
@@ -290,6 +297,10 @@ func setupRouter(
 	}
 	workItemsService.WithCountsCache(options.WorkItemsCache)
 	workItemsHandler := NewWorkItemsHandler(workItemsService)
+	var ownerAccountsHandler *OwnerAccountsHandler
+	if options.OwnerAccounts != nil {
+		ownerAccountsHandler = NewOwnerAccountsHandler(options.OwnerAccounts)
+	}
 	var quotaResetHandler *QuotaResetHandler
 	if providerHandler != nil {
 		adminUsersHandler = NewAdminUsersHandler(entClient, encryptionKey, providerHandler)
@@ -462,6 +473,18 @@ func setupRouter(
 			userGroup.POST("/quota-reset/approvals/:id/reject", quotaResetHandler.Reject)
 			userGroup.POST("/quota-reset/approvals/:id/retry-reset", quotaResetHandler.RetryReset)
 		}
+		if ownerAccountsHandler != nil {
+			userGroup.GET("/owner-accounts/scope", ownerAccountsHandler.Scope)
+			userGroup.GET("/owner-accounts", ownerAccountsHandler.List)
+			userGroup.POST("/owner-accounts/usage", ownerAccountsHandler.Usage)
+			userGroup.POST("/owner-accounts/:id/usage/refresh", ownerAccountsHandler.RefreshUsage)
+			userGroup.POST("/owner-accounts/:id/quota/refresh", ownerAccountsHandler.RefreshQuota)
+			userGroup.POST("/owner-accounts/:id/referral/refresh", ownerAccountsHandler.RefreshReferral)
+			userGroup.POST("/owner-accounts/:id/reset-credit", ownerAccountsHandler.ResetCredit)
+			userGroup.POST("/owner-accounts/:id/invitations", ownerAccountsHandler.Invite)
+			userGroup.GET("/owner-accounts/operations/:operation_id", ownerAccountsHandler.Operation)
+			userGroup.GET("/owner-accounts/:id/operations", ownerAccountsHandler.ListOperations)
+		}
 		userGroup.GET("/team-usage/scope", teamUsageHandler.Scope)
 		userGroup.GET("/team-usage/subjects", teamUsageHandler.Subjects)
 		userGroup.GET("/team-usage/subjects/:user_id/usage/dashboard", teamUsageHandler.SubjectDashboard)
@@ -556,6 +579,14 @@ func setupRouter(
 			opsMonitoringGroup.GET("/groups", opsMonitoringHandler.ListGroups)
 			opsMonitoringGroup.GET("/groups/:group_id/accounts", opsMonitoringHandler.ListGroupAccounts)
 			opsMonitoringGroup.POST("/proxies/:proxy_id/test", opsMonitoringHandler.TestProxy)
+		}
+	}
+
+	if ownerAccountsHandler != nil {
+		adminOwnerOperationsGroup := protected.Group("/admin/owner-operations")
+		adminOwnerOperationsGroup.Use(auth.RequireAdmin())
+		{
+			adminOwnerOperationsGroup.GET("", ownerAccountsHandler.AdminListOperations)
 		}
 	}
 

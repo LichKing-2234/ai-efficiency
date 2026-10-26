@@ -5,6 +5,10 @@ import DashboardView from '@/views/DashboardView.vue'
 import { getTeamUsageScope } from '@/api/teamUsage'
 import { setLocale } from '@/i18n'
 
+vi.mock('@/api/ownerAccounts', () => ({
+  getOwnerAccountScope: vi.fn(() => Promise.resolve({ data: { data: { account_count: 0, mutations_enabled: false } } })),
+}))
+
 vi.mock('@/api/teamUsage', () => ({ getTeamUsageScope: vi.fn() }))
 vi.mock('@/components/AppLayout.vue', () => ({
   default: { template: '<main><slot /></main>' },
