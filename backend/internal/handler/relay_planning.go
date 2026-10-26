@@ -61,12 +61,27 @@ func (h *RelayPlanningHandler) ListAccountConfigurations(c *gin.Context) {
 		ProviderID:        providerID,
 		Platform:          c.Query("platform"),
 		BaselineAccountID: baselineAccountID,
+		IgnoreKeys:        ignoreKeysQuery(c),
 	})
 	if err != nil {
 		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 	pkg.Success(c, result)
+}
+
+// ignoreKeysQuery reads the per-operation ignore list. Repeated parameters and
+// comma-separated values are both accepted so a caller can pass either form.
+func ignoreKeysQuery(c *gin.Context) []string {
+	var keys []string
+	for _, value := range c.QueryArray("ignore_keys") {
+		for _, key := range strings.Split(value, ",") {
+			if key = strings.TrimSpace(key); key != "" {
+				keys = append(keys, key)
+			}
+		}
+	}
+	return keys
 }
 
 func (h *RelayPlanningHandler) ApplyAccountConfiguration(c *gin.Context) {

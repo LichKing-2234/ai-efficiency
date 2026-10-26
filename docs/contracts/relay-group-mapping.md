@@ -239,7 +239,10 @@ when the applied configuration never sent it. The 5h threshold defaults to 0,
 which disables that window, and the expiry auto-use switch is independent of the
 threshold switch. Comparing raw presence would report a copy that did converge as
 deviating from its baseline, and would report as missing configuration that no
-copy could ever converge.
+copy could ever converge. An administrator may also exclude any allow-listed
+key from one comparison-and-copy run; excluded keys are neither reported as
+deviating nor written, and the exclusion is per-run input rather than persisted
+state.
 
 After initialization, saved desired Account order is applied only through
 Confirm. Preview edits are reviewed intent, not an immediate Relay or local

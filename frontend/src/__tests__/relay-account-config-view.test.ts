@@ -244,6 +244,39 @@ describe('AdminRelayAccountsView', () => {
     })
   })
 
+  it('excludes a manually ignored key from the comparison and the copy', async () => {
+    const { wrapper, relayPlanning } = await mountView()
+    await choosePlatformAndBaseline(wrapper)
+
+    const include = wrapper.get('[data-testid="include-key-model_mapping"] input')
+    expect((include.element as HTMLInputElement).checked).toBe(true)
+    await include.setValue(false)
+    await flushPromises()
+
+    expect(relayPlanning.listRelayAccountConfigurations).toHaveBeenLastCalledWith({
+      provider_id: 7,
+      platform: 'openai',
+      baseline_account_id: 11,
+      ignore_keys: 'model_mapping',
+    })
+
+    await wrapper.get('[data-testid="select-target-12"] input').setValue(true)
+    await flushPromises()
+    await wrapper.get('[data-testid="open-apply-dialog"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="confirm-ignored-keys"]').text()).toContain('1 setting(s) excluded')
+
+    await wrapper.get('[data-testid="confirm-apply"]').trigger('click')
+    await flushPromises()
+    expect(relayPlanning.applyRelayAccountConfiguration).toHaveBeenCalledWith({
+      provider_id: 7,
+      platform: 'openai',
+      baseline_account_id: 11,
+      target_account_ids: [12],
+      ignore_keys: ['model_mapping'],
+    })
+  })
+
   it('reports per-target apply results and refreshes the list', async () => {
     const { wrapper, relayPlanning } = await mountView()
     await choosePlatformAndBaseline(wrapper)

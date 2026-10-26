@@ -32,16 +32,18 @@ type AccountConfigurationPage struct {
 }
 
 type ListAccountConfigurationsRequest struct {
-	ProviderID        int    `json:"provider_id"`
-	Platform          string `json:"platform"`
-	BaselineAccountID int64  `json:"baseline_account_id"`
+	ProviderID        int      `json:"provider_id"`
+	Platform          string   `json:"platform"`
+	BaselineAccountID int64    `json:"baseline_account_id"`
+	IgnoreKeys        []string `json:"ignore_keys,omitempty"`
 }
 
 type ApplyAccountConfigurationRequest struct {
-	ProviderID        int     `json:"provider_id"`
-	Platform          string  `json:"platform"`
-	BaselineAccountID int64   `json:"baseline_account_id"`
-	TargetAccountIDs  []int64 `json:"target_account_ids"`
+	ProviderID        int      `json:"provider_id"`
+	Platform          string   `json:"platform"`
+	BaselineAccountID int64    `json:"baseline_account_id"`
+	TargetAccountIDs  []int64  `json:"target_account_ids"`
+	IgnoreKeys        []string `json:"ignore_keys,omitempty"`
 }
 
 // AccountConfigurationApplyResult is one target's outcome. Applied is decided by
@@ -83,6 +85,7 @@ func (s *Service) ListAccountConfigurations(ctx context.Context, req ListAccount
 		return nil, fmt.Errorf("read relay account configurations: %w", err)
 	}
 
+	ignoredKeys := normalizeIgnoredKeys(req.IgnoreKeys)
 	page := &AccountConfigurationPage{BaselineAccountID: req.BaselineAccountID, Items: make([]AccountConfigurationItem, 0, len(accounts))}
 	var baseline relay.AccountConfiguration
 	hasBaseline := false
@@ -93,6 +96,7 @@ func (s *Service) ListAccountConfigurations(ctx context.Context, req ListAccount
 		}
 		page.Baseline = &baseline
 	}
+	filteredBaseline := relay.FilterAccountConfiguration(baseline, ignoredKeys)
 
 	for _, account := range accounts {
 		if !strings.EqualFold(strings.TrimSpace(account.Platform), strings.TrimSpace(req.Platform)) {
@@ -100,7 +104,7 @@ func (s *Service) ListAccountConfigurations(ctx context.Context, req ListAccount
 		}
 		item := AccountConfigurationItem{Account: account, Configuration: configurations[account.ID]}
 		if hasBaseline {
-			diff := relay.CompareAccountConfiguration(baseline, item.Configuration)
+			diff := relay.CompareAccountConfiguration(filteredBaseline, relay.FilterAccountConfiguration(item.Configuration, ignoredKeys))
 			item.Diff = &diff
 		}
 		page.Items = append(page.Items, item)
@@ -162,6 +166,8 @@ func (s *Service) ApplyAccountConfiguration(ctx context.Context, req ApplyAccoun
 	if !present {
 		return nil, fmt.Errorf("baseline account %d was not found on platform %s", req.BaselineAccountID, req.Platform)
 	}
+	ignoredKeys := normalizeIgnoredKeys(req.IgnoreKeys)
+	baseline = relay.FilterAccountConfiguration(baseline, ignoredKeys)
 	if len(baseline.ModelMapping) == 0 && len(baseline.Extra) == 0 {
 		return nil, fmt.Errorf("baseline account %d has no allow-listed configuration to copy", req.BaselineAccountID)
 	}
@@ -185,7 +191,7 @@ func (s *Service) ApplyAccountConfiguration(ctx context.Context, req ApplyAccoun
 			response.Results = append(response.Results, result)
 			continue
 		}
-		result.Diff = relay.CompareAccountConfiguration(baseline, after)
+		result.Diff = relay.CompareAccountConfiguration(baseline, relay.FilterAccountConfiguration(after, ignoredKeys))
 		result.Applied = result.Diff.Matches
 		if !result.Applied {
 			result.Error = "configuration did not converge on the baseline"
@@ -193,6 +199,29 @@ func (s *Service) ApplyAccountConfiguration(ctx context.Context, req ApplyAccoun
 		response.Results = append(response.Results, result)
 	}
 	return response, nil
+}
+
+// normalizeIgnoredKeys trims, drops empty names and dedupes the per-operation
+// ignore list. Ignored names never widen what a copy may read or write: the
+// allow-list still decides that, so an unknown name is harmless.
+func normalizeIgnoredKeys(keys []string) []string {
+	if len(keys) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(keys))
+	out := make([]string, 0, len(keys))
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, key)
+	}
+	return out
 }
 
 func uniquePositiveIDs(ids []int64) []int64 {
