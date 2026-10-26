@@ -253,3 +253,42 @@ func TestCompareAccountConfigurationClassifiesEveryDifference(t *testing.T) {
 		}
 	})
 }
+
+func TestFilterAccountConfigurationDropsOnlyTheNamedAllowListedKeys(t *testing.T) {
+	baseline := relay.AccountConfiguration{
+		ModelMapping: map[string]string{"gpt-5.5": "gpt-6.1-sol"},
+		Extra: map[string]any{
+			"privacy_mode":   "training_off",
+			"codex_cli_only": true,
+		},
+	}
+
+	got := relay.FilterAccountConfiguration(baseline, []string{"model_mapping", " extra.codex_cli_only "})
+	want := relay.AccountConfiguration{Extra: map[string]any{"privacy_mode": "training_off"}}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("filtered configuration mismatch (-want +got):\n%s", diff)
+	}
+
+	t.Run("no ignored keys leaves the configuration untouched", func(t *testing.T) {
+		got := relay.FilterAccountConfiguration(baseline, nil)
+		if diff := cmp.Diff(baseline, got); diff != "" {
+			t.Fatalf("unfiltered configuration mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("a name outside the allow-list is ignored", func(t *testing.T) {
+		got := relay.FilterAccountConfiguration(baseline, []string{"credentials", "extra.not_allow_listed"})
+		if diff := cmp.Diff(baseline, got); diff != "" {
+			t.Fatalf("unknown ignore name changed the configuration (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("filtering both sides lets an ignored key converge", func(t *testing.T) {
+		ignored := []string{"model_mapping"}
+		target := relay.AccountConfiguration{Extra: map[string]any{"privacy_mode": "training_off", "codex_cli_only": true}, ModelMapping: map[string]string{"other": "mapping"}}
+		diff := relay.CompareAccountConfiguration(relay.FilterAccountConfiguration(baseline, ignored), relay.FilterAccountConfiguration(target, ignored))
+		if !diff.Matches {
+			t.Fatalf("Matches = false, want true; the ignored mapping must not count as a difference; diff = %+v", diff)
+		}
+	})
+}

@@ -331,11 +331,11 @@ export interface RelayPlanningAccountConfigurationApplyResponse {
   results: RelayPlanningAccountConfigurationApplyResult[]
 }
 
-export function listRelayAccountConfigurations(params: { provider_id: number; platform: string; baseline_account_id?: number }) {
+export function listRelayAccountConfigurations(params: { provider_id: number; platform: string; baseline_account_id?: number; ignore_keys?: string }) {
   return client.get<ApiResponse<RelayPlanningAccountConfigurationPage>>('/admin/relay-planning/account-configurations', { params })
 }
 
-export function applyRelayAccountConfiguration(data: { provider_id: number; platform: string; baseline_account_id: number; target_account_ids: number[] }) {
+export function applyRelayAccountConfiguration(data: { provider_id: number; platform: string; baseline_account_id: number; target_account_ids: number[]; ignore_keys?: string[] }) {
   return client.post<ApiResponse<RelayPlanningAccountConfigurationApplyResponse>>('/admin/relay-planning/account-configurations/apply', data)
 }
 

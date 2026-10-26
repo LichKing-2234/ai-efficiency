@@ -31,6 +31,7 @@ const accountTypeFilter = ref('')
 const groupFilter = ref('')
 const applyDialogOpen = ref(false)
 const applyResults = ref<RelayPlanningAccountConfigurationApplyResult[] | null>(null)
+const ignoredKeys = ref<Set<string>>(new Set())
 
 const form = reactive({
   provider_id: 0,
@@ -61,6 +62,7 @@ const baselineLabel = computed(() => {
   const item = baselineItem.value
   return item ? `${item.account.name} (#${item.account.id})` : `#${baselineAccountID.value}`
 })
+const ignoredKeyCount = computed(() => ignoredKeys.value.size)
 const baselineConfigurationRows = computed(() => {
   const configuration = baselineItem.value?.configuration
   if (!configuration) return []
@@ -81,6 +83,20 @@ const applyResultRows = computed(() => (applyResults.value ?? []).map((result) =
   ...result,
   name: items.value.find((item) => item.account.id === result.account_id)?.account.name ?? '',
 })))
+
+function isIgnoredKey(key: string): boolean {
+  return ignoredKeys.value.has(key)
+}
+
+// Ignored keys stay per-operation: they are sent with the comparison and the
+// copy, never persisted, so a later copy starts from the full baseline again.
+async function toggleIgnoreKey(key: string, include: boolean) {
+  const next = new Set(ignoredKeys.value)
+  if (include) next.delete(key)
+  else next.add(key)
+  ignoredKeys.value = next
+  await loadConfigurations()
+}
 
 function isDeviating(item: RelayPlanningAccountConfigurationItem): boolean {
   return Boolean(item.diff) && item.diff?.matches === false
@@ -129,6 +145,7 @@ function resetView() {
   baselineAccountID.value = 0
   selectedTargetIDs.value = new Set()
   expandedDiffIDs.value = new Set()
+  ignoredKeys.value = new Set()
   accountTypeFilter.value = ''
   groupFilter.value = ''
   items.value = []
@@ -154,6 +171,7 @@ async function loadConfigurations() {
       provider_id: Number(form.provider_id),
       platform: form.platform,
       ...(baselineAccountID.value > 0 ? { baseline_account_id: baselineAccountID.value } : {}),
+      ...(ignoredKeys.value.size > 0 ? { ignore_keys: Array.from(ignoredKeys.value).join(',') } : {}),
     })
     const data = response.data.data
     items.value = data?.items ?? []
@@ -182,6 +200,7 @@ async function setBaseline(accountID: number) {
   baselineAccountID.value = accountID
   selectedTargetIDs.value = new Set()
   expandedDiffIDs.value = new Set()
+  ignoredKeys.value = new Set()
   applyResults.value = null
   await loadConfigurations()
 }
@@ -190,6 +209,7 @@ async function clearBaseline() {
   baselineAccountID.value = 0
   selectedTargetIDs.value = new Set()
   expandedDiffIDs.value = new Set()
+  ignoredKeys.value = new Set()
   onlyDeviating.value = false
   applyResults.value = null
   await loadConfigurations()
@@ -258,6 +278,7 @@ async function confirmApply() {
       platform: form.platform,
       baseline_account_id: baselineAccountID.value,
       target_account_ids: selectedItems.value.map((item) => item.account.id),
+      ...(ignoredKeys.value.size > 0 ? { ignore_keys: Array.from(ignoredKeys.value) } : {}),
     })
     const results = response.data.data?.results ?? []
     applyResults.value = results
@@ -331,10 +352,17 @@ onMounted(async () => {
           </div>
           <div v-if="baselineConfigurationRows.length > 0" class="mt-3 border-t border-slate-100 pt-3" data-testid="baseline-configuration">
             <div class="text-xs text-slate-500">{{ t('relayPlanning.baselineConfiguration') }}</div>
+            <div class="mt-1 text-xs text-slate-500">{{ t('relayPlanning.baselineConfigurationHint') }}</div>
             <dl class="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
-              <div v-for="row in baselineConfigurationRows" :key="row.key" class="flex min-w-0 items-baseline gap-2">
+              <div v-for="row in baselineConfigurationRows" :key="row.key" class="flex min-w-0 items-center gap-2">
                 <dt class="shrink-0 font-mono text-xs text-slate-500">{{ row.key }}</dt>
                 <dd class="min-w-0 break-words text-xs text-slate-900">{{ row.value }}</dd>
+                <el-checkbox
+                  class="ml-auto shrink-0"
+                  :data-testid="`include-key-${row.key}`"
+                  :model-value="!isIgnoredKey(row.key)"
+                  @change="(value) => toggleIgnoreKey(row.key, value === true)"
+                >{{ t('relayPlanning.includeKey') }}</el-checkbox>
               </div>
             </dl>
           </div>
@@ -465,6 +493,10 @@ onMounted(async () => {
           <dd class="min-w-0 break-words font-medium text-slate-900" data-testid="confirm-baseline">{{ baselineLabel }}</dd>
           <dt class="text-slate-500">{{ t('relayPlanning.targetAccounts') }}</dt>
           <dd class="min-w-0 break-words font-medium text-slate-900" data-testid="confirm-target-count">{{ t('relayPlanning.selectedTargets', { count: selectedItems.length }) }}</dd>
+          <template v-if="ignoredKeyCount > 0">
+            <dt class="text-slate-500">{{ t('relayPlanning.ignoredKeys') }}</dt>
+            <dd class="min-w-0 break-words font-medium text-slate-900" data-testid="confirm-ignored-keys">{{ t('relayPlanning.ignoredKeysCount', { count: ignoredKeyCount }) }}</dd>
+          </template>
         </dl>
         <ul class="mt-3 max-h-48 space-y-1 overflow-y-auto text-sm text-slate-700" data-testid="confirm-target-list">
           <li v-for="item in selectedItems" :key="item.account.id" class="break-words">{{ accountLabel(item.account.id) }}</li>

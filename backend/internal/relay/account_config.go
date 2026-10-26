@@ -152,6 +152,36 @@ func CompareAccountConfiguration(baseline, target AccountConfiguration) AccountC
 	return diff
 }
 
+// FilterAccountConfiguration drops the named allow-listed keys so an
+// administrator can copy the rest of a baseline. Names are the keys the diff
+// reports ("model_mapping", "extra.<key>"); an unknown name is ignored, since an
+// ignore list can only narrow what a copy writes.
+func FilterAccountConfiguration(configuration AccountConfiguration, ignoredKeys []string) AccountConfiguration {
+	if len(ignoredKeys) == 0 {
+		return configuration
+	}
+	ignored := make(map[string]struct{}, len(ignoredKeys))
+	for _, key := range ignoredKeys {
+		if key = strings.TrimSpace(key); key != "" {
+			ignored[key] = struct{}{}
+		}
+	}
+	filtered := AccountConfiguration{}
+	if _, skip := ignored[accountModelMappingKey]; !skip {
+		filtered.ModelMapping = configuration.ModelMapping
+	}
+	for key, value := range configuration.Extra {
+		if _, skip := ignored[accountExtraKeyPrefix+key]; skip {
+			continue
+		}
+		if filtered.Extra == nil {
+			filtered.Extra = make(map[string]any, len(configuration.Extra))
+		}
+		filtered.Extra[key] = value
+	}
+	return filtered
+}
+
 // sub2apiAccountConfigItem is the narrowed decode used by configuration reads.
 // Only allow-listed keys are declared, so credential material and every other
 // private configuration field stays unmaterialized rather than being decoded and
