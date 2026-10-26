@@ -235,6 +235,13 @@
             <div class="text-sm">
               <p class="font-medium text-slate-900">{{ quotaFor(accountRow(row))?.reset_credits_remaining ?? '-' }}</p>
               <p class="text-xs text-slate-500">{{ t('ownerAccounts.codexCredits') }}: {{ quotaFor(accountRow(row)) ? codexCreditsLabel(quotaFor(accountRow(row))!) : '-' }}</p>
+              <p
+                v-for="(expiry, index) in quotaFor(accountRow(row))?.reset_credit_expiries ?? []"
+                :key="`${expiry}-${index}`"
+                class="text-xs text-slate-500"
+              >
+                {{ t('ownerAccounts.creditExpiry', { time: ownerAccountDateTime(expiry, locale) }) }}
+              </p>
             </div>
           </template>
         </ElTableColumn>
