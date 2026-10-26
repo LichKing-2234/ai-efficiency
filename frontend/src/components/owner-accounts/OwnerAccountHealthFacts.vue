@@ -34,7 +34,7 @@ function yesNo(value: boolean) {
       <dd class="font-medium text-slate-900">{{ yesNo(account.health.forbidden) }}</dd>
     </div>
     <div class="flex justify-between gap-3 border-b border-slate-100 py-1">
-      <dt class="text-slate-500">{{ t('ownerAccounts.rateLimitReset') }}</dt>
+      <dt class="text-slate-500">{{ t('ownerAccounts.rateLimitResetLabel') }}</dt>
       <dd class="font-medium text-slate-900">
         {{ account.health.rate_limit_reset_at ? ownerAccountDateTime(account.health.rate_limit_reset_at, locale) : t('ownerAccounts.notReported') }}
       </dd>

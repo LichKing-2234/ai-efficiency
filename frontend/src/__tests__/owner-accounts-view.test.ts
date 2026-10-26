@@ -1063,6 +1063,38 @@ describe('responsive composition and server state', () => {
     expect(wrapper.get('[data-testid="owner-accounts-table"]').text()).toContain('Account 1')
   })
 
+  it('shows reset-credit expiry dates in the wide table', async () => {
+    installMatchMedia(true)
+    vi.mocked(listOwnerAccounts).mockResolvedValue(accountPage([
+      ownerAccount(1, {
+        quota: {
+          ...ownerAccount(1).quota,
+          reset_credits_remaining: 2,
+          reset_credit_expiries: ['2027-01-01T00:00:00Z', '2028-01-01T00:00:00Z'],
+        },
+      }),
+    ]) as any)
+    const { wrapper } = await createHarness('/usage/accounts')
+    await flushPromises()
+
+    const table = wrapper.get('[data-testid="owner-accounts-table"]').text()
+    expect(table).toContain('2027')
+    expect(table).toContain('2028')
+  })
+
+  it('labels the rate-limit reset row without leaking an interpolation placeholder', async () => {
+    installMatchMedia(false)
+    const { wrapper } = await createHarness('/usage/accounts')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="owner-account-health-toggle-1"]').trigger('click')
+    await flushPromises()
+
+    const health = wrapper.get('[data-testid="owner-account-health-1"]').text()
+    expect(health).toContain('Rate limit reset')
+    expect(health).not.toContain('{time}')
+  })
+
   it('updates the reset countdown as time passes', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
     vi.setSystemTime(new Date('2026-10-23T12:00:00Z'))
