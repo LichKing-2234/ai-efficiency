@@ -126,7 +126,7 @@ func TestCompareAccountConfigurationClassifiesEveryDifference(t *testing.T) {
 			relay.AccountConfiguration{Extra: map[string]any{
 				"privacy_mode":                   "training_off",
 				"auto_reset_credit_enabled":      false,
-				"auto_reset_credit_5h_threshold": float64(1),
+				"auto_reset_credit_5h_threshold": float64(0),
 				"auto_reset_credit_7d_threshold": float64(1),
 			}},
 			relay.AccountConfiguration{Extra: map[string]any{"privacy_mode": "training_off"}},
@@ -152,7 +152,7 @@ func TestCompareAccountConfigurationClassifiesEveryDifference(t *testing.T) {
 			relay.AccountConfiguration{Extra: map[string]any{"privacy_mode": "training_off"}},
 			relay.AccountConfiguration{Extra: map[string]any{
 				"privacy_mode":                   "training_off",
-				"auto_reset_credit_5h_threshold": float64(1),
+				"auto_reset_credit_5h_threshold": float64(0),
 			}},
 		)
 		if !got.Matches {
@@ -215,6 +215,41 @@ func TestCompareAccountConfigurationClassifiesEveryDifference(t *testing.T) {
 		)
 		if !got.Matches {
 			t.Fatalf("Matches = false, want true; an absent key the provider defaults to the same value is not a difference; diff = %+v", got)
+		}
+	})
+
+	t.Run("an absent expiry auto-use pair at the provider defaults is not missing", func(t *testing.T) {
+		// Sub2API reads a missing expiry pair as disabled with a ten-minute lead,
+		// so an account that never carried it behaves exactly like one storing
+		// those values; reporting the pair as missing would never converge.
+		got := relay.CompareAccountConfiguration(
+			relay.AccountConfiguration{Extra: map[string]any{
+				"privacy_mode":                          "training_off",
+				"auto_reset_credit_expiry_enabled":      false,
+				"auto_reset_credit_expiry_lead_minutes": float64(10),
+			}},
+			relay.AccountConfiguration{Extra: map[string]any{"privacy_mode": "training_off"}},
+		)
+		if !got.Matches {
+			t.Fatalf("Matches = false, want true; diff = %+v", got)
+		}
+	})
+
+	t.Run("an enabled expiry auto-use pair the target does not carry is missing", func(t *testing.T) {
+		got := relay.CompareAccountConfiguration(
+			relay.AccountConfiguration{Extra: map[string]any{
+				"privacy_mode":                          "training_off",
+				"auto_reset_credit_expiry_enabled":      true,
+				"auto_reset_credit_expiry_lead_minutes": float64(30),
+			}},
+			relay.AccountConfiguration{Extra: map[string]any{"privacy_mode": "training_off"}},
+		)
+		want := []string{
+			"extra.auto_reset_credit_expiry_enabled",
+			"extra.auto_reset_credit_expiry_lead_minutes",
+		}
+		if diff := cmp.Diff(want, got.MissingKeys); diff != "" {
+			t.Fatalf("missing keys mismatch (-want +got):\n%s", diff)
 		}
 	})
 }

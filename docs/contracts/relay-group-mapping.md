@@ -225,19 +225,21 @@ infers compatibility, capability, or schedulability.
 
 The allow-listed account-configuration read is a separate surface that does not
 widen this one. It decodes its own narrowed payload carrying only
-`credentials.model_mapping` and the eleven allow-listed `extra` keys, and
+`credentials.model_mapping` and the thirteen allow-listed `extra` keys, and
 credential material stays unrepresented there as well;
 `docs/adr/0004-allow-listed-account-configuration.md` records that grant.
 
 Comparison reads a key at the provider's own default as equal whether an account
-stores it or omits it. Four allow-listed keys carry such a default: the
-auto-reset trio, which Sub2API persists only for OAuth accounts and reads as
-disabled with 1/1 thresholds when absent, and `openai_compact_mode`, which
-defaults to `auto`, which Sub2API's own form deletes rather than stores, and
-which its bulk update materialises on OAuth accounts even when the applied
-configuration never sent it. Comparing raw presence would report a copy that did
-converge as deviating from its baseline, and would report as missing
-configuration that no copy could ever converge.
+stores it or omits it. Six allow-listed keys carry such a default: the
+auto-reset quintet, which Sub2API persists only for OAuth accounts and reads as
+disabled with 0/1 thresholds and a ten-minute expiry lead when absent, and
+`openai_compact_mode`, which defaults to `auto`, which Sub2API's own form deletes
+rather than stores, and which its bulk update materialises on OAuth accounts even
+when the applied configuration never sent it. The 5h threshold defaults to 0,
+which disables that window, and the expiry auto-use switch is independent of the
+threshold switch. Comparing raw presence would report a copy that did converge as
+deviating from its baseline, and would report as missing configuration that no
+copy could ever converge.
 
 After initialization, saved desired Account order is applied only through
 Confirm. Preview edits are reviewed intent, not an immediate Relay or local
