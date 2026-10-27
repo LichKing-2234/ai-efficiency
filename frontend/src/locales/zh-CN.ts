@@ -485,6 +485,8 @@ const zhCN = {
   'user.manualConfigOpenClaw': 'OpenClaw',
   'user.manualConfigCustomAgentEnv': '自定义 Agent 环境变量',
   'user.manualConfigCustomAgentJson': '自定义 Agent JSON',
+  'user.manualConfigDshConfig': 'DSH 配置文件（cordis.patch.yml）',
+  'user.manualConfigDshSteps': 'DSH 界面配置步骤',
   'user.manualConfigUnsupportedPlatform': '当前平台还没有内置手动配置片段。请把服务入口、平台、接入组和 API Key 状态发给支持人员确认本地工具配置位置。',
   'user.copyConfigSnippet': '复制片段',
   'user.copyCommand': '复制命令',

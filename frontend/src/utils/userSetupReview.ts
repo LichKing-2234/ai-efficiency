@@ -13,6 +13,8 @@ export type ManualConfigSnippetKey =
   | 'openclaw-agent'
   | 'custom-agent-env'
   | 'custom-agent-json'
+  | 'dsh-config'
+  | 'dsh-steps'
 
 export type ManualConfigSnippet = {
   key: ManualConfigSnippetKey
@@ -28,6 +30,7 @@ export type ManualConfigSnippetInput = {
   apiKey: string
   groupName?: string | null
   model?: string
+  models?: string[]
 }
 
 export type CCSwitchProviderImportInput = {
@@ -100,7 +103,7 @@ export function buildAgentProviderBaseUrl(baseUrl: string) {
 
 function normalizeAgentPlatform(platform: string): AgentPlatform | null {
   const normalized = platform.trim().toLowerCase()
-  if (normalized === 'openai') return 'openai'
+  if (normalized === 'openai' || normalized === 'composite') return 'openai'
   if (normalized === 'anthropic') return 'anthropic'
   if (normalized === 'gemini') return 'gemini'
   return null
@@ -188,12 +191,13 @@ function buildGeminiCCSwitchConfig(baseUrl: string, apiKey: string, model?: stri
   return config
 }
 
-export function buildCodexConfigSnippet(providerName: string, baseUrl: string) {
+export function buildCodexConfigSnippet(providerName: string, baseUrl: string, model?: string) {
   const provider = providerName.trim() || 'provider'
+  const selectedModel = model?.trim() || CODEX_MODEL
   return [
     `model_provider = ${tomlString(provider)}`,
-    `model = ${tomlString(CODEX_MODEL)}`,
-    `review_model = ${tomlString(CODEX_MODEL)}`,
+    `model = ${tomlString(selectedModel)}`,
+    `review_model = ${tomlString(selectedModel)}`,
     `model_reasoning_effort = "xhigh"`,
     `disable_response_storage = true`,
     `network_access = "enabled"`,
@@ -345,11 +349,112 @@ function buildAgentManualConfigSnippets(input: ManualConfigSnippetInput): Manual
   ]
 }
 
+const DSH_API_KEY_ENV = 'SUB2API_API_KEY'
+
+export function resolveOnboardingModels(input: ManualConfigSnippetInput): string[] {
+  const listed = (input.models ?? []).map((item) => item.trim()).filter(Boolean)
+  if (listed.length > 0) return listed
+  const single = input.model?.trim()
+  return single ? [single] : []
+}
+
+/** DSH 的自定义供应商配置（写入 ~/.dsh/profiles/<profile>/cordis.patch.yml） */
+export function buildDshProviderSnippet(input: ManualConfigSnippetInput) {
+  const baseUrl = buildAgentProviderBaseUrl(input.baseUrl)
+  const providerId = 'sub2api'
+  const models = resolveOnboardingModels(input)
+  const modelLines = models.length > 0
+    ? models.flatMap((model) => [
+        `          - id: ${model}`,
+        `            name: ${model}`,
+        `            contextWindow: 1000000`,
+        `            maxTokens: 384000`,
+      ])
+    : [
+        `          # 先点击「获取可用模型」再把模型 id 填入这里`,
+        `          - id: deepseek-v4-pro`,
+        `            name: deepseek-v4-pro`,
+        `            contextWindow: 1000000`,
+        `            maxTokens: 384000`,
+      ]
+  return [
+    `- id: llm-pi-ai`,
+    `  name: "@deepseek-ai/dsh-llm-pi-ai"`,
+    `  config:`,
+    `    providers:`,
+    `      ${providerId}:`,
+    `        displayName: ${input.providerName.trim() || 'Sub2API'}`,
+    `        apiKeyEnv: ${DSH_API_KEY_ENV}`,
+    `        api: openai-completions`,
+    `        baseURL: ${baseUrl}`,
+    `        compat:`,
+    `          supportsStore: false`,
+    `          supportsDeveloperRole: false`,
+    `          maxTokensField: max_tokens`,
+    `          requiresReasoningContentOnAssistantMessages: true`,
+    `          thinkingFormat: deepseek`,
+    `        defaultContextWindow: 1000000`,
+    `        defaultMaxTokens: 384000`,
+    `        models:`,
+    ...modelLines,
+  ].join('\n')
+}
+
+/** DSH 界面配置步骤（新手推荐路径） */
+export function buildDshStepsSnippet(input: ManualConfigSnippetInput) {
+  const baseUrl = buildAgentProviderBaseUrl(input.baseUrl)
+  const models = resolveOnboardingModels(input)
+  const modelHint = models.length > 0 ? models.join(' / ') : 'deepseek-v4-pro / deepseek-flash'
+  return [
+    `1. 安装并启动 DSH（已安装可跳过）`,
+    `   npx @deepseek-ai/dsh web`,
+    ``,
+    `2. 打开 DSH 设置 → 模型供应商 → 添加自定义供应商`,
+    `   名称:     ${input.providerName.trim() || 'Sub2API'}`,
+    `   Base URL: ${baseUrl}`,
+    `   API Key:  ${input.apiKey}`,
+    `   协议:     openai-completions`,
+    ``,
+    `3. 点击「获取可用模型」，从列表中选择（不要手动输入）`,
+    `   可选模型: ${modelHint}`,
+    ``,
+    `4. 新建会话，在模型选择器里选中 ${modelHint.split(' / ')[0]}`,
+  ].join('\n')
+}
+
 export function buildManualConfigSnippets(input: ManualConfigSnippetInput): ManualConfigSnippet[] {
   if (isAgentAccessGroup(input.groupName)) {
     return buildAgentManualConfigSnippets(input)
   }
   const platform = input.platform.trim().toLowerCase()
+  if (platform === 'composite') {
+    return [
+      {
+        key: 'codex-config',
+        path: '~/.codex/config.toml',
+        body: buildCodexConfigSnippet(input.providerName, buildAgentProviderBaseUrl(input.baseUrl), input.model),
+        containsSecret: false,
+      },
+      {
+        key: 'codex-auth',
+        path: '~/.codex/auth.json',
+        body: buildCodexAuthSnippet(input.apiKey),
+        containsSecret: true,
+      },
+      {
+        key: 'dsh-config',
+        path: '~/.dsh/profiles/desktop/cordis.patch.yml',
+        body: buildDshProviderSnippet(input),
+        containsSecret: false,
+      },
+      {
+        key: 'dsh-steps',
+        path: 'DSH 界面配置步骤',
+        body: buildDshStepsSnippet(input),
+        containsSecret: true,
+      },
+    ]
+  }
   if (platform === 'openai') {
     return [
       {
@@ -403,7 +508,7 @@ export function buildManualConfigSnippets(input: ManualConfigSnippetInput): Manu
 
 export function resolveCCSwitchAppForPlatform(platform: string): CCSwitchApp | null {
   const normalized = platform.trim().toLowerCase()
-  if (normalized === 'openai') return 'codex'
+  if (normalized === 'openai' || normalized === 'composite') return 'codex'
   if (normalized === 'anthropic') return 'claude'
   if (normalized === 'gemini') return 'gemini'
   return null
@@ -411,7 +516,7 @@ export function resolveCCSwitchAppForPlatform(platform: string): CCSwitchApp | n
 
 export function resolveDiscoverToolForPlatform(platform: string): DiscoverTool | null {
   const normalized = platform.trim().toLowerCase()
-  if (normalized === 'openai') return 'codex'
+  if (normalized === 'openai' || normalized === 'composite') return 'codex'
   if (normalized === 'anthropic') return 'claude'
   if (normalized === 'gemini') return 'gemini'
   return null

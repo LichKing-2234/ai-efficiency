@@ -488,6 +488,8 @@ const enUS = {
   'user.manualConfigOpenClaw': 'OpenClaw',
   'user.manualConfigCustomAgentEnv': 'Custom Agent environment',
   'user.manualConfigCustomAgentJson': 'Custom Agent JSON',
+  'user.manualConfigDshConfig': 'DSH config (cordis.patch.yml)',
+  'user.manualConfigDshSteps': 'DSH UI setup steps',
   'user.manualConfigUnsupportedPlatform': 'This platform does not have a built-in manual snippet yet. Share the provider URL, platform, group, and API key status with support to confirm the local tool configuration target.',
   'user.copyConfigSnippet': 'Copy snippet',
   'user.copyCommand': 'Copy command',
