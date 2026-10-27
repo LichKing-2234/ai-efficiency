@@ -17,6 +17,8 @@ import {
   buildHooksGlobalCommand,
   buildHooksStatusUploadsCommand,
   buildInstallCommand,
+  buildDshProviderSnippet,
+  buildDshStepsSnippet,
   buildManualConfigSnippets,
   buildLoginCommand,
   buildPreferredGithubConnectivityCommand,
@@ -494,5 +496,65 @@ describe('userSetupReview command builders', () => {
     expect(buildDoctorCommand()).toBe('ae-cli doctor')
     expect(buildSyncCommand()).toBe('ae-cli sync')
     expect(buildHooksStatusUploadsCommand()).toBe('ae-cli hooks status --uploads')
+  })
+
+  it('treats composite groups as Codex-compatible', () => {
+    expect(resolveCCSwitchAppForPlatform('composite')).toBe('codex')
+    expect(resolveDiscoverToolForPlatform('composite')).toBe('codex')
+  })
+
+  it('builds Codex and DSH snippets for composite groups', () => {
+    const snippets = buildManualConfigSnippets({
+      providerName: 'Agora Sub2API',
+      baseUrl: 'https://sub2api.agoralab.co',
+      platform: 'composite',
+      apiKey: 'sk-test',
+      groupName: 'China',
+      model: 'deepseek-v4-pro',
+      models: ['deepseek-flash', 'deepseek-v4-pro'],
+    })
+    expect(snippets.map((item) => item.key)).toEqual([
+      'codex-config',
+      'codex-auth',
+      'dsh-config',
+      'dsh-steps',
+    ])
+
+    const codex = snippets.find((item) => item.key === 'codex-config')!
+    expect(codex.body).toContain('base_url = "https://sub2api.agoralab.co/v1"')
+    expect(codex.body).toContain('wire_api = "responses"')
+    expect(codex.body).toContain('model = "deepseek-v4-pro"')
+
+    const dsh = snippets.find((item) => item.key === 'dsh-config')!
+    expect(dsh.body).toContain('apiKeyEnv: SUB2API_API_KEY')
+    expect(dsh.body).toContain('baseURL: https://sub2api.agoralab.co/v1')
+    expect(dsh.body).toContain('api: openai-completions')
+    expect(dsh.body).toContain('- id: deepseek-flash')
+    expect(dsh.body).toContain('- id: deepseek-v4-pro')
+
+    const steps = snippets.find((item) => item.key === 'dsh-steps')!
+    expect(steps.body).toContain('npx @deepseek-ai/dsh web')
+    expect(steps.body).toContain('获取可用模型')
+    expect(steps.body).toContain('sk-test')
+  })
+
+  it('falls back to a single model when no model list is supplied', () => {
+    const dsh = buildDshProviderSnippet({
+      providerName: 'Sub2API',
+      baseUrl: 'https://sub2api.agoralab.co',
+      platform: 'composite',
+      apiKey: 'sk-test',
+      model: 'deepseek-flash',
+    })
+    expect(dsh).toContain('- id: deepseek-flash')
+    expect(dsh).not.toContain('- id: deepseek-v4-pro')
+
+    const steps = buildDshStepsSnippet({
+      providerName: 'Sub2API',
+      baseUrl: 'https://sub2api.agoralab.co',
+      platform: 'composite',
+      apiKey: 'sk-test',
+    })
+    expect(steps).toContain('deepseek-v4-pro / deepseek-flash')
   })
 })

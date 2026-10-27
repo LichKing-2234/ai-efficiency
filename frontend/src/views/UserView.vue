@@ -171,7 +171,7 @@ const ccSwitchImports = computed(() => {
       name: `${provider.display_name} / ${group.group_name}`,
       endpoint: provider.base_url,
       apiKey,
-      model: selectedModel || (app === 'codex' ? 'gpt-5.4' : undefined),
+      model: selectedModel || (app === 'codex' ? providerModelOptions.value[0]?.id || 'gpt-5.4' : undefined),
     }),
   }))
 })
@@ -275,6 +275,7 @@ function buildSelectedManualConfigSnippets(apiKey: string) {
     apiKey,
     groupName: selectedGroup.value.group_name,
     model: providerTestModel.value.trim(),
+    models: providerModelOptions.value.map((item) => item.id),
   })
 }
 
@@ -300,6 +301,10 @@ function manualConfigSnippetTitle(snippet: ManualConfigSnippet) {
       return t('user.manualConfigCustomAgentEnv')
     case 'custom-agent-json':
       return t('user.manualConfigCustomAgentJson')
+    case 'dsh-config':
+      return t('user.manualConfigDshConfig')
+    case 'dsh-steps':
+      return t('user.manualConfigDshSteps')
     default:
       return snippet.path
   }
