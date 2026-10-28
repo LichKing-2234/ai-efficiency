@@ -32,6 +32,8 @@ function reviewedPlan(overrides: Partial<RelayPlanningPlan> = {}): RelayPlanning
       range_cost: 1200,
       range_tokens: 100,
       usage_known: true,
+      range_requests: 1200,
+      rpm_peak: 20,
       global_token_rank: 1,
       migratable_key_count: 1,
       source_member: true,

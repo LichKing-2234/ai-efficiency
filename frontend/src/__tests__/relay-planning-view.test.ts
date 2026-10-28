@@ -46,7 +46,10 @@ const plan = {
     department: { external_id: 'dept-alpha', name: 'SDK Framework', display_path: 'Engineering / SDK Framework' },
     range_cost: 1200,
     range_tokens: 100,
-    tpm_peak: 1500,
+    usage_known: true,
+    range_requests: 2400,
+    peak_hour_requests: 90000,
+    rpm_peak: 1500,
     global_token_rank: 1,
     migratable_key_count: 1,
     source_member: true,
@@ -531,21 +534,28 @@ describe('RelayPlanningView', () => {
 		expect(picker.element.parentElement?.classList.contains('min-w-0')).toBe(true)
 	})
 
-	it('shows the candidate department and recent peak TPM in the wide table layout', async () => {
+	it('shows the candidate department, 30-day requests, and recent peak RPM in the wide table layout', async () => {
 		const { wrapper } = await mountView([], true)
 		await fillAndPreview(wrapper)
 
 		const table = wrapper.get('[data-testid="candidate-table-layout"]')
 		expect(table.text()).toContain('Candidate department')
-		expect(table.text()).toContain('Recent peak TPM')
+		expect(table.text()).toContain('30-day requests (this platform)')
+		expect(table.text()).toContain('Recent peak RPM')
 		const department = wrapper.get('[data-testid="candidate-department-1"]')
 		expect(department.text()).toBe('Engineering / SDK Framework')
 		expect(department.attributes('title')).toBe('Engineering / SDK Framework')
 		expect(department.classes()).toContain('truncate')
-		expect(wrapper.get('[data-testid="candidate-tpm-1"]').text()).toBe('1.5K')
+		expect(wrapper.get('[data-testid="candidate-requests-1"]').text()).toBe('2.4K')
+		expect(wrapper.get('[data-testid="candidate-rpm-1"]').text()).toBe('1.5K')
+		const rpmHeader = table.get('.cursor-help')
+		expect(rpmHeader.text()).toBe('Recent peak RPM')
+		expect(rpmHeader.classes()).toContain('border-dashed')
+		// peak_hour_requests stays API-only and must not leak into the UI.
+		expect(table.text()).not.toContain('90K')
 	})
 
-	it('shows the candidate department and recent peak TPM in the card layout', async () => {
+	it('shows the candidate department, 30-day requests, and recent peak RPM in the card layout', async () => {
 		const { wrapper } = await mountView()
 		await fillAndPreview(wrapper)
 
@@ -554,11 +564,29 @@ describe('RelayPlanningView', () => {
 		expect(department.text()).toBe('Engineering / SDK Framework')
 		expect(department.classes()).toContain('break-words')
 		expect(department.classes()).not.toContain('truncate')
-		expect(wrapper.text()).toContain('Recent peak TPM')
-		expect(wrapper.get('[data-testid="candidate-tpm-1"]').text()).toBe('1.5K')
+		expect(wrapper.text()).toContain('30-day requests (this platform)')
+		expect(wrapper.text()).toContain('Recent peak RPM')
+		expect(wrapper.get('[data-testid="candidate-requests-1"]').text()).toBe('2.4K')
+		const rpmEntry = wrapper.get('[data-testid="candidate-rpm-1"]')
+		expect(rpmEntry.text()).toBe('1.5K')
+		expect(rpmEntry.element.parentElement?.querySelector('dt')?.getAttribute('title')).toContain('busiest completed clock hour')
+		expect(wrapper.text()).not.toContain('90K')
 	})
 
-	it('falls back to the department name and shows a dash for an unknown peak TPM', async () => {
+	it('shows a dash for 30-day requests when usage is unknown and for a missing peak RPM', async () => {
+		const { wrapper, relayPlanning } = await mountView()
+		const unknownPlan = structuredClone(plan) as any
+		unknownPlan.candidates[0].usage_known = false
+		unknownPlan.candidates[0].rpm_peak = null
+		relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: unknownPlan } })
+
+		await fillAndPreview(wrapper)
+
+		expect(wrapper.get('[data-testid="candidate-requests-1"]').text()).toBe('-')
+		expect(wrapper.get('[data-testid="candidate-rpm-1"]').text()).toBe('-')
+	})
+
+	it('falls back to the department name and shows a dash for an unknown peak RPM', async () => {
 		const { wrapper, relayPlanning } = await mountView()
 		const fallbackPlan = structuredClone(plan) as any
 		fallbackPlan.candidates[0].department = { external_id: 'dept-beta', name: 'SDK Runtime', display_path: '' }
@@ -569,16 +597,17 @@ describe('RelayPlanningView', () => {
 			username: 'bob',
 			email: 'bob@example.org',
 			department: undefined,
-			tpm_peak: null,
+			rpm_peak: null,
 		})
 		relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: fallbackPlan } })
 
 		await fillAndPreview(wrapper)
 
 		expect(wrapper.get('[data-testid="candidate-department-1"]').text()).toBe('SDK Runtime')
-		expect(wrapper.get('[data-testid="candidate-tpm-1"]').text()).toBe('1.5K')
+		expect(wrapper.get('[data-testid="candidate-rpm-1"]').text()).toBe('1.5K')
 		expect(wrapper.get('[data-testid="candidate-department-2"]').text()).toBe('Not matched to directory')
-		expect(wrapper.get('[data-testid="candidate-tpm-2"]').text()).toBe('-')
+		expect(wrapper.get('[data-testid="candidate-rpm-2"]').text()).toBe('-')
+		expect(wrapper.get('[data-testid="candidate-requests-2"]').text()).toBe('2.4K')
 	})
 
 	it('localizes multi-Account and reused-Account mapping warnings', async () => {

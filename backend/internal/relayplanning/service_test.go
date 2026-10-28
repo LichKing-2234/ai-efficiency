@@ -1655,24 +1655,24 @@ func previewCandidateForTest(t *testing.T, p relay.Provider, globalStats map[int
 	return service.buildCandidate(context.Background(), p, newPlanningRequestFacts(), newRelayTestUser(1, 1001), relay.Group{ID: 20, Platform: "openai"}, "openai", "", platformGroupIDSet(groups, "openai"), nil, globalStats, nil, now)
 }
 
-func TestBuildCandidateScopesUsageToPlatformGroupsAndComputesPeakTPM(t *testing.T) {
+func TestBuildCandidateScopesUsageToPlatformGroupsAndComputesPeakRequests(t *testing.T) {
 	now := time.Now().UTC()
 	completed := now.Truncate(time.Hour).Add(-2 * time.Hour)
 	busiest := now.Truncate(time.Hour).Add(-time.Hour)
-	first, second, third := int64(6000), int64(12000), int64(60000)
+	first, second, third := int64(20), int64(120), int64(900000)
 	provider := &scopedCandidateProvider{
 		groupUsage: map[int64][]relay.GroupUsageStat{
 			1001: {
-				{GroupID: 101, TotalTokens: 600, ActualCost: 6},
-				{GroupID: 300, TotalTokens: 9000, ActualCost: 90},
-				{GroupID: 999, TotalTokens: 500, ActualCost: 5},
+				{GroupID: 101, TotalTokens: 600, ActualCost: 6, Requests: 60},
+				{GroupID: 300, TotalTokens: 9000, ActualCost: 90, Requests: 900},
+				{GroupID: 999, TotalTokens: 500, ActualCost: 5, Requests: 50},
 			},
 		},
 		trend: map[int64][]relay.UsageTrendPoint{
 			1001: {
-				{Date: completed.Format("2006-01-02 15:04"), TotalTokens: &first},
-				{Date: busiest.Format("2006-01-02 15:04"), TotalTokens: &second},
-				{Date: now.Truncate(time.Hour).Format("2006-01-02 15:04"), TotalTokens: &third},
+				{Date: completed.Format("2006-01-02 15:04"), Requests: first},
+				{Date: busiest.Format("2006-01-02 15:04"), Requests: second},
+				{Date: now.Truncate(time.Hour).Format("2006-01-02 15:04"), Requests: third},
 			},
 		},
 	}
@@ -1681,11 +1681,14 @@ func TestBuildCandidateScopesUsageToPlatformGroupsAndComputesPeakTPM(t *testing.
 	if !candidate.UsageKnown {
 		t.Fatal("platform-scoped usage read must be known even when rows are filtered out")
 	}
-	if candidate.RangeCost != 6 || candidate.RangeTokens != 600 {
-		t.Fatalf("candidate usage = %.1f/%.0f, want only OpenAI-group rows 6/600", candidate.RangeCost, float64(candidate.RangeTokens))
+	if candidate.RangeCost != 6 || candidate.RangeTokens != 600 || candidate.RangeRequests != 60 {
+		t.Fatalf("candidate usage = %.1f/%.0f/%d, want only OpenAI-group rows 6/600/60", candidate.RangeCost, float64(candidate.RangeTokens), candidate.RangeRequests)
 	}
-	if candidate.TpmPeak == nil || *candidate.TpmPeak != 200 {
-		t.Fatalf("candidate peak TPM = %#v, want 200 from the busiest completed hour", candidate.TpmPeak)
+	if candidate.PeakHourRequests == nil || *candidate.PeakHourRequests != 120 {
+		t.Fatalf("candidate peak hour requests = %#v, want 120 from the busiest completed hour", candidate.PeakHourRequests)
+	}
+	if candidate.RpmPeak == nil || *candidate.RpmPeak != 2 {
+		t.Fatalf("candidate peak RPM = %#v, want 2 from 120 requests in the busiest completed hour", candidate.RpmPeak)
 	}
 	if candidate.Department == nil || candidate.Department.ExternalID != "dept-alpha" || candidate.Department.DisplayPath != "Department Alpha" {
 		t.Fatalf("candidate department = %#v", candidate.Department)
@@ -1705,11 +1708,14 @@ func TestBuildCandidateMarksUsageUnknownWhenScopedReadFails(t *testing.T) {
 		trendErr:      errors.New("synthetic trend failure"),
 	}
 	candidate := previewCandidateForTest(t, provider, nil, now)
-	if candidate.UsageKnown || candidate.RangeCost != 0 || candidate.RangeTokens != 0 {
-		t.Fatalf("candidate usage after scoped failure = known:%v cost:%.1f tokens:%d, want unknown zero", candidate.UsageKnown, candidate.RangeCost, candidate.RangeTokens)
+	if candidate.UsageKnown || candidate.RangeCost != 0 || candidate.RangeTokens != 0 || candidate.RangeRequests != 0 {
+		t.Fatalf("candidate usage after scoped failure = known:%v cost:%.1f tokens:%d requests:%d, want unknown zero", candidate.UsageKnown, candidate.RangeCost, candidate.RangeTokens, candidate.RangeRequests)
 	}
-	if candidate.TpmPeak != nil {
-		t.Fatalf("candidate peak TPM after trend failure = %#v, want nil", candidate.TpmPeak)
+	if candidate.PeakHourRequests != nil {
+		t.Fatalf("candidate peak hour requests after trend failure = %#v, want nil", candidate.PeakHourRequests)
+	}
+	if candidate.RpmPeak != nil {
+		t.Fatalf("candidate peak RPM after trend failure = %#v, want nil", candidate.RpmPeak)
 	}
 	found := false
 	for _, warning := range candidate.Warnings {
@@ -1729,8 +1735,14 @@ func TestBuildCandidateFallsBackToProviderWideUsageWithoutScopedCapability(t *te
 	if !candidate.UsageKnown || candidate.RangeCost != 12.5 || candidate.RangeTokens != 321 {
 		t.Fatalf("legacy candidate usage = known:%v cost:%.1f tokens:%d, want provider-wide values", candidate.UsageKnown, candidate.RangeCost, candidate.RangeTokens)
 	}
-	if candidate.TpmPeak != nil {
-		t.Fatalf("legacy candidate peak TPM = %#v, want nil without trend capability", candidate.TpmPeak)
+	if candidate.RangeRequests != 0 {
+		t.Fatalf("legacy candidate requests = %d, want 0 without a provider-wide request fallback", candidate.RangeRequests)
+	}
+	if candidate.PeakHourRequests != nil {
+		t.Fatalf("legacy candidate peak hour requests = %#v, want nil without trend capability", candidate.PeakHourRequests)
+	}
+	if candidate.RpmPeak != nil {
+		t.Fatalf("legacy candidate peak RPM = %#v, want nil without trend capability", candidate.RpmPeak)
 	}
 }
 
@@ -1758,34 +1770,34 @@ func (p *legacyUsageProvider) GetUser(_ context.Context, userID int64) (*relay.U
 	return &relay.User{ID: userID, Username: "alice", Email: "alice@example.com"}, nil
 }
 
-func TestLoadPeakHourlyTPMUsesBusiestCompletedHourOfTrailingWindow(t *testing.T) {
+func TestLoadPeakHourlyRequestsUsesBusiestCompletedHourOfTrailingWindow(t *testing.T) {
 	now := time.Date(2026, 10, 28, 13, 42, 0, 0, time.UTC)
-	inside := int64(12000)
-	older := int64(6000)
+	inside := int64(1200)
+	older := int64(600)
 	current := int64(900000)
 	outsideWindow := int64(999999)
 	provider := &scopedCandidateProvider{trend: map[int64][]relay.UsageTrendPoint{1001: {
-		{Date: "2026-10-21 23:00", TotalTokens: &outsideWindow},
-		{Date: "2026-10-28 05:00", TotalTokens: &older},
-		{Date: "2026-10-28 11:00", TotalTokens: &inside},
-		{Date: "2026-10-28 13:00", TotalTokens: &current},
-		{Date: "2026-10-28 23:00", TotalTokens: &current},
-		{Date: "not-a-clock-hour", TotalTokens: &inside},
+		{Date: "2026-10-21 23:00", Requests: outsideWindow},
+		{Date: "2026-10-28 05:00", Requests: older},
+		{Date: "2026-10-28 11:00", Requests: inside},
+		{Date: "2026-10-28 13:00", Requests: current},
+		{Date: "2026-10-28 23:00", Requests: current},
+		{Date: "not-a-clock-hour", Requests: inside},
 	}}}
-	got := loadPeakHourlyTPM(context.Background(), provider, 1001, now)
-	if got == nil || *got != 200 {
-		t.Fatalf("peak TPM = %#v, want 200 from 12000 tokens in one completed hour", got)
+	got := loadPeakHourlyRequests(context.Background(), provider, 1001, now)
+	if got == nil || *got != 1200 {
+		t.Fatalf("peak hour requests = %#v, want 1200 from the busiest completed hour", got)
 	}
 }
 
-func TestLoadPeakHourlyTPMIgnoresPartialCurrentHourOnly(t *testing.T) {
+func TestLoadPeakHourlyRequestsIgnoresPartialCurrentHourOnly(t *testing.T) {
 	now := time.Date(2026, 10, 28, 0, 30, 0, 0, time.UTC)
 	current := int64(600)
 	provider := &scopedCandidateProvider{trend: map[int64][]relay.UsageTrendPoint{1001: {
-		{Date: "2026-10-28 00:00", TotalTokens: &current},
+		{Date: "2026-10-28 00:00", Requests: current},
 	}}}
-	if got := loadPeakHourlyTPM(context.Background(), provider, 1001, now); got != nil {
-		t.Fatalf("peak TPM = %#v, want nil when the current hour is the only sample", got)
+	if got := loadPeakHourlyRequests(context.Background(), provider, 1001, now); got != nil {
+		t.Fatalf("peak hour requests = %#v, want nil when the current hour is the only sample", got)
 	}
 }
 
@@ -1794,13 +1806,16 @@ func TestPlatformGroupUsageIgnoresGroupsOutsideThePlanningPlatform(t *testing.T)
 	if _, ok := set[101]; !ok || len(set) != 1 {
 		t.Fatalf("platform group set = %#v, want only 101", set)
 	}
-	cost, tokens := platformGroupUsage([]relay.GroupUsageStat{{GroupID: 101, TotalTokens: 600, ActualCost: 6}, {GroupID: 300, TotalTokens: 9000, ActualCost: 90}}, set)
-	if cost != 6 || tokens != 600 {
-		t.Fatalf("scoped usage = %.1f/%.0f, want 6/600", cost, float64(tokens))
+	totals := platformGroupUsage([]relay.GroupUsageStat{
+		{GroupID: 101, TotalTokens: 600, ActualCost: 6, Requests: 60},
+		{GroupID: 300, TotalTokens: 9000, ActualCost: 90, Requests: 900},
+	}, set)
+	if totals.Cost != 6 || totals.Tokens != 600 || totals.Requests != 60 {
+		t.Fatalf("scoped usage = %.1f/%.0f/%d, want 6/600/60", totals.Cost, float64(totals.Tokens), totals.Requests)
 	}
 }
 
-func TestPreviewProjectsDepartmentAndPlatformScopedUsageWithPeakTPM(t *testing.T) {
+func TestPreviewProjectsDepartmentAndPlatformScopedUsageWithPeakRequests(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	providerRow, err := client.RelayProvider.Create().
@@ -1840,14 +1855,14 @@ func TestPreviewProjectsDepartmentAndPlatformScopedUsageWithPeakTPM(t *testing.T
 		SaveX(ctx)
 
 	busiest := time.Now().UTC().Truncate(time.Hour).Add(-time.Hour)
-	peakHourTokens := int64(30000)
+	peakHourRequests := int64(3000)
 	fake := &scopedCandidateProvider{
 		groupUsage: map[int64][]relay.GroupUsageStat{1001: {
-			{GroupID: 101, TotalTokens: 600, ActualCost: 6},
-			{GroupID: 300, TotalTokens: 9000, ActualCost: 90},
+			{GroupID: 101, TotalTokens: 600, ActualCost: 6, Requests: 60},
+			{GroupID: 300, TotalTokens: 9000, ActualCost: 90, Requests: 900},
 		}},
 		trend: map[int64][]relay.UsageTrendPoint{1001: {
-			{Date: busiest.Format("2006-01-02 15:04"), TotalTokens: &peakHourTokens},
+			{Date: busiest.Format("2006-01-02 15:04"), Requests: peakHourRequests},
 		}},
 	}
 	resolver := relayPlanningProviderResolver(func(_ context.Context, providerID int) (relay.Provider, error) {
@@ -1873,11 +1888,14 @@ func TestPreviewProjectsDepartmentAndPlatformScopedUsageWithPeakTPM(t *testing.T
 	if candidate.Department == nil || candidate.Department.ExternalID != departmentID || candidate.Department.Name != "Department Alpha" || candidate.Department.DisplayPath == "" {
 		t.Fatalf("candidate department = %#v", candidate.Department)
 	}
-	if !candidate.UsageKnown || candidate.RangeCost != 6 || candidate.RangeTokens != 600 {
-		t.Fatalf("candidate usage = known:%v cost:%.1f tokens:%d, want only OpenAI-group rows", candidate.UsageKnown, candidate.RangeCost, candidate.RangeTokens)
+	if !candidate.UsageKnown || candidate.RangeCost != 6 || candidate.RangeTokens != 600 || candidate.RangeRequests != 60 {
+		t.Fatalf("candidate usage = known:%v cost:%.1f tokens:%d requests:%d, want only OpenAI-group rows", candidate.UsageKnown, candidate.RangeCost, candidate.RangeTokens, candidate.RangeRequests)
 	}
-	if candidate.TpmPeak == nil || *candidate.TpmPeak != 500 {
-		t.Fatalf("candidate peak TPM = %#v, want 500 from 30000 tokens in one completed hour", candidate.TpmPeak)
+	if candidate.PeakHourRequests == nil || *candidate.PeakHourRequests != 3000 {
+		t.Fatalf("candidate peak hour requests = %#v, want 3000 requests in one completed hour", candidate.PeakHourRequests)
+	}
+	if candidate.RpmPeak == nil || *candidate.RpmPeak != 50 {
+		t.Fatalf("candidate peak RPM = %#v, want 50 from 3000 requests in one completed hour", candidate.RpmPeak)
 	}
 	if fake.groupCalls != 1 || fake.trendCalls != 1 {
 		t.Fatalf("provider calls = %d group / %d trend, want 1/1", fake.groupCalls, fake.trendCalls)

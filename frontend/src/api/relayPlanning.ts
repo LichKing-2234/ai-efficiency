@@ -16,7 +16,9 @@ export interface RelayPlanningCandidate {
   range_cost: number
   range_tokens: number
   usage_known: boolean
-  tpm_peak?: number | null
+  range_requests: number
+  peak_hour_requests?: number | null
+  rpm_peak?: number | null
   global_token_rank: number
   current_group_ids?: number[]
   migratable_key_count: number

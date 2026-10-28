@@ -565,6 +565,7 @@ type TeamMemberTrendParams struct {
 
 type UsageTrendPoint struct {
 	Date        string  `json:"date"`
+	Requests    int64   `json:"requests"`
 	ActualCost  float64 `json:"actual_cost"`
 	TotalTokens *int64  `json:"total_tokens,omitempty"`
 }

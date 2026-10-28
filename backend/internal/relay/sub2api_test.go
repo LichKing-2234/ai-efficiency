@@ -5181,8 +5181,8 @@ func TestSub2APIGetUserUsageTrendUsesDashboardTrendContract(t *testing.T) {
 	}
 	firstTokens, secondTokens := int64(166), int64(283)
 	want := []relay.UsageTrendPoint{
-		{Date: "2026-10-28 04:00", ActualCost: 0.2, TotalTokens: &firstTokens},
-		{Date: "2026-10-28 05:00", ActualCost: 0.4, TotalTokens: &secondTokens},
+		{Date: "2026-10-28 04:00", Requests: 3, ActualCost: 0.2, TotalTokens: &firstTokens},
+		{Date: "2026-10-28 05:00", Requests: 5, ActualCost: 0.4, TotalTokens: &secondTokens},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("user usage trend mismatch (-want +got):\n%s", diff)

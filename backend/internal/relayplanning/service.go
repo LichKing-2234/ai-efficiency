@@ -197,14 +197,19 @@ type UserSearchPage struct {
 }
 
 type Candidate struct {
-	UserID      int     `json:"user_id"`
-	RelayUserID int64   `json:"relay_user_id"`
-	Username    string  `json:"username"`
-	Email       string  `json:"email"`
-	RangeCost   float64 `json:"range_cost"`
-	RangeTokens int64   `json:"range_tokens"`
-	UsageKnown  bool    `json:"usage_known"`
-	TpmPeak     *int64  `json:"tpm_peak,omitempty"`
+	UserID        int     `json:"user_id"`
+	RelayUserID   int64   `json:"relay_user_id"`
+	Username      string  `json:"username"`
+	Email         string  `json:"email"`
+	RangeCost     float64 `json:"range_cost"`
+	RangeTokens   int64   `json:"range_tokens"`
+	RangeRequests int64   `json:"range_requests"`
+	UsageKnown    bool    `json:"usage_known"`
+	// PeakHourRequests and RpmPeak are advisory request-rate facts derived from
+	// the provider-wide hourly trend. They are display-only and never part of
+	// the confirmation relationship fingerprint.
+	PeakHourRequests *int64 `json:"peak_hour_requests,omitempty"`
+	RpmPeak          *int64 `json:"rpm_peak,omitempty"`
 	// Department is the current directory department chosen for display. It is
 	// display-only and never part of the confirmation relationship fingerprint.
 	Department                  *CandidateDepartment `json:"department,omitempty"`
@@ -235,8 +240,9 @@ type CandidateDepartment struct {
 	DisplayPath string `json:"display_path"`
 }
 
-// tpmWindowDays is the trailing window used for the advisory peak-TPM metric.
-const tpmWindowDays = 7
+// peakHourWindowDays is the trailing window used for the advisory peak
+// request-rate metrics.
+const peakHourWindowDays = 7
 
 type Assignment struct {
 	Index                    int             `json:"index"`
@@ -5499,7 +5505,10 @@ func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestF
 		if rows, usageErr := scoped.GetUserGroupUsage(ctx, candidate.RelayUserID, thirtyDayUsageParams(now)); usageErr != nil {
 			candidate.UsageKnown = false
 		} else {
-			candidate.RangeCost, candidate.RangeTokens = platformGroupUsage(rows, platformGroupIDs)
+			totals := platformGroupUsage(rows, platformGroupIDs)
+			candidate.RangeCost = totals.Cost
+			candidate.RangeTokens = totals.Tokens
+			candidate.RangeRequests = totals.Requests
 			candidate.UsageKnown = true
 		}
 	} else {
@@ -5508,7 +5517,11 @@ func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestF
 		candidate.RangeCost = usageCost(stat)
 		candidate.RangeTokens = usageTokens(stat)
 	}
-	candidate.TpmPeak = loadPeakHourlyTPM(ctx, p, candidate.RelayUserID, now)
+	candidate.PeakHourRequests = loadPeakHourlyRequests(ctx, p, candidate.RelayUserID, now)
+	if candidate.PeakHourRequests != nil {
+		rpm := *candidate.PeakHourRequests / 60
+		candidate.RpmPeak = &rpm
+	}
 	candidate.GlobalTokenRank = ranks[candidate.RelayUserID]
 	candidate.relationshipSubscriptions = facts.relationshipSubscriptions
 	candidate.relationshipAPIKeys = facts.relationshipAPIKeys
@@ -5880,34 +5893,43 @@ func platformGroupIDSet(groups []relay.Group, platform string) map[int64]struct{
 	return out
 }
 
+// platformGroupUsageTotals is the Platform-scoped usage roll-up of one user's
+// per-Group rows. Cost and tokens drive candidate capacity; requests drive the
+// advisory request-volume metric.
+type platformGroupUsageTotals struct {
+	Cost     float64
+	Tokens   int64
+	Requests int64
+}
+
 // platformGroupUsage sums one user's usage rows that belong to the planning
 // Platform. Rows for other Platforms are ignored.
-func platformGroupUsage(rows []relay.GroupUsageStat, platformGroupIDs map[int64]struct{}) (float64, int64) {
-	var cost float64
-	var tokens int64
+func platformGroupUsage(rows []relay.GroupUsageStat, platformGroupIDs map[int64]struct{}) platformGroupUsageTotals {
+	var totals platformGroupUsageTotals
 	for _, row := range rows {
 		if _, ok := platformGroupIDs[row.GroupID]; !ok {
 			continue
 		}
-		cost += row.ActualCost
-		tokens += row.TotalTokens
+		totals.Cost += row.ActualCost
+		totals.Tokens += row.TotalTokens
+		totals.Requests += row.Requests
 	}
-	return cost, tokens
+	return totals
 }
 
-// loadPeakHourlyTPM returns the advisory peak tokens-per-minute over the
-// trailing tpmWindowDays UTC days: the busiest completed clock hour divided by
-// 60. It is provider-wide (not Platform-scoped) because sub2api exposes hourly
-// points per user rather than per user and Group, and it returns nil when the
-// provider has no trend capability or the read fails.
-func loadPeakHourlyTPM(ctx context.Context, p relay.Provider, relayUserID int64, now time.Time) *int64 {
+// loadPeakHourlyRequests returns the advisory peak request volume over the
+// trailing peakHourWindowDays UTC days: the requests of the busiest completed
+// clock hour. It is provider-wide (not Platform-scoped) because sub2api exposes
+// hourly points per user rather than per user and Group, and it returns nil when
+// the provider has no trend capability or the read fails.
+func loadPeakHourlyRequests(ctx context.Context, p relay.Provider, relayUserID int64, now time.Time) *int64 {
 	trendProvider, ok := p.(relay.TeamUserTrendProvider)
 	if !ok {
 		return nil
 	}
 	now = now.UTC()
 	points, err := trendProvider.GetUserUsageTrend(ctx, relayUserID, relay.TeamMemberTrendParams{
-		StartDate:   now.AddDate(0, 0, 1-tpmWindowDays).Format(time.DateOnly),
+		StartDate:   now.AddDate(0, 0, 1-peakHourWindowDays).Format(time.DateOnly),
 		EndDate:     now.Format(time.DateOnly),
 		Granularity: "hour",
 		Timezone:    "UTC",
@@ -5916,7 +5938,7 @@ func loadPeakHourlyTPM(ctx context.Context, p relay.Provider, relayUserID int64,
 		return nil
 	}
 	currentHour := now.Truncate(time.Hour)
-	windowStart := now.AddDate(0, 0, 1-tpmWindowDays).Truncate(24 * time.Hour)
+	windowStart := now.AddDate(0, 0, 1-peakHourWindowDays).Truncate(24 * time.Hour)
 	var peak int64
 	found := false
 	for _, point := range points {
@@ -5929,20 +5951,15 @@ func loadPeakHourlyTPM(ctx context.Context, p relay.Provider, relayUserID int64,
 		if !hour.Before(currentHour) || hour.Before(windowStart) {
 			continue
 		}
-		tokens := int64(0)
-		if point.TotalTokens != nil {
-			tokens = *point.TotalTokens
-		}
-		if !found || tokens > peak {
-			peak = tokens
+		if !found || point.Requests > peak {
+			peak = point.Requests
 			found = true
 		}
 	}
 	if !found {
 		return nil
 	}
-	tpm := peak / 60
-	return &tpm
+	return &peak
 }
 
 func (s *Service) departmentName(ctx context.Context, externalID string) (string, error) {
@@ -6656,7 +6673,7 @@ func (s *Service) loadUnmanagedMembers(ctx context.Context, provider relay.Provi
 			if usageErr != nil {
 				return nil, fmt.Errorf("load unmanaged member %d usage: %w", out[index].RelayUserID, usageErr)
 			}
-			out[index].RangeCost, _ = platformGroupUsage(rows, platformGroupIDs)
+			out[index].RangeCost = platformGroupUsage(rows, platformGroupIDs).Cost
 		}
 	} else {
 		stats, statsErr := s.loadUsageStats(ctx, provider, mapping.ProviderID, providerVersion, relayIDs)

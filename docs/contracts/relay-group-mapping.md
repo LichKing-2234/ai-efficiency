@@ -120,12 +120,21 @@ Relay relationship authority.
   Provider users over the same 30-day window and is not Platform-scoped.
   Candidates remain ordered by 30-day cost descending, now using the
   Platform-scoped cost.
-- `tpm_peak` is the advisory recent-peak Tokens per minute of one candidate: the
-  busiest completed UTC clock hour within the trailing seven UTC days divided by
-  60. It is read from the Provider's per-user hourly usage trend, includes cache
-  Tokens, is provider-wide rather than Platform-scoped, and is omitted when the
-  Provider cannot supply hourly points, the read fails, or no clock hour has
-  completed. The current partial hour and hours outside the window are excluded.
+- Request volume is advisory as well. `range_requests` sums the Platform-scoped
+  Groups' request counts over the same 30-day window and under the same scoping
+  and unknown rules as cost and Tokens, so it is meaningful only when the
+  candidate's usage is known. `peak_hour_requests` and `rpm_peak` describe the
+  busiest completed UTC clock hour within the trailing seven UTC days: the hourly
+  request count and its per-minute average. They are read from the Provider's
+  per-user hourly usage trend, are provider-wide rather than Platform-scoped, and
+  are omitted when the Provider cannot supply hourly points, the read fails, or
+  no clock hour has completed. The current partial hour and hours outside the
+  window are excluded.
+- The Provider exposes hourly buckets only, so peak RPM is an average inside one
+  hour. It cannot represent second-level QPS, bursts inside the hour, or
+  in-flight concurrency; sizing against an account's request-rate limit needs the
+  Target-level aggregate and Provider-side throttling facts, not this per-user
+  value alone.
 - Each candidate also exposes, for display only, its current Directory
   department (external ID, name, and effective display path). It follows the
   admin-users selection rule: the primary department when it is among the current
@@ -410,7 +419,7 @@ The current fingerprint carries separate canonical hashes for:
   facts for historically reviewed Keys.
 
 Credentials, API-Key values, private Account configuration, and raw Provider
-payloads are excluded. Usage, rank, cost, peak TPM, candidate department
+payloads are excluded. Usage, rank, cost, request volume, candidate department
 display, and freshness are advisory and also excluded; refreshing only
 advisory values does not invalidate Confirm.
 
@@ -621,10 +630,11 @@ The mapping list begins Provider Group, relationship, Account, and Directory
 reads concurrently; upstream read count scales with Relay pagination and
 Provider/Platform count, not managed-mapping count. Provider-wide usage that
 feeds only the global Token rank remains advisory and may use a valid Team Usage
-prewarm full hit. Per-candidate Platform-scoped cost, Token totals, and peak TPM
-use the Provider's per-user Group usage and hourly trend reads, add one bounded
-read per candidate inside the existing candidate worker fan-out, and never change
-relationship authority or the fingerprint.
+prewarm full hit. Per-candidate Platform-scoped cost, Token totals, request
+counts, and the peak-hour request rate use the Provider's per-user Group usage
+and hourly trend reads, add one bounded read per candidate inside the existing
+candidate worker fan-out, and never change relationship authority or the
+fingerprint.
 
 All Relay reads/writes remain behind `relay.Provider` capabilities and HTTP.
 There is no direct sub2api database coupling. Fingerprints, persisted state,
