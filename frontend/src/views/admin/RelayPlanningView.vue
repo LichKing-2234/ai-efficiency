@@ -348,6 +348,54 @@ function candidatePeakRPM(row: unknown): string {
   return typeof candidate.rpm_peak === 'number' ? formatTokenCount(candidate.rpm_peak) : '-'
 }
 
+// Candidate table sorting is display-only. Cells that render "-" (unknown 30-day
+// usage, missing peak RPM) sort with a single no-value sentinel so a row never
+// compares against undefined: -1 for numeric columns, '' for text columns.
+// Ascending puts no-value rows first, descending puts them last.
+const CANDIDATE_SORT_NO_VALUE = -1
+
+function candidateSortNumber(value: number | null | undefined, known: boolean): number {
+  return known && typeof value === 'number' ? value : CANDIDATE_SORT_NO_VALUE
+}
+
+function candidateUserSortKey(row: unknown): string {
+  const candidate = row as RelayPlanningCandidate
+  return (candidate.username || candidate.email || '').toLowerCase()
+}
+
+function candidateEmailSortKey(row: unknown): string {
+  const candidate = row as RelayPlanningCandidate
+  return (candidate.email || '').toLowerCase()
+}
+
+function candidateDepartmentSortKey(row: unknown): string {
+  return candidateDepartmentLabel(row).toLowerCase()
+}
+
+function candidateCostSort(a: unknown, b: unknown): number {
+  const left = a as RelayPlanningCandidate
+  const right = b as RelayPlanningCandidate
+  return candidateSortNumber(left.range_cost, left.usage_known !== false) - candidateSortNumber(right.range_cost, right.usage_known !== false)
+}
+
+function candidateTokensSort(a: unknown, b: unknown): number {
+  const left = a as RelayPlanningCandidate
+  const right = b as RelayPlanningCandidate
+  return candidateSortNumber(left.range_tokens, left.usage_known !== false) - candidateSortNumber(right.range_tokens, right.usage_known !== false)
+}
+
+function candidateRequestsSort(a: unknown, b: unknown): number {
+  const left = a as RelayPlanningCandidate
+  const right = b as RelayPlanningCandidate
+  return candidateSortNumber(left.range_requests, left.usage_known === true) - candidateSortNumber(right.range_requests, right.usage_known === true)
+}
+
+function candidateRpmSort(a: unknown, b: unknown): number {
+  const left = a as RelayPlanningCandidate
+  const right = b as RelayPlanningCandidate
+  return candidateSortNumber(left.rpm_peak, true) - candidateSortNumber(right.rpm_peak, true)
+}
+
 function translateMappingStatus(status: string): string {
   if (status === 'needs_retry') return t('relayPlanning.needsRetry')
   if (status === 'active') return t('relayPlanning.active')
@@ -1095,15 +1143,15 @@ onBeforeUnmount(() => {
           </div>
           <el-table v-else data-testid="candidate-table-layout" :data="plan.candidates" stripe>
             <el-table-column :label="t('relayPlanning.select')" width="70"><template #default="scope"><el-checkbox :model-value="selectedUserIDs.has(scope.row.user_id)" :disabled="!scope.row.can_add" @change="(value) => toggleCandidate(scope.row.user_id, value === true)" /></template></el-table-column>
-            <el-table-column prop="username" :label="t('relayPlanning.user')" min-width="140" />
-            <el-table-column prop="email" :label="t('relayPlanning.email')" min-width="190" />
-            <el-table-column :label="t('relayPlanning.candidateDepartment')" min-width="200"><template #default="scope"><span :data-testid="`candidate-department-${scope.row.user_id}`" :title="candidateDepartmentLabel(scope.row)" class="block truncate">{{ candidateDepartmentLabel(scope.row) }}</span></template></el-table-column>
-            <el-table-column prop="range_cost" :label="t('relayPlanning.cost30d')" width="120"><template #default="scope">{{ scope.row.usage_known === false ? t('relayPlanning.unknown') : `$${scope.row.range_cost.toFixed(2)}` }}</template></el-table-column>
-            <el-table-column prop="range_tokens" :label="t('relayPlanning.tokens30d')" width="130"><template #default="scope">{{ scope.row.usage_known === false ? t('relayPlanning.unknown') : scope.row.range_tokens }}</template></el-table-column>
-            <el-table-column prop="range_requests" :label="t('relayPlanning.requests30d')" width="150"><template #default="scope"><span :data-testid="`candidate-requests-${scope.row.user_id}`" class="tabular-nums">{{ candidateRequests(scope.row) }}</span></template></el-table-column>
-            <el-table-column :label="t('relayPlanning.rpmPeak')" width="130"><template #header><el-tooltip :content="t('relayPlanning.rpmPeakHelp')" placement="top"><span class="cursor-help border-b border-dashed border-slate-400">{{ t('relayPlanning.rpmPeak') }}</span></el-tooltip></template><template #default="scope"><span :data-testid="`candidate-rpm-${scope.row.user_id}`" class="tabular-nums">{{ candidatePeakRPM(scope.row) }}</span></template></el-table-column>
-            <el-table-column prop="global_token_rank" :label="t('relayPlanning.globalRank')" width="110" />
-            <el-table-column prop="migratable_key_count" :label="t('relayPlanning.keys')" width="80" />
+            <el-table-column prop="username" :label="t('relayPlanning.user')" min-width="140" sortable :sort-by="candidateUserSortKey" />
+            <el-table-column prop="email" :label="t('relayPlanning.email')" min-width="190" sortable :sort-by="candidateEmailSortKey" />
+            <el-table-column :label="t('relayPlanning.candidateDepartment')" min-width="260" sortable :sort-by="candidateDepartmentSortKey"><template #default="scope"><span :data-testid="`candidate-department-${scope.row.user_id}`" :title="candidateDepartmentLabel(scope.row)" class="block whitespace-normal break-words leading-snug">{{ candidateDepartmentLabel(scope.row) }}</span></template></el-table-column>
+            <el-table-column prop="range_cost" :label="t('relayPlanning.cost30d')" width="150" sortable :sort-method="candidateCostSort"><template #default="scope">{{ scope.row.usage_known === false ? t('relayPlanning.unknown') : `$${scope.row.range_cost.toFixed(2)}` }}</template></el-table-column>
+            <el-table-column prop="range_tokens" :label="t('relayPlanning.tokens30d')" width="150" sortable :sort-method="candidateTokensSort"><template #default="scope">{{ scope.row.usage_known === false ? t('relayPlanning.unknown') : scope.row.range_tokens }}</template></el-table-column>
+            <el-table-column prop="range_requests" :label="t('relayPlanning.requests30d')" width="170" sortable :sort-method="candidateRequestsSort"><template #default="scope"><span :data-testid="`candidate-requests-${scope.row.user_id}`" class="tabular-nums">{{ candidateRequests(scope.row) }}</span></template></el-table-column>
+            <el-table-column :label="t('relayPlanning.rpmPeak')" width="130" sortable :sort-method="candidateRpmSort"><template #header><el-tooltip :content="t('relayPlanning.rpmPeakHelp')" placement="top"><span class="cursor-help border-b border-dashed border-slate-400">{{ t('relayPlanning.rpmPeak') }}</span></el-tooltip></template><template #default="scope"><span :data-testid="`candidate-rpm-${scope.row.user_id}`" class="tabular-nums">{{ candidatePeakRPM(scope.row) }}</span></template></el-table-column>
+            <el-table-column prop="global_token_rank" :label="t('relayPlanning.globalRank')" width="110" sortable />
+            <el-table-column prop="migratable_key_count" :label="t('relayPlanning.keys')" width="80" sortable />
             <el-table-column :label="t('relayPlanning.target')" min-width="170"><template #default="scope"><el-select v-if="scope.row.can_add" :data-testid="`candidate-target-${scope.row.user_id}`" :model-value="candidateAssignmentIndex(scope.row.user_id)" clearable :placeholder="t('relayPlanning.unassigned')" @change="(value) => moveCandidate(scope.row.user_id, value === null || value === undefined || value === '' ? null : Number(value))"><el-option v-for="assignment in plan.assignments" :key="assignment.index" :label="assignment.target_group_name || `${t('relayPlanning.group')} ${assignment.index + 1}`" :value="assignment.index" /></el-select><span v-else class="text-xs text-slate-400">{{ t('relayPlanning.notAvailable') }}</span></template></el-table-column>
             <el-table-column :label="t('relayPlanning.sourceGroup')" min-width="180"><template #default="scope"><span v-if="scope.row.disposition === 'retained'" :data-testid="`candidate-source-${scope.row.user_id}`" class="text-xs text-slate-600">{{ candidateDispositionText(scope.row) }}</span><el-select v-else-if="selectedUserIDs.has(scope.row.user_id)" :data-testid="`candidate-source-${scope.row.user_id}`" :model-value="memberSources[String(scope.row.user_id)] ?? 0" @change="(value) => setMemberSource(scope.row.user_id, Number(value || 0))"><el-option :label="t('relayPlanning.targetOnly')" :value="0" /><el-option v-for="item in groups" :key="item.group_id" :label="`${item.group_name} (#${item.group_id})`" :value="Number(item.group_id)" /></el-select><span v-else>-</span></template></el-table-column>
             <el-table-column :label="t('relayPlanning.status')" min-width="180"><template #default="scope"><el-tag :type="candidateDispositionTag(scope.row)">{{ candidateDispositionText(scope.row) }}</el-tag><div v-if="scope.row.warnings?.length" :data-testid="`candidate-warning-${scope.row.user_id}`" class="mt-1 text-xs text-amber-700">{{ scope.row.warnings.map(translateWarning).join('; ') }}</div></template></el-table-column>
