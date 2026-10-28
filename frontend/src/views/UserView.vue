@@ -190,6 +190,7 @@ const clientSnippets = computed(() => {
 })
 const clientCcSwitchImports = computed(() => {
   if (!showClientSelector.value) return ccSwitchImports.value
+  if (selectedClient.value === 'dsh') return []
   const target = selectedClient.value === 'claude' ? 'claude' : 'codex'
   return ccSwitchImports.value.filter((item) => item.key === target)
 })
