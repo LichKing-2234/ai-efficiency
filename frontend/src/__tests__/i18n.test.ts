@@ -232,8 +232,8 @@ describe('i18n locale loading', () => {
       ...Object.keys(ownerAccountsMessages['zh-CN']),
     ].sort()
 
-    expect(englishKeys).toHaveLength(1510)
-    expect(chineseKeys).toHaveLength(1510)
+    expect(englishKeys).toHaveLength(1515)
+    expect(chineseKeys).toHaveLength(1515)
     expect(englishKeys).toContain('activity.title')
     expect(englishKeys).toContain('pagination.range')
     expect(englishKeys).toContain('pagination.pageOf')

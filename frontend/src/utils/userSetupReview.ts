@@ -443,6 +443,12 @@ export function buildManualConfigSnippets(input: ManualConfigSnippetInput): Manu
         containsSecret: true,
       },
       {
+        key: 'claude-settings',
+        path: '~/.claude/settings.json',
+        body: buildClaudeSettingsSnippet(input.baseUrl, input.apiKey),
+        containsSecret: true,
+      },
+      {
         key: 'dsh-config',
         path: '~/.dsh/profiles/desktop/cordis.patch.yml',
         body: buildDshProviderSnippet(input),
@@ -527,6 +533,10 @@ export function resolveDiscoverToolForPlatform(platform: string): DiscoverTool |
 export function resolveCCSwitchAppsForGroup(platform: string, groupName?: string | null): CCSwitchApp[] {
   if (isAgentAccessGroup(groupName)) {
     return ['hermes', 'openclaw']
+  }
+  if (platform.trim().toLowerCase() === 'composite') {
+    // composite 组同时提供 OpenAI(Codex) 与 Anthropic(Claude Code) 协议
+    return ['codex', 'claude']
   }
   const app = resolveCCSwitchAppForPlatform(platform)
   return app ? [app] : []

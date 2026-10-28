@@ -516,6 +516,7 @@ describe('userSetupReview command builders', () => {
     expect(snippets.map((item) => item.key)).toEqual([
       'codex-config',
       'codex-auth',
+      'claude-settings',
       'dsh-config',
       'dsh-steps',
     ])
