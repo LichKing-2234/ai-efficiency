@@ -5,6 +5,7 @@ export type DiscoverTool = 'codex' | 'claude' | 'gemini'
 export type ManualConfigSnippetKey =
   | 'codex-config'
   | 'codex-auth'
+  | 'codex-env'
   | 'claude-settings'
   | 'gemini-env'
   | 'gemini-reload'
@@ -351,6 +352,40 @@ function buildAgentManualConfigSnippets(input: ManualConfigSnippetInput): Manual
   ]
 }
 
+/** 与 sub2api「使用 API 密钥」面板一致的 Codex 配置（环境变量 + 模型目录） */
+export function buildCompositeCodexConfigSnippet(input: ManualConfigSnippetInput) {
+  const providerId = 'sub2api'
+  const baseUrl = buildAgentProviderBaseUrl(input.baseUrl)
+  const model = input.model?.trim() || resolveOnboardingModels(input)[0] || 'deepseek-v4-pro'
+  return [
+    `# Codex CLI -> Sub2API Composite group`,
+    `model_provider = ${tomlString(providerId)}`,
+    `model = ${tomlString(model)}`,
+    `review_model = ${tomlString(model)}`,
+    `disable_response_storage = true`,
+    ``,
+    `[model_providers.${tomlTableKey(providerId)}]`,
+    `name = "Sub2API Composite"`,
+    `base_url = ${tomlString(baseUrl)}`,
+    `model_catalog_url = ${tomlString(baseUrl + '/models')}`,
+    `env_key = "SUB2API_API_KEY"`,
+    `wire_api = "responses"`,
+    `requires_openai_auth = false`,
+    `supports_websockets = false`,
+  ].join('\n')
+}
+
+/** Codex 通过环境变量取密钥，不再需要 auth.json */
+export function buildCodexEnvSnippet(apiKey: string) {
+  return [
+    `# macOS / Linux`,
+    `export SUB2API_API_KEY="${apiKey}"`,
+    ``,
+    `# Windows PowerShell`,
+    `$env:SUB2API_API_KEY="${apiKey}"`,
+  ].join('\n')
+}
+
 const DSH_API_KEY_ENV = 'SUB2API_API_KEY'
 
 export function resolveOnboardingModels(input: ManualConfigSnippetInput): string[] {
@@ -433,13 +468,13 @@ export function buildManualConfigSnippets(input: ManualConfigSnippetInput): Manu
       {
         key: 'codex-config',
         path: '~/.codex/config.toml',
-        body: buildCodexConfigSnippet(input.providerName, buildAgentProviderBaseUrl(input.baseUrl), input.model),
+        body: buildCompositeCodexConfigSnippet(input),
         containsSecret: false,
       },
       {
-        key: 'codex-auth',
-        path: '~/.codex/auth.json',
-        body: buildCodexAuthSnippet(input.apiKey),
+        key: 'codex-env',
+        path: '终端环境变量',
+        body: buildCodexEnvSnippet(input.apiKey),
         containsSecret: true,
       },
       {

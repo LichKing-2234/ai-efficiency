@@ -487,6 +487,7 @@ const zhCN = {
   'user.manualConfigCustomAgentJson': '自定义 Agent JSON',
   'user.manualConfigDshConfig': 'DSH 配置文件（cordis.patch.yml）',
   'user.manualConfigDshSteps': 'DSH 界面配置步骤',
+  'user.manualConfigCodexEnv': 'API Key 环境变量',
   'user.selectClientTitle': '选择你要接入的客户端',
   'user.clientCodex': 'Codex',
   'user.clientClaudeCode': 'Claude Code',

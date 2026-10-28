@@ -515,7 +515,7 @@ describe('userSetupReview command builders', () => {
     })
     expect(snippets.map((item) => item.key)).toEqual([
       'codex-config',
-      'codex-auth',
+      'codex-env',
       'claude-settings',
       'dsh-config',
       'dsh-steps',
@@ -525,6 +525,14 @@ describe('userSetupReview command builders', () => {
     expect(codex.body).toContain('base_url = "https://sub2api.agoralab.co/v1"')
     expect(codex.body).toContain('wire_api = "responses"')
     expect(codex.body).toContain('model = "deepseek-v4-pro"')
+    expect(codex.body).toContain('model_catalog_url = "https://sub2api.agoralab.co/v1/models"')
+    expect(codex.body).toContain('env_key = "SUB2API_API_KEY"')
+    expect(codex.body).toContain('requires_openai_auth = false')
+
+    const env = snippets.find((item) => item.key === 'codex-env')!
+    expect(env.body).toContain('export SUB2API_API_KEY="sk-test"')
+    expect(env.body).toContain('$env:SUB2API_API_KEY="sk-test"')
+    expect(snippets.some((item) => item.key === 'codex-auth')).toBe(false)
 
     const dsh = snippets.find((item) => item.key === 'dsh-config')!
     expect(dsh.body).toContain('apiKeyEnv: SUB2API_API_KEY')

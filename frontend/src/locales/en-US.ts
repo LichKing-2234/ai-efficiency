@@ -490,6 +490,7 @@ const enUS = {
   'user.manualConfigCustomAgentJson': 'Custom Agent JSON',
   'user.manualConfigDshConfig': 'DSH config (cordis.patch.yml)',
   'user.manualConfigDshSteps': 'DSH UI setup steps',
+  'user.manualConfigCodexEnv': 'API key environment variable',
   'user.selectClientTitle': 'Choose the client you are connecting',
   'user.clientCodex': 'Codex',
   'user.clientClaudeCode': 'Claude Code',

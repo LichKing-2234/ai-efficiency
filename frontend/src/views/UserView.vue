@@ -323,6 +323,8 @@ function manualConfigSnippetTitle(snippet: ManualConfigSnippet) {
       return t('user.manualConfigCodexConfig')
     case 'codex-auth':
       return t('user.manualConfigCodexAuth')
+    case 'codex-env':
+      return t('user.manualConfigCodexEnv')
     case 'claude-settings':
       return t('user.manualConfigClaudeSettings')
     case 'gemini-env':
