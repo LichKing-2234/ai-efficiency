@@ -939,14 +939,23 @@ onBeforeUnmount(() => {
                           {{ manualConfigCopyLabel(snippet) }}
                         </ElButton>
                       </div>
-                      <ol v-if="snippet.render === 'steps'" class="mt-3 space-y-3">
-                        <li v-for="(step, index) in manualConfigSteps(snippet)" :key="index">
-                          <div class="text-sm font-medium text-slate-900">{{ step.title }}</div>
-                          <div
-                            v-for="(line, lineIndex) in step.lines"
-                            :key="lineIndex"
-                            class="mt-1 whitespace-pre-wrap break-all font-mono text-xs text-slate-600"
-                          >{{ line }}</div>
+                      <ol v-if="snippet.render === 'steps'" class="mt-3 space-y-4">
+                        <li
+                          v-for="(step, index) in manualConfigSteps(snippet)"
+                          :key="index"
+                          class="flex gap-3"
+                        >
+                          <span class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-semibold text-blue-600">
+                            {{ index + 1 }}
+                          </span>
+                          <div class="min-w-0">
+                            <div class="text-sm font-medium text-slate-900">{{ step.title }}</div>
+                            <div
+                              v-for="(line, lineIndex) in step.lines"
+                              :key="lineIndex"
+                              class="mt-1 whitespace-pre-wrap break-all font-mono text-xs text-slate-600"
+                            >{{ line }}</div>
+                          </div>
                         </li>
                       </ol>
                       <pre v-else class="mt-3 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ snippet.body }}</pre>
