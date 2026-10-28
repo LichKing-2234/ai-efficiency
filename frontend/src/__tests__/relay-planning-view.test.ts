@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { ElDialog, ElMessage, ElMessageBox } from 'element-plus'
+import { ElDialog, ElMessage, ElMessageBox, ElTooltip } from 'element-plus'
 import RelayPlanningView from '@/views/admin/RelayPlanningView.vue'
 
 vi.mock('@/api/adminUsers', () => ({
@@ -64,6 +64,7 @@ const plan = {
 	assignments: [{
     index: 0,
     total_cost: 1200,
+    peak_rpm_sum: 1500,
     user_ids: [1],
     target_group_name: 'SDK Framework-openai-01',
 		desired_accounts: [{ account_id: 11, priority: 1 }],
@@ -711,6 +712,41 @@ describe('RelayPlanningView', () => {
 		await rpmHeader.trigger('click')
 		await flushPromises()
 		expect(rowUsernames()).toEqual(['alice', 'bob'])
+	})
+
+	it('shows each suggested group\'s peak RPM sum next to its 30-day cost total', async () => {
+		const { wrapper, relayPlanning } = await mountView([], true)
+		const rpmPlan = structuredClone(plan) as any
+		const baseCandidate = structuredClone(plan.candidates[0])
+		rpmPlan.candidates = [
+			{ ...structuredClone(baseCandidate), user_id: 1, relay_user_id: 101, rpm_peak: 120 },
+			{ ...structuredClone(baseCandidate), user_id: 2, relay_user_id: 102, username: 'bob', email: 'bob@example.org', rpm_peak: 180 },
+		]
+		rpmPlan.assignments = [
+			{ ...structuredClone(plan.assignments[0]), index: 0, user_ids: [1, 2], peak_rpm_sum: 300 },
+			{
+				...structuredClone(plan.assignments[0]),
+				index: 1,
+				user_ids: [],
+				peak_rpm_sum: 0,
+				target_group_name: 'SDK Framework-openai-02',
+				target_group_id: 102,
+			},
+		]
+		relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: rpmPlan } })
+
+		await fillAndPreview(wrapper)
+
+		// 120 + 180 for the first Target; the empty Target still renders 0 instead of hiding the metric.
+		expect(wrapper.get('[data-testid="suggested-rpm-sum-0"]').text()).toBe('Peak RPM sum 300')
+		expect(wrapper.get('[data-testid="suggested-rpm-sum-1"]').text()).toBe('Peak RPM sum 0')
+		expect(wrapper.get('[data-testid="suggested-group-0"]').text()).toContain('$2400.00')
+		expect(wrapper.get('[data-testid="suggested-group-1"]').text()).toContain('$0.00')
+
+		const rpmSumTooltip = wrapper
+			.findAllComponents(ElTooltip)
+			.find((tooltip) => tooltip.find('[data-testid="suggested-rpm-sum-0"]').exists())
+		expect(rpmSumTooltip?.props('content')).toContain('upper-bound reference')
 	})
 
 	it('localizes multi-Account and reused-Account mapping warnings', async () => {

@@ -122,6 +122,10 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
   function recalculateAssignments() {
     if (!plan.value) return
     const costs = new Map(plan.value.candidates.map((candidate) => [candidate.user_id, candidate.range_cost]))
+    const peakRPMs = new Map(plan.value.candidates.map((candidate) => [
+      candidate.user_id,
+      typeof candidate.rpm_peak === 'number' ? candidate.rpm_peak : 0,
+    ]))
     const unmanagedCosts = new Map<number, number>()
     for (const member of plan.value.unmanaged_members ?? []) {
       for (const groupID of member.target_group_ids ?? []) {
@@ -132,6 +136,8 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
       assignment.user_ids = [...new Set(assignment.user_ids ?? [])]
       assignment.total_cost = assignment.user_ids.reduce((total, userID) => total + (costs.get(userID) ?? 0), 0)
         + (unmanagedCosts.get(assignment.target_group_id ?? 0) ?? 0)
+      // Advisory upper bound: sum of assigned members' peak RPM; members without peak data are excluded.
+      assignment.peak_rpm_sum = assignment.user_ids.reduce((total, userID) => total + (peakRPMs.get(userID) ?? 0), 0)
     }
     selectedUserIDs.value = new Set(plan.value.assignments.flatMap((assignment) => assignment.user_ids))
   }
@@ -181,6 +187,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     return (plan.value?.assignments ?? []).map((assignment) => ({
       index: assignment.index,
       total_cost: assignment.total_cost,
+      peak_rpm_sum: assignment.peak_rpm_sum,
       user_ids: [...(assignment.user_ids ?? [])],
       target_group_id: assignment.target_group_id,
       target_group_name: assignment.target_group_name,
@@ -396,6 +403,7 @@ export function useRelayPlanningWorkflow(options: RelayPlanningWorkflowOptions) 
     plan.value.assignments.push({
       index,
       total_cost: 0,
+      peak_rpm_sum: 0,
       user_ids: [],
       target_group_name: '',
       desired_accounts: accounts.map((account, accountIndex) => ({

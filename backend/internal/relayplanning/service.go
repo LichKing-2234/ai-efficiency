@@ -245,8 +245,13 @@ type CandidateDepartment struct {
 const peakHourWindowDays = 7
 
 type Assignment struct {
-	Index                    int             `json:"index"`
-	TotalCost                float64         `json:"total_cost"`
+	Index     int     `json:"index"`
+	TotalCost float64 `json:"total_cost"`
+	// PeakRpmSum is the sum of the assigned members' advisory rpm_peak: their
+	// per-minute average across the busiest completed UTC clock hour of the
+	// trailing 7 days. Display-only; never part of the relationship
+	// fingerprint. Members without a known peak contribute nothing.
+	PeakRpmSum               int64           `json:"peak_rpm_sum"`
 	UserIDs                  []int           `json:"user_ids"`
 	TargetGroupID            int64           `json:"target_group_id,omitempty"`
 	TargetUnavailable        bool            `json:"target_unavailable,omitempty"`
@@ -986,6 +991,10 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	}
 	warnings = append(warnings, replanRosterWarnings(replanBlockers)...)
 	warnings = append(warnings, replanUnavailableTargetWarnings(unavailableTargetGroupIDs)...)
+	// Both the greedy plan and the replan/validated-assignment paths converge
+	// here, so the advisory per-group request rate is aggregated once on the
+	// final assignment set with no additional Relay reads.
+	applyAssignmentPeakRpmSums(assignments, candidates)
 	plan := &Plan{
 		ProviderID: req.ProviderID, DepartmentID: req.DepartmentID, Platform: req.Platform,
 		TemplateGroupID: template.ID, TemplateGroupName: template.Name,
@@ -1044,6 +1053,29 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 	}
 	plan.TargetSummaries = buildTargetChangeSummaries(req, plan)
 	return plan, nil
+}
+
+// applyAssignmentPeakRpmSums fills each assignment's display-only aggregate of
+// its members' advisory rpm_peak values. Members whose peak is unknown
+// (unsupported trend capability, read failure, or no completed hour) and user
+// IDs that are not candidates contribute nothing to the sum; a missing peak is
+// never a planning failure. It reads only in-memory candidate data.
+func applyAssignmentPeakRpmSums(assignments []Assignment, candidates []Candidate) {
+	peakByUserID := make(map[int]*int64, len(candidates))
+	for index := range candidates {
+		if candidates[index].RpmPeak != nil {
+			peakByUserID[candidates[index].UserID] = candidates[index].RpmPeak
+		}
+	}
+	for index := range assignments {
+		var sum int64
+		for _, userID := range assignments[index].UserIDs {
+			if peak := peakByUserID[userID]; peak != nil {
+				sum += *peak
+			}
+		}
+		assignments[index].PeakRpmSum = sum
+	}
 }
 
 func assignCandidateDispositions(mapping *ent.RelayGroupMapping, candidates []Candidate, assignments []Assignment) {

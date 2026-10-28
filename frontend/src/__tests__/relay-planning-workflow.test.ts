@@ -47,6 +47,7 @@ function reviewedPlan(overrides: Partial<RelayPlanningPlan> = {}): RelayPlanning
     assignments: [{
       index: 0,
       total_cost: 1200,
+      peak_rpm_sum: 20,
       user_ids: [1],
       target_group_name: 'Department Alpha-openai-01',
       desired_accounts: [{ account_id: 11, priority: 1 }],

@@ -130,6 +130,12 @@ Relay relationship authority.
   are omitted when the Provider cannot supply hourly points, the read fails, or
   no clock hour has completed. The current partial hour and hours outside the
   window are excluded.
+- Each planned Assignment also carries `peak_rpm_sum`, the sum of its members'
+  advisory `rpm_peak`, so an administrator can compare a Target's request
+  pressure with the account's request-rate limit without adding up rows by hand.
+  Members without peak data contribute nothing, and member peaks may not
+  coincide, so the sum is an upper-bound reference rather than a measured
+  concurrency.
 - The Provider exposes hourly buckets only, so peak RPM is an average inside one
   hour. It cannot represent second-level QPS, bursts inside the hour, or
   in-flight concurrency; sizing against an account's request-rate limit needs the

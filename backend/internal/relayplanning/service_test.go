@@ -643,7 +643,7 @@ func TestAllocateSerializesEmptyGroupsAsEmptyUserLists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal assignments: %v", err)
 	}
-	if string(got) != `[{"index":0,"total_cost":0,"user_ids":[]},{"index":1,"total_cost":0,"user_ids":[]}]` {
+	if string(got) != `[{"index":0,"total_cost":0,"peak_rpm_sum":0,"user_ids":[]},{"index":1,"total_cost":0,"peak_rpm_sum":0,"user_ids":[]}]` {
 		t.Fatalf("assignments JSON = %s, want empty user arrays", got)
 	}
 }
@@ -1897,7 +1897,43 @@ func TestPreviewProjectsDepartmentAndPlatformScopedUsageWithPeakRequests(t *test
 	if candidate.RpmPeak == nil || *candidate.RpmPeak != 50 {
 		t.Fatalf("candidate peak RPM = %#v, want 50 from 3000 requests in one completed hour", candidate.RpmPeak)
 	}
+	if len(preview.Assignments) != 1 {
+		t.Fatalf("preview assignments = %d, want 1", len(preview.Assignments))
+	}
+	assignment := preview.Assignments[0]
+	var wantPeakRpmSum int64
+	for _, userID := range assignment.UserIDs {
+		if userID == candidate.UserID && candidate.RpmPeak != nil {
+			wantPeakRpmSum += *candidate.RpmPeak
+		}
+	}
+	if assignment.PeakRpmSum != wantPeakRpmSum {
+		t.Fatalf("assignment peak rpm sum = %d, want %d from its assigned candidates", assignment.PeakRpmSum, wantPeakRpmSum)
+	}
+	if assignment.PeakRpmSum != 50 {
+		t.Fatalf("assignment peak rpm sum = %d, want 50 from the single assigned candidate", assignment.PeakRpmSum)
+	}
 	if fake.groupCalls != 1 || fake.trendCalls != 1 {
-		t.Fatalf("provider calls = %d group / %d trend, want 1/1", fake.groupCalls, fake.trendCalls)
+		t.Fatalf("provider calls = %d group / %d trend, want 1/1 (aggregation must add no Relay reads)", fake.groupCalls, fake.trendCalls)
+	}
+}
+
+func TestApplyAssignmentPeakRpmSumsAggregatesAssignedCandidates(t *testing.T) {
+	rpm120, rpm180 := int64(120), int64(180)
+	candidates := []Candidate{
+		{UserID: 1, RpmPeak: &rpm120},
+		{UserID: 2, RpmPeak: &rpm180},
+		{UserID: 3}, // peak unknown: contributes nothing, must not panic
+	}
+	assignments := []Assignment{
+		{Index: 0, UserIDs: []int{1, 2}},
+		{Index: 1, UserIDs: []int{3, 999}}, // unknown peak and non-candidate user
+	}
+	applyAssignmentPeakRpmSums(assignments, candidates)
+	if assignments[0].PeakRpmSum != 300 {
+		t.Fatalf("assignment 0 peak rpm sum = %d, want 300 from candidates 120+180", assignments[0].PeakRpmSum)
+	}
+	if assignments[1].PeakRpmSum != 0 {
+		t.Fatalf("assignment 1 peak rpm sum = %d, want 0 when peaks are unknown or not candidates", assignments[1].PeakRpmSum)
 	}
 }

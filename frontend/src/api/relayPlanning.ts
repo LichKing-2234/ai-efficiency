@@ -35,6 +35,8 @@ export interface RelayPlanningCandidate {
 export interface RelayPlanningAssignment {
   index: number
   total_cost: number
+  /** Sum of the assigned candidates' advisory peak RPM; members without peak data are excluded. */
+  peak_rpm_sum: number
   user_ids: number[]
   target_group_id?: number
   target_unavailable?: boolean
