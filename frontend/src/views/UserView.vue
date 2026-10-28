@@ -279,6 +279,23 @@ function buildSelectedManualConfigSnippets(apiKey: string) {
   })
 }
 
+function manualConfigSteps(snippet: ManualConfigSnippet) {
+  const steps: { title: string; lines: string[] }[] = []
+  for (const raw of snippet.body.split('\n')) {
+    const line = raw.replace(/\s+$/, '')
+    if (!line.trim()) continue
+    const match = line.match(/^\s*(\d+)\.\s+(.*)$/)
+    if (match) {
+      steps.push({ title: match[2], lines: [] })
+    } else if (steps.length > 0) {
+      steps[steps.length - 1].lines.push(line.trim())
+    } else {
+      steps.push({ title: line.trim(), lines: [] })
+    }
+  }
+  return steps
+}
+
 function manualConfigSnippetTitle(snippet: ManualConfigSnippet) {
   switch (snippet.key) {
     case 'codex-config':
@@ -909,9 +926,10 @@ onBeforeUnmount(() => {
                       <div class="flex flex-wrap items-start justify-between gap-3">
                         <div class="min-w-0">
                           <div class="font-medium text-slate-900">{{ manualConfigSnippetTitle(snippet) }}</div>
-                          <div class="mt-1 break-all font-mono text-xs text-slate-500">{{ snippet.path }}</div>
+                          <div v-if="snippet.path" class="mt-1 break-all font-mono text-xs text-slate-500">{{ snippet.path }}</div>
                         </div>
                         <ElButton
+                          v-if="snippet.render !== 'steps'"
                           class="shrink-0"
                           link
                           type="primary"
@@ -921,7 +939,17 @@ onBeforeUnmount(() => {
                           {{ manualConfigCopyLabel(snippet) }}
                         </ElButton>
                       </div>
-                      <pre class="mt-3 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ snippet.body }}</pre>
+                      <ol v-if="snippet.render === 'steps'" class="mt-3 space-y-3">
+                        <li v-for="(step, index) in manualConfigSteps(snippet)" :key="index">
+                          <div class="text-sm font-medium text-slate-900">{{ step.title }}</div>
+                          <div
+                            v-for="(line, lineIndex) in step.lines"
+                            :key="lineIndex"
+                            class="mt-1 whitespace-pre-wrap break-all font-mono text-xs text-slate-600"
+                          >{{ line }}</div>
+                        </li>
+                      </ol>
+                      <pre v-else class="mt-3 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ snippet.body }}</pre>
                     </div>
                     <div v-if="pendingManualConfigSnippet">
                       <ElAlert

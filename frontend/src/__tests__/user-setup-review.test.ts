@@ -533,6 +533,9 @@ describe('userSetupReview command builders', () => {
     expect(dsh.body).toContain('- id: deepseek-v4-pro')
 
     const steps = snippets.find((item) => item.key === 'dsh-steps')!
+    expect(steps.render).toBe('steps')
+    expect(steps.path).toBe('')
+    expect(snippets.filter((item) => item.render === 'steps')).toHaveLength(1)
     expect(steps.body).toContain('npx @deepseek-ai/dsh web')
     expect(steps.body).toContain('获取可用模型')
     expect(steps.body).toContain('sk-test')

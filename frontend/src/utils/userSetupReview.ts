@@ -21,6 +21,8 @@ export type ManualConfigSnippet = {
   path: string
   body: string
   containsSecret: boolean
+  /** code: 可复制的配置片段；steps: 供人阅读的操作步骤，不提供复制 */
+  render?: 'code' | 'steps'
 }
 
 export type ManualConfigSnippetInput = {
@@ -449,9 +451,10 @@ export function buildManualConfigSnippets(input: ManualConfigSnippetInput): Manu
       },
       {
         key: 'dsh-steps',
-        path: 'DSH 界面配置步骤',
+        path: '',
         body: buildDshStepsSnippet(input),
         containsSecret: true,
+        render: 'steps',
       },
     ]
   }
