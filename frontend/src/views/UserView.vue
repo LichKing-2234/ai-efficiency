@@ -279,6 +279,20 @@ function buildSelectedManualConfigSnippets(apiKey: string) {
   })
 }
 
+function manualConfigLinkSegments(text: string) {
+  const segments: { text: string; href?: string }[] = []
+  const pattern = /(https?:\/\/[^\s]+)/g
+  let lastIndex = 0
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index ?? 0
+    if (index > lastIndex) segments.push({ text: text.slice(lastIndex, index) })
+    segments.push({ text: match[0], href: match[0] })
+    lastIndex = index + match[0].length
+  }
+  if (lastIndex < text.length) segments.push({ text: text.slice(lastIndex) })
+  return segments
+}
+
 function manualConfigSteps(snippet: ManualConfigSnippet) {
   const steps: { title: string; lines: string[] }[] = []
   for (const raw of snippet.body.split('\n')) {
@@ -949,12 +963,34 @@ onBeforeUnmount(() => {
                             {{ index + 1 }}
                           </span>
                           <div class="min-w-0">
-                            <div class="text-sm font-medium text-slate-900">{{ step.title }}</div>
+                            <div class="text-sm font-medium text-slate-900">
+                              <template v-for="(segment, segmentIndex) in manualConfigLinkSegments(step.title)" :key="segmentIndex">
+                                <a
+                                  v-if="segment.href"
+                                  :href="segment.href"
+                                  target="_blank"
+                                  rel="noreferrer noopener"
+                                  class="text-blue-600 underline"
+                                >{{ segment.text }}</a>
+                                <template v-else>{{ segment.text }}</template>
+                              </template>
+                            </div>
                             <div
                               v-for="(line, lineIndex) in step.lines"
                               :key="lineIndex"
                               class="mt-1 whitespace-pre-wrap break-all font-mono text-xs text-slate-600"
-                            >{{ line }}</div>
+                            >
+                              <template v-for="(segment, segmentIndex) in manualConfigLinkSegments(line)" :key="segmentIndex">
+                                <a
+                                  v-if="segment.href"
+                                  :href="segment.href"
+                                  target="_blank"
+                                  rel="noreferrer noopener"
+                                  class="text-blue-600 underline"
+                                >{{ segment.text }}</a>
+                                <template v-else>{{ segment.text }}</template>
+                              </template>
+                            </div>
                           </div>
                         </li>
                       </ol>

@@ -408,16 +408,16 @@ export function buildDshStepsSnippet(input: ManualConfigSnippetInput) {
   const models = resolveOnboardingModels(input)
   const modelHint = models.length > 0 ? models.join(' / ') : 'deepseek-v4-pro / deepseek-flash'
   return [
-    `1. 安装并启动 DSH（已安装可跳过）`,
+    `1. 安装并启动 DSH（已安装可跳过）。官方安装说明：https://deepseek-harness.github.io/deepseek-harness/guide/quickstart`,
     `   npx @deepseek-ai/dsh web`,
     ``,
-    `2. 打开 DSH 设置 → 模型供应商 → 添加自定义供应商`,
+    `2. 打开 DSH 设置 → 模型供应商 → 添加自定义供应商。官方配置说明：https://deepseek-harness.github.io/deepseek-harness/guide/providers`,
     `   名称:     ${input.providerName.trim() || 'Sub2API'}`,
     `   Base URL: ${baseUrl}`,
     `   API Key:  ${input.apiKey}`,
     `   协议:     openai-completions`,
     ``,
-    `3. 点击「获取可用模型」，从列表中选择（不要手动输入）`,
+    `3. 点击「获取可用模型」，从列表中选择（不要手动输入；探测失败时也可手动填写模型 ID）`,
     `   可选模型: ${modelHint}`,
     ``,
     `4. 新建会话，在模型选择器里选中 ${modelHint.split(' / ')[0]}`,
