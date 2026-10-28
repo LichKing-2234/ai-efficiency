@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import ReportingReadinessGuide from '@/components/activity/ReportingReadinessGuide.vue'
 import { createGroupCredential, getUserProviderModels, getUserProviders, regenerateGroupCredential, testUserProvider } from '@/api/user'
@@ -193,6 +193,11 @@ const clientCcSwitchImports = computed(() => {
   if (selectedClient.value === 'dsh') return []
   const target = selectedClient.value === 'claude' ? 'claude' : 'codex'
   return ccSwitchImports.value.filter((item) => item.key === target)
+})
+watch(clientCcSwitchImports, (imports) => {
+  if (selectedConfigMethod.value === 'ccswitch' && imports.length === 0) {
+    setConfigMethod('manual')
+  }
 })
 
 function credentialStatusLabel(state: string) {
@@ -928,15 +933,7 @@ onBeforeUnmount(() => {
                     <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ t('user.manualConfigApiKey') }}</dt>
                     <dd class="text-xs text-slate-900">{{ t('user.manualConfigApiKeyHelp') }}</dd>
                   </dl>
-                  <div v-if="selectedProvider" class="mt-3 text-xs">
-                    <ElLink
-                      :href="`${selectedProvider.base_url.replace(/\/+$/, '')}/keys`"
-                      target="_blank"
-                      type="primary"
-                    >
-                      {{ t('user.openSub2apiKeys') }}
-                    </ElLink>
-                  </div>
+
                   <div v-if="manualConfigDisplaySnippets.length > 0" class="mt-4 space-y-3">
                     <div
                       v-for="snippet in clientSnippets"
