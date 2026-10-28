@@ -537,6 +537,17 @@ type TeamUserUsageStats struct {
 	RangeTotalTokens *int64   `json:"range_total_tokens,omitempty"`
 }
 
+// GroupUsageStat is one Relay Group's usage row for a single Relay user over
+// one explicit window.
+type GroupUsageStat struct {
+	GroupID     int64   `json:"group_id"`
+	GroupName   string  `json:"group_name"`
+	Requests    int64   `json:"requests"`
+	TotalTokens int64   `json:"total_tokens"`
+	Cost        float64 `json:"cost"`
+	ActualCost  float64 `json:"actual_cost"`
+}
+
 type TeamUsageSummaryParams struct {
 	StartDate            string `json:"start_date"`
 	EndDate              string `json:"end_date"`

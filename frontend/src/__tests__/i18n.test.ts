@@ -232,8 +232,8 @@ describe('i18n locale loading', () => {
       ...Object.keys(ownerAccountsMessages['zh-CN']),
     ].sort()
 
-    expect(englishKeys).toHaveLength(1510)
-    expect(chineseKeys).toHaveLength(1510)
+    expect(englishKeys).toHaveLength(1514)
+    expect(chineseKeys).toHaveLength(1514)
     expect(englishKeys).toContain('activity.title')
     expect(englishKeys).toContain('pagination.range')
     expect(englishKeys).toContain('pagination.pageOf')
@@ -246,6 +246,10 @@ describe('i18n locale loading', () => {
     expect(englishKeys).toContain('quotaReset.subscriptionLimitRequired')
     expect(englishKeys).toContain('relayPlanning.addSuggestedGroup')
     expect(englishKeys).toContain('relayPlanning.removeSuggestedGroup')
+    expect(englishKeys).toContain('relayPlanning.candidateDepartment')
+    expect(englishKeys).toContain('relayPlanning.candidateDepartmentUnknown')
+    expect(englishKeys).toContain('relayPlanning.tpmPeak')
+    expect(englishKeys).toContain('relayPlanning.tpmPeakHelp')
     expect(englishKeys).toContain('opsMonitoring.title')
     expect(englishKeys).toContain('opsMonitoring.failedGroups')
     expect(englishKeys).toContain('opsMonitoring.refreshEgressIp')

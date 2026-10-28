@@ -1,14 +1,22 @@
 import client from './client'
 import type { ApiResponse } from '@/types'
 
+export interface RelayPlanningCandidateDepartment {
+  external_id: string
+  name: string
+  display_path: string
+}
+
 export interface RelayPlanningCandidate {
   user_id: number
   relay_user_id: number
   username: string
   email: string
+  department?: RelayPlanningCandidateDepartment
   range_cost: number
   range_tokens: number
   usage_known: boolean
+  tpm_peak?: number | null
   global_token_rank: number
   current_group_ids?: number[]
   migratable_key_count: number
@@ -281,7 +289,7 @@ export interface RelayPlanningUserSearchItem {
   relay_user_id?: number
   username: string
   email: string
-  department?: { external_id: string; name: string; display_path: string }
+  department?: RelayPlanningCandidateDepartment
   selectable: boolean
   disabled_reason?: string
 	managed_assignments?: Array<{ mapping_id: number; department_id: string; department_name: string; target_group_id: number }>

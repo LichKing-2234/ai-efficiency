@@ -230,6 +230,19 @@ type TeamMemberTrendProvider interface {
 	GetUsageTrendForUsers(ctx context.Context, relayUserIDs []int64, params TeamMemberTrendParams) (map[int64][]UsageTrendPoint, error)
 }
 
+// TeamUserGroupUsageProvider exposes one user's usage split by Relay Group
+// over one explicit window.
+type TeamUserGroupUsageProvider interface {
+	GetUserGroupUsage(ctx context.Context, relayUserID int64, params TeamUsageSummaryParams) ([]GroupUsageStat, error)
+}
+
+// TeamUserTrendProvider exposes one user's usage trend points for one explicit
+// window. Hour granularity returns clock-hour labels ("YYYY-MM-DD HH:MM"); day
+// granularity returns "YYYY-MM-DD".
+type TeamUserTrendProvider interface {
+	GetUserUsageTrend(ctx context.Context, relayUserID int64, params TeamMemberTrendParams) ([]UsageTrendPoint, error)
+}
+
 // ProviderWideTeamUsageProvider exposes bounded provider-wide roster and
 // current-usage sources without changing the generic user-directory contract.
 type ProviderWideTeamUsageProvider interface {

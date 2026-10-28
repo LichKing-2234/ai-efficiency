@@ -197,24 +197,28 @@ type UserSearchPage struct {
 }
 
 type Candidate struct {
-	UserID                      int      `json:"user_id"`
-	RelayUserID                 int64    `json:"relay_user_id"`
-	Username                    string   `json:"username"`
-	Email                       string   `json:"email"`
-	RangeCost                   float64  `json:"range_cost"`
-	RangeTokens                 int64    `json:"range_tokens"`
-	UsageKnown                  bool     `json:"usage_known"`
-	GlobalTokenRank             int      `json:"global_token_rank"`
-	CurrentGroupIDs             []int64  `json:"current_group_ids,omitempty"`
-	MigratableKeyCount          int      `json:"migratable_key_count"`
-	SourceMember                bool     `json:"source_member"`
-	SourceGroupID               int64    `json:"source_group_id,omitempty"`
-	CanAdd                      bool     `json:"can_add"`
-	Selected                    bool     `json:"selected"`
-	Eligible                    bool     `json:"eligible"`
-	CanRetain                   bool     `json:"can_retain"`
-	Disposition                 string   `json:"disposition"`
-	Warnings                    []string `json:"warnings,omitempty"`
+	UserID      int     `json:"user_id"`
+	RelayUserID int64   `json:"relay_user_id"`
+	Username    string  `json:"username"`
+	Email       string  `json:"email"`
+	RangeCost   float64 `json:"range_cost"`
+	RangeTokens int64   `json:"range_tokens"`
+	UsageKnown  bool    `json:"usage_known"`
+	TpmPeak     *int64  `json:"tpm_peak,omitempty"`
+	// Department is the current directory department chosen for display. It is
+	// display-only and never part of the confirmation relationship fingerprint.
+	Department                  *CandidateDepartment `json:"department,omitempty"`
+	GlobalTokenRank             int                  `json:"global_token_rank"`
+	CurrentGroupIDs             []int64              `json:"current_group_ids,omitempty"`
+	MigratableKeyCount          int                  `json:"migratable_key_count"`
+	SourceMember                bool                 `json:"source_member"`
+	SourceGroupID               int64                `json:"source_group_id,omitempty"`
+	CanAdd                      bool                 `json:"can_add"`
+	Selected                    bool                 `json:"selected"`
+	Eligible                    bool                 `json:"eligible"`
+	CanRetain                   bool                 `json:"can_retain"`
+	Disposition                 string               `json:"disposition"`
+	Warnings                    []string             `json:"warnings,omitempty"`
 	relationshipSubscriptions   []relationshipSubscriptionFact
 	relationshipAPIKeys         []relationshipAPIKeyFact
 	relationshipObservedAPIKeys []relationshipAPIKeyFact
@@ -222,6 +226,17 @@ type Candidate struct {
 	relationshipKeyErr          error
 	replanUnavailableReason     replanRosterUnavailableReason
 }
+
+// CandidateDepartment is the display-only department projection of one
+// candidate, resolved from the current directory snapshot.
+type CandidateDepartment struct {
+	ExternalID  string `json:"external_id"`
+	Name        string `json:"name"`
+	DisplayPath string `json:"display_path"`
+}
+
+// tpmWindowDays is the trailing window used for the advisory peak-TPM metric.
+const tpmWindowDays = 7
 
 type Assignment struct {
 	Index                    int             `json:"index"`
@@ -888,7 +903,7 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		if err != nil {
 			return nil, fmt.Errorf("load pending relay planning targets: %w", err)
 		}
-		unmanagedMembers, err = s.loadUnmanagedMembers(ctx, p, facts, providerConfig.ConfigurationVersion, mapping)
+		unmanagedMembers, err = s.loadUnmanagedMembers(ctx, p, facts, providerConfig.ConfigurationVersion, mapping, platformGroupIDSet(groups, req.Platform), s.currentTime())
 		if err != nil {
 			return nil, fmt.Errorf("load unmanaged relay members: %w", err)
 		}
@@ -5353,6 +5368,13 @@ func validateMemberSourceGroups(memberSources map[string]int64, groups []relay.G
 }
 
 func (s *Service) buildCandidates(ctx context.Context, p relay.Provider, requestFacts *planningRequestFacts, providerID int, providerVersion int64, users []*ent.User, source relay.Group, groups []relay.Group, memberSources map[string]int64, platform, departmentID string) ([]Candidate, error) {
+	// Resolve every candidate's display department in one candidate-bounded
+	// read. Membership warnings stay on the exact effective-hierarchy
+	// computation, so dangling memberships keep warning exactly as before.
+	departmentsByUserID, err := s.users.DepartmentsForUsers(ctx, users)
+	if err != nil {
+		return nil, fmt.Errorf("load candidate department memberships: %w", err)
+	}
 	departmentWarnings, err := s.departmentMembershipWarnings(ctx, users, departmentID)
 	if err != nil {
 		return nil, fmt.Errorf("load candidate department memberships: %w", err)
@@ -5389,6 +5411,8 @@ func (s *Service) buildCandidates(ctx context.Context, p relay.Provider, request
 	for i, id := range rankIDs {
 		ranks[id] = i + 1
 	}
+	platformGroupIDs := platformGroupIDSet(groups, platform)
+	now := s.currentTime()
 	out := make([]Candidate, len(users))
 	jobs := make(chan struct {
 		index int
@@ -5421,7 +5445,7 @@ func (s *Service) buildCandidates(ctx context.Context, p relay.Provider, request
 						}
 					}
 				}
-				out[job.index] = s.buildCandidate(ctx, p, requestFacts, job.user, candidateSource, platform, departmentWarnings[job.user.ID], globalStats, ranks)
+				out[job.index] = s.buildCandidate(ctx, p, requestFacts, job.user, candidateSource, platform, departmentWarnings[job.user.ID], platformGroupIDs, departmentsByUserID[job.user.ID], globalStats, ranks, now)
 			}
 		}()
 	}
@@ -5432,8 +5456,15 @@ func (s *Service) buildCandidates(ctx context.Context, p relay.Provider, request
 	return out, nil
 }
 
-func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestFacts *planningRequestFacts, u *ent.User, source relay.Group, platform, departmentWarning string, globalStats map[int64]relay.TeamUserUsageStats, ranks map[int64]int) Candidate {
+func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestFacts *planningRequestFacts, u *ent.User, source relay.Group, platform, departmentWarning string, platformGroupIDs map[int64]struct{}, departments []*adminusers.Department, globalStats map[int64]relay.TeamUserUsageStats, ranks map[int64]int, now time.Time) Candidate {
 	candidate := Candidate{UserID: u.ID, Username: u.Username, Email: u.Email, Eligible: false, Selected: true, replanUnavailableReason: replanRosterUnavailableIdentity}
+	if len(departments) > 0 && departments[0] != nil {
+		candidate.Department = &CandidateDepartment{
+			ExternalID:  departments[0].ExternalID,
+			Name:        departments[0].Name,
+			DisplayPath: departments[0].DisplayPath,
+		}
+	}
 	if departmentWarning != "" {
 		candidate.Warnings = append(candidate.Warnings, departmentWarning)
 	}
@@ -5464,10 +5495,20 @@ func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestF
 		return candidate
 	}
 	candidate.replanUnavailableReason = 0
-	stat, usageKnown := globalStats[candidate.RelayUserID]
-	candidate.UsageKnown = usageKnown
-	candidate.RangeCost = usageCost(stat)
-	candidate.RangeTokens = usageTokens(stat)
+	if scoped, ok := p.(relay.TeamUserGroupUsageProvider); ok {
+		if rows, usageErr := scoped.GetUserGroupUsage(ctx, candidate.RelayUserID, thirtyDayUsageParams(now)); usageErr != nil {
+			candidate.UsageKnown = false
+		} else {
+			candidate.RangeCost, candidate.RangeTokens = platformGroupUsage(rows, platformGroupIDs)
+			candidate.UsageKnown = true
+		}
+	} else {
+		stat, usageKnown := globalStats[candidate.RelayUserID]
+		candidate.UsageKnown = usageKnown
+		candidate.RangeCost = usageCost(stat)
+		candidate.RangeTokens = usageTokens(stat)
+	}
+	candidate.TpmPeak = loadPeakHourlyTPM(ctx, p, candidate.RelayUserID, now)
 	candidate.GlobalTokenRank = ranks[candidate.RelayUserID]
 	candidate.relationshipSubscriptions = facts.relationshipSubscriptions
 	candidate.relationshipAPIKeys = facts.relationshipAPIKeys
@@ -5617,6 +5658,10 @@ func loadCandidateRelayFacts(ctx context.Context, p relay.Provider, requestFacts
 	return facts
 }
 
+// departmentMembershipWarnings derives candidate warnings from the batch
+// department projections already resolved for this preview request. It is the
+// single source of the multi-department and selected-department warnings, so
+// Preview never walks the directory memberships twice.
 func (s *Service) departmentMembershipWarnings(ctx context.Context, users []*ent.User, selectedDepartment string) (map[int]string, error) {
 	warnings := make(map[int]string)
 	selectedDepartment = strings.TrimSpace(selectedDepartment)
@@ -5693,7 +5738,6 @@ func (s *Service) departmentMembershipWarnings(ctx context.Context, users []*ent
 	}
 	return warnings, nil
 }
-
 func (s *Service) loadUsageStats(ctx context.Context, p relay.Provider, providerID int, providerVersion int64, ids []int64) (map[int64]relay.TeamUserUsageStats, error) {
 	now := time.Now().UTC()
 	params := thirtyDayUsageParams(now)
@@ -5817,6 +5861,88 @@ func usageCost(stat relay.TeamUserUsageStats) float64 {
 		return *stat.RangeActualCost
 	}
 	return stat.TotalActualCost
+}
+
+// platformGroupIDSet returns the IDs of the Provider's groups that belong to
+// the planning Platform. Candidate cost and tokens are scoped to this set, so
+// usage recorded in another Platform never counts toward this plan.
+func platformGroupIDSet(groups []relay.Group, platform string) map[int64]struct{} {
+	platform = strings.TrimSpace(platform)
+	out := make(map[int64]struct{}, len(groups))
+	for _, group := range groups {
+		if group.ID <= 0 {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(group.Platform), platform) {
+			out[group.ID] = struct{}{}
+		}
+	}
+	return out
+}
+
+// platformGroupUsage sums one user's usage rows that belong to the planning
+// Platform. Rows for other Platforms are ignored.
+func platformGroupUsage(rows []relay.GroupUsageStat, platformGroupIDs map[int64]struct{}) (float64, int64) {
+	var cost float64
+	var tokens int64
+	for _, row := range rows {
+		if _, ok := platformGroupIDs[row.GroupID]; !ok {
+			continue
+		}
+		cost += row.ActualCost
+		tokens += row.TotalTokens
+	}
+	return cost, tokens
+}
+
+// loadPeakHourlyTPM returns the advisory peak tokens-per-minute over the
+// trailing tpmWindowDays UTC days: the busiest completed clock hour divided by
+// 60. It is provider-wide (not Platform-scoped) because sub2api exposes hourly
+// points per user rather than per user and Group, and it returns nil when the
+// provider has no trend capability or the read fails.
+func loadPeakHourlyTPM(ctx context.Context, p relay.Provider, relayUserID int64, now time.Time) *int64 {
+	trendProvider, ok := p.(relay.TeamUserTrendProvider)
+	if !ok {
+		return nil
+	}
+	now = now.UTC()
+	points, err := trendProvider.GetUserUsageTrend(ctx, relayUserID, relay.TeamMemberTrendParams{
+		StartDate:   now.AddDate(0, 0, 1-tpmWindowDays).Format(time.DateOnly),
+		EndDate:     now.Format(time.DateOnly),
+		Granularity: "hour",
+		Timezone:    "UTC",
+	})
+	if err != nil {
+		return nil
+	}
+	currentHour := now.Truncate(time.Hour)
+	windowStart := now.AddDate(0, 0, 1-tpmWindowDays).Truncate(24 * time.Hour)
+	var peak int64
+	found := false
+	for _, point := range points {
+		hour, parseErr := time.ParseInLocation("2006-01-02 15:04", strings.TrimSpace(point.Date), time.UTC)
+		if parseErr != nil {
+			continue
+		}
+		// Only completed clock hours inside the trailing window count; the
+		// current partial hour and anything newer is ignored.
+		if !hour.Before(currentHour) || hour.Before(windowStart) {
+			continue
+		}
+		tokens := int64(0)
+		if point.TotalTokens != nil {
+			tokens = *point.TotalTokens
+		}
+		if !found || tokens > peak {
+			peak = tokens
+			found = true
+		}
+	}
+	if !found {
+		return nil
+	}
+	tpm := peak / 60
+	return &tpm
 }
 
 func (s *Service) departmentName(ctx context.Context, externalID string) (string, error) {
@@ -6426,7 +6552,7 @@ func mappingRelationshipWarnings(facts *mappingRelationshipFacts, mapping Mappin
 	return uniqueStrings(warnings)
 }
 
-func (s *Service) loadUnmanagedMembers(ctx context.Context, provider relay.Provider, requestFacts *planningRequestFacts, providerVersion int64, mapping *ent.RelayGroupMapping) ([]UnmanagedMember, error) {
+func (s *Service) loadUnmanagedMembers(ctx context.Context, provider relay.Provider, requestFacts *planningRequestFacts, providerVersion int64, mapping *ent.RelayGroupMapping, platformGroupIDs map[int64]struct{}, now time.Time) ([]UnmanagedMember, error) {
 	directory, directoryOK := provider.(relay.UserDirectoryProvider)
 	subsLister, subsOK := provider.(relay.UserSubscriptionLister)
 	batchDirectory, batchOK := provider.(relay.UserSubscriptionDirectoryProvider)
@@ -6523,12 +6649,23 @@ func (s *Service) loadUnmanagedMembers(ctx context.Context, provider relay.Provi
 		out = append(out, UnmanagedMember{RelayUserID: remoteUser.ID, Username: remoteUser.Username, Email: remoteUser.Email, TargetGroupIDs: targetIDs})
 		relayIDs = append(relayIDs, remoteUser.ID)
 	}
-	stats, statsErr := s.loadUsageStats(ctx, provider, mapping.ProviderID, providerVersion, relayIDs)
-	if statsErr != nil {
-		return nil, fmt.Errorf("load unmanaged member usage: %w", statsErr)
-	}
-	for index := range out {
-		out[index].RangeCost = usageCost(stats[out[index].RelayUserID])
+	scopedProvider, scopedOK := provider.(relay.TeamUserGroupUsageProvider)
+	if scopedOK {
+		for index := range out {
+			rows, usageErr := scopedProvider.GetUserGroupUsage(ctx, out[index].RelayUserID, thirtyDayUsageParams(now))
+			if usageErr != nil {
+				return nil, fmt.Errorf("load unmanaged member %d usage: %w", out[index].RelayUserID, usageErr)
+			}
+			out[index].RangeCost, _ = platformGroupUsage(rows, platformGroupIDs)
+		}
+	} else {
+		stats, statsErr := s.loadUsageStats(ctx, provider, mapping.ProviderID, providerVersion, relayIDs)
+		if statsErr != nil {
+			return nil, fmt.Errorf("load unmanaged member usage: %w", statsErr)
+		}
+		for index := range out {
+			out[index].RangeCost = usageCost(stats[out[index].RelayUserID])
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].RelayUserID < out[j].RelayUserID })
 	return out, nil

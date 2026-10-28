@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -4940,5 +4941,371 @@ func TestSub2APIReadRequestUsageReturnsTwoRowsWhenExactTotalIsHigher(t *testing.
 	}
 	if len(rows) != 2 {
 		t.Fatalf("rows = %d, want ambiguity sentinel of two rows", len(rows))
+	}
+}
+func TestSub2APIGetUserGroupUsageUsesDashboardGroupsContract(t *testing.T) {
+	var seenQuery url.Values
+	var seenMethod, seenAdminKey string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/groups", func(w http.ResponseWriter, r *http.Request) {
+		seenQuery = r.URL.Query()
+		seenMethod = r.Method
+		seenAdminKey = r.Header.Get("X-API-Key")
+		// Upstream sub2api v0.2.18 dashboard handlers answer with the code/message
+		// envelope and data.groups[].
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code":    0,
+			"message": "success",
+			"data": map[string]any{
+				"groups": []map[string]any{
+					{"group_id": 7, "group_name": "Group Alpha", "requests": 12, "total_tokens": 3456, "cost": 1.25, "actual_cost": 0.5},
+					{"group_id": 9, "group_name": "Group Beta", "requests": 2, "total_tokens": 10, "cost": 0.1, "actual_cost": 0.05},
+				},
+				"start_date": "2026-07-15",
+				"end_date":   "2026-07-21",
+			},
+		})
+	})
+	provider := newTestProvider(t, mux)
+	groupUsage, ok := provider.(relay.TeamUserGroupUsageProvider)
+	if !ok {
+		t.Fatal("sub2apiRelay does not implement relay.TeamUserGroupUsageProvider")
+	}
+
+	got, err := groupUsage.GetUserGroupUsage(context.Background(), 1001, relay.TeamUsageSummaryParams{
+		StartDate: "2026-07-15", EndDate: "2026-07-21",
+		Granularity: "day", Timezone: "Asia/Shanghai",
+	})
+	if err != nil {
+		t.Fatalf("GetUserGroupUsage() error = %v", err)
+	}
+	if seenMethod != http.MethodGet {
+		t.Fatalf("method = %q, want GET", seenMethod)
+	}
+	if seenAdminKey != "test-admin-key" {
+		t.Fatalf("admin key = %q, want admin request contract", seenAdminKey)
+	}
+	wantQuery := url.Values{
+		"user_id":    {"1001"},
+		"start_date": {"2026-07-15"},
+		"end_date":   {"2026-07-21"},
+		"timezone":   {"Asia/Shanghai"},
+	}
+	if diff := cmp.Diff(wantQuery, seenQuery); diff != "" {
+		t.Fatalf("dashboard groups query mismatch (-want +got):\n%s", diff)
+	}
+	want := []relay.GroupUsageStat{
+		{GroupID: 7, GroupName: "Group Alpha", Requests: 12, TotalTokens: 3456, Cost: 1.25, ActualCost: 0.5},
+		{GroupID: 9, GroupName: "Group Beta", Requests: 2, TotalTokens: 10, Cost: 0.1, ActualCost: 0.05},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("group usage mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestSub2APIGetUserGroupUsageOmitsEmptyWindowParams(t *testing.T) {
+	var seenQuery url.Values
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/groups", func(w http.ResponseWriter, r *http.Request) {
+		seenQuery = r.URL.Query()
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": map[string]any{"groups": []any{}}})
+	})
+	provider := newTestProvider(t, mux).(relay.TeamUserGroupUsageProvider)
+
+	if _, err := provider.GetUserGroupUsage(context.Background(), 42, relay.TeamUsageSummaryParams{
+		StartDate: " ", EndDate: "", Timezone: "  ",
+	}); err != nil {
+		t.Fatalf("GetUserGroupUsage() error = %v", err)
+	}
+	if diff := cmp.Diff(url.Values{"user_id": {"42"}}, seenQuery); diff != "" {
+		t.Fatalf("empty window query mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestSub2APIGetUserGroupUsageReturnsEmptySliceForEmptyGroups(t *testing.T) {
+	tests := []struct {
+		name string
+		data map[string]any
+	}{
+		{name: "empty groups array", data: map[string]any{"groups": []any{}}},
+		{name: "missing groups key", data: map[string]any{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/admin/dashboard/groups", func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": tt.data})
+			})
+			provider := newTestProvider(t, mux).(relay.TeamUserGroupUsageProvider)
+
+			got, err := provider.GetUserGroupUsage(context.Background(), 1001, relay.TeamUsageSummaryParams{StartDate: "2026-07-21", EndDate: "2026-07-21"})
+			if err != nil {
+				t.Fatalf("GetUserGroupUsage() error = %v", err)
+			}
+			if got == nil || len(got) != 0 {
+				t.Fatalf("group usage = %#v, want non-nil empty slice", got)
+			}
+		})
+	}
+}
+
+func TestSub2APIGetUserGroupUsagePropagatesFailures(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       any
+		wantErr    string
+	}{
+		{
+			name:       "non-200 status",
+			statusCode: http.StatusInternalServerError,
+			body:       map[string]any{"success": false, "message": "upstream exploded"},
+			wantErr:    "unexpected status 500",
+		},
+		{
+			name:       "unenveloped response",
+			statusCode: http.StatusOK,
+			body:       map[string]any{"data": map[string]any{"groups": []any{}}},
+			wantErr:    "request failed",
+		},
+		{
+			name:       "failure envelope",
+			statusCode: http.StatusOK,
+			body:       map[string]any{"success": false, "message": "forbidden"},
+			wantErr:    "request failed: forbidden",
+		},
+		{
+			name:       "missing data",
+			statusCode: http.StatusOK,
+			body:       map[string]any{"success": true},
+			wantErr:    "decode data",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/admin/dashboard/groups", func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.statusCode)
+				_ = json.NewEncoder(w).Encode(tt.body)
+			})
+			provider := newTestProvider(t, mux).(relay.TeamUserGroupUsageProvider)
+
+			got, err := provider.GetUserGroupUsage(context.Background(), 1001, relay.TeamUsageSummaryParams{StartDate: "2026-07-21", EndDate: "2026-07-21"})
+			if err == nil || !strings.Contains(err.Error(), "relay: user group usage: "+tt.wantErr) {
+				t.Fatalf("GetUserGroupUsage() error = %v, want %q", err, tt.wantErr)
+			}
+			if got != nil {
+				t.Fatalf("GetUserGroupUsage() groups = %#v, want nil on error", got)
+			}
+		})
+	}
+}
+
+func TestSub2APIGetUserGroupUsageRejectsNonPositiveUserID(t *testing.T) {
+	var requests atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/groups", func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": map[string]any{"groups": []any{}}})
+	})
+	provider := newTestProvider(t, mux).(relay.TeamUserGroupUsageProvider)
+
+	for _, userID := range []int64{0, -1} {
+		if _, err := provider.GetUserGroupUsage(context.Background(), userID, relay.TeamUsageSummaryParams{}); err == nil || !strings.Contains(err.Error(), "invalid Relay user ID") {
+			t.Fatalf("GetUserGroupUsage(%d) error = %v, want invalid ID error", userID, err)
+		}
+	}
+	if requests.Load() != 0 {
+		t.Fatalf("upstream requests = %d, want 0 for invalid user IDs", requests.Load())
+	}
+}
+
+func TestSub2APIGetUserUsageTrendUsesDashboardTrendContract(t *testing.T) {
+	var seenQuery url.Values
+	var seenMethod, seenAdminKey string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+		seenQuery = r.URL.Query()
+		seenMethod = r.Method
+		seenAdminKey = r.Header.Get("X-API-Key")
+		// Upstream sub2api v0.2.18 answers with {code,message,data:{trend,start_date,end_date,granularity}};
+		// hour buckets are labelled "YYYY-MM-DD HH:MM".
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code":    0,
+			"message": "success",
+			"data": map[string]any{
+				"trend": []map[string]any{
+					{
+						"date": "2026-10-28 04:00", "requests": 3, "input_tokens": 100, "output_tokens": 50,
+						"cache_creation_tokens": 7, "cache_read_tokens": 9, "total_tokens": 166, "cost": 0.3, "actual_cost": 0.2,
+					},
+					{
+						"date": "2026-10-28 05:00", "requests": 5, "input_tokens": 200, "output_tokens": 80,
+						"cache_creation_tokens": 1, "cache_read_tokens": 2, "total_tokens": 283, "cost": 0.6, "actual_cost": 0.4,
+					},
+				},
+				"start_date":  "2026-10-22",
+				"end_date":    "2026-10-28",
+				"granularity": "hour",
+			},
+		})
+	})
+	provider := newTestProvider(t, mux)
+	trend, ok := provider.(relay.TeamUserTrendProvider)
+	if !ok {
+		t.Fatal("sub2apiRelay does not implement relay.TeamUserTrendProvider")
+	}
+
+	got, err := trend.GetUserUsageTrend(context.Background(), 1001, relay.TeamMemberTrendParams{
+		StartDate: "2026-10-22", EndDate: "2026-10-28",
+		Granularity: "hour", Timezone: "Asia/Shanghai",
+	})
+	if err != nil {
+		t.Fatalf("GetUserUsageTrend() error = %v", err)
+	}
+	if seenMethod != http.MethodGet {
+		t.Fatalf("method = %q, want GET", seenMethod)
+	}
+	if seenAdminKey != "test-admin-key" {
+		t.Fatalf("admin key = %q, want admin request contract", seenAdminKey)
+	}
+	wantQuery := url.Values{
+		"user_id":     {"1001"},
+		"start_date":  {"2026-10-22"},
+		"end_date":    {"2026-10-28"},
+		"granularity": {"hour"},
+		"timezone":    {"Asia/Shanghai"},
+	}
+	if diff := cmp.Diff(wantQuery, seenQuery); diff != "" {
+		t.Fatalf("dashboard trend query mismatch (-want +got):\n%s", diff)
+	}
+	firstTokens, secondTokens := int64(166), int64(283)
+	want := []relay.UsageTrendPoint{
+		{Date: "2026-10-28 04:00", ActualCost: 0.2, TotalTokens: &firstTokens},
+		{Date: "2026-10-28 05:00", ActualCost: 0.4, TotalTokens: &secondTokens},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("user usage trend mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestSub2APIGetUserUsageTrendOmitsEmptyWindowParams(t *testing.T) {
+	var seenQuery url.Values
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+		seenQuery = r.URL.Query()
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"trend": []any{}}})
+	})
+	provider := newTestProvider(t, mux).(relay.TeamUserTrendProvider)
+
+	if _, err := provider.GetUserUsageTrend(context.Background(), 42, relay.TeamMemberTrendParams{
+		StartDate: " ", EndDate: "", Granularity: "\t", Timezone: "  ",
+	}); err != nil {
+		t.Fatalf("GetUserUsageTrend() error = %v", err)
+	}
+	if diff := cmp.Diff(url.Values{"user_id": {"42"}}, seenQuery); diff != "" {
+		t.Fatalf("empty window query mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestSub2APIGetUserUsageTrendReturnsEmptySliceForEmptyTrend(t *testing.T) {
+	tests := []struct {
+		name string
+		data map[string]any
+	}{
+		{name: "empty trend array", data: map[string]any{"trend": []any{}}},
+		{name: "missing trend key", data: map[string]any{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": tt.data})
+			})
+			provider := newTestProvider(t, mux).(relay.TeamUserTrendProvider)
+
+			got, err := provider.GetUserUsageTrend(context.Background(), 1001, relay.TeamMemberTrendParams{
+				StartDate: "2026-10-28", EndDate: "2026-10-28", Granularity: "hour",
+			})
+			if err != nil {
+				t.Fatalf("GetUserUsageTrend() error = %v", err)
+			}
+			if got == nil || len(got) != 0 {
+				t.Fatalf("user usage trend = %#v, want non-nil empty slice", got)
+			}
+		})
+	}
+}
+
+func TestSub2APIGetUserUsageTrendPropagatesFailures(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       any
+		wantErr    string
+	}{
+		{
+			name:       "non-200 status",
+			statusCode: http.StatusInternalServerError,
+			body:       map[string]any{"success": false, "message": "upstream exploded"},
+			wantErr:    "unexpected status 500",
+		},
+		{
+			name:       "unenveloped response",
+			statusCode: http.StatusOK,
+			body:       map[string]any{"data": map[string]any{"trend": []any{}}},
+			wantErr:    "request failed",
+		},
+		{
+			name:       "failure envelope",
+			statusCode: http.StatusOK,
+			body:       map[string]any{"success": false, "message": "forbidden"},
+			wantErr:    "request failed: forbidden",
+		},
+		{
+			name:       "missing data",
+			statusCode: http.StatusOK,
+			body:       map[string]any{"success": true},
+			wantErr:    "decode data",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.statusCode)
+				_ = json.NewEncoder(w).Encode(tt.body)
+			})
+			provider := newTestProvider(t, mux).(relay.TeamUserTrendProvider)
+
+			got, err := provider.GetUserUsageTrend(context.Background(), 1001, relay.TeamMemberTrendParams{
+				StartDate: "2026-10-28", EndDate: "2026-10-28", Granularity: "hour",
+			})
+			if err == nil || !strings.Contains(err.Error(), "relay: user usage trend: "+tt.wantErr) {
+				t.Fatalf("GetUserUsageTrend() error = %v, want %q", err, tt.wantErr)
+			}
+			if got != nil {
+				t.Fatalf("GetUserUsageTrend() trend = %#v, want nil on error", got)
+			}
+		})
+	}
+}
+
+func TestSub2APIGetUserUsageTrendRejectsNonPositiveUserID(t *testing.T) {
+	var requests atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"trend": []any{}}})
+	})
+	provider := newTestProvider(t, mux).(relay.TeamUserTrendProvider)
+
+	for _, userID := range []int64{0, -1} {
+		if _, err := provider.GetUserUsageTrend(context.Background(), userID, relay.TeamMemberTrendParams{}); err == nil || !strings.Contains(err.Error(), "invalid Relay user ID") {
+			t.Fatalf("GetUserUsageTrend(%d) error = %v, want invalid ID error", userID, err)
+		}
+	}
+	if requests.Load() != 0 {
+		t.Fatalf("upstream requests = %d, want 0 for invalid user IDs", requests.Load())
 	}
 }

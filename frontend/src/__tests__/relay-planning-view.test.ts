@@ -43,8 +43,10 @@ const plan = {
     relay_user_id: 101,
     username: 'alice',
     email: 'alice@example.com',
+    department: { external_id: 'dept-alpha', name: 'SDK Framework', display_path: 'Engineering / SDK Framework' },
     range_cost: 1200,
     range_tokens: 100,
+    tpm_peak: 1500,
     global_token_rank: 1,
     migratable_key_count: 1,
     source_member: true,
@@ -527,6 +529,56 @@ describe('RelayPlanningView', () => {
 		const picker = wrapper.get('[data-testid="department-select"]')
 
 		expect(picker.element.parentElement?.classList.contains('min-w-0')).toBe(true)
+	})
+
+	it('shows the candidate department and recent peak TPM in the wide table layout', async () => {
+		const { wrapper } = await mountView([], true)
+		await fillAndPreview(wrapper)
+
+		const table = wrapper.get('[data-testid="candidate-table-layout"]')
+		expect(table.text()).toContain('Candidate department')
+		expect(table.text()).toContain('Recent peak TPM')
+		const department = wrapper.get('[data-testid="candidate-department-1"]')
+		expect(department.text()).toBe('Engineering / SDK Framework')
+		expect(department.attributes('title')).toBe('Engineering / SDK Framework')
+		expect(department.classes()).toContain('truncate')
+		expect(wrapper.get('[data-testid="candidate-tpm-1"]').text()).toBe('1.5K')
+	})
+
+	it('shows the candidate department and recent peak TPM in the card layout', async () => {
+		const { wrapper } = await mountView()
+		await fillAndPreview(wrapper)
+
+		expect(wrapper.find('[data-testid="candidate-table-layout"]').exists()).toBe(false)
+		const department = wrapper.get('[data-testid="candidate-department-1"]')
+		expect(department.text()).toBe('Engineering / SDK Framework')
+		expect(department.classes()).toContain('break-words')
+		expect(department.classes()).not.toContain('truncate')
+		expect(wrapper.text()).toContain('Recent peak TPM')
+		expect(wrapper.get('[data-testid="candidate-tpm-1"]').text()).toBe('1.5K')
+	})
+
+	it('falls back to the department name and shows a dash for an unknown peak TPM', async () => {
+		const { wrapper, relayPlanning } = await mountView()
+		const fallbackPlan = structuredClone(plan) as any
+		fallbackPlan.candidates[0].department = { external_id: 'dept-beta', name: 'SDK Runtime', display_path: '' }
+		fallbackPlan.candidates.push({
+			...structuredClone(plan.candidates[0]),
+			user_id: 2,
+			relay_user_id: 102,
+			username: 'bob',
+			email: 'bob@example.org',
+			department: undefined,
+			tpm_peak: null,
+		})
+		relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: fallbackPlan } })
+
+		await fillAndPreview(wrapper)
+
+		expect(wrapper.get('[data-testid="candidate-department-1"]').text()).toBe('SDK Runtime')
+		expect(wrapper.get('[data-testid="candidate-tpm-1"]').text()).toBe('1.5K')
+		expect(wrapper.get('[data-testid="candidate-department-2"]').text()).toBe('Not matched to directory')
+		expect(wrapper.get('[data-testid="candidate-tpm-2"]').text()).toBe('-')
 	})
 
 	it('localizes multi-Account and reused-Account mapping warnings', async () => {

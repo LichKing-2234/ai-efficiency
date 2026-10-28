@@ -37,6 +37,7 @@ import {
   type RelayPlanningUserSearchItem,
 } from '@/api/relayPlanning'
 import { createFeatureTranslator } from '@/utils/featureI18n'
+import { formatTokenCount } from '@/utils/formatters'
 import { isRequestTimeout } from '@/api/client'
 import { useMediaQuery, useWideContentLayout } from '@/composables/useMediaQuery'
 import { useRelayPlanningWorkflow } from '@/composables/useRelayPlanningWorkflow'
@@ -329,6 +330,17 @@ function candidateDispositionTag(candidate: unknown): 'success' | 'warning' | 'i
 	if (disposition === 'retained') return 'success'
 	if (disposition === 'target_only' || disposition === 'migration') return 'warning'
 	return 'info'
+}
+
+function candidateDepartmentLabel(row: unknown): string {
+  const candidate = row as RelayPlanningCandidate
+  if (!candidate.department) return t('relayPlanning.candidateDepartmentUnknown')
+  return candidate.department.display_path || candidate.department.name || t('relayPlanning.candidateDepartmentUnknown')
+}
+
+function candidatePeakTPM(row: unknown): string {
+  const candidate = row as RelayPlanningCandidate
+  return typeof candidate.tpm_peak === 'number' ? formatTokenCount(candidate.tpm_peak) : '-'
 }
 
 function translateMappingStatus(status: string): string {
@@ -1067,10 +1079,10 @@ onBeforeUnmount(() => {
           <div v-if="!wideContentLayout" data-testid="candidate-card-layout" class="space-y-3">
             <article v-for="candidate in plan.candidates" :key="candidate.user_id" class="rounded-md border border-slate-200 p-3">
               <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0"><div class="break-words font-medium text-slate-900">{{ candidate.username || candidate.email }}</div><div class="break-words text-xs text-slate-500">{{ candidate.email }}</div></div>
+                <div class="min-w-0"><div class="break-words font-medium text-slate-900">{{ candidate.username || candidate.email }}</div><div class="break-words text-xs text-slate-500">{{ candidate.email }}</div><div :data-testid="`candidate-department-${candidate.user_id}`" class="break-words text-xs text-slate-500">{{ candidateDepartmentLabel(candidate) }}</div></div>
                 <el-checkbox :model-value="selectedUserIDs.has(candidate.user_id)" :disabled="!candidate.can_add" @change="(value) => toggleCandidate(candidate.user_id, value === true)" />
               </div>
-              <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs"><div><dt class="text-slate-500">{{ t('relayPlanning.cost30d') }}</dt><dd class="font-medium">{{ candidate.usage_known === false ? t('relayPlanning.unknown') : `$${candidate.range_cost.toFixed(2)}` }}</dd></div><div><dt class="text-slate-500">{{ t('relayPlanning.tokens30d') }}</dt><dd class="font-medium">{{ candidate.usage_known === false ? t('relayPlanning.unknown') : candidate.range_tokens }}</dd></div><div><dt class="text-slate-500">{{ t('relayPlanning.globalRank') }}</dt><dd class="font-medium">{{ candidate.global_token_rank || '-' }}</dd></div><div><dt class="text-slate-500">{{ t('relayPlanning.keys') }}</dt><dd class="font-medium">{{ candidate.migratable_key_count }}</dd></div></dl>
+              <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs"><div><dt class="text-slate-500">{{ t('relayPlanning.cost30d') }}</dt><dd class="font-medium">{{ candidate.usage_known === false ? t('relayPlanning.unknown') : `$${candidate.range_cost.toFixed(2)}` }}</dd></div><div><dt class="text-slate-500">{{ t('relayPlanning.tokens30d') }}</dt><dd class="font-medium">{{ candidate.usage_known === false ? t('relayPlanning.unknown') : candidate.range_tokens }}</dd></div><div><dt class="text-slate-500" :title="t('relayPlanning.tpmPeakHelp')">{{ t('relayPlanning.tpmPeak') }}</dt><dd :data-testid="`candidate-tpm-${candidate.user_id}`" class="font-medium">{{ candidatePeakTPM(candidate) }}</dd></div><div><dt class="text-slate-500">{{ t('relayPlanning.globalRank') }}</dt><dd class="font-medium">{{ candidate.global_token_rank || '-' }}</dd></div><div><dt class="text-slate-500">{{ t('relayPlanning.keys') }}</dt><dd class="font-medium">{{ candidate.migratable_key_count }}</dd></div></dl>
               <div v-if="selectedUserIDs.has(candidate.user_id)" class="mt-3"><span v-if="candidate.disposition === 'retained'" :data-testid="`candidate-source-${candidate.user_id}`" class="text-xs text-slate-600">{{ candidateDispositionText(candidate) }}</span><el-select v-else :data-testid="`candidate-source-${candidate.user_id}`" :model-value="memberSources[String(candidate.user_id)] ?? 0" class="w-full" @change="(value) => setMemberSource(candidate.user_id, Number(value || 0))"><el-option :label="t('relayPlanning.targetOnly')" :value="0" /><el-option v-for="item in groups" :key="item.group_id" :label="`${item.group_name} (#${item.group_id})`" :value="Number(item.group_id)" /></el-select></div>
               <div class="mt-3"><el-select v-if="candidate.can_add" :data-testid="`candidate-target-${candidate.user_id}`" :model-value="candidateAssignmentIndex(candidate.user_id)" class="w-full" clearable :placeholder="t('relayPlanning.unassigned')" @change="(value) => moveCandidate(candidate.user_id, value === null || value === undefined || value === '' ? null : Number(value))"><el-option v-for="assignment in plan.assignments" :key="assignment.index" :label="assignment.target_group_name || `${t('relayPlanning.group')} ${assignment.index + 1}`" :value="assignment.index" /></el-select><span v-else class="text-xs text-slate-400">{{ t('relayPlanning.notAvailable') }}</span></div>
               <div class="mt-2"><el-tag :type="candidateDispositionTag(candidate)">{{ candidateDispositionText(candidate) }}</el-tag><div v-if="candidate.warnings?.length" :data-testid="`candidate-warning-${candidate.user_id}`" class="mt-1 text-xs text-amber-700">{{ candidate.warnings.map(translateWarning).join('; ') }}</div></div>
@@ -1080,8 +1092,10 @@ onBeforeUnmount(() => {
             <el-table-column :label="t('relayPlanning.select')" width="70"><template #default="scope"><el-checkbox :model-value="selectedUserIDs.has(scope.row.user_id)" :disabled="!scope.row.can_add" @change="(value) => toggleCandidate(scope.row.user_id, value === true)" /></template></el-table-column>
             <el-table-column prop="username" :label="t('relayPlanning.user')" min-width="140" />
             <el-table-column prop="email" :label="t('relayPlanning.email')" min-width="190" />
+            <el-table-column :label="t('relayPlanning.candidateDepartment')" min-width="200"><template #default="scope"><span :data-testid="`candidate-department-${scope.row.user_id}`" :title="candidateDepartmentLabel(scope.row)" class="block truncate">{{ candidateDepartmentLabel(scope.row) }}</span></template></el-table-column>
             <el-table-column prop="range_cost" :label="t('relayPlanning.cost30d')" width="120"><template #default="scope">{{ scope.row.usage_known === false ? t('relayPlanning.unknown') : `$${scope.row.range_cost.toFixed(2)}` }}</template></el-table-column>
             <el-table-column prop="range_tokens" :label="t('relayPlanning.tokens30d')" width="130"><template #default="scope">{{ scope.row.usage_known === false ? t('relayPlanning.unknown') : scope.row.range_tokens }}</template></el-table-column>
+            <el-table-column :label="t('relayPlanning.tpmPeak')" width="130"><template #header><el-tooltip :content="t('relayPlanning.tpmPeakHelp')" placement="top"><span class="cursor-help border-b border-dashed border-slate-400">{{ t('relayPlanning.tpmPeak') }}</span></el-tooltip></template><template #default="scope"><span :data-testid="`candidate-tpm-${scope.row.user_id}`" class="tabular-nums">{{ candidatePeakTPM(scope.row) }}</span></template></el-table-column>
             <el-table-column prop="global_token_rank" :label="t('relayPlanning.globalRank')" width="110" />
             <el-table-column prop="migratable_key_count" :label="t('relayPlanning.keys')" width="80" />
             <el-table-column :label="t('relayPlanning.target')" min-width="170"><template #default="scope"><el-select v-if="scope.row.can_add" :data-testid="`candidate-target-${scope.row.user_id}`" :model-value="candidateAssignmentIndex(scope.row.user_id)" clearable :placeholder="t('relayPlanning.unassigned')" @change="(value) => moveCandidate(scope.row.user_id, value === null || value === undefined || value === '' ? null : Number(value))"><el-option v-for="assignment in plan.assignments" :key="assignment.index" :label="assignment.target_group_name || `${t('relayPlanning.group')} ${assignment.index + 1}`" :value="assignment.index" /></el-select><span v-else class="text-xs text-slate-400">{{ t('relayPlanning.notAvailable') }}</span></template></el-table-column>
