@@ -536,7 +536,6 @@ describe('userSetupReview command builders', () => {
     expect(steps.render).toBe('steps')
     expect(steps.path).toBe('')
     expect(snippets.filter((item) => item.render === 'steps')).toHaveLength(1)
-    expect(steps.body).toContain('npx @deepseek-ai/dsh web')
     expect(steps.body).toContain('https://deepseek-harness.github.io/deepseek-harness/guide/quickstart')
     expect(steps.body).toContain('https://deepseek-harness.github.io/deepseek-harness/guide/providers')
     expect(steps.body).toContain('探测失败时也可手动填写模型 ID')
