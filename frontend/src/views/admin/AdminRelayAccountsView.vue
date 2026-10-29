@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { CopyDocument, Refresh, Setting } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import AppLayout from '@/components/AppLayout.vue'
@@ -33,6 +33,9 @@ const resetCreditsFilter = ref('')
 const applyDialogOpen = ref(false)
 const applyResults = ref<RelayPlanningAccountConfigurationApplyResult[] | null>(null)
 const ignoredKeys = ref<Set<string>>(new Set())
+// A refresh supersedes reads; only context changes invalidate an in-flight copy.
+let comparisonRequest = 0
+let comparisonContext = 0
 
 const form = reactive({
   provider_id: 0,
@@ -111,6 +114,7 @@ async function toggleIgnoreKey(key: string, include: boolean) {
   if (include) next.delete(key)
   else next.add(key)
   ignoredKeys.value = next
+  invalidateComparison()
   await loadConfigurations()
 }
 
@@ -166,20 +170,29 @@ function accountLabel(accountID: number): string {
 }
 
 function pruneSelection() {
+  applyDialogOpen.value = false
   const selectable = new Set(deviatingItems.value.map((item) => item.account.id))
   selectedTargetIDs.value = new Set(Array.from(selectedTargetIDs.value).filter((id) => selectable.has(id)))
 }
 
-function resetView() {
-  baselineAccountID.value = 0
+function invalidateComparison() {
+  ++comparisonContext
+  ++comparisonRequest
+  loading.value = false
+  applyDialogOpen.value = false
   selectedTargetIDs.value = new Set()
+  applyResults.value = null
+}
+
+function resetView() {
+  invalidateComparison()
+  baselineAccountID.value = 0
   expandedDiffIDs.value = new Set()
   ignoredKeys.value = new Set()
   accountTypeFilter.value = ''
   groupFilter.value = ''
   resetCreditsFilter.value = ''
   items.value = []
-  applyResults.value = null
   error.value = ''
 }
 
@@ -190,6 +203,8 @@ async function loadOptions() {
 }
 
 async function loadConfigurations() {
+  const request = ++comparisonRequest
+  applyDialogOpen.value = false
   if (!form.provider_id || !form.platform) {
     items.value = []
     return
@@ -203,15 +218,17 @@ async function loadConfigurations() {
       ...(baselineAccountID.value > 0 ? { baseline_account_id: baselineAccountID.value } : {}),
       ...(ignoredKeys.value.size > 0 ? { ignore_keys: Array.from(ignoredKeys.value).join(',') } : {}),
     })
+    if (request !== comparisonRequest) return
     const data = response.data.data
     items.value = data?.items ?? []
     baselineAccountID.value = Number(data?.baseline_account_id || 0)
     pruneSelection()
   } catch (err: any) {
+    if (request !== comparisonRequest) return
     items.value = []
     error.value = err.response?.data?.message || err.message || t('relayPlanning.accountConfigLoadFailed')
   } finally {
-    loading.value = false
+    if (request === comparisonRequest) loading.value = false
   }
 }
 
@@ -227,21 +244,19 @@ function handlePlatformChange() {
 
 async function setBaseline(accountID: number) {
   if (baselineAccountID.value === accountID) return
+  invalidateComparison()
   baselineAccountID.value = accountID
-  selectedTargetIDs.value = new Set()
   expandedDiffIDs.value = new Set()
   ignoredKeys.value = new Set()
-  applyResults.value = null
   await loadConfigurations()
 }
 
 async function clearBaseline() {
+  invalidateComparison()
   baselineAccountID.value = 0
-  selectedTargetIDs.value = new Set()
   expandedDiffIDs.value = new Set()
   ignoredKeys.value = new Set()
   onlyDeviating.value = false
-  applyResults.value = null
   await loadConfigurations()
 }
 
@@ -254,7 +269,8 @@ function isTargetSelected(accountID: number): boolean {
 const MAX_COPY_TARGETS = 100
 
 function toggleTarget(accountID: number, checked: boolean) {
-  if (!isDeviatingID(accountID)) return
+  if (loading.value || applying.value || !isDeviatingID(accountID)) return
+  applyDialogOpen.value = false
   const next = new Set(selectedTargetIDs.value)
   if (checked) {
     if (!next.has(accountID) && next.size >= MAX_COPY_TARGETS) {
@@ -269,6 +285,8 @@ function toggleTarget(accountID: number, checked: boolean) {
 }
 
 function toggleSelectAllDeviating(checked: boolean) {
+  if (loading.value || applying.value) return
+  applyDialogOpen.value = false
   if (!checked) {
     selectedTargetIDs.value = new Set()
     return
@@ -288,6 +306,7 @@ function toggleDiffKeys(accountID: number) {
 }
 
 function openApplyDialog() {
+  if (loading.value || applying.value) return
   if (!hasBaseline.value) {
     ElMessage.warning(t('relayPlanning.baselineRequired'))
     return
@@ -300,7 +319,8 @@ function openApplyDialog() {
 }
 
 async function confirmApply() {
-  if (!hasBaseline.value || selectedItems.value.length === 0) return
+  if (!applyDialogOpen.value || loading.value || applying.value || !hasBaseline.value || selectedItems.value.length === 0) return
+  const context = comparisonContext
   applying.value = true
   try {
     const response = await applyRelayAccountConfiguration({
@@ -310,6 +330,7 @@ async function confirmApply() {
       target_account_ids: selectedItems.value.map((item) => item.account.id),
       ...(ignoredKeys.value.size > 0 ? { ignore_keys: Array.from(ignoredKeys.value) } : {}),
     })
+    if (context !== comparisonContext) return
     const results = response.data.data?.results ?? []
     applyResults.value = results
     applyDialogOpen.value = false
@@ -320,11 +341,14 @@ async function confirmApply() {
     else ElMessage.success(t('relayPlanning.copyFinished', { applied, failed }))
     await loadConfigurations()
   } catch (err: any) {
+    if (context !== comparisonContext) return
     ElMessage.error(err.response?.data?.message || err.message || t('relayPlanning.copyFailedMessage'))
   } finally {
     applying.value = false
   }
 }
+
+onUnmounted(invalidateComparison)
 
 onMounted(async () => {
   try {
@@ -425,7 +449,7 @@ onMounted(async () => {
                 data-testid="select-all-deviating"
                 :model-value="allDeviatingSelected"
                 :indeterminate="someDeviatingSelected && !allDeviatingSelected"
-                :disabled="deviatingItems.length === 0"
+                :disabled="loading || applying || deviatingItems.length === 0"
                 @change="(value) => toggleSelectAllDeviating(value === true)"
               >
                 {{ t('relayPlanning.selectAllDeviating') }}
@@ -492,7 +516,7 @@ onMounted(async () => {
                 <el-checkbox
                   :data-testid="`select-target-${scope.row.account.id}`"
                   :model-value="isTargetSelected(scope.row.account.id)"
-                  :disabled="!isDeviatingID(scope.row.account.id)"
+                  :disabled="loading || applying || !isDeviatingID(scope.row.account.id)"
                   @change="(value) => toggleTarget(scope.row.account.id, value === true)"
                 />
               </template>
@@ -501,7 +525,7 @@ onMounted(async () => {
           </el-table>
 
           <div class="mt-4 flex flex-wrap items-center gap-2">
-            <el-button data-testid="open-apply-dialog" type="primary" :icon="CopyDocument" :disabled="!hasBaseline || selectedTargetIDs.size === 0" @click="openApplyDialog">{{ t('relayPlanning.copyBaselineConfig') }}</el-button>
+            <el-button data-testid="open-apply-dialog" type="primary" :icon="CopyDocument" :disabled="loading || applying || !hasBaseline || selectedItems.length === 0" @click="openApplyDialog">{{ t('relayPlanning.copyBaselineConfig') }}</el-button>
             <span class="text-xs text-slate-500">{{ t('relayPlanning.selectedTargets', { count: selectedTargetIDs.size }) }}</span>
           </div>
         </div>
