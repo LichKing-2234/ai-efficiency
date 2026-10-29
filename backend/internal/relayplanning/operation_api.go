@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/relationshipoperationattempt"
@@ -62,7 +61,10 @@ func (e *StaleRecoveryError) Error() string { return "Relay recovery facts chang
 
 func (s *Service) decorateMappingOperationState(ctx context.Context, mappings []Mapping) error {
 	for index := range mappings {
-		mappings[index].AlignmentDifferences, mappings[index].Warnings = classifyMappingWarnings(mappings[index].Warnings)
+		// Fact readers assign the category before rendering the message. Do not
+		// recover alignment semantics from presentation text.
+		mappings[index].AlignmentDifferences = uniqueStrings(mappings[index].AlignmentDifferences)
+		mappings[index].Warnings = uniqueStrings(mappings[index].Warnings)
 		mappings[index].Alignment = "aligned"
 		if len(mappings[index].AlignmentDifferences) > 0 {
 			mappings[index].Alignment = "drifted"
@@ -102,23 +104,6 @@ func (s *Service) decorateMappingOperationState(ctx context.Context, mappings []
 		}
 	}
 	return nil
-}
-
-func classifyMappingWarnings(warnings []string) (differences, advisories []string) {
-	for _, warning := range warnings {
-		switch {
-		case strings.Contains(warning, " has multiple Accounts"),
-			strings.Contains(warning, " is reused across target groups "):
-			advisories = append(advisories, warning)
-		case strings.Contains(warning, "account relationships are unavailable"):
-			differences = append(differences, "Account relationship readback is unavailable")
-		case strings.Contains(warning, "relay groups are unavailable"), strings.Contains(warning, "relationship snapshot"):
-			differences = append(differences, "Relay relationship readback is unavailable")
-		default:
-			differences = append(differences, warning)
-		}
-	}
-	return uniqueStrings(differences), uniqueStrings(advisories)
 }
 
 func (s *Service) relationshipOperationSummary(ctx context.Context, operationID int) (*RelationshipOperationSummary, error) {

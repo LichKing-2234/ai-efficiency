@@ -335,6 +335,15 @@ key from one comparison-and-copy run; excluded keys are neither reported as
 deviating nor written, and the exclusion is per-run input rather than persisted
 state.
 
+The copy page accepts comparison results, errors, and loading completion only
+from the current comparison attempt. Changing provider, Platform, baseline, or
+excluded keys invalidates the old comparison, selected targets, and pending
+confirmation, including resets that start no new read. Target selection and copy
+confirmation wait for the current comparison to finish. A submitted copy keeps
+its original context: if that context is replaced or the page is left, its late
+result or failure cannot overwrite the new view or trigger a refresh there. This
+UI invalidation does not cancel, retry, or reverse the upstream copy.
+
 After initialization, saved desired Account order is applied only through
 Confirm. Preview edits are reviewed intent, not an immediate Relay or local
 write. Reconciliation changes only the selected Target relationship and
@@ -583,7 +592,11 @@ a second promotion or accepting ambiguous state.
 
 Mapping list reads now expose Alignment independently as `aligned`, `drifted`, or
 `operating`, with safe categorized differences and an active Operation summary.
-They remain read-only. The Operation read surface exposes only lifecycle,
+Fact interpretation assigns advisory versus difference before rendering the
+message; changing explanatory wording does not change Alignment. Existing
+emitted unavailable-read differences remain safe, and active Operation ownership
+takes precedence as `operating`. These list reads remain read-only; individual
+Mapping reads retain their existing separate projection. The Operation read surface exposes only lifecycle,
 supported directions, affected Mapping IDs, attempt count, immutable step
 summaries, reviewed resource IDs, and a safe external blocker. Recovery Preview
 performs fresh Relay readback without mutation and binds the reviewed direction,

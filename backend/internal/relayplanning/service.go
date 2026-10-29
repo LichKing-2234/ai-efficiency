@@ -2760,31 +2760,31 @@ func (s *Service) ListMappings(ctx context.Context, providerID int) ([]Mapping, 
 	for _, row := range rows {
 		mapping := mappingFromEnt(row)
 		facts := providerFacts[mapping.ProviderID]
-		mapping.Warnings = append(mapping.Warnings, mappingAvailabilityWarnings(mapping, facts.groups)...)
-		mapping.Warnings = append(mapping.Warnings, mappingRelationshipWarnings(facts.relationships, mapping)...)
+		mapping.AlignmentDifferences = append(mapping.AlignmentDifferences, mappingAvailabilityWarnings(mapping, facts.groups)...)
+		mapping.AlignmentDifferences = append(mapping.AlignmentDifferences, mappingRelationshipWarnings(facts.relationships, mapping)...)
 		if result := facts.accounts[strings.ToLower(strings.TrimSpace(mapping.Platform))]; result != nil {
 			if result.err == nil {
 				mapping.AccountPools = accountPools(mapping, result.accounts)
 				mapping.Warnings = append(mapping.Warnings, accountPoolWarnings(mapping.AccountPools, mapping.AccountManagementInitialized)...)
 				for _, pool := range mapping.AccountPools {
 					if pool.Drift {
-						mapping.Warnings = append(mapping.Warnings, fmt.Sprintf("target group %d account relationships drifted", pool.TargetGroupID))
+						mapping.AlignmentDifferences = append(mapping.AlignmentDifferences, fmt.Sprintf("target group %d account relationships drifted", pool.TargetGroupID))
 					}
 				}
 			} else {
-				mapping.Warnings = append(mapping.Warnings, fmt.Sprintf("account relationships are unavailable: %v", result.err))
+				mapping.AlignmentDifferences = append(mapping.AlignmentDifferences, "Account relationship readback is unavailable")
 			}
 		}
 		if directoryFacts == nil || !directoryFacts.available[mapping.DepartmentID] {
-			mapping.Warnings = append(mapping.Warnings, fmt.Sprintf("department %s is unavailable", mapping.DepartmentID))
+			mapping.AlignmentDifferences = append(mapping.AlignmentDifferences, fmt.Sprintf("department %s is unavailable", mapping.DepartmentID))
 			mapping.DepartmentSuggestions = directoryFacts.suggestions(rows, mapping)
 		}
 		if len(mapping.GroupIDs) == 0 {
-			mapping.Warnings = append(mapping.Warnings, "mapping has no target groups")
+			mapping.AlignmentDifferences = append(mapping.AlignmentDifferences, "mapping has no target groups")
 		}
 		for _, groupID := range mapping.GroupIDs {
 			if groupID <= 0 {
-				mapping.Warnings = append(mapping.Warnings, "mapping contains an invalid target group")
+				mapping.AlignmentDifferences = append(mapping.AlignmentDifferences, "mapping contains an invalid target group")
 				break
 			}
 		}
@@ -2800,13 +2800,10 @@ func (s *Service) ListMappings(ctx context.Context, providerID int) ([]Mapping, 
 					continue
 				}
 				warning := fmt.Sprintf("user %s is assigned in multiple mappings", userID)
-				out[index].Warnings = append(out[index].Warnings, warning)
-				out[otherIndex].Warnings = append(out[otherIndex].Warnings, warning)
+				out[index].AlignmentDifferences = append(out[index].AlignmentDifferences, warning)
+				out[otherIndex].AlignmentDifferences = append(out[otherIndex].AlignmentDifferences, warning)
 			}
 		}
-	}
-	for index := range out {
-		out[index].Warnings = uniqueStrings(out[index].Warnings)
 	}
 	if err := s.decorateMappingOperationState(ctx, out); err != nil {
 		return nil, err

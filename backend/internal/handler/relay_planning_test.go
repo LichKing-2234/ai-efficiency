@@ -1349,6 +1349,74 @@ func TestRelayPlanningListMappingsUsesRelationshipSnapshot(t *testing.T) {
 	}
 }
 
+func TestRelayPlanningListMappingsPreservesFactDifferences(t *testing.T) {
+	for _, test := range []struct {
+		name            string
+		groupIDs        []int64
+		department      string
+		members         map[string]int64
+		accountErr      error
+		duplicateMember bool
+		want            []string
+	}{
+		{name: "unavailable Account readback", groupIDs: []int64{101}, department: "dept-alpha", accountErr: errors.New("test-only upstream diagnostic"), want: []string{"Account relationship readback is unavailable"}},
+		{name: "missing Target", groupIDs: []int64{102}, department: "dept-alpha", want: []string{"target group 102 is unavailable"}},
+		{name: "invalid Target", groupIDs: []int64{0}, department: "dept-alpha", want: []string{"mapping contains an invalid target group"}},
+		{name: "no Targets", groupIDs: []int64{}, department: "dept-alpha", want: []string{"mapping has no target groups"}},
+		{name: "missing department", groupIDs: []int64{101}, department: "dept-missing", want: []string{"department dept-missing is unavailable"}},
+		{name: "missing member", groupIDs: []int64{101}, department: "dept-alpha", members: map[string]int64{"7": 101}, want: []string{"mapping member 7 is missing from target group 101"}},
+		{name: "member in multiple mappings", groupIDs: []int64{101}, department: "dept-alpha", members: map[string]int64{"7": 101}, duplicateMember: true, want: []string{"mapping member 7 is missing from target group 101", "user 7 is assigned in multiple mappings"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := testdb.Open(t)
+			providerRow := client.RelayProvider.Create().SetName("alignment-test").SetDisplayName("Alignment Test").SetBaseURL("https://relay.example.com").SetAdminAPIKey("test-admin-key").SaveX(ctx)
+			source, run := createRelayPlanningHandlerDirectory(t, ctx, client, "dept-alpha")
+			client.RelayGroupMapping.Create().SetProviderID(providerRow.ID).SetDepartmentExternalID(test.department).SetDepartmentName("Department Alpha").SetPlatform("openai").SetTemplateGroupID(10).SetGroupIds(test.groupIDs).SetMemberAssignments(test.members).SaveX(ctx)
+			wantMappings := 1
+			if test.duplicateMember {
+				client.DirectoryDepartment.Create().SetSourceID(source.ID).SetExternalID("dept-beta").SetName("Department Beta").SetPath("synthetic/dept-beta").SetLastSeenRunID(run.ID).SaveX(ctx)
+				client.RelayGroupMapping.Create().SetProviderID(providerRow.ID).SetDepartmentExternalID("dept-beta").SetDepartmentName("Department Beta").SetPlatform("openai").SetTemplateGroupID(10).SetGroupIds(test.groupIDs).SetMemberAssignments(test.members).SaveX(ctx)
+				wantMappings = 2
+			}
+			provider := &relayPlanningSearchProvider{
+				groups:       []relay.Group{{ID: 10, Name: "Group Alpha", Platform: "openai"}, {ID: 101, Name: "Group Beta", Platform: "openai"}},
+				accountError: test.accountErr,
+			}
+			service := relayplanning.NewService(client, relayPlanningResolverFunc(func(context.Context, int) (relay.Provider, error) { return provider, nil }), nil)
+			router := gin.New()
+			router.GET("/admin/relay-planning/mappings", NewRelayPlanningHandler(service).ListMappings)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/admin/relay-planning/mappings", nil))
+			if response.Code != http.StatusOK {
+				t.Fatalf("list status = %d, body=%s", response.Code, response.Body.String())
+			}
+			var body struct {
+				Data struct {
+					Items []relayplanning.Mapping `json:"items"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if len(body.Data.Items) != wantMappings {
+				t.Fatalf("items = %+v, want %d Mappings", body.Data.Items, wantMappings)
+			}
+			for _, mapping := range body.Data.Items {
+				if mapping.Alignment != "drifted" || !reflect.DeepEqual(mapping.AlignmentDifferences, test.want) || len(mapping.Warnings) != 0 {
+					t.Fatalf("Mapping = %+v, want only differences %v", mapping, test.want)
+				}
+			}
+			if strings.Contains(response.Body.String(), "test-only upstream diagnostic") {
+				t.Fatal("Mapping response exposed raw Provider error")
+			}
+			if len(provider.assigned)+len(provider.removed)+len(provider.bound)+provider.accountUpdates != 0 {
+				t.Fatal("Mapping read mutated Relay relationships")
+			}
+		})
+	}
+}
+
 func TestRelayPlanningListMappingsStartsIndependentRelayReadsTogether(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
