@@ -772,7 +772,6 @@ describe('UserView', () => {
         ANTHROPIC_BASE_URL: 'https://prod.example.com',
         ANTHROPIC_AUTH_TOKEN: 'sk-existing-claude-123456',
         CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
-        CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
       },
     })
   })
@@ -804,18 +803,20 @@ describe('UserView', () => {
         'model_provider = "custom"',
         'model = "gpt-5.4"',
         'review_model = "gpt-5.4"',
-        'model_reasoning_effort = "xhigh"',
         'disable_response_storage = true',
         'network_access = "enabled"',
         'windows_wsl_setup_acknowledged = true',
-        'model_context_window = 1000000',
-        'model_auto_compact_token_limit = 900000',
         '',
         '[model_providers.custom]',
         'name = "Production / Group Alpha"',
-        'base_url = "https://prod.example.com"',
+        'base_url = "https://prod.example.com/v1"',
+        'model_catalog_url = "https://prod.example.com/v1/models"',
         'wire_api = "responses"',
         'requires_openai_auth = true',
+        '',
+        '[features]',
+        'api_key_model_discovery = true',
+        'goals = true',
       ].join('\n'),
     })
   })

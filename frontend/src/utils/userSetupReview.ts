@@ -136,28 +136,30 @@ function buildClaudeSettingsEnv(baseUrl: string, apiKey: string) {
     ANTHROPIC_BASE_URL: baseUrl,
     ANTHROPIC_AUTH_TOKEN: apiKey,
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
-    CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
   }
 }
 
 function buildCodexCCSwitchConfig(name: string, baseUrl: string, apiKey: string, model?: string) {
   const selectedModel = model?.trim() || CODEX_MODEL
+  const apiBase = buildAgentProviderBaseUrl(baseUrl)
   const config = [
     `model_provider = "custom"`,
     `model = ${tomlString(selectedModel)}`,
     `review_model = ${tomlString(selectedModel)}`,
-    `model_reasoning_effort = "xhigh"`,
     `disable_response_storage = true`,
     `network_access = "enabled"`,
     `windows_wsl_setup_acknowledged = true`,
-    `model_context_window = 1000000`,
-    `model_auto_compact_token_limit = 900000`,
     ``,
     `[model_providers.custom]`,
     `name = ${tomlString(name)}`,
-    `base_url = ${tomlString(baseUrl)}`,
+    `base_url = ${tomlString(apiBase)}`,
+    `model_catalog_url = ${tomlString(apiBase + '/models')}`,
     `wire_api = "responses"`,
     `requires_openai_auth = true`,
+    ``,
+    `[features]`,
+    `api_key_model_discovery = true`,
+    `goals = true`,
   ].join('\n')
 
   return {
@@ -195,24 +197,27 @@ function buildGeminiCCSwitchConfig(baseUrl: string, apiKey: string, model?: stri
 }
 
 export function buildCodexConfigSnippet(providerName: string, baseUrl: string, model?: string) {
-  const provider = providerName.trim() || 'provider'
+  const provider = providerName.trim() || 'OpenAI'
   const selectedModel = model?.trim() || CODEX_MODEL
+  const apiBase = buildAgentProviderBaseUrl(baseUrl)
   return [
     `model_provider = ${tomlString(provider)}`,
     `model = ${tomlString(selectedModel)}`,
     `review_model = ${tomlString(selectedModel)}`,
-    `model_reasoning_effort = "xhigh"`,
     `disable_response_storage = true`,
     `network_access = "enabled"`,
     `windows_wsl_setup_acknowledged = true`,
-    `model_context_window = 1000000`,
-    `model_auto_compact_token_limit = 900000`,
     ``,
     `[model_providers.${tomlTableKey(provider)}]`,
     `name = ${tomlString(provider)}`,
-    `base_url = ${tomlString(baseUrl)}`,
+    `base_url = ${tomlString(apiBase)}`,
+    `model_catalog_url = ${tomlString(apiBase + '/models')}`,
     `wire_api = "responses"`,
     `requires_openai_auth = true`,
+    ``,
+    `[features]`,
+    `api_key_model_discovery = true`,
+    `goals = true`,
   ].join('\n')
 }
 
@@ -222,6 +227,7 @@ export function buildCodexAuthSnippet(apiKey: string) {
 
 export function buildClaudeSettingsSnippet(baseUrl: string, apiKey: string) {
   return JSON.stringify({
+    $schema: 'https://json.schemastore.org/claude-code-settings.json',
     env: buildClaudeSettingsEnv(baseUrl, apiKey),
   }, null, 2)
 }
@@ -372,6 +378,9 @@ export function buildCompositeCodexConfigSnippet(input: ManualConfigSnippetInput
     `wire_api = "responses"`,
     `requires_openai_auth = false`,
     `supports_websockets = false`,
+    ``,
+    `[features]`,
+    `api_key_model_discovery = true`,
   ].join('\n')
 }
 
@@ -503,7 +512,7 @@ export function buildManualConfigSnippets(input: ManualConfigSnippetInput): Manu
       {
         key: 'codex-config',
         path: '~/.codex/config.toml',
-        body: buildCodexConfigSnippet(input.providerName, input.baseUrl),
+        body: buildCodexConfigSnippet('OpenAI', input.baseUrl, input.model),
         containsSecret: false,
       },
       {
