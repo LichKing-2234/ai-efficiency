@@ -80,3 +80,24 @@ func TestAccountConfigurationDefaultsStayInsideTheAllowList(t *testing.T) {
 		}
 	}
 }
+
+// TestAccountConfigurationInertThresholdsStayInsideTheAllowList keeps the copy
+// normalization and the comparison exemption anchored to the same list and the
+// same recorded defaults as the rest of the projection.
+func TestAccountConfigurationInertThresholdsStayInsideTheAllowList(t *testing.T) {
+	allowed := make(map[string]struct{}, len(accountConfigurationExtraKeys))
+	for _, key := range accountConfigurationExtraKeys {
+		allowed[key] = struct{}{}
+	}
+	for key := range accountConfigurationInertThresholdKeys {
+		if _, ok := allowed[key]; !ok {
+			t.Fatalf("inert threshold %q is not in the allow-list", key)
+		}
+		if _, ok := accountConfigurationExtraDefaults[key]; !ok {
+			t.Fatalf("inert threshold %q has no recorded provider default", key)
+		}
+	}
+	if _, ok := allowed[accountConfigurationAutoResetSwitchKey]; !ok {
+		t.Fatalf("auto-reset switch %q is not in the allow-list", accountConfigurationAutoResetSwitchKey)
+	}
+}

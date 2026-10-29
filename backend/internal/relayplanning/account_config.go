@@ -181,7 +181,12 @@ func (s *Service) ApplyAccountConfiguration(ctx context.Context, req ApplyAccoun
 	if len(baseline.ModelMapping) == 0 && len(baseline.Extra) == 0 {
 		return nil, fmt.Errorf("baseline account %d has no allow-listed configuration to copy", req.BaselineAccountID)
 	}
-	if err := applier.ApplyAccountConfiguration(ctx, targets, baseline); err != nil {
+	// A copy writes the provider defaults for values the baseline's own shape
+	// makes inert, so an account is not materialized with a threshold nothing
+	// reads. Verification compares against the baseline as stored; the inert
+	// comparison rule in relay.CompareAccountConfiguration accepts both shapes.
+	copyConfiguration := relay.NormalizeAccountConfigurationForCopy(baseline)
+	if err := applier.ApplyAccountConfiguration(ctx, targets, copyConfiguration); err != nil {
 		return nil, fmt.Errorf("apply relay account configuration: %w", err)
 	}
 

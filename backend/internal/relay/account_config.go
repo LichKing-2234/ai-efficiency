@@ -127,6 +127,66 @@ func extraDefault(key string) (any, bool) {
 	return value, ok
 }
 
+// accountConfigurationAutoResetSwitchKey is the allow-listed switch that decides
+// whether either auto-reset window threshold has any effect.
+const accountConfigurationAutoResetSwitchKey = "auto_reset_credit_enabled"
+
+// accountConfigurationInertThresholdKeys lists the allow-listed window
+// thresholds that Sub2API only reads while the auto-reset switch is on. While the
+// switch is off they are inert: the provider keeps whatever an account stored but
+// nothing evaluates it, so the value cannot make two accounts behave differently.
+var accountConfigurationInertThresholdKeys = map[string]struct{}{
+	"auto_reset_credit_5h_threshold": {},
+	"auto_reset_credit_7d_threshold": {},
+}
+
+// autoResetCreditSwitchOn reports whether an account stores the auto-reset switch
+// as explicitly enabled. A missing or non-boolean value is the provider default
+// (off), which is what makes the window thresholds inert.
+func autoResetCreditSwitchOn(extra map[string]any) bool {
+	enabled, ok := extra[accountConfigurationAutoResetSwitchKey].(bool)
+	return ok && enabled
+}
+
+// autoResetCreditThresholdsInert reports whether the two window thresholds carry
+// no meaning for this baseline/target pair. Sub2API gates both windows behind one
+// switch, so a threshold only has an observable effect when both accounts have it
+// on.
+func autoResetCreditThresholdsInert(baseline, target AccountConfiguration) bool {
+	return !autoResetCreditSwitchOn(baseline.Extra) || !autoResetCreditSwitchOn(target.Extra)
+}
+
+// isInertAutoResetThresholdKey reports whether key is one of the thresholds gated
+// by the auto-reset switch.
+func isInertAutoResetThresholdKey(key string) bool {
+	_, inert := accountConfigurationInertThresholdKeys[key]
+	return inert
+}
+
+// NormalizeAccountConfigurationForCopy returns the configuration a copy should
+// write to its targets. While the baseline's auto-reset switch is off the two
+// window thresholds are inert, so the copy writes the provider defaults instead
+// of propagating whatever the baseline happens to store — in particular the
+// legacy 100% 5h threshold that predates Sub2API 0.2.19's 0 default. The
+// baseline's own stored values are untouched; only the applied payload is
+// normalized.
+func NormalizeAccountConfigurationForCopy(configuration AccountConfiguration) AccountConfiguration {
+	if len(configuration.Extra) == 0 || autoResetCreditSwitchOn(configuration.Extra) {
+		return configuration
+	}
+	normalized := make(map[string]any, len(configuration.Extra))
+	for key, value := range configuration.Extra {
+		if isInertAutoResetThresholdKey(key) {
+			if def, ok := extraDefault(key); ok {
+				value = def
+			}
+		}
+		normalized[key] = value
+	}
+	configuration.Extra = normalized
+	return configuration
+}
+
 // CompareAccountConfiguration compares one target against a baseline. Keys are
 // reported as "model_mapping" and "extra.<key>", sorted, so callers can show and
 // store them directly.
@@ -147,7 +207,16 @@ func CompareAccountConfiguration(baseline, target AccountConfiguration) AccountC
 		diff.DifferingKeys = append(diff.DifferingKeys, accountModelMappingKey)
 	}
 
+	// A window threshold only has an effect while the account-level auto-reset
+	// switch is on, and Sub2API reads the same switch for both windows. While
+	// either side has it off the stored thresholds can only differ in a way
+	// nothing observes, so report the switch itself and leave them out.
+	inertThresholds := autoResetCreditThresholdsInert(baseline, target)
+
 	for key, want := range baseline.Extra {
+		if inertThresholds && isInertAutoResetThresholdKey(key) {
+			continue
+		}
 		got, present := target.Extra[key]
 		if !present {
 			// An absent key the provider defaults to the baseline's value is not a
@@ -169,6 +238,9 @@ func CompareAccountConfiguration(baseline, target AccountConfiguration) AccountC
 	// implies by not carrying it.
 	for key, got := range target.Extra {
 		if _, present := baseline.Extra[key]; present {
+			continue
+		}
+		if inertThresholds && isInertAutoResetThresholdKey(key) {
 			continue
 		}
 		if def, ok := extraDefault(key); ok && reflect.DeepEqual(def, got) {
