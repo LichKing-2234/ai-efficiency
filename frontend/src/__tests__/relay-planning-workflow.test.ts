@@ -32,6 +32,8 @@ function reviewedPlan(overrides: Partial<RelayPlanningPlan> = {}): RelayPlanning
       range_cost: 1200,
       range_tokens: 100,
       usage_known: true,
+      range_requests: 1200,
+      rpm_peak: 20,
       global_token_rank: 1,
       migratable_key_count: 1,
       source_member: true,
@@ -45,6 +47,7 @@ function reviewedPlan(overrides: Partial<RelayPlanningPlan> = {}): RelayPlanning
     assignments: [{
       index: 0,
       total_cost: 1200,
+      peak_rpm_sum: 20,
       user_ids: [1],
       target_group_name: 'Department Alpha-openai-01',
       desired_accounts: [{ account_id: 11, priority: 1 }],

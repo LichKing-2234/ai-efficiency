@@ -61,21 +61,66 @@ type DepartmentChildrenPage struct {
 	PageSize           int
 }
 
+// DepartmentsForUsers resolves the current directory departments for the
+// supplied users in one batch. It is intended for list pages outside this
+// package that need the full department projection rather than the single
+// chosen department of the admin users list.
+//
+// The result is keyed by user ID and each value holds that user's current
+// departments in selection order: the current primary department first when it
+// is among the current memberships, then the remaining current memberships
+// ordered by department external id. A user matched by several directory
+// member rows gets their union, deduplicated by department external id.
+//
+// Users without a resolvable current department are absent from the map, and
+// the map is empty when there is no current directory source or no membership
+// matches. Dangling departments are skipped rather than reported as errors,
+// matching the admin users list. The returned departments are shared with the
+// list projection and must be treated as read-only by callers.
+func (s *Service) DepartmentsForUsers(ctx context.Context, users []*ent.User) (map[int][]*Department, error) {
+	source, err := s.currentSource(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.departmentProjectionsForPage(ctx, source, users)
+}
+
 func (s *Service) departmentsForPage(ctx context.Context, source resolvedSource, users []*ent.User) (map[int]*Department, error) {
-	out := make(map[int]*Department, len(users))
+	projections, err := s.departmentProjectionsForPage(ctx, source, users)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int]*Department, len(projections))
+	for userID, departments := range projections {
+		if len(departments) == 0 || departments[0] == nil {
+			continue
+		}
+		out[userID] = departments[0]
+	}
+	return out, nil
+}
+
+func (s *Service) departmentProjectionsForPage(ctx context.Context, source resolvedSource, users []*ent.User) (map[int][]*Department, error) {
+	out := make(map[int][]*Department, len(users))
 	if !source.found || len(users) == 0 {
 		return out, nil
 	}
 	userIDs := make([]int, 0, len(users))
 	emails := make([]string, 0, len(users))
 	knownUsers := make([]directoryfacts.User, 0, len(users))
+	pageUserIDs := make(map[int]struct{}, len(users))
+	userIDsByEmail := make(map[string][]int, len(users))
 	for _, user := range users {
 		if user == nil {
 			continue
 		}
 		userIDs = append(userIDs, user.ID)
 		emails = append(emails, user.Email)
+		pageUserIDs[user.ID] = struct{}{}
 		knownUsers = append(knownUsers, directoryfacts.User{ID: user.ID, Username: user.Username, Email: user.Email})
+		if email := directoryfacts.NormalizeEmail(user.Email); email != "" {
+			userIDsByEmail[email] = append(userIDsByEmail[email], user.ID)
+		}
 	}
 	facts, err := source.view.Load(ctx, directoryfacts.Query{
 		MemberUserIDs:              userIDs,
@@ -88,20 +133,101 @@ func (s *Service) departmentsForPage(ctx context.Context, source resolvedSource,
 		return nil, fmt.Errorf("load directory facts for admin user page: %w", err)
 	}
 	departmentsByExternalID := map[string]*Department{}
-	for _, userID := range userIDs {
-		if department := facts.PreferredDepartmentForUser(userID); department != nil {
-			if departmentsByExternalID[department.ExternalID] == nil {
-				departmentsByExternalID[department.ExternalID] = &Department{
-					ExternalID:  department.ExternalID,
-					Name:        department.Name,
-					Path:        department.Path,
-					DisplayPath: facts.Hierarchy().DisplayPath(department.ExternalID),
-				}
+	resolveDepartment := func(externalID string) *Department {
+		externalID = strings.TrimSpace(externalID)
+		if externalID == "" {
+			return nil
+		}
+		if cached := departmentsByExternalID[externalID]; cached != nil {
+			return cached
+		}
+		department := facts.Hierarchy().Department(externalID)
+		if department == nil {
+			return nil
+		}
+		resolved := &Department{
+			ExternalID:  department.ExternalID,
+			Name:        department.Name,
+			Path:        department.Path,
+			DisplayPath: facts.Hierarchy().DisplayPath(externalID),
+		}
+		departmentsByExternalID[externalID] = resolved
+		return resolved
+	}
+	for _, member := range facts.Members() {
+		departments := make([]*Department, 0, 1)
+		for _, externalID := range memberDepartmentSelectionOrder(facts, member) {
+			if department := resolveDepartment(externalID); department != nil {
+				departments = append(departments, department)
 			}
-			out[userID] = departmentsByExternalID[department.ExternalID]
+		}
+		if len(departments) == 0 {
+			continue
+		}
+		matchingUserIDs := append([]int(nil), userIDsByEmail[directoryfacts.NormalizeEmail(member.EmailNormalized)]...)
+		if member.MatchedUserID != nil {
+			matchingUserIDs = append(matchingUserIDs, *member.MatchedUserID)
+		}
+		seenUserIDs := make(map[int]struct{}, len(matchingUserIDs))
+		for _, userID := range matchingUserIDs {
+			if _, onPage := pageUserIDs[userID]; !onPage {
+				continue
+			}
+			if _, duplicate := seenUserIDs[userID]; duplicate {
+				continue
+			}
+			seenUserIDs[userID] = struct{}{}
+			out[userID] = appendUniqueDepartments(out[userID], departments...)
 		}
 	}
 	return out, nil
+}
+
+// memberDepartmentSelectionOrder lists the current departments of one directory
+// member in display selection order: the current primary department first when
+// it is among the current memberships, then the remaining memberships ordered
+// by department external id. A member without current memberships falls back to
+// the legacy primary department field.
+func memberDepartmentSelectionOrder(facts *directoryfacts.Facts, member directoryfacts.Member) []string {
+	primaryID := strings.TrimSpace(member.DepartmentExternalID)
+	membershipIDs := facts.ExplicitDepartmentIDsForMember(member)
+	if len(membershipIDs) == 0 {
+		if primaryID == "" {
+			return nil
+		}
+		return []string{primaryID}
+	}
+	selection := make([]string, 0, len(membershipIDs))
+	if primaryID != "" {
+		for _, membershipID := range membershipIDs {
+			if strings.TrimSpace(membershipID) == primaryID {
+				selection = append(selection, primaryID)
+				break
+			}
+		}
+	}
+	return appendUniqueDepartmentIDs(selection, membershipIDs...)
+}
+
+func appendUniqueDepartments(current []*Department, values ...*Department) []*Department {
+	seen := make(map[string]struct{}, len(current)+len(values))
+	for _, department := range current {
+		if department == nil {
+			continue
+		}
+		seen[department.ExternalID] = struct{}{}
+	}
+	for _, department := range values {
+		if department == nil {
+			continue
+		}
+		if _, ok := seen[department.ExternalID]; ok {
+			continue
+		}
+		seen[department.ExternalID] = struct{}{}
+		current = append(current, department)
+	}
+	return current
 }
 
 func appendUniqueDepartmentIDs(current []string, values ...string) []string {

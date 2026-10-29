@@ -622,3 +622,204 @@ func countString(values []string, want string) int {
 	}
 	return count
 }
+
+type departmentProjectionFixture struct {
+	client *ent.Client
+	users  map[string]*ent.User
+}
+
+func TestDepartmentsForUsersSelectionOrder(t *testing.T) {
+	fixture := seedDepartmentProjectionFixture(t)
+	projections, err := NewService(fixture.client).DepartmentsForUsers(context.Background(), fixture.allUsers())
+	if err != nil {
+		t.Fatalf("DepartmentsForUsers: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		userKey string
+		want    []string
+	}{
+		{name: "current primary before remaining memberships", userKey: "ordered", want: []string{"dept-beta", "dept-alpha"}},
+		{name: "dangling primary falls back to ordered memberships", userKey: "dangling-primary", want: []string{"dept-a", "dept-b"}},
+		{name: "legacy primary only without current memberships", userKey: "legacy-primary", want: []string{"dept-legacy"}},
+		{name: "member rows union in first-row order without duplicates", userKey: "multi-row", want: []string{"dept-b", "dept-a", "dept-c"}},
+		{name: "all dangling departments are skipped", userKey: "all-dangling", want: []string{}},
+		{name: "user without directory membership is absent", userKey: "unmatched", want: []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			userID := fixture.users[tt.userKey].ID
+			got, present := projections[userID]
+			if gotIDs := projectionExternalIDs(got); !reflect.DeepEqual(gotIDs, tt.want) {
+				t.Fatalf("projection for %s = %v, want %v", tt.userKey, gotIDs, tt.want)
+			}
+			if len(tt.want) == 0 && present {
+				t.Fatalf("projection for %s is present with %v, want absent", tt.userKey, projectionExternalIDs(got))
+			}
+		})
+	}
+
+	ordered := projections[fixture.users["ordered"].ID]
+	if len(ordered) != 2 || ordered[0].Name != "Current Beta" || ordered[0].DisplayPath != "Current Beta" ||
+		ordered[1].Name != "Current Alpha" || ordered[1].DisplayPath != "Current Alpha" {
+		t.Fatalf("ordered projection = %+v, want current-source presentations", ordered)
+	}
+}
+
+func TestDepartmentsForUsersWithoutCurrentSource(t *testing.T) {
+	ctx := context.Background()
+	sourceLessClient := testdb.Open(t)
+	user := createTargetUser(t, sourceLessClient, "no-source", "no-source@example.com", nil, "", nil)
+	projections, err := NewService(sourceLessClient).DepartmentsForUsers(ctx, []*ent.User{user, nil})
+	if err != nil {
+		t.Fatalf("DepartmentsForUsers without source: %v", err)
+	}
+	if projections == nil || len(projections) != 0 {
+		t.Fatalf("projections without source = %v, want empty non-nil map", projections)
+	}
+
+	fixture := seedDepartmentProjectionFixture(t)
+	projections, err = NewService(fixture.client).DepartmentsForUsers(ctx, nil)
+	if err != nil {
+		t.Fatalf("DepartmentsForUsers without users: %v", err)
+	}
+	if projections == nil || len(projections) != 0 {
+		t.Fatalf("projections without users = %v, want empty non-nil map", projections)
+	}
+}
+
+func TestDepartmentProjectionsPreserveAdminListSelection(t *testing.T) {
+	fixture := seedDepartmentProjectionFixture(t)
+	service := NewService(fixture.client)
+	ctx := context.Background()
+	source, err := service.currentSource(ctx)
+	if err != nil {
+		t.Fatalf("currentSource: %v", err)
+	}
+
+	pageUsers := fixture.allUsers()
+	projections, err := service.departmentProjectionsForPage(ctx, source, pageUsers)
+	if err != nil {
+		t.Fatalf("departmentProjectionsForPage: %v", err)
+	}
+	pageDepartments, err := service.departmentsForPage(ctx, source, pageUsers)
+	if err != nil {
+		t.Fatalf("departmentsForPage: %v", err)
+	}
+	for _, user := range pageUsers {
+		want := projections[user.ID]
+		got := pageDepartments[user.ID]
+		if len(want) == 0 {
+			if got != nil {
+				t.Fatalf("departmentsForPage user %q = %+v, want absent", user.Username, got)
+			}
+			continue
+		}
+		if got == nil || !reflect.DeepEqual(*got, *want[0]) {
+			t.Fatalf("departmentsForPage user %q = %+v, want first projection %+v", user.Username, got, want[0])
+		}
+	}
+
+	wantSelection := map[string]string{
+		"ordered":          "dept-beta",
+		"dangling-primary": "dept-a",
+		"legacy-primary":   "dept-legacy",
+		"multi-row":        "dept-b",
+	}
+	for userKey, wantID := range wantSelection {
+		userID := fixture.users[userKey].ID
+		if got := pageDepartments[userID]; got == nil || got.ExternalID != wantID {
+			t.Fatalf("departmentsForPage %s = %+v, want external id %q", userKey, got, wantID)
+		}
+	}
+
+	page, err := service.List(ctx, ListRequest{Page: 1, PageSize: 100})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if page.Total != len(pageUsers) || len(page.Users) != len(pageUsers) {
+		t.Fatalf("list counts = total %d users %d, want %d", page.Total, len(page.Users), len(pageUsers))
+	}
+	for userKey, wantID := range wantSelection {
+		department := page.DepartmentsByUserID[fixture.users[userKey].ID]
+		if department == nil || department.ExternalID != wantID {
+			t.Fatalf("list department for %s = %+v, want external id %q", userKey, department, wantID)
+		}
+	}
+	for _, userKey := range []string{"all-dangling", "unmatched"} {
+		if department, ok := page.DepartmentsByUserID[fixture.users[userKey].ID]; ok || department != nil {
+			t.Fatalf("list department for %s = %+v, want absent", userKey, department)
+		}
+	}
+}
+
+func seedDepartmentProjectionFixture(t *testing.T) departmentProjectionFixture {
+	t.Helper()
+	client := testdb.Open(t)
+	users := map[string]*ent.User{
+		"ordered":          createTargetUser(t, client, "ordered", "ordered@example.com", nil, "", nil),
+		"dangling-primary": createTargetUser(t, client, "dangling-primary", "dangling-primary@example.com", nil, "", nil),
+		"legacy-primary":   createTargetUser(t, client, "legacy-primary", "legacy-primary@example.com", nil, "", nil),
+		"all-dangling":     createTargetUser(t, client, "all-dangling", "all-dangling@example.com", nil, "", nil),
+		"multi-row":        createTargetUser(t, client, "multi-row", "multi-row@example.com", nil, "", nil),
+		"unmatched":        createTargetUser(t, client, "unmatched", "unmatched@example.com", nil, "", nil),
+	}
+
+	staleSource, staleRun := createTargetSourceSnapshot(t, client, "Stale Projection Directory", time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC))
+	createTargetDepartment(t, client, staleSource.ID, staleRun.ID, "dept-alpha", "", "", "Stale Alpha")
+	createTargetDepartment(t, client, staleSource.ID, staleRun.ID, "dept-beta", "", "", "Stale Beta")
+	staleOrdered := createTargetMember(t, client, staleSource.ID, staleRun.ID, "stale-ordered", "ordered-directory@example.com", "dept-alpha", &users["ordered"].ID)
+	createTargetMembership(t, client, staleSource.ID, staleRun.ID, staleOrdered, "dept-alpha")
+
+	currentSource, currentRun := createTargetSourceSnapshot(t, client, "Current Projection Directory", time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC))
+	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-alpha", "", "", "Current Alpha")
+	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-beta", "", "", "Current Beta")
+	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-a", "", "", "Team A")
+	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-b", "", "", "Team B")
+	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-c", "", "", "Team C")
+	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-legacy", "", "", "Legacy Team")
+
+	ordered := createTargetMember(t, client, currentSource.ID, currentRun.ID, "member-ordered", "ordered-directory@example.com", "dept-beta", &users["ordered"].ID)
+	createTargetMembership(t, client, currentSource.ID, currentRun.ID, ordered, "dept-alpha")
+	createTargetMembership(t, client, currentSource.ID, currentRun.ID, ordered, "dept-beta")
+
+	dangling := createTargetMember(t, client, currentSource.ID, currentRun.ID, "member-dangling-primary", "dangling-directory@example.com", "dept-missing-primary", &users["dangling-primary"].ID)
+	createTargetMembership(t, client, currentSource.ID, currentRun.ID, dangling, "dept-b")
+	createTargetMembership(t, client, currentSource.ID, currentRun.ID, dangling, "dept-a")
+
+	createTargetMember(t, client, currentSource.ID, currentRun.ID, "member-legacy-primary", "legacy-directory@example.com", "dept-legacy", &users["legacy-primary"].ID)
+
+	allDangling := createTargetMember(t, client, currentSource.ID, currentRun.ID, "member-all-dangling", "all-dangling-directory@example.com", "dept-missing-one", &users["all-dangling"].ID)
+	createTargetMembership(t, client, currentSource.ID, currentRun.ID, allDangling, "dept-missing-two")
+	createTargetMembership(t, client, currentSource.ID, currentRun.ID, allDangling, "dept-missing-three")
+
+	firstRow := createTargetMember(t, client, currentSource.ID, currentRun.ID, "member-multi-first", "multi-directory@example.com", "dept-b", &users["multi-row"].ID)
+	createTargetMembership(t, client, currentSource.ID, currentRun.ID, firstRow, "dept-a")
+	createTargetMembership(t, client, currentSource.ID, currentRun.ID, firstRow, "dept-b")
+	secondRow := createTargetMember(t, client, currentSource.ID, currentRun.ID, "member-multi-second", users["multi-row"].Email, "dept-c", nil)
+	createTargetMembership(t, client, currentSource.ID, currentRun.ID, secondRow, "dept-b")
+	createTargetMembership(t, client, currentSource.ID, currentRun.ID, secondRow, "dept-c")
+
+	return departmentProjectionFixture{client: client, users: users}
+}
+
+func (f departmentProjectionFixture) allUsers() []*ent.User {
+	keys := []string{"ordered", "dangling-primary", "legacy-primary", "all-dangling", "multi-row", "unmatched"}
+	users := make([]*ent.User, 0, len(keys))
+	for _, key := range keys {
+		users = append(users, f.users[key])
+	}
+	return users
+}
+
+func projectionExternalIDs(departments []*Department) []string {
+	ids := make([]string, 0, len(departments))
+	for _, department := range departments {
+		if department == nil {
+			continue
+		}
+		ids = append(ids, department.ExternalID)
+	}
+	return ids
+}

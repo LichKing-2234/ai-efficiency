@@ -3713,6 +3713,77 @@ func (s *sub2apiRelay) GetBatchUserUsageStats(ctx context.Context, userIDs []int
 	return out, nil
 }
 
+// GetUserGroupUsage reads one Relay user's usage split by Group over one
+// explicit window. Upstream honors start_date/end_date/timezone only; end_date
+// is inclusive and granularity is not a filter for this endpoint, so it is
+// never sent.
+func (s *sub2apiRelay) GetUserGroupUsage(ctx context.Context, relayUserID int64, params TeamUsageSummaryParams) ([]GroupUsageStat, error) {
+	// Upstream treats a missing user_id filter as "every user", so a non-positive
+	// ID must fail here instead of silently returning provider-wide group usage.
+	if relayUserID <= 0 {
+		return nil, fmt.Errorf("relay: user group usage: invalid Relay user ID %d", relayUserID)
+	}
+	query := url.Values{}
+	query.Set("user_id", strconv.FormatInt(relayUserID, 10))
+	if startDate := strings.TrimSpace(params.StartDate); startDate != "" {
+		query.Set("start_date", startDate)
+	}
+	if endDate := strings.TrimSpace(params.EndDate); endDate != "" {
+		query.Set("end_date", endDate)
+	}
+	if timezone := strings.TrimSpace(params.Timezone); timezone != "" {
+		query.Set("timezone", timezone)
+	}
+
+	var payload struct {
+		Groups []GroupUsageStat `json:"groups"`
+	}
+	if err := s.getAdminEnvelopeJSON(ctx, "/api/v1/admin/dashboard/groups", query, &payload); err != nil {
+		return nil, fmt.Errorf("relay: user group usage: %w", err)
+	}
+	if payload.Groups == nil {
+		return []GroupUsageStat{}, nil
+	}
+	return payload.Groups, nil
+}
+
+// GetUserUsageTrend reads one Relay user's usage trend points for one explicit
+// window. Upstream defaults granularity to day and labels hour buckets as
+// "YYYY-MM-DD HH:MM"; the requested granularity is forwarded as-is so callers
+// control the bucket size.
+func (s *sub2apiRelay) GetUserUsageTrend(ctx context.Context, relayUserID int64, params TeamMemberTrendParams) ([]UsageTrendPoint, error) {
+	// Upstream treats a missing user_id filter as "every user", so a non-positive
+	// ID must fail here instead of silently returning provider-wide trend rows.
+	if relayUserID <= 0 {
+		return nil, fmt.Errorf("relay: user usage trend: invalid Relay user ID %d", relayUserID)
+	}
+	query := url.Values{}
+	query.Set("user_id", strconv.FormatInt(relayUserID, 10))
+	if startDate := strings.TrimSpace(params.StartDate); startDate != "" {
+		query.Set("start_date", startDate)
+	}
+	if endDate := strings.TrimSpace(params.EndDate); endDate != "" {
+		query.Set("end_date", endDate)
+	}
+	if granularity := strings.TrimSpace(params.Granularity); granularity != "" {
+		query.Set("granularity", granularity)
+	}
+	if timezone := strings.TrimSpace(params.Timezone); timezone != "" {
+		query.Set("timezone", timezone)
+	}
+
+	var payload struct {
+		Trend []UsageTrendPoint `json:"trend"`
+	}
+	if err := s.getAdminEnvelopeJSON(ctx, "/api/v1/admin/dashboard/trend", query, &payload); err != nil {
+		return nil, fmt.Errorf("relay: user usage trend: %w", err)
+	}
+	if payload.Trend == nil {
+		return []UsageTrendPoint{}, nil
+	}
+	return payload.Trend, nil
+}
+
 func (s *sub2apiRelay) GetUsageTrendForUsers(ctx context.Context, relayUserIDs []int64, params TeamMemberTrendParams) (map[int64][]UsageTrendPoint, error) {
 	requested := make([]int64, 0, len(relayUserIDs))
 	seen := make(map[int64]struct{}, len(relayUserIDs))

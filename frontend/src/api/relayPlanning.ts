@@ -1,14 +1,24 @@
 import client from './client'
 import type { ApiResponse } from '@/types'
 
+export interface RelayPlanningCandidateDepartment {
+  external_id: string
+  name: string
+  display_path: string
+}
+
 export interface RelayPlanningCandidate {
   user_id: number
   relay_user_id: number
   username: string
   email: string
+  department?: RelayPlanningCandidateDepartment
   range_cost: number
   range_tokens: number
   usage_known: boolean
+  range_requests: number
+  peak_hour_requests?: number | null
+  rpm_peak?: number | null
   global_token_rank: number
   current_group_ids?: number[]
   migratable_key_count: number
@@ -25,6 +35,8 @@ export interface RelayPlanningCandidate {
 export interface RelayPlanningAssignment {
   index: number
   total_cost: number
+  /** Sum of the assigned candidates' advisory peak RPM; members without peak data are excluded. */
+  peak_rpm_sum: number
   user_ids: number[]
   target_group_id?: number
   target_unavailable?: boolean
@@ -281,7 +293,7 @@ export interface RelayPlanningUserSearchItem {
   relay_user_id?: number
   username: string
   email: string
-  department?: { external_id: string; name: string; display_path: string }
+  department?: RelayPlanningCandidateDepartment
   selectable: boolean
   disabled_reason?: string
 	managed_assignments?: Array<{ mapping_id: number; department_id: string; department_name: string; target_group_id: number }>

@@ -97,6 +97,65 @@ Plan-scoped user and Account searches debounce text changes, paginate
 immediately, and ignore superseded responses. An older Preview/search/Execute
 response cannot replace state created by a newer request or explicit edit.
 
+## Planning Usage Scope and Advisory Metrics
+
+Candidate cost, Token totals, and burst intensity are planning hints, not
+Relay relationship authority.
+
+- Each candidate's 30-day cost and Token totals are scoped to Provider Groups
+  whose Platform equals the planning Platform: the backend sums the Provider's
+  per-Group usage for that user over exactly those Group IDs. Usage booked under
+  another Platform never counts toward the plan, and usage from a Group the
+  Provider no longer returns cannot be attributed. Composite-platform Groups are
+  not included, so traffic routed through a composite Group is excluded from the
+  scoped totals.
+- The same scoped rule applies to Relay-only unmanaged members of managed
+  Targets, because their observed cost contributes to remaining Target capacity.
+- A successful scoped read that matches no Groups is known zero usage. A failed
+  scoped read marks the candidate's usage unknown and keeps the existing
+  underestimated-capacity warning, so a read failure is never reported as zero.
+  A Provider without the optional Group-usage capability keeps the provider-wide
+  fallback.
+- The global Token rank stays provider-wide: it ranks candidates against all
+  Provider users over the same 30-day window and is not Platform-scoped.
+  Candidates remain ordered by 30-day cost descending, now using the
+  Platform-scoped cost.
+- Request volume is advisory as well. `range_requests` sums the Platform-scoped
+  Groups' request counts over the same 30-day window and under the same scoping
+  and unknown rules as cost and Tokens, so it is meaningful only when the
+  candidate's usage is known. `peak_hour_requests` and `rpm_peak` describe the
+  busiest completed UTC clock hour within the trailing seven UTC days: the hourly
+  request count and its per-minute average. They are read from the Provider's
+  per-user hourly usage trend, are provider-wide rather than Platform-scoped, and
+  are omitted when the Provider cannot supply hourly points, the read fails, or
+  no clock hour has completed. The current partial hour and hours outside the
+  window are excluded.
+- Each planned Assignment also carries `peak_rpm_sum`, the sum of its members'
+  advisory `rpm_peak`, so an administrator can compare a Target's request
+  pressure with the account's request-rate limit without adding up rows by hand.
+  Members without peak data contribute nothing, and member peaks may not
+  coincide, so the sum is an upper-bound reference rather than a measured
+  concurrency.
+- The Provider exposes hourly buckets only, so peak RPM is an average inside one
+  hour. It cannot represent second-level QPS, bursts inside the hour, or
+  in-flight concurrency; sizing against an account's request-rate limit needs the
+  Target-level aggregate and Provider-side throttling facts, not this per-user
+  value alone.
+- Each candidate also exposes, for display only, its current Directory
+  department (external ID, name, and effective display path). It follows the
+  admin-users selection rule: the primary department when it is among the current
+  memberships, otherwise the first current membership ordered by department
+  external ID; several directory member rows for one user are unioned and
+  deduplicated by department external ID. Department warnings keep their existing
+  subtree/multiple semantics and their effective-hierarchy read, including the
+  warning for a membership whose department is no longer in the hierarchy; the
+  display projection adds one candidate-bounded read per Preview and no
+  per-user query.
+
+These values are advisory and display-only. They never enter the relationship
+fingerprint, and a refresh that changes only cost, Tokens, rank, peak TPM, or
+department display does not invalidate a reviewed Confirm.
+
 ## Reviewed-Plan Ownership
 
 The Relay Planning workflow composable owns the active Preview/Replan and every
@@ -366,8 +425,9 @@ The current fingerprint carries separate canonical hashes for:
   facts for historically reviewed Keys.
 
 Credentials, API-Key values, private Account configuration, and raw Provider
-payloads are excluded. Usage, rank, cost, and freshness are advisory and also
-excluded; refreshing only advisory values does not invalidate Confirm.
+payloads are excluded. Usage, rank, cost, request volume, candidate department
+display, and freshness are advisory and also excluded; refreshing only
+advisory values does not invalidate Confirm.
 
 Confirm must send the fingerprint from the exact plan under review. Before the
 first Relay or mapping write, the backend rebuilds the complete relationship
@@ -574,9 +634,13 @@ relationship caches.
 
 The mapping list begins Provider Group, relationship, Account, and Directory
 reads concurrently; upstream read count scales with Relay pagination and
-Provider/Platform count, not managed-mapping count. Usage remains advisory and
-may use a valid Team Usage prewarm full hit without changing relationship
-authority or the fingerprint.
+Provider/Platform count, not managed-mapping count. Provider-wide usage that
+feeds only the global Token rank remains advisory and may use a valid Team Usage
+prewarm full hit. Per-candidate Platform-scoped cost, Token totals, request
+counts, and the peak-hour request rate use the Provider's per-user Group usage
+and hourly trend reads, add one bounded read per candidate inside the existing
+candidate worker fan-out, and never change relationship authority or the
+fingerprint.
 
 All Relay reads/writes remain behind `relay.Provider` capabilities and HTTP.
 There is no direct sub2api database coupling. Fingerprints, persisted state,

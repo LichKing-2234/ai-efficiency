@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { ElDialog, ElMessage, ElMessageBox } from 'element-plus'
+import { ElDialog, ElMessage, ElMessageBox, ElTooltip } from 'element-plus'
 import RelayPlanningView from '@/views/admin/RelayPlanningView.vue'
 
 vi.mock('@/api/adminUsers', () => ({
@@ -26,6 +26,8 @@ vi.mock('@/api/relayPlanning', async (importOriginal) => ({
 	searchRelayPlanningUsers: vi.fn(),
 }))
 
+const longDepartmentPath = 'Engineering / Platform Infrastructure / Developer Experience / SDK Framework'
+
 const plan = {
   provider_id: 7,
   department_id: 'dept-alpha',
@@ -43,8 +45,13 @@ const plan = {
     relay_user_id: 101,
     username: 'alice',
     email: 'alice@example.com',
+    department: { external_id: 'dept-alpha', name: 'SDK Framework', display_path: longDepartmentPath },
     range_cost: 1200,
     range_tokens: 100,
+    usage_known: true,
+    range_requests: 2400,
+    peak_hour_requests: 90000,
+    rpm_peak: 1500,
     global_token_rank: 1,
     migratable_key_count: 1,
     source_member: true,
@@ -57,6 +64,7 @@ const plan = {
 	assignments: [{
     index: 0,
     total_cost: 1200,
+    peak_rpm_sum: 1500,
     user_ids: [1],
     target_group_name: 'SDK Framework-openai-01',
 		desired_accounts: [{ account_id: 11, priority: 1 }],
@@ -527,6 +535,218 @@ describe('RelayPlanningView', () => {
 		const picker = wrapper.get('[data-testid="department-select"]')
 
 		expect(picker.element.parentElement?.classList.contains('min-w-0')).toBe(true)
+	})
+
+	it('shows the candidate department, 30-day requests, and recent peak RPM in the wide table layout', async () => {
+		const { wrapper } = await mountView([], true)
+		await fillAndPreview(wrapper)
+
+		const table = wrapper.get('[data-testid="candidate-table-layout"]')
+		expect(table.text()).toContain('Candidate department')
+		expect(table.text()).toContain('30-day requests (this platform)')
+		expect(table.text()).toContain('Recent peak RPM')
+		const department = wrapper.get('[data-testid="candidate-department-1"]')
+		expect(department.text()).toBe(longDepartmentPath)
+		expect(department.attributes('title')).toBe(longDepartmentPath)
+		expect(department.classes()).not.toContain('truncate')
+		expect(department.classes()).toContain('whitespace-normal')
+		expect(department.classes()).toContain('break-words')
+		expect(department.classes()).toContain('leading-snug')
+		expect(wrapper.get('[data-testid="candidate-requests-1"]').text()).toBe('2.4K')
+		expect(wrapper.get('[data-testid="candidate-rpm-1"]').text()).toBe('1.5K')
+		const rpmHeader = table.get('.cursor-help')
+		expect(rpmHeader.text()).toBe('Recent peak RPM')
+		expect(rpmHeader.classes()).toContain('border-dashed')
+		// peak_hour_requests stays API-only and must not leak into the UI.
+		expect(table.text()).not.toContain('90K')
+	})
+
+	it('shows the candidate department, 30-day requests, and recent peak RPM in the card layout', async () => {
+		const { wrapper } = await mountView()
+		await fillAndPreview(wrapper)
+
+		expect(wrapper.find('[data-testid="candidate-table-layout"]').exists()).toBe(false)
+		const department = wrapper.get('[data-testid="candidate-department-1"]')
+		expect(department.text()).toBe(longDepartmentPath)
+		expect(department.classes()).toContain('break-words')
+		expect(department.classes()).not.toContain('truncate')
+		expect(wrapper.text()).toContain('30-day requests (this platform)')
+		expect(wrapper.text()).toContain('Recent peak RPM')
+		expect(wrapper.get('[data-testid="candidate-requests-1"]').text()).toBe('2.4K')
+		const rpmEntry = wrapper.get('[data-testid="candidate-rpm-1"]')
+		expect(rpmEntry.text()).toBe('1.5K')
+		expect(rpmEntry.element.parentElement?.querySelector('dt')?.getAttribute('title')).toContain('busiest completed clock hour')
+		expect(wrapper.text()).not.toContain('90K')
+	})
+
+	it('shows a dash for 30-day requests when usage is unknown and for a missing peak RPM', async () => {
+		const { wrapper, relayPlanning } = await mountView()
+		const unknownPlan = structuredClone(plan) as any
+		unknownPlan.candidates[0].usage_known = false
+		unknownPlan.candidates[0].rpm_peak = null
+		relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: unknownPlan } })
+
+		await fillAndPreview(wrapper)
+
+		expect(wrapper.get('[data-testid="candidate-requests-1"]').text()).toBe('-')
+		expect(wrapper.get('[data-testid="candidate-rpm-1"]').text()).toBe('-')
+	})
+
+	it('falls back to the department name and shows a dash for an unknown peak RPM', async () => {
+		const { wrapper, relayPlanning } = await mountView()
+		const fallbackPlan = structuredClone(plan) as any
+		fallbackPlan.candidates[0].department = { external_id: 'dept-beta', name: 'SDK Runtime', display_path: '' }
+		fallbackPlan.candidates.push({
+			...structuredClone(plan.candidates[0]),
+			user_id: 2,
+			relay_user_id: 102,
+			username: 'bob',
+			email: 'bob@example.org',
+			department: undefined,
+			rpm_peak: null,
+		})
+		relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: fallbackPlan } })
+
+		await fillAndPreview(wrapper)
+
+		expect(wrapper.get('[data-testid="candidate-department-1"]').text()).toBe('SDK Runtime')
+		expect(wrapper.get('[data-testid="candidate-rpm-1"]').text()).toBe('1.5K')
+		expect(wrapper.get('[data-testid="candidate-department-2"]').text()).toBe('Not matched to directory')
+		expect(wrapper.get('[data-testid="candidate-rpm-2"]').text()).toBe('-')
+		expect(wrapper.get('[data-testid="candidate-requests-2"]').text()).toBe('2.4K')
+	})
+
+	it('enables sortable headers only on the candidate data columns', async () => {
+		const { wrapper } = await mountView([], true)
+		await fillAndPreview(wrapper)
+
+		const table = wrapper.get('[data-testid="candidate-table-layout"]')
+		const headerCells = table.findAll('thead th')
+		const sortableHeaders = headerCells.filter((cell) => cell.classes().includes('is-sortable'))
+		expect(sortableHeaders).toHaveLength(9)
+		sortableHeaders.forEach((cell) => expect(cell.find('.caret-wrapper').exists()).toBe(true))
+		expect(sortableHeaders.some((cell) => cell.find('.sort-caret.ascending').exists())).toBe(true)
+		expect(sortableHeaders.some((cell) => cell.find('.sort-caret.descending').exists())).toBe(true)
+
+		const headerCell = (label: string) => headerCells.find((cell) => cell.text().startsWith(label))
+		expect(headerCell('Select')).toBeTruthy()
+		expect(headerCell('Select')?.classes()).not.toContain('is-sortable')
+		expect(headerCell('Target')?.classes()).not.toContain('is-sortable')
+		expect(headerCell('Source')?.classes()).not.toContain('is-sortable')
+		expect(headerCell('Status')?.classes()).not.toContain('is-sortable')
+		expect(headerCell('Target')?.find('.caret-wrapper').exists()).toBe(false)
+	})
+
+	it('sorts rows by computed display values without mutating plan state', async () => {
+		const { wrapper, relayPlanning } = await mountView([], true)
+		const sortPlan = structuredClone(plan) as any
+		const baseCandidate = structuredClone(plan.candidates[0])
+		sortPlan.candidates = [
+			{ ...structuredClone(baseCandidate), user_id: 3, relay_user_id: 103, username: 'carol', email: 'carol@example.net', global_token_rank: 3, department: { external_id: 'dept-zeta', name: 'Zeta', display_path: 'Zeta' } },
+			{ ...structuredClone(baseCandidate), user_id: 2, relay_user_id: 102, username: 'bob', email: 'bob@example.org', global_token_rank: 2, department: { external_id: 'dept-alpha', name: 'Alpha', display_path: 'Alpha' } },
+			{ ...structuredClone(baseCandidate), user_id: 1, relay_user_id: 101, username: 'alice', email: 'alice@example.com', global_token_rank: 1, department: { external_id: 'dept-beta', name: 'Beta', display_path: 'Beta' } },
+		]
+		relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: sortPlan } })
+
+		await fillAndPreview(wrapper)
+
+		const table = wrapper.get('[data-testid="candidate-table-layout"]')
+		const rowUsernames = () => table.findAll('tbody tr').map((row) => row.findAll('td')[1].text())
+		expect(rowUsernames()).toEqual(['carol', 'bob', 'alice'])
+
+		const userHeader = table.findAll('thead th').find((cell) => cell.text().startsWith('User'))!
+		await userHeader.trigger('click')
+		await flushPromises()
+		expect(rowUsernames()).toEqual(['alice', 'bob', 'carol'])
+
+		await userHeader.trigger('click')
+		await flushPromises()
+		expect(rowUsernames()).toEqual(['carol', 'bob', 'alice'])
+
+		const departmentHeader = table.findAll('thead th').find((cell) => cell.text().startsWith('Candidate department'))!
+		await departmentHeader.trigger('click')
+		await flushPromises()
+		expect(rowUsernames()).toEqual(['bob', 'alice', 'carol'])
+
+		await departmentHeader.trigger('click')
+		await flushPromises()
+		expect(rowUsernames()).toEqual(['carol', 'alice', 'bob'])
+
+		// Sorting is display-only: the plan payload order, preview request count, and
+		// execution state are untouched.
+		expect(sortPlan.candidates.map((candidate: any) => candidate.user_id)).toEqual([3, 2, 1])
+		expect(relayPlanning.previewRelayPlan).toHaveBeenCalledTimes(1)
+		expect(relayPlanning.executeRelayPlan).not.toHaveBeenCalled()
+	})
+
+	it('sorts unknown usage and missing peak RPM as no-value with the documented sentinel', async () => {
+		const { wrapper, relayPlanning } = await mountView([], true)
+		const sortPlan = structuredClone(plan) as any
+		const known = structuredClone(plan.candidates[0])
+		sortPlan.candidates = [
+			known,
+			{ ...structuredClone(known), user_id: 2, relay_user_id: 102, username: 'bob', email: 'bob@example.org', usage_known: false, range_requests: 0, rpm_peak: null },
+		]
+		relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: sortPlan } })
+
+		await fillAndPreview(wrapper)
+
+		const table = wrapper.get('[data-testid="candidate-table-layout"]')
+		const rowUsernames = () => table.findAll('tbody tr').map((row) => row.findAll('td')[1].text())
+		const headerCell = (label: string) => table.findAll('thead th').find((cell) => cell.text().startsWith(label))!
+
+		const requestsHeader = headerCell('30-day requests')
+		await requestsHeader.trigger('click')
+		await flushPromises()
+		expect(rowUsernames()).toEqual(['bob', 'alice'])
+
+		await requestsHeader.trigger('click')
+		await flushPromises()
+		expect(rowUsernames()).toEqual(['alice', 'bob'])
+
+		const rpmHeader = headerCell('Recent peak RPM')
+		await rpmHeader.trigger('click')
+		await flushPromises()
+		expect(rowUsernames()).toEqual(['bob', 'alice'])
+
+		await rpmHeader.trigger('click')
+		await flushPromises()
+		expect(rowUsernames()).toEqual(['alice', 'bob'])
+	})
+
+	it('shows each suggested group\'s peak RPM sum next to its 30-day cost total', async () => {
+		const { wrapper, relayPlanning } = await mountView([], true)
+		const rpmPlan = structuredClone(plan) as any
+		const baseCandidate = structuredClone(plan.candidates[0])
+		rpmPlan.candidates = [
+			{ ...structuredClone(baseCandidate), user_id: 1, relay_user_id: 101, rpm_peak: 120 },
+			{ ...structuredClone(baseCandidate), user_id: 2, relay_user_id: 102, username: 'bob', email: 'bob@example.org', rpm_peak: 180 },
+		]
+		rpmPlan.assignments = [
+			{ ...structuredClone(plan.assignments[0]), index: 0, user_ids: [1, 2], peak_rpm_sum: 300 },
+			{
+				...structuredClone(plan.assignments[0]),
+				index: 1,
+				user_ids: [],
+				peak_rpm_sum: 0,
+				target_group_name: 'SDK Framework-openai-02',
+				target_group_id: 102,
+			},
+		]
+		relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: rpmPlan } })
+
+		await fillAndPreview(wrapper)
+
+		// 120 + 180 for the first Target; the empty Target still renders 0 instead of hiding the metric.
+		expect(wrapper.get('[data-testid="suggested-rpm-sum-0"]').text()).toBe('Peak RPM sum 300')
+		expect(wrapper.get('[data-testid="suggested-rpm-sum-1"]').text()).toBe('Peak RPM sum 0')
+		expect(wrapper.get('[data-testid="suggested-group-0"]').text()).toContain('$2400.00')
+		expect(wrapper.get('[data-testid="suggested-group-1"]').text()).toContain('$0.00')
+
+		const rpmSumTooltip = wrapper
+			.findAllComponents(ElTooltip)
+			.find((tooltip) => tooltip.find('[data-testid="suggested-rpm-sum-0"]').exists())
+		expect(rpmSumTooltip?.props('content')).toContain('upper-bound reference')
 	})
 
 	it('localizes multi-Account and reused-Account mapping warnings', async () => {
