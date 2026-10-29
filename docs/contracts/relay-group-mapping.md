@@ -583,7 +583,11 @@ a second promotion or accepting ambiguous state.
 
 Mapping list reads now expose Alignment independently as `aligned`, `drifted`, or
 `operating`, with safe categorized differences and an active Operation summary.
-They remain read-only. The Operation read surface exposes only lifecycle,
+Fact interpretation assigns advisory versus difference before rendering the
+message; changing explanatory wording does not change Alignment. Existing
+emitted unavailable-read differences remain safe, and active Operation ownership
+takes precedence as `operating`. These list reads remain read-only; individual
+Mapping reads retain their existing separate projection. The Operation read surface exposes only lifecycle,
 supported directions, affected Mapping IDs, attempt count, immutable step
 summaries, reviewed resource IDs, and a safe external blocker. Recovery Preview
 performs fresh Relay readback without mutation and binds the reviewed direction,
