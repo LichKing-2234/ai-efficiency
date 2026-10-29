@@ -232,8 +232,8 @@ describe('i18n locale loading', () => {
       ...Object.keys(ownerAccountsMessages['zh-CN']),
     ].sort()
 
-    expect(englishKeys).toHaveLength(1531)
-    expect(chineseKeys).toHaveLength(1531)
+    expect(englishKeys).toHaveLength(1533)
+    expect(chineseKeys).toHaveLength(1533)
     expect(englishKeys).toContain('activity.title')
     expect(englishKeys).toContain('pagination.range')
     expect(englishKeys).toContain('pagination.pageOf')
@@ -246,8 +246,10 @@ describe('i18n locale loading', () => {
     expect(englishKeys).toContain('quotaReset.subscriptionLimitRequired')
     expect(englishKeys).toContain('relayPlanning.addSuggestedGroup')
     expect(englishKeys).toContain('relayPlanning.removeSuggestedGroup')
-    expect(englishKeys).toContain('relayPlanning.candidateDepartment')
     expect(englishKeys).toContain('relayPlanning.candidateDepartmentUnknown')
+    expect(englishKeys).toContain('relayPlanning.candidateSectionMembers')
+    expect(englishKeys).toContain('relayPlanning.candidateSectionCost')
+    expect(englishKeys).toContain('relayPlanning.candidateSectionSelected')
     expect(englishKeys).toContain('relayPlanning.requests30d')
     expect(englishKeys).toContain('relayPlanning.rpmPeak')
     expect(englishKeys).toContain('relayPlanning.rpmPeakHelp')

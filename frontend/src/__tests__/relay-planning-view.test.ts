@@ -537,21 +537,21 @@ describe('RelayPlanningView', () => {
 		expect(picker.element.parentElement?.classList.contains('min-w-0')).toBe(true)
 	})
 
-	it('shows the candidate department, 30-day requests, and recent peak RPM in the wide table layout', async () => {
+	it('groups candidates into department sections in the wide table layout', async () => {
 		const { wrapper } = await mountView([], true)
 		await fillAndPreview(wrapper)
 
-		const table = wrapper.get('[data-testid="candidate-table-layout"]')
-		expect(table.text()).toContain('Candidate department')
-		expect(table.text()).toContain('30-day requests (this platform)')
-		expect(table.text()).toContain('Recent peak RPM')
-		const department = wrapper.get('[data-testid="candidate-department-1"]')
+		const sections = wrapper.get('[data-testid="candidate-sections"]')
+		expect(sections.findAll('section')).toHaveLength(1)
+		const department = wrapper.get('[data-testid="candidate-section-department-0"]')
 		expect(department.text()).toBe(longDepartmentPath)
 		expect(department.attributes('title')).toBe(longDepartmentPath)
-		expect(department.classes()).not.toContain('truncate')
-		expect(department.classes()).toContain('whitespace-normal')
-		expect(department.classes()).toContain('break-words')
-		expect(department.classes()).toContain('leading-snug')
+		expect(department.classes()).toContain('truncate')
+
+		const table = wrapper.get('[data-testid="candidate-table-layout"]')
+		expect(table.text()).not.toContain('Candidate department')
+		expect(table.text()).toContain('30-day requests (this platform)')
+		expect(table.text()).toContain('Recent peak RPM')
 		expect(wrapper.get('[data-testid="candidate-requests-1"]').text()).toBe('2.4K')
 		expect(wrapper.get('[data-testid="candidate-rpm-1"]').text()).toBe('1.5K')
 		const rpmHeader = table.get('.cursor-help')
@@ -561,15 +561,14 @@ describe('RelayPlanningView', () => {
 		expect(table.text()).not.toContain('90K')
 	})
 
-	it('shows the candidate department, 30-day requests, and recent peak RPM in the card layout', async () => {
+	it('groups candidates into department sections in the card layout', async () => {
 		const { wrapper } = await mountView()
 		await fillAndPreview(wrapper)
 
 		expect(wrapper.find('[data-testid="candidate-table-layout"]').exists()).toBe(false)
-		const department = wrapper.get('[data-testid="candidate-department-1"]')
+		const department = wrapper.get('[data-testid="candidate-section-department-0"]')
 		expect(department.text()).toBe(longDepartmentPath)
-		expect(department.classes()).toContain('break-words')
-		expect(department.classes()).not.toContain('truncate')
+		expect(department.classes()).toContain('truncate')
 		expect(wrapper.text()).toContain('30-day requests (this platform)')
 		expect(wrapper.text()).toContain('Recent peak RPM')
 		expect(wrapper.get('[data-testid="candidate-requests-1"]').text()).toBe('2.4K')
@@ -579,20 +578,7 @@ describe('RelayPlanningView', () => {
 		expect(wrapper.text()).not.toContain('90K')
 	})
 
-	it('shows a dash for 30-day requests when usage is unknown and for a missing peak RPM', async () => {
-		const { wrapper, relayPlanning } = await mountView()
-		const unknownPlan = structuredClone(plan) as any
-		unknownPlan.candidates[0].usage_known = false
-		unknownPlan.candidates[0].rpm_peak = null
-		relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: unknownPlan } })
-
-		await fillAndPreview(wrapper)
-
-		expect(wrapper.get('[data-testid="candidate-requests-1"]').text()).toBe('-')
-		expect(wrapper.get('[data-testid="candidate-rpm-1"]').text()).toBe('-')
-	})
-
-	it('falls back to the department name and shows a dash for an unknown peak RPM', async () => {
+	it('falls back to the department name and keeps an unmatched section last', async () => {
 		const { wrapper, relayPlanning } = await mountView()
 		const fallbackPlan = structuredClone(plan) as any
 		fallbackPlan.candidates[0].department = { external_id: 'dept-beta', name: 'SDK Runtime', display_path: '' }
@@ -609,9 +595,9 @@ describe('RelayPlanningView', () => {
 
 		await fillAndPreview(wrapper)
 
-		expect(wrapper.get('[data-testid="candidate-department-1"]').text()).toBe('SDK Runtime')
+		expect(wrapper.get('[data-testid="candidate-section-department-0"]').text()).toBe('SDK Runtime')
+		expect(wrapper.get('[data-testid="candidate-section-department-1"]').text()).toBe('Not matched to directory')
 		expect(wrapper.get('[data-testid="candidate-rpm-1"]').text()).toBe('1.5K')
-		expect(wrapper.get('[data-testid="candidate-department-2"]').text()).toBe('Not matched to directory')
 		expect(wrapper.get('[data-testid="candidate-rpm-2"]').text()).toBe('-')
 		expect(wrapper.get('[data-testid="candidate-requests-2"]').text()).toBe('2.4K')
 	})
@@ -623,7 +609,7 @@ describe('RelayPlanningView', () => {
 		const table = wrapper.get('[data-testid="candidate-table-layout"]')
 		const headerCells = table.findAll('thead th')
 		const sortableHeaders = headerCells.filter((cell) => cell.classes().includes('is-sortable'))
-		expect(sortableHeaders).toHaveLength(9)
+		expect(sortableHeaders).toHaveLength(8)
 		sortableHeaders.forEach((cell) => expect(cell.find('.caret-wrapper').exists()).toBe(true))
 		expect(sortableHeaders.some((cell) => cell.find('.sort-caret.ascending').exists())).toBe(true)
 		expect(sortableHeaders.some((cell) => cell.find('.sort-caret.descending').exists())).toBe(true)
@@ -637,14 +623,14 @@ describe('RelayPlanningView', () => {
 		expect(headerCell('Target')?.find('.caret-wrapper').exists()).toBe(false)
 	})
 
-	it('sorts rows by computed display values without mutating plan state', async () => {
+	it('sorts rows inside a department section by computed display values without mutating plan state', async () => {
 		const { wrapper, relayPlanning } = await mountView([], true)
 		const sortPlan = structuredClone(plan) as any
 		const baseCandidate = structuredClone(plan.candidates[0])
 		sortPlan.candidates = [
-			{ ...structuredClone(baseCandidate), user_id: 3, relay_user_id: 103, username: 'carol', email: 'carol@example.net', global_token_rank: 3, department: { external_id: 'dept-zeta', name: 'Zeta', display_path: 'Zeta' } },
-			{ ...structuredClone(baseCandidate), user_id: 2, relay_user_id: 102, username: 'bob', email: 'bob@example.org', global_token_rank: 2, department: { external_id: 'dept-alpha', name: 'Alpha', display_path: 'Alpha' } },
-			{ ...structuredClone(baseCandidate), user_id: 1, relay_user_id: 101, username: 'alice', email: 'alice@example.com', global_token_rank: 1, department: { external_id: 'dept-beta', name: 'Beta', display_path: 'Beta' } },
+			{ ...structuredClone(baseCandidate), user_id: 3, relay_user_id: 103, username: 'carol', email: 'carol@example.net', global_token_rank: 3 },
+			{ ...structuredClone(baseCandidate), user_id: 2, relay_user_id: 102, username: 'bob', email: 'bob@example.org', global_token_rank: 2 },
+			{ ...structuredClone(baseCandidate), user_id: 1, relay_user_id: 101, username: 'alice', email: 'alice@example.com', global_token_rank: 1 },
 		]
 		relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: sortPlan } })
 
@@ -663,20 +649,63 @@ describe('RelayPlanningView', () => {
 		await flushPromises()
 		expect(rowUsernames()).toEqual(['carol', 'bob', 'alice'])
 
-		const departmentHeader = table.findAll('thead th').find((cell) => cell.text().startsWith('Candidate department'))!
-		await departmentHeader.trigger('click')
-		await flushPromises()
-		expect(rowUsernames()).toEqual(['bob', 'alice', 'carol'])
-
-		await departmentHeader.trigger('click')
-		await flushPromises()
-		expect(rowUsernames()).toEqual(['carol', 'alice', 'bob'])
-
 		// Sorting is display-only: the plan payload order, preview request count, and
 		// execution state are untouched.
 		expect(sortPlan.candidates.map((candidate: any) => candidate.user_id)).toEqual([3, 2, 1])
 		expect(relayPlanning.previewRelayPlan).toHaveBeenCalledTimes(1)
 		expect(relayPlanning.executeRelayPlan).not.toHaveBeenCalled()
+	})
+
+	it('orders department sections by scoped 30-day cost and collapses each section', async () => {
+		const { wrapper, relayPlanning } = await mountView([], true)
+		const sectionPlan = structuredClone(plan) as any
+		const baseCandidate = structuredClone(plan.candidates[0])
+		const candidateIn = (userID: number, username: string, path: string, cost: number) => ({
+			...structuredClone(baseCandidate),
+			user_id: userID,
+			relay_user_id: 100 + userID,
+			username,
+			email: `${username}@example.com`,
+			department: { external_id: `dept-${userID}`, name: username, display_path: path },
+			range_cost: cost,
+			usage_known: true,
+		})
+		sectionPlan.candidates = [
+			candidateIn(1, 'alice', 'Engineering / Runtime', 1200),
+			candidateIn(2, 'bob', 'Engineering / SDK', 500),
+			{
+				...structuredClone(baseCandidate),
+				user_id: 3,
+				relay_user_id: 103,
+				username: 'carol',
+				email: 'carol@example.net',
+				department: undefined,
+				range_cost: 900,
+				usage_known: false,
+			},
+		]
+		relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: sectionPlan } })
+
+		await fillAndPreview(wrapper)
+
+		expect(wrapper.get('[data-testid="candidate-section-department-0"]').text()).toBe('Engineering / Runtime')
+		expect(wrapper.get('[data-testid="candidate-section-department-1"]').text()).toBe('Engineering / SDK')
+		expect(wrapper.get('[data-testid="candidate-section-department-2"]').text()).toBe('Not matched to directory')
+		expect(wrapper.get('[data-testid="candidate-section-members-0"]').text()).toBe('1 member(s)')
+		expect(wrapper.get('[data-testid="candidate-section-cost-0"]').text()).toBe('30-day cost $1200.00')
+		expect(wrapper.get('[data-testid="candidate-section-cost-1"]').text()).toBe('30-day cost $500.00')
+		expect(wrapper.get('[data-testid="candidate-section-cost-2"]').text()).toBe('30-day cost $0.00+')
+		expect(wrapper.get('[data-testid="candidate-section-selected-0"]').text()).toBe('1 selected')
+		expect(wrapper.get('[data-testid="candidate-section-selected-1"]').text()).toBe('0 selected')
+
+		const toggle = wrapper.get('[data-testid="candidate-section-toggle-1"]')
+		expect(toggle.attributes('aria-expanded')).toBe('true')
+		await toggle.trigger('click')
+		expect(toggle.attributes('aria-expanded')).toBe('false')
+		expect(wrapper.find('[data-testid="candidate-requests-2"]').exists()).toBe(false)
+		await toggle.trigger('click')
+		expect(toggle.attributes('aria-expanded')).toBe('true')
+		expect(wrapper.find('[data-testid="candidate-requests-2"]').exists()).toBe(true)
 	})
 
 	it('sorts unknown usage and missing peak RPM as no-value with the documented sentinel', async () => {
