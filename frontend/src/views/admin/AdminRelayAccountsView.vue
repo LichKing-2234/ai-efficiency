@@ -29,6 +29,7 @@ const expandedDiffIDs = ref<Set<number>>(new Set())
 const onlyDeviating = ref(false)
 const accountTypeFilter = ref('')
 const groupFilter = ref('')
+const resetCreditsFilter = ref('')
 const applyDialogOpen = ref(false)
 const applyResults = ref<RelayPlanningAccountConfigurationApplyResult[] | null>(null)
 const ignoredKeys = ref<Set<string>>(new Set())
@@ -41,14 +42,29 @@ const form = reactive({
 const provider = computed(() => providers.value.find((item) => item.id === form.provider_id))
 const platforms = computed(() => Array.from(new Set((provider.value?.groups ?? []).map((group) => group.platform).filter(Boolean))))
 const hasBaseline = computed(() => baselineAccountID.value > 0)
-// The type and group filters narrow the working set, not just the rendering: the
-// deviation count, the select-all action, and the copy targets all follow the
-// filter so an administrator can work one account type or one group at a time.
+// The type, group and reset-credit bucket filters narrow the working set, not
+// just the rendering: the deviation count, the select-all action, and the copy
+// targets all follow the filters so an administrator can work one account type,
+// one group, or one reset-credit count class at a time. The reset-credit count is
+// a cached upstream observation, and "unknown" (no snapshot observed yet) is its
+// own bucket rather than being folded into zero.
 const scopedItems = computed(() => items.value.filter((item) => {
   if (accountTypeFilter.value && item.account.type !== accountTypeFilter.value) return false
   if (groupFilter.value) {
     const groups = item.account.group_relationships ?? []
     if (!groups.some((relationship) => String(relationship.group_id) === groupFilter.value)) return false
+  }
+  if (resetCreditsFilter.value) {
+    const available = item.reset_credits_available
+    if (resetCreditsFilter.value === 'unknown') {
+      if (available != null) return false
+    } else if (available == null) {
+      return false
+    } else if (resetCreditsFilter.value === '3+') {
+      if (available < 3) return false
+    } else if (available !== Number(resetCreditsFilter.value)) {
+      return false
+    }
   }
   return true
 }))
@@ -123,6 +139,19 @@ function deviationText(diff: RelayPlanningAccountConfigurationDiff): string {
   return t('relayPlanning.deviationCounts', deviationCounts(diff))
 }
 
+// The count is display-only: it comes from Sub2API's cached reset-credit snapshot
+// and is never part of the comparison or the copy. An account without a snapshot
+// is unknown, shown as a dash rather than as zero.
+function resetCreditsLabel(available: number | null | undefined): string {
+  return available == null ? '—' : String(available)
+}
+
+function resetCreditsTitle(available: number | null | undefined): string {
+  return available == null
+    ? t('relayPlanning.resetCreditsUnknown')
+    : t('relayPlanning.resetCreditsSnapshotHint')
+}
+
 function deviationKeyGroups(diff: RelayPlanningAccountConfigurationDiff) {
   return [
     { label: t('relayPlanning.missingKeys'), keys: diff.missing_keys ?? [] },
@@ -148,6 +177,7 @@ function resetView() {
   ignoredKeys.value = new Set()
   accountTypeFilter.value = ''
   groupFilter.value = ''
+  resetCreditsFilter.value = ''
   items.value = []
   applyResults.value = null
   error.value = ''
@@ -380,6 +410,14 @@ onMounted(async () => {
                   <el-option :label="t('relayPlanning.allGroups')" value="" />
                   <el-option v-for="group in groupOptions" :key="group.group_id" :label="group.group_name" :value="String(group.group_id)" />
                 </el-select>
+                <el-select v-model="resetCreditsFilter" data-testid="reset-credits-filter" size="small" class="w-40" @change="pruneSelection">
+                  <el-option :label="t('relayPlanning.allResetCredits')" value="" />
+                  <el-option :label="t('relayPlanning.resetCreditsNone')" value="0" />
+                  <el-option :label="t('relayPlanning.resetCreditsOne')" value="1" />
+                  <el-option :label="t('relayPlanning.resetCreditsTwo')" value="2" />
+                  <el-option :label="t('relayPlanning.resetCreditsThreePlus')" value="3+" />
+                  <el-option :label="t('relayPlanning.resetCreditsUnknown')" value="unknown" />
+                </el-select>
               </div>
               <el-checkbox data-testid="only-deviating-toggle" :model-value="onlyDeviating" :disabled="!hasBaseline" @change="(value) => (onlyDeviating = value === true)">{{ t('relayPlanning.onlyDeviating') }}</el-checkbox>
               <el-checkbox
@@ -422,6 +460,11 @@ onMounted(async () => {
             <el-table-column :label="t('relayPlanning.schedulable')" width="140">
               <template #default="scope">
                 <el-tag :type="scope.row.account.schedulable ? 'success' : 'info'">{{ scope.row.account.schedulable ? t('relayPlanning.schedulableYes') : t('relayPlanning.schedulableNo') }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('relayPlanning.resetCredits')" width="120">
+              <template #default="scope">
+                <span :data-testid="`reset-credits-${scope.row.account.id}`" :title="resetCreditsTitle(scope.row.reset_credits_available)" class="tabular-nums">{{ resetCreditsLabel(scope.row.reset_credits_available) }}</span>
               </template>
             </el-table-column>
             <el-table-column :label="t('relayPlanning.deviation')" min-width="280">

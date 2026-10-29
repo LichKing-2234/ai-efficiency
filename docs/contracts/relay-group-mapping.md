@@ -288,6 +288,13 @@ widen this one. It decodes its own narrowed payload carrying only
 credential material stays unrepresented there as well;
 `docs/adr/0004-allow-listed-account-configuration.md` records that grant.
 
+The same read also carries each account's cached reset-credit count for the copy
+page to display and filter by. That count is projected on its own field, clamped
+to the credits that have not expired, and stays outside the allow-list: it is
+never compared against the baseline, never written to an account, and never
+stored. An account without a cached snapshot reports an unknown count rather than
+zero.
+
 Comparison reads a key at the provider's own default as equal whether an account
 stores it or omits it. Six allow-listed keys carry such a default: the
 auto-reset quintet, which Sub2API persists only for OAuth accounts and reads as

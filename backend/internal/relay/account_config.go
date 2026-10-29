@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // AccountConfiguration is the allow-listed account-level configuration that AI
@@ -35,16 +36,37 @@ type AccountConfigurationDiff struct {
 	AdditionalKeys []string `json:"additional_keys,omitempty"`
 }
 
+// AccountConfigurationRecord is one account's entry in a configuration read: the
+// allow-listed configuration a copy may apply, plus the reset-credit count the
+// copy page displays and filters by.
+//
+// ResetCreditsAvailable is a display-only observation, not configuration. It
+// never joins the copy allow-list, is never compared against a baseline, and is
+// never written to an account. A nil value means no cached upstream reset-credit
+// snapshot has been observed for the account, which is rendered as unknown
+// rather than as zero; an observed snapshot reports only credits that have not
+// expired.
+type AccountConfigurationRecord struct {
+	Configuration         AccountConfiguration
+	ResetCreditsAvailable *int
+}
+
 const (
 	accountModelMappingKey = "model_mapping"
 	accountExtraKeyPrefix  = "extra."
+	// accountResetCreditCountKey is read for display only. Sub2API persists the
+	// account's banked ChatGPT/Codex reset credits under this `extra` key, and the
+	// copy page shows that count. It is deliberately not in
+	// accountConfigurationExtraKeys: copying a reset-credit snapshot between
+	// accounts would fabricate observed upstream state.
+	accountResetCreditCountKey = "codex_reset_credit_snapshot"
 )
 
-// accountConfigurationExtraKeys is the exhaustive set of `extra` keys that may
-// leave this package. It must stay in step with sub2apiAccountConfigExtra;
-// TestAccountConfigurationAllowListMatchesItsWireStruct enforces that, so a field
-// added to one without the other fails tests rather than silently widening or
-// narrowing the boundary.
+// accountConfigurationExtraKeys is the exhaustive set of `extra` keys a copy may
+// compare, write, or report. It must stay in step with the copied declarations on
+// sub2apiAccountConfigExtra; TestAccountConfigurationAllowListMatchesItsWireStruct
+// enforces that, so a field added to one without the other fails tests rather
+// than silently widening or narrowing the copy boundary.
 var accountConfigurationExtraKeys = []string{
 	"privacy_mode",
 	"openai_long_context_billing_enabled",
@@ -59,6 +81,16 @@ var accountConfigurationExtraKeys = []string{
 	"auto_reset_credit_expiry_enabled",
 	"auto_reset_credit_expiry_lead_minutes",
 	"openai_compact_mode",
+}
+
+// accountConfigurationDisplayOnlyExtraKeys is the exhaustive set of `extra` keys
+// that may leave this package alongside a configuration read without ever
+// joining the copy allow-list. They are projected into their own field on
+// AccountConfigurationRecord, never into AccountConfiguration, and
+// TestAccountConfigurationDisplayOnlyKeysStayOutOfTheCopyAllowList enforces the
+// separation. See docs/adr/0004-allow-listed-account-configuration.md.
+var accountConfigurationDisplayOnlyExtraKeys = []string{
+	accountResetCreditCountKey,
 }
 
 // accountConfigurationExtraDefaults records the effective value Sub2API uses for
@@ -199,8 +231,9 @@ type sub2apiAccountConfigItem struct {
 	Extra sub2apiAccountConfigExtra `json:"extra"`
 }
 
-// sub2apiAccountConfigExtra declares exactly the allow-listed extra keys. Values
-// stay as raw JSON so an unexpected upstream type cannot fail the whole read.
+// sub2apiAccountConfigExtra declares exactly the copied allow-listed extra keys
+// plus the display-only keys this read is permitted to observe. Values stay as
+// raw JSON so an unexpected upstream type cannot fail the whole read.
 type sub2apiAccountConfigExtra struct {
 	PrivacyMode                   json.RawMessage `json:"privacy_mode"`
 	LongContextBilling            json.RawMessage `json:"openai_long_context_billing_enabled"`
@@ -215,6 +248,10 @@ type sub2apiAccountConfigExtra struct {
 	AutoResetCreditExpiryEnabled  json.RawMessage `json:"auto_reset_credit_expiry_enabled"`
 	AutoResetCreditExpiryLeadMins json.RawMessage `json:"auto_reset_credit_expiry_lead_minutes"`
 	OpenAICompactMode             json.RawMessage `json:"openai_compact_mode"`
+	// ResetCreditsSnapshot is display-only; it is projected onto
+	// AccountConfigurationRecord.ResetCreditsAvailable, never onto
+	// AccountConfiguration.
+	ResetCreditsSnapshot json.RawMessage `json:"codex_reset_credit_snapshot"`
 }
 
 // toAllowListedMap renders the declared keys as comparable values, keeping a
@@ -265,6 +302,32 @@ func projectAccountConfiguration(item sub2apiAccountConfigItem) (AccountConfigur
 	return config, nil
 }
 
+// projectAccountConfigurationRecord assembles one account's configuration read:
+// the allow-listed configuration plus the display-only reset-credit count.
+func projectAccountConfigurationRecord(item sub2apiAccountConfigItem) (AccountConfigurationRecord, error) {
+	config, err := projectAccountConfiguration(item)
+	if err != nil {
+		return AccountConfigurationRecord{}, err
+	}
+	return AccountConfigurationRecord{
+		Configuration:         config,
+		ResetCreditsAvailable: projectResetCreditsAvailable(item.Extra.ResetCreditsSnapshot),
+	}, nil
+}
+
+// projectResetCreditsAvailable clamps the cached reset-credit snapshot to the
+// credits that are still unexpired, which is the same count the owner console
+// reports. It is a display-only observation: the value is never compared,
+// copied, or stored, and an undecodable snapshot is unknown rather than zero.
+func projectResetCreditsAvailable(raw json.RawMessage) *int {
+	snapshot, ok := decodeResetCreditsSnapshot(raw)
+	if !ok {
+		return nil
+	}
+	available := projectOwnerAccountResetCredits(snapshot.AvailableCount, snapshot.expiries(), time.Now().UTC()).Available
+	return &available
+}
+
 func decodeAccountConfigPage(data json.RawMessage) ([]sub2apiAccountConfigItem, int, error) {
 	var page struct {
 		Items []sub2apiAccountConfigItem `json:"items"`
@@ -280,14 +343,15 @@ func decodeAccountConfigPage(data json.RawMessage) ([]sub2apiAccountConfigItem, 
 }
 
 // ReadAccountConfigurations returns the allow-listed configuration of every
-// account on one platform, keyed by account ID. An account without configuration
-// is present with an empty value so callers can still reason about it.
-func (s *sub2apiRelay) ReadAccountConfigurations(ctx context.Context, platform string) (map[int64]AccountConfiguration, error) {
+// account on one platform, keyed by account ID, together with the display-only
+// reset-credit count the copy page shows. An account without configuration is
+// present with an empty value so callers can still reason about it.
+func (s *sub2apiRelay) ReadAccountConfigurations(ctx context.Context, platform string) (map[int64]AccountConfigurationRecord, error) {
 	platform = strings.TrimSpace(platform)
 	if platform == "" {
 		return nil, fmt.Errorf("relay: read account configurations: platform is required")
 	}
-	out := map[int64]AccountConfiguration{}
+	out := map[int64]AccountConfigurationRecord{}
 	for page := 1; ; page++ {
 		query := url.Values{}
 		query.Set("page", strconv.Itoa(page))
@@ -320,11 +384,11 @@ func (s *sub2apiRelay) ReadAccountConfigurations(ctx context.Context, platform s
 			return nil, fmt.Errorf("relay: read account configurations for platform %s: decode page: %w", platform, err)
 		}
 		for _, item := range items {
-			config, err := projectAccountConfiguration(item)
+			record, err := projectAccountConfigurationRecord(item)
 			if err != nil {
 				return nil, fmt.Errorf("relay: read account configurations for platform %s: project account %d: %w", platform, item.ID, err)
 			}
-			out[item.ID] = config
+			out[item.ID] = record
 		}
 		if pages <= 1 || page >= pages {
 			return out, nil

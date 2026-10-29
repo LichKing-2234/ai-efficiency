@@ -80,3 +80,22 @@ Sub2API reads a missing pair as disabled with a ten-minute lead, so those are th
 recorded defaults. #6950 also changed the 5h threshold default from 100% to 0
 (window disabled); the recorded default moves with it, while stored values keep
 their meaning. This is the record the allow-list rule requires for an addition.
+
+## Amendment 2026-10-29: display-only reset-credit count on the copy page
+
+The account-configuration copy page shows each account's remaining reset-credit
+count and filters the working set by it, because an administrator choosing copy
+targets needs to see which accounts still hold banked ChatGPT/Codex reset credits.
+Reading that value is an extension of the read boundary recorded above, so it is
+recorded here.
+
+The value is a display-only observation, not account configuration. It is read
+from Sub2API's persisted `extra.codex_reset_credit_snapshot` through the same
+narrowed account-list decode, projected onto its own
+`relay.AccountConfigurationRecord.ResetCreditsAvailable` field, and clamped to the
+credits that have not expired — the same projection the owner-account console
+uses, so both surfaces report the same count. The key never joins the copy
+allow-list (which remains thirteen keys), is never compared against a baseline, is
+never written to any account, and is never persisted by AI Efficiency. Copying a
+snapshot between accounts would fabricate observed upstream state; that is why the
+copy allow-list and the display-only key list are separate and guarded by tests.

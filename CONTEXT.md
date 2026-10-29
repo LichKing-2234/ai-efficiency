@@ -51,3 +51,7 @@ _Avoid_: Retry job, quota reset request
 **Unknown Owner Operation**:
 An Owner Operation whose upstream call may have executed but whose terminal outcome could not be observed. It is never retried automatically and blocks a repeat until a newer owner-requested observation exists; there is no administrator override.
 _Avoid_: Failed operation, pending retry
+
+**Cached Reset Credit Count**:
+The number of unexpired banked ChatGPT/Codex reset credits recorded by the last cached upstream snapshot for one account. The account-configuration copy page displays it and filters the working set by it; it is not account configuration, is never compared against a baseline, and is never copied.
+_Avoid_: Recharge coupon, account balance, live reset count
