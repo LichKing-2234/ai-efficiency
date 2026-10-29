@@ -151,6 +151,17 @@ Relay relationship authority.
   warning for a membership whose department is no longer in the hierarchy; the
   display projection adds one candidate-bounded read per Preview and no
   per-user query.
+- Candidates are presented in collapsible department sections. Sections are
+  ordered by each department's total Platform-scoped 30-day cost descending,
+  with the not-matched-to-directory section last regardless of cost. Rows keep
+  the backend's cost-descending order inside each section, and each section
+  header shows its member count, its scoped 30-day cost total (suffixed `+` when
+  any member's usage is unknown, so the total is not understated), and how many
+  of its members are selected. Each row shows a single identity cell: the
+  username when present, otherwise the email, with the email as a secondary
+  line only when it differs from that identity. The grouping is browser-local
+  presentation only: it does not reorder allocation, change the relationship
+  fingerprint, or make an existing Confirm stale.
 
 These values are advisory and display-only. They never enter the relationship
 fingerprint, and a refresh that changes only cost, Tokens, rank, peak TPM, or
