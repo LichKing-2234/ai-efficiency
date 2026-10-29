@@ -287,16 +287,32 @@ type sub2apiResetCreditsSnapshot struct {
 	} `json:"credits"`
 }
 
-func decodeOwnerAccountResetCreditsSnapshot(raw json.RawMessage) *OwnerAccountResetCredits {
-	var snapshot sub2apiResetCreditsSnapshot
-	if !decodeOwnerAccountExtra(raw, &snapshot) {
-		return nil
-	}
-	expiresAt := make([]string, 0, len(snapshot.Credits))
-	for _, credit := range snapshot.Credits {
+// expiries returns the snapshot's credit expiry details, still unclamped.
+func (s sub2apiResetCreditsSnapshot) expiries() []string {
+	expiresAt := make([]string, 0, len(s.Credits))
+	for _, credit := range s.Credits {
 		expiresAt = append(expiresAt, credit.ExpiresAt)
 	}
-	return projectOwnerAccountResetCredits(snapshot.AvailableCount, expiresAt, time.Now().UTC())
+	return expiresAt
+}
+
+// decodeResetCreditsSnapshot decodes the persisted reset-credit snapshot shared by
+// the owner console and the account-configuration copy page, so both surfaces
+// report the same clamped count. A missing or malformed value is unknown.
+func decodeResetCreditsSnapshot(raw json.RawMessage) (sub2apiResetCreditsSnapshot, bool) {
+	var snapshot sub2apiResetCreditsSnapshot
+	if !decodeOwnerAccountExtra(raw, &snapshot) {
+		return snapshot, false
+	}
+	return snapshot, true
+}
+
+func decodeOwnerAccountResetCreditsSnapshot(raw json.RawMessage) *OwnerAccountResetCredits {
+	snapshot, ok := decodeResetCreditsSnapshot(raw)
+	if !ok {
+		return nil
+	}
+	return projectOwnerAccountResetCredits(snapshot.AvailableCount, snapshot.expiries(), time.Now().UTC())
 }
 
 // projectOwnerAccountResetCredits clamps a reset-credit snapshot to the credits

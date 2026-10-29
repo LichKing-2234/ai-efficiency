@@ -14,12 +14,16 @@ import (
 // statement, so this bounds request scope rather than upstream capacity.
 const MaxAccountConfigurationCopyTargets = 100
 
-// AccountConfigurationItem is one account with its allow-listed configuration
-// and, when a baseline was chosen, its distance from that baseline.
+// AccountConfigurationItem is one account with its allow-listed configuration,
+// the cached reset-credit count the copy page displays, and, when a baseline was
+// chosen, its distance from that baseline. ResetCreditsAvailable is a display
+// fact only: it is neither compared nor copied, and a nil value means no upstream
+// snapshot has been observed for the account.
 type AccountConfigurationItem struct {
-	Account       relay.Account                   `json:"account"`
-	Configuration relay.AccountConfiguration      `json:"configuration"`
-	Diff          *relay.AccountConfigurationDiff `json:"diff,omitempty"`
+	Account               relay.Account                   `json:"account"`
+	Configuration         relay.AccountConfiguration      `json:"configuration"`
+	ResetCreditsAvailable *int                            `json:"reset_credits_available"`
+	Diff                  *relay.AccountConfigurationDiff `json:"diff,omitempty"`
 }
 
 // AccountConfigurationPage is the read-only view an administrator uses to decide
@@ -80,7 +84,7 @@ func (s *Service) ListAccountConfigurations(ctx context.Context, req ListAccount
 	if err != nil {
 		return nil, fmt.Errorf("list relay accounts: %w", err)
 	}
-	configurations, err := configReader.ReadAccountConfigurations(ctx, req.Platform)
+	records, err := configReader.ReadAccountConfigurations(ctx, req.Platform)
 	if err != nil {
 		return nil, fmt.Errorf("read relay account configurations: %w", err)
 	}
@@ -90,10 +94,11 @@ func (s *Service) ListAccountConfigurations(ctx context.Context, req ListAccount
 	var baseline relay.AccountConfiguration
 	hasBaseline := false
 	if req.BaselineAccountID > 0 {
-		baseline, hasBaseline = configurations[req.BaselineAccountID]
-		if !hasBaseline {
+		record, present := records[req.BaselineAccountID]
+		if !present {
 			return nil, fmt.Errorf("baseline account %d was not found on platform %s", req.BaselineAccountID, req.Platform)
 		}
+		baseline, hasBaseline = record.Configuration, true
 		page.Baseline = &baseline
 	}
 	filteredBaseline := relay.FilterAccountConfiguration(baseline, ignoredKeys)
@@ -102,7 +107,12 @@ func (s *Service) ListAccountConfigurations(ctx context.Context, req ListAccount
 		if !strings.EqualFold(strings.TrimSpace(account.Platform), strings.TrimSpace(req.Platform)) {
 			continue
 		}
-		item := AccountConfigurationItem{Account: account, Configuration: configurations[account.ID]}
+		record := records[account.ID]
+		item := AccountConfigurationItem{
+			Account:               account,
+			Configuration:         record.Configuration,
+			ResetCreditsAvailable: record.ResetCreditsAvailable,
+		}
 		if hasBaseline {
 			diff := relay.CompareAccountConfiguration(filteredBaseline, relay.FilterAccountConfiguration(item.Configuration, ignoredKeys))
 			item.Diff = &diff
@@ -158,16 +168,16 @@ func (s *Service) ApplyAccountConfiguration(ctx context.Context, req ApplyAccoun
 		return nil, fmt.Errorf("relay provider does not support account configuration application")
 	}
 
-	configurations, err := reader.ReadAccountConfigurations(ctx, req.Platform)
+	records, err := reader.ReadAccountConfigurations(ctx, req.Platform)
 	if err != nil {
 		return nil, fmt.Errorf("read relay account configurations: %w", err)
 	}
-	baseline, present := configurations[req.BaselineAccountID]
+	baselineRecord, present := records[req.BaselineAccountID]
 	if !present {
 		return nil, fmt.Errorf("baseline account %d was not found on platform %s", req.BaselineAccountID, req.Platform)
 	}
 	ignoredKeys := normalizeIgnoredKeys(req.IgnoreKeys)
-	baseline = relay.FilterAccountConfiguration(baseline, ignoredKeys)
+	baseline := relay.FilterAccountConfiguration(baselineRecord.Configuration, ignoredKeys)
 	if len(baseline.ModelMapping) == 0 && len(baseline.Extra) == 0 {
 		return nil, fmt.Errorf("baseline account %d has no allow-listed configuration to copy", req.BaselineAccountID)
 	}
@@ -191,7 +201,7 @@ func (s *Service) ApplyAccountConfiguration(ctx context.Context, req ApplyAccoun
 			response.Results = append(response.Results, result)
 			continue
 		}
-		result.Diff = relay.CompareAccountConfiguration(baseline, relay.FilterAccountConfiguration(after, ignoredKeys))
+		result.Diff = relay.CompareAccountConfiguration(baseline, relay.FilterAccountConfiguration(after.Configuration, ignoredKeys))
 		result.Applied = result.Diff.Matches
 		if !result.Applied {
 			result.Error = "configuration did not converge on the baseline"

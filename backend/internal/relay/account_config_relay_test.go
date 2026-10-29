@@ -20,6 +20,10 @@ func sortedRawKeys(m map[string]json.RawMessage) []string {
 	return keys
 }
 
+func intPtr(value int) *int {
+	return &value
+}
+
 func TestReadAccountConfigurationsProjectsOnlyAllowListedKeys(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/accounts", func(w http.ResponseWriter, r *http.Request) {
@@ -27,30 +31,60 @@ func TestReadAccountConfigurationsProjectsOnlyAllowListedKeys(t *testing.T) {
 			t.Errorf("platform filter = %q, want openai", got)
 		}
 		writeOriginEnvelope(w, map[string]any{
-			"items": []any{map[string]any{
-				"id": 11, "name": "Account Alpha", "platform": "openai", "type": "oauth",
-				"status": "active", "schedulable": true,
-				"credentials": map[string]any{
-					"access_token":       "must-not-escape",
-					"refresh_token":      "must-not-escape",
-					"id_token":           "must-not-escape",
-					"chatgpt_account_id": "must-not-escape",
-					"_token_version":     7,
-					"model_mapping":      map[string]string{"gpt-5.5": "gpt-6.1-sol"},
+			"items": []any{
+				map[string]any{
+					"id": 11, "name": "Account Alpha", "platform": "openai", "type": "oauth",
+					"status": "active", "schedulable": true,
+					"credentials": map[string]any{
+						"access_token":       "must-not-escape",
+						"refresh_token":      "must-not-escape",
+						"id_token":           "must-not-escape",
+						"chatgpt_account_id": "must-not-escape",
+						"_token_version":     7,
+						"model_mapping":      map[string]string{"gpt-5.5": "gpt-6.1-sol"},
+					},
+					"extra": map[string]any{
+						"privacy_mode":                          "training_off",
+						"openai_compact_mode":                   "auto",
+						"codex_cli_only":                        true,
+						"auto_reset_credit_7d_threshold":        1,
+						"auto_reset_credit_expiry_enabled":      true,
+						"auto_reset_credit_expiry_lead_minutes": 30,
+						"codex_auto_reset_credit_expiry_at":     "must-not-escape",
+						"codex_fingerprint_seed":                "must-not-escape",
+						"codex_5h_used_percent":                 42,
+						"upstream_model_metadata":               map[string]any{"private": "must-not-escape"},
+						// Two live credits out of three: the expired one is not counted, and
+						// the display-only count must not leak into the configuration.
+						"codex_reset_credit_snapshot": map[string]any{
+							"available_count": 3,
+							"credits": []any{
+								map[string]any{"expires_at": "2020-01-01T00:00:00Z"},
+								map[string]any{"expires_at": "2999-01-01T00:00:00Z"},
+								map[string]any{"expires_at": "2999-01-02T00:00:00Z"},
+							},
+						},
+					},
 				},
-				"extra": map[string]any{
-					"privacy_mode":                          "training_off",
-					"openai_compact_mode":                   "auto",
-					"codex_cli_only":                        true,
-					"auto_reset_credit_7d_threshold":        1,
-					"auto_reset_credit_expiry_enabled":      true,
-					"auto_reset_credit_expiry_lead_minutes": 30,
-					"codex_auto_reset_credit_expiry_at":     "must-not-escape",
-					"codex_fingerprint_seed":                "must-not-escape",
-					"codex_5h_used_percent":                 42,
-					"upstream_model_metadata":               map[string]any{"private": "must-not-escape"},
+				map[string]any{
+					"id": 12, "name": "Account Beta", "platform": "openai", "type": "apikey",
+					"status": "active", "schedulable": true,
+					"credentials": map[string]any{"api_key": "must-not-escape"},
+					"extra": map[string]any{
+						"codex_fingerprint_seed": "must-not-escape",
+					},
 				},
-			}},
+				map[string]any{
+					"id": 13, "name": "Account Gamma", "platform": "openai", "type": "oauth",
+					"status": "active", "schedulable": true,
+					"credentials": map[string]any{"access_token": "must-not-escape"},
+					"extra": map[string]any{
+						// A positive count without expiry details cannot be proven live, so it
+						// clamps to zero instead of reporting credits that may already be gone.
+						"codex_reset_credit_snapshot": map[string]any{"available_count": 2},
+					},
+				},
+			},
 			"page": 1, "pages": 1,
 		})
 	})
@@ -61,17 +95,24 @@ func TestReadAccountConfigurationsProjectsOnlyAllowListedKeys(t *testing.T) {
 		t.Fatalf("ReadAccountConfigurations() error = %v", err)
 	}
 	// A whole-value diff: anything not on the allow-list can only surface here.
-	want := map[int64]relay.AccountConfiguration{
+	want := map[int64]relay.AccountConfigurationRecord{
 		11: {
-			ModelMapping: map[string]string{"gpt-5.5": "gpt-6.1-sol"},
-			Extra: map[string]any{
-				"privacy_mode":                          "training_off",
-				"openai_compact_mode":                   "auto",
-				"codex_cli_only":                        true,
-				"auto_reset_credit_7d_threshold":        float64(1),
-				"auto_reset_credit_expiry_enabled":      true,
-				"auto_reset_credit_expiry_lead_minutes": float64(30),
+			Configuration: relay.AccountConfiguration{
+				ModelMapping: map[string]string{"gpt-5.5": "gpt-6.1-sol"},
+				Extra: map[string]any{
+					"privacy_mode":                          "training_off",
+					"openai_compact_mode":                   "auto",
+					"codex_cli_only":                        true,
+					"auto_reset_credit_7d_threshold":        float64(1),
+					"auto_reset_credit_expiry_enabled":      true,
+					"auto_reset_credit_expiry_lead_minutes": float64(30),
+				},
 			},
+			ResetCreditsAvailable: intPtr(2),
+		},
+		12: {},
+		13: {
+			ResetCreditsAvailable: intPtr(0),
 		},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
@@ -98,6 +139,9 @@ func TestApplyAccountConfigurationSendsOnlyTheMergeableAllowList(t *testing.T) {
 		Extra: map[string]any{
 			"privacy_mode":           "training_off",
 			"codex_fingerprint_seed": "must-not-be-sent",
+			// The reset-credit snapshot is a display-only observation, not
+			// configuration; a caller that somehow carries it still cannot write it.
+			"codex_reset_credit_snapshot": map[string]any{"available_count": 2},
 		},
 	})
 	if err != nil {

@@ -8,7 +8,9 @@ import (
 // TestAccountConfigurationAllowListMatchesItsWireStruct keeps the exhaustive
 // allow-list and the narrowed wire struct from drifting apart. A field declared
 // without a list entry would silently never project; a list entry without a
-// declared field would silently project nothing.
+// declared field would silently project nothing. The display-only keys are part
+// of the same wire struct on purpose, so they are asserted here as well and must
+// stay outside the copy allow-list.
 func TestAccountConfigurationAllowListMatchesItsWireStruct(t *testing.T) {
 	raw, err := json.Marshal(sub2apiAccountConfigExtra{})
 	if err != nil {
@@ -18,13 +20,48 @@ func TestAccountConfigurationAllowListMatchesItsWireStruct(t *testing.T) {
 	if err := json.Unmarshal(raw, &declared); err != nil {
 		t.Fatalf("unmarshal wire struct: %v", err)
 	}
-	if len(declared) != len(accountConfigurationExtraKeys) {
-		t.Fatalf("wire struct declares %d keys, allow-list has %d", len(declared), len(accountConfigurationExtraKeys))
+	if want := len(accountConfigurationExtraKeys) + len(accountConfigurationDisplayOnlyExtraKeys); len(declared) != want {
+		t.Fatalf("wire struct declares %d keys, want %d copy keys plus %d display-only keys", len(declared), len(accountConfigurationExtraKeys), len(accountConfigurationDisplayOnlyExtraKeys))
 	}
 	for _, key := range accountConfigurationExtraKeys {
 		if _, ok := declared[key]; !ok {
-			t.Fatalf("allow-list key %q is not declared on sub2apiAccountConfigExtra", key)
+			t.Fatalf("copy allow-list key %q is not declared on sub2apiAccountConfigExtra", key)
 		}
+	}
+	for _, key := range accountConfigurationDisplayOnlyExtraKeys {
+		if _, ok := declared[key]; !ok {
+			t.Fatalf("display-only key %q is not declared on sub2apiAccountConfigExtra", key)
+		}
+	}
+}
+
+// TestAccountConfigurationDisplayOnlyKeysStayOutOfTheCopyAllowList is the
+// guard that keeps a display observation from becoming copyable configuration.
+// Copying a cached reset-credit snapshot onto another account would fabricate
+// observed upstream state, so the key may be read and must never be projected
+// into AccountConfiguration.
+func TestAccountConfigurationDisplayOnlyKeysStayOutOfTheCopyAllowList(t *testing.T) {
+	copyKeys := make(map[string]struct{}, len(accountConfigurationExtraKeys))
+	for _, key := range accountConfigurationExtraKeys {
+		copyKeys[key] = struct{}{}
+	}
+	for _, key := range accountConfigurationDisplayOnlyExtraKeys {
+		if _, ok := copyKeys[key]; ok {
+			t.Fatalf("display-only key %q is also in the copy allow-list", key)
+		}
+	}
+
+	item := sub2apiAccountConfigItem{}
+	item.Extra.ResetCreditsSnapshot = json.RawMessage(`{"available_count":2,"credits":[{"expires_at":"2099-01-01T00:00:00Z"}]}`)
+	config, err := projectAccountConfiguration(item)
+	if err != nil {
+		t.Fatalf("projectAccountConfiguration() error = %v", err)
+	}
+	if _, ok := config.Extra[accountResetCreditCountKey]; ok {
+		t.Fatalf("display-only key %q projected into the copyable configuration", accountResetCreditCountKey)
+	}
+	if len(config.Extra) != 0 {
+		t.Fatalf("configuration extra = %v, want none", config.Extra)
 	}
 }
 

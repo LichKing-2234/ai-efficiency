@@ -321,6 +321,8 @@ export interface RelayPlanningAccountConfigurationDiff {
 export interface RelayPlanningAccountConfigurationItem {
   account: RelayPlanningAccount
   configuration: RelayPlanningAccountConfiguration
+  /** Unexpired banked reset credits from the last cached upstream observation; null when none was observed. */
+  reset_credits_available?: number | null
   diff?: RelayPlanningAccountConfigurationDiff
 }
 

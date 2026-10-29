@@ -127,10 +127,11 @@ type AccountRelationshipUpdater interface {
 }
 
 // AccountConfigurationReader exposes the allow-listed account configuration for
-// one platform. It never returns credential material; see
-// docs/adr/0004-allow-listed-account-configuration.md.
+// one platform, together with the display-only reset-credit count the copy page
+// shows and filters by. It never returns credential material, and the reset-credit
+// count is never copied; see docs/adr/0004-allow-listed-account-configuration.md.
 type AccountConfigurationReader interface {
-	ReadAccountConfigurations(ctx context.Context, platform string) (map[int64]AccountConfiguration, error)
+	ReadAccountConfigurations(ctx context.Context, platform string) (map[int64]AccountConfigurationRecord, error)
 }
 
 // AccountConfigurationApplier merges an allow-listed account configuration onto

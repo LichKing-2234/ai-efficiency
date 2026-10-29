@@ -12,6 +12,13 @@ vi.mock('@/api/relayPlanning', () => ({
   listRelayAccountConfigurations: vi.fn(),
 }))
 
+const resetCredits = new Map<number, number | null>([
+  [11, 3],
+  [12, 0],
+  [13, 2],
+  [14, null],
+])
+
 const accounts = [
   { id: 11, name: 'Account Alpha', platform: 'openai', type: 'oauth', status: 'active', schedulable: true, group_relationships: [{ group_id: 42, priority: 0 }] },
   { id: 12, name: 'Account Beta', platform: 'openai', type: 'apikey', status: 'active', schedulable: false, group_relationships: [{ group_id: 43, priority: 0 }] },
@@ -21,7 +28,7 @@ const accounts = [
 
 const baselinePage = {
   baseline_account_id: 0,
-  items: accounts.map((account) => ({ account, configuration: { model_mapping: { 'gpt-4': 'gpt-4' } } })),
+  items: accounts.map((account) => ({ account, configuration: { model_mapping: { 'gpt-4': 'gpt-4' } }, reset_credits_available: resetCredits.get(account.id) ?? null })),
   total: accounts.length,
 }
 
@@ -32,11 +39,13 @@ const diffPage = {
     {
       account: accounts[0],
       configuration: { model_mapping: { 'gpt-4': 'gpt-4' }, extra: { privacy_mode: true } },
+      reset_credits_available: resetCredits.get(11),
       diff: { matches: true },
     },
     {
       account: accounts[1],
       configuration: {},
+      reset_credits_available: resetCredits.get(12),
       diff: {
         matches: false,
         missing_keys: ['model_mapping'],
@@ -47,11 +56,13 @@ const diffPage = {
     {
       account: accounts[2],
       configuration: { model_mapping: { 'gpt-4': 'gpt-4' }, extra: { privacy_mode: true } },
+      reset_credits_available: resetCredits.get(13),
       diff: { matches: true },
     },
     {
       account: accounts[3],
       configuration: { model_mapping: { 'gpt-4': 'gpt-4' } },
+      reset_credits_available: resetCredits.get(14),
       diff: { matches: false, differing_keys: ['extra.privacy_mode'] },
     },
   ],
@@ -209,6 +220,48 @@ describe('AdminRelayAccountsView', () => {
     expect(wrapper.find('[data-testid="account-row-12"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="account-row-13"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="account-row-14"]').exists()).toBe(false)
+  })
+
+  it('shows the cached reset-credit count and marks an unqueried account', async () => {
+    const { wrapper } = await mountView()
+    await choosePlatformAndBaseline(wrapper)
+
+    expect(wrapper.get('[data-testid="reset-credits-11"]').text()).toBe('3')
+    expect(wrapper.get('[data-testid="reset-credits-12"]').text()).toBe('0')
+    expect(wrapper.get('[data-testid="reset-credits-13"]').text()).toBe('2')
+    expect(wrapper.get('[data-testid="reset-credits-14"]').text()).toBe('—')
+    expect(wrapper.get('[data-testid="reset-credits-11"]').attributes('title')).toContain('only unexpired reset credits')
+    expect(wrapper.get('[data-testid="reset-credits-14"]').attributes('title')).toBe('Not queried')
+  })
+
+  it('filters the table by reset-credit bucket and narrows the working set with it', async () => {
+    const { wrapper } = await mountView()
+    await choosePlatformAndBaseline(wrapper)
+
+    await wrapper.get('[data-testid="select-target-12"] input').setValue(true)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="reset-credits-filter"]').setValue('0')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="account-row-11"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="account-row-12"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="account-row-13"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="account-row-14"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="deviation-summary"]').text()).toContain('1 account(s) deviate from the baseline')
+
+    // Narrowing away from the selected target drops it from the copy set.
+    await wrapper.get('[data-testid="reset-credits-filter"]').setValue('3+')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="account-row-11"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="account-row-12"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="deviation-summary"]').text()).toContain('0 account(s) deviate from the baseline')
+    expect(wrapper.get('[data-testid="deviation-summary"]').text()).toContain('0 target(s) selected')
+
+    await wrapper.get('[data-testid="reset-credits-filter"]').setValue('unknown')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="account-row-14"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="account-row-11"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="deviation-summary"]').text()).toContain('1 account(s) deviate from the baseline')
   })
 
   it('requires the confirmation dialog before calling the apply API', async () => {
