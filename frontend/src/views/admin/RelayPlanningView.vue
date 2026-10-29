@@ -361,9 +361,14 @@ function candidateUserSortKey(row: unknown): string {
   return (candidate.username || candidate.email || '').toLowerCase()
 }
 
-function candidateEmailSortKey(row: unknown): string {
+function candidateIdentity(row: unknown): string {
   const candidate = row as RelayPlanningCandidate
-  return (candidate.email || '').toLowerCase()
+  return candidate.username || candidate.email
+}
+
+function candidateSecondaryEmail(row: unknown): string {
+  const candidate = row as RelayPlanningCandidate
+  return candidate.email && candidate.email !== candidateIdentity(candidate) ? candidate.email : ''
 }
 
 function candidateCostSort(a: unknown, b: unknown): number {
@@ -1196,7 +1201,7 @@ onBeforeUnmount(() => {
                 <div v-if="!wideContentLayout" data-testid="candidate-card-layout" class="space-y-3 p-3">
                   <article v-for="candidate in section.candidates" :key="candidate.user_id" class="rounded-md border border-slate-200 p-3">
                     <div class="flex items-start justify-between gap-3">
-                      <div class="min-w-0"><div class="break-words font-medium text-slate-900">{{ candidate.username || candidate.email }}</div><div class="break-words text-xs text-slate-500">{{ candidate.email }}</div></div>
+                      <div class="min-w-0"><div class="break-words font-medium text-slate-900" :data-testid="`candidate-user-${candidate.user_id}`">{{ candidateIdentity(candidate) }}</div><div v-if="candidateSecondaryEmail(candidate)" :data-testid="`candidate-email-${candidate.user_id}`" class="break-words text-xs text-slate-500">{{ candidate.email }}</div></div>
                       <el-checkbox :model-value="selectedUserIDs.has(candidate.user_id)" :disabled="!candidate.can_add" @change="(value) => toggleCandidate(candidate.user_id, value === true)" />
                     </div>
                     <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs"><div><dt class="text-slate-500">{{ t('relayPlanning.cost30d') }}</dt><dd class="font-medium">{{ candidate.usage_known === false ? t('relayPlanning.unknown') : `$${candidate.range_cost.toFixed(2)}` }}</dd></div><div><dt class="text-slate-500">{{ t('relayPlanning.tokens30d') }}</dt><dd class="font-medium">{{ candidate.usage_known === false ? t('relayPlanning.unknown') : candidate.range_tokens }}</dd></div><div><dt class="text-slate-500">{{ t('relayPlanning.requests30d') }}</dt><dd :data-testid="`candidate-requests-${candidate.user_id}`" class="font-medium">{{ candidateRequests(candidate) }}</dd></div><div><dt class="text-slate-500" :title="t('relayPlanning.rpmPeakHelp')">{{ t('relayPlanning.rpmPeak') }}</dt><dd :data-testid="`candidate-rpm-${candidate.user_id}`" class="font-medium">{{ candidatePeakRPM(candidate) }}</dd></div><div><dt class="text-slate-500">{{ t('relayPlanning.globalRank') }}</dt><dd class="font-medium">{{ candidate.global_token_rank || '-' }}</dd></div><div><dt class="text-slate-500">{{ t('relayPlanning.keys') }}</dt><dd class="font-medium">{{ candidate.migratable_key_count }}</dd></div></dl>
@@ -1207,8 +1212,7 @@ onBeforeUnmount(() => {
                 </div>
                 <el-table v-else data-testid="candidate-table-layout" :data="section.candidates" stripe>
                   <el-table-column :label="t('relayPlanning.select')" width="70"><template #default="scope"><el-checkbox :model-value="selectedUserIDs.has(scope.row.user_id)" :disabled="!scope.row.can_add" @change="(value) => toggleCandidate(scope.row.user_id, value === true)" /></template></el-table-column>
-                  <el-table-column prop="username" :label="t('relayPlanning.user')" min-width="140" sortable :sort-by="candidateUserSortKey" />
-                  <el-table-column prop="email" :label="t('relayPlanning.email')" min-width="190" sortable :sort-by="candidateEmailSortKey" />
+                  <el-table-column :label="t('relayPlanning.user')" min-width="200" sortable :sort-by="candidateUserSortKey"><template #default="scope"><div class="min-w-0"><div :data-testid="`candidate-user-${scope.row.user_id}`" class="break-words font-medium text-slate-900">{{ candidateIdentity(scope.row) }}</div><div v-if="candidateSecondaryEmail(scope.row)" :data-testid="`candidate-email-${scope.row.user_id}`" class="break-words text-xs text-slate-500">{{ scope.row.email }}</div></div></template></el-table-column>
                   <el-table-column prop="range_cost" :label="t('relayPlanning.cost30d')" width="150" sortable :sort-method="candidateCostSort"><template #default="scope">{{ scope.row.usage_known === false ? t('relayPlanning.unknown') : `$${scope.row.range_cost.toFixed(2)}` }}</template></el-table-column>
                   <el-table-column prop="range_tokens" :label="t('relayPlanning.tokens30d')" width="150" sortable :sort-method="candidateTokensSort"><template #default="scope">{{ scope.row.usage_known === false ? t('relayPlanning.unknown') : scope.row.range_tokens }}</template></el-table-column>
                   <el-table-column prop="range_requests" :label="t('relayPlanning.requests30d')" width="170" sortable :sort-method="candidateRequestsSort"><template #default="scope"><span :data-testid="`candidate-requests-${scope.row.user_id}`" class="tabular-nums">{{ candidateRequests(scope.row) }}</span></template></el-table-column>

@@ -578,6 +578,27 @@ describe('RelayPlanningView', () => {
 		expect(wrapper.text()).not.toContain('90K')
 	})
 
+	it('shows one candidate identity cell and hides a repeated email', async () => {
+		const { wrapper, relayPlanning } = await mountView([], true)
+		const identityPlan = structuredClone(plan) as any
+		const baseCandidate = structuredClone(plan.candidates[0])
+		identityPlan.candidates = [
+			{ ...structuredClone(baseCandidate), user_id: 1, relay_user_id: 101, username: 'alice', email: 'alice@example.com' },
+			{ ...structuredClone(baseCandidate), user_id: 2, relay_user_id: 102, username: 'bob@example.org', email: 'bob@example.org' },
+			{ ...structuredClone(baseCandidate), user_id: 3, relay_user_id: 103, username: '', email: 'carol@example.net' },
+		]
+		relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: identityPlan } })
+
+		await fillAndPreview(wrapper)
+
+		expect(wrapper.get('[data-testid="candidate-user-1"]').text()).toBe('alice')
+		expect(wrapper.get('[data-testid="candidate-email-1"]').text()).toBe('alice@example.com')
+		expect(wrapper.get('[data-testid="candidate-user-2"]').text()).toBe('bob@example.org')
+		expect(wrapper.find('[data-testid="candidate-email-2"]').exists()).toBe(false)
+		expect(wrapper.get('[data-testid="candidate-user-3"]').text()).toBe('carol@example.net')
+		expect(wrapper.find('[data-testid="candidate-email-3"]').exists()).toBe(false)
+	})
+
 	it('falls back to the department name and keeps an unmatched section last', async () => {
 		const { wrapper, relayPlanning } = await mountView()
 		const fallbackPlan = structuredClone(plan) as any
@@ -609,7 +630,7 @@ describe('RelayPlanningView', () => {
 		const table = wrapper.get('[data-testid="candidate-table-layout"]')
 		const headerCells = table.findAll('thead th')
 		const sortableHeaders = headerCells.filter((cell) => cell.classes().includes('is-sortable'))
-		expect(sortableHeaders).toHaveLength(8)
+		expect(sortableHeaders).toHaveLength(7)
 		sortableHeaders.forEach((cell) => expect(cell.find('.caret-wrapper').exists()).toBe(true))
 		expect(sortableHeaders.some((cell) => cell.find('.sort-caret.ascending').exists())).toBe(true)
 		expect(sortableHeaders.some((cell) => cell.find('.sort-caret.descending').exists())).toBe(true)
@@ -637,7 +658,7 @@ describe('RelayPlanningView', () => {
 		await fillAndPreview(wrapper)
 
 		const table = wrapper.get('[data-testid="candidate-table-layout"]')
-		const rowUsernames = () => table.findAll('tbody tr').map((row) => row.findAll('td')[1].text())
+		const rowUsernames = () => table.findAll('tbody tr').map((row) => row.findAll('td')[1].find('[data-testid^="candidate-user-"]').text())
 		expect(rowUsernames()).toEqual(['carol', 'bob', 'alice'])
 
 		const userHeader = table.findAll('thead th').find((cell) => cell.text().startsWith('User'))!
@@ -721,7 +742,7 @@ describe('RelayPlanningView', () => {
 		await fillAndPreview(wrapper)
 
 		const table = wrapper.get('[data-testid="candidate-table-layout"]')
-		const rowUsernames = () => table.findAll('tbody tr').map((row) => row.findAll('td')[1].text())
+		const rowUsernames = () => table.findAll('tbody tr').map((row) => row.findAll('td')[1].find('[data-testid^="candidate-user-"]').text())
 		const headerCell = (label: string) => table.findAll('thead th').find((cell) => cell.text().startsWith(label))!
 
 		const requestsHeader = headerCell('30-day requests')
