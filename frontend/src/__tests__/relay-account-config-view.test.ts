@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { ElDialog } from 'element-plus'
+import { ElDialog, ElMessage } from 'element-plus'
 import AdminRelayAccountsView from '@/views/admin/AdminRelayAccountsView.vue'
 
 vi.mock('@/api/adminUsers', () => ({
@@ -69,6 +69,13 @@ const diffPage = {
   total: accounts.length,
 }
 
+function deferredResponse() {
+  let resolve!: (value: any) => void
+  let reject!: (reason: Error) => void
+  const promise = new Promise<any>((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve, reject }
+}
+
 async function mountView() {
   const adminUsers = await import('@/api/adminUsers') as any
   const relayPlanning = await import('@/api/relayPlanning') as any
@@ -83,7 +90,7 @@ async function mountView() {
             { group_id: '42', group_name: 'Group Alpha', platform: 'openai' },
             { group_id: '43', group_name: 'Group Beta', platform: 'anthropic' },
           ],
-        }],
+        }, { id: 8, name: 'relay-secondary', display_name: 'Relay Secondary', groups: [{ group_id: '44', group_name: 'Group Gamma', platform: 'openai' }] }],
       },
     },
   })
@@ -111,7 +118,15 @@ async function mountView() {
         ElSelect: {
           props: ['modelValue'],
           emits: ['update:modelValue', 'change'],
-          template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value); $emit(\'change\', $event.target.value)"><slot /></select>',
+          methods: {
+            change(event: Event) {
+              const raw = (event.target as HTMLSelectElement).value
+              const value = typeof this.modelValue === 'number' ? Number(raw) : raw
+              this.$emit('update:modelValue', value)
+              this.$emit('change', value)
+            },
+          },
+          template: '<select :value="modelValue" @change="change"><slot /></select>',
         },
         ElOption: { props: ['label', 'value'], template: '<option :value="value">{{ label }}</option>' },
       },
@@ -262,6 +277,200 @@ describe('AdminRelayAccountsView', () => {
     expect(wrapper.find('[data-testid="account-row-14"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="account-row-11"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="deviation-summary"]').text()).toContain('1 account(s) deviate from the baseline')
+  })
+
+  it('keeps the latest baseline when comparison responses arrive in reverse order', async () => {
+    const { wrapper, relayPlanning } = await mountView()
+    await wrapper.get('[data-testid="platform-select"]').setValue('openai')
+    await flushPromises()
+    const older = deferredResponse()
+    const newer = deferredResponse()
+    relayPlanning.listRelayAccountConfigurations
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise)
+
+    await wrapper.get('[data-testid="set-baseline-11"]').trigger('click')
+    await wrapper.get('[data-testid="set-baseline-13"]').trigger('click')
+    newer.resolve({ data: { data: { ...structuredClone(diffPage), baseline_account_id: 13 } } })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="baseline-account"]').text()).toBe('Account Gamma (#13)')
+
+    older.resolve({ data: { data: structuredClone(diffPage) } })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="baseline-account"]').text()).toBe('Account Gamma (#13)')
+    wrapper.unmount()
+  })
+
+  it.each(['success', 'failure'])('ignores an older comparison %s while the latest comparison is pending', async (outcome) => {
+    const { wrapper, relayPlanning } = await mountView()
+    await wrapper.get('[data-testid="platform-select"]').setValue('openai')
+    await flushPromises()
+    const older = deferredResponse()
+    const newer = deferredResponse()
+    relayPlanning.listRelayAccountConfigurations.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise)
+    await wrapper.get('[data-testid="set-baseline-11"]').trigger('click')
+    await wrapper.get('[data-testid="set-baseline-13"]').trigger('click')
+
+    if (outcome === 'failure') older.reject(new Error('obsolete comparison failed'))
+    else older.resolve({ data: { data: structuredClone(diffPage) } })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('obsolete comparison failed')
+    expect(wrapper.get('[data-testid="refresh-accounts"]').classes()).toContain('is-loading')
+
+    newer.resolve({ data: { data: { ...structuredClone(diffPage), baseline_account_id: 13 } } })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="baseline-account"]').text()).toBe('Account Gamma (#13)')
+    expect(wrapper.get('[data-testid="refresh-accounts"]').classes()).not.toContain('is-loading')
+    wrapper.unmount()
+  })
+
+  it.each(['success', 'failure'])('invalidates a pending comparison on provider reset without starting another request (%s)', async (outcome) => {
+    const { wrapper, relayPlanning } = await mountView()
+    await wrapper.get('[data-testid="platform-select"]').setValue('openai')
+    await flushPromises()
+    const pending = deferredResponse()
+    relayPlanning.listRelayAccountConfigurations.mockReturnValueOnce(pending.promise)
+    await wrapper.get('[data-testid="set-baseline-11"]').trigger('click')
+    const calls = relayPlanning.listRelayAccountConfigurations.mock.calls.length
+    await wrapper.get('[data-testid="provider-select"]').setValue('8')
+    expect(relayPlanning.listRelayAccountConfigurations).toHaveBeenCalledTimes(calls)
+
+    if (outcome === 'failure') pending.reject(new Error('obsolete provider failed'))
+    else pending.resolve({ data: { data: structuredClone(diffPage) } })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('obsolete provider failed')
+    expect(wrapper.get('[data-testid="refresh-accounts"]').classes()).not.toContain('is-loading')
+
+    relayPlanning.listRelayAccountConfigurations.mockResolvedValueOnce({ data: { data: baselinePage } })
+    await wrapper.get('[data-testid="platform-select"]').setValue('openai')
+    await flushPromises()
+    expect(relayPlanning.listRelayAccountConfigurations).toHaveBeenLastCalledWith({ provider_id: 8, platform: 'openai' })
+    wrapper.unmount()
+  })
+
+  it('requires a new selection and confirmation after changing excluded keys', async () => {
+    const { wrapper, relayPlanning } = await mountView()
+    await choosePlatformAndBaseline(wrapper)
+    await wrapper.get('[data-testid="select-target-12"] input').setValue(true)
+    await wrapper.get('[data-testid="open-apply-dialog"]').trigger('click')
+    const pending = deferredResponse()
+    relayPlanning.listRelayAccountConfigurations.mockReturnValueOnce(pending.promise)
+
+    await wrapper.get('[data-testid="include-key-model_mapping"] input').setValue(false)
+    expect(wrapper.findComponent(ElDialog).props('modelValue')).toBe(false)
+    expect(wrapper.get('[data-testid="deviation-summary"]').text()).toContain('0 target(s) selected')
+    expect((wrapper.get('[data-testid="open-apply-dialog"]').element as HTMLButtonElement).disabled).toBe(true)
+    expect((wrapper.get('[data-testid="select-target-12"] input').element as HTMLInputElement).disabled).toBe(true)
+    expect(relayPlanning.applyRelayAccountConfiguration).not.toHaveBeenCalled()
+
+    pending.resolve({ data: { data: structuredClone(diffPage) } })
+    await flushPromises()
+    await wrapper.get('[data-testid="select-target-12"] input').setValue(true)
+    await wrapper.get('[data-testid="open-apply-dialog"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-apply"]').trigger('click')
+    await flushPromises()
+    expect(relayPlanning.applyRelayAccountConfiguration).toHaveBeenCalledWith({ provider_id: 7, platform: 'openai', baseline_account_id: 11, target_account_ids: [12], ignore_keys: ['model_mapping'] })
+    wrapper.unmount()
+  })
+
+  it.each(['success', 'failure'])('does not publish an earlier copy %s into a new Platform context', async (outcome) => {
+    const { wrapper, relayPlanning } = await mountView()
+    await choosePlatformAndBaseline(wrapper)
+    const pending = deferredResponse()
+    const feedback = vi.spyOn(ElMessage, 'error')
+    relayPlanning.applyRelayAccountConfiguration.mockReturnValueOnce(pending.promise)
+    await wrapper.get('[data-testid="select-target-12"] input').setValue(true)
+    await wrapper.get('[data-testid="open-apply-dialog"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-apply"]').trigger('click')
+    await wrapper.get('[data-testid="platform-select"]').setValue('anthropic')
+    await flushPromises()
+    const calls = relayPlanning.listRelayAccountConfigurations.mock.calls.length
+
+    if (outcome === 'failure') pending.reject(new Error('obsolete copy failed'))
+    else pending.resolve({ data: { data: { baseline_account_id: 11, results: [{ account_id: 12, applied: true, diff: { matches: true } }] } } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="apply-results"]').exists()).toBe(false)
+    expect(feedback).not.toHaveBeenCalledWith('obsolete copy failed')
+    expect(relayPlanning.listRelayAccountConfigurations).toHaveBeenCalledTimes(calls)
+    expect(relayPlanning.applyRelayAccountConfiguration).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-testid="baseline-account"]').text()).toBe('No baseline selected')
+    wrapper.unmount()
+  })
+
+  it('does not refresh or publish copy feedback after leaving the page', async () => {
+    const { wrapper, relayPlanning } = await mountView()
+    await choosePlatformAndBaseline(wrapper)
+    const pending = deferredResponse()
+    const feedback = vi.spyOn(ElMessage, 'success')
+    relayPlanning.applyRelayAccountConfiguration.mockReturnValueOnce(pending.promise)
+    await wrapper.get('[data-testid="select-target-12"] input').setValue(true)
+    await wrapper.get('[data-testid="open-apply-dialog"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-apply"]').trigger('click')
+    wrapper.unmount()
+    const calls = relayPlanning.listRelayAccountConfigurations.mock.calls.length
+
+    pending.resolve({ data: { data: { results: [{ account_id: 12, applied: true, diff: { matches: true } }] } } })
+    await flushPromises()
+    expect(relayPlanning.listRelayAccountConfigurations).toHaveBeenCalledTimes(calls)
+    expect(feedback).not.toHaveBeenCalled()
+  })
+
+  it('keeps a cleared baseline when its earlier comparison finishes later', async () => {
+    const { wrapper, relayPlanning } = await mountView()
+    await choosePlatformAndBaseline(wrapper)
+    const older = deferredResponse()
+    relayPlanning.listRelayAccountConfigurations.mockReturnValueOnce(older.promise)
+    await wrapper.get('[data-testid="set-baseline-13"]').trigger('click')
+    await wrapper.get('[data-testid="clear-baseline"]').trigger('click')
+    await flushPromises()
+    older.resolve({ data: { data: { ...structuredClone(diffPage), baseline_account_id: 13 } } })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="baseline-account"]').text()).toBe('No baseline selected')
+    expect(wrapper.find('[data-testid="deviation-diff-12"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('copies the current excluded keys after their comparisons finish in reverse order', async () => {
+    const { wrapper, relayPlanning } = await mountView()
+    await choosePlatformAndBaseline(wrapper)
+    const older = deferredResponse()
+    const newer = deferredResponse()
+    relayPlanning.listRelayAccountConfigurations.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise)
+    await wrapper.get('[data-testid="include-key-model_mapping"] input').setValue(false)
+    await wrapper.get('[data-testid="include-key-extra.privacy_mode"] input').setValue(false)
+    const currentPage = structuredClone(diffPage)
+    currentPage.items[1]!.diff = { matches: false, missing_keys: ['model_mapping'], differing_keys: [], additional_keys: [] }
+    newer.resolve({ data: { data: currentPage } })
+    await flushPromises()
+    older.resolve({ data: { data: structuredClone(diffPage) } })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="deviation-counts-12"]').text()).toBe('1 missing, 0 different, 0 extra')
+    await wrapper.get('[data-testid="select-target-12"] input').setValue(true)
+    await wrapper.get('[data-testid="open-apply-dialog"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-apply"]').trigger('click')
+    await flushPromises()
+    expect(relayPlanning.applyRelayAccountConfiguration).toHaveBeenCalledWith(expect.objectContaining({ ignore_keys: ['model_mapping', 'extra.privacy_mode'] }))
+    wrapper.unmount()
+  })
+
+  it('ignores a previous copy refresh after the Platform changes', async () => {
+    const { wrapper, relayPlanning } = await mountView()
+    await choosePlatformAndBaseline(wrapper)
+    const refresh = deferredResponse()
+    relayPlanning.listRelayAccountConfigurations.mockReturnValueOnce(refresh.promise)
+    await wrapper.get('[data-testid="select-target-12"] input').setValue(true)
+    await wrapper.get('[data-testid="open-apply-dialog"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-apply"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="platform-select"]').setValue('anthropic')
+    await flushPromises()
+    refresh.resolve({ data: { data: structuredClone(diffPage) } })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="baseline-account"]').text()).toBe('No baseline selected')
+    expect(wrapper.find('[data-testid="deviation-diff-12"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="apply-results"]').exists()).toBe(false)
+    expect(relayPlanning.applyRelayAccountConfiguration).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
   })
 
   it('requires the confirmation dialog before calling the apply API', async () => {
