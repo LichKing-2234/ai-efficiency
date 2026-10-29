@@ -147,11 +147,95 @@ func TestCompareAccountConfigurationClassifiesEveryDifference(t *testing.T) {
 		}
 	})
 
-	t.Run("a target-only key the provider defaults to is not additional", func(t *testing.T) {
+	t.Run("inert window thresholds are not compared while the switch is off", func(t *testing.T) {
+		// The baseline stores the legacy 100% thresholds while the target never
+		// carried the keys. Both accounts have the auto-reset switch off, so
+		// neither value has an effect and there is nothing a copy could converge.
+		got := relay.CompareAccountConfiguration(
+			relay.AccountConfiguration{Extra: map[string]any{
+				"auto_reset_credit_enabled":      false,
+				"auto_reset_credit_5h_threshold": float64(1),
+				"auto_reset_credit_7d_threshold": float64(1),
+			}},
+			relay.AccountConfiguration{Extra: map[string]any{"auto_reset_credit_enabled": false}},
+		)
+		if !got.Matches {
+			t.Fatalf("Matches = false, want true; the switch makes both thresholds inert; diff = %+v", got)
+		}
+	})
+
+	t.Run("differing inert window thresholds are not a difference", func(t *testing.T) {
+		got := relay.CompareAccountConfiguration(
+			relay.AccountConfiguration{Extra: map[string]any{
+				"auto_reset_credit_enabled":      false,
+				"auto_reset_credit_5h_threshold": float64(1),
+			}},
+			relay.AccountConfiguration{Extra: map[string]any{
+				"auto_reset_credit_enabled":      false,
+				"auto_reset_credit_5h_threshold": float64(0.5),
+			}},
+		)
+		if !got.Matches {
+			t.Fatalf("Matches = false, want true; neither account reads its thresholds; diff = %+v", got)
+		}
+	})
+
+	t.Run("a target-only inert threshold is not additional", func(t *testing.T) {
 		got := relay.CompareAccountConfiguration(
 			relay.AccountConfiguration{Extra: map[string]any{"privacy_mode": "training_off"}},
 			relay.AccountConfiguration{Extra: map[string]any{
 				"privacy_mode":                   "training_off",
+				"auto_reset_credit_5h_threshold": float64(5),
+			}},
+		)
+		if !got.Matches {
+			t.Fatalf("Matches = false, want true; a missing switch reads as off, so the threshold is inert; diff = %+v", got)
+		}
+	})
+
+	t.Run("window thresholds are compared once both switches are on", func(t *testing.T) {
+		got := relay.CompareAccountConfiguration(
+			relay.AccountConfiguration{Extra: map[string]any{
+				"auto_reset_credit_enabled":      true,
+				"auto_reset_credit_5h_threshold": float64(0.8),
+			}},
+			relay.AccountConfiguration{Extra: map[string]any{
+				"auto_reset_credit_enabled":      true,
+				"auto_reset_credit_5h_threshold": float64(0.5),
+			}},
+		)
+		want := []string{"extra.auto_reset_credit_5h_threshold"}
+		if diff := cmp.Diff(want, got.DifferingKeys); diff != "" {
+			t.Fatalf("differing keys mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("a threshold is not compared while only one account has the switch on", func(t *testing.T) {
+		got := relay.CompareAccountConfiguration(
+			relay.AccountConfiguration{Extra: map[string]any{
+				"auto_reset_credit_enabled":      false,
+				"auto_reset_credit_5h_threshold": float64(1),
+			}},
+			relay.AccountConfiguration{Extra: map[string]any{
+				"auto_reset_credit_enabled":      true,
+				"auto_reset_credit_5h_threshold": float64(0.5),
+			}},
+		)
+		want := []string{"extra.auto_reset_credit_enabled"}
+		if diff := cmp.Diff(want, got.DifferingKeys); diff != "" {
+			t.Fatalf("differing keys mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("a target-only key the provider defaults to is not additional", func(t *testing.T) {
+		got := relay.CompareAccountConfiguration(
+			relay.AccountConfiguration{Extra: map[string]any{
+				"privacy_mode":              "training_off",
+				"auto_reset_credit_enabled": true,
+			}},
+			relay.AccountConfiguration{Extra: map[string]any{
+				"privacy_mode":                   "training_off",
+				"auto_reset_credit_enabled":      true,
 				"auto_reset_credit_5h_threshold": float64(0),
 			}},
 		)
@@ -162,9 +246,13 @@ func TestCompareAccountConfigurationClassifiesEveryDifference(t *testing.T) {
 
 	t.Run("a target-only key that differs from the provider default is additional", func(t *testing.T) {
 		got := relay.CompareAccountConfiguration(
-			relay.AccountConfiguration{Extra: map[string]any{"privacy_mode": "training_off"}},
+			relay.AccountConfiguration{Extra: map[string]any{
+				"privacy_mode":              "training_off",
+				"auto_reset_credit_enabled": true,
+			}},
 			relay.AccountConfiguration{Extra: map[string]any{
 				"privacy_mode":                   "training_off",
+				"auto_reset_credit_enabled":      true,
 				"auto_reset_credit_5h_threshold": float64(5),
 			}},
 		)
@@ -289,6 +377,71 @@ func TestFilterAccountConfigurationDropsOnlyTheNamedAllowListedKeys(t *testing.T
 		diff := relay.CompareAccountConfiguration(relay.FilterAccountConfiguration(baseline, ignored), relay.FilterAccountConfiguration(target, ignored))
 		if !diff.Matches {
 			t.Fatalf("Matches = false, want true; the ignored mapping must not count as a difference; diff = %+v", diff)
+		}
+	})
+}
+
+// A copy must not materialise a threshold that the baseline's switch makes
+// inert, but it must leave the stored baseline itself untouched.
+func TestNormalizeAccountConfigurationForCopyWritesDefaultsForInertThresholds(t *testing.T) {
+	t.Run("a switch-off baseline normalizes both thresholds", func(t *testing.T) {
+		baseline := relay.AccountConfiguration{Extra: map[string]any{
+			"privacy_mode":                   "training_off",
+			"auto_reset_credit_enabled":      false,
+			"auto_reset_credit_5h_threshold": float64(1),
+			"auto_reset_credit_7d_threshold": float64(1),
+		}}
+		got := relay.NormalizeAccountConfigurationForCopy(baseline)
+		want := map[string]any{
+			"privacy_mode":                   "training_off",
+			"auto_reset_credit_enabled":      false,
+			"auto_reset_credit_5h_threshold": float64(0),
+			"auto_reset_credit_7d_threshold": float64(1),
+		}
+		if diff := cmp.Diff(want, got.Extra); diff != "" {
+			t.Fatalf("normalized extra mismatch (-want +got):\n%s", diff)
+		}
+		if diff := cmp.Diff(map[string]any{
+			"privacy_mode":                   "training_off",
+			"auto_reset_credit_enabled":      false,
+			"auto_reset_credit_5h_threshold": float64(1),
+			"auto_reset_credit_7d_threshold": float64(1),
+		}, baseline.Extra); diff != "" {
+			t.Fatalf("normalization mutated the baseline (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("a missing switch reads as off and normalizes the thresholds", func(t *testing.T) {
+		got := relay.NormalizeAccountConfigurationForCopy(relay.AccountConfiguration{Extra: map[string]any{
+			"auto_reset_credit_5h_threshold": float64(2),
+			"auto_reset_credit_7d_threshold": float64(0.5),
+		}})
+		want := map[string]any{
+			"auto_reset_credit_5h_threshold": float64(0),
+			"auto_reset_credit_7d_threshold": float64(1),
+		}
+		if diff := cmp.Diff(want, got.Extra); diff != "" {
+			t.Fatalf("normalized extra mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("an enabled switch keeps the stored thresholds", func(t *testing.T) {
+		baseline := relay.AccountConfiguration{Extra: map[string]any{
+			"auto_reset_credit_enabled":      true,
+			"auto_reset_credit_5h_threshold": float64(0.8),
+		}}
+		if diff := cmp.Diff(baseline, relay.NormalizeAccountConfigurationForCopy(baseline)); diff != "" {
+			t.Fatalf("enabled configuration changed (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("a baseline without auto-reset keys is returned unchanged", func(t *testing.T) {
+		baseline := relay.AccountConfiguration{
+			ModelMapping: map[string]string{"gpt-5.5": "gpt-6.1-sol"},
+			Extra:        map[string]any{"privacy_mode": "training_off"},
+		}
+		if diff := cmp.Diff(baseline, relay.NormalizeAccountConfigurationForCopy(baseline)); diff != "" {
+			t.Fatalf("configuration without auto-reset keys changed (-want +got):\n%s", diff)
 		}
 	})
 }

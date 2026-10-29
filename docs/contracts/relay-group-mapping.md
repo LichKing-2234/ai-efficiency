@@ -305,7 +305,21 @@ when the applied configuration never sent it. The 5h threshold defaults to 0,
 which disables that window, and the expiry auto-use switch is independent of the
 threshold switch. Comparing raw presence would report a copy that did converge as
 deviating from its baseline, and would report as missing configuration that no
-copy could ever converge. An administrator may also exclude any allow-listed
+copy could ever converge.
+
+The two window thresholds have no effect while `auto_reset_credit_enabled` is
+off, and Sub2API reads that one switch for both windows. Comparison therefore
+reports a window threshold only when both the baseline and the target store the
+switch as enabled; while either side has it off, the stored thresholds are inert
+and neither missing, differing, nor additional. The switch itself is still
+compared, so a target that has it on remains a reported difference. A copy from a
+baseline whose switch is off writes the provider threshold defaults (5h 0, 7d 1)
+rather than the baseline's stored values, so the copy does not materialise a
+threshold nothing reads — in particular the legacy 100% 5h value that predates the
+0 default. The baseline's stored shape is never rewritten; the normalization
+applies to the copied payload only.
+
+An administrator may also exclude any allow-listed
 key from one comparison-and-copy run; excluded keys are neither reported as
 deviating nor written, and the exclusion is per-run input rather than persisted
 state.

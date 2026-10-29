@@ -99,3 +99,25 @@ allow-list (which remains thirteen keys), is never compared against a baseline, 
 never written to any account, and is never persisted by AI Efficiency. Copying a
 snapshot between accounts would fabricate observed upstream state; that is why the
 copy allow-list and the display-only key list are separate and guarded by tests.
+
+## Amendment 2026-10-29: inert auto-reset window thresholds
+
+Sub2API evaluates `auto_reset_credit_5h_threshold` and
+`auto_reset_credit_7d_threshold` only while the account-level
+`auto_reset_credit_enabled` switch is on. The 5h default moved from 100% to 0 in
+`0.2.19` (#6950), while accounts materialised by older builds still store 100%.
+Comparing raw values therefore reports every account that never carried the keys
+as deviating, over a threshold that has no effect for either side; the same shape
+mismatch is reported as missing or additional keys. Copying those values would
+also materialise a meaningless 100% threshold on accounts that may later turn the
+switch on.
+
+Comparison now reads the two thresholds only when both the baseline and the
+target store the switch as enabled, and reports the switch itself when it
+differs. A copy from a baseline whose switch is off writes the provider
+thresholds (5h 0, 7d 1) instead of the baseline's stored values. The allow-list is
+unchanged and stored values keep their meaning for an account whose switch is on:
+this narrows when two allow-listed keys are compared and what a copy writes, not
+what may be read. The contract
+`docs/contracts/relay-group-mapping.md` states the resulting comparison and copy
+behavior.
