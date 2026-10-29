@@ -578,7 +578,7 @@ describe('UserView', () => {
     expect(methodGroup).toBeDefined()
     expect(methodGroup!.classes()).toContain('!items-stretch')
     expect(methodGroup!.props('modelValue')).toBe('ccswitch')
-    expect(methodOptions).toHaveLength(3)
+    expect(methodOptions).toHaveLength(2)
     expect(methodOptions.every((component) => component.classes().includes('!h-full'))).toBe(true)
     expect(wrapper.get('[data-testid="config-method-recommended"]').text()).toBe('Recommended')
   })
@@ -632,7 +632,6 @@ describe('UserView', () => {
     expect(wrapper.get('[data-testid="user-provider-test-run"]').text()).toBe('Run connection test')
     const methods = await openConfigurationMethods(wrapper)
     expect(methods.text()).toContain('Manual configuration')
-    expect(methods.text()).toContain('Automatic configuration')
     expect(methods.text()).toContain('CC Switch configuration')
 
     await openOnboardingStep(wrapper, 1)
@@ -907,62 +906,11 @@ describe('UserView', () => {
     expect(wrapper.find('[data-testid="agent-import-v1-notice"]').exists()).toBe(true)
   })
 
-  it('keeps access-group automatic configuration focused on the selected provider', async () => {
-    const { wrapper } = await mountUserView()
-
-    await openConfigurationMethods(wrapper)
-    await wrapper.get('[data-testid="config-method-automatic"]').trigger('click')
-    expect(wrapper.text()).toContain('ae-cli discover --provider prod')
-    expect(wrapper.text()).not.toContain('One-time machine setup')
-    expect(wrapper.text()).not.toContain('Per-repo setup')
-    expect(wrapper.text()).not.toContain('ae-cli hooks enable --global')
-    expect(wrapper.text()).not.toContain('ae-cli init --hooks repo')
-    expect(wrapper.text()).not.toContain('ae-cli doctor')
-    expect(wrapper.find('[data-testid="auto-advanced"]').exists()).toBe(false)
-  })
-
-  it('shows a collapsed platform-specific discover fallback only inside automatic configuration', async () => {
-    const { wrapper } = await mountUserView()
-
-    expect(wrapper.find('[data-testid="auto-discover-fallback"]').exists()).toBe(false)
-
-    await openConfigurationMethods(wrapper)
-    await wrapper.get('[data-testid="config-method-automatic"]').trigger('click')
-
-    let fallback = wrapper.get('[data-testid="auto-discover-fallback"]')
-    expect(fallback.attributes('open')).toBeUndefined()
-    expect(fallback.element.previousElementSibling?.textContent).toBe('ae-cli discover --provider prod')
-    expect(fallback.text()).toContain('Explicit tool fallback')
-    expect(fallback.text()).toContain('automatic discover skips the selected tool')
-    expect(fallback.text()).toContain('ae-cli discover --provider prod --tool claude')
-    expect(fallback.text()).toContain('--tool bypasses installation detection only')
-    expect(fallback.text()).toContain('codex, claude, and gemini')
-    expect(fallback.text()).toContain('Repeat --tool or pass comma-separated values')
-
-    await wrapper.get('[data-testid="config-method-manual"]').trigger('click')
-    expect(wrapper.find('[data-testid="auto-discover-fallback"]').exists()).toBe(false)
-
-    await selectAccessGroup(wrapper, '44')
-    await openConfigurationMethods(wrapper)
-    await wrapper.get('[data-testid="config-method-automatic"]').trigger('click')
-    fallback = wrapper.get('[data-testid="auto-discover-fallback"]')
-    expect(fallback.element.previousElementSibling?.textContent).toBe('ae-cli discover --provider prod')
-    expect(fallback.text()).toContain('ae-cli discover --provider prod --tool codex')
-
-    await selectAccessGroup(wrapper, '45')
-    await openConfigurationMethods(wrapper)
-    await wrapper.get('[data-testid="config-method-automatic"]').trigger('click')
-    fallback = wrapper.get('[data-testid="auto-discover-fallback"]')
-    expect(fallback.element.previousElementSibling?.textContent).toBe('ae-cli discover --provider prod')
-    expect(fallback.text()).toContain('ae-cli discover --provider prod --tool gemini')
-  })
-
   it('shows audience guidance on each configuration method card', async () => {
     const { wrapper } = await mountUserView()
 
     const methods = (await openConfigurationMethods(wrapper)).text()
     expect(methods).toContain('Best for non-developers, independent agents')
-    expect(methods).toContain('Best for engineering teams')
     expect(methods).toContain('Best for non-developers who prefer a desktop app to manage tool configuration')
   })
 

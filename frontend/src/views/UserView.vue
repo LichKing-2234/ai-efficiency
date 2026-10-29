@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import ReportingReadinessGuide from '@/components/activity/ReportingReadinessGuide.vue'
 import { createGroupCredential, getUserProviderModels, getUserProviders, regenerateGroupCredential, testUserProvider } from '@/api/user'
@@ -111,7 +111,6 @@ const {
 const currentOrigin = computed(() => window.location.origin)
 const reportingCapabilities = computed(() => auth.user?.reporting_capabilities)
 const selectedIsAgentGroup = computed(() => isAgentAccessGroup(selectedGroup.value?.group_name))
-const showAutomaticConfigMethod = computed(() => !selectedIsAgentGroup.value)
 const ccSwitchMethodTitle = computed(() => selectedIsAgentGroup.value ? t('user.appImportMethodTitle') : t('user.ccSwitchConfigMethodTitle'))
 const ccSwitchMethodHelp = computed(() => selectedIsAgentGroup.value ? t('user.appImportMethodHelp') : t('user.ccSwitchConfigMethodHelp'))
 const ccSwitchMethodAudience = computed(() => selectedIsAgentGroup.value ? t('user.appImportMethodAudience') : t('user.ccSwitchConfigMethodAudience'))
@@ -175,23 +174,31 @@ const ccSwitchImports = computed(() => {
     }),
   }))
 })
-const automaticAccessCommands = computed(() => [
-  {
-    key: 'auto-discover',
-    label: t('user.setupStepConfigureTitle'),
-    value: discoverCommand.value || t('user.selectProviderCommand'),
-    fallback: discoverFallbackCommand.value
-      ? {
-          detailsTestId: 'auto-discover-fallback',
-          title: t('user.discoverToolFallback'),
-          help: t('user.automaticConfigDiscoverToolHelp'),
-          label: t('user.fallbackCommand'),
-          value: discoverFallbackCommand.value,
-          copyKey: 'discover-tool',
-        }
-      : undefined,
-  },
-])
+
+const selectedClient = ref<'codex' | 'claude' | 'dsh'>('codex')
+const showClientSelector = computed(() =>
+  !selectedIsAgentGroup.value && (selectedGroup.value?.platform ?? '').trim().toLowerCase() === 'composite',
+)
+function clientSnippetKey(key: string): 'codex' | 'claude' | 'dsh' {
+  if (key === 'claude-settings') return 'claude'
+  if (key.startsWith('dsh-')) return 'dsh'
+  return 'codex'
+}
+const clientSnippets = computed(() => {
+  if (!showClientSelector.value) return manualConfigDisplaySnippets.value
+  return manualConfigDisplaySnippets.value.filter((snippet) => clientSnippetKey(snippet.key) === selectedClient.value)
+})
+const clientCcSwitchImports = computed(() => {
+  if (!showClientSelector.value) return ccSwitchImports.value
+  if (selectedClient.value === 'dsh') return []
+  const target = selectedClient.value === 'claude' ? 'claude' : 'codex'
+  return ccSwitchImports.value.filter((item) => item.key === target)
+})
+watch(clientCcSwitchImports, (imports) => {
+  if (selectedConfigMethod.value === 'ccswitch' && imports.length === 0) {
+    setConfigMethod('manual')
+  }
+})
 
 function credentialStatusLabel(state: string) {
   return state === 'existing_hidden' ? t('user.readyToUse') : t('user.needsSetup')
@@ -279,12 +286,45 @@ function buildSelectedManualConfigSnippets(apiKey: string) {
   })
 }
 
+function manualConfigLinkSegments(text: string) {
+  const segments: { text: string; href?: string }[] = []
+  const pattern = /(https?:\/\/[^\s]+)/g
+  let lastIndex = 0
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index ?? 0
+    if (index > lastIndex) segments.push({ text: text.slice(lastIndex, index) })
+    segments.push({ text: match[0], href: match[0] })
+    lastIndex = index + match[0].length
+  }
+  if (lastIndex < text.length) segments.push({ text: text.slice(lastIndex) })
+  return segments
+}
+
+function manualConfigSteps(snippet: ManualConfigSnippet) {
+  const steps: { title: string; lines: string[] }[] = []
+  for (const raw of snippet.body.split('\n')) {
+    const line = raw.replace(/\s+$/, '')
+    if (!line.trim()) continue
+    const match = line.match(/^\s*(\d+)\.\s+(.*)$/)
+    if (match) {
+      steps.push({ title: match[2], lines: [] })
+    } else if (steps.length > 0) {
+      steps[steps.length - 1].lines.push(line.trim())
+    } else {
+      steps.push({ title: line.trim(), lines: [] })
+    }
+  }
+  return steps
+}
+
 function manualConfigSnippetTitle(snippet: ManualConfigSnippet) {
   switch (snippet.key) {
     case 'codex-config':
       return t('user.manualConfigCodexConfig')
     case 'codex-auth':
       return t('user.manualConfigCodexAuth')
+    case 'codex-env':
+      return t('user.manualConfigCodexEnv')
     case 'claude-settings':
       return t('user.manualConfigClaudeSettings')
     case 'gemini-env':
@@ -830,6 +870,15 @@ onBeforeUnmount(() => {
                 <h3 class="text-base font-semibold text-gray-900">{{ t('user.configurationMethodsTitle') }}</h3>
                 <p class="mt-1 text-sm text-gray-600">{{ t('user.configurationMethodsHelp') }}</p>
 
+                <div v-if="showClientSelector" class="mt-4">
+                  <div class="text-sm font-medium text-gray-900">{{ t('user.selectClientTitle') }}</div>
+                  <ElRadioGroup v-model="selectedClient" class="mt-2">
+                    <ElRadioButton value="codex">{{ t('user.clientCodex') }}</ElRadioButton>
+                    <ElRadioButton value="claude">{{ t('user.clientClaudeCode') }}</ElRadioButton>
+                    <ElRadioButton value="dsh">{{ t('user.clientDsh') }}</ElRadioButton>
+                  </ElRadioGroup>
+                </div>
+
                 <ElRadioGroup
                   :model-value="selectedConfigMethod ?? undefined"
                   class="mt-4 !grid w-full !items-stretch gap-3 lg:grid-cols-3"
@@ -848,21 +897,7 @@ onBeforeUnmount(() => {
                     </div>
                   </ElRadio>
                   <ElRadio
-                    v-if="showAutomaticConfigMethod"
-                    data-testid="config-method-automatic"
-                    border
-                    class="!mx-0 !h-full w-full !items-start !p-4"
-                    value="automatic"
-                    @click="setConfigMethod('automatic')"
-                  >
-                    <div class="whitespace-normal">
-                      <div class="font-medium text-gray-900">{{ t('user.automaticConfigMethodTitle') }}</div>
-                      <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigMethodHelp') }}</p>
-                      <p class="mt-3 text-xs text-gray-500">{{ t('user.automaticConfigMethodAudience') }}</p>
-                    </div>
-                  </ElRadio>
-                  <ElRadio
-                    v-if="ccSwitchImports.length > 0"
+                    v-if="clientCcSwitchImports.length > 0"
                     data-testid="config-method-ccswitch"
                     border
                     class="!mx-0 !h-full w-full !items-start !p-4"
@@ -900,18 +935,20 @@ onBeforeUnmount(() => {
                     <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ t('user.manualConfigApiKey') }}</dt>
                     <dd class="text-xs text-slate-900">{{ t('user.manualConfigApiKeyHelp') }}</dd>
                   </dl>
+
                   <div v-if="manualConfigDisplaySnippets.length > 0" class="mt-4 space-y-3">
                     <div
-                      v-for="snippet in manualConfigDisplaySnippets"
+                      v-for="snippet in clientSnippets"
                       :key="snippet.key"
                       class="rounded-md border border-slate-200 bg-white p-3"
                     >
                       <div class="flex flex-wrap items-start justify-between gap-3">
                         <div class="min-w-0">
                           <div class="font-medium text-slate-900">{{ manualConfigSnippetTitle(snippet) }}</div>
-                          <div class="mt-1 break-all font-mono text-xs text-slate-500">{{ snippet.path }}</div>
+                          <div v-if="snippet.path" class="mt-1 break-all font-mono text-xs text-slate-500">{{ snippet.path }}</div>
                         </div>
                         <ElButton
+                          v-if="snippet.render !== 'steps'"
                           class="shrink-0"
                           link
                           type="primary"
@@ -921,7 +958,48 @@ onBeforeUnmount(() => {
                           {{ manualConfigCopyLabel(snippet) }}
                         </ElButton>
                       </div>
-                      <pre class="mt-3 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ snippet.body }}</pre>
+                      <ol v-if="snippet.render === 'steps'" class="mt-3 space-y-4">
+                        <li
+                          v-for="(step, index) in manualConfigSteps(snippet)"
+                          :key="index"
+                          class="flex gap-3"
+                        >
+                          <span class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-semibold text-blue-600">
+                            {{ index + 1 }}
+                          </span>
+                          <div class="min-w-0">
+                            <div class="text-sm font-medium text-slate-900">
+                              <template v-for="(segment, segmentIndex) in manualConfigLinkSegments(step.title)" :key="segmentIndex">
+                                <a
+                                  v-if="segment.href"
+                                  :href="segment.href"
+                                  target="_blank"
+                                  rel="noreferrer noopener"
+                                  class="text-blue-600 underline"
+                                >{{ segment.text }}</a>
+                                <template v-else>{{ segment.text }}</template>
+                              </template>
+                            </div>
+                            <div
+                              v-for="(line, lineIndex) in step.lines"
+                              :key="lineIndex"
+                              class="mt-1 whitespace-pre-wrap break-all font-mono text-xs text-slate-600"
+                            >
+                              <template v-for="(segment, segmentIndex) in manualConfigLinkSegments(line)" :key="segmentIndex">
+                                <a
+                                  v-if="segment.href"
+                                  :href="segment.href"
+                                  target="_blank"
+                                  rel="noreferrer noopener"
+                                  class="text-blue-600 underline"
+                                >{{ segment.text }}</a>
+                                <template v-else>{{ segment.text }}</template>
+                              </template>
+                            </div>
+                          </div>
+                        </li>
+                      </ol>
+                      <pre v-else class="mt-3 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ snippet.body }}</pre>
                     </div>
                     <div v-if="pendingManualConfigSnippet">
                       <ElAlert
@@ -952,45 +1030,6 @@ onBeforeUnmount(() => {
                   </p>
                 </div>
 
-                <div v-if="selectedConfigMethod === 'automatic'" class="mt-4 rounded-lg border border-gray-200 p-4">
-                  <p class="text-sm leading-5 text-gray-600">{{ t('user.automaticConfigProviderHelp') }}</p>
-                  <p class="mt-2 text-sm leading-5 text-gray-600">{{ t('user.automaticConfigOverview') }}</p>
-
-                  <section class="mt-4">
-                    <div class="text-base font-semibold leading-6 text-gray-900">{{ t('user.setupStepConfigureTitle') }}</div>
-                    <div class="mt-4 space-y-3 text-sm">
-                      <div v-for="command in automaticAccessCommands" :key="command.key" class="rounded-md border border-gray-200 p-3 shadow-sm">
-                        <div class="flex items-center justify-between gap-3">
-                          <div class="text-[11px] font-semibold text-gray-500">{{ command.label }}</div>
-                          <ElButton link type="primary" @click="copyCommand(command.key, command.value)">
-                            {{ copyCommandLabel(command.key) }}
-                          </ElButton>
-                        </div>
-                        <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.value }}</pre>
-                        <ElCollapse
-                          v-if="command.fallback"
-                          :data-testid="command.fallback.detailsTestId"
-                          class="mt-3 rounded-md border border-gray-200 bg-gray-50 px-3"
-                        >
-                          <ElCollapseItem name="fallback">
-                            <template #title>
-                              <span class="text-sm font-medium leading-6 text-gray-700">{{ command.fallback.title }}</span>
-                            </template>
-                            <p class="text-xs leading-5 text-gray-500">{{ command.fallback.help }}</p>
-                            <div class="mt-2 flex items-center justify-between gap-3">
-                              <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{{ command.fallback.label }}</div>
-                              <ElButton link type="primary" @click="copyCommand(command.fallback.copyKey, command.fallback.value)">
-                                {{ copyCommandLabel(command.fallback.copyKey) }}
-                              </ElButton>
-                            </div>
-                            <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.fallback.value }}</pre>
-                          </ElCollapseItem>
-                        </ElCollapse>
-                      </div>
-                    </div>
-                  </section>
-                </div>
-
                 <div v-if="selectedConfigMethod === 'ccswitch'" class="mt-4 rounded-lg border border-gray-200 p-4">
                   <div class="font-medium text-gray-900">{{ ccSwitchMethodTitle }}</div>
                   <p class="mt-1 text-sm text-gray-600">{{ ccSwitchMethodHelp }}</p>
@@ -1005,7 +1044,7 @@ onBeforeUnmount(() => {
                   </div>
                   <div class="mt-4 flex flex-wrap gap-2">
                     <ElButton
-                      v-for="item in ccSwitchImports"
+                      v-for="item in clientCcSwitchImports"
                       :key="item.key"
                       :data-testid="`ccswitch-import-${item.key}`"
                       tag="a"

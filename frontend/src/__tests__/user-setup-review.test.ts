@@ -515,7 +515,8 @@ describe('userSetupReview command builders', () => {
     })
     expect(snippets.map((item) => item.key)).toEqual([
       'codex-config',
-      'codex-auth',
+      'codex-env',
+      'claude-settings',
       'dsh-config',
       'dsh-steps',
     ])
@@ -524,6 +525,14 @@ describe('userSetupReview command builders', () => {
     expect(codex.body).toContain('base_url = "https://sub2api.agoralab.co/v1"')
     expect(codex.body).toContain('wire_api = "responses"')
     expect(codex.body).toContain('model = "deepseek-v4-pro"')
+    expect(codex.body).toContain('model_catalog_url = "https://sub2api.agoralab.co/v1/models"')
+    expect(codex.body).toContain('env_key = "SUB2API_API_KEY"')
+    expect(codex.body).toContain('requires_openai_auth = false')
+
+    const env = snippets.find((item) => item.key === 'codex-env')!
+    expect(env.body).toContain('export SUB2API_API_KEY="sk-test"')
+    expect(env.body).toContain('$env:SUB2API_API_KEY="sk-test"')
+    expect(snippets.some((item) => item.key === 'codex-auth')).toBe(false)
 
     const dsh = snippets.find((item) => item.key === 'dsh-config')!
     expect(dsh.body).toContain('apiKeyEnv: SUB2API_API_KEY')
@@ -533,7 +542,12 @@ describe('userSetupReview command builders', () => {
     expect(dsh.body).toContain('- id: deepseek-v4-pro')
 
     const steps = snippets.find((item) => item.key === 'dsh-steps')!
-    expect(steps.body).toContain('npx @deepseek-ai/dsh web')
+    expect(steps.render).toBe('steps')
+    expect(steps.path).toBe('')
+    expect(snippets.filter((item) => item.render === 'steps')).toHaveLength(1)
+    expect(steps.body).toContain('https://deepseek-harness.github.io/deepseek-harness/guide/quickstart')
+    expect(steps.body).toContain('https://deepseek-harness.github.io/deepseek-harness/guide/providers')
+    expect(steps.body).toContain('探测失败时也可手动填写模型 ID')
     expect(steps.body).toContain('获取可用模型')
     expect(steps.body).toContain('sk-test')
   })

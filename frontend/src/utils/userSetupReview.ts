@@ -5,6 +5,7 @@ export type DiscoverTool = 'codex' | 'claude' | 'gemini'
 export type ManualConfigSnippetKey =
   | 'codex-config'
   | 'codex-auth'
+  | 'codex-env'
   | 'claude-settings'
   | 'gemini-env'
   | 'gemini-reload'
@@ -21,6 +22,8 @@ export type ManualConfigSnippet = {
   path: string
   body: string
   containsSecret: boolean
+  /** code: 可复制的配置片段；steps: 供人阅读的操作步骤，不提供复制 */
+  render?: 'code' | 'steps'
 }
 
 export type ManualConfigSnippetInput = {
@@ -349,6 +352,40 @@ function buildAgentManualConfigSnippets(input: ManualConfigSnippetInput): Manual
   ]
 }
 
+/** 与 sub2api「使用 API 密钥」面板一致的 Codex 配置（环境变量 + 模型目录） */
+export function buildCompositeCodexConfigSnippet(input: ManualConfigSnippetInput) {
+  const providerId = 'sub2api'
+  const baseUrl = buildAgentProviderBaseUrl(input.baseUrl)
+  const model = input.model?.trim() || resolveOnboardingModels(input)[0] || 'deepseek-v4-pro'
+  return [
+    `# Codex CLI -> Sub2API Composite group`,
+    `model_provider = ${tomlString(providerId)}`,
+    `model = ${tomlString(model)}`,
+    `review_model = ${tomlString(model)}`,
+    `disable_response_storage = true`,
+    ``,
+    `[model_providers.${tomlTableKey(providerId)}]`,
+    `name = "Sub2API Composite"`,
+    `base_url = ${tomlString(baseUrl)}`,
+    `model_catalog_url = ${tomlString(baseUrl + '/models')}`,
+    `env_key = "SUB2API_API_KEY"`,
+    `wire_api = "responses"`,
+    `requires_openai_auth = false`,
+    `supports_websockets = false`,
+  ].join('\n')
+}
+
+/** Codex 通过环境变量取密钥，不再需要 auth.json */
+export function buildCodexEnvSnippet(apiKey: string) {
+  return [
+    `# macOS / Linux`,
+    `export SUB2API_API_KEY="${apiKey}"`,
+    ``,
+    `# Windows PowerShell`,
+    `$env:SUB2API_API_KEY="${apiKey}"`,
+  ].join('\n')
+}
+
 const DSH_API_KEY_ENV = 'SUB2API_API_KEY'
 
 export function resolveOnboardingModels(input: ManualConfigSnippetInput): string[] {
@@ -406,16 +443,15 @@ export function buildDshStepsSnippet(input: ManualConfigSnippetInput) {
   const models = resolveOnboardingModels(input)
   const modelHint = models.length > 0 ? models.join(' / ') : 'deepseek-v4-pro / deepseek-flash'
   return [
-    `1. 安装并启动 DSH（已安装可跳过）`,
-    `   npx @deepseek-ai/dsh web`,
+    `1. 安装并启动 DSH（已安装可跳过）。官方安装说明：https://deepseek-harness.github.io/deepseek-harness/guide/quickstart`,
     ``,
-    `2. 打开 DSH 设置 → 模型供应商 → 添加自定义供应商`,
+    `2. 打开 DSH 设置 → 模型供应商 → 添加自定义供应商。官方配置说明：https://deepseek-harness.github.io/deepseek-harness/guide/providers`,
     `   名称:     ${input.providerName.trim() || 'Sub2API'}`,
     `   Base URL: ${baseUrl}`,
     `   API Key:  ${input.apiKey}`,
     `   协议:     openai-completions`,
     ``,
-    `3. 点击「获取可用模型」，从列表中选择（不要手动输入）`,
+    `3. 点击「获取可用模型」，从列表中选择（不要手动输入；探测失败时也可手动填写模型 ID）`,
     `   可选模型: ${modelHint}`,
     ``,
     `4. 新建会话，在模型选择器里选中 ${modelHint.split(' / ')[0]}`,
@@ -432,13 +468,19 @@ export function buildManualConfigSnippets(input: ManualConfigSnippetInput): Manu
       {
         key: 'codex-config',
         path: '~/.codex/config.toml',
-        body: buildCodexConfigSnippet(input.providerName, buildAgentProviderBaseUrl(input.baseUrl), input.model),
+        body: buildCompositeCodexConfigSnippet(input),
         containsSecret: false,
       },
       {
-        key: 'codex-auth',
-        path: '~/.codex/auth.json',
-        body: buildCodexAuthSnippet(input.apiKey),
+        key: 'codex-env',
+        path: '终端环境变量',
+        body: buildCodexEnvSnippet(input.apiKey),
+        containsSecret: true,
+      },
+      {
+        key: 'claude-settings',
+        path: '~/.claude/settings.json',
+        body: buildClaudeSettingsSnippet(input.baseUrl, input.apiKey),
         containsSecret: true,
       },
       {
@@ -449,9 +491,10 @@ export function buildManualConfigSnippets(input: ManualConfigSnippetInput): Manu
       },
       {
         key: 'dsh-steps',
-        path: 'DSH 界面配置步骤',
+        path: '',
         body: buildDshStepsSnippet(input),
         containsSecret: true,
+        render: 'steps',
       },
     ]
   }
@@ -525,6 +568,10 @@ export function resolveDiscoverToolForPlatform(platform: string): DiscoverTool |
 export function resolveCCSwitchAppsForGroup(platform: string, groupName?: string | null): CCSwitchApp[] {
   if (isAgentAccessGroup(groupName)) {
     return ['hermes', 'openclaw']
+  }
+  if (platform.trim().toLowerCase() === 'composite') {
+    // composite 组同时提供 OpenAI(Codex) 与 Anthropic(Claude Code) 协议
+    return ['codex', 'claude']
   }
   const app = resolveCCSwitchAppForPlatform(platform)
   return app ? [app] : []
