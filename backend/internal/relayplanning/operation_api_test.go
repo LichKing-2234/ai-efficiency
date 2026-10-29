@@ -3,8 +3,10 @@ package relayplanning
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
+	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/testdb"
 )
 
@@ -12,6 +14,10 @@ func TestRecoveryPreviewAndMappingReadAreSafeAndReadOnly(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	service, provider, mapping, operation := createRecoveryFixture(t, ctx, client, false)
+	provider.accounts = append(provider.accounts,
+		relay.Account{ID: 21, Platform: "openai", GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 101, Priority: 1}}},
+		relay.Account{ID: 22, Platform: "openai", GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 101, Priority: 1}}},
+	)
 
 	mappings, err := service.ListMappings(ctx, mapping.ProviderID)
 	if err != nil {
@@ -19,6 +25,9 @@ func TestRecoveryPreviewAndMappingReadAreSafeAndReadOnly(t *testing.T) {
 	}
 	if len(mappings) != 1 || mappings[0].Alignment != "operating" || mappings[0].ActiveOperation == nil || mappings[0].ActiveOperation.ID != operation.ID {
 		t.Fatalf("Mapping operation state = %+v, want operating Operation %d", mappings, operation.ID)
+	}
+	if len(mappings[0].Warnings) == 0 || len(mappings[0].AlignmentDifferences) == 0 {
+		t.Fatalf("operating Mapping lost advisory or difference evidence: %+v", mappings[0])
 	}
 	preview, err := service.PreviewRecovery(ctx, operation.ID, RecoveryResume)
 	if err != nil {
@@ -77,5 +86,37 @@ func TestRecoveryPreviewReportsExactExternalBlockerWithoutGenericRetry(t *testin
 	}
 	if provider.assignmentCalls != 0 || len(provider.bound) != 0 {
 		t.Fatalf("blocked Preview wrote Relay: assignments=%d bindings=%v", provider.assignmentCalls, provider.bound)
+	}
+}
+
+// This projection invariant complements the Mapping-list behavior tests without
+// exposing a formatter or making production text replaceable for tests.
+func TestMappingAlignmentDoesNotInterpretPresentationText(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	service := NewService(client, nil, nil)
+	for _, advisory := range []string{
+		"target group 101 has multiple Accounts",
+		"target group 101 uses two Accounts",
+		"relationship snapshot includes multiple Accounts",
+	} {
+		t.Run(advisory, func(t *testing.T) {
+			mappings := []Mapping{{ID: 1, Warnings: []string{advisory, advisory}}}
+			if err := service.decorateMappingOperationState(ctx, mappings); err != nil {
+				t.Fatal(err)
+			}
+			if mappings[0].Alignment != "aligned" || len(mappings[0].AlignmentDifferences) != 0 || !reflect.DeepEqual(mappings[0].Warnings, []string{advisory}) {
+				t.Fatalf("advisory changed Alignment: %+v", mappings[0])
+			}
+		})
+	}
+
+	difference := "target group 101 has multiple Accounts outside the reviewed pool"
+	mappings := []Mapping{{ID: 1, AlignmentDifferences: []string{difference, difference}}}
+	if err := service.decorateMappingOperationState(ctx, mappings); err != nil {
+		t.Fatal(err)
+	}
+	if mappings[0].Alignment != "drifted" || !reflect.DeepEqual(mappings[0].AlignmentDifferences, []string{difference}) || len(mappings[0].Warnings) != 0 {
+		t.Fatalf("difference wording changed Alignment: %+v", mappings[0])
 	}
 }
