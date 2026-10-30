@@ -350,8 +350,10 @@ func shouldBypassEmbeddedFrontend(requestPath string) bool {
 	trimmed := strings.TrimSpace(requestPath)
 	return trimmed == "/api" ||
 		trimmed == "/oauth" ||
+		trimmed == "/auth/oidc" ||
 		strings.HasPrefix(trimmed, "/api/") ||
-		strings.HasPrefix(trimmed, "/oauth/")
+		strings.HasPrefix(trimmed, "/oauth/") ||
+		strings.HasPrefix(trimmed, "/auth/oidc/")
 }
 
 func canonicalRequestPath(requestPath string) string {
