@@ -76,6 +76,14 @@ auth:
   jwt_secret: "change-me-in-production-32-bytes!"
   access_token_ttl: 7200      # 2 hours
   refresh_token_ttl: 604800   # 7 days
+  oidc:
+    enabled: false
+    issuer: "https://id.example.com/application/o/ai-efficiency/"
+    client_id: ""
+    client_secret: ""
+    redirect_url: "https://ai-efficiency.example.com/auth/oidc/callback"
+    allow_email_link: false
+    scopes: ["openid", "profile", "email"]
   ldap:
     url: "ldap://localhost:389"
     base_dn: "dc=example,dc=com"

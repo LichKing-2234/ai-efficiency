@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, onScopeDispose, ref } from 'vue'
-import { devLogin as apiDevLogin, getMe, login as apiLogin } from '@/api/auth'
+import { completeOIDC as apiCompleteOIDC, devLogin as apiDevLogin, getMe, login as apiLogin } from '@/api/auth'
 import { resetSessionResources } from '@/stores/sessionResources'
 import {
   clearBrowserSession,
@@ -49,6 +49,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     replaceBrowserSession({ accessToken, refreshToken })
+    localStorage.removeItem('oidc_logout_requested')
     return ensureUser()
   }
 
@@ -67,6 +68,13 @@ export const useAuthStore = defineStore('auth', () => {
     if (!data) {
       return null
     }
+    return installLoginPayload(data)
+  }
+
+  async function completeOIDC(): Promise<User | null> {
+    const res = await apiCompleteOIDC()
+    const data = res.data.data
+    if (!data) return null
     return installLoginPayload(data)
   }
 
@@ -121,10 +129,11 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function logout() {
+    localStorage.setItem('oidc_logout_requested', '1')
     clearBrowserSession()
   }
 
-  return { user, token, isAuthenticated, isAdmin, login, devLogin, logout, fetchMe, ensureUser }
+  return { user, token, isAuthenticated, isAdmin, login, devLogin, completeOIDC, logout, fetchMe, ensureUser }
 })
 
 type CurrentUserRequest = {

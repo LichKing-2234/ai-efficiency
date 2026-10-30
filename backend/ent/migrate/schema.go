@@ -1627,7 +1627,9 @@ var (
 		{Name: "id", Type: field.TypeInt, Increment: true},
 		{Name: "username", Type: field.TypeString, Unique: true},
 		{Name: "email", Type: field.TypeString, Unique: true},
-		{Name: "auth_source", Type: field.TypeEnum, Enums: []string{"sub2api_sso", "relay_sso", "ldap"}},
+		{Name: "auth_source", Type: field.TypeEnum, Enums: []string{"sub2api_sso", "relay_sso", "ldap", "oidc"}},
+		{Name: "oidc_issuer", Type: field.TypeString, Nullable: true},
+		{Name: "oidc_subject", Type: field.TypeString, Nullable: true},
 		{Name: "relay_user_id", Type: field.TypeInt, Nullable: true},
 		{Name: "relay_auth_password", Type: field.TypeString, Nullable: true},
 		{Name: "ldap_dn", Type: field.TypeString, Nullable: true},
@@ -1646,7 +1648,12 @@ var (
 			{
 				Name:    "user_relay_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsersColumns[4]},
+				Columns: []*schema.Column{UsersColumns[6]},
+			},
+			{
+				Name:    "user_oidc_issuer_oidc_subject",
+				Unique:  true,
+				Columns: []*schema.Column{UsersColumns[4], UsersColumns[5]},
 			},
 		},
 	}

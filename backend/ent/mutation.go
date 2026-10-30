@@ -47310,6 +47310,8 @@ type UserMutation struct {
 	username                       *string
 	email                          *string
 	auth_source                    *user.AuthSource
+	oidc_issuer                    *string
+	oidc_subject                   *string
 	relay_user_id                  *int
 	addrelay_user_id               *int
 	relay_auth_password            *string
@@ -47541,6 +47543,104 @@ func (m *UserMutation) OldAuthSource(ctx context.Context) (v user.AuthSource, er
 // ResetAuthSource resets all changes to the "auth_source" field.
 func (m *UserMutation) ResetAuthSource() {
 	m.auth_source = nil
+}
+
+// SetOidcIssuer sets the "oidc_issuer" field.
+func (m *UserMutation) SetOidcIssuer(s string) {
+	m.oidc_issuer = &s
+}
+
+// OidcIssuer returns the value of the "oidc_issuer" field in the mutation.
+func (m *UserMutation) OidcIssuer() (r string, exists bool) {
+	v := m.oidc_issuer
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOidcIssuer returns the old "oidc_issuer" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldOidcIssuer(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOidcIssuer is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOidcIssuer requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOidcIssuer: %w", err)
+	}
+	return oldValue.OidcIssuer, nil
+}
+
+// ClearOidcIssuer clears the value of the "oidc_issuer" field.
+func (m *UserMutation) ClearOidcIssuer() {
+	m.oidc_issuer = nil
+	m.clearedFields[user.FieldOidcIssuer] = struct{}{}
+}
+
+// OidcIssuerCleared returns if the "oidc_issuer" field was cleared in this mutation.
+func (m *UserMutation) OidcIssuerCleared() bool {
+	_, ok := m.clearedFields[user.FieldOidcIssuer]
+	return ok
+}
+
+// ResetOidcIssuer resets all changes to the "oidc_issuer" field.
+func (m *UserMutation) ResetOidcIssuer() {
+	m.oidc_issuer = nil
+	delete(m.clearedFields, user.FieldOidcIssuer)
+}
+
+// SetOidcSubject sets the "oidc_subject" field.
+func (m *UserMutation) SetOidcSubject(s string) {
+	m.oidc_subject = &s
+}
+
+// OidcSubject returns the value of the "oidc_subject" field in the mutation.
+func (m *UserMutation) OidcSubject() (r string, exists bool) {
+	v := m.oidc_subject
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOidcSubject returns the old "oidc_subject" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldOidcSubject(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOidcSubject is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOidcSubject requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOidcSubject: %w", err)
+	}
+	return oldValue.OidcSubject, nil
+}
+
+// ClearOidcSubject clears the value of the "oidc_subject" field.
+func (m *UserMutation) ClearOidcSubject() {
+	m.oidc_subject = nil
+	m.clearedFields[user.FieldOidcSubject] = struct{}{}
+}
+
+// OidcSubjectCleared returns if the "oidc_subject" field was cleared in this mutation.
+func (m *UserMutation) OidcSubjectCleared() bool {
+	_, ok := m.clearedFields[user.FieldOidcSubject]
+	return ok
+}
+
+// ResetOidcSubject resets all changes to the "oidc_subject" field.
+func (m *UserMutation) ResetOidcSubject() {
+	m.oidc_subject = nil
+	delete(m.clearedFields, user.FieldOidcSubject)
 }
 
 // SetRelayUserID sets the "relay_user_id" field.
@@ -48167,7 +48267,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 13)
 	if m.username != nil {
 		fields = append(fields, user.FieldUsername)
 	}
@@ -48176,6 +48276,12 @@ func (m *UserMutation) Fields() []string {
 	}
 	if m.auth_source != nil {
 		fields = append(fields, user.FieldAuthSource)
+	}
+	if m.oidc_issuer != nil {
+		fields = append(fields, user.FieldOidcIssuer)
+	}
+	if m.oidc_subject != nil {
+		fields = append(fields, user.FieldOidcSubject)
 	}
 	if m.relay_user_id != nil {
 		fields = append(fields, user.FieldRelayUserID)
@@ -48215,6 +48321,10 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.Email()
 	case user.FieldAuthSource:
 		return m.AuthSource()
+	case user.FieldOidcIssuer:
+		return m.OidcIssuer()
+	case user.FieldOidcSubject:
+		return m.OidcSubject()
 	case user.FieldRelayUserID:
 		return m.RelayUserID()
 	case user.FieldRelayAuthPassword:
@@ -48246,6 +48356,10 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldEmail(ctx)
 	case user.FieldAuthSource:
 		return m.OldAuthSource(ctx)
+	case user.FieldOidcIssuer:
+		return m.OldOidcIssuer(ctx)
+	case user.FieldOidcSubject:
+		return m.OldOidcSubject(ctx)
 	case user.FieldRelayUserID:
 		return m.OldRelayUserID(ctx)
 	case user.FieldRelayAuthPassword:
@@ -48291,6 +48405,20 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetAuthSource(v)
+		return nil
+	case user.FieldOidcIssuer:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOidcIssuer(v)
+		return nil
+	case user.FieldOidcSubject:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOidcSubject(v)
 		return nil
 	case user.FieldRelayUserID:
 		v, ok := value.(int)
@@ -48393,6 +48521,12 @@ func (m *UserMutation) AddField(name string, value ent.Value) error {
 // mutation.
 func (m *UserMutation) ClearedFields() []string {
 	var fields []string
+	if m.FieldCleared(user.FieldOidcIssuer) {
+		fields = append(fields, user.FieldOidcIssuer)
+	}
+	if m.FieldCleared(user.FieldOidcSubject) {
+		fields = append(fields, user.FieldOidcSubject)
+	}
 	if m.FieldCleared(user.FieldRelayUserID) {
 		fields = append(fields, user.FieldRelayUserID)
 	}
@@ -48422,6 +48556,12 @@ func (m *UserMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *UserMutation) ClearField(name string) error {
 	switch name {
+	case user.FieldOidcIssuer:
+		m.ClearOidcIssuer()
+		return nil
+	case user.FieldOidcSubject:
+		m.ClearOidcSubject()
+		return nil
 	case user.FieldRelayUserID:
 		m.ClearRelayUserID()
 		return nil
@@ -48453,6 +48593,12 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldAuthSource:
 		m.ResetAuthSource()
+		return nil
+	case user.FieldOidcIssuer:
+		m.ResetOidcIssuer()
+		return nil
+	case user.FieldOidcSubject:
+		m.ResetOidcSubject()
 		return nil
 	case user.FieldRelayUserID:
 		m.ResetRelayUserID()

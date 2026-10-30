@@ -27,6 +27,23 @@ JWT uses a stored or generated Relay user password.
 
 ## Login Sources
 
+### Browser OIDC
+
+When `auth.oidc.enabled` is true, the browser uses the standard OIDC
+authorization-code flow with PKCE. The application discovers the configured
+issuer, validates the ID Token signature, issuer, audience, expiry and nonce,
+then confirms that UserInfo has the same `sub`. The callback is a dedicated
+browser route; API, CLI, Connector, WebSocket and webhook routes keep their
+existing authentication.
+
+The application stores the external binding as `(issuer, subject)`. An
+unbound identity may be linked to an existing local email only when the
+deployment explicitly enables `allow_email_link` and the provider marks the
+email verified. Otherwise the user must be pre-provisioned by subject. A
+successful new identity receives the default local `user` role; the provider
+cannot grant local administrator access. The OIDC client secret and all issuer
+configuration remain server-side deployment settings.
+
 The auth options response exposes whether LDAP and the debug-only Dev Login are
 available. Relay SSO is the ordinary non-LDAP login source when its provider is
 registered.

@@ -23,6 +23,10 @@ type User struct {
 	Email string `json:"email,omitempty"`
 	// AuthSource holds the value of the "auth_source" field.
 	AuthSource user.AuthSource `json:"auth_source,omitempty"`
+	// OidcIssuer holds the value of the "oidc_issuer" field.
+	OidcIssuer *string `json:"oidc_issuer,omitempty"`
+	// OidcSubject holds the value of the "oidc_subject" field.
+	OidcSubject *string `json:"oidc_subject,omitempty"`
 	// RelayUserID holds the value of the "relay_user_id" field.
 	RelayUserID *int `json:"relay_user_id,omitempty"`
 	// RelayAuthPassword holds the value of the "relay_auth_password" field.
@@ -103,7 +107,7 @@ func (*User) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case user.FieldID, user.FieldRelayUserID:
 			values[i] = new(sql.NullInt64)
-		case user.FieldUsername, user.FieldEmail, user.FieldAuthSource, user.FieldRelayAuthPassword, user.FieldLdapDn, user.FieldRole:
+		case user.FieldUsername, user.FieldEmail, user.FieldAuthSource, user.FieldOidcIssuer, user.FieldOidcSubject, user.FieldRelayAuthPassword, user.FieldLdapDn, user.FieldRole:
 			values[i] = new(sql.NullString)
 		case user.FieldTokenValidAfter, user.FieldRelayDisabledAt, user.FieldCreatedAt, user.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -145,6 +149,20 @@ func (u *User) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field auth_source", values[i])
 			} else if value.Valid {
 				u.AuthSource = user.AuthSource(value.String)
+			}
+		case user.FieldOidcIssuer:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field oidc_issuer", values[i])
+			} else if value.Valid {
+				u.OidcIssuer = new(string)
+				*u.OidcIssuer = value.String
+			}
+		case user.FieldOidcSubject:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field oidc_subject", values[i])
+			} else if value.Valid {
+				u.OidcSubject = new(string)
+				*u.OidcSubject = value.String
 			}
 		case user.FieldRelayUserID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -263,6 +281,16 @@ func (u *User) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("auth_source=")
 	builder.WriteString(fmt.Sprintf("%v", u.AuthSource))
+	builder.WriteString(", ")
+	if v := u.OidcIssuer; v != nil {
+		builder.WriteString("oidc_issuer=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := u.OidcSubject; v != nil {
+		builder.WriteString("oidc_subject=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	if v := u.RelayUserID; v != nil {
 		builder.WriteString("relay_user_id=")

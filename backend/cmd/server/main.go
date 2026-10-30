@@ -446,6 +446,21 @@ func main() {
 		logger,
 		cfg.Encryption.Key,
 	)
+	if cfg.Auth.OIDC.Enabled {
+		redirectURL := cfg.Auth.OIDC.RedirectURL
+		if strings.TrimSpace(redirectURL) == "" {
+			redirectURL = strings.TrimRight(cfg.Server.FrontendURL, "/") + "/auth/oidc/callback"
+		}
+		oidcService, err := auth.NewOIDCService(context.Background(), auth.OIDCConfig{
+			Issuer: cfg.Auth.OIDC.Issuer, ClientID: cfg.Auth.OIDC.ClientID,
+			ClientSecret: cfg.Auth.OIDC.ClientSecret, RedirectURL: redirectURL,
+			AllowEmailLink: cfg.Auth.OIDC.AllowEmailLink, Scopes: cfg.Auth.OIDC.Scopes,
+		})
+		if err != nil {
+			logger.Fatal("initialize OIDC client", zap.Error(err))
+		}
+		authService.SetOIDCService(oidcService)
+	}
 	// When relay is configured, allow LDAP logins to provision/resolve a relay-side identity
 	// (by stable username) for session/PR attribution.
 	var relayIdentityResolver *auth.RelayIdentityResolver

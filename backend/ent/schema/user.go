@@ -22,7 +22,13 @@ func (User) Fields() []ent.Field {
 			Unique().
 			NotEmpty(),
 		field.Enum("auth_source").
-			Values("sub2api_sso", "relay_sso", "ldap"),
+			Values("sub2api_sso", "relay_sso", "ldap", "oidc"),
+		field.String("oidc_issuer").
+			Optional().
+			Nillable(),
+		field.String("oidc_subject").
+			Optional().
+			Nillable(),
 		field.Int("relay_user_id").
 			Optional().
 			Nillable(),
@@ -65,5 +71,6 @@ func (User) Edges() []ent.Edge {
 func (User) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("relay_user_id"),
+		index.Fields("oidc_issuer", "oidc_subject").Unique(),
 	}
 }

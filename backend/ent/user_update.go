@@ -74,6 +74,46 @@ func (uu *UserUpdate) SetNillableAuthSource(us *user.AuthSource) *UserUpdate {
 	return uu
 }
 
+// SetOidcIssuer sets the "oidc_issuer" field.
+func (uu *UserUpdate) SetOidcIssuer(s string) *UserUpdate {
+	uu.mutation.SetOidcIssuer(s)
+	return uu
+}
+
+// SetNillableOidcIssuer sets the "oidc_issuer" field if the given value is not nil.
+func (uu *UserUpdate) SetNillableOidcIssuer(s *string) *UserUpdate {
+	if s != nil {
+		uu.SetOidcIssuer(*s)
+	}
+	return uu
+}
+
+// ClearOidcIssuer clears the value of the "oidc_issuer" field.
+func (uu *UserUpdate) ClearOidcIssuer() *UserUpdate {
+	uu.mutation.ClearOidcIssuer()
+	return uu
+}
+
+// SetOidcSubject sets the "oidc_subject" field.
+func (uu *UserUpdate) SetOidcSubject(s string) *UserUpdate {
+	uu.mutation.SetOidcSubject(s)
+	return uu
+}
+
+// SetNillableOidcSubject sets the "oidc_subject" field if the given value is not nil.
+func (uu *UserUpdate) SetNillableOidcSubject(s *string) *UserUpdate {
+	if s != nil {
+		uu.SetOidcSubject(*s)
+	}
+	return uu
+}
+
+// ClearOidcSubject clears the value of the "oidc_subject" field.
+func (uu *UserUpdate) ClearOidcSubject() *UserUpdate {
+	uu.mutation.ClearOidcSubject()
+	return uu
+}
+
 // SetRelayUserID sets the "relay_user_id" field.
 func (uu *UserUpdate) SetRelayUserID(i int) *UserUpdate {
 	uu.mutation.ResetRelayUserID()
@@ -432,6 +472,18 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := uu.mutation.AuthSource(); ok {
 		_spec.SetField(user.FieldAuthSource, field.TypeEnum, value)
 	}
+	if value, ok := uu.mutation.OidcIssuer(); ok {
+		_spec.SetField(user.FieldOidcIssuer, field.TypeString, value)
+	}
+	if uu.mutation.OidcIssuerCleared() {
+		_spec.ClearField(user.FieldOidcIssuer, field.TypeString)
+	}
+	if value, ok := uu.mutation.OidcSubject(); ok {
+		_spec.SetField(user.FieldOidcSubject, field.TypeString, value)
+	}
+	if uu.mutation.OidcSubjectCleared() {
+		_spec.ClearField(user.FieldOidcSubject, field.TypeString)
+	}
 	if value, ok := uu.mutation.RelayUserID(); ok {
 		_spec.SetField(user.FieldRelayUserID, field.TypeInt, value)
 	}
@@ -710,6 +762,46 @@ func (uuo *UserUpdateOne) SetNillableAuthSource(us *user.AuthSource) *UserUpdate
 	if us != nil {
 		uuo.SetAuthSource(*us)
 	}
+	return uuo
+}
+
+// SetOidcIssuer sets the "oidc_issuer" field.
+func (uuo *UserUpdateOne) SetOidcIssuer(s string) *UserUpdateOne {
+	uuo.mutation.SetOidcIssuer(s)
+	return uuo
+}
+
+// SetNillableOidcIssuer sets the "oidc_issuer" field if the given value is not nil.
+func (uuo *UserUpdateOne) SetNillableOidcIssuer(s *string) *UserUpdateOne {
+	if s != nil {
+		uuo.SetOidcIssuer(*s)
+	}
+	return uuo
+}
+
+// ClearOidcIssuer clears the value of the "oidc_issuer" field.
+func (uuo *UserUpdateOne) ClearOidcIssuer() *UserUpdateOne {
+	uuo.mutation.ClearOidcIssuer()
+	return uuo
+}
+
+// SetOidcSubject sets the "oidc_subject" field.
+func (uuo *UserUpdateOne) SetOidcSubject(s string) *UserUpdateOne {
+	uuo.mutation.SetOidcSubject(s)
+	return uuo
+}
+
+// SetNillableOidcSubject sets the "oidc_subject" field if the given value is not nil.
+func (uuo *UserUpdateOne) SetNillableOidcSubject(s *string) *UserUpdateOne {
+	if s != nil {
+		uuo.SetOidcSubject(*s)
+	}
+	return uuo
+}
+
+// ClearOidcSubject clears the value of the "oidc_subject" field.
+func (uuo *UserUpdateOne) ClearOidcSubject() *UserUpdateOne {
+	uuo.mutation.ClearOidcSubject()
 	return uuo
 }
 
@@ -1100,6 +1192,18 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 	}
 	if value, ok := uuo.mutation.AuthSource(); ok {
 		_spec.SetField(user.FieldAuthSource, field.TypeEnum, value)
+	}
+	if value, ok := uuo.mutation.OidcIssuer(); ok {
+		_spec.SetField(user.FieldOidcIssuer, field.TypeString, value)
+	}
+	if uuo.mutation.OidcIssuerCleared() {
+		_spec.ClearField(user.FieldOidcIssuer, field.TypeString)
+	}
+	if value, ok := uuo.mutation.OidcSubject(); ok {
+		_spec.SetField(user.FieldOidcSubject, field.TypeString, value)
+	}
+	if uuo.mutation.OidcSubjectCleared() {
+		_spec.ClearField(user.FieldOidcSubject, field.TypeString)
 	}
 	if value, ok := uuo.mutation.RelayUserID(); ok {
 		_spec.SetField(user.FieldRelayUserID, field.TypeInt, value)

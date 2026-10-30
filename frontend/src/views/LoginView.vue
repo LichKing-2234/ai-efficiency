@@ -17,10 +17,15 @@ const password = ref('')
 const source = ref('SSO')
 const error = ref('')
 const loading = ref(false)
+const optionsLoaded = ref(false)
+const optionsError = ref(false)
 const authOptions = ref({
   ldap_enabled: false,
   dev_login_enabled: false,
+  oidc_enabled: false,
 })
+
+const oidcSignedOut = ref(localStorage.getItem('oidc_logout_requested') === '1')
 
 onMounted(async () => {
   try {
@@ -28,16 +33,49 @@ onMounted(async () => {
     authOptions.value = {
       ldap_enabled: Boolean(res.data.data?.ldap_enabled),
       dev_login_enabled: Boolean(res.data.data?.dev_login_enabled),
+      oidc_enabled: Boolean(res.data.data?.oidc_enabled),
     }
     source.value = authOptions.value.ldap_enabled ? 'LDAP' : 'SSO'
+    if (authOptions.value.oidc_enabled) {
+      if (router.currentRoute.value.query.oidc === 'complete') {
+        loading.value = true
+        const user = await auth.completeOIDC()
+        if (user) {
+          localStorage.removeItem('oidc_logout_requested')
+          await router.replace(resolveSafeRedirect(router.currentRoute.value.query.redirect))
+        }
+      } else if (!oidcSignedOut.value) {
+        startOIDC()
+      }
+    }
   } catch {
     authOptions.value = {
       ldap_enabled: false,
       dev_login_enabled: false,
+      oidc_enabled: false,
     }
     source.value = 'SSO'
+    optionsError.value = true
+  } finally {
+    optionsLoaded.value = true
+    loading.value = false
   }
 })
+
+function startOIDC() {
+  loading.value = true
+  const redirect = resolveSafeRedirect(router.currentRoute.value.query.redirect)
+  window.location.assign(`/auth/oidc/start?redirect=${encodeURIComponent(redirect)}`)
+}
+
+function logoutOIDC() {
+  localStorage.setItem('oidc_logout_requested', '1')
+  oidcSignedOut.value = true
+}
+
+function reloadLogin() {
+  window.location.reload()
+}
 
 async function handleLogin() {
   error.value = ''
@@ -79,7 +117,19 @@ async function handleDevLogin() {
         type="info"
       />
 
-      <el-form class="space-y-4" label-position="top" @submit.prevent="handleLogin">
+      <div v-if="optionsError" data-testid="auth-options-error" class="space-y-4">
+        <el-alert :closable="false" :title="t('auth.loginFailed')" type="error" />
+        <el-button @click="reloadLogin">{{ t('auth.signIn') }}</el-button>
+      </div>
+      <div v-else-if="authOptions.oidc_enabled" data-testid="oidc-login" class="space-y-4">
+        <p v-if="loading">{{ t('auth.oidcConnecting') }}</p>
+        <p v-if="oidcSignedOut && !loading">{{ t('auth.oidcSignedOut') }}</p>
+        <el-button v-if="oidcSignedOut || !loading" :loading="loading" type="primary" @click="startOIDC">
+          {{ oidcSignedOut ? t('auth.oidcSignIn') : t('auth.signIn') }}
+        </el-button>
+        <el-button v-if="!loading && !oidcSignedOut" plain @click="logoutOIDC">{{ t('auth.signOut') }}</el-button>
+      </div>
+      <el-form v-else-if="optionsLoaded" class="space-y-4" label-position="top" @submit.prevent="handleLogin">
         <el-form-item :label="t('auth.email')" label-for="username">
           <el-input
             id="username"

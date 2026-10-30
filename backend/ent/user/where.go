@@ -65,6 +65,16 @@ func Email(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldEmail, v))
 }
 
+// OidcIssuer applies equality check predicate on the "oidc_issuer" field. It's identical to OidcIssuerEQ.
+func OidcIssuer(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldOidcIssuer, v))
+}
+
+// OidcSubject applies equality check predicate on the "oidc_subject" field. It's identical to OidcSubjectEQ.
+func OidcSubject(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldOidcSubject, v))
+}
+
 // RelayUserID applies equality check predicate on the "relay_user_id" field. It's identical to RelayUserIDEQ.
 func RelayUserID(v int) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldRelayUserID, v))
@@ -248,6 +258,156 @@ func AuthSourceIn(vs ...AuthSource) predicate.User {
 // AuthSourceNotIn applies the NotIn predicate on the "auth_source" field.
 func AuthSourceNotIn(vs ...AuthSource) predicate.User {
 	return predicate.User(sql.FieldNotIn(FieldAuthSource, vs...))
+}
+
+// OidcIssuerEQ applies the EQ predicate on the "oidc_issuer" field.
+func OidcIssuerEQ(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldOidcIssuer, v))
+}
+
+// OidcIssuerNEQ applies the NEQ predicate on the "oidc_issuer" field.
+func OidcIssuerNEQ(v string) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldOidcIssuer, v))
+}
+
+// OidcIssuerIn applies the In predicate on the "oidc_issuer" field.
+func OidcIssuerIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldIn(FieldOidcIssuer, vs...))
+}
+
+// OidcIssuerNotIn applies the NotIn predicate on the "oidc_issuer" field.
+func OidcIssuerNotIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldOidcIssuer, vs...))
+}
+
+// OidcIssuerGT applies the GT predicate on the "oidc_issuer" field.
+func OidcIssuerGT(v string) predicate.User {
+	return predicate.User(sql.FieldGT(FieldOidcIssuer, v))
+}
+
+// OidcIssuerGTE applies the GTE predicate on the "oidc_issuer" field.
+func OidcIssuerGTE(v string) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldOidcIssuer, v))
+}
+
+// OidcIssuerLT applies the LT predicate on the "oidc_issuer" field.
+func OidcIssuerLT(v string) predicate.User {
+	return predicate.User(sql.FieldLT(FieldOidcIssuer, v))
+}
+
+// OidcIssuerLTE applies the LTE predicate on the "oidc_issuer" field.
+func OidcIssuerLTE(v string) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldOidcIssuer, v))
+}
+
+// OidcIssuerContains applies the Contains predicate on the "oidc_issuer" field.
+func OidcIssuerContains(v string) predicate.User {
+	return predicate.User(sql.FieldContains(FieldOidcIssuer, v))
+}
+
+// OidcIssuerHasPrefix applies the HasPrefix predicate on the "oidc_issuer" field.
+func OidcIssuerHasPrefix(v string) predicate.User {
+	return predicate.User(sql.FieldHasPrefix(FieldOidcIssuer, v))
+}
+
+// OidcIssuerHasSuffix applies the HasSuffix predicate on the "oidc_issuer" field.
+func OidcIssuerHasSuffix(v string) predicate.User {
+	return predicate.User(sql.FieldHasSuffix(FieldOidcIssuer, v))
+}
+
+// OidcIssuerIsNil applies the IsNil predicate on the "oidc_issuer" field.
+func OidcIssuerIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldOidcIssuer))
+}
+
+// OidcIssuerNotNil applies the NotNil predicate on the "oidc_issuer" field.
+func OidcIssuerNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldOidcIssuer))
+}
+
+// OidcIssuerEqualFold applies the EqualFold predicate on the "oidc_issuer" field.
+func OidcIssuerEqualFold(v string) predicate.User {
+	return predicate.User(sql.FieldEqualFold(FieldOidcIssuer, v))
+}
+
+// OidcIssuerContainsFold applies the ContainsFold predicate on the "oidc_issuer" field.
+func OidcIssuerContainsFold(v string) predicate.User {
+	return predicate.User(sql.FieldContainsFold(FieldOidcIssuer, v))
+}
+
+// OidcSubjectEQ applies the EQ predicate on the "oidc_subject" field.
+func OidcSubjectEQ(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldOidcSubject, v))
+}
+
+// OidcSubjectNEQ applies the NEQ predicate on the "oidc_subject" field.
+func OidcSubjectNEQ(v string) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldOidcSubject, v))
+}
+
+// OidcSubjectIn applies the In predicate on the "oidc_subject" field.
+func OidcSubjectIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldIn(FieldOidcSubject, vs...))
+}
+
+// OidcSubjectNotIn applies the NotIn predicate on the "oidc_subject" field.
+func OidcSubjectNotIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldOidcSubject, vs...))
+}
+
+// OidcSubjectGT applies the GT predicate on the "oidc_subject" field.
+func OidcSubjectGT(v string) predicate.User {
+	return predicate.User(sql.FieldGT(FieldOidcSubject, v))
+}
+
+// OidcSubjectGTE applies the GTE predicate on the "oidc_subject" field.
+func OidcSubjectGTE(v string) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldOidcSubject, v))
+}
+
+// OidcSubjectLT applies the LT predicate on the "oidc_subject" field.
+func OidcSubjectLT(v string) predicate.User {
+	return predicate.User(sql.FieldLT(FieldOidcSubject, v))
+}
+
+// OidcSubjectLTE applies the LTE predicate on the "oidc_subject" field.
+func OidcSubjectLTE(v string) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldOidcSubject, v))
+}
+
+// OidcSubjectContains applies the Contains predicate on the "oidc_subject" field.
+func OidcSubjectContains(v string) predicate.User {
+	return predicate.User(sql.FieldContains(FieldOidcSubject, v))
+}
+
+// OidcSubjectHasPrefix applies the HasPrefix predicate on the "oidc_subject" field.
+func OidcSubjectHasPrefix(v string) predicate.User {
+	return predicate.User(sql.FieldHasPrefix(FieldOidcSubject, v))
+}
+
+// OidcSubjectHasSuffix applies the HasSuffix predicate on the "oidc_subject" field.
+func OidcSubjectHasSuffix(v string) predicate.User {
+	return predicate.User(sql.FieldHasSuffix(FieldOidcSubject, v))
+}
+
+// OidcSubjectIsNil applies the IsNil predicate on the "oidc_subject" field.
+func OidcSubjectIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldOidcSubject))
+}
+
+// OidcSubjectNotNil applies the NotNil predicate on the "oidc_subject" field.
+func OidcSubjectNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldOidcSubject))
+}
+
+// OidcSubjectEqualFold applies the EqualFold predicate on the "oidc_subject" field.
+func OidcSubjectEqualFold(v string) predicate.User {
+	return predicate.User(sql.FieldEqualFold(FieldOidcSubject, v))
+}
+
+// OidcSubjectContainsFold applies the ContainsFold predicate on the "oidc_subject" field.
+func OidcSubjectContainsFold(v string) predicate.User {
+	return predicate.User(sql.FieldContainsFold(FieldOidcSubject, v))
 }
 
 // RelayUserIDEQ applies the EQ predicate on the "relay_user_id" field.
