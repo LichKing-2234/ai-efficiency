@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +25,7 @@ type OIDCConfig struct {
 	RedirectURL    string
 	AllowEmailLink bool
 	Scopes         []string
+	HTTPClient     *http.Client
 }
 
 type OIDCIdentity struct {
@@ -48,19 +50,23 @@ type oidcCompleted struct {
 
 // OIDCService owns provider discovery, state/PKCE and one-use browser handoffs.
 type OIDCService struct {
-	config   OIDCConfig
-	provider *oidc.Provider
-	verifier *oidc.IDTokenVerifier
-	oauth    oauth2.Config
-	mu       sync.Mutex
-	pending  map[string]oidcPending
-	done     map[string]oidcCompleted
+	config     OIDCConfig
+	httpClient *http.Client
+	provider   *oidc.Provider
+	verifier   *oidc.IDTokenVerifier
+	oauth      oauth2.Config
+	mu         sync.Mutex
+	pending    map[string]oidcPending
+	done       map[string]oidcCompleted
 }
 
 func NewOIDCService(ctx context.Context, cfg OIDCConfig) (*OIDCService, error) {
-	cfg.Issuer = strings.TrimRight(strings.TrimSpace(cfg.Issuer), "/") + "/"
-	if cfg.Issuer == "/" || strings.TrimSpace(cfg.ClientID) == "" || strings.TrimSpace(cfg.ClientSecret) == "" || strings.TrimSpace(cfg.RedirectURL) == "" {
+	cfg.Issuer = strings.TrimSpace(cfg.Issuer)
+	if cfg.Issuer == "" || cfg.Issuer == "/" || strings.TrimSpace(cfg.ClientID) == "" || strings.TrimSpace(cfg.ClientSecret) == "" || strings.TrimSpace(cfg.RedirectURL) == "" {
 		return nil, fmt.Errorf("OIDC requires issuer, client id, client secret and redirect URL")
+	}
+	if cfg.HTTPClient != nil {
+		ctx = oidc.ClientContext(ctx, cfg.HTTPClient)
 	}
 	provider, err := oidc.NewProvider(ctx, cfg.Issuer)
 	if err != nil {
@@ -70,9 +76,10 @@ func NewOIDCService(ctx context.Context, cfg OIDCConfig) (*OIDCService, error) {
 		cfg.Scopes = []string{oidc.ScopeOpenID, "profile", "email"}
 	}
 	s := &OIDCService{
-		config:   cfg,
-		provider: provider,
-		verifier: provider.Verifier(&oidc.Config{ClientID: cfg.ClientID}),
+		config:     cfg,
+		httpClient: cfg.HTTPClient,
+		provider:   provider,
+		verifier:   provider.Verifier(&oidc.Config{ClientID: cfg.ClientID}),
 		oauth: oauth2.Config{
 			ClientID: cfg.ClientID, ClientSecret: cfg.ClientSecret,
 			Endpoint: provider.Endpoint(), RedirectURL: cfg.RedirectURL, Scopes: cfg.Scopes,
@@ -107,8 +114,9 @@ func (s *OIDCService) Begin(redirect string) (state, urlValue string, err error)
 		redirect = "/"
 	}
 	s.mu.Lock()
+	now := time.Now()
 	for key, value := range s.pending {
-		if time.Now().After(value.expires) {
+		if now.After(value.expires) {
 			delete(s.pending, key)
 		}
 	}
@@ -122,6 +130,9 @@ func (s *OIDCService) Begin(redirect string) (state, urlValue string, err error)
 }
 
 func (s *OIDCService) Complete(ctx context.Context, state, code string, authService *Service) (string, string, error) {
+	if s.httpClient != nil {
+		ctx = oidc.ClientContext(ctx, s.httpClient)
+	}
 	s.mu.Lock()
 	pending, ok := s.pending[state]
 	delete(s.pending, state)
@@ -170,10 +181,11 @@ func (s *OIDCService) Complete(ctx context.Context, state, code string, authServ
 		return "", "", fmt.Errorf("OIDC userinfo claims: %w", err)
 	}
 	if userClaims.Email != "" {
+		if claims.Email != "" && !strings.EqualFold(strings.TrimSpace(claims.Email), strings.TrimSpace(userClaims.Email)) {
+			return "", "", fmt.Errorf("OIDC email mismatch between ID token and UserInfo")
+		}
 		claims.Email = userClaims.Email
-	}
-	if userClaims.EmailVerified {
-		claims.EmailVerified = true
+		claims.EmailVerified = claims.EmailVerified && userClaims.EmailVerified
 	}
 	if !strings.Contains(claims.Email, "@") {
 		return "", "", fmt.Errorf("OIDC email missing")
@@ -195,6 +207,12 @@ func (s *OIDCService) Complete(ctx context.Context, state, code string, authServ
 		return "", "", err
 	}
 	s.mu.Lock()
+	now := time.Now()
+	for key, value := range s.done {
+		if now.After(value.expires) {
+			delete(s.done, key)
+		}
+	}
 	s.done[handoff] = oidcCompleted{tokens: tokens, user: user, redirect: pending.redirect, expires: time.Now().Add(2 * time.Minute)}
 	s.mu.Unlock()
 	return handoff, pending.redirect, nil
@@ -248,8 +266,8 @@ func (s *Service) LoginOIDC(ctx context.Context, identity OIDCIdentity) (*TokenP
 }
 
 func (s *Service) linkOrCreateOIDCUser(ctx context.Context, identity OIDCIdentity) (*ent.User, error) {
-	if !identity.EmailVerified && !s.oidc.config.AllowEmailLink {
-		return nil, fmt.Errorf("OIDC identity is not bound and email is not verified")
+	if !s.oidc.config.AllowEmailLink || !identity.EmailVerified {
+		return nil, fmt.Errorf("OIDC identity is not bound and email linking is not allowed")
 	}
 	u, err := s.entClient.User.Query().Where(entuser.EmailEQ(identity.Email)).Only(ctx)
 	if err == nil {

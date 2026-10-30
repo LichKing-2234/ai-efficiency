@@ -49,8 +49,11 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     replaceBrowserSession({ accessToken, refreshToken })
-    localStorage.removeItem('oidc_logout_requested')
-    return ensureUser()
+    const user = await ensureUser()
+    if (user) {
+      localStorage.removeItem('oidc_logout_requested')
+    }
+    return user
   }
 
   async function login(req: LoginRequest): Promise<User | null> {
@@ -72,10 +75,22 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function completeOIDC(): Promise<User | null> {
+    const capturedGeneration = readBrowserSession().generation
+    if (localStorage.getItem('oidc_logout_requested') === '1') {
+      return null
+    }
     const res = await apiCompleteOIDC()
+    if (readBrowserSession().generation !== capturedGeneration
+      || localStorage.getItem('oidc_logout_requested') === '1') {
+      return null
+    }
     const data = res.data.data
     if (!data) return null
-    return installLoginPayload(data)
+    const user = await installLoginPayload(data)
+    if (readBrowserSession().generation !== capturedGeneration + 1) {
+      return null
+    }
+    return user
   }
 
   function fetchMe(): Promise<User | null> {

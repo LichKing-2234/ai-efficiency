@@ -81,6 +81,7 @@ type runtimeHTTPClients struct {
 	scm               *http.Client
 	version           *http.Client
 	webhook           *http.Client
+	oidc              *http.Client
 }
 
 func httpClientOptions(cfg config.HTTPClientConfig) httpclient.Options {
@@ -123,6 +124,7 @@ func newRuntimeHTTPClients(cfg config.HTTPClientConfig, relayWrappers ...httpcli
 		scm:               generalClient,
 		version:           version,
 		webhook:           webhook,
+		oidc:              generalClient,
 	}
 }
 
@@ -451,10 +453,13 @@ func main() {
 		if strings.TrimSpace(redirectURL) == "" {
 			redirectURL = strings.TrimRight(cfg.Server.FrontendURL, "/") + "/auth/oidc/callback"
 		}
-		oidcService, err := auth.NewOIDCService(context.Background(), auth.OIDCConfig{
+		oidcContext, cancelOIDC := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancelOIDC()
+		oidcService, err := auth.NewOIDCService(oidcContext, auth.OIDCConfig{
 			Issuer: cfg.Auth.OIDC.Issuer, ClientID: cfg.Auth.OIDC.ClientID,
 			ClientSecret: cfg.Auth.OIDC.ClientSecret, RedirectURL: redirectURL,
 			AllowEmailLink: cfg.Auth.OIDC.AllowEmailLink, Scopes: cfg.Auth.OIDC.Scopes,
+			HTTPClient: httpClients.oidc,
 		})
 		if err != nil {
 			logger.Fatal("initialize OIDC client", zap.Error(err))

@@ -1,3 +1,4 @@
+import axios from 'axios'
 import client from './client'
 import type { ApiResponse, LoginRequest, User } from '@/types'
 
@@ -37,5 +38,9 @@ export function getMe() {
 }
 
 export function completeOIDC() {
-  return client.get<ApiResponse<AuthTokenPayload & { redirect?: string }>>('/auth/oidc/complete')
+  // The handoff cookie is scoped to the browser callback route, which is
+  // served outside the /api/v1 application API prefix.
+  return axios.get<ApiResponse<AuthTokenPayload & { redirect?: string }>>('/auth/oidc/complete', {
+    timeout: 45000,
+  })
 }

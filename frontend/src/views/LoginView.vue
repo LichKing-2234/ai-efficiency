@@ -63,6 +63,8 @@ onMounted(async () => {
 })
 
 function startOIDC() {
+  localStorage.removeItem('oidc_logout_requested')
+  oidcSignedOut.value = false
   loading.value = true
   const redirect = resolveSafeRedirect(router.currentRoute.value.query.redirect)
   window.location.assign(`/auth/oidc/start?redirect=${encodeURIComponent(redirect)}`)

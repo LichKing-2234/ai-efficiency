@@ -91,7 +91,8 @@ func (h *AuthHandler) OIDCCallback(c *gin.Context) {
 		return
 	}
 	cookie, err := c.Request.Cookie("ae_oidc_state")
-	if err != nil || cookie.Value == "" {
+	queryState := c.Query("state")
+	if err != nil || cookie.Value == "" || queryState == "" || queryState != cookie.Value || c.Query("error") != "" {
 		pkg.Error(c, http.StatusUnauthorized, "invalid OIDC state")
 		return
 	}
@@ -113,6 +114,7 @@ func (h *AuthHandler) OIDCComplete(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
+	c.Header("Cache-Control", "no-store")
 	cookie, err := c.Request.Cookie("ae_oidc_handoff")
 	secure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
 	http.SetCookie(c.Writer, &http.Cookie{Name: "ae_oidc_handoff", Value: "", Path: "/auth/oidc/complete", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: -1})
