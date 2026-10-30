@@ -232,8 +232,8 @@ describe('i18n locale loading', () => {
       ...Object.keys(ownerAccountsMessages['zh-CN']),
     ].sort()
 
-    expect(englishKeys).toHaveLength(1532)
-    expect(chineseKeys).toHaveLength(1532)
+    expect(englishKeys).toHaveLength(1540)
+    expect(chineseKeys).toHaveLength(1540)
     expect(englishKeys).toContain('activity.title')
     expect(englishKeys).toContain('pagination.range')
     expect(englishKeys).toContain('pagination.pageOf')
@@ -258,6 +258,14 @@ describe('i18n locale loading', () => {
     expect(englishKeys).toContain('opsMonitoring.title')
     expect(englishKeys).toContain('opsMonitoring.failedGroups')
     expect(englishKeys).toContain('opsMonitoring.refreshEgressIp')
+    expect(englishKeys).toContain('opsMonitoring.concurrency')
+    expect(englishKeys).toContain('opsMonitoring.currentConcurrency')
+    expect(englishKeys).toContain('opsMonitoring.setConcurrency')
+    expect(englishKeys).toContain('opsMonitoring.save')
+    expect(englishKeys).toContain('opsMonitoring.cancel')
+    expect(englishKeys).toContain('opsMonitoring.concurrencyInvalid')
+    expect(englishKeys).toContain('opsMonitoring.concurrencyUpdated')
+    expect(englishKeys).toContain('opsMonitoring.concurrencyUpdateFailed')
     expect(chineseKeys).toEqual(englishKeys)
   })
 

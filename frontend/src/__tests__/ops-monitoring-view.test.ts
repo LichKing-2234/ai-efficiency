@@ -11,6 +11,7 @@ vi.mock('@/api/relayProvider', () => ({
 vi.mock('@/api/opsMonitoring', () => ({
   getOpsMonitoringGroups: vi.fn(),
   getOpsMonitoringGroupAccounts: vi.fn(),
+  setOpsMonitoringAccountConcurrency: vi.fn(),
   testOpsMonitoringProxy: vi.fn(),
 }))
 
@@ -100,10 +101,23 @@ const accountsPayload = {
       type: 'oauth',
       status: 'active',
       schedulable: true,
+      concurrency: 5,
+      current_concurrency: 2,
       proxy_id: 31,
       proxy: { proxy_id: 31, name: 'Proxy One', protocol: 'http', host: '10.0.0.1', port: 8080, status: 'active' },
     },
-    { account_id: 22, name: 'Account Beta', platform: 'openai', type: 'apikey', status: 'inactive', schedulable: false, proxy_id: null, proxy: null },
+    {
+      account_id: 22,
+      name: 'Account Beta',
+      platform: 'openai',
+      type: 'apikey',
+      status: 'inactive',
+      schedulable: false,
+      concurrency: 8,
+      current_concurrency: 0,
+      proxy_id: null,
+      proxy: null,
+    },
   ],
 }
 
@@ -138,6 +152,9 @@ async function mountView(options: { wide?: boolean; providerList?: typeof provid
   // A one-shot failure for the first read, so the page starts with no snapshot.
   if (options.groupsError) ops.getOpsMonitoringGroups.mockRejectedValueOnce(options.groupsError)
   ops.getOpsMonitoringGroupAccounts.mockResolvedValue({ data: { data: structuredClone(accountsPayload) } })
+  ops.setOpsMonitoringAccountConcurrency.mockResolvedValue({
+    data: { data: { account_id: 21, concurrency: 9, current_concurrency: 4 } },
+  })
   ops.testOpsMonitoringProxy.mockResolvedValue({ data: { data: structuredClone(proxyTestPayload) } })
 
   const wrapper = mount(OpsMonitoringView, {
@@ -298,6 +315,61 @@ describe('OpsMonitoringView', () => {
     expect(wrapper.get('[data-testid="ops-metric-token_consumed"]').text()).toBe('123456')
     // sub2api's output_tps carries percentiles and a sample count, not current/peak.
     expect(wrapper.get('[data-testid="ops-metric-output_tps"]').text()).toBe('avg 5 · p50 4 · p10 3 · p5 2 · samples 7')
+  })
+
+  it('shows each account configured and current concurrency verbatim', async () => {
+    const { wrapper } = await mountView()
+
+    await wrapper.get('[data-testid="ops-group-toggle-11"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="ops-account-concurrency-11-21"]').text()).toBe('Concurrency 5 · Current concurrency 2')
+    expect(wrapper.get('[data-testid="ops-account-concurrency-11-22"]').text()).toBe('Concurrency 8 · Current concurrency 0')
+  })
+
+  it('saves a concurrency change only on explicit save and applies the verified read-back', async () => {
+    const { wrapper, ops } = await mountView()
+
+    await wrapper.get('[data-testid="ops-group-toggle-11"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="ops-account-concurrency-edit-11-21"]').trigger('click')
+    await wrapper.get('[data-testid="ops-account-concurrency-input-11-21"]').find('input').setValue('9')
+    await flushPromises()
+
+    // Typing alone never persists the value.
+    expect(ops.setOpsMonitoringAccountConcurrency).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="ops-account-concurrency-11-21"]').text()).toBe('Concurrency 5 · Current concurrency 2')
+
+    await wrapper.get('[data-testid="ops-account-concurrency-save-11-21"]').trigger('click')
+    await flushPromises()
+
+    expect(ops.setOpsMonitoringAccountConcurrency).toHaveBeenCalledWith(11, 21, 9, { provider_id: 7 })
+    expect(wrapper.get('[data-testid="ops-account-concurrency-11-21"]').text()).toBe('Concurrency 9 · Current concurrency 4')
+    expect(wrapper.get('[data-testid="ops-account-concurrency-status-11-21"]').text()).toBe('Concurrency updated')
+    expect(wrapper.find('[data-testid="ops-account-concurrency-input-11-21"]').exists()).toBe(false)
+  })
+
+  it('keeps the previous concurrency and shows the server error inline when the save fails', async () => {
+    const { wrapper, ops } = await mountView()
+    ops.setOpsMonitoringAccountConcurrency.mockRejectedValueOnce({
+      response: { data: { message: 'relay rejected the capacity change' } },
+    })
+
+    await wrapper.get('[data-testid="ops-group-toggle-11"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="ops-account-concurrency-edit-11-21"]').trigger('click')
+    await wrapper.get('[data-testid="ops-account-concurrency-input-11-21"]').find('input').setValue('9')
+    await wrapper.get('[data-testid="ops-account-concurrency-save-11-21"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="ops-account-concurrency-error-11-21"]').text()).toBe(
+      'Failed to update concurrency: relay rejected the capacity change',
+    )
+    expect(wrapper.get('[data-testid="ops-account-concurrency-11-21"]').text()).toBe('Concurrency 5 · Current concurrency 2')
+    expect(wrapper.find('[data-testid="ops-account-concurrency-status-11-21"]').exists()).toBe(false)
+    // The editor stays open so the operator can retry the value that failed.
+    expect(wrapper.find('[data-testid="ops-account-concurrency-input-11-21"]').exists()).toBe(true)
+    expect(ops.setOpsMonitoringAccountConcurrency).toHaveBeenCalledTimes(1)
   })
 
   it('renders the egress IP returned by the proxy test button', async () => {

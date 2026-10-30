@@ -22,4 +22,4 @@ Read only the contracts directly relevant to a change:
 | [Relay Group Mapping](./relay-group-mapping.md) | Relay Planning, department-to-Group mapping, Replan, Accounts, member moves, or retries |
 | [Collection Navigation](./collection-navigation.md) | Pagination, cursors, incremental branches, responsive collections, or navigation boundaries |
 | [Owner Account Console](./owner-account-console.md) | Owner-account ownership matching, `/user/owner-accounts` reads, reset-credit or invitation mutations, the async operation worker, or the read-only admin operation list |
-| [Ops Monitoring](./ops-monitoring.md) | Admin ops-monitoring routes, group ops snapshots, upstream metric alignment, account/proxy expansion, or egress probes |
+| [Ops Monitoring](./ops-monitoring.md) | Admin ops-monitoring routes, group ops snapshots, upstream metric alignment, account/proxy expansion, account concurrency capacity/read-back writes, or egress probes |

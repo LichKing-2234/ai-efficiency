@@ -10,10 +10,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// OpsMonitoringHandler exposes the admin-only, read-only Ops Monitoring view.
-// It deliberately keeps the HTTP layer thin: every upstream fact and every
-// cache decision lives in opsmonitoring.Service, and no handler here mutates
-// relay state.
+// OpsMonitoringHandler exposes the admin-only Ops Monitoring view. It stays a
+// thin HTTP layer: every upstream fact and every cache decision lives in
+// opsmonitoring.Service. The view is read-only for upstream metrics; the single
+// mutation is setting one account's configured concurrency, which the service
+// verifies upstream before this layer reports success.
 type OpsMonitoringHandler struct {
 	service *opsmonitoring.Service
 }
@@ -99,6 +100,58 @@ func (h *OpsMonitoringHandler) TestProxy(c *gin.Context) {
 		return
 	}
 	pkg.Success(c, record)
+}
+
+// UpdateAccountConcurrency sets one group member account's configured
+// concurrency. Missing, malformed, or out-of-range input is rejected here with
+// a 400; membership, capability, no-op, and upstream verification are enforced
+// by opsmonitoring.Service and surface as a 422.
+func (h *OpsMonitoringHandler) UpdateAccountConcurrency(c *gin.Context) {
+	if h == nil || h.service == nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, "ops monitoring service is unavailable")
+		return
+	}
+	providerID, ok := parseOpsMonitoringProviderID(c)
+	if !ok {
+		return
+	}
+	groupID, err := strconv.ParseInt(strings.TrimSpace(c.Param("group_id")), 10, 64)
+	if err != nil || groupID <= 0 {
+		pkg.Error(c, http.StatusBadRequest, "valid group_id is required")
+		return
+	}
+	accountID, err := strconv.ParseInt(strings.TrimSpace(c.Param("account_id")), 10, 64)
+	if err != nil || accountID <= 0 {
+		pkg.Error(c, http.StatusBadRequest, "valid account_id is required")
+		return
+	}
+	var body struct {
+		Concurrency *int `json:"concurrency"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if body.Concurrency == nil {
+		pkg.Error(c, http.StatusBadRequest, "concurrency is required")
+		return
+	}
+	if err := opsmonitoring.ValidateAccountConcurrency(*body.Concurrency); err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	capacity, err := h.service.SetAccountConcurrency(c.Request.Context(), opsmonitoring.SetAccountConcurrencyRequest{
+		ProviderID:  providerID,
+		GroupID:     groupID,
+		AccountID:   accountID,
+		Concurrency: *body.Concurrency,
+	})
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	pkg.Success(c, capacity)
 }
 
 func parseOpsMonitoringProviderID(c *gin.Context) (int, bool) {

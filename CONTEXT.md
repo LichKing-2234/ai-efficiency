@@ -33,8 +33,12 @@ The verbatim Sub2API ops overview for one Sub2API Group over one explicit time w
 _Avoid_: computed health score, derived metric
 
 **Ops Monitoring**:
-The admin-only read-only surface that presents Group Health Snapshots for every Sub2API Group at once, with no alerting and no relationship or account mutations.
+The admin-only surface that presents Group Health Snapshots for every Sub2API Group at once and shows each account's Account Concurrency Capacity, with no alerting and no relationship or bulk account mutations.
 _Avoid_: Relay Planning, dashboard, alerting
+
+**Account Concurrency Capacity**:
+One Sub2API account's configured `concurrency` limit (its capacity) together with upstream's live `current_concurrency` count, both shown verbatim. It is the only Ops Monitoring value an administrator can set, one account at a time, using an explicit save with read-back verification.
+_Avoid_: quota, rate limit, effective load factor, platform concurrency
 
 **Account Custodian (号主)**:
 The local user whose normalized email equals an upstream Sub2API OpenAI account's `credentials.email` or its email-shaped `name`, and therefore may read that account's facts or act on its upstream-scoped capabilities. Either field is sufficient; ownership is derived on every request from `users.email` and is not stored as a registry.

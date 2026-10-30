@@ -2055,14 +2055,16 @@ func (s *sub2apiRelay) ListGroupAccounts(ctx context.Context, groupID int64) ([]
 		Status   string `json:"status"`
 	}
 	type accountItem struct {
-		ID          int64      `json:"id"`
-		Name        string     `json:"name"`
-		Platform    string     `json:"platform"`
-		Type        string     `json:"type"`
-		Status      string     `json:"status"`
-		Schedulable bool       `json:"schedulable"`
-		ProxyID     *int64     `json:"proxy_id"`
-		Proxy       *proxyItem `json:"proxy"`
+		ID                 int64      `json:"id"`
+		Name               string     `json:"name"`
+		Platform           string     `json:"platform"`
+		Type               string     `json:"type"`
+		Status             string     `json:"status"`
+		Schedulable        bool       `json:"schedulable"`
+		Concurrency        int        `json:"concurrency"`
+		CurrentConcurrency int        `json:"current_concurrency"`
+		ProxyID            *int64     `json:"proxy_id"`
+		Proxy              *proxyItem `json:"proxy"`
 	}
 	type pageData struct {
 		Items []accountItem `json:"items"`
@@ -2103,13 +2105,15 @@ func (s *sub2apiRelay) ListGroupAccounts(ctx context.Context, groupID int64) ([]
 
 		for _, item := range result.Data.Items {
 			account := GroupAccount{
-				AccountID:   item.ID,
-				Name:        strings.TrimSpace(item.Name),
-				Platform:    strings.TrimSpace(item.Platform),
-				Type:        strings.TrimSpace(item.Type),
-				Status:      strings.TrimSpace(item.Status),
-				Schedulable: item.Schedulable,
-				ProxyID:     item.ProxyID,
+				AccountID:          item.ID,
+				Name:               strings.TrimSpace(item.Name),
+				Platform:           strings.TrimSpace(item.Platform),
+				Type:               strings.TrimSpace(item.Type),
+				Status:             strings.TrimSpace(item.Status),
+				Schedulable:        item.Schedulable,
+				Concurrency:        item.Concurrency,
+				CurrentConcurrency: item.CurrentConcurrency,
+				ProxyID:            item.ProxyID,
 			}
 			if item.Proxy != nil {
 				account.Proxy = &GroupProxy{
@@ -2129,6 +2133,65 @@ func (s *sub2apiRelay) ListGroupAccounts(ctx context.Context, groupID int64) ([]
 		}
 	}
 	return accounts, nil
+}
+
+// UpdateAccountConcurrency sets one account's configured concurrency and then
+// reads the account back to verify the stored value. A read-back mismatch is an
+// error: the caller is never told a write succeeded with different numbers.
+// Provider credentials are never decoded.
+func (s *sub2apiRelay) UpdateAccountConcurrency(ctx context.Context, accountID int64, concurrency int) (*AccountCapacity, error) {
+	if accountID <= 0 {
+		return nil, fmt.Errorf("relay: update account concurrency: account id is required")
+	}
+	if concurrency < MinAccountConcurrency || concurrency > MaxAccountConcurrency {
+		return nil, fmt.Errorf("relay: update account concurrency: concurrency must be between %d and %d", MinAccountConcurrency, MaxAccountConcurrency)
+	}
+
+	payload, err := json.Marshal(map[string]int{"concurrency": concurrency})
+	if err != nil {
+		return nil, fmt.Errorf("relay: update account concurrency: marshal: %w", err)
+	}
+	resp, err := s.doAdminRequest(ctx, http.MethodPut, fmt.Sprintf("/api/v1/admin/accounts/%d", accountID), bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("relay: update account concurrency: %w", err)
+	}
+	body, readErr := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if readErr != nil {
+		return nil, fmt.Errorf("relay: update account concurrency: read response: %w", readErr)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: update account concurrency: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffixFromData(body))
+	}
+	var envelope envelopeStatus
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, fmt.Errorf("relay: update account concurrency: decode response: %w", err)
+	}
+	if !envelope.ok() {
+		return nil, fmt.Errorf("relay: update account concurrency: request failed%s", relayErrorMessageSuffixFromData(body))
+	}
+
+	capacity, err := s.getAccountCapacity(ctx, accountID)
+	if err != nil {
+		return nil, fmt.Errorf("relay: update account concurrency: verify update: %w", err)
+	}
+	if capacity.Concurrency != concurrency {
+		return nil, fmt.Errorf("relay: update account concurrency: verification failed for account %d: read back %d, requested %d", accountID, capacity.Concurrency, concurrency)
+	}
+	return capacity, nil
+}
+
+// getAccountCapacity reads one account's concurrency back from upstream. It
+// decodes only the two concurrency fields, never credentials.
+func (s *sub2apiRelay) getAccountCapacity(ctx context.Context, accountID int64) (*AccountCapacity, error) {
+	var data struct {
+		Concurrency        int `json:"concurrency"`
+		CurrentConcurrency int `json:"current_concurrency"`
+	}
+	if err := s.getAdminEnvelopeJSON(ctx, fmt.Sprintf("/api/v1/admin/accounts/%d", accountID), nil, &data); err != nil {
+		return nil, err
+	}
+	return &AccountCapacity{AccountID: accountID, Concurrency: data.Concurrency, CurrentConcurrency: data.CurrentConcurrency}, nil
 }
 
 // TestProxy runs one upstream egress probe. An unreachable proxy is a probe

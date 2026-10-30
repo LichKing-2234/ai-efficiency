@@ -16,17 +16,23 @@ import (
 type opsProviderStub struct {
 	relay.Provider
 
-	mu            sync.Mutex
-	groups        []relay.Group
-	groupsErr     error
-	overviews     map[int64]json.RawMessage
-	overviewErrs  map[int64]error
-	accounts      map[int64][]relay.GroupAccount
-	accountsErr   error
-	egress        map[int64]*relay.ProxyEgressCheck
-	egressErr     error
-	overviewCalls int
-	egressCalls   int
+	mu                   sync.Mutex
+	groups               []relay.Group
+	groupsErr            error
+	overviews            map[int64]json.RawMessage
+	overviewErrs         map[int64]error
+	accounts             map[int64][]relay.GroupAccount
+	accountsErr          error
+	egress               map[int64]*relay.ProxyEgressCheck
+	egressErr            error
+	overviewCalls        int
+	egressCalls          int
+	accountListCalls     int
+	updaterCalls         int
+	updaterErr           error
+	updatedAccountIDs    []int64
+	updatedConcurrencies []int
+	currentConcurrency   int
 }
 
 func (p *opsProviderStub) ListPlatformGroups(context.Context) ([]relay.Group, error) {
@@ -54,10 +60,45 @@ func (p *opsProviderStub) ReadGroupOpsHealth(_ context.Context, groupID int64, s
 }
 
 func (p *opsProviderStub) ListGroupAccounts(_ context.Context, groupID int64) ([]relay.GroupAccount, error) {
+	p.mu.Lock()
+	p.accountListCalls++
+	p.mu.Unlock()
 	if p.accountsErr != nil {
 		return nil, p.accountsErr
 	}
 	return p.accounts[groupID], nil
+}
+
+func (p *opsProviderStub) UpdateAccountConcurrency(_ context.Context, accountID int64, concurrency int) (*relay.AccountCapacity, error) {
+	p.mu.Lock()
+	p.updaterCalls++
+	p.updatedAccountIDs = append(p.updatedAccountIDs, accountID)
+	p.updatedConcurrencies = append(p.updatedConcurrencies, concurrency)
+	current := p.currentConcurrency
+	p.mu.Unlock()
+	if p.updaterErr != nil {
+		return nil, p.updaterErr
+	}
+	return &relay.AccountCapacity{AccountID: accountID, Concurrency: concurrency, CurrentConcurrency: current}, nil
+}
+
+// opsReaderOnlyStub exposes the ops membership read but not the account
+// concurrency updater capability.
+type opsReaderOnlyStub struct {
+	relay.Provider
+	accounts []relay.GroupAccount
+}
+
+func (p *opsReaderOnlyStub) ReadGroupOpsHealth(context.Context, int64, time.Time, time.Time) (*relay.GroupOpsHealth, error) {
+	return &relay.GroupOpsHealth{}, nil
+}
+
+func (p *opsReaderOnlyStub) ListGroupAccounts(context.Context, int64) ([]relay.GroupAccount, error) {
+	return p.accounts, nil
+}
+
+func (p *opsReaderOnlyStub) TestProxy(context.Context, int64) (*relay.ProxyEgressCheck, error) {
+	return &relay.ProxyEgressCheck{}, nil
 }
 
 func (p *opsProviderStub) TestProxy(_ context.Context, proxyID int64) (*relay.ProxyEgressCheck, error) {
@@ -573,5 +614,123 @@ func TestGroupAccountsRejectsInvalidGroupID(t *testing.T) {
 	service, _ := newTestService(newStubProvider(), nil)
 	if _, err := service.GroupAccounts(context.Background(), GroupAccountsRequest{ProviderID: 1}); err == nil {
 		t.Fatal("missing group id must be rejected")
+	}
+}
+
+func TestSetAccountConcurrencyWritesMembershipVerifiedCapacity(t *testing.T) {
+	provider := newStubProvider()
+	provider.accounts = map[int64][]relay.GroupAccount{
+		7: {{AccountID: 50, Name: "alice@example.com", Concurrency: 5, CurrentConcurrency: 2}},
+	}
+	provider.currentConcurrency = 2
+	service, _ := newTestService(provider, nil)
+
+	capacity, err := service.SetAccountConcurrency(context.Background(), SetAccountConcurrencyRequest{
+		ProviderID: 1, GroupID: 7, AccountID: 50, Concurrency: 20,
+	})
+	if err != nil {
+		t.Fatalf("SetAccountConcurrency() error = %v", err)
+	}
+	want := &relay.AccountCapacity{AccountID: 50, Concurrency: 20, CurrentConcurrency: 2}
+	if capacity == nil || *capacity != *want {
+		t.Fatalf("SetAccountConcurrency() capacity = %#v, want %#v", capacity, want)
+	}
+	if provider.accountListCalls != 1 {
+		t.Fatalf("membership reads = %d, want 1", provider.accountListCalls)
+	}
+	if provider.updaterCalls != 1 {
+		t.Fatalf("updater calls = %d, want 1", provider.updaterCalls)
+	}
+	if provider.updatedAccountIDs[0] != 50 || provider.updatedConcurrencies[0] != 20 {
+		t.Fatalf("updater args = %d/%d, want 50/20", provider.updatedAccountIDs[0], provider.updatedConcurrencies[0])
+	}
+}
+
+func TestSetAccountConcurrencySkipsUpstreamWhenValueAlreadyMatches(t *testing.T) {
+	provider := newStubProvider()
+	provider.accounts = map[int64][]relay.GroupAccount{
+		7: {{AccountID: 50, Name: "alice@example.com", Concurrency: 20, CurrentConcurrency: 4}},
+	}
+	service, _ := newTestService(provider, nil)
+
+	capacity, err := service.SetAccountConcurrency(context.Background(), SetAccountConcurrencyRequest{
+		ProviderID: 1, GroupID: 7, AccountID: 50, Concurrency: 20,
+	})
+	if err != nil {
+		t.Fatalf("SetAccountConcurrency() error = %v", err)
+	}
+	want := &relay.AccountCapacity{AccountID: 50, Concurrency: 20, CurrentConcurrency: 4}
+	if capacity == nil || *capacity != *want {
+		t.Fatalf("SetAccountConcurrency() capacity = %#v, want listed facts %#v", capacity, want)
+	}
+	if provider.updaterCalls != 0 {
+		t.Fatalf("updater calls = %d, want 0 for a no-op", provider.updaterCalls)
+	}
+}
+
+func TestSetAccountConcurrencyRejectsAccountOutsideGroup(t *testing.T) {
+	provider := newStubProvider()
+	provider.accounts = map[int64][]relay.GroupAccount{
+		7: {{AccountID: 50, Name: "alice@example.com", Concurrency: 5, CurrentConcurrency: 2}},
+	}
+	service, _ := newTestService(provider, nil)
+
+	_, err := service.SetAccountConcurrency(context.Background(), SetAccountConcurrencyRequest{
+		ProviderID: 1, GroupID: 7, AccountID: 51, Concurrency: 20,
+	})
+	if err == nil || !strings.Contains(err.Error(), "account 51 is not a member of group 7") {
+		t.Fatalf("SetAccountConcurrency() error = %v, want membership error", err)
+	}
+	if provider.updaterCalls != 0 {
+		t.Fatalf("updater calls = %d, want 0 when the account is not a member", provider.updaterCalls)
+	}
+}
+
+func TestSetAccountConcurrencyRejectsProviderWithoutUpdaterCapability(t *testing.T) {
+	provider := &opsReaderOnlyStub{accounts: []relay.GroupAccount{{AccountID: 50, Concurrency: 5}}}
+	service, _ := newTestService(provider, nil)
+
+	_, err := service.SetAccountConcurrency(context.Background(), SetAccountConcurrencyRequest{
+		ProviderID: 1, GroupID: 7, AccountID: 50, Concurrency: 20,
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not expose account concurrency updates") {
+		t.Fatalf("SetAccountConcurrency() error = %v, want missing capability error", err)
+	}
+}
+
+func TestSetAccountConcurrencyRejectsInvalidInputBeforeReadingUpstream(t *testing.T) {
+	provider := newStubProvider()
+	service, _ := newTestService(provider, nil)
+
+	for _, testCase := range []struct {
+		name    string
+		request SetAccountConcurrencyRequest
+	}{
+		{"missing group id", SetAccountConcurrencyRequest{ProviderID: 1, AccountID: 50, Concurrency: 20}},
+		{"missing account id", SetAccountConcurrencyRequest{ProviderID: 1, GroupID: 7, Concurrency: 20}},
+		{"below minimum concurrency", SetAccountConcurrencyRequest{ProviderID: 1, GroupID: 7, AccountID: 50, Concurrency: relay.MinAccountConcurrency - 1}},
+		{"above maximum concurrency", SetAccountConcurrencyRequest{ProviderID: 1, GroupID: 7, AccountID: 50, Concurrency: relay.MaxAccountConcurrency + 1}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			if _, err := service.SetAccountConcurrency(context.Background(), testCase.request); err == nil {
+				t.Fatalf("SetAccountConcurrency(%+v) error = nil, want validation error", testCase.request)
+			}
+		})
+	}
+	if provider.accountListCalls != 0 || provider.updaterCalls != 0 {
+		t.Fatalf("upstream calls = %d list / %d update, want 0/0", provider.accountListCalls, provider.updaterCalls)
+	}
+}
+
+func TestValidateAccountConcurrencyBounds(t *testing.T) {
+	for _, value := range []int{relay.MinAccountConcurrency, relay.MaxAccountConcurrency} {
+		if err := ValidateAccountConcurrency(value); err != nil {
+			t.Fatalf("ValidateAccountConcurrency(%d) error = %v, want nil", value, err)
+		}
+	}
+	for _, value := range []int{relay.MinAccountConcurrency - 1, relay.MaxAccountConcurrency + 1} {
+		if err := ValidateAccountConcurrency(value); err == nil {
+			t.Fatalf("ValidateAccountConcurrency(%d) error = nil, want out-of-range error", value)
+		}
 	}
 }
