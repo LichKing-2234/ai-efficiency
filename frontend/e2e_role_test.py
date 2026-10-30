@@ -1285,7 +1285,9 @@ def exercise_route_control(page, exercise):
         page.wait_for_timeout(250)
         method_options = methods.locator(".el-radio[data-testid^='config-method-']")
         method_boxes = [method_options.nth(index).bounding_box() for index in range(method_options.count())]
-        if len(method_boxes) != 3 or not all(method_boxes):
+        # Current onboarding offers manual and CC Switch methods; the former
+        # automatic ae-cli method was retired.
+        if len(method_boxes) != 2 or not all(method_boxes):
             return False, "Configuration method cards are not all visible"
         widths = [box["width"] for box in method_boxes]
         heights = [box["height"] for box in method_boxes]
@@ -1718,6 +1720,88 @@ def test_activity_route_layout_and_responsive_style(page):
     clear_auth_routes(page)
 
 
+def test_deepseek_group_tool_configuration(page):
+    """DeepSeek groups follow the OpenAI path for probes and tool configuration."""
+    print("\n🧪 DeepSeek Group — Connection Test and Tool Configuration")
+
+    page.set_viewport_size({"width": 1440, "height": 900})
+    do_dev_login(page, role="user")
+
+    # Reuse the shared provider and group identifiers so the credential and
+    # model mocks keep applying; only the platform differs.
+    page.route("**/api/v1/user/providers", lambda route: route.fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps({
+            "code": 0,
+            "data": {
+                "providers": [{
+                    "id": 2,
+                    "name": "example",
+                    "display_name": "Example AI",
+                    "base_url": "https://api.example.com",
+                    "default_model": "deepseek-chat",
+                    "is_primary": True,
+                    "groups": [{
+                        "group_id": "group-alpha",
+                        "group_name": "Group Alpha",
+                        "platform": "deepseek",
+                        "supported_protocols": ["responses", "chat_completions"],
+                        "recommended_protocol": "responses",
+                        "credential": {"state": "missing"},
+                    }],
+                }],
+                "message": "",
+            },
+        }),
+    ))
+
+    page.goto(f"{BASE}/user")
+    page.wait_for_load_state("networkidle")
+
+    page.locator("[data-testid='onboarding-step-button-0']").click()
+    page.locator("[data-testid='group-group-alpha']").wait_for(state="visible")
+    page.locator("[data-testid='primary-onboarding-action']").click()
+    page.locator("[data-testid='onboarding-step-button-2']:not([disabled])").wait_for(state="visible")
+
+    page.locator("[data-testid='onboarding-step-button-1']").click()
+    page.wait_for_timeout(250)
+    protocol = page.locator("[data-testid='user-provider-test-protocol']")
+    protocol_text = protocol.inner_text() if protocol.count() == 1 else ""
+    report("DeepSeek group exposes the Responses connection-test protocol",
+           "Responses" in protocol_text,
+           f"Protocol selection: {protocol_text}")
+
+    page.locator("[data-testid='onboarding-step-button-2']").click()
+    methods = page.locator("[data-testid='configuration-methods']")
+    methods.wait_for(state="visible")
+    page.wait_for_timeout(250)
+
+    cc_switch_method = methods.locator("[data-testid='config-method-ccswitch']")
+    cc_switch_visible = cc_switch_method.count() == 1 and cc_switch_method.is_visible()
+    report("DeepSeek group offers the CC Switch configuration method", cc_switch_visible)
+    if cc_switch_visible:
+        report("CC Switch is the recommended method for a DeepSeek group",
+               "is-checked" in (cc_switch_method.get_attribute("class") or ""),
+               f"Class: {cc_switch_method.get_attribute('class')}")
+
+        import_codex = page.locator("[data-testid='ccswitch-import-codex']")
+        href = import_codex.get_attribute("href") if import_codex.count() == 1 else None
+        report("DeepSeek group imports to Codex",
+               import_codex.count() == 1 and bool(href) and href.startswith("ccswitch://v1/import?"),
+               f"Href: {href}")
+
+    page.locator("[data-testid='config-method-manual']").click()
+    page.wait_for_timeout(250)
+    manual_text = methods.inner_text()
+    report("DeepSeek group shows the Codex manual snippets",
+           "~/.codex/config.toml" in manual_text and "~/.codex/auth.json" in manual_text,
+           manual_text[:400])
+
+    screenshot(page, "deepseek_group_tool_configuration")
+    clear_auth_routes(page)
+
+
 def test_mobile_navigation_drawer(page):
     """The mobile shell uses one compact navigation surface at narrow widths."""
     print("\n🧪 App Shell — Mobile Navigation Drawer")
@@ -1808,6 +1892,7 @@ def run_all():
             ("User Role /admin/users Blocked", lambda: test_user_role_admin_users_blocked(page)),
             ("User Role Repositories Blocked", lambda: test_user_role_repositories_blocked(page)),
             ("Activity Route and Layout", lambda: test_activity_route_layout_and_responsive_style(page)),
+            ("DeepSeek Group Tool Configuration", lambda: test_deepseek_group_tool_configuration(page)),
             ("Mobile Navigation Drawer", lambda: test_mobile_navigation_drawer(page)),
         ]
 
