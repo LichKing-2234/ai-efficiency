@@ -6,6 +6,7 @@ import { useWorkItemsStore } from '@/stores/workItems'
 import {
   onAuthExpiry,
   readBrowserSession,
+  hciLoginSuppressed,
   replaceBrowserSession,
 } from '@/auth/browserSession'
 import type { User } from '@/types'
@@ -14,6 +15,7 @@ vi.mock('@/api/auth', () => ({
   login: vi.fn(),
   getMe: vi.fn(),
   devLogin: vi.fn(),
+  hciBootstrap: vi.fn(),
 }))
 
 vi.mock('@/api/workItems', () => ({
@@ -441,4 +443,21 @@ describe('Auth Store', () => {
     expect(readBrowserSession().refreshToken).toBe('refresh-a2')
     stop()
   })
+})
+
+it('logout during an HCI exchange keeps tokens and automatic login cleared', async () => {
+  const {hciBootstrap,getMe}=await import('@/api/auth')
+  localStorage.clear();vi.clearAllMocks()
+  const pinia=createPinia();setActivePinia(pinia)
+  const auth=useAuthStore(pinia)
+  const response=deferred<any>()
+  vi.mocked(hciBootstrap).mockReturnValue(response.promise)
+  const pending=auth.hciBootstrap()
+  auth.logout()
+  response.resolve({data:{data:{tokens:{access_token:'stale',refresh_token:'stale-refresh'}}}})
+  await expect(pending).resolves.toBeNull()
+  expect(auth.token).toBeNull()
+  expect(hciLoginSuppressed()).toBe(true)
+  expect(getMe).not.toHaveBeenCalled()
+  disposePinia(pinia)
 })

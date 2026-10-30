@@ -735,6 +735,7 @@ const enUS = {
   'repoDetail.phaseFailed': 'Failed',
   'auth.hciConnecting': 'Completing company sign-in…',
   'auth.hciFailed': 'Company sign-in could not be completed. Please retry or contact the administrator.',
+  'auth.hciSignIn': 'Sign in with company account',
   'auth.hciSignedOut': 'You signed out of this application. Use company sign-in when you are ready to return.',
   'auth.hciRetry': 'Retry',
   'auth.signInTitle': 'Sign in',

@@ -50,12 +50,15 @@ export const useAuthStore = defineStore('auth', () => {
       throw new Error('login response missing access token')
     }
 
-    replaceBrowserSession({ accessToken, refreshToken })
-    return ensureUser()
+    const installed = replaceBrowserSession({ accessToken, refreshToken })
+    const currentUser = await ensureUser()
+    if (currentUser && readBrowserSession().generation === installed.generation) {
+      allowHciLogin()
+    }
+    return currentUser
   }
 
   async function login(req: LoginRequest): Promise<User | null> {
-    allowHciLogin()
     const res = await apiLogin(req)
     const data = res.data.data
     if (!data) {
@@ -74,7 +77,6 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function hciBootstrap(): Promise<User | null> {
-    allowHciLogin()
     const captured = readBrowserSession().generation
     const res = await apiHciBootstrap()
     if (readBrowserSession().generation !== captured) return null

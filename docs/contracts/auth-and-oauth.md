@@ -39,7 +39,11 @@ registered.
   true.
 - HCI is opt-in (`AE_AUTH_HCI_ENABLED=true`). Login options then advertise
   `hci_enabled`; `/login` completes a same-origin POST to `/auth/hci/bootstrap`
-  automatically, including when entered from a protected administrator deep link.
+  automatically, including when entered from a protected administrator deep link,
+  unless the user explicitly signed out. Explicit logout persists a local
+  automatic-login suppression flag across reloads; company sign-in then requires
+  a button click. Only a successfully hydrated login clears the flag; a failed
+  exchange or a late response after logout cannot clear it.
   HCI failures show a retry error, not a password form. The bootstrap route bypasses
   embedded SPA fallback and returns JSON with `Cache-Control: no-store`.
 - Header mode requires `AE_AUTH_HCI_PROXY_SECRET` (at least 32 bytes). A Kong
@@ -190,7 +194,9 @@ API operations even though the browser entry pages themselves are public.
 ## Current Limitations
 
 - HCI logout currently clears only the local browser session; the IAM session
-  remains external. A later visit may sign in automatically while IAM is active.
+  remains external. Explicit logout suppresses automatic re-entry until the user
+  chooses company sign-in again. This flag is browser-local UX state, not
+  server-side token revocation or an IAM/global logout.
   Issued local tokens retain their configured lifetimes and local revocation
   boundary; IAM logout alone does not revoke them. Header mode relies on the
   platform overwriting its identity headers and must be validated per cluster.

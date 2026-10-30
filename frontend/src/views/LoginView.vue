@@ -19,6 +19,7 @@ const source = ref('SSO')
 const error = ref('')
 const loading = ref(false)
 const optionsLoaded = ref(false)
+const signedOut = ref(hciLoginSuppressed())
 let active = true
 onUnmounted(() => { active = false })
 const authOptions = ref({
@@ -38,7 +39,7 @@ onMounted(async () => {
     source.value = authOptions.value.ldap_enabled ? 'LDAP' : 'SSO'
     if (authOptions.value.hci_enabled) {
       if (hciLoginSuppressed()) {
-        error.value = t('auth.hciSignedOut')
+        signedOut.value = true
       } else {
         await handleHCI()
       }
@@ -56,6 +57,7 @@ onMounted(async () => {
 })
 
 async function handleHCI() {
+  if (loading.value) return
   loading.value = true
   error.value = ''
   const redirect = resolveSafeRedirect(router.currentRoute.value.query.redirect)
@@ -112,8 +114,11 @@ async function handleDevLogin() {
 
       <div v-if="authOptions.hci_enabled" data-testid="hci-login" class="space-y-4">
         <p v-if="loading">{{ t('auth.hciConnecting') }}</p>
+        <p v-if="signedOut && !loading">{{ t('auth.hciSignedOut') }}</p>
         <el-alert v-if="error" :closable="false" :title="error" type="error" />
-        <el-button v-if="error" @click="handleHCI">{{ t('auth.hciRetry') }}</el-button>
+        <el-button v-if="signedOut || error" :loading="loading" @click="handleHCI">
+          {{ t(signedOut ? 'auth.hciSignIn' : 'auth.hciRetry') }}
+        </el-button>
       </div>
       <el-form v-else-if="optionsLoaded" class="space-y-4" label-position="top" @submit.prevent="handleLogin">
         <el-form-item :label="t('auth.email')" label-for="username">
