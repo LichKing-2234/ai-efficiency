@@ -93,12 +93,23 @@ export interface OpsMonitoringAccount {
   schedulable: boolean
   proxy_id: number | null
   proxy: OpsMonitoringProxy | null
+  /** Configured upstream concurrency limit, shown verbatim by the page. */
+  concurrency: number
+  /** Live upstream active request count, shown verbatim by the page. */
+  current_concurrency: number
 }
 
 export interface OpsMonitoringAccountsData {
   group_id: number
   as_of: string
   accounts: OpsMonitoringAccount[]
+}
+
+// Verified upstream read-back after setting one account's configured concurrency.
+export interface OpsMonitoringAccountCapacity {
+  account_id: number
+  concurrency: number
+  current_concurrency: number
 }
 
 export interface OpsMonitoringProxyTestResult {
@@ -142,6 +153,19 @@ export function getOpsMonitoringGroups(params: OpsMonitoringGroupsParams) {
 
 export function getOpsMonitoringGroupAccounts(groupId: number, params: { provider_id: number }) {
   return client.get<ApiResponse<OpsMonitoringAccountsData>>(`/admin/ops-monitoring/groups/${groupId}/accounts`, { params })
+}
+
+export function setOpsMonitoringAccountConcurrency(
+  groupId: number,
+  accountId: number,
+  concurrency: number,
+  params: { provider_id: number },
+) {
+  return client.put<ApiResponse<OpsMonitoringAccountCapacity>>(
+    `/admin/ops-monitoring/groups/${groupId}/accounts/${accountId}/concurrency`,
+    { concurrency },
+    { params },
+  )
 }
 
 export function testOpsMonitoringProxy(proxyId: number, params: OpsMonitoringProxyTestParams) {

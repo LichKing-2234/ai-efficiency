@@ -126,17 +126,38 @@ type GroupProxy struct {
 }
 
 // GroupAccount is the privacy-safe account projection for one group's
-// operator-facing account list, including the account's proxy binding.
+// operator-facing account list, including the account's proxy binding and the
+// two upstream concurrency integers.
 type GroupAccount struct {
-	AccountID   int64       `json:"account_id"`
-	Name        string      `json:"name"`
-	Platform    string      `json:"platform"`
-	Type        string      `json:"type"`
-	Status      string      `json:"status"`
-	Schedulable bool        `json:"schedulable"`
-	ProxyID     *int64      `json:"proxy_id"`
-	Proxy       *GroupProxy `json:"proxy"`
+	AccountID          int64       `json:"account_id"`
+	Name               string      `json:"name"`
+	Platform           string      `json:"platform"`
+	Type               string      `json:"type"`
+	Status             string      `json:"status"`
+	Schedulable        bool        `json:"schedulable"`
+	Concurrency        int         `json:"concurrency"`
+	CurrentConcurrency int         `json:"current_concurrency"`
+	ProxyID            *int64      `json:"proxy_id"`
+	Proxy              *GroupProxy `json:"proxy"`
 }
+
+// AccountCapacity is one account's configured concurrency and its live request
+// count. Both values are upstream facts passed through verbatim; this platform
+// never derives or adjusts them.
+type AccountCapacity struct {
+	AccountID          int64 `json:"account_id"`
+	Concurrency        int   `json:"concurrency"`
+	CurrentConcurrency int   `json:"current_concurrency"`
+}
+
+const (
+	// MinAccountConcurrency and MaxAccountConcurrency bound the configured
+	// concurrency this platform may submit upstream. The range matches
+	// sub2api's own load_factor ceiling: it is a sanity guard, not a capacity
+	// policy.
+	MinAccountConcurrency = 1
+	MaxAccountConcurrency = 10000
+)
 
 // ProxyEgressCheck is the measured egress identity of one proxy. It is an
 // active upstream probe result and is never inferred from configuration.

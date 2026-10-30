@@ -1,12 +1,13 @@
 # Ops Monitoring Contract
 
-This contract describes the current admin-only, read-only Ops Monitoring
-surface: the per-group upstream ops facts it presents for every Sub2API Group at
-once, the API and Relay read paths that serve them, the display-only metric
+This contract describes the current admin-only Ops Monitoring surface: the
+per-group upstream ops facts it presents for every Sub2API Group at once, each
+expanded account's configured concurrency capacity and its one scoped mutation,
+the API and Relay read/write paths that serve them, the display-only metric
 alignment rule, and the fetch, cache, and failure behavior. Read it before
 changing `/admin/ops-monitoring`, `backend/internal/opsmonitoring`, the Relay
-group ops-health/account/proxy-test capability, or the upstream ops field
-mapping.
+group ops-health/account/proxy-test/concurrency capability, or the upstream ops
+field mapping.
 
 Relay identity, Provider access, and Group/Account planning facts follow
 [relay user access](./relay-user-access.md) and
@@ -19,10 +20,11 @@ deadlines, and frontend loading follow
 
 | Term | Meaning |
 | --- | --- |
-| Ops Monitoring | The administrator-only, read-only surface at `/admin/ops-monitoring` that presents every Sub2API Group's upstream ops facts at once. |
+| Ops Monitoring | The administrator-only surface at `/admin/ops-monitoring` that presents every Sub2API Group's upstream ops facts at once. It has exactly one mutation: setting one account's configured concurrency. |
 | Sub2API Group | The upstream routing group whose ops facts are displayed. It is not a user-selectable Access Group and not a Relay Group Mapping Target. |
 | Group Health Snapshot | The verbatim Sub2API ops overview for one Sub2API Group over one explicit UTC window. |
 | Metric alignment | The rule that every number on this surface is a field returned by sub2api, displayed without recomputation. |
+| Account Concurrency Capacity | One Sub2API account's configured `concurrency` limit together with upstream's live `current_concurrency` count, both displayed verbatim. It is the only value an administrator can set on this surface, one account at a time, and the write is verified by a read-back. |
 | Fetch failure | The platform outcome for one group whose overview read did not complete. It is not an upstream health fact. |
 
 sub2api remains the authority for every metric, account, proxy, and egress fact
@@ -36,9 +38,11 @@ and owns no local ops table.
 - `/admin/ops-monitoring` is an administrator-only route with the navigation
   label 「运维监控」. Its scope is global: it has no department, subject, or
   role scoping.
-- The surface is read-only. It exposes no alert, threshold, notification, or
-  paging rule; no action button; no relationship, account, or proxy mutation;
-  and no history, trend, or previous-window comparison.
+- The surface is read-only except for exactly one mutation: an administrator can
+  set one Sub2API account's configured concurrency from that group's expanded
+  account list. It exposes no alert, threshold, notification, or paging rule; no
+  relationship, proxy, status, scheduling, or bulk account mutation; and no
+  history, trend, or previous-window comparison.
 - The page lists the configured Relay Providers through the existing provider
   list, starts on the primary Provider, and shows a Provider switcher when more
   than one Provider exists.
@@ -49,24 +53,27 @@ and owns no local ops table.
 - The route and module are named for the surface rather than the provider so a
   second ops source can be added without a URL change. Only sub2api implements
   the capability; the service type-asserts the Relay provider's
-  `relay.GroupOpsHealthReader` capability (`ReadGroupOpsHealth`,
-  `ListGroupAccounts`, `TestProxy`) and defines no provider-neutral ops
-  abstraction.
+  `relay.GroupOpsHealthReader` read capability (`ReadGroupOpsHealth`,
+  `ListGroupAccounts`, `TestProxy`) and the optional
+  `relay.AccountConcurrencyUpdater` write capability, and defines no
+  provider-neutral ops abstraction.
 - No ops endpoint exists upstream for all groups at once. The backend fans out
   one overview read per group and joins the result with directory and account
   facts sub2api already returns.
 
 ## Upstream Sources
 
-All four calls go through the configured Relay provider's admin HTTP client and
+All six calls go through the configured Relay provider's admin HTTP client and
 credential. There is no direct sub2api database access.
 
 | Upstream call | Supplies | Behavior |
 | --- | --- | --- |
 | `GET /api/v1/admin/groups?page=&page_size=200` | Group identity, name, platform, `account_count`, `active_account_count` | The directory read that enumerates the fan-out. It is the authority for group identity, name, platform, and both account counts. |
 | `GET /api/v1/admin/ops/dashboard/overview?group_id=&start_time=&end_time=` | Every per-group metric on the row and in the group detail | One call per selected group. sub2api ignores the upstream `window=` parameter, so the window is always sent as explicit RFC3339 UTC `start_time` / `end_time`. A group-scoped call returns `data.platform` empty, and this layer reads no overview field by name, so platform is never sourced from this response. |
-| `GET /api/v1/admin/accounts?page=&page_size=200&group=<id>` | Expanded account list and each account's embedded `proxy` object | Paginated until `pages` is exhausted. Credentials are never decoded. |
+| `GET /api/v1/admin/accounts?page=&page_size=200&group=<id>` | Expanded account list, each account's embedded `proxy` object, and both concurrency integers (`concurrency`, `current_concurrency`) | Paginated until `pages` is exhausted. Credentials are never decoded. |
 | `POST /api/v1/admin/proxies/<id>/test` | Measured egress IP and geo for one proxy | An active upstream probe issued only on explicit operator demand. It measures; it mutates no platform or upstream state. |
+| `PUT /api/v1/admin/accounts/<id>` | Writes one account's configured `concurrency` | A partial update: the platform sends only `{"concurrency": N}`, and sub2api's pointer-typed request struct leaves every other account field unchanged. Issued only on an explicit operator save from the account expansion. |
+| `GET /api/v1/admin/accounts/<id>` | Read-back verification of `concurrency` and `current_concurrency` after a write | The platform returns the capacity only after the read-back matches the requested value; a mismatch is an error, not a success with different numbers. |
 
 The overview `data` object carries 19 scalar keys and 6 sub-objects.
 `system_metrics` and `job_heartbeats` are platform-global rather than
@@ -76,11 +83,11 @@ platform are the displayed authorities.
 
 ## API Surface
 
-All three routes are administrator-gated under `/api/v1`, require the
+All four routes are administrator-gated under `/api/v1`, require the
 `provider_id` query parameter, and return the standard `{"code": 200, "data":
-...}` envelope. Invalid query input returns `400`; a provider-level failure
-(provider resolution, missing ops capability, or the group directory read)
-returns `422` and no snapshot.
+...}` envelope. Invalid query or body input returns `400`; a provider-level
+failure (provider resolution, missing ops capability, group membership, or an
+upstream write/read-back failure) returns `422`.
 
 ### `GET /admin/ops-monitoring/groups`
 
@@ -130,9 +137,10 @@ the fetch outcome, never upstream health.
 ### `GET /admin/ops-monitoring/groups/:group_id/accounts`
 
 Query: `provider_id` (required). Returns `{group_id, as_of, accounts[]}` with
-the privacy-safe account projection and its `proxy` object when one is bound.
-This layer loads on demand when a row expands and is never cache-warmed with the
-group table.
+the privacy-safe account projection, its `proxy` object when one is bound, and
+the account's configured `concurrency` together with upstream's live
+`current_concurrency`. This layer loads on demand when a row expands and is never
+cache-warmed with the group table.
 
 ### `POST /admin/ops-monitoring/proxies/:proxy_id/test`
 
@@ -142,6 +150,34 @@ inside the cache window returns the stored measurement with `cached = true` and
 does not re-probe; `force=true` (or `force=1`) re-probes and still stores the new
 measurement. The page sends `force` for the row's explicit probe action, so an
 operator re-checking a repaired proxy is never answered from the stored result.
+
+### `PUT /admin/ops-monitoring/groups/:group_id/accounts/:account_id/concurrency`
+
+Query: `provider_id` (required). Body: `{"concurrency": N}`, where `N` is an
+integer from `1` to `10000`. This is the surface's only mutation.
+
+The route sets one account's configured concurrency from the group the operator
+expanded. Missing, malformed, non-integer, zero, negative, and out-of-range
+values are rejected with `400` before any upstream call. The service then reads
+the expanded group's account list from upstream and returns `422` when that
+account is not currently a member, so a stale expansion cannot edit an account
+that was moved away from the group. When the listed `concurrency` already equals
+`N`, the service performs no upstream write and returns the listed facts.
+
+Otherwise the Relay adapter sends a partial `PUT /api/v1/admin/accounts/<id>`
+containing only `{"concurrency": N}` and then reads the account back. A non-OK
+response or a read-back `concurrency` that differs from `N` fails with `422`;
+the requested value is never reported as applied. Success returns the verified
+capacity:
+
+```json
+{ "account_id": 50, "concurrency": 20, "current_concurrency": 2 }
+```
+
+`concurrency` is the value read back from upstream, not merely the requested
+value. Credentials, proxy binding, status, scheduling priority, and group
+relationships are never included in the write body, and no platform persistence,
+history, audit table, or cache is added for this write.
 
 ## Metric Alignment
 
@@ -173,6 +209,13 @@ Forbidden:
   platform constructs.
 - A dominant-proxy, dominant-error, or most-affected-account rollup.
 - Trends, history, deltas, or comparison against a previous window.
+
+Account concurrency capacity is configuration, not a metric: `concurrency` is an
+upstream account field and `current_concurrency` is upstream's live count, both
+displayed verbatim. The platform never derives an effective limit from them, never
+compares them with sub2api's `load_factor`, and never recomputes a saturation
+ratio. Setting `concurrency` writes exactly that field and changes no displayed
+derived value.
 
 `upstream_error_rate` is already the excluding-429/529 figure and is displayed
 directly. A production group-scoped read returned
@@ -237,6 +280,8 @@ sub-objects that do carry `avg` / `current` / `peak`.
 | Type | `type` | accounts |
 | Status | `status` | accounts |
 | Schedulability | `schedulable` | accounts |
+| 并发数 | `concurrency` (configured limit, displayed verbatim) | accounts |
+| 当前并发 | `current_concurrency` (live active request count) | accounts |
 | Proxy binding | `proxy.name`, `proxy.protocol`, `proxy.host`, `proxy.port` | accounts |
 | Direct (no proxy) | absent `proxy` / `proxy_id` | accounts |
 
@@ -304,8 +349,11 @@ Measured egress results are cached for 6 hours per provider and proxy, matching
 the static nature of a fixed egress address; a stored result returns
 `cached = true` without re-probing, and `force=true` re-probes. The group
 snapshot is the only cache-warmed read: account expansion and the egress probe
-are per-row requests outside the fan-out. No ops read persists history or
-trends.
+are per-row requests outside the fan-out. Account concurrency capacity is never
+cached: the account list is read on demand per expansion, and the concurrency
+write performs no cache read or write, so a saved value is visible on the next
+expansion without invalidating the group snapshot. No ops read persists history
+or trends.
 
 Auto-refresh is off by default and re-reads the same window every 60 seconds
 when enabled, through the cached read path. A failed group is never stored as
@@ -323,6 +371,8 @@ provider change, or a later auto-refresh tick — retries it.
 | Missing upstream metric | A metric cell whose upstream key is absent renders the same muted 无数据 / No data value for that cell. |
 | Stale snapshot with failed refresh | The previous snapshot remains displayed; failed rows remain failed. |
 | Overview returned nothing | Treated as that group's fetch failure, never as no data. |
+| Account concurrency save fails | The requested value is not shown as applied. The account row keeps its last displayed capacity and shows the platform/upstream error inline; other accounts are unaffected. |
+| Account left the group before saving | The service's fresh membership read returns `422` and leaves upstream unchanged; the row keeps its last displayed capacity and shows the error inline. |
 
 An unfetched group is never rendered as healthy, and a failed group is never
 rendered as zero traffic.
@@ -352,11 +402,21 @@ the same loaded collection and request state. There is no pagination.
 - Rate fields (`sla`, `error_rate`, `upstream_error_rate`) arrive as fractions
   and are rendered as percentages; only the representation changes.
 - Expanding a group loads its account list and shows the remaining group
-  metrics. Each account row shows its proxy binding, and a proxy offers an
-  explicit egress probe action that shows the measured IP, location, latency,
-  check time, and a cached marker. The probe action and the manual refresh both
-  ask for a fresh read rather than replaying a cached one. A group failure does
-  not remove, reorder, or block any other row's expansion.
+  metrics. Each account row shows its proxy binding, its upstream concurrency
+  capacity (`并发数` / `当前并发`), and an inline 设置 control that opens an
+  explicit-save editor for the configured concurrency. The editor's accepted
+  range is an integer from 1 to 10000, matching the upstream account editor's
+  floor and sub2api's own `load_factor` ceiling; nothing is sent until the
+  administrator saves, and cancel discards the draft. The saved row updates in
+  place from the verified read-back capacity; a failed save keeps the previous
+  value and renders the error inline. A proxy offers an explicit egress probe
+  action that shows the measured IP, location, latency, check time, and a cached
+  marker. The probe action and the manual refresh both ask for a fresh read
+  rather than replaying a cached one. A group failure does not remove, reorder,
+  or block any other row's expansion.
+- Account capacity state is scoped to the expansion that started the save:
+  switching Provider or window resets it, and an editor closes only after its
+  own save is confirmed. Other rows and the group collection keep their state.
 - A failed refresh never clears data already on screen: the last snapshot stays
   rendered and the failure is shown as a notice above it. The whole-page error
   state is reserved for a read that produced no snapshot at all.

@@ -13,12 +13,14 @@ import client from '@/api/client'
 import {
   getOpsMonitoringGroupAccounts,
   getOpsMonitoringGroups,
+  setOpsMonitoringAccountConcurrency,
   testOpsMonitoringProxy,
 } from '@/api/opsMonitoring'
 
 const mockClient = client as unknown as {
   get: ReturnType<typeof vi.fn>
   post: ReturnType<typeof vi.fn>
+  put: ReturnType<typeof vi.fn>
 }
 
 beforeEach(() => {
@@ -69,6 +71,20 @@ describe('opsMonitoring API', () => {
     expect(mockClient.post).toHaveBeenCalledWith('/admin/ops-monitoring/proxies/31/test', undefined, {
       params: { provider_id: 7 },
     })
+  })
+
+  it('setOpsMonitoringAccountConcurrency puts only the capacity with the provider scope', async () => {
+    mockClient.put.mockResolvedValue({
+      data: { data: { account_id: 21, concurrency: 8, current_concurrency: 2 } },
+    })
+
+    await setOpsMonitoringAccountConcurrency(42, 21, 8, { provider_id: 7 })
+
+    expect(mockClient.put).toHaveBeenCalledWith(
+      '/admin/ops-monitoring/groups/42/accounts/21/concurrency',
+      { concurrency: 8 },
+      { params: { provider_id: 7 } },
+    )
   })
 
   it('testOpsMonitoringProxy appends force only for an explicit re-probe', async () => {

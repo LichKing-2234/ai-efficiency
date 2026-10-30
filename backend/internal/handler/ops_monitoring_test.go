@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,11 @@ type opsMonitoringProviderStub struct {
 	relay.Provider
 	groups    []relay.Group
 	overviews map[int64]json.RawMessage
+
+	updateCalls        int
+	updatedAccountID   int64
+	updatedConcurrency int
+	updateErr          error
 }
 
 func (p *opsMonitoringProviderStub) ListPlatformGroups(context.Context) ([]relay.Group, error) {
@@ -41,6 +47,16 @@ func (p *opsMonitoringProviderStub) ListGroupAccounts(_ context.Context, _ int64
 	}}, nil
 }
 
+func (p *opsMonitoringProviderStub) UpdateAccountConcurrency(_ context.Context, accountID int64, concurrency int) (*relay.AccountCapacity, error) {
+	p.updateCalls++
+	p.updatedAccountID = accountID
+	p.updatedConcurrency = concurrency
+	if p.updateErr != nil {
+		return nil, p.updateErr
+	}
+	return &relay.AccountCapacity{AccountID: accountID, Concurrency: concurrency, CurrentConcurrency: 2}, nil
+}
+
 func (p *opsMonitoringProviderStub) TestProxy(_ context.Context, proxyID int64) (*relay.ProxyEgressCheck, error) {
 	return &relay.ProxyEgressCheck{
 		Success:     true,
@@ -62,6 +78,25 @@ func (r opsMonitoringResolverStub) Resolve(context.Context, int) (relay.Provider
 	return r.provider, r.err
 }
 
+// opsMonitoringReaderOnlyProvider exposes the ops membership read but not the
+// account concurrency updater capability.
+type opsMonitoringReaderOnlyProvider struct {
+	relay.Provider
+	accounts []relay.GroupAccount
+}
+
+func (p *opsMonitoringReaderOnlyProvider) ReadGroupOpsHealth(_ context.Context, groupID int64, _, _ time.Time) (*relay.GroupOpsHealth, error) {
+	return &relay.GroupOpsHealth{GroupID: groupID}, nil
+}
+
+func (p *opsMonitoringReaderOnlyProvider) ListGroupAccounts(context.Context, int64) ([]relay.GroupAccount, error) {
+	return p.accounts, nil
+}
+
+func (p *opsMonitoringReaderOnlyProvider) TestProxy(context.Context, int64) (*relay.ProxyEgressCheck, error) {
+	return &relay.ProxyEgressCheck{}, nil
+}
+
 func newOpsMonitoringTestRouter(t *testing.T, provider relay.Provider) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -70,6 +105,7 @@ func newOpsMonitoringTestRouter(t *testing.T, provider relay.Provider) *gin.Engi
 	group := engine.Group("/api/v1/admin/ops-monitoring")
 	group.GET("/groups", opsHandler.ListGroups)
 	group.GET("/groups/:group_id/accounts", opsHandler.ListGroupAccounts)
+	group.PUT("/groups/:group_id/accounts/:account_id/concurrency", opsHandler.UpdateAccountConcurrency)
 	group.POST("/proxies/:proxy_id/test", opsHandler.TestProxy)
 	return engine
 }
@@ -81,6 +117,21 @@ func newOpsMonitoringStubProvider() *opsMonitoringProviderStub {
 			7: json.RawMessage(`{"health_score":10,"upstream_error_rate":0.5,"request_count_total":100}`),
 		},
 	}
+}
+
+func opsMonitoringJSON(t *testing.T, engine *gin.Engine, method, target, body string) (*httptest.ResponseRecorder, map[string]any) {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(method, target, strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	engine.ServeHTTP(recorder, request)
+	var decoded map[string]any
+	if recorder.Body.Len() > 0 {
+		if err := json.Unmarshal(recorder.Body.Bytes(), &decoded); err != nil {
+			t.Fatalf("decode %s %s response: %v (%s)", method, target, err, recorder.Body.String())
+		}
+	}
+	return recorder, decoded
 }
 
 func opsMonitoringGet(t *testing.T, engine *gin.Engine, method, target string) (*httptest.ResponseRecorder, map[string]any) {
@@ -217,5 +268,83 @@ func TestOpsMonitoringAcceptsExplicitForceOnBothReadEndpoints(t *testing.T) {
 	recorder, _ := opsMonitoringGet(t, engine, http.MethodPost, "/api/v1/admin/ops-monitoring/proxies/3/test?provider_id=1&force=true")
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("forced proxy test status = %d, want 200 (%s)", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestOpsMonitoringUpdateAccountConcurrencyReturnsVerifiedCapacity(t *testing.T) {
+	provider := newOpsMonitoringStubProvider()
+	engine := newOpsMonitoringTestRouter(t, provider)
+	recorder, body := opsMonitoringJSON(t, engine, http.MethodPut, "/api/v1/admin/ops-monitoring/groups/7/accounts/50/concurrency?provider_id=1", `{"concurrency":20}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", recorder.Code, recorder.Body.String())
+	}
+	if provider.updateCalls != 1 || provider.updatedAccountID != 50 || provider.updatedConcurrency != 20 {
+		t.Fatalf("updater calls = %d, args = %d/%d; want 1, 50/20", provider.updateCalls, provider.updatedAccountID, provider.updatedConcurrency)
+	}
+	data, ok := body["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("response data = %#v", body["data"])
+	}
+	if data["account_id"].(float64) != 50 {
+		t.Fatalf("account_id = %v, want 50", data["account_id"])
+	}
+	if data["concurrency"].(float64) != 20 || data["current_concurrency"].(float64) != 2 {
+		t.Fatalf("capacity = %v/%v, want 20/2", data["concurrency"], data["current_concurrency"])
+	}
+}
+
+func TestOpsMonitoringUpdateAccountConcurrencyRejectsMissingConcurrency(t *testing.T) {
+	provider := newOpsMonitoringStubProvider()
+	engine := newOpsMonitoringTestRouter(t, provider)
+	recorder, _ := opsMonitoringJSON(t, engine, http.MethodPut, "/api/v1/admin/ops-monitoring/groups/7/accounts/50/concurrency?provider_id=1", `{}`)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (%s)", recorder.Code, recorder.Body.String())
+	}
+	if provider.updateCalls != 0 {
+		t.Fatalf("updater calls = %d, want 0 for a missing value", provider.updateCalls)
+	}
+}
+
+func TestOpsMonitoringUpdateAccountConcurrencyRejectsOutOfRangeConcurrency(t *testing.T) {
+	for _, body := range []string{`{"concurrency":0}`, `{"concurrency":10001}`} {
+		provider := newOpsMonitoringStubProvider()
+		engine := newOpsMonitoringTestRouter(t, provider)
+		recorder, _ := opsMonitoringJSON(t, engine, http.MethodPut, "/api/v1/admin/ops-monitoring/groups/7/accounts/50/concurrency?provider_id=1", body)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("body %s: status = %d, want 400 (%s)", body, recorder.Code, recorder.Body.String())
+		}
+		if provider.updateCalls != 0 {
+			t.Fatalf("body %s: updater calls = %d, want 0", body, provider.updateCalls)
+		}
+	}
+}
+
+func TestOpsMonitoringUpdateAccountConcurrencyRejectsInvalidIDs(t *testing.T) {
+	for _, target := range []string{
+		"/api/v1/admin/ops-monitoring/groups/0/accounts/50/concurrency?provider_id=1",
+		"/api/v1/admin/ops-monitoring/groups/7/accounts/0/concurrency?provider_id=1",
+	} {
+		provider := newOpsMonitoringStubProvider()
+		engine := newOpsMonitoringTestRouter(t, provider)
+		recorder, _ := opsMonitoringJSON(t, engine, http.MethodPut, target, `{"concurrency":20}`)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("%s: status = %d, want 400 (%s)", target, recorder.Code, recorder.Body.String())
+		}
+		if provider.updateCalls != 0 {
+			t.Fatalf("%s: updater calls = %d, want 0", target, provider.updateCalls)
+		}
+	}
+}
+
+func TestOpsMonitoringUpdateAccountConcurrencyRejectsProviderWithoutUpdater(t *testing.T) {
+	provider := &opsMonitoringReaderOnlyProvider{accounts: []relay.GroupAccount{{AccountID: 50, Concurrency: 5}}}
+	engine := newOpsMonitoringTestRouter(t, provider)
+	recorder, body := opsMonitoringJSON(t, engine, http.MethodPut, "/api/v1/admin/ops-monitoring/groups/7/accounts/50/concurrency?provider_id=1", `{"concurrency":20}`)
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (%s)", recorder.Code, recorder.Body.String())
+	}
+	message, _ := body["message"].(string)
+	if !strings.Contains(message, "does not expose account concurrency updates") {
+		t.Fatalf("message = %q, want missing capability error", message)
 	}
 }

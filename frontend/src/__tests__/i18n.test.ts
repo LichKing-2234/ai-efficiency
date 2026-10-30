@@ -232,8 +232,8 @@ describe('i18n locale loading', () => {
       ...Object.keys(ownerAccountsMessages['zh-CN']),
     ].sort()
 
-    expect(englishKeys).toHaveLength(1537)
-    expect(chineseKeys).toHaveLength(1537)
+    expect(englishKeys).toHaveLength(1545)
+    expect(chineseKeys).toHaveLength(1545)
     expect(englishKeys).toContain('activity.title')
     expect(englishKeys).toEqual(expect.arrayContaining(['auth.hciConnecting', 'auth.hciFailed', 'auth.hciRetry', 'auth.hciSignedOut', 'auth.hciSignIn']))
     expect(englishKeys).toContain('pagination.range')
@@ -259,6 +259,14 @@ describe('i18n locale loading', () => {
     expect(englishKeys).toContain('opsMonitoring.title')
     expect(englishKeys).toContain('opsMonitoring.failedGroups')
     expect(englishKeys).toContain('opsMonitoring.refreshEgressIp')
+    expect(englishKeys).toContain('opsMonitoring.concurrency')
+    expect(englishKeys).toContain('opsMonitoring.currentConcurrency')
+    expect(englishKeys).toContain('opsMonitoring.setConcurrency')
+    expect(englishKeys).toContain('opsMonitoring.save')
+    expect(englishKeys).toContain('opsMonitoring.cancel')
+    expect(englishKeys).toContain('opsMonitoring.concurrencyInvalid')
+    expect(englishKeys).toContain('opsMonitoring.concurrencyUpdated')
+    expect(englishKeys).toContain('opsMonitoring.concurrencyUpdateFailed')
     expect(chineseKeys).toEqual(englishKeys)
   })
 

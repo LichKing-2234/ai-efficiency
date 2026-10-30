@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from '@/i18n'
 import { opsMonitoringMessages } from '@/locales/opsMonitoring'
 import { createFeatureTranslator } from '@/utils/featureI18n'
@@ -13,6 +13,12 @@ import type {
   OpsMonitoringWindowStat,
 } from '@/api/opsMonitoring'
 
+interface OpsMonitoringConcurrencyState {
+  saving: boolean
+  error: string
+  saved: boolean
+}
+
 const props = defineProps<{
   group: OpsMonitoringGroup
   accounts: OpsMonitoringAccount[]
@@ -20,12 +26,73 @@ const props = defineProps<{
   accountsError: string
   accountsAsOf: string
   proxyTests: Record<string, { loading: boolean; error: string; result: OpsMonitoringProxyTestResult | null }>
+  concurrencyStates: Record<number, OpsMonitoringConcurrencyState>
 }>()
 
-const emit = defineEmits<{ testProxy: [proxyID: number] }>()
+const emit = defineEmits<{
+  testProxy: [proxyID: number]
+  setConcurrency: [accountID: number, concurrency: number]
+}>()
+
+const MIN_CONCURRENCY = 1
+const MAX_CONCURRENCY = 10000
+const idleConcurrencyState: OpsMonitoringConcurrencyState = { saving: false, error: '', saved: false }
+
+const editingAccountID = ref<number | null>(null)
+const draftConcurrency = ref<number | null>(null)
+const pendingSaveAccountID = ref<number | null>(null)
+const validationError = ref('')
 
 const { t: baseT, locale } = useI18n()
 const t = createFeatureTranslator(locale, baseT, 'opsMonitoring.', opsMonitoringMessages)
+
+function concurrencyStateFor(accountID: number): OpsMonitoringConcurrencyState {
+  return props.concurrencyStates[accountID] ?? idleConcurrencyState
+}
+
+function startConcurrencyEdit(account: OpsMonitoringAccount) {
+  editingAccountID.value = account.account_id
+  draftConcurrency.value = account.concurrency
+  pendingSaveAccountID.value = null
+  validationError.value = ''
+}
+
+function cancelConcurrencyEdit() {
+  editingAccountID.value = null
+  draftConcurrency.value = null
+  pendingSaveAccountID.value = null
+  validationError.value = ''
+}
+
+function saveConcurrency(accountID: number) {
+  const value = draftConcurrency.value
+  // The mutation only accepts whole numbers in the upstream account editor's range.
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < MIN_CONCURRENCY || value > MAX_CONCURRENCY) {
+    validationError.value = t('opsMonitoring.concurrencyInvalid')
+    return
+  }
+  validationError.value = ''
+  pendingSaveAccountID.value = accountID
+  emit('setConcurrency', accountID, value)
+}
+
+// The lifted state owns the request lifecycle; the editor closes itself only
+// after the request it started is confirmed, so a failure keeps the form and the
+// previous value visible.
+watch(
+  () => {
+    if (editingAccountID.value === null || pendingSaveAccountID.value !== editingAccountID.value) return null
+    const state = props.concurrencyStates[editingAccountID.value]
+    if (!state) return null
+    return { saving: state.saving, saved: state.saved, error: state.error }
+  },
+  (current) => {
+    if (!current || current.saving || !current.saved || current.error) return
+    editingAccountID.value = null
+    draftConcurrency.value = null
+    pendingSaveAccountID.value = null
+  },
+)
 
 const noValue = computed(() => t('opsMonitoring.noData'))
 
@@ -114,6 +181,7 @@ const accountRows = computed(() => props.accounts.map((account) => ({
   state: account.proxy
     ? props.proxyTests[String(account.proxy.proxy_id)] ?? { loading: false, error: '', result: null }
     : null,
+  concurrencyState: concurrencyStateFor(account.account_id),
 })))
 </script>
 
@@ -188,6 +256,76 @@ const accountRows = computed(() => props.accounts.map((account) => ({
           </div>
           <div v-else class="mt-1 text-xs text-slate-500" :data-testid="`ops-account-direct-${group.group_id}-${row.account.account_id}`">
             {{ t('opsMonitoring.direct') }}
+          </div>
+          <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <span
+              class="tabular-nums"
+              :data-testid="`ops-account-concurrency-${group.group_id}-${row.account.account_id}`"
+            >
+              {{ t('opsMonitoring.concurrency') }} {{ row.account.concurrency }}
+              · {{ t('opsMonitoring.currentConcurrency') }} {{ row.account.current_concurrency }}
+            </span>
+            <template v-if="editingAccountID !== row.account.account_id">
+              <el-button
+                link
+                type="primary"
+                size="small"
+                :data-testid="`ops-account-concurrency-edit-${group.group_id}-${row.account.account_id}`"
+                @click="startConcurrencyEdit(row.account)"
+              >
+                {{ t('opsMonitoring.setConcurrency') }}
+              </el-button>
+              <span
+                v-if="row.concurrencyState.saved && !row.concurrencyState.error"
+                class="text-green-600"
+                :data-testid="`ops-account-concurrency-status-${group.group_id}-${row.account.account_id}`"
+              >
+                {{ t('opsMonitoring.concurrencyUpdated') }}
+              </span>
+            </template>
+            <template v-else>
+              <el-input-number
+                v-model="draftConcurrency"
+                size="small"
+                :min="MIN_CONCURRENCY"
+                :max="MAX_CONCURRENCY"
+                :step="1"
+                controls-position="right"
+                class="w-28"
+                :data-testid="`ops-account-concurrency-input-${group.group_id}-${row.account.account_id}`"
+              />
+              <el-button
+                size="small"
+                type="primary"
+                :loading="row.concurrencyState.saving"
+                :disabled="row.concurrencyState.saving"
+                :data-testid="`ops-account-concurrency-save-${group.group_id}-${row.account.account_id}`"
+                @click="saveConcurrency(row.account.account_id)"
+              >
+                {{ t('opsMonitoring.save') }}
+              </el-button>
+              <el-button
+                size="small"
+                :data-testid="`ops-account-concurrency-cancel-${group.group_id}-${row.account.account_id}`"
+                @click="cancelConcurrencyEdit"
+              >
+                {{ t('opsMonitoring.cancel') }}
+              </el-button>
+            </template>
+          </div>
+          <div
+            v-if="validationError && editingAccountID === row.account.account_id"
+            class="mt-1 text-xs text-red-600"
+            :data-testid="`ops-account-concurrency-invalid-${group.group_id}-${row.account.account_id}`"
+          >
+            {{ validationError }}
+          </div>
+          <div
+            v-if="row.concurrencyState.error"
+            class="mt-1 text-xs text-red-600"
+            :data-testid="`ops-account-concurrency-error-${group.group_id}-${row.account.account_id}`"
+          >
+            {{ t('opsMonitoring.concurrencyUpdateFailed') }}: {{ row.concurrencyState.error }}
           </div>
           <div
             v-if="row.proxy && row.state && (row.state.result || row.state.error)"

@@ -114,6 +114,13 @@ type GroupOpsHealthReader interface {
 	TestProxy(ctx context.Context, proxyID int64) (*ProxyEgressCheck, error)
 }
 
+// AccountConcurrencyUpdater changes one account's configured concurrency.
+// Implementations must read the value back and return the verified capacity; a
+// read-back mismatch is an error, never a success with different numbers.
+type AccountConcurrencyUpdater interface {
+	UpdateAccountConcurrency(ctx context.Context, accountID int64, concurrency int) (*AccountCapacity, error)
+}
+
 // AccountRelationshipReader exposes only the safe account metadata needed to
 // inspect group relationships for one platform.
 type AccountRelationshipReader interface {

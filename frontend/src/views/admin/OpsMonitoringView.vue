@@ -12,6 +12,7 @@ import { listRelayProviders } from '@/api/relayProvider'
 import {
   getOpsMonitoringGroupAccounts,
   getOpsMonitoringGroups,
+  setOpsMonitoringAccountConcurrency,
   testOpsMonitoringProxy,
   type OpsMonitoringAccount,
   type OpsMonitoringGroup,
@@ -33,6 +34,12 @@ interface OpsProxyTestState {
   loading: boolean
   error: string
   result: OpsMonitoringProxyTestResult | null
+}
+
+interface OpsConcurrencyState {
+  saving: boolean
+  error: string
+  saved: boolean
 }
 
 type OpsNumericKey =
@@ -71,6 +78,7 @@ const autoRefresh = ref(false)
 const expandedGroupIDs = ref<string[]>([])
 const accountStates = reactive<Record<number, OpsAccountsState>>({})
 const proxyTests = reactive<Record<string, OpsProxyTestState>>({})
+const concurrencyStates = reactive<Record<number, OpsConcurrencyState>>({})
 const sortKey = ref<OpsSortKey>('upstream_error_rate')
 const sortOrder = ref<'ascending' | 'descending'>('descending')
 let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
@@ -209,6 +217,7 @@ function resetDetails() {
   expandedGroupIDs.value = []
   for (const key of Object.keys(accountStates)) delete accountStates[Number(key)]
   for (const key of Object.keys(proxyTests)) delete proxyTests[key]
+  for (const key of Object.keys(concurrencyStates)) delete concurrencyStates[Number(key)]
 }
 
 function applyGroups(next: OpsMonitoringGroupsData | null) {
@@ -342,6 +351,34 @@ async function refreshProxy(proxyID: number) {
   }
 }
 
+async function setAccountConcurrency(groupID: number, accountID: number, concurrency: number) {
+  if (!concurrencyStates[accountID]) {
+    concurrencyStates[accountID] = { saving: false, error: '', saved: false }
+  }
+  // Re-read through the reactive map: the `??=` shorthand yields the raw object
+  // on its first assignment, which would bypass reactivity for every update.
+  const state = concurrencyStates[accountID]
+  if (state.saving) return
+  state.saving = true
+  state.error = ''
+  state.saved = false
+  try {
+    const response = await setOpsMonitoringAccountConcurrency(groupID, accountID, concurrency, { provider_id: providerID.value })
+    const capacity = response.data.data
+    const account = accountStates[groupID]?.accounts.find((item) => item.account_id === accountID)
+    if (account) {
+      account.concurrency = capacity?.concurrency ?? concurrency
+      account.current_concurrency = capacity?.current_concurrency ?? account.current_concurrency
+    }
+    state.saved = true
+  } catch (err: any) {
+    // No automatic retry: keep the previous capacity and report the failure.
+    state.error = err.response?.data?.message || err.message || t('opsMonitoring.concurrencyUpdateFailed')
+  } finally {
+    state.saving = false
+  }
+}
+
 function stopAutoRefresh() {
   if (autoRefreshTimer !== null) {
     clearInterval(autoRefreshTimer)
@@ -456,7 +493,9 @@ onBeforeUnmount(stopAutoRefresh)
                   :accounts-error="accountState(scope.row.group_id).error"
                   :accounts-as-of="accountState(scope.row.group_id).asOf"
                   :proxy-tests="proxyTests"
+                  :concurrency-states="concurrencyStates"
                   @test-proxy="refreshProxy"
+                  @set-concurrency="(accountID, concurrency) => setAccountConcurrency(asGroup(scope.row).group_id, accountID, concurrency)"
                 />
               </template>
             </el-table-column>
@@ -532,7 +571,9 @@ onBeforeUnmount(stopAutoRefresh)
               :accounts-error="accountState(group.group_id).error"
               :accounts-as-of="accountState(group.group_id).asOf"
               :proxy-tests="proxyTests"
+              :concurrency-states="concurrencyStates"
               @test-proxy="refreshProxy"
+              @set-concurrency="(accountID, concurrency) => setAccountConcurrency(group.group_id, accountID, concurrency)"
             />
           </article>
         </div>

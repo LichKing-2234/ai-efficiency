@@ -1,6 +1,9 @@
-// Package opsmonitoring builds the read-only Ops Monitoring view: every group's
-// upstream ops health, fetched together. It is deliberately a display layer —
-// upstream metrics are carried through verbatim and never recomputed here.
+// Package opsmonitoring builds the Ops Monitoring view: every group's upstream
+// ops health plus each group's account projections. It is deliberately a
+// display layer — upstream metrics are carried through verbatim and never
+// recomputed here. The only mutation is setting one account's configured
+// concurrency; it is issued on explicit operator demand, verified upstream, and
+// never cached.
 package opsmonitoring
 
 import (
@@ -102,6 +105,25 @@ type GroupAccountsSnapshot struct {
 	GroupID  int64                `json:"group_id"`
 	AsOf     time.Time            `json:"as_of"`
 	Accounts []relay.GroupAccount `json:"accounts"`
+}
+
+// SetAccountConcurrencyRequest is one explicit account capacity change, scoped
+// to the group the operator expanded.
+type SetAccountConcurrencyRequest struct {
+	ProviderID  int
+	GroupID     int64
+	AccountID   int64
+	Concurrency int
+}
+
+// ValidateAccountConcurrency bounds a requested configured concurrency. The
+// HTTP layer uses the same guard to reject out-of-range input with a 400 before
+// the service is called.
+func ValidateAccountConcurrency(concurrency int) error {
+	if concurrency < relay.MinAccountConcurrency || concurrency > relay.MaxAccountConcurrency {
+		return fmt.Errorf("concurrency must be between %d and %d", relay.MinAccountConcurrency, relay.MaxAccountConcurrency)
+	}
+	return nil
 }
 
 type ProxyEgressRequest struct {
@@ -229,6 +251,73 @@ func (s *Service) GroupAccounts(ctx context.Context, request GroupAccountsReques
 		accounts = []relay.GroupAccount{}
 	}
 	return &GroupAccountsSnapshot{GroupID: request.GroupID, AsOf: s.now().UTC(), Accounts: accounts}, nil
+}
+
+// SetAccountConcurrency sets one account's configured concurrency from the
+// group the operator expanded. It is the only mutation in Ops Monitoring: the
+// account must currently belong to the group, an already-matching value is a
+// no-op that never touches upstream, and the returned capacity is the value the
+// relay adapter verified by reading it back.
+func (s *Service) SetAccountConcurrency(ctx context.Context, request SetAccountConcurrencyRequest) (*relay.AccountCapacity, error) {
+	if s == nil || s.resolver == nil {
+		return nil, fmt.Errorf("ops monitoring service is unavailable")
+	}
+	if request.GroupID <= 0 {
+		return nil, fmt.Errorf("group id is required")
+	}
+	if request.AccountID <= 0 {
+		return nil, fmt.Errorf("account id is required")
+	}
+	if err := ValidateAccountConcurrency(request.Concurrency); err != nil {
+		return nil, err
+	}
+
+	provider, err := s.resolver.Resolve(ctx, request.ProviderID)
+	if err != nil {
+		return nil, err
+	}
+	if provider == nil {
+		return nil, fmt.Errorf("relay provider %d is not configured", request.ProviderID)
+	}
+	reader, ok := provider.(relay.GroupOpsHealthReader)
+	if !ok {
+		return nil, fmt.Errorf("relay provider %d does not expose ops monitoring", request.ProviderID)
+	}
+	updater, ok := provider.(relay.AccountConcurrencyUpdater)
+	if !ok {
+		return nil, fmt.Errorf("relay provider %d does not expose account concurrency updates", request.ProviderID)
+	}
+
+	accounts, err := reader.ListGroupAccounts(ctx, request.GroupID)
+	if err != nil {
+		return nil, fmt.Errorf("list accounts in group %d: %w", request.GroupID, err)
+	}
+	var listed *relay.GroupAccount
+	for index := range accounts {
+		if accounts[index].AccountID == request.AccountID {
+			listed = &accounts[index]
+			break
+		}
+	}
+	if listed == nil {
+		return nil, fmt.Errorf("account %d is not a member of group %d", request.AccountID, request.GroupID)
+	}
+	if listed.Concurrency == request.Concurrency {
+		return &relay.AccountCapacity{
+			AccountID:          listed.AccountID,
+			Concurrency:        listed.Concurrency,
+			CurrentConcurrency: listed.CurrentConcurrency,
+		}, nil
+	}
+
+	capacity, err := updater.UpdateAccountConcurrency(ctx, request.AccountID, request.Concurrency)
+	if err != nil {
+		return nil, fmt.Errorf("set account %d concurrency in group %d: %w", request.AccountID, request.GroupID, err)
+	}
+	if capacity == nil {
+		return nil, fmt.Errorf("set account %d concurrency in group %d: upstream returned no capacity", request.AccountID, request.GroupID)
+	}
+	return capacity, nil
 }
 
 // ProxyEgress measures one proxy's real egress identity. The probe is an
