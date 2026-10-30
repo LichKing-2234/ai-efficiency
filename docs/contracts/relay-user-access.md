@@ -146,6 +146,7 @@ Stable Connection Test capabilities are centralized in the backend:
 | Group platform | Recommended | Supported protocols |
 | --- | --- | --- |
 | OpenAI | Responses | Responses, Chat Completions, and Messages only when message dispatch is enabled |
+| DeepSeek | Responses | Responses, Chat Completions, and Messages only when message dispatch is enabled |
 | Anthropic or Claude | Messages | Messages, Responses, Chat Completions |
 | Gemini | GenerateContent | GenerateContent, Chat Completions |
 | Antigravity | Messages | Messages, Antigravity GenerateContent |
@@ -156,6 +157,9 @@ Capability metadata flows from Relay group facts through the shared metadata
 envelope to user setup. A schema version that predates a required capability
 field is a cache miss, not an implicit false value. The frontend renders the
 backend matrix and does not duplicate it.
+
+DeepSeek groups are served through the Relay's OpenAI gateway, so they share the
+OpenAI protocol set and the OpenAI tool-configuration path.
 
 ## Connection Test Proof
 
