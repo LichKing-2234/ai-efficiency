@@ -19,6 +19,7 @@ const source = ref('SSO')
 const error = ref('')
 const loading = ref(false)
 const optionsLoaded = ref(false)
+const optionsError = ref(false)
 const signedOut = ref(hciLoginSuppressed())
 let active = true
 onUnmounted(() => { active = false })
@@ -28,7 +29,10 @@ const authOptions = ref({
   dev_login_enabled: false,
 })
 
-onMounted(async () => {
+async function loadAuthOptions() {
+  optionsLoaded.value = false
+  optionsError.value = false
+  error.value = ''
   try {
     const res = await getAuthOptions()
     authOptions.value = {
@@ -45,16 +49,14 @@ onMounted(async () => {
       }
     }
   } catch {
-    authOptions.value = {
-      hci_enabled: false,
-      ldap_enabled: false,
-      dev_login_enabled: false,
-    }
-    source.value = 'SSO'
+    optionsError.value = true
+    error.value = t('auth.hciFailed')
   } finally {
     optionsLoaded.value = true
   }
-})
+}
+
+onMounted(() => { void loadAuthOptions() })
 
 async function handleHCI() {
   if (loading.value) return
@@ -112,7 +114,13 @@ async function handleDevLogin() {
         type="info"
       />
 
-      <div v-if="authOptions.hci_enabled" data-testid="hci-login" class="space-y-4">
+      <div v-if="optionsError" data-testid="auth-options-error" class="space-y-4">
+        <el-alert :closable="false" :title="error" type="error" />
+        <el-button :loading="loading" @click="loadAuthOptions">
+          {{ t('auth.hciRetry') }}
+        </el-button>
+      </div>
+      <div v-else-if="authOptions.hci_enabled" data-testid="hci-login" class="space-y-4">
         <p v-if="loading">{{ t('auth.hciConnecting') }}</p>
         <p v-if="signedOut && !loading">{{ t('auth.hciSignedOut') }}</p>
         <el-alert v-if="error" :closable="false" :title="error" type="error" />

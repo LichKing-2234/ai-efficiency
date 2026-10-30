@@ -96,6 +96,22 @@ describe('LoginView', () => {
     expect(source.text()).not.toContain('LDAP')
   })
 
+  it('does not fall back to a password form when auth options cannot be loaded', async () => {
+    const { getAuthOptions } = await import('@/api/auth')
+    ;(getAuthOptions as any).mockRejectedValue(new Error('network error'))
+    const router = createTestRouter()
+    const wrapper = mount(LoginView, {
+      global: { plugins: [createPinia(), router] },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="auth-options-error"]').exists()).toBe(true)
+    expect(wrapper.find('form').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="username-field"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Company sign-in could not be completed')
+  })
+
   it('hides dev login when disabled', async () => {
     const { getAuthOptions } = await import('@/api/auth')
     ;(getAuthOptions as any).mockResolvedValue({

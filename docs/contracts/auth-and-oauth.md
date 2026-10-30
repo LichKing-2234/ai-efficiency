@@ -44,7 +44,8 @@ registered.
   automatic-login suppression flag across reloads; company sign-in then requires
   a button click. Only a successfully hydrated login clears the flag; a failed
   exchange or a late response after logout cannot clear it.
-  HCI failures show a retry error, not a password form. The bootstrap route bypasses
+  HCI failures, including failure to load the authentication options, show a
+  retry error, not a password form. The bootstrap route bypasses
   embedded SPA fallback and returns JSON with `Cache-Control: no-store`.
 - Header mode requires `AE_AUTH_HCI_PROXY_SECRET` (at least 32 bytes). A Kong
   request-transformer on the HCI Web route removes any client proof header and
@@ -72,14 +73,20 @@ Relay SSO authenticates existing upstream users only.
 
 ## Local User Reconciliation
 
-After one auth provider succeeds, AI Efficiency reconciles the upstream
-identity into one local user before issuing tokens.
+After an LDAP or Relay SSO provider succeeds, AI Efficiency reconciles the
+upstream identity into one local user before issuing tokens.
 
 1. Reuse an existing local username match.
 2. Otherwise reuse a non-empty exact email match.
 3. Create a local user only when neither identity exists.
 4. On every successful login, synchronize the current auth source and a valid
    upstream `admin` or `user` role.
+
+HCI is a separate Web-only ingress identity path. It matches an existing local
+user by the authenticated email only, preserves that user's username, local
+role, Relay ID and encrypted Relay password, and assigns `user` only to a new
+account. HCI does not resolve LDAP or Relay credentials and does not copy an
+upstream role into the local account.
 
 LDAP login always re-resolves the Relay identity so historical local bindings
 can be repaired. Resolution prefers an exact Relay email match, then a
