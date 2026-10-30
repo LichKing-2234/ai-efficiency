@@ -69,10 +69,15 @@ func (p *HCIProvider) AuthenticateHeaders(r *http.Request) (*UserInfo, error) {
 		// The Web route overwrites this proof with a deployment-owned secret after
 		// HCI authentication. Direct Service callers cannot forge ingress identity.
 		proof := r.Header.Get("X-AE-HCI-Proxy-Secret")
-		if len(p.proxySecret) < 32 || subtle.ConstantTimeCompare([]byte(proof), p.proxySecret) != 1 || r.Header.Get("X-Consumer-Username") != "agora-hciauth-v1" {
+		if len(p.proxySecret) < 32 || subtle.ConstantTimeCompare([]byte(proof), p.proxySecret) != 1 {
 			return nil, fmt.Errorf("untrusted HCI ingress")
 		}
 		email = r.Header.Get("X-Oauth-Email")
+		// HCI replaces the anonymous Consumer with the authenticated email.
+		// A request cannot claim an identity different from Kong's Consumer.
+		if !strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Consumer-Username")), strings.TrimSpace(email)) {
+			return nil, fmt.Errorf("HCI Consumer does not match identity")
+		}
 	}
 	email = strings.TrimSpace(email)
 	parsed, err := mail.ParseAddress(email)

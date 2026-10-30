@@ -43,7 +43,7 @@ func TestHCIProviderReadsClassicHeaderWithoutVerificationKey(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("x-oauth-email", "alice@example.com")
 	req.Header.Set("X-AE-HCI-Proxy-Secret", strings.Repeat("p", 32))
-	req.Header.Set("X-Consumer-Username", "agora-hciauth-v1")
+	req.Header.Set("X-Consumer-Username", "alice@example.com")
 	info, err := NewHCIProvider("", strings.Repeat("p", 32)).AuthenticateHeaders(req)
 	if err != nil {
 		t.Fatal(err)
@@ -104,7 +104,7 @@ func TestHCILocalIdentityPreservesAdminAndRelay(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Oauth-Email", "alice@example.com")
 	req.Header.Set("X-AE-HCI-Proxy-Secret", strings.Repeat("p", 32))
-	req.Header.Set("X-Consumer-Username", "agora-hciauth-v1")
+	req.Header.Set("X-Consumer-Username", "alice@example.com")
 	pair, info, err := svc.LoginHCI(ctx, req)
 	if err != nil {
 		t.Fatal(err)
@@ -159,5 +159,20 @@ func TestHCIConfigurationFailsClosed(t *testing.T) {
 	}
 	if err := svc.ConfigureHCI(false, "", "", ""); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestHCIUsesAuthenticatedEmailAsKongConsumer(t *testing.T) {
+	req := httptest.NewRequest("POST", "/auth/hci/bootstrap", nil)
+	req.Header.Set("X-AE-HCI-Proxy-Secret", strings.Repeat("p", 32))
+	req.Header.Set("X-Consumer-Username", "alice@example.com")
+	req.Header.Set("X-Oauth-Email", "alice@example.com")
+	info, err := NewHCIProvider("", strings.Repeat("p", 32)).AuthenticateHeaders(req)
+	if err != nil || info.Email != "alice@example.com" {
+		t.Fatalf("HCI email Consumer rejected: %v", err)
+	}
+	req.Header.Set("X-Oauth-Email", "bob@example.org")
+	if _, err = NewHCIProvider("", strings.Repeat("p", 32)).AuthenticateHeaders(req); err == nil {
+		t.Fatal("mismatched Consumer/email accepted")
 	}
 }

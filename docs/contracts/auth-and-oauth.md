@@ -45,8 +45,9 @@ registered.
 - Header mode requires `AE_AUTH_HCI_PROXY_SECRET` (at least 32 bytes). A Kong
   request-transformer on the HCI Web route removes any client proof header and
   inserts the deployment secret as `X-AE-HCI-Proxy-Secret`. The backend also
-  requires `X-Consumer-Username: agora-hciauth-v1`; ordinary key-auth Consumers
-  cannot impersonate the HCI identity. Direct service requests and the ordinary
+  requires `X-Consumer-Username` to match the HCI email; the gateway replaces
+  the anonymous Consumer with the authenticated user. Mismatched identities
+  cannot issue sessions. Direct service requests and the ordinary
   API route do not obtain this proof. Keep the secret in server-side config,
   never in browser JavaScript, responses, request URLs or logs.
 - Optional `AE_AUTH_HCI_JWT_SECRET` enables mandatory HS256 signature and expiry

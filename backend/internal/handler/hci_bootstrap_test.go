@@ -28,7 +28,7 @@ func TestHCIBootstrapIsJSONWithEmbeddedFrontend(t *testing.T) {
 	req.Header.Set("Origin", "http://localhost:5173")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-AE-HCI-Proxy-Secret", strings.Repeat("p", 32))
-	req.Header.Set("X-Consumer-Username", "agora-hciauth-v1")
+	req.Header.Set("X-Consumer-Username", "alice@example.com")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if !strings.Contains(w.Header().Get("Content-Type"), "application/json") {
