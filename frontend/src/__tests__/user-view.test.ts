@@ -756,6 +756,50 @@ describe('UserView', () => {
     expect(methods).toContain('Download CC Switch')
   })
 
+  it('routes a DeepSeek access group through the OpenAI tool-configuration path', async () => {
+    const { wrapper } = await mountUserViewWithProviders([
+      {
+        id: 2,
+        name: 'example',
+        display_name: 'Example AI',
+        base_url: 'https://api.example.com',
+        default_model: 'deepseek-chat',
+        is_primary: true,
+        groups: [
+          {
+            group_id: '52',
+            group_name: 'Group Alpha',
+            platform: 'deepseek',
+            supported_protocols: ['responses', 'chat_completions'],
+            recommended_protocol: 'responses',
+            credential: {
+              state: 'existing_hidden',
+              api_key_id: 31,
+              name: 'alice',
+              status: 'active',
+              key: 'sk-existing-deepseek-123456',
+            },
+          },
+        ],
+      },
+    ])
+
+    await openConfigurationMethods(wrapper)
+
+    const methodGroup = wrapper.findAllComponents({ name: 'ElRadioGroup' })
+      .find((component) => component.classes().includes('lg:grid-cols-3'))
+    const methodOptions = wrapper.findAllComponents({ name: 'ElRadio' })
+      .filter((component) => component.attributes('data-testid')?.startsWith('config-method-'))
+    expect(methodOptions).toHaveLength(2)
+    expect(methodGroup!.props('modelValue')).toBe('ccswitch')
+    expect(wrapper.get('[data-testid="ccswitch-import-codex"]').attributes('href')).toContain('app=codex')
+
+    await wrapper.get('[data-testid="config-method-manual"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('~/.codex/config.toml')
+    expect(wrapper.text()).toContain('~/.codex/auth.json')
+  })
+
   it('does not map the selected connection-test model in the Claude CC Switch import link', async () => {
     const { wrapper } = await mountUserView()
 

@@ -117,8 +117,8 @@ The workflow separates business facts from the visible step:
 - A missing key offers an explicit create-and-continue action.
 - A key makes model loading, Connection Test, and configuration methods
   reachable.
-- Connection Test is the recommended next action, not a gate for manual,
-  automatic, or CC Switch configuration.
+- Connection Test is the recommended next action, not a gate for manual or
+  CC Switch configuration.
 - Success stays on the test step until the user explicitly advances. Failure
   keeps the selected group/key and offers retry.
 - Key regeneration invalidates the prior Connection Test result.
@@ -160,6 +160,24 @@ backend matrix and does not duplicate it.
 
 DeepSeek groups are served through the Relay's OpenAI gateway, so they share the
 OpenAI protocol set and the OpenAI tool-configuration path.
+
+## Configuration Methods
+
+The configuration step offers manual client snippets and, when the selected
+group platform maps to one, a CC Switch provider-import method:
+
+| Group platform | Manual snippets | CC Switch import |
+| --- | --- | --- |
+| OpenAI or DeepSeek | Codex config and auth JSON | Codex |
+| Anthropic or Claude | Claude Code settings | Claude Code |
+| Gemini | Gemini environment and shell block | Gemini |
+| Composite | Client selector for Codex, Claude Code, or DSH snippets | Codex and Claude Code |
+| Antigravity or Grok | No platform-specific snippets | None |
+| `Agent`-prefixed access groups | Hermes Agent, OpenClaw, and Custom Agent snippets | Hermes and OpenClaw |
+
+This mapping is tool configuration only. It does not change Connection Test
+capability, the probe protocol, or the generated configuration ownership
+described in the CLI tool-configuration contract.
 
 ## Connection Test Proof
 

@@ -507,7 +507,7 @@ export function buildManualConfigSnippets(input: ManualConfigSnippetInput): Manu
       },
     ]
   }
-  if (platform === 'openai') {
+  if (usesOpenAIProtocolPlatform(platform)) {
     return [
       {
         key: 'codex-config',
@@ -560,7 +560,7 @@ export function buildManualConfigSnippets(input: ManualConfigSnippetInput): Manu
 
 export function resolveCCSwitchAppForPlatform(platform: string): CCSwitchApp | null {
   const normalized = platform.trim().toLowerCase()
-  if (normalized === 'openai' || normalized === 'composite') return 'codex'
+  if (usesOpenAIProtocolPlatform(normalized) || normalized === 'composite') return 'codex'
   if (normalized === 'anthropic') return 'claude'
   if (normalized === 'gemini') return 'gemini'
   return null
@@ -568,10 +568,16 @@ export function resolveCCSwitchAppForPlatform(platform: string): CCSwitchApp | n
 
 export function resolveDiscoverToolForPlatform(platform: string): DiscoverTool | null {
   const normalized = platform.trim().toLowerCase()
-  if (normalized === 'openai' || normalized === 'composite') return 'codex'
+  if (usesOpenAIProtocolPlatform(normalized) || normalized === 'composite') return 'codex'
   if (normalized === 'anthropic') return 'claude'
   if (normalized === 'gemini') return 'gemini'
   return null
+}
+
+// DeepSeek groups are served through the Relay's OpenAI gateway, so they follow
+// the OpenAI tool-configuration path on every surface.
+function usesOpenAIProtocolPlatform(normalizedPlatform: string): boolean {
+  return normalizedPlatform === 'openai' || normalizedPlatform === 'deepseek'
 }
 
 export function resolveCCSwitchAppsForGroup(platform: string, groupName?: string | null): CCSwitchApp[] {
