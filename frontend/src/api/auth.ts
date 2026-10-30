@@ -1,4 +1,5 @@
 import client from './client'
+import axios from 'axios'
 import type { ApiResponse, LoginRequest, User } from '@/types'
 
 export interface AuthTokenPayload {
@@ -33,4 +34,8 @@ export function refresh(token: string) {
 
 export function getMe() {
   return client.get<ApiResponse<User>>('/auth/me')
+}
+
+export function hciBootstrap() {
+	return axios.get<ApiResponse<AuthTokenPayload>>('/auth/hci/bootstrap')
 }

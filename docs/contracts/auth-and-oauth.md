@@ -37,6 +37,12 @@ registered.
 - Dev Login is outside the ordinary provider chain. It is available only when
   the server runs in debug mode and the explicit enablement environment flag is
   true.
+- HCI Web Bootstrap is a separate ingress-bound source. When
+  `AE_AUTH_HCI_JWT_SECRET` is configured, `GET /auth/hci/bootstrap` validates
+  the `x-hci-auth-jwt` header injected by the trusted HCI ingress, reconciles
+  the email into a local user, and issues the same local JWT pair. It does not
+  accept username/password credentials and must not be exposed through an
+  unprotected API route.
 - Browser login stores the returned access and refresh tokens as one browser
   session generation, then resolves the current user before treating identity
   or role as confirmed.
@@ -167,6 +173,11 @@ a same-route redirect loop. Approval and device verification remain protected
 API operations even though the browser entry pages themselves are public.
 
 ## Current Limitations
+
+- HCI JWT verification requires the platform to provide the HS256 key and
+  claim/lifetime contract. The application does not trust the classic
+  `x-oauth-email` header by itself, and HCI Bootstrap is disabled when the key
+  is empty.
 
 - Authorization codes and device entries are process-local and are lost on
   restart. A client that reaches another process or loses the issuing process

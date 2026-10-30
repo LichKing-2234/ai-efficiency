@@ -458,6 +458,9 @@ func main() {
 	if relayProvider != nil {
 		authService.RegisterProvider(auth.NewSSOProvider(relayProvider, logger))
 	}
+	if cfg.Auth.HCIJWTSecret != "" {
+		authService.RegisterProvider(auth.NewHCIProvider(cfg.Auth.HCIJWTSecret))
+	}
 	authService.RegisterProvider(auth.NewLDAPProvider(&ldapConfig, logger))
 
 	// Init repo service

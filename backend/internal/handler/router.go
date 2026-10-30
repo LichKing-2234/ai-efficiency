@@ -250,6 +250,7 @@ func setupRouter(
 	authHandler := NewAuthHandler(authService, entClient, adminSettingsHandler, ReportingCapabilities{
 		SetupAvailable: options.AttributionSetupAvailable, ReadinessAvailable: options.AttributionReadinessAvailable,
 	})
+	r.GET("/auth/hci/bootstrap", authHandler.HCIBootstrap)
 	credentialHandler := NewCredentialHandler(entClient, encryptionKey)
 	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey, repoService)
 	repoHandler := NewRepoHandler(repoService)

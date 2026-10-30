@@ -54,6 +54,18 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	})
 }
 
+// HCIBootstrap exchanges the identity established by the HCI ingress for the
+// existing AI Efficiency browser JWT pair. It is intentionally outside /api so
+// the Web HCI ingress protects it while the ordinary API ingress remains unchanged.
+func (h *AuthHandler) HCIBootstrap(c *gin.Context) {
+	tokens, userInfo, err := h.authService.LoginHCI(c.Request.Context(), c.Request)
+	if err != nil {
+		pkg.Error(c, http.StatusUnauthorized, err.Error())
+		return
+	}
+	pkg.Success(c, gin.H{"tokens": tokens, "user": userInfo})
+}
+
 // Options handles GET /api/v1/auth/options.
 func (h *AuthHandler) Options(c *gin.Context) {
 	pkg.Success(c, gin.H{

@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -85,6 +86,35 @@ func (s *Service) SetRelayIdentityResolver(r *RelayIdentityResolver) {
 // RegisterProvider adds an auth provider.
 func (s *Service) RegisterProvider(p AuthProvider) {
 	s.providers = append(s.providers, p)
+}
+
+// LoginHCI authenticates the identity already established by the trusted HCI
+// ingress and issues the same local JWT pair as password-based login.
+func (s *Service) LoginHCI(ctx context.Context, request *http.Request) (*TokenPair, *UserInfo, error) {
+	for _, provider := range s.providers {
+		hci, ok := provider.(interface {
+			AuthenticateHeaders(*http.Request) (*UserInfo, error)
+		})
+		if !ok {
+			continue
+		}
+		info, err := hci.AuthenticateHeaders(request)
+		if err != nil {
+			return nil, nil, err
+		}
+		localUser, err := s.ensureLocalUser(ctx, info)
+		if err != nil {
+			return nil, nil, fmt.Errorf("ensure local user: %w", err)
+		}
+		info.ID = localUser.ID
+		info.Role = string(localUser.Role)
+		pair, err := s.generateTokenPair(info)
+		if err != nil {
+			return nil, nil, fmt.Errorf("generate token pair: %w", err)
+		}
+		return pair, info, nil
+	}
+	return nil, nil, fmt.Errorf("hci auth provider is not configured")
 }
 
 func (s *Service) defaultLoginProviders() []AuthProvider {

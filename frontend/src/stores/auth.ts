@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, onScopeDispose, ref } from 'vue'
-import { devLogin as apiDevLogin, getMe, login as apiLogin } from '@/api/auth'
+import { devLogin as apiDevLogin, getMe, hciBootstrap as apiHciBootstrap, login as apiLogin } from '@/api/auth'
 import { resetSessionResources } from '@/stores/sessionResources'
 import {
   clearBrowserSession,
@@ -70,6 +70,13 @@ export const useAuthStore = defineStore('auth', () => {
     return installLoginPayload(data)
   }
 
+  async function hciBootstrap(): Promise<User | null> {
+	const res = await apiHciBootstrap()
+	const data = res.data.data
+	if (!data) return null
+	return installLoginPayload(data)
+	}
+
   function fetchMe(): Promise<User | null> {
     const captured = readBrowserSession()
     if (!captured.accessToken) {
@@ -124,7 +131,7 @@ export const useAuthStore = defineStore('auth', () => {
     clearBrowserSession()
   }
 
-  return { user, token, isAuthenticated, isAdmin, login, devLogin, logout, fetchMe, ensureUser }
+  return { user, token, isAuthenticated, isAdmin, login, devLogin, hciBootstrap, logout, fetchMe, ensureUser }
 })
 
 type CurrentUserRequest = {

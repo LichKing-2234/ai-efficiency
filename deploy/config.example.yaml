@@ -76,6 +76,9 @@ auth:
   jwt_secret: "change-me-in-production-32-bytes!"
   access_token_ttl: 7200      # 2 hours
   refresh_token_ttl: 604800   # 7 days
+  # HCI ingress HS256 verification key. Leave empty until the platform
+  # provides the key and claim contract for the target cluster.
+  hci_jwt_secret: ""
   ldap:
     url: "ldap://localhost:389"
     base_dn: "dc=example,dc=com"
