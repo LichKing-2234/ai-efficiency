@@ -578,6 +578,7 @@ func setupRouter(
 		{
 			opsMonitoringGroup.GET("/groups", opsMonitoringHandler.ListGroups)
 			opsMonitoringGroup.GET("/groups/:group_id/accounts", opsMonitoringHandler.ListGroupAccounts)
+			opsMonitoringGroup.PUT("/groups/:group_id/accounts/:account_id/concurrency", opsMonitoringHandler.UpdateAccountConcurrency)
 			opsMonitoringGroup.POST("/proxies/:proxy_id/test", opsMonitoringHandler.TestProxy)
 		}
 	}

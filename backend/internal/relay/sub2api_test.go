@@ -5309,3 +5309,164 @@ func TestSub2APIGetUserUsageTrendRejectsNonPositiveUserID(t *testing.T) {
 		t.Fatalf("upstream requests = %d, want 0 for invalid user IDs", requests.Load())
 	}
 }
+
+func TestListGroupAccountsProjectsConfiguredAndCurrentConcurrency(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/accounts", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("group"); got != "7" {
+			t.Fatalf("group filter = %q, want 7", got)
+		}
+		if got := r.Header.Get("X-API-Key"); got != "test-admin-key" {
+			t.Fatalf("X-API-Key = %q, want configured admin key", got)
+		}
+		writeOriginEnvelope(w, map[string]any{
+			"items": []any{map[string]any{
+				"id": 11, "name": "alice@example.com", "platform": "openai", "type": "oauth",
+				"status": "active", "schedulable": true,
+				"concurrency": 20, "current_concurrency": 7,
+				"credentials": map[string]any{"access_token": "must-not-escape"},
+			}},
+			"page": 1, "pages": 1,
+		})
+	})
+
+	reader := newTestProvider(t, mux).(relay.GroupOpsHealthReader)
+	accounts, err := reader.ListGroupAccounts(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("ListGroupAccounts() error = %v", err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("accounts = %d, want 1", len(accounts))
+	}
+	if accounts[0].Concurrency != 20 || accounts[0].CurrentConcurrency != 7 {
+		t.Fatalf("concurrency projection = %d/%d, want 20/7", accounts[0].Concurrency, accounts[0].CurrentConcurrency)
+	}
+}
+
+func TestUpdateAccountConcurrencySendsPartialPutAndReturnsVerifiedCapacity(t *testing.T) {
+	var putBody []byte
+	putCalls, getCalls := 0, 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/accounts/11", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-API-Key"); got != "test-admin-key" {
+			t.Fatalf("X-API-Key = %q, want configured admin key", got)
+		}
+		if r.URL.Path != "/api/v1/admin/accounts/11" {
+			t.Fatalf("path = %q, want account 11", r.URL.Path)
+		}
+		switch r.Method {
+		case http.MethodPut:
+			putCalls++
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read PUT body: %v", err)
+			}
+			putBody = body
+			writeOriginEnvelope(w, map[string]any{"id": 11})
+		case http.MethodGet:
+			getCalls++
+			writeOriginEnvelope(w, map[string]any{
+				"id": 11, "concurrency": 20, "current_concurrency": 3,
+				"credentials": map[string]any{"access_token": "must-not-escape"},
+			})
+		default:
+			t.Fatalf("unexpected method %s", r.Method)
+		}
+	})
+
+	updater := newTestProvider(t, mux).(relay.AccountConcurrencyUpdater)
+	capacity, err := updater.UpdateAccountConcurrency(context.Background(), 11, 20)
+	if err != nil {
+		t.Fatalf("UpdateAccountConcurrency() error = %v", err)
+	}
+	if diff := cmp.Diff(`{"concurrency":20}`, string(putBody)); diff != "" {
+		t.Fatalf("PUT body mismatch (-want +got):\n%s", diff)
+	}
+	if putCalls != 1 || getCalls != 1 {
+		t.Fatalf("upstream calls = %d PUT / %d GET, want 1/1", putCalls, getCalls)
+	}
+	want := &relay.AccountCapacity{AccountID: 11, Concurrency: 20, CurrentConcurrency: 3}
+	if diff := cmp.Diff(want, capacity); diff != "" {
+		t.Fatalf("capacity mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestUpdateAccountConcurrencyRejectsReadBackMismatch(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/accounts/11", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPut:
+			writeOriginEnvelope(w, map[string]any{"id": 11})
+		case http.MethodGet:
+			writeOriginEnvelope(w, map[string]any{"id": 11, "concurrency": 19, "current_concurrency": 3})
+		default:
+			t.Fatalf("unexpected method %s", r.Method)
+		}
+	})
+
+	updater := newTestProvider(t, mux).(relay.AccountConcurrencyUpdater)
+	capacity, err := updater.UpdateAccountConcurrency(context.Background(), 11, 20)
+	if err == nil || !strings.Contains(err.Error(), "verification") {
+		t.Fatalf("UpdateAccountConcurrency() error = %v, want verification error", err)
+	}
+	if capacity != nil {
+		t.Fatalf("UpdateAccountConcurrency() capacity = %#v, want nil on mismatch", capacity)
+	}
+}
+
+func TestUpdateAccountConcurrencyReportsUpstreamWriteFailure(t *testing.T) {
+	getCalls := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/accounts/11", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPut:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(`{"error":{"message":"load factor is clamped"}}`))
+		case http.MethodGet:
+			getCalls++
+			t.Fatal("read-back must not run after a failed write")
+		default:
+			t.Fatalf("unexpected method %s", r.Method)
+		}
+	})
+
+	updater := newTestProvider(t, mux).(relay.AccountConcurrencyUpdater)
+	capacity, err := updater.UpdateAccountConcurrency(context.Background(), 11, 20)
+	if err == nil || !strings.Contains(err.Error(), "load factor is clamped") {
+		t.Fatalf("UpdateAccountConcurrency() error = %v, want upstream message", err)
+	}
+	if capacity != nil || getCalls != 0 {
+		t.Fatalf("capacity = %#v, read-back calls = %d; want nil and 0", capacity, getCalls)
+	}
+}
+
+func TestUpdateAccountConcurrencyRejectsInvalidInputBeforeCallingUpstream(t *testing.T) {
+	var requests atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/accounts/", func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		writeOriginEnvelope(w, map[string]any{"concurrency": 20, "current_concurrency": 3})
+	})
+
+	updater := newTestProvider(t, mux).(relay.AccountConcurrencyUpdater)
+	for _, testCase := range []struct {
+		name        string
+		accountID   int64
+		concurrency int
+	}{
+		{"zero account id", 0, 20},
+		{"negative account id", -1, 20},
+		{"below minimum concurrency", 11, relay.MinAccountConcurrency - 1},
+		{"above maximum concurrency", 11, relay.MaxAccountConcurrency + 1},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			if _, err := updater.UpdateAccountConcurrency(context.Background(), testCase.accountID, testCase.concurrency); err == nil {
+				t.Fatalf("UpdateAccountConcurrency(%d, %d) error = nil, want validation error", testCase.accountID, testCase.concurrency)
+			}
+		})
+	}
+	if requests.Load() != 0 {
+		t.Fatalf("upstream requests = %d, want 0 for invalid input", requests.Load())
+	}
+}
