@@ -26,31 +26,33 @@ func (p *HCIProvider) Authenticate(_ context.Context, _, _ string) (*UserInfo, e
 }
 
 func (p *HCIProvider) AuthenticateHeaders(r *http.Request) (*UserInfo, error) {
-	if len(p.secret) == 0 {
-		return nil, fmt.Errorf("hci auth is not configured")
-	}
 	raw := strings.TrimSpace(r.Header.Get("x-hci-auth-jwt"))
-	if raw == "" {
-		return nil, fmt.Errorf("hci auth header is missing")
-	}
-	token, err := jwt.Parse(raw, func(token *jwt.Token) (any, error) {
-		if token.Method != jwt.SigningMethodHS256 {
-			return nil, fmt.Errorf("unexpected hci jwt signing method")
+	var email string
+	if raw != "" && len(p.secret) > 0 {
+		token, err := jwt.Parse(raw, func(token *jwt.Token) (any, error) {
+			if token.Method != jwt.SigningMethodHS256 {
+				return nil, fmt.Errorf("unexpected hci jwt signing method")
+			}
+			return p.secret, nil
+		})
+		if err != nil || !token.Valid {
+			return nil, fmt.Errorf("invalid hci auth jwt")
 		}
-		return p.secret, nil
-	})
-	if err != nil || !token.Valid {
-		return nil, fmt.Errorf("invalid hci auth jwt")
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			return nil, fmt.Errorf("invalid hci auth claims")
+		}
+		user, ok := claims["user"].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("hci auth user claim is missing")
+		}
+		email, _ = user["email"].(string)
+	} else {
+		// Kong's HCI plugin has already authenticated the request before this
+		// Web-only bootstrap route is reached. The classic header is the HCI
+		// contract for deployments that do not expose the HS256 verification key.
+		email = r.Header.Get("x-oauth-email")
 	}
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return nil, fmt.Errorf("invalid hci auth claims")
-	}
-	user, ok := claims["user"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("hci auth user claim is missing")
-	}
-	email, _ := user["email"].(string)
 	email = strings.TrimSpace(email)
 	if email == "" || !strings.Contains(email, "@") {
 		return nil, fmt.Errorf("hci auth email claim is invalid")

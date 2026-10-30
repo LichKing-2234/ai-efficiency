@@ -34,6 +34,18 @@ func TestHCIProviderReadsSignedEmail(t *testing.T) {
 	}
 }
 
+func TestHCIProviderReadsClassicHeaderWithoutVerificationKey(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("x-oauth-email", "alice@example.com")
+	info, err := NewHCIProvider("").AuthenticateHeaders(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Email != "alice@example.com" || info.AuthSource != "hci" {
+		t.Fatalf("identity = %+v", info)
+	}
+}
+
 func TestHCIProviderRejectsWrongSecret(t *testing.T) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user": map[string]any{"email": "alice@example.com"},
