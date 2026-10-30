@@ -12,6 +12,7 @@ vi.mock('@/api/auth', () => ({
   getMe: vi.fn(),
   devLogin: vi.fn(),
   getAuthOptions: vi.fn(),
+  hciBootstrap: vi.fn(),
 }))
 
 function createTestRouter(initialPath = '/login') {
@@ -136,6 +137,7 @@ describe('LoginView', () => {
       global: { plugins: [createPinia(), router] },
     })
 
+    await flushPromises()
     await wrapper.get('input[data-testid="username-field"]').setValue('bad')
     await wrapper.get('input[data-testid="password-field"]').setValue('bad')
     await wrapper.find('form').trigger('submit')
@@ -448,4 +450,34 @@ describe('LoginView', () => {
 
     expect(wrapper.get('[data-testid="auth-source"]').text()).toContain('SSO')
   })
+})
+
+ it('HCI session opens requested admin page without a password form', async () => {
+   const {getAuthOptions,hciBootstrap,getMe}=await import('@/api/auth')
+   vi.mocked(getAuthOptions).mockResolvedValue({data:{data:{ldap_enabled:false,dev_login_enabled:false,hci_enabled:true}}} as any)
+   vi.mocked(hciBootstrap).mockResolvedValue({data:{data:{tokens:{access_token:'hci-app-token',refresh_token:'hci-refresh'}}}} as any)
+   vi.mocked(getMe).mockResolvedValue({data:{data:{id:1,username:'alice',email:'alice@example.com',role:'admin'}}} as any)
+   const pinia=createPinia();setActivePinia(pinia);localStorage.clear()
+   const router=createTestRouter();await router.push('/login?redirect=/repos');await router.isReady()
+   const wrapper=mount(LoginView,{global:{plugins:[pinia,router]}})
+   await flushPromises()
+   expect(hciBootstrap).toHaveBeenCalledTimes(1)
+   expect(wrapper.find('form').exists()).toBe(false)
+   expect(router.currentRoute.value.path).toBe('/repos')
+ })
+
+it('HCI exchange failure offers retry without LDAP or Relay password fallback', async () => {
+  const { getAuthOptions, hciBootstrap } = await import('@/api/auth')
+  vi.clearAllMocks()
+  vi.mocked(getAuthOptions).mockResolvedValue({ data: { data: { hci_enabled: true, ldap_enabled: false, dev_login_enabled: false } } } as any)
+  vi.mocked(hciBootstrap).mockRejectedValue(new Error('invalid gateway identity'))
+  const router = createTestRouter()
+  await router.push('/login')
+  await router.isReady()
+  const wrapper = mount(LoginView, { global: { plugins: [createPinia(), router] } })
+  await flushPromises()
+  expect(wrapper.find('form').exists()).toBe(false)
+  expect(wrapper.get('[data-testid="hci-login"]').text()).toContain('Company sign-in could not be completed')
+  expect(localStorage.getItem('token')).toBeNull()
+  wrapper.unmount()
 })

@@ -104,6 +104,8 @@ export function credentialSummaryLabel(summary: Record<string, unknown> | null |
 
 export function authSourceLabel(source: string | null | undefined, t: Translate): string {
   switch (source) {
+    case 'hci':
+      return 'HCI OAuth'
     case 'ldap':
       return t('display.authSource.ldap')
     case 'relay_sso':

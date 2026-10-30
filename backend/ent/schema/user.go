@@ -22,7 +22,7 @@ func (User) Fields() []ent.Field {
 			Unique().
 			NotEmpty(),
 		field.Enum("auth_source").
-			Values("sub2api_sso", "relay_sso", "ldap"),
+			Values("sub2api_sso", "relay_sso", "ldap", "hci"),
 		field.Int("relay_user_id").
 			Optional().
 			Nillable(),

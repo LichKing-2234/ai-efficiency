@@ -1107,3 +1107,15 @@ func TestEnsureWritableConfigFilePreservesExistingFile(t *testing.T) {
 		t.Fatalf("EnsureWritableConfigFile should not overwrite existing file, got:\n%s", string(content))
 	}
 }
+
+func TestHCIBootstrapEnvironmentConfig(t *testing.T) {
+	t.Setenv("AE_AUTH_HCI_ENABLED", "true")
+	t.Setenv("AE_AUTH_HCI_PROXY_SECRET", "fixture-proof-00000000000000000000")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Auth.HCIEnabled || cfg.Auth.HCIProxySecret != "fixture-proof-00000000000000000000" {
+		t.Fatal("HCI config missing")
+	}
+}

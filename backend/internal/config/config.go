@@ -103,6 +103,8 @@ type AuthConfig struct {
 	AccessTokenTTL  int        `mapstructure:"access_token_ttl"`  // seconds, default 7200 (2h)
 	RefreshTokenTTL int        `mapstructure:"refresh_token_ttl"` // seconds, default 604800 (7d)
 	HCIJWTSecret    string     `mapstructure:"hci_jwt_secret"`
+	HCIEnabled      bool       `mapstructure:"hci_enabled"`
+	HCIProxySecret  string     `mapstructure:"hci_proxy_secret"`
 	LDAP            LDAPConfig `mapstructure:"ldap"`
 }
 
@@ -218,6 +220,8 @@ func Load(path string) (*Config, error) {
 		"auth.access_token_ttl",
 		"auth.refresh_token_ttl",
 		"auth.hci_jwt_secret",
+		"auth.hci_enabled",
+		"auth.hci_proxy_secret",
 		"auth.ldap.url",
 		"auth.ldap.base_dn",
 		"auth.ldap.bind_dn",

@@ -458,8 +458,8 @@ func main() {
 	if relayProvider != nil {
 		authService.RegisterProvider(auth.NewSSOProvider(relayProvider, logger))
 	}
-	if cfg.Auth.HCIJWTSecret != "" {
-		authService.RegisterProvider(auth.NewHCIProvider(cfg.Auth.HCIJWTSecret))
+	if err := authService.ConfigureHCI(cfg.Auth.HCIEnabled, cfg.Auth.HCIJWTSecret, cfg.Auth.HCIProxySecret, cfg.Server.FrontendURL); err != nil {
+		logger.Fatal("configure HCI login", zap.Error(err))
 	}
 	authService.RegisterProvider(auth.NewLDAPProvider(&ldapConfig, logger))
 

@@ -58,9 +58,15 @@ func (h *AuthHandler) Login(c *gin.Context) {
 // existing AI Efficiency browser JWT pair. It is intentionally outside /api so
 // the Web HCI ingress protects it while the ordinary API ingress remains unchanged.
 func (h *AuthHandler) HCIBootstrap(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	c.Header("Pragma", "no-cache")
+	if !h.authService.HCIEnabled() {
+		c.Status(http.StatusNotFound)
+		return
+	}
 	tokens, userInfo, err := h.authService.LoginHCI(c.Request.Context(), c.Request)
 	if err != nil {
-		pkg.Error(c, http.StatusUnauthorized, err.Error())
+		pkg.Error(c, http.StatusUnauthorized, "HCI session could not be established")
 		return
 	}
 	pkg.Success(c, gin.H{"tokens": tokens, "user": userInfo})
@@ -69,6 +75,7 @@ func (h *AuthHandler) HCIBootstrap(c *gin.Context) {
 // Options handles GET /api/v1/auth/options.
 func (h *AuthHandler) Options(c *gin.Context) {
 	pkg.Success(c, gin.H{
+		"hci_enabled":       h.authService.HCIEnabled(),
 		"ldap_enabled":      h.ldapEnabled(),
 		"dev_login_enabled": devLoginEnabled(),
 	})

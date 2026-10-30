@@ -12,6 +12,7 @@ export interface AuthTokenPayload {
 }
 
 export interface AuthOptions {
+  hci_enabled?: boolean
   ldap_enabled: boolean
   dev_login_enabled: boolean
 }
@@ -37,5 +38,5 @@ export function getMe() {
 }
 
 export function hciBootstrap() {
-	return axios.get<ApiResponse<AuthTokenPayload>>('/auth/hci/bootstrap')
+	return axios.post<ApiResponse<AuthTokenPayload>>('/auth/hci/bootstrap', {}, { timeout: 15000, withCredentials: true })
 }

@@ -37,14 +37,26 @@ registered.
 - Dev Login is outside the ordinary provider chain. It is available only when
   the server runs in debug mode and the explicit enablement environment flag is
   true.
-- HCI Web Bootstrap is a separate ingress-bound source. When
-  `GET /auth/hci/bootstrap` consumes the identity headers injected by the
-  trusted HCI ingress, reconciles the email into a local user, and issues the
-  same local JWT pair. It does not accept username/password credentials and
-  must not be exposed through an unprotected API route. If
-  `AE_AUTH_HCI_JWT_SECRET` is configured, the application additionally
-  verifies `x-hci-auth-jwt`; otherwise it uses the HCI `x-oauth-email` header
-  after Kong has authenticated the Web-only route.
+- HCI is opt-in (`AE_AUTH_HCI_ENABLED=true`). Login options then advertise
+  `hci_enabled`; `/login` completes a same-origin POST to `/auth/hci/bootstrap`
+  automatically, including when entered from a protected administrator deep link.
+  HCI failures show a retry error, not a password form. The bootstrap route bypasses
+  embedded SPA fallback and returns JSON with `Cache-Control: no-store`.
+- Header mode requires `AE_AUTH_HCI_PROXY_SECRET` (at least 32 bytes). A Kong
+  request-transformer on the HCI Web route removes any client proof header and
+  inserts the deployment secret as `X-AE-HCI-Proxy-Secret`. The backend also
+  requires `X-Consumer-Username: agora-hciauth-v1`; ordinary key-auth Consumers
+  cannot impersonate the HCI identity. Direct service requests and the ordinary
+  API route do not obtain this proof. Keep the secret in server-side config,
+  never in browser JavaScript, responses, request URLs or logs.
+- Optional `AE_AUTH_HCI_JWT_SECRET` enables mandatory HS256 signature and expiry
+  validation instead of classic-header mode; missing JWT never downgrades.
+- HCI lookup uses only the authenticated email. Existing username, local role,
+  Relay ID and encrypted Relay password are preserved; new users receive role
+  `user`. HCI never calls LDAP or provisions/rotates Relay credentials during
+  sign-in. Disabled local accounts are rejected. `auth_source=hci` is persisted.
+- The bootstrap is POST-only, requires the configured frontend Origin and JSON,
+  and rejects missing/forged ingress identity. Other APIs retain Bearer auth.
 - Browser login stores the returned access and refresh tokens as one browser
   session generation, then resolves the current user before treating identity
   or role as confirmed.
@@ -176,11 +188,11 @@ API operations even though the browser entry pages themselves are public.
 
 ## Current Limitations
 
-- HCI JWT verification is optional defense in depth. The application must
-  keep the bootstrap route reachable only through the HCI-protected Web
-  ingress; it must not expose the route through the ordinary API ingress or a
-  directly reachable Service.
-
+- HCI logout currently clears only the local browser session; the IAM session
+  remains external. A later visit may sign in automatically while IAM is active.
+  Issued local tokens retain their configured lifetimes and local revocation
+  boundary; IAM logout alone does not revoke them. Header mode relies on the
+  platform overwriting its identity headers and must be validated per cluster.
 - Authorization codes and device entries are process-local and are lost on
   restart. A client that reaches another process or loses the issuing process
   must restart authorization.

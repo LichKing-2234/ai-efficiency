@@ -76,8 +76,11 @@ auth:
   jwt_secret: "change-me-in-production-32-bytes!"
   access_token_ttl: 7200      # 2 hours
   refresh_token_ttl: 604800   # 7 days
-  # HCI ingress HS256 verification key. Leave empty until the platform
-  # provides the key and claim contract for the target cluster.
+  # Opt-in browser SSO. Header mode requires a per-app proof overwritten by
+  # the HCI-protected Kong route; never expose the proof to browser JavaScript.
+  hci_enabled: false
+  hci_proxy_secret: ""
+  # Optional HS256 assertion verification; when set, JWT and expiry are mandatory.
   hci_jwt_secret: ""
   ldap:
     url: "ldap://localhost:389"

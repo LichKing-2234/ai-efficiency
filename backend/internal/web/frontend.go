@@ -348,7 +348,8 @@ func appendVary(header http.Header, token string) {
 
 func shouldBypassEmbeddedFrontend(requestPath string) bool {
 	trimmed := strings.TrimSpace(requestPath)
-	return trimmed == "/api" ||
+	return trimmed == "/auth/hci/bootstrap" ||
+		trimmed == "/api" ||
 		trimmed == "/oauth" ||
 		strings.HasPrefix(trimmed, "/api/") ||
 		strings.HasPrefix(trimmed, "/oauth/")

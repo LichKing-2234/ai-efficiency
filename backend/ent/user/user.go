@@ -124,6 +124,7 @@ const (
 	AuthSourceSub2apiSSO AuthSource = "sub2api_sso"
 	AuthSourceRelaySSO   AuthSource = "relay_sso"
 	AuthSourceLdap       AuthSource = "ldap"
+	AuthSourceHci        AuthSource = "hci"
 )
 
 func (as AuthSource) String() string {
@@ -133,7 +134,7 @@ func (as AuthSource) String() string {
 // AuthSourceValidator is a validator for the "auth_source" field enum values. It is called by the builders before save.
 func AuthSourceValidator(as AuthSource) error {
 	switch as {
-	case AuthSourceSub2apiSSO, AuthSourceRelaySSO, AuthSourceLdap:
+	case AuthSourceSub2apiSSO, AuthSourceRelaySSO, AuthSourceLdap, AuthSourceHci:
 		return nil
 	default:
 		return fmt.Errorf("user: invalid enum value for auth_source field: %q", as)

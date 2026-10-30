@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { getAuthOptions } from '@/api/auth'
@@ -17,7 +17,11 @@ const password = ref('')
 const source = ref('SSO')
 const error = ref('')
 const loading = ref(false)
+const optionsLoaded = ref(false)
+let active = true
+onUnmounted(() => { active = false })
 const authOptions = ref({
+  hci_enabled: false,
   ldap_enabled: false,
   dev_login_enabled: false,
 })
@@ -26,18 +30,38 @@ onMounted(async () => {
   try {
     const res = await getAuthOptions()
     authOptions.value = {
+      hci_enabled: Boolean(res.data.data?.hci_enabled),
       ldap_enabled: Boolean(res.data.data?.ldap_enabled),
       dev_login_enabled: Boolean(res.data.data?.dev_login_enabled),
     }
     source.value = authOptions.value.ldap_enabled ? 'LDAP' : 'SSO'
+    if (authOptions.value.hci_enabled) await handleHCI()
   } catch {
     authOptions.value = {
+      hci_enabled: false,
       ldap_enabled: false,
       dev_login_enabled: false,
     }
     source.value = 'SSO'
+  } finally {
+    optionsLoaded.value = true
   }
 })
+
+async function handleHCI() {
+  loading.value = true
+  error.value = ''
+  const redirect = resolveSafeRedirect(router.currentRoute.value.query.redirect)
+  try {
+    const user = await auth.hciBootstrap()
+    if (active && user) await router.replace(redirect)
+    else if (active) error.value = t('auth.hciFailed')
+  } catch {
+    if (active) error.value = t('auth.hciFailed')
+  } finally {
+    if (active) loading.value = false
+  }
+}
 
 async function handleLogin() {
   error.value = ''
@@ -79,7 +103,12 @@ async function handleDevLogin() {
         type="info"
       />
 
-      <el-form class="space-y-4" label-position="top" @submit.prevent="handleLogin">
+      <div v-if="authOptions.hci_enabled" data-testid="hci-login" class="space-y-4">
+        <p v-if="loading">{{ t('auth.hciConnecting') }}</p>
+        <el-alert v-if="error" :closable="false" :title="error" type="error" />
+        <el-button v-if="error" @click="handleHCI">{{ t('auth.hciRetry') }}</el-button>
+      </div>
+      <el-form v-else-if="optionsLoaded" class="space-y-4" label-position="top" @submit.prevent="handleLogin">
         <el-form-item :label="t('auth.email')" label-for="username">
           <el-input
             id="username"
@@ -128,7 +157,7 @@ async function handleDevLogin() {
         </el-button>
       </el-form>
 
-      <template v-if="authOptions.dev_login_enabled">
+      <template v-if="!authOptions.hci_enabled && authOptions.dev_login_enabled">
         <el-divider>{{ t('auth.devMode') }}</el-divider>
 
         <el-button

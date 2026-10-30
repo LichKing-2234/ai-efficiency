@@ -228,13 +228,6 @@ export function installAuthNavigationGuards(router: Router): () => void {
 
     if (!to.meta.public) {
       if (!auth.isAuthenticated) {
-        try {
-          const user = await auth.hciBootstrap()
-          if (user) return undefined
-        } catch {
-          // Fall through to the existing login screen when the request did not
-          // arrive through an HCI-protected Web ingress.
-        }
         return { path: '/login', query: { redirect: to.fullPath } }
       }
       if (!auth.user) {

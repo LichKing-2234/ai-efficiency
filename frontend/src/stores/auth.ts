@@ -71,11 +71,13 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function hciBootstrap(): Promise<User | null> {
-	const res = await apiHciBootstrap()
-	const data = res.data.data
-	if (!data) return null
-	return installLoginPayload(data)
-	}
+    const captured = readBrowserSession().generation
+    const res = await apiHciBootstrap()
+    if (readBrowserSession().generation !== captured) return null
+    const data = res.data.data
+    if (!data?.tokens?.access_token) throw new Error('HCI response missing session')
+    return installLoginPayload(data)
+  }
 
   function fetchMe(): Promise<User | null> {
     const captured = readBrowserSession()
