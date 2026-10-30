@@ -232,9 +232,10 @@ describe('i18n locale loading', () => {
       ...Object.keys(ownerAccountsMessages['zh-CN']),
     ].sort()
 
-    expect(englishKeys).toHaveLength(1532)
-    expect(chineseKeys).toHaveLength(1532)
+    expect(englishKeys).toHaveLength(1535)
+    expect(chineseKeys).toHaveLength(1535)
     expect(englishKeys).toContain('activity.title')
+    expect(englishKeys).toEqual(expect.arrayContaining(['auth.hciConnecting', 'auth.hciFailed', 'auth.hciRetry']))
     expect(englishKeys).toContain('pagination.range')
     expect(englishKeys).toContain('pagination.pageOf')
     expect(englishKeys).toContain('activity.teamsTitle')
