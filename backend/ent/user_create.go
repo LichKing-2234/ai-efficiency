@@ -42,6 +42,34 @@ func (uc *UserCreate) SetAuthSource(us user.AuthSource) *UserCreate {
 	return uc
 }
 
+// SetOidcIssuer sets the "oidc_issuer" field.
+func (uc *UserCreate) SetOidcIssuer(s string) *UserCreate {
+	uc.mutation.SetOidcIssuer(s)
+	return uc
+}
+
+// SetNillableOidcIssuer sets the "oidc_issuer" field if the given value is not nil.
+func (uc *UserCreate) SetNillableOidcIssuer(s *string) *UserCreate {
+	if s != nil {
+		uc.SetOidcIssuer(*s)
+	}
+	return uc
+}
+
+// SetOidcSubject sets the "oidc_subject" field.
+func (uc *UserCreate) SetOidcSubject(s string) *UserCreate {
+	uc.mutation.SetOidcSubject(s)
+	return uc
+}
+
+// SetNillableOidcSubject sets the "oidc_subject" field if the given value is not nil.
+func (uc *UserCreate) SetNillableOidcSubject(s *string) *UserCreate {
+	if s != nil {
+		uc.SetOidcSubject(*s)
+	}
+	return uc
+}
+
 // SetRelayUserID sets the "relay_user_id" field.
 func (uc *UserCreate) SetRelayUserID(i int) *UserCreate {
 	uc.mutation.SetRelayUserID(i)
@@ -340,6 +368,14 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := uc.mutation.AuthSource(); ok {
 		_spec.SetField(user.FieldAuthSource, field.TypeEnum, value)
 		_node.AuthSource = value
+	}
+	if value, ok := uc.mutation.OidcIssuer(); ok {
+		_spec.SetField(user.FieldOidcIssuer, field.TypeString, value)
+		_node.OidcIssuer = &value
+	}
+	if value, ok := uc.mutation.OidcSubject(); ok {
+		_spec.SetField(user.FieldOidcSubject, field.TypeString, value)
+		_node.OidcSubject = &value
 	}
 	if value, ok := uc.mutation.RelayUserID(); ok {
 		_spec.SetField(user.FieldRelayUserID, field.TypeInt, value)

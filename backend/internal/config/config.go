@@ -103,6 +103,17 @@ type AuthConfig struct {
 	AccessTokenTTL  int        `mapstructure:"access_token_ttl"`  // seconds, default 7200 (2h)
 	RefreshTokenTTL int        `mapstructure:"refresh_token_ttl"` // seconds, default 604800 (7d)
 	LDAP            LDAPConfig `mapstructure:"ldap"`
+	OIDC            OIDCConfig `mapstructure:"oidc"`
+}
+
+type OIDCConfig struct {
+	Enabled        bool     `mapstructure:"enabled"`
+	Issuer         string   `mapstructure:"issuer"`
+	ClientID       string   `mapstructure:"client_id"`
+	ClientSecret   string   `mapstructure:"client_secret"`
+	RedirectURL    string   `mapstructure:"redirect_url"`
+	AllowEmailLink bool     `mapstructure:"allow_email_link"`
+	Scopes         []string `mapstructure:"scopes"`
 }
 
 type LDAPConfig struct {
@@ -164,6 +175,9 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("auth.access_token_ttl", 7200)
 	v.SetDefault("auth.refresh_token_ttl", 604800)
 	v.SetDefault("auth.ldap.user_filter", "(uid=%s)")
+	v.SetDefault("auth.oidc.enabled", false)
+	v.SetDefault("auth.oidc.allow_email_link", false)
+	v.SetDefault("auth.oidc.scopes", []string{"openid", "profile", "email"})
 	v.SetDefault("version_check.enabled", true)
 	v.SetDefault("version_check.release_api_url", "https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest")
 	// Config file
@@ -222,6 +236,13 @@ func Load(path string) (*Config, error) {
 		"auth.ldap.bind_password",
 		"auth.ldap.user_filter",
 		"auth.ldap.tls",
+		"auth.oidc.enabled",
+		"auth.oidc.issuer",
+		"auth.oidc.client_id",
+		"auth.oidc.client_secret",
+		"auth.oidc.redirect_url",
+		"auth.oidc.allow_email_link",
+		"auth.oidc.scopes",
 		"encryption.key",
 		"redis.addr",
 		"redis.password",

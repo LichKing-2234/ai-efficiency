@@ -136,6 +136,7 @@ describe('LoginView', () => {
       global: { plugins: [createPinia(), router] },
     })
 
+    await flushPromises()
     await wrapper.get('input[data-testid="username-field"]').setValue('bad')
     await wrapper.get('input[data-testid="password-field"]').setValue('bad')
     await wrapper.find('form').trigger('submit')

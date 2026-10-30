@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -59,7 +60,74 @@ func (h *AuthHandler) Options(c *gin.Context) {
 	pkg.Success(c, gin.H{
 		"ldap_enabled":      h.ldapEnabled(),
 		"dev_login_enabled": devLoginEnabled(),
+		"oidc_enabled":      h.authService.OIDCEnabled(),
 	})
+}
+
+func (h *AuthHandler) OIDCStart(c *gin.Context) {
+	provider := h.authService.OIDC()
+	if provider == nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	redirect := c.Query("redirect")
+	if redirect == "" || redirect[0] != '/' || strings.HasPrefix(redirect, "//") {
+		redirect = "/"
+	}
+	state, target, err := provider.Begin(redirect)
+	if err != nil {
+		pkg.Error(c, http.StatusServiceUnavailable, "OIDC login unavailable")
+		return
+	}
+	secure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
+	http.SetCookie(c.Writer, &http.Cookie{Name: "ae_oidc_state", Value: state, Path: "/auth/oidc/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: 300})
+	c.Redirect(http.StatusFound, target)
+}
+
+func (h *AuthHandler) OIDCCallback(c *gin.Context) {
+	provider := h.authService.OIDC()
+	if provider == nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	cookie, err := c.Request.Cookie("ae_oidc_state")
+	queryState := c.Query("state")
+	if err != nil || cookie.Value == "" || queryState == "" || queryState != cookie.Value || c.Query("error") != "" {
+		pkg.Error(c, http.StatusUnauthorized, "invalid OIDC state")
+		return
+	}
+	handoff, redirect, err := provider.Complete(c.Request.Context(), cookie.Value, c.Query("code"), h.authService)
+	secure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
+	http.SetCookie(c.Writer, &http.Cookie{Name: "ae_oidc_state", Value: "", Path: "/auth/oidc/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	if err != nil {
+		pkg.Error(c, http.StatusUnauthorized, "OIDC login could not be completed")
+		return
+	}
+	http.SetCookie(c.Writer, &http.Cookie{Name: "ae_oidc_handoff", Value: handoff, Path: "/auth/oidc/complete", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: 120})
+	location := "/login?oidc=complete&redirect=" + url.QueryEscape(redirect)
+	c.Redirect(http.StatusFound, location)
+}
+
+func (h *AuthHandler) OIDCComplete(c *gin.Context) {
+	provider := h.authService.OIDC()
+	if provider == nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	cookie, err := c.Request.Cookie("ae_oidc_handoff")
+	secure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
+	http.SetCookie(c.Writer, &http.Cookie{Name: "ae_oidc_handoff", Value: "", Path: "/auth/oidc/complete", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	if err != nil || cookie.Value == "" {
+		pkg.Error(c, http.StatusUnauthorized, "OIDC handoff missing")
+		return
+	}
+	tokens, user, redirect, err := provider.Take(cookie.Value)
+	if err != nil {
+		pkg.Error(c, http.StatusUnauthorized, "OIDC handoff expired")
+		return
+	}
+	pkg.Success(c, gin.H{"tokens": tokens, "user": user, "redirect": redirect})
 }
 
 // Refresh handles POST /api/v1/auth/refresh

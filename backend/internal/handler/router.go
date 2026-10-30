@@ -250,6 +250,9 @@ func setupRouter(
 	authHandler := NewAuthHandler(authService, entClient, adminSettingsHandler, ReportingCapabilities{
 		SetupAvailable: options.AttributionSetupAvailable, ReadinessAvailable: options.AttributionReadinessAvailable,
 	})
+	r.GET("/auth/oidc/start", authHandler.OIDCStart)
+	r.GET("/auth/oidc/callback", authHandler.OIDCCallback)
+	r.GET("/auth/oidc/complete", authHandler.OIDCComplete)
 	credentialHandler := NewCredentialHandler(entClient, encryptionKey)
 	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey, repoService)
 	repoHandler := NewRepoHandler(repoService)

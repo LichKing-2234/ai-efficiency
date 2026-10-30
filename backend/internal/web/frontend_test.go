@@ -720,3 +720,24 @@ func TestServeEmbeddedFrontendBypassesNormalizedOAuthTokenPath(t *testing.T) {
 		t.Fatalf("body=%q", w.Body.String())
 	}
 }
+
+func TestServeEmbeddedFrontendBypassesOIDCBrowserRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "dist"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "dist", "index.html"), []byte("<html>app</html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	restore := SetFrontendFSForTest(os.DirFS(root))
+	defer restore()
+	router := gin.New()
+	router.Use(ServeEmbeddedFrontend())
+	router.GET("/auth/oidc/start", func(c *gin.Context) { c.String(http.StatusFound, "oidc") })
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/auth/oidc/start", nil))
+	if w.Code != http.StatusFound || w.Body.String() != "oidc" {
+		t.Fatalf("status=%d body=%q", w.Code, w.Body.String())
+	}
+}

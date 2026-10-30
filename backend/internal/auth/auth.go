@@ -47,6 +47,7 @@ type AuthProvider interface {
 
 // Service handles authentication logic.
 type Service struct {
+	oidc                  *OIDCService
 	providers             []AuthProvider
 	entClient             *ent.Client
 	jwtSecret             []byte

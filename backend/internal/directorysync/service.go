@@ -3,6 +3,7 @@ package directorysync
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -465,7 +466,7 @@ func (s *Service) failRun(ctx context.Context, runID int, message string) (*ent.
 	if err != nil {
 		return nil, err
 	}
-	return run, fmt.Errorf(message)
+	return run, errors.New(message)
 }
 
 func (s *Service) completeRun(ctx context.Context, runID int, source *ent.DirectorySource, result *ExecutionResult) (*ent.DirectorySyncRun, error) {

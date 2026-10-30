@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, onScopeDispose, ref } from 'vue'
-import { devLogin as apiDevLogin, getMe, login as apiLogin } from '@/api/auth'
+import { completeOIDC as apiCompleteOIDC, devLogin as apiDevLogin, getMe, login as apiLogin } from '@/api/auth'
 import { resetSessionResources } from '@/stores/sessionResources'
 import {
   clearBrowserSession,
@@ -49,7 +49,11 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     replaceBrowserSession({ accessToken, refreshToken })
-    return ensureUser()
+    const user = await ensureUser()
+    if (user) {
+      localStorage.removeItem('oidc_logout_requested')
+    }
+    return user
   }
 
   async function login(req: LoginRequest): Promise<User | null> {
@@ -68,6 +72,25 @@ export const useAuthStore = defineStore('auth', () => {
       return null
     }
     return installLoginPayload(data)
+  }
+
+  async function completeOIDC(): Promise<User | null> {
+    const capturedGeneration = readBrowserSession().generation
+    if (localStorage.getItem('oidc_logout_requested') === '1') {
+      return null
+    }
+    const res = await apiCompleteOIDC()
+    if (readBrowserSession().generation !== capturedGeneration
+      || localStorage.getItem('oidc_logout_requested') === '1') {
+      return null
+    }
+    const data = res.data.data
+    if (!data) return null
+    const user = await installLoginPayload(data)
+    if (readBrowserSession().generation !== capturedGeneration + 1) {
+      return null
+    }
+    return user
   }
 
   function fetchMe(): Promise<User | null> {
@@ -121,10 +144,11 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function logout() {
+    localStorage.setItem('oidc_logout_requested', '1')
     clearBrowserSession()
   }
 
-  return { user, token, isAuthenticated, isAdmin, login, devLogin, logout, fetchMe, ensureUser }
+  return { user, token, isAuthenticated, isAdmin, login, devLogin, completeOIDC, logout, fetchMe, ensureUser }
 })
 
 type CurrentUserRequest = {

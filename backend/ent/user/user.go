@@ -21,6 +21,10 @@ const (
 	FieldEmail = "email"
 	// FieldAuthSource holds the string denoting the auth_source field in the database.
 	FieldAuthSource = "auth_source"
+	// FieldOidcIssuer holds the string denoting the oidc_issuer field in the database.
+	FieldOidcIssuer = "oidc_issuer"
+	// FieldOidcSubject holds the string denoting the oidc_subject field in the database.
+	FieldOidcSubject = "oidc_subject"
 	// FieldRelayUserID holds the string denoting the relay_user_id field in the database.
 	FieldRelayUserID = "relay_user_id"
 	// FieldRelayAuthPassword holds the string denoting the relay_auth_password field in the database.
@@ -83,6 +87,8 @@ var Columns = []string{
 	FieldUsername,
 	FieldEmail,
 	FieldAuthSource,
+	FieldOidcIssuer,
+	FieldOidcSubject,
 	FieldRelayUserID,
 	FieldRelayAuthPassword,
 	FieldLdapDn,
@@ -124,6 +130,7 @@ const (
 	AuthSourceSub2apiSSO AuthSource = "sub2api_sso"
 	AuthSourceRelaySSO   AuthSource = "relay_sso"
 	AuthSourceLdap       AuthSource = "ldap"
+	AuthSourceOidc       AuthSource = "oidc"
 )
 
 func (as AuthSource) String() string {
@@ -133,7 +140,7 @@ func (as AuthSource) String() string {
 // AuthSourceValidator is a validator for the "auth_source" field enum values. It is called by the builders before save.
 func AuthSourceValidator(as AuthSource) error {
 	switch as {
-	case AuthSourceSub2apiSSO, AuthSourceRelaySSO, AuthSourceLdap:
+	case AuthSourceSub2apiSSO, AuthSourceRelaySSO, AuthSourceLdap, AuthSourceOidc:
 		return nil
 	default:
 		return fmt.Errorf("user: invalid enum value for auth_source field: %q", as)
@@ -187,6 +194,16 @@ func ByEmail(opts ...sql.OrderTermOption) OrderOption {
 // ByAuthSource orders the results by the auth_source field.
 func ByAuthSource(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAuthSource, opts...).ToFunc()
+}
+
+// ByOidcIssuer orders the results by the oidc_issuer field.
+func ByOidcIssuer(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOidcIssuer, opts...).ToFunc()
+}
+
+// ByOidcSubject orders the results by the oidc_subject field.
+func ByOidcSubject(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOidcSubject, opts...).ToFunc()
 }
 
 // ByRelayUserID orders the results by the relay_user_id field.
