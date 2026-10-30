@@ -481,3 +481,17 @@ it('HCI exchange failure offers retry without LDAP or Relay password fallback', 
   expect(localStorage.getItem('token')).toBeNull()
   wrapper.unmount()
 })
+
+it('does not automatically re-bootstrap after an explicit logout', async () => {
+  const { getAuthOptions, hciBootstrap } = await import('@/api/auth')
+  vi.clearAllMocks()
+  vi.mocked(getAuthOptions).mockResolvedValue({ data: { data: { hci_enabled: true, ldap_enabled: false, dev_login_enabled: false } } } as any)
+  const pinia = createPinia(); setActivePinia(pinia)
+  const auth = useAuthStore(pinia); auth.logout()
+  const router = createTestRouter(); await router.push('/login'); await router.isReady()
+  const wrapper = mount(LoginView, { global: { plugins: [pinia, router] } })
+  await flushPromises()
+  expect(hciBootstrap).not.toHaveBeenCalled()
+  expect(wrapper.text()).toContain('You signed out of this application')
+  wrapper.unmount()
+})

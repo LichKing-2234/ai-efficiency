@@ -6,6 +6,7 @@ import { getAuthOptions } from '@/api/auth'
 import AuthShell from '@/components/AuthShell.vue'
 import { useI18n } from '@/i18n'
 import { resolveSafeRedirect } from '@/router/authGuard'
+import { hciLoginSuppressed } from '@/auth/browserSession'
 import { Lock, User } from '@element-plus/icons-vue'
 
 const auth = useAuthStore()
@@ -35,7 +36,13 @@ onMounted(async () => {
       dev_login_enabled: Boolean(res.data.data?.dev_login_enabled),
     }
     source.value = authOptions.value.ldap_enabled ? 'LDAP' : 'SSO'
-    if (authOptions.value.hci_enabled) await handleHCI()
+    if (authOptions.value.hci_enabled) {
+      if (hciLoginSuppressed()) {
+        error.value = t('auth.hciSignedOut')
+      } else {
+        await handleHCI()
+      }
+    }
   } catch {
     authOptions.value = {
       hci_enabled: false,

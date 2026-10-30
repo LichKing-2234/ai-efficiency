@@ -24,6 +24,7 @@ export interface AuthExpiryEvent {
 
 const TOKEN_KEY = 'token'
 const REFRESH_TOKEN_KEY = 'refresh_token'
+const HCI_LOGOUT_KEY = 'hci_logout_requested'
 
 let generation = 0
 let latestAuthExpiry: AuthExpiryEvent | null = null
@@ -69,6 +70,18 @@ export function readBrowserSession(): BrowserSessionSnapshot {
     accessToken: localStorage.getItem(TOKEN_KEY),
     refreshToken: localStorage.getItem(REFRESH_TOKEN_KEY),
   }
+}
+
+export function hciLoginSuppressed(): boolean {
+  return localStorage.getItem(HCI_LOGOUT_KEY) === '1'
+}
+
+export function suppressHciLogin(): void {
+  localStorage.setItem(HCI_LOGOUT_KEY, '1')
+}
+
+export function allowHciLogin(): void {
+  localStorage.removeItem(HCI_LOGOUT_KEY)
 }
 
 export function replaceBrowserSession(tokens: BrowserTokenPair): BrowserSessionSnapshot {

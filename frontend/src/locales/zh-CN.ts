@@ -732,6 +732,7 @@ const zhCN = {
   'repoDetail.phaseFailed': '失败',
   'auth.hciConnecting': '正在完成公司账号登录…',
   'auth.hciFailed': '公司账号登录未完成，请重试或联系管理员。',
+  'auth.hciSignedOut': '你已退出当前应用。准备返回时，再点击公司账号登录。',
   'auth.hciRetry': '重试',
   'auth.signInTitle': '登录',
   'auth.signInSubtitle': '使用公司账号访问 AI 效能工作流。',

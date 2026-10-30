@@ -5,9 +5,11 @@ import { resetSessionResources } from '@/stores/sessionResources'
 import {
   clearBrowserSession,
   expireBrowserSession,
+  allowHciLogin,
   onBrowserSessionTransition,
   readBrowserSession,
   replaceBrowserSession,
+  suppressHciLogin,
 } from '@/auth/browserSession'
 import type { AuthTokenPayload } from '@/api/auth'
 import type { User, LoginRequest } from '@/types'
@@ -53,6 +55,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function login(req: LoginRequest): Promise<User | null> {
+    allowHciLogin()
     const res = await apiLogin(req)
     const data = res.data.data
     if (!data) {
@@ -71,6 +74,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function hciBootstrap(): Promise<User | null> {
+    allowHciLogin()
     const captured = readBrowserSession().generation
     const res = await apiHciBootstrap()
     if (readBrowserSession().generation !== captured) return null
@@ -130,6 +134,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function logout() {
+    suppressHciLogin()
     clearBrowserSession()
   }
 
