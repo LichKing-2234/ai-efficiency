@@ -14,8 +14,9 @@ func TestOIDCCallbackURLUsesForwardedHost(t *testing.T) {
 	c.Request.Header.Set("X-Forwarded-Proto", "https")
 	c.Request.Header.Set("X-Forwarded-Host", "ai-efficiency-staging.la3.agoralab.co")
 
-	if got, want := oidcCallbackURL(c), "https://ai-efficiency-staging.la3.agoralab.co/auth/oidc/callback"; got != want {
-		t.Fatalf("oidcCallbackURL() = %q, want %q", got, want)
+	got := oidcCallbackCandidates(c)
+	if len(got) == 0 || got[0] != "https://ai-efficiency-staging.la3.agoralab.co/auth/oidc/callback" {
+		t.Fatalf("oidcCallbackCandidates() = %q", got)
 	}
 }
 
@@ -24,7 +25,8 @@ func TestOIDCCallbackURLFallsBackToRequestHost(t *testing.T) {
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest("GET", "http://ai-efficiency.example.test/auth/oidc/start", nil)
 
-	if got, want := oidcCallbackURL(c), "http://ai-efficiency.example.test/auth/oidc/callback"; got != want {
-		t.Fatalf("oidcCallbackURL() = %q, want %q", got, want)
+	got := oidcCallbackCandidates(c)
+	if len(got) == 0 || got[0] != "http://ai-efficiency.example.test/auth/oidc/callback" {
+		t.Fatalf("oidcCallbackCandidates() = %q", got)
 	}
 }
