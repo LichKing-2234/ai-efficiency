@@ -98,10 +98,17 @@ func oidcCallbackCandidates(c *gin.Context) []string {
 	if c.Request.TLS != nil || strings.EqualFold(forwardedProto, "https") {
 		scheme = "https"
 	}
-	hosts := []string{c.GetHeader("X-Forwarded-Host"), c.GetHeader("X-Original-Host"), c.Request.Host}
+	hosts := make([]string, 0, 4)
 	if referer, err := url.Parse(c.GetHeader("Referer")); err == nil && referer.Host != "" {
-		hosts = append([]string{referer.Host}, hosts...)
+		hosts = append(hosts, referer.Host)
 	}
+	// Kong can retain a route's forwarded host while the request Host is the
+	// public hostname the browser actually used. Prefer that public Host so a
+	// canonical-domain request does not receive a callback for another domain.
+	if !isInternalRequestHost(c.Request.Host) {
+		hosts = append(hosts, c.Request.Host)
+	}
+	hosts = append(hosts, c.GetHeader("X-Forwarded-Host"), c.GetHeader("X-Original-Host"), c.Request.Host)
 	seen := make(map[string]struct{}, len(hosts))
 	callbacks := make([]string, 0, len(hosts))
 	for _, raw := range hosts {
@@ -120,6 +127,24 @@ func oidcCallbackCandidates(c *gin.Context) []string {
 		}
 	}
 	return callbacks
+}
+
+func isInternalRequestHost(raw string) bool {
+	host := strings.TrimSpace(strings.Split(raw, ",")[0])
+	if host == "" {
+		return true
+	}
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = parsedHost
+	}
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	if host == "localhost" || host == "internal" || strings.HasSuffix(host, ".svc") || strings.HasSuffix(host, ".cluster.local") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsPrivate() || ip.IsLoopback()
+	}
+	return false
 }
 
 func (h *AuthHandler) OIDCCallback(c *gin.Context) {
