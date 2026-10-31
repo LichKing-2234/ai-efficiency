@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -121,6 +122,13 @@ func (s *OIDCService) Begin(redirect, callbackURL string) (state, urlValue strin
 	allowed := false
 	for _, value := range s.config.RedirectURLs {
 		if callbackURL == value {
+			allowed = true
+			break
+		}
+		requested, requestedErr := url.Parse(callbackURL)
+		configured, configuredErr := url.Parse(value)
+		if requestedErr == nil && configuredErr == nil && requested.Host == configured.Host && configured.Scheme == "https" {
+			callbackURL = value
 			allowed = true
 			break
 		}
