@@ -67,9 +67,18 @@ func NewOIDCService(ctx context.Context, cfg OIDCConfig) (*OIDCService, error) {
 	if cfg.Issuer == "" || cfg.Issuer == "/" || strings.TrimSpace(cfg.ClientID) == "" || strings.TrimSpace(cfg.ClientSecret) == "" || strings.TrimSpace(cfg.RedirectURL) == "" {
 		return nil, fmt.Errorf("OIDC requires issuer, client id, client secret and redirect URL")
 	}
-	if len(cfg.RedirectURLs) == 0 {
-		cfg.RedirectURLs = []string{cfg.RedirectURL}
+	redirectURLs := make([]string, 0, len(cfg.RedirectURLs))
+	for _, value := range cfg.RedirectURLs {
+		for _, item := range strings.Split(value, ",") {
+			if item = strings.TrimSpace(item); item != "" {
+				redirectURLs = append(redirectURLs, item)
+			}
+		}
 	}
+	if len(redirectURLs) == 0 {
+		redirectURLs = []string{cfg.RedirectURL}
+	}
+	cfg.RedirectURLs = redirectURLs
 	if cfg.HTTPClient != nil {
 		ctx = oidc.ClientContext(ctx, cfg.HTTPClient)
 	}
