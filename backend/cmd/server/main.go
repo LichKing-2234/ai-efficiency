@@ -458,6 +458,7 @@ func main() {
 		oidcService, err := auth.NewOIDCService(oidcContext, auth.OIDCConfig{
 			Issuer: cfg.Auth.OIDC.Issuer, ClientID: cfg.Auth.OIDC.ClientID,
 			ClientSecret: cfg.Auth.OIDC.ClientSecret, RedirectURL: redirectURL,
+			RedirectURLs: cfg.Auth.OIDC.RedirectURLs,
 			AllowEmailLink: cfg.Auth.OIDC.AllowEmailLink, Scopes: cfg.Auth.OIDC.Scopes,
 			HTTPClient: httpClients.oidc,
 		})

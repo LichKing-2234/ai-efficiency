@@ -23,6 +23,7 @@ type OIDCConfig struct {
 	ClientID       string
 	ClientSecret   string
 	RedirectURL    string
+	RedirectURLs   []string
 	AllowEmailLink bool
 	Scopes         []string
 	HTTPClient     *http.Client
@@ -38,6 +39,7 @@ type OIDCIdentity struct {
 
 type oidcPending struct {
 	nonce, verifier, redirect string
+	callback                  string
 	expires                   time.Time
 }
 
@@ -64,6 +66,9 @@ func NewOIDCService(ctx context.Context, cfg OIDCConfig) (*OIDCService, error) {
 	cfg.Issuer = strings.TrimSpace(cfg.Issuer)
 	if cfg.Issuer == "" || cfg.Issuer == "/" || strings.TrimSpace(cfg.ClientID) == "" || strings.TrimSpace(cfg.ClientSecret) == "" || strings.TrimSpace(cfg.RedirectURL) == "" {
 		return nil, fmt.Errorf("OIDC requires issuer, client id, client secret and redirect URL")
+	}
+	if len(cfg.RedirectURLs) == 0 {
+		cfg.RedirectURLs = []string{cfg.RedirectURL}
 	}
 	if cfg.HTTPClient != nil {
 		ctx = oidc.ClientContext(ctx, cfg.HTTPClient)
@@ -100,7 +105,20 @@ func randomOIDCValue() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-func (s *OIDCService) Begin(redirect string) (state, urlValue string, err error) {
+func (s *OIDCService) Begin(redirect, callbackURL string) (state, urlValue string, err error) {
+	if callbackURL == "" {
+		callbackURL = s.config.RedirectURL
+	}
+	allowed := false
+	for _, value := range s.config.RedirectURLs {
+		if callbackURL == value {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return "", "", fmt.Errorf("OIDC callback URL is not configured")
+	}
 	state, err = randomOIDCValue()
 	if err != nil {
 		return "", "", err
@@ -124,9 +142,11 @@ func (s *OIDCService) Begin(redirect string) (state, urlValue string, err error)
 		s.mu.Unlock()
 		return "", "", fmt.Errorf("OIDC login capacity reached")
 	}
-	s.pending[state] = oidcPending{nonce: nonce, verifier: verifier, redirect: redirect, expires: time.Now().Add(5 * time.Minute)}
+	s.pending[state] = oidcPending{nonce: nonce, verifier: verifier, redirect: redirect, callback: callbackURL, expires: time.Now().Add(5 * time.Minute)}
 	s.mu.Unlock()
-	return state, s.oauth.AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier)), nil
+	oauth := s.oauth
+	oauth.RedirectURL = callbackURL
+	return state, oauth.AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier)), nil
 }
 
 func (s *OIDCService) Complete(ctx context.Context, state, code string, authService *Service) (string, string, error) {
@@ -140,7 +160,9 @@ func (s *OIDCService) Complete(ctx context.Context, state, code string, authServ
 	if !ok || time.Now().After(pending.expires) || strings.TrimSpace(code) == "" {
 		return "", "", fmt.Errorf("invalid OIDC authorization state")
 	}
-	token, err := s.oauth.Exchange(ctx, code, oauth2.VerifierOption(pending.verifier))
+	oauth := s.oauth
+	oauth.RedirectURL = pending.callback
+	token, err := oauth.Exchange(ctx, code, oauth2.VerifierOption(pending.verifier))
 	if err != nil {
 		return "", "", fmt.Errorf("OIDC code exchange: %w", err)
 	}
