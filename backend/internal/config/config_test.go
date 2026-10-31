@@ -294,6 +294,8 @@ func TestLoadEnvOverride(t *testing.T) {
 	t.Setenv("AE_RELAY_URL", "http://relay.internal:4000")
 	t.Setenv("AE_RELAY_ADMIN_API_KEY", "relay-admin-key-from-env")
 	t.Setenv("AE_AUTH_LDAP_URL", "ldap://env-ldap.example.com:389")
+	t.Setenv("AE_AUTH_OIDC_ENABLED", "true")
+	t.Setenv("AE_AUTH_OIDC_REDIRECT_URLS", "https://ai-efficiency.agoralab.co/auth/oidc/callback,https://ai-efficiency.la3.agoralab.co/auth/oidc/callback")
 	t.Setenv("AE_ATTRIBUTION_LEDGER_EPOCH", "formal_v2")
 	t.Setenv("AE_ATTRIBUTION_V1_WRITE_POLICY", "upgrade_required")
 	t.Setenv("AE_ATTRIBUTION_MINIMUM_CLI_VERSION", "0.2.0-preview.5")
@@ -319,6 +321,12 @@ func TestLoadEnvOverride(t *testing.T) {
 	}
 	if cfg.Auth.LDAP.URL != "ldap://env-ldap.example.com:389" {
 		t.Errorf("auth.ldap.url = %q, want %q", cfg.Auth.LDAP.URL, "ldap://env-ldap.example.com:389")
+	}
+	if !cfg.Auth.OIDC.Enabled {
+		t.Fatal("auth.oidc.enabled = false, want true")
+	}
+	if got, want := cfg.Auth.OIDC.RedirectURLs, []string{"https://ai-efficiency.agoralab.co/auth/oidc/callback", "https://ai-efficiency.la3.agoralab.co/auth/oidc/callback"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("auth.oidc.redirect_urls = %#v, want %#v", got, want)
 	}
 	if cfg.Attribution != (AttributionConfig{LedgerEpoch: "formal_v2", V1WritePolicy: "upgrade_required", MinimumCLIVersion: "0.2.0-preview.5", CutoverAt: "2026-08-12T12:00:00Z", SetupAvailable: true, ReadinessAvailable: true}) {
 		t.Errorf("attribution protocol = %#v", cfg.Attribution)
