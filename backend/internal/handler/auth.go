@@ -74,7 +74,7 @@ func (h *AuthHandler) OIDCStart(c *gin.Context) {
 	if redirect == "" || redirect[0] != '/' || strings.HasPrefix(redirect, "//") {
 		redirect = "/"
 	}
-	state, target, err := provider.Begin(redirect)
+	state, target, err := provider.Begin(redirect, oidcCallbackURL(c))
 	if err != nil {
 		pkg.Error(c, http.StatusServiceUnavailable, "OIDC login unavailable")
 		return
@@ -82,6 +82,18 @@ func (h *AuthHandler) OIDCStart(c *gin.Context) {
 	secure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
 	http.SetCookie(c.Writer, &http.Cookie{Name: "ae_oidc_state", Value: state, Path: "/auth/oidc/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: 300})
 	c.Redirect(http.StatusFound, target)
+}
+
+func oidcCallbackURL(c *gin.Context) string {
+	scheme := "http"
+	if c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	host := c.GetHeader("X-Forwarded-Host")
+	if host == "" {
+		host = c.Request.Host
+	}
+	return scheme + "://" + host + "/auth/oidc/callback"
 }
 
 func (h *AuthHandler) OIDCCallback(c *gin.Context) {

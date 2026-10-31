@@ -112,6 +112,7 @@ type OIDCConfig struct {
 	ClientID       string   `mapstructure:"client_id"`
 	ClientSecret   string   `mapstructure:"client_secret"`
 	RedirectURL    string   `mapstructure:"redirect_url"`
+	RedirectURLs   []string `mapstructure:"redirect_urls"`
 	AllowEmailLink bool     `mapstructure:"allow_email_link"`
 	Scopes         []string `mapstructure:"scopes"`
 }

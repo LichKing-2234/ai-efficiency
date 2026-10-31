@@ -15,6 +15,7 @@ const { t } = useI18n()
 const username = ref('')
 const password = ref('')
 const source = ref('SSO')
+const loginMode = ref<'oidc' | 'sso'>('oidc')
 const error = ref('')
 const loading = ref(false)
 const optionsLoaded = ref(false)
@@ -35,7 +36,7 @@ onMounted(async () => {
       dev_login_enabled: Boolean(res.data.data?.dev_login_enabled),
       oidc_enabled: Boolean(res.data.data?.oidc_enabled),
     }
-    source.value = authOptions.value.ldap_enabled ? 'LDAP' : 'SSO'
+    source.value = authOptions.value.oidc_enabled ? 'SSO' : (authOptions.value.ldap_enabled ? 'LDAP' : 'SSO')
     if (authOptions.value.oidc_enabled) {
       if (router.currentRoute.value.query.oidc === 'complete') {
         loading.value = true
@@ -44,8 +45,6 @@ onMounted(async () => {
           localStorage.removeItem('oidc_logout_requested')
           await router.replace(resolveSafeRedirect(router.currentRoute.value.query.redirect))
         }
-      } else if (!oidcSignedOut.value) {
-        startOIDC()
       }
     }
   } catch {
@@ -123,15 +122,29 @@ async function handleDevLogin() {
         <el-alert :closable="false" :title="t('auth.loginFailed')" type="error" />
         <el-button @click="reloadLogin">{{ t('auth.signIn') }}</el-button>
       </div>
-      <div v-else-if="authOptions.oidc_enabled" data-testid="oidc-login" class="space-y-4">
-        <p v-if="loading">{{ t('auth.oidcConnecting') }}</p>
-        <p v-if="oidcSignedOut && !loading">{{ t('auth.oidcSignedOut') }}</p>
-        <el-button v-if="oidcSignedOut || !loading" :loading="loading" type="primary" @click="startOIDC">
-          {{ oidcSignedOut ? t('auth.oidcSignIn') : t('auth.signIn') }}
-        </el-button>
-        <el-button v-if="!loading && !oidcSignedOut" plain @click="logoutOIDC">{{ t('auth.signOut') }}</el-button>
+      <div v-if="authOptions.oidc_enabled" data-testid="login-method" class="space-y-4">
+        <el-form-item :label="t('auth.loginMethod')" label-for="login-method">
+          <el-select id="login-method" v-model="loginMode" class="w-full">
+            <el-option :label="t('auth.companyOAuthRecommended')" value="oidc" />
+            <el-option :label="t('auth.relaySsoFallback')" value="sso" />
+          </el-select>
+        </el-form-item>
+        <div v-if="loginMode === 'oidc'" data-testid="oidc-login" class="space-y-4">
+          <p v-if="loading">{{ t('auth.oidcConnecting') }}</p>
+          <p v-if="oidcSignedOut && !loading">{{ t('auth.oidcSignedOut') }}</p>
+          <el-button v-if="oidcSignedOut || !loading" :loading="loading" type="primary" @click="startOIDC">
+            {{ oidcSignedOut ? t('auth.oidcSignIn') : t('auth.signIn') }}
+          </el-button>
+          <el-button v-if="!loading && !oidcSignedOut" plain @click="logoutOIDC">{{ t('auth.signOut') }}</el-button>
+        </div>
       </div>
-      <el-form v-else-if="optionsLoaded" class="space-y-4" label-position="top" @submit.prevent="handleLogin">
+      <el-alert
+        v-if="authOptions.oidc_enabled && loginMode === 'sso'"
+        :closable="false"
+        :title="t('auth.relaySsoAdminOnly')"
+        type="warning"
+      />
+      <el-form v-if="optionsLoaded && (!authOptions.oidc_enabled || loginMode === 'sso')" class="space-y-4" label-position="top" @submit.prevent="handleLogin">
         <el-form-item :label="t('auth.email')" label-for="username">
           <el-input
             id="username"
@@ -163,7 +176,6 @@ async function handleDevLogin() {
             data-testid="auth-source"
             class="w-full"
           >
-            <el-option v-if="authOptions.ldap_enabled" label="LDAP" value="LDAP" />
             <el-option label="SSO" value="SSO" />
           </el-select>
         </el-form-item>
