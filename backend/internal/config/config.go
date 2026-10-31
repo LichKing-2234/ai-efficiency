@@ -242,6 +242,7 @@ func Load(path string) (*Config, error) {
 		"auth.oidc.client_id",
 		"auth.oidc.client_secret",
 		"auth.oidc.redirect_url",
+		"auth.oidc.redirect_urls",
 		"auth.oidc.allow_email_link",
 		"auth.oidc.scopes",
 		"encryption.key",
