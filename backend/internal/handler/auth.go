@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -74,7 +75,14 @@ func (h *AuthHandler) OIDCStart(c *gin.Context) {
 	if redirect == "" || redirect[0] != '/' || strings.HasPrefix(redirect, "//") {
 		redirect = "/"
 	}
-	state, target, err := provider.Begin(redirect, oidcCallbackURL(c))
+	var state, target string
+	var err error
+	for _, callback := range oidcCallbackCandidates(c) {
+		state, target, err = provider.Begin(redirect, callback)
+		if err == nil {
+			break
+		}
+	}
 	if err != nil {
 		pkg.Error(c, http.StatusServiceUnavailable, "OIDC login unavailable")
 		return
@@ -84,16 +92,30 @@ func (h *AuthHandler) OIDCStart(c *gin.Context) {
 	c.Redirect(http.StatusFound, target)
 }
 
-func oidcCallbackURL(c *gin.Context) string {
+func oidcCallbackCandidates(c *gin.Context) []string {
 	scheme := "http"
 	if c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https") {
 		scheme = "https"
 	}
-	host := c.GetHeader("X-Forwarded-Host")
-	if host == "" {
-		host = c.Request.Host
+	hosts := []string{c.GetHeader("X-Forwarded-Host"), c.GetHeader("X-Original-Host"), c.Request.Host}
+	seen := make(map[string]struct{}, len(hosts))
+	callbacks := make([]string, 0, len(hosts))
+	for _, raw := range hosts {
+		host := strings.TrimSpace(strings.Split(raw, ",")[0])
+		host = strings.TrimSuffix(strings.ToLower(host), ".")
+		if host == "" {
+			continue
+		}
+		if parsedHost, _, splitErr := net.SplitHostPort(host); splitErr == nil {
+			host = parsedHost
+		}
+		callback := scheme + "://" + host + "/auth/oidc/callback"
+		if _, ok := seen[callback]; !ok {
+			seen[callback] = struct{}{}
+			callbacks = append(callbacks, callback)
+		}
 	}
-	return scheme + "://" + host + "/auth/oidc/callback"
+	return callbacks
 }
 
 func (h *AuthHandler) OIDCCallback(c *gin.Context) {
