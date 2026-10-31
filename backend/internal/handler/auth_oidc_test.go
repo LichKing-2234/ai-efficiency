@@ -43,3 +43,16 @@ func TestOIDCCallbackURLPrefersPublicRequestHostOverStaleForwardedHost(t *testin
 		t.Fatalf("oidcCallbackCandidates() = %q", got)
 	}
 }
+
+func TestOIDCCallbackURLUsesExplicitBrowserHost(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("GET", "https://internal:8081/auth/oidc/start?host=ai-efficiency.agoralab.co", nil)
+	c.Request.Header.Set("X-Forwarded-Proto", "https")
+	c.Request.Header.Set("X-Forwarded-Host", "ai-efficiency.la3.agoralab.co")
+
+	got := oidcCallbackCandidates(c)
+	if len(got) == 0 || got[0] != "https://ai-efficiency.agoralab.co/auth/oidc/callback" {
+		t.Fatalf("oidcCallbackCandidates() = %q", got)
+	}
+}

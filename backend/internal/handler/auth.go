@@ -99,6 +99,9 @@ func oidcCallbackCandidates(c *gin.Context) []string {
 		scheme = "https"
 	}
 	hosts := make([]string, 0, 4)
+	if requestedHost := c.Query("host"); requestedHost != "" {
+		hosts = append(hosts, requestedHost)
+	}
 	if referer, err := url.Parse(c.GetHeader("Referer")); err == nil && referer.Host != "" {
 		hosts = append(hosts, referer.Host)
 	}
