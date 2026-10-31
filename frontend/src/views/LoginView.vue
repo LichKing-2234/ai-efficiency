@@ -66,7 +66,8 @@ function startOIDC() {
   oidcSignedOut.value = false
   loading.value = true
   const redirect = resolveSafeRedirect(router.currentRoute.value.query.redirect)
-  window.location.assign(`/auth/oidc/start?redirect=${encodeURIComponent(redirect)}`)
+  const host = window.location.host
+  window.location.assign(`/auth/oidc/start?redirect=${encodeURIComponent(redirect)}&host=${encodeURIComponent(host)}`)
 }
 
 function logoutOIDC() {
