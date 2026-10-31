@@ -99,6 +99,9 @@ func oidcCallbackCandidates(c *gin.Context) []string {
 		scheme = "https"
 	}
 	hosts := []string{c.GetHeader("X-Forwarded-Host"), c.GetHeader("X-Original-Host"), c.Request.Host}
+	if referer, err := url.Parse(c.GetHeader("Referer")); err == nil && referer.Host != "" {
+		hosts = append([]string{referer.Host}, hosts...)
+	}
 	seen := make(map[string]struct{}, len(hosts))
 	callbacks := make([]string, 0, len(hosts))
 	for _, raw := range hosts {
