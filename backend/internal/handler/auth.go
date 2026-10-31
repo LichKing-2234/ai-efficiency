@@ -94,7 +94,8 @@ func (h *AuthHandler) OIDCStart(c *gin.Context) {
 
 func oidcCallbackCandidates(c *gin.Context) []string {
 	scheme := "http"
-	if c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https") {
+	forwardedProto := strings.TrimSpace(strings.Split(c.GetHeader("X-Forwarded-Proto"), ",")[0])
+	if c.Request.TLS != nil || strings.EqualFold(forwardedProto, "https") {
 		scheme = "https"
 	}
 	hosts := []string{c.GetHeader("X-Forwarded-Host"), c.GetHeader("X-Original-Host"), c.Request.Host}
