@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -451,7 +452,39 @@ func ownerAccountStatusError(operation string, statusCode int, body []byte, newE
 			return fmt.Errorf("%w: %s", ErrCapabilityUnsupported, operation)
 		}
 	}
-	return fmt.Errorf("%s: unexpected status %d%s", operation, statusCode, relayErrorMessageSuffixFromData(body))
+	return &UpstreamStatusError{
+		operation: operation,
+		status:    statusCode,
+		suffix:    relayErrorMessageSuffixFromData(body),
+	}
+}
+
+// UpstreamStatusError is one owner-account upstream failure that carries the
+// HTTP status of the upstream response, so callers can classify it (expired
+// account authorization, rate limit, transient upstream failure) without
+// parsing error text. Error() keeps the historical message shape.
+type UpstreamStatusError struct {
+	operation string
+	status    int
+	suffix    string
+}
+
+func (e *UpstreamStatusError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s: unexpected status %d%s", e.operation, e.status, e.suffix)
+}
+
+// UpstreamHTTPStatus returns the HTTP status carried by an owner-account upstream
+// failure. Transport failures, sentinel capability errors and local validation
+// errors carry no status and report false.
+func UpstreamHTTPStatus(err error) (int, bool) {
+	var statusErr *UpstreamStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.status, true
+	}
+	return 0, false
 }
 
 func ownerAccountEndpointError(operation string, statusCode int, body []byte) error {

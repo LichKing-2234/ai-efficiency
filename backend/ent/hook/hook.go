@@ -9,6 +9,30 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 )
 
+// The AccountQuotaObservationFunc type is an adapter to allow the use of ordinary
+// function as AccountQuotaObservation mutator.
+type AccountQuotaObservationFunc func(context.Context, *ent.AccountQuotaObservationMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AccountQuotaObservationFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AccountQuotaObservationMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AccountQuotaObservationMutation", m)
+}
+
+// The AccountQuotaSweepFunc type is an adapter to allow the use of ordinary
+// function as AccountQuotaSweep mutator.
+type AccountQuotaSweepFunc func(context.Context, *ent.AccountQuotaSweepMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AccountQuotaSweepFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AccountQuotaSweepMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AccountQuotaSweepMutation", m)
+}
+
 // The AdminSubscriptionJobFunc type is an adapter to allow the use of ordinary
 // function as AdminSubscriptionJob mutator.
 type AdminSubscriptionJobFunc func(context.Context, *ent.AdminSubscriptionJobMutation) (ent.Value, error)

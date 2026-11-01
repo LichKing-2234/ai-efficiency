@@ -12,6 +12,10 @@ import (
 // Tx is a transactional client that is created by calling Client.Tx().
 type Tx struct {
 	config
+	// AccountQuotaObservation is the client for interacting with the AccountQuotaObservation builders.
+	AccountQuotaObservation *AccountQuotaObservationClient
+	// AccountQuotaSweep is the client for interacting with the AccountQuotaSweep builders.
+	AccountQuotaSweep *AccountQuotaSweepClient
 	// AdminSubscriptionJob is the client for interacting with the AdminSubscriptionJob builders.
 	AdminSubscriptionJob *AdminSubscriptionJobClient
 	// AttributionClaimGroup is the client for interacting with the AttributionClaimGroup builders.
@@ -217,6 +221,8 @@ func (tx *Tx) Client() *Client {
 }
 
 func (tx *Tx) init() {
+	tx.AccountQuotaObservation = NewAccountQuotaObservationClient(tx.config)
+	tx.AccountQuotaSweep = NewAccountQuotaSweepClient(tx.config)
 	tx.AdminSubscriptionJob = NewAdminSubscriptionJobClient(tx.config)
 	tx.AttributionClaimGroup = NewAttributionClaimGroupClient(tx.config)
 	tx.AttributionRequestClaim = NewAttributionRequestClaimClient(tx.config)
@@ -263,7 +269,7 @@ func (tx *Tx) init() {
 // of them in order to commit or rollback the transaction.
 //
 // If a closed transaction is embedded in one of the generated entities, and the entity
-// applies a query, for example: AdminSubscriptionJob.QueryXXX(), the query will be executed
+// applies a query, for example: AccountQuotaObservation.QueryXXX(), the query will be executed
 // through the driver which created this transaction.
 //
 // Note that txDriver is not goroutine safe.

@@ -9,6 +9,84 @@ import (
 )
 
 var (
+	// AccountQuotaObservationsColumns holds the columns for the "account_quota_observations" table.
+	AccountQuotaObservationsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "provider_id", Type: field.TypeInt},
+		{Name: "account_id", Type: field.TypeInt64},
+		{Name: "sweep_id", Type: field.TypeInt},
+		{Name: "plan_type", Type: field.TypeString, Nullable: true},
+		{Name: "windows", Type: field.TypeJSON, Nullable: true},
+		{Name: "credits", Type: field.TypeJSON, Nullable: true},
+		{Name: "reset_credit_snapshot", Type: field.TypeJSON, Nullable: true},
+		{Name: "observed_at", Type: field.TypeTime},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// AccountQuotaObservationsTable holds the schema information for the "account_quota_observations" table.
+	AccountQuotaObservationsTable = &schema.Table{
+		Name:       "account_quota_observations",
+		Columns:    AccountQuotaObservationsColumns,
+		PrimaryKey: []*schema.Column{AccountQuotaObservationsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "accountquotaobservation_provider_id_account_id",
+				Unique:  true,
+				Columns: []*schema.Column{AccountQuotaObservationsColumns[1], AccountQuotaObservationsColumns[2]},
+			},
+			{
+				Name:    "accountquotaobservation_provider_id_observed_at",
+				Unique:  false,
+				Columns: []*schema.Column{AccountQuotaObservationsColumns[1], AccountQuotaObservationsColumns[8]},
+			},
+		},
+	}
+	// AccountQuotaSweepsColumns holds the columns for the "account_quota_sweeps" table.
+	AccountQuotaSweepsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"queued", "running", "completed", "failed", "abandoned"}, Default: "queued"},
+		{Name: "provider_id", Type: field.TypeInt},
+		{Name: "platform", Type: field.TypeString, Default: "openai"},
+		{Name: "scope", Type: field.TypeEnum, Enums: []string{"all", "selected"}},
+		{Name: "include_auto_reset", Type: field.TypeBool, Default: false},
+		{Name: "total_count", Type: field.TypeInt, Default: 0},
+		{Name: "processed_count", Type: field.TypeInt, Default: 0},
+		{Name: "success_count", Type: field.TypeInt, Default: 0},
+		{Name: "skipped_count", Type: field.TypeInt, Default: 0},
+		{Name: "failed_count", Type: field.TypeInt, Default: 0},
+		{Name: "results", Type: field.TypeJSON, Nullable: true},
+		{Name: "last_error", Type: field.TypeString, Nullable: true},
+		{Name: "started_at", Type: field.TypeTime, Nullable: true},
+		{Name: "finished_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// AccountQuotaSweepsTable holds the schema information for the "account_quota_sweeps" table.
+	AccountQuotaSweepsTable = &schema.Table{
+		Name:       "account_quota_sweeps",
+		Columns:    AccountQuotaSweepsColumns,
+		PrimaryKey: []*schema.Column{AccountQuotaSweepsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "accountquotasweep_status_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{AccountQuotaSweepsColumns[1], AccountQuotaSweepsColumns[15]},
+			},
+			{
+				Name:    "accountquotasweep_provider_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{AccountQuotaSweepsColumns[2], AccountQuotaSweepsColumns[15]},
+			},
+			{
+				Name:    "accountquotasweep_running_unique",
+				Unique:  true,
+				Columns: []*schema.Column{AccountQuotaSweepsColumns[2]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status IN ('queued', 'running')",
+				},
+			},
+		},
+	}
 	// AdminSubscriptionJobsColumns holds the columns for the "admin_subscription_jobs" table.
 	AdminSubscriptionJobsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -1687,6 +1765,8 @@ var (
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
+		AccountQuotaObservationsTable,
+		AccountQuotaSweepsTable,
 		AdminSubscriptionJobsTable,
 		AttributionClaimGroupsTable,
 		AttributionRequestClaimsTable,

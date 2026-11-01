@@ -14,6 +14,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	_ "github.com/ai-efficiency/backend/ent/runtime"
+	"github.com/ai-efficiency/backend/internal/accountquota"
 	"github.com/ai-efficiency/backend/internal/activity"
 	"github.com/ai-efficiency/backend/internal/attribution"
 	"github.com/ai-efficiency/backend/internal/attributionledger"
@@ -458,7 +459,7 @@ func main() {
 		oidcService, err := auth.NewOIDCService(oidcContext, auth.OIDCConfig{
 			Issuer: cfg.Auth.OIDC.Issuer, ClientID: cfg.Auth.OIDC.ClientID,
 			ClientSecret: cfg.Auth.OIDC.ClientSecret, RedirectURL: redirectURL,
-			RedirectURLs: cfg.Auth.OIDC.RedirectURLs,
+			RedirectURLs:   cfg.Auth.OIDC.RedirectURLs,
 			AllowEmailLink: cfg.Auth.OIDC.AllowEmailLink, Scopes: cfg.Auth.OIDC.Scopes,
 			HTTPClient: httpClients.oidc,
 		})
@@ -530,6 +531,12 @@ func main() {
 	})
 	if err != nil {
 		logger.Fatal("initialize owner account service", zap.Error(err))
+	}
+	// Admin OpenAI quota sweep: the tab refreshes 额度/点数/重置券 of the pool
+	// through bounded async fan-out. It never consumes a reset credit.
+	accountQuotaService, err := accountquota.NewService(entClient, providerRuntime, logger, accountquota.Options{})
+	if err != nil {
+		logger.Fatal("initialize account quota service", zap.Error(err))
 	}
 	ownerAccountSweepCtx, cancelOwnerAccountSweep := context.WithTimeout(context.Background(), 10*time.Second)
 	if swept, sweepErr := ownerAccountService.SweepStaleOperations(ownerAccountSweepCtx); sweepErr != nil {
@@ -632,6 +639,7 @@ func main() {
 			ActivityCache:                 activityCache,
 			OpsMonitoringCache:            opsMonitoringCache,
 			OwnerAccounts:                 ownerAccountService,
+			AccountQuota:                  accountQuotaService,
 			Release:                       versionInfo.Version,
 			RequestTimeout:                time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
 		},

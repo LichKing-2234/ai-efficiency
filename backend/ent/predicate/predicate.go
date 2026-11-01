@@ -6,6 +6,12 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
+// AccountQuotaObservation is the predicate function for accountquotaobservation builders.
+type AccountQuotaObservation func(*sql.Selector)
+
+// AccountQuotaSweep is the predicate function for accountquotasweep builders.
+type AccountQuotaSweep func(*sql.Selector)
+
 // AdminSubscriptionJob is the predicate function for adminsubscriptionjob builders.
 type AdminSubscriptionJob func(*sql.Selector)
 

@@ -60,7 +60,10 @@ type RouterOptions struct {
 	OpsMonitoringCache            *opsmonitoring.Cache
 	// OwnerAccounts is the owner-account console service. It is required in
 	// production and may be nil in tests that do not exercise those routes.
-	OwnerAccounts  *owneraccount.Service
+	OwnerAccounts *owneraccount.Service
+	// AccountQuota is the admin OpenAI quota sweep service. It is required in
+	// production and may be nil in tests that do not exercise those routes.
+	AccountQuota   accountQuotaService
 	Release        string
 	RequestTimeout time.Duration
 }
@@ -288,6 +291,7 @@ func setupRouter(
 	adminUsersHandler := NewAdminUsersHandler(entClient, encryptionKey)
 	var relayPlanningHandler *RelayPlanningHandler
 	var opsMonitoringHandler *OpsMonitoringHandler
+	var accountQuotaHandler *AccountQuotaHandler
 	var offboardingCounter interface {
 		CountOffboardingCandidates(context.Context, int) (int, error)
 	}
@@ -303,6 +307,9 @@ func setupRouter(
 	var ownerAccountsHandler *OwnerAccountsHandler
 	if options.OwnerAccounts != nil {
 		ownerAccountsHandler = NewOwnerAccountsHandler(options.OwnerAccounts)
+	}
+	if options.AccountQuota != nil {
+		accountQuotaHandler = NewAccountQuotaHandler(options.AccountQuota)
 	}
 	var quotaResetHandler *QuotaResetHandler
 	if providerHandler != nil {
@@ -583,6 +590,17 @@ func setupRouter(
 			opsMonitoringGroup.GET("/groups/:group_id/accounts", opsMonitoringHandler.ListGroupAccounts)
 			opsMonitoringGroup.PUT("/groups/:group_id/accounts/:account_id/concurrency", opsMonitoringHandler.UpdateAccountConcurrency)
 			opsMonitoringGroup.POST("/proxies/:proxy_id/test", opsMonitoringHandler.TestProxy)
+		}
+	}
+
+	if accountQuotaHandler != nil {
+		adminAccountQuotaGroup := protected.Group("/admin/account-quotas")
+		adminAccountQuotaGroup.Use(auth.RequireAdmin())
+		{
+			adminAccountQuotaGroup.GET("", accountQuotaHandler.List)
+			adminAccountQuotaGroup.POST("/sweeps", accountQuotaHandler.StartSweep)
+			adminAccountQuotaGroup.GET("/sweeps/latest", accountQuotaHandler.LatestSweep)
+			adminAccountQuotaGroup.GET("/sweeps/:id", accountQuotaHandler.GetSweep)
 		}
 	}
 

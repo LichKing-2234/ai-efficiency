@@ -11,6 +11,8 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/ai-efficiency/backend/ent/accountquotaobservation"
+	"github.com/ai-efficiency/backend/ent/accountquotasweep"
 	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
 	"github.com/ai-efficiency/backend/ent/attributionclaimgroup"
 	"github.com/ai-efficiency/backend/ent/attributionrequestclaim"
@@ -60,6 +62,8 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
+	TypeAccountQuotaObservation       = "AccountQuotaObservation"
+	TypeAccountQuotaSweep             = "AccountQuotaSweep"
 	TypeAdminSubscriptionJob          = "AdminSubscriptionJob"
 	TypeAttributionClaimGroup         = "AttributionClaimGroup"
 	TypeAttributionRequestClaim       = "AttributionRequestClaim"
@@ -98,6 +102,2449 @@ const (
 	TypeUser                          = "User"
 	TypeWebhookDeadLetter             = "WebhookDeadLetter"
 )
+
+// AccountQuotaObservationMutation represents an operation that mutates the AccountQuotaObservation nodes in the graph.
+type AccountQuotaObservationMutation struct {
+	config
+	op                    Op
+	typ                   string
+	id                    *int
+	provider_id           *int
+	addprovider_id        *int
+	account_id            *int64
+	addaccount_id         *int64
+	sweep_id              *int
+	addsweep_id           *int
+	plan_type             *string
+	windows               *[]map[string]interface{}
+	appendwindows         []map[string]interface{}
+	credits               *map[string]interface{}
+	reset_credit_snapshot *map[string]interface{}
+	observed_at           *time.Time
+	created_at            *time.Time
+	updated_at            *time.Time
+	clearedFields         map[string]struct{}
+	done                  bool
+	oldValue              func(context.Context) (*AccountQuotaObservation, error)
+	predicates            []predicate.AccountQuotaObservation
+}
+
+var _ ent.Mutation = (*AccountQuotaObservationMutation)(nil)
+
+// accountquotaobservationOption allows management of the mutation configuration using functional options.
+type accountquotaobservationOption func(*AccountQuotaObservationMutation)
+
+// newAccountQuotaObservationMutation creates new mutation for the AccountQuotaObservation entity.
+func newAccountQuotaObservationMutation(c config, op Op, opts ...accountquotaobservationOption) *AccountQuotaObservationMutation {
+	m := &AccountQuotaObservationMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAccountQuotaObservation,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAccountQuotaObservationID sets the ID field of the mutation.
+func withAccountQuotaObservationID(id int) accountquotaobservationOption {
+	return func(m *AccountQuotaObservationMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AccountQuotaObservation
+		)
+		m.oldValue = func(ctx context.Context) (*AccountQuotaObservation, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AccountQuotaObservation.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAccountQuotaObservation sets the old AccountQuotaObservation of the mutation.
+func withAccountQuotaObservation(node *AccountQuotaObservation) accountquotaobservationOption {
+	return func(m *AccountQuotaObservationMutation) {
+		m.oldValue = func(context.Context) (*AccountQuotaObservation, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AccountQuotaObservationMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AccountQuotaObservationMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AccountQuotaObservationMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AccountQuotaObservationMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AccountQuotaObservation.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetProviderID sets the "provider_id" field.
+func (m *AccountQuotaObservationMutation) SetProviderID(i int) {
+	m.provider_id = &i
+	m.addprovider_id = nil
+}
+
+// ProviderID returns the value of the "provider_id" field in the mutation.
+func (m *AccountQuotaObservationMutation) ProviderID() (r int, exists bool) {
+	v := m.provider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderID returns the old "provider_id" field's value of the AccountQuotaObservation entity.
+// If the AccountQuotaObservation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaObservationMutation) OldProviderID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderID: %w", err)
+	}
+	return oldValue.ProviderID, nil
+}
+
+// AddProviderID adds i to the "provider_id" field.
+func (m *AccountQuotaObservationMutation) AddProviderID(i int) {
+	if m.addprovider_id != nil {
+		*m.addprovider_id += i
+	} else {
+		m.addprovider_id = &i
+	}
+}
+
+// AddedProviderID returns the value that was added to the "provider_id" field in this mutation.
+func (m *AccountQuotaObservationMutation) AddedProviderID() (r int, exists bool) {
+	v := m.addprovider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetProviderID resets all changes to the "provider_id" field.
+func (m *AccountQuotaObservationMutation) ResetProviderID() {
+	m.provider_id = nil
+	m.addprovider_id = nil
+}
+
+// SetAccountID sets the "account_id" field.
+func (m *AccountQuotaObservationMutation) SetAccountID(i int64) {
+	m.account_id = &i
+	m.addaccount_id = nil
+}
+
+// AccountID returns the value of the "account_id" field in the mutation.
+func (m *AccountQuotaObservationMutation) AccountID() (r int64, exists bool) {
+	v := m.account_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAccountID returns the old "account_id" field's value of the AccountQuotaObservation entity.
+// If the AccountQuotaObservation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaObservationMutation) OldAccountID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAccountID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAccountID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAccountID: %w", err)
+	}
+	return oldValue.AccountID, nil
+}
+
+// AddAccountID adds i to the "account_id" field.
+func (m *AccountQuotaObservationMutation) AddAccountID(i int64) {
+	if m.addaccount_id != nil {
+		*m.addaccount_id += i
+	} else {
+		m.addaccount_id = &i
+	}
+}
+
+// AddedAccountID returns the value that was added to the "account_id" field in this mutation.
+func (m *AccountQuotaObservationMutation) AddedAccountID() (r int64, exists bool) {
+	v := m.addaccount_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAccountID resets all changes to the "account_id" field.
+func (m *AccountQuotaObservationMutation) ResetAccountID() {
+	m.account_id = nil
+	m.addaccount_id = nil
+}
+
+// SetSweepID sets the "sweep_id" field.
+func (m *AccountQuotaObservationMutation) SetSweepID(i int) {
+	m.sweep_id = &i
+	m.addsweep_id = nil
+}
+
+// SweepID returns the value of the "sweep_id" field in the mutation.
+func (m *AccountQuotaObservationMutation) SweepID() (r int, exists bool) {
+	v := m.sweep_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSweepID returns the old "sweep_id" field's value of the AccountQuotaObservation entity.
+// If the AccountQuotaObservation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaObservationMutation) OldSweepID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSweepID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSweepID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSweepID: %w", err)
+	}
+	return oldValue.SweepID, nil
+}
+
+// AddSweepID adds i to the "sweep_id" field.
+func (m *AccountQuotaObservationMutation) AddSweepID(i int) {
+	if m.addsweep_id != nil {
+		*m.addsweep_id += i
+	} else {
+		m.addsweep_id = &i
+	}
+}
+
+// AddedSweepID returns the value that was added to the "sweep_id" field in this mutation.
+func (m *AccountQuotaObservationMutation) AddedSweepID() (r int, exists bool) {
+	v := m.addsweep_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSweepID resets all changes to the "sweep_id" field.
+func (m *AccountQuotaObservationMutation) ResetSweepID() {
+	m.sweep_id = nil
+	m.addsweep_id = nil
+}
+
+// SetPlanType sets the "plan_type" field.
+func (m *AccountQuotaObservationMutation) SetPlanType(s string) {
+	m.plan_type = &s
+}
+
+// PlanType returns the value of the "plan_type" field in the mutation.
+func (m *AccountQuotaObservationMutation) PlanType() (r string, exists bool) {
+	v := m.plan_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPlanType returns the old "plan_type" field's value of the AccountQuotaObservation entity.
+// If the AccountQuotaObservation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaObservationMutation) OldPlanType(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPlanType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPlanType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPlanType: %w", err)
+	}
+	return oldValue.PlanType, nil
+}
+
+// ClearPlanType clears the value of the "plan_type" field.
+func (m *AccountQuotaObservationMutation) ClearPlanType() {
+	m.plan_type = nil
+	m.clearedFields[accountquotaobservation.FieldPlanType] = struct{}{}
+}
+
+// PlanTypeCleared returns if the "plan_type" field was cleared in this mutation.
+func (m *AccountQuotaObservationMutation) PlanTypeCleared() bool {
+	_, ok := m.clearedFields[accountquotaobservation.FieldPlanType]
+	return ok
+}
+
+// ResetPlanType resets all changes to the "plan_type" field.
+func (m *AccountQuotaObservationMutation) ResetPlanType() {
+	m.plan_type = nil
+	delete(m.clearedFields, accountquotaobservation.FieldPlanType)
+}
+
+// SetWindows sets the "windows" field.
+func (m *AccountQuotaObservationMutation) SetWindows(value []map[string]interface{}) {
+	m.windows = &value
+	m.appendwindows = nil
+}
+
+// Windows returns the value of the "windows" field in the mutation.
+func (m *AccountQuotaObservationMutation) Windows() (r []map[string]interface{}, exists bool) {
+	v := m.windows
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWindows returns the old "windows" field's value of the AccountQuotaObservation entity.
+// If the AccountQuotaObservation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaObservationMutation) OldWindows(ctx context.Context) (v []map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWindows is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWindows requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWindows: %w", err)
+	}
+	return oldValue.Windows, nil
+}
+
+// AppendWindows adds value to the "windows" field.
+func (m *AccountQuotaObservationMutation) AppendWindows(value []map[string]interface{}) {
+	m.appendwindows = append(m.appendwindows, value...)
+}
+
+// AppendedWindows returns the list of values that were appended to the "windows" field in this mutation.
+func (m *AccountQuotaObservationMutation) AppendedWindows() ([]map[string]interface{}, bool) {
+	if len(m.appendwindows) == 0 {
+		return nil, false
+	}
+	return m.appendwindows, true
+}
+
+// ClearWindows clears the value of the "windows" field.
+func (m *AccountQuotaObservationMutation) ClearWindows() {
+	m.windows = nil
+	m.appendwindows = nil
+	m.clearedFields[accountquotaobservation.FieldWindows] = struct{}{}
+}
+
+// WindowsCleared returns if the "windows" field was cleared in this mutation.
+func (m *AccountQuotaObservationMutation) WindowsCleared() bool {
+	_, ok := m.clearedFields[accountquotaobservation.FieldWindows]
+	return ok
+}
+
+// ResetWindows resets all changes to the "windows" field.
+func (m *AccountQuotaObservationMutation) ResetWindows() {
+	m.windows = nil
+	m.appendwindows = nil
+	delete(m.clearedFields, accountquotaobservation.FieldWindows)
+}
+
+// SetCredits sets the "credits" field.
+func (m *AccountQuotaObservationMutation) SetCredits(value map[string]interface{}) {
+	m.credits = &value
+}
+
+// Credits returns the value of the "credits" field in the mutation.
+func (m *AccountQuotaObservationMutation) Credits() (r map[string]interface{}, exists bool) {
+	v := m.credits
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCredits returns the old "credits" field's value of the AccountQuotaObservation entity.
+// If the AccountQuotaObservation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaObservationMutation) OldCredits(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCredits is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCredits requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCredits: %w", err)
+	}
+	return oldValue.Credits, nil
+}
+
+// ClearCredits clears the value of the "credits" field.
+func (m *AccountQuotaObservationMutation) ClearCredits() {
+	m.credits = nil
+	m.clearedFields[accountquotaobservation.FieldCredits] = struct{}{}
+}
+
+// CreditsCleared returns if the "credits" field was cleared in this mutation.
+func (m *AccountQuotaObservationMutation) CreditsCleared() bool {
+	_, ok := m.clearedFields[accountquotaobservation.FieldCredits]
+	return ok
+}
+
+// ResetCredits resets all changes to the "credits" field.
+func (m *AccountQuotaObservationMutation) ResetCredits() {
+	m.credits = nil
+	delete(m.clearedFields, accountquotaobservation.FieldCredits)
+}
+
+// SetResetCreditSnapshot sets the "reset_credit_snapshot" field.
+func (m *AccountQuotaObservationMutation) SetResetCreditSnapshot(value map[string]interface{}) {
+	m.reset_credit_snapshot = &value
+}
+
+// ResetCreditSnapshot returns the value of the "reset_credit_snapshot" field in the mutation.
+func (m *AccountQuotaObservationMutation) ResetCreditSnapshot() (r map[string]interface{}, exists bool) {
+	v := m.reset_credit_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResetCreditSnapshot returns the old "reset_credit_snapshot" field's value of the AccountQuotaObservation entity.
+// If the AccountQuotaObservation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaObservationMutation) OldResetCreditSnapshot(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResetCreditSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResetCreditSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResetCreditSnapshot: %w", err)
+	}
+	return oldValue.ResetCreditSnapshot, nil
+}
+
+// ClearResetCreditSnapshot clears the value of the "reset_credit_snapshot" field.
+func (m *AccountQuotaObservationMutation) ClearResetCreditSnapshot() {
+	m.reset_credit_snapshot = nil
+	m.clearedFields[accountquotaobservation.FieldResetCreditSnapshot] = struct{}{}
+}
+
+// ResetCreditSnapshotCleared returns if the "reset_credit_snapshot" field was cleared in this mutation.
+func (m *AccountQuotaObservationMutation) ResetCreditSnapshotCleared() bool {
+	_, ok := m.clearedFields[accountquotaobservation.FieldResetCreditSnapshot]
+	return ok
+}
+
+// ResetResetCreditSnapshot resets all changes to the "reset_credit_snapshot" field.
+func (m *AccountQuotaObservationMutation) ResetResetCreditSnapshot() {
+	m.reset_credit_snapshot = nil
+	delete(m.clearedFields, accountquotaobservation.FieldResetCreditSnapshot)
+}
+
+// SetObservedAt sets the "observed_at" field.
+func (m *AccountQuotaObservationMutation) SetObservedAt(t time.Time) {
+	m.observed_at = &t
+}
+
+// ObservedAt returns the value of the "observed_at" field in the mutation.
+func (m *AccountQuotaObservationMutation) ObservedAt() (r time.Time, exists bool) {
+	v := m.observed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldObservedAt returns the old "observed_at" field's value of the AccountQuotaObservation entity.
+// If the AccountQuotaObservation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaObservationMutation) OldObservedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldObservedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldObservedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldObservedAt: %w", err)
+	}
+	return oldValue.ObservedAt, nil
+}
+
+// ResetObservedAt resets all changes to the "observed_at" field.
+func (m *AccountQuotaObservationMutation) ResetObservedAt() {
+	m.observed_at = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AccountQuotaObservationMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AccountQuotaObservationMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AccountQuotaObservation entity.
+// If the AccountQuotaObservation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaObservationMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AccountQuotaObservationMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *AccountQuotaObservationMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *AccountQuotaObservationMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the AccountQuotaObservation entity.
+// If the AccountQuotaObservation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaObservationMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *AccountQuotaObservationMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the AccountQuotaObservationMutation builder.
+func (m *AccountQuotaObservationMutation) Where(ps ...predicate.AccountQuotaObservation) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AccountQuotaObservationMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AccountQuotaObservationMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AccountQuotaObservation, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AccountQuotaObservationMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AccountQuotaObservationMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AccountQuotaObservation).
+func (m *AccountQuotaObservationMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AccountQuotaObservationMutation) Fields() []string {
+	fields := make([]string, 0, 10)
+	if m.provider_id != nil {
+		fields = append(fields, accountquotaobservation.FieldProviderID)
+	}
+	if m.account_id != nil {
+		fields = append(fields, accountquotaobservation.FieldAccountID)
+	}
+	if m.sweep_id != nil {
+		fields = append(fields, accountquotaobservation.FieldSweepID)
+	}
+	if m.plan_type != nil {
+		fields = append(fields, accountquotaobservation.FieldPlanType)
+	}
+	if m.windows != nil {
+		fields = append(fields, accountquotaobservation.FieldWindows)
+	}
+	if m.credits != nil {
+		fields = append(fields, accountquotaobservation.FieldCredits)
+	}
+	if m.reset_credit_snapshot != nil {
+		fields = append(fields, accountquotaobservation.FieldResetCreditSnapshot)
+	}
+	if m.observed_at != nil {
+		fields = append(fields, accountquotaobservation.FieldObservedAt)
+	}
+	if m.created_at != nil {
+		fields = append(fields, accountquotaobservation.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, accountquotaobservation.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AccountQuotaObservationMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case accountquotaobservation.FieldProviderID:
+		return m.ProviderID()
+	case accountquotaobservation.FieldAccountID:
+		return m.AccountID()
+	case accountquotaobservation.FieldSweepID:
+		return m.SweepID()
+	case accountquotaobservation.FieldPlanType:
+		return m.PlanType()
+	case accountquotaobservation.FieldWindows:
+		return m.Windows()
+	case accountquotaobservation.FieldCredits:
+		return m.Credits()
+	case accountquotaobservation.FieldResetCreditSnapshot:
+		return m.ResetCreditSnapshot()
+	case accountquotaobservation.FieldObservedAt:
+		return m.ObservedAt()
+	case accountquotaobservation.FieldCreatedAt:
+		return m.CreatedAt()
+	case accountquotaobservation.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AccountQuotaObservationMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case accountquotaobservation.FieldProviderID:
+		return m.OldProviderID(ctx)
+	case accountquotaobservation.FieldAccountID:
+		return m.OldAccountID(ctx)
+	case accountquotaobservation.FieldSweepID:
+		return m.OldSweepID(ctx)
+	case accountquotaobservation.FieldPlanType:
+		return m.OldPlanType(ctx)
+	case accountquotaobservation.FieldWindows:
+		return m.OldWindows(ctx)
+	case accountquotaobservation.FieldCredits:
+		return m.OldCredits(ctx)
+	case accountquotaobservation.FieldResetCreditSnapshot:
+		return m.OldResetCreditSnapshot(ctx)
+	case accountquotaobservation.FieldObservedAt:
+		return m.OldObservedAt(ctx)
+	case accountquotaobservation.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case accountquotaobservation.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown AccountQuotaObservation field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountQuotaObservationMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case accountquotaobservation.FieldProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderID(v)
+		return nil
+	case accountquotaobservation.FieldAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccountID(v)
+		return nil
+	case accountquotaobservation.FieldSweepID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSweepID(v)
+		return nil
+	case accountquotaobservation.FieldPlanType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPlanType(v)
+		return nil
+	case accountquotaobservation.FieldWindows:
+		v, ok := value.([]map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWindows(v)
+		return nil
+	case accountquotaobservation.FieldCredits:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCredits(v)
+		return nil
+	case accountquotaobservation.FieldResetCreditSnapshot:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResetCreditSnapshot(v)
+		return nil
+	case accountquotaobservation.FieldObservedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetObservedAt(v)
+		return nil
+	case accountquotaobservation.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case accountquotaobservation.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AccountQuotaObservation field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AccountQuotaObservationMutation) AddedFields() []string {
+	var fields []string
+	if m.addprovider_id != nil {
+		fields = append(fields, accountquotaobservation.FieldProviderID)
+	}
+	if m.addaccount_id != nil {
+		fields = append(fields, accountquotaobservation.FieldAccountID)
+	}
+	if m.addsweep_id != nil {
+		fields = append(fields, accountquotaobservation.FieldSweepID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AccountQuotaObservationMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case accountquotaobservation.FieldProviderID:
+		return m.AddedProviderID()
+	case accountquotaobservation.FieldAccountID:
+		return m.AddedAccountID()
+	case accountquotaobservation.FieldSweepID:
+		return m.AddedSweepID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountQuotaObservationMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case accountquotaobservation.FieldProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProviderID(v)
+		return nil
+	case accountquotaobservation.FieldAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAccountID(v)
+		return nil
+	case accountquotaobservation.FieldSweepID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSweepID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AccountQuotaObservation numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AccountQuotaObservationMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(accountquotaobservation.FieldPlanType) {
+		fields = append(fields, accountquotaobservation.FieldPlanType)
+	}
+	if m.FieldCleared(accountquotaobservation.FieldWindows) {
+		fields = append(fields, accountquotaobservation.FieldWindows)
+	}
+	if m.FieldCleared(accountquotaobservation.FieldCredits) {
+		fields = append(fields, accountquotaobservation.FieldCredits)
+	}
+	if m.FieldCleared(accountquotaobservation.FieldResetCreditSnapshot) {
+		fields = append(fields, accountquotaobservation.FieldResetCreditSnapshot)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AccountQuotaObservationMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AccountQuotaObservationMutation) ClearField(name string) error {
+	switch name {
+	case accountquotaobservation.FieldPlanType:
+		m.ClearPlanType()
+		return nil
+	case accountquotaobservation.FieldWindows:
+		m.ClearWindows()
+		return nil
+	case accountquotaobservation.FieldCredits:
+		m.ClearCredits()
+		return nil
+	case accountquotaobservation.FieldResetCreditSnapshot:
+		m.ClearResetCreditSnapshot()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountQuotaObservation nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AccountQuotaObservationMutation) ResetField(name string) error {
+	switch name {
+	case accountquotaobservation.FieldProviderID:
+		m.ResetProviderID()
+		return nil
+	case accountquotaobservation.FieldAccountID:
+		m.ResetAccountID()
+		return nil
+	case accountquotaobservation.FieldSweepID:
+		m.ResetSweepID()
+		return nil
+	case accountquotaobservation.FieldPlanType:
+		m.ResetPlanType()
+		return nil
+	case accountquotaobservation.FieldWindows:
+		m.ResetWindows()
+		return nil
+	case accountquotaobservation.FieldCredits:
+		m.ResetCredits()
+		return nil
+	case accountquotaobservation.FieldResetCreditSnapshot:
+		m.ResetResetCreditSnapshot()
+		return nil
+	case accountquotaobservation.FieldObservedAt:
+		m.ResetObservedAt()
+		return nil
+	case accountquotaobservation.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case accountquotaobservation.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountQuotaObservation field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AccountQuotaObservationMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AccountQuotaObservationMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AccountQuotaObservationMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AccountQuotaObservationMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AccountQuotaObservationMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AccountQuotaObservationMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AccountQuotaObservationMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown AccountQuotaObservation unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AccountQuotaObservationMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown AccountQuotaObservation edge %s", name)
+}
+
+// AccountQuotaSweepMutation represents an operation that mutates the AccountQuotaSweep nodes in the graph.
+type AccountQuotaSweepMutation struct {
+	config
+	op                 Op
+	typ                string
+	id                 *int
+	status             *accountquotasweep.Status
+	provider_id        *int
+	addprovider_id     *int
+	platform           *string
+	scope              *accountquotasweep.Scope
+	include_auto_reset *bool
+	total_count        *int
+	addtotal_count     *int
+	processed_count    *int
+	addprocessed_count *int
+	success_count      *int
+	addsuccess_count   *int
+	skipped_count      *int
+	addskipped_count   *int
+	failed_count       *int
+	addfailed_count    *int
+	results            *[]map[string]interface{}
+	appendresults      []map[string]interface{}
+	last_error         *string
+	started_at         *time.Time
+	finished_at        *time.Time
+	created_at         *time.Time
+	updated_at         *time.Time
+	clearedFields      map[string]struct{}
+	done               bool
+	oldValue           func(context.Context) (*AccountQuotaSweep, error)
+	predicates         []predicate.AccountQuotaSweep
+}
+
+var _ ent.Mutation = (*AccountQuotaSweepMutation)(nil)
+
+// accountquotasweepOption allows management of the mutation configuration using functional options.
+type accountquotasweepOption func(*AccountQuotaSweepMutation)
+
+// newAccountQuotaSweepMutation creates new mutation for the AccountQuotaSweep entity.
+func newAccountQuotaSweepMutation(c config, op Op, opts ...accountquotasweepOption) *AccountQuotaSweepMutation {
+	m := &AccountQuotaSweepMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAccountQuotaSweep,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAccountQuotaSweepID sets the ID field of the mutation.
+func withAccountQuotaSweepID(id int) accountquotasweepOption {
+	return func(m *AccountQuotaSweepMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AccountQuotaSweep
+		)
+		m.oldValue = func(ctx context.Context) (*AccountQuotaSweep, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AccountQuotaSweep.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAccountQuotaSweep sets the old AccountQuotaSweep of the mutation.
+func withAccountQuotaSweep(node *AccountQuotaSweep) accountquotasweepOption {
+	return func(m *AccountQuotaSweepMutation) {
+		m.oldValue = func(context.Context) (*AccountQuotaSweep, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AccountQuotaSweepMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AccountQuotaSweepMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AccountQuotaSweepMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AccountQuotaSweepMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AccountQuotaSweep.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetStatus sets the "status" field.
+func (m *AccountQuotaSweepMutation) SetStatus(a accountquotasweep.Status) {
+	m.status = &a
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *AccountQuotaSweepMutation) Status() (r accountquotasweep.Status, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the AccountQuotaSweep entity.
+// If the AccountQuotaSweep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaSweepMutation) OldStatus(ctx context.Context) (v accountquotasweep.Status, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *AccountQuotaSweepMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetProviderID sets the "provider_id" field.
+func (m *AccountQuotaSweepMutation) SetProviderID(i int) {
+	m.provider_id = &i
+	m.addprovider_id = nil
+}
+
+// ProviderID returns the value of the "provider_id" field in the mutation.
+func (m *AccountQuotaSweepMutation) ProviderID() (r int, exists bool) {
+	v := m.provider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderID returns the old "provider_id" field's value of the AccountQuotaSweep entity.
+// If the AccountQuotaSweep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaSweepMutation) OldProviderID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderID: %w", err)
+	}
+	return oldValue.ProviderID, nil
+}
+
+// AddProviderID adds i to the "provider_id" field.
+func (m *AccountQuotaSweepMutation) AddProviderID(i int) {
+	if m.addprovider_id != nil {
+		*m.addprovider_id += i
+	} else {
+		m.addprovider_id = &i
+	}
+}
+
+// AddedProviderID returns the value that was added to the "provider_id" field in this mutation.
+func (m *AccountQuotaSweepMutation) AddedProviderID() (r int, exists bool) {
+	v := m.addprovider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetProviderID resets all changes to the "provider_id" field.
+func (m *AccountQuotaSweepMutation) ResetProviderID() {
+	m.provider_id = nil
+	m.addprovider_id = nil
+}
+
+// SetPlatform sets the "platform" field.
+func (m *AccountQuotaSweepMutation) SetPlatform(s string) {
+	m.platform = &s
+}
+
+// Platform returns the value of the "platform" field in the mutation.
+func (m *AccountQuotaSweepMutation) Platform() (r string, exists bool) {
+	v := m.platform
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPlatform returns the old "platform" field's value of the AccountQuotaSweep entity.
+// If the AccountQuotaSweep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaSweepMutation) OldPlatform(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPlatform is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPlatform requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPlatform: %w", err)
+	}
+	return oldValue.Platform, nil
+}
+
+// ResetPlatform resets all changes to the "platform" field.
+func (m *AccountQuotaSweepMutation) ResetPlatform() {
+	m.platform = nil
+}
+
+// SetScope sets the "scope" field.
+func (m *AccountQuotaSweepMutation) SetScope(a accountquotasweep.Scope) {
+	m.scope = &a
+}
+
+// Scope returns the value of the "scope" field in the mutation.
+func (m *AccountQuotaSweepMutation) Scope() (r accountquotasweep.Scope, exists bool) {
+	v := m.scope
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldScope returns the old "scope" field's value of the AccountQuotaSweep entity.
+// If the AccountQuotaSweep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaSweepMutation) OldScope(ctx context.Context) (v accountquotasweep.Scope, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldScope is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldScope requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldScope: %w", err)
+	}
+	return oldValue.Scope, nil
+}
+
+// ResetScope resets all changes to the "scope" field.
+func (m *AccountQuotaSweepMutation) ResetScope() {
+	m.scope = nil
+}
+
+// SetIncludeAutoReset sets the "include_auto_reset" field.
+func (m *AccountQuotaSweepMutation) SetIncludeAutoReset(b bool) {
+	m.include_auto_reset = &b
+}
+
+// IncludeAutoReset returns the value of the "include_auto_reset" field in the mutation.
+func (m *AccountQuotaSweepMutation) IncludeAutoReset() (r bool, exists bool) {
+	v := m.include_auto_reset
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIncludeAutoReset returns the old "include_auto_reset" field's value of the AccountQuotaSweep entity.
+// If the AccountQuotaSweep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaSweepMutation) OldIncludeAutoReset(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIncludeAutoReset is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIncludeAutoReset requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIncludeAutoReset: %w", err)
+	}
+	return oldValue.IncludeAutoReset, nil
+}
+
+// ResetIncludeAutoReset resets all changes to the "include_auto_reset" field.
+func (m *AccountQuotaSweepMutation) ResetIncludeAutoReset() {
+	m.include_auto_reset = nil
+}
+
+// SetTotalCount sets the "total_count" field.
+func (m *AccountQuotaSweepMutation) SetTotalCount(i int) {
+	m.total_count = &i
+	m.addtotal_count = nil
+}
+
+// TotalCount returns the value of the "total_count" field in the mutation.
+func (m *AccountQuotaSweepMutation) TotalCount() (r int, exists bool) {
+	v := m.total_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTotalCount returns the old "total_count" field's value of the AccountQuotaSweep entity.
+// If the AccountQuotaSweep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaSweepMutation) OldTotalCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTotalCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTotalCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTotalCount: %w", err)
+	}
+	return oldValue.TotalCount, nil
+}
+
+// AddTotalCount adds i to the "total_count" field.
+func (m *AccountQuotaSweepMutation) AddTotalCount(i int) {
+	if m.addtotal_count != nil {
+		*m.addtotal_count += i
+	} else {
+		m.addtotal_count = &i
+	}
+}
+
+// AddedTotalCount returns the value that was added to the "total_count" field in this mutation.
+func (m *AccountQuotaSweepMutation) AddedTotalCount() (r int, exists bool) {
+	v := m.addtotal_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTotalCount resets all changes to the "total_count" field.
+func (m *AccountQuotaSweepMutation) ResetTotalCount() {
+	m.total_count = nil
+	m.addtotal_count = nil
+}
+
+// SetProcessedCount sets the "processed_count" field.
+func (m *AccountQuotaSweepMutation) SetProcessedCount(i int) {
+	m.processed_count = &i
+	m.addprocessed_count = nil
+}
+
+// ProcessedCount returns the value of the "processed_count" field in the mutation.
+func (m *AccountQuotaSweepMutation) ProcessedCount() (r int, exists bool) {
+	v := m.processed_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProcessedCount returns the old "processed_count" field's value of the AccountQuotaSweep entity.
+// If the AccountQuotaSweep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaSweepMutation) OldProcessedCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProcessedCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProcessedCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProcessedCount: %w", err)
+	}
+	return oldValue.ProcessedCount, nil
+}
+
+// AddProcessedCount adds i to the "processed_count" field.
+func (m *AccountQuotaSweepMutation) AddProcessedCount(i int) {
+	if m.addprocessed_count != nil {
+		*m.addprocessed_count += i
+	} else {
+		m.addprocessed_count = &i
+	}
+}
+
+// AddedProcessedCount returns the value that was added to the "processed_count" field in this mutation.
+func (m *AccountQuotaSweepMutation) AddedProcessedCount() (r int, exists bool) {
+	v := m.addprocessed_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetProcessedCount resets all changes to the "processed_count" field.
+func (m *AccountQuotaSweepMutation) ResetProcessedCount() {
+	m.processed_count = nil
+	m.addprocessed_count = nil
+}
+
+// SetSuccessCount sets the "success_count" field.
+func (m *AccountQuotaSweepMutation) SetSuccessCount(i int) {
+	m.success_count = &i
+	m.addsuccess_count = nil
+}
+
+// SuccessCount returns the value of the "success_count" field in the mutation.
+func (m *AccountQuotaSweepMutation) SuccessCount() (r int, exists bool) {
+	v := m.success_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSuccessCount returns the old "success_count" field's value of the AccountQuotaSweep entity.
+// If the AccountQuotaSweep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaSweepMutation) OldSuccessCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSuccessCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSuccessCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSuccessCount: %w", err)
+	}
+	return oldValue.SuccessCount, nil
+}
+
+// AddSuccessCount adds i to the "success_count" field.
+func (m *AccountQuotaSweepMutation) AddSuccessCount(i int) {
+	if m.addsuccess_count != nil {
+		*m.addsuccess_count += i
+	} else {
+		m.addsuccess_count = &i
+	}
+}
+
+// AddedSuccessCount returns the value that was added to the "success_count" field in this mutation.
+func (m *AccountQuotaSweepMutation) AddedSuccessCount() (r int, exists bool) {
+	v := m.addsuccess_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSuccessCount resets all changes to the "success_count" field.
+func (m *AccountQuotaSweepMutation) ResetSuccessCount() {
+	m.success_count = nil
+	m.addsuccess_count = nil
+}
+
+// SetSkippedCount sets the "skipped_count" field.
+func (m *AccountQuotaSweepMutation) SetSkippedCount(i int) {
+	m.skipped_count = &i
+	m.addskipped_count = nil
+}
+
+// SkippedCount returns the value of the "skipped_count" field in the mutation.
+func (m *AccountQuotaSweepMutation) SkippedCount() (r int, exists bool) {
+	v := m.skipped_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSkippedCount returns the old "skipped_count" field's value of the AccountQuotaSweep entity.
+// If the AccountQuotaSweep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaSweepMutation) OldSkippedCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSkippedCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSkippedCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSkippedCount: %w", err)
+	}
+	return oldValue.SkippedCount, nil
+}
+
+// AddSkippedCount adds i to the "skipped_count" field.
+func (m *AccountQuotaSweepMutation) AddSkippedCount(i int) {
+	if m.addskipped_count != nil {
+		*m.addskipped_count += i
+	} else {
+		m.addskipped_count = &i
+	}
+}
+
+// AddedSkippedCount returns the value that was added to the "skipped_count" field in this mutation.
+func (m *AccountQuotaSweepMutation) AddedSkippedCount() (r int, exists bool) {
+	v := m.addskipped_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSkippedCount resets all changes to the "skipped_count" field.
+func (m *AccountQuotaSweepMutation) ResetSkippedCount() {
+	m.skipped_count = nil
+	m.addskipped_count = nil
+}
+
+// SetFailedCount sets the "failed_count" field.
+func (m *AccountQuotaSweepMutation) SetFailedCount(i int) {
+	m.failed_count = &i
+	m.addfailed_count = nil
+}
+
+// FailedCount returns the value of the "failed_count" field in the mutation.
+func (m *AccountQuotaSweepMutation) FailedCount() (r int, exists bool) {
+	v := m.failed_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFailedCount returns the old "failed_count" field's value of the AccountQuotaSweep entity.
+// If the AccountQuotaSweep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaSweepMutation) OldFailedCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFailedCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFailedCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFailedCount: %w", err)
+	}
+	return oldValue.FailedCount, nil
+}
+
+// AddFailedCount adds i to the "failed_count" field.
+func (m *AccountQuotaSweepMutation) AddFailedCount(i int) {
+	if m.addfailed_count != nil {
+		*m.addfailed_count += i
+	} else {
+		m.addfailed_count = &i
+	}
+}
+
+// AddedFailedCount returns the value that was added to the "failed_count" field in this mutation.
+func (m *AccountQuotaSweepMutation) AddedFailedCount() (r int, exists bool) {
+	v := m.addfailed_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetFailedCount resets all changes to the "failed_count" field.
+func (m *AccountQuotaSweepMutation) ResetFailedCount() {
+	m.failed_count = nil
+	m.addfailed_count = nil
+}
+
+// SetResults sets the "results" field.
+func (m *AccountQuotaSweepMutation) SetResults(value []map[string]interface{}) {
+	m.results = &value
+	m.appendresults = nil
+}
+
+// Results returns the value of the "results" field in the mutation.
+func (m *AccountQuotaSweepMutation) Results() (r []map[string]interface{}, exists bool) {
+	v := m.results
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResults returns the old "results" field's value of the AccountQuotaSweep entity.
+// If the AccountQuotaSweep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaSweepMutation) OldResults(ctx context.Context) (v []map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResults is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResults requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResults: %w", err)
+	}
+	return oldValue.Results, nil
+}
+
+// AppendResults adds value to the "results" field.
+func (m *AccountQuotaSweepMutation) AppendResults(value []map[string]interface{}) {
+	m.appendresults = append(m.appendresults, value...)
+}
+
+// AppendedResults returns the list of values that were appended to the "results" field in this mutation.
+func (m *AccountQuotaSweepMutation) AppendedResults() ([]map[string]interface{}, bool) {
+	if len(m.appendresults) == 0 {
+		return nil, false
+	}
+	return m.appendresults, true
+}
+
+// ClearResults clears the value of the "results" field.
+func (m *AccountQuotaSweepMutation) ClearResults() {
+	m.results = nil
+	m.appendresults = nil
+	m.clearedFields[accountquotasweep.FieldResults] = struct{}{}
+}
+
+// ResultsCleared returns if the "results" field was cleared in this mutation.
+func (m *AccountQuotaSweepMutation) ResultsCleared() bool {
+	_, ok := m.clearedFields[accountquotasweep.FieldResults]
+	return ok
+}
+
+// ResetResults resets all changes to the "results" field.
+func (m *AccountQuotaSweepMutation) ResetResults() {
+	m.results = nil
+	m.appendresults = nil
+	delete(m.clearedFields, accountquotasweep.FieldResults)
+}
+
+// SetLastError sets the "last_error" field.
+func (m *AccountQuotaSweepMutation) SetLastError(s string) {
+	m.last_error = &s
+}
+
+// LastError returns the value of the "last_error" field in the mutation.
+func (m *AccountQuotaSweepMutation) LastError() (r string, exists bool) {
+	v := m.last_error
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastError returns the old "last_error" field's value of the AccountQuotaSweep entity.
+// If the AccountQuotaSweep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaSweepMutation) OldLastError(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastError is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastError requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastError: %w", err)
+	}
+	return oldValue.LastError, nil
+}
+
+// ClearLastError clears the value of the "last_error" field.
+func (m *AccountQuotaSweepMutation) ClearLastError() {
+	m.last_error = nil
+	m.clearedFields[accountquotasweep.FieldLastError] = struct{}{}
+}
+
+// LastErrorCleared returns if the "last_error" field was cleared in this mutation.
+func (m *AccountQuotaSweepMutation) LastErrorCleared() bool {
+	_, ok := m.clearedFields[accountquotasweep.FieldLastError]
+	return ok
+}
+
+// ResetLastError resets all changes to the "last_error" field.
+func (m *AccountQuotaSweepMutation) ResetLastError() {
+	m.last_error = nil
+	delete(m.clearedFields, accountquotasweep.FieldLastError)
+}
+
+// SetStartedAt sets the "started_at" field.
+func (m *AccountQuotaSweepMutation) SetStartedAt(t time.Time) {
+	m.started_at = &t
+}
+
+// StartedAt returns the value of the "started_at" field in the mutation.
+func (m *AccountQuotaSweepMutation) StartedAt() (r time.Time, exists bool) {
+	v := m.started_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStartedAt returns the old "started_at" field's value of the AccountQuotaSweep entity.
+// If the AccountQuotaSweep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaSweepMutation) OldStartedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStartedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStartedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStartedAt: %w", err)
+	}
+	return oldValue.StartedAt, nil
+}
+
+// ClearStartedAt clears the value of the "started_at" field.
+func (m *AccountQuotaSweepMutation) ClearStartedAt() {
+	m.started_at = nil
+	m.clearedFields[accountquotasweep.FieldStartedAt] = struct{}{}
+}
+
+// StartedAtCleared returns if the "started_at" field was cleared in this mutation.
+func (m *AccountQuotaSweepMutation) StartedAtCleared() bool {
+	_, ok := m.clearedFields[accountquotasweep.FieldStartedAt]
+	return ok
+}
+
+// ResetStartedAt resets all changes to the "started_at" field.
+func (m *AccountQuotaSweepMutation) ResetStartedAt() {
+	m.started_at = nil
+	delete(m.clearedFields, accountquotasweep.FieldStartedAt)
+}
+
+// SetFinishedAt sets the "finished_at" field.
+func (m *AccountQuotaSweepMutation) SetFinishedAt(t time.Time) {
+	m.finished_at = &t
+}
+
+// FinishedAt returns the value of the "finished_at" field in the mutation.
+func (m *AccountQuotaSweepMutation) FinishedAt() (r time.Time, exists bool) {
+	v := m.finished_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFinishedAt returns the old "finished_at" field's value of the AccountQuotaSweep entity.
+// If the AccountQuotaSweep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaSweepMutation) OldFinishedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFinishedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFinishedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFinishedAt: %w", err)
+	}
+	return oldValue.FinishedAt, nil
+}
+
+// ClearFinishedAt clears the value of the "finished_at" field.
+func (m *AccountQuotaSweepMutation) ClearFinishedAt() {
+	m.finished_at = nil
+	m.clearedFields[accountquotasweep.FieldFinishedAt] = struct{}{}
+}
+
+// FinishedAtCleared returns if the "finished_at" field was cleared in this mutation.
+func (m *AccountQuotaSweepMutation) FinishedAtCleared() bool {
+	_, ok := m.clearedFields[accountquotasweep.FieldFinishedAt]
+	return ok
+}
+
+// ResetFinishedAt resets all changes to the "finished_at" field.
+func (m *AccountQuotaSweepMutation) ResetFinishedAt() {
+	m.finished_at = nil
+	delete(m.clearedFields, accountquotasweep.FieldFinishedAt)
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AccountQuotaSweepMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AccountQuotaSweepMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AccountQuotaSweep entity.
+// If the AccountQuotaSweep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaSweepMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AccountQuotaSweepMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *AccountQuotaSweepMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *AccountQuotaSweepMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the AccountQuotaSweep entity.
+// If the AccountQuotaSweep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountQuotaSweepMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *AccountQuotaSweepMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the AccountQuotaSweepMutation builder.
+func (m *AccountQuotaSweepMutation) Where(ps ...predicate.AccountQuotaSweep) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AccountQuotaSweepMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AccountQuotaSweepMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AccountQuotaSweep, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AccountQuotaSweepMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AccountQuotaSweepMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AccountQuotaSweep).
+func (m *AccountQuotaSweepMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AccountQuotaSweepMutation) Fields() []string {
+	fields := make([]string, 0, 16)
+	if m.status != nil {
+		fields = append(fields, accountquotasweep.FieldStatus)
+	}
+	if m.provider_id != nil {
+		fields = append(fields, accountquotasweep.FieldProviderID)
+	}
+	if m.platform != nil {
+		fields = append(fields, accountquotasweep.FieldPlatform)
+	}
+	if m.scope != nil {
+		fields = append(fields, accountquotasweep.FieldScope)
+	}
+	if m.include_auto_reset != nil {
+		fields = append(fields, accountquotasweep.FieldIncludeAutoReset)
+	}
+	if m.total_count != nil {
+		fields = append(fields, accountquotasweep.FieldTotalCount)
+	}
+	if m.processed_count != nil {
+		fields = append(fields, accountquotasweep.FieldProcessedCount)
+	}
+	if m.success_count != nil {
+		fields = append(fields, accountquotasweep.FieldSuccessCount)
+	}
+	if m.skipped_count != nil {
+		fields = append(fields, accountquotasweep.FieldSkippedCount)
+	}
+	if m.failed_count != nil {
+		fields = append(fields, accountquotasweep.FieldFailedCount)
+	}
+	if m.results != nil {
+		fields = append(fields, accountquotasweep.FieldResults)
+	}
+	if m.last_error != nil {
+		fields = append(fields, accountquotasweep.FieldLastError)
+	}
+	if m.started_at != nil {
+		fields = append(fields, accountquotasweep.FieldStartedAt)
+	}
+	if m.finished_at != nil {
+		fields = append(fields, accountquotasweep.FieldFinishedAt)
+	}
+	if m.created_at != nil {
+		fields = append(fields, accountquotasweep.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, accountquotasweep.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AccountQuotaSweepMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case accountquotasweep.FieldStatus:
+		return m.Status()
+	case accountquotasweep.FieldProviderID:
+		return m.ProviderID()
+	case accountquotasweep.FieldPlatform:
+		return m.Platform()
+	case accountquotasweep.FieldScope:
+		return m.Scope()
+	case accountquotasweep.FieldIncludeAutoReset:
+		return m.IncludeAutoReset()
+	case accountquotasweep.FieldTotalCount:
+		return m.TotalCount()
+	case accountquotasweep.FieldProcessedCount:
+		return m.ProcessedCount()
+	case accountquotasweep.FieldSuccessCount:
+		return m.SuccessCount()
+	case accountquotasweep.FieldSkippedCount:
+		return m.SkippedCount()
+	case accountquotasweep.FieldFailedCount:
+		return m.FailedCount()
+	case accountquotasweep.FieldResults:
+		return m.Results()
+	case accountquotasweep.FieldLastError:
+		return m.LastError()
+	case accountquotasweep.FieldStartedAt:
+		return m.StartedAt()
+	case accountquotasweep.FieldFinishedAt:
+		return m.FinishedAt()
+	case accountquotasweep.FieldCreatedAt:
+		return m.CreatedAt()
+	case accountquotasweep.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AccountQuotaSweepMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case accountquotasweep.FieldStatus:
+		return m.OldStatus(ctx)
+	case accountquotasweep.FieldProviderID:
+		return m.OldProviderID(ctx)
+	case accountquotasweep.FieldPlatform:
+		return m.OldPlatform(ctx)
+	case accountquotasweep.FieldScope:
+		return m.OldScope(ctx)
+	case accountquotasweep.FieldIncludeAutoReset:
+		return m.OldIncludeAutoReset(ctx)
+	case accountquotasweep.FieldTotalCount:
+		return m.OldTotalCount(ctx)
+	case accountquotasweep.FieldProcessedCount:
+		return m.OldProcessedCount(ctx)
+	case accountquotasweep.FieldSuccessCount:
+		return m.OldSuccessCount(ctx)
+	case accountquotasweep.FieldSkippedCount:
+		return m.OldSkippedCount(ctx)
+	case accountquotasweep.FieldFailedCount:
+		return m.OldFailedCount(ctx)
+	case accountquotasweep.FieldResults:
+		return m.OldResults(ctx)
+	case accountquotasweep.FieldLastError:
+		return m.OldLastError(ctx)
+	case accountquotasweep.FieldStartedAt:
+		return m.OldStartedAt(ctx)
+	case accountquotasweep.FieldFinishedAt:
+		return m.OldFinishedAt(ctx)
+	case accountquotasweep.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case accountquotasweep.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown AccountQuotaSweep field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountQuotaSweepMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case accountquotasweep.FieldStatus:
+		v, ok := value.(accountquotasweep.Status)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case accountquotasweep.FieldProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderID(v)
+		return nil
+	case accountquotasweep.FieldPlatform:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPlatform(v)
+		return nil
+	case accountquotasweep.FieldScope:
+		v, ok := value.(accountquotasweep.Scope)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetScope(v)
+		return nil
+	case accountquotasweep.FieldIncludeAutoReset:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIncludeAutoReset(v)
+		return nil
+	case accountquotasweep.FieldTotalCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTotalCount(v)
+		return nil
+	case accountquotasweep.FieldProcessedCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProcessedCount(v)
+		return nil
+	case accountquotasweep.FieldSuccessCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSuccessCount(v)
+		return nil
+	case accountquotasweep.FieldSkippedCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSkippedCount(v)
+		return nil
+	case accountquotasweep.FieldFailedCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFailedCount(v)
+		return nil
+	case accountquotasweep.FieldResults:
+		v, ok := value.([]map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResults(v)
+		return nil
+	case accountquotasweep.FieldLastError:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastError(v)
+		return nil
+	case accountquotasweep.FieldStartedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStartedAt(v)
+		return nil
+	case accountquotasweep.FieldFinishedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFinishedAt(v)
+		return nil
+	case accountquotasweep.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case accountquotasweep.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AccountQuotaSweep field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AccountQuotaSweepMutation) AddedFields() []string {
+	var fields []string
+	if m.addprovider_id != nil {
+		fields = append(fields, accountquotasweep.FieldProviderID)
+	}
+	if m.addtotal_count != nil {
+		fields = append(fields, accountquotasweep.FieldTotalCount)
+	}
+	if m.addprocessed_count != nil {
+		fields = append(fields, accountquotasweep.FieldProcessedCount)
+	}
+	if m.addsuccess_count != nil {
+		fields = append(fields, accountquotasweep.FieldSuccessCount)
+	}
+	if m.addskipped_count != nil {
+		fields = append(fields, accountquotasweep.FieldSkippedCount)
+	}
+	if m.addfailed_count != nil {
+		fields = append(fields, accountquotasweep.FieldFailedCount)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AccountQuotaSweepMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case accountquotasweep.FieldProviderID:
+		return m.AddedProviderID()
+	case accountquotasweep.FieldTotalCount:
+		return m.AddedTotalCount()
+	case accountquotasweep.FieldProcessedCount:
+		return m.AddedProcessedCount()
+	case accountquotasweep.FieldSuccessCount:
+		return m.AddedSuccessCount()
+	case accountquotasweep.FieldSkippedCount:
+		return m.AddedSkippedCount()
+	case accountquotasweep.FieldFailedCount:
+		return m.AddedFailedCount()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountQuotaSweepMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case accountquotasweep.FieldProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProviderID(v)
+		return nil
+	case accountquotasweep.FieldTotalCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTotalCount(v)
+		return nil
+	case accountquotasweep.FieldProcessedCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProcessedCount(v)
+		return nil
+	case accountquotasweep.FieldSuccessCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSuccessCount(v)
+		return nil
+	case accountquotasweep.FieldSkippedCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSkippedCount(v)
+		return nil
+	case accountquotasweep.FieldFailedCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddFailedCount(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AccountQuotaSweep numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AccountQuotaSweepMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(accountquotasweep.FieldResults) {
+		fields = append(fields, accountquotasweep.FieldResults)
+	}
+	if m.FieldCleared(accountquotasweep.FieldLastError) {
+		fields = append(fields, accountquotasweep.FieldLastError)
+	}
+	if m.FieldCleared(accountquotasweep.FieldStartedAt) {
+		fields = append(fields, accountquotasweep.FieldStartedAt)
+	}
+	if m.FieldCleared(accountquotasweep.FieldFinishedAt) {
+		fields = append(fields, accountquotasweep.FieldFinishedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AccountQuotaSweepMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AccountQuotaSweepMutation) ClearField(name string) error {
+	switch name {
+	case accountquotasweep.FieldResults:
+		m.ClearResults()
+		return nil
+	case accountquotasweep.FieldLastError:
+		m.ClearLastError()
+		return nil
+	case accountquotasweep.FieldStartedAt:
+		m.ClearStartedAt()
+		return nil
+	case accountquotasweep.FieldFinishedAt:
+		m.ClearFinishedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountQuotaSweep nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AccountQuotaSweepMutation) ResetField(name string) error {
+	switch name {
+	case accountquotasweep.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case accountquotasweep.FieldProviderID:
+		m.ResetProviderID()
+		return nil
+	case accountquotasweep.FieldPlatform:
+		m.ResetPlatform()
+		return nil
+	case accountquotasweep.FieldScope:
+		m.ResetScope()
+		return nil
+	case accountquotasweep.FieldIncludeAutoReset:
+		m.ResetIncludeAutoReset()
+		return nil
+	case accountquotasweep.FieldTotalCount:
+		m.ResetTotalCount()
+		return nil
+	case accountquotasweep.FieldProcessedCount:
+		m.ResetProcessedCount()
+		return nil
+	case accountquotasweep.FieldSuccessCount:
+		m.ResetSuccessCount()
+		return nil
+	case accountquotasweep.FieldSkippedCount:
+		m.ResetSkippedCount()
+		return nil
+	case accountquotasweep.FieldFailedCount:
+		m.ResetFailedCount()
+		return nil
+	case accountquotasweep.FieldResults:
+		m.ResetResults()
+		return nil
+	case accountquotasweep.FieldLastError:
+		m.ResetLastError()
+		return nil
+	case accountquotasweep.FieldStartedAt:
+		m.ResetStartedAt()
+		return nil
+	case accountquotasweep.FieldFinishedAt:
+		m.ResetFinishedAt()
+		return nil
+	case accountquotasweep.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case accountquotasweep.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountQuotaSweep field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AccountQuotaSweepMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AccountQuotaSweepMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AccountQuotaSweepMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AccountQuotaSweepMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AccountQuotaSweepMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AccountQuotaSweepMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AccountQuotaSweepMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown AccountQuotaSweep unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AccountQuotaSweepMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown AccountQuotaSweep edge %s", name)
+}
 
 // AdminSubscriptionJobMutation represents an operation that mutates the AdminSubscriptionJob nodes in the graph.
 type AdminSubscriptionJobMutation struct {
