@@ -39,6 +39,7 @@ AI Efficiency Platform（AI 效能平台）是一个独立于 `sub2api` 的系�
 - 修改 attribution、checkpoint、hooks 或 collector：`docs/contracts/attribution-v2.md`
 - 修改 Relay Planning、Group mapping、Replan 或 Account 关系：`docs/contracts/relay-group-mapping.md`
 - 修改号主账号控制台、邮箱派生归属或 owner 操作：`docs/contracts/owner-account-console.md`
+- 修改 Relay 账号额度巡检、`/admin/account-quotas`、额度观察或 Relay 账号页额度 tab：`docs/contracts/account-quota-sweep.md`
 - 修改分页、游标、列表响应式或集合导航：`docs/contracts/collection-navigation.md`
 
 执行要求：
