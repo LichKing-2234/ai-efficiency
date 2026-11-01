@@ -5,6 +5,8 @@ package runtime
 import (
 	"time"
 
+	"github.com/ai-efficiency/backend/ent/accountquotaobservation"
+	"github.com/ai-efficiency/backend/ent/accountquotasweep"
 	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
 	"github.com/ai-efficiency/backend/ent/attributionclaimgroup"
 	"github.com/ai-efficiency/backend/ent/attributionrequestclaim"
@@ -49,6 +51,58 @@ import (
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
+	accountquotaobservationFields := schema.AccountQuotaObservation{}.Fields()
+	_ = accountquotaobservationFields
+	// accountquotaobservationDescCreatedAt is the schema descriptor for created_at field.
+	accountquotaobservationDescCreatedAt := accountquotaobservationFields[8].Descriptor()
+	// accountquotaobservation.DefaultCreatedAt holds the default value on creation for the created_at field.
+	accountquotaobservation.DefaultCreatedAt = accountquotaobservationDescCreatedAt.Default.(func() time.Time)
+	// accountquotaobservationDescUpdatedAt is the schema descriptor for updated_at field.
+	accountquotaobservationDescUpdatedAt := accountquotaobservationFields[9].Descriptor()
+	// accountquotaobservation.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	accountquotaobservation.DefaultUpdatedAt = accountquotaobservationDescUpdatedAt.Default.(func() time.Time)
+	// accountquotaobservation.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	accountquotaobservation.UpdateDefaultUpdatedAt = accountquotaobservationDescUpdatedAt.UpdateDefault.(func() time.Time)
+	accountquotasweepFields := schema.AccountQuotaSweep{}.Fields()
+	_ = accountquotasweepFields
+	// accountquotasweepDescPlatform is the schema descriptor for platform field.
+	accountquotasweepDescPlatform := accountquotasweepFields[2].Descriptor()
+	// accountquotasweep.DefaultPlatform holds the default value on creation for the platform field.
+	accountquotasweep.DefaultPlatform = accountquotasweepDescPlatform.Default.(string)
+	// accountquotasweepDescIncludeAutoReset is the schema descriptor for include_auto_reset field.
+	accountquotasweepDescIncludeAutoReset := accountquotasweepFields[4].Descriptor()
+	// accountquotasweep.DefaultIncludeAutoReset holds the default value on creation for the include_auto_reset field.
+	accountquotasweep.DefaultIncludeAutoReset = accountquotasweepDescIncludeAutoReset.Default.(bool)
+	// accountquotasweepDescTotalCount is the schema descriptor for total_count field.
+	accountquotasweepDescTotalCount := accountquotasweepFields[5].Descriptor()
+	// accountquotasweep.DefaultTotalCount holds the default value on creation for the total_count field.
+	accountquotasweep.DefaultTotalCount = accountquotasweepDescTotalCount.Default.(int)
+	// accountquotasweepDescProcessedCount is the schema descriptor for processed_count field.
+	accountquotasweepDescProcessedCount := accountquotasweepFields[6].Descriptor()
+	// accountquotasweep.DefaultProcessedCount holds the default value on creation for the processed_count field.
+	accountquotasweep.DefaultProcessedCount = accountquotasweepDescProcessedCount.Default.(int)
+	// accountquotasweepDescSuccessCount is the schema descriptor for success_count field.
+	accountquotasweepDescSuccessCount := accountquotasweepFields[7].Descriptor()
+	// accountquotasweep.DefaultSuccessCount holds the default value on creation for the success_count field.
+	accountquotasweep.DefaultSuccessCount = accountquotasweepDescSuccessCount.Default.(int)
+	// accountquotasweepDescSkippedCount is the schema descriptor for skipped_count field.
+	accountquotasweepDescSkippedCount := accountquotasweepFields[8].Descriptor()
+	// accountquotasweep.DefaultSkippedCount holds the default value on creation for the skipped_count field.
+	accountquotasweep.DefaultSkippedCount = accountquotasweepDescSkippedCount.Default.(int)
+	// accountquotasweepDescFailedCount is the schema descriptor for failed_count field.
+	accountquotasweepDescFailedCount := accountquotasweepFields[9].Descriptor()
+	// accountquotasweep.DefaultFailedCount holds the default value on creation for the failed_count field.
+	accountquotasweep.DefaultFailedCount = accountquotasweepDescFailedCount.Default.(int)
+	// accountquotasweepDescCreatedAt is the schema descriptor for created_at field.
+	accountquotasweepDescCreatedAt := accountquotasweepFields[14].Descriptor()
+	// accountquotasweep.DefaultCreatedAt holds the default value on creation for the created_at field.
+	accountquotasweep.DefaultCreatedAt = accountquotasweepDescCreatedAt.Default.(func() time.Time)
+	// accountquotasweepDescUpdatedAt is the schema descriptor for updated_at field.
+	accountquotasweepDescUpdatedAt := accountquotasweepFields[15].Descriptor()
+	// accountquotasweep.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	accountquotasweep.DefaultUpdatedAt = accountquotasweepDescUpdatedAt.Default.(func() time.Time)
+	// accountquotasweep.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	accountquotasweep.UpdateDefaultUpdatedAt = accountquotasweepDescUpdatedAt.UpdateDefault.(func() time.Time)
 	adminsubscriptionjobFields := schema.AdminSubscriptionJob{}.Fields()
 	_ = adminsubscriptionjobFields
 	// adminsubscriptionjobDescTotalCount is the schema descriptor for total_count field.

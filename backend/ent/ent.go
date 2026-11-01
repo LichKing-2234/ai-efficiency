@@ -12,6 +12,8 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/ai-efficiency/backend/ent/accountquotaobservation"
+	"github.com/ai-efficiency/backend/ent/accountquotasweep"
 	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
 	"github.com/ai-efficiency/backend/ent/attributionclaimgroup"
 	"github.com/ai-efficiency/backend/ent/attributionrequestclaim"
@@ -109,6 +111,8 @@ var (
 func checkColumn(table, column string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
+			accountquotaobservation.Table:       accountquotaobservation.ValidColumn,
+			accountquotasweep.Table:             accountquotasweep.ValidColumn,
 			adminsubscriptionjob.Table:          adminsubscriptionjob.ValidColumn,
 			attributionclaimgroup.Table:         attributionclaimgroup.ValidColumn,
 			attributionrequestclaim.Table:       attributionrequestclaim.ValidColumn,

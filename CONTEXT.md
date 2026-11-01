@@ -59,3 +59,11 @@ _Avoid_: Failed operation, pending retry
 **Cached Reset Credit Count**:
 The number of unexpired banked ChatGPT/Codex reset credits recorded by the last cached upstream snapshot for one account. The account-configuration copy page displays it and filters the working set by it; it is not account configuration, is never compared against a baseline, and is never copied.
 _Avoid_: Recharge coupon, account balance, live reset count
+
+**Account Quota Sweep**:
+One administrator-triggered, asynchronous refresh of OpenAI OAuth account quota facts in the Relay pool — the 5h/7d usage windows, the Codex credit balance and the banked reset credits — bounded to one in-flight sweep per provider. It is a display refresh only: it never spends a reset credit, and accounts whose Sub2API auto reset-credit worker is enabled are skipped unless the administrator explicitly includes them.
+_Avoid_: Quota reset, scheduled quota sweep, credit consumption
+
+**Account Quota Observation**:
+The last successful quota facts recorded for one upstream account by an Account Quota Sweep, together with their observation time. It is a display fact that survives later sweeps and is never the authority for spending a reset credit.
+_Avoid_: Quota snapshot, cached quota balance

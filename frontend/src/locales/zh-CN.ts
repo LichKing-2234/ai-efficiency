@@ -49,7 +49,7 @@ const zhCN = {
   'nav.directoryOffboarding': '离职处理',
   'nav.relayPlanning': 'Relay 分组规划',
   'nav.opsMonitoring': 'Relay 监控',
-  'nav.relayAccounts': 'Relay 账号配置',
+  'nav.relayAccounts': 'Relay 账号',
   'nav.adminConsole': '管理后台',
   'nav.adminSection': '管理',
   'nav.relayAccountManagementSection': 'Relay 管理',

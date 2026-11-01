@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AccountQuotaPanel: typeof import('./components/admin/AccountQuotaPanel.vue')['default']
     ActivityAnalytics: typeof import('./components/activity/ActivityAnalytics.vue')['default']
     ActivityDateRange: typeof import('./components/activity/ActivityDateRange.vue')['default']
     ActivityTeamTreeNode: typeof import('./components/activity/ActivityTeamTreeNode.vue')['default']
@@ -49,6 +50,7 @@ declare module 'vue' {
     ElOption: typeof import('element-plus/es')['ElOption']
     ElPagination: typeof import('element-plus/es')['ElPagination']
     ElPopconfirm: typeof import('element-plus/es')['ElPopconfirm']
+    ElProgress: typeof import('element-plus/es')['ElProgress']
     ElRadio: typeof import('element-plus/es')['ElRadio']
     ElRadioButton: typeof import('element-plus/es')['ElRadioButton']
     ElRadioGroup: typeof import('element-plus/es')['ElRadioGroup']

@@ -15,6 +15,8 @@ import (
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/ai-efficiency/backend/ent/accountquotaobservation"
+	"github.com/ai-efficiency/backend/ent/accountquotasweep"
 	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
 	"github.com/ai-efficiency/backend/ent/attributionclaimgroup"
 	"github.com/ai-efficiency/backend/ent/attributionrequestclaim"
@@ -59,6 +61,10 @@ type Client struct {
 	config
 	// Schema is the client for creating, migrating and dropping schema.
 	Schema *migrate.Schema
+	// AccountQuotaObservation is the client for interacting with the AccountQuotaObservation builders.
+	AccountQuotaObservation *AccountQuotaObservationClient
+	// AccountQuotaSweep is the client for interacting with the AccountQuotaSweep builders.
+	AccountQuotaSweep *AccountQuotaSweepClient
 	// AdminSubscriptionJob is the client for interacting with the AdminSubscriptionJob builders.
 	AdminSubscriptionJob *AdminSubscriptionJobClient
 	// AttributionClaimGroup is the client for interacting with the AttributionClaimGroup builders.
@@ -144,6 +150,8 @@ func NewClient(opts ...Option) *Client {
 
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
+	c.AccountQuotaObservation = NewAccountQuotaObservationClient(c.config)
+	c.AccountQuotaSweep = NewAccountQuotaSweepClient(c.config)
 	c.AdminSubscriptionJob = NewAdminSubscriptionJobClient(c.config)
 	c.AttributionClaimGroup = NewAttributionClaimGroupClient(c.config)
 	c.AttributionRequestClaim = NewAttributionRequestClaimClient(c.config)
@@ -273,6 +281,8 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	return &Tx{
 		ctx:                           ctx,
 		config:                        cfg,
+		AccountQuotaObservation:       NewAccountQuotaObservationClient(cfg),
+		AccountQuotaSweep:             NewAccountQuotaSweepClient(cfg),
 		AdminSubscriptionJob:          NewAdminSubscriptionJobClient(cfg),
 		AttributionClaimGroup:         NewAttributionClaimGroupClient(cfg),
 		AttributionRequestClaim:       NewAttributionRequestClaimClient(cfg),
@@ -329,6 +339,8 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	return &Tx{
 		ctx:                           ctx,
 		config:                        cfg,
+		AccountQuotaObservation:       NewAccountQuotaObservationClient(cfg),
+		AccountQuotaSweep:             NewAccountQuotaSweepClient(cfg),
 		AdminSubscriptionJob:          NewAdminSubscriptionJobClient(cfg),
 		AttributionClaimGroup:         NewAttributionClaimGroupClient(cfg),
 		AttributionRequestClaim:       NewAttributionRequestClaimClient(cfg),
@@ -372,7 +384,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 // Debug returns a new debug-client. It's used to get verbose logging on specific operations.
 //
 //	client.Debug().
-//		AdminSubscriptionJob.
+//		AccountQuotaObservation.
 //		Query().
 //		Count(ctx)
 func (c *Client) Debug() *Client {
@@ -395,9 +407,10 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.AdminSubscriptionJob, c.AttributionClaimGroup, c.AttributionRequestClaim,
-		c.AttributionUsagePool, c.AttributionUsagePoolCommit, c.CommitCheckpoint,
-		c.CommitRewrite, c.Credential, c.DirectoryDepartment, c.DirectoryMember,
+		c.AccountQuotaObservation, c.AccountQuotaSweep, c.AdminSubscriptionJob,
+		c.AttributionClaimGroup, c.AttributionRequestClaim, c.AttributionUsagePool,
+		c.AttributionUsagePoolCommit, c.CommitCheckpoint, c.CommitRewrite,
+		c.Credential, c.DirectoryDepartment, c.DirectoryMember,
 		c.DirectoryMemberDepartment, c.DirectoryOffboardingAction, c.DirectorySource,
 		c.DirectorySyncRun, c.OwnerAccountOperation, c.PRCommitUsageSnapshot,
 		c.PRSyncJob, c.PrAttributionRun, c.PrRecord, c.QuotaResetApproverConfig,
@@ -416,9 +429,10 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.AdminSubscriptionJob, c.AttributionClaimGroup, c.AttributionRequestClaim,
-		c.AttributionUsagePool, c.AttributionUsagePoolCommit, c.CommitCheckpoint,
-		c.CommitRewrite, c.Credential, c.DirectoryDepartment, c.DirectoryMember,
+		c.AccountQuotaObservation, c.AccountQuotaSweep, c.AdminSubscriptionJob,
+		c.AttributionClaimGroup, c.AttributionRequestClaim, c.AttributionUsagePool,
+		c.AttributionUsagePoolCommit, c.CommitCheckpoint, c.CommitRewrite,
+		c.Credential, c.DirectoryDepartment, c.DirectoryMember,
 		c.DirectoryMemberDepartment, c.DirectoryOffboardingAction, c.DirectorySource,
 		c.DirectorySyncRun, c.OwnerAccountOperation, c.PRCommitUsageSnapshot,
 		c.PRSyncJob, c.PrAttributionRun, c.PrRecord, c.QuotaResetApproverConfig,
@@ -436,6 +450,10 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 // Mutate implements the ent.Mutator interface.
 func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
+	case *AccountQuotaObservationMutation:
+		return c.AccountQuotaObservation.mutate(ctx, m)
+	case *AccountQuotaSweepMutation:
+		return c.AccountQuotaSweep.mutate(ctx, m)
 	case *AdminSubscriptionJobMutation:
 		return c.AdminSubscriptionJob.mutate(ctx, m)
 	case *AttributionClaimGroupMutation:
@@ -512,6 +530,272 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.WebhookDeadLetter.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
+	}
+}
+
+// AccountQuotaObservationClient is a client for the AccountQuotaObservation schema.
+type AccountQuotaObservationClient struct {
+	config
+}
+
+// NewAccountQuotaObservationClient returns a client for the AccountQuotaObservation from the given config.
+func NewAccountQuotaObservationClient(c config) *AccountQuotaObservationClient {
+	return &AccountQuotaObservationClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `accountquotaobservation.Hooks(f(g(h())))`.
+func (c *AccountQuotaObservationClient) Use(hooks ...Hook) {
+	c.hooks.AccountQuotaObservation = append(c.hooks.AccountQuotaObservation, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `accountquotaobservation.Intercept(f(g(h())))`.
+func (c *AccountQuotaObservationClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AccountQuotaObservation = append(c.inters.AccountQuotaObservation, interceptors...)
+}
+
+// Create returns a builder for creating a AccountQuotaObservation entity.
+func (c *AccountQuotaObservationClient) Create() *AccountQuotaObservationCreate {
+	mutation := newAccountQuotaObservationMutation(c.config, OpCreate)
+	return &AccountQuotaObservationCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AccountQuotaObservation entities.
+func (c *AccountQuotaObservationClient) CreateBulk(builders ...*AccountQuotaObservationCreate) *AccountQuotaObservationCreateBulk {
+	return &AccountQuotaObservationCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AccountQuotaObservationClient) MapCreateBulk(slice any, setFunc func(*AccountQuotaObservationCreate, int)) *AccountQuotaObservationCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AccountQuotaObservationCreateBulk{err: fmt.Errorf("calling to AccountQuotaObservationClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AccountQuotaObservationCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AccountQuotaObservationCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AccountQuotaObservation.
+func (c *AccountQuotaObservationClient) Update() *AccountQuotaObservationUpdate {
+	mutation := newAccountQuotaObservationMutation(c.config, OpUpdate)
+	return &AccountQuotaObservationUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AccountQuotaObservationClient) UpdateOne(aqo *AccountQuotaObservation) *AccountQuotaObservationUpdateOne {
+	mutation := newAccountQuotaObservationMutation(c.config, OpUpdateOne, withAccountQuotaObservation(aqo))
+	return &AccountQuotaObservationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AccountQuotaObservationClient) UpdateOneID(id int) *AccountQuotaObservationUpdateOne {
+	mutation := newAccountQuotaObservationMutation(c.config, OpUpdateOne, withAccountQuotaObservationID(id))
+	return &AccountQuotaObservationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AccountQuotaObservation.
+func (c *AccountQuotaObservationClient) Delete() *AccountQuotaObservationDelete {
+	mutation := newAccountQuotaObservationMutation(c.config, OpDelete)
+	return &AccountQuotaObservationDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AccountQuotaObservationClient) DeleteOne(aqo *AccountQuotaObservation) *AccountQuotaObservationDeleteOne {
+	return c.DeleteOneID(aqo.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AccountQuotaObservationClient) DeleteOneID(id int) *AccountQuotaObservationDeleteOne {
+	builder := c.Delete().Where(accountquotaobservation.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AccountQuotaObservationDeleteOne{builder}
+}
+
+// Query returns a query builder for AccountQuotaObservation.
+func (c *AccountQuotaObservationClient) Query() *AccountQuotaObservationQuery {
+	return &AccountQuotaObservationQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAccountQuotaObservation},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AccountQuotaObservation entity by its id.
+func (c *AccountQuotaObservationClient) Get(ctx context.Context, id int) (*AccountQuotaObservation, error) {
+	return c.Query().Where(accountquotaobservation.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AccountQuotaObservationClient) GetX(ctx context.Context, id int) *AccountQuotaObservation {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AccountQuotaObservationClient) Hooks() []Hook {
+	return c.hooks.AccountQuotaObservation
+}
+
+// Interceptors returns the client interceptors.
+func (c *AccountQuotaObservationClient) Interceptors() []Interceptor {
+	return c.inters.AccountQuotaObservation
+}
+
+func (c *AccountQuotaObservationClient) mutate(ctx context.Context, m *AccountQuotaObservationMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AccountQuotaObservationCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AccountQuotaObservationUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AccountQuotaObservationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AccountQuotaObservationDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AccountQuotaObservation mutation op: %q", m.Op())
+	}
+}
+
+// AccountQuotaSweepClient is a client for the AccountQuotaSweep schema.
+type AccountQuotaSweepClient struct {
+	config
+}
+
+// NewAccountQuotaSweepClient returns a client for the AccountQuotaSweep from the given config.
+func NewAccountQuotaSweepClient(c config) *AccountQuotaSweepClient {
+	return &AccountQuotaSweepClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `accountquotasweep.Hooks(f(g(h())))`.
+func (c *AccountQuotaSweepClient) Use(hooks ...Hook) {
+	c.hooks.AccountQuotaSweep = append(c.hooks.AccountQuotaSweep, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `accountquotasweep.Intercept(f(g(h())))`.
+func (c *AccountQuotaSweepClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AccountQuotaSweep = append(c.inters.AccountQuotaSweep, interceptors...)
+}
+
+// Create returns a builder for creating a AccountQuotaSweep entity.
+func (c *AccountQuotaSweepClient) Create() *AccountQuotaSweepCreate {
+	mutation := newAccountQuotaSweepMutation(c.config, OpCreate)
+	return &AccountQuotaSweepCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AccountQuotaSweep entities.
+func (c *AccountQuotaSweepClient) CreateBulk(builders ...*AccountQuotaSweepCreate) *AccountQuotaSweepCreateBulk {
+	return &AccountQuotaSweepCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AccountQuotaSweepClient) MapCreateBulk(slice any, setFunc func(*AccountQuotaSweepCreate, int)) *AccountQuotaSweepCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AccountQuotaSweepCreateBulk{err: fmt.Errorf("calling to AccountQuotaSweepClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AccountQuotaSweepCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AccountQuotaSweepCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AccountQuotaSweep.
+func (c *AccountQuotaSweepClient) Update() *AccountQuotaSweepUpdate {
+	mutation := newAccountQuotaSweepMutation(c.config, OpUpdate)
+	return &AccountQuotaSweepUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AccountQuotaSweepClient) UpdateOne(aqs *AccountQuotaSweep) *AccountQuotaSweepUpdateOne {
+	mutation := newAccountQuotaSweepMutation(c.config, OpUpdateOne, withAccountQuotaSweep(aqs))
+	return &AccountQuotaSweepUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AccountQuotaSweepClient) UpdateOneID(id int) *AccountQuotaSweepUpdateOne {
+	mutation := newAccountQuotaSweepMutation(c.config, OpUpdateOne, withAccountQuotaSweepID(id))
+	return &AccountQuotaSweepUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AccountQuotaSweep.
+func (c *AccountQuotaSweepClient) Delete() *AccountQuotaSweepDelete {
+	mutation := newAccountQuotaSweepMutation(c.config, OpDelete)
+	return &AccountQuotaSweepDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AccountQuotaSweepClient) DeleteOne(aqs *AccountQuotaSweep) *AccountQuotaSweepDeleteOne {
+	return c.DeleteOneID(aqs.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AccountQuotaSweepClient) DeleteOneID(id int) *AccountQuotaSweepDeleteOne {
+	builder := c.Delete().Where(accountquotasweep.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AccountQuotaSweepDeleteOne{builder}
+}
+
+// Query returns a query builder for AccountQuotaSweep.
+func (c *AccountQuotaSweepClient) Query() *AccountQuotaSweepQuery {
+	return &AccountQuotaSweepQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAccountQuotaSweep},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AccountQuotaSweep entity by its id.
+func (c *AccountQuotaSweepClient) Get(ctx context.Context, id int) (*AccountQuotaSweep, error) {
+	return c.Query().Where(accountquotasweep.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AccountQuotaSweepClient) GetX(ctx context.Context, id int) *AccountQuotaSweep {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AccountQuotaSweepClient) Hooks() []Hook {
+	return c.hooks.AccountQuotaSweep
+}
+
+// Interceptors returns the client interceptors.
+func (c *AccountQuotaSweepClient) Interceptors() []Interceptor {
+	return c.inters.AccountQuotaSweep
+}
+
+func (c *AccountQuotaSweepClient) mutate(ctx context.Context, m *AccountQuotaSweepMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AccountQuotaSweepCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AccountQuotaSweepUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AccountQuotaSweepUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AccountQuotaSweepDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AccountQuotaSweep mutation op: %q", m.Op())
 	}
 }
 
@@ -6130,30 +6414,32 @@ func (c *WebhookDeadLetterClient) mutate(ctx context.Context, m *WebhookDeadLett
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		AdminSubscriptionJob, AttributionClaimGroup, AttributionRequestClaim,
-		AttributionUsagePool, AttributionUsagePoolCommit, CommitCheckpoint,
-		CommitRewrite, Credential, DirectoryDepartment, DirectoryMember,
-		DirectoryMemberDepartment, DirectoryOffboardingAction, DirectorySource,
-		DirectorySyncRun, OwnerAccountOperation, PRCommitUsageSnapshot, PRSyncJob,
-		PrAttributionRun, PrRecord, QuotaResetApproverConfig,
-		QuotaResetNotificationSetting, QuotaResetRequest, QuotaResetRequestEvent,
-		RelationshipOperation, RelationshipOperationAttempt,
-		RelationshipOperationMapping, RelationshipOperationStep, RelayGroupMapping,
-		RelayProvider, RepoConfig, ReportingInstallation, ScmProvider, SystemSetting,
+		AccountQuotaObservation, AccountQuotaSweep, AdminSubscriptionJob,
+		AttributionClaimGroup, AttributionRequestClaim, AttributionUsagePool,
+		AttributionUsagePoolCommit, CommitCheckpoint, CommitRewrite, Credential,
+		DirectoryDepartment, DirectoryMember, DirectoryMemberDepartment,
+		DirectoryOffboardingAction, DirectorySource, DirectorySyncRun,
+		OwnerAccountOperation, PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun,
+		PrRecord, QuotaResetApproverConfig, QuotaResetNotificationSetting,
+		QuotaResetRequest, QuotaResetRequestEvent, RelationshipOperation,
+		RelationshipOperationAttempt, RelationshipOperationMapping,
+		RelationshipOperationStep, RelayGroupMapping, RelayProvider, RepoConfig,
+		ReportingInstallation, ScmProvider, SystemSetting,
 		TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
 		WebhookDeadLetter []ent.Hook
 	}
 	inters struct {
-		AdminSubscriptionJob, AttributionClaimGroup, AttributionRequestClaim,
-		AttributionUsagePool, AttributionUsagePoolCommit, CommitCheckpoint,
-		CommitRewrite, Credential, DirectoryDepartment, DirectoryMember,
-		DirectoryMemberDepartment, DirectoryOffboardingAction, DirectorySource,
-		DirectorySyncRun, OwnerAccountOperation, PRCommitUsageSnapshot, PRSyncJob,
-		PrAttributionRun, PrRecord, QuotaResetApproverConfig,
-		QuotaResetNotificationSetting, QuotaResetRequest, QuotaResetRequestEvent,
-		RelationshipOperation, RelationshipOperationAttempt,
-		RelationshipOperationMapping, RelationshipOperationStep, RelayGroupMapping,
-		RelayProvider, RepoConfig, ReportingInstallation, ScmProvider, SystemSetting,
+		AccountQuotaObservation, AccountQuotaSweep, AdminSubscriptionJob,
+		AttributionClaimGroup, AttributionRequestClaim, AttributionUsagePool,
+		AttributionUsagePoolCommit, CommitCheckpoint, CommitRewrite, Credential,
+		DirectoryDepartment, DirectoryMember, DirectoryMemberDepartment,
+		DirectoryOffboardingAction, DirectorySource, DirectorySyncRun,
+		OwnerAccountOperation, PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun,
+		PrRecord, QuotaResetApproverConfig, QuotaResetNotificationSetting,
+		QuotaResetRequest, QuotaResetRequestEvent, RelationshipOperation,
+		RelationshipOperationAttempt, RelationshipOperationMapping,
+		RelationshipOperationStep, RelayGroupMapping, RelayProvider, RepoConfig,
+		ReportingInstallation, ScmProvider, SystemSetting,
 		TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
 		WebhookDeadLetter []ent.Interceptor
 	}

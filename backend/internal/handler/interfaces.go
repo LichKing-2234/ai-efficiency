@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/internal/accountquota"
 	"github.com/ai-efficiency/backend/internal/attribution"
 	"github.com/ai-efficiency/backend/internal/prsync"
 	"github.com/ai-efficiency/backend/internal/prusage"
@@ -38,4 +39,12 @@ type prUsageFreshnessEvaluator interface {
 
 type prUsagePageFreshnessEvaluator interface {
 	EvaluatePRFreshnessPage(ctx context.Context, repoConfigID int, prs []*ent.PrRecord) (map[int]*prusage.PRFreshness, error)
+}
+
+// accountQuotaService abstracts the admin quota sweep service for testability.
+type accountQuotaService interface {
+	List(ctx context.Context, providerID int, platform string) (*accountquota.Page, error)
+	StartSweep(ctx context.Context, request accountquota.StartSweepRequest) (*accountquota.Sweep, error)
+	GetSweep(ctx context.Context, id int) (*accountquota.Sweep, error)
+	LatestSweep(ctx context.Context, providerID int) (*accountquota.Sweep, error)
 }

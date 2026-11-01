@@ -10,6 +10,7 @@
 - Independent architectural rationale: `docs/adr/` when warranted
 - Domain vocabulary: tracked root `CONTEXT.md` when present and relevant
 - Implemented account custodian console (email-derived ownership; two async gated mutations; switch `relay.owner_account_mutations_enabled` / `AE_RELAY_OWNER_ACCOUNT_MUTATIONS_ENABLED`, default off): `docs/contracts/owner-account-console.md`
+- Implemented admin account quota sweep (「额度巡检」 tab on `/admin/relay-accounts`; manual bounded async refresh of OpenAI OAuth 额度/点数/重置券; never spends a reset credit): `docs/contracts/account-quota-sweep.md`
 - Platform Sessions and the local session proxy are retired
 - Default verification:
   - `cd backend && go test ./...`
