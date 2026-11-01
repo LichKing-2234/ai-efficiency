@@ -2,6 +2,7 @@ import type { RelayPlanningMessageKey } from './relayPlanning'
 import type { DirectoryOffboardingMessageKey } from './directoryOffboarding'
 import type { OpsMonitoringMessageKey } from './opsMonitoring'
 import type { OwnerAccountsMessageKey } from './ownerAccounts'
+import type { AccountQuotaMessageKey } from './accountQuota'
 
 const enUS = {
   'app.title': 'AI Efficiency',
@@ -1001,6 +1002,7 @@ export type MessageKey =
   | DirectoryOffboardingMessageKey
   | OpsMonitoringMessageKey
   | OwnerAccountsMessageKey
+  | AccountQuotaMessageKey
 export type Messages = { readonly [Key in keyof typeof enUS]: string }
 
 export default enUS

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { CopyDocument, Refresh, Setting } from '@element-plus/icons-vue'
+import { CopyDocument, Odometer, Refresh, Setting } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import AppLayout from '@/components/AppLayout.vue'
+import AccountQuotaPanel from '@/components/admin/AccountQuotaPanel.vue'
 import { useI18n } from '@/i18n'
+import { accountQuotaMessages } from '@/locales/accountQuota'
 import { relayPlanningMessages } from '@/locales/relayPlanning'
 import { listAdminUserSubscriptionOptions } from '@/api/adminUsers'
 import {
@@ -17,6 +19,9 @@ import { createFeatureTranslator } from '@/utils/featureI18n'
 
 const { t: baseT, locale } = useI18n()
 const t = createFeatureTranslator(locale, baseT, 'relayPlanning.', relayPlanningMessages)
+const tabT = createFeatureTranslator(locale, baseT, 'accountQuota.', accountQuotaMessages)
+
+const activeTab = ref<'config' | 'quota'>('config')
 
 const loading = ref(false)
 const applying = ref(false)
@@ -234,6 +239,7 @@ async function loadConfigurations() {
 
 function handleProviderChange() {
   form.platform = ''
+  activeTab.value = 'config'
   resetView()
 }
 
@@ -365,13 +371,13 @@ onMounted(async () => {
       <header class="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-blue-700">
-            <el-icon><CopyDocument /></el-icon>
-            {{ t('relayPlanning.accountConfigEyebrow') }}
+            <el-icon><Odometer /></el-icon>
+            {{ tabT('accountQuota.pageEyebrow') }}
           </div>
-          <h1 class="mt-1 text-2xl font-semibold text-slate-900">{{ t('relayPlanning.accountConfigTitle') }}</h1>
-          <p class="mt-1 text-sm text-slate-500">{{ t('relayPlanning.accountConfigSubtitle') }}</p>
+          <h1 class="mt-1 text-2xl font-semibold text-slate-900">{{ tabT('accountQuota.pageTitle') }}</h1>
+          <p class="mt-1 text-sm text-slate-500">{{ tabT('accountQuota.pageSubtitle') }}</p>
         </div>
-        <el-button data-testid="refresh-accounts" :icon="Refresh" :loading="loading" :disabled="!form.platform" @click="loadConfigurations">{{ t('relayPlanning.accountConfigRefresh') }}</el-button>
+        <el-button v-if="activeTab === 'config'" data-testid="refresh-accounts" :icon="Refresh" :loading="loading" :disabled="!form.platform" @click="loadConfigurations">{{ t('relayPlanning.accountConfigRefresh') }}</el-button>
       </header>
 
       <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -395,153 +401,160 @@ onMounted(async () => {
         {{ t('relayPlanning.accountConfigNoPlatform') }}
       </section>
 
-      <section v-else class="space-y-4">
-        <div class="rounded-lg border border-slate-200 bg-white p-4">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div class="min-w-0">
-              <div class="text-xs text-slate-500">{{ t('relayPlanning.baselineAccount') }}</div>
-              <div class="mt-1 break-words text-sm font-medium text-slate-900" data-testid="baseline-account">{{ baselineLabel }}</div>
-            </div>
-            <el-button v-if="hasBaseline" data-testid="clear-baseline" size="small" @click="clearBaseline">{{ t('relayPlanning.clearBaseline') }}</el-button>
-          </div>
-          <div v-if="baselineConfigurationRows.length > 0" class="mt-3 border-t border-slate-100 pt-3" data-testid="baseline-configuration">
-            <div class="text-xs text-slate-500">{{ t('relayPlanning.baselineConfiguration') }}</div>
-            <div class="mt-1 text-xs text-slate-500">{{ t('relayPlanning.baselineConfigurationHint') }}</div>
-            <dl class="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
-              <div v-for="row in baselineConfigurationRows" :key="row.key" class="flex min-w-0 items-center gap-2">
-                <dt class="shrink-0 font-mono text-xs text-slate-500">{{ row.key }}</dt>
-                <dd class="min-w-0 break-words text-xs text-slate-900">{{ row.value }}</dd>
-                <el-checkbox
-                  class="ml-auto shrink-0"
-                  :data-testid="`include-key-${row.key}`"
-                  :model-value="!isIgnoredKey(row.key)"
-                  @change="(value) => toggleIgnoreKey(row.key, value === true)"
-                >{{ t('relayPlanning.includeKey') }}</el-checkbox>
+      <el-tabs v-else v-model="activeTab" data-testid="relay-account-tabs">
+        <el-tab-pane :label="tabT('accountQuota.tabConfig')" name="config">
+          <section class="space-y-4">
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="text-xs text-slate-500">{{ t('relayPlanning.baselineAccount') }}</div>
+                  <div class="mt-1 break-words text-sm font-medium text-slate-900" data-testid="baseline-account">{{ baselineLabel }}</div>
+                </div>
+                <el-button v-if="hasBaseline" data-testid="clear-baseline" size="small" @click="clearBaseline">{{ t('relayPlanning.clearBaseline') }}</el-button>
               </div>
-            </dl>
-          </div>
-        </div>
-
-        <div class="rounded-lg border border-slate-200 bg-white p-4">
-          <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
-              <div class="flex flex-wrap items-center gap-2">
-                <el-select v-model="accountTypeFilter" data-testid="account-type-filter" size="small" class="w-36" @change="pruneSelection">
-                  <el-option :label="t('relayPlanning.allAccountTypes')" value="" />
-                  <el-option v-for="type in accountTypeOptions" :key="type" :label="type" :value="type" />
-                </el-select>
-                <el-select v-model="groupFilter" data-testid="group-filter" size="small" class="w-44" @change="pruneSelection">
-                  <el-option :label="t('relayPlanning.allGroups')" value="" />
-                  <el-option v-for="group in groupOptions" :key="group.group_id" :label="group.group_name" :value="String(group.group_id)" />
-                </el-select>
-                <el-select v-model="resetCreditsFilter" data-testid="reset-credits-filter" size="small" class="w-40" @change="pruneSelection">
-                  <el-option :label="t('relayPlanning.allResetCredits')" value="" />
-                  <el-option :label="t('relayPlanning.resetCreditsNone')" value="0" />
-                  <el-option :label="t('relayPlanning.resetCreditsOne')" value="1" />
-                  <el-option :label="t('relayPlanning.resetCreditsTwo')" value="2" />
-                  <el-option :label="t('relayPlanning.resetCreditsThreePlus')" value="3+" />
-                  <el-option :label="t('relayPlanning.resetCreditsUnknown')" value="unknown" />
-                </el-select>
+              <div v-if="baselineConfigurationRows.length > 0" class="mt-3 border-t border-slate-100 pt-3" data-testid="baseline-configuration">
+                <div class="text-xs text-slate-500">{{ t('relayPlanning.baselineConfiguration') }}</div>
+                <div class="mt-1 text-xs text-slate-500">{{ t('relayPlanning.baselineConfigurationHint') }}</div>
+                <dl class="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
+                  <div v-for="row in baselineConfigurationRows" :key="row.key" class="flex min-w-0 items-center gap-2">
+                    <dt class="shrink-0 font-mono text-xs text-slate-500">{{ row.key }}</dt>
+                    <dd class="min-w-0 break-words text-xs text-slate-900">{{ row.value }}</dd>
+                    <el-checkbox
+                      class="ml-auto shrink-0"
+                      :data-testid="`include-key-${row.key}`"
+                      :model-value="!isIgnoredKey(row.key)"
+                      @change="(value) => toggleIgnoreKey(row.key, value === true)"
+                    >{{ t('relayPlanning.includeKey') }}</el-checkbox>
+                  </div>
+                </dl>
               </div>
-              <el-checkbox data-testid="only-deviating-toggle" :model-value="onlyDeviating" :disabled="!hasBaseline" @change="(value) => (onlyDeviating = value === true)">{{ t('relayPlanning.onlyDeviating') }}</el-checkbox>
-              <el-checkbox
-                v-if="hasBaseline"
-                data-testid="select-all-deviating"
-                :model-value="allDeviatingSelected"
-                :indeterminate="someDeviatingSelected && !allDeviatingSelected"
-                :disabled="loading || applying || deviatingItems.length === 0"
-                @change="(value) => toggleSelectAllDeviating(value === true)"
-              >
-                {{ t('relayPlanning.selectAllDeviating') }}
-              </el-checkbox>
             </div>
-            <div v-if="hasBaseline" class="text-xs text-slate-500" data-testid="deviation-summary">
-              {{ t('relayPlanning.deviatingAccounts', { count: deviatingItems.length }) }} · {{ t('relayPlanning.selectedTargets', { count: selectedTargetIDs.size }) }}
+
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <el-select v-model="accountTypeFilter" data-testid="account-type-filter" size="small" class="w-36" @change="pruneSelection">
+                      <el-option :label="t('relayPlanning.allAccountTypes')" value="" />
+                      <el-option v-for="type in accountTypeOptions" :key="type" :label="type" :value="type" />
+                    </el-select>
+                    <el-select v-model="groupFilter" data-testid="group-filter" size="small" class="w-44" @change="pruneSelection">
+                      <el-option :label="t('relayPlanning.allGroups')" value="" />
+                      <el-option v-for="group in groupOptions" :key="group.group_id" :label="group.group_name" :value="String(group.group_id)" />
+                    </el-select>
+                    <el-select v-model="resetCreditsFilter" data-testid="reset-credits-filter" size="small" class="w-40" @change="pruneSelection">
+                      <el-option :label="t('relayPlanning.allResetCredits')" value="" />
+                      <el-option :label="t('relayPlanning.resetCreditsNone')" value="0" />
+                      <el-option :label="t('relayPlanning.resetCreditsOne')" value="1" />
+                      <el-option :label="t('relayPlanning.resetCreditsTwo')" value="2" />
+                      <el-option :label="t('relayPlanning.resetCreditsThreePlus')" value="3+" />
+                      <el-option :label="t('relayPlanning.resetCreditsUnknown')" value="unknown" />
+                    </el-select>
+                  </div>
+                  <el-checkbox data-testid="only-deviating-toggle" :model-value="onlyDeviating" :disabled="!hasBaseline" @change="(value) => (onlyDeviating = value === true)">{{ t('relayPlanning.onlyDeviating') }}</el-checkbox>
+                  <el-checkbox
+                    v-if="hasBaseline"
+                    data-testid="select-all-deviating"
+                    :model-value="allDeviatingSelected"
+                    :indeterminate="someDeviatingSelected && !allDeviatingSelected"
+                    :disabled="loading || applying || deviatingItems.length === 0"
+                    @change="(value) => toggleSelectAllDeviating(value === true)"
+                  >
+                    {{ t('relayPlanning.selectAllDeviating') }}
+                  </el-checkbox>
+                </div>
+                <div v-if="hasBaseline" class="text-xs text-slate-500" data-testid="deviation-summary">
+                  {{ t('relayPlanning.deviatingAccounts', { count: deviatingItems.length }) }} · {{ t('relayPlanning.selectedTargets', { count: selectedTargetIDs.size }) }}
+                </div>
+              </div>
+
+              <el-table data-testid="account-config-table" :data="visibleItems" stripe :row-key="(row) => String(row.account.id)">
+                <el-table-column :label="t('relayPlanning.baseline')" width="150">
+                  <template #default="scope">
+                    <el-tag v-if="scope.row.account.id === baselineAccountID" type="warning" data-testid="baseline-tag">{{ t('relayPlanning.baseline') }}</el-tag>
+                    <el-button v-else size="small" :data-testid="`set-baseline-${scope.row.account.id}`" @click="setBaseline(scope.row.account.id)">{{ t('relayPlanning.setAsBaseline') }}</el-button>
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('relayPlanning.accountName')" min-width="200">
+                  <template #default="scope">
+                    <div :data-testid="`account-row-${scope.row.account.id}`">
+                      <div class="break-words font-medium text-slate-900">{{ scope.row.account.name }}</div>
+                      <div class="text-xs text-slate-500">#{{ scope.row.account.id }}</div>
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('relayPlanning.accountType')" width="110">
+                  <template #default="scope">{{ scope.row.account.type }}</template>
+                </el-table-column>
+                <el-table-column :label="t('relayPlanning.status')" width="110">
+                  <template #default="scope">{{ scope.row.account.status }}</template>
+                </el-table-column>
+                <el-table-column :label="t('relayPlanning.schedulable')" width="140">
+                  <template #default="scope">
+                    <el-tag :type="scope.row.account.schedulable ? 'success' : 'info'">{{ scope.row.account.schedulable ? t('relayPlanning.schedulableYes') : t('relayPlanning.schedulableNo') }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('relayPlanning.resetCredits')" width="120">
+                  <template #default="scope">
+                    <span :data-testid="`reset-credits-${scope.row.account.id}`" :title="resetCreditsTitle(scope.row.reset_credits_available)" class="tabular-nums">{{ resetCreditsLabel(scope.row.reset_credits_available) }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('relayPlanning.deviation')" min-width="280">
+                  <template #default="scope">
+                    <div v-if="!scope.row.diff" class="text-xs text-slate-400">-</div>
+                    <div v-else-if="scope.row.diff.matches" :data-testid="`deviation-match-${scope.row.account.id}`">
+                      <el-tag type="success">{{ t('relayPlanning.matchesBaseline') }}</el-tag>
+                    </div>
+                    <div v-else :data-testid="`deviation-diff-${scope.row.account.id}`">
+                      <div class="font-medium text-amber-700" :data-testid="`deviation-counts-${scope.row.account.id}`">{{ deviationText(scope.row.diff) }}</div>
+                      <el-button link type="primary" size="small" :data-testid="`toggle-keys-${scope.row.account.id}`" @click="toggleDiffKeys(scope.row.account.id)">
+                        {{ expandedDiffIDs.has(scope.row.account.id) ? t('relayPlanning.hideDeviationKeys') : t('relayPlanning.viewDeviationKeys') }}
+                      </el-button>
+                      <ul v-if="expandedDiffIDs.has(scope.row.account.id)" class="mt-1 space-y-1 text-xs text-slate-600" :data-testid="`deviation-keys-${scope.row.account.id}`">
+                        <li v-for="group in deviationKeyGroups(scope.row.diff)" :key="group.label">
+                          <span class="font-medium text-slate-700">{{ group.label }}:</span>
+                          <span class="break-all">{{ group.keys.join(', ') }}</span>
+                        </li>
+                      </ul>
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('relayPlanning.select')" width="90">
+                  <template #default="scope">
+                    <el-checkbox
+                      :data-testid="`select-target-${scope.row.account.id}`"
+                      :model-value="isTargetSelected(scope.row.account.id)"
+                      :disabled="loading || applying || !isDeviatingID(scope.row.account.id)"
+                      @change="(value) => toggleTarget(scope.row.account.id, value === true)"
+                    />
+                  </template>
+                </el-table-column>
+                <template #empty>{{ t('relayPlanning.accountConfigNoAccounts') }}</template>
+              </el-table>
+
+              <div class="mt-4 flex flex-wrap items-center gap-2">
+                <el-button data-testid="open-apply-dialog" type="primary" :icon="CopyDocument" :disabled="loading || applying || !hasBaseline || selectedItems.length === 0" @click="openApplyDialog">{{ t('relayPlanning.copyBaselineConfig') }}</el-button>
+                <span class="text-xs text-slate-500">{{ t('relayPlanning.selectedTargets', { count: selectedTargetIDs.size }) }}</span>
+              </div>
             </div>
-          </div>
 
-          <el-table data-testid="account-config-table" :data="visibleItems" stripe :row-key="(row) => String(row.account.id)">
-            <el-table-column :label="t('relayPlanning.baseline')" width="150">
-              <template #default="scope">
-                <el-tag v-if="scope.row.account.id === baselineAccountID" type="warning" data-testid="baseline-tag">{{ t('relayPlanning.baseline') }}</el-tag>
-                <el-button v-else size="small" :data-testid="`set-baseline-${scope.row.account.id}`" @click="setBaseline(scope.row.account.id)">{{ t('relayPlanning.setAsBaseline') }}</el-button>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('relayPlanning.accountName')" min-width="200">
-              <template #default="scope">
-                <div :data-testid="`account-row-${scope.row.account.id}`">
-                  <div class="break-words font-medium text-slate-900">{{ scope.row.account.name }}</div>
-                  <div class="text-xs text-slate-500">#{{ scope.row.account.id }}</div>
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('relayPlanning.accountType')" width="110">
-              <template #default="scope">{{ scope.row.account.type }}</template>
-            </el-table-column>
-            <el-table-column :label="t('relayPlanning.status')" width="110">
-              <template #default="scope">{{ scope.row.account.status }}</template>
-            </el-table-column>
-            <el-table-column :label="t('relayPlanning.schedulable')" width="140">
-              <template #default="scope">
-                <el-tag :type="scope.row.account.schedulable ? 'success' : 'info'">{{ scope.row.account.schedulable ? t('relayPlanning.schedulableYes') : t('relayPlanning.schedulableNo') }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('relayPlanning.resetCredits')" width="120">
-              <template #default="scope">
-                <span :data-testid="`reset-credits-${scope.row.account.id}`" :title="resetCreditsTitle(scope.row.reset_credits_available)" class="tabular-nums">{{ resetCreditsLabel(scope.row.reset_credits_available) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('relayPlanning.deviation')" min-width="280">
-              <template #default="scope">
-                <div v-if="!scope.row.diff" class="text-xs text-slate-400">-</div>
-                <div v-else-if="scope.row.diff.matches" :data-testid="`deviation-match-${scope.row.account.id}`">
-                  <el-tag type="success">{{ t('relayPlanning.matchesBaseline') }}</el-tag>
-                </div>
-                <div v-else :data-testid="`deviation-diff-${scope.row.account.id}`">
-                  <div class="font-medium text-amber-700" :data-testid="`deviation-counts-${scope.row.account.id}`">{{ deviationText(scope.row.diff) }}</div>
-                  <el-button link type="primary" size="small" :data-testid="`toggle-keys-${scope.row.account.id}`" @click="toggleDiffKeys(scope.row.account.id)">
-                    {{ expandedDiffIDs.has(scope.row.account.id) ? t('relayPlanning.hideDeviationKeys') : t('relayPlanning.viewDeviationKeys') }}
-                  </el-button>
-                  <ul v-if="expandedDiffIDs.has(scope.row.account.id)" class="mt-1 space-y-1 text-xs text-slate-600" :data-testid="`deviation-keys-${scope.row.account.id}`">
-                    <li v-for="group in deviationKeyGroups(scope.row.diff)" :key="group.label">
-                      <span class="font-medium text-slate-700">{{ group.label }}:</span>
-                      <span class="break-all">{{ group.keys.join(', ') }}</span>
-                    </li>
-                  </ul>
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('relayPlanning.select')" width="90">
-              <template #default="scope">
-                <el-checkbox
-                  :data-testid="`select-target-${scope.row.account.id}`"
-                  :model-value="isTargetSelected(scope.row.account.id)"
-                  :disabled="loading || applying || !isDeviatingID(scope.row.account.id)"
-                  @change="(value) => toggleTarget(scope.row.account.id, value === true)"
-                />
-              </template>
-            </el-table-column>
-            <template #empty>{{ t('relayPlanning.accountConfigNoAccounts') }}</template>
-          </el-table>
-
-          <div class="mt-4 flex flex-wrap items-center gap-2">
-            <el-button data-testid="open-apply-dialog" type="primary" :icon="CopyDocument" :disabled="loading || applying || !hasBaseline || selectedItems.length === 0" @click="openApplyDialog">{{ t('relayPlanning.copyBaselineConfig') }}</el-button>
-            <span class="text-xs text-slate-500">{{ t('relayPlanning.selectedTargets', { count: selectedTargetIDs.size }) }}</span>
-          </div>
-        </div>
-
-        <div v-if="applyResults" class="rounded-lg border border-slate-200 bg-white p-4" data-testid="apply-results">
-          <div class="text-sm font-semibold text-slate-900">{{ t('relayPlanning.copyConfigResultTitle') }}</div>
-          <div class="mt-1 text-xs text-slate-500">{{ t('relayPlanning.copyAdjusted') }}</div>
-          <ul class="mt-3 divide-y divide-slate-200">
-            <li v-for="result in applyResultRows" :key="result.account_id" class="flex flex-wrap items-center gap-2 py-2 text-sm" :data-testid="`apply-result-${result.account_id}`">
-              <span class="font-medium text-slate-900">{{ result.name ? `${result.name} ` : '' }}#{{ result.account_id }}</span>
-              <el-tag :type="result.applied ? 'success' : 'danger'">{{ result.applied ? t('relayPlanning.copyApplied') : t('relayPlanning.copyFailed') }}</el-tag>
-              <span v-if="!result.applied" class="break-words text-xs text-red-600">{{ result.error || t('relayPlanning.copyFailedMessage') }}</span>
-            </li>
-          </ul>
-        </div>
-      </section>
+            <div v-if="applyResults" class="rounded-lg border border-slate-200 bg-white p-4" data-testid="apply-results">
+              <div class="text-sm font-semibold text-slate-900">{{ t('relayPlanning.copyConfigResultTitle') }}</div>
+              <div class="mt-1 text-xs text-slate-500">{{ t('relayPlanning.copyAdjusted') }}</div>
+              <ul class="mt-3 divide-y divide-slate-200">
+                <li v-for="result in applyResultRows" :key="result.account_id" class="flex flex-wrap items-center gap-2 py-2 text-sm" :data-testid="`apply-result-${result.account_id}`">
+                  <span class="font-medium text-slate-900">{{ result.name ? `${result.name} ` : '' }}#{{ result.account_id }}</span>
+                  <el-tag :type="result.applied ? 'success' : 'danger'">{{ result.applied ? t('relayPlanning.copyApplied') : t('relayPlanning.copyFailed') }}</el-tag>
+                  <span v-if="!result.applied" class="break-words text-xs text-red-600">{{ result.error || t('relayPlanning.copyFailedMessage') }}</span>
+                </li>
+              </ul>
+            </div>
+          </section>
+        </el-tab-pane>
+        <el-tab-pane :label="tabT('accountQuota.tabQuota')" name="quota" lazy>
+          <AccountQuotaPanel v-if="activeTab === 'quota'" :provider-id="form.provider_id" :platform="form.platform" />
+        </el-tab-pane>
+      </el-tabs>
 
       <el-dialog
         v-model="applyDialogOpen"

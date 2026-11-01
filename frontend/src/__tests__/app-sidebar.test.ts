@@ -578,7 +578,7 @@ describe('AppSidebar', () => {
     expect(following.map((link) => link.textContent?.trim())).toEqual([
       'Relay 分组规划',
       'Relay 监控',
-      'Relay 账号配置',
+      'Relay 账号',
     ])
   })
 
