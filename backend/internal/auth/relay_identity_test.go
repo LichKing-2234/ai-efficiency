@@ -359,3 +359,109 @@ func TestResolveOrProvisionRelayUser_FallsBackToLegacyEmailUsernameAndRenames(t 
 		t.Fatalf("expected UpdateUser password empty, got %q", api2.updateUserCalls[0].req.Password)
 	}
 }
+
+func TestResolveOrProvisionForOIDC_CreatesUserWithOIDCProvisioningMarker(t *testing.T) {
+	api := &fakeRelayIdentityAPI{}
+
+	r := NewRelayIdentityResolver(api, "")
+	u, password, err := r.ResolveOrProvisionForOIDC(context.Background(), "alice@example.com", "alice@example.com")
+	if err != nil {
+		t.Fatalf("ResolveOrProvisionForOIDC() unexpected error: %v", err)
+	}
+	if u == nil || u.ID != 123 {
+		t.Fatalf("expected provisioned relay user ID=123, got %+v", u)
+	}
+	if password == "" {
+		t.Fatal("expected generated relay password")
+	}
+	if len(api.createUserCalls) != 1 {
+		t.Fatalf("expected CreateUser called once, got %d", len(api.createUserCalls))
+	}
+	created := api.createUserCalls[0]
+	if created.Username != "alice" {
+		t.Fatalf("expected Username=alice, got %q", created.Username)
+	}
+	if created.Email != "alice@example.com" {
+		t.Fatalf("expected Email=alice@example.com, got %q", created.Email)
+	}
+	if created.Password != password {
+		t.Fatalf("expected created password to match returned password")
+	}
+	if created.Notes != relayOIDCProvisioningNote {
+		t.Fatalf("expected Notes=%q, got %q", relayOIDCProvisioningNote, created.Notes)
+	}
+	if created.Concurrency != defaultRelayUserConcurrency {
+		t.Fatalf("expected Concurrency=%d, got %d", defaultRelayUserConcurrency, created.Concurrency)
+	}
+}
+
+func TestResolveOrProvisionForOIDC_AssignsDefaultsForExistingOIDCProvisionedUserWithoutGroups(t *testing.T) {
+	api := &fakeRelayIdentityAPI{
+		findResult: &relay.User{
+			ID:          7,
+			Username:    "alice",
+			Email:       "alice@example.com",
+			Notes:       relayOIDCProvisioningNote,
+			Concurrency: defaultRelayUserConcurrency,
+		},
+	}
+
+	r := NewRelayIdentityResolver(api, "")
+	u, password, err := r.ResolveOrProvisionForOIDC(context.Background(), "alice", "alice@example.com")
+	if err != nil {
+		t.Fatalf("ResolveOrProvisionForOIDC() unexpected error: %v", err)
+	}
+	if u == nil || u.ID != 7 {
+		t.Fatalf("expected existing relay user ID=7, got %+v", u)
+	}
+	if password != "" {
+		t.Fatalf("returned password = %q, want empty", password)
+	}
+	if len(api.createUserCalls) != 0 {
+		t.Fatalf("expected CreateUser not called when user exists, got %d calls", len(api.createUserCalls))
+	}
+	if len(api.assignDefaultSubscriptionCalls) != 1 || api.assignDefaultSubscriptionCalls[0] != 7 {
+		t.Fatalf("expected default subscriptions assigned for user 7, got %+v", api.assignDefaultSubscriptionCalls)
+	}
+}
+
+func TestResetGeneratedPasswordForProvisionedUser_RotatesOIDCProvisionedUser(t *testing.T) {
+	api := &fakeRelayIdentityAPI{}
+
+	r := NewRelayIdentityResolver(api, "")
+	password, err := r.ResetGeneratedPasswordForProvisionedUser(context.Background(), &relay.User{
+		ID:    7,
+		Notes: relayOIDCProvisioningNote,
+	})
+	if err != nil {
+		t.Fatalf("ResetGeneratedPasswordForProvisionedUser() unexpected error: %v", err)
+	}
+	if password == "" {
+		t.Fatal("expected rotated generated password")
+	}
+	if len(api.updateUserCalls) != 1 {
+		t.Fatalf("expected UpdateUser called once, got %d", len(api.updateUserCalls))
+	}
+	if api.updateUserCalls[0].req.Password != password {
+		t.Fatalf("expected UpdateUser password to match returned password")
+	}
+}
+
+func TestResetGeneratedPasswordForProvisionedUser_SkipsForeignRelayUser(t *testing.T) {
+	api := &fakeRelayIdentityAPI{}
+
+	r := NewRelayIdentityResolver(api, "")
+	password, err := r.ResetGeneratedPasswordForProvisionedUser(context.Background(), &relay.User{
+		ID:    7,
+		Notes: "manually created",
+	})
+	if err != nil {
+		t.Fatalf("ResetGeneratedPasswordForProvisionedUser() unexpected error: %v", err)
+	}
+	if password != "" {
+		t.Fatalf("password = %q, want empty", password)
+	}
+	if len(api.updateUserCalls) != 0 {
+		t.Fatalf("expected UpdateUser not called for foreign relay user, got %d", len(api.updateUserCalls))
+	}
+}

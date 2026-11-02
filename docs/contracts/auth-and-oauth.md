@@ -44,6 +44,18 @@ successful new identity receives the default local `user` role; the provider
 cannot grant local administrator access. The OIDC client secret and all issuer
 configuration remain server-side deployment settings.
 
+A successful OIDC sign-in also reconciles the local user's Relay identity. When
+the local user has no Relay binding, AI Efficiency resolves an exact Relay email
+match, then the canonical or legacy username, and otherwise provisions a Relay
+user with a high-entropy generated password and the default concurrency, then
+stores the binding and the encrypted password locally. Relay users created this
+way carry the `provisioned_by_ai_efficiency_oidc` note. This preserves the
+Relay provisioning that LDAP sign-in already provides, so an OIDC-only account
+can create personal Relay API keys without an upstream password. OIDC
+sign-in never replaces an existing Relay binding, never rotates credentials for
+an already-bound user, and never copies a Relay role into the local account. A
+failed Relay resolution fails the sign-in attempt; the next attempt retries.
+
 The auth options response exposes whether LDAP and the debug-only Dev Login are
 available. Relay SSO is the ordinary non-LDAP login source when its provider is
 registered.
@@ -74,17 +86,25 @@ identity into one local user before issuing tokens.
    upstream `admin` or `user` role.
 
 LDAP login always re-resolves the Relay identity so historical local bindings
-can be repaired. Resolution prefers an exact Relay email match, then a
-canonical username, then a legacy full username. A missing Relay identity is
-provisioned with a high-entropy generated password and the configured default
-concurrency. An existing AI Efficiency LDAP-provisioned Relay user with no
-group facts may receive idempotent default-subscription repair.
+can be repaired. OIDC sign-in resolves the Relay identity only when the local
+user has no binding; an existing binding is never replaced, so later OIDC
+sign-ins make no Relay identity call. Resolution prefers an exact Relay email
+match, then a canonical username, then a legacy full username. A missing Relay
+identity is provisioned with a high-entropy generated password and the
+configured default concurrency. An existing AI Efficiency-provisioned Relay
+user (created by LDAP or OIDC sign-in) with no group facts may receive
+idempotent default-subscription repair.
 
 When LDAP reuses a local user that previously authenticated through Relay SSO,
 the local auth source becomes `ldap` while any previously stored Relay password
 is preserved. A Relay binding move may rotate a generated password only for an
-AI Efficiency LDAP-provisioned Relay user. The LDAP login password is cleared
+AI Efficiency-provisioned Relay user. The LDAP login password is cleared
 before any local persistence or Relay identity operation.
+
+An OIDC sign-in that provisions a Relay identity also stores the generated
+password encrypted, so the same user can later create or regenerate personal
+Relay API keys without an upstream password. When OIDC links an existing local
+account, it does not change the local username, local role, or Relay binding.
 
 If LDAP omits email, AI Efficiency derives a deterministic non-empty fallback
 from the login identity. Local identity repair must not create a duplicate row

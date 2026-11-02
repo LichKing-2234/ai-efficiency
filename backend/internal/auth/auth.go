@@ -288,7 +288,7 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 		if strings.TrimSpace(relayPassword) != "" {
 			info.RelayAuthPassword = relayPassword
 		} else {
-			relayPassword, err := s.relayIdentityResolver.ResetGeneratedPasswordForLDAPProvisionedUser(ctx, relayUser)
+			relayPassword, err := s.relayIdentityResolver.ResetGeneratedPasswordForProvisionedUser(ctx, relayUser)
 			if err != nil {
 				return nil, fmt.Errorf("reset relay auth password: %w", err)
 			}
@@ -370,7 +370,7 @@ func (s *Service) syncExistingLocalUser(ctx context.Context, u *ent.User, info *
 		u = updated
 	}
 	if ldapLogin && relayBindingMoved && strings.TrimSpace(info.RelayAuthPassword) == "" && s.relayIdentityResolver != nil {
-		relayPassword, err := s.relayIdentityResolver.ResetGeneratedPasswordForLDAPProvisionedUser(ctx, resolvedRelayUser)
+		relayPassword, err := s.relayIdentityResolver.ResetGeneratedPasswordForProvisionedUser(ctx, resolvedRelayUser)
 		if err != nil {
 			return nil, fmt.Errorf("reset relay auth password: %w", err)
 		}
