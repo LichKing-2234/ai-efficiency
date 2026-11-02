@@ -81,8 +81,10 @@ password through the admin API, stores the generated replacement encrypted,
 and retries the user-scoped write once. The LDAP password is never used for
 this repair.
 
-These repairs are mutation prerequisites, not login behavior: Relay SSO itself
-still authenticates existing Relay users only.
+These repairs are mutation prerequisites. Relay SSO itself still authenticates
+existing Relay users only. LDAP and OIDC sign-in may separately bind or
+provision a local user's Relay identity as login behavior; that is defined in
+[`auth-and-oauth.md`](./auth-and-oauth.md).
 
 ## Personal Credential Lifecycle
 
