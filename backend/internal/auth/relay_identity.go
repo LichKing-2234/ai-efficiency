@@ -11,7 +11,22 @@ import (
 )
 
 const defaultRelayUserConcurrency = 5
-const relayLDAPProvisioningNote = "provisioned_by_ai_efficiency_ldap"
+
+// Relay users provisioned by AI Efficiency carry a source marker. Later repair
+// paths use it to decide whether the upstream password is platform-generated.
+const (
+	relayLDAPProvisioningNote = "provisioned_by_ai_efficiency_ldap"
+	relayOIDCProvisioningNote = "provisioned_by_ai_efficiency_oidc"
+)
+
+func isAIEfficiencyProvisionedRelayUser(notes string) bool {
+	switch strings.TrimSpace(notes) {
+	case relayLDAPProvisioningNote, relayOIDCProvisioningNote:
+		return true
+	default:
+		return false
+	}
+}
 
 type relayIdentityAPI interface {
 	FindUserByUsername(ctx context.Context, username string) (*relay.User, error)
@@ -34,8 +49,9 @@ type relayIdentityDefaultSubscriptionAssigner interface {
 	AssignDefaultSubscriptionsForUser(ctx context.Context, userID int64) error
 }
 
-// RelayIdentityResolver resolves a relay user by a stable username key and provisions one if missing.
-// Intended for LDAP logins where we don't have relay-side SSO identity.
+// RelayIdentityResolver resolves a relay user by an exact email match, then a
+// stable username key, and provisions one if missing. Used by LDAP and OIDC
+// sign-in where the local user has no relay-side SSO identity.
 type RelayIdentityResolver struct {
 	api            relayIdentityAPI
 	fallbackDomain string
@@ -54,6 +70,14 @@ func (r *RelayIdentityResolver) ResolveOrProvision(ctx context.Context, username
 }
 
 func (r *RelayIdentityResolver) ResolveOrProvisionForLDAP(ctx context.Context, username, email string) (*relay.User, string, error) {
+	return r.resolveOrProvision(ctx, username, email, relayLDAPProvisioningNote)
+}
+
+func (r *RelayIdentityResolver) ResolveOrProvisionForOIDC(ctx context.Context, username, email string) (*relay.User, string, error) {
+	return r.resolveOrProvision(ctx, username, email, relayOIDCProvisioningNote)
+}
+
+func (r *RelayIdentityResolver) resolveOrProvision(ctx context.Context, username, email, provisioningNote string) (*relay.User, string, error) {
 	username = strings.TrimSpace(username)
 	email = strings.TrimSpace(email)
 	if username == "" {
@@ -70,7 +94,7 @@ func (r *RelayIdentityResolver) ResolveOrProvisionForLDAP(ctx context.Context, u
 			return nil, "", err
 		}
 		if u != nil {
-			return r.updateExistingLDAPRelayUser(ctx, u, canonicalUsername, false)
+			return r.updateExistingRelayUser(ctx, u, canonicalUsername, false)
 		}
 	}
 
@@ -87,7 +111,7 @@ func (r *RelayIdentityResolver) ResolveOrProvisionForLDAP(ctx context.Context, u
 		foundByLegacyUsername = u != nil
 	}
 	if u != nil {
-		return r.updateExistingLDAPRelayUser(ctx, u, canonicalUsername, foundByLegacyUsername)
+		return r.updateExistingRelayUser(ctx, u, canonicalUsername, foundByLegacyUsername)
 	}
 
 	email = ensureNonEmptyEmail(email, username, r.fallbackDomain)
@@ -101,7 +125,7 @@ func (r *RelayIdentityResolver) ResolveOrProvisionForLDAP(ctx context.Context, u
 		Username:    canonicalUsername,
 		Email:       email,
 		Password:    pw,
-		Notes:       relayLDAPProvisioningNote,
+		Notes:       provisioningNote,
 		Concurrency: defaultRelayUserConcurrency,
 	})
 	if err != nil {
@@ -122,12 +146,12 @@ func (r *RelayIdentityResolver) findUserByEmail(ctx context.Context, email strin
 	return u, nil
 }
 
-func (r *RelayIdentityResolver) updateExistingLDAPRelayUser(ctx context.Context, u *relay.User, canonicalUsername string, foundByLegacyUsername bool) (*relay.User, string, error) {
-	u = r.hydrateExistingLDAPRelayUser(ctx, u)
-	updateReq, shouldUpdate := relayUserUpdateForLDAP(u, canonicalUsername, foundByLegacyUsername)
+func (r *RelayIdentityResolver) updateExistingRelayUser(ctx context.Context, u *relay.User, canonicalUsername string, foundByLegacyUsername bool) (*relay.User, string, error) {
+	u = r.hydrateExistingRelayUser(ctx, u)
+	updateReq, shouldUpdate := relayUserUpdate(u, canonicalUsername, foundByLegacyUsername)
 	resolved := u
 	if !shouldUpdate {
-		if err := r.assignDefaultsForExistingLDAPProvisionedUser(ctx, resolved); err != nil {
+		if err := r.assignDefaultsForExistingProvisionedUser(ctx, resolved); err != nil {
 			return nil, "", err
 		}
 		return resolved, "", nil
@@ -148,15 +172,15 @@ func (r *RelayIdentityResolver) updateExistingLDAPRelayUser(ctx context.Context,
 		}
 		resolved = updated
 	}
-	if err := r.assignDefaultsForExistingLDAPProvisionedUser(ctx, resolved); err != nil {
+	if err := r.assignDefaultsForExistingProvisionedUser(ctx, resolved); err != nil {
 		return nil, "", err
 	}
 	return resolved, "", nil
 }
 
-func (r *RelayIdentityResolver) ResetGeneratedPasswordForLDAPProvisionedUser(ctx context.Context, u *relay.User) (string, error) {
-	u = r.hydrateExistingLDAPRelayUser(ctx, u)
-	if u == nil || u.ID <= 0 || strings.TrimSpace(u.Notes) != relayLDAPProvisioningNote {
+func (r *RelayIdentityResolver) ResetGeneratedPasswordForProvisionedUser(ctx context.Context, u *relay.User) (string, error) {
+	u = r.hydrateExistingRelayUser(ctx, u)
+	if u == nil || u.ID <= 0 || !isAIEfficiencyProvisionedRelayUser(u.Notes) {
 		return "", nil
 	}
 	updater, ok := r.api.(relayIdentityPasswordUpdater)
@@ -173,7 +197,7 @@ func (r *RelayIdentityResolver) ResetGeneratedPasswordForLDAPProvisionedUser(ctx
 	return pw, nil
 }
 
-func (r *RelayIdentityResolver) hydrateExistingLDAPRelayUser(ctx context.Context, u *relay.User) *relay.User {
+func (r *RelayIdentityResolver) hydrateExistingRelayUser(ctx context.Context, u *relay.User) *relay.User {
 	if u == nil || u.ID <= 0 {
 		return u
 	}
@@ -217,11 +241,11 @@ func mergeRelayUserFacts(base, full *relay.User) *relay.User {
 	return full
 }
 
-func (r *RelayIdentityResolver) assignDefaultsForExistingLDAPProvisionedUser(ctx context.Context, u *relay.User) error {
+func (r *RelayIdentityResolver) assignDefaultsForExistingProvisionedUser(ctx context.Context, u *relay.User) error {
 	if u == nil || u.ID <= 0 {
 		return nil
 	}
-	if strings.TrimSpace(u.Notes) != relayLDAPProvisioningNote || len(u.AllowedGroups) > 0 || len(u.AllowedGroupIDs) > 0 {
+	if !isAIEfficiencyProvisionedRelayUser(u.Notes) || len(u.AllowedGroups) > 0 || len(u.AllowedGroupIDs) > 0 {
 		return nil
 	}
 	assigner, ok := r.api.(relayIdentityDefaultSubscriptionAssigner)
@@ -245,7 +269,7 @@ func relayProvisionUsername(username string) string {
 	return username
 }
 
-func relayUserUpdateForLDAP(u *relay.User, canonicalUsername string, foundByLegacyUsername bool) (relay.UpdateUserRequest, bool) {
+func relayUserUpdate(u *relay.User, canonicalUsername string, foundByLegacyUsername bool) (relay.UpdateUserRequest, bool) {
 	var req relay.UpdateUserRequest
 	if foundByLegacyUsername && strings.TrimSpace(u.Username) != canonicalUsername {
 		req.Username = canonicalUsername

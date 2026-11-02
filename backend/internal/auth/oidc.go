@@ -14,6 +14,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/coreos/go-oidc/v3/oidc"
+	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 )
 
@@ -296,12 +297,58 @@ func (s *Service) LoginOIDC(ctx context.Context, identity OIDCIdentity) (*TokenP
 	if u.RelayDisabledAt != nil {
 		return nil, nil, fmt.Errorf("local account disabled")
 	}
+	u, err = s.ensureOIDCRelayIdentity(ctx, u)
+	if err != nil {
+		return nil, nil, err
+	}
 	info := &UserInfo{ID: u.ID, Username: u.Username, Email: u.Email, Role: string(u.Role), AuthSource: string(entuser.AuthSourceOidc)}
+	if u.RelayUserID != nil {
+		relayID := *u.RelayUserID
+		info.RelayUserID = &relayID
+	}
 	tokens, err := s.generateTokenPair(info)
 	if err != nil {
 		return nil, nil, err
 	}
 	return tokens, info, nil
+}
+
+// ensureOIDCRelayIdentity binds a verified OIDC sign-in to its Relay identity.
+// The first sign-in of a local user without a Relay binding resolves an exact
+// Relay email match, then the canonical or legacy username, and provisions a
+// Relay user with a generated password when none exists. Existing bindings are
+// never replaced. A failed resolution fails the sign-in so the next attempt
+// retries instead of continuing with a half-onboarded account.
+func (s *Service) ensureOIDCRelayIdentity(ctx context.Context, u *ent.User) (*ent.User, error) {
+	if u == nil || u.RelayUserID != nil || s.relayIdentityResolver == nil {
+		return u, nil
+	}
+	relayUser, relayPassword, err := s.relayIdentityResolver.ResolveOrProvisionForOIDC(ctx, u.Username, u.Email)
+	if err != nil {
+		return nil, fmt.Errorf("resolve relay identity: %w", err)
+	}
+	if relayUser == nil || relayUser.ID <= 0 {
+		return nil, fmt.Errorf("resolve relay identity: missing relay user id")
+	}
+	update := u.Update().SetRelayUserID(int(relayUser.ID))
+	if password := strings.TrimSpace(relayPassword); password != "" {
+		encrypted, err := s.encryptRelayAuthPassword(password)
+		if err != nil {
+			return nil, err
+		}
+		if encrypted != "" {
+			update.SetRelayAuthPassword(encrypted)
+		}
+	}
+	updated, err := update.Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("persist relay user binding: %w", err)
+	}
+	s.logger.Info("bound relay identity on OIDC sign-in",
+		zap.Int("user_id", updated.ID),
+		zap.Int64("relay_user_id", relayUser.ID),
+	)
+	return updated, nil
 }
 
 func (s *Service) linkOrCreateOIDCUser(ctx context.Context, identity OIDCIdentity) (*ent.User, error) {
