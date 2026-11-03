@@ -67,6 +67,19 @@ func TestLoadPrewarmerBindsDedicatedTimezoneEnvironment(t *testing.T) {
 	}
 }
 
+func TestLoadBindsGuideLinksFromEnvironment(t *testing.T) {
+	t.Setenv("AE_GUIDES_CCSWITCH_URL", "https://confluence.example/page")
+	t.Setenv("AE_GUIDES_CCSWITCH_LABEL", "图文教程")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Guides.CCSwitchURL != "https://confluence.example/page" || cfg.Guides.CCSwitchLabel != "图文教程" {
+		t.Fatalf("Guides = %#v", cfg.Guides)
+	}
+}
+
 func TestLoadMetricsListenAddressFromEnvironment(t *testing.T) {
 	t.Setenv("AE_METRICS_LISTEN_ADDRESS", ":9191")
 	cfg, err := Load("")
