@@ -38,9 +38,15 @@ type CodexFailureSummary struct {
 	RecentWithRequestID []CodexFailedRequest
 }
 
-// codexFailedRequestTarget mirrors the source the reference codex_request_ids.py
-// script trusts: HTTP completions logged by the default client transport.
-const codexFailedRequestTarget = "codex_client::default_client"
+// codexFailedRequestTarget is the log target Codex writes HTTP completions to.
+//
+// It used to name codex_client::default_client, the target the reference
+// codex_request_ids.py script trusted. Codex no longer writes there: measured on
+// one machine that target held 0 of 23,732 rows while codex_http_client::client
+// held 1,579, so doctor reported "no failed Codex requests in local logs" from a
+// query that could not have found one. This is the same target the attribution
+// reader already trusts for Request evidence.
+const codexFailedRequestTarget = codexResponsesHTTPClientTarget
 
 const codexFailureLookback = 30 * 24 * time.Hour
 const codexFailureQueryTimeout = 3 * time.Second

@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -204,5 +206,157 @@ func TestMustWorkspaceID_UsesGitdirFileForLinkedWorktreeLayout(t *testing.T) {
 	}
 	if got != want {
 		t.Fatalf("workspaceID = %q, want %q", got, want)
+	}
+}
+
+func clearKiroCLIPathEnv(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{"KIRO_CLI_DB", "KIRO_CLI_DATA_DIR", "XDG_DATA_HOME", "APPDATA", "LOCALAPPDATA"} {
+		t.Setenv(key, "")
+	}
+}
+
+func TestKiroCLISQLiteDBCandidates_PrefersExplicitDBOverride(t *testing.T) {
+	clearKiroCLIPathEnv(t)
+	t.Setenv("KIRO_CLI_DB", filepath.Join("custom", "kiro.db"))
+	t.Setenv("KIRO_CLI_DATA_DIR", filepath.Join("ignored", "dir"))
+
+	got := kiroCLISQLiteDBCandidates("/home/alice", "linux")
+	want := []string{filepath.Join("custom", "kiro.db")}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("candidates = %v, want %v", got, want)
+	}
+}
+
+func TestKiroCLISQLiteDBCandidates_UsesDataDirOverride(t *testing.T) {
+	clearKiroCLIPathEnv(t)
+	t.Setenv("KIRO_CLI_DATA_DIR", filepath.Join("data", "here"))
+
+	got := kiroCLISQLiteDBCandidates("/home/alice", "darwin")
+	want := []string{filepath.Join("data", "here", "data.sqlite3")}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("candidates = %v, want %v", got, want)
+	}
+}
+
+func TestKiroCLISQLiteDBCandidates_ExpandsHomePrefixInOverrides(t *testing.T) {
+	clearKiroCLIPathEnv(t)
+	t.Setenv("KIRO_CLI_DATA_DIR", "~/kiro-data")
+
+	got := kiroCLISQLiteDBCandidates("/home/alice", "linux")
+	want := []string{filepath.Join("/home/alice", "kiro-data", "data.sqlite3")}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("candidates = %v, want %v", got, want)
+	}
+}
+
+func TestKiroCLISQLiteDBCandidates_DarwinDefaultIsUnchanged(t *testing.T) {
+	clearKiroCLIPathEnv(t)
+
+	got := kiroCLISQLiteDBCandidates("/home/alice", "darwin")
+	want := []string{filepath.Join("/home/alice", "Library", "Application Support", "kiro-cli", "data.sqlite3")}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("candidates = %v, want %v", got, want)
+	}
+}
+
+func TestKiroCLISQLiteDBCandidates_LinuxDefaultsToXDGDataHome(t *testing.T) {
+	clearKiroCLIPathEnv(t)
+
+	got := kiroCLISQLiteDBCandidates("/home/alice", "linux")
+	want := []string{filepath.Join("/home/alice", ".local", "share", "kiro-cli", "data.sqlite3")}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("candidates = %v, want %v", got, want)
+	}
+
+	t.Setenv("XDG_DATA_HOME", filepath.Join("xdg", "data"))
+	got = kiroCLISQLiteDBCandidates("/home/alice", "linux")
+	want = []string{filepath.Join("xdg", "data", "kiro-cli", "data.sqlite3")}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("candidates with XDG_DATA_HOME = %v, want %v", got, want)
+	}
+}
+
+func TestKiroCLISQLiteDBCandidates_WindowsUsesRoamingThenLocalAppData(t *testing.T) {
+	clearKiroCLIPathEnv(t)
+	t.Setenv("APPDATA", filepath.Join("C:", "Users", "alice", "AppData", "Roaming"))
+	t.Setenv("LOCALAPPDATA", filepath.Join("C:", "Users", "alice", "AppData", "Local"))
+
+	got := kiroCLISQLiteDBCandidates(filepath.Join("C:", "Users", "alice"), "windows")
+	want := []string{
+		filepath.Join("C:", "Users", "alice", "AppData", "Roaming", "kiro-cli", "data.sqlite3"),
+		filepath.Join("C:", "Users", "alice", "AppData", "Local", "kiro-cli", "data.sqlite3"),
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("candidates = %v, want %v", got, want)
+	}
+}
+
+func TestKiroCLISQLiteDBCandidates_WindowsFallsBackToHomeAppData(t *testing.T) {
+	clearKiroCLIPathEnv(t)
+
+	got := kiroCLISQLiteDBCandidates(filepath.Join("C:", "Users", "alice"), "windows")
+	want := []string{
+		filepath.Join("C:", "Users", "alice", "AppData", "Roaming", "kiro-cli", "data.sqlite3"),
+		filepath.Join("C:", "Users", "alice", "AppData", "Local", "kiro-cli", "data.sqlite3"),
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("candidates = %v, want %v", got, want)
+	}
+}
+
+func TestKiroCLISQLiteDBCandidates_WithoutHomeDirYieldsNoPlatformDefault(t *testing.T) {
+	clearKiroCLIPathEnv(t)
+
+	for _, goos := range []string{"darwin", "linux", "windows"} {
+		if got := kiroCLISQLiteDBCandidates("", goos); len(got) != 0 {
+			t.Fatalf("candidates for %s without home = %v, want none", goos, got)
+		}
+	}
+}
+
+func TestFindKiroCLISQLiteFiles_ReturnsFirstExistingCandidate(t *testing.T) {
+	clearKiroCLIPathEnv(t)
+	homeDir := t.TempDir()
+
+	if got := findKiroCLISQLiteFiles(homeDir); got != nil {
+		t.Fatalf("paths = %v, want nil before the db exists", got)
+	}
+
+	dbDir := filepath.Join(t.TempDir(), "kiro-cli")
+	if err := os.MkdirAll(dbDir, 0o700); err != nil {
+		t.Fatalf("mkdir kiro-cli dir: %v", err)
+	}
+	dbPath := filepath.Join(dbDir, "data.sqlite3")
+	if err := os.WriteFile(dbPath, []byte(""), 0o600); err != nil {
+		t.Fatalf("write kiro-cli db: %v", err)
+	}
+
+	t.Setenv("KIRO_CLI_DATA_DIR", dbDir)
+	got := findKiroCLISQLiteFiles(homeDir)
+	if len(got) != 1 || got[0] != dbPath {
+		t.Fatalf("paths = %v, want %v", got, []string{dbPath})
+	}
+}
+
+func TestFindKiroCLISQLiteFiles_KeepsMacOSApplicationSupportLayout(t *testing.T) {
+	clearKiroCLIPathEnv(t)
+	if runtime.GOOS != "darwin" {
+		t.Skipf("macOS default layout check only applies on darwin, got %s", runtime.GOOS)
+	}
+
+	homeDir := t.TempDir()
+	dbDir := filepath.Join(homeDir, "Library", "Application Support", "kiro-cli")
+	if err := os.MkdirAll(dbDir, 0o700); err != nil {
+		t.Fatalf("mkdir kiro-cli dir: %v", err)
+	}
+	dbPath := filepath.Join(dbDir, "data.sqlite3")
+	if err := os.WriteFile(dbPath, []byte(""), 0o600); err != nil {
+		t.Fatalf("write kiro-cli db: %v", err)
+	}
+
+	got := findKiroCLISQLiteFiles(homeDir)
+	if len(got) != 1 || got[0] != dbPath {
+		t.Fatalf("paths = %v, want %v", got, []string{dbPath})
 	}
 }

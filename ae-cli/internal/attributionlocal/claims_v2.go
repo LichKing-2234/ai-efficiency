@@ -33,16 +33,37 @@ const (
 	v2GapMissingRequestID         = "missing_request_id"
 	v2GapAmbiguousRequestEvidence = "ambiguous_request_evidence"
 	v2GapRequestEvidenceExpired   = "request_evidence_expired"
+	// v2GapUnrecognizedPatchWrapper marks a turn where a generated apply_patch
+	// wrapper was present but did not satisfy the accepted grammar. It is kept
+	// distinct from a turn with no mutation at all so that wrapper drift is
+	// countable instead of silent.
+	v2GapUnrecognizedPatchWrapper = "unrecognized_patch_wrapper"
+
+	// The proof gaps. These were bare literals, which is why they were the only
+	// reasons a claim could fail that nothing counted and nothing printed: a
+	// machine could hold thousands of them and report pending=0 conflict=0.
+	// missing_structured_mutation in particular is what an agent's shell writes
+	// and an unreadable edit both become, and it was invisible.
+	v2GapInvalidLocalUsage         = "invalid_local_usage"
+	v2GapMissingLocalUsage         = "missing_local_usage"
+	v2GapMissingStructuredMutation = "missing_structured_mutation"
+	v2GapInvalidStructuredMutation = "invalid_structured_mutation"
+	v2GapCommitContentMismatch     = "commit_content_mismatch"
 )
 
 var codexV2SourceReadObserver = func(string) {}
 
 var (
-	v2ThreadIDPattern          = regexp.MustCompile(`thread\.id=([^ }]+)`)
-	v2TurnIDPattern            = regexp.MustCompile(`turn\.id=([^ }]+)`)
-	v2SuccessfulResponseStatus = regexp.MustCompile(` status=2[0-9]{2} `)
-	v2WrappedPatchPattern      = regexp.MustCompile(`(?s)^\s*const\s+patch\s*=\s*("(?:\\.|[^"\\])*")\s*;\s*text\s*\(\s*await\s+tools\.apply_patch\s*\(\s*patch\s*\)\s*\)\s*;\s*$`)
-	v2InlinePatchPattern       = regexp.MustCompile(`(?s)^\s*const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*await\s+tools\.apply_patch\s*\(\s*("(?:\\.|[^"\\])*")\s*\)\s*;\s*text\s*\(\s*JSON\.stringify\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*\)\s*;\s*$`)
+	v2ThreadIDPattern            = regexp.MustCompile(`thread\.id=([^ }]+)`)
+	v2TurnIDPattern              = regexp.MustCompile(`turn\.id=([^ }]+)`)
+	v2SuccessfulResponseStatus   = regexp.MustCompile(` status=2[0-9]{2} `)
+	v2WrappedPatchPattern        = regexp.MustCompile(`(?s)^\s*const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*("(?:\\.|[^"\\])*")\s*;\s*text\s*\(\s*await\s+tools\.apply_patch\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*\)\s*;\s*$`)
+	v2ThreeStatementPatchPattern = regexp.MustCompile(`(?s)^\s*const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*("(?:\\.|[^"\\])*")\s*;\s*const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*await\s+tools\.apply_patch\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*;\s*text\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*;\s*$`)
+	// v2PatchWrapperHintPattern is deliberately loose. It never authorises an
+	// allocation; it only tells us a turn tried to call apply_patch so that a
+	// wrapper we do not accept can be counted rather than lost.
+	v2PatchWrapperHintPattern = regexp.MustCompile(`tools\.apply_patch\s*\(`)
+	v2InlinePatchPattern      = regexp.MustCompile(`(?s)^\s*const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*await\s+tools\.apply_patch\s*\(\s*("(?:\\.|[^"\\])*")\s*\)\s*;\s*text\s*\(\s*JSON\.stringify\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*\)\s*;\s*$`)
 )
 
 type V2ClaimScanOptions struct {
@@ -369,18 +390,19 @@ type v2Mutation struct {
 }
 
 type v2Turn struct {
-	threadID     string
-	turnID       string
-	model        string
-	webSocket    bool
-	requests     map[string]struct{}
-	transportIDs map[string]struct{}
-	mutations    []v2Mutation
-	replayFiles  map[string]v2ReplayFile
-	calibration  client.AttributionV2Calibration
-	localUsage   map[string]*client.AttributionV2LocalUsageBucket
-	localInvalid bool
-	startedAt    time.Time
+	threadID            string
+	turnID              string
+	model               string
+	webSocket           bool
+	requests            map[string]struct{}
+	transportIDs        map[string]struct{}
+	mutations           []v2Mutation
+	replayFiles         map[string]v2ReplayFile
+	calibration         client.AttributionV2Calibration
+	localUsage          map[string]*client.AttributionV2LocalUsageBucket
+	localInvalid        bool
+	unrecognizedWrapper bool
+	startedAt           time.Time
 }
 
 type v2ReplayFile struct {
@@ -441,11 +463,51 @@ func mergeV2ScannedCandidates(scanned []V2ClaimCandidate) []V2ClaimCandidate {
 	return result
 }
 
+// UploadableV2ClaimGroups collects the groups ready to send, with each group id
+// appearing once.
+//
+// Local state is keyed by the turn a claim was observed in, while a group is
+// named by what it proves. Those disagree after a Claude Code resume: the agent
+// replays the same work under a new session id and a restarted turn counter, so
+// two entries describe one piece of work and name one group. Sending both put
+// the same group id in a batch twice, and the backend rejected the second for
+// disagreeing with the first about which session and turn it came from, which
+// failed the whole batch.
+//
+// Collapsing them is not a workaround for that rejection but the correct
+// reading of it: the same group id means the same commit and the same evidence.
+// Their commit allocations are unioned, and their usage is added. Adding is
+// safe because the scan already settled which turn each response belongs to:
+// every response is priced into exactly one turn's claim (the earliest
+// occurrence wins), so two claims that meet here carry disjoint partitions of
+// the consumption, never two copies of it. Measured on live data, each
+// candidate's buckets equalled its winner partition exactly, and keeping only
+// the first partition — the previous behaviour — silently dropped the others,
+// permanently: the acknowledgement maps back by group id, so the dropped
+// claims were still marked delivered and never re-sent.
 func UploadableV2ClaimGroups(candidates []V2ClaimCandidate) []client.AttributionV2ClaimGroup {
 	groups := make([]client.AttributionV2ClaimGroup, 0, len(candidates))
+	index := map[string]int{}
 	for _, candidate := range candidates {
-		if v2ClaimUploadable(candidate) {
+		if !v2ClaimUploadable(candidate) {
+			continue
+		}
+		groupID := strings.TrimSpace(candidate.Group.GroupID)
+		at, seen := index[groupID]
+		if !seen || groupID == "" {
 			groups = append(groups, candidate.Group)
+			if groupID != "" {
+				index[groupID] = len(groups) - 1
+			}
+			continue
+		}
+		kept := &groups[at]
+		kept.CommitAllocations = mergeV2Allocations(kept.CommitAllocations, candidate.Group.CommitAllocations)
+		kept.EvidenceDigest = v2AllocationEvidenceDigest(kept.CommitAllocations)
+		kept.RequestIDs = uniqueSorted(append(kept.RequestIDs, candidate.Group.RequestIDs...))
+		kept.LocalUsage = sumV2LocalUsage(kept.LocalUsage, candidate.Group.LocalUsage)
+		if kept.Calibration == nil {
+			kept.Calibration = candidate.Group.Calibration
 		}
 	}
 	return groups
@@ -533,9 +595,12 @@ func parseCodexV2ClaimFileBatch(ctx context.Context, path string, options []V2Cl
 						current.transportIDs[transportID] = struct{}{}
 					}
 				}
-				if patch := v2StructuredPatchInput(row.Payload.Name, row.Payload.Input, row.Payload.Arguments); patch != "" {
+				patch, unrecognizedWrapper := v2StructuredPatchInput(row.Payload.Name, row.Payload.Input, row.Payload.Arguments)
+				if patch != "" {
 					opts := options[index]
 					current.mutations = append(current.mutations, v2PatchMutations(ctx, patch, opts.RepoRoot, opts.CommitSHA, current.replayFiles)...)
+				} else if unrecognizedWrapper {
+					current.unrecognizedWrapper = true
 				}
 			}
 		case "event_msg":
@@ -655,17 +720,19 @@ func buildCodexV2ClaimCandidates(ctx context.Context, path, sessionID string, op
 		}
 		switch {
 		case turn.webSocket && turn.localInvalid:
-			proofGap = "invalid_local_usage"
+			proofGap = v2GapInvalidLocalUsage
 		case turn.webSocket && len(turn.localUsage) == 0:
-			proofGap = "missing_local_usage"
+			proofGap = v2GapMissingLocalUsage
+		case len(turn.mutations) == 0 && turn.unrecognizedWrapper:
+			proofGap = v2GapUnrecognizedPatchWrapper
 		case len(turn.mutations) == 0:
-			proofGap = "missing_structured_mutation"
+			proofGap = v2GapMissingStructuredMutation
 		case !validV2Mutations(turn.mutations):
-			proofGap = "invalid_structured_mutation"
+			proofGap = v2GapInvalidStructuredMutation
 		default:
 			introduced := introducedV2Mutations(ctx, opts.RepoRoot, opts.CommitSHA, turn.mutations)
 			if len(introduced) == 0 {
-				proofGap = "commit_content_mismatch"
+				proofGap = v2GapCommitContentMismatch
 				break
 			}
 			if turn.webSocket {
@@ -759,30 +826,35 @@ func finalizeV2RequestEvidence(candidates []V2ClaimCandidate, evidence []v2Reque
 	}
 }
 
-func v2StructuredPatchInput(toolName, input, arguments string) string {
+// v2StructuredPatchInput returns the patch a generated wrapper applied, and
+// whether the payload looked like an apply_patch attempt that the accepted
+// grammar rejected. The second value is diagnostic only and never widens what
+// may authorise a commit allocation.
+func v2StructuredPatchInput(toolName, input, arguments string) (string, bool) {
 	payload := input + "\n" + arguments
 	if isPatchTool(toolName) {
-		return payload
+		return payload, false
 	}
 	encodedPatch := ""
-	match := v2WrappedPatchPattern.FindStringSubmatch(payload)
-	if len(match) == 2 {
-		encodedPatch = match[1]
-	} else if match = v2InlinePatchPattern.FindStringSubmatch(payload); len(match) == 4 && match[1] == match[3] {
+	if match := v2WrappedPatchPattern.FindStringSubmatch(payload); len(match) == 4 && match[1] == match[3] {
+		encodedPatch = match[2]
+	} else if match := v2ThreeStatementPatchPattern.FindStringSubmatch(payload); len(match) == 6 && match[1] == match[4] && match[3] == match[5] {
+		encodedPatch = match[2]
+	} else if match := v2InlinePatchPattern.FindStringSubmatch(payload); len(match) == 4 && match[1] == match[3] {
 		encodedPatch = match[2]
 	}
 	if encodedPatch == "" {
-		return ""
+		return "", v2PatchWrapperHintPattern.MatchString(payload)
 	}
 	patch, err := strconv.Unquote(encodedPatch)
 	if err != nil {
-		return ""
+		return "", true
 	}
 	patch = strings.TrimSpace(patch)
 	if !strings.HasPrefix(patch, "*** Begin Patch\n") || !strings.HasSuffix(patch, "\n*** End Patch") {
-		return ""
+		return "", true
 	}
-	return patch
+	return patch, false
 }
 
 func v2PatchMutations(ctx context.Context, patch, repoRoot, commitSHA string, replayFiles map[string]v2ReplayFile) []v2Mutation {
@@ -1397,6 +1469,53 @@ func sortedV2LocalUsage(values map[string]*client.AttributionV2LocalUsageBucket)
 	return result
 }
 
+// sumV2LocalUsage adds two usage partitions bucket by bucket.
+//
+// It is the collapse-time counterpart of mergeV2LocalUsage and must not be
+// confused with it. mergeV2LocalUsage reconciles two observations of the SAME
+// turn across scans, where an identical bucket is the same consumption seen
+// twice and is kept once. Here the inputs come from DIFFERENT turns, whose
+// responses the scan has already partitioned — each response priced into
+// exactly one turn — so a shared bucket key just means two turns consuming in
+// the same quarter hour, and the amounts add.
+func sumV2LocalUsage(existing, incoming []client.AttributionV2LocalUsageBucket) []client.AttributionV2LocalUsageBucket {
+	if len(incoming) == 0 {
+		return existing
+	}
+	byKey := make(map[string]*client.AttributionV2LocalUsageBucket, len(existing)+len(incoming))
+	order := make([]string, 0, len(existing)+len(incoming))
+	for _, usage := range append(append([]client.AttributionV2LocalUsageBucket(nil), existing...), incoming...) {
+		key := strings.TrimSpace(usage.RequestedModel) + "\x00" + usage.BucketStartUTC.UTC().Format(time.RFC3339)
+		bucket, ok := byKey[key]
+		if !ok {
+			copied := usage
+			copied.RequestedModel = strings.TrimSpace(copied.RequestedModel)
+			copied.BucketStartUTC = copied.BucketStartUTC.UTC()
+			byKey[key] = &copied
+			order = append(order, key)
+			continue
+		}
+		bucket.InputTokens += usage.InputTokens
+		bucket.OutputTokens += usage.OutputTokens
+		bucket.CacheCreationTokens += usage.CacheCreationTokens
+		bucket.CacheReadTokens += usage.CacheReadTokens
+		bucket.TotalTokens += usage.TotalTokens
+		bucket.CreditUsage += usage.CreditUsage
+		bucket.RequestCount += usage.RequestCount
+	}
+	out := make([]client.AttributionV2LocalUsageBucket, 0, len(order))
+	for _, key := range order {
+		out = append(out, *byKey[key])
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].RequestedModel != out[j].RequestedModel {
+			return out[i].RequestedModel < out[j].RequestedModel
+		}
+		return out[i].BucketStartUTC.Before(out[j].BucketStartUTC)
+	})
+	return out
+}
+
 func mergeV2LocalUsage(existing, incoming []client.AttributionV2LocalUsageBucket) []client.AttributionV2LocalUsageBucket {
 	values := make(map[string]*client.AttributionV2LocalUsageBucket, len(existing)+len(incoming))
 	for _, usage := range append(append([]client.AttributionV2LocalUsageBucket(nil), existing...), incoming...) {
@@ -1415,7 +1534,7 @@ func mergeV2LocalUsage(existing, incoming []client.AttributionV2LocalUsageBucket
 func localUsageContains(left, right client.AttributionV2LocalUsageBucket) bool {
 	return left.InputTokens >= right.InputTokens && left.OutputTokens >= right.OutputTokens &&
 		left.CacheCreationTokens >= right.CacheCreationTokens && left.CacheReadTokens >= right.CacheReadTokens &&
-		left.TotalTokens >= right.TotalTokens && left.RequestCount >= right.RequestCount
+		left.TotalTokens >= right.TotalTokens && left.CreditUsage >= right.CreditUsage && left.RequestCount >= right.RequestCount
 }
 
 func v2LocalUsageDigest(values []client.AttributionV2LocalUsageBucket) string {
@@ -1425,7 +1544,7 @@ func v2LocalUsageDigest(values []client.AttributionV2LocalUsageBucket) string {
 			usage.RequestedModel, usage.BucketStartUTC.UTC().Format(time.RFC3339),
 			fmt.Sprintf("%d", usage.InputTokens), fmt.Sprintf("%d", usage.OutputTokens),
 			fmt.Sprintf("%d", usage.CacheCreationTokens), fmt.Sprintf("%d", usage.CacheReadTokens),
-			fmt.Sprintf("%d", usage.TotalTokens), fmt.Sprintf("%d", usage.RequestCount),
+			fmt.Sprintf("%d", usage.TotalTokens), fmt.Sprintf("%g", usage.CreditUsage), fmt.Sprintf("%d", usage.RequestCount),
 		}, "\x00"))
 	}
 	return claimDigest(parts...)

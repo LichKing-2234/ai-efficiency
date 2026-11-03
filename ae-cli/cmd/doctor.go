@@ -107,6 +107,7 @@ var doctorCmd = &cobra.Command{
 			fmt.Fprintf(out, "V2 Claim Delivery: unavailable (%v)\n", err)
 		}
 		printToolDiagnostics(out)
+		printPilotDiagnostic(out)
 		printRepoEligibilityDiagnostic(out)
 		printRecentFailures(out, doctorRecentFailures)
 		return nil

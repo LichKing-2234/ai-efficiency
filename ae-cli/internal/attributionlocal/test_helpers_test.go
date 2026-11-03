@@ -160,18 +160,11 @@ func buildKiroCLISQLiteAttributionFixture(t *testing.T) attributionFixture {
 	root := fixtureRepoRoot(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	if err := os.MkdirAll(filepath.Join(home, "Library", "Application Support", "kiro-cli"), 0o700); err != nil {
-		t.Fatalf("mkdir kiro-cli home: %v", err)
-	}
-	src := buildKiroCLISQLiteFixture(t, root)
-	dst := filepath.Join(home, "Library", "Application Support", "kiro-cli", "data.sqlite3")
-	data, err := os.ReadFile(src)
-	if err != nil {
-		t.Fatalf("read kiro-cli fixture: %v", err)
-	}
-	if err := os.WriteFile(dst, data, 0o600); err != nil {
-		t.Fatalf("write kiro-cli fixture: %v", err)
-	}
+	// Point the reader at the fixture through the override it already supports.
+	// Placing the file at the macOS default instead only worked on macOS: the
+	// candidate paths are chosen per platform, so a Linux runner looked under
+	// XDG and found nothing.
+	t.Setenv("KIRO_CLI_DB", buildKiroCLISQLiteFixture(t, root))
 
 	return attributionFixture{
 		WorkspaceRoot: root,

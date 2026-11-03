@@ -237,7 +237,8 @@ func TestAttributionRecoveryInstalledBinaryE2E(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Sync Task: pending [failed]", "remaining_triggers: 1", "failure_reason: commit unavailable in recovery checkout",
-		"Synthetic Fixture Quarantine: workspaces=1 unresolved=1", "V2 Claim Delivery: pending=0 conflict=0 upgrade_required=0 accepted=1 missing_request_id=0 ambiguous_request_evidence=0 request_evidence_expired=0",
+		"Synthetic Fixture Quarantine: workspaces=1 unresolved=1", "V2 Claim Delivery: pending=0 conflict=0 upgrade_required=0 accepted=1",
+		"V2 Claim Gaps: missing_request_id=0 ambiguous_request_evidence=0 request_evidence_expired=0 unrecognized_patch_wrapper=0 invalid_local_usage=0 missing_local_usage=0 missing_structured_mutation=0 invalid_structured_mutation=0 commit_content_mismatch=0",
 	} {
 		if !bytes.Contains(statusOutput, []byte(want)) {
 			t.Fatalf("installed status missing %q:\n%s", want, statusOutput)
@@ -271,7 +272,8 @@ func TestAttributionRecoveryInstalledBinaryE2E(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Sync Task: none [ok]", "Machine Sync Tasks: queued=0 running=0 yielded=0 recoverable=1 terminal=0 expiring=0",
-		"Synthetic Fixture Quarantine: workspaces=1 unresolved=1", "V2 Claim Delivery: pending=0 conflict=0 upgrade_required=0 accepted=1 missing_request_id=0 ambiguous_request_evidence=0 request_evidence_expired=0",
+		"Synthetic Fixture Quarantine: workspaces=1 unresolved=1", "V2 Claim Delivery: pending=0 conflict=0 upgrade_required=0 accepted=1",
+		"V2 Claim Gaps: missing_request_id=0 ambiguous_request_evidence=0 request_evidence_expired=0 unrecognized_patch_wrapper=0 invalid_local_usage=0 missing_local_usage=0 missing_structured_mutation=0 invalid_structured_mutation=0 commit_content_mismatch=0",
 	} {
 		if !bytes.Contains(finalOutput, []byte(want)) {
 			t.Fatalf("final installed status missing %q:\n%s", want, finalOutput)

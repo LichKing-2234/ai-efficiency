@@ -84,6 +84,27 @@ func asInt64(v any) int64 {
 	}
 }
 
+func asFloat64(v any) float64 {
+	switch value := v.(type) {
+	case float64:
+		return value
+	case float32:
+		return float64(value)
+	case int:
+		return float64(value)
+	case int64:
+		return float64(value)
+	case json.Number:
+		out, _ := value.Float64()
+		return out
+	case string:
+		out, _ := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		return out
+	default:
+		return 0
+	}
+}
+
 func parseObservedAt(raw any) time.Time {
 	value := strings.TrimSpace(asString(raw))
 	if value == "" {
