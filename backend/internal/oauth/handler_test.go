@@ -97,13 +97,13 @@ func TestAuthorizeServesEmbeddedFrontendBehindForwardingProxyChain(t *testing.T)
 
 	gin.SetMode(gin.TestMode)
 	oauthServer := oauth.NewServer()
-	handler := oauth.NewHandler(oauthServer, "https://ai-efficiency.agoralab.co", &mockTokenGen{})
+	handler := oauth.NewHandler(oauthServer, "https://ai-efficiency.example.com", &mockTokenGen{})
 
 	r := gin.New()
 	r.GET("/oauth/authorize", handler.Authorize)
 
 	req := httptest.NewRequest(http.MethodGet, "http://internal-service/oauth/authorize?response_type=code&client_id=ae-cli&redirect_uri=http://localhost:18234/callback&code_challenge=abc&code_challenge_method=S256&state=xyz", nil)
-	req.Header.Set("X-Forwarded-Host", "ai-efficiency.agoralab.co, internal-service")
+	req.Header.Set("X-Forwarded-Host", "ai-efficiency.example.com, internal-service")
 	req.Header.Set("X-Forwarded-Proto", "http")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -132,13 +132,13 @@ func TestAuthorizeServesEmbeddedFrontendWhenProxyRewritesHost(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	oauthServer := oauth.NewServer()
-	handler := oauth.NewHandler(oauthServer, "https://ai-efficiency.agoralab.co", &mockTokenGen{})
+	handler := oauth.NewHandler(oauthServer, "https://ai-efficiency.example.com", &mockTokenGen{})
 
 	r := gin.New()
 	r.GET("/oauth/authorize", handler.Authorize)
 
 	req := httptest.NewRequest(http.MethodGet, "http://ai-efficiency-prod.la3-ai-efficiency-prod.svc.cluster.local/oauth/authorize?response_type=code&client_id=ae-cli&redirect_uri=http://localhost:18234/callback&code_challenge=abc&code_challenge_method=S256&state=xyz", nil)
-	req.Header.Set("X-Forwarded-Host", "ai-efficiency.la3.agoralab.co")
+	req.Header.Set("X-Forwarded-Host", "staging.ai-efficiency.example.com")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
