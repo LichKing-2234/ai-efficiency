@@ -23,6 +23,15 @@ type Config struct {
 	Relay        RelayConfig        `mapstructure:"relay"`
 	Attribution  AttributionConfig  `mapstructure:"attribution"`
 	VersionCheck VersionCheckConfig `mapstructure:"version_check"`
+	Guides       GuidesConfig       `mapstructure:"guides"`
+}
+
+// GuidesConfig points the UI at externally maintained walkthroughs. Empty
+// values hide the corresponding link, so self-hosted deployments can omit them
+// and internal deployments can point at their own pages without a rebuild.
+type GuidesConfig struct {
+	CCSwitchLabel string `mapstructure:"ccswitch_label"`
+	CCSwitchURL   string `mapstructure:"ccswitch_url"`
 }
 
 type MetricsConfig struct {
@@ -179,6 +188,8 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("auth.oidc.enabled", false)
 	v.SetDefault("auth.oidc.allow_email_link", false)
 	v.SetDefault("auth.oidc.scopes", []string{"openid", "profile", "email"})
+	v.SetDefault("guides.ccswitch_label", "")
+	v.SetDefault("guides.ccswitch_url", "")
 	v.SetDefault("version_check.enabled", true)
 	v.SetDefault("version_check.release_api_url", "https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest")
 	// Config file
@@ -251,6 +262,8 @@ func Load(path string) (*Config, error) {
 		"redis.db",
 		"redis.namespace",
 		"prewarmer.timezones",
+		"guides.ccswitch_label",
+		"guides.ccswitch_url",
 		"version_check.enabled",
 		"version_check.release_api_url",
 	} {

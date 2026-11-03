@@ -657,6 +657,8 @@ func main() {
 			AttributionCutoverAt:          attributionCutoverAt,
 			AttributionSetupAvailable:     cfg.Attribution.SetupAvailable,
 			AttributionReadinessAvailable: cfg.Attribution.ReadinessAvailable,
+			GuideCCSwitchLabel:            cfg.Guides.CCSwitchLabel,
+			GuideCCSwitchURL:              cfg.Guides.CCSwitchURL,
 			ActivityCache:                 activityCache,
 			OpsMonitoringCache:            opsMonitoringCache,
 			OwnerAccounts:                 ownerAccountService,

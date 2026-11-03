@@ -9,6 +9,13 @@ export interface User {
     setup_available: boolean
     readiness_available: boolean
   }
+  // Documented walkthrough maintained outside the app (Helm → env → /auth/me).
+  guides?: {
+    ccswitch?: {
+      label?: string
+      url?: string
+    }
+  }
 }
 
 export interface SCMProvider {

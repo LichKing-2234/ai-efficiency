@@ -21,6 +21,28 @@ type AuthHandler struct {
 	entClient             *ent.Client
 	adminSettingsHandler  *AdminSettingsHandler
 	reportingCapabilities ReportingCapabilities
+	guides                Guides
+}
+
+// Guides carries externally maintained documentation links. A guide with an
+// empty URL is omitted so deployments that do not maintain one never render a
+// dead link.
+type Guides struct {
+	CCSwitch *GuideLink `json:"ccswitch,omitempty"`
+}
+
+type GuideLink struct {
+	Label string `json:"label"`
+	URL   string `json:"url"`
+}
+
+// NewGuides builds the guide payload, dropping entries without a URL.
+func NewGuides(ccSwitchLabel, ccSwitchURL string) Guides {
+	guides := Guides{}
+	if url := strings.TrimSpace(ccSwitchURL); url != "" {
+		guides.CCSwitch = &GuideLink{Label: strings.TrimSpace(ccSwitchLabel), URL: url}
+	}
+	return guides
 }
 
 type ReportingCapabilities struct {
@@ -29,10 +51,10 @@ type ReportingCapabilities struct {
 }
 
 // NewAuthHandler creates a new auth handler.
-func NewAuthHandler(authService *auth.Service, entClient *ent.Client, adminSettingsHandler *AdminSettingsHandler, reportingCapabilities ReportingCapabilities) *AuthHandler {
+func NewAuthHandler(authService *auth.Service, entClient *ent.Client, adminSettingsHandler *AdminSettingsHandler, reportingCapabilities ReportingCapabilities, guides Guides) *AuthHandler {
 	return &AuthHandler{
 		authService: authService, entClient: entClient, adminSettingsHandler: adminSettingsHandler,
-		reportingCapabilities: reportingCapabilities,
+		reportingCapabilities: reportingCapabilities, guides: guides,
 	}
 }
 
@@ -274,6 +296,7 @@ func (h *AuthHandler) Me(c *gin.Context) {
 			"role":                   uc.Role,
 			"auth_source":            "",
 			"reporting_capabilities": h.reportingCapabilities,
+			"guides":                 h.guides,
 		})
 		return
 	}
@@ -289,6 +312,7 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		"role":                   string(u.Role),
 		"auth_source":            string(u.AuthSource),
 		"reporting_capabilities": h.reportingCapabilities,
+		"guides":                 h.guides,
 	})
 }
 

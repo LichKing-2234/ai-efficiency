@@ -114,6 +114,13 @@ const selectedIsAgentGroup = computed(() => isAgentAccessGroup(selectedGroup.val
 const ccSwitchMethodTitle = computed(() => selectedIsAgentGroup.value ? t('user.appImportMethodTitle') : t('user.ccSwitchConfigMethodTitle'))
 const ccSwitchMethodHelp = computed(() => selectedIsAgentGroup.value ? t('user.appImportMethodHelp') : t('user.ccSwitchConfigMethodHelp'))
 const ccSwitchMethodAudience = computed(() => selectedIsAgentGroup.value ? t('user.appImportMethodAudience') : t('user.ccSwitchConfigMethodAudience'))
+// The walkthrough lives outside the binary: deployments point at their own page
+// through guides.ccswitch_url, and an unset value simply hides the link.
+const ccSwitchGuide = computed(() => {
+  const guide = auth.user?.guides?.ccswitch
+  if (!guide?.url) return null
+  return { label: guide.label || t('user.ccSwitchTutorialTitle'), href: guide.url }
+})
 const discoverCommand = computed(() => selectedProvider.value ? buildDiscoverCommand(currentOrigin.value, selectedProvider.value.name) : '')
 const discoverTool = computed(() => resolveDiscoverToolForPlatform(selectedGroup.value?.platform ?? ''))
 const discoverFallbackCommand = computed(() =>
@@ -936,6 +943,14 @@ onBeforeUnmount(() => {
                     <dd class="text-xs text-slate-900">{{ t('user.manualConfigApiKeyHelp') }}</dd>
                   </dl>
 
+                  <p
+                    v-if="clientSnippets.length > 1"
+                    class="mt-3 text-xs text-gray-600"
+                    data-testid="manual-multi-client-hint"
+                  >
+                    {{ t('user.manualConfigMultiClientHint') }}
+                  </p>
+
                   <div v-if="manualConfigDisplaySnippets.length > 0" class="mt-4 space-y-3">
                     <div
                       v-for="snippet in clientSnippets"
@@ -1024,6 +1039,16 @@ onBeforeUnmount(() => {
                         </ElButton>
                       </div>
                     </div>
+                    <div
+                      class="rounded-md border border-slate-200 bg-slate-50 p-3"
+                      data-testid="manual-config-notice"
+                    >
+                      <div class="text-xs font-medium text-gray-900">{{ t('user.manualConfigNoticeTitle') }}</div>
+                      <ul class="mt-1 list-disc space-y-1 pl-4 text-xs text-gray-600">
+                        <li>{{ t('user.manualConfigRestartHint') }}</li>
+                        <li>{{ t('user.manualConfigEnvHint') }}</li>
+                      </ul>
+                    </div>
                   </div>
                   <p v-else class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
                     {{ t('user.manualConfigUnsupportedPlatform') }}
@@ -1033,11 +1058,13 @@ onBeforeUnmount(() => {
                 <div v-if="selectedConfigMethod === 'ccswitch'" class="mt-4 rounded-lg border border-gray-200 p-4">
                   <div class="font-medium text-gray-900">{{ ccSwitchMethodTitle }}</div>
                   <p class="mt-1 text-sm text-gray-600">{{ ccSwitchMethodHelp }}</p>
-                  <div class="mt-3">
+                  <div class="mt-3 text-sm" data-testid="ccswitch-download">
                     <ElLink
                       :href="t('user.ccSwitchDownloadUrl')"
                       target="_blank"
+                      rel="noreferrer noopener"
                       type="primary"
+                      data-testid="ccswitch-download-link"
                     >
                       {{ t('user.ccSwitchDownload') }}
                     </ElLink>
@@ -1067,7 +1094,45 @@ onBeforeUnmount(() => {
                   >
                     {{ t('user.agentImportV1EndpointNotice') }}
                   </p>
-                  <p class="mt-3 text-xs text-gray-500">{{ t('user.ccSwitchFallback') }}</p>
+                  <p class="mt-3 text-xs text-gray-500" data-testid="ccswitch-fallback">
+                    {{ t('user.ccSwitchFallback') }}
+                  </p>
+                  <ol
+                    v-if="!selectedIsAgentGroup"
+                    class="mt-3 list-decimal space-y-1 pl-5 text-sm text-gray-600"
+                    data-testid="ccswitch-steps"
+                  >
+                    <li>{{ t('user.ccSwitchStep1') }}</li>
+                    <li>{{ t('user.ccSwitchStep2') }}</li>
+                  </ol>
+                  <p
+                    v-if="!selectedIsAgentGroup"
+                    class="mt-2 pl-5 text-xs text-gray-500"
+                    data-testid="ccswitch-codex-warning-hint"
+                  >
+                    {{ t('user.ccSwitchCodexWarningHint') }}
+                  </p>
+                  <p
+                    v-if="!selectedIsAgentGroup && ccSwitchGuide"
+                    class="mt-3 text-sm"
+                    data-testid="ccswitch-tutorial"
+                  >
+                    <ElLink
+                      :href="ccSwitchGuide.href"
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      type="primary"
+                    >
+                      {{ ccSwitchGuide.label }}
+                    </ElLink>
+                  </p>
+                  <p
+                    v-if="!selectedIsAgentGroup"
+                    class="mt-3 text-xs text-amber-700"
+                    data-testid="ccswitch-secret-hint"
+                  >
+                    {{ t('user.ccSwitchSecretHint') }}
+                  </p>
                 </div>
               </section>
             </div>

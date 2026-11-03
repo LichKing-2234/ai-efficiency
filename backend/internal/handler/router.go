@@ -56,6 +56,10 @@ type RouterOptions struct {
 	AttributionCutoverAt          time.Time
 	AttributionSetupAvailable     bool
 	AttributionReadinessAvailable bool
+	// Guide links are maintained outside the binary (Helm values → env vars) so
+	// documentation can be edited without a release.
+	GuideCCSwitchLabel string
+	GuideCCSwitchURL   string
 	ActivityCache                 *activity.Cache
 	OpsMonitoringCache            *opsmonitoring.Cache
 	// OwnerAccounts is the owner-account console service. It is required in
@@ -252,7 +256,7 @@ func setupRouter(
 	// Handlers
 	authHandler := NewAuthHandler(authService, entClient, adminSettingsHandler, ReportingCapabilities{
 		SetupAvailable: options.AttributionSetupAvailable, ReadinessAvailable: options.AttributionReadinessAvailable,
-	})
+	}, NewGuides(options.GuideCCSwitchLabel, options.GuideCCSwitchURL))
 	r.GET("/auth/oidc/start", authHandler.OIDCStart)
 	r.GET("/auth/oidc/callback", authHandler.OIDCCallback)
 	r.GET("/auth/oidc/complete", authHandler.OIDCComplete)
