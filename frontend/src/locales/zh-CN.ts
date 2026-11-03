@@ -757,7 +757,7 @@ const zhCN = {
   'auth.oidcSignedOut': '你已退出当前应用。准备返回时，再点击公司账号登录。',
   'auth.oidcSignIn': '公司账号登录',
   'auth.oidcLoginRetry': '登录未完成，请重新登录。',
-  'auth.oidcIdentityConflict': '该账号已绑定其他登录身份，请重新登录；如仍无法登录，请联系管理员处理。',
+  'auth.oidcIdentityConflict': '该账号已绑定其他登录身份，请先退出登录后重新登录；如仍无法登录，请联系管理员处理。',
   'auth.oidcUnavailable': '公司登录暂时不可用，请稍后重试。',
   'auth.signingIn': '登录中...',
   'auth.devMode': '开发模式',

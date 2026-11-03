@@ -80,10 +80,17 @@ response; ordinary Bearer-authenticated API requests do not depend on it.
 A browser callback that cannot complete redirects to `/login` with an
 `oidc=failed`, `oidc=conflict`, or `oidc=unavailable` reason so the login page
 can ask the user to sign in again instead of leaving a JSON error response on
-screen. A local account that already carries a different `(issuer, subject)`
-binding is never silently rebound; the browser shows the account-conflict
-guidance and the user must retry another sign-in path or ask an administrator
-to resolve the binding.
+screen.
+
+When a verified email matches an existing local account whose stored
+`(issuer, subject)` binding belongs to a different issuer, that binding is
+stale environment state (for example a database restored from another
+environment or a replaced OIDC client). The deployment verifies and trusts
+only its currently configured issuer, so the sign-in replaces the stale
+binding with the current issuer and subject and continues. A binding under the
+current issuer with a different subject is a real identity conflict: it is
+never rebound, and the browser shows the account-conflict guidance so the user
+can retry another sign-in path or ask an administrator.
 
 A successful OIDC sign-in also reconciles the local user's Relay identity. When
 the local user has no Relay binding, AI Efficiency resolves an exact Relay email

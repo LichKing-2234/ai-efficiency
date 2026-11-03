@@ -22,9 +22,10 @@ import (
 )
 
 var (
-	// ErrOIDCIdentityConflict reports a local account that already belongs to a
-	// different external identity. The application does not silently replace that
-	// binding; the browser is prompted to sign in again or ask an administrator.
+	// ErrOIDCIdentityConflict reports a local account bound to a different
+	// subject under the currently configured issuer. A binding from another
+	// issuer is treated as stale environment state and is re-bound after a
+	// verified-email sign-in; a same-issuer subject conflict is never re-bound.
 	ErrOIDCIdentityConflict = errors.New("OIDC identity conflicts with another external identity")
 	// ErrOIDCEmailLinkUnavailable reports an unbound identity whose verified
 	// email cannot be linked or provisioned under the current configuration.
@@ -560,7 +561,23 @@ func (s *Service) linkOrCreateOIDCUser(ctx context.Context, identity OIDCIdentit
 	u, err := s.entClient.User.Query().Where(entuser.EmailEQ(identity.Email)).Only(ctx)
 	if err == nil {
 		if u.OidcIssuer != nil || u.OidcSubject != nil {
-			return nil, fmt.Errorf("email already belongs to another external identity: %w", ErrOIDCIdentityConflict)
+			storedIssuer := ""
+			if u.OidcIssuer != nil {
+				storedIssuer = strings.TrimSpace(*u.OidcIssuer)
+			}
+			if storedIssuer != "" && storedIssuer == strings.TrimSpace(identity.Issuer) {
+				return nil, fmt.Errorf("email already belongs to a different external identity under the same issuer: %w", ErrOIDCIdentityConflict)
+			}
+			// The stored binding points at a different issuer, which can only be
+			// stale state from another environment or an earlier client. This
+			// deployment verifies and trusts only its configured issuer, and the
+			// verified email belongs to this account, so replace the stale binding
+			// instead of locking the account out.
+			s.logger.Info("rebound OIDC identity after issuer change",
+				zap.Int("user_id", u.ID),
+				zap.String("previous_issuer", storedIssuer),
+				zap.String("issuer", identity.Issuer),
+			)
 		}
 		return u.Update().SetAuthSource(entuser.AuthSourceOidc).SetOidcIssuer(identity.Issuer).SetOidcSubject(identity.Subject).Save(ctx)
 	}
