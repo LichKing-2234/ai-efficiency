@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -155,7 +156,23 @@ func TestTokenDeviceGrantDeniedExpiredAndSlowDown(t *testing.T) {
 	}
 
 	_, expiringCode := issueDeviceCode(t, router)
-	handler.devices[expiringCode].ExpiresAt = now.Add(-time.Second)
+	ctx := context.Background()
+	entryRaw, found, err := handler.state.Get(ctx, deviceCodeKey(expiringCode))
+	if err != nil || !found {
+		t.Fatalf("load device entry: found=%v err=%v", found, err)
+	}
+	entry, err := decodeState[deviceEntry](entryRaw)
+	if err != nil {
+		t.Fatalf("decode device entry: %v", err)
+	}
+	entry.ExpiresAt = now.Add(-time.Second)
+	encoded, err := encodeState(entry)
+	if err != nil {
+		t.Fatalf("encode device entry: %v", err)
+	}
+	if err := handler.state.Set(ctx, deviceCodeKey(expiringCode), encoded, handler.deviceCodeExpiry); err != nil {
+		t.Fatalf("store device entry: %v", err)
+	}
 
 	expiredForm := url.Values{
 		"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
@@ -219,8 +236,8 @@ func TestDeviceCodeRegeneratesDuplicateUserCodes(t *testing.T) {
 	if firstPayload["user_code"] == secondPayload["user_code"] {
 		t.Fatalf("expected regenerated unique user_code, got duplicate %q", firstPayload["user_code"])
 	}
-	if got := handler.devicesByUserCode[normalizeUserCode(secondPayload["user_code"].(string))]; got == nil {
-		t.Fatal("expected secondary user_code index to contain second device entry")
+	if _, found, err := handler.state.Get(context.Background(), deviceUserCodeKey(normalizeUserCode(secondPayload["user_code"].(string)))); err != nil || !found {
+		t.Fatalf("expected secondary user_code index to contain second device entry: found=%v err=%v", found, err)
 	}
 }
 

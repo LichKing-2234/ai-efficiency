@@ -356,6 +356,7 @@ func TestAuthOptionsExposeLDAPAndDevLoginWhenAvailable(t *testing.T) {
 		config.OIDCConfig{},
 		"",
 		nil,
+		nil,
 	)
 
 	router := setupRouterForTest(t,

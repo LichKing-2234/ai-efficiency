@@ -13,6 +13,7 @@ import (
 
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/authsettings"
+	"github.com/ai-efficiency/backend/internal/authstate"
 	"github.com/ai-efficiency/backend/internal/config"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/gin-gonic/gin"
@@ -40,6 +41,7 @@ type AdminSettingsHandler struct {
 	defaultOIDC config.OIDCConfig
 	frontendURL string
 	httpClient  *http.Client
+	state       authstate.Store
 	buildOIDC   func(context.Context, auth.OIDCConfig) (*auth.OIDCService, error)
 
 	oidcRefreshMu    sync.Mutex
@@ -56,6 +58,7 @@ func NewAdminSettingsHandler(
 	defaultOIDC config.OIDCConfig,
 	frontendURL string,
 	httpClient *http.Client,
+	state authstate.Store,
 ) *AdminSettingsHandler {
 	handler := &AdminSettingsHandler{
 		store:       store,
@@ -64,10 +67,11 @@ func NewAdminSettingsHandler(
 		defaultOIDC: defaultOIDC,
 		frontendURL: frontendURL,
 		httpClient:  httpClient,
+		state:       state,
 	}
 	handler.buildOIDC = func(ctx context.Context, cfg auth.OIDCConfig) (*auth.OIDCService, error) {
 		cfg.HTTPClient = handler.httpClient
-		return auth.NewOIDCService(ctx, cfg)
+		return auth.NewOIDCServiceWithStore(ctx, cfg, handler.state)
 	}
 	return handler
 }

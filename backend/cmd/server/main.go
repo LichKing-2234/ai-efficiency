@@ -21,6 +21,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/attributionreconcile"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/authsettings"
+	"github.com/ai-efficiency/backend/internal/authstate"
 	"github.com/ai-efficiency/backend/internal/buildinfo"
 	"github.com/ai-efficiency/backend/internal/checkpoint"
 	"github.com/ai-efficiency/backend/internal/config"
@@ -316,6 +317,7 @@ func main() {
 		logger.Fatal("register Redis pool metrics", zap.Error(err))
 	}
 	redisStore := readcache.NewRedisStore(redisClient)
+	authStateStore := authstate.NewRedisStore(redisClient, cfg.Redis.Namespace)
 	providerInvalidationBus, err := relayruntime.NewRedisInvalidationBus(redisClient, cfg.Redis.Namespace)
 	if err != nil {
 		logger.Fatal("initialize relay provider invalidation bus", zap.Error(err))
@@ -476,7 +478,7 @@ func main() {
 		defer cancelOIDC()
 		oidcRuntimeConfig := oidcSettings.AuthConfig(cfg.Server.FrontendURL)
 		oidcRuntimeConfig.HTTPClient = httpClients.oidc
-		oidcService, err := auth.NewOIDCService(oidcContext, oidcRuntimeConfig)
+		oidcService, err := auth.NewOIDCServiceWithStore(oidcContext, oidcRuntimeConfig, authStateStore)
 		if err != nil {
 			logger.Fatal("initialize OIDC client", zap.Error(err))
 		}
@@ -529,7 +531,7 @@ func main() {
 
 	// Init OAuth handler
 	oauthServer := oauth.NewServer()
-	oauthHandler := oauth.NewHandler(oauthServer, cfg.Server.FrontendURL, &authTokenAdapter{authService: authService})
+	oauthHandler := oauth.NewHandlerWithStore(oauthServer, cfg.Server.FrontendURL, &authTokenAdapter{authService: authService}, authStateStore)
 
 	// Init provider handler
 	providerHandler, err := handler.NewProviderHandler(entClient, cfg.Encryption.Key, logger, providerRuntime)
@@ -579,6 +581,7 @@ func main() {
 		cfg.Auth.OIDC,
 		cfg.Server.FrontendURL,
 		httpClients.oidc,
+		authStateStore,
 	)
 
 	checkpointService := checkpoint.NewService(entClient, checkpoint.ServiceOptions{

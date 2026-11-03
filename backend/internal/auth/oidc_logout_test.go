@@ -12,10 +12,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ai-efficiency/backend/internal/authstate"
 	"github.com/golang-jwt/jwt/v5"
 )
 
 func newLogoutTestService(t *testing.T) (*OIDCService, *rsa.PrivateKey, string) {
+	t.Helper()
+	return newLogoutTestServiceWithStore(t, nil)
+}
+
+func newLogoutTestServiceWithStore(t *testing.T, state authstate.Store) (*OIDCService, *rsa.PrivateKey, string) {
 	t.Helper()
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -47,12 +53,12 @@ func newLogoutTestService(t *testing.T) (*OIDCService, *rsa.PrivateKey, string) 
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	serverURL = server.URL
-	service, err := NewOIDCService(context.Background(), OIDCConfig{
+	service, err := NewOIDCServiceWithStore(context.Background(), OIDCConfig{
 		Issuer:       serverURL,
 		ClientID:     "client-id",
 		ClientSecret: "client-secret",
 		RedirectURL:  serverURL + "/auth/oidc/callback",
-	})
+	}, state)
 	if err != nil {
 		t.Fatalf("build OIDC service: %v", err)
 	}

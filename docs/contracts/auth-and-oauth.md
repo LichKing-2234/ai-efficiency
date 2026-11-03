@@ -65,6 +65,18 @@ cannot grant local administrator access. The OIDC client secret and issuer
 configuration remain server side: they come from deployment configuration or
 the administrator-managed database settings described above.
 
+The two pieces of transient state that join the browser redirect back to the
+application are stored in the shared auth state store, not in process memory.
+`/auth/oidc/start` stores the pending state (`state`, nonce, PKCE verifier,
+requested redirect and callback) under a five-minute TTL; the callback consumes
+it atomically, so exactly one process completes a given authorization. The
+one-use completion handoff then holds only the resolved local identity and the
+requested redirect for two minutes; the token pair is issued when the browser
+consumes the handoff, so no credential is written to the state store. Any
+replica may serve the start, callback, or completion request. A state-store
+failure makes the start and callback paths fail closed with an unavailable
+response; ordinary Bearer-authenticated API requests do not depend on it.
+
 A successful OIDC sign-in also reconciles the local user's Relay identity. When
 the local user has no Relay binding, AI Efficiency resolves an exact Relay email
 match, then the canonical or legacy username, and otherwise provisions a Relay
@@ -104,13 +116,16 @@ accepts an `application/x-www-form-urlencoded` body with a single
 checks `iss`, `aud`, the
 `http://schemas.openid.net/event/backchannel-logout` event, a recent `iat`, a
 non-empty `jti` with replay rejection, absence of `nonce`, and a non-empty
-`sub`. A valid token revokes the matching local account's access and refresh
-tokens through the same `token_valid_after` boundary used by directory
-offboarding, so existing sessions fail on their next request or refresh.
+`sub`. The `jti` replay marker is a shared store entry with a ten-minute TTL, so
+redelivery is rejected regardless of which replica receives it. A valid token
+revokes the matching local account's access and refresh tokens through the same
+`token_valid_after` boundary used by directory offboarding, so existing
+sessions fail on their next request or refresh.
 
 Unknown subjects still return `200` so provider delivery is idempotent.
-Invalid tokens return `400`, and a disabled OIDC client returns `404`. The
-endpoint never redirects and requires no browser session.
+Invalid tokens return `400`, a disabled OIDC client returns `404`, and a state
+store failure returns `503` so provider delivery can retry a transient backend
+problem. The endpoint never redirects and requires no browser session.
 
 ## Local User Reconciliation
 
@@ -186,10 +201,11 @@ The callback URI is accepted only when URL parsing proves all of these facts:
 
 The server validates the same callback and public-client identity before
 authorization approval and token exchange. An approved authorization code is
-bound to the client, callback URI, user, and PKCE challenge. It is process
-memory state, expires after five minutes, and is removed on the first exchange
-attempt. A mismatched client, callback, verifier, expired code, or reused code
-returns `invalid_grant`.
+bound to the client, callback URI, user, and PKCE challenge. It is short-lived
+shared state with a five-minute TTL and is consumed atomically on the first
+exchange attempt, so any backend process may redeem it and a replay cannot
+observe it twice. A mismatched client, callback, verifier, expired code, or
+reused code returns `invalid_grant`.
 
 The CLI opens a random localhost listener, verifies the returned state, and
 exchanges the code through the OAuth token endpoint. The ordinary login waits
@@ -209,7 +225,10 @@ interval. The browser must have a valid AI Efficiency access token before it
 can approve or deny the normalized user code. The browser never receives the
 device code.
 
-Device state is process memory with this lifecycle:
+Device state lives in the same shared store. It has a fifteen-minute TTL; the
+poll, approval, denial, and consumption transitions are atomic, so any backend
+process can poll or approve a device authorization another process issued. Its
+lifecycle is:
 
 ```text
 pending -> approved -> consumed
@@ -243,9 +262,11 @@ API operations even though the browser entry pages themselves are public.
 
 ## Current Limitations
 
-- Authorization codes and device entries are process-local and are lost on
-  restart. A client that reaches another process or loses the issuing process
-  must restart authorization.
+- Interactive login completion requires the shared auth state store. Flows
+  whose state entries expire return `invalid_grant` or an expired handoff, and
+  a Redis outage fails start/completion with an unavailable response. Existing
+  Bearer sessions, token validation, and refresh use only JWT and PostgreSQL
+  facts and keep working.
 - OAuth has one public client and no scope model. Both grants receive the same
   current CLI access.
 - OAuth does not provide a CLI username/password grant or a device

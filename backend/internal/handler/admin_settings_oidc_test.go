@@ -66,7 +66,7 @@ func newOIDCSettingsTestHandler(t *testing.T, store AuthSettingsStore, defaults 
 	authService := auth.NewService(nil, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, zap.NewNop())
 	var ldapConfig atomic.Pointer[config.LDAPConfig]
 	ldapConfig.Store(&config.LDAPConfig{})
-	handler := NewAdminSettingsHandler(store, authService, &ldapConfig, defaults, "https://app.example.test", nil)
+	handler := NewAdminSettingsHandler(store, authService, &ldapConfig, defaults, "https://app.example.test", nil, nil)
 	handler.buildOIDC = func(context.Context, auth.OIDCConfig) (*auth.OIDCService, error) {
 		return &auth.OIDCService{}, nil
 	}
