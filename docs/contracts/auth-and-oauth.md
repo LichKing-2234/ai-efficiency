@@ -77,6 +77,14 @@ replica may serve the start, callback, or completion request. A state-store
 failure makes the start and callback paths fail closed with an unavailable
 response; ordinary Bearer-authenticated API requests do not depend on it.
 
+A browser callback that cannot complete redirects to `/login` with an
+`oidc=failed`, `oidc=conflict`, or `oidc=unavailable` reason so the login page
+can ask the user to sign in again instead of leaving a JSON error response on
+screen. A local account that already carries a different `(issuer, subject)`
+binding is never silently rebound; the browser shows the account-conflict
+guidance and the user must retry another sign-in path or ask an administrator
+to resolve the binding.
+
 A successful OIDC sign-in also reconciles the local user's Relay identity. When
 the local user has no Relay binding, AI Efficiency resolves an exact Relay email
 match, then the canonical or legacy username, and otherwise provisions a Relay

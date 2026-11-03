@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/url"
@@ -186,26 +187,37 @@ func (h *AuthHandler) OIDCCallback(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
+	secure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
+	http.SetCookie(c.Writer, &http.Cookie{Name: "ae_oidc_state", Value: "", Path: "/auth/oidc/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: -1})
 	cookie, err := c.Request.Cookie("ae_oidc_state")
 	queryState := c.Query("state")
 	if err != nil || cookie.Value == "" || queryState == "" || queryState != cookie.Value || c.Query("error") != "" {
-		pkg.Error(c, http.StatusUnauthorized, "invalid OIDC state")
+		c.Redirect(http.StatusFound, oidcCallbackFailureLocation(nil))
 		return
 	}
 	handoff, redirect, err := provider.Complete(c.Request.Context(), cookie.Value, c.Query("code"), h.authService)
-	secure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
-	http.SetCookie(c.Writer, &http.Cookie{Name: "ae_oidc_state", Value: "", Path: "/auth/oidc/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: -1})
 	if err != nil {
-		if authstate.Unavailable(err) {
-			pkg.Error(c, http.StatusServiceUnavailable, "OIDC login unavailable")
-			return
-		}
-		pkg.Error(c, http.StatusUnauthorized, "OIDC login could not be completed")
+		c.Redirect(http.StatusFound, oidcCallbackFailureLocation(err))
 		return
 	}
 	http.SetCookie(c.Writer, &http.Cookie{Name: "ae_oidc_handoff", Value: handoff, Path: "/auth/oidc/complete", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: 120})
 	location := "/login?oidc=complete&redirect=" + url.QueryEscape(redirect)
 	c.Redirect(http.StatusFound, location)
+}
+
+// oidcCallbackFailureLocation sends a browser back to the login page with an
+// actionable retry reason. The callback route is browser-only, so returning a
+// JSON error would leave the user on a dead end. Issuer binding policy is
+// unchanged: a conflicting identity is not auto-rebound.
+func oidcCallbackFailureLocation(err error) string {
+	switch {
+	case errors.Is(err, auth.ErrOIDCIdentityConflict):
+		return "/login?oidc=conflict"
+	case authstate.Unavailable(err):
+		return "/login?oidc=unavailable"
+	default:
+		return "/login?oidc=failed"
+	}
 }
 
 func (h *AuthHandler) OIDCComplete(c *gin.Context) {

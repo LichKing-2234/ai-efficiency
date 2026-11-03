@@ -27,6 +27,7 @@ const authOptions = ref({
   oidc_label: '',
 })
 
+const oidcNotice = ref('')
 const oidcSignedOut = ref(localStorage.getItem('oidc_logout_requested') === '1')
 
 onMounted(async () => {
@@ -40,6 +41,14 @@ onMounted(async () => {
     }
     source.value = authOptions.value.oidc_enabled ? 'SSO' : (authOptions.value.ldap_enabled ? 'LDAP' : 'SSO')
     if (authOptions.value.oidc_enabled) {
+      const oidcStatus = String(router.currentRoute.value.query.oidc || '')
+      if (oidcStatus === 'conflict') {
+        oidcNotice.value = t('auth.oidcIdentityConflict')
+      } else if (oidcStatus === 'unavailable') {
+        oidcNotice.value = t('auth.oidcUnavailable')
+      } else if (oidcStatus === 'failed') {
+        oidcNotice.value = t('auth.oidcLoginRetry')
+      }
       if (router.currentRoute.value.query.oidc === 'complete') {
         loading.value = true
         const user = await auth.completeOIDC()
@@ -134,12 +143,22 @@ async function handleDevLogin() {
           </el-select>
         </el-form-item>
         <div v-if="loginMode === 'oidc'" data-testid="oidc-login" class="space-y-4">
+          <el-alert
+            v-if="oidcNotice"
+            :closable="false"
+            :title="oidcNotice"
+            data-testid="oidc-notice"
+            show-icon
+            type="warning"
+          />
           <p v-if="loading">{{ t('auth.oidcConnecting') }}</p>
           <p v-if="oidcSignedOut && !loading">{{ t('auth.oidcSignedOut') }}</p>
-          <el-button v-if="oidcSignedOut || !loading" :loading="loading" type="primary" @click="startOIDC">
-            {{ oidcSignedOut ? t('auth.oidcSignIn') : t('auth.signIn') }}
-          </el-button>
-          <el-button v-if="!loading && !oidcSignedOut" plain @click="logoutOIDC">{{ t('auth.signOut') }}</el-button>
+          <div class="flex flex-wrap items-center gap-3">
+            <el-button v-if="oidcSignedOut || !loading" :loading="loading" type="primary" @click="startOIDC">
+              {{ oidcSignedOut ? t('auth.oidcSignIn') : t('auth.signIn') }}
+            </el-button>
+            <el-button v-if="!loading && !oidcSignedOut" plain @click="logoutOIDC">{{ t('auth.signOut') }}</el-button>
+          </div>
         </div>
       </div>
       <el-alert

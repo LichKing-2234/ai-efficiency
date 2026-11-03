@@ -232,13 +232,15 @@ describe('i18n locale loading', () => {
       ...Object.keys(ownerAccountsMessages['zh-CN']),
     ].sort()
 
-    expect(englishKeys).toHaveLength(1579)
-    expect(chineseKeys).toHaveLength(1579)
+    expect(englishKeys).toHaveLength(1582)
+    expect(chineseKeys).toHaveLength(1582)
     expect(englishKeys).toContain('user.ccSwitchStep2')
     expect(englishKeys).toContain('user.manualConfigRestartHint')
     expect(englishKeys).toContain('user.ccSwitchSecretHint')
     expect(englishKeys).toContain('user.manualConfigEnvHint')
     expect(englishKeys).toContain('user.ccSwitchTutorialTitle')
+    expect(englishKeys).toContain('auth.oidcLoginRetry')
+    expect(chineseKeys).toContain('auth.oidcLoginRetry')
     expect(chineseKeys).toContain('user.ccSwitchStep2')
     expect(chineseKeys).toContain('user.manualConfigRestartHint')
     expect(chineseKeys).toContain('user.ccSwitchSecretHint')
