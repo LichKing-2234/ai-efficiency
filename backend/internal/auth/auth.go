@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -47,7 +48,7 @@ type AuthProvider interface {
 
 // Service handles authentication logic.
 type Service struct {
-	oidc                  *OIDCService
+	oidc                  atomic.Pointer[OIDCService]
 	providers             []AuthProvider
 	entClient             *ent.Client
 	jwtSecret             []byte
@@ -228,6 +229,32 @@ func (s *Service) RevokeUserTokens(ctx context.Context, userID int, revokedAt ti
 		return fmt.Errorf("revoke user tokens: %w", err)
 	}
 	return nil
+}
+
+// RevokeTokensByOIDCSubject revokes tokens for the local account bound to the
+// given OIDC issuer and subject. It reports whether a bound account exists.
+func (s *Service) RevokeTokensByOIDCSubject(ctx context.Context, issuer, subject string) (bool, error) {
+	issuer = strings.TrimSpace(issuer)
+	subject = strings.TrimSpace(subject)
+	if s == nil || s.entClient == nil {
+		return false, fmt.Errorf("auth service is not configured")
+	}
+	if issuer == "" || subject == "" {
+		return false, fmt.Errorf("issuer and subject are required")
+	}
+	u, err := s.entClient.User.Query().
+		Where(entuser.OidcIssuerEQ(issuer), entuser.OidcSubjectEQ(subject)).
+		Only(ctx)
+	if ent.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("resolve OIDC subject: %w", err)
+	}
+	if err := s.RevokeUserTokens(ctx, u.ID, time.Now()); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *Service) RevokeUserTokensTx(ctx context.Context, tx *ent.Tx, userID int, revokedAt time.Time) error {

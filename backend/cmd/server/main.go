@@ -20,6 +20,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/attributionledger"
 	"github.com/ai-efficiency/backend/internal/attributionreconcile"
 	"github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/authsettings"
 	"github.com/ai-efficiency/backend/internal/buildinfo"
 	"github.com/ai-efficiency/backend/internal/checkpoint"
 	"github.com/ai-efficiency/backend/internal/config"
@@ -436,9 +437,30 @@ func main() {
 		logger.Fatal("initialize repository inventory", zap.Error(err))
 	}
 
+	// Load administrator-managed login settings. Database values override the
+	// deployment configuration; a missing row falls back to deployment values.
+	authSettingsStore := authsettings.NewStore(entClient, cfg.Encryption.Key)
+	settingsCtx, cancelSettings := context.WithTimeout(context.Background(), 10*time.Second)
+
+	ldapSettings := authsettings.FromConfigLDAP(cfg.Auth.LDAP)
+	if stored, found, err := authSettingsStore.LoadLDAP(settingsCtx); err != nil {
+		logger.Warn("load stored LDAP settings", zap.Error(err))
+	} else if found {
+		ldapSettings = *stored
+	}
+
+	oidcSettings := authsettings.FromConfigOIDC(cfg.Auth.OIDC)
+	if stored, found, err := authSettingsStore.LoadOIDC(settingsCtx); err != nil {
+		logger.Warn("load stored OIDC settings", zap.Error(err))
+	} else if found {
+		oidcSettings = *stored
+	}
+	cancelSettings()
+
 	// Init LDAP config (shared between auth service and admin settings handler)
 	var ldapConfig atomic.Pointer[config.LDAPConfig]
-	ldapConfig.Store(&cfg.Auth.LDAP)
+	ldapRuntimeConfig := ldapSettings.Config()
+	ldapConfig.Store(&ldapRuntimeConfig)
 
 	// Init auth service
 	authService := auth.NewService(
@@ -449,20 +471,12 @@ func main() {
 		logger,
 		cfg.Encryption.Key,
 	)
-	if cfg.Auth.OIDC.Enabled {
-		redirectURL := cfg.Auth.OIDC.RedirectURL
-		if strings.TrimSpace(redirectURL) == "" {
-			redirectURL = strings.TrimRight(cfg.Server.FrontendURL, "/") + "/auth/oidc/callback"
-		}
+	if oidcSettings.Enabled {
 		oidcContext, cancelOIDC := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancelOIDC()
-		oidcService, err := auth.NewOIDCService(oidcContext, auth.OIDCConfig{
-			Issuer: cfg.Auth.OIDC.Issuer, ClientID: cfg.Auth.OIDC.ClientID,
-			ClientSecret: cfg.Auth.OIDC.ClientSecret, RedirectURL: redirectURL,
-			RedirectURLs:   cfg.Auth.OIDC.RedirectURLs,
-			AllowEmailLink: cfg.Auth.OIDC.AllowEmailLink, Scopes: cfg.Auth.OIDC.Scopes,
-			HTTPClient: httpClients.oidc,
-		})
+		oidcRuntimeConfig := oidcSettings.AuthConfig(cfg.Server.FrontendURL)
+		oidcRuntimeConfig.HTTPClient = httpClients.oidc
+		oidcService, err := auth.NewOIDCService(oidcContext, oidcRuntimeConfig)
 		if err != nil {
 			logger.Fatal("initialize OIDC client", zap.Error(err))
 		}
@@ -558,7 +572,14 @@ func main() {
 	directoryService.StartScheduler(directorySchedulerCtx, time.Minute)
 
 	// Init admin settings handler
-	adminSettingsHandler := handler.NewAdminSettingsHandler(settingsConfigPath, &ldapConfig)
+	adminSettingsHandler := handler.NewAdminSettingsHandler(
+		authSettingsStore,
+		authService,
+		&ldapConfig,
+		cfg.Auth.OIDC,
+		cfg.Server.FrontendURL,
+		httpClients.oidc,
+	)
 
 	checkpointService := checkpoint.NewService(entClient, checkpoint.ServiceOptions{
 		InventoryRevisionStore: repoInventoryRevisions,

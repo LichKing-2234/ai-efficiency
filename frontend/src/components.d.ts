@@ -67,6 +67,7 @@ declare module 'vue' {
     ElTag: typeof import('element-plus/es')['ElTag']
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
     LineChartCanvas: typeof import('./components/charts/LineChartCanvas.vue')['default']
+    OIDCSettings: typeof import('./components/settings/OIDCSettings.vue')['default']
     OpsMonitoringGroupDetail: typeof import('./components/admin/OpsMonitoringGroupDetail.vue')['default']
     OrganizationLoginSettings: typeof import('./components/settings/OrganizationLoginSettings.vue')['default']
     OwnerAccountActions: typeof import('./components/owner-accounts/OwnerAccountActions.vue')['default']
