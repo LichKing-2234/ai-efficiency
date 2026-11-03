@@ -188,7 +188,7 @@ async function mountUserView(reportingCapabilities?: { setup_available: boolean;
   setActivePinia(pinia)
   const auth = useAuthStore(pinia)
   auth.token = 'token'
-  auth.user = { id: 1, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'relay_sso', reporting_capabilities: reportingCapabilities }
+  auth.user = { id: 1, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'relay_sso', reporting_capabilities: reportingCapabilities, guides: { ccswitch: { label: 'Illustrated guides', url: 'https://confluence.agoralab.co/pages/viewpage.action?pageId=2053571138' } } }
 
   const router = createTestRouter()
   await router.push('/user')
@@ -205,7 +205,7 @@ async function mountUserView(reportingCapabilities?: { setup_available: boolean;
     },
   })
   await flushPromises()
-  return { wrapper, router }
+  return { wrapper, router, auth }
 }
 
 async function mountUserViewWithProviders(providers: any[]) {
@@ -798,6 +798,52 @@ describe('UserView', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('~/.codex/config.toml')
     expect(wrapper.text()).toContain('~/.codex/auth.json')
+  })
+
+  it('documents the confirm-dialog switch and the restart the import link cannot do', async () => {
+    const { wrapper } = await mountUserView()
+
+    await openConfigurationMethods(wrapper)
+    await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
+
+    const steps = wrapper.get('[data-testid="ccswitch-steps"]')
+    expect(steps.findAll('li')).toHaveLength(2)
+    const text = steps.text()
+    expect(text).toContain('Switch to this provider after import')
+    expect(text).toContain('Restart the client')
+    expect(wrapper.get('[data-testid="ccswitch-fallback"]').text()).toContain('choose "Open"')
+    expect(wrapper.get('[data-testid="ccswitch-codex-warning-hint"]').text()).toContain('unrecognized configuration setting')
+    const download = wrapper.get('[data-testid="ccswitch-download"]')
+    expect(download.findAll('a')).toHaveLength(1)
+    const official = wrapper.get('[data-testid="ccswitch-download-link"]')
+    expect(official.text()).toBe('Download CC Switch')
+    expect(official.attributes('href')).toBe('https://ccswitch.io/download')
+  })
+
+  it('links the internal screenshot walkthrough next to the import buttons', async () => {
+    const { wrapper } = await mountUserView()
+
+    await openConfigurationMethods(wrapper)
+    await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
+
+    const tutorial = wrapper.get('[data-testid="ccswitch-tutorial"]')
+    const links = tutorial.findAll('a')
+    expect(links).toHaveLength(1)
+    expect(links[0]!.attributes('href')).toBe('https://confluence.agoralab.co/pages/viewpage.action?pageId=2053571138')
+    expect(links[0]!.text()).toBe('Illustrated guides')
+  })
+
+  it('hides the walkthrough link when the deployment configures no guide', async () => {
+    const { wrapper, auth } = await mountUserView()
+
+    await openConfigurationMethods(wrapper)
+    await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
+    expect(wrapper.find('[data-testid="ccswitch-tutorial"]').exists()).toBe(true)
+
+    auth.user = { ...auth.user!, guides: undefined }
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="ccswitch-tutorial"]').exists()).toBe(false)
   })
 
   it('does not map the selected connection-test model in the Claude CC Switch import link', async () => {
