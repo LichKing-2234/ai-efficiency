@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -18,6 +19,16 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"
+)
+
+var (
+	// ErrOIDCIdentityConflict reports a local account that already belongs to a
+	// different external identity. The application does not silently replace that
+	// binding; the browser is prompted to sign in again or ask an administrator.
+	ErrOIDCIdentityConflict = errors.New("OIDC identity conflicts with another external identity")
+	// ErrOIDCEmailLinkUnavailable reports an unbound identity whose verified
+	// email cannot be linked or provisioned under the current configuration.
+	ErrOIDCEmailLinkUnavailable = errors.New("OIDC identity is not bound and email linking is not allowed")
 )
 
 const (
@@ -544,12 +555,12 @@ func (s *Service) ensureOIDCRelayIdentity(ctx context.Context, u *ent.User) (*en
 func (s *Service) linkOrCreateOIDCUser(ctx context.Context, identity OIDCIdentity) (*ent.User, error) {
 	provider := s.OIDC()
 	if provider == nil || !provider.config.AllowEmailLink || !identity.EmailVerified {
-		return nil, fmt.Errorf("OIDC identity is not bound and email linking is not allowed")
+		return nil, fmt.Errorf("OIDC identity is not bound and email linking is not allowed: %w", ErrOIDCEmailLinkUnavailable)
 	}
 	u, err := s.entClient.User.Query().Where(entuser.EmailEQ(identity.Email)).Only(ctx)
 	if err == nil {
 		if u.OidcIssuer != nil || u.OidcSubject != nil {
-			return nil, fmt.Errorf("email already belongs to another external identity")
+			return nil, fmt.Errorf("email already belongs to another external identity: %w", ErrOIDCIdentityConflict)
 		}
 		return u.Update().SetAuthSource(entuser.AuthSourceOidc).SetOidcIssuer(identity.Issuer).SetOidcSubject(identity.Subject).Save(ctx)
 	}

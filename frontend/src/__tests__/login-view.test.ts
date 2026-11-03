@@ -449,4 +449,36 @@ describe('LoginView', () => {
 
     expect(wrapper.get('[data-testid="auth-source"]').text()).toContain('SSO')
   })
+  it('prompts a retry when the OIDC callback could not complete', async () => {
+    const { getAuthOptions } = await import('@/api/auth')
+    ;(getAuthOptions as any).mockResolvedValue({
+      data: { data: { ldap_enabled: true, dev_login_enabled: false, oidc_enabled: true } },
+    })
+    const router = createTestRouter()
+    await router.push('/login?oidc=failed')
+    await router.isReady()
+    const wrapper = mount(LoginView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="oidc-notice"]').text()).toContain('Sign-in was not completed')
+  })
+
+  it('shows the identity-conflict guidance when OIDC is bound to another identity', async () => {
+    const { getAuthOptions } = await import('@/api/auth')
+    ;(getAuthOptions as any).mockResolvedValue({
+      data: { data: { ldap_enabled: true, dev_login_enabled: false, oidc_enabled: true } },
+    })
+    const router = createTestRouter()
+    await router.push('/login?oidc=conflict')
+    await router.isReady()
+    const wrapper = mount(LoginView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="oidc-notice"]').text()).toContain('different sign-in identity')
+  })
+
 })

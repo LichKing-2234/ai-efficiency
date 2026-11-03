@@ -1,9 +1,13 @@
 package handler
 
 import (
+	"errors"
+	"fmt"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/authstate"
 	"github.com/gin-gonic/gin"
 )
 
@@ -54,5 +58,26 @@ func TestOIDCCallbackURLUsesExplicitBrowserHost(t *testing.T) {
 	got := oidcCallbackCandidates(c)
 	if len(got) == 0 || got[0] != "https://ai-efficiency.example.com/auth/oidc/callback" {
 		t.Fatalf("oidcCallbackCandidates() = %q", got)
+	}
+}
+
+func TestOIDCCallbackFailureLocation(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "identity conflict", err: fmt.Errorf("resolve OIDC identity: %w", auth.ErrOIDCIdentityConflict), want: "/login?oidc=conflict"},
+		{name: "email linking unavailable", err: fmt.Errorf("resolve OIDC identity: %w", auth.ErrOIDCEmailLinkUnavailable), want: "/login?oidc=failed"},
+		{name: "state store unavailable", err: fmt.Errorf("load pending: %w", authstate.ErrUnavailable), want: "/login?oidc=unavailable"},
+		{name: "generic failure", err: errors.New("code exchange failed"), want: "/login?oidc=failed"},
+		{name: "missing state", err: nil, want: "/login?oidc=failed"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := oidcCallbackFailureLocation(tc.err); got != tc.want {
+				t.Fatalf("oidcCallbackFailureLocation() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
