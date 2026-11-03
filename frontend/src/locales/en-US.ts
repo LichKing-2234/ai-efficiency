@@ -761,7 +761,7 @@ const enUS = {
   'auth.oidcSignedOut': 'You signed out of this application. Sign in when you are ready to return.',
   'auth.oidcSignIn': 'Company sign-in',
   'auth.oidcLoginRetry': 'Sign-in was not completed. Please sign in again.',
-  'auth.oidcIdentityConflict': 'This account is already linked to a different sign-in identity. Sign in again, or contact an administrator to reset the link.',
+  'auth.oidcIdentityConflict': 'This account is already linked to a different sign-in identity. Sign out, then sign in again; if it still fails, contact an administrator to reset the link.',
   'auth.oidcUnavailable': 'Company sign-in is temporarily unavailable. Please try again later.',
   'auth.signingIn': 'Signing in...',
   'auth.devMode': 'DEV MODE',
