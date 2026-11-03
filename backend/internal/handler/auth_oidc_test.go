@@ -12,10 +12,10 @@ func TestOIDCCallbackURLUsesForwardedHost(t *testing.T) {
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest("GET", "https://internal:8081/auth/oidc/start", nil)
 	c.Request.Header.Set("X-Forwarded-Proto", "https")
-	c.Request.Header.Set("X-Forwarded-Host", "ai-efficiency-staging.la3.agoralab.co")
+	c.Request.Header.Set("X-Forwarded-Host", "staging.ai-efficiency.example.com")
 
 	got := oidcCallbackCandidates(c)
-	if len(got) == 0 || got[0] != "https://ai-efficiency-staging.la3.agoralab.co/auth/oidc/callback" {
+	if len(got) == 0 || got[0] != "https://staging.ai-efficiency.example.com/auth/oidc/callback" {
 		t.Fatalf("oidcCallbackCandidates() = %q", got)
 	}
 }
@@ -34,12 +34,12 @@ func TestOIDCCallbackURLFallsBackToRequestHost(t *testing.T) {
 func TestOIDCCallbackURLPrefersPublicRequestHostOverStaleForwardedHost(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	c.Request = httptest.NewRequest("GET", "https://ai-efficiency.agoralab.co/auth/oidc/start", nil)
+	c.Request = httptest.NewRequest("GET", "https://ai-efficiency.example.com/auth/oidc/start", nil)
 	c.Request.Header.Set("X-Forwarded-Proto", "https")
-	c.Request.Header.Set("X-Forwarded-Host", "ai-efficiency.la3.agoralab.co")
+	c.Request.Header.Set("X-Forwarded-Host", "staging.ai-efficiency.example.com")
 
 	got := oidcCallbackCandidates(c)
-	if len(got) == 0 || got[0] != "https://ai-efficiency.agoralab.co/auth/oidc/callback" {
+	if len(got) == 0 || got[0] != "https://ai-efficiency.example.com/auth/oidc/callback" {
 		t.Fatalf("oidcCallbackCandidates() = %q", got)
 	}
 }
@@ -47,12 +47,12 @@ func TestOIDCCallbackURLPrefersPublicRequestHostOverStaleForwardedHost(t *testin
 func TestOIDCCallbackURLUsesExplicitBrowserHost(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	c.Request = httptest.NewRequest("GET", "https://internal:8081/auth/oidc/start?host=ai-efficiency.agoralab.co", nil)
+	c.Request = httptest.NewRequest("GET", "https://internal:8081/auth/oidc/start?host=ai-efficiency.example.com", nil)
 	c.Request.Header.Set("X-Forwarded-Proto", "https")
-	c.Request.Header.Set("X-Forwarded-Host", "ai-efficiency.la3.agoralab.co")
+	c.Request.Header.Set("X-Forwarded-Host", "staging.ai-efficiency.example.com")
 
 	got := oidcCallbackCandidates(c)
-	if len(got) == 0 || got[0] != "https://ai-efficiency.agoralab.co/auth/oidc/callback" {
+	if len(got) == 0 || got[0] != "https://ai-efficiency.example.com/auth/oidc/callback" {
 		t.Fatalf("oidcCallbackCandidates() = %q", got)
 	}
 }

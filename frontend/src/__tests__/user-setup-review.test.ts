@@ -522,7 +522,7 @@ describe('userSetupReview command builders', () => {
   it('builds Codex and DSH snippets for composite groups', () => {
     const snippets = buildManualConfigSnippets({
       providerName: 'Agora Sub2API',
-      baseUrl: 'https://sub2api.agoralab.co',
+      baseUrl: 'https://relay.example.com',
       platform: 'composite',
       apiKey: 'sk-test',
       groupName: 'China',
@@ -538,10 +538,10 @@ describe('userSetupReview command builders', () => {
     ])
 
     const codex = snippets.find((item) => item.key === 'codex-config')!
-    expect(codex.body).toContain('base_url = "https://sub2api.agoralab.co/v1"')
+    expect(codex.body).toContain('base_url = "https://relay.example.com/v1"')
     expect(codex.body).toContain('wire_api = "responses"')
     expect(codex.body).toContain('model = "deepseek-v4-pro"')
-    expect(codex.body).toContain('model_catalog_url = "https://sub2api.agoralab.co/v1/models"')
+    expect(codex.body).toContain('model_catalog_url = "https://relay.example.com/v1/models"')
     expect(codex.body).toContain('env_key = "SUB2API_API_KEY"')
     expect(codex.body).toContain('requires_openai_auth = false')
 
@@ -552,7 +552,7 @@ describe('userSetupReview command builders', () => {
 
     const dsh = snippets.find((item) => item.key === 'dsh-config')!
     expect(dsh.body).toContain('apiKeyEnv: SUB2API_API_KEY')
-    expect(dsh.body).toContain('baseURL: https://sub2api.agoralab.co/v1')
+    expect(dsh.body).toContain('baseURL: https://relay.example.com/v1')
     expect(dsh.body).toContain('api: openai-completions')
     expect(dsh.body).toContain('- id: deepseek-flash')
     expect(dsh.body).toContain('- id: deepseek-v4-pro')
@@ -571,7 +571,7 @@ describe('userSetupReview command builders', () => {
   it('falls back to a single model when no model list is supplied', () => {
     const dsh = buildDshProviderSnippet({
       providerName: 'Sub2API',
-      baseUrl: 'https://sub2api.agoralab.co',
+      baseUrl: 'https://relay.example.com',
       platform: 'composite',
       apiKey: 'sk-test',
       model: 'deepseek-flash',
@@ -581,7 +581,7 @@ describe('userSetupReview command builders', () => {
 
     const steps = buildDshStepsSnippet({
       providerName: 'Sub2API',
-      baseUrl: 'https://sub2api.agoralab.co',
+      baseUrl: 'https://relay.example.com',
       platform: 'composite',
       apiKey: 'sk-test',
     })

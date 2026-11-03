@@ -188,7 +188,7 @@ async function mountUserView(reportingCapabilities?: { setup_available: boolean;
   setActivePinia(pinia)
   const auth = useAuthStore(pinia)
   auth.token = 'token'
-  auth.user = { id: 1, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'relay_sso', reporting_capabilities: reportingCapabilities, guides: { ccswitch: { label: 'Illustrated guides', url: 'https://confluence.agoralab.co/pages/viewpage.action?pageId=2053571138' } } }
+  auth.user = { id: 1, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'relay_sso', reporting_capabilities: reportingCapabilities, guides: { ccswitch: { label: 'Illustrated guides', url: 'https://confluence.example.com/ccswitch-guide' } } }
 
   const router = createTestRouter()
   await router.push('/user')
@@ -829,7 +829,7 @@ describe('UserView', () => {
     const tutorial = wrapper.get('[data-testid="ccswitch-tutorial"]')
     const links = tutorial.findAll('a')
     expect(links).toHaveLength(1)
-    expect(links[0]!.attributes('href')).toBe('https://confluence.agoralab.co/pages/viewpage.action?pageId=2053571138')
+    expect(links[0]!.attributes('href')).toBe('https://confluence.example.com/ccswitch-guide')
     expect(links[0]!.text()).toBe('Illustrated guides')
   })
 
