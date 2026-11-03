@@ -256,6 +256,7 @@ func setupRouter(
 	r.GET("/auth/oidc/start", authHandler.OIDCStart)
 	r.GET("/auth/oidc/callback", authHandler.OIDCCallback)
 	r.GET("/auth/oidc/complete", authHandler.OIDCComplete)
+	r.POST("/auth/oidc/backchannel-logout", authHandler.OIDCBackchannelLogout)
 	credentialHandler := NewCredentialHandler(entClient, encryptionKey)
 	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey, repoService)
 	repoHandler := NewRepoHandler(repoService)
@@ -645,7 +646,8 @@ func setupRouter(
 		adminCredentialGroup.DELETE("/:id", credentialHandler.Delete)
 	}
 
-	// LDAP settings — admin only
+	// Login settings — admin only. Values live in the database and override
+	// deployment configuration at runtime.
 	if adminSettingsHandler != nil {
 		ldapGroup := protected.Group("/admin/settings/ldap")
 		ldapGroup.Use(auth.RequireAdmin())
@@ -653,6 +655,14 @@ func setupRouter(
 			ldapGroup.GET("", adminSettingsHandler.GetLDAP)
 			ldapGroup.PUT("", adminSettingsHandler.UpdateLDAP)
 			ldapGroup.POST("/test", adminSettingsHandler.TestLDAP)
+		}
+		oidcGroup := protected.Group("/admin/settings/oidc")
+		oidcGroup.Use(auth.RequireAdmin())
+		{
+			oidcGroup.GET("", adminSettingsHandler.GetOIDC)
+			oidcGroup.PUT("", adminSettingsHandler.UpdateOIDC)
+			oidcGroup.DELETE("", adminSettingsHandler.DeleteOIDC)
+			oidcGroup.POST("/test", adminSettingsHandler.TestOIDC)
 		}
 	}
 

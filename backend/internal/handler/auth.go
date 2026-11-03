@@ -58,14 +58,21 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 // Options handles GET /api/v1/auth/options.
 func (h *AuthHandler) Options(c *gin.Context) {
+	if h.adminSettingsHandler != nil {
+		h.adminSettingsHandler.RefreshOIDC(c.Request.Context())
+	}
 	pkg.Success(c, gin.H{
 		"ldap_enabled":      h.ldapEnabled(),
 		"dev_login_enabled": devLoginEnabled(),
 		"oidc_enabled":      h.authService.OIDCEnabled(),
+		"oidc_label":        h.authService.OIDCLabel(),
 	})
 }
 
 func (h *AuthHandler) OIDCStart(c *gin.Context) {
+	if h.adminSettingsHandler != nil {
+		h.adminSettingsHandler.RefreshOIDC(c.Request.Context())
+	}
 	provider := h.authService.OIDC()
 	if provider == nil {
 		c.Status(http.StatusNotFound)
@@ -194,6 +201,40 @@ func (h *AuthHandler) OIDCComplete(c *gin.Context) {
 		return
 	}
 	pkg.Success(c, gin.H{"tokens": tokens, "user": user, "redirect": redirect})
+}
+
+// OIDCBackchannelLogout handles POST /auth/oidc/backchannel-logout. The
+// endpoint is called server-to-server by the identity provider when a browser
+// session ends or an administrator deactivates the user, so it must stay
+// reachable without a browser session and must not redirect.
+func (h *AuthHandler) OIDCBackchannelLogout(c *gin.Context) {
+	if h.adminSettingsHandler != nil {
+		h.adminSettingsHandler.RefreshOIDC(c.Request.Context())
+	}
+	provider := h.authService.OIDC()
+	if provider == nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	if err := c.Request.ParseForm(); err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid logout request")
+		return
+	}
+	raw := strings.TrimSpace(c.PostForm("logout_token"))
+	if raw == "" {
+		pkg.Error(c, http.StatusBadRequest, "logout_token is required")
+		return
+	}
+	identity, err := provider.VerifyLogoutToken(c.Request.Context(), raw)
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid logout token")
+		return
+	}
+	if _, err := h.authService.RevokeTokensByOIDCSubject(c.Request.Context(), identity.Issuer, identity.Subject); err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to revoke tokens")
+		return
+	}
+	c.Status(http.StatusOK)
 }
 
 // Refresh handles POST /api/v1/auth/refresh

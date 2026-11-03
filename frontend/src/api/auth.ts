@@ -15,6 +15,7 @@ export interface AuthOptions {
   ldap_enabled: boolean
   dev_login_enabled: boolean
   oidc_enabled: boolean
+  oidc_label?: string
 }
 
 export function login(req: LoginRequest) {

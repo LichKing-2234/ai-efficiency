@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import client from '@/api/client'
 import { useI18n } from '@/i18n'
 import DirectorySyncSettings from '@/components/settings/DirectorySyncSettings.vue'
+import OIDCSettings from '@/components/settings/OIDCSettings.vue'
 import QuotaResetApprovalSettings from '@/components/settings/QuotaResetApprovalSettings.vue'
 import { useSettingsResourcesStore } from '@/stores/settingsResources'
 
@@ -77,7 +78,8 @@ async function handleTestLDAP() {
   <div class="space-y-4">
     <h2 class="text-xl font-bold text-gray-900">{{ t('settings.organizationLogin') }}</h2>
     <p class="text-sm text-gray-500">{{ t('settings.organizationLoginSubtitle') }}</p>
-    <ElCard shadow="never">
+    <OIDCSettings />
+    <ElCard shadow="never" class="mt-4">
       <div class="space-y-4">
         <div>
           <label class="block text-sm font-medium text-gray-700">{{ t('settings.ldapUrl') }}</label>

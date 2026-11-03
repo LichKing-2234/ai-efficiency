@@ -24,6 +24,7 @@ const authOptions = ref({
   ldap_enabled: false,
   dev_login_enabled: false,
   oidc_enabled: false,
+  oidc_label: '',
 })
 
 const oidcSignedOut = ref(localStorage.getItem('oidc_logout_requested') === '1')
@@ -35,6 +36,7 @@ onMounted(async () => {
       ldap_enabled: Boolean(res.data.data?.ldap_enabled),
       dev_login_enabled: Boolean(res.data.data?.dev_login_enabled),
       oidc_enabled: Boolean(res.data.data?.oidc_enabled),
+      oidc_label: String(res.data.data?.oidc_label || ''),
     }
     source.value = authOptions.value.oidc_enabled ? 'SSO' : (authOptions.value.ldap_enabled ? 'LDAP' : 'SSO')
     if (authOptions.value.oidc_enabled) {
@@ -52,6 +54,7 @@ onMounted(async () => {
       ldap_enabled: false,
       dev_login_enabled: false,
       oidc_enabled: false,
+      oidc_label: '',
     }
     source.value = 'SSO'
     optionsError.value = true
@@ -126,7 +129,7 @@ async function handleDevLogin() {
       <div v-if="authOptions.oidc_enabled" data-testid="login-method" class="space-y-4">
         <el-form-item :label="t('auth.loginMethod')" label-for="login-method">
           <el-select id="login-method" v-model="loginMode" class="w-full">
-            <el-option :label="t('auth.companyOAuthRecommended')" value="oidc" />
+            <el-option :label="authOptions.oidc_label || t('auth.companyOAuthRecommended')" value="oidc" />
             <el-option :label="t('auth.relaySsoFallback')" value="sso" />
           </el-select>
         </el-form-item>

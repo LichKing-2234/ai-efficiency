@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -21,6 +22,8 @@ import (
 // OIDCConfig describes a standard authorization-code OIDC client. Deployment
 // values stay outside the open-source application defaults.
 type OIDCConfig struct {
+	Enabled        bool
+	Label          string
 	Issuer         string
 	ClientID       string
 	ClientSecret   string
@@ -37,6 +40,23 @@ type OIDCIdentity struct {
 	Email         string
 	EmailVerified bool
 	Username      string
+}
+
+// OIDCDiscovery is the provider metadata surfaced to administrators.
+type OIDCDiscovery struct {
+	Issuer                string `json:"issuer"`
+	AuthorizationEndpoint string `json:"authorization_endpoint"`
+	TokenEndpoint         string `json:"token_endpoint"`
+	UserinfoEndpoint      string `json:"userinfo_endpoint"`
+	JWKSURI               string `json:"jwks_uri"`
+}
+
+// OIDCLogoutIdentity identifies the subject of a verified back-channel logout
+// token.
+type OIDCLogoutIdentity struct {
+	Issuer    string
+	Subject   string
+	SessionID string
 }
 
 type oidcPending struct {
@@ -59,9 +79,12 @@ type OIDCService struct {
 	provider   *oidc.Provider
 	verifier   *oidc.IDTokenVerifier
 	oauth      oauth2.Config
+	discovery  OIDCDiscovery
+	keySet     *oidc.RemoteKeySet
 	mu         sync.Mutex
 	pending    map[string]oidcPending
 	done       map[string]oidcCompleted
+	logoutJTI  map[string]time.Time
 }
 
 func NewOIDCService(ctx context.Context, cfg OIDCConfig) (*OIDCService, error) {
@@ -88,8 +111,30 @@ func NewOIDCService(ctx context.Context, cfg OIDCConfig) (*OIDCService, error) {
 	if err != nil {
 		return nil, fmt.Errorf("OIDC discovery: %w", err)
 	}
+	var discovery OIDCDiscovery
+	if err := provider.Claims(&discovery); err != nil {
+		return nil, fmt.Errorf("OIDC discovery claims: %w", err)
+	}
+	if strings.TrimSpace(discovery.Issuer) == "" {
+		discovery.Issuer = cfg.Issuer
+	}
+	endpoint := provider.Endpoint()
+	if discovery.AuthorizationEndpoint == "" {
+		discovery.AuthorizationEndpoint = endpoint.AuthURL
+	}
+	if discovery.TokenEndpoint == "" {
+		discovery.TokenEndpoint = endpoint.TokenURL
+	}
 	if len(cfg.Scopes) == 0 {
 		cfg.Scopes = []string{oidc.ScopeOpenID, "profile", "email"}
+	}
+	keysetCtx := context.Background()
+	if cfg.HTTPClient != nil {
+		keysetCtx = oidc.ClientContext(keysetCtx, cfg.HTTPClient)
+	}
+	var keySet *oidc.RemoteKeySet
+	if strings.TrimSpace(discovery.JWKSURI) != "" {
+		keySet = oidc.NewRemoteKeySet(keysetCtx, discovery.JWKSURI)
 	}
 	s := &OIDCService{
 		config:     cfg,
@@ -98,10 +143,13 @@ func NewOIDCService(ctx context.Context, cfg OIDCConfig) (*OIDCService, error) {
 		verifier:   provider.Verifier(&oidc.Config{ClientID: cfg.ClientID}),
 		oauth: oauth2.Config{
 			ClientID: cfg.ClientID, ClientSecret: cfg.ClientSecret,
-			Endpoint: provider.Endpoint(), RedirectURL: cfg.RedirectURL, Scopes: cfg.Scopes,
+			Endpoint: endpoint, RedirectURL: cfg.RedirectURL, Scopes: cfg.Scopes,
 		},
-		pending: make(map[string]oidcPending),
-		done:    make(map[string]oidcCompleted),
+		discovery: discovery,
+		keySet:    keySet,
+		pending:   make(map[string]oidcPending),
+		done:      make(map[string]oidcCompleted),
+		logoutJTI: make(map[string]time.Time),
 	}
 	return s, nil
 }
@@ -271,13 +319,135 @@ func (s *OIDCService) Take(handoff string) (*TokenPair, *UserInfo, string, error
 	return value.tokens, value.user, value.redirect, nil
 }
 
-func (s *Service) SetOIDCService(provider *OIDCService) { s.oidc = provider }
-func (s *Service) OIDCEnabled() bool                    { return s != nil && s.oidc != nil }
+func (s *Service) SetOIDCService(provider *OIDCService) { s.oidc.Store(provider) }
+
+func (s *Service) OIDCEnabled() bool {
+	return s != nil && s.oidc.Load() != nil
+}
+
 func (s *Service) OIDC() *OIDCService {
 	if s == nil {
 		return nil
 	}
-	return s.oidc
+	return s.oidc.Load()
+}
+
+// OIDCLabel returns the administrator-configured login button label.
+func (s *Service) OIDCLabel() string {
+	provider := s.OIDC()
+	if provider == nil {
+		return ""
+	}
+	return provider.config.Label
+}
+
+// Config returns the runtime OIDC configuration, including the client secret.
+func (s *OIDCService) Config() OIDCConfig {
+	if s == nil {
+		return OIDCConfig{}
+	}
+	return s.config
+}
+
+// Discovery returns the discovered provider metadata.
+func (s *OIDCService) Discovery() OIDCDiscovery {
+	if s == nil {
+		return OIDCDiscovery{}
+	}
+	return s.discovery
+}
+
+const backchannelLogoutEvent = "http://schemas.openid.net/event/backchannel-logout"
+
+// VerifyLogoutToken validates an OIDC Back-Channel Logout token issued by the
+// configured provider. Signature verification uses the provider JWKS; the
+// claims checks follow OpenID Connect Back-Channel Logout 1.0.
+func (s *OIDCService) VerifyLogoutToken(ctx context.Context, raw string) (OIDCLogoutIdentity, error) {
+	if s == nil || s.keySet == nil {
+		return OIDCLogoutIdentity{}, fmt.Errorf("OIDC back-channel logout is not configured")
+	}
+	payload, err := s.keySet.VerifySignature(ctx, raw)
+	if err != nil {
+		return OIDCLogoutIdentity{}, fmt.Errorf("verify logout token signature: %w", err)
+	}
+	var claims struct {
+		Issuer    string                     `json:"iss"`
+		Audience  json.RawMessage            `json:"aud"`
+		IssuedAt  int64                      `json:"iat"`
+		Expiry    int64                      `json:"exp"`
+		JTI       string                     `json:"jti"`
+		Subject   string                     `json:"sub"`
+		SessionID string                     `json:"sid"`
+		Nonce     string                     `json:"nonce"`
+		Events    map[string]json.RawMessage `json:"events"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return OIDCLogoutIdentity{}, fmt.Errorf("decode logout token claims: %w", err)
+	}
+	if claims.Issuer != s.config.Issuer {
+		return OIDCLogoutIdentity{}, fmt.Errorf("logout token issuer mismatch")
+	}
+	if !audienceContains(claims.Audience, s.config.ClientID) {
+		return OIDCLogoutIdentity{}, fmt.Errorf("logout token audience mismatch")
+	}
+	if _, ok := claims.Events[backchannelLogoutEvent]; !ok {
+		return OIDCLogoutIdentity{}, fmt.Errorf("logout token events claim missing")
+	}
+	if strings.TrimSpace(claims.Nonce) != "" {
+		return OIDCLogoutIdentity{}, fmt.Errorf("logout token must not carry a nonce")
+	}
+	now := time.Now()
+	if claims.IssuedAt == 0 || now.Sub(time.Unix(claims.IssuedAt, 0)).Abs() > 10*time.Minute {
+		return OIDCLogoutIdentity{}, fmt.Errorf("logout token issued at is not recent")
+	}
+	if claims.Expiry != 0 && now.After(time.Unix(claims.Expiry, 0)) {
+		return OIDCLogoutIdentity{}, fmt.Errorf("logout token is expired")
+	}
+	if strings.TrimSpace(claims.JTI) == "" {
+		return OIDCLogoutIdentity{}, fmt.Errorf("logout token jti is missing")
+	}
+	if strings.TrimSpace(claims.Subject) == "" {
+		return OIDCLogoutIdentity{}, fmt.Errorf("logout token subject is missing")
+	}
+	if !s.recordLogoutJTI(claims.JTI) {
+		return OIDCLogoutIdentity{}, fmt.Errorf("logout token was already processed")
+	}
+	return OIDCLogoutIdentity{Issuer: claims.Issuer, Subject: claims.Subject, SessionID: claims.SessionID}, nil
+}
+
+func (s *OIDCService) recordLogoutJTI(jti string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	for key, seenAt := range s.logoutJTI {
+		if now.Sub(seenAt) > 10*time.Minute {
+			delete(s.logoutJTI, key)
+		}
+	}
+	if _, seen := s.logoutJTI[jti]; seen {
+		return false
+	}
+	s.logoutJTI[jti] = now
+	return true
+}
+
+func audienceContains(raw json.RawMessage, clientID string) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var single string
+	if err := json.Unmarshal(raw, &single); err == nil {
+		return single == clientID
+	}
+	var multiple []string
+	if err := json.Unmarshal(raw, &multiple); err == nil {
+		for _, value := range multiple {
+			if value == clientID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *Service) LoginOIDC(ctx context.Context, identity OIDCIdentity) (*TokenPair, *UserInfo, error) {
@@ -352,7 +522,8 @@ func (s *Service) ensureOIDCRelayIdentity(ctx context.Context, u *ent.User) (*en
 }
 
 func (s *Service) linkOrCreateOIDCUser(ctx context.Context, identity OIDCIdentity) (*ent.User, error) {
-	if !s.oidc.config.AllowEmailLink || !identity.EmailVerified {
+	provider := s.OIDC()
+	if provider == nil || !provider.config.AllowEmailLink || !identity.EmailVerified {
 		return nil, fmt.Errorf("OIDC identity is not bound and email linking is not allowed")
 	}
 	u, err := s.entClient.User.Query().Where(entuser.EmailEQ(identity.Email)).Only(ctx)

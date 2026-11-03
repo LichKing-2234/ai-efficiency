@@ -15,6 +15,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/authsettings"
 	"github.com/ai-efficiency/backend/internal/checkpoint"
 	"github.com/ai-efficiency/backend/internal/config"
 	"github.com/ai-efficiency/backend/internal/middleware"
@@ -348,7 +349,14 @@ func TestAuthOptionsExposeLDAPAndDevLoginWhenAvailable(t *testing.T) {
 	webhookHandler := webhook.NewHandler(client, nil, logger)
 	var ldapConfig atomic.Pointer[config.LDAPConfig]
 	ldapConfig.Store(&config.LDAPConfig{URL: "ldap://ldap.example.com:389"})
-	adminSettingsHandler := NewAdminSettingsHandler(filepath.Join(t.TempDir(), "config.yaml"), &ldapConfig)
+	adminSettingsHandler := NewAdminSettingsHandler(
+		authsettings.NewStore(client, "0000000000000000000000000000000000000000000000000000000000000000"),
+		authSvc,
+		&ldapConfig,
+		config.OIDCConfig{},
+		"",
+		nil,
+	)
 
 	router := setupRouterForTest(t,
 		client,

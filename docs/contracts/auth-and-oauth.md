@@ -15,7 +15,8 @@ and administrator subscription jobs are defined in
 | Credential | Owner | Persistence and use |
 | --- | --- | --- |
 | LDAP login password | The authenticating user | Used only for the LDAP user bind. It is not stored locally and is not sent to Relay. |
-| LDAP service bind password | Deployment configuration | Returned masked by the admin API, preserved on masked updates, and hot-reloaded with the rest of the LDAP configuration. |
+| LDAP service bind password | Deployment configuration or administrator-managed database settings | Encrypted at rest when stored by the admin API, returned masked, preserved on masked updates, and hot-reloaded with the rest of the LDAP configuration. |
+| OIDC client secret | Deployment configuration or administrator-managed database settings | Encrypted at rest when stored by the admin API, returned masked, preserved on masked updates, and rebuilt into the runtime OIDC client on save. |
 | Relay SSO password | The authenticating Relay user | Stored locally only after a successful upstream Relay login, encrypted with the platform encryption key, for later user-JWT Relay writes. |
 | Generated Relay password | AI Efficiency | Generated for Relay identities provisioned or repaired by AI Efficiency, stored encrypted, and never derived from the LDAP password. |
 | Access and refresh JWTs | AI Efficiency | Issued by the same token service for browser login, PKCE, and device authorization. |
@@ -24,6 +25,25 @@ and administrator subscription jobs are defined in
 Admin Relay credentials are not user credentials. They may resolve and manage
 Relay identities, but a user-scoped operation that requires an upstream user
 JWT uses a stored or generated Relay user password.
+
+## Admin-Managed Login Configuration
+
+Administrators can edit browser OIDC and LDAP settings at runtime through the
+administrator-only `GET/PUT/DELETE /api/v1/admin/settings/oidc` and
+`GET/PUT /api/v1/admin/settings/ldap` endpoints. Values are stored in
+`SystemSetting` rows (`auth.oidc` and `auth.ldap`) with secrets encrypted by the
+platform encryption key. A stored row overrides the deployment configuration
+(`auth.oidc.*` / `auth.ldap.*` environment or file values); deleting the OIDC
+row restores the deployment values.
+
+Saving OIDC settings validates the input, performs provider discovery, stores
+the encrypted secret, and replaces the runtime OIDC client without a restart.
+Other replicas reload the stored settings within about ten seconds (the
+refreshed read is throttled and its failures keep the running client).
+The secret is always returned masked; an empty secret or the mask keeps the
+current value. The auth options response exposes the configured OIDC button
+label as `oidc_label`. A failed discovery rejects the save and leaves the
+running configuration unchanged.
 
 ## Login Sources
 
@@ -41,8 +61,9 @@ unbound identity may be linked to an existing local email only when the
 deployment explicitly enables `allow_email_link` and the provider marks the
 email verified. Otherwise the user must be pre-provisioned by subject. A
 successful new identity receives the default local `user` role; the provider
-cannot grant local administrator access. The OIDC client secret and all issuer
-configuration remain server-side deployment settings.
+cannot grant local administrator access. The OIDC client secret and issuer
+configuration remain server side: they come from deployment configuration or
+the administrator-managed database settings described above.
 
 A successful OIDC sign-in also reconciles the local user's Relay identity. When
 the local user has no Relay binding, AI Efficiency resolves an exact Relay email
@@ -73,6 +94,23 @@ registered.
 Invalid credentials, an upstream extra-verification requirement, or a Relay
 authentication transport error does not provision a Relay user during SSO.
 Relay SSO authenticates existing upstream users only.
+
+### Back-Channel Logout
+
+When OIDC is enabled the server exposes `POST /auth/oidc/backchannel-logout`,
+which is the endpoint registered with the identity provider. The endpoint
+accepts an `application/x-www-form-urlencoded` body with a single
+`logout_token` field, verifies the JWT signature against the provider JWKS, and
+checks `iss`, `aud`, the
+`http://schemas.openid.net/event/backchannel-logout` event, a recent `iat`, a
+non-empty `jti` with replay rejection, absence of `nonce`, and a non-empty
+`sub`. A valid token revokes the matching local account's access and refresh
+tokens through the same `token_valid_after` boundary used by directory
+offboarding, so existing sessions fail on their next request or refresh.
+
+Unknown subjects still return `200` so provider delivery is idempotent.
+Invalid tokens return `400`, and a disabled OIDC client returns `404`. The
+endpoint never redirects and requires no browser session.
 
 ## Local User Reconciliation
 
