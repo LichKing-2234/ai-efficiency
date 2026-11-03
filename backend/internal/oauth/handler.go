@@ -3,14 +3,16 @@ package oauth
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/authstate"
 	"github.com/ai-efficiency/backend/internal/web"
 	"github.com/gin-gonic/gin"
 )
@@ -28,11 +30,37 @@ const (
 	deviceGrantType           = "urn:ietf:params:oauth:grant-type:device_code"
 )
 
+const (
+	authCodeKeyBase   = "oauth:code:"
+	deviceCodeKeyBase = "oauth:device:"
+	deviceUserKeyBase = "oauth:device-user-code:"
+)
+
 var (
 	errRandomRead        = errors.New("oauth: random read failed")
 	generateCodeFunc     = generateCode
 	generateUserCodeFunc = generateUserCode
 )
+
+func authCodeKey(code string) string       { return authCodeKeyBase + code }
+func deviceCodeKey(code string) string     { return deviceCodeKeyBase + code }
+func deviceUserCodeKey(code string) string { return deviceUserKeyBase + code }
+
+func encodeState(value any) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("encode oauth state: %w", err)
+	}
+	return raw, nil
+}
+
+func decodeState[T any](raw []byte) (T, error) {
+	var value T
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return value, fmt.Errorf("decode oauth state: %w", err)
+	}
+	return value, nil
+}
 
 // authCodeEntry stores a pending authorization code with its metadata.
 type authCodeEntry struct {
@@ -70,49 +98,30 @@ type Handler struct {
 	deviceCodeExpiry   time.Duration
 	devicePollInterval time.Duration
 
-	mu                sync.Mutex
-	codes             map[string]*authCodeEntry
-	devices           map[string]*deviceEntry
-	devicesByUserCode map[string]*deviceEntry
+	state authstate.Store
 }
 
-// NewHandler creates a new OAuth handler.
+// NewHandler creates a new OAuth handler with a process-local auth state store.
+// Single-process deployments and tests keep working; the server wires the
+// shared Redis store through NewHandlerWithStore.
 func NewHandler(server *Server, frontendURL string, tokenGen TokenGenerator) *Handler {
-	h := &Handler{
+	return NewHandlerWithStore(server, frontendURL, tokenGen, authstate.NewMemoryStore())
+}
+
+// NewHandlerWithStore creates a new OAuth handler backed by the given auth
+// state store.
+func NewHandlerWithStore(server *Server, frontendURL string, tokenGen TokenGenerator, state authstate.Store) *Handler {
+	if state == nil {
+		state = authstate.NewMemoryStore()
+	}
+	return &Handler{
 		server:             server,
 		frontendURL:        frontendURL,
 		tokenGen:           tokenGen,
 		now:                time.Now,
 		deviceCodeExpiry:   deviceCodeExpiryDefault,
 		devicePollInterval: devicePollIntervalDefault,
-		codes:              make(map[string]*authCodeEntry),
-		devices:            make(map[string]*deviceEntry),
-		devicesByUserCode:  make(map[string]*deviceEntry),
-	}
-	// Background goroutine to reap expired auth codes every minute.
-	go h.reapExpiredCodes()
-	return h
-}
-
-// reapExpiredCodes periodically removes expired authorization codes from memory.
-func (h *Handler) reapExpiredCodes() {
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-	for range ticker.C {
-		h.mu.Lock()
-		now := h.now()
-		for code, entry := range h.codes {
-			if now.Sub(entry.CreatedAt) > codeExpiry {
-				delete(h.codes, code)
-			}
-		}
-		for code, entry := range h.devices {
-			if h.isDeviceExpiredLocked(entry) || entry.Status == deviceStatusConsumed {
-				delete(h.devicesByUserCode, entry.UserCode)
-				delete(h.devices, code)
-			}
-		}
-		h.mu.Unlock()
+		state:              state,
 	}
 }
 
@@ -232,8 +241,7 @@ func (h *Handler) Approve(c *gin.Context) {
 		return
 	}
 
-	h.mu.Lock()
-	h.codes[code] = &authCodeEntry{
+	entry := authCodeEntry{
 		Code:          code,
 		ClientID:      req.ClientID,
 		RedirectURI:   req.RedirectURI,
@@ -244,7 +252,15 @@ func (h *Handler) Approve(c *gin.Context) {
 		State:         req.State,
 		CreatedAt:     h.now(),
 	}
-	h.mu.Unlock()
+	encoded, err := encodeState(entry)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+	if err := h.state.Set(c.Request.Context(), authCodeKey(code), encoded, codeExpiry); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"redirect_uri": buildRedirectURI(req.RedirectURI, map[string]string{
@@ -269,26 +285,51 @@ func (h *Handler) DeviceCode(c *gin.Context) {
 		return
 	}
 
-	h.mu.Lock()
-	userCode, normalizedUserCode, err := h.issueUniqueUserCodeLocked()
-	if err != nil {
-		h.mu.Unlock()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
-		return
-	}
-
-	entry := &deviceEntry{
+	entry := deviceEntry{
 		DeviceCode:      deviceCode,
-		UserCode:        normalizedUserCode,
 		ClientID:        clientID,
 		Status:          deviceStatusPending,
 		CreatedAt:       now,
 		ExpiresAt:       now.Add(h.deviceCodeExpiry),
 		PollIntervalSec: int(h.devicePollInterval / time.Second),
 	}
-	h.devices[deviceCode] = entry
-	h.devicesByUserCode[normalizedUserCode] = entry
-	h.mu.Unlock()
+	var (
+		userCode           string
+		normalizedUserCode string
+	)
+	for range 8 {
+		generated, genErr := generateUserCodeFunc()
+		if genErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+			return
+		}
+		normalized := normalizeUserCode(generated)
+		stored, storeErr := h.state.SetIfAbsent(c.Request.Context(), deviceUserCodeKey(normalized), []byte(deviceCode), h.deviceCodeExpiry)
+		if storeErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+			return
+		}
+		if stored {
+			userCode, normalizedUserCode = generated, normalized
+			break
+		}
+	}
+	if userCode == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+	entry.UserCode = normalizedUserCode
+	encoded, err := encodeState(entry)
+	if err != nil {
+		_ = h.state.Delete(c.Request.Context(), deviceUserCodeKey(normalizedUserCode))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+	if err := h.state.Set(c.Request.Context(), deviceCodeKey(deviceCode), encoded, h.deviceCodeExpiry); err != nil {
+		_ = h.state.Delete(c.Request.Context(), deviceUserCodeKey(normalizedUserCode))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"device_code":      deviceCode,
@@ -321,34 +362,52 @@ func (h *Handler) VerifyDevice(c *gin.Context) {
 		return
 	}
 
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	entry := h.findDeviceByUserCodeLocked(req.UserCode)
-	if entry == nil || entry.Status == deviceStatusConsumed || h.isDeviceExpiredLocked(entry) {
+	rawDeviceCode, found, err := h.state.Get(c.Request.Context(), deviceUserCodeKey(normalizeUserCode(req.UserCode)))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+	if !found {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_user_code", "message": "Code invalid or expired"})
 		return
 	}
+	deviceCode := string(rawDeviceCode)
 
-	if entry.Status != deviceStatusPending {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_user_code", "message": "Code invalid or expired"})
-		return
-	}
-
-	if !req.Approved {
-		entry.Status = deviceStatusDenied
+	resolvedStatus := ""
+	found, err = h.state.Update(c.Request.Context(), deviceCodeKey(deviceCode), h.deviceCodeExpiry, func(current []byte) ([]byte, error) {
+		entry, err := decodeState[deviceEntry](current)
+		if err != nil {
+			return nil, err
+		}
+		if entry.Status == deviceStatusConsumed || h.isDeviceExpired(&entry) || entry.Status != deviceStatusPending {
+			return nil, authstate.ErrUpdateAborted
+		}
+		if !req.Approved {
+			entry.Status = deviceStatusDenied
+			resolvedStatus = deviceStatusDenied
+		} else {
+			entry.Status = deviceStatusApproved
+			entry.UserID = uc.UserID
+			entry.Username = uc.Username
+			entry.Role = uc.Role
+			resolvedStatus = deviceStatusApproved
+		}
 		entry.LastPolledAt = time.Time{}
-		c.JSON(http.StatusOK, gin.H{"status": deviceStatusDenied})
+		return encodeState(entry)
+	})
+	if err != nil {
+		if errors.Is(err, authstate.ErrUpdateAborted) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_user_code", "message": "Code invalid or expired"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
 		return
 	}
-
-	entry.Status = deviceStatusApproved
-	entry.LastPolledAt = time.Time{}
-	entry.UserID = uc.UserID
-	entry.Username = uc.Username
-	entry.Role = uc.Role
-
-	c.JSON(http.StatusOK, gin.H{"status": deviceStatusApproved})
+	if !found || resolvedStatus == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_user_code", "message": "Code invalid or expired"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": resolvedStatus})
 }
 
 // Token handles POST /oauth/token (authorization code -> JWT exchange).
@@ -375,14 +434,17 @@ func (h *Handler) exchangeAuthorizationCode(c *gin.Context) {
 		return
 	}
 
-	h.mu.Lock()
-	entry, ok := h.codes[code]
-	if ok {
-		delete(h.codes, code)
+	rawEntry, found, err := h.state.Take(c.Request.Context(), authCodeKey(code))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
 	}
-	h.mu.Unlock()
-
-	if !ok {
+	if !found {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant", "error_description": "code not found or already used"})
+		return
+	}
+	entry, err := decodeState[authCodeEntry](rawEntry)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant", "error_description": "code not found or already used"})
 		return
 	}
@@ -430,41 +492,76 @@ func (h *Handler) exchangeDeviceToken(c *gin.Context) {
 		return
 	}
 
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	entry, ok := h.devices[deviceCode]
-	if !ok || entry.ClientID != clientID || entry.Status == deviceStatusConsumed {
+	var (
+		outcome string
+		granted deviceEntry
+	)
+	found, err := h.state.Update(c.Request.Context(), deviceCodeKey(deviceCode), h.deviceCodeExpiry, func(current []byte) ([]byte, error) {
+		entry, err := decodeState[deviceEntry](current)
+		if err != nil {
+			return nil, err
+		}
+		if entry.ClientID != clientID || entry.Status == deviceStatusConsumed {
+			outcome = "invalid_grant"
+			return nil, authstate.ErrUpdateAborted
+		}
+		if h.isDeviceExpired(&entry) {
+			entry.Status = deviceStatusExpired
+			outcome = "expired_token"
+			return encodeState(entry)
+		}
+		if !entry.LastPolledAt.IsZero() && h.now().Sub(entry.LastPolledAt) < time.Duration(entry.PollIntervalSec)*time.Second {
+			entry.LastPolledAt = h.now()
+			outcome = "slow_down"
+			return encodeState(entry)
+		}
+		entry.LastPolledAt = h.now()
+		switch entry.Status {
+		case deviceStatusPending:
+			outcome = "authorization_pending"
+		case deviceStatusDenied:
+			outcome = "access_denied"
+		case deviceStatusApproved:
+			entry.Status = deviceStatusConsumed
+			outcome = "token"
+			granted = entry
+		default:
+			outcome = "invalid_grant"
+			return nil, authstate.ErrUpdateAborted
+		}
+		return encodeState(entry)
+	})
+	if err != nil {
+		if errors.Is(err, authstate.ErrUpdateAborted) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+	if !found {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant"})
 		return
 	}
-
-	if h.isDeviceExpiredLocked(entry) {
-		entry.Status = deviceStatusExpired
+	switch outcome {
+	case "expired_token":
 		c.JSON(http.StatusBadRequest, gin.H{"error": "expired_token"})
 		return
-	}
-
-	if !entry.LastPolledAt.IsZero() && h.now().Sub(entry.LastPolledAt) < time.Duration(entry.PollIntervalSec)*time.Second {
-		entry.LastPolledAt = h.now()
+	case "slow_down":
 		c.JSON(http.StatusBadRequest, gin.H{"error": "slow_down"})
 		return
-	}
-	entry.LastPolledAt = h.now()
-
-	switch entry.Status {
-	case deviceStatusPending:
+	case "authorization_pending":
 		c.JSON(http.StatusBadRequest, gin.H{"error": "authorization_pending"})
 		return
-	case deviceStatusDenied:
+	case "access_denied":
 		c.JSON(http.StatusBadRequest, gin.H{"error": "access_denied"})
 		return
-	case deviceStatusApproved:
-		entry.Status = deviceStatusConsumed
+	case "token":
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant"})
 		return
 	}
+	entry := granted
 
 	if h.tokenGen == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error", "error_description": "token generator not configured"})
@@ -485,28 +582,8 @@ func (h *Handler) exchangeDeviceToken(c *gin.Context) {
 	})
 }
 
-func (h *Handler) findDeviceByUserCodeLocked(userCode string) *deviceEntry {
-	normalized := normalizeUserCode(userCode)
-	return h.devicesByUserCode[normalized]
-}
-
-func (h *Handler) isDeviceExpiredLocked(entry *deviceEntry) bool {
+func (h *Handler) isDeviceExpired(entry *deviceEntry) bool {
 	return !h.now().Before(entry.ExpiresAt)
-}
-
-func (h *Handler) issueUniqueUserCodeLocked() (string, string, error) {
-	for range 8 {
-		userCode, err := generateUserCodeFunc()
-		if err != nil {
-			return "", "", err
-		}
-		normalized := normalizeUserCode(userCode)
-		if _, exists := h.devicesByUserCode[normalized]; exists {
-			continue
-		}
-		return userCode, normalized, nil
-	}
-	return "", "", errRandomRead
 }
 
 func generateCode() (string, error) {

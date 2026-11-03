@@ -11,6 +11,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/authstate"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/gin-gonic/gin"
 )
@@ -107,7 +108,7 @@ func (h *AuthHandler) OIDCStart(c *gin.Context) {
 	var state, target string
 	var err error
 	for _, callback := range oidcCallbackCandidates(c) {
-		state, target, err = provider.Begin(redirect, callback)
+		state, target, err = provider.Begin(c.Request.Context(), redirect, callback)
 		if err == nil {
 			break
 		}
@@ -195,6 +196,10 @@ func (h *AuthHandler) OIDCCallback(c *gin.Context) {
 	secure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
 	http.SetCookie(c.Writer, &http.Cookie{Name: "ae_oidc_state", Value: "", Path: "/auth/oidc/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: -1})
 	if err != nil {
+		if authstate.Unavailable(err) {
+			pkg.Error(c, http.StatusServiceUnavailable, "OIDC login unavailable")
+			return
+		}
 		pkg.Error(c, http.StatusUnauthorized, "OIDC login could not be completed")
 		return
 	}
@@ -217,9 +222,18 @@ func (h *AuthHandler) OIDCComplete(c *gin.Context) {
 		pkg.Error(c, http.StatusUnauthorized, "OIDC handoff missing")
 		return
 	}
-	tokens, user, redirect, err := provider.Take(cookie.Value)
+	user, redirect, err := provider.Take(c.Request.Context(), cookie.Value)
 	if err != nil {
+		if authstate.Unavailable(err) {
+			pkg.Error(c, http.StatusServiceUnavailable, "OIDC login unavailable")
+			return
+		}
 		pkg.Error(c, http.StatusUnauthorized, "OIDC handoff expired")
+		return
+	}
+	tokens, err := h.authService.GenerateTokenPairForUser(user)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "OIDC token issuance failed")
 		return
 	}
 	pkg.Success(c, gin.H{"tokens": tokens, "user": user, "redirect": redirect})
@@ -249,6 +263,10 @@ func (h *AuthHandler) OIDCBackchannelLogout(c *gin.Context) {
 	}
 	identity, err := provider.VerifyLogoutToken(c.Request.Context(), raw)
 	if err != nil {
+		if authstate.Unavailable(err) {
+			pkg.Error(c, http.StatusServiceUnavailable, "logout token check unavailable")
+			return
+		}
 		pkg.Error(c, http.StatusBadRequest, "invalid logout token")
 		return
 	}

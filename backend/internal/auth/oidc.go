@@ -3,20 +3,30 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	entuser "github.com/ai-efficiency/backend/ent/user"
+	"github.com/ai-efficiency/backend/internal/authstate"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"
+)
+
+const (
+	oidcPendingTTL     = 5 * time.Minute
+	oidcHandoffTTL     = 2 * time.Minute
+	oidcLogoutJTITTL   = 10 * time.Minute
+	oidcPendingKeyBase = "oidc:pending:"
+	oidcHandoffKeyBase = "oidc:handoff:"
+	oidcLogoutKeyBase  = "oidc:logout-jti:"
 )
 
 // OIDCConfig describes a standard authorization-code OIDC client. Deployment
@@ -60,19 +70,21 @@ type OIDCLogoutIdentity struct {
 }
 
 type oidcPending struct {
-	nonce, verifier, redirect string
-	callback                  string
-	expires                   time.Time
+	Nonce    string `json:"nonce"`
+	Verifier string `json:"verifier"`
+	Redirect string `json:"redirect"`
+	Callback string `json:"callback"`
 }
 
-type oidcCompleted struct {
-	tokens   *TokenPair
-	user     *UserInfo
-	redirect string
-	expires  time.Time
+type oidcHandoff struct {
+	User     UserInfo `json:"user"`
+	Redirect string   `json:"redirect"`
 }
 
 // OIDCService owns provider discovery, state/PKCE and one-use browser handoffs.
+// Durable provider configuration lives in this process; the short-lived state
+// that joins a browser redirect back to the application lives in the auth state
+// store so any replica can finish the flow.
 type OIDCService struct {
 	config     OIDCConfig
 	httpClient *http.Client
@@ -81,13 +93,20 @@ type OIDCService struct {
 	oauth      oauth2.Config
 	discovery  OIDCDiscovery
 	keySet     *oidc.RemoteKeySet
-	mu         sync.Mutex
-	pending    map[string]oidcPending
-	done       map[string]oidcCompleted
-	logoutJTI  map[string]time.Time
+	state      authstate.Store
 }
 
 func NewOIDCService(ctx context.Context, cfg OIDCConfig) (*OIDCService, error) {
+	return NewOIDCServiceWithStore(ctx, cfg, authstate.NewMemoryStore())
+}
+
+// NewOIDCServiceWithStore builds the OIDC client with an explicit auth state
+// store. Deployments pass the shared Redis store; tests and single-process
+// deployments may keep the memory store.
+func NewOIDCServiceWithStore(ctx context.Context, cfg OIDCConfig, state authstate.Store) (*OIDCService, error) {
+	if state == nil {
+		state = authstate.NewMemoryStore()
+	}
 	cfg.Issuer = strings.TrimSpace(cfg.Issuer)
 	if cfg.Issuer == "" || cfg.Issuer == "/" || strings.TrimSpace(cfg.ClientID) == "" || strings.TrimSpace(cfg.ClientSecret) == "" || strings.TrimSpace(cfg.RedirectURL) == "" {
 		return nil, fmt.Errorf("OIDC requires issuer, client id, client secret and redirect URL")
@@ -147,9 +166,7 @@ func NewOIDCService(ctx context.Context, cfg OIDCConfig) (*OIDCService, error) {
 		},
 		discovery: discovery,
 		keySet:    keySet,
-		pending:   make(map[string]oidcPending),
-		done:      make(map[string]oidcCompleted),
-		logoutJTI: make(map[string]time.Time),
+		state:     state,
 	}
 	return s, nil
 }
@@ -164,7 +181,13 @@ func randomOIDCValue() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-func (s *OIDCService) Begin(redirect, callbackURL string) (state, urlValue string, err error) {
+func oidcPendingKey(state string) string { return oidcPendingKeyBase + state }
+func oidcHandoffKey(id string) string    { return oidcHandoffKeyBase + id }
+func oidcLogoutJTIKey(jti string) string {
+	return oidcLogoutKeyBase + fmt.Sprintf("%x", sha256.Sum256([]byte(jti)))
+}
+
+func (s *OIDCService) Begin(ctx context.Context, redirect, callbackURL string) (state, urlValue string, err error) {
 	if callbackURL == "" {
 		callbackURL = s.config.RedirectURL
 	}
@@ -197,19 +220,13 @@ func (s *OIDCService) Begin(redirect, callbackURL string) (state, urlValue strin
 	if redirect == "" || !strings.HasPrefix(redirect, "/") || strings.HasPrefix(redirect, "//") {
 		redirect = "/"
 	}
-	s.mu.Lock()
-	now := time.Now()
-	for key, value := range s.pending {
-		if now.After(value.expires) {
-			delete(s.pending, key)
-		}
+	pending, err := json.Marshal(oidcPending{Nonce: nonce, Verifier: verifier, Redirect: redirect, Callback: callbackURL})
+	if err != nil {
+		return "", "", fmt.Errorf("encode OIDC pending state: %w", err)
 	}
-	if len(s.pending) >= 128 {
-		s.mu.Unlock()
-		return "", "", fmt.Errorf("OIDC login capacity reached")
+	if err := s.state.Set(ctx, oidcPendingKey(state), pending, oidcPendingTTL); err != nil {
+		return "", "", fmt.Errorf("store OIDC pending state: %w", err)
 	}
-	s.pending[state] = oidcPending{nonce: nonce, verifier: verifier, redirect: redirect, callback: callbackURL, expires: time.Now().Add(5 * time.Minute)}
-	s.mu.Unlock()
 	oauth := s.oauth
 	oauth.RedirectURL = callbackURL
 	return state, oauth.AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier)), nil
@@ -219,16 +236,20 @@ func (s *OIDCService) Complete(ctx context.Context, state, code string, authServ
 	if s.httpClient != nil {
 		ctx = oidc.ClientContext(ctx, s.httpClient)
 	}
-	s.mu.Lock()
-	pending, ok := s.pending[state]
-	delete(s.pending, state)
-	s.mu.Unlock()
-	if !ok || time.Now().After(pending.expires) || strings.TrimSpace(code) == "" {
+	rawPending, found, err := s.state.Take(ctx, oidcPendingKey(state))
+	if err != nil {
+		return "", "", fmt.Errorf("load OIDC pending state: %w", err)
+	}
+	if !found || strings.TrimSpace(code) == "" {
 		return "", "", fmt.Errorf("invalid OIDC authorization state")
 	}
+	var pending oidcPending
+	if err := json.Unmarshal(rawPending, &pending); err != nil {
+		return "", "", fmt.Errorf("decode OIDC pending state: %w", err)
+	}
 	oauth := s.oauth
-	oauth.RedirectURL = pending.callback
-	token, err := oauth.Exchange(ctx, code, oauth2.VerifierOption(pending.verifier))
+	oauth.RedirectURL = pending.Callback
+	token, err := oauth.Exchange(ctx, code, oauth2.VerifierOption(pending.Verifier))
 	if err != nil {
 		return "", "", fmt.Errorf("OIDC code exchange: %w", err)
 	}
@@ -240,7 +261,7 @@ func (s *OIDCService) Complete(ctx context.Context, state, code string, authServ
 	if err != nil {
 		return "", "", fmt.Errorf("OIDC token verification: %w", err)
 	}
-	if idToken.Nonce != pending.nonce {
+	if idToken.Nonce != pending.Nonce {
 		return "", "", fmt.Errorf("OIDC nonce mismatch")
 	}
 	var claims struct {
@@ -286,7 +307,10 @@ func (s *OIDCService) Complete(ctx context.Context, state, code string, authServ
 		username = claims.Email
 	}
 	identity := OIDCIdentity{Issuer: s.config.Issuer, Subject: idToken.Subject, Email: strings.TrimSpace(claims.Email), EmailVerified: claims.EmailVerified, Username: username}
-	tokens, user, err := authService.LoginOIDC(ctx, identity)
+	// The token pair generated during sign-in is intentionally discarded; only
+	// the resolved local identity is handed to the browser, and a fresh pair is
+	// issued when the one-use handoff is consumed.
+	_, user, err := authService.LoginOIDC(ctx, identity)
 	if err != nil {
 		return "", "", err
 	}
@@ -294,29 +318,33 @@ func (s *OIDCService) Complete(ctx context.Context, state, code string, authServ
 	if err != nil {
 		return "", "", err
 	}
-	s.mu.Lock()
-	now := time.Now()
-	for key, value := range s.done {
-		if now.After(value.expires) {
-			delete(s.done, key)
-		}
+	payload, err := json.Marshal(oidcHandoff{User: *user, Redirect: pending.Redirect})
+	if err != nil {
+		return "", "", fmt.Errorf("encode OIDC handoff: %w", err)
 	}
-	s.done[handoff] = oidcCompleted{tokens: tokens, user: user, redirect: pending.redirect, expires: time.Now().Add(2 * time.Minute)}
-	s.mu.Unlock()
-	return handoff, pending.redirect, nil
+	if err := s.state.Set(ctx, oidcHandoffKey(handoff), payload, oidcHandoffTTL); err != nil {
+		return "", "", fmt.Errorf("store OIDC handoff: %w", err)
+	}
+	return handoff, pending.Redirect, nil
 }
 
-func (s *OIDCService) Take(handoff string) (*TokenPair, *UserInfo, string, error) {
-	s.mu.Lock()
-	value, ok := s.done[handoff]
-	if ok {
-		delete(s.done, handoff)
+// Take consumes a one-use browser handoff and returns the resolved identity. It
+// deliberately does not store tokens in the shared state store; the caller
+// issues the token pair when the handoff is consumed.
+func (s *OIDCService) Take(ctx context.Context, handoff string) (*UserInfo, string, error) {
+	raw, found, err := s.state.Take(ctx, oidcHandoffKey(handoff))
+	if err != nil {
+		return nil, "", fmt.Errorf("load OIDC handoff: %w", err)
 	}
-	s.mu.Unlock()
-	if !ok || time.Now().After(value.expires) {
-		return nil, nil, "", fmt.Errorf("OIDC handoff expired")
+	if !found {
+		return nil, "", fmt.Errorf("OIDC handoff expired")
 	}
-	return value.tokens, value.user, value.redirect, nil
+	var payload oidcHandoff
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, "", fmt.Errorf("decode OIDC handoff: %w", err)
+	}
+	user := payload.User
+	return &user, payload.Redirect, nil
 }
 
 func (s *Service) SetOIDCService(provider *OIDCService) { s.oidc.Store(provider) }
@@ -409,26 +437,18 @@ func (s *OIDCService) VerifyLogoutToken(ctx context.Context, raw string) (OIDCLo
 	if strings.TrimSpace(claims.Subject) == "" {
 		return OIDCLogoutIdentity{}, fmt.Errorf("logout token subject is missing")
 	}
-	if !s.recordLogoutJTI(claims.JTI) {
+	fresh, err := s.recordLogoutJTI(ctx, claims.JTI)
+	if err != nil {
+		return OIDCLogoutIdentity{}, fmt.Errorf("record logout token jti: %w", err)
+	}
+	if !fresh {
 		return OIDCLogoutIdentity{}, fmt.Errorf("logout token was already processed")
 	}
 	return OIDCLogoutIdentity{Issuer: claims.Issuer, Subject: claims.Subject, SessionID: claims.SessionID}, nil
 }
 
-func (s *OIDCService) recordLogoutJTI(jti string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now()
-	for key, seenAt := range s.logoutJTI {
-		if now.Sub(seenAt) > 10*time.Minute {
-			delete(s.logoutJTI, key)
-		}
-	}
-	if _, seen := s.logoutJTI[jti]; seen {
-		return false
-	}
-	s.logoutJTI[jti] = now
-	return true
+func (s *OIDCService) recordLogoutJTI(ctx context.Context, jti string) (bool, error) {
+	return s.state.SetIfAbsent(ctx, oidcLogoutJTIKey(jti), []byte("1"), oidcLogoutJTITTL)
 }
 
 func audienceContains(raw json.RawMessage, clientID string) bool {
