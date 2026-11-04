@@ -3484,6 +3484,21 @@ func (s *sub2apiRelay) loginSessionToken(ctx context.Context, username, password
 	return loginResult.Data.AccessToken, user, nil
 }
 
+func accountIDString(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return typed
+	case float64:
+		return strconv.FormatInt(int64(typed), 10)
+	case json.Number:
+		return typed.String()
+	default:
+		return fmt.Sprint(typed)
+	}
+}
+
 func (s *sub2apiRelay) ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID int64, from, to time.Time) ([]UsageLog, error) {
 	// The admin usage listing is the only endpoint that exposes per-key request
 	// records; it filters by api_key_id and a start/end date pair.
@@ -3506,7 +3521,9 @@ func (s *sub2apiRelay) ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID 
 					ID           int64     `json:"id"`
 					RequestID    string    `json:"request_id"`
 					CreatedAt    time.Time `json:"created_at"`
+					UserID       int64     `json:"user_id"`
 					APIKeyID     int64     `json:"api_key_id"`
+					AccountID    any       `json:"account_id"`
 					GroupID      int64     `json:"group_id"`
 					Model        string    `json:"model"`
 					InputTokens  int64     `json:"input_tokens"`
@@ -3533,7 +3550,9 @@ func (s *sub2apiRelay) ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID 
 				ID:           item.ID,
 				RequestID:    item.RequestID,
 				CreatedAt:    item.CreatedAt,
+				UserID:       item.UserID,
 				APIKeyID:     item.APIKeyID,
+				AccountID:    accountIDString(item.AccountID),
 				GroupID:      strconv.FormatInt(item.GroupID, 10),
 				Model:        item.Model,
 				InputTokens:  item.InputTokens,
