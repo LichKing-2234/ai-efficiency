@@ -373,6 +373,21 @@ func (s *Service) reconcileSubscriptions(ctx context.Context, provider relay.Pro
 		wanted[group] = true
 	}
 
+	existing := map[int64]bool{}
+	if lister, ok := provider.(interface {
+		ListUserSubscriptions(ctx context.Context, relayUserID int64) ([]relay.UserSubscription, error)
+	}); ok {
+		subs, err := lister.ListUserSubscriptions(ctx, relayUserID)
+		if err != nil {
+			return fmt.Errorf("list subscriptions: %w", err)
+		}
+		for _, sub := range subs {
+			if strings.EqualFold(strings.TrimSpace(sub.Status), "active") {
+				existing[sub.GroupID] = true
+			}
+		}
+	}
+
 	assigner, ok := provider.(interface {
 		AssignSubscriptionForUser(ctx context.Context, userID, groupID int64, validityDays int) error
 	})
@@ -380,6 +395,11 @@ func (s *Service) reconcileSubscriptions(ctx context.Context, provider relay.Pro
 		return errors.New("relay provider cannot assign subscriptions")
 	}
 	for _, group := range groups {
+		// Provisioning already auto-assigned the provider defaults; assigning a
+		// group that is live would conflict with the existing assignment notes.
+		if existing[group] {
+			continue
+		}
 		if err := assigner.AssignSubscriptionForUser(ctx, relayUserID, group, SubscriptionValidityDays); err != nil {
 			return fmt.Errorf("assign group %d: %w", group, err)
 		}
