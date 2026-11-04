@@ -695,8 +695,8 @@ func (s *Service) RevokeKey(ctx context.Context, actorUserID int, includeAll boo
 	if err != nil {
 		return fmt.Errorf("resolve relay provider: %w", err)
 	}
-	if err := provider.RevokeUserAPIKey(ctx, keyRow.RelayAPIKeyID); err != nil {
-		return fmt.Errorf("revoke relay api key: %w", err)
+	if err := s.disableRelayKey(ctx, row, provider, keyRow.RelayAPIKeyID); err != nil {
+		return err
 	}
 	now := time.Now()
 	if _, err := s.client.TeamAccountKey.UpdateOneID(keyRow.ID).
@@ -894,8 +894,8 @@ func (s *Service) revokeActiveKeys(ctx context.Context, actorUserID int, row *en
 	}
 	now := time.Now()
 	for _, key := range keys {
-		if err := provider.RevokeUserAPIKey(ctx, key.RelayAPIKeyID); err != nil {
-			return fmt.Errorf("revoke relay key %d: %w", key.RelayAPIKeyID, err)
+		if err := s.disableRelayKey(ctx, row, provider, key.RelayAPIKeyID); err != nil {
+			return err
 		}
 		if _, err := s.client.TeamAccountKey.UpdateOneID(key.ID).
 			SetStatus("revoked").
@@ -904,6 +904,24 @@ func (s *Service) revokeActiveKeys(ctx context.Context, actorUserID int, row *en
 			return fmt.Errorf("mark key revoked: %w", err)
 		}
 		_ = s.recordEvent(ctx, row.ID, actorUserID, "key_revoked", map[string]any{"key_id": key.RelayAPIKeyID, "reason": "account_suspended"})
+	}
+	return nil
+}
+
+// disableRelayKey marks one Relay key inactive using the account's own
+// credentials: the Relay build exposes no administrator revoke endpoint.
+func (s *Service) disableRelayKey(ctx context.Context, row *ent.TeamAccount, provider relay.Provider, relayKeyID int64) error {
+	password, err := s.decryptPassword(row)
+	if err != nil {
+		return err
+	}
+	login := strings.TrimSpace(row.RelayEmail)
+	if login == "" {
+		login = row.RelayUsername + "@" + EmailDomain
+	}
+	authCtx := relay.WithUserCredentials(ctx, login, password)
+	if err := provider.UpdateUserAPIKeyStatus(authCtx, relayKeyID, "inactive"); err != nil {
+		return fmt.Errorf("disable relay api key: %w", err)
 	}
 	return nil
 }
@@ -948,11 +966,7 @@ func (s *Service) AggregateUsage(ctx context.Context, actorUserID int, includeAl
 		return nil, fmt.Errorf("resolve relay provider: %w", err)
 	}
 
-	totals, err := provider.GetUsageStats(ctx, row.RelayUserID, from, to)
-	if err != nil {
-		return nil, fmt.Errorf("load usage stats: %w", err)
-	}
-	usage := &Usage{TotalTokens: totals.TotalTokens, TotalCost: totals.TotalCost, Days: []UsagePoint{}, Keys: []UsageKey{}}
+	usage := &Usage{Days: []UsagePoint{}, Keys: []UsageKey{}}
 
 	keys, err := s.client.TeamAccountKey.Query().
 		Where(teamAccountKeyAccountID(accountID)).
@@ -968,6 +982,8 @@ func (s *Service) AggregateUsage(ctx context.Context, actorUserID int, includeAl
 		}
 		item := UsageKey{ID: key.ID, Name: key.Name, Group: key.RelayGroupID}
 		for _, log := range logs {
+			usage.TotalTokens += log.TotalTokens
+			usage.TotalCost += log.TotalCost
 			item.Tokens += log.TotalTokens
 			item.Cost += log.TotalCost
 			date := log.CreatedAt.Format("2006-01-02")

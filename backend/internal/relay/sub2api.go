@@ -3485,31 +3485,69 @@ func (s *sub2apiRelay) loginSessionToken(ctx context.Context, username, password
 }
 
 func (s *sub2apiRelay) ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID int64, from, to time.Time) ([]UsageLog, error) {
-	path := fmt.Sprintf("/api/v1/admin/usage_logs?api_key_id=%d&from=%s&to=%s",
-		apiKeyID, url.QueryEscape(from.Format(time.RFC3339)), url.QueryEscape(to.Format(time.RFC3339)))
-
-	resp, err := s.doAdminRequest(ctx, http.MethodGet, path, nil)
-	if err != nil {
-		return nil, fmt.Errorf("relay: list usage logs by api key: %w", err)
+	// The admin usage listing is the only endpoint that exposes per-key request
+	// records; it filters by api_key_id and a start/end date pair.
+	var logs []UsageLog
+	for page := 1; page <= 20; page++ {
+		path := fmt.Sprintf("/api/v1/admin/usage?api_key_id=%d&start_date=%s&end_date=%s&page=%d&page_size=200",
+			apiKeyID,
+			url.QueryEscape(from.Format("2006-01-02")),
+			url.QueryEscape(to.Format("2006-01-02")),
+			page,
+		)
+		resp, err := s.doAdminRequest(ctx, http.MethodGet, path, nil)
+		if err != nil {
+			return nil, fmt.Errorf("relay: list usage logs by api key: %w", err)
+		}
+		var result struct {
+			envelopeStatus
+			Data struct {
+				Items []struct {
+					ID           int64     `json:"id"`
+					RequestID    string    `json:"request_id"`
+					CreatedAt    time.Time `json:"created_at"`
+					APIKeyID     int64     `json:"api_key_id"`
+					GroupID      int64     `json:"group_id"`
+					Model        string    `json:"model"`
+					InputTokens  int64     `json:"input_tokens"`
+					OutputTokens int64     `json:"output_tokens"`
+					CacheTokens  int64     `json:"cache_read_tokens"`
+					TotalCost    float64   `json:"total_cost"`
+				} `json:"items"`
+				Total int `json:"total"`
+			} `json:"data"`
+		}
+		decodeErr := json.NewDecoder(resp.Body).Decode(&result)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("relay: list usage logs by api key: unexpected status %d", resp.StatusCode)
+		}
+		if decodeErr != nil {
+			return nil, fmt.Errorf("relay: list usage logs by api key: decode: %w", decodeErr)
+		}
+		if !result.ok() {
+			return nil, fmt.Errorf("relay: list usage logs by api key: request failed")
+		}
+		for _, item := range result.Data.Items {
+			logs = append(logs, UsageLog{
+				ID:           item.ID,
+				RequestID:    item.RequestID,
+				CreatedAt:    item.CreatedAt,
+				APIKeyID:     item.APIKeyID,
+				GroupID:      strconv.FormatInt(item.GroupID, 10),
+				Model:        item.Model,
+				InputTokens:  item.InputTokens,
+				OutputTokens: item.OutputTokens,
+				CacheTokens:  item.CacheTokens,
+				TotalTokens:  item.InputTokens + item.OutputTokens + item.CacheTokens,
+				TotalCost:    item.TotalCost,
+			})
+		}
+		if len(result.Data.Items) < 200 || len(logs) >= result.Data.Total {
+			break
+		}
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("relay: list usage logs by api key: unexpected status %d", resp.StatusCode)
-	}
-
-	var result struct {
-		envelopeStatus
-		Data []UsageLog `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("relay: list usage logs by api key: decode: %w", err)
-	}
-	if !result.ok() {
-		return nil, fmt.Errorf("relay: list usage logs by api key: request failed")
-	}
-
-	return result.Data, nil
+	return logs, nil
 }
 
 // doAdminRequest is a helper that sends an authenticated request to the admin API.
