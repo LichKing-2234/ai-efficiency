@@ -1026,6 +1026,9 @@ func offboardingSnapshotSourcePredicate(sourceID int) predicate.DirectorySyncRun
 func (s *Service) offboardingCandidateUsers(sourceID int, q string) *ent.UserQuery {
 	query := s.client.User.Query().Where(
 		entuser.RelayUserIDNotNil(),
+		// Organization accounts exist independently of any directory member, so
+		// they must never be treated as missing-from-directory candidates.
+		entuser.LoginPolicyNEQ(entuser.LoginPolicySSOOnly),
 		offboardingCandidateAntiJoin(sourceID),
 	)
 	if q != "" {

@@ -32,6 +32,8 @@ type Tx struct {
 	CommitRewrite *CommitRewriteClient
 	// Credential is the client for interacting with the Credential builders.
 	Credential *CredentialClient
+	// DepartmentGroupMap is the client for interacting with the DepartmentGroupMap builders.
+	DepartmentGroupMap *DepartmentGroupMapClient
 	// DirectoryDepartment is the client for interacting with the DirectoryDepartment builders.
 	DirectoryDepartment *DirectoryDepartmentClient
 	// DirectoryMember is the client for interacting with the DirectoryMember builders.
@@ -82,6 +84,14 @@ type Tx struct {
 	ScmProvider *ScmProviderClient
 	// SystemSetting is the client for interacting with the SystemSetting builders.
 	SystemSetting *SystemSettingClient
+	// TeamAccount is the client for interacting with the TeamAccount builders.
+	TeamAccount *TeamAccountClient
+	// TeamAccountEvent is the client for interacting with the TeamAccountEvent builders.
+	TeamAccountEvent *TeamAccountEventClient
+	// TeamAccountKey is the client for interacting with the TeamAccountKey builders.
+	TeamAccountKey *TeamAccountKeyClient
+	// TeamAccountManager is the client for interacting with the TeamAccountManager builders.
+	TeamAccountManager *TeamAccountManagerClient
 	// TeamUsageRateMultiplierAudit is the client for interacting with the TeamUsageRateMultiplierAudit builders.
 	TeamUsageRateMultiplierAudit *TeamUsageRateMultiplierAuditClient
 	// ToolUsageEvent is the client for interacting with the ToolUsageEvent builders.
@@ -231,6 +241,7 @@ func (tx *Tx) init() {
 	tx.CommitCheckpoint = NewCommitCheckpointClient(tx.config)
 	tx.CommitRewrite = NewCommitRewriteClient(tx.config)
 	tx.Credential = NewCredentialClient(tx.config)
+	tx.DepartmentGroupMap = NewDepartmentGroupMapClient(tx.config)
 	tx.DirectoryDepartment = NewDirectoryDepartmentClient(tx.config)
 	tx.DirectoryMember = NewDirectoryMemberClient(tx.config)
 	tx.DirectoryMemberDepartment = NewDirectoryMemberDepartmentClient(tx.config)
@@ -256,6 +267,10 @@ func (tx *Tx) init() {
 	tx.ReportingInstallation = NewReportingInstallationClient(tx.config)
 	tx.ScmProvider = NewScmProviderClient(tx.config)
 	tx.SystemSetting = NewSystemSettingClient(tx.config)
+	tx.TeamAccount = NewTeamAccountClient(tx.config)
+	tx.TeamAccountEvent = NewTeamAccountEventClient(tx.config)
+	tx.TeamAccountKey = NewTeamAccountKeyClient(tx.config)
+	tx.TeamAccountManager = NewTeamAccountManagerClient(tx.config)
 	tx.TeamUsageRateMultiplierAudit = NewTeamUsageRateMultiplierAuditClient(tx.config)
 	tx.ToolUsageEvent = NewToolUsageEventClient(tx.config)
 	tx.User = NewUserClient(tx.config)

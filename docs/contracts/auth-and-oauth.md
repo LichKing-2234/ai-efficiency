@@ -142,6 +142,37 @@ Invalid tokens return `400`, a disabled OIDC client returns `404`, and a state
 store failure returns `503` so provider delivery can retry a transient backend
 problem. The endpoint never redirects and requires no browser session.
 
+## Login Policy
+
+`users.login_policy` constrains which provider may authenticate an account.
+
+| Value | Behaviour |
+| --- | --- |
+| `default` | Existing behaviour: LDAP first, then the remaining providers. |
+| `sso_only` | Only Relay SSO may authenticate. |
+
+The policy is evaluated by username **before any provider runs**. A request that
+names a different provider explicitly (for example `source=ldap`) is rejected
+with `account is restricted to sso login` without contacting that provider.
+This ordering is required, not cosmetic: the LDAP path resolves and may rewrite
+the relay identity and reset its relay password, so rejecting after a successful
+LDAP bind would already have mutated the account.
+
+Because the relay authenticates by email, the login identifier of an
+organization account is `<username>@invalid.account`. The SSO provider expands a
+bare username to that address before calling the relay, so operators can sign in
+with the username alone; inputs that already contain `@` are used verbatim.
+
+`sso_only` accounts are created by an administrator through
+`POST /api/v1/admin/users/org-accounts`. Creation provisions the relay user
+first, then the local user with `login_policy=sso_only` and
+`auth_source=relay_sso`; the generated password is returned exactly once and is
+also stored encrypted so the existing relay-password reveal endpoint keeps
+working. The account receives no group or subscription at creation time.
+
+Organization accounts are excluded from missing-from-directory offboarding
+candidates; see `docs/contracts/directory-sync.md`.
+
 ## Local User Reconciliation
 
 After one auth provider succeeds, AI Efficiency reconciles the upstream

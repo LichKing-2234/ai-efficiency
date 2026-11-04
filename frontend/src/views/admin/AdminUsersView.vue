@@ -8,6 +8,7 @@ import { useMediaQuery } from '@/composables/useMediaQuery'
 import { useAdminUsersWorkflow } from '@/composables/useAdminUsersWorkflow'
 import DepartmentTreeToggle from '@/components/DepartmentTreeToggle.vue'
 import {
+  createAdminOrgAccount,
   disableAdminUserAccess,
   getAdminUserSubscriptionJob,
   getLatestAdminUserSubscriptionJob,
@@ -504,6 +505,55 @@ async function submitSubscriptionManagement() {
   }
 }
 
+const orgAccountDialog = reactive({
+  open: false,
+  username: '',
+  password: '',
+  confirmPassword: '',
+  loading: false,
+  message: '',
+})
+
+function openOrgAccountDialog() {
+  ElMessage.closeAll()
+  orgAccountDialog.open = true
+  orgAccountDialog.username = ''
+  orgAccountDialog.password = ''
+  orgAccountDialog.confirmPassword = ''
+  orgAccountDialog.loading = false
+  orgAccountDialog.message = ''
+}
+
+async function submitOrgAccount() {
+  orgAccountDialog.message = ''
+  const username = orgAccountDialog.username.trim()
+  if (!username) {
+    orgAccountDialog.message = t('adminUsers.orgAccountFailed')
+    return
+  }
+  if (orgAccountDialog.password.length < 8) {
+    orgAccountDialog.message = t('adminUsers.orgAccountPasswordTooShort')
+    return
+  }
+  if (orgAccountDialog.password !== orgAccountDialog.confirmPassword) {
+    orgAccountDialog.message = t('adminUsers.orgAccountPasswordMismatch')
+    return
+  }
+  orgAccountDialog.loading = true
+  try {
+    const res = await createAdminOrgAccount({ username, password: orgAccountDialog.password })
+    if (res.data?.data) {
+      orgAccountDialog.open = false
+      ElMessage.success(t('adminUsers.orgAccountCreated'))
+      await refreshActiveView()
+    }
+  } catch (err: any) {
+    orgAccountDialog.message = err.response?.data?.message || err.message || t('adminUsers.orgAccountFailed')
+  } finally {
+    orgAccountDialog.loading = false
+  }
+}
+
 async function copyEncrypted(user: AdminUser) {
   if (!user.relay_auth_password) {
     ElMessage.error(t('adminUsers.noEncryptedPassword'))
@@ -632,14 +682,24 @@ onBeforeUnmount(() => {
           <h1 class="text-2xl font-bold text-gray-900">{{ t('nav.userManagement') }}</h1>
           <p class="mt-1 text-sm text-gray-500">{{ t('adminUsers.subtitle') }}</p>
         </div>
-        <ElButton
-          data-testid="admin-users-refresh"
-          class="shrink-0 self-start whitespace-nowrap sm:self-auto"
-          :disabled="activeViewLoading"
-          @click="refreshActiveView"
-        >
-          {{ activeViewLoading ? t('adminUsers.loading') : t('adminUsers.refresh') }}
-        </ElButton>
+        <div class="flex shrink-0 gap-2 self-start sm:self-auto">
+          <ElButton
+            data-testid="admin-users-create-org-account"
+            class="whitespace-nowrap"
+            type="primary"
+            @click="openOrgAccountDialog"
+          >
+            {{ t('adminUsers.createOrgAccount') }}
+          </ElButton>
+          <ElButton
+            data-testid="admin-users-refresh"
+            class="whitespace-nowrap"
+            :disabled="activeViewLoading"
+            @click="refreshActiveView"
+          >
+            {{ activeViewLoading ? t('adminUsers.loading') : t('adminUsers.refresh') }}
+          </ElButton>
+        </div>
       </div>
 
       <ElRadioGroup class="order-2" :model-value="filters.view" @change="handleAdminUsersViewChange">
@@ -1345,6 +1405,50 @@ onBeforeUnmount(() => {
             {{ disableAccessDialog.loading ? t('adminUsers.working') : t('adminUsers.confirmDisableUser') }}
           </ElButton>
         </div>
+      </template>
+    </ElDialog>
+    <ElDialog
+      v-if="orgAccountDialog.open"
+      v-model="orgAccountDialog.open"
+      :title="t('adminUsers.createOrgAccountTitle')"
+      width="460px"
+      data-testid="admin-org-account-dialog"
+    >
+      <div class="flex flex-col gap-3">
+        <ElInput
+          v-model="orgAccountDialog.username"
+          :placeholder="t('adminUsers.orgAccountUsername')"
+          data-testid="admin-org-account-username"
+        />
+        <ElInput
+          v-model="orgAccountDialog.password"
+          type="password"
+          show-password
+          :placeholder="t('adminUsers.orgAccountPassword')"
+          data-testid="admin-org-account-password"
+        />
+        <ElInput
+          v-model="orgAccountDialog.confirmPassword"
+          type="password"
+          show-password
+          :placeholder="t('adminUsers.orgAccountPasswordConfirm')"
+          data-testid="admin-org-account-confirm-password"
+        />
+        <p class="text-xs text-gray-500">{{ t('adminUsers.orgAccountHint') }}</p>
+      </div>
+      <p v-if="orgAccountDialog.message" class="mt-3 text-sm text-red-600">{{ orgAccountDialog.message }}</p>
+      <template #footer>
+        <ElButton @click="orgAccountDialog.open = false">
+          {{ t('adminUsers.orgAccountCancel') }}
+        </ElButton>
+        <ElButton
+          type="primary"
+          :loading="orgAccountDialog.loading"
+          data-testid="admin-org-account-submit"
+          @click="submitOrgAccount"
+        >
+          {{ t('adminUsers.orgAccountSubmit') }}
+        </ElButton>
       </template>
     </ElDialog>
   </AppLayout>

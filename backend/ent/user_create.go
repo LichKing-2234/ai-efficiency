@@ -126,6 +126,20 @@ func (uc *UserCreate) SetNillableRole(u *user.Role) *UserCreate {
 	return uc
 }
 
+// SetLoginPolicy sets the "login_policy" field.
+func (uc *UserCreate) SetLoginPolicy(up user.LoginPolicy) *UserCreate {
+	uc.mutation.SetLoginPolicy(up)
+	return uc
+}
+
+// SetNillableLoginPolicy sets the "login_policy" field if the given value is not nil.
+func (uc *UserCreate) SetNillableLoginPolicy(up *user.LoginPolicy) *UserCreate {
+	if up != nil {
+		uc.SetLoginPolicy(*up)
+	}
+	return uc
+}
+
 // SetTokenValidAfter sets the "token_valid_after" field.
 func (uc *UserCreate) SetTokenValidAfter(t time.Time) *UserCreate {
 	uc.mutation.SetTokenValidAfter(t)
@@ -281,6 +295,10 @@ func (uc *UserCreate) defaults() {
 		v := user.DefaultRole
 		uc.mutation.SetRole(v)
 	}
+	if _, ok := uc.mutation.LoginPolicy(); !ok {
+		v := user.DefaultLoginPolicy
+		uc.mutation.SetLoginPolicy(v)
+	}
 	if _, ok := uc.mutation.CreatedAt(); !ok {
 		v := user.DefaultCreatedAt()
 		uc.mutation.SetCreatedAt(v)
@@ -323,6 +341,14 @@ func (uc *UserCreate) check() error {
 	if v, ok := uc.mutation.Role(); ok {
 		if err := user.RoleValidator(v); err != nil {
 			return &ValidationError{Name: "role", err: fmt.Errorf(`ent: validator failed for field "User.role": %w`, err)}
+		}
+	}
+	if _, ok := uc.mutation.LoginPolicy(); !ok {
+		return &ValidationError{Name: "login_policy", err: errors.New(`ent: missing required field "User.login_policy"`)}
+	}
+	if v, ok := uc.mutation.LoginPolicy(); ok {
+		if err := user.LoginPolicyValidator(v); err != nil {
+			return &ValidationError{Name: "login_policy", err: fmt.Errorf(`ent: validator failed for field "User.login_policy": %w`, err)}
 		}
 	}
 	if _, ok := uc.mutation.CreatedAt(); !ok {
@@ -392,6 +418,10 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := uc.mutation.Role(); ok {
 		_spec.SetField(user.FieldRole, field.TypeEnum, value)
 		_node.Role = value
+	}
+	if value, ok := uc.mutation.LoginPolicy(); ok {
+		_spec.SetField(user.FieldLoginPolicy, field.TypeEnum, value)
+		_node.LoginPolicy = value
 	}
 	if value, ok := uc.mutation.TokenValidAfter(); ok {
 		_spec.SetField(user.FieldTokenValidAfter, field.TypeTime, value)

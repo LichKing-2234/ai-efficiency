@@ -36,6 +36,9 @@ type CommitRewrite func(*sql.Selector)
 // Credential is the predicate function for credential builders.
 type Credential func(*sql.Selector)
 
+// DepartmentGroupMap is the predicate function for departmentgroupmap builders.
+type DepartmentGroupMap func(*sql.Selector)
+
 // DirectoryDepartment is the predicate function for directorydepartment builders.
 type DirectoryDepartment func(*sql.Selector)
 
@@ -110,6 +113,18 @@ type ScmProvider func(*sql.Selector)
 
 // SystemSetting is the predicate function for systemsetting builders.
 type SystemSetting func(*sql.Selector)
+
+// TeamAccount is the predicate function for teamaccount builders.
+type TeamAccount func(*sql.Selector)
+
+// TeamAccountEvent is the predicate function for teamaccountevent builders.
+type TeamAccountEvent func(*sql.Selector)
+
+// TeamAccountKey is the predicate function for teamaccountkey builders.
+type TeamAccountKey func(*sql.Selector)
+
+// TeamAccountManager is the predicate function for teamaccountmanager builders.
+type TeamAccountManager func(*sql.Selector)
 
 // TeamUsageRateMultiplierAudit is the predicate function for teamusageratemultiplieraudit builders.
 type TeamUsageRateMultiplierAudit func(*sql.Selector)

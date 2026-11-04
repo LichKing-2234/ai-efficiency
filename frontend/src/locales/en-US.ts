@@ -3,6 +3,7 @@ import type { DirectoryOffboardingMessageKey } from './directoryOffboarding'
 import type { OpsMonitoringMessageKey } from './opsMonitoring'
 import type { OwnerAccountsMessageKey } from './ownerAccounts'
 import type { AccountQuotaMessageKey } from './accountQuota'
+import type { TeamAccountsMessageKey } from './teamAccounts'
 
 const enUS = {
   'app.title': 'AI Efficiency',
@@ -748,7 +749,7 @@ const enUS = {
   'auth.recommended': 'Recommended sign-in',
   'auth.authorizeEyebrow': 'Authorization request',
   'auth.deviceEyebrow': 'Device approval',
-  'auth.email': 'Email',
+  'auth.email': 'Email / username',
   'auth.password': 'Password',
   'auth.source': 'Auth Source',
   'auth.loginMethod': 'Login method',
@@ -794,6 +795,18 @@ const enUS = {
   'adminUsers.subtitle': 'Manage users, AI service identity mapping, and credential access risks.',
   'adminUsers.loading': 'Loading...',
   'adminUsers.refresh': 'Refresh',
+  'adminUsers.createOrgAccount': 'Create organization account',
+  'adminUsers.createOrgAccountTitle': 'Create organization account (SSO only)',
+  'adminUsers.orgAccountUsername': 'Username',
+  'adminUsers.orgAccountHint': 'This account can only sign in through Relay SSO; LDAP login is rejected. It never inherits anyone else\'s quota.',
+  'adminUsers.orgAccountPassword': 'Password',
+  'adminUsers.orgAccountPasswordConfirm': 'Confirm password',
+  'adminUsers.orgAccountPasswordMismatch': 'The two passwords do not match',
+  'adminUsers.orgAccountPasswordTooShort': 'Password must be at least 8 characters',
+  'adminUsers.orgAccountCreated': 'Organization account created',
+  'adminUsers.orgAccountSubmit': 'Create',
+  'adminUsers.orgAccountCancel': 'Cancel',
+  'adminUsers.orgAccountFailed': 'Failed to create account',
   'adminUsers.search': 'Search',
   'adminUsers.searchPlaceholder': 'username, email, local id, relay user id',
   'adminUsers.userView': 'Users',
@@ -1028,6 +1041,7 @@ const enUS = {
   'settings.oidcResetDone': 'Deployment OIDC configuration restored',
   'settings.oidcLoadFailed': 'Failed to load OIDC settings',
   'settings.oidcSaveFailed': 'Failed to save OIDC settings',
+  'nav.teamAccounts': 'Department Accounts',
 } as const
 
 export type MessageKey =
@@ -1037,6 +1051,7 @@ export type MessageKey =
   | OpsMonitoringMessageKey
   | OwnerAccountsMessageKey
   | AccountQuotaMessageKey
+  | TeamAccountsMessageKey
 export type Messages = { readonly [Key in keyof typeof enUS]: string }
 
 export default enUS

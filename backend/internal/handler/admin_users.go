@@ -16,6 +16,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/adminsubscription"
 	"github.com/ai-efficiency/backend/internal/adminuseraccess"
 	"github.com/ai-efficiency/backend/internal/adminusers"
+	"github.com/ai-efficiency/backend/internal/orgaccount"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/gin-gonic/gin"
@@ -28,6 +29,7 @@ type AdminUsersHandler struct {
 	encryptionKey    string
 	resolver         adminUsersProviderResolver
 	subscriptionJobs *adminsubscription.Service
+	orgAccounts      *orgaccount.Service
 	logger           *zap.Logger
 }
 
@@ -231,6 +233,7 @@ func NewAdminUsersHandler(entClient *ent.Client, encryptionKey string, resolvers
 	return &AdminUsersHandler{
 		entClient:     entClient,
 		users:         userReader,
+		orgAccounts:   orgaccount.NewService(entClient, resolver, strings.TrimSpace(encryptionKey), zap.NewNop()),
 		encryptionKey: strings.TrimSpace(encryptionKey),
 		resolver:      resolver,
 		subscriptionJobs: adminsubscription.NewService(entClient, adminsubscription.CurrentFilterTargetResolverFunc(
@@ -1195,4 +1198,52 @@ func parseAdminUsersListRequest(c *gin.Context) adminUsersListRequest {
 		Page:         page,
 		PageSize:     pageSize,
 	}
+}
+
+// CreateOrgAccount provisions an organization account that can only sign in
+// through Relay SSO. The generated password is returned exactly once.
+func (h *AdminUsersHandler) CreateOrgAccount(c *gin.Context) {
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if h.orgAccounts == nil {
+		pkg.Error(c, http.StatusInternalServerError, "organization account service is not configured")
+		return
+	}
+
+	providerID, err := h.primaryRelayProviderID(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "get relay provider: "+err.Error())
+		return
+	}
+
+	created, err := h.orgAccounts.Create(c.Request.Context(), orgaccount.CreateRequest{
+		Username:   req.Username,
+		Password:   req.Password,
+		ProviderID: providerID,
+	})
+	if err != nil {
+		var validationErr *orgaccount.ValidationError
+		var conflictErr *orgaccount.ConflictError
+		switch {
+		case errors.As(err, &validationErr):
+			pkg.Error(c, http.StatusUnprocessableEntity, validationErr.Message)
+		case errors.As(err, &conflictErr):
+			pkg.Error(c, http.StatusConflict, conflictErr.Message)
+		default:
+			pkg.Error(c, http.StatusBadGateway, err.Error())
+		}
+		return
+	}
+
+	pkg.Success(c, gin.H{
+		"user_id":       created.UserID,
+		"relay_user_id": created.RelayUserID,
+		"username":      created.Username,
+	})
 }

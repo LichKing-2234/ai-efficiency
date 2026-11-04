@@ -11,6 +11,7 @@ import {
   Document,
   House,
   Monitor,
+  OfficeBuilding,
   Setting,
   Switch,
   SwitchButton,
@@ -148,6 +149,16 @@ function handleNavigate() {
         >
           <el-icon class="mr-3"><UserFilled /></el-icon>
           {{ t('nav.userManagement') }}
+        </RouterLink>
+
+        <RouterLink
+          to="/admin/team-accounts"
+          class="mt-1 flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
+          :active-class="activeNavigationClass"
+          @click="handleNavigate"
+        >
+          <el-icon class="mr-3"><OfficeBuilding /></el-icon>
+          {{ t('nav.teamAccounts') }}
         </RouterLink>
 
         <RouterLink

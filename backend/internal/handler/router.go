@@ -22,6 +22,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/relayplanning"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/representativescope"
+	"github.com/ai-efficiency/backend/internal/teamaccount"
 	"github.com/ai-efficiency/backend/internal/teamusage"
 	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/ai-efficiency/backend/internal/toolusage"
@@ -67,7 +68,10 @@ type RouterOptions struct {
 	OwnerAccounts *owneraccount.Service
 	// AccountQuota is the admin OpenAI quota sweep service. It is required in
 	// production and may be nil in tests that do not exercise those routes.
-	AccountQuota   accountQuotaService
+	AccountQuota accountQuotaService
+	// TeamAccounts is the department team account service. It may be nil in
+	// tests that do not exercise those routes.
+	TeamAccounts *teamaccount.Service
 	Release        string
 	RequestTimeout time.Duration
 }
@@ -477,6 +481,21 @@ func setupRouter(
 
 	userGroup := protected.Group("/user")
 	{
+		if options.TeamAccounts != nil {
+			teamAccountHandler := NewTeamAccountHandler(options.TeamAccounts)
+			teamAccountGroup := userGroup.Group("/team-accounts")
+			teamAccountGroup.GET("", teamAccountHandler.List)
+			teamAccountGroup.POST("", teamAccountHandler.Create)
+			teamAccountGroup.GET("/:id", teamAccountHandler.Get)
+			teamAccountGroup.GET("/:id/usage", teamAccountHandler.Usage)
+			teamAccountGroup.GET("/:id/events", teamAccountHandler.Events)
+			teamAccountGroup.POST("/:id/credentials", teamAccountHandler.RevealCredentials)
+			teamAccountGroup.POST("/:id/keys", teamAccountHandler.CreateKey)
+			teamAccountGroup.POST("/:id/keys/:key_id/revoke", teamAccountHandler.RevokeKey)
+			teamAccountGroup.POST("/:id/managers", teamAccountHandler.AddManager)
+			teamAccountGroup.DELETE("/:id/managers/:user_id", teamAccountHandler.RemoveManager)
+			teamAccountGroup.POST("/:id/transfer", teamAccountHandler.Transfer)
+		}
 		userGroup.GET("/providers", userSetupHandler.ListProviders)
 		if quotaResetHandler != nil {
 			userGroup.GET("/quota-reset/options", quotaResetHandler.Options)
@@ -549,6 +568,7 @@ func setupRouter(
 	adminUsersGroup.Use(auth.RequireAdmin())
 	{
 		adminUsersGroup.GET("", adminUsersHandler.List)
+		adminUsersGroup.POST("/org-accounts", adminUsersHandler.CreateOrgAccount)
 		adminUsersGroup.GET("/department-options", adminUsersHandler.ListDepartmentOptions)
 		adminUsersGroup.GET("/department-children", adminUsersHandler.ListDepartmentChildren)
 		adminUsersGroup.GET("/departments", adminUsersHandler.ListDepartments)
@@ -561,6 +581,29 @@ func setupRouter(
 		adminUsersGroup.POST("/:id/relay-password/reveal", adminUsersHandler.RevealRelayPassword)
 		adminUsersGroup.POST("/:id/subscriptions", adminUsersHandler.AssignSubscription)
 	}
+	if options.TeamAccounts != nil {
+		teamAccountAdminHandler := NewTeamAccountHandler(options.TeamAccounts)
+		adminTeamAccountsGroup := protected.Group("/admin/team-accounts")
+		adminTeamAccountsGroup.Use(auth.RequireAdmin())
+		{
+			adminTeamAccountsGroup.GET("", teamAccountAdminHandler.List)
+			adminTeamAccountsGroup.POST("", teamAccountAdminHandler.AdminCreate)
+			adminTeamAccountsGroup.GET("/:id", teamAccountAdminHandler.Get)
+			adminTeamAccountsGroup.GET("/:id/usage", teamAccountAdminHandler.Usage)
+			adminTeamAccountsGroup.GET("/:id/events", teamAccountAdminHandler.Events)
+			adminTeamAccountsGroup.POST("/:id/credentials", teamAccountAdminHandler.RevealCredentials)
+			adminTeamAccountsGroup.POST("/:id/keys", teamAccountAdminHandler.CreateKey)
+			adminTeamAccountsGroup.POST("/:id/keys/:key_id/revoke", teamAccountAdminHandler.RevokeKey)
+			adminTeamAccountsGroup.POST("/:id/managers", teamAccountAdminHandler.AddManager)
+			adminTeamAccountsGroup.DELETE("/:id/managers/:user_id", teamAccountAdminHandler.RemoveManager)
+			adminTeamAccountsGroup.POST("/:id/transfer", teamAccountAdminHandler.Transfer)
+			adminTeamAccountsGroup.POST("/:id/status", teamAccountAdminHandler.AdminSetStatus)
+			adminTeamAccountsGroup.GET("/department-groups", teamAccountAdminHandler.ListDepartmentGroups)
+			adminTeamAccountsGroup.POST("/department-groups", teamAccountAdminHandler.UpsertDepartmentGroup)
+			adminTeamAccountsGroup.DELETE("/department-groups", teamAccountAdminHandler.DeleteDepartmentGroup)
+		}
+	}
+
 	if relayPlanningHandler != nil {
 		relayPlanningGroup := protected.Group("/admin/relay-planning")
 		relayPlanningGroup.Use(auth.RequireAdmin())

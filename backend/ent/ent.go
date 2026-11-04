@@ -22,6 +22,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
+	"github.com/ai-efficiency/backend/ent/departmentgroupmap"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorymember"
 	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
@@ -47,6 +48,10 @@ import (
 	"github.com/ai-efficiency/backend/ent/reportinginstallation"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/ent/systemsetting"
+	"github.com/ai-efficiency/backend/ent/teamaccount"
+	"github.com/ai-efficiency/backend/ent/teamaccountevent"
+	"github.com/ai-efficiency/backend/ent/teamaccountkey"
+	"github.com/ai-efficiency/backend/ent/teamaccountmanager"
 	"github.com/ai-efficiency/backend/ent/teamusageratemultiplieraudit"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
@@ -121,6 +126,7 @@ func checkColumn(table, column string) error {
 			commitcheckpoint.Table:              commitcheckpoint.ValidColumn,
 			commitrewrite.Table:                 commitrewrite.ValidColumn,
 			credential.Table:                    credential.ValidColumn,
+			departmentgroupmap.Table:            departmentgroupmap.ValidColumn,
 			directorydepartment.Table:           directorydepartment.ValidColumn,
 			directorymember.Table:               directorymember.ValidColumn,
 			directorymemberdepartment.Table:     directorymemberdepartment.ValidColumn,
@@ -146,6 +152,10 @@ func checkColumn(table, column string) error {
 			reportinginstallation.Table:         reportinginstallation.ValidColumn,
 			scmprovider.Table:                   scmprovider.ValidColumn,
 			systemsetting.Table:                 systemsetting.ValidColumn,
+			teamaccount.Table:                   teamaccount.ValidColumn,
+			teamaccountevent.Table:              teamaccountevent.ValidColumn,
+			teamaccountkey.Table:                teamaccountkey.ValidColumn,
+			teamaccountmanager.Table:            teamaccountmanager.ValidColumn,
 			teamusageratemultiplieraudit.Table:  teamusageratemultiplieraudit.ValidColumn,
 			toolusageevent.Table:                toolusageevent.ValidColumn,
 			user.Table:                          user.ValidColumn,

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import TeamAccountSection from '@/components/team-accounts/TeamAccountSection.vue'
 import TeamOverviewMemberTable from '@/components/team-usage/TeamOverviewMemberTable.vue'
 import { getTeamUsageMembers, getTeamUsageSummary, getTeamUsageTrend } from '@/api/teamUsage'
 import { useTeamUsageOrganization } from '@/composables/useTeamUsageOrganization'
@@ -225,6 +226,8 @@ onMounted(loadOverview)
 
 <template>
   <div class="space-y-4">
+      <TeamAccountSection />
+
       <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <ElRadioGroup
           :model-value="selectedRange"

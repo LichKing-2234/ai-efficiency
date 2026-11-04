@@ -427,6 +427,33 @@ var (
 		Columns:    CredentialsColumns,
 		PrimaryKey: []*schema.Column{CredentialsColumns[0]},
 	}
+	// DepartmentGroupMapsColumns holds the columns for the "department_group_maps" table.
+	DepartmentGroupMapsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "department_external_id", Type: field.TypeString},
+		{Name: "relay_provider_id", Type: field.TypeInt},
+		{Name: "relay_group_id", Type: field.TypeInt64},
+		{Name: "created_by_user_id", Type: field.TypeInt, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// DepartmentGroupMapsTable holds the schema information for the "department_group_maps" table.
+	DepartmentGroupMapsTable = &schema.Table{
+		Name:       "department_group_maps",
+		Columns:    DepartmentGroupMapsColumns,
+		PrimaryKey: []*schema.Column{DepartmentGroupMapsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "departmentgroupmap_department_external_id_relay_provider_id_relay_group_id",
+				Unique:  true,
+				Columns: []*schema.Column{DepartmentGroupMapsColumns[1], DepartmentGroupMapsColumns[2], DepartmentGroupMapsColumns[3]},
+			},
+			{
+				Name:    "departmentgroupmap_department_external_id",
+				Unique:  false,
+				Columns: []*schema.Column{DepartmentGroupMapsColumns[1]},
+			},
+		},
+	}
 	// DirectoryDepartmentsColumns holds the columns for the "directory_departments" table.
 	DirectoryDepartmentsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -1529,6 +1556,125 @@ var (
 		Columns:    SystemSettingsColumns,
 		PrimaryKey: []*schema.Column{SystemSettingsColumns[0]},
 	}
+	// TeamAccountsColumns holds the columns for the "team_accounts" table.
+	TeamAccountsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "department_external_id", Type: field.TypeString, Unique: true},
+		{Name: "department_display_path", Type: field.TypeString, Nullable: true, Default: ""},
+		{Name: "name", Type: field.TypeString},
+		{Name: "relay_provider_id", Type: field.TypeInt},
+		{Name: "relay_user_id", Type: field.TypeInt64, Unique: true},
+		{Name: "relay_username", Type: field.TypeString},
+		{Name: "relay_auth_password", Type: field.TypeString, Nullable: true},
+		{Name: "owner_user_id", Type: field.TypeInt},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "suspended", "pending_claim", "orphaned"}, Default: "active"},
+		{Name: "created_by_user_id", Type: field.TypeInt, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// TeamAccountsTable holds the schema information for the "team_accounts" table.
+	TeamAccountsTable = &schema.Table{
+		Name:       "team_accounts",
+		Columns:    TeamAccountsColumns,
+		PrimaryKey: []*schema.Column{TeamAccountsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "teamaccount_owner_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{TeamAccountsColumns[8]},
+			},
+			{
+				Name:    "teamaccount_status",
+				Unique:  false,
+				Columns: []*schema.Column{TeamAccountsColumns[9]},
+			},
+		},
+	}
+	// TeamAccountEventsColumns holds the columns for the "team_account_events" table.
+	TeamAccountEventsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "team_account_id", Type: field.TypeInt},
+		{Name: "actor_user_id", Type: field.TypeInt, Nullable: true},
+		{Name: "action", Type: field.TypeString},
+		{Name: "payload", Type: field.TypeJSON, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// TeamAccountEventsTable holds the schema information for the "team_account_events" table.
+	TeamAccountEventsTable = &schema.Table{
+		Name:       "team_account_events",
+		Columns:    TeamAccountEventsColumns,
+		PrimaryKey: []*schema.Column{TeamAccountEventsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "teamaccountevent_team_account_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{TeamAccountEventsColumns[1], TeamAccountEventsColumns[5]},
+			},
+			{
+				Name:    "teamaccountevent_action",
+				Unique:  false,
+				Columns: []*schema.Column{TeamAccountEventsColumns[3]},
+			},
+		},
+	}
+	// TeamAccountKeysColumns holds the columns for the "team_account_keys" table.
+	TeamAccountKeysColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "team_account_id", Type: field.TypeInt},
+		{Name: "relay_api_key_id", Type: field.TypeInt64},
+		{Name: "relay_group_id", Type: field.TypeInt64},
+		{Name: "name", Type: field.TypeString},
+		{Name: "secret_preview", Type: field.TypeString, Nullable: true, Default: ""},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "revoked"}, Default: "active"},
+		{Name: "created_by_user_id", Type: field.TypeInt, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "revoked_at", Type: field.TypeTime, Nullable: true},
+	}
+	// TeamAccountKeysTable holds the schema information for the "team_account_keys" table.
+	TeamAccountKeysTable = &schema.Table{
+		Name:       "team_account_keys",
+		Columns:    TeamAccountKeysColumns,
+		PrimaryKey: []*schema.Column{TeamAccountKeysColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "teamaccountkey_team_account_id",
+				Unique:  false,
+				Columns: []*schema.Column{TeamAccountKeysColumns[1]},
+			},
+			{
+				Name:    "teamaccountkey_relay_api_key_id",
+				Unique:  true,
+				Columns: []*schema.Column{TeamAccountKeysColumns[2]},
+			},
+		},
+	}
+	// TeamAccountManagersColumns holds the columns for the "team_account_managers" table.
+	TeamAccountManagersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "team_account_id", Type: field.TypeInt},
+		{Name: "user_id", Type: field.TypeInt},
+		{Name: "role", Type: field.TypeEnum, Enums: []string{"owner", "manager"}, Default: "manager"},
+		{Name: "added_by_user_id", Type: field.TypeInt, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// TeamAccountManagersTable holds the schema information for the "team_account_managers" table.
+	TeamAccountManagersTable = &schema.Table{
+		Name:       "team_account_managers",
+		Columns:    TeamAccountManagersColumns,
+		PrimaryKey: []*schema.Column{TeamAccountManagersColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "teamaccountmanager_team_account_id_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{TeamAccountManagersColumns[1], TeamAccountManagersColumns[2]},
+			},
+			{
+				Name:    "teamaccountmanager_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{TeamAccountManagersColumns[2]},
+			},
+		},
+	}
 	// TeamUsageRateMultiplierAuditsColumns holds the columns for the "team_usage_rate_multiplier_audits" table.
 	TeamUsageRateMultiplierAuditsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -1712,6 +1858,7 @@ var (
 		{Name: "relay_auth_password", Type: field.TypeString, Nullable: true},
 		{Name: "ldap_dn", Type: field.TypeString, Nullable: true},
 		{Name: "role", Type: field.TypeEnum, Enums: []string{"admin", "user"}, Default: "user"},
+		{Name: "login_policy", Type: field.TypeEnum, Enums: []string{"default", "sso_only"}, Default: "default"},
 		{Name: "token_valid_after", Type: field.TypeTime, Nullable: true},
 		{Name: "relay_disabled_at", Type: field.TypeTime, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
@@ -1775,6 +1922,7 @@ var (
 		CommitCheckpointsTable,
 		CommitRewritesTable,
 		CredentialsTable,
+		DepartmentGroupMapsTable,
 		DirectoryDepartmentsTable,
 		DirectoryMembersTable,
 		DirectoryMemberDepartmentsTable,
@@ -1800,6 +1948,10 @@ var (
 		ReportingInstallationsTable,
 		ScmProvidersTable,
 		SystemSettingsTable,
+		TeamAccountsTable,
+		TeamAccountEventsTable,
+		TeamAccountKeysTable,
+		TeamAccountManagersTable,
 		TeamUsageRateMultiplierAuditsTable,
 		ToolUsageEventsTable,
 		UsersTable,

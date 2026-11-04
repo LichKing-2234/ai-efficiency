@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -108,10 +109,53 @@ func (s *Service) defaultLoginProviders() []AuthProvider {
 	return ordered
 }
 
+// ErrSSOOnlyAccount rejects an explicit non-SSO login for an account whose
+// login_policy is sso_only.
+var ErrSSOOnlyAccount = errors.New("account is restricted to sso login")
+
+// restrictProviderForPolicy enforces login_policy before any provider runs.
+//
+// The check must happen *before* authentication: the LDAP path resolves and may
+// rewrite the relay identity (and reset its password), so rejecting after a
+// successful LDAP bind would already have mutated the account.
+func (s *Service) restrictProviderForPolicy(ctx context.Context, req *LoginRequest) error {
+	if s.entClient == nil || strings.TrimSpace(req.Username) == "" {
+		return nil
+	}
+	identifier := strings.TrimSpace(req.Username)
+	u, err := s.entClient.User.Query().
+		Where(entuser.Or(
+			entuser.UsernameEQ(identifier),
+			entuser.EmailEqualFold(identifier),
+		)).
+		Only(ctx)
+	if err != nil {
+		// Unknown user (or lookup failure): keep the existing login behaviour.
+		return nil
+	}
+	if u.LoginPolicy != entuser.LoginPolicySSOOnly {
+		return nil
+	}
+	if req.Source != "" && !strings.EqualFold(req.Source, "sso") {
+		return ErrSSOOnlyAccount
+	}
+	req.Source = "sso"
+	// The relay authenticates by email, while operators know the account by its
+	// username. Swap in the stored mailbox so a username login still works.
+	if email := strings.TrimSpace(u.Email); email != "" {
+		req.Username = email
+	}
+	return nil
+}
+
 // Login authenticates a user and returns a token pair.
 func (s *Service) Login(ctx context.Context, req LoginRequest) (*TokenPair, *UserInfo, error) {
 	var userInfo *UserInfo
 	var lastErr error
+
+	if err := s.restrictProviderForPolicy(ctx, &req); err != nil {
+		return nil, nil, err
+	}
 
 	if req.Source != "" {
 		// Try specific provider
