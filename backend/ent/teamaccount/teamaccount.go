@@ -26,6 +26,8 @@ const (
 	FieldRelayUserID = "relay_user_id"
 	// FieldRelayUsername holds the string denoting the relay_username field in the database.
 	FieldRelayUsername = "relay_username"
+	// FieldRelayEmail holds the string denoting the relay_email field in the database.
+	FieldRelayEmail = "relay_email"
 	// FieldRelayAuthPassword holds the string denoting the relay_auth_password field in the database.
 	FieldRelayAuthPassword = "relay_auth_password"
 	// FieldOwnerUserID holds the string denoting the owner_user_id field in the database.
@@ -51,6 +53,7 @@ var Columns = []string{
 	FieldRelayProviderID,
 	FieldRelayUserID,
 	FieldRelayUsername,
+	FieldRelayEmail,
 	FieldRelayAuthPassword,
 	FieldOwnerUserID,
 	FieldStatus,
@@ -78,6 +81,8 @@ var (
 	NameValidator func(string) error
 	// RelayUsernameValidator is a validator for the "relay_username" field. It is called by the builders before save.
 	RelayUsernameValidator func(string) error
+	// DefaultRelayEmail holds the default value on creation for the "relay_email" field.
+	DefaultRelayEmail string
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -150,6 +155,11 @@ func ByRelayUserID(opts ...sql.OrderTermOption) OrderOption {
 // ByRelayUsername orders the results by the relay_username field.
 func ByRelayUsername(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRelayUsername, opts...).ToFunc()
+}
+
+// ByRelayEmail orders the results by the relay_email field.
+func ByRelayEmail(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRelayEmail, opts...).ToFunc()
 }
 
 // ByRelayAuthPassword orders the results by the relay_auth_password field.

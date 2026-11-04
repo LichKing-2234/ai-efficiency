@@ -1565,6 +1565,7 @@ var (
 		{Name: "relay_provider_id", Type: field.TypeInt},
 		{Name: "relay_user_id", Type: field.TypeInt64, Unique: true},
 		{Name: "relay_username", Type: field.TypeString},
+		{Name: "relay_email", Type: field.TypeString, Nullable: true, Default: ""},
 		{Name: "relay_auth_password", Type: field.TypeString, Nullable: true},
 		{Name: "owner_user_id", Type: field.TypeInt},
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "suspended", "pending_claim", "orphaned"}, Default: "active"},
@@ -1581,12 +1582,12 @@ var (
 			{
 				Name:    "teamaccount_owner_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{TeamAccountsColumns[8]},
+				Columns: []*schema.Column{TeamAccountsColumns[9]},
 			},
 			{
 				Name:    "teamaccount_status",
 				Unique:  false,
-				Columns: []*schema.Column{TeamAccountsColumns[9]},
+				Columns: []*schema.Column{TeamAccountsColumns[10]},
 			},
 		},
 	}

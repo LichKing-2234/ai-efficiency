@@ -102,6 +102,7 @@ type Account struct {
 	DepartmentExternalID  string    `json:"department_external_id"`
 	DepartmentDisplayPath string    `json:"department_display_path"`
 	RelayUsername         string    `json:"relay_username"`
+	RelayEmail            string    `json:"relay_email"`
 	RelayUserID           int64     `json:"relay_user_id"`
 	OwnerUserID           int       `json:"owner_user_id"`
 	Status                string    `json:"status"`
@@ -235,6 +236,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 		SetRelayProviderID(providerID).
 		SetRelayUserID(relayUser.ID).
 		SetRelayUsername(username).
+		SetRelayEmail(email).
 		SetRelayAuthPassword(encrypted).
 		SetOwnerUserID(ownerID).
 		SetStatus("active").
@@ -612,7 +614,11 @@ func (s *Service) CreateKey(ctx context.Context, actorUserID int, includeAll boo
 		keyName = fmt.Sprintf("%s-%d", row.RelayUsername, groupID)
 	}
 
-	authCtx := relay.WithUserCredentials(ctx, row.RelayUsername, password)
+	login := strings.TrimSpace(row.RelayEmail)
+	if login == "" {
+		login = row.RelayUsername + "@" + EmailDomain
+	}
+	authCtx := relay.WithUserCredentials(ctx, login, password)
 	created, err := provider.CreateUserAPIKey(authCtx, row.RelayUserID, relay.APIKeyCreateRequest{
 		Name:    keyName,
 		GroupID: strconv.FormatInt(groupID, 10),
@@ -1170,6 +1176,7 @@ func toAccount(row *ent.TeamAccount) Account {
 		DepartmentExternalID:  row.DepartmentExternalID,
 		DepartmentDisplayPath: row.DepartmentDisplayPath,
 		RelayUsername:         row.RelayUsername,
+		RelayEmail:            row.RelayEmail,
 		RelayUserID:           row.RelayUserID,
 		OwnerUserID:           row.OwnerUserID,
 		Status:                string(row.Status),

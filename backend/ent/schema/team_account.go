@@ -30,6 +30,9 @@ func (TeamAccount) Fields() []ent.Field {
 			Unique(),
 		field.String("relay_username").
 			NotEmpty(),
+		field.String("relay_email").
+			Optional().
+			Default(""),
 		field.String("relay_auth_password").
 			Optional().
 			Nillable().

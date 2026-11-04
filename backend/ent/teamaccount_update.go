@@ -132,6 +132,26 @@ func (tau *TeamAccountUpdate) SetNillableRelayUsername(s *string) *TeamAccountUp
 	return tau
 }
 
+// SetRelayEmail sets the "relay_email" field.
+func (tau *TeamAccountUpdate) SetRelayEmail(s string) *TeamAccountUpdate {
+	tau.mutation.SetRelayEmail(s)
+	return tau
+}
+
+// SetNillableRelayEmail sets the "relay_email" field if the given value is not nil.
+func (tau *TeamAccountUpdate) SetNillableRelayEmail(s *string) *TeamAccountUpdate {
+	if s != nil {
+		tau.SetRelayEmail(*s)
+	}
+	return tau
+}
+
+// ClearRelayEmail clears the value of the "relay_email" field.
+func (tau *TeamAccountUpdate) ClearRelayEmail() *TeamAccountUpdate {
+	tau.mutation.ClearRelayEmail()
+	return tau
+}
+
 // SetRelayAuthPassword sets the "relay_auth_password" field.
 func (tau *TeamAccountUpdate) SetRelayAuthPassword(s string) *TeamAccountUpdate {
 	tau.mutation.SetRelayAuthPassword(s)
@@ -325,6 +345,12 @@ func (tau *TeamAccountUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := tau.mutation.RelayUsername(); ok {
 		_spec.SetField(teamaccount.FieldRelayUsername, field.TypeString, value)
 	}
+	if value, ok := tau.mutation.RelayEmail(); ok {
+		_spec.SetField(teamaccount.FieldRelayEmail, field.TypeString, value)
+	}
+	if tau.mutation.RelayEmailCleared() {
+		_spec.ClearField(teamaccount.FieldRelayEmail, field.TypeString)
+	}
 	if value, ok := tau.mutation.RelayAuthPassword(); ok {
 		_spec.SetField(teamaccount.FieldRelayAuthPassword, field.TypeString, value)
 	}
@@ -473,6 +499,26 @@ func (tauo *TeamAccountUpdateOne) SetNillableRelayUsername(s *string) *TeamAccou
 	if s != nil {
 		tauo.SetRelayUsername(*s)
 	}
+	return tauo
+}
+
+// SetRelayEmail sets the "relay_email" field.
+func (tauo *TeamAccountUpdateOne) SetRelayEmail(s string) *TeamAccountUpdateOne {
+	tauo.mutation.SetRelayEmail(s)
+	return tauo
+}
+
+// SetNillableRelayEmail sets the "relay_email" field if the given value is not nil.
+func (tauo *TeamAccountUpdateOne) SetNillableRelayEmail(s *string) *TeamAccountUpdateOne {
+	if s != nil {
+		tauo.SetRelayEmail(*s)
+	}
+	return tauo
+}
+
+// ClearRelayEmail clears the value of the "relay_email" field.
+func (tauo *TeamAccountUpdateOne) ClearRelayEmail() *TeamAccountUpdateOne {
+	tauo.mutation.ClearRelayEmail()
 	return tauo
 }
 
@@ -698,6 +744,12 @@ func (tauo *TeamAccountUpdateOne) sqlSave(ctx context.Context) (_node *TeamAccou
 	}
 	if value, ok := tauo.mutation.RelayUsername(); ok {
 		_spec.SetField(teamaccount.FieldRelayUsername, field.TypeString, value)
+	}
+	if value, ok := tauo.mutation.RelayEmail(); ok {
+		_spec.SetField(teamaccount.FieldRelayEmail, field.TypeString, value)
+	}
+	if tauo.mutation.RelayEmailCleared() {
+		_spec.ClearField(teamaccount.FieldRelayEmail, field.TypeString)
 	}
 	if value, ok := tauo.mutation.RelayAuthPassword(); ok {
 		_spec.SetField(teamaccount.FieldRelayAuthPassword, field.TypeString, value)

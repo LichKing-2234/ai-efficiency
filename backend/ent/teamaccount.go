@@ -29,6 +29,8 @@ type TeamAccount struct {
 	RelayUserID int64 `json:"relay_user_id,omitempty"`
 	// RelayUsername holds the value of the "relay_username" field.
 	RelayUsername string `json:"relay_username,omitempty"`
+	// RelayEmail holds the value of the "relay_email" field.
+	RelayEmail string `json:"relay_email,omitempty"`
 	// Encrypted Relay password used to mint team API keys; never returned in listings.
 	RelayAuthPassword *string `json:"-"`
 	// OwnerUserID holds the value of the "owner_user_id" field.
@@ -51,7 +53,7 @@ func (*TeamAccount) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case teamaccount.FieldID, teamaccount.FieldRelayProviderID, teamaccount.FieldRelayUserID, teamaccount.FieldOwnerUserID, teamaccount.FieldCreatedByUserID:
 			values[i] = new(sql.NullInt64)
-		case teamaccount.FieldDepartmentExternalID, teamaccount.FieldDepartmentDisplayPath, teamaccount.FieldName, teamaccount.FieldRelayUsername, teamaccount.FieldRelayAuthPassword, teamaccount.FieldStatus:
+		case teamaccount.FieldDepartmentExternalID, teamaccount.FieldDepartmentDisplayPath, teamaccount.FieldName, teamaccount.FieldRelayUsername, teamaccount.FieldRelayEmail, teamaccount.FieldRelayAuthPassword, teamaccount.FieldStatus:
 			values[i] = new(sql.NullString)
 		case teamaccount.FieldCreatedAt, teamaccount.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -111,6 +113,12 @@ func (ta *TeamAccount) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field relay_username", values[i])
 			} else if value.Valid {
 				ta.RelayUsername = value.String
+			}
+		case teamaccount.FieldRelayEmail:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field relay_email", values[i])
+			} else if value.Valid {
+				ta.RelayEmail = value.String
 			}
 		case teamaccount.FieldRelayAuthPassword:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -203,6 +211,9 @@ func (ta *TeamAccount) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("relay_username=")
 	builder.WriteString(ta.RelayUsername)
+	builder.WriteString(", ")
+	builder.WriteString("relay_email=")
+	builder.WriteString(ta.RelayEmail)
 	builder.WriteString(", ")
 	builder.WriteString("relay_auth_password=<sensitive>")
 	builder.WriteString(", ")

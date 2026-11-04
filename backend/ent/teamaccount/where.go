@@ -84,6 +84,11 @@ func RelayUsername(v string) predicate.TeamAccount {
 	return predicate.TeamAccount(sql.FieldEQ(FieldRelayUsername, v))
 }
 
+// RelayEmail applies equality check predicate on the "relay_email" field. It's identical to RelayEmailEQ.
+func RelayEmail(v string) predicate.TeamAccount {
+	return predicate.TeamAccount(sql.FieldEQ(FieldRelayEmail, v))
+}
+
 // RelayAuthPassword applies equality check predicate on the "relay_auth_password" field. It's identical to RelayAuthPasswordEQ.
 func RelayAuthPassword(v string) predicate.TeamAccount {
 	return predicate.TeamAccount(sql.FieldEQ(FieldRelayAuthPassword, v))
@@ -457,6 +462,81 @@ func RelayUsernameEqualFold(v string) predicate.TeamAccount {
 // RelayUsernameContainsFold applies the ContainsFold predicate on the "relay_username" field.
 func RelayUsernameContainsFold(v string) predicate.TeamAccount {
 	return predicate.TeamAccount(sql.FieldContainsFold(FieldRelayUsername, v))
+}
+
+// RelayEmailEQ applies the EQ predicate on the "relay_email" field.
+func RelayEmailEQ(v string) predicate.TeamAccount {
+	return predicate.TeamAccount(sql.FieldEQ(FieldRelayEmail, v))
+}
+
+// RelayEmailNEQ applies the NEQ predicate on the "relay_email" field.
+func RelayEmailNEQ(v string) predicate.TeamAccount {
+	return predicate.TeamAccount(sql.FieldNEQ(FieldRelayEmail, v))
+}
+
+// RelayEmailIn applies the In predicate on the "relay_email" field.
+func RelayEmailIn(vs ...string) predicate.TeamAccount {
+	return predicate.TeamAccount(sql.FieldIn(FieldRelayEmail, vs...))
+}
+
+// RelayEmailNotIn applies the NotIn predicate on the "relay_email" field.
+func RelayEmailNotIn(vs ...string) predicate.TeamAccount {
+	return predicate.TeamAccount(sql.FieldNotIn(FieldRelayEmail, vs...))
+}
+
+// RelayEmailGT applies the GT predicate on the "relay_email" field.
+func RelayEmailGT(v string) predicate.TeamAccount {
+	return predicate.TeamAccount(sql.FieldGT(FieldRelayEmail, v))
+}
+
+// RelayEmailGTE applies the GTE predicate on the "relay_email" field.
+func RelayEmailGTE(v string) predicate.TeamAccount {
+	return predicate.TeamAccount(sql.FieldGTE(FieldRelayEmail, v))
+}
+
+// RelayEmailLT applies the LT predicate on the "relay_email" field.
+func RelayEmailLT(v string) predicate.TeamAccount {
+	return predicate.TeamAccount(sql.FieldLT(FieldRelayEmail, v))
+}
+
+// RelayEmailLTE applies the LTE predicate on the "relay_email" field.
+func RelayEmailLTE(v string) predicate.TeamAccount {
+	return predicate.TeamAccount(sql.FieldLTE(FieldRelayEmail, v))
+}
+
+// RelayEmailContains applies the Contains predicate on the "relay_email" field.
+func RelayEmailContains(v string) predicate.TeamAccount {
+	return predicate.TeamAccount(sql.FieldContains(FieldRelayEmail, v))
+}
+
+// RelayEmailHasPrefix applies the HasPrefix predicate on the "relay_email" field.
+func RelayEmailHasPrefix(v string) predicate.TeamAccount {
+	return predicate.TeamAccount(sql.FieldHasPrefix(FieldRelayEmail, v))
+}
+
+// RelayEmailHasSuffix applies the HasSuffix predicate on the "relay_email" field.
+func RelayEmailHasSuffix(v string) predicate.TeamAccount {
+	return predicate.TeamAccount(sql.FieldHasSuffix(FieldRelayEmail, v))
+}
+
+// RelayEmailIsNil applies the IsNil predicate on the "relay_email" field.
+func RelayEmailIsNil() predicate.TeamAccount {
+	return predicate.TeamAccount(sql.FieldIsNull(FieldRelayEmail))
+}
+
+// RelayEmailNotNil applies the NotNil predicate on the "relay_email" field.
+func RelayEmailNotNil() predicate.TeamAccount {
+	return predicate.TeamAccount(sql.FieldNotNull(FieldRelayEmail))
+}
+
+// RelayEmailEqualFold applies the EqualFold predicate on the "relay_email" field.
+func RelayEmailEqualFold(v string) predicate.TeamAccount {
+	return predicate.TeamAccount(sql.FieldEqualFold(FieldRelayEmail, v))
+}
+
+// RelayEmailContainsFold applies the ContainsFold predicate on the "relay_email" field.
+func RelayEmailContainsFold(v string) predicate.TeamAccount {
+	return predicate.TeamAccount(sql.FieldContainsFold(FieldRelayEmail, v))
 }
 
 // RelayAuthPasswordEQ applies the EQ predicate on the "relay_auth_password" field.

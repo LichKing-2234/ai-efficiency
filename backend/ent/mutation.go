@@ -46642,6 +46642,7 @@ type TeamAccountMutation struct {
 	relay_user_id           *int64
 	addrelay_user_id        *int64
 	relay_username          *string
+	relay_email             *string
 	relay_auth_password     *string
 	owner_user_id           *int
 	addowner_user_id        *int
@@ -47023,6 +47024,55 @@ func (m *TeamAccountMutation) ResetRelayUsername() {
 	m.relay_username = nil
 }
 
+// SetRelayEmail sets the "relay_email" field.
+func (m *TeamAccountMutation) SetRelayEmail(s string) {
+	m.relay_email = &s
+}
+
+// RelayEmail returns the value of the "relay_email" field in the mutation.
+func (m *TeamAccountMutation) RelayEmail() (r string, exists bool) {
+	v := m.relay_email
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRelayEmail returns the old "relay_email" field's value of the TeamAccount entity.
+// If the TeamAccount object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamAccountMutation) OldRelayEmail(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRelayEmail is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRelayEmail requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRelayEmail: %w", err)
+	}
+	return oldValue.RelayEmail, nil
+}
+
+// ClearRelayEmail clears the value of the "relay_email" field.
+func (m *TeamAccountMutation) ClearRelayEmail() {
+	m.relay_email = nil
+	m.clearedFields[teamaccount.FieldRelayEmail] = struct{}{}
+}
+
+// RelayEmailCleared returns if the "relay_email" field was cleared in this mutation.
+func (m *TeamAccountMutation) RelayEmailCleared() bool {
+	_, ok := m.clearedFields[teamaccount.FieldRelayEmail]
+	return ok
+}
+
+// ResetRelayEmail resets all changes to the "relay_email" field.
+func (m *TeamAccountMutation) ResetRelayEmail() {
+	m.relay_email = nil
+	delete(m.clearedFields, teamaccount.FieldRelayEmail)
+}
+
 // SetRelayAuthPassword sets the "relay_auth_password" field.
 func (m *TeamAccountMutation) SetRelayAuthPassword(s string) {
 	m.relay_auth_password = &s
@@ -47340,7 +47390,7 @@ func (m *TeamAccountMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TeamAccountMutation) Fields() []string {
-	fields := make([]string, 0, 12)
+	fields := make([]string, 0, 13)
 	if m.department_external_id != nil {
 		fields = append(fields, teamaccount.FieldDepartmentExternalID)
 	}
@@ -47358,6 +47408,9 @@ func (m *TeamAccountMutation) Fields() []string {
 	}
 	if m.relay_username != nil {
 		fields = append(fields, teamaccount.FieldRelayUsername)
+	}
+	if m.relay_email != nil {
+		fields = append(fields, teamaccount.FieldRelayEmail)
 	}
 	if m.relay_auth_password != nil {
 		fields = append(fields, teamaccount.FieldRelayAuthPassword)
@@ -47397,6 +47450,8 @@ func (m *TeamAccountMutation) Field(name string) (ent.Value, bool) {
 		return m.RelayUserID()
 	case teamaccount.FieldRelayUsername:
 		return m.RelayUsername()
+	case teamaccount.FieldRelayEmail:
+		return m.RelayEmail()
 	case teamaccount.FieldRelayAuthPassword:
 		return m.RelayAuthPassword()
 	case teamaccount.FieldOwnerUserID:
@@ -47430,6 +47485,8 @@ func (m *TeamAccountMutation) OldField(ctx context.Context, name string) (ent.Va
 		return m.OldRelayUserID(ctx)
 	case teamaccount.FieldRelayUsername:
 		return m.OldRelayUsername(ctx)
+	case teamaccount.FieldRelayEmail:
+		return m.OldRelayEmail(ctx)
 	case teamaccount.FieldRelayAuthPassword:
 		return m.OldRelayAuthPassword(ctx)
 	case teamaccount.FieldOwnerUserID:
@@ -47492,6 +47549,13 @@ func (m *TeamAccountMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRelayUsername(v)
+		return nil
+	case teamaccount.FieldRelayEmail:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRelayEmail(v)
 		return nil
 	case teamaccount.FieldRelayAuthPassword:
 		v, ok := value.(string)
@@ -47619,6 +47683,9 @@ func (m *TeamAccountMutation) ClearedFields() []string {
 	if m.FieldCleared(teamaccount.FieldDepartmentDisplayPath) {
 		fields = append(fields, teamaccount.FieldDepartmentDisplayPath)
 	}
+	if m.FieldCleared(teamaccount.FieldRelayEmail) {
+		fields = append(fields, teamaccount.FieldRelayEmail)
+	}
 	if m.FieldCleared(teamaccount.FieldRelayAuthPassword) {
 		fields = append(fields, teamaccount.FieldRelayAuthPassword)
 	}
@@ -47641,6 +47708,9 @@ func (m *TeamAccountMutation) ClearField(name string) error {
 	switch name {
 	case teamaccount.FieldDepartmentDisplayPath:
 		m.ClearDepartmentDisplayPath()
+		return nil
+	case teamaccount.FieldRelayEmail:
+		m.ClearRelayEmail()
 		return nil
 	case teamaccount.FieldRelayAuthPassword:
 		m.ClearRelayAuthPassword()
@@ -47673,6 +47743,9 @@ func (m *TeamAccountMutation) ResetField(name string) error {
 		return nil
 	case teamaccount.FieldRelayUsername:
 		m.ResetRelayUsername()
+		return nil
+	case teamaccount.FieldRelayEmail:
+		m.ResetRelayEmail()
 		return nil
 	case teamaccount.FieldRelayAuthPassword:
 		m.ResetRelayAuthPassword()

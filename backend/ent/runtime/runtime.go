@@ -1202,12 +1202,16 @@ func init() {
 	teamaccountDescRelayUsername := teamaccountFields[5].Descriptor()
 	// teamaccount.RelayUsernameValidator is a validator for the "relay_username" field. It is called by the builders before save.
 	teamaccount.RelayUsernameValidator = teamaccountDescRelayUsername.Validators[0].(func(string) error)
+	// teamaccountDescRelayEmail is the schema descriptor for relay_email field.
+	teamaccountDescRelayEmail := teamaccountFields[6].Descriptor()
+	// teamaccount.DefaultRelayEmail holds the default value on creation for the relay_email field.
+	teamaccount.DefaultRelayEmail = teamaccountDescRelayEmail.Default.(string)
 	// teamaccountDescCreatedAt is the schema descriptor for created_at field.
-	teamaccountDescCreatedAt := teamaccountFields[10].Descriptor()
+	teamaccountDescCreatedAt := teamaccountFields[11].Descriptor()
 	// teamaccount.DefaultCreatedAt holds the default value on creation for the created_at field.
 	teamaccount.DefaultCreatedAt = teamaccountDescCreatedAt.Default.(func() time.Time)
 	// teamaccountDescUpdatedAt is the schema descriptor for updated_at field.
-	teamaccountDescUpdatedAt := teamaccountFields[11].Descriptor()
+	teamaccountDescUpdatedAt := teamaccountFields[12].Descriptor()
 	// teamaccount.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	teamaccount.DefaultUpdatedAt = teamaccountDescUpdatedAt.Default.(func() time.Time)
 	// teamaccount.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

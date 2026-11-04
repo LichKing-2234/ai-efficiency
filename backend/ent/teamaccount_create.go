@@ -64,6 +64,20 @@ func (tac *TeamAccountCreate) SetRelayUsername(s string) *TeamAccountCreate {
 	return tac
 }
 
+// SetRelayEmail sets the "relay_email" field.
+func (tac *TeamAccountCreate) SetRelayEmail(s string) *TeamAccountCreate {
+	tac.mutation.SetRelayEmail(s)
+	return tac
+}
+
+// SetNillableRelayEmail sets the "relay_email" field if the given value is not nil.
+func (tac *TeamAccountCreate) SetNillableRelayEmail(s *string) *TeamAccountCreate {
+	if s != nil {
+		tac.SetRelayEmail(*s)
+	}
+	return tac
+}
+
 // SetRelayAuthPassword sets the "relay_auth_password" field.
 func (tac *TeamAccountCreate) SetRelayAuthPassword(s string) *TeamAccountCreate {
 	tac.mutation.SetRelayAuthPassword(s)
@@ -179,6 +193,10 @@ func (tac *TeamAccountCreate) defaults() {
 		v := teamaccount.DefaultDepartmentDisplayPath
 		tac.mutation.SetDepartmentDisplayPath(v)
 	}
+	if _, ok := tac.mutation.RelayEmail(); !ok {
+		v := teamaccount.DefaultRelayEmail
+		tac.mutation.SetRelayEmail(v)
+	}
 	if _, ok := tac.mutation.Status(); !ok {
 		v := teamaccount.DefaultStatus
 		tac.mutation.SetStatus(v)
@@ -291,6 +309,10 @@ func (tac *TeamAccountCreate) createSpec() (*TeamAccount, *sqlgraph.CreateSpec) 
 	if value, ok := tac.mutation.RelayUsername(); ok {
 		_spec.SetField(teamaccount.FieldRelayUsername, field.TypeString, value)
 		_node.RelayUsername = value
+	}
+	if value, ok := tac.mutation.RelayEmail(); ok {
+		_spec.SetField(teamaccount.FieldRelayEmail, field.TypeString, value)
+		_node.RelayEmail = value
 	}
 	if value, ok := tac.mutation.RelayAuthPassword(); ok {
 		_spec.SetField(teamaccount.FieldRelayAuthPassword, field.TypeString, value)
