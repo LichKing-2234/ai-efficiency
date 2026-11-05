@@ -164,7 +164,10 @@ const rows = [
 
 for (const [row, maximum] of [
   [initialShellRow, 76_800],
-  [defaultUsageRow, 163_840],
+  // Raised once for the organization-account console, which added UI to the
+  // usage route. Keep this budget tight; split the feature into an async chunk
+  // before asking for more room.
+  [defaultUsageRow, 166_400],
   [adminUsersRow, 262_144],
 ]) {
   assert(row.gzip <= maximum, `${row.label} gzip ${row.gzip} exceeds budget ${maximum}`)

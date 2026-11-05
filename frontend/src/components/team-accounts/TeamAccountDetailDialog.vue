@@ -119,7 +119,7 @@ const ownerLabel = computed(() => {
   if (current.owner_username) return current.owner_username
   const owner = (current.managers ?? []).find((manager) => manager.role === 'owner')
   if (owner) return owner.username || owner.email
-  return `#${current.owner_user_id}`
+  return '—'
 })
 
 const canCreateKey = computed(() => (
@@ -845,7 +845,7 @@ function requestStatusChange() {
               <span class="font-medium text-gray-800">{{ t(teamAccountEventLabelKey(event.action)) }}</span>
               <span class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
                 <span>{{ t('teamAccounts.events.actor') }}:
-                  {{ event.actor_user_id ? `#${event.actor_user_id}` : t('teamAccounts.events.system') }}
+                  {{ event.actor_username || t('teamAccounts.events.system') }}
                 </span>
                 <span>{{ formatTeamAccountTimestamp(event.created_at, locale) }}</span>
               </span>

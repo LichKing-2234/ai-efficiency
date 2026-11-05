@@ -1545,6 +1545,8 @@ export interface TeamAccountEvent {
   id: number
   action: string
   actor_user_id: number | null
+  actor_username?: string
+  actor_email?: string
   payload: Record<string, unknown>
   created_at: string
 }

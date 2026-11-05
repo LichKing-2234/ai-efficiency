@@ -272,7 +272,7 @@ function handleTransferred() {
           </div>
           <div>
             <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ t('teamAccounts.owner') }}</dt>
-            <dd class="mt-1 break-all text-gray-700">{{ account.owner_username || `#${account.owner_user_id}` }}</dd>
+            <dd class="mt-1 break-all text-gray-700">{{ account.owner_username || '—' }}</dd>
           </div>
           <div class="min-w-0">
             <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ t('teamAccounts.relayUsername') }}</dt>

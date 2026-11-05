@@ -1163,15 +1163,41 @@ func (s *Service) Events(ctx context.Context, actorUserID int, includeAll bool, 
 	if err != nil {
 		return nil, fmt.Errorf("list events: %w", err)
 	}
+	actorIDs := make([]int, 0, len(rows))
+	seen := map[int]bool{}
+	for _, row := range rows {
+		if row.ActorUserID == nil || seen[*row.ActorUserID] {
+			continue
+		}
+		seen[*row.ActorUserID] = true
+		actorIDs = append(actorIDs, *row.ActorUserID)
+	}
+	actors := map[int]*ent.User{}
+	if len(actorIDs) > 0 {
+		users, err := s.client.User.Query().Where(entuser.IDIn(actorIDs...)).All(ctx)
+		if err == nil {
+			for _, user := range users {
+				actors[user.ID] = user
+			}
+		}
+	}
+
 	out := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, map[string]any{
+		entry := map[string]any{
 			"id":            row.ID,
 			"action":        row.Action,
 			"actor_user_id": row.ActorUserID,
 			"payload":       row.Payload,
 			"created_at":    row.CreatedAt,
-		})
+		}
+		if row.ActorUserID != nil {
+			if user := actors[*row.ActorUserID]; user != nil {
+				entry["actor_username"] = user.Username
+				entry["actor_email"] = user.Email
+			}
+		}
+		out = append(out, entry)
 	}
 	return out, nil
 }
