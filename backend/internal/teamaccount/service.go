@@ -19,10 +19,10 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	entteamaccount "github.com/ai-efficiency/backend/ent/teamaccount"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/pkg"
+	"github.com/ai-efficiency/backend/internal/directoryfacts"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/representativescope"
 )
@@ -379,20 +379,39 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 	return s.Get(ctx, in.ActorUserID, in.IsAdmin, created.ID)
 }
 
-// departmentLabel resolves the directory path for a department, falling back to
-// the account name when the department is not in the current snapshot.
+// departmentLabel resolves the human-readable directory path (names, not ids)
+// for a department, falling back to the account name when the department is not
+// in the current snapshot.
 func (s *Service) departmentLabel(ctx context.Context, departmentID, fallback string) string {
-	row, err := s.client.DirectoryDepartment.Query().
-		Where(directorydepartment.ExternalIDEQ(departmentID)).
-		Order(ent.Desc(directorydepartment.FieldID)).
-		First(ctx)
-	if err != nil {
-		return fallback
-	}
-	if label := strings.TrimSpace(row.Path); label != "" {
+	paths := s.departmentDisplayPaths(ctx, []string{departmentID})
+	if label := paths[departmentID]; label != "" {
 		return label
 	}
-	return row.Name
+	return fallback
+}
+
+// departmentDisplayPaths maps department external ids to their display paths
+// built from the current directory hierarchy.
+func (s *Service) departmentDisplayPaths(ctx context.Context, departmentIDs []string) map[string]string {
+	out := map[string]string{}
+	view, ok, err := directoryfacts.New(s.client).Current(ctx)
+	if err != nil || !ok {
+		return out
+	}
+	facts, err := view.Load(ctx, directoryfacts.Query{
+		DepartmentIDs:              departmentIDs,
+		IncludeDepartmentAncestors: true,
+	})
+	if err != nil {
+		return out
+	}
+	hierarchy := facts.Hierarchy()
+	for _, departmentID := range departmentIDs {
+		if label := hierarchy.DisplayPath(departmentID); label != "" {
+			out[departmentID] = label
+		}
+	}
+	return out
 }
 
 func (s *Service) resolveDepartment(ctx context.Context, in CreateInput) (string, error) {
@@ -618,23 +637,9 @@ func (s *Service) hydrateDepartments(ctx context.Context, accounts []Account) {
 	if len(ids) == 0 {
 		return
 	}
-	rows, err := s.client.DirectoryDepartment.Query().
-		Where(directorydepartment.ExternalIDIn(ids...)).
-		Order(ent.Desc(directorydepartment.FieldID)).
-		All(ctx)
-	if err != nil {
+	byExternalID := s.departmentDisplayPaths(ctx, ids)
+	if len(byExternalID) == 0 {
 		return
-	}
-	byExternalID := make(map[string]string, len(rows))
-	for _, row := range rows {
-		label := strings.TrimSpace(row.Path)
-		if label == "" {
-			label = row.Name
-		}
-		if _, exists := byExternalID[row.ExternalID]; exists {
-			continue
-		}
-		byExternalID[row.ExternalID] = label
 	}
 	for index := range accounts {
 		if label := byExternalID[accounts[index].DepartmentExternalID]; label != "" {
