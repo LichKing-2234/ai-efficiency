@@ -1173,22 +1173,28 @@ func (s *Service) CreateKey(ctx context.Context, actorUserID int, includeAll boo
 		Name:    keyName,
 		GroupID: strconv.FormatInt(groupID, 10),
 	})
-	if err != nil && relayAuthFailure(err) {
-		// A handover may have rotated the shared password while this request was
-		// in flight; retry once with the stored value.
-		if fresh, loadErr := s.loadAccount(ctx, accountID); loadErr == nil {
-			if rotated, decryptErr := s.decryptPassword(fresh); decryptErr == nil {
-				login = strings.TrimSpace(fresh.RelayEmail)
-				if login == "" {
-					login = fresh.RelayUsername + "@" + EmailDomain
-				}
-				authCtx = relay.WithUserCredentials(ctx, login, rotated)
-				created, err = provider.CreateUserAPIKey(authCtx, row.RelayUserID, relay.APIKeyCreateRequest{
-					Name:    keyName,
-					GroupID: strconv.FormatInt(groupID, 10),
-				})
-			}
+	// A handover may rotate the shared password while this request is in flight.
+	// Retry with the stored value a few times; the rotation update lands shortly
+	// after the relay-side change.
+	for attempt := 0; err != nil && relayAuthFailure(err) && attempt < 3; attempt++ {
+		time.Sleep(time.Duration(150*(attempt+1)) * time.Millisecond)
+		fresh, loadErr := s.loadAccount(ctx, accountID)
+		if loadErr != nil {
+			break
 		}
+		rotated, decryptErr := s.decryptPassword(fresh)
+		if decryptErr != nil {
+			break
+		}
+		login = strings.TrimSpace(fresh.RelayEmail)
+		if login == "" {
+			login = fresh.RelayUsername + "@" + EmailDomain
+		}
+		authCtx = relay.WithUserCredentials(ctx, login, rotated)
+		created, err = provider.CreateUserAPIKey(authCtx, row.RelayUserID, relay.APIKeyCreateRequest{
+			Name:    keyName,
+			GroupID: strconv.FormatInt(groupID, 10),
+		})
 	}
 	if err != nil {
 		return nil, "", fmt.Errorf("create relay api key: %w", err)
