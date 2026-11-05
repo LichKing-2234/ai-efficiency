@@ -37,6 +37,8 @@ const activeIndex = ref(0)
 const focused = ref(false)
 const trigger = ref<HTMLElement | null>(null)
 const list = ref<HTMLElement | null>(null)
+const departmentInput = ref<HTMLInputElement | null>(null)
+const composing = ref(false)
 const { position, start, stop } = useComboPosition(trigger)
 
 const selected = computed(() => departments.value.find((item) => item.external_id === props.modelValue) ?? null)
@@ -76,6 +78,10 @@ onMounted(() => {
 })
 
 function onInput(event: Event) {
+  // Composition (for example pinyin IME) fires input events before the final
+  // characters exist; ignore them so a half-composed word never becomes the
+  // query that survives a selection.
+  if (composing.value || !focused.value) return
   query.value = (event.target as HTMLInputElement).value
   activeIndex.value = 0
   start()
@@ -88,27 +94,54 @@ function onFocus() {
   start()
 }
 
+function onCompositionStart() {
+  composing.value = true
+}
+
+function onCompositionEnd(event: Event) {
+  composing.value = false
+  // A blur during composition commits late; ignore anything that arrives after
+  // the field already selected a value.
+  if (!focused.value) {
+    return
+  }
+  query.value = (event.target as HTMLInputElement).value
+}
+
 function onBlur() {
+  composing.value = false
   focused.value = false
   query.value = ''
   stop()
+}
+
+// Ends editing, drops any in-flight IME composition, and re-asserts the label
+// once Vue has patched the input value.
+function endEditing() {
+  composing.value = false
+  focused.value = false
+  query.value = ''
+  stop()
+  departmentInput.value?.blur()
+  void nextTick(() => {
+    if (departmentInput.value) departmentInput.value.value = displayValue.value
+  })
 }
 
 function select(department: Department) {
   emit('update:modelValue', department.external_id)
   emit('change', department.external_id)
-  focused.value = false
-  query.value = ''
-  stop()
+  endEditing()
 }
 
 function clear() {
   emit('update:modelValue', '')
   emit('change', '')
-  query.value = ''
+  endEditing()
 }
 
 function onKeydown(event: KeyboardEvent) {
+  if (event.isComposing || composing.value) return
   if (!open.value) return
   if (event.key === 'ArrowDown') {
     activeIndex.value = Math.min(activeIndex.value + 1, rows.value.length - 1)
@@ -136,6 +169,7 @@ function onKeydown(event: KeyboardEvent) {
       :class="disabled ? 'bg-slate-50' : ''"
     >
       <input
+        ref="departmentInput"
         :value="displayValue"
         :placeholder="placeholder || t('teamAccounts.admin.departmentPlaceholder')"
         :disabled="disabled"
@@ -147,6 +181,8 @@ function onKeydown(event: KeyboardEvent) {
         @keydown="onKeydown"
         @focus="onFocus"
         @blur="onBlur"
+        @compositionstart="onCompositionStart"
+        @compositionend="onCompositionEnd"
       >
       <button
         v-if="modelValue && !disabled"

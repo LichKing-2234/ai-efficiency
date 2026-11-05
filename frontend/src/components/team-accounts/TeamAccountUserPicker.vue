@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { listAdminUsers } from '@/api/adminUsers'
 import { useI18n } from '@/i18n'
 import { teamAccountsMessages } from '@/locales/teamAccounts'
@@ -35,6 +35,8 @@ const focused = ref(false)
 const selectedUser = ref<AdminUser | null>(null)
 const trigger = ref<HTMLElement | null>(null)
 const list = ref<HTMLElement | null>(null)
+const userInput = ref<HTMLInputElement | null>(null)
+const composing = ref(false)
 const { position, start, stop } = useComboPosition(trigger)
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -113,19 +115,45 @@ function onFocus() {
   start()
 }
 
+function onCompositionStart() {
+  composing.value = true
+}
+
+function onCompositionEnd(event: Event) {
+  composing.value = false
+  // A blur during composition commits late; ignore anything that arrives after
+  // the field already selected a value.
+  if (!focused.value) {
+    return
+  }
+  query.value = (event.target as HTMLInputElement).value
+}
+
 function onBlur() {
+  composing.value = false
   focused.value = false
   query.value = ''
   stop()
+}
+
+// Ends editing, drops any in-flight IME composition, and re-asserts the label
+// once Vue has patched the input value.
+function endEditing() {
+  composing.value = false
+  focused.value = false
+  query.value = ''
+  stop()
+  userInput.value?.blur()
+  void nextTick(() => {
+    if (userInput.value) userInput.value.value = displayValue.value
+  })
 }
 
 function select(user: AdminUser) {
   selectedUser.value = user
   emit('update:modelValue', user.id)
   emit('select', user)
-  focused.value = false
-  query.value = ''
-  stop()
+  endEditing()
 }
 
 function clear() {
@@ -137,6 +165,7 @@ function clear() {
 }
 
 function onKeydown(event: KeyboardEvent) {
+  if (event.isComposing || composing.value) return
   if (!open.value) return
   if (event.key === 'ArrowDown') {
     activeIndex.value = Math.min(activeIndex.value + 1, users.value.length - 1)
@@ -159,6 +188,7 @@ function onKeydown(event: KeyboardEvent) {
   <div ref="trigger" class="relative w-full">
     <div class="flex h-8 w-full items-center gap-1 rounded border border-slate-300 bg-white px-2 text-sm focus-within:border-blue-400">
       <input
+        ref="userInput"
         :value="displayValue"
         :placeholder="placeholder || t('teamAccounts.userPicker.placeholder')"
         :disabled="disabled"
@@ -170,6 +200,8 @@ function onKeydown(event: KeyboardEvent) {
         @keydown="onKeydown"
         @focus="onFocus"
         @blur="onBlur"
+        @compositionstart="onCompositionStart"
+        @compositionend="onCompositionEnd"
       >
       <button
         v-if="modelValue !== null && !disabled"
