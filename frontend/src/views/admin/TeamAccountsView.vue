@@ -5,9 +5,10 @@ import AppLayout from '@/components/AppLayout.vue'
 import { useMediaQuery } from '@/composables/useMediaQuery'
 import TeamAccountDetailDialog from '@/components/team-accounts/TeamAccountDetailDialog.vue'
 import TeamAccountUserPicker from '@/components/team-accounts/TeamAccountUserPicker.vue'
+import TeamAccountDepartmentPicker from '@/components/team-accounts/TeamAccountDepartmentPicker.vue'
 import TeamAccountTransferDialog from '@/components/team-accounts/TeamAccountTransferDialog.vue'
 import { useTeamAccountLogin } from '@/composables/useTeamAccountLogin'
-import { listAdminUserDepartmentOptions, listAdminUserSubscriptionOptions } from '@/api/adminUsers'
+import { listAdminUserSubscriptionOptions } from '@/api/adminUsers'
 import {
   createAdminTeamAccount,
   deleteTeamAccountDepartmentGroup,
@@ -26,7 +27,7 @@ import {
   teamAccountStatusLabelKey,
   teamAccountStatusTagType,
 } from '@/utils/teamAccounts'
-import type { AdminDepartmentOption, TeamAccountStatus, TeamAccountSummary } from '@/types'
+import type { TeamAccountStatus, TeamAccountSummary } from '@/types'
 
 interface RelayGroupOption {
   providerId: number
@@ -84,8 +85,6 @@ function closeStatusDialog() {
 
 const mappingOpen = ref(false)
 const mappingForm = reactive({ departmentExternalID: '', groupKey: '' })
-const departmentOptions = ref<AdminDepartmentOption[]>([])
-const departmentLoading = ref(false)
 const groupOptions = ref<RelayGroupOption[]>([])
 const groupsLoading = ref(false)
 const mappingIDs = ref<number[]>([])
@@ -232,18 +231,6 @@ async function submitStatusChange() {
   }
 }
 
-async function searchDepartments(query: string) {
-  departmentLoading.value = true
-  try {
-    const response = await listAdminUserDepartmentOptions({ q: query.trim() || undefined, page: 1, page_size: 20 })
-    departmentOptions.value = response.data.data?.items ?? []
-  } catch {
-    departmentOptions.value = []
-  } finally {
-    departmentLoading.value = false
-  }
-}
-
 async function ensureGroupOptions() {
   if (groupOptions.value.length > 0 || groupsLoading.value) return
   groupsLoading.value = true
@@ -270,7 +257,6 @@ async function openMappings(account?: TeamAccountSummary) {
   mappingIDs.value = []
   mappingError.value = ''
   mappingOpen.value = true
-  void searchDepartments('')
   await ensureGroupOptions()
   if (mappingForm.departmentExternalID) {
     await loadMappings()
@@ -564,25 +550,11 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
           </label>
           <label class="block text-sm">
             <span class="font-medium text-gray-700">{{ t('teamAccounts.admin.departmentSelect') }}</span>
-            <ElSelect
+            <TeamAccountDepartmentPicker
               v-model="createForm.departmentExternalId"
               data-testid="admin-team-account-create-department"
-              filterable
-              remote
-              clearable
-              :remote-method="searchDepartments"
-              :loading="departmentLoading"
-              :placeholder="t('teamAccounts.admin.departmentPlaceholder')"
-              class="mt-1 w-full"
               :disabled="creating"
-            >
-              <ElOption
-                v-for="department in departmentOptions"
-                :key="department.external_id"
-                :label="department.display_path || department.name"
-                :value="department.external_id"
-              />
-            </ElSelect>
+            />
           </label>
           <label class="block text-sm">
             <span class="font-medium text-gray-700">{{ t('teamAccounts.ownerUserId') }}</span>
@@ -646,26 +618,12 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
           <div class="grid gap-3 sm:grid-cols-2">
             <label class="block text-sm">
               <span class="font-medium text-gray-700">{{ t('teamAccounts.admin.departmentSelect') }}</span>
-              <ElSelect
+              <TeamAccountDepartmentPicker
                 v-model="mappingForm.departmentExternalID"
                 data-testid="admin-mapping-department"
-                filterable
-                remote
-                clearable
-                :remote-method="searchDepartments"
-                :loading="departmentLoading"
-                :placeholder="t('teamAccounts.admin.departmentPlaceholder')"
-                class="mt-1 w-full"
                 :disabled="mappingLoading"
                 @change="onDepartmentChange"
-              >
-                <ElOption
-                  v-for="department in departmentOptions"
-                  :key="department.external_id"
-                  :label="department.display_path || department.name"
-                  :value="department.external_id"
-                />
-              </ElSelect>
+              />
             </label>
             <label class="block text-sm">
               <span class="font-medium text-gray-700">{{ t('teamAccounts.admin.groupSelect') }}</span>

@@ -33,7 +33,7 @@ async function search(keyword: string) {
   query.value = keyword
   loading.value = true
   try {
-    const response = await listAdminUsers({ q: keyword.trim() || undefined, page: 1, page_size: 20 })
+    const response = await listAdminUsers({ q: keyword.trim() || undefined, page: 1, page_size: 50 })
     options.value = response.data.data?.items ?? []
   } catch {
     options.value = []
