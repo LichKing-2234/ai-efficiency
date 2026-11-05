@@ -15,7 +15,7 @@ export const useTeamAccountsAccessStore = defineStore('teamAccountsAccess', () =
   const isRepresentative = ref(false)
   const accountCount = ref(0)
 
-  const canOpen = computed(() => isRepresentative.value || accountCount.value > 0)
+  const canOpen = computed(() => loaded.value && (isRepresentative.value || accountCount.value > 0))
 
   async function ensureLoaded() {
     if (loaded.value || loading.value) return
