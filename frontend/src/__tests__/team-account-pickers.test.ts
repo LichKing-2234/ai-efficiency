@@ -236,4 +236,53 @@ describe('team account pickers', () => {
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
     expect((input.element as HTMLInputElement).value).toBe('alice')
   })
+
+  it('ignores a stale search response that arrives after a newer one', async () => {
+    const api = await import('@/api/adminUsers')
+    const resolvers: Record<string, (value: unknown) => void> = {}
+    vi.mocked(api.listAdminUsers).mockImplementation((params: any) => new Promise((resolve) => {
+      resolvers[params?.q ?? ''] = resolve
+    }) as any)
+    const wrapper = mount(TeamAccountUserPicker, {
+      props: { modelValue: null },
+      attachTo: document.body,
+    })
+    const input = wrapper.get('[data-testid="team-account-user-input"]')
+    await input.trigger('focus')
+    await input.setValue('a')
+    await new Promise((resolve) => setTimeout(resolve, 230))
+    await input.setValue('ab')
+    await new Promise((resolve) => setTimeout(resolve, 230))
+
+    resolvers['ab']?.({ data: { code: 0, data: { items: [user(9, 'ab-person', 'ab@example.com')], page: 1, page_size: 50, total: 1 } } })
+    await flushPromises()
+    resolvers['a']?.({ data: { code: 0, data: { items: [user(7, 'stale-person', 'stale@example.com')], page: 1, page_size: 50, total: 1 } } })
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('ab-person')
+    expect(document.body.textContent).not.toContain('stale-person')
+  })
+
+  it('searches the committed text after an IME composition ends', async () => {
+    const api = await import('@/api/adminUsers')
+    vi.mocked(api.listAdminUsers).mockResolvedValue(response({
+      items: [user(7, '张三', 'zhang@example.com')],
+      page: 1,
+      page_size: 50,
+      total: 1,
+    }) as any)
+    const wrapper = mount(TeamAccountUserPicker, {
+      props: { modelValue: null },
+      attachTo: document.body,
+    })
+    const input = wrapper.get('[data-testid="team-account-user-input"]')
+    await input.trigger('focus')
+    await input.trigger('compositionstart')
+    ;(input.element as HTMLInputElement).value = '张三'
+    await input.trigger('compositionend')
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    await flushPromises()
+
+    expect(api.listAdminUsers).toHaveBeenCalledWith(expect.objectContaining({ q: '张三' }))
+  })
 })

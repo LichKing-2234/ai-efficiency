@@ -121,7 +121,16 @@ function onCompositionEnd(event: Event) {
   if (!focused.value) {
     return
   }
-  query.value = (event.target as HTMLInputElement).value
+  const value = (event.target as HTMLInputElement).value
+  query.value = value
+  // Some browsers do not emit a trailing input event, so the list would keep
+  // treating the field as untouched after the committed characters.
+  touched.value = true
+  activeIndex.value = 0
+  if (!value.trim()) {
+    return
+  }
+  start()
 }
 
 function onBlur() {

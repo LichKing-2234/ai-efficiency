@@ -65,22 +65,29 @@ function label(user: AdminUser) {
   return user.department?.display_path || user.department?.name || ''
 }
 
+let searchSeq = 0
+
 async function search(keyword: string) {
+  const seq = ++searchSeq
   loading.value = true
+  const apply = (items: AdminUser[]) => {
+    if (seq !== searchSeq) return
+    users.value = items
+    activeIndex.value = 0
+  }
   try {
     if (props.mode === 'account' && props.accountId) {
       // Account members may search people through the account-scoped endpoint;
       // the admin directory is not available to them.
       const response = await listTeamAccountUserOptions(props.accountId, keyword.trim())
-      users.value = (response.data.data?.items ?? []).map((item: { id: number; username: string; email: string }) => ({
+      apply((response.data.data?.items ?? []).map((item: { id: number; username: string; email: string }) => ({
         id: item.id,
         username: item.username,
         email: item.email,
         role: 'user',
         auth_source: '',
         relay_auth_password: '',
-      })) as AdminUser[]
-      activeIndex.value = 0
+      })) as AdminUser[])
       return
     }
     const response = await listAdminUsers({
@@ -89,12 +96,11 @@ async function search(keyword: string) {
       page: 1,
       page_size: 50,
     })
-    users.value = response.data.data?.items ?? []
-    activeIndex.value = 0
+    apply(response.data.data?.items ?? [])
   } catch {
-    users.value = []
+    apply([])
   } finally {
-    loading.value = false
+    if (seq === searchSeq) loading.value = false
   }
 }
 
@@ -188,7 +194,20 @@ function onCompositionEnd(event: Event) {
   if (!focused.value) {
     return
   }
-  query.value = (event.target as HTMLInputElement).value
+  const value = (event.target as HTMLInputElement).value
+  query.value = value
+  touched.value = true
+  // Some browsers do not emit a trailing input event, so the list would keep
+  // results for the half-composed text. Search the committed value here.
+  if (debounceTimer) clearTimeout(debounceTimer)
+  if (!value.trim()) {
+    users.value = []
+    return
+  }
+  start()
+  debounceTimer = setTimeout(() => {
+    void search(value)
+  }, 150)
 }
 
 function onBlur() {
