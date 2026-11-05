@@ -88,7 +88,9 @@ async function loadGrantableGroups() {
 
 // Members who neither manage an account nor represent a department never see the
 // section; showing an empty block would only add noise to their usage page.
-const showSection = computed(() => scopeLoaded.value && (accounts.value.length > 0 || isRepresentative.value))
+const showSection = computed(() => scopeLoaded.value && (
+  accounts.value.length > 0 || isRepresentative.value || Boolean(error.value)
+))
 
 const singleRepresentedDepartment = computed(() => (
   representativeDepartments.value.length === 1 ? representativeDepartments.value[0] : null
@@ -102,7 +104,8 @@ async function loadAccounts() {
     accounts.value = response.data.data?.items ?? []
     void hydrateKeyCounts(accounts.value)
   } catch (e: unknown) {
-    accounts.value = []
+    // Keep the last good list: a failed refresh must not unmount the section
+    // (and with it the error message) for managers who are not representatives.
     error.value = teamAccountErrorMessage(e, t('teamAccounts.loadFailed'))
   } finally {
     loading.value = false
@@ -169,7 +172,7 @@ async function submitCreate() {
     const message = teamAccountErrorMessage(e, t('teamAccounts.createFailed'))
     if (message.includes('already has a team account')) {
       createError.value = t('teamAccounts.departmentTaken')
-    } else if (message.includes('username already exists') || message.includes('email already exists')) {
+    } else if (message.includes('username already exists') || message.includes('email already exists') || message.includes('already exists in relay')) {
       createError.value = t('teamAccounts.usernameTaken')
     } else {
       createError.value = message
@@ -305,6 +308,7 @@ function handleTransferred() {
             {{ t('teamAccounts.viewDetail') }}
           </ElButton>
           <ElButton
+            v-if="account.status === 'active'"
             :data-testid="`team-account-login-as-${account.id}`"
             size="small"
             type="primary"

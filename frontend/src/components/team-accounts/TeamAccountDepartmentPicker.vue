@@ -37,6 +37,7 @@ const activeIndex = ref(0)
 const focused = ref(false)
 const touched = ref(false)
 const suppressClearOnBlur = ref(false)
+const cancelled = ref(false)
 const trigger = ref<HTMLElement | null>(null)
 const list = ref<HTMLElement | null>(null)
 const departmentInput = ref<HTMLInputElement | null>(null)
@@ -102,6 +103,7 @@ function onInput(event: Event) {
 function onFocus() {
   focused.value = true
   touched.value = false
+  cancelled.value = false
   // Keep the current selection in the field so it can be edited or deleted
   // character by character instead of vanishing on click.
   query.value = selected.value ? selected.value.name : ''
@@ -126,6 +128,8 @@ function onBlur() {
   composing.value = false
   if (suppressClearOnBlur.value) {
     suppressClearOnBlur.value = false
+  } else if (cancelled.value) {
+    cancelled.value = false
   } else if (!query.value.trim() && props.modelValue) {
     // An emptied field is a cleared selection even if the input event was
     // missed (for example when the text is removed with a keyboard shortcut).

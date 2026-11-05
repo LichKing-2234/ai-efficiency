@@ -152,6 +152,7 @@ watch(
       usageRequestSeq += 1
       eventsRequestSeq += 1
       detail.value = null
+      createdKey.value = null
       usage.value = null
       events.value = []
       return
@@ -159,6 +160,7 @@ watch(
     if (accountID == null) return
     if (detail.value && detail.value.id !== accountID) {
       detail.value = null
+      createdKey.value = null
       usage.value = null
       events.value = []
     }
@@ -167,13 +169,22 @@ watch(
   { immediate: true },
 )
 
+// A status change from the dialog's own action updates the summary in the list;
+// reload the detail so the header/button never contradict the backend.
+watch(
+  () => props.account?.status,
+  (next, previous) => {
+    if (!props.modelValue || !next || next === previous || props.accountId == null) return
+    void loadDetail(props.accountId)
+  },
+)
+
 function resetTransientState() {
   credentials.value = null
   credentialsError.value = ''
   keyForm.groupId = detail.value?.available_groups?.[0]?.id ?? ''
   keyForm.name = ''
   keyError.value = ''
-  createdKey.value = null
   managerUserID.value = null
   managerError.value = ''
   usageRange.value = '7d'
@@ -208,10 +219,14 @@ async function loadDetail(accountID: number) {
       keys: data.keys ?? [],
       managers: data.managers ?? [],
     }
+    if (!keyForm.groupId && detail.value.available_groups?.length) {
+      keyForm.groupId = detail.value.available_groups[0].id
+    }
     emit('updated', detail.value)
   } catch (error: unknown) {
     if (requestSeq !== detailRequestSeq) return
-    detail.value = null
+    // Keep the last good snapshot: a transient refresh failure must not wipe the
+    // one-time key secret that was just revealed.
     detailError.value = teamAccountErrorMessage(error, t('teamAccounts.detailLoadFailed'))
   } finally {
     if (requestSeq === detailRequestSeq) {
@@ -580,7 +595,7 @@ function requestStatusChange() {
             <p class="text-xs text-gray-500">{{ t('teamAccounts.keys.help') }}</p>
           </div>
 
-          <div v-if="isOwner" class="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-end">
             <label class="block text-sm sm:w-40">
               <span class="font-medium text-gray-700">{{ t('teamAccounts.keys.groupId') }}</span>
               <ElSelect
@@ -730,6 +745,7 @@ function requestStatusChange() {
             <ElTableColumn :label="t('teamAccounts.actions')" width="100" fixed="right">
               <template #default="{ row }">
                 <ElButton
+                  v-if="isOwner"
                   :data-testid="`team-account-remove-manager-${row.user_id}`"
                   link
                   type="danger"
@@ -797,11 +813,11 @@ function requestStatusChange() {
               </div>
             </div>
 
-            <div v-if="usage.keys.length > 0">
+            <div v-if="(usage.keys ?? []).length > 0">
               <h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
                 {{ t('teamAccounts.usage.byKey') }}
               </h4>
-              <ElTable :data="usage.keys" size="small" class="w-full">
+              <ElTable :data="usage.keys ?? []" size="small" class="w-full">
                 <ElTableColumn prop="name" :label="t('teamAccounts.keys.name')" min-width="120" />
                 <ElTableColumn :label="t('teamAccounts.keys.groupId')" width="130">
                 <template #default="{ row }">{{ groupName(row.relay_group_id) }}</template>
@@ -815,7 +831,7 @@ function requestStatusChange() {
               </ElTable>
             </div>
 
-            <div v-if="usage.days.length > 0">
+            <div v-if="(usage.days ?? []).length > 0">
               <h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
                 {{ t('teamAccounts.usage.daily') }}
               </h4>

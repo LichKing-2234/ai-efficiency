@@ -39,6 +39,7 @@ const activeIndex = ref(0)
 const focused = ref(false)
 const touched = ref(false)
 const suppressClearOnBlur = ref(false)
+const cancelled = ref(false)
 const labelCache = ref(new Map<number, AdminUser>())
 const trigger = ref<HTMLElement | null>(null)
 const list = ref<HTMLElement | null>(null)
@@ -170,6 +171,7 @@ function onInput(event: Event) {
 function onFocus() {
   focused.value = true
   touched.value = false
+  cancelled.value = false
   // Keep the chosen user's name in the field so it can be edited or deleted.
   query.value = selectedLabel.value
   start()
@@ -193,6 +195,8 @@ function onBlur() {
   composing.value = false
   if (suppressClearOnBlur.value) {
     suppressClearOnBlur.value = false
+  } else if (cancelled.value) {
+    cancelled.value = false
   } else if (!query.value.trim() && props.modelValue !== null) {
     emit('update:modelValue', null)
     emit('select', null)

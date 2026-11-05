@@ -1175,6 +1175,31 @@ func (s *sub2apiRelay) DisableUser(ctx context.Context, userID int64) error {
 	return nil
 }
 
+// EnableUser re-activates a previously disabled user.
+func (s *sub2apiRelay) EnableUser(ctx context.Context, userID int64) error {
+	if userID <= 0 {
+		return fmt.Errorf("relay: enable user: user id is required")
+	}
+	if _, err := s.UpdateUser(ctx, userID, UpdateUserRequest{Status: "active"}); err != nil {
+		return fmt.Errorf("relay: enable user: %w", err)
+	}
+	return nil
+}
+
+// UpdateUserPassword rotates the upstream password.
+func (s *sub2apiRelay) UpdateUserPassword(ctx context.Context, userID int64, password string) error {
+	if userID <= 0 {
+		return fmt.Errorf("relay: update user password: user id is required")
+	}
+	if strings.TrimSpace(password) == "" {
+		return fmt.Errorf("relay: update user password: password is required")
+	}
+	if _, err := s.UpdateUser(ctx, userID, UpdateUserRequest{Password: password}); err != nil {
+		return fmt.Errorf("relay: update user password: %w", err)
+	}
+	return nil
+}
+
 func (s *sub2apiRelay) ChatCompletion(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
 	return s.chatCompletion(ctx, req, relayErrorMessageSuffix, false)
 }

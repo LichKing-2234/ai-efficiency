@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"go.uber.org/zap"
 
@@ -23,9 +24,10 @@ import (
 	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	entteamaccount "github.com/ai-efficiency/backend/ent/teamaccount"
+	entteamaccountmanager "github.com/ai-efficiency/backend/ent/teamaccountmanager"
 	entuser "github.com/ai-efficiency/backend/ent/user"
-	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/directoryfacts"
+	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/representativescope"
 )
@@ -272,6 +274,9 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 	if name == "" {
 		return nil, &ValidationError{Message: "account name is required"}
 	}
+	if utf8.RuneCountInString(name) > 64 {
+		return nil, &ValidationError{Message: "account name must be at most 64 characters"}
+	}
 
 	departmentID, err := s.resolveDepartment(ctx, in)
 	if err != nil {
@@ -316,6 +321,17 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 		return nil, err
 	}
 
+	ownerID := in.OwnerUserID
+	if ownerID == 0 {
+		ownerID = in.ActorUserID
+	}
+	if err := s.assertUserExists(ctx, ownerID); err != nil {
+		return nil, err
+	}
+	if err := s.assertPersonUser(ctx, ownerID); err != nil {
+		return nil, err
+	}
+
 	relayUser, err := provider.CreateUser(ctx, relay.CreateUserRequest{
 		Username:    username,
 		Email:       email,
@@ -325,23 +341,13 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 		Concurrency: DefaultConcurrency,
 	})
 	if err != nil {
+		if duplicateRelayIdentity(err) {
+			return nil, &ConflictError{Message: "team account identity already exists in relay"}
+		}
 		return nil, fmt.Errorf("create relay user: %w", err)
 	}
 
 	if err := s.assignAdditionalGroups(ctx, provider, relayUser.ID, in); err != nil {
-		s.disableRelayUser(ctx, provider, relayUser.ID)
-		return nil, err
-	}
-
-	ownerID := in.OwnerUserID
-	if ownerID == 0 {
-		ownerID = in.ActorUserID
-	}
-	if err := s.assertUserExists(ctx, ownerID); err != nil {
-		s.disableRelayUser(ctx, provider, relayUser.ID)
-		return nil, err
-	}
-	if err := s.assertPersonUser(ctx, ownerID); err != nil {
 		s.disableRelayUser(ctx, provider, relayUser.ID)
 		return nil, err
 	}
@@ -393,7 +399,21 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 		return nil, fmt.Errorf("commit team account: %w", err)
 	}
 
-	return s.Get(ctx, in.ActorUserID, in.IsAdmin, created.ID)
+	account, err := s.Get(ctx, in.ActorUserID, in.IsAdmin, created.ID)
+	if err == nil {
+		return account, nil
+	}
+	// The account is already committed; a Relay hiccup while hydrating must not
+	// report the create as failed and invite a duplicate retry.
+	s.logger.Warn("hydrate created team account", zap.Int("account_id", created.ID), zap.Error(err))
+	fallback := toAccount(created)
+	fallback.Keys = []Key{}
+	fallback.Managers = []Manager{}
+	if owner, ownerErr := s.client.User.Get(ctx, ownerID); ownerErr == nil {
+		fallback.OwnerUsername = owner.Username
+		fallback.OwnerEmail = owner.Email
+	}
+	return &fallback, nil
 }
 
 // departmentLabel resolves the human-readable directory path (names, not ids)
@@ -461,6 +481,15 @@ func (s *Service) resolveDepartment(ctx context.Context, in CreateInput) (string
 }
 
 func (s *Service) assertIdentityFree(ctx context.Context, username, email string) error {
+	reserved, err := s.client.TeamAccount.Query().
+		Where(entteamaccount.Or(entteamaccount.RelayUsernameEQ(username), entteamaccount.RelayEmailEQ(email))).
+		Exist(ctx)
+	if err != nil {
+		return fmt.Errorf("check reserved identity: %w", err)
+	}
+	if reserved {
+		return &ConflictError{Message: "this department identity is already reserved by another team account"}
+	}
 	exists, err := s.client.User.Query().Where(entuser.UsernameEQ(username)).Exist(ctx)
 	if err != nil {
 		return fmt.Errorf("check username: %w", err)
@@ -654,6 +683,9 @@ func (s *Service) SearchUserOptions(ctx context.Context, actorUserID int, includ
 	}
 	out := make([]UserOption, 0, 20)
 	for _, user := range users {
+		if user.LoginPolicy == entuser.LoginPolicySSOOnly {
+			continue
+		}
 		if identities[strings.ToLower(strings.TrimSpace(user.Username))] ||
 			identities[strings.ToLower(strings.TrimSpace(user.Email))] {
 			continue
@@ -731,6 +763,11 @@ func (s *Service) assertPersonUser(ctx context.Context, userID int) error {
 	}
 	if identities[strings.ToLower(strings.TrimSpace(user.Username))] ||
 		identities[strings.ToLower(strings.TrimSpace(user.Email))] {
+		return &ValidationError{Message: "organization accounts cannot be managers or owners"}
+	}
+	// Organization accounts minted by the admin console are SSO-only local users;
+	// they are sign-in surfaces too and must never own another account.
+	if user.LoginPolicy == entuser.LoginPolicySSOOnly {
 		return &ValidationError{Message: "organization accounts cannot be managers or owners"}
 	}
 	return nil
@@ -961,6 +998,138 @@ func (s *Service) assertOwner(ctx context.Context, actorUserID int, includeAll b
 	return nil
 }
 
+// setRelayUserActive disables or enables the upstream identity when the relay
+// supports it. Suspension must stop direct Relay logins, not just platform keys.
+func (s *Service) setRelayUserActive(ctx context.Context, provider relay.Provider, row *ent.TeamAccount, active bool) error {
+	if active {
+		enabler, ok := provider.(relay.UserEnabler)
+		if !ok {
+			return nil
+		}
+		if err := enabler.EnableUser(ctx, row.RelayUserID); err != nil {
+			return fmt.Errorf("enable relay user: %w", err)
+		}
+		return nil
+	}
+	disabler, ok := provider.(relay.UserDisabler)
+	if !ok {
+		return nil
+	}
+	if err := disabler.DisableUser(ctx, row.RelayUserID); err != nil {
+		return fmt.Errorf("disable relay user: %w", err)
+	}
+	return nil
+}
+
+// revokeLocalSessions makes existing JWTs of the account's SSO identity expire;
+// "Sign in as this account" creates that local user, so suspension and handover
+// must invalidate it.
+func (s *Service) revokeLocalSessions(ctx context.Context, row *ent.TeamAccount) {
+	if row == nil {
+		return
+	}
+	now := time.Now()
+	_, err := s.client.User.Update().
+		Where(entuser.Or(
+			entuser.UsernameEQ(row.RelayUsername),
+			entuser.EmailEQ(row.RelayEmail),
+		)).
+		SetTokenValidAfter(now).
+		Save(ctx)
+	if err != nil {
+		s.logger.Warn("revoke team account sessions", zap.Int("account_id", row.ID), zap.Error(err))
+	}
+}
+
+// rotateRelayPassword replaces the shared password and stores the new value so
+// key minting keeps working; it is best effort because the ownership change has
+// already been committed.
+func (s *Service) rotateRelayPassword(ctx context.Context, provider relay.Provider, accountID int, row *ent.TeamAccount) {
+	updater, ok := provider.(relay.UserPasswordUpdater)
+	if !ok {
+		return
+	}
+	password, err := generatedPassword()
+	if err != nil {
+		s.logger.Warn("generate rotated team password", zap.Int("account_id", accountID), zap.Error(err))
+		return
+	}
+	if err := updater.UpdateUserPassword(ctx, row.RelayUserID, password); err != nil {
+		s.logger.Warn("rotate team relay password", zap.Int("account_id", accountID), zap.Error(err))
+		return
+	}
+	encrypted, err := s.encrypt(password)
+	if err != nil {
+		s.logger.Warn("encrypt rotated team password", zap.Int("account_id", accountID), zap.Error(err))
+		return
+	}
+	if _, err := s.client.TeamAccount.UpdateOneID(accountID).SetRelayAuthPassword(encrypted).Save(ctx); err != nil {
+		s.logger.Warn("store rotated team password", zap.Int("account_id", accountID), zap.Error(err))
+	}
+}
+
+// disableRelayUser compensates a failed provisioning attempt with a detached
+// context so a client disconnect cannot leave a half-created identity behind.
+func (s *Service) disableRelayUserDetached(provider relay.Provider, relayUserID int64) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	disabler, ok := provider.(relay.UserDisabler)
+	if !ok {
+		return
+	}
+	if err := disabler.DisableUser(ctx, relayUserID); err != nil {
+		s.logger.Warn("disable relay user after failed create", zap.Int64("relay_user_id", relayUserID), zap.Error(err))
+	}
+}
+
+// recordKey persists a freshly minted Relay key only while the account is still
+// active. The compare-and-swap on the status row also serializes against a
+// concurrent suspension.
+func (s *Service) recordKey(ctx context.Context, actorUserID int, row *ent.TeamAccount, relayKeyID, groupID int64, keyName, secret string) (*ent.TeamAccountKey, error) {
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	locked, err := tx.TeamAccount.Update().
+		Where(entteamaccount.IDEQ(row.ID), entteamaccount.StatusEQ(entteamaccount.StatusActive)).
+		SetStatus(entteamaccount.StatusActive).
+		Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("lock team account: %w", err)
+	}
+	if locked == 0 {
+		return nil, &ConflictError{Message: "team account is not active"}
+	}
+	keyRow, err := tx.TeamAccountKey.Create().
+		SetTeamAccountID(row.ID).
+		SetRelayAPIKeyID(relayKeyID).
+		SetRelayGroupID(groupID).
+		SetName(keyName).
+		SetSecretPreview(previewSecret(secret)).
+		SetStatus("active").
+		SetNillableCreatedByUserID(&actorUserID).
+		Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("record api key: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit api key: %w", err)
+	}
+	return keyRow, nil
+}
+
+// revokeRelayKeyDetached disables a Relay key that could not be recorded, so an
+// untracked credential cannot outlive a failed request.
+func (s *Service) revokeRelayKeyDetached(provider relay.Provider, row *ent.TeamAccount, relayKeyID int64) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := s.disableRelayKey(ctx, row, provider, relayKeyID); err != nil {
+		s.logger.Warn("revoke relay key after failed record", zap.Int64("relay_key_id", relayKeyID), zap.Error(err))
+	}
+}
+
 // CreateKey mints one API key for a mapped group and returns the secret once.
 func (s *Service) CreateKey(ctx context.Context, actorUserID int, includeAll bool, accountID int, groupID int64, name string) (*Key, string, error) {
 	row, err := s.loadAccount(ctx, accountID)
@@ -1005,17 +1174,10 @@ func (s *Service) CreateKey(ctx context.Context, actorUserID int, includeAll boo
 		return nil, "", fmt.Errorf("create relay api key: %w", err)
 	}
 
-	keyRow, err := s.client.TeamAccountKey.Create().
-		SetTeamAccountID(row.ID).
-		SetRelayAPIKeyID(created.ID).
-		SetRelayGroupID(groupID).
-		SetName(keyName).
-		SetSecretPreview(previewSecret(created.Secret)).
-		SetStatus("active").
-		SetNillableCreatedByUserID(&actorUserID).
-		Save(ctx)
+	keyRow, err := s.recordKey(ctx, actorUserID, row, created.ID, groupID, keyName, created.Secret)
 	if err != nil {
-		return nil, "", fmt.Errorf("record api key: %w", err)
+		s.revokeRelayKeyDetached(provider, row, created.ID)
+		return nil, "", err
 	}
 	_ = s.recordEvent(ctx, row.ID, actorUserID, "key_created", map[string]any{
 		"key_id":   created.ID,
@@ -1131,6 +1293,9 @@ func (s *Service) Credentials(ctx context.Context, actorUserID int, includeAll b
 		if err := s.assertMember(ctx, actorUserID, accountID); err != nil {
 			return nil, err
 		}
+		if row.Status != "active" {
+			return nil, &ConflictError{Message: "team account is not active"}
+		}
 	}
 	password, err := s.decryptPassword(row)
 	if err != nil {
@@ -1208,14 +1373,25 @@ func (s *Service) RemoveManager(ctx context.Context, actorUserID int, includeAll
 	if row.Role == "owner" {
 		return &ValidationError{Message: "transfer ownership before removing the owner"}
 	}
+	account, err := s.loadAccount(ctx, accountID)
+	if err != nil {
+		return err
+	}
 	if err := s.client.TeamAccountManager.DeleteOneID(row.ID).Exec(ctx); err != nil {
 		return fmt.Errorf("remove manager: %w", err)
+	}
+	if provider, resolveErr := s.resolver.Resolve(ctx, account.RelayProviderID); resolveErr == nil {
+		// The removed manager could have revealed the shared password, so rotate
+		// it and drop the account's SSO sessions.
+		s.rotateRelayPassword(ctx, provider, accountID, account)
+		s.revokeLocalSessions(ctx, account)
 	}
 	return s.recordEvent(ctx, accountID, actorUserID, "manager_removed", map[string]any{"user_id": userID})
 }
 
 // Transfer replaces the owner and drops the previous owner's access in one
-// transaction.
+// transaction. The account row is locked so two concurrent handovers cannot
+// leave two owners.
 func (s *Service) Transfer(ctx context.Context, actorUserID int, includeAll bool, accountID, newOwnerUserID int) error {
 	row, err := s.loadAccount(ctx, accountID)
 	if err != nil {
@@ -1235,7 +1411,6 @@ func (s *Service) Transfer(ctx context.Context, actorUserID int, includeAll bool
 			return err
 		}
 	}
-	previousOwner := row.OwnerUserID
 
 	tx, err := s.client.Tx(ctx)
 	if err != nil {
@@ -1243,28 +1418,34 @@ func (s *Service) Transfer(ctx context.Context, actorUserID int, includeAll bool
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.TeamAccount.UpdateOneID(accountID).SetOwnerUserID(newOwnerUserID).Save(ctx); err != nil {
+	previousOwner := row.OwnerUserID
+	// Compare-and-swap on the current owner: two concurrent handovers cannot both
+	// win, so the account can never end up with two owners.
+	updated, err := tx.TeamAccount.Update().
+		Where(entteamaccount.IDEQ(accountID), entteamaccount.OwnerUserID(previousOwner)).
+		SetOwnerUserID(newOwnerUserID).
+		Save(ctx)
+	if err != nil {
 		return fmt.Errorf("update owner: %w", err)
+	}
+	if updated == 0 {
+		return &ConflictError{Message: "account ownership changed, reload and retry"}
 	}
 	if _, err := tx.TeamAccountManager.Delete().
 		Where(teamAccountManagerAccountID(accountID), teamAccountManagerUserID(previousOwner)).
 		Exec(ctx); err != nil {
 		return fmt.Errorf("remove previous owner: %w", err)
 	}
-	exists, err := tx.TeamAccountManager.Query().
-		Where(teamAccountManagerAccountID(accountID), teamAccountManagerUserID(newOwnerUserID)).
-		Exist(ctx)
-	if err != nil {
-		return fmt.Errorf("check new owner: %w", err)
+	// Keep exactly one owner row: drop every manager flagged as owner.
+	if _, err := tx.TeamAccountManager.Delete().
+		Where(
+			teamAccountManagerAccountID(accountID),
+			entteamaccountmanager.RoleEQ("owner"),
+		).
+		Exec(ctx); err != nil {
+		return fmt.Errorf("drop stale owner rows: %w", err)
 	}
-	if exists {
-		if _, err := tx.TeamAccountManager.Update().
-			Where(teamAccountManagerAccountID(accountID), teamAccountManagerUserID(newOwnerUserID)).
-			SetRole("owner").
-			Save(ctx); err != nil {
-			return fmt.Errorf("promote new owner: %w", err)
-		}
-	} else if _, err := tx.TeamAccountManager.Create().
+	if _, err := tx.TeamAccountManager.Create().
 		SetTeamAccountID(accountID).
 		SetUserID(newOwnerUserID).
 		SetRole("owner").
@@ -1278,39 +1459,77 @@ func (s *Service) Transfer(ctx context.Context, actorUserID int, includeAll bool
 	}); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	if provider, resolveErr := s.resolver.Resolve(ctx, row.RelayProviderID); resolveErr == nil {
+		s.rotateRelayPassword(ctx, provider, accountID, row)
+		s.revokeLocalSessions(ctx, row)
+	}
+	return nil
 }
 
-// SetStatus suspends, restores, or orphans an account.
+// SetStatus suspends, restores, or orphans an account. Suspension revokes the
+// keys and disables the underlying Relay identity before the status is committed,
+// so a suspended account can never keep a working credential.
 func (s *Service) SetStatus(ctx context.Context, actorUserID int, accountID int, status string) error {
 	switch status {
 	case "active", "suspended", "orphaned":
 	default:
 		return &ValidationError{Message: "unsupported status"}
 	}
-	if _, err := s.loadAccount(ctx, accountID); err != nil {
-		return err
-	}
 	row, err := s.loadAccount(ctx, accountID)
 	if err != nil {
 		return err
 	}
+	provider, err := s.resolver.Resolve(ctx, row.RelayProviderID)
+	if err != nil {
+		return fmt.Errorf("resolve relay provider: %w", err)
+	}
+	previous := string(row.Status)
+
+	if status == "active" {
+		if err := s.setRelayUserActive(ctx, provider, row, true); err != nil {
+			return err
+		}
+		if _, err := s.client.TeamAccount.UpdateOneID(accountID).SetStatus(entteamaccount.StatusActive).Save(ctx); err != nil {
+			return fmt.Errorf("update status: %w", err)
+		}
+		return s.recordEvent(ctx, accountID, actorUserID, "account_restored", map[string]any{"status": status})
+	}
+
+	// Flip the status first so a concurrent key creation is rejected at its
+	// compare-and-swap; revert it if the Relay side cannot be shut down.
 	if _, err := s.client.TeamAccount.UpdateOneID(accountID).SetStatus(entteamaccount.Status(status)).Save(ctx); err != nil {
 		return fmt.Errorf("update status: %w", err)
 	}
-	if status == "suspended" || status == "orphaned" {
-		if err := s.revokeActiveKeys(ctx, actorUserID, row); err != nil {
-			return err
-		}
+	if err := s.revokeActiveKeys(ctx, actorUserID, row); err != nil {
+		s.revertStatus(ctx, accountID, previous)
+		return err
 	}
+	if err := s.setRelayUserActive(ctx, provider, row, false); err != nil {
+		s.revertStatus(ctx, accountID, previous)
+		return err
+	}
+	s.revokeLocalSessions(ctx, row)
+
 	action := "account_suspended"
-	switch status {
-	case "active":
-		action = "account_restored"
-	case "orphaned":
+	if status == "orphaned" {
 		action = "account_orphaned"
 	}
 	return s.recordEvent(ctx, accountID, actorUserID, action, map[string]any{"status": status})
+}
+
+// revertStatus restores the previous state when a suspension cannot finish; the
+// account must never look suspended while its Relay identity still works.
+func (s *Service) revertStatus(ctx context.Context, accountID int, previous string) {
+	if previous == "" {
+		previous = "active"
+	}
+	if _, err := s.client.TeamAccount.UpdateOneID(accountID).SetStatus(entteamaccount.Status(previous)).Save(ctx); err != nil {
+		s.logger.Error("revert team account status", zap.Int("account_id", accountID), zap.Error(err))
+	}
 }
 
 // revokeActiveKeys disables every active key so a suspended account can no
@@ -1575,6 +1794,18 @@ func deriveUsername(departmentExternalID string) string {
 		slug = slug[:32]
 	}
 	return teamUsernamePrefix + slug
+}
+
+// duplicateRelayIdentity recognizes Relay duplicate-user responses so the
+// console can explain a leftover identity instead of surfacing a raw status.
+func duplicateRelayIdentity(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "already exists") ||
+		strings.Contains(message, "duplicate") ||
+		strings.Contains(message, "status 409")
 }
 
 func previewSecret(secret string) string {

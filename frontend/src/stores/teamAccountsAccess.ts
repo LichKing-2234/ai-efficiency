@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { registerSessionResourceReset } from '@/stores/sessionResources'
 import { listTeamAccounts } from '@/api/teamAccounts'
 import { getTeamUsageScope } from '@/api/teamUsage'
 
@@ -28,13 +29,14 @@ export const useTeamAccountsAccessStore = defineStore('teamAccountsAccess', () =
         Promise.resolve().then(() => listTeamAccounts()).catch(() => null),
       ])
       if (scope) {
-        resolved = true
         isRepresentative.value = scope.data?.data?.is_representative ?? false
       }
       if (accounts) {
-        resolved = true
         accountCount.value = accounts.data?.data?.items?.length ?? 0
       }
+      // Both lookups are required: a partial failure must be retried instead of
+      // hiding the navigation entry for the rest of the session.
+      resolved = Boolean(scope && accounts)
     } finally {
       // A failed lookup stays unresolved so the next mount can retry instead of
       // hiding the navigation entry for the whole session.
@@ -43,5 +45,14 @@ export const useTeamAccountsAccessStore = defineStore('teamAccountsAccess', () =
     }
   }
 
-  return { loaded, loading, isRepresentative, accountCount, canOpen, ensureLoaded }
+  function reset() {
+    loaded.value = false
+    loading.value = false
+    isRepresentative.value = false
+    accountCount.value = 0
+  }
+
+  registerSessionResourceReset('teamAccountsAccess', reset)
+
+  return { loaded, loading, isRepresentative, accountCount, canOpen, ensureLoaded, reset }
 })
