@@ -37,18 +37,17 @@ Creating an account for a department:
 1. Requires an administrator, or a representative of that department. A
    representative may not create an account for a department they do not
    represent, and the department is never accepted from an untrusted source.
-2. Requires at least one Relay group mapped to the department in
-   `department_group_map`; nothing else links departments to Relay groups.
-3. Derives the Relay identity deterministically from the department id:
+2. Derives the Relay identity deterministically from the department id:
    username `team-<normalized-department-id>`, mailbox
    `<username>@invalid.account`. The domain is the organization-account domain
    so every synthetic identity stays out of the corporate namespace.
 4. Generates the Relay password server-side and stores only its ciphertext in
    `team_accounts.relay_auth_password`. The plaintext exists only inside the
    provisioning call and the explicit credential-reveal response.
-5. Creates the Relay user with `allowed_groups` covering the mapped groups and
-   an active subscription for each of them, then revokes the provider default
-   subscriptions that the department did not request.
+5. Creates the Relay user exactly like a personal account: no allow-list is
+   pinned and the Relay assigns its default subscriptions. Optional additional
+   groups are granted on top; a non-administrative caller may only grant groups
+   they are subscribed to themselves.
 6. Records the account, the owner row, and an `account_created` event in one
    local transaction. If any step fails, the Relay user is disabled so no orphan
    identity can authenticate.
@@ -60,8 +59,9 @@ mailbox collision fails the create; an existing identity is never adopted.
 
 Relay offers no administrator endpoint for minting another user's API key, so
 the platform authenticates as the team account with its stored password and
-calls the user-scoped key endpoint. A key is always bound to one mapped Relay
-group, and the plaintext secret is returned exactly once.
+calls the user-scoped key endpoint. A key is always bound to a group the account
+holds an active subscription for, and the plaintext secret is returned exactly
+once.
 
 Revocation calls the Relay revoke endpoint and marks the local row. Only a
 `secret_preview` is persisted; the console never receives a stored full secret.
@@ -87,9 +87,9 @@ accounts; administrators read every account.
 ## Administration
 
 `/api/v1/admin/team-accounts` exposes listing, creation, status changes, the
-credential and key operations, department-group mapping maintenance, and
-transfer. The console page follows the directory offboarding interaction: search,
-card list, typed confirmation for transfer and suspend, and an audit drawer.
+credential and key operations, and transfer. The console page follows the
+directory offboarding interaction: search, card list, typed confirmation for
+transfer and suspend, and an audit drawer.
 
 ## Boundaries
 
