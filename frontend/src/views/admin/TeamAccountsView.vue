@@ -27,7 +27,7 @@ import {
   teamAccountStatusLabelKey,
   teamAccountStatusTagType,
 } from '@/utils/teamAccounts'
-import type { TeamAccountStatus, TeamAccountSummary } from '@/types'
+import type { AdminUser, TeamAccountStatus, TeamAccountSummary } from '@/types'
 
 interface RelayGroupOption {
   providerId: number
@@ -51,6 +51,9 @@ const page = ref(1)
 const pageSize = ref(FULL_PAGE_SIZES[0])
 const createOpen = ref(false)
 const createForm = reactive<{ name: string; departmentExternalId: string; ownerUserID: number | null }>({ name: '', departmentExternalId: '', ownerUserID: null })
+// True while the department is being derived from the chosen user, so the
+// department change handler does not clear that same selection.
+const linkingOwnerFromDepartment = ref(false)
 const creating = ref(false)
 const createError = ref('')
 const detailOpen = ref(false)
@@ -153,6 +156,22 @@ async function loadAccounts() {
   } finally {
     loading.value = false
   }
+}
+
+function onCreateDepartmentChange() {
+  if (linkingOwnerFromDepartment.value) {
+    linkingOwnerFromDepartment.value = false
+    return
+  }
+  createForm.ownerUserID = null
+}
+
+function onOwnerSelected(user: AdminUser | null) {
+  const departmentId = user?.department?.external_id
+  if (!departmentId) return
+  if (createForm.departmentExternalId === departmentId) return
+  linkingOwnerFromDepartment.value = true
+  createForm.departmentExternalId = departmentId
 }
 
 function openCreate() {
@@ -554,6 +573,7 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
               v-model="createForm.departmentExternalId"
               data-testid="admin-team-account-create-department"
               :disabled="creating"
+              @change="onCreateDepartmentChange"
             />
           </label>
           <label class="block text-sm">
@@ -563,6 +583,8 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
               data-testid="admin-team-account-create-owner"
               class="mt-1"
               :disabled="creating"
+              :department-id="createForm.departmentExternalId"
+              @select="onOwnerSelected"
             />
           </label>
           <ElAlert

@@ -10,12 +10,17 @@ const props = withDefaults(defineProps<{
   modelValue: number | null
   placeholder?: string
   disabled?: boolean
+  departmentId?: string
 }>(), {
   placeholder: '',
   disabled: false,
+  departmentId: '',
 })
 
-const emit = defineEmits<{ 'update:modelValue': [value: number | null] }>()
+const emit = defineEmits<{
+  'update:modelValue': [value: number | null]
+  select: [user: AdminUser | null]
+}>()
 
 const { t: baseT, locale } = useI18n()
 const t = createFeatureTranslator(locale, baseT, 'teamAccounts.', teamAccountsMessages)
@@ -33,7 +38,12 @@ async function search(keyword: string) {
   query.value = keyword
   loading.value = true
   try {
-    const response = await listAdminUsers({ q: keyword.trim() || undefined, page: 1, page_size: 50 })
+    const response = await listAdminUsers({
+      q: keyword.trim() || undefined,
+      department_id: props.departmentId.trim() || undefined,
+      page: 1,
+      page_size: 50,
+    })
     options.value = response.data.data?.items ?? []
   } catch {
     options.value = []
@@ -56,8 +66,16 @@ watch(
   },
 )
 
+watch(
+  () => props.departmentId,
+  () => {
+    void search(query.value)
+  },
+)
+
 function onChange(value: number | null) {
   emit('update:modelValue', value)
+  emit('select', value === null ? null : options.value.find((option) => option.id === value) ?? null)
 }
 </script>
 
