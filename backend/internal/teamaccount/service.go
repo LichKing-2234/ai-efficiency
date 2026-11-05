@@ -1842,6 +1842,8 @@ func relayAuthFailure(err error) bool {
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "login failed") ||
 		strings.Contains(message, "authenticate") ||
+		strings.Contains(message, "invalid credentials") ||
+		strings.Contains(message, "invalid email or password") ||
 		strings.Contains(message, "unauthorized") ||
 		strings.Contains(message, "status 401")
 }
