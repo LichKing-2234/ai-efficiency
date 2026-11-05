@@ -20,6 +20,7 @@ import {
   revokeTeamAccountKey,
 } from '@/api/teamAccounts'
 import TeamAccountUserPicker from './TeamAccountUserPicker.vue'
+import { useAuthStore } from '@/stores/auth'
 import { useI18n } from '@/i18n'
 import { teamAccountsMessages } from '@/locales/teamAccounts'
 import { createFeatureTranslator } from '@/utils/featureI18n'
@@ -63,6 +64,7 @@ const emit = defineEmits<{
   'status-requested': [account: TeamAccountSummary]
 }>()
 
+const auth = useAuthStore()
 const { t: baseT, locale } = useI18n()
 const t = createFeatureTranslator(locale, baseT, 'teamAccounts.', teamAccountsMessages)
 const detail = ref<TeamAccountDetail | null>(null)
@@ -129,6 +131,9 @@ const canCreateKey = computed(() => (
   && !keyCreating.value
 ))
 const availableGroups = computed(() => detail.value?.available_groups ?? [])
+// Only the owner (or an administrator) may hand over the account or change its
+// managers; managers keep day-to-day key work.
+const isOwner = computed(() => props.mode === 'admin' || (detail.value?.owner_user_id != null && detail.value.owner_user_id === auth.user?.id))
 function groupName(groupID: number | string) {
   const match = availableGroups.value.find((group) => group.id === Number(groupID))
   return match?.name || '—'
@@ -517,7 +522,7 @@ function requestStatusChange() {
               >
                 {{ credentials ? t('teamAccounts.credentials.hide') : t('teamAccounts.credentials.reveal') }}
               </ElButton>
-              <ElButton data-testid="team-account-transfer" @click="requestTransfer">
+              <ElButton v-if="isOwner" data-testid="team-account-transfer" @click="requestTransfer">
                 {{ t('teamAccounts.transfer.button') }}
               </ElButton>
             </div>
@@ -575,7 +580,7 @@ function requestStatusChange() {
             <p class="text-xs text-gray-500">{{ t('teamAccounts.keys.help') }}</p>
           </div>
 
-          <div class="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <div v-if="isOwner" class="flex flex-col gap-2 sm:flex-row sm:items-end">
             <label class="block text-sm sm:w-40">
               <span class="font-medium text-gray-700">{{ t('teamAccounts.keys.groupId') }}</span>
               <ElSelect
@@ -682,7 +687,7 @@ function requestStatusChange() {
             <p class="text-xs text-gray-500">{{ t('teamAccounts.managers.help') }}</p>
           </div>
 
-          <div class="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <div v-if="isOwner" class="flex flex-col gap-2 sm:flex-row sm:items-end">
             <label class="block text-sm sm:w-64">
               <span class="font-medium text-gray-700">{{ t('teamAccounts.managers.userId') }}</span>
               <TeamAccountUserPicker

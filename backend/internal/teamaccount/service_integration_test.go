@@ -113,6 +113,29 @@ func seedUsers(t *testing.T, client *ent.Client) (int, int) {
 	return owner.ID, other.ID
 }
 
+
+func seedDepartmentMember(t *testing.T, client *ent.Client, departmentID, email string) {
+	t.Helper()
+	ctx := context.Background()
+	source, err := client.DirectorySource.Create().
+		SetName("test-directory").
+		SetDsl("{}").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed directory source: %v", err)
+	}
+	if _, err := client.DirectoryMember.Create().
+		SetSourceID(source.ID).
+		SetExternalID(email).
+		SetEmailNormalized(email).
+		SetDepartmentExternalID(departmentID).
+		SetStatus("active").
+		SetLastSeenRunID(1).
+		Save(ctx); err != nil {
+		t.Fatalf("seed department member: %v", err)
+	}
+}
+
 func seedProvider(t *testing.T, client *ent.Client) int {
 	t.Helper()
 	row, err := client.RelayProvider.Create().
@@ -200,6 +223,7 @@ func TestTransferRemovesPreviousOwner(t *testing.T) {
 	ownerID, otherID := seedUsers(t, client)
 	provider := newFakeProvider()
 	seedProvider(t, client)
+	seedDepartmentMember(t, client, "department-alpha", "other@example.com")
 
 	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
 	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
@@ -231,6 +255,7 @@ func TestTransferRejectsNonOwnerManager(t *testing.T) {
 	ownerID, otherID := seedUsers(t, client)
 	provider := newFakeProvider()
 	seedProvider(t, client)
+	seedDepartmentMember(t, client, "department-alpha", "other@example.com")
 	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
 	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
 	if err != nil {
@@ -336,5 +361,57 @@ func TestCreateKeyRejectsGroupsWithoutSubscription(t *testing.T) {
 	}
 	if _, _, err := service.CreateKey(context.Background(), ownerID, false, account.ID, 25, "not-subscribed"); err == nil {
 		t.Fatal("unsubscribed group must be rejected")
+	}
+}
+
+func TestRepresentativeCannotTransferOutsideDepartment(t *testing.T) {
+	client := testdb.Open(t)
+	ownerID, otherID := seedUsers(t, client)
+	provider := newFakeProvider()
+	seedProvider(t, client)
+	seedDepartmentMember(t, client, "department-alpha", "owner@example.com")
+	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
+	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	err = service.Transfer(context.Background(), ownerID, false, account.ID, otherID)
+	var permission *PermissionError
+	if !errors.As(err, &permission) {
+		t.Fatalf("Transfer() error = %v, want PermissionError", err)
+	}
+}
+
+func TestRepresentativeCannotAddManagerOutsideDepartment(t *testing.T) {
+	client := testdb.Open(t)
+	ownerID, otherID := seedUsers(t, client)
+	provider := newFakeProvider()
+	seedProvider(t, client)
+	seedDepartmentMember(t, client, "department-alpha", "owner@example.com")
+	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
+	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	err = service.AddManager(context.Background(), ownerID, false, account.ID, otherID)
+	var permission *PermissionError
+	if !errors.As(err, &permission) {
+		t.Fatalf("AddManager() error = %v, want PermissionError", err)
+	}
+}
+
+func TestGroupOptionsRequireRepresentativeRole(t *testing.T) {
+	client := testdb.Open(t)
+	userID, _ := seedUsers(t, client)
+	provider := newFakeProvider()
+	seedProvider(t, client)
+	service := New(client, fakeResolver{provider}, fakeScope{departments: nil}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
+
+	_, err := service.GroupOptionsForActor(context.Background(), userID, false, 0)
+	var permission *PermissionError
+	if !errors.As(err, &permission) {
+		t.Fatalf("GroupOptionsForActor() error = %v, want PermissionError", err)
 	}
 }

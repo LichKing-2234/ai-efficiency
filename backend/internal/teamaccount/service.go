@@ -212,6 +212,16 @@ func (s *Service) GroupOptionsForActor(ctx context.Context, actorUserID int, isA
 		}
 	}
 
+	if !isAdmin {
+		scope, err := s.scopes.Resolve(ctx, actorUserID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve representative scope: %w", err)
+		}
+		if scope == nil || !scope.IsRepresentative {
+			return nil, &PermissionError{Message: "only a department representative can create a team account"}
+		}
+	}
+
 	grantable := map[int64]bool{}
 	if isAdmin {
 		for _, group := range options.Groups {
@@ -726,6 +736,27 @@ func (s *Service) assertPersonUser(ctx context.Context, userID int) error {
 	return nil
 }
 
+// assertPersonInDepartment rejects targets outside the account's department for
+// non-administrators, so a representative cannot hand the account to someone
+// they do not represent.
+func (s *Service) assertPersonInDepartment(ctx context.Context, departmentID string, userID int) error {
+	user, err := s.client.User.Get(ctx, userID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return &ValidationError{Message: "user does not exist"}
+		}
+		return fmt.Errorf("load user: %w", err)
+	}
+	allowed, err := s.departmentMemberEmails(ctx, departmentID)
+	if err != nil {
+		return err
+	}
+	if !allowed[strings.ToLower(strings.TrimSpace(user.Email))] {
+		return &PermissionError{Message: "user is not a member of this department"}
+	}
+	return nil
+}
+
 // List returns the accounts the actor owns or manages.
 func (s *Service) List(ctx context.Context, actorUserID int, includeAll bool) ([]Account, error) {
 	var rows []*ent.TeamAccount
@@ -1127,6 +1158,15 @@ func (s *Service) AddManager(ctx context.Context, actorUserID int, includeAll bo
 	if err := s.assertPersonUser(ctx, userID); err != nil {
 		return err
 	}
+	if !includeAll {
+		account, err := s.loadAccount(ctx, accountID)
+		if err != nil {
+			return err
+		}
+		if err := s.assertPersonInDepartment(ctx, account.DepartmentExternalID, userID); err != nil {
+			return err
+		}
+	}
 	exists, err := s.client.TeamAccountManager.Query().
 		Where(teamAccountManagerAccountID(accountID), teamAccountManagerUserID(userID)).
 		Exist(ctx)
@@ -1189,6 +1229,11 @@ func (s *Service) Transfer(ctx context.Context, actorUserID int, includeAll bool
 	}
 	if err := s.assertPersonUser(ctx, newOwnerUserID); err != nil {
 		return err
+	}
+	if !includeAll {
+		if err := s.assertPersonInDepartment(ctx, row.DepartmentExternalID, newOwnerUserID); err != nil {
+			return err
+		}
 	}
 	previousOwner := row.OwnerUserID
 
