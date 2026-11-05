@@ -165,4 +165,25 @@ describe('team account pickers', () => {
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([null])
     expect(wrapper.emitted('select')?.[0]).toEqual([null])
   })
+
+  it('drops the displayed user when the parent clears the value', async () => {
+    const api = await import('@/api/adminUsers')
+    vi.mocked(api.listAdminUsers).mockResolvedValue(response({
+      items: [user(7, 'alice', 'alice@example.com')],
+      page: 1,
+      page_size: 50,
+      total: 1,
+    }) as any)
+    const wrapper = mount(TeamAccountUserPicker, {
+      props: { modelValue: 7 },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    expect((wrapper.get('[data-testid="team-account-user-input"]').element as HTMLInputElement).value).toBe('alice')
+
+    await wrapper.setProps({ modelValue: null })
+    await flushPromises()
+
+    expect((wrapper.get('[data-testid="team-account-user-input"]').element as HTMLInputElement).value).toBe('')
+  })
 })

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { listAdminUsers } from '@/api/adminUsers'
 import { useI18n } from '@/i18n'
 import { teamAccountsMessages } from '@/locales/teamAccounts'
@@ -74,6 +74,21 @@ async function search(keyword: string) {
 onMounted(() => {
   if (props.modelValue !== null) void hydrateSelection()
 })
+
+// The parent owns the value: when it clears the owner (for example because the
+// department was cleared), the field must drop the stale name immediately.
+watch(
+  () => props.modelValue,
+  (value) => {
+    if (value === null) {
+      selectedUser.value = null
+      return
+    }
+    if (!selectedUser.value || selectedUser.value.id !== value) {
+      void hydrateSelection()
+    }
+  },
+)
 
 async function hydrateSelection() {
   if (props.modelValue === null) {
