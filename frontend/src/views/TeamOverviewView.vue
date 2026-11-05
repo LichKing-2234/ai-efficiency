@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import TeamAccountSection from '@/components/team-accounts/TeamAccountSection.vue'
+// Loaded on demand: the organization-account console is only relevant to
+// representatives and managers, and keeping it out of the route chunk protects
+// the usage bundle budget.
+const TeamAccountSection = defineAsyncComponent(() => import('@/components/team-accounts/TeamAccountSection.vue'))
 import TeamOverviewMemberTable from '@/components/team-usage/TeamOverviewMemberTable.vue'
 import { getTeamUsageMembers, getTeamUsageSummary, getTeamUsageTrend } from '@/api/teamUsage'
 import { useTeamUsageOrganization } from '@/composables/useTeamUsageOrganization'
