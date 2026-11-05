@@ -1157,6 +1157,9 @@ func (s *Service) CreateKey(ctx context.Context, actorUserID int, includeAll boo
 		return nil, "", err
 	}
 	keyName := strings.TrimSpace(name)
+	if utf8.RuneCountInString(keyName) > 64 {
+		return nil, "", &ValidationError{Message: "key name must be at most 64 characters"}
+	}
 	if keyName == "" {
 		keyName = fmt.Sprintf("%s-%d", row.RelayUsername, groupID)
 	}
@@ -1431,19 +1434,19 @@ func (s *Service) Transfer(ctx context.Context, actorUserID int, includeAll bool
 	if updated == 0 {
 		return &ConflictError{Message: "account ownership changed, reload and retry"}
 	}
-	if _, err := tx.TeamAccountManager.Delete().
-		Where(teamAccountManagerAccountID(accountID), teamAccountManagerUserID(previousOwner)).
-		Exec(ctx); err != nil {
-		return fmt.Errorf("remove previous owner: %w", err)
-	}
-	// Keep exactly one owner row: drop every manager flagged as owner.
+	// Keep exactly one owner row: drop the previous owner, any row the new owner
+	// already had as a manager, and every stale owner-flagged row.
 	if _, err := tx.TeamAccountManager.Delete().
 		Where(
 			teamAccountManagerAccountID(accountID),
-			entteamaccountmanager.RoleEQ("owner"),
+			entteamaccountmanager.Or(
+				entteamaccountmanager.UserIDEQ(previousOwner),
+				entteamaccountmanager.UserIDEQ(newOwnerUserID),
+				entteamaccountmanager.RoleEQ("owner"),
+			),
 		).
 		Exec(ctx); err != nil {
-		return fmt.Errorf("drop stale owner rows: %w", err)
+		return fmt.Errorf("drop stale manager rows: %w", err)
 	}
 	if _, err := tx.TeamAccountManager.Create().
 		SetTeamAccountID(accountID).
