@@ -1522,9 +1522,16 @@ export interface TeamAccountSummary {
   created_at: string
 }
 
+export interface TeamAccountAvailableGroup {
+  id: number
+  name: string
+  platform: string
+}
+
 export interface TeamAccountDetail extends TeamAccountSummary {
   keys: TeamAccountKey[]
   managers: TeamAccountManager[]
+  available_groups?: TeamAccountAvailableGroup[]
 }
 
 export interface TeamAccountUsage {
@@ -1561,10 +1568,6 @@ export interface TeamAccountKeyCreationResponse {
   secret: string
 }
 
-export interface TeamAccountDepartmentGroupsResponse {
-  relay_group_ids: number[]
-}
-
 export interface TeamAccountUsageParams {
   from?: string
   to?: string
@@ -1573,6 +1576,7 @@ export interface TeamAccountUsageParams {
 export interface TeamAccountCreateRequest {
   name: string
   department_external_id?: string
+  additional_group_ids?: number[]
 }
 
 export interface AdminTeamAccountCreateRequest extends TeamAccountCreateRequest {

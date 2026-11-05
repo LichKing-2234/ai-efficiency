@@ -129,18 +129,6 @@ func (f CredentialFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CredentialMutation", m)
 }
 
-// The DepartmentGroupMapFunc type is an adapter to allow the use of ordinary
-// function as DepartmentGroupMap mutator.
-type DepartmentGroupMapFunc func(context.Context, *ent.DepartmentGroupMapMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f DepartmentGroupMapFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.DepartmentGroupMapMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.DepartmentGroupMapMutation", m)
-}
-
 // The DirectoryDepartmentFunc type is an adapter to allow the use of ordinary
 // function as DirectoryDepartment mutator.
 type DirectoryDepartmentFunc func(context.Context, *ent.DirectoryDepartmentMutation) (ent.Value, error)

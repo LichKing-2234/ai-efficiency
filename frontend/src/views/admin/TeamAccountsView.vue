@@ -11,11 +11,8 @@ import { useTeamAccountLogin } from '@/composables/useTeamAccountLogin'
 import { listAdminUserSubscriptionOptions } from '@/api/adminUsers'
 import {
   createAdminTeamAccount,
-  deleteTeamAccountDepartmentGroup,
   listAdminTeamAccounts,
-  listTeamAccountDepartmentGroups,
   setAdminTeamAccountStatus,
-  upsertTeamAccountDepartmentGroup,
 } from '@/api/teamAccounts'
 import { useI18n } from '@/i18n'
 import { teamAccountsMessages } from '@/locales/teamAccounts'
@@ -86,16 +83,9 @@ function closeStatusDialog() {
   statusDialogOpen.value = false
 }
 
-const mappingOpen = ref(false)
-const mappingForm = reactive({ departmentExternalID: '', groupKey: '' })
 const groupOptions = ref<RelayGroupOption[]>([])
 const groupsLoading = ref(false)
-const mappingIDs = ref<number[]>([])
-const mappingLoading = ref(false)
-const mappingError = ref('')
-const mappingAdding = ref(false)
-const mappingRemovingID = ref<number | null>(null)
-const confirmingRemoveID = ref<number | null>(null)
+const createAdditionalGroupIDs = ref<number[]>([])
 
 const statusOptions = computed<TeamAccountStatus[]>(() => ['active', 'suspended', 'orphaned'])
 
@@ -122,15 +112,6 @@ const pageAccounts = computed(() => {
   return filteredAccounts.value.slice(start, start + pageSize.value)
 })
 const showPagination = computed(() => total.value > pageSize.value)
-const selectedGroup = computed(() => (
-  groupOptions.value.find((option) => `${option.providerId}:${option.groupId}` === mappingForm.groupKey) ?? null
-))
-const mappingProviderID = computed(() => selectedGroup.value?.providerId ?? null)
-const groupNameByID = computed(() => {
-  const names = new Map<number, string>()
-  for (const option of groupOptions.value) names.set(option.groupId, option.name)
-  return names
-})
 
 watch([q, statusFilter], () => {
   page.value = 1
@@ -175,6 +156,8 @@ function onOwnerSelected(user: AdminUser | null) {
 }
 
 function openCreate() {
+  void ensureGroupOptions()
+  createAdditionalGroupIDs.value = []
   createForm.name = ''
   createForm.departmentExternalId = ''
   createForm.ownerUserID = null
@@ -205,6 +188,7 @@ async function submitCreate() {
       name: createForm.name.trim(),
       department_external_id: createForm.departmentExternalId.trim() || undefined,
       owner_user_id: ownerUserID,
+      additional_group_ids: createAdditionalGroupIDs.value,
     })
     ElMessage.success(t('teamAccounts.admin.createSuccess'))
     createOpen.value = false
@@ -270,106 +254,6 @@ async function ensureGroupOptions() {
   }
 }
 
-async function openMappings(account?: TeamAccountSummary) {
-  mappingForm.departmentExternalID = account?.department_external_id ?? ''
-  mappingForm.groupKey = ''
-  mappingIDs.value = []
-  mappingError.value = ''
-  mappingOpen.value = true
-  await ensureGroupOptions()
-  if (mappingForm.departmentExternalID) {
-    await loadMappings()
-  }
-}
-
-function closeMappings() {
-  if (mappingAdding.value || mappingRemovingID.value !== null) return
-  mappingOpen.value = false
-}
-
-async function loadMappings() {
-  const departmentID = mappingForm.departmentExternalID.trim()
-  if (!departmentID) {
-    mappingIDs.value = []
-    return
-  }
-  mappingLoading.value = true
-  mappingError.value = ''
-  try {
-    const response = await listTeamAccountDepartmentGroups(departmentID)
-    mappingIDs.value = response.data.data?.relay_group_ids ?? []
-  } catch (e: unknown) {
-    mappingIDs.value = []
-    mappingError.value = teamAccountErrorMessage(e, t('teamAccounts.admin.mappingsLoadFailed'))
-  } finally {
-    mappingLoading.value = false
-  }
-}
-
-async function onDepartmentChange() {
-  mappingForm.groupKey = ''
-  await loadMappings()
-}
-
-function mappingProviderForGroup(groupID: number): number | null {
-  const match = groupOptions.value.find((option) => option.groupId === groupID)
-  return match?.providerId ?? null
-}
-
-async function addMapping() {
-  const departmentID = mappingForm.departmentExternalID.trim()
-  const group = selectedGroup.value
-  if (!departmentID || !group) {
-    mappingError.value = t('teamAccounts.admin.mappingFieldsRequired')
-    return
-  }
-  mappingAdding.value = true
-  mappingError.value = ''
-  try {
-    await upsertTeamAccountDepartmentGroup({
-      department_external_id: departmentID,
-      relay_provider_id: group.providerId,
-      relay_group_id: group.groupId,
-    })
-    ElMessage.success(t('teamAccounts.admin.mappingAdded'))
-    mappingForm.groupKey = ''
-    await loadMappings()
-  } catch (e: unknown) {
-    mappingError.value = teamAccountErrorMessage(e, t('teamAccounts.admin.mappingAddFailed'))
-  } finally {
-    mappingAdding.value = false
-  }
-}
-
-async function removeMapping(groupID: number) {
-  const departmentID = mappingForm.departmentExternalID.trim()
-  const providerID = mappingProviderForGroup(groupID)
-  if (!departmentID || providerID === null) {
-    mappingError.value = t('teamAccounts.admin.mappingFieldsRequired')
-    return
-  }
-  if (confirmingRemoveID.value !== groupID) {
-    confirmingRemoveID.value = groupID
-    return
-  }
-  confirmingRemoveID.value = null
-  mappingRemovingID.value = groupID
-  mappingError.value = ''
-  try {
-    await deleteTeamAccountDepartmentGroup({
-      department_external_id: departmentID,
-      relay_provider_id: providerID,
-      relay_group_id: groupID,
-    })
-    ElMessage.success(t('teamAccounts.admin.mappingRemoved'))
-    await loadMappings()
-  } catch (e: unknown) {
-    mappingError.value = teamAccountErrorMessage(e, t('teamAccounts.admin.mappingRemoveFailed'))
-  } finally {
-    mappingRemovingID.value = null
-  }
-}
-
 function changePage(nextPage: number) {
   if (nextPage < 1 || nextPage > totalPages.value) return
   page.value = nextPage
@@ -398,9 +282,6 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
           <p class="mt-1 text-sm text-gray-500">{{ t('teamAccounts.admin.subtitle') }}</p>
         </div>
         <div class="flex flex-wrap gap-2">
-          <ElButton data-testid="admin-team-account-mappings" @click="openMappings()">
-            {{ t('teamAccounts.admin.mappings') }}
-          </ElButton>
           <ElButton data-testid="admin-team-account-create-open" type="primary" @click="openCreate">
             {{ t('teamAccounts.admin.create') }}
           </ElButton>
@@ -577,6 +458,27 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
             />
           </label>
           <label class="block text-sm">
+            <span class="font-medium text-gray-700">{{ t('teamAccounts.additionalGroups') }}</span>
+            <ElSelect
+              v-model="createAdditionalGroupIDs"
+              data-testid="admin-team-account-create-groups"
+              multiple
+              filterable
+              clearable
+              :loading="groupsLoading"
+              :placeholder="t('teamAccounts.additionalGroupsHint')"
+              class="mt-1 w-full"
+              :disabled="creating"
+            >
+              <ElOption
+                v-for="option in groupOptions"
+                :key="`${option.providerId}:${option.groupId}`"
+                :label="`${option.name} · ${option.platform}`"
+                :value="option.groupId"
+              />
+            </ElSelect>
+          </label>
+          <label class="block text-sm">
             <span class="font-medium text-gray-700">{{ t('teamAccounts.ownerUserId') }}</span>
             <TeamAccountUserPicker
               v-model="createForm.ownerUserID"
@@ -613,117 +515,6 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
         </template>
       </ElDialog>
 
-      <ElDialog
-        :model-value="mappingOpen"
-        data-testid="admin-team-account-mapping-dialog"
-        append-to-body
-        align-center
-        :show-close="false"
-        width="min(100%, 46rem)"
-        :close-on-click-modal="mappingAdding === false && mappingRemovingID === null"
-        :close-on-press-escape="mappingAdding === false && mappingRemovingID === null"
-        @update:model-value="(value) => { if (!value) closeMappings() }"
-      >
-        <template #header>
-          <div class="flex items-start justify-between gap-4">
-            <div class="min-w-0">
-              <h2 class="text-base font-semibold text-gray-900">{{ t('teamAccounts.admin.mappings') }}</h2>
-              <p class="mt-1 text-sm text-gray-500">{{ t('teamAccounts.admin.mappingsHelp') }}</p>
-            </div>
-            <ElButton :disabled="mappingAdding || mappingRemovingID !== null" @click="closeMappings">
-              {{ t('teamAccounts.close') }}
-            </ElButton>
-          </div>
-        </template>
-
-        <div class="space-y-4">
-          <div class="grid gap-3 sm:grid-cols-2">
-            <label class="block text-sm">
-              <span class="font-medium text-gray-700">{{ t('teamAccounts.admin.departmentSelect') }}</span>
-              <TeamAccountDepartmentPicker
-                v-model="mappingForm.departmentExternalID"
-                data-testid="admin-mapping-department"
-                :disabled="mappingLoading"
-                @change="onDepartmentChange"
-              />
-            </label>
-            <label class="block text-sm">
-              <span class="font-medium text-gray-700">{{ t('teamAccounts.admin.groupSelect') }}</span>
-              <ElSelect
-                v-model="mappingForm.groupKey"
-                data-testid="admin-mapping-group"
-                filterable
-                clearable
-                :loading="groupsLoading"
-                :placeholder="t('teamAccounts.admin.groupPlaceholder')"
-                class="mt-1 w-full"
-                :disabled="groupsLoading"
-              >
-                <ElOptionGroup
-                  v-for="provider in [...new Set(groupOptions.map((option) => option.providerLabel))]"
-                  :key="provider"
-                  :label="provider"
-                >
-                  <ElOption
-                    v-for="option in groupOptions.filter((item) => item.providerLabel === provider)"
-                    :key="`${option.providerId}:${option.groupId}`"
-                    :label="`${option.name} · ${option.platform}`"
-                    :value="`${option.providerId}:${option.groupId}`"
-                  />
-                </ElOptionGroup>
-              </ElSelect>
-            </label>
-          </div>
-
-          <ElAlert
-            v-if="!mappingForm.departmentExternalID"
-            type="info"
-            :closable="false"
-            show-icon
-            :title="t('teamAccounts.admin.mappingEmpty')"
-          />
-
-          <ElSkeleton v-if="mappingLoading" :rows="2" animated />
-          <ElEmpty v-else-if="mappingIDs.length === 0" :description="t('teamAccounts.admin.noMappings')" :image-size="56" />
-          <ElTable v-else :data="mappingIDs.map((id) => ({ relay_group_id: id, name: groupNameByID.get(id) ?? `#${id}` }))" size="small" class="w-full">
-            <ElTableColumn prop="name" :label="t('teamAccounts.admin.groupSelect')" min-width="200" />
-            <ElTableColumn :label="t('teamAccounts.actions')" width="180" fixed="right">
-              <template #default="{ row }">
-                <div v-if="confirmingRemoveID === row.relay_group_id" class="flex flex-col gap-1">
-                  <span class="text-xs text-amber-700">
-                    {{ t('teamAccounts.admin.mappingRemoveConfirm', { group: row.relay_group_id }) }}
-                  </span>
-                  <div class="flex gap-1">
-                    <ElButton
-                      :data-testid="`admin-mapping-remove-confirm-${row.relay_group_id}`"
-                      link
-                      type="danger"
-                      :loading="mappingRemovingID === row.relay_group_id"
-                      :disabled="mappingRemovingID !== null"
-                      @click="removeMapping(row.relay_group_id)"
-                    >
-                      {{ t('teamAccounts.confirm') }}
-                    </ElButton>
-                    <ElButton link @click="confirmingRemoveID = null">
-                      {{ t('teamAccounts.cancel') }}
-                    </ElButton>
-                  </div>
-                </div>
-                <ElButton
-                  v-else
-                  :data-testid="`admin-mapping-remove-${row.relay_group_id}`"
-                  link
-                  type="danger"
-                  :disabled="mappingProviderID === null || mappingRemovingID !== null"
-                  @click="removeMapping(row.relay_group_id)"
-                >
-                  {{ t('teamAccounts.admin.mappingRemove') }}
-                </ElButton>
-              </template>
-            </ElTableColumn>
-          </ElTable>
-        </div>
-      </ElDialog>
 
       <TeamAccountDetailDialog
         v-model="detailOpen"

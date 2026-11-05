@@ -10,7 +10,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -20,7 +19,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/departmentgroupmap"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	entteamaccount "github.com/ai-efficiency/backend/ent/teamaccount"
 	entuser "github.com/ai-efficiency/backend/ent/user"
@@ -98,21 +96,28 @@ func (e *NotFoundError) Error() string { return e.Message }
 
 // Account is the console projection of a team account.
 type Account struct {
-	ID                    int       `json:"id"`
-	Name                  string    `json:"name"`
-	DepartmentExternalID  string    `json:"department_external_id"`
-	DepartmentDisplayPath string    `json:"department_display_path"`
-	RelayUsername         string    `json:"relay_username"`
-	RelayEmail            string    `json:"relay_email"`
-	RelayUserID           int64     `json:"relay_user_id"`
-	OwnerUserID           int       `json:"owner_user_id"`
-	OwnerUsername         string    `json:"owner_username,omitempty"`
-	OwnerEmail            string    `json:"owner_email,omitempty"`
-	Status                string    `json:"status"`
-	CreatedAt             time.Time `json:"created_at"`
-	Keys                  []Key     `json:"keys,omitempty"`
-	Managers              []Manager `json:"managers,omitempty"`
-	RelayGroupIDs         []int64   `json:"relay_group_ids,omitempty"`
+	ID                    int        `json:"id"`
+	Name                  string     `json:"name"`
+	DepartmentExternalID  string     `json:"department_external_id"`
+	DepartmentDisplayPath string     `json:"department_display_path"`
+	RelayUsername         string     `json:"relay_username"`
+	RelayEmail            string     `json:"relay_email"`
+	RelayUserID           int64      `json:"relay_user_id"`
+	OwnerUserID           int        `json:"owner_user_id"`
+	OwnerUsername         string     `json:"owner_username,omitempty"`
+	OwnerEmail            string     `json:"owner_email,omitempty"`
+	Status                string     `json:"status"`
+	CreatedAt             time.Time  `json:"created_at"`
+	Keys                  []Key      `json:"keys,omitempty"`
+	Managers              []Manager  `json:"managers,omitempty"`
+	AvailableGroups       []GroupRef `json:"available_groups,omitempty"`
+}
+
+// GroupRef is one Relay access group with its display name.
+type GroupRef struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Platform string `json:"platform"`
 }
 
 // Key is one issued API key.
@@ -142,6 +147,10 @@ type CreateInput struct {
 	OwnerUserID          int
 	ActorUserID          int
 	IsAdmin              bool
+	// AdditionalGroupIDs are Relay groups the account should be subscribed to
+	// on top of the provider defaults. A non-administrator may only choose
+	// groups they are subscribed to themselves.
+	AdditionalGroupIDs []int64
 }
 
 // Create provisions a Relay user and records the owning department.
@@ -170,14 +179,6 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 		return nil, &ValidationError{Message: "no enabled relay provider is configured"}
 	}
 
-	groups, err := s.mappedGroups(ctx, departmentID, providerID)
-	if err != nil {
-		return nil, err
-	}
-	if len(groups) == 0 {
-		return nil, &ValidationError{Message: "no Relay group is mapped to this department yet; an administrator must map at least one"}
-	}
-
 	username := deriveUsername(departmentID)
 	email := username + "@" + EmailDomain
 	if err := s.assertIdentityFree(ctx, username, email); err != nil {
@@ -198,22 +199,25 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 		return nil, fmt.Errorf("resolve relay provider: %w", err)
 	}
 
+	if err := s.assertAdditionalGroupsAllowed(ctx, provider, in); err != nil {
+		return nil, err
+	}
+
 	relayUser, err := provider.CreateUser(ctx, relay.CreateUserRequest{
-		Username:      username,
-		Email:         email,
-		Password:      password,
-		Role:          "user",
-		Notes:         "provisioned_by_ai_efficiency_team",
-		Concurrency:   DefaultConcurrency,
-		AllowedGroups: groups,
+		Username:    username,
+		Email:       email,
+		Password:    password,
+		Role:        "user",
+		Notes:       "provisioned_by_ai_efficiency_team",
+		Concurrency: DefaultConcurrency,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create relay user: %w", err)
 	}
 
-	if err := s.reconcileSubscriptions(ctx, provider, relayUser.ID, groups); err != nil {
+	if err := s.assignAdditionalGroups(ctx, provider, relayUser.ID, in); err != nil {
 		s.disableRelayUser(ctx, provider, relayUser.ID)
-		return nil, fmt.Errorf("reconcile subscriptions: %w", err)
+		return nil, err
 	}
 
 	ownerID := in.OwnerUserID
@@ -261,7 +265,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 	if err := recordEvent(ctx, tx, created.ID, in.ActorUserID, "account_created", map[string]any{
 		"department_external_id": departmentID,
 		"relay_user_id":          relayUser.ID,
-		"groups":                 groups,
+		"additional_group_ids":   in.AdditionalGroupIDs,
 		"owner_user_id":          ownerID,
 	}); err != nil {
 		s.disableRelayUser(ctx, provider, relayUser.ID)
@@ -368,86 +372,82 @@ func (s *Service) primaryProviderID(ctx context.Context) (int, error) {
 	return rows[0].ID, nil
 }
 
-func (s *Service) mappedGroups(ctx context.Context, departmentID string, providerID int) ([]int64, error) {
-	rows, err := s.client.DepartmentGroupMap.Query().
-		Where(
-			departmentgroupmap.DepartmentExternalIDEQ(departmentID),
-			departmentgroupmap.RelayProviderIDEQ(providerID),
-		).
-		Order(ent.Asc(departmentgroupmap.FieldRelayGroupID)).
-		All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list department groups: %w", err)
-	}
-	out := make([]int64, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, row.RelayGroupID)
-	}
-	return out, nil
-}
-
-// reconcileSubscriptions grants every mapped group and revokes the provider
-// defaults that were never requested by the department.
-func (s *Service) reconcileSubscriptions(ctx context.Context, provider relay.Provider, relayUserID int64, groups []int64) error {
-	wanted := make(map[int64]bool, len(groups))
-	for _, group := range groups {
-		wanted[group] = true
-	}
-
-	existing := map[int64]bool{}
-	if lister, ok := provider.(interface {
-		ListUserSubscriptions(ctx context.Context, relayUserID int64) ([]relay.UserSubscription, error)
-	}); ok {
-		subs, err := lister.ListUserSubscriptions(ctx, relayUserID)
-		if err != nil {
-			return fmt.Errorf("list subscriptions: %w", err)
-		}
-		for _, sub := range subs {
-			if strings.EqualFold(strings.TrimSpace(sub.Status), "active") {
-				existing[sub.GroupID] = true
-			}
-		}
-	}
-
-	assigner, ok := provider.(interface {
-		AssignSubscriptionForUser(ctx context.Context, userID, groupID int64, validityDays int) error
-	})
-	if !ok {
-		return errors.New("relay provider cannot assign subscriptions")
-	}
-	for _, group := range groups {
-		// Provisioning already auto-assigned the provider defaults; assigning a
-		// group that is live would conflict with the existing assignment notes.
-		if existing[group] {
-			continue
-		}
-		if err := assigner.AssignSubscriptionForUser(ctx, relayUserID, group, SubscriptionValidityDays); err != nil {
-			return fmt.Errorf("assign group %d: %w", group, err)
-		}
-	}
-
+// activeSubscriptionGroupIDSet returns the groups the Relay user currently holds
+// an active subscription for; a Relay key can only be bound to those.
+func (s *Service) activeSubscriptionGroupIDSet(ctx context.Context, provider relay.Provider, relayUserID int64) (map[int64]bool, error) {
 	lister, ok := provider.(interface {
 		ListUserSubscriptions(ctx context.Context, relayUserID int64) ([]relay.UserSubscription, error)
 	})
 	if !ok {
-		return nil
-	}
-	remover, ok := provider.(interface {
-		RemoveSubscriptionForUser(ctx context.Context, userID, groupID int64) error
-	})
-	if !ok {
-		return nil
+		return nil, fmt.Errorf("relay provider cannot list subscriptions")
 	}
 	subs, err := lister.ListUserSubscriptions(ctx, relayUserID)
 	if err != nil {
-		return fmt.Errorf("list subscriptions: %w", err)
+		return nil, fmt.Errorf("list subscriptions: %w", err)
 	}
+	out := make(map[int64]bool, len(subs))
 	for _, sub := range subs {
-		if wanted[sub.GroupID] {
+		if strings.EqualFold(strings.TrimSpace(sub.Status), "active") {
+			out[sub.GroupID] = true
+		}
+	}
+	return out, nil
+}
+
+// assertAdditionalGroupsAllowed rejects grants that exceed the creator's own
+// subscriptions before any Relay identity is created.
+func (s *Service) assertAdditionalGroupsAllowed(ctx context.Context, provider relay.Provider, in CreateInput) error {
+	if len(in.AdditionalGroupIDs) == 0 || in.IsAdmin {
+		return nil
+	}
+	actor, err := s.client.User.Get(ctx, in.ActorUserID)
+	if err != nil {
+		return fmt.Errorf("load creator: %w", err)
+	}
+	if actor.RelayUserID == nil {
+		return &PermissionError{Message: "your account has no Relay identity yet, so no group can be granted"}
+	}
+	own, err := s.activeSubscriptionGroupIDSet(ctx, provider, int64(*actor.RelayUserID))
+	if err != nil {
+		return err
+	}
+	for _, groupID := range in.AdditionalGroupIDs {
+		if groupID > 0 && !own[groupID] {
+			return &PermissionError{Message: fmt.Sprintf("you are not subscribed to group %d, so you cannot grant it", groupID)}
+		}
+	}
+	return nil
+}
+
+// assignAdditionalGroups subscribes the new account to the extra groups the
+// caller asked for. Defaults assigned by the Relay stay untouched, so a team
+// account starts with the same groups as any personal account.
+func (s *Service) assignAdditionalGroups(ctx context.Context, provider relay.Provider, relayUserID int64, in CreateInput) error {
+	if len(in.AdditionalGroupIDs) == 0 {
+		return nil
+	}
+	assigner, ok := provider.(interface {
+		AssignSubscriptionForUser(ctx context.Context, userID, groupID int64, validityDays int) error
+	})
+	if !ok {
+		return fmt.Errorf("relay provider cannot assign subscriptions")
+	}
+
+	existing, err := s.activeSubscriptionGroupIDSet(ctx, provider, relayUserID)
+	if err != nil {
+		return err
+	}
+	seen := map[int64]bool{}
+	for _, groupID := range in.AdditionalGroupIDs {
+		if groupID <= 0 || seen[groupID] {
 			continue
 		}
-		if err := remover.RemoveSubscriptionForUser(ctx, relayUserID, sub.GroupID); err != nil {
-			return fmt.Errorf("remove default group %d: %w", sub.GroupID, err)
+		seen[groupID] = true
+		if existing[groupID] {
+			continue
+		}
+		if err := assigner.AssignSubscriptionForUser(ctx, relayUserID, groupID, SubscriptionValidityDays); err != nil {
+			return fmt.Errorf("assign group %d: %w", groupID, err)
 		}
 	}
 	return nil
@@ -606,11 +606,15 @@ func (s *Service) Get(ctx context.Context, actorUserID int, includeAll bool, acc
 	}
 	account.Managers = managers
 
-	groups, err := s.mappedGroups(ctx, row.DepartmentExternalID, row.RelayProviderID)
+	provider, err := s.resolver.Resolve(ctx, row.RelayProviderID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve relay provider: %w", err)
+	}
+	groupIDs, err := s.activeSubscriptionGroupIDSet(ctx, provider, row.RelayUserID)
 	if err != nil {
 		return nil, err
 	}
-	account.RelayGroupIDs = groups
+	account.AvailableGroups = s.groupRefs(ctx, provider, groupIDs)
 	if owner, err := s.client.User.Get(ctx, row.OwnerUserID); err == nil {
 		account.OwnerUsername = owner.Username
 		account.OwnerEmail = owner.Email
@@ -694,14 +698,13 @@ func (s *Service) CreateKey(ctx context.Context, actorUserID int, includeAll boo
 	if row.Status != "active" {
 		return nil, "", &ConflictError{Message: "team account is not active"}
 	}
-	groupID, err = s.assertMappedGroup(ctx, row, groupID)
-	if err != nil {
-		return nil, "", err
-	}
-
 	provider, err := s.resolver.Resolve(ctx, row.RelayProviderID)
 	if err != nil {
 		return nil, "", fmt.Errorf("resolve relay provider: %w", err)
+	}
+	groupID, err = s.ensureSubscribedGroup(ctx, provider, row.RelayUserID, groupID)
+	if err != nil {
+		return nil, "", err
 	}
 	password, err := s.decryptPassword(row)
 	if err != nil {
@@ -747,23 +750,50 @@ func (s *Service) CreateKey(ctx context.Context, actorUserID int, includeAll boo
 	return &key, created.Secret, nil
 }
 
-func (s *Service) assertMappedGroup(ctx context.Context, row *ent.TeamAccount, groupID int64) (int64, error) {
-	groups, err := s.mappedGroups(ctx, row.DepartmentExternalID, row.RelayProviderID)
+// ensureSubscribedGroup resolves the group a key should bind to and rejects
+// groups the account is not subscribed to.
+func (s *Service) ensureSubscribedGroup(ctx context.Context, provider relay.Provider, relayUserID int64, groupID int64) (int64, error) {
+	subs, err := s.activeSubscriptionGroupIDSet(ctx, provider, relayUserID)
 	if err != nil {
 		return 0, err
 	}
-	if len(groups) == 0 {
-		return 0, &ValidationError{Message: "no Relay group is mapped to this department"}
+	if len(subs) == 0 {
+		return 0, &ValidationError{Message: "this account has no active Relay subscription yet"}
 	}
 	if groupID == 0 {
-		return groups[0], nil
-	}
-	for _, candidate := range groups {
-		if candidate == groupID {
-			return groupID, nil
+		for id := range subs {
+			return id, nil
 		}
 	}
-	return 0, &ValidationError{Message: "this group is not mapped to the department"}
+	if !subs[groupID] {
+		return 0, &ValidationError{Message: "this account is not subscribed to that group"}
+	}
+	return groupID, nil
+}
+
+// groupRefs resolves display names for the subscribed groups.
+func (s *Service) groupRefs(ctx context.Context, provider relay.Provider, ids map[int64]bool) []GroupRef {
+	out := make([]GroupRef, 0, len(ids))
+	names := map[int64]relay.Group{}
+	if lister, ok := provider.(interface {
+		ListPlatformGroups(ctx context.Context) ([]relay.Group, error)
+	}); ok {
+		if groups, err := lister.ListPlatformGroups(ctx); err == nil {
+			for _, group := range groups {
+				names[group.ID] = group
+			}
+		}
+	}
+	for id := range ids {
+		ref := GroupRef{ID: id, Name: fmt.Sprintf("#%d", id)}
+		if group, ok := names[id]; ok {
+			ref.Name = group.Name
+			ref.Platform = group.Platform
+		}
+		out = append(out, ref)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 // RevokeKey disables one key at the Relay and records the change.
@@ -1112,69 +1142,6 @@ func (s *Service) AggregateUsage(ctx context.Context, actorUserID int, includeAl
 	}
 	sort.Slice(usage.Days, func(i, j int) bool { return usage.Days[i].Date < usage.Days[j].Date })
 	return usage, nil
-}
-
-// UpsertDepartmentGroup maps one Relay group to a department.
-func (s *Service) UpsertDepartmentGroup(ctx context.Context, actorUserID, providerID int, departmentID string, groupID int64) error {
-	departmentID = strings.TrimSpace(departmentID)
-	if departmentID == "" {
-		return &ValidationError{Message: "department is required"}
-	}
-	if groupID <= 0 {
-		return &ValidationError{Message: "group is required"}
-	}
-	exists, err := s.client.DepartmentGroupMap.Query().
-		Where(
-			departmentgroupmap.DepartmentExternalIDEQ(departmentID),
-			departmentgroupmap.RelayProviderIDEQ(providerID),
-			departmentgroupmap.RelayGroupIDEQ(groupID),
-		).Exist(ctx)
-	if err != nil {
-		return fmt.Errorf("check mapping: %w", err)
-	}
-	if exists {
-		return nil
-	}
-	_, err = s.client.DepartmentGroupMap.Create().
-		SetDepartmentExternalID(departmentID).
-		SetRelayProviderID(providerID).
-		SetRelayGroupID(groupID).
-		SetNillableCreatedByUserID(&actorUserID).
-		Save(ctx)
-	if err != nil {
-		return fmt.Errorf("create mapping: %w", err)
-	}
-	return nil
-}
-
-// DeleteDepartmentGroup removes one mapping.
-func (s *Service) DeleteDepartmentGroup(ctx context.Context, providerID int, departmentID string, groupID int64) error {
-	_, err := s.client.DepartmentGroupMap.Delete().
-		Where(
-			departmentgroupmap.DepartmentExternalIDEQ(departmentID),
-			departmentgroupmap.RelayProviderIDEQ(providerID),
-			departmentgroupmap.RelayGroupIDEQ(groupID),
-		).Exec(ctx)
-	if err != nil {
-		return fmt.Errorf("delete mapping: %w", err)
-	}
-	return nil
-}
-
-// ListDepartmentGroups lists mappings for one department.
-func (s *Service) ListDepartmentGroups(ctx context.Context, departmentID string) ([]int64, error) {
-	rows, err := s.client.DepartmentGroupMap.Query().
-		Where(departmentgroupmap.DepartmentExternalIDEQ(strings.TrimSpace(departmentID))).
-		Order(ent.Asc(departmentgroupmap.FieldRelayGroupID)).
-		All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list mappings: %w", err)
-	}
-	out := make([]int64, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, row.RelayGroupID)
-	}
-	return out, nil
 }
 
 // Events returns the audit trail, newest first.

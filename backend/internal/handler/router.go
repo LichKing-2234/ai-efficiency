@@ -598,9 +598,6 @@ func setupRouter(
 			adminTeamAccountsGroup.DELETE("/:id/managers/:user_id", teamAccountAdminHandler.RemoveManager)
 			adminTeamAccountsGroup.POST("/:id/transfer", teamAccountAdminHandler.Transfer)
 			adminTeamAccountsGroup.POST("/:id/status", teamAccountAdminHandler.AdminSetStatus)
-			adminTeamAccountsGroup.GET("/department-groups", teamAccountAdminHandler.ListDepartmentGroups)
-			adminTeamAccountsGroup.POST("/department-groups", teamAccountAdminHandler.UpsertDepartmentGroup)
-			adminTeamAccountsGroup.DELETE("/department-groups", teamAccountAdminHandler.DeleteDepartmentGroup)
 		}
 	}
 

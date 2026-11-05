@@ -222,6 +222,7 @@ describe('TeamAccountSection', () => {
     expect(api.createTeamAccount).toHaveBeenCalledWith({
       name: 'New Account',
       department_external_id: 'dept-data',
+      additional_group_ids: [],
     })
   })
 

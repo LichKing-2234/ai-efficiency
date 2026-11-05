@@ -32,8 +32,6 @@ type Tx struct {
 	CommitRewrite *CommitRewriteClient
 	// Credential is the client for interacting with the Credential builders.
 	Credential *CredentialClient
-	// DepartmentGroupMap is the client for interacting with the DepartmentGroupMap builders.
-	DepartmentGroupMap *DepartmentGroupMapClient
 	// DirectoryDepartment is the client for interacting with the DirectoryDepartment builders.
 	DirectoryDepartment *DirectoryDepartmentClient
 	// DirectoryMember is the client for interacting with the DirectoryMember builders.
@@ -241,7 +239,6 @@ func (tx *Tx) init() {
 	tx.CommitCheckpoint = NewCommitCheckpointClient(tx.config)
 	tx.CommitRewrite = NewCommitRewriteClient(tx.config)
 	tx.Credential = NewCredentialClient(tx.config)
-	tx.DepartmentGroupMap = NewDepartmentGroupMapClient(tx.config)
 	tx.DirectoryDepartment = NewDirectoryDepartmentClient(tx.config)
 	tx.DirectoryMember = NewDirectoryMemberClient(tx.config)
 	tx.DirectoryMemberDepartment = NewDirectoryMemberDepartmentClient(tx.config)

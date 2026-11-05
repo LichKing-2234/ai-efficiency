@@ -427,33 +427,6 @@ var (
 		Columns:    CredentialsColumns,
 		PrimaryKey: []*schema.Column{CredentialsColumns[0]},
 	}
-	// DepartmentGroupMapsColumns holds the columns for the "department_group_maps" table.
-	DepartmentGroupMapsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "department_external_id", Type: field.TypeString},
-		{Name: "relay_provider_id", Type: field.TypeInt},
-		{Name: "relay_group_id", Type: field.TypeInt64},
-		{Name: "created_by_user_id", Type: field.TypeInt, Nullable: true},
-		{Name: "created_at", Type: field.TypeTime},
-	}
-	// DepartmentGroupMapsTable holds the schema information for the "department_group_maps" table.
-	DepartmentGroupMapsTable = &schema.Table{
-		Name:       "department_group_maps",
-		Columns:    DepartmentGroupMapsColumns,
-		PrimaryKey: []*schema.Column{DepartmentGroupMapsColumns[0]},
-		Indexes: []*schema.Index{
-			{
-				Name:    "departmentgroupmap_department_external_id_relay_provider_id_relay_group_id",
-				Unique:  true,
-				Columns: []*schema.Column{DepartmentGroupMapsColumns[1], DepartmentGroupMapsColumns[2], DepartmentGroupMapsColumns[3]},
-			},
-			{
-				Name:    "departmentgroupmap_department_external_id",
-				Unique:  false,
-				Columns: []*schema.Column{DepartmentGroupMapsColumns[1]},
-			},
-		},
-	}
 	// DirectoryDepartmentsColumns holds the columns for the "directory_departments" table.
 	DirectoryDepartmentsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -1923,7 +1896,6 @@ var (
 		CommitCheckpointsTable,
 		CommitRewritesTable,
 		CredentialsTable,
-		DepartmentGroupMapsTable,
 		DirectoryDepartmentsTable,
 		DirectoryMembersTable,
 		DirectoryMemberDepartmentsTable,

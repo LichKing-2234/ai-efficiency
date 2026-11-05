@@ -4,9 +4,6 @@ import type {
   ApiResponse,
   TeamAccountCredentials,
   TeamAccountCreateRequest,
-  TeamAccountDepartmentGroupMutationResponse,
-  TeamAccountDepartmentGroupRequest,
-  TeamAccountDepartmentGroupsResponse,
   TeamAccountDetail,
   TeamAccountEventListResponse,
   TeamAccountKeyCreateRequest,
@@ -147,25 +144,4 @@ export function listAdminTeamAccountEvents(id: number, limit = 100) {
 export function setAdminTeamAccountStatus(id: number, status: TeamAccountStatus) {
   const data: TeamAccountStatusRequest = { status }
   return client.post<ApiResponse<TeamAccountStatusResponse>>(accountPath(ADMIN_BASE, id, '/status'), data)
-}
-
-export function listTeamAccountDepartmentGroups(departmentExternalID: string) {
-  return client.get<ApiResponse<TeamAccountDepartmentGroupsResponse>>(
-    `${ADMIN_BASE}/department-groups`,
-    { params: { department_external_id: departmentExternalID } },
-  )
-}
-
-export function upsertTeamAccountDepartmentGroup(data: TeamAccountDepartmentGroupRequest) {
-  return client.post<ApiResponse<TeamAccountDepartmentGroupMutationResponse>>(
-    `${ADMIN_BASE}/department-groups`,
-    data,
-  )
-}
-
-export function deleteTeamAccountDepartmentGroup(data: TeamAccountDepartmentGroupRequest) {
-  return client.delete<ApiResponse<TeamAccountDepartmentGroupMutationResponse>>(
-    `${ADMIN_BASE}/department-groups`,
-    { data },
-  )
 }

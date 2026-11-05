@@ -71,7 +71,7 @@ const detailError = ref('')
 const credentials = ref<TeamAccountCredentials | null>(null)
 const credentialsLoading = ref(false)
 const credentialsError = ref('')
-const keyForm = reactive({ groupId: '', name: '' })
+const keyForm = reactive<{ groupId: number | ''; name: string }>({ groupId: '', name: '' })
 const keyCreating = ref(false)
 const keyError = ref('')
 const createdKey = ref<{ name: string; secret: string } | null>(null)
@@ -123,11 +123,12 @@ const ownerLabel = computed(() => {
 })
 
 const canCreateKey = computed(() => (
-  Number.isInteger(Number(keyForm.groupId))
-  && Number(keyForm.groupId) > 0
+  typeof keyForm.groupId === 'number'
+  && keyForm.groupId > 0
   && keyForm.name.trim().length > 0
   && !keyCreating.value
 ))
+const availableGroups = computed(() => detail.value?.available_groups ?? [])
 const canAddManager = computed(() => (
   managerUserID.value !== null
   && managerUserID.value > 0
@@ -160,7 +161,7 @@ watch(
 function resetTransientState() {
   credentials.value = null
   credentialsError.value = ''
-  keyForm.groupId = ''
+  keyForm.groupId = detail.value?.available_groups?.[0]?.id ?? ''
   keyForm.name = ''
   keyError.value = ''
   createdKey.value = null
@@ -573,14 +574,20 @@ function requestStatusChange() {
           <div class="flex flex-col gap-2 sm:flex-row sm:items-end">
             <label class="block text-sm sm:w-40">
               <span class="font-medium text-gray-700">{{ t('teamAccounts.keys.groupId') }}</span>
-              <ElInput
+              <ElSelect
                 v-model="keyForm.groupId"
                 data-testid="team-account-key-group"
-                class="mt-1"
-                type="number"
-                min="1"
+                class="mt-1 w-full"
+                :placeholder="t('teamAccounts.keys.groupPlaceholder')"
                 :disabled="keyCreating"
-              />
+              >
+                <ElOption
+                  v-for="group in availableGroups"
+                  :key="group.id"
+                  :label="`${group.name}${group.platform ? ` · ${group.platform}` : ''}`"
+                  :value="group.id"
+                />
+              </ElSelect>
             </label>
             <label class="block min-w-0 flex-1 text-sm">
               <span class="font-medium text-gray-700">{{ t('teamAccounts.keys.name') }}</span>

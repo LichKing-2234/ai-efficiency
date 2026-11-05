@@ -36,9 +36,6 @@ type CommitRewrite func(*sql.Selector)
 // Credential is the predicate function for credential builders.
 type Credential func(*sql.Selector)
 
-// DepartmentGroupMap is the predicate function for departmentgroupmap builders.
-type DepartmentGroupMap func(*sql.Selector)
-
 // DirectoryDepartment is the predicate function for directorydepartment builders.
 type DirectoryDepartment func(*sql.Selector)
 

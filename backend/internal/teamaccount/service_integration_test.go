@@ -2,6 +2,7 @@ package teamaccount
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -27,9 +28,21 @@ func newFakeProvider() *fakeProvider {
 	return &fakeProvider{subscriptions: map[int64]map[int64]bool{}, nextRelayID: 900, keySecret: "sk-team-secret-value-0123456789"}
 }
 
+// defaults mirrors the provider behaviour: every new Relay user is subscribed
+// to Codex, Agent, Claude and China automatically.
+func (f *fakeProvider) seedDefaults(relayUserID int64) {
+	if f.subscriptions[relayUserID] == nil {
+		f.subscriptions[relayUserID] = map[int64]bool{}
+	}
+	for _, group := range []int64{2, 4, 10, 12} {
+		f.subscriptions[relayUserID][group] = true
+	}
+}
+
 func (f *fakeProvider) CreateUser(_ context.Context, req relay.CreateUserRequest) (*relay.User, error) {
 	f.created = append(f.created, req)
 	f.nextRelayID++
+	f.seedDefaults(f.nextRelayID)
 	return &relay.User{ID: f.nextRelayID, Username: req.Username, Email: req.Email}, nil
 }
 
@@ -58,9 +71,12 @@ func (f *fakeProvider) AssignSubscriptionForUser(_ context.Context, userID, grou
 	return nil
 }
 
-func (f *fakeProvider) ListUserSubscriptions(_ context.Context, _ int64) ([]relay.UserSubscription, error) {
-	// Provider defaults that were never requested by the department.
-	return []relay.UserSubscription{{GroupID: 2}, {GroupID: 4}, {GroupID: 10}}, nil
+func (f *fakeProvider) ListUserSubscriptions(_ context.Context, relayUserID int64) ([]relay.UserSubscription, error) {
+	out := make([]relay.UserSubscription, 0, len(f.subscriptions[relayUserID]))
+	for groupID := range f.subscriptions[relayUserID] {
+		out = append(out, relay.UserSubscription{GroupID: groupID, Status: "active"})
+	}
+	return out, nil
 }
 
 func (f *fakeProvider) RemoveSubscriptionForUser(_ context.Context, userID, groupID int64) error {
@@ -116,23 +132,11 @@ func seedProvider(t *testing.T, client *ent.Client) int {
 	return row.ID
 }
 
-func seedMapping(t *testing.T, client *ent.Client, providerID int, departmentID string, groupID int64) {
-	t.Helper()
-	if _, err := client.DepartmentGroupMap.Create().
-		SetDepartmentExternalID(departmentID).
-		SetRelayProviderID(providerID).
-		SetRelayGroupID(groupID).
-		Save(context.Background()); err != nil {
-		t.Fatalf("seed mapping: %v", err)
-	}
-}
-
 func TestCreateProvisionsRelayIdentityAndOwnership(t *testing.T) {
 	client := testdb.Open(t)
 	ownerID, _ := seedUsers(t, client)
 	provider := newFakeProvider()
-	providerID := seedProvider(t, client)
-	seedMapping(t, client, providerID, "department-alpha", 10)
+	seedProvider(t, client)
 
 	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
 	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha Team", ActorUserID: ownerID})
@@ -156,17 +160,14 @@ func TestCreateProvisionsRelayIdentityAndOwnership(t *testing.T) {
 	if req.Email != "team-department-alpha@invalid.account" {
 		t.Errorf("email = %q", req.Email)
 	}
-	if len(req.AllowedGroups) != 1 || req.AllowedGroups[0] != 10 {
-		t.Errorf("allowed groups = %v", req.AllowedGroups)
+	if len(req.AllowedGroups) != 0 {
+		t.Errorf("new accounts must not pin an allow-list, got %v", req.AllowedGroups)
 	}
 
 	subs := provider.subscriptions[account.RelayUserID]
-	if !subs[10] {
-		t.Errorf("mapped group subscription missing: %v", subs)
-	}
-	for _, defaultGroup := range []int64{2, 4} {
-		if subs[defaultGroup] {
-			t.Errorf("default group %d was not revoked: %v", defaultGroup, subs)
+	for _, defaultGroup := range []int64{2, 4, 10, 12} {
+		if !subs[defaultGroup] {
+			t.Errorf("default group %d missing after provisioning: %v", defaultGroup, subs)
 		}
 	}
 
@@ -183,8 +184,7 @@ func TestCreateRequiresRepresentative(t *testing.T) {
 	client := testdb.Open(t)
 	ownerID, _ := seedUsers(t, client)
 	provider := newFakeProvider()
-	providerID := seedProvider(t, client)
-	seedMapping(t, client, providerID, "department-alpha", 10)
+	seedProvider(t, client)
 
 	service := New(client, fakeResolver{provider}, fakeScope{}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
 	if _, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID}); err == nil {
@@ -199,8 +199,7 @@ func TestTransferRemovesPreviousOwner(t *testing.T) {
 	client := testdb.Open(t)
 	ownerID, otherID := seedUsers(t, client)
 	provider := newFakeProvider()
-	providerID := seedProvider(t, client)
-	seedMapping(t, client, providerID, "department-alpha", 10)
+	seedProvider(t, client)
 
 	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
 	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
@@ -231,8 +230,7 @@ func TestTransferRejectsNonOwnerManager(t *testing.T) {
 	client := testdb.Open(t)
 	ownerID, otherID := seedUsers(t, client)
 	provider := newFakeProvider()
-	providerID := seedProvider(t, client)
-	seedMapping(t, client, providerID, "department-alpha", 10)
+	seedProvider(t, client)
 	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
 	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
 	if err != nil {
@@ -243,5 +241,100 @@ func TestTransferRejectsNonOwnerManager(t *testing.T) {
 	}
 	if err := service.Transfer(context.Background(), otherID, false, account.ID, otherID); err == nil {
 		t.Fatal("a plain manager must not transfer ownership")
+	}
+}
+
+func TestAdditionalGroupsRespectCreatorSubscriptions(t *testing.T) {
+	client := testdb.Open(t)
+	ownerID, _ := seedUsers(t, client)
+	seedProvider(t, client)
+	provider := newFakeProvider()
+	// The creator's own account holds China (10) and Claude (4) only.
+	creatorRelayID := int64(2001)
+	if _, err := client.User.UpdateOneID(ownerID).SetRelayUserID(int(creatorRelayID)).Save(context.Background()); err != nil {
+		t.Fatalf("bind creator relay identity: %v", err)
+	}
+	provider.subscriptions[creatorRelayID] = map[int64]bool{4: true, 10: true}
+	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
+
+	if _, err := service.Create(context.Background(), CreateInput{
+		Name: "Alpha", ActorUserID: ownerID, AdditionalGroupIDs: []int64{10},
+	}); err != nil {
+		t.Fatalf("creator may grant a group they hold: %v", err)
+	}
+	accounts, err := service.List(context.Background(), ownerID, false)
+	if err != nil || len(accounts) != 1 {
+		t.Fatalf("list accounts: %v %d", err, len(accounts))
+	}
+	if !provider.subscriptions[accounts[0].RelayUserID][10] {
+		t.Fatalf("additional group was not subscribed: %v", provider.subscriptions[accounts[0].RelayUserID])
+	}
+	if !provider.subscriptions[accounts[0].RelayUserID][2] {
+		t.Fatalf("default subscriptions must stay: %v", provider.subscriptions[accounts[0].RelayUserID])
+	}
+}
+
+func TestAdditionalGroupsRejectGroupsTheCreatorDoesNotHold(t *testing.T) {
+	client := testdb.Open(t)
+	ownerID, _ := seedUsers(t, client)
+	seedProvider(t, client)
+	provider := newFakeProvider()
+	creatorRelayID := int64(2002)
+	if _, err := client.User.UpdateOneID(ownerID).SetRelayUserID(int(creatorRelayID)).Save(context.Background()); err != nil {
+		t.Fatalf("bind creator relay identity: %v", err)
+	}
+	provider.subscriptions[creatorRelayID] = map[int64]bool{10: true}
+	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
+
+	_, err := service.Create(context.Background(), CreateInput{
+		Name: "Alpha", ActorUserID: ownerID, AdditionalGroupIDs: []int64{25},
+	})
+	if err == nil {
+		t.Fatal("granting a group the creator does not hold must fail")
+	}
+	var permission *PermissionError
+	if !errors.As(err, &permission) {
+		t.Fatalf("expected a permission error, got %v", err)
+	}
+	if len(provider.created) != 0 {
+		t.Fatal("relay user must not be created for a rejected grant")
+	}
+}
+
+func TestAdminMayGrantAnyGroup(t *testing.T) {
+	client := testdb.Open(t)
+	adminID, _ := seedUsers(t, client)
+	seedProvider(t, client)
+	provider := newFakeProvider()
+	service := New(client, fakeResolver{provider}, fakeScope{}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
+
+	account, err := service.Create(context.Background(), CreateInput{
+		Name: "Alpha", DepartmentExternalID: "department-alpha", ActorUserID: adminID, IsAdmin: true,
+		AdditionalGroupIDs: []int64{25},
+	})
+	if err != nil {
+		t.Fatalf("admin grant failed: %v", err)
+	}
+	if !provider.subscriptions[account.RelayUserID][25] {
+		t.Fatalf("admin grant missing: %v", provider.subscriptions[account.RelayUserID])
+	}
+}
+
+func TestCreateKeyRejectsGroupsWithoutSubscription(t *testing.T) {
+	client := testdb.Open(t)
+	ownerID, _ := seedUsers(t, client)
+	seedProvider(t, client)
+	provider := newFakeProvider()
+	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
+	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	if _, _, err := service.CreateKey(context.Background(), ownerID, false, account.ID, 10, "china"); err != nil {
+		t.Fatalf("subscribed group must be allowed: %v", err)
+	}
+	if _, _, err := service.CreateKey(context.Background(), ownerID, false, account.ID, 25, "not-subscribed"); err == nil {
+		t.Fatal("unsubscribed group must be rejected")
 	}
 }

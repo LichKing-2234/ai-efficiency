@@ -22,7 +22,6 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
-	"github.com/ai-efficiency/backend/ent/departmentgroupmap"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorymember"
 	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
@@ -126,7 +125,6 @@ func checkColumn(table, column string) error {
 			commitcheckpoint.Table:              commitcheckpoint.ValidColumn,
 			commitrewrite.Table:                 commitrewrite.ValidColumn,
 			credential.Table:                    credential.ValidColumn,
-			departmentgroupmap.Table:            departmentgroupmap.ValidColumn,
 			directorydepartment.Table:           directorydepartment.ValidColumn,
 			directorymember.Table:               directorymember.ValidColumn,
 			directorymemberdepartment.Table:     directorymemberdepartment.ValidColumn,

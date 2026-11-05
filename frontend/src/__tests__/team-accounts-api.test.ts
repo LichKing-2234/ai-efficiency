@@ -14,12 +14,10 @@ import {
   createAdminTeamAccount,
   createTeamAccount,
   createTeamAccountKey,
-  deleteTeamAccountDepartmentGroup,
   getAdminTeamAccount,
   getTeamAccount,
   getTeamAccountUsage,
   listAdminTeamAccounts,
-  listTeamAccountDepartmentGroups,
   listTeamAccountEvents,
   listTeamAccounts,
   removeTeamAccountManager,
@@ -27,7 +25,6 @@ import {
   revokeTeamAccountKey,
   setAdminTeamAccountStatus,
   transferTeamAccount,
-  upsertTeamAccountDepartmentGroup,
 } from '@/api/teamAccounts'
 
 const mockClient = client as unknown as {
@@ -112,15 +109,4 @@ describe('team accounts API', () => {
     expect(mockClient.post).toHaveBeenNthCalledWith(2, '/admin/team-accounts/7/status', { status: 'suspended' })
   })
 
-  it('lists, adds, and removes department group mappings', async () => {
-    const payload = { department_external_id: 'dept-data', relay_provider_id: 2, relay_group_id: 9 }
-    await listTeamAccountDepartmentGroups('dept-data')
-    await upsertTeamAccountDepartmentGroup(payload)
-    await deleteTeamAccountDepartmentGroup(payload)
-    expect(mockClient.get).toHaveBeenCalledWith('/admin/team-accounts/department-groups', {
-      params: { department_external_id: 'dept-data' },
-    })
-    expect(mockClient.post).toHaveBeenCalledWith('/admin/team-accounts/department-groups', payload)
-    expect(mockClient.delete).toHaveBeenCalledWith('/admin/team-accounts/department-groups', { data: payload })
-  })
 })

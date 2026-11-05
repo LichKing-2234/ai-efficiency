@@ -15,7 +15,6 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
-	"github.com/ai-efficiency/backend/ent/departmentgroupmap"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorymember"
 	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
@@ -364,16 +363,6 @@ func init() {
 	credential.DefaultUpdatedAt = credentialDescUpdatedAt.Default.(func() time.Time)
 	// credential.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	credential.UpdateDefaultUpdatedAt = credentialDescUpdatedAt.UpdateDefault.(func() time.Time)
-	departmentgroupmapFields := schema.DepartmentGroupMap{}.Fields()
-	_ = departmentgroupmapFields
-	// departmentgroupmapDescDepartmentExternalID is the schema descriptor for department_external_id field.
-	departmentgroupmapDescDepartmentExternalID := departmentgroupmapFields[0].Descriptor()
-	// departmentgroupmap.DepartmentExternalIDValidator is a validator for the "department_external_id" field. It is called by the builders before save.
-	departmentgroupmap.DepartmentExternalIDValidator = departmentgroupmapDescDepartmentExternalID.Validators[0].(func(string) error)
-	// departmentgroupmapDescCreatedAt is the schema descriptor for created_at field.
-	departmentgroupmapDescCreatedAt := departmentgroupmapFields[4].Descriptor()
-	// departmentgroupmap.DefaultCreatedAt holds the default value on creation for the created_at field.
-	departmentgroupmap.DefaultCreatedAt = departmentgroupmapDescCreatedAt.Default.(func() time.Time)
 	directorydepartmentFields := schema.DirectoryDepartment{}.Fields()
 	_ = directorydepartmentFields
 	// directorydepartmentDescExternalID is the schema descriptor for external_id field.

@@ -86,8 +86,9 @@ func (h *TeamAccountHandler) Create(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name                 string `json:"name"`
-		DepartmentExternalID string `json:"department_external_id"`
+		Name                 string  `json:"name"`
+		DepartmentExternalID string  `json:"department_external_id"`
+		AdditionalGroupIDs   []int64 `json:"additional_group_ids"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		pkg.Error(c, http.StatusBadRequest, "invalid request body")
@@ -98,6 +99,7 @@ func (h *TeamAccountHandler) Create(c *gin.Context) {
 		DepartmentExternalID: req.DepartmentExternalID,
 		ActorUserID:          userID,
 		IsAdmin:              isAdmin,
+		AdditionalGroupIDs:   req.AdditionalGroupIDs,
 	})
 	if err != nil {
 		h.respondError(c, err)
@@ -325,9 +327,10 @@ func (h *TeamAccountHandler) AdminCreate(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name                 string `json:"name"`
-		DepartmentExternalID string `json:"department_external_id"`
-		OwnerUserID          int    `json:"owner_user_id"`
+		Name                 string  `json:"name"`
+		DepartmentExternalID string  `json:"department_external_id"`
+		OwnerUserID          int     `json:"owner_user_id"`
+		AdditionalGroupIDs   []int64 `json:"additional_group_ids"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		pkg.Error(c, http.StatusBadRequest, "invalid request body")
@@ -339,6 +342,7 @@ func (h *TeamAccountHandler) AdminCreate(c *gin.Context) {
 		OwnerUserID:          req.OwnerUserID,
 		ActorUserID:          userID,
 		IsAdmin:              true,
+		AdditionalGroupIDs:   req.AdditionalGroupIDs,
 	})
 	if err != nil {
 		h.respondError(c, err)
@@ -369,54 +373,4 @@ func (h *TeamAccountHandler) AdminSetStatus(c *gin.Context) {
 		return
 	}
 	pkg.Success(c, gin.H{"status": req.Status})
-}
-
-// ListDepartmentGroups handles GET /api/v1/admin/team-accounts/department-groups.
-func (h *TeamAccountHandler) ListDepartmentGroups(c *gin.Context) {
-	groups, err := h.service.ListDepartmentGroups(c.Request.Context(), c.Query("department_external_id"))
-	if err != nil {
-		h.respondError(c, err)
-		return
-	}
-	pkg.Success(c, gin.H{"relay_group_ids": groups})
-}
-
-// UpsertDepartmentGroup handles POST /api/v1/admin/team-accounts/department-groups.
-func (h *TeamAccountHandler) UpsertDepartmentGroup(c *gin.Context) {
-	userID, _, ok := h.actor(c)
-	if !ok {
-		return
-	}
-	var req struct {
-		DepartmentExternalID string `json:"department_external_id"`
-		ProviderID           int    `json:"relay_provider_id"`
-		GroupID              int64  `json:"relay_group_id"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Error(c, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	if err := h.service.UpsertDepartmentGroup(c.Request.Context(), userID, req.ProviderID, req.DepartmentExternalID, req.GroupID); err != nil {
-		h.respondError(c, err)
-		return
-	}
-	pkg.Success(c, gin.H{"mapped": true})
-}
-
-// DeleteDepartmentGroup handles DELETE /api/v1/admin/team-accounts/department-groups.
-func (h *TeamAccountHandler) DeleteDepartmentGroup(c *gin.Context) {
-	var req struct {
-		DepartmentExternalID string `json:"department_external_id"`
-		ProviderID           int    `json:"relay_provider_id"`
-		GroupID              int64  `json:"relay_group_id"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Error(c, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	if err := h.service.DeleteDepartmentGroup(c.Request.Context(), req.ProviderID, req.DepartmentExternalID, req.GroupID); err != nil {
-		h.respondError(c, err)
-		return
-	}
-	pkg.Success(c, gin.H{"deleted": true})
 }

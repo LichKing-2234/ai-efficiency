@@ -25,7 +25,6 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
-	"github.com/ai-efficiency/backend/ent/departmentgroupmap"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorymember"
 	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
@@ -86,8 +85,6 @@ type Client struct {
 	CommitRewrite *CommitRewriteClient
 	// Credential is the client for interacting with the Credential builders.
 	Credential *CredentialClient
-	// DepartmentGroupMap is the client for interacting with the DepartmentGroupMap builders.
-	DepartmentGroupMap *DepartmentGroupMapClient
 	// DirectoryDepartment is the client for interacting with the DirectoryDepartment builders.
 	DirectoryDepartment *DirectoryDepartmentClient
 	// DirectoryMember is the client for interacting with the DirectoryMember builders.
@@ -175,7 +172,6 @@ func (c *Client) init() {
 	c.CommitCheckpoint = NewCommitCheckpointClient(c.config)
 	c.CommitRewrite = NewCommitRewriteClient(c.config)
 	c.Credential = NewCredentialClient(c.config)
-	c.DepartmentGroupMap = NewDepartmentGroupMapClient(c.config)
 	c.DirectoryDepartment = NewDirectoryDepartmentClient(c.config)
 	c.DirectoryMember = NewDirectoryMemberClient(c.config)
 	c.DirectoryMemberDepartment = NewDirectoryMemberDepartmentClient(c.config)
@@ -311,7 +307,6 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		CommitCheckpoint:              NewCommitCheckpointClient(cfg),
 		CommitRewrite:                 NewCommitRewriteClient(cfg),
 		Credential:                    NewCredentialClient(cfg),
-		DepartmentGroupMap:            NewDepartmentGroupMapClient(cfg),
 		DirectoryDepartment:           NewDirectoryDepartmentClient(cfg),
 		DirectoryMember:               NewDirectoryMemberClient(cfg),
 		DirectoryMemberDepartment:     NewDirectoryMemberDepartmentClient(cfg),
@@ -374,7 +369,6 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		CommitCheckpoint:              NewCommitCheckpointClient(cfg),
 		CommitRewrite:                 NewCommitRewriteClient(cfg),
 		Credential:                    NewCredentialClient(cfg),
-		DepartmentGroupMap:            NewDepartmentGroupMapClient(cfg),
 		DirectoryDepartment:           NewDirectoryDepartmentClient(cfg),
 		DirectoryMember:               NewDirectoryMemberClient(cfg),
 		DirectoryMemberDepartment:     NewDirectoryMemberDepartmentClient(cfg),
@@ -440,7 +434,7 @@ func (c *Client) Use(hooks ...Hook) {
 		c.AccountQuotaObservation, c.AccountQuotaSweep, c.AdminSubscriptionJob,
 		c.AttributionClaimGroup, c.AttributionRequestClaim, c.AttributionUsagePool,
 		c.AttributionUsagePoolCommit, c.CommitCheckpoint, c.CommitRewrite,
-		c.Credential, c.DepartmentGroupMap, c.DirectoryDepartment, c.DirectoryMember,
+		c.Credential, c.DirectoryDepartment, c.DirectoryMember,
 		c.DirectoryMemberDepartment, c.DirectoryOffboardingAction, c.DirectorySource,
 		c.DirectorySyncRun, c.OwnerAccountOperation, c.PRCommitUsageSnapshot,
 		c.PRSyncJob, c.PrAttributionRun, c.PrRecord, c.QuotaResetApproverConfig,
@@ -463,7 +457,7 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.AccountQuotaObservation, c.AccountQuotaSweep, c.AdminSubscriptionJob,
 		c.AttributionClaimGroup, c.AttributionRequestClaim, c.AttributionUsagePool,
 		c.AttributionUsagePoolCommit, c.CommitCheckpoint, c.CommitRewrite,
-		c.Credential, c.DepartmentGroupMap, c.DirectoryDepartment, c.DirectoryMember,
+		c.Credential, c.DirectoryDepartment, c.DirectoryMember,
 		c.DirectoryMemberDepartment, c.DirectoryOffboardingAction, c.DirectorySource,
 		c.DirectorySyncRun, c.OwnerAccountOperation, c.PRCommitUsageSnapshot,
 		c.PRSyncJob, c.PrAttributionRun, c.PrRecord, c.QuotaResetApproverConfig,
@@ -502,8 +496,6 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.CommitRewrite.mutate(ctx, m)
 	case *CredentialMutation:
 		return c.Credential.mutate(ctx, m)
-	case *DepartmentGroupMapMutation:
-		return c.DepartmentGroupMap.mutate(ctx, m)
 	case *DirectoryDepartmentMutation:
 		return c.DirectoryDepartment.mutate(ctx, m)
 	case *DirectoryMemberMutation:
@@ -2030,139 +2022,6 @@ func (c *CredentialClient) mutate(ctx context.Context, m *CredentialMutation) (V
 		return (&CredentialDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Credential mutation op: %q", m.Op())
-	}
-}
-
-// DepartmentGroupMapClient is a client for the DepartmentGroupMap schema.
-type DepartmentGroupMapClient struct {
-	config
-}
-
-// NewDepartmentGroupMapClient returns a client for the DepartmentGroupMap from the given config.
-func NewDepartmentGroupMapClient(c config) *DepartmentGroupMapClient {
-	return &DepartmentGroupMapClient{config: c}
-}
-
-// Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `departmentgroupmap.Hooks(f(g(h())))`.
-func (c *DepartmentGroupMapClient) Use(hooks ...Hook) {
-	c.hooks.DepartmentGroupMap = append(c.hooks.DepartmentGroupMap, hooks...)
-}
-
-// Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `departmentgroupmap.Intercept(f(g(h())))`.
-func (c *DepartmentGroupMapClient) Intercept(interceptors ...Interceptor) {
-	c.inters.DepartmentGroupMap = append(c.inters.DepartmentGroupMap, interceptors...)
-}
-
-// Create returns a builder for creating a DepartmentGroupMap entity.
-func (c *DepartmentGroupMapClient) Create() *DepartmentGroupMapCreate {
-	mutation := newDepartmentGroupMapMutation(c.config, OpCreate)
-	return &DepartmentGroupMapCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// CreateBulk returns a builder for creating a bulk of DepartmentGroupMap entities.
-func (c *DepartmentGroupMapClient) CreateBulk(builders ...*DepartmentGroupMapCreate) *DepartmentGroupMapCreateBulk {
-	return &DepartmentGroupMapCreateBulk{config: c.config, builders: builders}
-}
-
-// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
-// a builder and applies setFunc on it.
-func (c *DepartmentGroupMapClient) MapCreateBulk(slice any, setFunc func(*DepartmentGroupMapCreate, int)) *DepartmentGroupMapCreateBulk {
-	rv := reflect.ValueOf(slice)
-	if rv.Kind() != reflect.Slice {
-		return &DepartmentGroupMapCreateBulk{err: fmt.Errorf("calling to DepartmentGroupMapClient.MapCreateBulk with wrong type %T, need slice", slice)}
-	}
-	builders := make([]*DepartmentGroupMapCreate, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		builders[i] = c.Create()
-		setFunc(builders[i], i)
-	}
-	return &DepartmentGroupMapCreateBulk{config: c.config, builders: builders}
-}
-
-// Update returns an update builder for DepartmentGroupMap.
-func (c *DepartmentGroupMapClient) Update() *DepartmentGroupMapUpdate {
-	mutation := newDepartmentGroupMapMutation(c.config, OpUpdate)
-	return &DepartmentGroupMapUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOne returns an update builder for the given entity.
-func (c *DepartmentGroupMapClient) UpdateOne(dgm *DepartmentGroupMap) *DepartmentGroupMapUpdateOne {
-	mutation := newDepartmentGroupMapMutation(c.config, OpUpdateOne, withDepartmentGroupMap(dgm))
-	return &DepartmentGroupMapUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOneID returns an update builder for the given id.
-func (c *DepartmentGroupMapClient) UpdateOneID(id int) *DepartmentGroupMapUpdateOne {
-	mutation := newDepartmentGroupMapMutation(c.config, OpUpdateOne, withDepartmentGroupMapID(id))
-	return &DepartmentGroupMapUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// Delete returns a delete builder for DepartmentGroupMap.
-func (c *DepartmentGroupMapClient) Delete() *DepartmentGroupMapDelete {
-	mutation := newDepartmentGroupMapMutation(c.config, OpDelete)
-	return &DepartmentGroupMapDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// DeleteOne returns a builder for deleting the given entity.
-func (c *DepartmentGroupMapClient) DeleteOne(dgm *DepartmentGroupMap) *DepartmentGroupMapDeleteOne {
-	return c.DeleteOneID(dgm.ID)
-}
-
-// DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *DepartmentGroupMapClient) DeleteOneID(id int) *DepartmentGroupMapDeleteOne {
-	builder := c.Delete().Where(departmentgroupmap.ID(id))
-	builder.mutation.id = &id
-	builder.mutation.op = OpDeleteOne
-	return &DepartmentGroupMapDeleteOne{builder}
-}
-
-// Query returns a query builder for DepartmentGroupMap.
-func (c *DepartmentGroupMapClient) Query() *DepartmentGroupMapQuery {
-	return &DepartmentGroupMapQuery{
-		config: c.config,
-		ctx:    &QueryContext{Type: TypeDepartmentGroupMap},
-		inters: c.Interceptors(),
-	}
-}
-
-// Get returns a DepartmentGroupMap entity by its id.
-func (c *DepartmentGroupMapClient) Get(ctx context.Context, id int) (*DepartmentGroupMap, error) {
-	return c.Query().Where(departmentgroupmap.ID(id)).Only(ctx)
-}
-
-// GetX is like Get, but panics if an error occurs.
-func (c *DepartmentGroupMapClient) GetX(ctx context.Context, id int) *DepartmentGroupMap {
-	obj, err := c.Get(ctx, id)
-	if err != nil {
-		panic(err)
-	}
-	return obj
-}
-
-// Hooks returns the client hooks.
-func (c *DepartmentGroupMapClient) Hooks() []Hook {
-	return c.hooks.DepartmentGroupMap
-}
-
-// Interceptors returns the client interceptors.
-func (c *DepartmentGroupMapClient) Interceptors() []Interceptor {
-	return c.inters.DepartmentGroupMap
-}
-
-func (c *DepartmentGroupMapClient) mutate(ctx context.Context, m *DepartmentGroupMapMutation) (Value, error) {
-	switch m.Op() {
-	case OpCreate:
-		return (&DepartmentGroupMapCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdate:
-		return (&DepartmentGroupMapUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdateOne:
-		return (&DepartmentGroupMapUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpDelete, OpDeleteOne:
-		return (&DepartmentGroupMapDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
-	default:
-		return nil, fmt.Errorf("ent: unknown DepartmentGroupMap mutation op: %q", m.Op())
 	}
 }
 
@@ -7124,15 +6983,15 @@ type (
 		AccountQuotaObservation, AccountQuotaSweep, AdminSubscriptionJob,
 		AttributionClaimGroup, AttributionRequestClaim, AttributionUsagePool,
 		AttributionUsagePoolCommit, CommitCheckpoint, CommitRewrite, Credential,
-		DepartmentGroupMap, DirectoryDepartment, DirectoryMember,
-		DirectoryMemberDepartment, DirectoryOffboardingAction, DirectorySource,
-		DirectorySyncRun, OwnerAccountOperation, PRCommitUsageSnapshot, PRSyncJob,
-		PrAttributionRun, PrRecord, QuotaResetApproverConfig,
-		QuotaResetNotificationSetting, QuotaResetRequest, QuotaResetRequestEvent,
-		RelationshipOperation, RelationshipOperationAttempt,
-		RelationshipOperationMapping, RelationshipOperationStep, RelayGroupMapping,
-		RelayProvider, RepoConfig, ReportingInstallation, ScmProvider, SystemSetting,
-		TeamAccount, TeamAccountEvent, TeamAccountKey, TeamAccountManager,
+		DirectoryDepartment, DirectoryMember, DirectoryMemberDepartment,
+		DirectoryOffboardingAction, DirectorySource, DirectorySyncRun,
+		OwnerAccountOperation, PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun,
+		PrRecord, QuotaResetApproverConfig, QuotaResetNotificationSetting,
+		QuotaResetRequest, QuotaResetRequestEvent, RelationshipOperation,
+		RelationshipOperationAttempt, RelationshipOperationMapping,
+		RelationshipOperationStep, RelayGroupMapping, RelayProvider, RepoConfig,
+		ReportingInstallation, ScmProvider, SystemSetting, TeamAccount,
+		TeamAccountEvent, TeamAccountKey, TeamAccountManager,
 		TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
 		WebhookDeadLetter []ent.Hook
 	}
@@ -7140,15 +6999,15 @@ type (
 		AccountQuotaObservation, AccountQuotaSweep, AdminSubscriptionJob,
 		AttributionClaimGroup, AttributionRequestClaim, AttributionUsagePool,
 		AttributionUsagePoolCommit, CommitCheckpoint, CommitRewrite, Credential,
-		DepartmentGroupMap, DirectoryDepartment, DirectoryMember,
-		DirectoryMemberDepartment, DirectoryOffboardingAction, DirectorySource,
-		DirectorySyncRun, OwnerAccountOperation, PRCommitUsageSnapshot, PRSyncJob,
-		PrAttributionRun, PrRecord, QuotaResetApproverConfig,
-		QuotaResetNotificationSetting, QuotaResetRequest, QuotaResetRequestEvent,
-		RelationshipOperation, RelationshipOperationAttempt,
-		RelationshipOperationMapping, RelationshipOperationStep, RelayGroupMapping,
-		RelayProvider, RepoConfig, ReportingInstallation, ScmProvider, SystemSetting,
-		TeamAccount, TeamAccountEvent, TeamAccountKey, TeamAccountManager,
+		DirectoryDepartment, DirectoryMember, DirectoryMemberDepartment,
+		DirectoryOffboardingAction, DirectorySource, DirectorySyncRun,
+		OwnerAccountOperation, PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun,
+		PrRecord, QuotaResetApproverConfig, QuotaResetNotificationSetting,
+		QuotaResetRequest, QuotaResetRequestEvent, RelationshipOperation,
+		RelationshipOperationAttempt, RelationshipOperationMapping,
+		RelationshipOperationStep, RelayGroupMapping, RelayProvider, RepoConfig,
+		ReportingInstallation, ScmProvider, SystemSetting, TeamAccount,
+		TeamAccountEvent, TeamAccountKey, TeamAccountManager,
 		TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
 		WebhookDeadLetter []ent.Interceptor
 	}
