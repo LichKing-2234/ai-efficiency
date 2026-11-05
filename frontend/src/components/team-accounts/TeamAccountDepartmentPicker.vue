@@ -36,6 +36,7 @@ const query = ref('')
 const activeIndex = ref(0)
 const focused = ref(false)
 const touched = ref(false)
+const suppressClearOnBlur = ref(false)
 const trigger = ref<HTMLElement | null>(null)
 const list = ref<HTMLElement | null>(null)
 const departmentInput = ref<HTMLInputElement | null>(null)
@@ -123,9 +124,11 @@ function onCompositionEnd(event: Event) {
 
 function onBlur() {
   composing.value = false
-  // An emptied field is a cleared selection even if the input event was missed
-  // (for example when the text is removed with a keyboard shortcut).
-  if (!query.value.trim() && props.modelValue) {
+  if (suppressClearOnBlur.value) {
+    suppressClearOnBlur.value = false
+  } else if (!query.value.trim() && props.modelValue) {
+    // An emptied field is a cleared selection even if the input event was
+    // missed (for example when the text is removed with a keyboard shortcut).
     emit('update:modelValue', '')
     emit('change', '')
   }
@@ -139,6 +142,7 @@ function onBlur() {
 // once Vue has patched the input value.
 function endEditing() {
   composing.value = false
+  suppressClearOnBlur.value = true
   focused.value = false
   touched.value = false
   query.value = ''

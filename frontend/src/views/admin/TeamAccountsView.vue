@@ -50,9 +50,6 @@ const page = ref(1)
 const pageSize = ref(FULL_PAGE_SIZES[0])
 const createOpen = ref(false)
 const createForm = reactive<{ name: string; departmentExternalId: string; ownerUserID: number | null }>({ name: '', departmentExternalId: '', ownerUserID: null })
-// True while the department is being derived from the chosen user, so the
-// department change handler does not clear that same selection.
-const linkingOwnerFromDepartment = ref(false)
 const creating = ref(false)
 const createError = ref('')
 const detailOpen = ref(false)
@@ -146,10 +143,9 @@ async function loadAccounts() {
 }
 
 function onCreateDepartmentChange() {
-  if (linkingOwnerFromDepartment.value) {
-    linkingOwnerFromDepartment.value = false
-    return
-  }
+  // Picking a user fills the department programmatically and does not emit this
+  // event, so any change here comes from the operator: drop the user and their
+  // group prefill.
   createForm.ownerUserID = null
   createAdditionalGroupIDs.value = [...createDefaultGroupIDs.value]
 }
@@ -158,7 +154,6 @@ async function onOwnerSelected(user: AdminUser | null) {
   if (!user) return
   const departmentId = user.department?.external_id
   if (departmentId && createForm.departmentExternalId !== departmentId) {
-    linkingOwnerFromDepartment.value = true
     createForm.departmentExternalId = departmentId
   }
   // The account starts with the owner's own access groups plus the defaults.

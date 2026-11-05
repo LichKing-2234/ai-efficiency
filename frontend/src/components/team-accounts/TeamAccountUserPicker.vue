@@ -33,6 +33,7 @@ const query = ref('')
 const activeIndex = ref(0)
 const focused = ref(false)
 const touched = ref(false)
+const suppressClearOnBlur = ref(false)
 const selectedUser = ref<AdminUser | null>(null)
 const trigger = ref<HTMLElement | null>(null)
 const list = ref<HTMLElement | null>(null)
@@ -103,6 +104,12 @@ function onInput(event: Event) {
   if (debounceTimer) clearTimeout(debounceTimer)
   if (!value.trim()) {
     users.value = []
+    // Deleting the whole text clears the chosen user.
+    if (props.modelValue !== null) {
+      selectedUser.value = null
+      emit('update:modelValue', null)
+      emit('select', null)
+    }
     return
   }
   start()
@@ -135,6 +142,13 @@ function onCompositionEnd(event: Event) {
 
 function onBlur() {
   composing.value = false
+  if (suppressClearOnBlur.value) {
+    suppressClearOnBlur.value = false
+  } else if (!query.value.trim() && props.modelValue !== null) {
+    selectedUser.value = null
+    emit('update:modelValue', null)
+    emit('select', null)
+  }
   focused.value = false
   touched.value = false
   query.value = ''
@@ -145,6 +159,7 @@ function onBlur() {
 // once Vue has patched the input value.
 function endEditing() {
   composing.value = false
+  suppressClearOnBlur.value = true
   focused.value = false
   touched.value = false
   query.value = ''
