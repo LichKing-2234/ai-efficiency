@@ -86,6 +86,7 @@ const mappingLoading = ref(false)
 const mappingError = ref('')
 const mappingAdding = ref(false)
 const mappingRemovingID = ref<number | null>(null)
+const confirmingRemoveID = ref<number | null>(null)
 
 const statusOptions = computed<TeamAccountStatus[]>(() => ['active', 'suspended', 'orphaned'])
 
@@ -286,19 +287,11 @@ async function removeMapping(groupID: number) {
     mappingError.value = t('teamAccounts.admin.providerRequired')
     return
   }
-  try {
-    await ElMessageBox.confirm(
-      t('teamAccounts.admin.mappingRemoveConfirm', { group: groupID }),
-      t('teamAccounts.admin.mappingRemoveTitle'),
-      {
-        type: 'warning',
-        confirmButtonText: t('teamAccounts.confirm'),
-        cancelButtonText: t('teamAccounts.cancel'),
-      },
-    )
-  } catch {
+  if (confirmingRemoveID.value !== groupID) {
+    confirmingRemoveID.value = groupID
     return
   }
+  confirmingRemoveID.value = null
   mappingRemovingID.value = groupID
   mappingError.value = ''
   try {
@@ -672,14 +665,34 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
           <ElEmpty v-else-if="mappingIDs.length === 0" :description="t('teamAccounts.admin.noMappings')" :image-size="56" />
           <ElTable v-else :data="mappingIDs.map((id) => ({ relay_group_id: id }))" size="small" class="w-full">
             <ElTableColumn prop="relay_group_id" :label="t('teamAccounts.admin.groupId')" min-width="120" />
-            <ElTableColumn :label="t('teamAccounts.actions')" width="120" fixed="right">
+            <ElTableColumn :label="t('teamAccounts.actions')" width="180" fixed="right">
               <template #default="{ row }">
+                <div v-if="confirmingRemoveID === row.relay_group_id" class="flex flex-col gap-1">
+                  <span class="text-xs text-amber-700">
+                    {{ t('teamAccounts.admin.mappingRemoveConfirm', { group: row.relay_group_id }) }}
+                  </span>
+                  <div class="flex gap-1">
+                    <ElButton
+                      :data-testid="`admin-mapping-remove-confirm-${row.relay_group_id}`"
+                      link
+                      type="danger"
+                      :loading="mappingRemovingID === row.relay_group_id"
+                      :disabled="mappingRemovingID !== null"
+                      @click="removeMapping(row.relay_group_id)"
+                    >
+                      {{ t('teamAccounts.confirm') }}
+                    </ElButton>
+                    <ElButton link @click="confirmingRemoveID = null">
+                      {{ t('teamAccounts.cancel') }}
+                    </ElButton>
+                  </div>
+                </div>
                 <ElButton
+                  v-else
                   :data-testid="`admin-mapping-remove-${row.relay_group_id}`"
                   link
                   type="danger"
                   :disabled="mappingProviderID === null || mappingRemovingID !== null"
-                  :loading="mappingRemovingID === row.relay_group_id"
                   @click="removeMapping(row.relay_group_id)"
                 >
                   {{ t('teamAccounts.admin.mappingRemove') }}
