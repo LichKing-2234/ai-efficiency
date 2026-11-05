@@ -89,6 +89,7 @@ describe('team account pickers', () => {
     const { wrapper } = await mountDepartmentPicker()
     const input = wrapper.get('[data-testid="team-account-department-input"]')
     expect(document.body.querySelector('[data-testid="team-account-department-list"]')).toBeNull()
+    await input.trigger('focus')
     await input.setValue('SDK')
     await flushPromises()
 
@@ -105,6 +106,7 @@ describe('team account pickers', () => {
   it('searches users while typing and selects the first match on Enter', async () => {
     const { wrapper, api } = await mountUserPicker()
     const input = wrapper.get('[data-testid="team-account-user-input"]')
+    await input.trigger('focus')
     await input.setValue('ali')
     await new Promise((resolve) => setTimeout(resolve, 250))
     await flushPromises()

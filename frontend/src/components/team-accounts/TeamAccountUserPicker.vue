@@ -31,6 +31,7 @@ const users = ref<AdminUser[]>([])
 const loading = ref(false)
 const query = ref('')
 const activeIndex = ref(0)
+const focused = ref(false)
 const selectedUser = ref<AdminUser | null>(null)
 const trigger = ref<HTMLElement | null>(null)
 const list = ref<HTMLElement | null>(null)
@@ -40,7 +41,9 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
 // The list only exists while the operator is typing; there is no browse mode.
 const open = computed(() => query.value.trim().length > 0)
-const displayValue = computed(() => (open.value ? query.value : selectedUser.value?.username ?? ''))
+// While the field is focused it shows exactly what was typed, so deleting the
+// text never resurrects the previously selected user.
+const displayValue = computed(() => (focused.value ? query.value : selectedUser.value?.username ?? ''))
 
 function label(user: AdminUser) {
   return user.department?.display_path || user.department?.name || ''
@@ -74,9 +77,17 @@ async function hydrateSelection() {
     return
   }
   try {
-    const response = await listAdminUsers({ page: 1, page_size: 100 })
-    const items = response.data.data?.items ?? []
-    selectedUser.value = items.find((user) => user.id === props.modelValue) ?? null
+    for (let page = 1; page <= 10; page += 1) {
+      const response = await listAdminUsers({ page, page_size: 100 })
+      const items = response.data.data?.items ?? []
+      const match = items.find((user) => user.id === props.modelValue)
+      if (match) {
+        selectedUser.value = match
+        return
+      }
+      if (items.length < 100) break
+    }
+    selectedUser.value = null
   } catch {
     selectedUser.value = null
   }
@@ -97,10 +108,13 @@ function onInput(event: Event) {
 }
 
 function onFocus() {
+  focused.value = true
+  query.value = ''
   start()
 }
 
 function onBlur() {
+  focused.value = false
   query.value = ''
   stop()
 }
@@ -109,6 +123,7 @@ function select(user: AdminUser) {
   selectedUser.value = user
   emit('update:modelValue', user.id)
   emit('select', user)
+  focused.value = false
   query.value = ''
   stop()
 }
@@ -117,6 +132,7 @@ function clear() {
   selectedUser.value = null
   emit('update:modelValue', null)
   emit('select', null)
+  focused.value = false
   query.value = ''
 }
 

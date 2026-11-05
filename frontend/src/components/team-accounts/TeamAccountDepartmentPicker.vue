@@ -34,6 +34,7 @@ const departments = ref<Department[]>([])
 const loading = ref(false)
 const query = ref('')
 const activeIndex = ref(0)
+const focused = ref(false)
 const trigger = ref<HTMLElement | null>(null)
 const list = ref<HTMLElement | null>(null)
 const { position, start, stop } = useComboPosition(trigger)
@@ -49,7 +50,9 @@ const rows = computed(() => {
     || department.display_path.toLowerCase().includes(keyword)
   ))
 })
-const displayValue = computed(() => (open.value ? query.value : selected.value?.display_path ?? ''))
+// While the field is focused it shows exactly what was typed, so deleting the
+// text never resurrects the previously selected department.
+const displayValue = computed(() => (focused.value ? query.value : selected.value?.display_path ?? ''))
 
 async function load() {
   if (loading.value || departments.value.length > 0) return
@@ -80,10 +83,13 @@ function onInput(event: Event) {
 }
 
 function onFocus() {
+  focused.value = true
+  query.value = ''
   start()
 }
 
 function onBlur() {
+  focused.value = false
   query.value = ''
   stop()
 }
@@ -91,6 +97,7 @@ function onBlur() {
 function select(department: Department) {
   emit('update:modelValue', department.external_id)
   emit('change', department.external_id)
+  focused.value = false
   query.value = ''
   stop()
 }
