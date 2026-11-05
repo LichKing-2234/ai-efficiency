@@ -250,7 +250,9 @@ function onKeydown(event: KeyboardEvent) {
     if (user) select(user)
     event.preventDefault()
   } else if (event.key === 'Escape') {
-    query.value = ''
+    // Escape closes the list and restores the committed label; it must never
+    // clear the selection.
+    endEditing()
     event.preventDefault()
   }
 }

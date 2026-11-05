@@ -210,4 +210,30 @@ describe('team account pickers', () => {
 
     expect(api.listTeamAccountUserOptions).toHaveBeenCalledWith(3, 'mem')
   })
+
+  it('Escape restores the committed user instead of clearing it', async () => {
+    const api = await import('@/api/adminUsers')
+    vi.mocked(api.listAdminUsers).mockResolvedValue(response({
+      items: [user(7, 'alice', 'alice@example.com')],
+      page: 1,
+      page_size: 50,
+      total: 1,
+    }) as any)
+    const wrapper = mount(TeamAccountUserPicker, {
+      props: { modelValue: 7 },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    const input = wrapper.get('[data-testid="team-account-user-input"]')
+    await input.trigger('focus')
+    await input.setValue('ali')
+    await flushPromises()
+    await input.trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    await input.trigger('blur')
+    await flushPromises()
+
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect((input.element as HTMLInputElement).value).toBe('alice')
+  })
 })

@@ -53,4 +53,23 @@ describe('TeamAccountSection refresh', () => {
     expect(wrapper.find('[data-testid="team-account-load-error"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('test')
   })
+
+  it('hides sign-in for a suspended account', async () => {
+    const accounts = await import('@/api/teamAccounts')
+    const usage = await import('@/api/teamUsage')
+    vi.mocked(usage.getTeamUsageScope).mockResolvedValue({ data: { code: 0, data: { is_representative: false, departments: [] } } } as any)
+    vi.mocked(accounts.listTeamAccounts).mockResolvedValue({
+      data: { code: 0, data: { items: [{ ...account, status: 'suspended' }] } },
+    } as any)
+    vi.mocked(accounts.getTeamAccount).mockResolvedValue({
+      data: { code: 0, data: { ...account, status: 'suspended', keys: [], managers: [], available_groups: [] } },
+    } as any)
+
+    const wrapper = mount(TeamAccountSection, {
+      global: { plugins: [createPinia()], stubs: { teleport: true } },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="team-account-login-as-6"]').exists()).toBe(false)
+  })
 })
