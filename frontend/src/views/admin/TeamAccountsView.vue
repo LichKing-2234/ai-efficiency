@@ -160,7 +160,21 @@ function onOwnerSelected(user: AdminUser | null) {
   createForm.departmentExternalId = departmentId
 }
 
-function openCreate() {
+async function loadCreateGroupOptions() {
+  try {
+    const response = await getAdminTeamAccountGroupOptions()
+    const options = response.data.data
+    createGroupOptions.value = options?.groups ?? []
+    createDefaultGroupIDs.value = options?.default_group_ids ?? []
+    createGrantableGroupIDs.value = options?.grantable_group_ids ?? []
+  } catch {
+    createGroupOptions.value = []
+    createDefaultGroupIDs.value = []
+    createGrantableGroupIDs.value = []
+  }
+}
+
+async function openCreate() {
   void ensureGroupOptions()
   createAdditionalGroupIDs.value = []
   createForm.name = ''
@@ -168,6 +182,10 @@ function openCreate() {
   createForm.ownerUserID = null
   createError.value = ''
   createOpen.value = true
+  await loadCreateGroupOptions()
+  // Administrators start from the account defaults; extra groups are granted
+  // by hand through the shuttle.
+  createAdditionalGroupIDs.value = [...createDefaultGroupIDs.value]
 }
 
 function closeCreate() {
@@ -462,6 +480,17 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
               @change="onCreateDepartmentChange"
             />
           </label>
+          <label class="block text-sm">
+            <span class="font-medium text-gray-700">{{ t('teamAccounts.ownerUserId') }}</span>
+            <TeamAccountUserPicker
+              v-model="createForm.ownerUserID"
+              data-testid="admin-team-account-create-owner"
+              class="mt-1"
+              :disabled="creating"
+              :department-id="createForm.departmentExternalId"
+              @select="onOwnerSelected"
+            />
+          </label>
           <div class="block text-sm">
             <span class="font-medium text-gray-700">{{ t('teamAccounts.additionalGroups') }}</span>
             <p class="mb-1 text-xs text-slate-500">{{ t('teamAccounts.additionalGroupsHint') }}</p>
@@ -474,17 +503,6 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
               :disabled="creating"
             />
           </div>
-          <label class="block text-sm">
-            <span class="font-medium text-gray-700">{{ t('teamAccounts.ownerUserId') }}</span>
-            <TeamAccountUserPicker
-              v-model="createForm.ownerUserID"
-              data-testid="admin-team-account-create-owner"
-              class="mt-1"
-              :disabled="creating"
-              :department-id="createForm.departmentExternalId"
-              @select="onOwnerSelected"
-            />
-          </label>
           <ElAlert
             v-if="createError"
             data-testid="admin-team-account-create-error"
