@@ -63,6 +63,10 @@ async function loadScope() {
 
 const canCreate = computed(() => isRepresentative.value)
 
+// Members who neither manage an account nor represent a department never see the
+// section; showing an empty block would only add noise to their usage page.
+const showSection = computed(() => scopeLoaded.value && (accounts.value.length > 0 || isRepresentative.value))
+
 const singleRepresentedDepartment = computed(() => (
   representativeDepartments.value.length === 1 ? representativeDepartments.value[0] : null
 ))
@@ -175,6 +179,7 @@ function handleTransferred() {
 
 <template>
   <section
+    v-if="showSection"
     data-testid="team-account-section"
     class="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
   >

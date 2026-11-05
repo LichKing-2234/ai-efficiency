@@ -117,7 +117,7 @@ function response<T>(data: T) {
   return { data: { code: 0, data } }
 }
 
-async function mockApi(representative = true) {
+async function mockApi(representative = true, items: TeamAccountSummary[] = [account]) {
   const teamUsage = await import('@/api/teamUsage')
   vi.mocked(teamUsage.getTeamUsageScope).mockResolvedValue({
     data: {
@@ -137,7 +137,7 @@ async function mockApi(representative = true) {
     },
   } as any)
   const api = await import('@/api/teamAccounts')
-  vi.mocked(api.listTeamAccounts).mockResolvedValue(response({ items: [account] }) as any)
+  vi.mocked(api.listTeamAccounts).mockResolvedValue(response({ items }) as any)
   vi.mocked(api.getTeamAccount).mockResolvedValue(response(detail()) as any)
   vi.mocked(api.revealTeamAccountCredentials).mockResolvedValue(response({
     username: 'dept-data-platform',
@@ -155,8 +155,8 @@ async function mockApi(representative = true) {
   return api
 }
 
-async function mountSection(representative = true) {
-  const api = await mockApi(representative)
+async function mountSection(representative = true, items: TeamAccountSummary[] = [account]) {
+  const api = await mockApi(representative, items)
   const wrapper = withTeleportedContent(mount(TeamAccountSection))
   await flushPromises()
   return { wrapper, api }
@@ -229,6 +229,12 @@ describe('TeamAccountSection', () => {
     const { wrapper } = await mountSection(false)
 
     expect(wrapper.find('[data-testid="team-account-create-open"]').exists()).toBe(false)
+  })
+
+  it('hides the whole section when the user has neither a role nor a department', async () => {
+    const { wrapper } = await mountSection(false, [])
+
+    expect(wrapper.find('[data-testid="team-account-section"]').exists()).toBe(false)
   })
 
   it('offers a one-click sign in on the card', async () => {
