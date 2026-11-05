@@ -34,7 +34,7 @@ const activeIndex = ref(0)
 const focused = ref(false)
 const touched = ref(false)
 const suppressClearOnBlur = ref(false)
-const selectedUser = ref<AdminUser | null>(null)
+const labelCache = ref(new Map<number, AdminUser>())
 const trigger = ref<HTMLElement | null>(null)
 const list = ref<HTMLElement | null>(null)
 const userInput = ref<HTMLInputElement | null>(null)
@@ -45,9 +45,15 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
 // The list only exists while the operator is typing; there is no browse mode.
 const open = computed(() => touched.value && query.value.trim().length > 0)
+// The displayed name is derived from the model value, never from a local copy,
+// so clearing the owner anywhere empties the field immediately.
+const selectedLabel = computed(() => {
+  if (props.modelValue === null) return ''
+  return labelCache.value.get(props.modelValue)?.username ?? ''
+})
 // While the field is focused it shows exactly what was typed, so deleting the
 // text never resurrects the previously selected user.
-const displayValue = computed(() => (focused.value ? query.value : selectedUser.value?.username ?? ''))
+const displayValue = computed(() => (focused.value ? query.value : selectedLabel.value))
 
 function label(user: AdminUser) {
   return user.department?.display_path || user.department?.name || ''
@@ -80,36 +86,33 @@ onMounted(() => {
 watch(
   () => props.modelValue,
   (value) => {
-    if (value === null) {
-      selectedUser.value = null
-      return
-    }
-    if (!selectedUser.value || selectedUser.value.id !== value) {
+    if (value === null) return
+    if (!labelCache.value.has(value)) {
       void hydrateSelection()
     }
   },
 )
 
 async function hydrateSelection() {
-  if (props.modelValue === null) {
-    selectedUser.value = null
-    return
-  }
+  if (props.modelValue === null) return
   try {
     for (let page = 1; page <= 10; page += 1) {
       const response = await listAdminUsers({ page, page_size: 100 })
       const items = response.data.data?.items ?? []
       const match = items.find((user) => user.id === props.modelValue)
       if (match) {
-        selectedUser.value = match
+        rememberUser(match)
         return
       }
       if (items.length < 100) break
     }
-    selectedUser.value = null
   } catch {
-    selectedUser.value = null
+    // The field falls back to the raw value when the directory cannot be read.
   }
+}
+
+function rememberUser(user: AdminUser) {
+  labelCache.value = new Map(labelCache.value).set(user.id, user)
 }
 
 function onInput(event: Event) {
@@ -121,7 +124,6 @@ function onInput(event: Event) {
     users.value = []
     // Deleting the whole text clears the chosen user.
     if (props.modelValue !== null) {
-      selectedUser.value = null
       emit('update:modelValue', null)
       emit('select', null)
     }
@@ -137,7 +139,7 @@ function onFocus() {
   focused.value = true
   touched.value = false
   // Keep the chosen user's name in the field so it can be edited or deleted.
-  query.value = selectedUser.value?.username ?? ''
+  query.value = selectedLabel.value
   start()
 }
 
@@ -160,7 +162,6 @@ function onBlur() {
   if (suppressClearOnBlur.value) {
     suppressClearOnBlur.value = false
   } else if (!query.value.trim() && props.modelValue !== null) {
-    selectedUser.value = null
     emit('update:modelValue', null)
     emit('select', null)
   }
@@ -186,14 +187,13 @@ function endEditing() {
 }
 
 function select(user: AdminUser) {
-  selectedUser.value = user
+  rememberUser(user)
   emit('update:modelValue', user.id)
   emit('select', user)
   endEditing()
 }
 
 function clear() {
-  selectedUser.value = null
   emit('update:modelValue', null)
   emit('select', null)
   focused.value = false
