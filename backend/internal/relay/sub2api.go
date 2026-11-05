@@ -3087,6 +3087,23 @@ func (s *sub2apiRelay) extendSubscriptionByID(ctx context.Context, subscriptionI
 	return nil
 }
 
+// DefaultSubscriptionGroupIDs returns the groups the provider grants to every
+// new user. The organization-account console shows these as the account's
+// starting access groups.
+func (s *sub2apiRelay) DefaultSubscriptionGroupIDs(ctx context.Context) ([]int64, error) {
+	defaults, err := s.listDefaultSubscriptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int64, 0, len(defaults))
+	for _, item := range defaults {
+		if item.GroupID > 0 {
+			ids = append(ids, item.GroupID)
+		}
+	}
+	return ids, nil
+}
+
 // RemoveSubscriptionForUser revokes an existing subscription group for a relay user.
 func (s *sub2apiRelay) RemoveSubscriptionForUser(ctx context.Context, userID, groupID int64) error {
 	if userID <= 0 {

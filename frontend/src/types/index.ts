@@ -1559,6 +1559,18 @@ export interface TeamAccountEventListResponse {
   items: TeamAccountEvent[]
 }
 
+export interface TeamAccountGroupOption {
+  id: number
+  name: string
+  platform: string
+}
+
+export interface TeamAccountGroupOptions {
+  groups: TeamAccountGroupOption[]
+  default_group_ids: number[]
+  grantable_group_ids: number[]
+}
+
 export interface TeamAccountCredentials {
   username: string
   email: string

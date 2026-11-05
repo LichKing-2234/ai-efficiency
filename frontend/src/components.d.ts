@@ -92,6 +92,7 @@ declare module 'vue' {
     TeamAccountCredentialsDialog: typeof import('./components/team-accounts/TeamAccountCredentialsDialog.vue')['default']
     TeamAccountDepartmentPicker: typeof import('./components/team-accounts/TeamAccountDepartmentPicker.vue')['default']
     TeamAccountDetailDialog: typeof import('./components/team-accounts/TeamAccountDetailDialog.vue')['default']
+    TeamAccountGroupShuttle: typeof import('./components/team-accounts/TeamAccountGroupShuttle.vue')['default']
     TeamAccountSection: typeof import('./components/team-accounts/TeamAccountSection.vue')['default']
     TeamAccountTransferDialog: typeof import('./components/team-accounts/TeamAccountTransferDialog.vue')['default']
     TeamAccountUserPicker: typeof import('./components/team-accounts/TeamAccountUserPicker.vue')['default']

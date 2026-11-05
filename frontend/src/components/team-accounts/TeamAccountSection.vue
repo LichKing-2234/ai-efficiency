@@ -2,8 +2,9 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import TeamAccountDetailDialog from './TeamAccountDetailDialog.vue'
+import TeamAccountGroupShuttle from './TeamAccountGroupShuttle.vue'
 import TeamAccountTransferDialog from './TeamAccountTransferDialog.vue'
-import { createTeamAccount, getTeamAccount, listTeamAccounts } from '@/api/teamAccounts'
+import { createTeamAccount, getTeamAccount, getTeamAccountGroupOptions, listTeamAccounts } from '@/api/teamAccounts'
 import { getTeamUsageScope } from '@/api/teamUsage'
 import { getUserProviders } from '@/api/user'
 import { useTeamAccountLogin } from '@/composables/useTeamAccountLogin'
@@ -63,20 +64,22 @@ async function loadScope() {
 }
 
 const canCreate = computed(() => isRepresentative.value)
-const grantableGroups = ref<{ id: number; name: string; platform: string }[]>([])
+const groupOptions = ref<{ id: number; name: string; platform: string }[]>([])
+const defaultGroupIDs = ref<number[]>([])
+const grantableGroupIDs = ref<number[]>([])
 const additionalGroupIDs = ref<number[]>([])
 
 async function loadGrantableGroups() {
   try {
-    const response = await getUserProviders()
-    const providers = response.data.data?.providers ?? []
-    grantableGroups.value = providers.flatMap((provider) => (provider.groups ?? []).map((group) => ({
-      id: Number(group.group_id),
-      name: group.group_name,
-      platform: group.platform,
-    })))
+    const response = await getTeamAccountGroupOptions()
+    const options = response.data.data
+    groupOptions.value = options?.groups ?? []
+    defaultGroupIDs.value = options?.default_group_ids ?? []
+    grantableGroupIDs.value = options?.grantable_group_ids ?? []
   } catch {
-    grantableGroups.value = []
+    groupOptions.value = []
+    defaultGroupIDs.value = []
+    grantableGroupIDs.value = []
   }
 }
 
@@ -119,13 +122,16 @@ async function hydrateKeyCounts(items: TeamAccountSummary[]) {
   }))
 }
 
-function openCreate() {
-  void loadGrantableGroups()
-  additionalGroupIDs.value = []
+async function openCreate() {
   createForm.name = ''
   createForm.departmentExternalId = singleRepresentedDepartment.value?.external_id ?? ''
+  additionalGroupIDs.value = []
   createError.value = ''
   createOpen.value = true
+  await loadGrantableGroups()
+  // A representative starts from the account defaults plus the groups they
+  // already hold themselves.
+  additionalGroupIDs.value = Array.from(new Set([...defaultGroupIDs.value, ...grantableGroupIDs.value]))
 }
 
 function closeCreate() {
@@ -145,7 +151,7 @@ async function submitCreate() {
     const response = await createTeamAccount({
       name: createForm.name.trim(),
       department_external_id: createForm.departmentExternalId.trim() || undefined,
-      additional_group_ids: additionalGroupIDs.value,
+      additional_group_ids: additionalGroupIDs.value.filter((id) => !defaultGroupIDs.value.includes(id)),
     })
     const created = response.data.data
     ElMessage.success(t('teamAccounts.createSuccess'))
@@ -351,26 +357,18 @@ function handleTransferred() {
             />
           </ElSelect>
         </label>
-        <label class="block text-sm">
+        <div class="block text-sm">
           <span class="font-medium text-gray-700">{{ t('teamAccounts.additionalGroups') }}</span>
-          <ElSelect
+          <p class="mb-1 text-xs text-slate-500">{{ t('teamAccounts.additionalGroupsHint') }}</p>
+          <TeamAccountGroupShuttle
             v-model="additionalGroupIDs"
             data-testid="team-account-create-groups"
-            multiple
-            filterable
-            clearable
-            :placeholder="t('teamAccounts.additionalGroupsHint')"
-            class="mt-1 w-full"
+            :groups="groupOptions"
+            :default-group-ids="defaultGroupIDs"
+            :grantable-group-ids="grantableGroupIDs"
             :disabled="creating"
-          >
-            <ElOption
-              v-for="group in grantableGroups"
-              :key="group.id"
-              :label="`${group.name} · ${group.platform}`"
-              :value="group.id"
-            />
-          </ElSelect>
-        </label>
+          />
+        </div>
         <ElAlert
           v-if="createError"
           data-testid="team-account-create-error"

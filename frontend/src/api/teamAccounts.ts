@@ -3,6 +3,7 @@ import type {
   AdminTeamAccountCreateRequest,
   ApiResponse,
   TeamAccountCredentials,
+  TeamAccountGroupOptions,
   TeamAccountCreateRequest,
   TeamAccountDetail,
   TeamAccountEventListResponse,
@@ -41,6 +42,14 @@ export function createTeamAccount(data: TeamAccountCreateRequest) {
 
 export function getTeamAccount(id: number) {
   return client.get<ApiResponse<TeamAccountDetail>>(accountPath(USER_BASE, id))
+}
+
+export function getTeamAccountGroupOptions() {
+  return client.get<ApiResponse<TeamAccountGroupOptions>>(`${USER_BASE}/group-options`)
+}
+
+export function getAdminTeamAccountGroupOptions() {
+  return client.get<ApiResponse<TeamAccountGroupOptions>>(`${ADMIN_BASE}/group-options`)
 }
 
 export function revealTeamAccountCredentials(id: number) {

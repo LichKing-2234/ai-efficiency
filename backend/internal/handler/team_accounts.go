@@ -320,6 +320,34 @@ func (h *TeamAccountHandler) Events(c *gin.Context) {
 	pkg.Success(c, gin.H{"items": events})
 }
 
+// GroupOptions handles GET /api/v1/user/team-accounts/group-options.
+func (h *TeamAccountHandler) GroupOptions(c *gin.Context) {
+	userID, isAdmin, ok := h.actor(c)
+	if !ok {
+		return
+	}
+	options, err := h.service.GroupOptionsForActor(c.Request.Context(), userID, isAdmin)
+	if err != nil {
+		h.respondError(c, err)
+		return
+	}
+	pkg.Success(c, options)
+}
+
+// AdminGroupOptions handles GET /api/v1/admin/team-accounts/group-options.
+func (h *TeamAccountHandler) AdminGroupOptions(c *gin.Context) {
+	userID, _, ok := h.actor(c)
+	if !ok {
+		return
+	}
+	options, err := h.service.GroupOptionsForActor(c.Request.Context(), userID, true)
+	if err != nil {
+		h.respondError(c, err)
+		return
+	}
+	pkg.Success(c, options)
+}
+
 // AdminCreate handles POST /api/v1/admin/team-accounts.
 func (h *TeamAccountHandler) AdminCreate(c *gin.Context) {
 	userID, _, ok := h.actor(c)

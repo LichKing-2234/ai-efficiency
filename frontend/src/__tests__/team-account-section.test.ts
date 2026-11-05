@@ -20,6 +20,7 @@ vi.mock('@/api/teamAccounts', () => ({
   createTeamAccount: vi.fn(),
   getTeamAccount: vi.fn(),
   revealTeamAccountCredentials: vi.fn(),
+  getTeamAccountGroupOptions: vi.fn(),
   createTeamAccountKey: vi.fn(),
   revokeTeamAccountKey: vi.fn(),
   addTeamAccountManager: vi.fn(),

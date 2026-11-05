@@ -6,11 +6,13 @@ import { useMediaQuery } from '@/composables/useMediaQuery'
 import TeamAccountDetailDialog from '@/components/team-accounts/TeamAccountDetailDialog.vue'
 import TeamAccountUserPicker from '@/components/team-accounts/TeamAccountUserPicker.vue'
 import TeamAccountDepartmentPicker from '@/components/team-accounts/TeamAccountDepartmentPicker.vue'
+import TeamAccountGroupShuttle from '@/components/team-accounts/TeamAccountGroupShuttle.vue'
 import TeamAccountTransferDialog from '@/components/team-accounts/TeamAccountTransferDialog.vue'
 import { useTeamAccountLogin } from '@/composables/useTeamAccountLogin'
 import { listAdminUserSubscriptionOptions } from '@/api/adminUsers'
 import {
   createAdminTeamAccount,
+  getAdminTeamAccountGroupOptions,
   listAdminTeamAccounts,
   setAdminTeamAccountStatus,
 } from '@/api/teamAccounts'
@@ -86,6 +88,9 @@ function closeStatusDialog() {
 const groupOptions = ref<RelayGroupOption[]>([])
 const groupsLoading = ref(false)
 const createAdditionalGroupIDs = ref<number[]>([])
+const createGroupOptions = ref<{ id: number; name: string; platform: string }[]>([])
+const createDefaultGroupIDs = ref<number[]>([])
+const createGrantableGroupIDs = ref<number[]>([])
 
 const statusOptions = computed<TeamAccountStatus[]>(() => ['active', 'suspended', 'orphaned'])
 
@@ -188,7 +193,7 @@ async function submitCreate() {
       name: createForm.name.trim(),
       department_external_id: createForm.departmentExternalId.trim() || undefined,
       owner_user_id: ownerUserID,
-      additional_group_ids: createAdditionalGroupIDs.value,
+      additional_group_ids: createAdditionalGroupIDs.value.filter((id) => !createDefaultGroupIDs.value.includes(id)),
     })
     ElMessage.success(t('teamAccounts.admin.createSuccess'))
     createOpen.value = false
@@ -457,27 +462,18 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
               @change="onCreateDepartmentChange"
             />
           </label>
-          <label class="block text-sm">
+          <div class="block text-sm">
             <span class="font-medium text-gray-700">{{ t('teamAccounts.additionalGroups') }}</span>
-            <ElSelect
+            <p class="mb-1 text-xs text-slate-500">{{ t('teamAccounts.additionalGroupsHint') }}</p>
+            <TeamAccountGroupShuttle
               v-model="createAdditionalGroupIDs"
               data-testid="admin-team-account-create-groups"
-              multiple
-              filterable
-              clearable
-              :loading="groupsLoading"
-              :placeholder="t('teamAccounts.additionalGroupsHint')"
-              class="mt-1 w-full"
+              :groups="createGroupOptions"
+              :default-group-ids="createDefaultGroupIDs"
+              :grantable-group-ids="createGrantableGroupIDs"
               :disabled="creating"
-            >
-              <ElOption
-                v-for="option in groupOptions"
-                :key="`${option.providerId}:${option.groupId}`"
-                :label="`${option.name} · ${option.platform}`"
-                :value="option.groupId"
-              />
-            </ElSelect>
-          </label>
+            />
+          </div>
           <label class="block text-sm">
             <span class="font-medium text-gray-700">{{ t('teamAccounts.ownerUserId') }}</span>
             <TeamAccountUserPicker

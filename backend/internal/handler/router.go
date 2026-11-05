@@ -485,6 +485,7 @@ func setupRouter(
 			teamAccountHandler := NewTeamAccountHandler(options.TeamAccounts)
 			teamAccountGroup := userGroup.Group("/team-accounts")
 			teamAccountGroup.GET("", teamAccountHandler.List)
+			teamAccountGroup.GET("/group-options", teamAccountHandler.GroupOptions)
 			teamAccountGroup.POST("", teamAccountHandler.Create)
 			teamAccountGroup.GET("/:id", teamAccountHandler.Get)
 			teamAccountGroup.GET("/:id/usage", teamAccountHandler.Usage)
@@ -587,6 +588,7 @@ func setupRouter(
 		adminTeamAccountsGroup.Use(auth.RequireAdmin())
 		{
 			adminTeamAccountsGroup.GET("", teamAccountAdminHandler.List)
+			adminTeamAccountsGroup.GET("/group-options", teamAccountAdminHandler.AdminGroupOptions)
 			adminTeamAccountsGroup.POST("", teamAccountAdminHandler.AdminCreate)
 			adminTeamAccountsGroup.GET("/:id", teamAccountAdminHandler.Get)
 			adminTeamAccountsGroup.GET("/:id/usage", teamAccountAdminHandler.Usage)

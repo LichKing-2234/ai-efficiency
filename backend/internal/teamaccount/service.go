@@ -153,6 +153,86 @@ type CreateInput struct {
 	AdditionalGroupIDs []int64
 }
 
+// GroupOption is one access group the console may offer for an account.
+type GroupOption struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Platform string `json:"platform"`
+}
+
+// GroupOptions is the access-group picker payload: every known group, the ones
+// the provider grants by default, and the ones the caller may grant.
+type GroupOptions struct {
+	Groups         []GroupOption `json:"groups"`
+	DefaultGroupIDs []int64      `json:"default_group_ids"`
+	GrantableIDs    []int64      `json:"grantable_group_ids"`
+}
+
+type defaultSubscriptionReader interface {
+	DefaultSubscriptionGroupIDs(ctx context.Context) ([]int64, error)
+}
+
+// GroupOptionsForActor returns the access groups an account creator may choose
+// from. A representative may only grant groups they are subscribed to
+// themselves; an administrator may grant any group.
+func (s *Service) GroupOptionsForActor(ctx context.Context, actorUserID int, isAdmin bool) (*GroupOptions, error) {
+	providerID, err := s.primaryProviderID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if providerID == 0 {
+		return nil, &ValidationError{Message: "no enabled relay provider is configured"}
+	}
+	provider, err := s.resolver.Resolve(ctx, providerID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve relay provider: %w", err)
+	}
+
+	options := &GroupOptions{Groups: []GroupOption{}, DefaultGroupIDs: []int64{}, GrantableIDs: []int64{}}
+	if reader, ok := provider.(defaultSubscriptionReader); ok {
+		if defaults, err := reader.DefaultSubscriptionGroupIDs(ctx); err == nil {
+			options.DefaultGroupIDs = defaults
+		}
+	}
+	if lister, ok := provider.(interface {
+		ListPlatformGroups(ctx context.Context) ([]relay.Group, error)
+	}); ok {
+		groups, err := lister.ListPlatformGroups(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list relay groups: %w", err)
+		}
+		for _, group := range groups {
+			options.Groups = append(options.Groups, GroupOption{ID: group.ID, Name: group.Name, Platform: group.Platform})
+		}
+	}
+
+	grantable := map[int64]bool{}
+	if isAdmin {
+		for _, group := range options.Groups {
+			grantable[group.ID] = true
+		}
+	} else {
+		actor, err := s.client.User.Get(ctx, actorUserID)
+		if err != nil {
+			return nil, fmt.Errorf("load creator: %w", err)
+		}
+		if actor.RelayUserID != nil {
+			own, err := s.activeSubscriptionGroupIDSet(ctx, provider, int64(*actor.RelayUserID))
+			if err != nil {
+				return nil, err
+			}
+			for id := range own {
+				grantable[id] = true
+			}
+		}
+	}
+	for id := range grantable {
+		options.GrantableIDs = append(options.GrantableIDs, id)
+	}
+	sort.Slice(options.GrantableIDs, func(i, j int) bool { return options.GrantableIDs[i] < options.GrantableIDs[j] })
+	return options, nil
+}
+
 // Create provisions a Relay user and records the owning department.
 func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) {
 	name := strings.TrimSpace(in.Name)
