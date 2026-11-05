@@ -19,6 +19,9 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/directorymember"
+	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
+	"github.com/ai-efficiency/backend/ent/predicate"
 	entteamaccount "github.com/ai-efficiency/backend/ent/teamaccount"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/pkg"
@@ -606,22 +609,70 @@ func (s *Service) SearchUserOptions(ctx context.Context, actorUserID int, includ
 		}
 	}
 	keyword := strings.TrimSpace(query)
-	predicate := entuser.Or(
+	selectors := []predicate.User{
 		entuser.UsernameContainsFold(keyword),
 		entuser.EmailContainsFold(keyword),
-	)
+	}
 	users, err := s.client.User.Query().
-		Where(predicate).
+		Where(entuser.Or(selectors...)).
 		Order(ent.Asc(entuser.FieldID)).
-		Limit(20).
+		Limit(200).
 		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("search users: %w", err)
 	}
-	out := make([]UserOption, 0, len(users))
-	for _, user := range users {
-		out = append(out, UserOption{ID: user.ID, Username: user.Username, Email: user.Email})
+
+	var allowed map[string]bool
+	if !includeAll {
+		account, err := s.loadAccount(ctx, accountID)
+		if err != nil {
+			return nil, err
+		}
+		allowed, err = s.departmentMemberEmails(ctx, account.DepartmentExternalID)
+		if err != nil {
+			return nil, err
+		}
 	}
+
+	out := make([]UserOption, 0, 20)
+	for _, user := range users {
+		if allowed != nil && !allowed[strings.ToLower(strings.TrimSpace(user.Email))] {
+			continue
+		}
+		out = append(out, UserOption{ID: user.ID, Username: user.Username, Email: user.Email})
+		if len(out) == 20 {
+			break
+		}
+	}
+	return out, nil
+}
+
+// departmentMemberEmails collects the normalized emails of everyone in the
+// department, using both the primary department and additional memberships.
+func (s *Service) departmentMemberEmails(ctx context.Context, departmentID string) (map[string]bool, error) {
+	out := map[string]bool{}
+	if strings.TrimSpace(departmentID) == "" {
+		return out, nil
+	}
+	members, err := s.client.DirectoryMember.Query().
+		Where(directorymember.DepartmentExternalIDEQ(departmentID)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load department members: %w", err)
+	}
+	for _, member := range members {
+		out[strings.ToLower(strings.TrimSpace(member.EmailNormalized))] = true
+	}
+	memberships, err := s.client.DirectoryMemberDepartment.Query().
+		Where(directorymemberdepartment.DepartmentExternalIDEQ(departmentID)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load department memberships: %w", err)
+	}
+	for _, membership := range memberships {
+		out[strings.ToLower(strings.TrimSpace(membership.MemberEmailNormalized))] = true
+	}
+	delete(out, "")
 	return out, nil
 }
 
