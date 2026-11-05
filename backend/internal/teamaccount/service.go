@@ -331,6 +331,10 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 		s.disableRelayUser(ctx, provider, relayUser.ID)
 		return nil, err
 	}
+	if err := s.assertPersonUser(ctx, ownerID); err != nil {
+		s.disableRelayUser(ctx, provider, relayUser.ID)
+		return nil, err
+	}
 
 	tx, err := s.client.Tx(ctx)
 	if err != nil {
@@ -634,8 +638,16 @@ func (s *Service) SearchUserOptions(ctx context.Context, actorUserID int, includ
 		}
 	}
 
+	identities, err := s.organizationIdentities(ctx)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]UserOption, 0, 20)
 	for _, user := range users {
+		if identities[strings.ToLower(strings.TrimSpace(user.Username))] ||
+			identities[strings.ToLower(strings.TrimSpace(user.Email))] {
+			continue
+		}
 		if allowed != nil && !allowed[strings.ToLower(strings.TrimSpace(user.Email))] {
 			continue
 		}
@@ -674,6 +686,44 @@ func (s *Service) departmentMemberEmails(ctx context.Context, departmentID strin
 	}
 	delete(out, "")
 	return out, nil
+}
+
+// organizationIdentity is the set of relay names and mailboxes owned by team
+// accounts. They are sign-in surfaces, never people, so they must never be
+// granted management rights.
+func (s *Service) organizationIdentities(ctx context.Context) (map[string]bool, error) {
+	rows, err := s.client.TeamAccount.Query().All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load organization accounts: %w", err)
+	}
+	out := map[string]bool{}
+	for _, row := range rows {
+		out[strings.ToLower(strings.TrimSpace(row.RelayUsername))] = true
+		out[strings.ToLower(strings.TrimSpace(row.RelayEmail))] = true
+	}
+	delete(out, "")
+	return out, nil
+}
+
+// assertPersonUser rejects organization-account identities as managers or
+// owners: an account can never be handed to another account.
+func (s *Service) assertPersonUser(ctx context.Context, userID int) error {
+	user, err := s.client.User.Get(ctx, userID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return &ValidationError{Message: "user does not exist"}
+		}
+		return fmt.Errorf("load user: %w", err)
+	}
+	identities, err := s.organizationIdentities(ctx)
+	if err != nil {
+		return err
+	}
+	if identities[strings.ToLower(strings.TrimSpace(user.Username))] ||
+		identities[strings.ToLower(strings.TrimSpace(user.Email))] {
+		return &ValidationError{Message: "organization accounts cannot be managers or owners"}
+	}
+	return nil
 }
 
 // List returns the accounts the actor owns or manages.
@@ -1072,6 +1122,9 @@ func (s *Service) AddManager(ctx context.Context, actorUserID int, includeAll bo
 	if err := s.assertUserExists(ctx, userID); err != nil {
 		return err
 	}
+	if err := s.assertPersonUser(ctx, userID); err != nil {
+		return err
+	}
 	exists, err := s.client.TeamAccountManager.Query().
 		Where(teamAccountManagerAccountID(accountID), teamAccountManagerUserID(userID)).
 		Exist(ctx)
@@ -1130,6 +1183,9 @@ func (s *Service) Transfer(ctx context.Context, actorUserID int, includeAll bool
 		return err
 	}
 	if err := s.assertUserExists(ctx, newOwnerUserID); err != nil {
+		return err
+	}
+	if err := s.assertPersonUser(ctx, newOwnerUserID); err != nil {
 		return err
 	}
 	previousOwner := row.OwnerUserID

@@ -9,6 +9,7 @@ import {
   readBrowserSession,
   replaceBrowserSession,
 } from '@/auth/browserSession'
+import { clearImpersonationReturn } from '@/auth/impersonation'
 import type { AuthTokenPayload } from '@/api/auth'
 import type { User, LoginRequest } from '@/types'
 
@@ -48,6 +49,9 @@ export const useAuthStore = defineStore('auth', () => {
       throw new Error('login response missing access token')
     }
 
+    // A normal sign-in starts clean; a leftover impersonation link must not
+    // survive across accounts.
+    clearImpersonationReturn()
     replaceBrowserSession({ accessToken, refreshToken })
     const user = await ensureUser()
     if (user) {
@@ -145,6 +149,10 @@ export const useAuthStore = defineStore('auth', () => {
 
   function logout() {
     localStorage.setItem('oidc_logout_requested', '1')
+    // Logging out must also drop any impersonated session link so the next
+    // sign-in starts clean instead of offering to restore an organization
+    // account.
+    clearImpersonationReturn()
     clearBrowserSession()
   }
 

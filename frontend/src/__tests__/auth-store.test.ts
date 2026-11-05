@@ -441,4 +441,21 @@ describe('Auth Store', () => {
     expect(readBrowserSession().refreshToken).toBe('refresh-a2')
     stop()
   })
+
+  it('logout drops the impersonated organization-account link', () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    localStorage.setItem('ae.impersonation.return', JSON.stringify({
+      accountName: 'SDK 效能组',
+      accessToken: 'operator-token',
+      refreshToken: 'operator-refresh',
+    }))
+    replaceBrowserSession({ accessToken: 'account-token', refreshToken: null })
+
+    const store = useAuthStore()
+    store.logout()
+
+    expect(localStorage.getItem('ae.impersonation.return')).toBeNull()
+    expect(readBrowserSession().accessToken).toBeNull()
+  })
 })
