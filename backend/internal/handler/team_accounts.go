@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -272,7 +273,11 @@ func (h *TeamAccountHandler) Usage(c *gin.Context) {
 	if !ok {
 		return
 	}
-	from, to := usageWindow(c)
+	from, to, err := usageWindow(c)
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
 	usage, err := h.service.AggregateUsage(c.Request.Context(), userID, isAdmin, id, from, to)
 	if err != nil {
 		h.respondError(c, err)
@@ -281,24 +286,44 @@ func (h *TeamAccountHandler) Usage(c *gin.Context) {
 	pkg.Success(c, usage)
 }
 
-func usageWindow(c *gin.Context) (time.Time, time.Time) {
+func usageWindow(c *gin.Context) (time.Time, time.Time, error) {
 	to := time.Now()
 	from := to.AddDate(0, 0, -7)
 	if raw := strings.TrimSpace(c.Query("from")); raw != "" {
-		if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
-			from = parsed
-		} else if parsed, err := time.Parse("2006-01-02", raw); err == nil {
-			from = parsed
+		parsed, err := parseUsageDate(raw, false)
+		if err != nil {
+			return from, to, fmt.Errorf("invalid from date")
 		}
+		from = parsed
 	}
 	if raw := strings.TrimSpace(c.Query("to")); raw != "" {
-		if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
-			to = parsed
-		} else if parsed, err := time.Parse("2006-01-02", raw); err == nil {
-			to = parsed.Add(24 * time.Hour)
+		parsed, err := parseUsageDate(raw, true)
+		if err != nil {
+			return from, to, fmt.Errorf("invalid to date")
 		}
+		to = parsed
 	}
-	return from, to
+	if from.After(to) {
+		return from, to, fmt.Errorf("from must be before to")
+	}
+	if to.Sub(from) > 92*24*time.Hour {
+		return from, to, fmt.Errorf("usage window is limited to 92 days")
+	}
+	return from, to, nil
+}
+
+func parseUsageDate(raw string, endOfDay bool) (time.Time, error) {
+	if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
+		return parsed, nil
+	}
+	parsed, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if endOfDay {
+		return parsed.Add(24 * time.Hour), nil
+	}
+	return parsed, nil
 }
 
 // Events handles GET /api/v1/user/team-accounts/:id/events.
