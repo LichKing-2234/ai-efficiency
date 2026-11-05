@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import TeamAccountSection from '@/components/team-accounts/TeamAccountSection.vue'
 import { setLocale } from '@/i18n'
@@ -158,7 +159,7 @@ async function mockApi(representative = true, items: TeamAccountSummary[] = [acc
 
 async function mountSection(representative = true, items: TeamAccountSummary[] = [account]) {
   const api = await mockApi(representative, items)
-  const wrapper = withTeleportedContent(mount(TeamAccountSection))
+  const wrapper = withTeleportedContent(mount(TeamAccountSection, { global: { plugins: [createPinia()] } }))
   await flushPromises()
   return { wrapper, api }
 }

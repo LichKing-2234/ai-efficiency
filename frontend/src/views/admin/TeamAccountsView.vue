@@ -91,6 +91,7 @@ const createAdditionalGroupIDs = ref<number[]>([])
 const createGroupOptions = ref<{ id: number; name: string; platform: string }[]>([])
 const createDefaultGroupIDs = ref<number[]>([])
 const createGrantableGroupIDs = ref<number[]>([])
+const createOwnerGroupIDs = ref<number[]>([])
 
 const statusOptions = computed<TeamAccountStatus[]>(() => ['active', 'suspended', 'orphaned'])
 
@@ -150,27 +151,37 @@ function onCreateDepartmentChange() {
     return
   }
   createForm.ownerUserID = null
+  createAdditionalGroupIDs.value = [...createDefaultGroupIDs.value]
 }
 
-function onOwnerSelected(user: AdminUser | null) {
-  const departmentId = user?.department?.external_id
-  if (!departmentId) return
-  if (createForm.departmentExternalId === departmentId) return
-  linkingOwnerFromDepartment.value = true
-  createForm.departmentExternalId = departmentId
+async function onOwnerSelected(user: AdminUser | null) {
+  if (!user) return
+  const departmentId = user.department?.external_id
+  if (departmentId && createForm.departmentExternalId !== departmentId) {
+    linkingOwnerFromDepartment.value = true
+    createForm.departmentExternalId = departmentId
+  }
+  // The account starts with the owner's own access groups plus the defaults.
+  await loadCreateGroupOptions(user.id)
+  createAdditionalGroupIDs.value = Array.from(new Set([
+    ...createDefaultGroupIDs.value,
+    ...createOwnerGroupIDs.value,
+  ]))
 }
 
-async function loadCreateGroupOptions() {
+async function loadCreateGroupOptions(ownerUserID?: number) {
   try {
-    const response = await getAdminTeamAccountGroupOptions()
+    const response = await getAdminTeamAccountGroupOptions(ownerUserID)
     const options = response.data.data
     createGroupOptions.value = options?.groups ?? []
     createDefaultGroupIDs.value = options?.default_group_ids ?? []
     createGrantableGroupIDs.value = options?.grantable_group_ids ?? []
+    createOwnerGroupIDs.value = options?.owner_group_ids ?? []
   } catch {
     createGroupOptions.value = []
     createDefaultGroupIDs.value = []
     createGrantableGroupIDs.value = []
+    createOwnerGroupIDs.value = []
   }
 }
 
@@ -445,7 +456,7 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
         append-to-body
         align-center
         :show-close="false"
-        width="min(100%, 34rem)"
+        width="min(100%, 48rem)"
         :close-on-click-modal="!creating"
         :close-on-press-escape="!creating"
         @update:model-value="(value) => { if (!value) closeCreate() }"

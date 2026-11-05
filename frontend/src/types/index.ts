@@ -1569,6 +1569,7 @@ export interface TeamAccountGroupOptions {
   groups: TeamAccountGroupOption[]
   default_group_ids: number[]
   grantable_group_ids: number[]
+  owner_group_ids: number[]
 }
 
 export interface TeamAccountCredentials {

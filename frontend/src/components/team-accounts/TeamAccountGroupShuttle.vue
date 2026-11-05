@@ -25,13 +25,13 @@ const t = createFeatureTranslator(locale, baseT, 'teamAccounts.', teamAccountsMe
 const grantable = computed(() => new Set(props.grantableGroupIds))
 const defaults = computed(() => new Set(props.defaultGroupIds))
 
-// Left: groups the creator may grant but the account does not have yet.
+// Top list: groups the creator may grant but the account does not have yet.
 const available = computed(() => {
   const chosen = new Set(props.modelValue)
   return props.groups.filter((group) => grantable.value.has(group.id) && !chosen.has(group.id))
 })
 
-// Right: everything the account will have. Defaults first, then extras.
+// Bottom list: everything the account will have. Defaults first, then extras.
 const selected = computed(() => {
   const chosen = new Set(props.modelValue)
   return props.groups
@@ -51,12 +51,12 @@ function remove(group: TeamAccountGroupOption) {
 </script>
 
 <template>
-  <div class="grid grid-cols-2 gap-2" data-testid="team-account-group-shuttle">
+  <div class="space-y-2" data-testid="team-account-group-shuttle">
     <div class="rounded border border-slate-200">
       <div class="border-b border-slate-100 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-500">
         {{ t('teamAccounts.groups.available') }}
       </div>
-      <ul class="max-h-44 overflow-auto p-1">
+      <ul class="max-h-40 overflow-auto p-1">
         <li v-if="available.length === 0" class="px-2 py-2 text-xs text-slate-400">
           {{ t('teamAccounts.groups.noneAvailable') }}
         </li>
@@ -67,15 +67,18 @@ function remove(group: TeamAccountGroupOption) {
           class="cursor-pointer rounded px-2 py-1 text-sm text-slate-700 hover:bg-blue-50"
           @click="add(group)"
         >
-          {{ group.name }} · {{ group.platform }}
+          <ElTooltip :content="`${group.name} · ${group.platform}`" placement="top" :show-after="300">
+            <span class="block truncate">{{ group.name }} · {{ group.platform }}</span>
+          </ElTooltip>
         </li>
       </ul>
     </div>
+
     <div class="rounded border border-slate-200">
       <div class="border-b border-slate-100 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-500">
         {{ t('teamAccounts.groups.selected') }}
       </div>
-      <ul class="max-h-44 overflow-auto p-1">
+      <ul class="max-h-40 overflow-auto p-1">
         <li v-if="selected.length === 0" class="px-2 py-2 text-xs text-slate-400">
           {{ t('teamAccounts.groups.noneSelected') }}
         </li>
@@ -87,7 +90,9 @@ function remove(group: TeamAccountGroupOption) {
           :class="defaults.has(group.id) ? 'text-slate-500' : 'cursor-pointer text-slate-800 hover:bg-blue-50'"
           @click="remove(group)"
         >
-          <span class="min-w-0 truncate">{{ group.name }} · {{ group.platform }}</span>
+          <ElTooltip :content="`${group.name} · ${group.platform}`" placement="top" :show-after="300">
+            <span class="block min-w-0 truncate">{{ group.name }} · {{ group.platform }}</span>
+          </ElTooltip>
           <span v-if="defaults.has(group.id)" class="shrink-0 rounded bg-slate-100 px-1 text-[11px] text-slate-500">
             {{ t('teamAccounts.groups.defaultTag') }}
           </span>

@@ -326,7 +326,7 @@ func (h *TeamAccountHandler) GroupOptions(c *gin.Context) {
 	if !ok {
 		return
 	}
-	options, err := h.service.GroupOptionsForActor(c.Request.Context(), userID, isAdmin)
+	options, err := h.service.GroupOptionsForActor(c.Request.Context(), userID, isAdmin, 0)
 	if err != nil {
 		h.respondError(c, err)
 		return
@@ -340,7 +340,8 @@ func (h *TeamAccountHandler) AdminGroupOptions(c *gin.Context) {
 	if !ok {
 		return
 	}
-	options, err := h.service.GroupOptionsForActor(c.Request.Context(), userID, true)
+	ownerUserID, _ := strconv.Atoi(strings.TrimSpace(c.Query("user_id")))
+	options, err := h.service.GroupOptionsForActor(c.Request.Context(), userID, true, ownerUserID)
 	if err != nil {
 		h.respondError(c, err)
 		return

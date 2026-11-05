@@ -163,9 +163,12 @@ type GroupOption struct {
 // GroupOptions is the access-group picker payload: every known group, the ones
 // the provider grants by default, and the ones the caller may grant.
 type GroupOptions struct {
-	Groups         []GroupOption `json:"groups"`
-	DefaultGroupIDs []int64      `json:"default_group_ids"`
-	GrantableIDs    []int64      `json:"grantable_group_ids"`
+	Groups          []GroupOption `json:"groups"`
+	DefaultGroupIDs []int64       `json:"default_group_ids"`
+	GrantableIDs    []int64       `json:"grantable_group_ids"`
+	// OwnerGroupIDs are the groups the chosen account owner is subscribed to;
+	// the console preselects them so an account starts with its owner's access.
+	OwnerGroupIDs []int64 `json:"owner_group_ids"`
 }
 
 type defaultSubscriptionReader interface {
@@ -175,7 +178,7 @@ type defaultSubscriptionReader interface {
 // GroupOptionsForActor returns the access groups an account creator may choose
 // from. A representative may only grant groups they are subscribed to
 // themselves; an administrator may grant any group.
-func (s *Service) GroupOptionsForActor(ctx context.Context, actorUserID int, isAdmin bool) (*GroupOptions, error) {
+func (s *Service) GroupOptionsForActor(ctx context.Context, actorUserID int, isAdmin bool, ownerUserID int) (*GroupOptions, error) {
 	providerID, err := s.primaryProviderID(ctx)
 	if err != nil {
 		return nil, err
@@ -188,7 +191,7 @@ func (s *Service) GroupOptionsForActor(ctx context.Context, actorUserID int, isA
 		return nil, fmt.Errorf("resolve relay provider: %w", err)
 	}
 
-	options := &GroupOptions{Groups: []GroupOption{}, DefaultGroupIDs: []int64{}, GrantableIDs: []int64{}}
+	options := &GroupOptions{Groups: []GroupOption{}, DefaultGroupIDs: []int64{}, GrantableIDs: []int64{}, OwnerGroupIDs: []int64{}}
 	if reader, ok := provider.(defaultSubscriptionReader); ok {
 		if defaults, err := reader.DefaultSubscriptionGroupIDs(ctx); err == nil {
 			options.DefaultGroupIDs = defaults
@@ -226,6 +229,23 @@ func (s *Service) GroupOptionsForActor(ctx context.Context, actorUserID int, isA
 			}
 		}
 	}
+	if isAdmin && ownerUserID > 0 {
+		owner, err := s.client.User.Get(ctx, ownerUserID)
+		if err != nil {
+			return nil, &ValidationError{Message: "owner does not exist"}
+		}
+		if owner.RelayUserID != nil {
+			own, err := s.activeSubscriptionGroupIDSet(ctx, provider, int64(*owner.RelayUserID))
+			if err != nil {
+				return nil, err
+			}
+			for id := range own {
+				options.OwnerGroupIDs = append(options.OwnerGroupIDs, id)
+			}
+			sort.Slice(options.OwnerGroupIDs, func(i, j int) bool { return options.OwnerGroupIDs[i] < options.OwnerGroupIDs[j] })
+		}
+	}
+
 	for id := range grantable {
 		options.GrantableIDs = append(options.GrantableIDs, id)
 	}

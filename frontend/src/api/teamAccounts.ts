@@ -48,8 +48,10 @@ export function getTeamAccountGroupOptions() {
   return client.get<ApiResponse<TeamAccountGroupOptions>>(`${USER_BASE}/group-options`)
 }
 
-export function getAdminTeamAccountGroupOptions() {
-  return client.get<ApiResponse<TeamAccountGroupOptions>>(`${ADMIN_BASE}/group-options`)
+export function getAdminTeamAccountGroupOptions(userID?: number) {
+  return client.get<ApiResponse<TeamAccountGroupOptions>>(`${ADMIN_BASE}/group-options`, {
+    params: userID ? { user_id: userID } : undefined,
+  })
 }
 
 export function revealTeamAccountCredentials(id: number) {

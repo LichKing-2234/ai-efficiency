@@ -8,6 +8,7 @@ import { createTeamAccount, getTeamAccount, getTeamAccountGroupOptions, listTeam
 import { getTeamUsageScope } from '@/api/teamUsage'
 import { getUserProviders } from '@/api/user'
 import { useTeamAccountLogin } from '@/composables/useTeamAccountLogin'
+import { useAuthStore } from '@/stores/auth'
 import { useI18n } from '@/i18n'
 import { teamAccountsMessages } from '@/locales/teamAccounts'
 import { createFeatureTranslator } from '@/utils/featureI18n'
@@ -19,6 +20,8 @@ import {
 } from '@/utils/teamAccounts'
 import type { TeamAccountDetail, TeamAccountSummary } from '@/types'
 
+const auth = useAuthStore()
+const currentUsername = computed(() => auth.user?.username ?? auth.user?.email ?? '')
 const { t: baseT, locale } = useI18n()
 const t = createFeatureTranslator(locale, baseT, 'teamAccounts.', teamAccountsMessages)
 const accounts = ref<TeamAccountSummary[]>([])
@@ -314,7 +317,7 @@ function handleTransferred() {
       append-to-body
       align-center
       :show-close="false"
-      width="min(100%, 32rem)"
+      width="min(100%, 44rem)"
       :close-on-click-modal="!creating"
       :close-on-press-escape="!creating"
       @update:model-value="(value) => { if (!value) closeCreate() }"
@@ -356,6 +359,16 @@ function handleTransferred() {
               :value="department.external_id"
             />
           </ElSelect>
+        </label>
+
+        <label class="block text-sm">
+          <span class="font-medium text-gray-700">{{ t('teamAccounts.ownerUserId') }}</span>
+          <ElInput
+            :model-value="currentUsername"
+            data-testid="team-account-create-owner"
+            class="mt-1"
+            disabled
+          />
         </label>
         <div class="block text-sm">
           <span class="font-medium text-gray-700">{{ t('teamAccounts.additionalGroups') }}</span>
