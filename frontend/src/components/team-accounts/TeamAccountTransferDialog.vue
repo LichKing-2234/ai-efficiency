@@ -122,6 +122,8 @@ async function submit() {
           data-testid="team-account-transfer-owner"
           class="mt-1"
           :disabled="transferring"
+          :mode="mode === 'admin' ? 'admin' : 'account'"
+          :account-id="account?.id ?? null"
         />
       </label>
 

@@ -320,6 +320,24 @@ func (h *TeamAccountHandler) Events(c *gin.Context) {
 	pkg.Success(c, gin.H{"items": events})
 }
 
+// UserOptions handles GET /api/v1/user/team-accounts/:id/user-options.
+func (h *TeamAccountHandler) UserOptions(c *gin.Context) {
+	userID, isAdmin, ok := h.actor(c)
+	if !ok {
+		return
+	}
+	id, ok := accountIDParam(c)
+	if !ok {
+		return
+	}
+	options, err := h.service.SearchUserOptions(c.Request.Context(), userID, isAdmin, id, c.Query("q"))
+	if err != nil {
+		h.respondError(c, err)
+		return
+	}
+	pkg.Success(c, gin.H{"items": options})
+}
+
 // GroupOptions handles GET /api/v1/user/team-accounts/group-options.
 func (h *TeamAccountHandler) GroupOptions(c *gin.Context) {
 	userID, isAdmin, ok := h.actor(c)

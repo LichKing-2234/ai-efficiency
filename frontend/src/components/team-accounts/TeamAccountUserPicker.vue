@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { listAdminUsers } from '@/api/adminUsers'
+import { listAdminTeamAccountUserOptions, listTeamAccountUserOptions } from '@/api/teamAccounts'
 import { useI18n } from '@/i18n'
 import { teamAccountsMessages } from '@/locales/teamAccounts'
 import { createFeatureTranslator } from '@/utils/featureI18n'
@@ -13,10 +14,14 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   disabled?: boolean
   departmentId?: string
+  mode?: 'admin' | 'account'
+  accountId?: number | null
 }>(), {
   placeholder: '',
   disabled: false,
   departmentId: '',
+  mode: 'admin',
+  accountId: null,
 })
 
 const emit = defineEmits<{
@@ -62,6 +67,21 @@ function label(user: AdminUser) {
 async function search(keyword: string) {
   loading.value = true
   try {
+    if (props.mode === 'account' && props.accountId) {
+      // Account members may search people through the account-scoped endpoint;
+      // the admin directory is not available to them.
+      const response = await listTeamAccountUserOptions(props.accountId, keyword.trim())
+      users.value = (response.data.data?.items ?? []).map((item: { id: number; username: string; email: string }) => ({
+        id: item.id,
+        username: item.username,
+        email: item.email,
+        role: 'user',
+        auth_source: '',
+        relay_auth_password: '',
+      })) as AdminUser[]
+      activeIndex.value = 0
+      return
+    }
     const response = await listAdminUsers({
       q: keyword.trim() || undefined,
       department_id: props.departmentId.trim() || undefined,
@@ -95,6 +115,18 @@ watch(
 
 async function hydrateSelection() {
   if (props.modelValue === null) return
+  if (props.mode === 'account' && props.accountId) {
+    try {
+      const response = await listAdminTeamAccountUserOptions(props.accountId, '')
+      const match = (response.data.data?.items ?? []).find((item: { id: number; username: string; email: string }) => item.id === props.modelValue)
+      if (match) {
+        rememberUser({ ...match, role: 'user', auth_source: '', relay_auth_password: '' } as AdminUser)
+      }
+    } catch {
+      // The field falls back to the raw value.
+    }
+    return
+  }
   try {
     for (let page = 1; page <= 10; page += 1) {
       const response = await listAdminUsers({ page, page_size: 100 })

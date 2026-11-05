@@ -156,3 +156,23 @@ export function setAdminTeamAccountStatus(id: number, status: TeamAccountStatus)
   const data: TeamAccountStatusRequest = { status }
   return client.post<ApiResponse<TeamAccountStatusResponse>>(accountPath(ADMIN_BASE, id, '/status'), data)
 }
+
+export interface TeamAccountUserOption {
+  id: number
+  username: string
+  email: string
+}
+
+export function listTeamAccountUserOptions(id: number, q: string) {
+  return client.get<ApiResponse<{ items: TeamAccountUserOption[] }>>(
+    accountPath(USER_BASE, id, '/user-options'),
+    { params: { q } },
+  )
+}
+
+export function listAdminTeamAccountUserOptions(id: number, q: string) {
+  return client.get<ApiResponse<{ items: TeamAccountUserOption[] }>>(
+    accountPath(ADMIN_BASE, id, '/user-options'),
+    { params: { q } },
+  )
+}

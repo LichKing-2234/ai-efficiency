@@ -587,6 +587,44 @@ func (s *Service) disableRelayUser(ctx context.Context, provider relay.Provider,
 	s.logger.Warn("team account relay user disabled after local failure", zap.Int64("relay_user_id", relayUserID))
 }
 
+// UserOption is one person that can be added as an account manager.
+type UserOption struct {
+	ID       int    `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+}
+
+// SearchUserOptions finds people an account member may add as a manager. The
+// caller must already manage the account (administrators skip that check).
+func (s *Service) SearchUserOptions(ctx context.Context, actorUserID int, includeAll bool, accountID int, query string) ([]UserOption, error) {
+	if _, err := s.loadAccount(ctx, accountID); err != nil {
+		return nil, err
+	}
+	if !includeAll {
+		if err := s.assertMember(ctx, actorUserID, accountID); err != nil {
+			return nil, err
+		}
+	}
+	keyword := strings.TrimSpace(query)
+	predicate := entuser.Or(
+		entuser.UsernameContainsFold(keyword),
+		entuser.EmailContainsFold(keyword),
+	)
+	users, err := s.client.User.Query().
+		Where(predicate).
+		Order(ent.Asc(entuser.FieldID)).
+		Limit(20).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("search users: %w", err)
+	}
+	out := make([]UserOption, 0, len(users))
+	for _, user := range users {
+		out = append(out, UserOption{ID: user.ID, Username: user.Username, Email: user.Email})
+	}
+	return out, nil
+}
+
 // List returns the accounts the actor owns or manages.
 func (s *Service) List(ctx context.Context, actorUserID int, includeAll bool) ([]Account, error) {
 	var rows []*ent.TeamAccount

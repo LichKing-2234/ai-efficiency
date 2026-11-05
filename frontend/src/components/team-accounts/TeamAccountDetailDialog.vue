@@ -129,6 +129,10 @@ const canCreateKey = computed(() => (
   && !keyCreating.value
 ))
 const availableGroups = computed(() => detail.value?.available_groups ?? [])
+function groupName(groupID: number | string) {
+  const match = availableGroups.value.find((group) => group.id === Number(groupID))
+  return match?.name || '—'
+}
 const canAddManager = computed(() => (
   managerUserID.value !== null
   && managerUserID.value > 0
@@ -639,7 +643,9 @@ function requestStatusChange() {
 
           <ElTable v-if="keys.length > 0" :data="keys" size="small" class="w-full">
             <ElTableColumn prop="name" :label="t('teamAccounts.keys.name')" min-width="120" />
-            <ElTableColumn prop="relay_group_id" :label="t('teamAccounts.keys.groupId')" width="130" />
+            <ElTableColumn :label="t('teamAccounts.keys.groupId')" width="130">
+                <template #default="{ row }">{{ groupName(row.relay_group_id) }}</template>
+              </ElTableColumn>
             <ElTableColumn prop="secret_preview" :label="t('teamAccounts.keys.preview')" min-width="140" />
             <ElTableColumn :label="t('teamAccounts.status.label')" width="100">
               <template #default="{ row }">
@@ -684,6 +690,8 @@ function requestStatusChange() {
                 data-testid="team-account-manager-user-id"
                 class="mt-1"
                 :disabled="managerAdding"
+                :mode="mode === 'admin' ? 'admin' : 'account'"
+                :account-id="props.accountId"
               />
             </label>
             <ElButton
@@ -790,7 +798,9 @@ function requestStatusChange() {
               </h4>
               <ElTable :data="usage.keys" size="small" class="w-full">
                 <ElTableColumn prop="name" :label="t('teamAccounts.keys.name')" min-width="120" />
-                <ElTableColumn prop="relay_group_id" :label="t('teamAccounts.keys.groupId')" width="130" />
+                <ElTableColumn :label="t('teamAccounts.keys.groupId')" width="130">
+                <template #default="{ row }">{{ groupName(row.relay_group_id) }}</template>
+              </ElTableColumn>
                 <ElTableColumn :label="t('teamAccounts.usage.tokens')" width="120">
                   <template #default="{ row }">{{ formatTeamAccountNumber(row.tokens) }}</template>
                 </ElTableColumn>

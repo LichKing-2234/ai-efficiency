@@ -4,6 +4,11 @@ import TeamAccountDepartmentPicker from '@/components/team-accounts/TeamAccountD
 import TeamAccountUserPicker from '@/components/team-accounts/TeamAccountUserPicker.vue'
 import { setLocale } from '@/i18n'
 
+vi.mock('@/api/teamAccounts', () => ({
+  listTeamAccountUserOptions: vi.fn(),
+  listAdminTeamAccountUserOptions: vi.fn(),
+}))
+
 vi.mock('@/api/adminUsers', () => ({
   listAdminUserDepartments: vi.fn(),
   listAdminUsers: vi.fn(),
@@ -185,5 +190,24 @@ describe('team account pickers', () => {
     await flushPromises()
 
     expect((wrapper.get('[data-testid="team-account-user-input"]').element as HTMLInputElement).value).toBe('')
+  })
+
+  it('searches people through the account endpoint for account members', async () => {
+    const api = await import('@/api/teamAccounts')
+    vi.mocked(api.listTeamAccountUserOptions).mockResolvedValue(response({
+      items: [{ id: 9, username: 'member', email: 'member@example.com' }],
+    }) as any)
+    const wrapper = mount(TeamAccountUserPicker, {
+      props: { modelValue: null, mode: 'account', accountId: 3 },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    const input = wrapper.get('[data-testid="team-account-user-input"]')
+    await input.trigger('focus')
+    await input.setValue('mem')
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    await flushPromises()
+
+    expect(api.listTeamAccountUserOptions).toHaveBeenCalledWith(3, 'mem')
   })
 })
