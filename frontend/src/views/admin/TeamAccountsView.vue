@@ -474,7 +474,7 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
               <dl class="grid gap-3 text-sm sm:grid-cols-2">
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ t('teamAccounts.owner') }}</dt>
-                  <dd class="mt-1 text-gray-700">#{{ account.owner_user_id }}</dd>
+                  <dd class="mt-1 break-all text-gray-700">{{ account.owner_username || `#${account.owner_user_id}` }}</dd>
                 </div>
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ t('teamAccounts.createdAt') }}</dt>

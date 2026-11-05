@@ -21,6 +21,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/departmentgroupmap"
+	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	entteamaccount "github.com/ai-efficiency/backend/ent/teamaccount"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/pkg"
@@ -105,6 +106,8 @@ type Account struct {
 	RelayEmail            string    `json:"relay_email"`
 	RelayUserID           int64     `json:"relay_user_id"`
 	OwnerUserID           int       `json:"owner_user_id"`
+	OwnerUsername         string    `json:"owner_username,omitempty"`
+	OwnerEmail            string    `json:"owner_email,omitempty"`
 	Status                string    `json:"status"`
 	CreatedAt             time.Time `json:"created_at"`
 	Keys                  []Key     `json:"keys,omitempty"`
@@ -231,7 +234,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 
 	created, err := tx.TeamAccount.Create().
 		SetDepartmentExternalID(departmentID).
-		SetDepartmentDisplayPath(strings.TrimSpace(in.Name)).
+		SetDepartmentDisplayPath(s.departmentLabel(ctx, departmentID, name)).
 		SetName(name).
 		SetRelayProviderID(providerID).
 		SetRelayUserID(relayUser.ID).
@@ -270,6 +273,22 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 	}
 
 	return s.Get(ctx, in.ActorUserID, in.IsAdmin, created.ID)
+}
+
+// departmentLabel resolves the directory path for a department, falling back to
+// the account name when the department is not in the current snapshot.
+func (s *Service) departmentLabel(ctx context.Context, departmentID, fallback string) string {
+	row, err := s.client.DirectoryDepartment.Query().
+		Where(directorydepartment.ExternalIDEQ(departmentID)).
+		Order(ent.Desc(directorydepartment.FieldID)).
+		First(ctx)
+	if err != nil {
+		return fallback
+	}
+	if label := strings.TrimSpace(row.Path); label != "" {
+		return label
+	}
+	return row.Name
 }
 
 func (s *Service) resolveDepartment(ctx context.Context, in CreateInput) (string, error) {
@@ -479,7 +498,82 @@ func (s *Service) List(ctx context.Context, actorUserID int, includeAll bool) ([
 	for _, row := range rows {
 		accounts = append(accounts, toAccount(row))
 	}
+	s.hydrateOwners(ctx, accounts)
+	s.hydrateDepartments(ctx, accounts)
 	return accounts, nil
+}
+
+// hydrateDepartments replaces the stored label with the current directory path
+// so the console shows where the account sits in the org tree.
+func (s *Service) hydrateDepartments(ctx context.Context, accounts []Account) {
+	ids := make([]string, 0, len(accounts))
+	seen := map[string]bool{}
+	for _, account := range accounts {
+		if account.DepartmentExternalID == "" || seen[account.DepartmentExternalID] {
+			continue
+		}
+		seen[account.DepartmentExternalID] = true
+		ids = append(ids, account.DepartmentExternalID)
+	}
+	if len(ids) == 0 {
+		return
+	}
+	rows, err := s.client.DirectoryDepartment.Query().
+		Where(directorydepartment.ExternalIDIn(ids...)).
+		Order(ent.Desc(directorydepartment.FieldID)).
+		All(ctx)
+	if err != nil {
+		return
+	}
+	byExternalID := make(map[string]string, len(rows))
+	for _, row := range rows {
+		label := strings.TrimSpace(row.Path)
+		if label == "" {
+			label = row.Name
+		}
+		if _, exists := byExternalID[row.ExternalID]; exists {
+			continue
+		}
+		byExternalID[row.ExternalID] = label
+	}
+	for index := range accounts {
+		if label := byExternalID[accounts[index].DepartmentExternalID]; label != "" {
+			accounts[index].DepartmentDisplayPath = label
+		}
+	}
+}
+
+// hydrateOwners attaches human-readable owner identities so the console never
+// has to show a raw user id.
+func (s *Service) hydrateOwners(ctx context.Context, accounts []Account) {
+	ids := make([]int, 0, len(accounts))
+	seen := map[int]bool{}
+	for _, account := range accounts {
+		if account.OwnerUserID <= 0 || seen[account.OwnerUserID] {
+			continue
+		}
+		seen[account.OwnerUserID] = true
+		ids = append(ids, account.OwnerUserID)
+	}
+	if len(ids) == 0 {
+		return
+	}
+	users, err := s.client.User.Query().Where(entuser.IDIn(ids...)).All(ctx)
+	if err != nil {
+		return
+	}
+	byID := make(map[int]*ent.User, len(users))
+	for _, user := range users {
+		byID[user.ID] = user
+	}
+	for index := range accounts {
+		user := byID[accounts[index].OwnerUserID]
+		if user == nil {
+			continue
+		}
+		accounts[index].OwnerUsername = user.Username
+		accounts[index].OwnerEmail = user.Email
+	}
 }
 
 // Get returns one account with keys and managers after an access check.
@@ -517,6 +611,10 @@ func (s *Service) Get(ctx context.Context, actorUserID int, includeAll bool, acc
 		return nil, err
 	}
 	account.RelayGroupIDs = groups
+	if owner, err := s.client.User.Get(ctx, row.OwnerUserID); err == nil {
+		account.OwnerUsername = owner.Username
+		account.OwnerEmail = owner.Email
+	}
 	return &account, nil
 }
 

@@ -1516,6 +1516,8 @@ export interface TeamAccountSummary {
   relay_username: string
   relay_user_id: number
   owner_user_id: number
+  owner_username?: string
+  owner_email?: string
   status: string
   created_at: string
 }

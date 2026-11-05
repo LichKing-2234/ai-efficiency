@@ -113,6 +113,15 @@ const api = computed(() => props.mode === 'admin'
 const summary = computed<TeamAccountSummary | null>(() => detail.value ?? props.account)
 const keys = computed(() => detail.value?.keys ?? [])
 const managers = computed(() => detail.value?.managers ?? [])
+const ownerLabel = computed(() => {
+  const current = detail.value
+  if (!current) return ''
+  if (current.owner_username) return current.owner_username
+  const owner = (current.managers ?? []).find((manager) => manager.role === 'owner')
+  if (owner) return owner.username || owner.email
+  return `#${current.owner_user_id}`
+})
+
 const canCreateKey = computed(() => (
   Number.isInteger(Number(keyForm.groupId))
   && Number(keyForm.groupId) > 0
@@ -469,7 +478,7 @@ function requestStatusChange() {
           <dl class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ t('teamAccounts.owner') }}</dt>
-              <dd class="mt-1 text-gray-700">{{ t('teamAccounts.ownerUserId') }} #{{ detail.owner_user_id }}</dd>
+              <dd class="mt-1 break-all text-gray-700">{{ ownerLabel }}</dd>
             </div>
             <div>
               <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ t('teamAccounts.createdAt') }}</dt>
