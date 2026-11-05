@@ -20,9 +20,11 @@ export const useTeamAccountsAccessStore = defineStore('teamAccountsAccess', () =
     if (loaded.value || loading.value) return
     loading.value = true
     try {
+      // Wrap each call so a missing module export in tests rejects instead of
+      // throwing synchronously and leaving an unhandled rejection behind.
       const [scope, accounts] = await Promise.all([
-        getTeamUsageScope().catch(() => null),
-        listTeamAccounts().catch(() => null),
+        Promise.resolve().then(() => getTeamUsageScope()).catch(() => null),
+        Promise.resolve().then(() => listTeamAccounts()).catch(() => null),
       ])
       isRepresentative.value = scope?.data?.data?.is_representative ?? false
       accountCount.value = accounts?.data?.data?.items?.length ?? 0

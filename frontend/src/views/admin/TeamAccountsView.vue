@@ -223,7 +223,10 @@ async function submitCreate() {
     createOpen.value = false
     await loadAccounts()
   } catch (e: unknown) {
-    createError.value = teamAccountErrorMessage(e, t('teamAccounts.admin.createFailed'))
+    const message = teamAccountErrorMessage(e, t('teamAccounts.admin.createFailed'))
+    createError.value = message.includes('already has a team account')
+      ? t('teamAccounts.departmentTaken')
+      : message
   } finally {
     creating.value = false
   }

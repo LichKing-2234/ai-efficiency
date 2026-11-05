@@ -166,7 +166,10 @@ async function submitCreate() {
       await loadAccounts()
     }
   } catch (e: unknown) {
-    createError.value = teamAccountErrorMessage(e, t('teamAccounts.createFailed'))
+    const message = teamAccountErrorMessage(e, t('teamAccounts.createFailed'))
+    createError.value = message.includes('already has a team account')
+      ? t('teamAccounts.departmentTaken')
+      : message
   } finally {
     creating.value = false
   }
@@ -343,9 +346,17 @@ function handleTransferred() {
             :disabled="creating"
           />
         </label>
-        <label v-if="!singleRepresentedDepartment" class="block text-sm">
+        <label class="block text-sm">
           <span class="font-medium text-gray-700">{{ t('teamAccounts.admin.departmentSelect') }}</span>
+          <ElInput
+            v-if="singleRepresentedDepartment"
+            :model-value="singleRepresentedDepartment.display_path || singleRepresentedDepartment.name"
+            data-testid="team-account-create-department-locked"
+            class="mt-1"
+            disabled
+          />
           <ElSelect
+            v-else
             v-model="createForm.departmentExternalId"
             data-testid="team-account-create-department"
             class="mt-1 w-full"

@@ -216,6 +216,8 @@ describe('TeamAccountSection', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="team-account-create-department"]').exists()).toBe(false)
+    expect((wrapper.get('[data-testid="team-account-create-department-locked"]').element as HTMLInputElement).value)
+      .toContain('Engineering / Data Platform')
 
     await wrapper.get('[data-testid="team-account-create-name"]').setValue('New Account')
     await wrapper.get('[data-testid="team-account-create-submit"]').trigger('click')
