@@ -32,6 +32,7 @@ const loading = ref(false)
 const query = ref('')
 const activeIndex = ref(0)
 const focused = ref(false)
+const touched = ref(false)
 const selectedUser = ref<AdminUser | null>(null)
 const trigger = ref<HTMLElement | null>(null)
 const list = ref<HTMLElement | null>(null)
@@ -42,7 +43,7 @@ const { position, start, stop } = useComboPosition(trigger)
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
 // The list only exists while the operator is typing; there is no browse mode.
-const open = computed(() => query.value.trim().length > 0)
+const open = computed(() => touched.value && query.value.trim().length > 0)
 // While the field is focused it shows exactly what was typed, so deleting the
 // text never resurrects the previously selected user.
 const displayValue = computed(() => (focused.value ? query.value : selectedUser.value?.username ?? ''))
@@ -97,6 +98,7 @@ async function hydrateSelection() {
 
 function onInput(event: Event) {
   const value = (event.target as HTMLInputElement).value
+  touched.value = true
   query.value = value
   if (debounceTimer) clearTimeout(debounceTimer)
   if (!value.trim()) {
@@ -111,7 +113,9 @@ function onInput(event: Event) {
 
 function onFocus() {
   focused.value = true
-  query.value = ''
+  touched.value = false
+  // Keep the chosen user's name in the field so it can be edited or deleted.
+  query.value = selectedUser.value?.username ?? ''
   start()
 }
 
@@ -132,6 +136,7 @@ function onCompositionEnd(event: Event) {
 function onBlur() {
   composing.value = false
   focused.value = false
+  touched.value = false
   query.value = ''
   stop()
 }
@@ -141,6 +146,7 @@ function onBlur() {
 function endEditing() {
   composing.value = false
   focused.value = false
+  touched.value = false
   query.value = ''
   stop()
   userInput.value?.blur()

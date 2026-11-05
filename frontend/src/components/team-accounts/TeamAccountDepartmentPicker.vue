@@ -35,6 +35,7 @@ const loading = ref(false)
 const query = ref('')
 const activeIndex = ref(0)
 const focused = ref(false)
+const touched = ref(false)
 const trigger = ref<HTMLElement | null>(null)
 const list = ref<HTMLElement | null>(null)
 const departmentInput = ref<HTMLInputElement | null>(null)
@@ -43,7 +44,7 @@ const { position, start, stop } = useComboPosition(trigger)
 
 const selected = computed(() => departments.value.find((item) => item.external_id === props.modelValue) ?? null)
 // The list only exists while the operator is typing; there is no browse mode.
-const open = computed(() => query.value.trim().length > 0)
+const open = computed(() => touched.value && query.value.trim().length > 0)
 const rows = computed(() => {
   const keyword = query.value.trim().toLowerCase()
   if (!keyword) return []
@@ -82,6 +83,7 @@ function onInput(event: Event) {
   // characters exist; ignore them so a half-composed word never becomes the
   // query that survives a selection.
   if (composing.value || !focused.value) return
+  touched.value = true
   query.value = (event.target as HTMLInputElement).value
   activeIndex.value = 0
   start()
@@ -90,7 +92,10 @@ function onInput(event: Event) {
 
 function onFocus() {
   focused.value = true
-  query.value = ''
+  touched.value = false
+  // Keep the current selection in the field so it can be edited or deleted
+  // character by character instead of vanishing on click.
+  query.value = selected.value ? selected.value.display_path || selected.value.name : ''
   start()
 }
 
@@ -111,6 +116,7 @@ function onCompositionEnd(event: Event) {
 function onBlur() {
   composing.value = false
   focused.value = false
+  touched.value = false
   query.value = ''
   stop()
 }
@@ -120,6 +126,7 @@ function onBlur() {
 function endEditing() {
   composing.value = false
   focused.value = false
+  touched.value = false
   query.value = ''
   stop()
   departmentInput.value?.blur()
