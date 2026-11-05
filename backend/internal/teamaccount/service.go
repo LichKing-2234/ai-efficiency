@@ -832,6 +832,8 @@ func (s *Service) Get(ctx context.Context, actorUserID int, includeAll bool, acc
 		}
 	}
 	account := toAccount(row)
+	// Never expose the raw directory-id path that older rows stored.
+	account.DepartmentDisplayPath = s.departmentLabel(ctx, row.DepartmentExternalID, account.DepartmentDisplayPath)
 
 	keys, err := s.client.TeamAccountKey.Query().
 		Where(teamAccountKeyAccountID(accountID)).
