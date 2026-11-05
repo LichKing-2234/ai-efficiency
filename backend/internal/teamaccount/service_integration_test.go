@@ -3,6 +3,8 @@ package teamaccount
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,8 +21,10 @@ type fakeProvider struct {
 	revokedKeys   []int64
 	disabled      []int64
 	nextRelayID   int64
-	keySecret     string
-	usageTokens   int64
+	keySecret       string
+	keyAuthFailures int
+	keyCalls        int
+	usageTokens     int64
 	usageCost     float64
 }
 
@@ -47,6 +51,11 @@ func (f *fakeProvider) CreateUser(_ context.Context, req relay.CreateUserRequest
 }
 
 func (f *fakeProvider) CreateUserAPIKey(_ context.Context, _ int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error) {
+	f.keyCalls++
+	if f.keyAuthFailures > 0 {
+		f.keyAuthFailures--
+		return nil, fmt.Errorf("relay: create api key via jwt: relay: invalid credentials")
+	}
 	return &relay.APIKeyWithSecret{APIKey: relay.APIKey{ID: 555, Name: req.Name}, Secret: f.keySecret}, nil
 }
 
@@ -413,5 +422,29 @@ func TestGroupOptionsRequireRepresentativeRole(t *testing.T) {
 	var permission *PermissionError
 	if !errors.As(err, &permission) {
 		t.Fatalf("GroupOptionsForActor() error = %v, want PermissionError", err)
+	}
+}
+
+func TestCreateKeyRetriesAfterPasswordRotation(t *testing.T) {
+	client := testdb.Open(t)
+	ownerID, _ := seedUsers(t, client)
+	provider := newFakeProvider()
+	provider.keyAuthFailures = 1
+	seedProvider(t, client)
+	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
+	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	key, secret, err := service.CreateKey(context.Background(), ownerID, false, account.ID, 10, "ci")
+	if err != nil {
+		t.Fatalf("CreateKey() error = %v", err)
+	}
+	if key == nil || strings.TrimSpace(secret) == "" {
+		t.Fatalf("key = %+v secret = %q", key, secret)
+	}
+	if provider.keyCalls != 2 {
+		t.Fatalf("relay key calls = %d, want 2 (one retry)", provider.keyCalls)
 	}
 }

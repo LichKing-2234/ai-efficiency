@@ -458,4 +458,17 @@ describe('Auth Store', () => {
     expect(localStorage.getItem('ae.impersonation.return')).toBeNull()
     expect(readBrowserSession().accessToken).toBeNull()
   })
+
+  it('restores the operator session after impersonation exactly once', async () => {
+    const { stashImpersonationReturn, switchBackFromImpersonation, readImpersonationReturn } = await import('@/auth/impersonation')
+    replaceBrowserSession({ accessToken: 'operator-token', refreshToken: 'operator-refresh' })
+    expect(stashImpersonationReturn('SDK 效能组')).toBe(true)
+    replaceBrowserSession({ accessToken: 'account-token', refreshToken: null })
+
+    expect(switchBackFromImpersonation()).toBe(true)
+    expect(readBrowserSession().accessToken).toBe('operator-token')
+    expect(readBrowserSession().refreshToken).toBe('operator-refresh')
+    expect(readImpersonationReturn()).toBeNull()
+    expect(switchBackFromImpersonation()).toBe(false)
+  })
 })
