@@ -55,7 +55,9 @@ const rows = computed(() => {
 })
 // While the field is focused it shows exactly what was typed, so deleting the
 // text never resurrects the previously selected department.
-const displayValue = computed(() => (focused.value ? query.value : selected.value?.display_path ?? ''))
+// The closed field shows the department's own name; the full path stays in the
+// dropdown as the secondary line.
+const displayValue = computed(() => (focused.value ? query.value : selected.value?.name ?? ''))
 
 async function load() {
   if (loading.value || departments.value.length > 0) return
@@ -95,7 +97,7 @@ function onFocus() {
   touched.value = false
   // Keep the current selection in the field so it can be edited or deleted
   // character by character instead of vanishing on click.
-  query.value = selected.value ? selected.value.display_path || selected.value.name : ''
+  query.value = selected.value ? selected.value.name : ''
   start()
 }
 
