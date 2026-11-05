@@ -182,12 +182,12 @@ func (h *TeamAccountHandler) RevealCredentials(c *gin.Context) {
 	if !ok {
 		return
 	}
-	username, password, err := h.service.Credentials(c.Request.Context(), userID, isAdmin, id)
+	credentials, err := h.service.Credentials(c.Request.Context(), userID, isAdmin, id)
 	if err != nil {
 		h.respondError(c, err)
 		return
 	}
-	pkg.Success(c, gin.H{"username": username, "password": password})
+	pkg.Success(c, credentials)
 }
 
 // AddManager handles POST /api/v1/user/team-accounts/:id/managers.

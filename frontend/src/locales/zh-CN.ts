@@ -1036,7 +1036,7 @@ const zhCN = {
   'settings.oidcResetDone': '已恢复部署配置',
   'settings.oidcLoadFailed': '加载 OIDC 配置失败',
   'settings.oidcSaveFailed': '保存 OIDC 配置失败',
-  'nav.teamAccounts': '部门团队账号',
+  'nav.teamAccounts': '组织账号',
 } as const satisfies Messages
 
 export default zhCN

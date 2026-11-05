@@ -1041,7 +1041,7 @@ const enUS = {
   'settings.oidcResetDone': 'Deployment OIDC configuration restored',
   'settings.oidcLoadFailed': 'Failed to load OIDC settings',
   'settings.oidcSaveFailed': 'Failed to save OIDC settings',
-  'nav.teamAccounts': 'Department Accounts',
+  'nav.teamAccounts': 'Organization accounts',
 } as const
 
 export type MessageKey =

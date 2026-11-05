@@ -1550,6 +1550,7 @@ export interface TeamAccountEventListResponse {
 
 export interface TeamAccountCredentials {
   username: string
+  email: string
   password: string
 }
 

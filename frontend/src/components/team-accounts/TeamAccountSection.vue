@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import TeamAccountCredentialsDialog from './TeamAccountCredentialsDialog.vue'
 import TeamAccountDetailDialog from './TeamAccountDetailDialog.vue'
 import TeamAccountTransferDialog from './TeamAccountTransferDialog.vue'
 import { createTeamAccount, getTeamAccount, listTeamAccounts } from '@/api/teamAccounts'
+import { useTeamAccountLogin } from '@/composables/useTeamAccountLogin'
 import { useI18n } from '@/i18n'
 import { teamAccountsMessages } from '@/locales/teamAccounts'
 import { createFeatureTranslator } from '@/utils/featureI18n'
@@ -30,6 +32,14 @@ const selectedAccount = ref<TeamAccountSummary | null>(null)
 const transferOpen = ref(false)
 const transferAccount = ref<TeamAccountSummary | null>(null)
 const keyCounts = ref<Record<number, number>>({})
+const credentialsOpen = ref(false)
+const credentialsAccount = ref<TeamAccountSummary | null>(null)
+const { loginAs, pendingAccountID } = useTeamAccountLogin()
+
+function openCredentials(account: TeamAccountSummary) {
+  credentialsAccount.value = account
+  credentialsOpen.value = true
+}
 
 onMounted(() => {
   void loadAccounts()
@@ -227,8 +237,27 @@ function handleTransferred() {
           </div>
         </dl>
 
-        <div class="mt-3 text-right text-sm font-medium text-blue-600">
-          {{ t('teamAccounts.viewDetail') }} →
+        <div class="mt-4 flex flex-wrap justify-end gap-2">
+          <ElButton
+            :data-testid="`team-account-credentials-open-${account.id}`"
+            size="small"
+            @click.stop="openCredentials(account)"
+          >
+            {{ t('teamAccounts.credentials.reveal') }}
+          </ElButton>
+          <ElButton
+            :data-testid="`team-account-login-as-${account.id}`"
+            size="small"
+            type="primary"
+            plain
+            :loading="pendingAccountID === account.id"
+            @click.stop="loginAs(account)"
+          >
+            {{ t('teamAccounts.loginAs') }}
+          </ElButton>
+          <ElButton size="small" @click.stop="openDetail(account)">
+            {{ t('teamAccounts.viewDetail') }}
+          </ElButton>
         </div>
       </ElCard>
     </div>
@@ -307,6 +336,12 @@ function handleTransferred() {
       :account="selectedAccount"
       @updated="handleDetailUpdated"
       @transfer-requested="openTransfer"
+    />
+
+    <TeamAccountCredentialsDialog
+      v-model="credentialsOpen"
+      :account-id="credentialsAccount?.id ?? null"
+      :account-name="credentialsAccount?.name"
     />
 
     <TeamAccountTransferDialog

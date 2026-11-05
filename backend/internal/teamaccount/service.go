@@ -708,23 +708,35 @@ func (s *Service) RevokeKey(ctx context.Context, actorUserID int, includeAll boo
 	return s.recordEvent(ctx, accountID, actorUserID, "key_revoked", map[string]any{"key_id": keyRow.RelayAPIKeyID})
 }
 
-// Credentials returns the account name and decrypted Relay password.
-func (s *Service) Credentials(ctx context.Context, actorUserID int, includeAll bool, accountID int) (string, string, error) {
+// Credentials is the account's Relay login identity with the decrypted
+// password. The mailbox is included because Relay authenticates by email.
+type Credentials struct {
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+// Credentials returns the account name, mailbox, and decrypted Relay password.
+func (s *Service) Credentials(ctx context.Context, actorUserID int, includeAll bool, accountID int) (*Credentials, error) {
 	row, err := s.loadAccount(ctx, accountID)
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 	if !includeAll {
 		if err := s.assertMember(ctx, actorUserID, accountID); err != nil {
-			return "", "", err
+			return nil, err
 		}
 	}
 	password, err := s.decryptPassword(row)
 	if err != nil {
-		return "", "", err
+		return nil, err
+	}
+	email := strings.TrimSpace(row.RelayEmail)
+	if email == "" {
+		email = row.RelayUsername + "@" + EmailDomain
 	}
 	_ = s.recordEvent(ctx, accountID, actorUserID, "credentials_revealed", map[string]any{"user_id": actorUserID})
-	return row.RelayUsername, password, nil
+	return &Credentials{Username: row.RelayUsername, Email: email, Password: password}, nil
 }
 
 // AddManager grants one user management access.

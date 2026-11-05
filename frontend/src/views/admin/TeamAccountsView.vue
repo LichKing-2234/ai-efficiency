@@ -3,8 +3,10 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppLayout from '@/components/AppLayout.vue'
 import { useMediaQuery } from '@/composables/useMediaQuery'
+import TeamAccountCredentialsDialog from '@/components/team-accounts/TeamAccountCredentialsDialog.vue'
 import TeamAccountDetailDialog from '@/components/team-accounts/TeamAccountDetailDialog.vue'
 import TeamAccountTransferDialog from '@/components/team-accounts/TeamAccountTransferDialog.vue'
+import { useTeamAccountLogin } from '@/composables/useTeamAccountLogin'
 import {
   createAdminTeamAccount,
   deleteTeamAccountDepartmentGroup,
@@ -47,6 +49,36 @@ const selectedAccount = ref<TeamAccountSummary | null>(null)
 const transferOpen = ref(false)
 const transferAccount = ref<TeamAccountSummary | null>(null)
 const statusUpdatingID = ref<number | null>(null)
+const statusDialogOpen = ref(false)
+const statusTarget = ref<TeamAccountSummary | null>(null)
+const statusNext = ref<TeamAccountStatus>('suspended')
+const statusConfirmText = ref('')
+const credentialsOpen = ref(false)
+const credentialsAccount = ref<TeamAccountSummary | null>(null)
+const { loginAs, pendingAccountID } = useTeamAccountLogin()
+const statusConfirmed = computed(() => {
+  const target = statusTarget.value
+  if (!target) return false
+  return statusConfirmText.value.trim().toLowerCase() === target.name.trim().toLowerCase()
+})
+
+function openStatusDialog(account: TeamAccountSummary) {
+  if (statusUpdatingID.value !== null) return
+  statusTarget.value = account
+  statusNext.value = account.status === 'active' ? 'suspended' : 'active'
+  statusConfirmText.value = ''
+  statusDialogOpen.value = true
+}
+
+function closeStatusDialog() {
+  if (statusUpdatingID.value !== null) return
+  statusDialogOpen.value = false
+}
+
+function openCredentials(account: TeamAccountSummary) {
+  credentialsAccount.value = account
+  credentialsOpen.value = true
+}
 const mappingOpen = ref(false)
 const mappingForm = reactive({ departmentExternalID: '', providerID: '', groupID: '' })
 const mappingIDs = ref<number[]>([])
@@ -170,28 +202,15 @@ function handleTransferred() {
   void loadAccounts()
 }
 
-async function toggleStatus(account: TeamAccountSummary) {
-  if (statusUpdatingID.value !== null) return
-  const nextStatus: TeamAccountStatus = account.status === 'active' ? 'suspended' : 'active'
-  const title = nextStatus === 'suspended'
-    ? t('teamAccounts.admin.suspendTitle')
-    : t('teamAccounts.admin.restoreTitle')
-  const message = nextStatus === 'suspended'
-    ? t('teamAccounts.admin.suspendConfirm', { name: account.name })
-    : t('teamAccounts.admin.restoreConfirm', { name: account.name })
+async function submitStatusChange() {
+  const target = statusTarget.value
+  if (!target || !statusConfirmed.value || statusUpdatingID.value !== null) return
+  const nextStatus = statusNext.value
+  statusUpdatingID.value = target.id
   try {
-    await ElMessageBox.confirm(message, title, {
-      type: 'warning',
-      confirmButtonText: t('teamAccounts.confirm'),
-      cancelButtonText: t('teamAccounts.cancel'),
-    })
-  } catch {
-    return
-  }
-  statusUpdatingID.value = account.id
-  try {
-    await setAdminTeamAccountStatus(account.id, nextStatus)
+    await setAdminTeamAccountStatus(target.id, nextStatus)
     ElMessage.success(t('teamAccounts.admin.statusUpdated'))
+    statusDialogOpen.value = false
     await loadAccounts()
   } catch (e: unknown) {
     ElMessage.error(teamAccountErrorMessage(e, t('teamAccounts.admin.statusUpdateFailed')))
@@ -415,6 +434,19 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
 
               <div class="mt-4 flex flex-wrap justify-end gap-2">
                 <ElButton
+                  :data-testid="`admin-team-account-credentials-${account.id}`"
+                  @click="openCredentials(account)"
+                >
+                  {{ t('teamAccounts.credentials.reveal') }}
+                </ElButton>
+                <ElButton
+                  :data-testid="`admin-team-account-login-as-${account.id}`"
+                  :loading="pendingAccountID === account.id"
+                  @click="loginAs(account, 'admin')"
+                >
+                  {{ t('teamAccounts.loginAs') }}
+                </ElButton>
+                <ElButton
                   :data-testid="`admin-team-account-view-${account.id}`"
                   @click="openDetail(account)"
                 >
@@ -431,7 +463,7 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
                   :type="statusActionType(account)"
                   :loading="statusUpdatingID === account.id"
                   :disabled="statusUpdatingID !== null && statusUpdatingID !== account.id"
-                  @click="toggleStatus(account)"
+                  @click="openStatusDialog(account)"
                 >
                   {{ statusActionLabel(account) }}
                 </ElButton>
@@ -666,7 +698,72 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
         @transfer-requested="openTransfer"
       />
 
-      <TeamAccountTransferDialog
+      <ElDialog
+      :model-value="statusDialogOpen"
+      data-testid="admin-team-account-status-dialog"
+      append-to-body
+      align-center
+      :show-close="false"
+      width="min(100%, 30rem)"
+      :close-on-click-modal="statusUpdatingID === null"
+      :close-on-press-escape="statusUpdatingID === null"
+      @update:model-value="(value) => { if (!value) closeStatusDialog() }"
+    >
+      <template #header>
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <h2 class="text-base font-semibold text-gray-900">{{ t('teamAccounts.admin.statusConfirmTitle') }}</h2>
+            <p class="mt-1 break-words text-sm text-gray-500">{{ statusTarget?.name }}</p>
+          </div>
+          <ElButton :disabled="statusUpdatingID !== null" @click="closeStatusDialog">{{ t('teamAccounts.close') }}</ElButton>
+        </div>
+      </template>
+
+      <div class="space-y-4">
+        <ElAlert
+          :type="statusNext === 'suspended' ? 'warning' : 'success'"
+          :closable="false"
+          show-icon
+          :title="statusNext === 'suspended'
+            ? t('teamAccounts.admin.suspendConfirm', { name: statusTarget?.name ?? '' })
+            : t('teamAccounts.admin.restoreConfirm', { name: statusTarget?.name ?? '' })"
+        />
+        <label class="block text-sm">
+          <span class="font-medium text-gray-700">{{ t('teamAccounts.admin.statusConfirmHint') }}</span>
+          <ElInput
+            v-model="statusConfirmText"
+            data-testid="admin-team-account-status-confirm"
+            class="mt-1"
+            :disabled="statusUpdatingID !== null"
+            :placeholder="statusTarget?.name ?? ''"
+          />
+        </label>
+      </div>
+
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <ElButton :disabled="statusUpdatingID !== null" @click="closeStatusDialog">{{ t('teamAccounts.cancel') }}</ElButton>
+          <ElButton
+            data-testid="admin-team-account-status-submit"
+            :type="statusNext === 'suspended' ? 'warning' : 'success'"
+            :loading="statusUpdatingID !== null"
+            :disabled="!statusConfirmed || statusUpdatingID !== null"
+            @click="submitStatusChange"
+          >
+            {{ t('teamAccounts.confirm') }}
+          </ElButton>
+        </div>
+      </template>
+    </ElDialog>
+
+    <TeamAccountCredentialsDialog
+      v-model="credentialsOpen"
+      :account-id="credentialsAccount?.id ?? null"
+      :account-name="credentialsAccount?.name"
+      mode="admin"
+    />
+
+    <TeamAccountTransferDialog
         v-model="transferOpen"
         :account="transferAccount"
         mode="admin"

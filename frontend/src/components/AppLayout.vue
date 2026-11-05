@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { defineAsyncComponent, ref, watch } from 'vue'
 import { Close, Menu, Switch } from '@element-plus/icons-vue'
 import AppSidebar from './AppSidebar.vue'
+// Loaded only when an impersonation session exists, so the shared shell stays inside its budget.
+const ImpersonationBanner = defineAsyncComponent(() => import('./ImpersonationBanner.vue'))
 import ElementPlusLocaleProvider from './ElementPlusLocaleProvider.vue'
 import { useDesktopLayout } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
@@ -45,6 +47,7 @@ watch(desktopLayout, (isDesktop) => {
       <AppSidebar class="hidden h-screen md:flex" />
 
       <main class="min-h-screen min-w-0 flex-1 overflow-auto p-4 sm:p-6 lg:p-8 md:h-screen md:min-h-0">
+        <ImpersonationBanner />
         <slot />
       </main>
 
