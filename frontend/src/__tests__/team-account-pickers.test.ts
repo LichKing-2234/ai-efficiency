@@ -124,4 +124,23 @@ describe('team account pickers', () => {
     await input.trigger('keydown', { key: 'Enter' })
     expect(wrapper.emitted('select')?.[0]?.[0]).toMatchObject({ id: 7, username: 'alice' })
   })
+
+  it('clears the department when the typed text is deleted', async () => {
+    const api = await import('@/api/adminUsers')
+    vi.mocked(api.listAdminUserDepartments).mockResolvedValue(response({
+      items: [department('root', '声网'), department('sdk', 'SDK框架与效能组', 'root')],
+    }) as any)
+    const wrapper = mount(TeamAccountDepartmentPicker, {
+      props: { modelValue: 'sdk' },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    const input = wrapper.get('[data-testid="team-account-department-input"]')
+    await input.trigger('focus')
+    await input.setValue('')
+    await flushPromises()
+
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([''])
+    expect(wrapper.emitted('change')?.[0]).toEqual([''])
+  })
 })

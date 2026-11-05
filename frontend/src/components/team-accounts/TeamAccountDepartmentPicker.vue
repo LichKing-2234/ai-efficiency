@@ -87,6 +87,12 @@ function onInput(event: Event) {
   if (composing.value || !focused.value) return
   touched.value = true
   query.value = (event.target as HTMLInputElement).value
+  // Deleting the whole text clears the selection, which also clears whoever was
+  // picked for this department.
+  if (!query.value.trim() && props.modelValue) {
+    emit('update:modelValue', '')
+    emit('change', '')
+  }
   activeIndex.value = 0
   start()
   void nextTick(() => list.value?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView?.({ block: 'nearest' }))
