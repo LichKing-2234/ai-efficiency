@@ -167,9 +167,13 @@ async function submitCreate() {
     }
   } catch (e: unknown) {
     const message = teamAccountErrorMessage(e, t('teamAccounts.createFailed'))
-    createError.value = message.includes('already has a team account')
-      ? t('teamAccounts.departmentTaken')
-      : message
+    if (message.includes('already has a team account')) {
+      createError.value = t('teamAccounts.departmentTaken')
+    } else if (message.includes('username already exists') || message.includes('email already exists')) {
+      createError.value = t('teamAccounts.usernameTaken')
+    } else {
+      createError.value = message
+    }
   } finally {
     creating.value = false
   }
