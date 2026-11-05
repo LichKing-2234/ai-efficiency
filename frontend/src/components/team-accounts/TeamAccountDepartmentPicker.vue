@@ -123,6 +123,12 @@ function onCompositionEnd(event: Event) {
 
 function onBlur() {
   composing.value = false
+  // An emptied field is a cleared selection even if the input event was missed
+  // (for example when the text is removed with a keyboard shortcut).
+  if (!query.value.trim() && props.modelValue) {
+    emit('update:modelValue', '')
+    emit('change', '')
+  }
   focused.value = false
   touched.value = false
   query.value = ''

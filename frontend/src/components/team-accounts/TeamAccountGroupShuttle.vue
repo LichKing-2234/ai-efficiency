@@ -56,7 +56,7 @@ function remove(group: TeamAccountGroupOption) {
       <div class="border-b border-slate-100 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-500">
         {{ t('teamAccounts.groups.available') }}
       </div>
-      <ul class="max-h-40 overflow-auto p-1">
+      <ul class="h-40 overflow-auto p-1">
         <li v-if="available.length === 0" class="px-2 py-2 text-xs text-slate-400">
           {{ t('teamAccounts.groups.noneAvailable') }}
         </li>
@@ -78,7 +78,7 @@ function remove(group: TeamAccountGroupOption) {
       <div class="border-b border-slate-100 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-500">
         {{ t('teamAccounts.groups.selected') }}
       </div>
-      <ul class="max-h-40 overflow-auto p-1">
+      <ul class="h-40 overflow-auto p-1">
         <li v-if="selected.length === 0" class="px-2 py-2 text-xs text-slate-400">
           {{ t('teamAccounts.groups.noneSelected') }}
         </li>
