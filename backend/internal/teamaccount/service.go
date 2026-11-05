@@ -1173,6 +1173,23 @@ func (s *Service) CreateKey(ctx context.Context, actorUserID int, includeAll boo
 		Name:    keyName,
 		GroupID: strconv.FormatInt(groupID, 10),
 	})
+	if err != nil && relayAuthFailure(err) {
+		// A handover may have rotated the shared password while this request was
+		// in flight; retry once with the stored value.
+		if fresh, loadErr := s.loadAccount(ctx, accountID); loadErr == nil {
+			if rotated, decryptErr := s.decryptPassword(fresh); decryptErr == nil {
+				login = strings.TrimSpace(fresh.RelayEmail)
+				if login == "" {
+					login = fresh.RelayUsername + "@" + EmailDomain
+				}
+				authCtx = relay.WithUserCredentials(ctx, login, rotated)
+				created, err = provider.CreateUserAPIKey(authCtx, row.RelayUserID, relay.APIKeyCreateRequest{
+					Name:    keyName,
+					GroupID: strconv.FormatInt(groupID, 10),
+				})
+			}
+		}
+	}
 	if err != nil {
 		return nil, "", fmt.Errorf("create relay api key: %w", err)
 	}
@@ -1350,6 +1367,14 @@ func (s *Service) AddManager(ctx context.Context, actorUserID int, includeAll bo
 		SetRole("manager").
 		SetNillableAddedByUserID(&actorUserID).
 		Save(ctx); err != nil {
+		// Two concurrent adds race on the unique row; the loser simply observes
+		// that the manager already exists.
+		exists, checkErr := s.client.TeamAccountManager.Query().
+			Where(teamAccountManagerAccountID(accountID), teamAccountManagerUserID(userID)).
+			Exist(ctx)
+		if checkErr == nil && exists {
+			return nil
+		}
 		return fmt.Errorf("add manager: %w", err)
 	}
 	return s.recordEvent(ctx, accountID, actorUserID, "manager_added", map[string]any{"user_id": userID})
@@ -1381,6 +1406,9 @@ func (s *Service) RemoveManager(ctx context.Context, actorUserID int, includeAll
 		return err
 	}
 	if err := s.client.TeamAccountManager.DeleteOneID(row.ID).Exec(ctx); err != nil {
+		if ent.IsNotFound(err) {
+			return nil
+		}
 		return fmt.Errorf("remove manager: %w", err)
 	}
 	if provider, resolveErr := s.resolver.Resolve(ctx, account.RelayProviderID); resolveErr == nil {
@@ -1797,6 +1825,19 @@ func deriveUsername(departmentExternalID string) string {
 		slug = slug[:32]
 	}
 	return teamUsernamePrefix + slug
+}
+
+// relayAuthFailure reports password-related relay rejections so key creation can
+// retry with the freshly rotated shared password.
+func relayAuthFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "login failed") ||
+		strings.Contains(message, "authenticate") ||
+		strings.Contains(message, "unauthorized") ||
+		strings.Contains(message, "status 401")
 }
 
 // duplicateRelayIdentity recognizes Relay duplicate-user responses so the
