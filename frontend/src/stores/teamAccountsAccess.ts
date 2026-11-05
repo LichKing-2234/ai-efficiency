@@ -19,6 +19,7 @@ export const useTeamAccountsAccessStore = defineStore('teamAccountsAccess', () =
   async function ensureLoaded() {
     if (loaded.value || loading.value) return
     loading.value = true
+    let resolved = false
     try {
       // Wrap each call so a missing module export in tests rejects instead of
       // throwing synchronously and leaving an unhandled rejection behind.
@@ -26,10 +27,18 @@ export const useTeamAccountsAccessStore = defineStore('teamAccountsAccess', () =
         Promise.resolve().then(() => getTeamUsageScope()).catch(() => null),
         Promise.resolve().then(() => listTeamAccounts()).catch(() => null),
       ])
-      isRepresentative.value = scope?.data?.data?.is_representative ?? false
-      accountCount.value = accounts?.data?.data?.items?.length ?? 0
+      if (scope) {
+        resolved = true
+        isRepresentative.value = scope.data?.data?.is_representative ?? false
+      }
+      if (accounts) {
+        resolved = true
+        accountCount.value = accounts.data?.data?.items?.length ?? 0
+      }
     } finally {
-      loaded.value = true
+      // A failed lookup stays unresolved so the next mount can retry instead of
+      // hiding the navigation entry for the whole session.
+      loaded.value = resolved
       loading.value = false
     }
   }
