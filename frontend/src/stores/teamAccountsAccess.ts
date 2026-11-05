@@ -1,0 +1,36 @@
+import { computed, ref } from 'vue'
+import { defineStore } from 'pinia'
+import { listTeamAccounts } from '@/api/teamAccounts'
+import { getTeamUsageScope } from '@/api/teamUsage'
+
+/**
+ * Tracks whether the signed-in person may open the organization-account page:
+ * a department representative can create accounts, and anyone who already
+ * manages one can review it. Administrators use the admin console instead.
+ */
+export const useTeamAccountsAccessStore = defineStore('teamAccountsAccess', () => {
+  const loaded = ref(false)
+  const loading = ref(false)
+  const isRepresentative = ref(false)
+  const accountCount = ref(0)
+
+  const canOpen = computed(() => isRepresentative.value || accountCount.value > 0)
+
+  async function ensureLoaded() {
+    if (loaded.value || loading.value) return
+    loading.value = true
+    try {
+      const [scope, accounts] = await Promise.all([
+        getTeamUsageScope().catch(() => null),
+        listTeamAccounts().catch(() => null),
+      ])
+      isRepresentative.value = scope?.data?.data?.is_representative ?? false
+      accountCount.value = accounts?.data?.data?.items?.length ?? 0
+    } finally {
+      loaded.value = true
+      loading.value = false
+    }
+  }
+
+  return { loaded, loading, isRepresentative, accountCount, canOpen, ensureLoaded }
+})

@@ -128,6 +128,11 @@ const router = createRouter({
       meta: { requireAdmin: true },
     },
     {
+      path: '/organization-accounts',
+      name: 'OrganizationAccounts',
+      component: () => import('@/views/OrganizationAccountsView.vue'),
+    },
+    {
       path: '/admin/team-accounts',
       name: 'TeamAccounts',
       component: () => import('@/views/admin/TeamAccountsView.vue'),
