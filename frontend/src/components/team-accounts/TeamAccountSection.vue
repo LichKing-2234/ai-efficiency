@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import TeamAccountDetailDialog from './TeamAccountDetailDialog.vue'
 import TeamAccountTransferDialog from './TeamAccountTransferDialog.vue'
 import { createTeamAccount, getTeamAccount, listTeamAccounts } from '@/api/teamAccounts'
+import { getTeamUsageScope } from '@/api/teamUsage'
 import { useTeamAccountLogin } from '@/composables/useTeamAccountLogin'
 import { useI18n } from '@/i18n'
 import { teamAccountsMessages } from '@/locales/teamAccounts'
@@ -32,11 +33,39 @@ const transferOpen = ref(false)
 const transferAccount = ref<TeamAccountSummary | null>(null)
 const keyCounts = ref<Record<number, number>>({})
 const { loginAs, pendingAccountID } = useTeamAccountLogin()
+const isRepresentative = ref(false)
+const representativeDepartments = ref<{ external_id: string; name: string; display_path: string }[]>([])
+const scopeLoaded = ref(false)
 
 
 onMounted(() => {
   void loadAccounts()
+  void loadScope()
 })
+
+async function loadScope() {
+  try {
+    const response = await getTeamUsageScope()
+    const scope = response.data.data
+    isRepresentative.value = scope?.is_representative ?? false
+    representativeDepartments.value = (scope?.departments ?? []).map((department) => ({
+      external_id: department.external_id,
+      name: department.name,
+      display_path: department.display_path,
+    }))
+  } catch {
+    isRepresentative.value = false
+    representativeDepartments.value = []
+  } finally {
+    scopeLoaded.value = true
+  }
+}
+
+const canCreate = computed(() => isRepresentative.value)
+
+const singleRepresentedDepartment = computed(() => (
+  representativeDepartments.value.length === 1 ? representativeDepartments.value[0] : null
+))
 
 async function loadAccounts() {
   loading.value = true
@@ -71,7 +100,7 @@ async function hydrateKeyCounts(items: TeamAccountSummary[]) {
 
 function openCreate() {
   createForm.name = ''
-  createForm.departmentExternalId = ''
+  createForm.departmentExternalId = singleRepresentedDepartment.value?.external_id ?? ''
   createError.value = ''
   createOpen.value = true
 }
@@ -162,7 +191,7 @@ function handleTransferred() {
         >
           {{ t('teamAccounts.refresh') }}
         </ElButton>
-        <ElButton data-testid="team-account-create-open" type="primary" @click="openCreate">
+        <ElButton v-if="canCreate" data-testid="team-account-create-open" type="primary" @click="openCreate">
           {{ t('teamAccounts.create') }}
         </ElButton>
       </div>
@@ -180,7 +209,7 @@ function handleTransferred() {
     <ElSkeleton v-if="loading && accounts.length === 0" :rows="3" animated />
 
     <ElEmpty v-else-if="accounts.length === 0 && !error" :description="t('teamAccounts.empty')">
-      <ElButton data-testid="team-account-empty-create" type="primary" @click="openCreate">
+      <ElButton v-if="canCreate" data-testid="team-account-empty-create" type="primary" @click="openCreate">
         {{ t('teamAccounts.create') }}
       </ElButton>
     </ElEmpty>
@@ -280,15 +309,22 @@ function handleTransferred() {
             :disabled="creating"
           />
         </label>
-        <label class="block text-sm">
-          <span class="font-medium text-gray-700">{{ t('teamAccounts.departmentExternalId') }}</span>
-          <ElInput
+        <label v-if="!singleRepresentedDepartment" class="block text-sm">
+          <span class="font-medium text-gray-700">{{ t('teamAccounts.admin.departmentSelect') }}</span>
+          <ElSelect
             v-model="createForm.departmentExternalId"
             data-testid="team-account-create-department"
-            class="mt-1"
-            :placeholder="t('teamAccounts.departmentExternalIdPlaceholder')"
+            class="mt-1 w-full"
+            :placeholder="t('teamAccounts.admin.departmentPlaceholder')"
             :disabled="creating"
-          />
+          >
+            <ElOption
+              v-for="department in representativeDepartments"
+              :key="department.external_id"
+              :label="department.display_path || department.name"
+              :value="department.external_id"
+            />
+          </ElSelect>
         </label>
         <ElAlert
           v-if="createError"

@@ -492,23 +492,25 @@ function requestStatusChange() {
               </dd>
             </div>
           </dl>
-          <div class="mt-4 flex flex-wrap gap-2">
-            <ElButton
-              data-testid="team-account-reveal-credentials"
-              type="primary"
-              plain
-              :loading="credentialsLoading"
-              @click="revealCredentials"
-            >
-              {{ credentials ? t('teamAccounts.credentials.hide') : t('teamAccounts.credentials.reveal') }}
-            </ElButton>
-            <ElButton data-testid="team-account-transfer" @click="requestTransfer">
-              {{ t('teamAccounts.transfer.button') }}
-            </ElButton>
+          <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex flex-wrap gap-2">
+              <ElButton
+                data-testid="team-account-reveal-credentials"
+                type="primary"
+                plain
+                :loading="credentialsLoading"
+                @click="revealCredentials"
+              >
+                {{ credentials ? t('teamAccounts.credentials.hide') : t('teamAccounts.credentials.reveal') }}
+              </ElButton>
+              <ElButton data-testid="team-account-transfer" @click="requestTransfer">
+                {{ t('teamAccounts.transfer.button') }}
+              </ElButton>
+            </div>
             <ElButton
               v-if="mode === 'admin' && summary"
               data-testid="team-account-status-action"
-              :type="summary.status === 'active' ? 'warning' : 'success'"
+              :type="summary.status === 'active' ? 'danger' : 'success'"
               @click="requestStatusChange"
             >
               {{ summary.status === 'active' ? t('teamAccounts.admin.suspend') : t('teamAccounts.admin.restore') }}

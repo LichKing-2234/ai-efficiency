@@ -11,6 +11,10 @@ import type {
   TeamAccountUsage,
 } from '@/types'
 
+vi.mock('@/api/teamUsage', () => ({
+  getTeamUsageScope: vi.fn(),
+}))
+
 vi.mock('@/api/teamAccounts', () => ({
   listTeamAccounts: vi.fn(),
   createTeamAccount: vi.fn(),
@@ -113,7 +117,25 @@ function response<T>(data: T) {
   return { data: { code: 0, data } }
 }
 
-async function mockApi() {
+async function mockApi(representative = true) {
+  const teamUsage = await import('@/api/teamUsage')
+  vi.mocked(teamUsage.getTeamUsageScope).mockResolvedValue({
+    data: {
+      code: 0,
+      data: {
+        is_representative: representative,
+        departments: representative
+          ? [{
+            external_id: 'dept-data',
+            name: 'Data Platform',
+            display_path: 'Engineering / Data Platform',
+            subtree_member_count: 4,
+            matched_user_count: 4,
+          }]
+          : [],
+      },
+    },
+  } as any)
   const api = await import('@/api/teamAccounts')
   vi.mocked(api.listTeamAccounts).mockResolvedValue(response({ items: [account] }) as any)
   vi.mocked(api.getTeamAccount).mockResolvedValue(response(detail()) as any)
@@ -133,8 +155,8 @@ async function mockApi() {
   return api
 }
 
-async function mountSection() {
-  const api = await mockApi()
+async function mountSection(representative = true) {
+  const api = await mockApi(representative)
   const wrapper = withTeleportedContent(mount(TeamAccountSection))
   await flushPromises()
   return { wrapper, api }
@@ -183,6 +205,30 @@ describe('TeamAccountSection', () => {
 
     expect(api.revealTeamAccountCredentials).toHaveBeenCalledWith(7)
     expect(wrapper.get('[data-testid="team-account-password"]').text()).toBe('test-password')
+  })
+
+  it('creates an account for the representative department without asking for one', async () => {
+    const { wrapper, api } = await mountSection()
+
+    await wrapper.get('[data-testid="team-account-create-open"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="team-account-create-department"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="team-account-create-name"]').setValue('New Account')
+    await wrapper.get('[data-testid="team-account-create-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(api.createTeamAccount).toHaveBeenCalledWith({
+      name: 'New Account',
+      department_external_id: 'dept-data',
+    })
+  })
+
+  it('hides the create action for users who are not representatives', async () => {
+    const { wrapper } = await mountSection(false)
+
+    expect(wrapper.find('[data-testid="team-account-create-open"]').exists()).toBe(false)
   })
 
   it('offers a one-click sign in on the card', async () => {
