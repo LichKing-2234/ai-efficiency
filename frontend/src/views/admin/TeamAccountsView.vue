@@ -226,7 +226,7 @@ async function submitCreate() {
     const message = teamAccountErrorMessage(e, t('teamAccounts.admin.createFailed'))
     if (message.includes('already has a team account')) {
       createError.value = t('teamAccounts.departmentTaken')
-    } else if (message.includes('username already exists') || message.includes('email already exists') || message.includes('already exists in relay')) {
+    } else if (message.includes('username already exists') || message.includes('email already exists') || message.includes('already exists in relay') || message.includes('reserved by another team account')) {
       createError.value = t('teamAccounts.usernameTaken')
     } else {
       createError.value = message
