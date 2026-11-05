@@ -33,7 +33,7 @@ const parts = computed(() => {
 <template>
   <span>
     <template v-for="(part, index) in parts" :key="index">
-      <mark v-if="part.match" class="rounded-sm bg-amber-100 px-0 text-amber-900">{{ part.text }}</mark>
+      <mark v-if="part.match" class="rounded-sm bg-blue-100 px-0 text-blue-800">{{ part.text }}</mark>
       <template v-else>{{ part.text }}</template>
     </template>
   </span>

@@ -85,10 +85,10 @@ describe('team account pickers', () => {
     expect(api.listAdminUserDepartments).toHaveBeenCalledTimes(1)
   })
 
-  it('switches to a flat highlighted list while searching and selects the first match on Enter', async () => {
+  it('shows matches only while typing and selects the first match on Enter', async () => {
     const { wrapper } = await mountDepartmentPicker()
     const input = wrapper.get('[data-testid="team-account-department-input"]')
-    await input.trigger('focus')
+    expect(document.body.querySelector('[data-testid="team-account-department-list"]')).toBeNull()
     await input.setValue('SDK')
     await flushPromises()
 
@@ -102,19 +102,18 @@ describe('team account pickers', () => {
     expect(wrapper.emitted('change')?.[0]).toEqual(['sdk'])
   })
 
-  it('filters users by department and selects the first match on Enter', async () => {
+  it('searches users while typing and selects the first match on Enter', async () => {
     const { wrapper, api } = await mountUserPicker()
     const input = wrapper.get('[data-testid="team-account-user-input"]')
-    await input.trigger('focus')
     await input.setValue('ali')
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    await new Promise((resolve) => setTimeout(resolve, 250))
     await flushPromises()
 
     expect(api.listAdminUsers).toHaveBeenLastCalledWith({
       q: 'ali',
       department_id: undefined,
       page: 1,
-      page_size: 100,
+      page_size: 50,
     })
 
     const list = document.body.querySelector('[data-testid="team-account-user-list"]')!
