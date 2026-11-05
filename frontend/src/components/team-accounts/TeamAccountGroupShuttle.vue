@@ -67,9 +67,7 @@ function remove(group: TeamAccountGroupOption) {
           class="cursor-pointer rounded px-2 py-1 text-sm text-slate-700 hover:bg-blue-50"
           @click="add(group)"
         >
-          <ElTooltip :content="`${group.name} · ${group.platform}`" placement="top" :show-after="300">
-            <span class="block truncate">{{ group.name }} · {{ group.platform }}</span>
-          </ElTooltip>
+          <span class="block truncate">{{ group.name }} · {{ group.platform }}</span>
         </li>
       </ul>
     </div>
@@ -90,9 +88,7 @@ function remove(group: TeamAccountGroupOption) {
           :class="defaults.has(group.id) ? 'text-slate-500' : 'cursor-pointer text-slate-800 hover:bg-blue-50'"
           @click="remove(group)"
         >
-          <ElTooltip :content="`${group.name} · ${group.platform}`" placement="top" :show-after="300">
-            <span class="block min-w-0 truncate">{{ group.name }} · {{ group.platform }}</span>
-          </ElTooltip>
+          <span class="block min-w-0 truncate">{{ group.name }} · {{ group.platform }}</span>
           <span v-if="defaults.has(group.id)" class="shrink-0 rounded bg-slate-100 px-1 text-[11px] text-slate-500">
             {{ t('teamAccounts.groups.defaultTag') }}
           </span>
