@@ -19,6 +19,7 @@ import {
   revokeAdminTeamAccountKey,
   revokeTeamAccountKey,
 } from '@/api/teamAccounts'
+import TeamAccountUserPicker from './TeamAccountUserPicker.vue'
 import { useI18n } from '@/i18n'
 import { teamAccountsMessages } from '@/locales/teamAccounts'
 import { createFeatureTranslator } from '@/utils/featureI18n'
@@ -59,6 +60,7 @@ const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   updated: [detail: TeamAccountDetail]
   'transfer-requested': [account: TeamAccountSummary]
+  'status-requested': [account: TeamAccountSummary]
 }>()
 
 const { t: baseT, locale } = useI18n()
@@ -73,7 +75,7 @@ const keyForm = reactive({ groupId: '', name: '' })
 const keyCreating = ref(false)
 const keyError = ref('')
 const createdKey = ref<{ name: string; secret: string } | null>(null)
-const managerUserID = ref('')
+const managerUserID = ref<number | null>(null)
 const managerAdding = ref(false)
 const managerError = ref('')
 const usageRange = ref<UsageRange>('7d')
@@ -118,8 +120,8 @@ const canCreateKey = computed(() => (
   && !keyCreating.value
 ))
 const canAddManager = computed(() => (
-  Number.isInteger(Number(managerUserID.value))
-  && Number(managerUserID.value) > 0
+  managerUserID.value !== null
+  && managerUserID.value > 0
   && !managerAdding.value
 ))
 
@@ -153,7 +155,7 @@ function resetTransientState() {
   keyForm.name = ''
   keyError.value = ''
   createdKey.value = null
-  managerUserID.value = ''
+  managerUserID.value = null
   managerError.value = ''
   usageRange.value = '7d'
   usageError.value = ''
@@ -354,8 +356,8 @@ async function addManager() {
   managerAdding.value = true
   managerError.value = ''
   try {
-    await api.value.addManager(props.accountId, Number(managerUserID.value))
-    managerUserID.value = ''
+    await api.value.addManager(props.accountId, managerUserID.value as number)
+    managerUserID.value = null
     ElMessage.success(t('teamAccounts.managers.added'))
     await loadDetail(props.accountId)
     await loadEvents(props.accountId)
@@ -395,6 +397,12 @@ function requestTransfer() {
   const current = summary.value
   if (!current) return
   emit('transfer-requested', current)
+}
+
+function requestStatusChange() {
+  const current = summary.value
+  if (!current) return
+  emit('status-requested', current)
 }
 </script>
 
@@ -496,6 +504,14 @@ function requestTransfer() {
             </ElButton>
             <ElButton data-testid="team-account-transfer" @click="requestTransfer">
               {{ t('teamAccounts.transfer.button') }}
+            </ElButton>
+            <ElButton
+              v-if="mode === 'admin' && summary"
+              data-testid="team-account-status-action"
+              :type="summary.status === 'active' ? 'warning' : 'success'"
+              @click="requestStatusChange"
+            >
+              {{ summary.status === 'active' ? t('teamAccounts.admin.suspend') : t('teamAccounts.admin.restore') }}
             </ElButton>
           </div>
 
@@ -643,15 +659,12 @@ function requestTransfer() {
           </div>
 
           <div class="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <label class="block text-sm sm:w-48">
+            <label class="block text-sm sm:w-64">
               <span class="font-medium text-gray-700">{{ t('teamAccounts.managers.userId') }}</span>
-              <ElInput
+              <TeamAccountUserPicker
                 v-model="managerUserID"
                 data-testid="team-account-manager-user-id"
                 class="mt-1"
-                type="number"
-                min="1"
-                :placeholder="t('teamAccounts.managers.userIdPlaceholder')"
                 :disabled="managerAdding"
               />
             </label>

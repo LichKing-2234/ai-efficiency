@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import TeamAccountUserPicker from './TeamAccountUserPicker.vue'
 import { transferAdminTeamAccount, transferTeamAccount } from '@/api/teamAccounts'
 import { useI18n } from '@/i18n'
 import { teamAccountsMessages } from '@/locales/teamAccounts'
@@ -23,15 +24,12 @@ const emit = defineEmits<{
 
 const { t: baseT, locale } = useI18n()
 const t = createFeatureTranslator(locale, baseT, 'teamAccounts.', teamAccountsMessages)
-const newOwnerUserID = ref('')
+const newOwnerUserID = ref<number | null>(null)
 const confirmation = ref('')
 const transferring = ref(false)
 const error = ref('')
 
-const parsedOwnerUserID = computed(() => {
-  const parsed = Number(newOwnerUserID.value)
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null
-})
+const parsedOwnerUserID = computed(() => newOwnerUserID.value)
 
 const confirmationMatches = computed(() => {
   if (!props.account) return false
@@ -48,7 +46,7 @@ watch(
   () => props.modelValue,
   (open) => {
     if (!open) return
-    newOwnerUserID.value = ''
+    newOwnerUserID.value = null
     confirmation.value = ''
     transferring.value = false
     error.value = ''
@@ -119,13 +117,10 @@ async function submit() {
 
       <label class="block text-sm">
         <span class="font-medium text-gray-700">{{ t('teamAccounts.transfer.newOwnerUserId') }}</span>
-        <ElInput
+        <TeamAccountUserPicker
           v-model="newOwnerUserID"
           data-testid="team-account-transfer-owner"
           class="mt-1"
-          type="number"
-          min="1"
-          :placeholder="t('teamAccounts.managers.userIdPlaceholder')"
           :disabled="transferring"
         />
       </label>

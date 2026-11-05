@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import AppLayout from '@/components/AppLayout.vue'
 import { useMediaQuery } from '@/composables/useMediaQuery'
-import TeamAccountCredentialsDialog from '@/components/team-accounts/TeamAccountCredentialsDialog.vue'
 import TeamAccountDetailDialog from '@/components/team-accounts/TeamAccountDetailDialog.vue'
+import TeamAccountUserPicker from '@/components/team-accounts/TeamAccountUserPicker.vue'
 import TeamAccountTransferDialog from '@/components/team-accounts/TeamAccountTransferDialog.vue'
 import { useTeamAccountLogin } from '@/composables/useTeamAccountLogin'
+import { listAdminUserDepartmentOptions, listAdminUserSubscriptionOptions } from '@/api/adminUsers'
 import {
   createAdminTeamAccount,
   deleteTeamAccountDepartmentGroup,
@@ -25,7 +26,15 @@ import {
   teamAccountStatusLabelKey,
   teamAccountStatusTagType,
 } from '@/utils/teamAccounts'
-import type { TeamAccountStatus, TeamAccountSummary } from '@/types'
+import type { AdminDepartmentOption, TeamAccountStatus, TeamAccountSummary } from '@/types'
+
+interface RelayGroupOption {
+  providerId: number
+  providerLabel: string
+  groupId: number
+  name: string
+  platform: string
+}
 
 type StatusFilter = 'all' | TeamAccountStatus
 
@@ -40,7 +49,7 @@ const statusFilter = ref<StatusFilter>('all')
 const page = ref(1)
 const pageSize = ref(FULL_PAGE_SIZES[0])
 const createOpen = ref(false)
-const createForm = reactive({ name: '', departmentExternalId: '', ownerUserID: '' })
+const createForm = reactive<{ name: string; departmentExternalId: string; ownerUserID: number | null }>({ name: '', departmentExternalId: '', ownerUserID: null })
 const creating = ref(false)
 const createError = ref('')
 const detailOpen = ref(false)
@@ -53,8 +62,6 @@ const statusDialogOpen = ref(false)
 const statusTarget = ref<TeamAccountSummary | null>(null)
 const statusNext = ref<TeamAccountStatus>('suspended')
 const statusConfirmText = ref('')
-const credentialsOpen = ref(false)
-const credentialsAccount = ref<TeamAccountSummary | null>(null)
 const { loginAs, pendingAccountID } = useTeamAccountLogin()
 const statusConfirmed = computed(() => {
   const target = statusTarget.value
@@ -75,12 +82,12 @@ function closeStatusDialog() {
   statusDialogOpen.value = false
 }
 
-function openCredentials(account: TeamAccountSummary) {
-  credentialsAccount.value = account
-  credentialsOpen.value = true
-}
 const mappingOpen = ref(false)
-const mappingForm = reactive({ departmentExternalID: '', providerID: '', groupID: '' })
+const mappingForm = reactive({ departmentExternalID: '', groupKey: '' })
+const departmentOptions = ref<AdminDepartmentOption[]>([])
+const departmentLoading = ref(false)
+const groupOptions = ref<RelayGroupOption[]>([])
+const groupsLoading = ref(false)
 const mappingIDs = ref<number[]>([])
 const mappingLoading = ref(false)
 const mappingError = ref('')
@@ -113,9 +120,14 @@ const pageAccounts = computed(() => {
   return filteredAccounts.value.slice(start, start + pageSize.value)
 })
 const showPagination = computed(() => total.value > pageSize.value)
-const mappingProviderID = computed(() => {
-  const parsed = Number(mappingForm.providerID)
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null
+const selectedGroup = computed(() => (
+  groupOptions.value.find((option) => `${option.providerId}:${option.groupId}` === mappingForm.groupKey) ?? null
+))
+const mappingProviderID = computed(() => selectedGroup.value?.providerId ?? null)
+const groupNameByID = computed(() => {
+  const names = new Map<number, string>()
+  for (const option of groupOptions.value) names.set(option.groupId, option.name)
+  return names
 })
 
 watch([q, statusFilter], () => {
@@ -147,7 +159,7 @@ async function loadAccounts() {
 function openCreate() {
   createForm.name = ''
   createForm.departmentExternalId = ''
-  createForm.ownerUserID = ''
+  createForm.ownerUserID = null
   createError.value = ''
   createOpen.value = true
 }
@@ -163,8 +175,8 @@ async function submitCreate() {
     createError.value = t('teamAccounts.nameRequired')
     return
   }
-  const ownerUserID = Number(createForm.ownerUserID)
-  if (!Number.isInteger(ownerUserID) || ownerUserID <= 0) {
+  const ownerUserID = createForm.ownerUserID
+  if (ownerUserID === null || ownerUserID <= 0) {
     createError.value = t('teamAccounts.admin.ownerRequired')
     return
   }
@@ -220,13 +232,46 @@ async function submitStatusChange() {
   }
 }
 
+async function searchDepartments(query: string) {
+  departmentLoading.value = true
+  try {
+    const response = await listAdminUserDepartmentOptions({ q: query.trim() || undefined, page: 1, page_size: 20 })
+    departmentOptions.value = response.data.data?.items ?? []
+  } catch {
+    departmentOptions.value = []
+  } finally {
+    departmentLoading.value = false
+  }
+}
+
+async function ensureGroupOptions() {
+  if (groupOptions.value.length > 0 || groupsLoading.value) return
+  groupsLoading.value = true
+  try {
+    const response = await listAdminUserSubscriptionOptions()
+    const providers = response.data.data?.providers ?? []
+    groupOptions.value = providers.flatMap((provider) => provider.groups.map((group) => ({
+      providerId: provider.id,
+      providerLabel: provider.display_name || provider.name,
+      groupId: Number(group.group_id),
+      name: group.group_name,
+      platform: group.platform,
+    })))
+  } catch {
+    groupOptions.value = []
+  } finally {
+    groupsLoading.value = false
+  }
+}
+
 async function openMappings(account?: TeamAccountSummary) {
   mappingForm.departmentExternalID = account?.department_external_id ?? ''
-  mappingForm.providerID = ''
-  mappingForm.groupID = ''
+  mappingForm.groupKey = ''
   mappingIDs.value = []
   mappingError.value = ''
   mappingOpen.value = true
+  void searchDepartments('')
+  await ensureGroupOptions()
   if (mappingForm.departmentExternalID) {
     await loadMappings()
   }
@@ -240,7 +285,7 @@ function closeMappings() {
 async function loadMappings() {
   const departmentID = mappingForm.departmentExternalID.trim()
   if (!departmentID) {
-    mappingError.value = t('teamAccounts.admin.mappingFieldsRequired')
+    mappingIDs.value = []
     return
   }
   mappingLoading.value = true
@@ -256,10 +301,20 @@ async function loadMappings() {
   }
 }
 
+async function onDepartmentChange() {
+  mappingForm.groupKey = ''
+  await loadMappings()
+}
+
+function mappingProviderForGroup(groupID: number): number | null {
+  const match = groupOptions.value.find((option) => option.groupId === groupID)
+  return match?.providerId ?? null
+}
+
 async function addMapping() {
   const departmentID = mappingForm.departmentExternalID.trim()
-  const groupID = Number(mappingForm.groupID)
-  if (!departmentID || mappingProviderID.value === null || !Number.isInteger(groupID) || groupID <= 0) {
+  const group = selectedGroup.value
+  if (!departmentID || !group) {
     mappingError.value = t('teamAccounts.admin.mappingFieldsRequired')
     return
   }
@@ -268,11 +323,11 @@ async function addMapping() {
   try {
     await upsertTeamAccountDepartmentGroup({
       department_external_id: departmentID,
-      relay_provider_id: mappingProviderID.value,
-      relay_group_id: groupID,
+      relay_provider_id: group.providerId,
+      relay_group_id: group.groupId,
     })
     ElMessage.success(t('teamAccounts.admin.mappingAdded'))
-    mappingForm.groupID = ''
+    mappingForm.groupKey = ''
     await loadMappings()
   } catch (e: unknown) {
     mappingError.value = teamAccountErrorMessage(e, t('teamAccounts.admin.mappingAddFailed'))
@@ -283,8 +338,9 @@ async function addMapping() {
 
 async function removeMapping(groupID: number) {
   const departmentID = mappingForm.departmentExternalID.trim()
-  if (!departmentID || mappingProviderID.value === null) {
-    mappingError.value = t('teamAccounts.admin.providerRequired')
+  const providerID = mappingProviderForGroup(groupID)
+  if (!departmentID || providerID === null) {
+    mappingError.value = t('teamAccounts.admin.mappingFieldsRequired')
     return
   }
   if (confirmingRemoveID.value !== groupID) {
@@ -297,7 +353,7 @@ async function removeMapping(groupID: number) {
   try {
     await deleteTeamAccountDepartmentGroup({
       department_external_id: departmentID,
-      relay_provider_id: mappingProviderID.value,
+      relay_provider_id: providerID,
       relay_group_id: groupID,
     })
     ElMessage.success(t('teamAccounts.admin.mappingRemoved'))
@@ -427,38 +483,19 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
 
               <div class="mt-4 flex flex-wrap justify-end gap-2">
                 <ElButton
-                  :data-testid="`admin-team-account-credentials-${account.id}`"
-                  @click="openCredentials(account)"
-                >
-                  {{ t('teamAccounts.credentials.reveal') }}
-                </ElButton>
-                <ElButton
-                  :data-testid="`admin-team-account-login-as-${account.id}`"
-                  :loading="pendingAccountID === account.id"
-                  @click="loginAs(account, 'admin')"
-                >
-                  {{ t('teamAccounts.loginAs') }}
-                </ElButton>
-                <ElButton
                   :data-testid="`admin-team-account-view-${account.id}`"
                   @click="openDetail(account)"
                 >
                   {{ t('teamAccounts.viewDetail') }}
                 </ElButton>
                 <ElButton
-                  :data-testid="`admin-team-account-transfer-${account.id}`"
-                  @click="openTransfer(account)"
+                  :data-testid="`admin-team-account-login-as-${account.id}`"
+                  type="primary"
+                  plain
+                  :loading="pendingAccountID === account.id"
+                  @click="loginAs(account, 'admin')"
                 >
-                  {{ t('teamAccounts.transfer.button') }}
-                </ElButton>
-                <ElButton
-                  :data-testid="`admin-team-account-status-${account.id}`"
-                  :type="statusActionType(account)"
-                  :loading="statusUpdatingID === account.id"
-                  :disabled="statusUpdatingID !== null && statusUpdatingID !== account.id"
-                  @click="openStatusDialog(account)"
-                >
-                  {{ statusActionLabel(account) }}
+                  {{ t('teamAccounts.loginAs') }}
                 </ElButton>
               </div>
             </ElCard>
@@ -526,24 +563,33 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
             />
           </label>
           <label class="block text-sm">
-            <span class="font-medium text-gray-700">{{ t('teamAccounts.departmentExternalId') }}</span>
-            <ElInput
+            <span class="font-medium text-gray-700">{{ t('teamAccounts.admin.departmentSelect') }}</span>
+            <ElSelect
               v-model="createForm.departmentExternalId"
               data-testid="admin-team-account-create-department"
-              class="mt-1"
-              :placeholder="t('teamAccounts.departmentExternalIdPlaceholder')"
+              filterable
+              remote
+              clearable
+              :remote-method="searchDepartments"
+              :loading="departmentLoading"
+              :placeholder="t('teamAccounts.admin.departmentPlaceholder')"
+              class="mt-1 w-full"
               :disabled="creating"
-            />
+            >
+              <ElOption
+                v-for="department in departmentOptions"
+                :key="department.external_id"
+                :label="department.display_path || department.name"
+                :value="department.external_id"
+              />
+            </ElSelect>
           </label>
           <label class="block text-sm">
             <span class="font-medium text-gray-700">{{ t('teamAccounts.ownerUserId') }}</span>
-            <ElInput
+            <TeamAccountUserPicker
               v-model="createForm.ownerUserID"
               data-testid="admin-team-account-create-owner"
               class="mt-1"
-              type="number"
-              min="1"
-              :placeholder="t('teamAccounts.admin.ownerUserIdPlaceholder')"
               :disabled="creating"
             />
           </label>
@@ -597,74 +643,70 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
         </template>
 
         <div class="space-y-4">
-          <div class="grid gap-3 sm:grid-cols-3">
+          <div class="grid gap-3 sm:grid-cols-2">
             <label class="block text-sm">
-              <span class="font-medium text-gray-700">{{ t('teamAccounts.admin.departmentExternalId') }}</span>
-              <ElInput
+              <span class="font-medium text-gray-700">{{ t('teamAccounts.admin.departmentSelect') }}</span>
+              <ElSelect
                 v-model="mappingForm.departmentExternalID"
                 data-testid="admin-mapping-department"
-                class="mt-1"
+                filterable
+                remote
+                clearable
+                :remote-method="searchDepartments"
+                :loading="departmentLoading"
+                :placeholder="t('teamAccounts.admin.departmentPlaceholder')"
+                class="mt-1 w-full"
                 :disabled="mappingLoading"
-              />
+                @change="onDepartmentChange"
+              >
+                <ElOption
+                  v-for="department in departmentOptions"
+                  :key="department.external_id"
+                  :label="department.display_path || department.name"
+                  :value="department.external_id"
+                />
+              </ElSelect>
             </label>
             <label class="block text-sm">
-              <span class="font-medium text-gray-700">{{ t('teamAccounts.admin.providerId') }}</span>
-              <ElInput
-                v-model="mappingForm.providerID"
-                data-testid="admin-mapping-provider"
-                class="mt-1"
-                type="number"
-                min="1"
-                :disabled="mappingLoading"
-              />
-            </label>
-            <label class="block text-sm">
-              <span class="font-medium text-gray-700">{{ t('teamAccounts.admin.groupId') }}</span>
-              <ElInput
-                v-model="mappingForm.groupID"
+              <span class="font-medium text-gray-700">{{ t('teamAccounts.admin.groupSelect') }}</span>
+              <ElSelect
+                v-model="mappingForm.groupKey"
                 data-testid="admin-mapping-group"
-                class="mt-1"
-                type="number"
-                min="1"
-                :disabled="mappingLoading"
-              />
+                filterable
+                clearable
+                :loading="groupsLoading"
+                :placeholder="t('teamAccounts.admin.groupPlaceholder')"
+                class="mt-1 w-full"
+                :disabled="groupsLoading"
+              >
+                <ElOptionGroup
+                  v-for="provider in [...new Set(groupOptions.map((option) => option.providerLabel))]"
+                  :key="provider"
+                  :label="provider"
+                >
+                  <ElOption
+                    v-for="option in groupOptions.filter((item) => item.providerLabel === provider)"
+                    :key="`${option.providerId}:${option.groupId}`"
+                    :label="`${option.name} · ${option.platform}`"
+                    :value="`${option.providerId}:${option.groupId}`"
+                  />
+                </ElOptionGroup>
+              </ElSelect>
             </label>
-          </div>
-
-          <div class="flex flex-wrap gap-2">
-            <ElButton
-              data-testid="admin-mapping-load"
-              :loading="mappingLoading"
-              :disabled="mappingLoading || mappingAdding"
-              @click="loadMappings"
-            >
-              {{ t('teamAccounts.admin.lookup') }}
-            </ElButton>
-            <ElButton
-              data-testid="admin-mapping-add"
-              type="primary"
-              :loading="mappingAdding"
-              :disabled="mappingAdding || mappingLoading"
-              @click="addMapping"
-            >
-              {{ t('teamAccounts.admin.addMapping') }}
-            </ElButton>
           </div>
 
           <ElAlert
-            v-if="mappingError"
-            data-testid="admin-mapping-error"
-            type="error"
+            v-if="!mappingForm.departmentExternalID"
+            type="info"
             :closable="false"
             show-icon
-            :title="mappingError"
+            :title="t('teamAccounts.admin.mappingEmpty')"
           />
-          <ElAlert type="info" :closable="false" show-icon :title="t('teamAccounts.admin.providerHint')" />
 
           <ElSkeleton v-if="mappingLoading" :rows="2" animated />
           <ElEmpty v-else-if="mappingIDs.length === 0" :description="t('teamAccounts.admin.noMappings')" :image-size="56" />
-          <ElTable v-else :data="mappingIDs.map((id) => ({ relay_group_id: id }))" size="small" class="w-full">
-            <ElTableColumn prop="relay_group_id" :label="t('teamAccounts.admin.groupId')" min-width="120" />
+          <ElTable v-else :data="mappingIDs.map((id) => ({ relay_group_id: id, name: groupNameByID.get(id) ?? `#${id}` }))" size="small" class="w-full">
+            <ElTableColumn prop="name" :label="t('teamAccounts.admin.groupSelect')" min-width="200" />
             <ElTableColumn :label="t('teamAccounts.actions')" width="180" fixed="right">
               <template #default="{ row }">
                 <div v-if="confirmingRemoveID === row.relay_group_id" class="flex flex-col gap-1">
@@ -709,6 +751,7 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
         :account="selectedAccount"
         mode="admin"
         @transfer-requested="openTransfer"
+      @status-requested="openStatusDialog"
       />
 
       <ElDialog
@@ -768,13 +811,6 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
         </div>
       </template>
     </ElDialog>
-
-    <TeamAccountCredentialsDialog
-      v-model="credentialsOpen"
-      :account-id="credentialsAccount?.id ?? null"
-      :account-name="credentialsAccount?.name"
-      mode="admin"
-    />
 
     <TeamAccountTransferDialog
         v-model="transferOpen"

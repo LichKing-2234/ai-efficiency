@@ -185,18 +185,6 @@ describe('TeamAccountSection', () => {
     expect(wrapper.get('[data-testid="team-account-password"]').text()).toBe('test-password')
   })
 
-  it('reveals credentials from the card without opening the detail', async () => {
-    const { wrapper, api } = await mountSection()
-
-    expect(api.revealTeamAccountCredentials).not.toHaveBeenCalled()
-    await wrapper.get('[data-testid="team-account-credentials-open-7"]').trigger('click')
-    await flushPromises()
-
-    expect(api.getTeamAccount).toHaveBeenCalled()
-    expect(api.revealTeamAccountCredentials).toHaveBeenCalledWith(7)
-    expect(document.body.textContent).toContain('test-password')
-  })
-
   it('offers a one-click sign in on the card', async () => {
     const { wrapper } = await mountSection()
     const button = wrapper.get('[data-testid="team-account-login-as-7"]')
