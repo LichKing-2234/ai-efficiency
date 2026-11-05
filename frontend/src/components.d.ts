@@ -67,6 +67,7 @@ declare module 'vue' {
     ElTabs: typeof import('element-plus/es')['ElTabs']
     ElTag: typeof import('element-plus/es')['ElTag']
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
+    HighlightedText: typeof import('./components/team-accounts/HighlightedText.vue')['default']
     ImpersonationBanner: typeof import('./components/ImpersonationBanner.vue')['default']
     LineChartCanvas: typeof import('./components/charts/LineChartCanvas.vue')['default']
     OIDCSettings: typeof import('./components/settings/OIDCSettings.vue')['default']

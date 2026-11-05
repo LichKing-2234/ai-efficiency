@@ -13,6 +13,63 @@ function response<T>(data: T) {
   return { data: { code: 0, data } }
 }
 
+function department(id: string, name: string, parent: string | null = null) {
+  return {
+    external_id: id,
+    parent_external_id: parent,
+    name,
+    display_path: parent ? `${parent} / ${name}` : name,
+    depth: parent ? 1 : 0,
+    child_count: 0,
+    member_count: 1,
+    matched_user_count: 1,
+    subtree_member_count: 1,
+    subtree_matched_user_count: 1,
+    path: name,
+  }
+}
+
+function user(id: number, username: string, email: string) {
+  return {
+    id,
+    username,
+    email,
+    role: 'user',
+    auth_source: 'ldap',
+    relay_auth_password: '',
+    department: { external_id: 'dept-sdk', name: 'SDK', display_path: '声网 / 研发团队 / SDK' },
+  }
+}
+
+async function mountDepartmentPicker() {
+  const api = await import('@/api/adminUsers')
+  vi.mocked(api.listAdminUserDepartments).mockResolvedValue(response({
+    items: [department('root', '声网'), department('sdk', 'SDK框架与效能组', 'root')],
+  }) as any)
+  const wrapper = mount(TeamAccountDepartmentPicker, {
+    props: { modelValue: '' },
+    attachTo: document.body,
+  })
+  await flushPromises()
+  return { wrapper, api }
+}
+
+async function mountUserPicker() {
+  const api = await import('@/api/adminUsers')
+  vi.mocked(api.listAdminUsers).mockResolvedValue(response({
+    items: [user(7, 'alice', 'alice@example.com'), user(8, 'bob', 'bob@example.com')],
+    page: 1,
+    page_size: 100,
+    total: 2,
+  }) as any)
+  const wrapper = mount(TeamAccountUserPicker, {
+    props: { modelValue: null },
+    attachTo: document.body,
+  })
+  await flushPromises()
+  return { wrapper, api }
+}
+
 describe('team account pickers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -23,54 +80,47 @@ describe('team account pickers', () => {
     document.body.innerHTML = ''
   })
 
-  it('loads the complete department tree without pagination', async () => {
-    const api = await import('@/api/adminUsers')
-    vi.mocked(api.listAdminUserDepartments).mockResolvedValue(response({
-      items: [
-        { external_id: 'root', parent_external_id: null, name: 'Agora', display_path: 'Agora', depth: 0, child_count: 1, member_count: 1, matched_user_count: 1, subtree_member_count: 2, subtree_matched_user_count: 2, path: 'Agora' },
-        { external_id: 'child', parent_external_id: 'root', name: 'Data Platform', display_path: 'Agora / Data Platform', depth: 1, child_count: 0, member_count: 1, matched_user_count: 1, subtree_member_count: 1, subtree_matched_user_count: 1, path: 'Agora/Data' },
-      ],
-    }) as any)
-
-    const wrapper = mount(TeamAccountDepartmentPicker, { props: { modelValue: '' } })
-    await flushPromises()
-
+  it('loads the whole department directory once', async () => {
+    const { api } = await mountDepartmentPicker()
     expect(api.listAdminUserDepartments).toHaveBeenCalledTimes(1)
-    expect(wrapper.find('.el-select').exists()).toBe(true)
   })
 
-  it('filters users by the selected department', async () => {
-    const api = await import('@/api/adminUsers')
-    vi.mocked(api.listAdminUsers).mockResolvedValue(response({
-      items: [],
-      page: 1,
-      page_size: 50,
-      total: 0,
-    }) as any)
-
-    mount(TeamAccountUserPicker, { props: { modelValue: null, departmentId: 'dept-data' } })
+  it('switches to a flat highlighted list while searching and selects the first match on Enter', async () => {
+    const { wrapper } = await mountDepartmentPicker()
+    const input = wrapper.get('[data-testid="team-account-department-input"]')
+    await input.trigger('focus')
+    await input.setValue('SDK')
     await flushPromises()
 
-    expect(api.listAdminUsers).toHaveBeenCalledWith({
-      q: undefined,
-      department_id: 'dept-data',
+    const list = document.body.querySelector('[data-testid="team-account-department-list"]')!
+    expect(list.textContent).toContain('SDK框架与效能组')
+    expect(list.textContent).not.toContain('Agora US')
+    expect(list.querySelector('mark')?.textContent).toBe('SDK')
+
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['sdk'])
+    expect(wrapper.emitted('change')?.[0]).toEqual(['sdk'])
+  })
+
+  it('filters users by department and selects the first match on Enter', async () => {
+    const { wrapper, api } = await mountUserPicker()
+    const input = wrapper.get('[data-testid="team-account-user-input"]')
+    await input.trigger('focus')
+    await input.setValue('ali')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    await flushPromises()
+
+    expect(api.listAdminUsers).toHaveBeenLastCalledWith({
+      q: 'ali',
+      department_id: undefined,
       page: 1,
-      page_size: 50,
+      page_size: 100,
     })
-  })
 
-  it('searches users through the admin directory instead of capping the list', async () => {
-    const api = await import('@/api/adminUsers')
-    vi.mocked(api.listAdminUsers).mockResolvedValue(response({
-      items: [{ id: 7, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'ldap', relay_auth_password: '' }],
-      page: 1,
-      page_size: 50,
-      total: 1,
-    }) as any)
+    const list = document.body.querySelector('[data-testid="team-account-user-list"]')!
+    expect(list.textContent).toContain('alice')
 
-    mount(TeamAccountUserPicker, { props: { modelValue: null } })
-    await flushPromises()
-
-    expect(api.listAdminUsers).toHaveBeenCalledWith({ q: undefined, department_id: undefined, page: 1, page_size: 50 })
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('select')?.[0]?.[0]).toMatchObject({ id: 7, username: 'alice' })
   })
 })
