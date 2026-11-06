@@ -429,6 +429,9 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 		s.disableRelayUser(ctx, provider, relayUser.ID)
 		return nil, fmt.Errorf("commit team account: %w", err)
 	}
+	if err := s.ensureShadowUser(ctx, created); err != nil {
+		s.logger.Warn("create organization account shadow user", zap.Int("account_id", created.ID), zap.Error(err))
+	}
 
 	account, err := s.Get(ctx, in.ActorUserID, in.IsAdmin, created.ID)
 	if err == nil {
@@ -1964,6 +1967,50 @@ func duplicateRelayIdentity(err error) bool {
 	return strings.Contains(message, "already exists") ||
 		strings.Contains(message, "duplicate") ||
 		strings.Contains(message, "status 409")
+}
+
+// ensureShadowUser records the hidden local identity of the account so it can
+// appear in member details with a stable user id before anyone signs in.
+func (s *Service) ensureShadowUser(ctx context.Context, row *ent.TeamAccount) error {
+	if row == nil || strings.TrimSpace(row.RelayUsername) == "" {
+		return nil
+	}
+	exists, err := s.client.User.Query().
+		Where(entuser.Or(
+			entuser.UsernameEQ(row.RelayUsername),
+			entuser.EmailEQ(row.RelayEmail),
+		)).
+		Exist(ctx)
+	if err != nil || exists {
+		return err
+	}
+	_, err = s.client.User.Create().
+		SetUsername(row.RelayUsername).
+		SetEmail(row.RelayEmail).
+		SetAuthSource(entuser.AuthSourceRelaySSO).
+		SetRole(entuser.RoleUser).
+		SetRelayUserID(int(row.RelayUserID)).
+		Save(ctx)
+	return err
+}
+
+// EnsureOrganizationShadowUsers backfills the hidden local identities of
+// existing organization accounts so member details can open their dashboard.
+func EnsureOrganizationShadowUsers(ctx context.Context, client *ent.Client) error {
+	if client == nil {
+		return nil
+	}
+	rows, err := client.TeamAccount.Query().All(ctx)
+	if err != nil {
+		return fmt.Errorf("list organization accounts: %w", err)
+	}
+	service := &Service{client: client}
+	for _, row := range rows {
+		if err := service.ensureShadowUser(ctx, row); err != nil {
+			return fmt.Errorf("ensure shadow user for account %d: %w", row.ID, err)
+		}
+	}
+	return nil
 }
 
 func previewSecret(secret string) string {

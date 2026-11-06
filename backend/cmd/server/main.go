@@ -260,6 +260,9 @@ func main() {
 	if err := dropLegacyTeamAccountDepartmentUnique(context.Background(), db); err != nil {
 		logger.Fatal("drop legacy team account department constraint", zap.Error(err))
 	}
+	if err := teamaccount.EnsureOrganizationShadowUsers(context.Background(), entClient); err != nil {
+		logger.Warn("backfill organization account identities", zap.Error(err))
+	}
 	logger.Info("database schema migrated")
 	settledOperations, err := relayplanning.SettleAbandonedOperations(
 		context.Background(),
