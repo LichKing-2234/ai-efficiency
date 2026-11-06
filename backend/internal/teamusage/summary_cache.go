@@ -672,6 +672,11 @@ func pagedMemberStableIdentity(member OverviewMember) string {
 	}
 	externalID := strings.TrimSpace(member.DirectoryMemberExternalID)
 	if externalID == "" {
+		// Organization accounts that never signed in have no local user and no
+		// directory member row; their relay identity is the stable key.
+		if member.SubjectType == teamAccountSubjectType && member.RelayUserID != nil && *member.RelayUserID > 0 {
+			return fmt.Sprintf("team-account:%d", *member.RelayUserID)
+		}
 		return ""
 	}
 	return "directory:" + externalID
