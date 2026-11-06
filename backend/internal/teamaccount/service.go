@@ -527,12 +527,22 @@ func (s *Service) resolveDepartment(ctx context.Context, in CreateInput) (string
 		if len(scope.RepresentedDepartmentIDs) != 1 {
 			return "", &ValidationError{Message: "department is required when representing more than one department"}
 		}
-		return scope.RepresentedDepartmentIDs[0], nil
+		departmentID = scope.RepresentedDepartmentIDs[0]
+		if exists, known := s.departmentExists(ctx, departmentID); known && !exists {
+			return "", &ValidationError{Message: "department does not exist in the current directory snapshot"}
+		}
+		return departmentID, nil
 	}
 	for _, candidate := range scope.RepresentedDepartmentIDs {
-		if candidate == departmentID {
-			return departmentID, nil
+		if candidate != departmentID {
+			continue
 		}
+		// The leader metadata can keep referencing a department that the latest
+		// snapshot no longer contains; never create an account for that phantom.
+		if exists, known := s.departmentExists(ctx, departmentID); known && !exists {
+			return "", &ValidationError{Message: "department does not exist in the current directory snapshot"}
+		}
+		return departmentID, nil
 	}
 	return "", &PermissionError{Message: "you do not represent this department"}
 }
