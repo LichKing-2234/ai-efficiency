@@ -394,9 +394,10 @@ async function addManager() {
   managerAdding.value = true
   managerError.value = ''
   try {
-    await api.value.addManager(props.accountId, managerUserID.value as number)
+    const response = await api.value.addManager(props.accountId, managerUserID.value as number)
     managerUserID.value = null
-    ElMessage.success(t('teamAccounts.managers.added'))
+    const added = response.data.data?.added ?? true
+    ElMessage.success(added ? t('teamAccounts.managers.added') : t('teamAccounts.managers.already'))
     await loadDetail(props.accountId)
     await loadEvents(props.accountId)
   } catch (error: unknown) {

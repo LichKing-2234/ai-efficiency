@@ -1336,36 +1336,36 @@ func (s *Service) Credentials(ctx context.Context, actorUserID int, includeAll b
 }
 
 // AddManager grants one user management access.
-func (s *Service) AddManager(ctx context.Context, actorUserID int, includeAll bool, accountID, userID int) error {
+func (s *Service) AddManager(ctx context.Context, actorUserID int, includeAll bool, accountID, userID int) (bool, error) {
 	if _, err := s.loadAccount(ctx, accountID); err != nil {
-		return err
+		return false, err
 	}
 	if err := s.assertOwner(ctx, actorUserID, includeAll, accountID); err != nil {
-		return err
+		return false, err
 	}
 	if err := s.assertUserExists(ctx, userID); err != nil {
-		return err
+		return false, err
 	}
 	if err := s.assertPersonUser(ctx, userID); err != nil {
-		return err
+		return false, err
 	}
 	if !includeAll {
 		account, err := s.loadAccount(ctx, accountID)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if err := s.assertPersonInDepartment(ctx, account.DepartmentExternalID, userID); err != nil {
-			return err
+			return false, err
 		}
 	}
 	exists, err := s.client.TeamAccountManager.Query().
 		Where(teamAccountManagerAccountID(accountID), teamAccountManagerUserID(userID)).
 		Exist(ctx)
 	if err != nil {
-		return fmt.Errorf("check manager: %w", err)
+		return false, fmt.Errorf("check manager: %w", err)
 	}
 	if exists {
-		return nil
+		return false, nil
 	}
 	if _, err := s.client.TeamAccountManager.Create().
 		SetTeamAccountID(accountID).
@@ -1379,11 +1379,14 @@ func (s *Service) AddManager(ctx context.Context, actorUserID int, includeAll bo
 			Where(teamAccountManagerAccountID(accountID), teamAccountManagerUserID(userID)).
 			Exist(ctx)
 		if checkErr == nil && exists {
-			return nil
+			return false, nil
 		}
-		return fmt.Errorf("add manager: %w", err)
+		return false, fmt.Errorf("add manager: %w", err)
 	}
-	return s.recordEvent(ctx, accountID, actorUserID, "manager_added", map[string]any{"user_id": userID})
+	if err := s.recordEvent(ctx, accountID, actorUserID, "manager_added", map[string]any{"user_id": userID}); err != nil {
+		return true, err
+	}
+	return true, nil
 }
 
 // RemoveManager revokes one user's management access. The owner cannot be

@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { setLocale } from '@/i18n'
+import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import TeamAccountDetailDialog from '@/components/team-accounts/TeamAccountDetailDialog.vue'
+import TeamAccountUserPicker from '@/components/team-accounts/TeamAccountUserPicker.vue'
 
 vi.mock('@/api/teamAccounts', () => ({
   getTeamAccount: vi.fn(),
@@ -45,6 +47,8 @@ const detail = {
 }
 
 async function mountAs(userID: number) {
+  // Teleported dialogs from earlier tests would otherwise answer the body queries.
+  document.body.innerHTML = ''
   const pinia = createPinia()
   setActivePinia(pinia)
   const auth = useAuthStore()
@@ -85,6 +89,20 @@ describe('TeamAccountDetailDialog permissions', () => {
     expect(body.find('[data-testid="team-account-transfer"]').exists()).toBe(true)
     expect(body.find('[data-testid="team-account-add-manager"]').exists()).toBe(true)
     expect(body.find('[data-testid="team-account-remove-manager-448"]').exists()).toBe(true)
+  })
+
+  it('reports that a person is already a manager instead of claiming success', async () => {
+    const { wrapper, body, api } = await mountAs(447)
+    vi.mocked(api.addTeamAccountManager).mockResolvedValue({ data: { code: 0, data: { added: false } } } as any)
+    const success = vi.spyOn(ElMessage, 'success')
+    const picker = wrapper.findComponent(TeamAccountUserPicker)
+    picker.vm.$emit('update:modelValue', 448)
+    await flushPromises()
+    await body.get('[data-testid="team-account-add-manager"]').trigger('click')
+    await flushPromises()
+
+    expect(api.addTeamAccountManager).toHaveBeenCalledWith(6, 448)
+    expect(success).toHaveBeenCalledWith('该用户已经是管理员')
   })
 
   it('keeps the one-time key secret when a refresh fails', async () => {

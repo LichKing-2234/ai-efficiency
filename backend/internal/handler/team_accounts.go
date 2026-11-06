@@ -210,11 +210,12 @@ func (h *TeamAccountHandler) AddManager(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if err := h.service.AddManager(c.Request.Context(), userID, isAdmin, id, req.UserID); err != nil {
+	added, err := h.service.AddManager(c.Request.Context(), userID, isAdmin, id, req.UserID)
+	if err != nil {
 		h.respondError(c, err)
 		return
 	}
-	pkg.Success(c, gin.H{"added": true})
+	pkg.Success(c, gin.H{"added": added})
 }
 
 // RemoveManager handles DELETE /api/v1/user/team-accounts/:id/managers/:user_id.

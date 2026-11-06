@@ -270,7 +270,7 @@ func TestTransferRejectsNonOwnerManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	if err := service.AddManager(context.Background(), ownerID, false, account.ID, otherID); err != nil {
+	if _, err := service.AddManager(context.Background(), ownerID, false, account.ID, otherID); err != nil {
 		t.Fatalf("AddManager() error = %v", err)
 	}
 	if err := service.Transfer(context.Background(), otherID, false, account.ID, otherID); err == nil {
@@ -404,7 +404,7 @@ func TestRepresentativeCannotAddManagerOutsideDepartment(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	err = service.AddManager(context.Background(), ownerID, false, account.ID, otherID)
+	_, err = service.AddManager(context.Background(), ownerID, false, account.ID, otherID)
 	var permission *PermissionError
 	if !errors.As(err, &permission) {
 		t.Fatalf("AddManager() error = %v, want PermissionError", err)
@@ -446,5 +446,47 @@ func TestCreateKeyRetriesAfterPasswordRotation(t *testing.T) {
 	}
 	if provider.keyCalls != 2 {
 		t.Fatalf("relay key calls = %d, want 2 (one retry)", provider.keyCalls)
+	}
+}
+
+func TestAddManagerIsIdempotent(t *testing.T) {
+	client := testdb.Open(t)
+	ownerID, otherID := seedUsers(t, client)
+	provider := newFakeProvider()
+	seedProvider(t, client)
+	seedDepartmentMember(t, client, "department-alpha", "other@example.com")
+	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
+	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	added, err := service.AddManager(context.Background(), ownerID, false, account.ID, otherID)
+	if err != nil || !added {
+		t.Fatalf("first AddManager() = %v, %v, want added", added, err)
+	}
+	added, err = service.AddManager(context.Background(), ownerID, false, account.ID, otherID)
+	if err != nil || added {
+		t.Fatalf("second AddManager() = %v, %v, want not added", added, err)
+	}
+	rows, err := client.TeamAccountManager.Query().All(context.Background())
+	if err != nil {
+		t.Fatalf("list managers: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("manager rows = %d, want owner + manager only", len(rows))
+	}
+	events, err := client.TeamAccountEvent.Query().All(context.Background())
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	addedEvents := 0
+	for _, event := range events {
+		if event.Action == "manager_added" {
+			addedEvents++
+		}
+	}
+	if addedEvents != 1 {
+		t.Fatalf("manager_added events = %d, want 1", addedEvents)
 	}
 }
