@@ -21,6 +21,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorymember"
 	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
 	"github.com/ai-efficiency/backend/ent/predicate"
@@ -106,6 +107,8 @@ type Account struct {
 	Name                  string     `json:"name"`
 	DepartmentExternalID  string     `json:"department_external_id"`
 	DepartmentDisplayPath string     `json:"department_display_path"`
+	DepartmentMissing     bool       `json:"department_missing,omitempty"`
+	OwnerDisabled         bool       `json:"owner_disabled,omitempty"`
 	RelayUsername         string     `json:"relay_username"`
 	RelayEmail            string     `json:"relay_email"`
 	RelayUserID           int64      `json:"relay_user_id"`
@@ -283,6 +286,12 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 	if err != nil {
 		return nil, err
 	}
+	if in.IsAdmin {
+		exists, known := s.departmentExists(ctx, departmentID)
+		if known && !exists {
+			return nil, &ValidationError{Message: "department does not exist in the current directory snapshot"}
+		}
+	}
 
 	if _, err := s.client.TeamAccount.Query().
 		Where(teamaccountDepartmentEQ(departmentID), entteamaccount.StatusEQ(entteamaccount.StatusActive)).
@@ -447,6 +456,32 @@ func (s *Service) departmentLabel(ctx context.Context, departmentID, fallback st
 		return label
 	}
 	return fallback
+}
+
+// departmentExists reports whether the department is part of the current
+// directory snapshot. known is false when no snapshot is available, so callers
+// never reject accounts based on missing directory data.
+func (s *Service) departmentExists(ctx context.Context, departmentID string) (exists bool, known bool) {
+	departmentID = strings.TrimSpace(departmentID)
+	if departmentID == "" {
+		return false, false
+	}
+	view, ok, err := directoryfacts.New(s.client).Current(ctx)
+	if err != nil || !ok {
+		return false, false
+	}
+	snapshot := view.Snapshot()
+	count, err := s.client.DirectoryDepartment.Query().
+		Where(
+			directorydepartment.SourceIDEQ(snapshot.SourceID),
+			directorydepartment.LastSeenRunIDEQ(snapshot.RunID),
+			directorydepartment.ExternalIDEQ(departmentID),
+		).
+		Count(ctx)
+	if err != nil {
+		return false, false
+	}
+	return count > 0, true
 }
 
 // departmentDisplayPaths maps department external ids to their display paths
@@ -907,6 +942,7 @@ func (s *Service) hydrateOwners(ctx context.Context, accounts []Account) {
 		}
 		accounts[index].OwnerUsername = user.Username
 		accounts[index].OwnerEmail = user.Email
+		accounts[index].OwnerDisabled = user.TokenValidAfter != nil || user.RelayDisabledAt != nil
 	}
 }
 
@@ -924,6 +960,9 @@ func (s *Service) Get(ctx context.Context, actorUserID int, includeAll bool, acc
 	account := toAccount(row)
 	// Never expose the raw directory-id path that older rows stored.
 	account.DepartmentDisplayPath = s.departmentLabel(ctx, row.DepartmentExternalID, account.DepartmentDisplayPath)
+	if exists, known := s.departmentExists(ctx, row.DepartmentExternalID); known && !exists {
+		account.DepartmentMissing = true
+	}
 
 	keys, err := s.client.TeamAccountKey.Query().
 		Where(teamAccountKeyAccountID(accountID)).

@@ -1514,6 +1514,8 @@ export interface TeamAccountSummary {
   name: string
   department_external_id: string
   department_display_path: string
+  department_missing?: boolean
+  owner_disabled?: boolean
   relay_username: string
   relay_user_id: number
   owner_user_id: number

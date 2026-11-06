@@ -8,6 +8,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/teamaccount"
 	entuser "github.com/ai-efficiency/backend/ent/user"
+	"github.com/ai-efficiency/backend/internal/directoryfacts"
 	"github.com/ai-efficiency/backend/internal/representativescope"
 )
 
@@ -70,6 +71,7 @@ func (s *Service) appendOrganizationAccountSubjects(ctx context.Context, scope *
 		}
 	}
 
+	livePaths := s.organizationDepartmentPaths(ctx, departments)
 	extra := make([]representativescope.Subject, 0, len(accounts))
 	for _, account := range accounts {
 		relayUserID := int(account.RelayUserID)
@@ -87,13 +89,17 @@ func (s *Service) appendOrganizationAccountSubjects(ctx context.Context, scope *
 		if shadow == nil {
 			shadow = userByUsername[strings.ToLower(strings.TrimSpace(account.RelayUsername))]
 		}
+		displayPath := strings.TrimSpace(livePaths[account.DepartmentExternalID])
+		if displayPath == "" {
+			displayPath = account.DepartmentDisplayPath
+		}
 		subject := representativescope.Subject{
 			SubjectType:           teamAccountSubjectType,
 			DisplayName:           account.Name,
 			Email:                 account.RelayEmail,
 			DepartmentExternalID:  account.DepartmentExternalID,
 			DepartmentExternalIDs: []string{account.DepartmentExternalID},
-			DepartmentDisplayPath: account.DepartmentDisplayPath,
+			DepartmentDisplayPath: displayPath,
 			RelayUserID:           &relayUserID,
 			Selectable:            shadow != nil,
 		}
@@ -132,6 +138,30 @@ func representedDepartmentSet(scope *representativescope.Scope) []string {
 	out := make([]string, 0, len(seen))
 	for departmentID := range seen {
 		out = append(out, departmentID)
+	}
+	return out
+}
+
+// organizationDepartmentPaths resolves the current directory display paths so a
+// renamed or moved department is reflected in member rows immediately.
+func (s *Service) organizationDepartmentPaths(ctx context.Context, departmentIDs []string) map[string]string {
+	out := make(map[string]string, len(departmentIDs))
+	view, ok, err := directoryfacts.New(s.client).Current(ctx)
+	if err != nil || !ok {
+		return out
+	}
+	facts, err := view.Load(ctx, directoryfacts.Query{
+		DepartmentIDs:              departmentIDs,
+		IncludeDepartmentAncestors: true,
+	})
+	if err != nil {
+		return out
+	}
+	hierarchy := facts.Hierarchy()
+	for _, departmentID := range departmentIDs {
+		if path := hierarchy.DisplayPath(departmentID); path != "" {
+			out[departmentID] = path
+		}
 	}
 	return out
 }

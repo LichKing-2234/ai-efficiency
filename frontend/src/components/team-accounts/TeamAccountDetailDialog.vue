@@ -595,6 +595,21 @@ function requestStatusChange() {
         </section>
 
         
+        <ElAlert
+          v-if="detail.department_missing"
+          type="error"
+          :closable="false"
+          show-icon
+          :title="t('teamAccounts.departmentMissingHint')"
+        />
+        <ElAlert
+          v-if="detail.owner_disabled"
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="t('teamAccounts.ownerDisabledHint')"
+        />
+
         <section data-testid="team-account-managers" class="space-y-3">
           <div>
             <h3 class="text-sm font-semibold text-gray-900">{{ t('teamAccounts.managers.title') }}</h3>
