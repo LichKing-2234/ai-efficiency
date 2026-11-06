@@ -17,7 +17,7 @@ type TeamAccount struct {
 	config `json:"-"`
 	// ID of the ent.
 	ID int `json:"id,omitempty"`
-	// Directory department stable id; the account is owned by this department.
+	// Directory department stable id; only one active account may exist per department.
 	DepartmentExternalID string `json:"department_external_id,omitempty"`
 	// DepartmentDisplayPath holds the value of the "department_display_path" field.
 	DepartmentDisplayPath string `json:"department_display_path,omitempty"`

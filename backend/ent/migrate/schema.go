@@ -1532,7 +1532,7 @@ var (
 	// TeamAccountsColumns holds the columns for the "team_accounts" table.
 	TeamAccountsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "department_external_id", Type: field.TypeString, Unique: true},
+		{Name: "department_external_id", Type: field.TypeString},
 		{Name: "department_display_path", Type: field.TypeString, Nullable: true, Default: ""},
 		{Name: "name", Type: field.TypeString},
 		{Name: "relay_provider_id", Type: field.TypeInt},
@@ -1561,6 +1561,14 @@ var (
 				Name:    "teamaccount_status",
 				Unique:  false,
 				Columns: []*schema.Column{TeamAccountsColumns[10]},
+			},
+			{
+				Name:    "team_accounts_department_active_key",
+				Unique:  true,
+				Columns: []*schema.Column{TeamAccountsColumns[1]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status = 'active'",
+				},
 			},
 		},
 	}

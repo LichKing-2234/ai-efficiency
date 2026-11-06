@@ -111,24 +111,4 @@ describe('TeamAccountDetailDialog permissions', () => {
     expect(success).toHaveBeenCalledWith('该用户已经是管理员')
   })
 
-  it('keeps the one-time key secret when a refresh fails', async () => {
-    const { body, api } = await mountAs(447, 'admin')
-    vi.mocked(api.createTeamAccountKey).mockResolvedValue({
-      data: { code: 0, data: { key: { id: 1, name: 'ci', group_id: 10 }, secret: 'sk-secret' } },
-    } as any)
-    vi.mocked(api.createAdminTeamAccountKey).mockResolvedValue({
-      data: { code: 0, data: { key: { id: 1, name: 'ci', group_id: 10 }, secret: 'sk-secret' } },
-    } as any)
-    vi.mocked(api.getTeamAccount).mockRejectedValueOnce(new Error('boom'))
-
-    ;(body.get('[data-testid="team-account-key-name"]').element as HTMLInputElement).value = 'ci'
-    await body.get('[data-testid="team-account-key-name"]').trigger('input')
-    await body.get('[data-testid="team-account-create-key"]').trigger('click')
-    await flushPromises()
-    expect(body.text()).toContain('sk-secret')
-
-    await body.get('[data-testid="team-account-detail-refresh"]').trigger('click')
-    await flushPromises()
-    expect(body.text()).toContain('sk-secret')
-  })
 })

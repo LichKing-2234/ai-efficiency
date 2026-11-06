@@ -257,6 +257,9 @@ func main() {
 	if err := dropLegacyAttributionIdentityIndexes(context.Background(), db); err != nil {
 		logger.Fatal("drop legacy attribution identity indexes", zap.Error(err))
 	}
+	if err := dropLegacyTeamAccountDepartmentUnique(context.Background(), db); err != nil {
+		logger.Fatal("drop legacy team account department constraint", zap.Error(err))
+	}
 	logger.Info("database schema migrated")
 	settledOperations, err := relayplanning.SettleAbandonedOperations(
 		context.Background(),

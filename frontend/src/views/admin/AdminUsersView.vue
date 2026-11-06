@@ -684,14 +684,6 @@ onBeforeUnmount(() => {
         </div>
         <div class="flex shrink-0 gap-2 self-start sm:self-auto">
           <ElButton
-            data-testid="admin-users-create-org-account"
-            class="whitespace-nowrap"
-            type="primary"
-            @click="openOrgAccountDialog"
-          >
-            {{ t('adminUsers.createOrgAccount') }}
-          </ElButton>
-          <ElButton
             data-testid="admin-users-refresh"
             class="whitespace-nowrap"
             :disabled="activeViewLoading"
@@ -1405,50 +1397,6 @@ onBeforeUnmount(() => {
             {{ disableAccessDialog.loading ? t('adminUsers.working') : t('adminUsers.confirmDisableUser') }}
           </ElButton>
         </div>
-      </template>
-    </ElDialog>
-    <ElDialog
-      v-if="orgAccountDialog.open"
-      v-model="orgAccountDialog.open"
-      :title="t('adminUsers.createOrgAccountTitle')"
-      width="460px"
-      data-testid="admin-org-account-dialog"
-    >
-      <div class="flex flex-col gap-3">
-        <ElInput
-          v-model="orgAccountDialog.username"
-          :placeholder="t('adminUsers.orgAccountUsername')"
-          data-testid="admin-org-account-username"
-        />
-        <ElInput
-          v-model="orgAccountDialog.password"
-          type="password"
-          show-password
-          :placeholder="t('adminUsers.orgAccountPassword')"
-          data-testid="admin-org-account-password"
-        />
-        <ElInput
-          v-model="orgAccountDialog.confirmPassword"
-          type="password"
-          show-password
-          :placeholder="t('adminUsers.orgAccountPasswordConfirm')"
-          data-testid="admin-org-account-confirm-password"
-        />
-        <p class="text-xs text-gray-500">{{ t('adminUsers.orgAccountHint') }}</p>
-      </div>
-      <p v-if="orgAccountDialog.message" class="mt-3 text-sm text-red-600">{{ orgAccountDialog.message }}</p>
-      <template #footer>
-        <ElButton @click="orgAccountDialog.open = false">
-          {{ t('adminUsers.orgAccountCancel') }}
-        </ElButton>
-        <ElButton
-          type="primary"
-          :loading="orgAccountDialog.loading"
-          data-testid="admin-org-account-submit"
-          @click="submitOrgAccount"
-        >
-          {{ t('adminUsers.orgAccountSubmit') }}
-        </ElButton>
       </template>
     </ElDialog>
   </AppLayout>

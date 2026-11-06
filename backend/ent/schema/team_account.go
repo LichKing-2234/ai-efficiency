@@ -2,6 +2,7 @@ package schema
 
 import (
 	"entgo.io/ent"
+	entsql "entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 )
@@ -17,9 +18,8 @@ type TeamAccount struct {
 func (TeamAccount) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("department_external_id").
-			Unique().
 			NotEmpty().
-			Comment("Directory department stable id; the account is owned by this department."),
+			Comment("Directory department stable id; only one active account may exist per department."),
 		field.String("department_display_path").
 			Optional().
 			Default(""),
@@ -59,5 +59,9 @@ func (TeamAccount) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("owner_user_id"),
 		index.Fields("status"),
+		index.Fields("department_external_id").
+			Unique().
+			StorageKey("team_accounts_department_active_key").
+			Annotations(entsql.IndexWhere("status = 'active'")),
 	}
 }

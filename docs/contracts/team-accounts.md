@@ -58,11 +58,14 @@ Creating an account for a department:
    local transaction. If any step fails, the Relay user is disabled so no orphan
    identity can authenticate.
 
-Creating a second account for the same department is rejected regardless of the
-existing account's status. A username or mailbox collision fails the create; an
-existing identity is never adopted. There is no delete operation: a suspended
-account keeps its department and Relay identity reserved until an administrator
-removes the data out of band.
+At most one **active** account may exist per department. Suspending an account
+releases the creation slot: a replacement account may be created for the same
+department, receives the next free Relay identity (`team-<dept>`,
+`team-<dept>-2`, ...), and the suspended account keeps its own identity and
+history. Creating while another account is active is rejected, and restoring a
+suspended account while a replacement is active is rejected with a conflict.
+There is no delete operation: suspended accounts still occupy their Relay
+identity and audit history.
 
 ## Keys
 
@@ -99,13 +102,24 @@ never included in member counts of the directory itself.
 credentials or full key secrets. Owners and managers read events for their own
 accounts; administrators read every account.
 
+## Keys and suspension
+
+Keys minted while signed in as the organization account are normal Relay user
+keys. Suspending the account disables its Relay identity, so those keys stop
+working until the account is restored; registered `team_account_keys` (if any)
+are revoked permanently on suspension.
+
 ## Administration
 
-`/api/v1/admin/team-accounts` exposes listing, creation, status changes, the
-credential and key operations, and transfer. The representative opens accounts inside the AI usage center (there is no
-separate organization-account navigation); the account card shows ownership,
-credentials, and managers only, while keys, access groups, usage, and the audit
-record stay in the administrator console. The admin console page follows the
+`/api/v1/admin/team-accounts` exposes listing, creation, status changes,
+credential operations, and transfer. The administrator user console no longer
+creates SSO-only organization accounts; organization accounts are created from
+the team-account console. The representative opens accounts inside the AI usage center (there is no
+separate organization-account navigation); the account card shows ownership, credentials, and managers only. API keys,
+access groups, usage, and the audit record are not rendered in the card (for
+either role); keys are created by signing in as the account, and usage is read
+from the AI usage center member details. The administrator console keeps
+suspension, transfer, and manager management. The admin console page follows the
 directory offboarding interaction: search, card list, typed confirmation for
 transfer and suspend, and an audit drawer.
 

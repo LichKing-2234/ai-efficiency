@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -283,10 +284,12 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 		return nil, err
 	}
 
-	if _, err := s.client.TeamAccount.Query().Where(teamaccountDepartmentEQ(departmentID)).Only(ctx); err == nil {
+	if _, err := s.client.TeamAccount.Query().
+		Where(teamaccountDepartmentEQ(departmentID), entteamaccount.StatusEQ(entteamaccount.StatusActive)).
+		Only(ctx); err == nil {
 		return nil, &ConflictError{Message: "this department already has a team account"}
 	} else if !ent.IsNotFound(err) {
-		return nil, fmt.Errorf("check existing team account: %w", err)
+		return nil, fmt.Errorf("check active team account: %w", err)
 	}
 
 	providerID, err := s.primaryProviderID(ctx)
@@ -297,11 +300,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 		return nil, &ValidationError{Message: "no enabled relay provider is configured"}
 	}
 
-	username := deriveUsername(departmentID)
-	email := username + "@" + EmailDomain
-	if err := s.assertIdentityFree(ctx, username, email); err != nil {
-		return nil, err
-	}
+	baseUsername := deriveUsername(departmentID)
 
 	password, err := generatedPassword()
 	if err != nil {
@@ -332,19 +331,42 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 		return nil, err
 	}
 
-	relayUser, err := provider.CreateUser(ctx, relay.CreateUserRequest{
-		Username:    username,
-		Email:       email,
-		Password:    password,
-		Role:        "user",
-		Notes:       "provisioned_by_ai_efficiency_team",
-		Concurrency: DefaultConcurrency,
-	})
-	if err != nil {
-		if duplicateRelayIdentity(err) {
-			return nil, &ConflictError{Message: "team account identity already exists in relay"}
+	var relayUser *relay.User
+	username, email := "", ""
+	for attempt := 1; attempt <= 10; attempt++ {
+		candidate := baseUsername
+		if attempt > 1 {
+			candidate = fmt.Sprintf("%s-%d", baseUsername, attempt)
 		}
-		return nil, fmt.Errorf("create relay user: %w", err)
+		candidateEmail := candidate + "@" + EmailDomain
+		if identityErr := s.assertIdentityFree(ctx, candidate, candidateEmail); identityErr != nil {
+			var conflict *ConflictError
+			if errors.As(identityErr, &conflict) {
+				continue
+			}
+			return nil, identityErr
+		}
+		created, createErr := provider.CreateUser(ctx, relay.CreateUserRequest{
+			Username:    candidate,
+			Email:       candidateEmail,
+			Password:    password,
+			Role:        "user",
+			Notes:       "provisioned_by_ai_efficiency_team",
+			Concurrency: DefaultConcurrency,
+		})
+		if createErr != nil {
+			// A leftover Relay identity reserves the deterministic name; the next
+			// suffix lets a replacement account proceed without deleting history.
+			if duplicateRelayIdentity(createErr) {
+				continue
+			}
+			return nil, fmt.Errorf("create relay user: %w", createErr)
+		}
+		relayUser, username, email = created, candidate, candidateEmail
+		break
+	}
+	if relayUser == nil {
+		return nil, &ConflictError{Message: "could not allocate a unique relay identity for this department"}
 	}
 
 	if err := s.assignAdditionalGroups(ctx, provider, relayUser.ID, in); err != nil {
@@ -1530,6 +1552,19 @@ func (s *Service) SetStatus(ctx context.Context, actorUserID int, accountID int,
 	previous := string(row.Status)
 
 	if status == "active" {
+		otherActive, checkErr := s.client.TeamAccount.Query().
+			Where(
+				teamaccountDepartmentEQ(row.DepartmentExternalID),
+				entteamaccount.StatusEQ(entteamaccount.StatusActive),
+				entteamaccount.IDNEQ(accountID),
+			).
+			Exist(ctx)
+		if checkErr != nil {
+			return fmt.Errorf("check other active account: %w", checkErr)
+		}
+		if otherActive {
+			return &ConflictError{Message: "another team account is already active for this department"}
+		}
 		if err := s.setRelayUserActive(ctx, provider, row, true); err != nil {
 			return err
 		}

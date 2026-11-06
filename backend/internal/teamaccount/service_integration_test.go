@@ -490,3 +490,34 @@ func TestAddManagerIsIdempotent(t *testing.T) {
 		t.Fatalf("manager_added events = %d, want 1", addedEvents)
 	}
 }
+
+func TestReplacementAccountAfterSuspension(t *testing.T) {
+	client := testdb.Open(t)
+	ownerID, _ := seedUsers(t, client)
+	provider := newFakeProvider()
+	seedProvider(t, client)
+	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
+
+	first, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
+	if err != nil {
+		t.Fatalf("Create() first error = %v", err)
+	}
+	if err := service.SetStatus(context.Background(), ownerID, first.ID, "suspended"); err != nil {
+		t.Fatalf("SetStatus(suspended) error = %v", err)
+	}
+
+	second, err := service.Create(context.Background(), CreateInput{Name: "Alpha replacement", ActorUserID: ownerID})
+	if err != nil {
+		t.Fatalf("Create() replacement error = %v", err)
+	}
+	if second.RelayUsername == first.RelayUsername {
+		t.Fatalf("replacement reused relay identity %q", second.RelayUsername)
+	}
+
+	if _, err := service.Create(context.Background(), CreateInput{Name: "Third", ActorUserID: ownerID}); err == nil {
+		t.Fatal("Create() while another account is active must fail")
+	}
+	if err := service.SetStatus(context.Background(), ownerID, first.ID, "active"); err == nil {
+		t.Fatal("restoring the suspended account while another is active must fail")
+	}
+}

@@ -570,7 +570,6 @@ func setupRouter(
 	adminUsersGroup.Use(auth.RequireAdmin())
 	{
 		adminUsersGroup.GET("", adminUsersHandler.List)
-		adminUsersGroup.POST("/org-accounts", adminUsersHandler.CreateOrgAccount)
 		adminUsersGroup.GET("/department-options", adminUsersHandler.ListDepartmentOptions)
 		adminUsersGroup.GET("/department-children", adminUsersHandler.ListDepartmentChildren)
 		adminUsersGroup.GET("/departments", adminUsersHandler.ListDepartments)
