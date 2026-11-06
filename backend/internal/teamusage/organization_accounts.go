@@ -27,7 +27,12 @@ func (s *Service) appendOrganizationAccountSubjects(ctx context.Context, scope *
 		return scope, nil
 	}
 	accounts, err := s.client.TeamAccount.Query().
-		Where(teamaccount.DepartmentExternalIDIn(departments...)).
+		Where(
+			teamaccount.DepartmentExternalIDIn(departments...),
+			// Suspended and orphaned accounts are not active members; only active
+			// accounts belong in member details and usage trends.
+			teamaccount.StatusEQ(teamaccount.StatusActive),
+		).
 		Order(ent.Asc(teamaccount.FieldID)).
 		All(ctx)
 	if err != nil {

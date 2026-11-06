@@ -70,6 +70,18 @@ func TestAppendOrganizationAccountSubjects(t *testing.T) {
 		t.Fatalf("department path = %q", account.DepartmentDisplayPath)
 	}
 
+	// A suspended account is not a member.
+	if _, err := client.TeamAccount.UpdateOneID(1).SetStatus("suspended").Save(ctx); err != nil {
+		t.Fatalf("suspend account: %v", err)
+	}
+	enriched, err = service.appendOrganizationAccountSubjects(ctx, scope)
+	if err != nil {
+		t.Fatalf("appendOrganizationAccountSubjects() after suspend error = %v", err)
+	}
+	if len(enriched.Subjects) != 1 {
+		t.Fatalf("suspended account leaked into members: %+v", enriched.Subjects)
+	}
+
 	// A non-representative scope is never enriched.
 	plain := &representativescope.Scope{IsRepresentative: false}
 	unchanged, err := service.appendOrganizationAccountSubjects(ctx, plain)
