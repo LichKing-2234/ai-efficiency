@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+// These helpers are imported as JS, not resolved from templates, so their
+// Element Plus styles are not pulled in automatically.
+import 'element-plus/es/components/message/style/css'
+import 'element-plus/es/components/message-box/style/css'
 import {
   addAdminTeamAccountManager,
   addTeamAccountManager,
