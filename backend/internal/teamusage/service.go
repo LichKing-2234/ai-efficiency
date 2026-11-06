@@ -193,12 +193,19 @@ func (s *Service) SubjectDashboard(ctx context.Context, actorUserID, targetUserI
 	if err != nil {
 		return nil, fmt.Errorf("resolve primary relay provider: %w", err)
 	}
-	relayUserID, resolvedSubject, err := s.resolveSubjectRelayUserID(ctx, provider, *subject)
-	if err != nil {
-		if errors.Is(err, ErrNoRelayMapping) {
-			return nil, &ForbiddenError{Reason: ErrNoRelayMapping.Error()}
+	var relayUserID int64
+	var resolvedSubject representativescope.Subject
+	if subject.SubjectType == teamAccountSubjectType && subject.RelayUserID != nil && *subject.RelayUserID > 0 {
+		relayUserID = int64(*subject.RelayUserID)
+		resolvedSubject = *subject
+	} else {
+		relayUserID, resolvedSubject, err = s.resolveSubjectRelayUserID(ctx, provider, *subject)
+		if err != nil {
+			if errors.Is(err, ErrNoRelayMapping) {
+				return nil, &ForbiddenError{Reason: ErrNoRelayMapping.Error()}
+			}
+			return nil, err
 		}
-		return nil, err
 	}
 	dashboardProvider, ok := provider.(relay.SubjectUsageDashboardProvider)
 	if !ok {
@@ -1824,7 +1831,7 @@ func filterSubjects(subjects []representativescope.Subject, q string) []represen
 
 func findScopedSubject(subjects []representativescope.Subject, targetUserID int) (*representativescope.Subject, bool) {
 	for i := range subjects {
-		if subjects[i].SubjectType == "member" && subjects[i].UserID == targetUserID {
+		if (subjects[i].SubjectType == "member" || subjects[i].SubjectType == teamAccountSubjectType) && subjects[i].UserID == targetUserID {
 			return &subjects[i], true
 		}
 	}
