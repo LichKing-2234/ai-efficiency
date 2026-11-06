@@ -26,6 +26,12 @@ department id. People never own the account: they are recorded in
   who left without transferring leaves the account usable and claimable by an
   administrator.
 
+Organization accounts are stored in `team_accounts` as the canonical record. An
+SSO sign-in as the account creates a hidden local user (`auth_source=relay_sso`)
+that only binds browser sessions; it is excluded from the administrator user
+list, people pickers, and directory offboarding candidates, so it is never
+treated as a person or a leaver.
+
 `Transfer` replaces the owner atomically and removes the previous owner's
 manager row in the same transaction, so a completed handover immediately
 revokes the old owner's access.
@@ -52,8 +58,11 @@ Creating an account for a department:
    local transaction. If any step fails, the Relay user is disabled so no orphan
    identity can authenticate.
 
-Creating a second account for the same department is rejected. A username or
-mailbox collision fails the create; an existing identity is never adopted.
+Creating a second account for the same department is rejected regardless of the
+existing account's status. A username or mailbox collision fails the create; an
+existing identity is never adopted. There is no delete operation: a suspended
+account keeps its department and Relay identity reserved until an administrator
+removes the data out of band.
 
 ## Keys
 
@@ -78,6 +87,12 @@ Usage is read from Relay and aggregated for the account itself, by day and by
 key. It is attributed to the team account's Relay user, so it never appears in
 any person's personal usage.
 
+Inside the AI usage center the organization account appears in the department
+member details as a `team_account` subject: it carries the account name, the
+department path, and the Relay usage, participates in the usage trend totals,
+and can be opened like a member dashboard. It is not a directory member and is
+never included in member counts of the directory itself.
+
 ## Audit
 
 `team_account_events` is append-only. Payloads never contain plaintext
@@ -87,7 +102,10 @@ accounts; administrators read every account.
 ## Administration
 
 `/api/v1/admin/team-accounts` exposes listing, creation, status changes, the
-credential and key operations, and transfer. The console page follows the
+credential and key operations, and transfer. The representative opens accounts inside the AI usage center (there is no
+separate organization-account navigation); the account card shows ownership,
+credentials, and managers only, while keys, access groups, usage, and the audit
+record stay in the administrator console. The admin console page follows the
 directory offboarding interaction: search, card list, typed confirmation for
 transfer and suspend, and an audit drawer.
 
