@@ -521,3 +521,38 @@ func TestReplacementAccountAfterSuspension(t *testing.T) {
 		t.Fatal("restoring the suspended account while another is active must fail")
 	}
 }
+
+func TestSuspendedAccountHiddenFromMembers(t *testing.T) {
+	client := testdb.Open(t)
+	ownerID, otherID := seedUsers(t, client)
+	provider := newFakeProvider()
+	seedProvider(t, client)
+	seedDepartmentMember(t, client, "department-alpha", "other@example.com")
+	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
+	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if _, err := service.AddManager(context.Background(), ownerID, false, account.ID, otherID); err != nil {
+		t.Fatalf("AddManager() error = %v", err)
+	}
+	if err := service.SetStatus(context.Background(), ownerID, account.ID, "suspended"); err != nil {
+		t.Fatalf("SetStatus() error = %v", err)
+	}
+
+	accounts, err := service.List(context.Background(), ownerID, false)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(accounts) != 0 {
+		t.Fatalf("suspended account leaked into member list: %+v", accounts)
+	}
+	_, err = service.Get(context.Background(), otherID, false, account.ID)
+	var missing *NotFoundError
+	if !errors.As(err, &missing) {
+		t.Fatalf("Get() error = %v, want NotFoundError", err)
+	}
+	if _, err := service.Get(context.Background(), ownerID, true, account.ID); err != nil {
+		t.Fatalf("admin Get() error = %v", err)
+	}
+}

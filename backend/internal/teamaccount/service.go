@@ -882,7 +882,10 @@ func (s *Service) List(ctx context.Context, actorUserID int, includeAll bool) ([
 		if len(ids) == 0 {
 			return []Account{}, nil
 		}
-		rows, err = s.client.TeamAccount.Query().Where(teamAccountIDIn(ids)).Order(ent.Asc("id")).All(ctx)
+		rows, err = s.client.TeamAccount.Query().
+			Where(teamAccountIDIn(ids), entteamaccount.StatusEQ(entteamaccount.StatusActive)).
+			Order(ent.Asc("id")).
+			All(ctx)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("list team accounts: %w", err)
@@ -1047,6 +1050,15 @@ func (s *Service) assertMember(ctx context.Context, actorUserID, accountID int) 
 	if !ok {
 		return &PermissionError{Message: "you do not manage this team account"}
 	}
+	// Suspended and orphaned accounts are administrator-only surfaces; members
+	// must not see them in the AI usage center.
+	row, err := s.client.TeamAccount.Get(ctx, accountID)
+	if err != nil {
+		return fmt.Errorf("load team account status: %w", err)
+	}
+	if row.Status != entteamaccount.StatusActive {
+		return &NotFoundError{Message: "team account not found"}
+	}
 	return nil
 }
 
@@ -1065,6 +1077,13 @@ func (s *Service) assertOwner(ctx context.Context, actorUserID int, includeAll b
 	}
 	if row.Role != "owner" {
 		return &PermissionError{Message: "only the account owner can do this"}
+	}
+	account, err := s.client.TeamAccount.Get(ctx, accountID)
+	if err != nil {
+		return fmt.Errorf("load team account status: %w", err)
+	}
+	if account.Status != entteamaccount.StatusActive {
+		return &NotFoundError{Message: "team account not found"}
 	}
 	return nil
 }
