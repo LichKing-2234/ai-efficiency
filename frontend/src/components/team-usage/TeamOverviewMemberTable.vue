@@ -290,8 +290,11 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
       >
         <ElTableColumn :label="t('teamUsage.memberName')" min-width="140">
           <template #default="{ row: member }">
-            <span v-member-test-id="memberTestID(tableMember(member))" class="font-medium text-slate-900">
+            <span v-member-test-id="memberTestID(tableMember(member))" class="inline-flex items-center gap-2 font-medium text-slate-900">
               {{ member.display_name }}
+              <ElTag v-if="member.subject_type === 'team_account'" size="small" type="info" effect="plain">
+                {{ t('teamUsage.organizationAccount') }}
+              </ElTag>
             </span>
           </template>
         </ElTableColumn>
@@ -333,7 +336,12 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
         >
           <div class="flex min-w-0 items-start justify-between gap-3">
             <div class="min-w-0">
-              <div class="break-words font-medium text-slate-900">{{ member.display_name }}</div>
+              <div class="break-words font-medium text-slate-900">
+                {{ member.display_name }}
+                <ElTag v-if="member.subject_type === 'team_account'" size="small" type="info" effect="plain">
+                  {{ t('teamUsage.organizationAccount') }}
+                </ElTag>
+              </div>
               <div class="mt-1 break-all text-sm text-slate-600">{{ member.email }}</div>
             </div>
             <ElTag v-if="!isConnected(member)" type="danger" effect="light" class="shrink-0">

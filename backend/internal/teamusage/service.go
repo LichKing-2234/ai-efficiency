@@ -765,6 +765,11 @@ func (s *Service) resolveSubjectsWithResolver(ctx context.Context, source []repr
 	subjects := make([]representativescope.Subject, 0, len(source))
 	relayUserIDs := make([]int64, 0, len(source))
 	for _, subject := range source {
+		if subject.SubjectType == teamAccountSubjectType && subject.RelayUserID != nil && *subject.RelayUserID > 0 {
+			subjects = append(subjects, subject)
+			relayUserIDs = append(relayUserIDs, int64(*subject.RelayUserID))
+			continue
+		}
 		relayUserID, resolvedSubject, err := resolver.Resolve(ctx, subject)
 		if err != nil {
 			if errors.Is(err, ErrNoRelayMapping) {
@@ -1298,7 +1303,11 @@ func (s *Service) requireRepresentativeScope(ctx context.Context, actorUserID in
 	if !scope.IsRepresentative {
 		return nil, &ForbiddenError{Reason: ErrNotRepresentative.Error()}
 	}
-	return scope, nil
+	enriched, err := s.appendOrganizationAccountSubjects(ctx, scope)
+	if err != nil {
+		return nil, err
+	}
+	return enriched, nil
 }
 
 func (s *Service) resolvePrimaryProvider(ctx context.Context) (int, relay.Provider, error) {

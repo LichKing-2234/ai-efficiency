@@ -38,7 +38,7 @@ func RankTopMembers(subjects []representativescope.Subject, stats map[int64]rela
 func BuildOverviewMemberDetails(subjects []representativescope.Subject, stats map[int64]relay.TeamUserUsageStats, totals map[int64]overviewWindowTotal) []OverviewMember {
 	members := make([]OverviewMember, 0, len(subjects))
 	for _, subject := range subjects {
-		if subject.SubjectType != "member" {
+		if subject.SubjectType != "member" && subject.SubjectType != teamAccountSubjectType {
 			continue
 		}
 		members = append(members, overviewMemberFromSubject(subject, stats, totals))
@@ -71,6 +71,7 @@ func MergeResolvedOverviewSubjects(subjects []representativescope.Subject, resol
 
 func overviewMemberFromSubject(subject representativescope.Subject, stats map[int64]relay.TeamUserUsageStats, totals map[int64]overviewWindowTotal) OverviewMember {
 	member := OverviewMember{
+		SubjectType:               subject.SubjectType,
 		UserID:                    subject.UserID,
 		DirectoryMemberExternalID: subject.DirectoryMemberExternalID,
 		DisplayName:               subject.DisplayName,

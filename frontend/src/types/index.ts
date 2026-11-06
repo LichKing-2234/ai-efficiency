@@ -992,6 +992,7 @@ export interface TeamUsageSummaryResponse extends TeamUsageSnapshotFreshness {
 
 export interface TeamOverviewMember {
   rank?: number
+  subject_type?: string
   user_id: number
   directory_member_external_id?: string
   display_name: string

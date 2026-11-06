@@ -46,7 +46,7 @@ const detail = {
   available_groups: [{ id: 10, name: 'China', platform: 'composite' }],
 }
 
-async function mountAs(userID: number) {
+async function mountAs(userID: number, mode: 'user' | 'admin' = 'user') {
   // Teleported dialogs from earlier tests would otherwise answer the body queries.
   document.body.innerHTML = ''
   const pinia = createPinia()
@@ -55,10 +55,13 @@ async function mountAs(userID: number) {
   auth.user = { id: userID, username: 'u', email: 'u@example.com', role: 'user' } as any
   const api = await import('@/api/teamAccounts')
   vi.mocked(api.getTeamAccount).mockResolvedValue({ data: { code: 0, data: detail } } as any)
+  vi.mocked(api.getAdminTeamAccount).mockResolvedValue({ data: { code: 0, data: detail } } as any)
   vi.mocked(api.getTeamAccountUsage).mockResolvedValue({ data: { code: 0, data: { total_tokens: 0, total_cost: 0, days: [], keys: [] } } } as any)
+  vi.mocked(api.getAdminTeamAccountUsage).mockResolvedValue({ data: { code: 0, data: { total_tokens: 0, total_cost: 0, days: [], keys: [] } } } as any)
   vi.mocked(api.listTeamAccountEvents).mockResolvedValue({ data: { code: 0, data: { items: [] } } } as any)
+  vi.mocked(api.listAdminTeamAccountEvents).mockResolvedValue({ data: { code: 0, data: { items: [] } } } as any)
   const wrapper = mount(TeamAccountDetailDialog, {
-    props: { modelValue: true, accountId: 6, mode: 'user' },
+    props: { modelValue: true, accountId: 6, mode },
     global: {
       plugins: [pinia],
       config: { errorHandler: (error: unknown) => { console.error('RENDER ERROR', error) } },
@@ -76,9 +79,12 @@ describe('TeamAccountDetailDialog permissions', () => {
     void setLocale('zh-CN')
   })
 
-  it('lets a manager create keys but hides owner-only controls', async () => {
+  it('shows managers the account without keys, usage or audit in user mode', async () => {
     const { body } = await mountAs(448)
-    expect(body.find('[data-testid="team-account-key-group"]').exists()).toBe(true)
+    expect(body.find('[data-testid="team-account-keys"]').exists()).toBe(false)
+    expect(body.find('[data-testid="team-account-usage"]').exists()).toBe(false)
+    expect(body.find('[data-testid="team-account-events"]').exists()).toBe(false)
+    expect(body.find('[data-testid="team-account-managers"]').exists()).toBe(true)
     expect(body.find('[data-testid="team-account-transfer"]').exists()).toBe(false)
     expect(body.find('[data-testid="team-account-add-manager"]').exists()).toBe(false)
     expect(body.find('[data-testid="team-account-remove-manager-448"]').exists()).toBe(false)
@@ -106,8 +112,11 @@ describe('TeamAccountDetailDialog permissions', () => {
   })
 
   it('keeps the one-time key secret when a refresh fails', async () => {
-    const { body, api } = await mountAs(447)
+    const { body, api } = await mountAs(447, 'admin')
     vi.mocked(api.createTeamAccountKey).mockResolvedValue({
+      data: { code: 0, data: { key: { id: 1, name: 'ci', group_id: 10 }, secret: 'sk-secret' } },
+    } as any)
+    vi.mocked(api.createAdminTeamAccountKey).mockResolvedValue({
       data: { code: 0, data: { key: { id: 1, name: 'ci', group_id: 10 }, secret: 'sk-secret' } },
     } as any)
     vi.mocked(api.getTeamAccount).mockRejectedValueOnce(new Error('boom'))

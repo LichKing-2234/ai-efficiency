@@ -1304,6 +1304,60 @@ func TestServiceListOffboardingCandidatesUsesCurrentSourceWhenSourceIDMissing(t 
 	}
 }
 
+func TestServiceOffboardingCandidatesIgnoreOrganizationAccountIdentities(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	createDirectorySnapshot(t, ctx, client, "Current Directory", "dept-current", "present@example.com", time.Date(2026, 7, 14, 9, 0, 0, 0, time.UTC))
+
+	owner := client.User.Create().
+		SetUsername("present").
+		SetEmail("present@example.com").
+		SetAuthSource(entuser.AuthSourceLdap).
+		SetRole(entuser.RoleUser).
+		SetRelayUserID(41).
+		SaveX(ctx)
+	client.User.Create().
+		SetUsername("leaver").
+		SetEmail("leaver@example.com").
+		SetAuthSource(entuser.AuthSourceLdap).
+		SetRole(entuser.RoleUser).
+		SetRelayUserID(42).
+		SaveX(ctx)
+	shadow := client.User.Create().
+		SetUsername("team-dept-a").
+		SetEmail("team-dept-a@invalid.account").
+		SetAuthSource(entuser.AuthSourceRelaySSO).
+		SetRole(entuser.RoleUser).
+		SetRelayUserID(43).
+		SaveX(ctx)
+	client.TeamAccount.Create().
+		SetDepartmentExternalID("dept-a").
+		SetDepartmentDisplayPath("Org / Dept A").
+		SetName("Dept A AI").
+		SetRelayProviderID(1).
+		SetRelayUserID(43).
+		SetRelayUsername("team-dept-a").
+		SetRelayEmail("team-dept-a@invalid.account").
+		SetRelayAuthPassword("ciphertext").
+		SetOwnerUserID(owner.ID).
+		SetStatus("active").
+		SaveX(ctx)
+
+	svc := NewService(client, ServiceOptions{})
+	page, err := svc.ListOffboardingCandidates(ctx, OffboardingCandidateListParams{})
+	if err != nil {
+		t.Fatalf("ListOffboardingCandidates: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Username != "leaver" {
+		t.Fatalf("candidates = %+v, want only the real leaver", page.Items)
+	}
+	for _, item := range page.Items {
+		if item.UserID == shadow.ID {
+			t.Fatalf("organization account shadow user must never be a candidate")
+		}
+	}
+}
+
 func TestServiceListOffboardingCandidatesExtremePageReturnsEmpty(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()

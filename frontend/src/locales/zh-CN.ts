@@ -389,6 +389,7 @@ const zhCN = {
   'teamUsage.connectedCountSingular': '{count} 个已接入',
   'teamUsage.connectedCountPlural': '{count} 个已接入',
   'teamUsage.notConnected': '未接入',
+  'teamUsage.organizationAccount': '组织账号',
   'teamUsage.memberName': '姓名',
   'teamUsage.memberEmail': '邮箱',
   'teamUsage.memberDepartment': '部门',

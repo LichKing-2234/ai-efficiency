@@ -247,16 +247,4 @@ describe('TeamAccountSection', () => {
     const button = wrapper.get('[data-testid="team-account-login-as-7"]')
     expect(button.text()).toContain('Sign in as this account')
   })
-
-  it('revokes a key through the API after confirmation', async () => {
-    const { wrapper, api } = await mountSection()
-
-    await openFirstCard(wrapper)
-    await wrapper.get('[data-testid="team-account-revoke-key-11"]').trigger('click')
-    await flushPromises()
-
-    expect(messageBoxConfirm).toHaveBeenCalledTimes(1)
-    expect(api.revokeTeamAccountKey).toHaveBeenCalledWith(7, 11)
-    expect(messageSuccess).toHaveBeenCalled()
-  })
 })

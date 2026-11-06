@@ -55,7 +55,7 @@ func (s Scope) AllowedUserIDs() []int {
 	seen := make(map[int]struct{}, len(s.Subjects))
 	ids := make([]int, 0, len(s.Subjects))
 	for _, subject := range s.Subjects {
-		if subject.SubjectType != "member" || !subject.Selectable || subject.UserID <= 0 {
+		if !subject.Selectable || subject.UserID <= 0 {
 			continue
 		}
 		if _, ok := seen[subject.UserID]; ok {

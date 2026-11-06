@@ -594,7 +594,7 @@ function requestStatusChange() {
           </div>
         </section>
 
-        <section data-testid="team-account-keys" class="space-y-3">
+        <section v-if="mode === 'admin'" data-testid="team-account-keys" class="space-y-3">
           <div>
             <h3 class="text-sm font-semibold text-gray-900">{{ t('teamAccounts.keys.title') }}</h3>
             <p class="text-xs text-gray-500">{{ t('teamAccounts.keys.help') }}</p>
@@ -765,7 +765,7 @@ function requestStatusChange() {
           <ElEmpty v-else :description="t('teamAccounts.managers.empty')" :image-size="48" />
         </section>
 
-        <section data-testid="team-account-usage" class="space-y-3">
+        <section v-if="mode === 'admin'" data-testid="team-account-usage" class="space-y-3">
           <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <h3 class="text-sm font-semibold text-gray-900">{{ t('teamAccounts.usage.title') }}</h3>
             <ElRadioGroup
@@ -859,7 +859,7 @@ function requestStatusChange() {
           </template>
         </section>
 
-        <section data-testid="team-account-events" class="space-y-3">
+        <section v-if="mode === 'admin'" data-testid="team-account-events" class="space-y-3">
           <h3 class="text-sm font-semibold text-gray-900">{{ t('teamAccounts.events.title') }}</h3>
 
           <ElAlert

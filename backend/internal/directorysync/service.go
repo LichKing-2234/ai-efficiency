@@ -20,6 +20,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/directorysyncrun"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
+	entteamaccount "github.com/ai-efficiency/backend/ent/teamaccount"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/directoryfacts"
 	"github.com/ai-efficiency/backend/internal/relay"
@@ -1030,6 +1031,7 @@ func (s *Service) offboardingCandidateUsers(sourceID int, q string) *ent.UserQue
 		// they must never be treated as missing-from-directory candidates.
 		entuser.LoginPolicyNEQ(entuser.LoginPolicySSOOnly),
 		offboardingCandidateAntiJoin(sourceID),
+		notOrganizationAccountIdentityForUsers(),
 	)
 	if q != "" {
 		query = query.Where(userSearchPredicate(q))
@@ -1368,4 +1370,27 @@ func (s *Service) unmarkSourceRunning(sourceID int) {
 	s.runningMu.Lock()
 	defer s.runningMu.Unlock()
 	delete(s.runningSources, sourceID)
+}
+
+// notOrganizationAccountIdentityForUsers hides organization-account shadow users
+// from the offboarding candidate list.
+func notOrganizationAccountIdentityForUsers() predicate.User {
+	return func(users *entsql.Selector) {
+		accounts := entsql.Table(entteamaccount.Table)
+		usernameMatches := entsql.ColumnsEQ(
+			accounts.C(entteamaccount.FieldRelayUsername),
+			users.C(entuser.FieldUsername),
+		)
+		emailMatches := entsql.P(func(builder *entsql.Builder) {
+			builder.Ident(accounts.C(entteamaccount.FieldRelayEmail)).
+				WriteOp(entsql.OpEQ).
+				WriteString("LOWER(BTRIM(").
+				Ident(users.C(entuser.FieldEmail)).
+				WriteString("))")
+		})
+		exists := entsql.SelectExpr(entsql.Expr("1")).
+			From(accounts).
+			Where(entsql.Or(usernameMatches, emailMatches))
+		users.Where(entsql.NotExists(exists))
+	}
 }

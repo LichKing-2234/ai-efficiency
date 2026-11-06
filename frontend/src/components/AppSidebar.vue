@@ -2,7 +2,6 @@
 import { computed, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useWorkItemsStore } from '@/stores/workItems'
-import { useTeamAccountsAccessStore } from '@/stores/teamAccountsAccess'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/i18n'
 import {
@@ -30,7 +29,6 @@ const emit = defineEmits<{
 
 const auth = useAuthStore()
 const workItems = useWorkItemsStore()
-const teamAccountsAccess = useTeamAccountsAccessStore()
 const router = useRouter()
 const { languageToggleLabel, t, toggleLocale } = useI18n()
 const displayUsername = computed(() => auth.user?.username ?? 'User')
@@ -52,7 +50,6 @@ const activityLinkClass = computed(() => [
 
 onMounted(() => {
   void workItems.loadCounts()
-  if (!auth.isAdmin) void teamAccountsAccess.ensureLoaded()
 })
 
 function handleLogout() {
@@ -135,25 +132,6 @@ function handleNavigate() {
         <el-icon class="mr-3"><DataLine /></el-icon>
         {{ t('nav.activity') }}
       </RouterLink>
-
-      <div
-        v-if="!auth.isAdmin && teamAccountsAccess.canOpen"
-        class="mt-3 border-t pt-3"
-        :class="mobile ? 'border-slate-200' : 'border-gray-800 md:mt-5 md:pt-4'"
-      >
-        <div class="px-3 pb-2 text-[11px] font-semibold uppercase text-gray-500">
-          {{ t('nav.adminSection') }}
-        </div>
-        <RouterLink
-          to="/organization-accounts"
-          class="flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
-          :active-class="activeNavigationClass"
-          @click="handleNavigate"
-        >
-          <el-icon class="mr-3"><OfficeBuilding /></el-icon>
-          {{ t('nav.teamAccounts') }}
-        </RouterLink>
-      </div>
 
       <div
         v-if="auth.isAdmin"

@@ -235,8 +235,8 @@ describe('i18n locale loading', () => {
       ...Object.keys(teamAccountsMessages['zh-CN']),
     ].sort()
 
-    expect(englishKeys).toHaveLength(1779)
-    expect(chineseKeys).toHaveLength(1779)
+    expect(englishKeys).toHaveLength(1780)
+    expect(chineseKeys).toHaveLength(1780)
     expect(englishKeys).toContain('user.ccSwitchStep2')
     expect(englishKeys).toContain('user.manualConfigRestartHint')
     expect(englishKeys).toContain('user.ccSwitchSecretHint')

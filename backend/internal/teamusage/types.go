@@ -320,6 +320,7 @@ type SummaryAggregate struct {
 
 type OverviewMember struct {
 	Rank                      int      `json:"rank,omitempty"`
+	SubjectType               string   `json:"subject_type,omitempty"`
 	UserID                    int      `json:"user_id"`
 	DirectoryMemberExternalID string   `json:"directory_member_external_id,omitempty"`
 	DisplayName               string   `json:"display_name"`

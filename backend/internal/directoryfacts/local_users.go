@@ -10,6 +10,7 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/predicate"
+	entteamaccount "github.com/ai-efficiency/backend/ent/teamaccount"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/adminuseraccess"
 )
@@ -20,7 +21,7 @@ func (s *Store) LocalUsers(ctx context.Context, snapshot *Snapshot, request Loca
 	if s == nil || s.client == nil {
 		return LocalUserPage{}, fmt.Errorf("directory facts reader is not configured")
 	}
-	query := s.client.User.Query()
+	query := s.client.User.Query().Where(notOrganizationAccountIdentity())
 	if userIDs := positiveInts(request.UserIDs); len(userIDs) > 0 {
 		query = query.Where(entuser.IDIn(userIDs...))
 	}
@@ -166,4 +167,28 @@ eligible_user_ids(user_id) AS MATERIALIZED (
   JOIN eligible_members
     ON eligible_members.email_normalized = LOWER(BTRIM(candidate.email))
 )`)
+}
+
+// notOrganizationAccountIdentity excludes the local shadow users of organization
+// accounts: they are sign-in surfaces owned by team_accounts, not people, so
+// they must not appear in people lists or offboarding candidates.
+func notOrganizationAccountIdentity() predicate.User {
+	return func(users *entsql.Selector) {
+		accounts := entsql.Table(entteamaccount.Table)
+		usernameMatches := entsql.ColumnsEQ(
+			accounts.C(entteamaccount.FieldRelayUsername),
+			users.C(entuser.FieldUsername),
+		)
+		emailMatches := entsql.P(func(builder *entsql.Builder) {
+			builder.Ident(accounts.C(entteamaccount.FieldRelayEmail)).
+				WriteOp(entsql.OpEQ).
+				WriteString("LOWER(BTRIM(").
+				Ident(users.C(entuser.FieldEmail)).
+				WriteString("))")
+		})
+		exists := entsql.SelectExpr(entsql.Expr("1")).
+			From(accounts).
+			Where(entsql.Or(usernameMatches, emailMatches))
+		users.Where(entsql.NotExists(exists))
+	}
 }

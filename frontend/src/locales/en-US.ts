@@ -394,6 +394,7 @@ const enUS = {
   'teamUsage.connectedCountSingular': '{count} connected',
   'teamUsage.connectedCountPlural': '{count} connected',
   'teamUsage.notConnected': 'Not connected',
+  'teamUsage.organizationAccount': 'Organization account',
   'teamUsage.memberName': 'Name',
   'teamUsage.memberEmail': 'Email',
   'teamUsage.memberDepartment': 'Department',
