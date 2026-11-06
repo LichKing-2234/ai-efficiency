@@ -67,6 +67,10 @@ suspended account while a replacement is active is rejected with a conflict.
 There is no delete operation: suspended accounts still occupy their Relay
 identity and audit history.
 
+A suspended account is an administrator-only surface: representatives and
+managers no longer see it in account lists, member details, usage trends, or by
+id, while the administrator console can still inspect, transfer, and restore it.
+
 ## Keys
 
 Relay offers no administrator endpoint for minting another user's API key, so
@@ -93,7 +97,11 @@ any person's personal usage.
 Inside the AI usage center the organization account appears in the department
 member details as a `team_account` subject: it carries the account name, the
 department path, and the Relay usage, participates in the usage trend totals,
-and can be opened like a member dashboard. It is not a directory member and is
+and can be opened like a member dashboard. Each account gets a hidden local
+identity (`auth_source=relay_sso`) at creation so the dashboard has a stable
+user id; that identity is excluded from the administrator user list, people
+pickers, and offboarding candidates. A manager who is not a representative sees
+the team tab as soon as they manage at least one active account. It is not a directory member and is
 never included in member counts of the directory itself.
 
 ## Audit
