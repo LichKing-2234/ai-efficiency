@@ -33,6 +33,8 @@ const (
 	FieldLdapDn = "ldap_dn"
 	// FieldRole holds the string denoting the role field in the database.
 	FieldRole = "role"
+	// FieldLoginPolicy holds the string denoting the login_policy field in the database.
+	FieldLoginPolicy = "login_policy"
 	// FieldTokenValidAfter holds the string denoting the token_valid_after field in the database.
 	FieldTokenValidAfter = "token_valid_after"
 	// FieldRelayDisabledAt holds the string denoting the relay_disabled_at field in the database.
@@ -93,6 +95,7 @@ var Columns = []string{
 	FieldRelayAuthPassword,
 	FieldLdapDn,
 	FieldRole,
+	FieldLoginPolicy,
 	FieldTokenValidAfter,
 	FieldRelayDisabledAt,
 	FieldCreatedAt,
@@ -173,6 +176,32 @@ func RoleValidator(r Role) error {
 	}
 }
 
+// LoginPolicy defines the type for the "login_policy" enum field.
+type LoginPolicy string
+
+// LoginPolicyDefault is the default value of the LoginPolicy enum.
+const DefaultLoginPolicy = LoginPolicyDefault
+
+// LoginPolicy values.
+const (
+	LoginPolicyDefault LoginPolicy = "default"
+	LoginPolicySSOOnly LoginPolicy = "sso_only"
+)
+
+func (lp LoginPolicy) String() string {
+	return string(lp)
+}
+
+// LoginPolicyValidator is a validator for the "login_policy" field enum values. It is called by the builders before save.
+func LoginPolicyValidator(lp LoginPolicy) error {
+	switch lp {
+	case LoginPolicyDefault, LoginPolicySSOOnly:
+		return nil
+	default:
+		return fmt.Errorf("user: invalid enum value for login_policy field: %q", lp)
+	}
+}
+
 // OrderOption defines the ordering options for the User queries.
 type OrderOption func(*sql.Selector)
 
@@ -224,6 +253,11 @@ func ByLdapDn(opts ...sql.OrderTermOption) OrderOption {
 // ByRole orders the results by the role field.
 func ByRole(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRole, opts...).ToFunc()
+}
+
+// ByLoginPolicy orders the results by the login_policy field.
+func ByLoginPolicy(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLoginPolicy, opts...).ToFunc()
 }
 
 // ByTokenValidAfter orders the results by the token_valid_after field.

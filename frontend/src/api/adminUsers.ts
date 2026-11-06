@@ -2,6 +2,8 @@ import client from './client'
 import type {
   AdminAssignSubscriptionRequest,
   AdminAssignSubscriptionResponse,
+  AdminCreateOrgAccountRequest,
+  AdminCreateOrgAccountResponse,
   AdminDepartmentChildrenResponse,
   AdminDepartmentOptionsResponse,
   AdminDisableUserAccessRequest,
@@ -83,4 +85,8 @@ export function getLatestAdminUserSubscriptionJob() {
 
 export function revealAdminUserRelayPassword(id: number) {
   return client.post<ApiResponse<AdminRelayPasswordRevealResponse>>(`/admin/users/${id}/relay-password/reveal`)
+}
+
+export function createAdminOrgAccount(data: AdminCreateOrgAccountRequest) {
+  return client.post<ApiResponse<AdminCreateOrgAccountResponse>>('/admin/users/org-accounts', data)
 }

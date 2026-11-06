@@ -195,6 +195,20 @@ func (uu *UserUpdate) SetNillableRole(u *user.Role) *UserUpdate {
 	return uu
 }
 
+// SetLoginPolicy sets the "login_policy" field.
+func (uu *UserUpdate) SetLoginPolicy(up user.LoginPolicy) *UserUpdate {
+	uu.mutation.SetLoginPolicy(up)
+	return uu
+}
+
+// SetNillableLoginPolicy sets the "login_policy" field if the given value is not nil.
+func (uu *UserUpdate) SetNillableLoginPolicy(up *user.LoginPolicy) *UserUpdate {
+	if up != nil {
+		uu.SetLoginPolicy(*up)
+	}
+	return uu
+}
+
 // SetTokenValidAfter sets the "token_valid_after" field.
 func (uu *UserUpdate) SetTokenValidAfter(t time.Time) *UserUpdate {
 	uu.mutation.SetTokenValidAfter(t)
@@ -448,6 +462,11 @@ func (uu *UserUpdate) check() error {
 			return &ValidationError{Name: "role", err: fmt.Errorf(`ent: validator failed for field "User.role": %w`, err)}
 		}
 	}
+	if v, ok := uu.mutation.LoginPolicy(); ok {
+		if err := user.LoginPolicyValidator(v); err != nil {
+			return &ValidationError{Name: "login_policy", err: fmt.Errorf(`ent: validator failed for field "User.login_policy": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -507,6 +526,9 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if value, ok := uu.mutation.Role(); ok {
 		_spec.SetField(user.FieldRole, field.TypeEnum, value)
+	}
+	if value, ok := uu.mutation.LoginPolicy(); ok {
+		_spec.SetField(user.FieldLoginPolicy, field.TypeEnum, value)
 	}
 	if value, ok := uu.mutation.TokenValidAfter(); ok {
 		_spec.SetField(user.FieldTokenValidAfter, field.TypeTime, value)
@@ -886,6 +908,20 @@ func (uuo *UserUpdateOne) SetNillableRole(u *user.Role) *UserUpdateOne {
 	return uuo
 }
 
+// SetLoginPolicy sets the "login_policy" field.
+func (uuo *UserUpdateOne) SetLoginPolicy(up user.LoginPolicy) *UserUpdateOne {
+	uuo.mutation.SetLoginPolicy(up)
+	return uuo
+}
+
+// SetNillableLoginPolicy sets the "login_policy" field if the given value is not nil.
+func (uuo *UserUpdateOne) SetNillableLoginPolicy(up *user.LoginPolicy) *UserUpdateOne {
+	if up != nil {
+		uuo.SetLoginPolicy(*up)
+	}
+	return uuo
+}
+
 // SetTokenValidAfter sets the "token_valid_after" field.
 func (uuo *UserUpdateOne) SetTokenValidAfter(t time.Time) *UserUpdateOne {
 	uuo.mutation.SetTokenValidAfter(t)
@@ -1152,6 +1188,11 @@ func (uuo *UserUpdateOne) check() error {
 			return &ValidationError{Name: "role", err: fmt.Errorf(`ent: validator failed for field "User.role": %w`, err)}
 		}
 	}
+	if v, ok := uuo.mutation.LoginPolicy(); ok {
+		if err := user.LoginPolicyValidator(v); err != nil {
+			return &ValidationError{Name: "login_policy", err: fmt.Errorf(`ent: validator failed for field "User.login_policy": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -1228,6 +1269,9 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 	}
 	if value, ok := uuo.mutation.Role(); ok {
 		_spec.SetField(user.FieldRole, field.TypeEnum, value)
+	}
+	if value, ok := uuo.mutation.LoginPolicy(); ok {
+		_spec.SetField(user.FieldLoginPolicy, field.TypeEnum, value)
 	}
 	if value, ok := uuo.mutation.TokenValidAfter(); ok {
 		_spec.SetField(user.FieldTokenValidAfter, field.TypeTime, value)

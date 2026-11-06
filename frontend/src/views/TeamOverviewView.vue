@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+// Loaded on demand: the organization-account console is only relevant to
+// representatives and managers, and keeping it out of the route chunk protects
+// the usage bundle budget.
+const TeamAccountSection = defineAsyncComponent(() => import('@/components/team-accounts/TeamAccountSection.vue'))
 import TeamOverviewMemberTable from '@/components/team-usage/TeamOverviewMemberTable.vue'
 import { getTeamUsageMembers, getTeamUsageSummary, getTeamUsageTrend } from '@/api/teamUsage'
 import { useTeamUsageOrganization } from '@/composables/useTeamUsageOrganization'
@@ -225,6 +229,8 @@ onMounted(loadOverview)
 
 <template>
   <div class="space-y-4">
+      <TeamAccountSection />
+
       <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <ElRadioGroup
           :model-value="selectedRange"

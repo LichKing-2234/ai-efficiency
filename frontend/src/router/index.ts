@@ -128,6 +128,12 @@ const router = createRouter({
       meta: { requireAdmin: true },
     },
     {
+      path: '/admin/team-accounts',
+      name: 'TeamAccounts',
+      component: () => import('@/views/admin/TeamAccountsView.vue'),
+      meta: { requireAdmin: true },
+    },
+    {
       path: '/repos/:id',
       name: 'RepoDetail',
       component: () => import('@/views/repos/RepoDetailView.vue'),

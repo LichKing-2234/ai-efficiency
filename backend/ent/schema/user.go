@@ -42,6 +42,12 @@ func (User) Fields() []ent.Field {
 		field.Enum("role").
 			Values("admin", "user").
 			Default("user"),
+		// login_policy 约束账号可用的登录入口。
+		// default: 沿用既有行为（LDAP 优先，SSO 兜底）。
+		// sso_only: 只允许 Relay SSO 登录；LDAP 凭据在认证前即被拒绝。
+		field.Enum("login_policy").
+			Values("default", "sso_only").
+			Default("default"),
 		field.Time("token_valid_after").
 			Optional().
 			Nillable(),

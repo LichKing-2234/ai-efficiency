@@ -148,6 +148,15 @@ assert(chartRuntimeFiles.size > 0, 'at least one emitted Chart.js/vue-chartjs ru
 const indexHtml = await readEmittedFile('index.html')
 assert(!indexHtml.toString('utf8').includes('/vite.svg'), 'emitted index.html must not contain /vite.svg')
 
+// ElMessageBox/ElMessage are imported as JS helpers, so their Element Plus
+// styles are not pulled in by the template resolver. Guard the explicit import.
+const emittedCss = new Set(Object.values(manifest).flatMap((chunk) => chunk.css ?? []))
+const cssSources = await Promise.all([...emittedCss].map((file) => readEmittedFile(file)))
+assert(
+  cssSources.some((css) => css.toString('utf8').includes('.el-overlay-message-box')),
+  'message-box styles must be bundled for ElMessageBox confirms',
+)
+
 const initialShellRow = await measure('Initial shell', filesForClosure(entryClosure, true))
 const defaultUsageRow = await measure('Default English `/usage`', filesForClosure(usageClosure, true))
 const adminUsersRow = await measure('Default English `/admin/users`', filesForClosure(adminUsersClosure, true))
@@ -164,8 +173,12 @@ const rows = [
 
 for (const [row, maximum] of [
   [initialShellRow, 76_800],
-  [defaultUsageRow, 163_840],
-  [adminUsersRow, 262_144],
+  // Raised once for the organization-account console, which added UI to the
+  // usage route. Keep this budget tight; split the feature into an async chunk
+  // before asking for more room.
+  [defaultUsageRow, 166_400],
+  // Slightly raised for the organization-account admin console controls.
+  [adminUsersRow, 264_192],
 ]) {
   assert(row.gzip <= maximum, `${row.label} gzip ${row.gzip} exceeds budget ${maximum}`)
 }

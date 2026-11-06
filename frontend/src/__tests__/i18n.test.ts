@@ -5,6 +5,7 @@ import { relayPlanningMessages } from '@/locales/relayPlanning'
 import { directoryOffboardingMessages } from '@/locales/directoryOffboarding'
 import { opsMonitoringMessages } from '@/locales/opsMonitoring'
 import { ownerAccountsMessages } from '@/locales/ownerAccounts'
+import { teamAccountsMessages } from '@/locales/teamAccounts'
 import { createI18nControllerForTest, type Locale } from '@/i18n'
 import type { Messages } from '@/locales/en-US'
 
@@ -223,6 +224,7 @@ describe('i18n locale loading', () => {
       ...Object.keys(directoryOffboardingMessages['en-US']),
       ...Object.keys(opsMonitoringMessages['en-US']),
       ...Object.keys(ownerAccountsMessages['en-US']),
+      ...Object.keys(teamAccountsMessages['en-US']),
     ].sort()
     const chineseKeys = [
       ...Object.keys(zhCN),
@@ -230,10 +232,11 @@ describe('i18n locale loading', () => {
       ...Object.keys(directoryOffboardingMessages['zh-CN']),
       ...Object.keys(opsMonitoringMessages['zh-CN']),
       ...Object.keys(ownerAccountsMessages['zh-CN']),
+      ...Object.keys(teamAccountsMessages['zh-CN']),
     ].sort()
 
-    expect(englishKeys).toHaveLength(1582)
-    expect(chineseKeys).toHaveLength(1582)
+    expect(englishKeys).toHaveLength(1784)
+    expect(chineseKeys).toHaveLength(1784)
     expect(englishKeys).toContain('user.ccSwitchStep2')
     expect(englishKeys).toContain('user.manualConfigRestartHint')
     expect(englishKeys).toContain('user.ccSwitchSecretHint')

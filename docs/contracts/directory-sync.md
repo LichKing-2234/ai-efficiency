@@ -141,6 +141,11 @@ email is absent from the current successful full-company snapshot and who has
 no succeeded Directory offboarding action. Candidate count and page use the
 same database anti-join; failed, preview, or partial runs never create absence.
 
+Accounts with `login_policy=sso_only` (organization accounts) are excluded from
+candidate selection. They exist independently of any directory member by
+design, and their absence from the directory snapshot carries no offboarding
+meaning.
+
 Disabling requires administrator authentication, exact email confirmation, and
 the fixed missing-directory reason. Immediately before mutation, the service
 re-resolves the current source/run and confirms that the user is still absent

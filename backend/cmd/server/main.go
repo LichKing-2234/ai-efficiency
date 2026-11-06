@@ -45,6 +45,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/relayruntime"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/representativescope"
+	"github.com/ai-efficiency/backend/internal/teamaccount"
 	"github.com/ai-efficiency/backend/internal/teamusage"
 	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/ai-efficiency/backend/internal/versioncheck"
@@ -255,6 +256,12 @@ func main() {
 	}
 	if err := dropLegacyAttributionIdentityIndexes(context.Background(), db); err != nil {
 		logger.Fatal("drop legacy attribution identity indexes", zap.Error(err))
+	}
+	if err := dropLegacyTeamAccountDepartmentUnique(context.Background(), db); err != nil {
+		logger.Fatal("drop legacy team account department constraint", zap.Error(err))
+	}
+	if err := teamaccount.EnsureOrganizationShadowUsers(context.Background(), entClient); err != nil {
+		logger.Warn("backfill organization account identities", zap.Error(err))
 	}
 	logger.Info("database schema migrated")
 	settledOperations, err := relayplanning.SettleAbandonedOperations(
@@ -641,6 +648,7 @@ func main() {
 		checkpointHandler,
 		healthHandler,
 		handler.RouterOptions{
+			TeamAccounts:             teamaccount.New(entClient, providerHandler, representativescope.NewWithCache(entClient, representativeScopeCache), cfg.Encryption.Key, logger),
 			DirectoryService:         directoryService,
 			PersonalUsageCache:       personalUsageCache,
 			WorkItemsCache:           workItemsCache,

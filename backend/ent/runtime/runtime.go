@@ -41,6 +41,10 @@ import (
 	"github.com/ai-efficiency/backend/ent/schema"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/ent/systemsetting"
+	"github.com/ai-efficiency/backend/ent/teamaccount"
+	"github.com/ai-efficiency/backend/ent/teamaccountevent"
+	"github.com/ai-efficiency/backend/ent/teamaccountkey"
+	"github.com/ai-efficiency/backend/ent/teamaccountmanager"
 	"github.com/ai-efficiency/backend/ent/teamusageratemultiplieraudit"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
@@ -1169,6 +1173,68 @@ func init() {
 	systemsetting.DefaultUpdatedAt = systemsettingDescUpdatedAt.Default.(func() time.Time)
 	// systemsetting.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	systemsetting.UpdateDefaultUpdatedAt = systemsettingDescUpdatedAt.UpdateDefault.(func() time.Time)
+	teamaccountFields := schema.TeamAccount{}.Fields()
+	_ = teamaccountFields
+	// teamaccountDescDepartmentExternalID is the schema descriptor for department_external_id field.
+	teamaccountDescDepartmentExternalID := teamaccountFields[0].Descriptor()
+	// teamaccount.DepartmentExternalIDValidator is a validator for the "department_external_id" field. It is called by the builders before save.
+	teamaccount.DepartmentExternalIDValidator = teamaccountDescDepartmentExternalID.Validators[0].(func(string) error)
+	// teamaccountDescDepartmentDisplayPath is the schema descriptor for department_display_path field.
+	teamaccountDescDepartmentDisplayPath := teamaccountFields[1].Descriptor()
+	// teamaccount.DefaultDepartmentDisplayPath holds the default value on creation for the department_display_path field.
+	teamaccount.DefaultDepartmentDisplayPath = teamaccountDescDepartmentDisplayPath.Default.(string)
+	// teamaccountDescName is the schema descriptor for name field.
+	teamaccountDescName := teamaccountFields[2].Descriptor()
+	// teamaccount.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	teamaccount.NameValidator = teamaccountDescName.Validators[0].(func(string) error)
+	// teamaccountDescRelayUsername is the schema descriptor for relay_username field.
+	teamaccountDescRelayUsername := teamaccountFields[5].Descriptor()
+	// teamaccount.RelayUsernameValidator is a validator for the "relay_username" field. It is called by the builders before save.
+	teamaccount.RelayUsernameValidator = teamaccountDescRelayUsername.Validators[0].(func(string) error)
+	// teamaccountDescRelayEmail is the schema descriptor for relay_email field.
+	teamaccountDescRelayEmail := teamaccountFields[6].Descriptor()
+	// teamaccount.DefaultRelayEmail holds the default value on creation for the relay_email field.
+	teamaccount.DefaultRelayEmail = teamaccountDescRelayEmail.Default.(string)
+	// teamaccountDescCreatedAt is the schema descriptor for created_at field.
+	teamaccountDescCreatedAt := teamaccountFields[11].Descriptor()
+	// teamaccount.DefaultCreatedAt holds the default value on creation for the created_at field.
+	teamaccount.DefaultCreatedAt = teamaccountDescCreatedAt.Default.(func() time.Time)
+	// teamaccountDescUpdatedAt is the schema descriptor for updated_at field.
+	teamaccountDescUpdatedAt := teamaccountFields[12].Descriptor()
+	// teamaccount.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	teamaccount.DefaultUpdatedAt = teamaccountDescUpdatedAt.Default.(func() time.Time)
+	// teamaccount.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	teamaccount.UpdateDefaultUpdatedAt = teamaccountDescUpdatedAt.UpdateDefault.(func() time.Time)
+	teamaccounteventFields := schema.TeamAccountEvent{}.Fields()
+	_ = teamaccounteventFields
+	// teamaccounteventDescAction is the schema descriptor for action field.
+	teamaccounteventDescAction := teamaccounteventFields[2].Descriptor()
+	// teamaccountevent.ActionValidator is a validator for the "action" field. It is called by the builders before save.
+	teamaccountevent.ActionValidator = teamaccounteventDescAction.Validators[0].(func(string) error)
+	// teamaccounteventDescCreatedAt is the schema descriptor for created_at field.
+	teamaccounteventDescCreatedAt := teamaccounteventFields[4].Descriptor()
+	// teamaccountevent.DefaultCreatedAt holds the default value on creation for the created_at field.
+	teamaccountevent.DefaultCreatedAt = teamaccounteventDescCreatedAt.Default.(func() time.Time)
+	teamaccountkeyFields := schema.TeamAccountKey{}.Fields()
+	_ = teamaccountkeyFields
+	// teamaccountkeyDescName is the schema descriptor for name field.
+	teamaccountkeyDescName := teamaccountkeyFields[3].Descriptor()
+	// teamaccountkey.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	teamaccountkey.NameValidator = teamaccountkeyDescName.Validators[0].(func(string) error)
+	// teamaccountkeyDescSecretPreview is the schema descriptor for secret_preview field.
+	teamaccountkeyDescSecretPreview := teamaccountkeyFields[4].Descriptor()
+	// teamaccountkey.DefaultSecretPreview holds the default value on creation for the secret_preview field.
+	teamaccountkey.DefaultSecretPreview = teamaccountkeyDescSecretPreview.Default.(string)
+	// teamaccountkeyDescCreatedAt is the schema descriptor for created_at field.
+	teamaccountkeyDescCreatedAt := teamaccountkeyFields[7].Descriptor()
+	// teamaccountkey.DefaultCreatedAt holds the default value on creation for the created_at field.
+	teamaccountkey.DefaultCreatedAt = teamaccountkeyDescCreatedAt.Default.(func() time.Time)
+	teamaccountmanagerFields := schema.TeamAccountManager{}.Fields()
+	_ = teamaccountmanagerFields
+	// teamaccountmanagerDescCreatedAt is the schema descriptor for created_at field.
+	teamaccountmanagerDescCreatedAt := teamaccountmanagerFields[4].Descriptor()
+	// teamaccountmanager.DefaultCreatedAt holds the default value on creation for the created_at field.
+	teamaccountmanager.DefaultCreatedAt = teamaccountmanagerDescCreatedAt.Default.(func() time.Time)
 	teamusageratemultiplierauditFields := schema.TeamUsageRateMultiplierAudit{}.Fields()
 	_ = teamusageratemultiplierauditFields
 	// teamusageratemultiplierauditDescGroupID is the schema descriptor for group_id field.
@@ -1262,11 +1328,11 @@ func init() {
 	// user.EmailValidator is a validator for the "email" field. It is called by the builders before save.
 	user.EmailValidator = userDescEmail.Validators[0].(func(string) error)
 	// userDescCreatedAt is the schema descriptor for created_at field.
-	userDescCreatedAt := userFields[11].Descriptor()
+	userDescCreatedAt := userFields[12].Descriptor()
 	// user.DefaultCreatedAt holds the default value on creation for the created_at field.
 	user.DefaultCreatedAt = userDescCreatedAt.Default.(func() time.Time)
 	// userDescUpdatedAt is the schema descriptor for updated_at field.
-	userDescUpdatedAt := userFields[12].Descriptor()
+	userDescUpdatedAt := userFields[13].Descriptor()
 	// user.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	user.DefaultUpdatedAt = userDescUpdatedAt.Default.(func() time.Time)
 	// user.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

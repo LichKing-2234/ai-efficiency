@@ -1304,6 +1304,60 @@ func TestServiceListOffboardingCandidatesUsesCurrentSourceWhenSourceIDMissing(t 
 	}
 }
 
+func TestServiceOffboardingCandidatesIgnoreOrganizationAccountIdentities(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	createDirectorySnapshot(t, ctx, client, "Current Directory", "dept-current", "present@example.com", time.Date(2026, 7, 14, 9, 0, 0, 0, time.UTC))
+
+	owner := client.User.Create().
+		SetUsername("present").
+		SetEmail("present@example.com").
+		SetAuthSource(entuser.AuthSourceLdap).
+		SetRole(entuser.RoleUser).
+		SetRelayUserID(41).
+		SaveX(ctx)
+	client.User.Create().
+		SetUsername("leaver").
+		SetEmail("leaver@example.com").
+		SetAuthSource(entuser.AuthSourceLdap).
+		SetRole(entuser.RoleUser).
+		SetRelayUserID(42).
+		SaveX(ctx)
+	shadow := client.User.Create().
+		SetUsername("team-dept-a").
+		SetEmail("team-dept-a@invalid.account").
+		SetAuthSource(entuser.AuthSourceRelaySSO).
+		SetRole(entuser.RoleUser).
+		SetRelayUserID(43).
+		SaveX(ctx)
+	client.TeamAccount.Create().
+		SetDepartmentExternalID("dept-a").
+		SetDepartmentDisplayPath("Org / Dept A").
+		SetName("Dept A AI").
+		SetRelayProviderID(1).
+		SetRelayUserID(43).
+		SetRelayUsername("team-dept-a").
+		SetRelayEmail("team-dept-a@invalid.account").
+		SetRelayAuthPassword("ciphertext").
+		SetOwnerUserID(owner.ID).
+		SetStatus("active").
+		SaveX(ctx)
+
+	svc := NewService(client, ServiceOptions{})
+	page, err := svc.ListOffboardingCandidates(ctx, OffboardingCandidateListParams{})
+	if err != nil {
+		t.Fatalf("ListOffboardingCandidates: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Username != "leaver" {
+		t.Fatalf("candidates = %+v, want only the real leaver", page.Items)
+	}
+	for _, item := range page.Items {
+		if item.UserID == shadow.ID {
+			t.Fatalf("organization account shadow user must never be a candidate")
+		}
+	}
+}
+
 func TestServiceListOffboardingCandidatesExtremePageReturnsEmpty(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()
@@ -2249,4 +2303,42 @@ func stringsReplaceAll(input string, replacements map[string]string) string {
 		out = strings.ReplaceAll(out, old, replacement)
 	}
 	return out
+}
+
+// Organization accounts are not directory members by design; they must never be
+// reported as missing-from-directory offboarding candidates.
+func TestServiceListOffboardingCandidatesExcludesSSOOnlyAccounts(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	createDirectorySnapshot(t, ctx, client, "Current Directory", "dept-current", "present@example.com", time.Date(2026, 7, 14, 9, 0, 0, 0, time.UTC))
+
+	orgAccount := client.User.Create().
+		SetUsername("team-alpha").
+		SetEmail("team-alpha@example.com").
+		SetAuthSource(entuser.AuthSourceRelaySSO).
+		SetRole(entuser.RoleUser).
+		SetLoginPolicy(entuser.LoginPolicySSOOnly).
+		SetRelayUserID(501).
+		SaveX(ctx)
+	missing := client.User.Create().
+		SetUsername("bob").
+		SetEmail("bob@example.org").
+		SetAuthSource(entuser.AuthSourceLdap).
+		SetRole(entuser.RoleUser).
+		SetRelayUserID(99).
+		SaveX(ctx)
+
+	svc := NewService(client, ServiceOptions{})
+	page, err := svc.ListOffboardingCandidates(ctx, OffboardingCandidateListParams{})
+	if err != nil {
+		t.Fatalf("ListOffboardingCandidates: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].UserID != missing.ID {
+		t.Fatalf("candidates = %+v, want only the missing directory member", page.Items)
+	}
+	for _, item := range page.Items {
+		if item.UserID == orgAccount.ID {
+			t.Fatalf("organization account %d must not be an offboarding candidate", orgAccount.ID)
+		}
+	}
 }

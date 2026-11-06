@@ -35,6 +35,8 @@ type User struct {
 	LdapDn *string `json:"ldap_dn,omitempty"`
 	// Role holds the value of the "role" field.
 	Role user.Role `json:"role,omitempty"`
+	// LoginPolicy holds the value of the "login_policy" field.
+	LoginPolicy user.LoginPolicy `json:"login_policy,omitempty"`
 	// TokenValidAfter holds the value of the "token_valid_after" field.
 	TokenValidAfter *time.Time `json:"token_valid_after,omitempty"`
 	// RelayDisabledAt holds the value of the "relay_disabled_at" field.
@@ -107,7 +109,7 @@ func (*User) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case user.FieldID, user.FieldRelayUserID:
 			values[i] = new(sql.NullInt64)
-		case user.FieldUsername, user.FieldEmail, user.FieldAuthSource, user.FieldOidcIssuer, user.FieldOidcSubject, user.FieldRelayAuthPassword, user.FieldLdapDn, user.FieldRole:
+		case user.FieldUsername, user.FieldEmail, user.FieldAuthSource, user.FieldOidcIssuer, user.FieldOidcSubject, user.FieldRelayAuthPassword, user.FieldLdapDn, user.FieldRole, user.FieldLoginPolicy:
 			values[i] = new(sql.NullString)
 		case user.FieldTokenValidAfter, user.FieldRelayDisabledAt, user.FieldCreatedAt, user.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -190,6 +192,12 @@ func (u *User) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field role", values[i])
 			} else if value.Valid {
 				u.Role = user.Role(value.String)
+			}
+		case user.FieldLoginPolicy:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field login_policy", values[i])
+			} else if value.Valid {
+				u.LoginPolicy = user.LoginPolicy(value.String)
 			}
 		case user.FieldTokenValidAfter:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -306,6 +314,9 @@ func (u *User) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("role=")
 	builder.WriteString(fmt.Sprintf("%v", u.Role))
+	builder.WriteString(", ")
+	builder.WriteString("login_policy=")
+	builder.WriteString(fmt.Sprintf("%v", u.LoginPolicy))
 	builder.WriteString(", ")
 	if v := u.TokenValidAfter; v != nil {
 		builder.WriteString("token_valid_after=")

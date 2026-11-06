@@ -50,6 +50,10 @@ import (
 	"github.com/ai-efficiency/backend/ent/reportinginstallation"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/ent/systemsetting"
+	"github.com/ai-efficiency/backend/ent/teamaccount"
+	"github.com/ai-efficiency/backend/ent/teamaccountevent"
+	"github.com/ai-efficiency/backend/ent/teamaccountkey"
+	"github.com/ai-efficiency/backend/ent/teamaccountmanager"
 	"github.com/ai-efficiency/backend/ent/teamusageratemultiplieraudit"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
@@ -131,6 +135,14 @@ type Client struct {
 	ScmProvider *ScmProviderClient
 	// SystemSetting is the client for interacting with the SystemSetting builders.
 	SystemSetting *SystemSettingClient
+	// TeamAccount is the client for interacting with the TeamAccount builders.
+	TeamAccount *TeamAccountClient
+	// TeamAccountEvent is the client for interacting with the TeamAccountEvent builders.
+	TeamAccountEvent *TeamAccountEventClient
+	// TeamAccountKey is the client for interacting with the TeamAccountKey builders.
+	TeamAccountKey *TeamAccountKeyClient
+	// TeamAccountManager is the client for interacting with the TeamAccountManager builders.
+	TeamAccountManager *TeamAccountManagerClient
 	// TeamUsageRateMultiplierAudit is the client for interacting with the TeamUsageRateMultiplierAudit builders.
 	TeamUsageRateMultiplierAudit *TeamUsageRateMultiplierAuditClient
 	// ToolUsageEvent is the client for interacting with the ToolUsageEvent builders.
@@ -185,6 +197,10 @@ func (c *Client) init() {
 	c.ReportingInstallation = NewReportingInstallationClient(c.config)
 	c.ScmProvider = NewScmProviderClient(c.config)
 	c.SystemSetting = NewSystemSettingClient(c.config)
+	c.TeamAccount = NewTeamAccountClient(c.config)
+	c.TeamAccountEvent = NewTeamAccountEventClient(c.config)
+	c.TeamAccountKey = NewTeamAccountKeyClient(c.config)
+	c.TeamAccountManager = NewTeamAccountManagerClient(c.config)
 	c.TeamUsageRateMultiplierAudit = NewTeamUsageRateMultiplierAuditClient(c.config)
 	c.ToolUsageEvent = NewToolUsageEventClient(c.config)
 	c.User = NewUserClient(c.config)
@@ -316,6 +332,10 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ReportingInstallation:         NewReportingInstallationClient(cfg),
 		ScmProvider:                   NewScmProviderClient(cfg),
 		SystemSetting:                 NewSystemSettingClient(cfg),
+		TeamAccount:                   NewTeamAccountClient(cfg),
+		TeamAccountEvent:              NewTeamAccountEventClient(cfg),
+		TeamAccountKey:                NewTeamAccountKeyClient(cfg),
+		TeamAccountManager:            NewTeamAccountManagerClient(cfg),
 		TeamUsageRateMultiplierAudit:  NewTeamUsageRateMultiplierAuditClient(cfg),
 		ToolUsageEvent:                NewToolUsageEventClient(cfg),
 		User:                          NewUserClient(cfg),
@@ -374,6 +394,10 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ReportingInstallation:         NewReportingInstallationClient(cfg),
 		ScmProvider:                   NewScmProviderClient(cfg),
 		SystemSetting:                 NewSystemSettingClient(cfg),
+		TeamAccount:                   NewTeamAccountClient(cfg),
+		TeamAccountEvent:              NewTeamAccountEventClient(cfg),
+		TeamAccountKey:                NewTeamAccountKeyClient(cfg),
+		TeamAccountManager:            NewTeamAccountManagerClient(cfg),
 		TeamUsageRateMultiplierAudit:  NewTeamUsageRateMultiplierAuditClient(cfg),
 		ToolUsageEvent:                NewToolUsageEventClient(cfg),
 		User:                          NewUserClient(cfg),
@@ -418,7 +442,8 @@ func (c *Client) Use(hooks ...Hook) {
 		c.RelationshipOperation, c.RelationshipOperationAttempt,
 		c.RelationshipOperationMapping, c.RelationshipOperationStep,
 		c.RelayGroupMapping, c.RelayProvider, c.RepoConfig, c.ReportingInstallation,
-		c.ScmProvider, c.SystemSetting, c.TeamUsageRateMultiplierAudit,
+		c.ScmProvider, c.SystemSetting, c.TeamAccount, c.TeamAccountEvent,
+		c.TeamAccountKey, c.TeamAccountManager, c.TeamUsageRateMultiplierAudit,
 		c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Use(hooks...)
@@ -440,7 +465,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.RelationshipOperation, c.RelationshipOperationAttempt,
 		c.RelationshipOperationMapping, c.RelationshipOperationStep,
 		c.RelayGroupMapping, c.RelayProvider, c.RepoConfig, c.ReportingInstallation,
-		c.ScmProvider, c.SystemSetting, c.TeamUsageRateMultiplierAudit,
+		c.ScmProvider, c.SystemSetting, c.TeamAccount, c.TeamAccountEvent,
+		c.TeamAccountKey, c.TeamAccountManager, c.TeamUsageRateMultiplierAudit,
 		c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Intercept(interceptors...)
@@ -520,6 +546,14 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ScmProvider.mutate(ctx, m)
 	case *SystemSettingMutation:
 		return c.SystemSetting.mutate(ctx, m)
+	case *TeamAccountMutation:
+		return c.TeamAccount.mutate(ctx, m)
+	case *TeamAccountEventMutation:
+		return c.TeamAccountEvent.mutate(ctx, m)
+	case *TeamAccountKeyMutation:
+		return c.TeamAccountKey.mutate(ctx, m)
+	case *TeamAccountManagerMutation:
+		return c.TeamAccountManager.mutate(ctx, m)
 	case *TeamUsageRateMultiplierAuditMutation:
 		return c.TeamUsageRateMultiplierAudit.mutate(ctx, m)
 	case *ToolUsageEventMutation:
@@ -5751,6 +5785,538 @@ func (c *SystemSettingClient) mutate(ctx context.Context, m *SystemSettingMutati
 	}
 }
 
+// TeamAccountClient is a client for the TeamAccount schema.
+type TeamAccountClient struct {
+	config
+}
+
+// NewTeamAccountClient returns a client for the TeamAccount from the given config.
+func NewTeamAccountClient(c config) *TeamAccountClient {
+	return &TeamAccountClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `teamaccount.Hooks(f(g(h())))`.
+func (c *TeamAccountClient) Use(hooks ...Hook) {
+	c.hooks.TeamAccount = append(c.hooks.TeamAccount, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `teamaccount.Intercept(f(g(h())))`.
+func (c *TeamAccountClient) Intercept(interceptors ...Interceptor) {
+	c.inters.TeamAccount = append(c.inters.TeamAccount, interceptors...)
+}
+
+// Create returns a builder for creating a TeamAccount entity.
+func (c *TeamAccountClient) Create() *TeamAccountCreate {
+	mutation := newTeamAccountMutation(c.config, OpCreate)
+	return &TeamAccountCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of TeamAccount entities.
+func (c *TeamAccountClient) CreateBulk(builders ...*TeamAccountCreate) *TeamAccountCreateBulk {
+	return &TeamAccountCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TeamAccountClient) MapCreateBulk(slice any, setFunc func(*TeamAccountCreate, int)) *TeamAccountCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TeamAccountCreateBulk{err: fmt.Errorf("calling to TeamAccountClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TeamAccountCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TeamAccountCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for TeamAccount.
+func (c *TeamAccountClient) Update() *TeamAccountUpdate {
+	mutation := newTeamAccountMutation(c.config, OpUpdate)
+	return &TeamAccountUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TeamAccountClient) UpdateOne(ta *TeamAccount) *TeamAccountUpdateOne {
+	mutation := newTeamAccountMutation(c.config, OpUpdateOne, withTeamAccount(ta))
+	return &TeamAccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TeamAccountClient) UpdateOneID(id int) *TeamAccountUpdateOne {
+	mutation := newTeamAccountMutation(c.config, OpUpdateOne, withTeamAccountID(id))
+	return &TeamAccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for TeamAccount.
+func (c *TeamAccountClient) Delete() *TeamAccountDelete {
+	mutation := newTeamAccountMutation(c.config, OpDelete)
+	return &TeamAccountDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TeamAccountClient) DeleteOne(ta *TeamAccount) *TeamAccountDeleteOne {
+	return c.DeleteOneID(ta.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TeamAccountClient) DeleteOneID(id int) *TeamAccountDeleteOne {
+	builder := c.Delete().Where(teamaccount.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TeamAccountDeleteOne{builder}
+}
+
+// Query returns a query builder for TeamAccount.
+func (c *TeamAccountClient) Query() *TeamAccountQuery {
+	return &TeamAccountQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTeamAccount},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a TeamAccount entity by its id.
+func (c *TeamAccountClient) Get(ctx context.Context, id int) (*TeamAccount, error) {
+	return c.Query().Where(teamaccount.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TeamAccountClient) GetX(ctx context.Context, id int) *TeamAccount {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *TeamAccountClient) Hooks() []Hook {
+	return c.hooks.TeamAccount
+}
+
+// Interceptors returns the client interceptors.
+func (c *TeamAccountClient) Interceptors() []Interceptor {
+	return c.inters.TeamAccount
+}
+
+func (c *TeamAccountClient) mutate(ctx context.Context, m *TeamAccountMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TeamAccountCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TeamAccountUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TeamAccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TeamAccountDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown TeamAccount mutation op: %q", m.Op())
+	}
+}
+
+// TeamAccountEventClient is a client for the TeamAccountEvent schema.
+type TeamAccountEventClient struct {
+	config
+}
+
+// NewTeamAccountEventClient returns a client for the TeamAccountEvent from the given config.
+func NewTeamAccountEventClient(c config) *TeamAccountEventClient {
+	return &TeamAccountEventClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `teamaccountevent.Hooks(f(g(h())))`.
+func (c *TeamAccountEventClient) Use(hooks ...Hook) {
+	c.hooks.TeamAccountEvent = append(c.hooks.TeamAccountEvent, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `teamaccountevent.Intercept(f(g(h())))`.
+func (c *TeamAccountEventClient) Intercept(interceptors ...Interceptor) {
+	c.inters.TeamAccountEvent = append(c.inters.TeamAccountEvent, interceptors...)
+}
+
+// Create returns a builder for creating a TeamAccountEvent entity.
+func (c *TeamAccountEventClient) Create() *TeamAccountEventCreate {
+	mutation := newTeamAccountEventMutation(c.config, OpCreate)
+	return &TeamAccountEventCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of TeamAccountEvent entities.
+func (c *TeamAccountEventClient) CreateBulk(builders ...*TeamAccountEventCreate) *TeamAccountEventCreateBulk {
+	return &TeamAccountEventCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TeamAccountEventClient) MapCreateBulk(slice any, setFunc func(*TeamAccountEventCreate, int)) *TeamAccountEventCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TeamAccountEventCreateBulk{err: fmt.Errorf("calling to TeamAccountEventClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TeamAccountEventCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TeamAccountEventCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for TeamAccountEvent.
+func (c *TeamAccountEventClient) Update() *TeamAccountEventUpdate {
+	mutation := newTeamAccountEventMutation(c.config, OpUpdate)
+	return &TeamAccountEventUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TeamAccountEventClient) UpdateOne(tae *TeamAccountEvent) *TeamAccountEventUpdateOne {
+	mutation := newTeamAccountEventMutation(c.config, OpUpdateOne, withTeamAccountEvent(tae))
+	return &TeamAccountEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TeamAccountEventClient) UpdateOneID(id int) *TeamAccountEventUpdateOne {
+	mutation := newTeamAccountEventMutation(c.config, OpUpdateOne, withTeamAccountEventID(id))
+	return &TeamAccountEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for TeamAccountEvent.
+func (c *TeamAccountEventClient) Delete() *TeamAccountEventDelete {
+	mutation := newTeamAccountEventMutation(c.config, OpDelete)
+	return &TeamAccountEventDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TeamAccountEventClient) DeleteOne(tae *TeamAccountEvent) *TeamAccountEventDeleteOne {
+	return c.DeleteOneID(tae.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TeamAccountEventClient) DeleteOneID(id int) *TeamAccountEventDeleteOne {
+	builder := c.Delete().Where(teamaccountevent.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TeamAccountEventDeleteOne{builder}
+}
+
+// Query returns a query builder for TeamAccountEvent.
+func (c *TeamAccountEventClient) Query() *TeamAccountEventQuery {
+	return &TeamAccountEventQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTeamAccountEvent},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a TeamAccountEvent entity by its id.
+func (c *TeamAccountEventClient) Get(ctx context.Context, id int) (*TeamAccountEvent, error) {
+	return c.Query().Where(teamaccountevent.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TeamAccountEventClient) GetX(ctx context.Context, id int) *TeamAccountEvent {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *TeamAccountEventClient) Hooks() []Hook {
+	return c.hooks.TeamAccountEvent
+}
+
+// Interceptors returns the client interceptors.
+func (c *TeamAccountEventClient) Interceptors() []Interceptor {
+	return c.inters.TeamAccountEvent
+}
+
+func (c *TeamAccountEventClient) mutate(ctx context.Context, m *TeamAccountEventMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TeamAccountEventCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TeamAccountEventUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TeamAccountEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TeamAccountEventDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown TeamAccountEvent mutation op: %q", m.Op())
+	}
+}
+
+// TeamAccountKeyClient is a client for the TeamAccountKey schema.
+type TeamAccountKeyClient struct {
+	config
+}
+
+// NewTeamAccountKeyClient returns a client for the TeamAccountKey from the given config.
+func NewTeamAccountKeyClient(c config) *TeamAccountKeyClient {
+	return &TeamAccountKeyClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `teamaccountkey.Hooks(f(g(h())))`.
+func (c *TeamAccountKeyClient) Use(hooks ...Hook) {
+	c.hooks.TeamAccountKey = append(c.hooks.TeamAccountKey, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `teamaccountkey.Intercept(f(g(h())))`.
+func (c *TeamAccountKeyClient) Intercept(interceptors ...Interceptor) {
+	c.inters.TeamAccountKey = append(c.inters.TeamAccountKey, interceptors...)
+}
+
+// Create returns a builder for creating a TeamAccountKey entity.
+func (c *TeamAccountKeyClient) Create() *TeamAccountKeyCreate {
+	mutation := newTeamAccountKeyMutation(c.config, OpCreate)
+	return &TeamAccountKeyCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of TeamAccountKey entities.
+func (c *TeamAccountKeyClient) CreateBulk(builders ...*TeamAccountKeyCreate) *TeamAccountKeyCreateBulk {
+	return &TeamAccountKeyCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TeamAccountKeyClient) MapCreateBulk(slice any, setFunc func(*TeamAccountKeyCreate, int)) *TeamAccountKeyCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TeamAccountKeyCreateBulk{err: fmt.Errorf("calling to TeamAccountKeyClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TeamAccountKeyCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TeamAccountKeyCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for TeamAccountKey.
+func (c *TeamAccountKeyClient) Update() *TeamAccountKeyUpdate {
+	mutation := newTeamAccountKeyMutation(c.config, OpUpdate)
+	return &TeamAccountKeyUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TeamAccountKeyClient) UpdateOne(tak *TeamAccountKey) *TeamAccountKeyUpdateOne {
+	mutation := newTeamAccountKeyMutation(c.config, OpUpdateOne, withTeamAccountKey(tak))
+	return &TeamAccountKeyUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TeamAccountKeyClient) UpdateOneID(id int) *TeamAccountKeyUpdateOne {
+	mutation := newTeamAccountKeyMutation(c.config, OpUpdateOne, withTeamAccountKeyID(id))
+	return &TeamAccountKeyUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for TeamAccountKey.
+func (c *TeamAccountKeyClient) Delete() *TeamAccountKeyDelete {
+	mutation := newTeamAccountKeyMutation(c.config, OpDelete)
+	return &TeamAccountKeyDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TeamAccountKeyClient) DeleteOne(tak *TeamAccountKey) *TeamAccountKeyDeleteOne {
+	return c.DeleteOneID(tak.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TeamAccountKeyClient) DeleteOneID(id int) *TeamAccountKeyDeleteOne {
+	builder := c.Delete().Where(teamaccountkey.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TeamAccountKeyDeleteOne{builder}
+}
+
+// Query returns a query builder for TeamAccountKey.
+func (c *TeamAccountKeyClient) Query() *TeamAccountKeyQuery {
+	return &TeamAccountKeyQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTeamAccountKey},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a TeamAccountKey entity by its id.
+func (c *TeamAccountKeyClient) Get(ctx context.Context, id int) (*TeamAccountKey, error) {
+	return c.Query().Where(teamaccountkey.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TeamAccountKeyClient) GetX(ctx context.Context, id int) *TeamAccountKey {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *TeamAccountKeyClient) Hooks() []Hook {
+	return c.hooks.TeamAccountKey
+}
+
+// Interceptors returns the client interceptors.
+func (c *TeamAccountKeyClient) Interceptors() []Interceptor {
+	return c.inters.TeamAccountKey
+}
+
+func (c *TeamAccountKeyClient) mutate(ctx context.Context, m *TeamAccountKeyMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TeamAccountKeyCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TeamAccountKeyUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TeamAccountKeyUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TeamAccountKeyDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown TeamAccountKey mutation op: %q", m.Op())
+	}
+}
+
+// TeamAccountManagerClient is a client for the TeamAccountManager schema.
+type TeamAccountManagerClient struct {
+	config
+}
+
+// NewTeamAccountManagerClient returns a client for the TeamAccountManager from the given config.
+func NewTeamAccountManagerClient(c config) *TeamAccountManagerClient {
+	return &TeamAccountManagerClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `teamaccountmanager.Hooks(f(g(h())))`.
+func (c *TeamAccountManagerClient) Use(hooks ...Hook) {
+	c.hooks.TeamAccountManager = append(c.hooks.TeamAccountManager, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `teamaccountmanager.Intercept(f(g(h())))`.
+func (c *TeamAccountManagerClient) Intercept(interceptors ...Interceptor) {
+	c.inters.TeamAccountManager = append(c.inters.TeamAccountManager, interceptors...)
+}
+
+// Create returns a builder for creating a TeamAccountManager entity.
+func (c *TeamAccountManagerClient) Create() *TeamAccountManagerCreate {
+	mutation := newTeamAccountManagerMutation(c.config, OpCreate)
+	return &TeamAccountManagerCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of TeamAccountManager entities.
+func (c *TeamAccountManagerClient) CreateBulk(builders ...*TeamAccountManagerCreate) *TeamAccountManagerCreateBulk {
+	return &TeamAccountManagerCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TeamAccountManagerClient) MapCreateBulk(slice any, setFunc func(*TeamAccountManagerCreate, int)) *TeamAccountManagerCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TeamAccountManagerCreateBulk{err: fmt.Errorf("calling to TeamAccountManagerClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TeamAccountManagerCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TeamAccountManagerCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for TeamAccountManager.
+func (c *TeamAccountManagerClient) Update() *TeamAccountManagerUpdate {
+	mutation := newTeamAccountManagerMutation(c.config, OpUpdate)
+	return &TeamAccountManagerUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TeamAccountManagerClient) UpdateOne(tam *TeamAccountManager) *TeamAccountManagerUpdateOne {
+	mutation := newTeamAccountManagerMutation(c.config, OpUpdateOne, withTeamAccountManager(tam))
+	return &TeamAccountManagerUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TeamAccountManagerClient) UpdateOneID(id int) *TeamAccountManagerUpdateOne {
+	mutation := newTeamAccountManagerMutation(c.config, OpUpdateOne, withTeamAccountManagerID(id))
+	return &TeamAccountManagerUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for TeamAccountManager.
+func (c *TeamAccountManagerClient) Delete() *TeamAccountManagerDelete {
+	mutation := newTeamAccountManagerMutation(c.config, OpDelete)
+	return &TeamAccountManagerDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TeamAccountManagerClient) DeleteOne(tam *TeamAccountManager) *TeamAccountManagerDeleteOne {
+	return c.DeleteOneID(tam.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TeamAccountManagerClient) DeleteOneID(id int) *TeamAccountManagerDeleteOne {
+	builder := c.Delete().Where(teamaccountmanager.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TeamAccountManagerDeleteOne{builder}
+}
+
+// Query returns a query builder for TeamAccountManager.
+func (c *TeamAccountManagerClient) Query() *TeamAccountManagerQuery {
+	return &TeamAccountManagerQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTeamAccountManager},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a TeamAccountManager entity by its id.
+func (c *TeamAccountManagerClient) Get(ctx context.Context, id int) (*TeamAccountManager, error) {
+	return c.Query().Where(teamaccountmanager.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TeamAccountManagerClient) GetX(ctx context.Context, id int) *TeamAccountManager {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *TeamAccountManagerClient) Hooks() []Hook {
+	return c.hooks.TeamAccountManager
+}
+
+// Interceptors returns the client interceptors.
+func (c *TeamAccountManagerClient) Interceptors() []Interceptor {
+	return c.inters.TeamAccountManager
+}
+
+func (c *TeamAccountManagerClient) mutate(ctx context.Context, m *TeamAccountManagerMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TeamAccountManagerCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TeamAccountManagerUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TeamAccountManagerUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TeamAccountManagerDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown TeamAccountManager mutation op: %q", m.Op())
+	}
+}
+
 // TeamUsageRateMultiplierAuditClient is a client for the TeamUsageRateMultiplierAudit schema.
 type TeamUsageRateMultiplierAuditClient struct {
 	config
@@ -6424,7 +6990,8 @@ type (
 		QuotaResetRequest, QuotaResetRequestEvent, RelationshipOperation,
 		RelationshipOperationAttempt, RelationshipOperationMapping,
 		RelationshipOperationStep, RelayGroupMapping, RelayProvider, RepoConfig,
-		ReportingInstallation, ScmProvider, SystemSetting,
+		ReportingInstallation, ScmProvider, SystemSetting, TeamAccount,
+		TeamAccountEvent, TeamAccountKey, TeamAccountManager,
 		TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
 		WebhookDeadLetter []ent.Hook
 	}
@@ -6439,7 +7006,8 @@ type (
 		QuotaResetRequest, QuotaResetRequestEvent, RelationshipOperation,
 		RelationshipOperationAttempt, RelationshipOperationMapping,
 		RelationshipOperationStep, RelayGroupMapping, RelayProvider, RepoConfig,
-		ReportingInstallation, ScmProvider, SystemSetting,
+		ReportingInstallation, ScmProvider, SystemSetting, TeamAccount,
+		TeamAccountEvent, TeamAccountKey, TeamAccountManager,
 		TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
 		WebhookDeadLetter []ent.Interceptor
 	}

@@ -19,7 +19,7 @@ import (
 
 const (
 	systemDefaultMultiplier              = 1.0
-	defaultTeamOverviewTrendTimeout      = 20 * time.Second
+	defaultTeamOverviewTrendTimeout      = 40 * time.Second
 	multiplierMetadataUnavailableMessage = "Multiplier metadata is temporarily unavailable."
 )
 
@@ -193,12 +193,19 @@ func (s *Service) SubjectDashboard(ctx context.Context, actorUserID, targetUserI
 	if err != nil {
 		return nil, fmt.Errorf("resolve primary relay provider: %w", err)
 	}
-	relayUserID, resolvedSubject, err := s.resolveSubjectRelayUserID(ctx, provider, *subject)
-	if err != nil {
-		if errors.Is(err, ErrNoRelayMapping) {
-			return nil, &ForbiddenError{Reason: ErrNoRelayMapping.Error()}
+	var relayUserID int64
+	var resolvedSubject representativescope.Subject
+	if subject.SubjectType == teamAccountSubjectType && subject.RelayUserID != nil && *subject.RelayUserID > 0 {
+		relayUserID = int64(*subject.RelayUserID)
+		resolvedSubject = *subject
+	} else {
+		relayUserID, resolvedSubject, err = s.resolveSubjectRelayUserID(ctx, provider, *subject)
+		if err != nil {
+			if errors.Is(err, ErrNoRelayMapping) {
+				return nil, &ForbiddenError{Reason: ErrNoRelayMapping.Error()}
+			}
+			return nil, err
 		}
-		return nil, err
 	}
 	dashboardProvider, ok := provider.(relay.SubjectUsageDashboardProvider)
 	if !ok {
@@ -765,6 +772,11 @@ func (s *Service) resolveSubjectsWithResolver(ctx context.Context, source []repr
 	subjects := make([]representativescope.Subject, 0, len(source))
 	relayUserIDs := make([]int64, 0, len(source))
 	for _, subject := range source {
+		if subject.SubjectType == teamAccountSubjectType && subject.RelayUserID != nil && *subject.RelayUserID > 0 {
+			subjects = append(subjects, subject)
+			relayUserIDs = append(relayUserIDs, int64(*subject.RelayUserID))
+			continue
+		}
 		relayUserID, resolvedSubject, err := resolver.Resolve(ctx, subject)
 		if err != nil {
 			if errors.Is(err, ErrNoRelayMapping) {
@@ -1298,7 +1310,11 @@ func (s *Service) requireRepresentativeScope(ctx context.Context, actorUserID in
 	if !scope.IsRepresentative {
 		return nil, &ForbiddenError{Reason: ErrNotRepresentative.Error()}
 	}
-	return scope, nil
+	enriched, err := s.appendOrganizationAccountSubjects(ctx, scope)
+	if err != nil {
+		return nil, err
+	}
+	return enriched, nil
 }
 
 func (s *Service) resolvePrimaryProvider(ctx context.Context) (int, relay.Provider, error) {
@@ -1815,7 +1831,7 @@ func filterSubjects(subjects []representativescope.Subject, q string) []represen
 
 func findScopedSubject(subjects []representativescope.Subject, targetUserID int) (*representativescope.Subject, bool) {
 	for i := range subjects {
-		if subjects[i].SubjectType == "member" && subjects[i].UserID == targetUserID {
+		if (subjects[i].SubjectType == "member" || subjects[i].SubjectType == teamAccountSubjectType) && subjects[i].UserID == targetUserID {
 			return &subjects[i], true
 		}
 	}

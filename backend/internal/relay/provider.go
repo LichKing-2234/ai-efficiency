@@ -207,6 +207,16 @@ type UserDisabler interface {
 	DisableUser(ctx context.Context, userID int64) error
 }
 
+// UserEnabler re-activates a disabled upstream user.
+type UserEnabler interface {
+	EnableUser(ctx context.Context, userID int64) error
+}
+
+// UserPasswordUpdater rotates the upstream password without reading it back.
+type UserPasswordUpdater interface {
+	UpdateUserPassword(ctx context.Context, userID int64, password string) error
+}
+
 type SubjectUsageDashboardProvider interface {
 	GetUsageDashboardForUser(ctx context.Context, relayUserID int64, params UserUsageDashboardParams) (*UserUsageDashboardResponse, error)
 }

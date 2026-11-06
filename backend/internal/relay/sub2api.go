@@ -1175,6 +1175,31 @@ func (s *sub2apiRelay) DisableUser(ctx context.Context, userID int64) error {
 	return nil
 }
 
+// EnableUser re-activates a previously disabled user.
+func (s *sub2apiRelay) EnableUser(ctx context.Context, userID int64) error {
+	if userID <= 0 {
+		return fmt.Errorf("relay: enable user: user id is required")
+	}
+	if _, err := s.UpdateUser(ctx, userID, UpdateUserRequest{Status: "active"}); err != nil {
+		return fmt.Errorf("relay: enable user: %w", err)
+	}
+	return nil
+}
+
+// UpdateUserPassword rotates the upstream password.
+func (s *sub2apiRelay) UpdateUserPassword(ctx context.Context, userID int64, password string) error {
+	if userID <= 0 {
+		return fmt.Errorf("relay: update user password: user id is required")
+	}
+	if strings.TrimSpace(password) == "" {
+		return fmt.Errorf("relay: update user password: password is required")
+	}
+	if _, err := s.UpdateUser(ctx, userID, UpdateUserRequest{Password: password}); err != nil {
+		return fmt.Errorf("relay: update user password: %w", err)
+	}
+	return nil
+}
+
 func (s *sub2apiRelay) ChatCompletion(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
 	return s.chatCompletion(ctx, req, relayErrorMessageSuffix, false)
 }
@@ -3087,6 +3112,23 @@ func (s *sub2apiRelay) extendSubscriptionByID(ctx context.Context, subscriptionI
 	return nil
 }
 
+// DefaultSubscriptionGroupIDs returns the groups the provider grants to every
+// new user. The organization-account console shows these as the account's
+// starting access groups.
+func (s *sub2apiRelay) DefaultSubscriptionGroupIDs(ctx context.Context) ([]int64, error) {
+	defaults, err := s.listDefaultSubscriptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int64, 0, len(defaults))
+	for _, item := range defaults {
+		if item.GroupID > 0 {
+			ids = append(ids, item.GroupID)
+		}
+	}
+	return ids, nil
+}
+
 // RemoveSubscriptionForUser revokes an existing subscription group for a relay user.
 func (s *sub2apiRelay) RemoveSubscriptionForUser(ctx context.Context, userID, groupID int64) error {
 	if userID <= 0 {
@@ -3484,32 +3526,89 @@ func (s *sub2apiRelay) loginSessionToken(ctx context.Context, username, password
 	return loginResult.Data.AccessToken, user, nil
 }
 
+func accountIDString(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return typed
+	case float64:
+		return strconv.FormatInt(int64(typed), 10)
+	case json.Number:
+		return typed.String()
+	default:
+		return fmt.Sprint(typed)
+	}
+}
+
 func (s *sub2apiRelay) ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID int64, from, to time.Time) ([]UsageLog, error) {
-	path := fmt.Sprintf("/api/v1/admin/usage_logs?api_key_id=%d&from=%s&to=%s",
-		apiKeyID, url.QueryEscape(from.Format(time.RFC3339)), url.QueryEscape(to.Format(time.RFC3339)))
-
-	resp, err := s.doAdminRequest(ctx, http.MethodGet, path, nil)
-	if err != nil {
-		return nil, fmt.Errorf("relay: list usage logs by api key: %w", err)
+	// The admin usage listing is the only endpoint that exposes per-key request
+	// records; it filters by api_key_id and a start/end date pair.
+	var logs []UsageLog
+	for page := 1; page <= 20; page++ {
+		path := fmt.Sprintf("/api/v1/admin/usage?api_key_id=%d&start_date=%s&end_date=%s&page=%d&page_size=200",
+			apiKeyID,
+			url.QueryEscape(from.Format("2006-01-02")),
+			url.QueryEscape(to.Format("2006-01-02")),
+			page,
+		)
+		resp, err := s.doAdminRequest(ctx, http.MethodGet, path, nil)
+		if err != nil {
+			return nil, fmt.Errorf("relay: list usage logs by api key: %w", err)
+		}
+		var result struct {
+			envelopeStatus
+			Data struct {
+				Items []struct {
+					ID           int64     `json:"id"`
+					RequestID    string    `json:"request_id"`
+					CreatedAt    time.Time `json:"created_at"`
+					UserID       int64     `json:"user_id"`
+					APIKeyID     int64     `json:"api_key_id"`
+					AccountID    any       `json:"account_id"`
+					GroupID      int64     `json:"group_id"`
+					Model        string    `json:"model"`
+					InputTokens  int64     `json:"input_tokens"`
+					OutputTokens int64     `json:"output_tokens"`
+					CacheTokens  int64     `json:"cache_read_tokens"`
+					TotalCost    float64   `json:"total_cost"`
+				} `json:"items"`
+				Total int `json:"total"`
+			} `json:"data"`
+		}
+		decodeErr := json.NewDecoder(resp.Body).Decode(&result)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("relay: list usage logs by api key: unexpected status %d", resp.StatusCode)
+		}
+		if decodeErr != nil {
+			return nil, fmt.Errorf("relay: list usage logs by api key: decode: %w", decodeErr)
+		}
+		if !result.ok() {
+			return nil, fmt.Errorf("relay: list usage logs by api key: request failed")
+		}
+		for _, item := range result.Data.Items {
+			logs = append(logs, UsageLog{
+				ID:           item.ID,
+				RequestID:    item.RequestID,
+				CreatedAt:    item.CreatedAt,
+				UserID:       item.UserID,
+				APIKeyID:     item.APIKeyID,
+				AccountID:    accountIDString(item.AccountID),
+				GroupID:      strconv.FormatInt(item.GroupID, 10),
+				Model:        item.Model,
+				InputTokens:  item.InputTokens,
+				OutputTokens: item.OutputTokens,
+				CacheTokens:  item.CacheTokens,
+				TotalTokens:  item.InputTokens + item.OutputTokens + item.CacheTokens,
+				TotalCost:    item.TotalCost,
+			})
+		}
+		if len(result.Data.Items) < 200 || len(logs) >= result.Data.Total {
+			break
+		}
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("relay: list usage logs by api key: unexpected status %d", resp.StatusCode)
-	}
-
-	var result struct {
-		envelopeStatus
-		Data []UsageLog `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("relay: list usage logs by api key: decode: %w", err)
-	}
-	if !result.ok() {
-		return nil, fmt.Errorf("relay: list usage logs by api key: request failed")
-	}
-
-	return result.Data, nil
+	return logs, nil
 }
 
 // doAdminRequest is a helper that sends an authenticated request to the admin API.

@@ -174,7 +174,7 @@ async function handleDevLogin() {
             v-model="username"
             autocomplete="username"
             data-testid="username-field"
-            placeholder="you@example.com"
+            placeholder="you@example.com / username"
             required
             :prefix-icon="User"
           />

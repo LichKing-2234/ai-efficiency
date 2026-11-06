@@ -55,7 +55,7 @@ func (s Scope) AllowedUserIDs() []int {
 	seen := make(map[int]struct{}, len(s.Subjects))
 	ids := make([]int, 0, len(s.Subjects))
 	for _, subject := range s.Subjects {
-		if subject.SubjectType != "member" || !subject.Selectable || subject.UserID <= 0 {
+		if !subject.Selectable || subject.UserID <= 0 {
 			continue
 		}
 		if _, ok := seen[subject.UserID]; ok {
@@ -228,6 +228,16 @@ func buildScope(actor *ent.User, facts *directoryfacts.Facts) *Scope {
 
 	tree := facts.Hierarchy()
 	actorRoots := compactStrings(facts.RepresentativeRoots(scope.ActorMemberExternalID))
+	// Leader metadata can keep referencing departments that the latest snapshot
+	// no longer contains; drop them so the scope never exposes phantom departments.
+	presentRoots := actorRoots[:0]
+	for _, root := range actorRoots {
+		if strings.TrimSpace(tree.DisplayPath(root)) == "" {
+			continue
+		}
+		presentRoots = append(presentRoots, root)
+	}
+	actorRoots = presentRoots
 	if len(actorRoots) == 0 {
 		return scope
 	}

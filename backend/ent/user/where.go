@@ -630,6 +630,26 @@ func RoleNotIn(vs ...Role) predicate.User {
 	return predicate.User(sql.FieldNotIn(FieldRole, vs...))
 }
 
+// LoginPolicyEQ applies the EQ predicate on the "login_policy" field.
+func LoginPolicyEQ(v LoginPolicy) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldLoginPolicy, v))
+}
+
+// LoginPolicyNEQ applies the NEQ predicate on the "login_policy" field.
+func LoginPolicyNEQ(v LoginPolicy) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldLoginPolicy, v))
+}
+
+// LoginPolicyIn applies the In predicate on the "login_policy" field.
+func LoginPolicyIn(vs ...LoginPolicy) predicate.User {
+	return predicate.User(sql.FieldIn(FieldLoginPolicy, vs...))
+}
+
+// LoginPolicyNotIn applies the NotIn predicate on the "login_policy" field.
+func LoginPolicyNotIn(vs ...LoginPolicy) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldLoginPolicy, vs...))
+}
+
 // TokenValidAfterEQ applies the EQ predicate on the "token_valid_after" field.
 func TokenValidAfterEQ(v time.Time) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldTokenValidAfter, v))

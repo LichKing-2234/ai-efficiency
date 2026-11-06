@@ -288,7 +288,7 @@ func selectOrganizationBranch(scope *representativescope.Scope, parentID string)
 	}
 	selection.represented = append(selection.represented, source...)
 	for _, subject := range source {
-		if subject.SubjectType != "member" || !subjectIntersectsDepartments(subject, relevantDepartments) {
+		if (subject.SubjectType != "member" && subject.SubjectType != teamAccountSubjectType) || !subjectIntersectsDepartments(subject, relevantDepartments) {
 			continue
 		}
 		selection.subjects = append(selection.subjects, subject)

@@ -3651,39 +3651,40 @@ func TestListUsageLogsByAPIKeyExact(t *testing.T) {
 	to := time.Date(2026, 3, 2, 0, 0, 0, 0, time.UTC)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/admin/usage_logs", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v1/admin/usage", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected GET, got %s", r.Method)
 		}
 		if got := r.URL.Query().Get("api_key_id"); got != "99" {
 			t.Errorf("api_key_id=%q, want %q", got, "99")
 		}
-		if got := r.URL.Query().Get("from"); got != from.Format(time.RFC3339) {
-			t.Errorf("from=%q, want %q", got, from.Format(time.RFC3339))
+		if got := r.URL.Query().Get("start_date"); got != "2026-03-01" {
+			t.Errorf("start_date=%q, want %q", got, "2026-03-01")
 		}
-		if got := r.URL.Query().Get("to"); got != to.Format(time.RFC3339) {
-			t.Errorf("to=%q, want %q", got, to.Format(time.RFC3339))
+		if got := r.URL.Query().Get("end_date"); got != "2026-03-02" {
+			t.Errorf("end_date=%q, want %q", got, "2026-03-02")
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
-			"data": []any{
-				map[string]any{
-					"id":            1,
-					"request_id":    "req-1",
-					"created_at":    "2026-03-01T00:00:01Z",
-					"api_key_id":    99,
-					"user_id":       3,
-					"account_id":    "acct-1",
-					"group_id":      "team-ai",
-					"model":         "gpt-5.1",
-					"input_tokens":  10,
-					"output_tokens": 20,
-					"cache_tokens":  3,
-					"total_tokens":  33,
-					"total_cost":    0.12,
-					"actual_cost":   0.10,
+			"data": map[string]any{
+				"total": 1,
+				"items": []any{
+					map[string]any{
+						"id":                1,
+						"request_id":        "req-1",
+						"created_at":        "2026-03-01T00:00:01Z",
+						"api_key_id":        99,
+						"user_id":           3,
+						"account_id":        152,
+						"group_id":          7,
+						"model":             "gpt-5.1",
+						"input_tokens":      10,
+						"output_tokens":     20,
+						"cache_read_tokens": 3,
+						"total_cost":        0.12,
+					},
 				},
 			},
 		})
@@ -3700,14 +3701,17 @@ func TestListUsageLogsByAPIKeyExact(t *testing.T) {
 	if logs[0].RequestID != "req-1" {
 		t.Fatalf("expected RequestID=req-1, got %q", logs[0].RequestID)
 	}
-	if logs[0].APIKeyID != 99 || logs[0].UserID != 3 || logs[0].AccountID != "acct-1" || logs[0].GroupID != "team-ai" {
+	if logs[0].APIKeyID != 99 || logs[0].UserID != 3 || logs[0].AccountID != "152" || logs[0].GroupID != "7" {
 		t.Fatalf("unexpected ids: %+v", logs[0])
 	}
 	if logs[0].Model != "gpt-5.1" || logs[0].InputTokens != 10 || logs[0].OutputTokens != 20 || logs[0].CacheTokens != 3 {
 		t.Fatalf("unexpected token/model fields: %+v", logs[0])
 	}
 	if logs[0].TotalTokens != 33 {
-		t.Fatalf("unexpected log: %+v", logs[0])
+		t.Fatalf("expected TotalTokens=33, got %d", logs[0].TotalTokens)
+	}
+	if logs[0].TotalCost != 0.12 {
+		t.Fatalf("expected TotalCost=0.12, got %v", logs[0].TotalCost)
 	}
 }
 

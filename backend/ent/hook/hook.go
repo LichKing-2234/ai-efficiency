@@ -429,6 +429,54 @@ func (f SystemSettingFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Valu
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SystemSettingMutation", m)
 }
 
+// The TeamAccountFunc type is an adapter to allow the use of ordinary
+// function as TeamAccount mutator.
+type TeamAccountFunc func(context.Context, *ent.TeamAccountMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TeamAccountFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TeamAccountMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TeamAccountMutation", m)
+}
+
+// The TeamAccountEventFunc type is an adapter to allow the use of ordinary
+// function as TeamAccountEvent mutator.
+type TeamAccountEventFunc func(context.Context, *ent.TeamAccountEventMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TeamAccountEventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TeamAccountEventMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TeamAccountEventMutation", m)
+}
+
+// The TeamAccountKeyFunc type is an adapter to allow the use of ordinary
+// function as TeamAccountKey mutator.
+type TeamAccountKeyFunc func(context.Context, *ent.TeamAccountKeyMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TeamAccountKeyFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TeamAccountKeyMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TeamAccountKeyMutation", m)
+}
+
+// The TeamAccountManagerFunc type is an adapter to allow the use of ordinary
+// function as TeamAccountManager mutator.
+type TeamAccountManagerFunc func(context.Context, *ent.TeamAccountManagerMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TeamAccountManagerFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TeamAccountManagerMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TeamAccountManagerMutation", m)
+}
+
 // The TeamUsageRateMultiplierAuditFunc type is an adapter to allow the use of ordinary
 // function as TeamUsageRateMultiplierAudit mutator.
 type TeamUsageRateMultiplierAuditFunc func(context.Context, *ent.TeamUsageRateMultiplierAuditMutation) (ent.Value, error)

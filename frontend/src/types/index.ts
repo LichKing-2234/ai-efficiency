@@ -483,6 +483,17 @@ export interface AdminRelayPasswordRevealResponse {
   password: string
 }
 
+export interface AdminCreateOrgAccountRequest {
+  username: string
+  password: string
+}
+
+export interface AdminCreateOrgAccountResponse {
+  user_id: number
+  relay_user_id: number
+  username: string
+}
+
 export interface AdminDisableUserAccessRequest {
   confirm_email: string
 }
@@ -981,6 +992,7 @@ export interface TeamUsageSummaryResponse extends TeamUsageSnapshotFreshness {
 
 export interface TeamOverviewMember {
   rank?: number
+  subject_type?: string
   user_id: number
   directory_member_external_id?: string
   display_name: string
@@ -1477,4 +1489,160 @@ export interface OwnerAccountOperation {
   started_at: string
   finished_at?: string | null
   created_at?: string
+}
+
+export interface TeamAccountKey {
+  id: number
+  relay_api_key_id: number
+  relay_group_id: number
+  name: string
+  secret_preview: string
+  status: string
+  created_at: string
+  revoked_at?: string
+}
+
+export interface TeamAccountManager {
+  user_id: number
+  username: string
+  email: string
+  role: 'owner' | 'manager' | string
+}
+
+export interface TeamAccountSummary {
+  id: number
+  name: string
+  department_external_id: string
+  department_display_path: string
+  department_missing?: boolean
+  owner_disabled?: boolean
+  relay_username: string
+  relay_user_id: number
+  owner_user_id: number
+  owner_username?: string
+  owner_email?: string
+  status: string
+  created_at: string
+}
+
+export interface TeamAccountAvailableGroup {
+  id: number
+  name: string
+  platform: string
+}
+
+export interface TeamAccountDetail extends TeamAccountSummary {
+  keys: TeamAccountKey[]
+  managers: TeamAccountManager[]
+  available_groups?: TeamAccountAvailableGroup[]
+}
+
+export interface TeamAccountUsage {
+  total_tokens: number
+  total_cost: number
+  days: { date: string; tokens: number; cost: number }[]
+  keys: { id: number; name: string; relay_group_id: number; tokens: number; cost: number }[]
+}
+
+export interface TeamAccountEvent {
+  id: number
+  action: string
+  actor_user_id: number | null
+  actor_username?: string
+  actor_email?: string
+  payload: Record<string, unknown>
+  created_at: string
+}
+
+export interface TeamAccountListResponse {
+  items: TeamAccountSummary[]
+}
+
+export interface TeamAccountEventListResponse {
+  items: TeamAccountEvent[]
+}
+
+export interface TeamAccountGroupOption {
+  id: number
+  name: string
+  platform: string
+}
+
+export interface TeamAccountGroupOptions {
+  groups: TeamAccountGroupOption[]
+  default_group_ids: number[]
+  grantable_group_ids: number[]
+  owner_group_ids: number[]
+}
+
+export interface TeamAccountCredentials {
+  username: string
+  email: string
+  password: string
+}
+
+export interface TeamAccountKeyCreationResponse {
+  key: TeamAccountKey
+  secret: string
+}
+
+export interface TeamAccountUsageParams {
+  from?: string
+  to?: string
+}
+
+export interface TeamAccountCreateRequest {
+  name: string
+  department_external_id?: string
+  additional_group_ids?: number[]
+}
+
+export interface AdminTeamAccountCreateRequest extends TeamAccountCreateRequest {
+  owner_user_id: number
+}
+
+export interface TeamAccountKeyCreateRequest {
+  relay_group_id: number
+  name: string
+}
+
+export interface TeamAccountTransferRequest {
+  new_owner_user_id: number
+}
+
+export interface TeamAccountDepartmentGroupRequest {
+  department_external_id: string
+  relay_provider_id: number
+  relay_group_id: number
+}
+
+export type TeamAccountStatus = 'active' | 'suspended' | 'orphaned'
+
+export interface TeamAccountStatusRequest {
+  status: TeamAccountStatus
+}
+
+export interface TeamAccountKeyRevokeResponse {
+  revoked: boolean
+}
+
+export interface TeamAccountManagerAddResponse {
+  added: boolean
+}
+
+export interface TeamAccountManagerRemoveResponse {
+  removed: boolean
+}
+
+export interface TeamAccountTransferResponse {
+  transferred: boolean
+}
+
+export interface TeamAccountStatusResponse {
+  status: string
+}
+
+export interface TeamAccountDepartmentGroupMutationResponse {
+  mapped?: boolean
+  deleted?: boolean
 }

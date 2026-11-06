@@ -6,6 +6,7 @@ import UserUsageDashboard from '@/components/user/usage/UserUsageDashboard.vue'
 import UsageCenterTabs from '@/components/user/usage/UsageCenterTabs.vue'
 import { getTeamUsageScope } from '@/api/teamUsage'
 import { getOwnerAccountScope } from '@/api/ownerAccounts'
+import { listTeamAccounts } from '@/api/teamAccounts'
 import { useI18n } from '@/i18n'
 
 const route = useRoute()
@@ -24,7 +25,16 @@ const activeTab = computed(() => {
 onMounted(() => {
   if (!isUsageCenterRoute.value) return
   void getTeamUsageScope()
-    .then((response) => { hasTeamUsageScope.value = response.data.data?.is_representative === true })
+    .then(async (response) => {
+      hasTeamUsageScope.value = response.data.data?.is_representative === true
+      if (hasTeamUsageScope.value) return
+      // A manager who is not a representative still needs the team tab to reach
+      // the organization account they manage.
+      const accounts = await listTeamAccounts().catch(() => null)
+      if ((accounts?.data?.data?.items?.length ?? 0) > 0) {
+        hasTeamUsageScope.value = true
+      }
+    })
     .catch(() => { hasTeamUsageScope.value = false })
   void getOwnerAccountScope()
     .then((response) => { hasOwnerAccountsScope.value = (response.data.data?.account_count ?? 0) > 0 })
