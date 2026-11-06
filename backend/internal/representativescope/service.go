@@ -228,6 +228,16 @@ func buildScope(actor *ent.User, facts *directoryfacts.Facts) *Scope {
 
 	tree := facts.Hierarchy()
 	actorRoots := compactStrings(facts.RepresentativeRoots(scope.ActorMemberExternalID))
+	// Leader metadata can keep referencing departments that the latest snapshot
+	// no longer contains; drop them so the scope never exposes phantom departments.
+	presentRoots := actorRoots[:0]
+	for _, root := range actorRoots {
+		if strings.TrimSpace(tree.DisplayPath(root)) == "" {
+			continue
+		}
+		presentRoots = append(presentRoots, root)
+	}
+	actorRoots = presentRoots
 	if len(actorRoots) == 0 {
 		return scope
 	}

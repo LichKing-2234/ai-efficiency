@@ -848,3 +848,29 @@ func createScopeMemberDepartment(t *testing.T, client *ent.Client, sourceID int,
 		t.Fatalf("create member department %s/%s: %v", member.EmailNormalized, departmentID, err)
 	}
 }
+
+func TestResolveRepresentativeScopeDropsMissingLeaderDepartments(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	source := createScopeSource(t, client, true)
+	actor := createScopeUser(t, client, "actor", "actor@example.com", nil)
+	createScopeDepartment(t, client, source.ID, "department-beta", "Department Beta", nil, nil)
+	createScopeMember(t, client, source.ID, "member-actor", actor.Email, "department-beta", &actor.ID,
+		map[string]any{"leader_department_ids": []string{"department-beta", "department-ghost"}})
+
+	scope, err := New(client).Resolve(ctx, actor.ID)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if !scope.IsRepresentative {
+		t.Fatal("scope should remain representative through the existing department")
+	}
+	if got, want := scope.RepresentedDepartmentIDs, []string{"department-beta"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("represented departments = %#v, want %#v", got, want)
+	}
+	for _, department := range scope.Departments {
+		if department.ExternalID == "department-ghost" {
+			t.Fatal("phantom department leaked into the scope")
+		}
+	}
+}
