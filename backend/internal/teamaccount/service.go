@@ -34,6 +34,10 @@ import (
 	"github.com/ai-efficiency/backend/internal/representativescope"
 )
 
+// DefaultConcurrency matches sub2api's registration default. It is set
+// explicitly because the admin create API applies 0 (unlimited) when omitted.
+const DefaultConcurrency = 5
+
 // SubscriptionValidityDays is how long a provisioned subscription lasts.
 const SubscriptionValidityDays = 365
 
