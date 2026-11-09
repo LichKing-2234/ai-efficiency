@@ -54,7 +54,9 @@ Creating an account for a department:
    pinned and the Relay assigns its default subscriptions. Optional additional
    groups are granted on top; a non-administrative caller may only grant groups
    they are subscribed to themselves.
-6. Records the account, the owner row, and an `account_created` event in one
+6. Leaves Relay user concurrency at the Relay registration default; the platform
+   does not override it for team accounts.
+7. Records the account, the owner row, and an `account_created` event in one
    local transaction. If any step fails, the Relay user is disabled so no orphan
    identity can authenticate.
 
