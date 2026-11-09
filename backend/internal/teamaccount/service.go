@@ -34,11 +34,6 @@ import (
 	"github.com/ai-efficiency/backend/internal/representativescope"
 )
 
-// DefaultConcurrency is the Relay concurrency granted to a team account. Relay
-// provisioning defaults to a per-person value that is too small for a shared
-// account, so the platform always states it explicitly.
-const DefaultConcurrency = 20
-
 // SubscriptionValidityDays is how long a provisioned subscription lasts.
 const SubscriptionValidityDays = 365
 
@@ -356,12 +351,14 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 			return nil, identityErr
 		}
 		created, createErr := provider.CreateUser(ctx, relay.CreateUserRequest{
-			Username:    candidate,
-			Email:       candidateEmail,
-			Password:    password,
-			Role:        "user",
-			Notes:       "provisioned_by_ai_efficiency_team",
-			Concurrency: DefaultConcurrency,
+			Username: candidate,
+			Email:    candidateEmail,
+			Password: password,
+			Role:     "user",
+			Notes:    "provisioned_by_ai_efficiency_team",
+			// Concurrency is intentionally omitted so Relay applies its own
+			// registration default, keeping team accounts consistent with
+			// users created directly in Relay.
 		})
 		if createErr != nil {
 			// A leftover Relay identity reserves the deterministic name; the next
