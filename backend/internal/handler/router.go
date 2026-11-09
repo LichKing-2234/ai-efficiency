@@ -61,8 +61,8 @@ type RouterOptions struct {
 	// documentation can be edited without a release.
 	GuideCCSwitchLabel string
 	GuideCCSwitchURL   string
-	ActivityCache                 *activity.Cache
-	OpsMonitoringCache            *opsmonitoring.Cache
+	ActivityCache      *activity.Cache
+	OpsMonitoringCache *opsmonitoring.Cache
 	// OwnerAccounts is the owner-account console service. It is required in
 	// production and may be nil in tests that do not exercise those routes.
 	OwnerAccounts *owneraccount.Service
@@ -71,7 +71,7 @@ type RouterOptions struct {
 	AccountQuota accountQuotaService
 	// TeamAccounts is the department team account service. It may be nil in
 	// tests that do not exercise those routes.
-	TeamAccounts *teamaccount.Service
+	TeamAccounts   *teamaccount.Service
 	Release        string
 	RequestTimeout time.Duration
 }
@@ -587,7 +587,7 @@ func setupRouter(
 		adminTeamAccountsGroup := protected.Group("/admin/team-accounts")
 		adminTeamAccountsGroup.Use(auth.RequireAdmin())
 		{
-			adminTeamAccountsGroup.GET("", teamAccountAdminHandler.List)
+			adminTeamAccountsGroup.GET("", teamAccountAdminHandler.AdminList)
 			adminTeamAccountsGroup.GET("/group-options", teamAccountAdminHandler.AdminGroupOptions)
 			adminTeamAccountsGroup.POST("", teamAccountAdminHandler.AdminCreate)
 			adminTeamAccountsGroup.GET("/:id", teamAccountAdminHandler.Get)

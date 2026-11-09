@@ -83,6 +83,20 @@ func (h *TeamAccountHandler) List(c *gin.Context) {
 	pkg.Success(c, gin.H{"items": accounts})
 }
 
+// AdminList handles GET /api/v1/admin/team-accounts.
+func (h *TeamAccountHandler) AdminList(c *gin.Context) {
+	userID, _, ok := h.actor(c)
+	if !ok {
+		return
+	}
+	accounts, err := h.service.List(c.Request.Context(), userID, true)
+	if err != nil {
+		h.respondError(c, err)
+		return
+	}
+	pkg.Success(c, gin.H{"items": accounts})
+}
+
 // Create handles POST /api/v1/user/team-accounts.
 func (h *TeamAccountHandler) Create(c *gin.Context) {
 	userID, isAdmin, ok := h.actor(c)
