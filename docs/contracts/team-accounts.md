@@ -105,7 +105,7 @@ user id; that identity is excluded from the administrator user list, people
 pickers, and offboarding candidates. A manager who is not a representative sees
 the team tab as soon as they manage at least one active account. The AI usage
 center lists only accounts the caller owns or manages, administrators included;
-the administrator console remains unrestricted. It is not a directory member and is
+the administrator console uses a separate unrestricted list. It is not a directory member and is
 never included in member counts of the directory itself.
 
 ## Audit
