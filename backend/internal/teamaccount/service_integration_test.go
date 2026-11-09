@@ -16,16 +16,16 @@ import (
 
 type fakeProvider struct {
 	relay.Provider
-	created       []relay.CreateUserRequest
-	subscriptions map[int64]map[int64]bool
-	revokedKeys   []int64
-	disabled      []int64
-	nextRelayID   int64
+	created         []relay.CreateUserRequest
+	subscriptions   map[int64]map[int64]bool
+	revokedKeys     []int64
+	disabled        []int64
+	nextRelayID     int64
 	keySecret       string
 	keyAuthFailures int
 	keyCalls        int
 	usageTokens     int64
-	usageCost     float64
+	usageCost       float64
 }
 
 func newFakeProvider() *fakeProvider {
@@ -121,7 +121,6 @@ func seedUsers(t *testing.T, client *ent.Client) (int, int) {
 	}
 	return owner.ID, other.ID
 }
-
 
 func seedDepartmentMember(t *testing.T, client *ent.Client, departmentID, email string) {
 	t.Helper()
@@ -554,5 +553,20 @@ func TestSuspendedAccountHiddenFromMembers(t *testing.T) {
 	}
 	if _, err := service.Get(context.Background(), ownerID, true, account.ID); err != nil {
 		t.Fatalf("admin Get() error = %v", err)
+	}
+}
+
+func TestCreateUsesRelayRegistrationConcurrency(t *testing.T) {
+	client := testdb.Open(t)
+	ownerID, _ := seedUsers(t, client)
+	provider := newFakeProvider()
+	seedProvider(t, client)
+	seedDepartmentMember(t, client, "department-alpha", "other@example.com")
+	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
+	if _, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if len(provider.created) != 1 || provider.created[0].Concurrency != 5 {
+		t.Fatalf("relay concurrency = %+v, want 5", provider.created)
 	}
 }

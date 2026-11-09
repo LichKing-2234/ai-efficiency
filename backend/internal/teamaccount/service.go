@@ -355,14 +355,12 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 			return nil, identityErr
 		}
 		created, createErr := provider.CreateUser(ctx, relay.CreateUserRequest{
-			Username: candidate,
-			Email:    candidateEmail,
-			Password: password,
-			Role:     "user",
-			Notes:    "provisioned_by_ai_efficiency_team",
-			// Concurrency is intentionally omitted so Relay applies its own
-			// registration default, keeping team accounts consistent with
-			// users created directly in Relay.
+			Username:    candidate,
+			Email:       candidateEmail,
+			Password:    password,
+			Role:        "user",
+			Notes:       "provisioned_by_ai_efficiency_team",
+			Concurrency: DefaultConcurrency,
 		})
 		if createErr != nil {
 			// A leftover Relay identity reserves the deterministic name; the next
