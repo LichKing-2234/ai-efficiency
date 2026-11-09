@@ -103,7 +103,9 @@ and can be opened like a member dashboard. Each account gets a hidden local
 identity (`auth_source=relay_sso`) at creation so the dashboard has a stable
 user id; that identity is excluded from the administrator user list, people
 pickers, and offboarding candidates. A manager who is not a representative sees
-the team tab as soon as they manage at least one active account. It is not a directory member and is
+the team tab as soon as they manage at least one active account. The AI usage
+center lists only accounts the caller owns or manages, administrators included;
+the administrator console remains unrestricted. It is not a directory member and is
 never included in member counts of the directory itself.
 
 ## Audit

@@ -68,11 +68,14 @@ func accountIDParam(c *gin.Context) (int, bool) {
 
 // List handles GET /api/v1/user/team-accounts.
 func (h *TeamAccountHandler) List(c *gin.Context) {
-	userID, isAdmin, ok := h.actor(c)
+	userID, _, ok := h.actor(c)
 	if !ok {
 		return
 	}
-	accounts, err := h.service.List(c.Request.Context(), userID, isAdmin)
+	// The AI usage center is a member surface: even administrators only see
+	// accounts they own or manage here. The administrator console keeps the
+	// unrestricted list.
+	accounts, err := h.service.List(c.Request.Context(), userID, false)
 	if err != nil {
 		h.respondError(c, err)
 		return
