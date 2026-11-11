@@ -374,6 +374,35 @@ Group-configuration compatibility is shown only when the Provider exposes a
 privacy-safe fact. AI Efficiency does not infer compatibility from credentials,
 private Account configuration, status, or schedulability.
 
+## Warning and Alignment Display References
+
+Mapping reads, Preview, and maintenance responses name every referenced Group,
+Account, local user, Relay user, and Department as
+`<authoritative ID> (<display label>)` whenever the same read that produced the
+message supplied a label:
+
+- Group: the Relay Group name;
+- Account: the Relay Account name;
+- local user: the local user email, otherwise the local user name;
+- Relay user: the Relay user email, otherwise the Relay user name;
+- Department: the Mapping's stored department name.
+
+The ID remains authoritative. The label is a display snapshot resolved from the
+same request: it never enters identity comparison, Mapping Alignment, Confirm
+validation, or the relationship fingerprint. When no label is available — for
+example a target Group the Provider no longer returns — the message keeps the
+bare ID, and an unrecognized message is displayed verbatim instead of hidden.
+
+Account relationship drift is one Mapping Alignment difference per drifted
+target Group and states both sides of the reviewed comparison:
+`expected Accounts [...]` is the reviewed desired pool and
+`observed Accounts [...]` is the current Relay relationship, each entry rendered
+as `<Account ID> (<name>)`. A pool with no Accounts renders as an empty list,
+and drift compares Account membership rather than priority. Callers that already
+hold the current Account relationships — mapping list, mapping read, execute,
+adopt, and save-desired — emit the same drift difference, so maintenance
+responses do not depend on a later list refresh.
+
 ## Member Relationship Operations
 
 A source-backed addition ensures the Target subscription, moves eligible

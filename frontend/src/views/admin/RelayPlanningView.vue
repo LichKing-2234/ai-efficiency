@@ -276,6 +276,10 @@ async function confirmRecovery() {
 	}
 }
 
+function labeledWarningReference(id: string, label?: string): string {
+  return label ? `${id} (${label})` : id
+}
+
 function translateWarning(warning: string): string {
   void locale.value
   if (warning === 'no eligible member has a valid relay mapping and source-group membership') return t('relayPlanning.warningNoEligible')
@@ -284,30 +288,37 @@ function translateWarning(warning: string): string {
   if (warning === '30-day usage is unknown; capacity may be underestimated') return t('relayPlanning.warningUnknownUsage')
   if (warning === 'user is not in the selected department') return t('relayPlanning.warningNotSelectedDepartment')
   if (warning === 'user belongs to multiple departments') return t('relayPlanning.warningMultipleDepartments')
-  if (warning.includes(' has no relay mapping')) return t('relayPlanning.warningNoRelayMapping', { user: warning.replace(/ has no relay mapping$/, '') })
+  const noRelayMapping = warning.match(/^user (\d+)(?: \((.+)\))? has no relay mapping$/)
+  if (noRelayMapping) return t('relayPlanning.warningNoRelayMapping', { user: labeledWarningReference(noRelayMapping[1], noRelayMapping[2]) })
   if (warning.startsWith('relay groups unavailable: ')) return `${t('relayPlanning.warningRelayGroupsUnavailable')}: ${warning.slice('relay groups unavailable: '.length)}`
-  const unavailable = warning.match(/^(template|migration source|target) group (\d+) is unavailable$/)
-  if (unavailable) return t(`relayPlanning.warningUnavailable${unavailable[1] === 'template' ? 'Template' : unavailable[1] === 'migration source' ? 'Source' : 'Target'}`, { id: unavailable[2] })
-  const conflict = warning.match(/^user (\d+) is assigned in multiple mappings$/)
-  if (conflict) return t('relayPlanning.warningMappingConflict', { user: conflict[1] })
-  const multipleAccounts = warning.match(/^target group (\d+) has multiple Accounts$/)
-  if (multipleAccounts) return t('relayPlanning.warningMultipleTargetAccounts', { group: multipleAccounts[1] })
-  const reusedAccount = warning.match(/^account (\d+) is reused across target groups ([0-9, ]+)$/)
-  if (reusedAccount) return t('relayPlanning.warningReusedAccount', { account: reusedAccount[1], groups: reusedAccount[2].split(',').map((id) => `#${id.trim()}`).join(', ') })
+  const unavailable = warning.match(/^(template|migration source|target) group (\d+)(?: \((.+)\))? is unavailable$/)
+  if (unavailable) return t(`relayPlanning.warningUnavailable${unavailable[1] === 'template' ? 'Template' : unavailable[1] === 'migration source' ? 'Source' : 'Target'}`, { id: labeledWarningReference(unavailable[2], unavailable[3]) })
+  const conflict = warning.match(/^user (\d+)(?: \((.+)\))? is assigned in multiple mappings$/)
+  if (conflict) return t('relayPlanning.warningMappingConflict', { user: labeledWarningReference(conflict[1], conflict[2]) })
+  const multipleAccounts = warning.match(/^target group (\d+)(?: \((.+)\))? has multiple Accounts$/)
+  if (multipleAccounts) return t('relayPlanning.warningMultipleTargetAccounts', { group: labeledWarningReference(multipleAccounts[1], multipleAccounts[2]) })
+  const reusedAccount = warning.match(/^account (\d+)(?: \((.+)\))? is reused across target groups (.+)$/)
+  if (reusedAccount) return t('relayPlanning.warningReusedAccount', { account: labeledWarningReference(reusedAccount[1], reusedAccount[2]), groups: reusedAccount[3] })
+  const accountDrift = warning.match(/^target group (\d+)(?: \((.+)\))? account relationships drifted: expected Accounts \[(.*)\]; observed Accounts \[(.*)\]$/)
+  if (accountDrift) return t('relayPlanning.warningAccountDrift', { group: labeledWarningReference(accountDrift[1], accountDrift[2]), expected: accountDrift[3], observed: accountDrift[4] })
   if (warning === 'mapping has no target groups') return t('relayPlanning.warningNoTargetGroups')
   if (warning === 'mapping contains an invalid target group') return t('relayPlanning.warningInvalidTargetGroup')
   const invalidDepartment = warning.match(/^department (.+) is unavailable$/)
   if (invalidDepartment) return t('relayPlanning.warningUnavailableDepartment', { department: invalidDepartment[1] })
-  const capacity = warning.match(/^user (\d+) exceeds remaining planning capacity$/)
-  if (capacity) return t('relayPlanning.warningRemainingCapacity', { user: capacity[1] })
-  const unmanagedRelay = warning.match(/^unmanaged relay member (\d+) in target group (\d+)$/)
-  if (unmanagedRelay) return t('relayPlanning.warningUnmanagedRelayMember', { user: unmanagedRelay[1], group: unmanagedRelay[2] })
-  const unmanaged = warning.match(/^unmanaged member (\d+) in target group (\d+)$/)
-  if (unmanaged) return t('relayPlanning.warningUnmanagedMember', { user: unmanaged[1], group: unmanaged[2] })
-  const wrongGroup = warning.match(/^member (\d+) is subscribed to target group (\d+) instead of (\d+)$/)
-  if (wrongGroup) return t('relayPlanning.warningWrongTargetGroup', { user: wrongGroup[1], actual: wrongGroup[2], expected: wrongGroup[3] })
-  const missing = warning.match(/^mapping member (\d+) is missing from target group (\d+)$/)
-  if (missing) return t('relayPlanning.warningMissingTargetMembership', { user: missing[1], group: missing[2] })
+  const duplicateTarget = warning.match(/^target group (\d+)(?: \((.+)\))? is already managed by destination mapping$/)
+  if (duplicateTarget) return t('relayPlanning.warningDuplicateMigrationTarget', { group: labeledWarningReference(duplicateTarget[1], duplicateTarget[2]) })
+  const duplicateMember = warning.match(/^member (\d+)(?: \((.+)\))? is already managed by destination mapping$/)
+  if (duplicateMember) return t('relayPlanning.warningDuplicateMigrationMember', { user: labeledWarningReference(duplicateMember[1], duplicateMember[2]) })
+  const capacity = warning.match(/^user (\d+)(?: \((.+)\))? exceeds remaining planning capacity$/)
+  if (capacity) return t('relayPlanning.warningRemainingCapacity', { user: labeledWarningReference(capacity[1], capacity[2]) })
+  const unmanagedRelay = warning.match(/^unmanaged relay member (\d+)(?: \((.+)\))? in target group (\d+)(?: \((.+)\))?$/)
+  if (unmanagedRelay) return t('relayPlanning.warningUnmanagedRelayMember', { user: labeledWarningReference(unmanagedRelay[1], unmanagedRelay[2]), group: labeledWarningReference(unmanagedRelay[3], unmanagedRelay[4]) })
+  const unmanaged = warning.match(/^unmanaged member (\d+)(?: \((.+)\))? in target group (\d+)(?: \((.+)\))?$/)
+  if (unmanaged) return t('relayPlanning.warningUnmanagedMember', { user: labeledWarningReference(unmanaged[1], unmanaged[2]), group: labeledWarningReference(unmanaged[3], unmanaged[4]) })
+  const wrongGroup = warning.match(/^member (\d+)(?: \((.+)\))? is subscribed to target group (\d+)(?: \((.+)\))? instead of (\d+)(?: \((.+)\))?$/)
+  if (wrongGroup) return t('relayPlanning.warningWrongTargetGroup', { user: labeledWarningReference(wrongGroup[1], wrongGroup[2]), actual: labeledWarningReference(wrongGroup[3], wrongGroup[4]), expected: labeledWarningReference(wrongGroup[5], wrongGroup[6]) })
+  const missing = warning.match(/^mapping member (\d+)(?: \((.+)\))? is missing from target group (\d+)(?: \((.+)\))?$/)
+  if (missing) return t('relayPlanning.warningMissingTargetMembership', { user: labeledWarningReference(missing[1], missing[2]), group: labeledWarningReference(missing[3], missing[4]) })
   const targetMatch = warning.match(/^(.*) exceeds the planning target$/)
   if (targetMatch) return t('relayPlanning.warningExceedsTarget', { group: targetMatch[1] })
   return warning

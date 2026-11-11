@@ -235,8 +235,8 @@ describe('i18n locale loading', () => {
       ...Object.keys(teamAccountsMessages['zh-CN']),
     ].sort()
 
-    expect(englishKeys).toHaveLength(1784)
-    expect(chineseKeys).toHaveLength(1784)
+    expect(englishKeys).toHaveLength(1785)
+    expect(chineseKeys).toHaveLength(1785)
     expect(englishKeys).toContain('user.ccSwitchStep2')
     expect(englishKeys).toContain('user.manualConfigRestartHint')
     expect(englishKeys).toContain('user.ccSwitchSecretHint')
@@ -261,6 +261,7 @@ describe('i18n locale loading', () => {
     expect(englishKeys).toContain('quotaReset.subscriptionLimitRequired')
     expect(englishKeys).toContain('relayPlanning.addSuggestedGroup')
     expect(englishKeys).toContain('relayPlanning.removeSuggestedGroup')
+    expect(englishKeys).toContain('relayPlanning.warningAccountDrift')
     expect(englishKeys).toContain('relayPlanning.candidateDepartmentUnknown')
     expect(englishKeys).toContain('relayPlanning.candidateSectionMembers')
     expect(englishKeys).toContain('relayPlanning.candidateSectionCost')
