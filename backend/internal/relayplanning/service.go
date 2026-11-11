@@ -972,6 +972,10 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		return nil, fmt.Errorf("assign relay planning Accounts: %w", err)
 	}
 	warnings := make([]string, 0)
+	// Display labels come from the Groups and local users this Preview already
+	// loaded for planning; no extra Relay or Directory read is issued.
+	groupLabels := groupWarningLabels(groups)
+	localUserLabels := localUserWarningLabels(users)
 	if len(eligible) == 0 && (mapping == nil || len(mapping.MemberAssignments) == 0) {
 		warnings = append(warnings, "no eligible member has a valid relay mapping and source-group membership")
 	}
@@ -1027,12 +1031,12 @@ func (s *Service) Preview(ctx context.Context, req PreviewRequest) (*Plan, error
 		).Only(ctx); destinationErr == nil {
 			for _, groupID := range mapping.GroupIds {
 				if containsInt64(destination.GroupIds, groupID) {
-					plan.Warnings = append(plan.Warnings, fmt.Sprintf("target group %d is already managed by destination mapping", groupID))
+					plan.Warnings = append(plan.Warnings, fmt.Sprintf("target group %s is already managed by destination mapping", groupWarningRef(groupLabels, groupID)))
 				}
 			}
 			for userID := range mapping.MemberAssignments {
 				if _, exists := destination.MemberAssignments[userID]; exists {
-					plan.Warnings = append(plan.Warnings, fmt.Sprintf("member %s is already managed by destination mapping", userID))
+					plan.Warnings = append(plan.Warnings, fmt.Sprintf("member %s is already managed by destination mapping", memberWarningRef(userID, localUserLabels)))
 				}
 			}
 			if destination.TemplateGroupID != mapping.TemplateGroupID || destination.SourceGroupID != mapping.SourceGroupID {
@@ -1676,8 +1680,29 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionRe
 		warnings = append(warnings, "new Target Account relationships could not be refreshed")
 	}
 	updatedMapping.AccountPools = accountPools(updatedMapping, currentAccounts)
-	updatedMapping.Warnings = accountPoolWarnings(updatedMapping.AccountPools, updatedMapping.AccountManagementInitialized)
+	updatedMapping.Warnings = accountPoolWarnings(updatedMapping.AccountPools, updatedMapping.AccountManagementInitialized, executeGroupWarningLabels(groupResults), accountWarningLabels(currentAccounts))
 	return &ExecutionResult{Plan: plan, Groups: groupResults, Accounts: accountResults, Members: memberResults, Mapping: &updatedMapping, Warnings: warnings}, nil
+}
+
+// executeGroupWarningLabels collects the display labels of the Groups created or
+// renamed by this execution, preferring the name Relay actually reports. The
+// execution path does not load the full platform Group list, so untouched
+// Groups keep their authoritative bare IDs.
+func executeGroupWarningLabels(groupResults []GroupResult) map[int64]string {
+	labels := make(map[int64]string, len(groupResults))
+	for _, result := range groupResults {
+		if result.ID <= 0 {
+			continue
+		}
+		name := result.Name
+		if result.Rename == "failed" && warningLabel(result.CurrentName) != "" {
+			name = result.CurrentName
+		}
+		if label := warningLabel(name); label != "" {
+			labels[result.ID] = label
+		}
+	}
+	return labels
 }
 
 func accountIntentsForGroup(accounts []relay.Account, platform string, groupID int64) []AccountIntent {
@@ -2760,23 +2785,23 @@ func (s *Service) ListMappings(ctx context.Context, providerID int) ([]Mapping, 
 	for _, row := range rows {
 		mapping := mappingFromEnt(row)
 		facts := providerFacts[mapping.ProviderID]
+		groupLabels := groupWarningLabels(facts.groups)
 		mapping.AlignmentDifferences = append(mapping.AlignmentDifferences, mappingAvailabilityWarnings(mapping, facts.groups)...)
-		mapping.AlignmentDifferences = append(mapping.AlignmentDifferences, mappingRelationshipWarnings(facts.relationships, mapping)...)
+		mapping.AlignmentDifferences = append(mapping.AlignmentDifferences, mappingRelationshipWarnings(facts.relationships, mapping, groupLabels)...)
 		if result := facts.accounts[strings.ToLower(strings.TrimSpace(mapping.Platform))]; result != nil {
 			if result.err == nil {
+				accountLabels := accountWarningLabels(result.accounts)
 				mapping.AccountPools = accountPools(mapping, result.accounts)
-				mapping.Warnings = append(mapping.Warnings, accountPoolWarnings(mapping.AccountPools, mapping.AccountManagementInitialized)...)
-				for _, pool := range mapping.AccountPools {
-					if pool.Drift {
-						mapping.AlignmentDifferences = append(mapping.AlignmentDifferences, fmt.Sprintf("target group %d account relationships drifted", pool.TargetGroupID))
-					}
-				}
+				mapping.Warnings = append(mapping.Warnings, accountPoolAdvisories(mapping.AccountPools, mapping.AccountManagementInitialized, groupLabels, accountLabels)...)
+				// Account drift is an Alignment difference on the mapping list so
+				// the drifted indicator and its edit gating stay intact.
+				mapping.AlignmentDifferences = append(mapping.AlignmentDifferences, accountPoolDriftWarnings(mapping.AccountPools, mapping.AccountManagementInitialized, groupLabels, accountLabels)...)
 			} else {
 				mapping.AlignmentDifferences = append(mapping.AlignmentDifferences, "Account relationship readback is unavailable")
 			}
 		}
 		if directoryFacts == nil || !directoryFacts.available[mapping.DepartmentID] {
-			mapping.AlignmentDifferences = append(mapping.AlignmentDifferences, fmt.Sprintf("department %s is unavailable", mapping.DepartmentID))
+			mapping.AlignmentDifferences = append(mapping.AlignmentDifferences, fmt.Sprintf("department %s is unavailable", warningRefText(mapping.DepartmentID, mapping.DepartmentName)))
 			mapping.DepartmentSuggestions = directoryFacts.suggestions(rows, mapping)
 		}
 		if len(mapping.GroupIDs) == 0 {
@@ -2790,6 +2815,20 @@ func (s *Service) ListMappings(ctx context.Context, providerID int) ([]Mapping, 
 		}
 		out = append(out, mapping)
 	}
+	conflictedUserIDs := make(map[string]struct{})
+	for index := range out {
+		for otherIndex := index + 1; otherIndex < len(out); otherIndex++ {
+			if out[index].ProviderID != out[otherIndex].ProviderID || out[index].Platform != out[otherIndex].Platform {
+				continue
+			}
+			for userID := range out[index].MemberAssignments {
+				if _, exists := out[otherIndex].MemberAssignments[userID]; exists {
+					conflictedUserIDs[userID] = struct{}{}
+				}
+			}
+		}
+	}
+	memberLabels := s.mappingMemberLabels(ctx, conflictedUserIDs)
 	for index := range out {
 		for otherIndex := index + 1; otherIndex < len(out); otherIndex++ {
 			if out[index].ProviderID != out[otherIndex].ProviderID || out[index].Platform != out[otherIndex].Platform {
@@ -2799,7 +2838,7 @@ func (s *Service) ListMappings(ctx context.Context, providerID int) ([]Mapping, 
 				if _, exists := out[otherIndex].MemberAssignments[userID]; !exists {
 					continue
 				}
-				warning := fmt.Sprintf("user %s is assigned in multiple mappings", userID)
+				warning := fmt.Sprintf("user %s is assigned in multiple mappings", memberWarningRef(userID, memberLabels))
 				out[index].AlignmentDifferences = append(out[index].AlignmentDifferences, warning)
 				out[otherIndex].AlignmentDifferences = append(out[otherIndex].AlignmentDifferences, warning)
 			}
@@ -2809,6 +2848,27 @@ func (s *Service) ListMappings(ctx context.Context, providerID int) ([]Mapping, 
 		return nil, err
 	}
 	return out, nil
+}
+
+// mappingMemberLabels resolves display labels for local users referenced by
+// mapping member assignments. Labels are advisory display snapshots, so a
+// failed read degrades the warnings to bare IDs instead of failing the list.
+func (s *Service) mappingMemberLabels(ctx context.Context, rawUserIDs map[string]struct{}) map[int]string {
+	userIDs := make([]int, 0, len(rawUserIDs))
+	for rawUserID := range rawUserIDs {
+		if userID, err := strconv.Atoi(rawUserID); err == nil && userID > 0 {
+			userIDs = append(userIDs, userID)
+		}
+	}
+	if len(userIDs) == 0 {
+		return nil
+	}
+	sort.Ints(userIDs)
+	localUsers, err := s.client.User.Query().Where(user.IDIn(userIDs...)).All(ctx)
+	if err != nil {
+		return nil
+	}
+	return localUserWarningLabels(localUsers)
 }
 
 func (s *Service) loadMappingDirectoryFacts(ctx context.Context, rows []*ent.RelayGroupMapping) (*mappingDirectoryFacts, error) {
@@ -2882,21 +2942,26 @@ func (s *Service) GetMapping(ctx context.Context, id int) (*Mapping, error) {
 		return nil, fmt.Errorf("get relay group mapping: %w", err)
 	}
 	mapping := mappingFromEnt(row)
+	var groups []relay.Group
+	if listed, groupsErr := s.listPlatformGroups(ctx, mapping.ProviderID); groupsErr == nil {
+		groups = listed
+	}
+	groupLabels := groupWarningLabels(groups)
 	if s.resolver != nil {
 		if provider, resolveErr := s.resolver.Resolve(ctx, mapping.ProviderID); resolveErr == nil {
 			if reader, ok := provider.(relay.AccountRelationshipReader); ok {
 				if accounts, accountErr := reader.ListAccountsForPlatform(ctx, mapping.Platform); accountErr == nil {
 					mapping.AccountPools = accountPools(mapping, accounts)
-					mapping.Warnings = append(mapping.Warnings, accountPoolWarnings(mapping.AccountPools, mapping.AccountManagementInitialized)...)
+					mapping.Warnings = append(mapping.Warnings, accountPoolWarnings(mapping.AccountPools, mapping.AccountManagementInitialized, groupLabels, accountWarningLabels(accounts))...)
 				}
 			}
 		}
 	}
-	if groups, groupsErr := s.listPlatformGroups(ctx, mapping.ProviderID); groupsErr == nil {
-		mapping.Warnings = mappingAvailabilityWarnings(mapping, groups)
+	if groups != nil {
+		mapping.Warnings = append(mapping.Warnings, mappingAvailabilityWarnings(mapping, groups)...)
 	}
 	if departmentErr := s.validateDepartment(ctx, mapping.DepartmentID); departmentErr != nil {
-		mapping.Warnings = append(mapping.Warnings, fmt.Sprintf("department %s is unavailable", mapping.DepartmentID))
+		mapping.Warnings = append(mapping.Warnings, fmt.Sprintf("department %s is unavailable", warningRefText(mapping.DepartmentID, mapping.DepartmentName)))
 		mapping.DepartmentSuggestions = s.departmentSuggestions(ctx, mapping.ProviderID, mapping.Platform, mapping.DepartmentID)
 	}
 	mapping.Warnings = uniqueStrings(mapping.Warnings)
@@ -3381,7 +3446,9 @@ func (s *Service) AdoptCurrentAccounts(ctx context.Context, id int) (*Mapping, e
 	}
 	mapping = mappingFromEnt(row)
 	mapping.AccountPools = accountPools(mapping, accounts)
-	mapping.Warnings = accountPoolWarnings(mapping.AccountPools, mapping.AccountManagementInitialized)
+	// Adoption does not load the platform Group list, so Group references keep
+	// their authoritative bare IDs while Account references stay labeled.
+	mapping.Warnings = accountPoolWarnings(mapping.AccountPools, mapping.AccountManagementInitialized, nil, accountWarningLabels(accounts))
 	return &mapping, nil
 }
 
@@ -3504,7 +3571,9 @@ func (s *Service) SaveDesiredAccounts(ctx context.Context, id int, desired map[s
 	}
 	mapping := mappingFromEnt(row)
 	mapping.AccountPools = accountPools(mapping, accounts)
-	mapping.Warnings = accountPoolWarnings(mapping.AccountPools, mapping.AccountManagementInitialized)
+	// Saving desired Accounts does not load the platform Group list, so Group
+	// references keep their authoritative bare IDs.
+	mapping.Warnings = accountPoolWarnings(mapping.AccountPools, mapping.AccountManagementInitialized, nil, accountWarningLabels(accounts))
 	return &mapping, nil
 }
 
@@ -3584,7 +3653,7 @@ func (s *Service) Rebind(ctx context.Context, id int, departmentID string, templ
 	}
 	mapping := mappingFromEnt(row)
 	if nameErr := s.validateDepartment(ctx, mapping.DepartmentID); nameErr != nil {
-		mapping.Warnings = append(mapping.Warnings, fmt.Sprintf("department %s is unavailable", mapping.DepartmentID))
+		mapping.Warnings = append(mapping.Warnings, fmt.Sprintf("department %s is unavailable", warningRefText(mapping.DepartmentID, mapping.DepartmentName)))
 		mapping.DepartmentSuggestions = s.departmentSuggestions(ctx, mapping.ProviderID, mapping.Platform, mapping.DepartmentID)
 	}
 	return &mapping, nil
@@ -5504,7 +5573,7 @@ func (s *Service) buildCandidate(ctx context.Context, p relay.Provider, requestF
 		candidate.Warnings = append(candidate.Warnings, departmentWarning)
 	}
 	if u.RelayUserID == nil || *u.RelayUserID <= 0 {
-		candidate.Warnings = append(candidate.Warnings, fmt.Sprintf("user %d has no relay mapping", u.ID))
+		candidate.Warnings = append(candidate.Warnings, fmt.Sprintf("user %s has no relay mapping", warningRef(int64(u.ID), localUserWarningLabel(u))))
 		return candidate
 	}
 	candidate.RelayUserID = int64(*u.RelayUserID)
@@ -6329,7 +6398,19 @@ func accountPools(mapping Mapping, accounts []relay.Account) []TargetAccountPool
 	return pools
 }
 
-func accountPoolWarnings(pools []TargetAccountPool, initialized bool) []string {
+// accountPoolWarnings combines the advisory Account warnings with the
+// Account-drift details of every drifting pool. Mapping lists render the drift
+// details as AlignmentDifferences, so ListMappings consumes the two halves
+// separately; the other read paths surface both as Mapping.Warnings. A single
+// producer keeps the drift message identical across those paths.
+func accountPoolWarnings(pools []TargetAccountPool, initialized bool, groupLabels, accountLabels map[int64]string) []string {
+	return append(accountPoolAdvisories(pools, initialized, groupLabels, accountLabels), accountPoolDriftWarnings(pools, initialized, groupLabels, accountLabels)...)
+}
+
+// accountPoolAdvisories reports Account shapes that do not make the Mapping
+// drifted: a Target holding multiple Accounts and one Account reused across
+// Targets.
+func accountPoolAdvisories(pools []TargetAccountPool, initialized bool, groupLabels, accountLabels map[int64]string) []string {
 	groupsByAccount := make(map[int64][]int64)
 	warnings := make([]string, 0)
 	for _, pool := range pools {
@@ -6344,7 +6425,7 @@ func accountPoolWarnings(pools []TargetAccountPool, initialized bool) []string {
 			}
 		}
 		if len(accountIDs) > 1 {
-			warnings = append(warnings, fmt.Sprintf("target group %d has multiple Accounts", pool.TargetGroupID))
+			warnings = append(warnings, fmt.Sprintf("target group %s has multiple Accounts", groupWarningRef(groupLabels, pool.TargetGroupID)))
 		}
 		for accountID := range accountIDs {
 			groupsByAccount[accountID] = append(groupsByAccount[accountID], pool.TargetGroupID)
@@ -6361,11 +6442,37 @@ func accountPoolWarnings(pools []TargetAccountPool, initialized bool) []string {
 			continue
 		}
 		sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
-		labels := make([]string, len(groupIDs))
+		groupRefs := make([]string, len(groupIDs))
 		for index, groupID := range groupIDs {
-			labels[index] = strconv.FormatInt(groupID, 10)
+			groupRefs[index] = groupWarningRef(groupLabels, groupID)
 		}
-		warnings = append(warnings, fmt.Sprintf("account %d is reused across target groups %s", accountID, strings.Join(labels, ", ")))
+		warnings = append(warnings, fmt.Sprintf("account %s is reused across target groups %s", warningRef(accountID, accountLabels[accountID]), strings.Join(groupRefs, ", ")))
+	}
+	return warnings
+}
+
+// accountPoolDriftWarnings reports, for every drifting pool, the reviewed
+// desired pool against the pool observed on Relay. Every managed Account
+// relationship is reviewed at the same priority, so only membership is
+// reported and no priority text is rendered.
+func accountPoolDriftWarnings(pools []TargetAccountPool, initialized bool, groupLabels, accountLabels map[int64]string) []string {
+	warnings := make([]string, 0)
+	for _, pool := range pools {
+		if !pool.Drift {
+			continue
+		}
+		expected := make([]string, 0, len(pool.Desired))
+		if initialized {
+			for _, account := range pool.Desired {
+				expected = append(expected, warningRef(account.AccountID, accountLabels[account.AccountID]))
+			}
+		}
+		observed := make([]string, 0, len(pool.Current))
+		for _, account := range pool.Current {
+			observed = append(observed, warningRef(account.ID, account.Name))
+		}
+		warnings = append(warnings, fmt.Sprintf("target group %s account relationships drifted: expected Accounts [%s]; observed Accounts [%s]",
+			groupWarningRef(groupLabels, pool.TargetGroupID), strings.Join(expected, ", "), strings.Join(observed, ", ")))
 	}
 	return warnings
 }
@@ -6394,6 +6501,101 @@ func sameAccountIntents(left, right []AccountIntent) bool {
 	return true
 }
 
+// Warning display references. Relay Planning warnings keep the numeric ID as
+// the authoritative identity and append a human-readable label when the same
+// read that produced the warning already carried one. Labels are display
+// snapshots only: they must never be used for identity comparisons,
+// relationship fingerprints, or validation.
+func warningLabel(value string) string {
+	return strings.TrimSpace(value)
+}
+
+// warningRef renders "<id> (<label>)" and degrades to the bare ID when the
+// display label is unavailable. Backend warnings never add "#"; the frontend
+// warning templates add it where they already do.
+func warningRef(id int64, label string) string {
+	return warningRefText(strconv.FormatInt(id, 10), label)
+}
+
+func warningRefText(id, label string) string {
+	id = strings.TrimSpace(id)
+	label = warningLabel(label)
+	if id == "" || label == "" {
+		return id
+	}
+	return id + " (" + label + ")"
+}
+
+// memberWarningRef renders a local user reference from the raw
+// MemberAssignments key, which is stored as a decimal string.
+func memberWarningRef(rawUserID string, labels map[int]string) string {
+	userID, err := strconv.Atoi(strings.TrimSpace(rawUserID))
+	if err != nil {
+		return strings.TrimSpace(rawUserID)
+	}
+	return warningRef(int64(userID), labels[userID])
+}
+
+func groupWarningLabels(groups []relay.Group) map[int64]string {
+	labels := make(map[int64]string, len(groups))
+	for _, group := range groups {
+		if group.ID <= 0 {
+			continue
+		}
+		if label := warningLabel(group.Name); label != "" {
+			labels[group.ID] = label
+		}
+	}
+	return labels
+}
+
+func groupWarningRef(labels map[int64]string, groupID int64) string {
+	return warningRef(groupID, labels[groupID])
+}
+
+func accountWarningLabels(accounts []relay.Account) map[int64]string {
+	labels := make(map[int64]string, len(accounts))
+	for _, account := range accounts {
+		if account.ID <= 0 {
+			continue
+		}
+		if label := warningLabel(account.Name); label != "" {
+			labels[account.ID] = label
+		}
+	}
+	return labels
+}
+
+func localUserWarningLabel(localUser *ent.User) string {
+	if localUser == nil {
+		return ""
+	}
+	if label := warningLabel(localUser.Email); label != "" {
+		return label
+	}
+	return warningLabel(localUser.Username)
+}
+
+func localUserWarningLabels(localUsers []*ent.User) map[int]string {
+	labels := make(map[int]string, len(localUsers))
+	for _, localUser := range localUsers {
+		if localUser == nil || localUser.ID <= 0 {
+			continue
+		}
+		if label := localUserWarningLabel(localUser); label != "" {
+			labels[localUser.ID] = label
+		}
+	}
+	return labels
+}
+
+func relayUserWarningLabel(relayUser relay.User) string {
+	if label := warningLabel(relayUser.Email); label != "" {
+		return label
+	}
+	return warningLabel(relayUser.Username)
+}
+
 func mappingAvailabilityWarnings(mapping Mapping, groups []relay.Group) []string {
 	if groups == nil {
 		return nil
@@ -6407,17 +6609,19 @@ func mappingAvailabilityWarnings(mapping Mapping, groups []relay.Group) []string
 	warnings := make([]string, 0)
 	if mapping.TemplateGroupID > 0 {
 		if _, ok := available[mapping.TemplateGroupID]; !ok {
-			warnings = append(warnings, fmt.Sprintf("template group %d is unavailable", mapping.TemplateGroupID))
+			warnings = append(warnings, fmt.Sprintf("template group %s is unavailable", warningRef(mapping.TemplateGroupID, mapping.TemplateGroupName)))
 		}
 	}
 	if mapping.SourceGroupID > 0 {
 		if _, ok := available[mapping.SourceGroupID]; !ok {
-			warnings = append(warnings, fmt.Sprintf("migration source group %d is unavailable", mapping.SourceGroupID))
+			warnings = append(warnings, fmt.Sprintf("migration source group %s is unavailable", warningRef(mapping.SourceGroupID, mapping.SourceGroupName)))
 		}
 	}
 	for _, groupID := range mapping.GroupIDs {
 		if groupID > 0 {
 			if _, ok := available[groupID]; !ok {
+				// The provider no longer returns this target Group, so no display
+				// label exists for it: keep the authoritative bare ID.
 				warnings = append(warnings, fmt.Sprintf("target group %d is unavailable", groupID))
 			}
 		}
@@ -6428,6 +6632,7 @@ func mappingAvailabilityWarnings(mapping Mapping, groups []relay.Group) []string
 type mappingRelationshipFacts struct {
 	users                []relay.User
 	localByRelay         map[int64]int
+	localLabels          map[int]string
 	activeGroupsByUserID map[int64][]int64
 }
 
@@ -6519,7 +6724,7 @@ func loadMappingRelationshipFacts(ctx context.Context, client *ent.Client, provi
 			activeGroupsByUserID[result.relayUserID] = result.groups
 		}
 	}
-	return &mappingRelationshipFacts{users: users, localByRelay: localByRelay, activeGroupsByUserID: activeGroupsByUserID}, nil
+	return &mappingRelationshipFacts{users: users, localByRelay: localByRelay, localLabels: localUserWarningLabels(localUsers), activeGroupsByUserID: activeGroupsByUserID}, nil
 }
 
 func mappingRelationshipFactsFromSnapshot(ctx context.Context, client *ent.Client, snapshot *providerRelationshipSnapshot) (*mappingRelationshipFacts, error) {
@@ -6530,6 +6735,7 @@ func mappingRelationshipFactsFromSnapshot(ctx context.Context, client *ent.Clien
 	facts := &mappingRelationshipFacts{
 		users:                make([]relay.User, 0, len(snapshot.relationships)),
 		localByRelay:         make(map[int64]int, len(localUsers)),
+		localLabels:          localUserWarningLabels(localUsers),
 		activeGroupsByUserID: make(map[int64][]int64, len(snapshot.relationships)),
 	}
 	for _, localUser := range localUsers {
@@ -6544,7 +6750,7 @@ func mappingRelationshipFactsFromSnapshot(ctx context.Context, client *ent.Clien
 	return facts, nil
 }
 
-func mappingRelationshipWarnings(facts *mappingRelationshipFacts, mapping Mapping) []string {
+func mappingRelationshipWarnings(facts *mappingRelationshipFacts, mapping Mapping, groupLabels map[int64]string) []string {
 	if facts == nil {
 		return nil
 	}
@@ -6576,7 +6782,7 @@ func mappingRelationshipWarnings(facts *mappingRelationshipFacts, mapping Mappin
 				if relayGroupAdopted(mapping.OperationState, relayUser.ID, groupID) {
 					continue
 				}
-				warnings = append(warnings, fmt.Sprintf("unmanaged relay member %d in target group %d", relayUser.ID, groupID))
+				warnings = append(warnings, fmt.Sprintf("unmanaged relay member %s in target group %s", warningRef(relayUser.ID, relayUserWarningLabel(relayUser)), groupWarningRef(groupLabels, groupID)))
 			}
 			continue
 		}
@@ -6584,15 +6790,15 @@ func mappingRelationshipWarnings(facts *mappingRelationshipFacts, mapping Mappin
 		for _, groupID := range groups {
 			actual[localID][groupID] = struct{}{}
 			if expectedGroup, expectedOK := expected[localID]; !expectedOK {
-				warnings = append(warnings, fmt.Sprintf("unmanaged member %d in target group %d", localID, groupID))
+				warnings = append(warnings, fmt.Sprintf("unmanaged member %s in target group %s", warningRef(int64(localID), facts.localLabels[localID]), groupWarningRef(groupLabels, groupID)))
 			} else if expectedGroup != groupID {
-				warnings = append(warnings, fmt.Sprintf("member %d is subscribed to target group %d instead of %d", localID, groupID, expectedGroup))
+				warnings = append(warnings, fmt.Sprintf("member %s is subscribed to target group %s instead of %s", warningRef(int64(localID), facts.localLabels[localID]), groupWarningRef(groupLabels, groupID), groupWarningRef(groupLabels, expectedGroup)))
 			}
 		}
 	}
 	for userID, groupID := range expected {
 		if _, exists := actual[userID][groupID]; !exists {
-			warnings = append(warnings, fmt.Sprintf("mapping member %d is missing from target group %d", userID, groupID))
+			warnings = append(warnings, fmt.Sprintf("mapping member %s is missing from target group %s", warningRef(int64(userID), facts.localLabels[userID]), groupWarningRef(groupLabels, groupID)))
 		}
 	}
 	return uniqueStrings(warnings)

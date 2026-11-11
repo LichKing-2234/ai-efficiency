@@ -96,8 +96,9 @@ func TestMappingAlignmentDoesNotInterpretPresentationText(t *testing.T) {
 	client := testdb.Open(t)
 	service := NewService(client, nil, nil)
 	for _, advisory := range []string{
-		"target group 101 has multiple Accounts",
-		"target group 101 uses two Accounts",
+		"target group 101 (Group Beta) has multiple Accounts",
+		"account 11 (Account Alpha) is reused across target groups 101 (Group Beta), 102 (Group Gamma)",
+		"target group 101 (Group Beta) account relationships drifted: expected Accounts []; observed Accounts [62 (Account Alpha)]",
 		"relationship snapshot includes multiple Accounts",
 	} {
 		t.Run(advisory, func(t *testing.T) {
@@ -111,7 +112,7 @@ func TestMappingAlignmentDoesNotInterpretPresentationText(t *testing.T) {
 		})
 	}
 
-	difference := "target group 101 has multiple Accounts outside the reviewed pool"
+	difference := "target group 101 (Group Beta) account relationships drifted: expected Accounts []; observed Accounts [62 (Account Alpha)]"
 	mappings := []Mapping{{ID: 1, AlignmentDifferences: []string{difference, difference}}}
 	if err := service.decorateMappingOperationState(ctx, mappings); err != nil {
 		t.Fatal(err)

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ElDialog, ElMessage, ElMessageBox, ElTooltip } from 'element-plus'
 import RelayPlanningView from '@/views/admin/RelayPlanningView.vue'
+import { setLocale } from '@/i18n'
 
 vi.mock('@/api/adminUsers', () => ({
   listAdminUserDepartmentOptions: vi.fn(),
@@ -227,6 +228,28 @@ async function mountView(initialMappings: any[] = [], wide = false, previewPlan 
   })
   await flushPromises()
   return { wrapper, relayPlanning, matchMedia }
+}
+
+function mappingWithWarnings(warnings: string[]) {
+	return {
+		id: 9,
+		provider_id: 7,
+		department_id: 'dept-alpha',
+		department_name: 'SDK Framework',
+		platform: 'openai',
+		template_group_id: 42,
+		template_group_name: 'Group Alpha',
+		source_group_id: 0,
+		source_group_name: '',
+		group_ids: [101, 102],
+		status: 'active',
+		weekly_cost_target: 2500,
+		account_management_initialized: true,
+		desired_accounts: {},
+		account_pools: [],
+		warnings,
+		updated_at: '2026-08-20T00:00:00Z',
+	}
 }
 
 async function selectPlanningDepartment(wrapper: ReturnType<typeof mount>, departmentID = 'dept-alpha') {
@@ -816,12 +839,92 @@ describe('RelayPlanningView', () => {
 			account_management_initialized: true,
 			desired_accounts: {},
 			account_pools: [],
-			warnings: ['target group 101 has multiple Accounts', 'account 11 is reused across target groups 101, 102'],
+			warnings: ['target group 101 (Group Beta) has multiple Accounts', 'account 11 (Account Alpha) is reused across target groups 101 (Group Beta), 102 (Group Gamma)'],
 			updated_at: '2026-08-20T00:00:00Z',
 		}])
 
-		expect(wrapper.text()).toContain('Target Group #101 has multiple Accounts')
-		expect(wrapper.text()).toContain('Account #11 is reused across Target Groups #101, #102')
+		expect(wrapper.text()).toContain('Target Group #101 (Group Beta) has multiple Accounts')
+		expect(wrapper.text()).toContain('Account #11 (Account Alpha) is reused across Target Groups 101 (Group Beta), 102 (Group Gamma)')
+	})
+
+	it('localizes a labeled unmanaged-member warning in both locales', async () => {
+		const warnings = ['unmanaged member 447 (alice@example.com) in target group 67 (Group Gamma)']
+
+		const english = await mountView([mappingWithWarnings(warnings)])
+		expect(english.wrapper.text()).toContain('User 447 (alice@example.com) is unmanaged in target Group #67 (Group Gamma)')
+
+		await setLocale('zh-CN')
+		const chinese = await mountView([mappingWithWarnings(warnings)])
+		expect(chinese.wrapper.text()).toContain('用户 447 (alice@example.com) 在目标分组 #67 (Group Gamma) 中但未纳入映射')
+	})
+
+	it('localizes labeled account-drift warnings with expected and observed Accounts in both locales', async () => {
+		const warnings = [
+			'target group 20 (Group Delta) account relationships drifted: expected Accounts []; observed Accounts [62 (Account Alpha), 111 (Account Beta)]',
+			'target group 21 (Group Epsilon) account relationships drifted: expected Accounts [62 (Account Alpha)]; observed Accounts []',
+		]
+
+		const english = await mountView([mappingWithWarnings(warnings)])
+		expect(english.wrapper.text()).toContain('Target Group #20 (Group Delta) Account relationships drifted: expected []; observed [62 (Account Alpha), 111 (Account Beta)]')
+		expect(english.wrapper.text()).toContain('Target Group #21 (Group Epsilon) Account relationships drifted: expected [62 (Account Alpha)]; observed []')
+
+		await setLocale('zh-CN')
+		const chinese = await mountView([mappingWithWarnings(warnings)])
+		expect(chinese.wrapper.text()).toContain('目标分组 #20 (Group Delta) 的账号关系不一致：期望 []；实际 [62 (Account Alpha), 111 (Account Beta)]')
+		expect(chinese.wrapper.text()).toContain('目标分组 #21 (Group Epsilon) 的账号关系不一致：期望 [62 (Account Alpha)]；实际 []')
+	})
+
+	it('falls back to bare IDs when a warning label is unavailable', async () => {
+		const { wrapper } = await mountView([mappingWithWarnings([
+			'target group 67 is unavailable',
+			'unmanaged member 447 in target group 67',
+			'account 11 is reused across target groups 101, 102',
+		])])
+
+		expect(wrapper.text()).toContain('Target Group #67 is unavailable')
+		expect(wrapper.text()).toContain('User 447 is unmanaged in target Group #67')
+		expect(wrapper.text()).toContain('Account #11 is reused across Target Groups 101, 102')
+	})
+
+	it('passes unknown warnings through unchanged', async () => {
+		const { wrapper } = await mountView([mappingWithWarnings([
+			'a future backend warning 42 the frontend does not know',
+		])])
+
+		expect(wrapper.text()).toContain('a future backend warning 42 the frontend does not know')
+	})
+
+	it.each([
+		['template group 42 (Group Alpha) is unavailable', 'Template Group #42 (Group Alpha) is unavailable'],
+		['migration source group 41 (Group Alpha) is unavailable', 'Migration Source Group #41 (Group Alpha) is unavailable'],
+		['target group 101 (Group Beta) is unavailable', 'Target Group #101 (Group Beta) is unavailable'],
+		['user 1 (alice@example.com) is assigned in multiple mappings', 'User 1 (alice@example.com) is assigned in multiple mappings'],
+		['user 1 (alice@example.com) exceeds remaining planning capacity', 'User 1 (alice@example.com) exceeds the remaining target capacity'],
+		['unmanaged relay member 447 (relay-alpha) in target group 67 (Group Gamma)', 'Relay member 447 (relay-alpha) is unmanaged in target Group #67 (Group Gamma)'],
+		['member 1 (alice@example.com) is subscribed to target group 101 (Group Beta) instead of 102 (Group Gamma)', 'User 1 (alice@example.com) is subscribed to Group #101 (Group Beta), expected Group #102 (Group Gamma)'],
+		['mapping member 1 (alice@example.com) is missing from target group 101 (Group Beta)', 'Mapped user 1 (alice@example.com) is missing from target Group #101 (Group Beta)'],
+	])('localizes the labeled warning shape %s', async (warning, expected) => {
+		const { wrapper } = await mountView([mappingWithWarnings([warning])])
+
+		expect(wrapper.text()).toContain(expected)
+	})
+
+	it('localizes labeled plan and candidate warnings from the preview plan', async () => {
+		const { wrapper, relayPlanning } = await mountView()
+		const labeledPlan = structuredClone(plan) as any
+		labeledPlan.warnings = [
+			'user 1 (alice@example.com) has no relay mapping',
+			'target group 101 (Group Beta) is already managed by destination mapping',
+			'member 1 (alice@example.com) is already managed by destination mapping',
+		]
+		labeledPlan.candidates[0].warnings = ['user 1 (alice@example.com) has no relay mapping']
+		relayPlanning.previewRelayPlan.mockResolvedValue({ data: { data: labeledPlan } })
+
+		await fillAndPreview(wrapper)
+
+		expect(wrapper.text()).toContain('User 1 (alice@example.com) has no Relay mapping')
+		expect(wrapper.text()).toContain('Target Group #101 (Group Beta) is already managed by the destination mapping')
+		expect(wrapper.text()).toContain('Member 1 (alice@example.com) is already managed by the destination mapping')
 	})
 
 	it('paginates managed mappings without rendering every mapping at once', async () => {
@@ -1389,12 +1492,12 @@ describe('RelayPlanningView', () => {
 		const mapping = {
 			...structuredClone(renewalMapping),
 			status: 'needs_retry',
-			warnings: ['unmanaged member 2 in target group 25'],
+			warnings: ['unmanaged member 2 (bob@example.org) in target group 25 (Group Beta)'],
 		}
 		const { wrapper } = await mountView([mapping])
 
 		expect(wrapper.text()).toContain('Needs retry')
-		expect(wrapper.text()).toContain('User 2 is unmanaged in target Group #25')
+		expect(wrapper.text()).toContain('User 2 (bob@example.org) is unmanaged in target Group #25 (Group Beta)')
 	})
 
 	it('requires a removal destination for a legacy managed member', async () => {
@@ -1918,8 +2021,8 @@ describe('RelayPlanningView', () => {
 		const mapping = {
 			...structuredClone(existingMapping),
 			alignment: 'drifted',
-			alignment_differences: ['target group 101 account relationships drifted'],
-			warnings: ['target group 101 has multiple Accounts'],
+			alignment_differences: ['target group 101 (Group Beta) account relationships drifted: expected Accounts []; observed Accounts [62 (Account Alpha), 111 (Account Beta)]'],
+			warnings: ['target group 101 (Group Beta) has multiple Accounts'],
 		}
 		const replan = structuredClone({ ...plan, mapping_id: 9, assignments: [{ ...plan.assignments[0], target_group_id: 101 }] })
 		const { wrapper, relayPlanning } = await mountView([mapping], wide)
@@ -1927,8 +2030,8 @@ describe('RelayPlanningView', () => {
 
 		const button = wrapper.get('[data-testid="replan-mapping-9"]')
 		expect(button.attributes('disabled')).toBeUndefined()
-		expect(wrapper.text().match(/target group 101 account relationships drifted/g)).toHaveLength(1)
-		expect(wrapper.text().match(/Target Group #101 has multiple Accounts/g)).toHaveLength(1)
+		expect(wrapper.text().match(/Target Group #101 \(Group Beta\) Account relationships drifted: expected \[\]; observed \[62 \(Account Alpha\), 111 \(Account Beta\)\]/g)).toHaveLength(1)
+		expect(wrapper.text().match(/Target Group #101 \(Group Beta\) has multiple Accounts/g)).toHaveLength(1)
 		await button.trigger('click')
 		await flushPromises()
 		expect(relayPlanning.previewRelayReplan).toHaveBeenCalledWith(9, {})

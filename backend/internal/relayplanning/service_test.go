@@ -280,12 +280,12 @@ func TestValidateAssignmentsRejectsDuplicateMember(t *testing.T) {
 }
 
 func TestMappingAvailabilityWarningsArePlatformScoped(t *testing.T) {
-	warnings := mappingAvailabilityWarnings(Mapping{Platform: "openai", TemplateGroupID: 11, SourceGroupID: 12, GroupIDs: []int64{13}}, []relay.Group{
+	warnings := mappingAvailabilityWarnings(Mapping{Platform: "openai", TemplateGroupID: 11, SourceGroupID: 12, SourceGroupName: "Group Beta", GroupIDs: []int64{13}}, []relay.Group{
 		{ID: 11, Platform: "openai"},
 		{ID: 12, Platform: "anthropic"},
 		{ID: 13, Platform: "openai"},
 	})
-	if len(warnings) != 1 || warnings[0] != "migration source group 12 is unavailable" {
+	if len(warnings) != 1 || warnings[0] != "migration source group 12 (Group Beta) is unavailable" {
 		t.Fatalf("mapping availability warnings = %#v", warnings)
 	}
 }
@@ -1935,5 +1935,416 @@ func TestApplyAssignmentPeakRpmSumsAggregatesAssignedCandidates(t *testing.T) {
 	}
 	if assignments[1].PeakRpmSum != 0 {
 		t.Fatalf("assignment 1 peak rpm sum = %d, want 0 when peaks are unknown or not candidates", assignments[1].PeakRpmSum)
+	}
+}
+
+func assertWarningSet(t *testing.T, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("warnings = %#v, want %#v", got, want)
+	}
+	counts := make(map[string]int, len(want))
+	for _, warning := range want {
+		counts[warning]++
+	}
+	for _, warning := range got {
+		counts[warning]--
+		if counts[warning] < 0 {
+			t.Fatalf("warnings = %#v, want %#v", got, want)
+		}
+	}
+	for warning, count := range counts {
+		if count != 0 {
+			t.Fatalf("warnings = %#v, want %#v (missing %q)", got, want, warning)
+		}
+	}
+}
+
+func containsWarning(warnings []string, want string) bool {
+	for _, warning := range warnings {
+		if warning == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestMappingAvailabilityWarningsUseDisplayLabels(t *testing.T) {
+	warnings := mappingAvailabilityWarnings(Mapping{
+		Platform:          "openai",
+		TemplateGroupID:   11,
+		TemplateGroupName: "Group Alpha",
+		SourceGroupID:     12,
+		SourceGroupName:   "Group Beta",
+		GroupIDs:          []int64{13, 15},
+	}, []relay.Group{
+		{ID: 13, Name: "Group Gamma", Platform: "openai"},
+		{ID: 14, Name: "Group Delta", Platform: "openai"},
+	})
+	want := []string{
+		"template group 11 (Group Alpha) is unavailable",
+		"migration source group 12 (Group Beta) is unavailable",
+		"target group 15 is unavailable",
+	}
+	assertWarningSet(t, warnings, want)
+}
+
+func TestMappingRelationshipWarningsUseDisplayLabels(t *testing.T) {
+	facts := &mappingRelationshipFacts{
+		users: []relay.User{
+			{ID: 900, Email: "external@example.com", Username: "external"},
+			{ID: 901, Username: "relay-only"},
+			{ID: 902, Email: "alice@example.com", Username: "alice"},
+			{ID: 903, Username: "bob"},
+			{ID: 904, Email: "carol@example.org", Username: "carol"},
+		},
+		localByRelay: map[int64]int{902: 44, 903: 45, 904: 46},
+		localLabels:  map[int]string{44: "alice@example.com", 45: "bob", 46: "carol@example.org"},
+		activeGroupsByUserID: map[int64][]int64{
+			900: {101},
+			901: {101},
+			902: {102},
+			903: {101},
+			904: {101},
+		},
+	}
+	warnings := mappingRelationshipWarnings(facts, Mapping{
+		GroupIDs:          []int64{101, 102},
+		MemberAssignments: map[string]int64{"44": 101, "45": 102},
+	}, map[int64]string{101: "Group Gamma", 102: "Group Delta"})
+	want := []string{
+		"unmanaged relay member 900 (external@example.com) in target group 101 (Group Gamma)",
+		"unmanaged relay member 901 (relay-only) in target group 101 (Group Gamma)",
+		"member 44 (alice@example.com) is subscribed to target group 102 (Group Delta) instead of 101 (Group Gamma)",
+		"member 45 (bob) is subscribed to target group 101 (Group Gamma) instead of 102 (Group Delta)",
+		"unmanaged member 46 (carol@example.org) in target group 101 (Group Gamma)",
+		"mapping member 44 (alice@example.com) is missing from target group 101 (Group Gamma)",
+		"mapping member 45 (bob) is missing from target group 102 (Group Delta)",
+	}
+	assertWarningSet(t, warnings, want)
+}
+
+func TestAccountPoolWarningsUseDisplayLabelsAndDriftDetail(t *testing.T) {
+	pools := []TargetAccountPool{
+		{
+			TargetGroupID: 20,
+			Current: []TargetAccount{
+				{ID: 111, Name: "Account Beta", Priority: 1},
+				{ID: 62, Name: "Account Alpha", Priority: 2},
+			},
+			Desired: []AccountIntent{{AccountID: 62, Priority: 1}, {AccountID: 111, Priority: 2}},
+			Drift:   true,
+		},
+		{
+			TargetGroupID: 21,
+			Current:       []TargetAccount{{ID: 62, Name: "Account Alpha", Priority: 1}},
+			Desired:       []AccountIntent{{AccountID: 62, Priority: 1}},
+		},
+	}
+	warnings := accountPoolWarnings(pools, true, map[int64]string{20: "Group Epsilon", 21: "Group Zeta"}, map[int64]string{62: "Account Alpha", 111: "Account Beta"})
+	want := []string{
+		"target group 20 (Group Epsilon) has multiple Accounts",
+		"account 62 (Account Alpha) is reused across target groups 20 (Group Epsilon), 21 (Group Zeta)",
+		"target group 20 (Group Epsilon) account relationships drifted: expected Accounts [62 (Account Alpha), 111 (Account Beta)]; observed Accounts [111 (Account Beta), 62 (Account Alpha)]",
+	}
+	assertWarningSet(t, warnings, want)
+}
+
+func TestAccountPoolWarningHalvesStaySeparate(t *testing.T) {
+	pools := []TargetAccountPool{
+		{
+			TargetGroupID: 20,
+			Current:       []TargetAccount{{ID: 62, Name: "Account Alpha", Priority: 1}, {ID: 111, Name: "Account Beta", Priority: 2}},
+			Desired:       []AccountIntent{{AccountID: 62, Priority: 1}, {AccountID: 111, Priority: 2}},
+		},
+		{
+			TargetGroupID: 21,
+			Current:       []TargetAccount{{ID: 62, Name: "Account Alpha", Priority: 1}, {ID: 111, Name: "Account Beta", Priority: 2}},
+			Desired:       []AccountIntent{{AccountID: 13, Priority: 1}},
+			Drift:         true,
+		},
+	}
+	groupLabels := map[int64]string{20: "Group Epsilon", 21: "Group Zeta"}
+	accountLabels := map[int64]string{13: "Account Gamma", 62: "Account Alpha", 111: "Account Beta"}
+	advisories := accountPoolAdvisories(pools, true, groupLabels, accountLabels)
+	if len(advisories) != 1 || advisories[0] != "target group 20 (Group Epsilon) has multiple Accounts" {
+		t.Fatalf("advisories = %#v, want only the multi-Account advisory", advisories)
+	}
+	drift := accountPoolDriftWarnings(pools, true, groupLabels, accountLabels)
+	wantDrift := "target group 21 (Group Zeta) account relationships drifted: expected Accounts [13 (Account Gamma)]; observed Accounts [62 (Account Alpha), 111 (Account Beta)]"
+	if len(drift) != 1 || drift[0] != wantDrift {
+		t.Fatalf("drift warnings = %#v, want %q", drift, wantDrift)
+	}
+}
+
+func TestAccountPoolWarningsDegradeToBareIDsWithoutLabels(t *testing.T) {
+	pools := []TargetAccountPool{{
+		TargetGroupID: 7,
+		Current:       []TargetAccount{{ID: 13, Priority: 3}},
+		Drift:         true,
+	}}
+	warnings := accountPoolWarnings(pools, true, nil, nil)
+	want := []string{"target group 7 account relationships drifted: expected Accounts []; observed Accounts [13]"}
+	assertWarningSet(t, warnings, want)
+}
+
+func TestBuildCandidateLabelsUserWithoutRelayMapping(t *testing.T) {
+	service := &Service{}
+	candidate := service.buildCandidate(context.Background(), nil, newPlanningRequestFacts(), &ent.User{ID: 7, Username: "alice", Email: "alice@example.com"}, relay.Group{ID: 20, Platform: "openai"}, "openai", "", nil, nil, nil, nil, time.Now().UTC())
+	assertWarningSet(t, candidate.Warnings, []string{"user 7 (alice@example.com) has no relay mapping"})
+
+	candidate = service.buildCandidate(context.Background(), nil, newPlanningRequestFacts(), &ent.User{ID: 8, Username: "bob"}, relay.Group{ID: 20, Platform: "openai"}, "openai", "", nil, nil, nil, nil, time.Now().UTC())
+	assertWarningSet(t, candidate.Warnings, []string{"user 8 (bob) has no relay mapping"})
+
+	candidate = service.buildCandidate(context.Background(), nil, newPlanningRequestFacts(), &ent.User{ID: 9}, relay.Group{ID: 20, Platform: "openai"}, "openai", "", nil, nil, nil, nil, time.Now().UTC())
+	assertWarningSet(t, candidate.Warnings, []string{"user 9 has no relay mapping"})
+}
+
+func TestLocalUserWarningLabelFallsBackToUsername(t *testing.T) {
+	if got := localUserWarningLabel(&ent.User{ID: 1, Username: "bob"}); got != "bob" {
+		t.Fatalf("username-only label = %q, want bob", got)
+	}
+	if got := localUserWarningLabel(&ent.User{ID: 1, Username: "bob", Email: " bob@example.org "}); got != "bob@example.org" {
+		t.Fatalf("email-first label = %q, want trimmed email", got)
+	}
+	if got := localUserWarningLabel(nil); got != "" {
+		t.Fatalf("nil label = %q, want empty", got)
+	}
+}
+
+type accountWarningProvider struct {
+	relay.Provider
+	groups   []relay.Group
+	accounts []relay.Account
+}
+
+func (p *accountWarningProvider) ListPlatformGroups(context.Context) ([]relay.Group, error) {
+	return p.groups, nil
+}
+
+func (p *accountWarningProvider) ListAccountsForPlatform(context.Context, string) ([]relay.Account, error) {
+	return p.accounts, nil
+}
+
+func TestGetMappingEmitsLabeledAccountDriftDetail(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerRow := client.RelayProvider.Create().
+		SetName("relay-planning-drift-label-test").
+		SetDisplayName("Relay Planning Drift Label Test").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SaveX(ctx)
+	mapping := client.RelayGroupMapping.Create().
+		SetProviderID(providerRow.ID).
+		SetDepartmentExternalID("dept-alpha").
+		SetDepartmentName("Department Alpha").
+		SetPlatform("openai").
+		SetTemplateGroupID(10).
+		SetGroupIds([]int64{20}).
+		SetAccountManagementInitialized(true).
+		SetDesiredAccounts(map[string][]map[string]int64{"20": {{"account_id": 62, "priority": 1}, {"account_id": 111, "priority": 2}}}).
+		SaveX(ctx)
+	provider := &accountWarningProvider{
+		groups: []relay.Group{
+			{ID: 10, Name: "Group Alpha", Platform: "openai"},
+			{ID: 20, Name: "Group Beta", Platform: "openai"},
+		},
+		accounts: []relay.Account{
+			{ID: 62, Name: "Account Alpha", Platform: "openai", GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 20, Priority: 2}}},
+			{ID: 13, Name: "Account Gamma", Platform: "openai", GroupRelationships: []relay.AccountGroupRelationship{{GroupID: 20, Priority: 1}}},
+			{ID: 111, Name: "Account Beta", Platform: "openai"},
+		},
+	}
+	got, err := NewService(client, relayPlanningProviderResolver(func(context.Context, int) (relay.Provider, error) {
+		return provider, nil
+	}), nil).GetMapping(ctx, mapping.ID)
+	if err != nil {
+		t.Fatalf("GetMapping() error = %v", err)
+	}
+	if len(got.AccountPools) != 1 || !got.AccountPools[0].Drift {
+		t.Fatalf("account pools = %+v, want one drifting pool", got.AccountPools)
+	}
+	wantDrift := "target group 20 (Group Beta) account relationships drifted: expected Accounts [62 (Account Alpha), 111 (Account Beta)]; observed Accounts [13 (Account Gamma), 62 (Account Alpha)]"
+	if !containsWarning(got.Warnings, wantDrift) {
+		t.Fatalf("GetMapping warnings = %#v, want %q", got.Warnings, wantDrift)
+	}
+	if !containsWarning(got.Warnings, "target group 20 (Group Beta) has multiple Accounts") {
+		t.Fatalf("GetMapping warnings = %#v, want labeled multi-Account warning", got.Warnings)
+	}
+}
+
+func TestListMappingsLabelsCrossMappingConflictAndDepartment(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerRow := client.RelayProvider.Create().
+		SetName("relay-planning-warning-label-test").
+		SetDisplayName("Relay Planning Warning Label Test").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SaveX(ctx)
+	alice := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource(entuser.AuthSourceLdap).SetRelayUserID(1001).SaveX(ctx)
+	bob := client.User.Create().SetUsername("bob").SetEmail("bob@example.org").SetAuthSource(entuser.AuthSourceLdap).SetRelayUserID(1002).SaveX(ctx)
+	carol := client.User.Create().SetUsername("carol").SetEmail("carol@example.org").SetAuthSource(entuser.AuthSourceLdap).SetRelayUserID(1003).SaveX(ctx)
+	aliceKey, bobKey, carolKey := fmt.Sprintf("%d", alice.ID), fmt.Sprintf("%d", bob.ID), fmt.Sprintf("%d", carol.ID)
+	client.RelayGroupMapping.Create().
+		SetProviderID(providerRow.ID).
+		SetDepartmentExternalID("dept-alpha").
+		SetDepartmentName("Department Alpha").
+		SetPlatform("openai").
+		SetTemplateGroupID(10).
+		SetGroupIds([]int64{101}).
+		SetMemberAssignments(map[string]int64{aliceKey: 101, carolKey: 101}).
+		SaveX(ctx)
+	client.RelayGroupMapping.Create().
+		SetProviderID(providerRow.ID).
+		SetDepartmentExternalID("dept-beta").
+		SetDepartmentName("Department Beta").
+		SetPlatform("openai").
+		SetTemplateGroupID(10).
+		SetGroupIds([]int64{102}).
+		SetMemberAssignments(map[string]int64{aliceKey: 102, carolKey: 102, bobKey: 102}).
+		SaveX(ctx)
+	mappings, err := NewService(client, relayPlanningProviderResolver(func(context.Context, int) (relay.Provider, error) {
+		return &legacyUsageProvider{}, nil
+	}), nil).ListMappings(ctx, providerRow.ID)
+	if err != nil {
+		t.Fatalf("ListMappings() error = %v", err)
+	}
+	if len(mappings) != 2 {
+		t.Fatalf("mapping count = %d, want 2", len(mappings))
+	}
+	aliceConflict := fmt.Sprintf("user %d (alice@example.com) is assigned in multiple mappings", alice.ID)
+	carolConflict := fmt.Sprintf("user %d (carol@example.org) is assigned in multiple mappings", carol.ID)
+	for _, want := range []string{aliceConflict, carolConflict, "department dept-alpha (Department Alpha) is unavailable"} {
+		if !containsWarning(mappings[0].AlignmentDifferences, want) {
+			t.Fatalf("mapping 0 differences = %#v, want %q", mappings[0].AlignmentDifferences, want)
+		}
+	}
+	for _, want := range []string{aliceConflict, carolConflict, "department dept-beta (Department Beta) is unavailable", "target group 102 is unavailable"} {
+		if !containsWarning(mappings[1].AlignmentDifferences, want) {
+			t.Fatalf("mapping 1 differences = %#v, want %q", mappings[1].AlignmentDifferences, want)
+		}
+	}
+	if containsWarning(mappings[1].AlignmentDifferences, fmt.Sprintf("user %d (bob@example.org) is assigned in multiple mappings", bob.ID)) {
+		t.Fatalf("mapping 1 differences = %#v, bob is only assigned once and must not conflict", mappings[1].AlignmentDifferences)
+	}
+	for _, mapping := range mappings {
+		if mapping.Alignment != "drifted" || len(mapping.Warnings) != 0 {
+			t.Fatalf("mapping = %+v, want drifted differences without Account advisories", mapping)
+		}
+	}
+}
+
+// labeledPreviewProvider extends the scoped candidate provider with the Source
+// and Target memberships a Replan Preview needs, so the plan-level destination
+// warnings can be exercised end to end.
+type labeledPreviewProvider struct {
+	scopedCandidateProvider
+	subscriptions []relay.UserSubscription
+}
+
+func (p *labeledPreviewProvider) ListUserSubscriptions(context.Context, int64) ([]relay.UserSubscription, error) {
+	return p.subscriptions, nil
+}
+
+func TestPreviewLabelsPlanWarnings(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerRow := client.RelayProvider.Create().
+		SetName("relay-planning-plan-warning-label-test").
+		SetDisplayName("Relay Planning Plan Warning Label Test").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetRelayType("sub2api").
+		SaveX(ctx)
+	source, run := createRelayPlanningDirectorySnapshot(t, ctx, client, "dept-beta")
+	alice := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource(entuser.AuthSourceLdap).SetRelayUserID(42).SaveX(ctx)
+	member := client.DirectoryMember.Create().
+		SetSourceID(source.ID).
+		SetExternalID("member-alice").
+		SetEmailNormalized(alice.Email).
+		SetDisplayName(alice.Username).
+		SetDepartmentExternalID("dept-beta").
+		SetMatchedUserID(alice.ID).
+		SetLastSeenRunID(run.ID).
+		SaveX(ctx)
+	client.DirectoryMemberDepartment.Create().
+		SetSourceID(source.ID).
+		SetDirectoryMemberID(member.ID).
+		SetMemberExternalID(member.ExternalID).
+		SetMemberEmailNormalized(member.EmailNormalized).
+		SetDepartmentExternalID("dept-beta").
+		SetLastSeenRunID(run.ID).
+		SaveX(ctx)
+	aliceKey := fmt.Sprintf("%d", alice.ID)
+	sourceMapping := client.RelayGroupMapping.Create().
+		SetProviderID(providerRow.ID).
+		SetDepartmentExternalID("dept-alpha").
+		SetDepartmentName("Department Alpha").
+		SetPlatform("openai").
+		SetTemplateGroupID(10).
+		SetSourceGroupID(20).
+		SetGroupIds([]int64{101}).
+		SetMemberAssignments(map[string]int64{aliceKey: 101}).
+		SaveX(ctx)
+	client.RelayGroupMapping.Create().
+		SetProviderID(providerRow.ID).
+		SetDepartmentExternalID("dept-beta").
+		SetDepartmentName("Department Beta").
+		SetPlatform("openai").
+		SetTemplateGroupID(10).
+		SetSourceGroupID(20).
+		SetGroupIds([]int64{101}).
+		SetMemberAssignments(map[string]int64{aliceKey: 101}).
+		SaveX(ctx)
+	provider := &labeledPreviewProvider{subscriptions: []relay.UserSubscription{
+		{GroupID: 20, Status: "active"},
+		{GroupID: 101, Status: "active"},
+	}}
+	plan, err := NewService(client, relayPlanningProviderResolver(func(context.Context, int) (relay.Provider, error) {
+		return provider, nil
+	}), nil).Preview(ctx, PreviewRequest{
+		ProviderID:        providerRow.ID,
+		DepartmentID:      "dept-beta",
+		Platform:          "openai",
+		TemplateGroupID:   10,
+		SourceGroupID:     20,
+		GroupCount:        1,
+		SelectedUserIDs:   []int{alice.ID},
+		Assignments:       []Assignment{{Index: 0}},
+		ExistingMappingID: sourceMapping.ID,
+	})
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	for _, want := range []string{
+		"target group 101 (OpenAI Group) is already managed by destination mapping",
+		fmt.Sprintf("member %d (alice@example.com) is already managed by destination mapping", alice.ID),
+	} {
+		if !containsWarning(plan.Warnings, want) {
+			t.Fatalf("plan warnings = %#v, want %q", plan.Warnings, want)
+		}
+	}
+}
+
+func TestExecuteGroupWarningLabelsPreferRelayReportedName(t *testing.T) {
+	labels := executeGroupWarningLabels([]GroupResult{
+		{Index: 0, ID: 101, Name: "Group Alpha", Status: "succeeded"},
+		{Index: 1, ID: 102, Name: "Group Beta", CurrentName: "Group Beta (old)", Rename: "failed", Status: "succeeded"},
+		{Index: 2, ID: 0},
+		{Index: 3, ID: 103, Name: "   "},
+	})
+	if labels[101] != "Group Alpha" {
+		t.Fatalf("label 101 = %q, want Group Alpha", labels[101])
+	}
+	if labels[102] != "Group Beta (old)" {
+		t.Fatalf("failed-rename label 102 = %q, want the Relay-reported current name", labels[102])
+	}
+	if _, ok := labels[103]; ok {
+		t.Fatalf("blank Group name produced label %q, want no label for a bare-ID fallback", labels[103])
+	}
+	if _, ok := labels[0]; ok {
+		t.Fatalf("uncreated Group produced label %q", labels[0])
 	}
 }

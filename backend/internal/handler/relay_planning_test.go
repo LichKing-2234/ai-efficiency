@@ -1085,8 +1085,8 @@ func TestRelayPlanningAdoptCurrentAccountsInitializesDesiredStateWithoutRelayWri
 	if got := listed.AccountPools[0].Current; len(got) != 2 || got[0].ID != 12 || got[0].Priority != 1 || got[1].ID != 11 || got[1].Priority != 2 {
 		t.Fatalf("current target accounts = %+v, want safe same-platform priority order", got)
 	}
-	if !containsRelayPlanningWarning(listed.Warnings, "target group 101 has multiple Accounts") || !containsRelayPlanningWarning(listed.Warnings, "account 11 is reused across target groups 101, 102") {
-		t.Fatalf("Account warnings = %v, want multi-Account and reused-Account warnings", listed.Warnings)
+	if !containsRelayPlanningWarning(listed.Warnings, "target group 101 (Group Beta) has multiple Accounts") || !containsRelayPlanningWarning(listed.Warnings, "account 11 (Account Alpha) is reused across target groups 101 (Group Beta), 102 (Group Gamma)") {
+		t.Fatalf("Account warnings = %v, want labeled multi-Account and reused-Account warnings", listed.Warnings)
 	}
 	if listed.Alignment != "aligned" || len(listed.AlignmentDifferences) != 0 {
 		t.Fatalf("Account advisories changed alignment = %s differences=%v", listed.Alignment, listed.AlignmentDifferences)
@@ -1136,11 +1136,11 @@ func TestRelayPlanningAdoptCurrentAccountsInitializesDesiredStateWithoutRelayWri
 		t.Fatalf("drifted list status = %d, body=%s", response.Code, response.Body.String())
 	}
 	listed = listBody.Data.Items[0]
-	wantDrift := "target group 101 account relationships drifted"
+	wantDrift := "target group 101 (Group Beta) account relationships drifted: expected Accounts [11 (Account Alpha), 12 (Account Beta)]; observed Accounts [11 (Account Alpha)]"
 	if listed.Alignment != "drifted" || fmt.Sprint(listed.AlignmentDifferences) != fmt.Sprint([]string{wantDrift}) {
 		t.Fatalf("Account drift alignment = %s differences=%v", listed.Alignment, listed.AlignmentDifferences)
 	}
-	if containsRelayPlanningWarning(listed.Warnings, wantDrift) || !containsRelayPlanningWarning(listed.Warnings, "target group 101 has multiple Accounts") {
+	if containsRelayPlanningWarning(listed.Warnings, wantDrift) || !containsRelayPlanningWarning(listed.Warnings, "target group 101 (Group Beta) has multiple Accounts") {
 		t.Fatalf("Account drift warnings = %v, want advisories without duplicated drift", listed.Warnings)
 	}
 }
@@ -1332,8 +1332,8 @@ func TestRelayPlanningListMappingsUsesRelationshipSnapshot(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode mapping list: %v", err)
 	}
-	if len(body.Data.Items) != 2 || !containsRelayPlanningWarning(body.Data.Items[0].AlignmentDifferences, "unmanaged relay member 900 in target group 101") {
-		t.Fatalf("mapping alignment = %+v, want batch-derived unmanaged member difference", body.Data.Items)
+	if len(body.Data.Items) != 2 || !containsRelayPlanningWarning(body.Data.Items[0].AlignmentDifferences, "unmanaged relay member 900 (external@example.com) in target group 101 (Group Gamma)") {
+		t.Fatalf("mapping alignment = %+v, want labeled batch-derived unmanaged member difference", body.Data.Items)
 	}
 	if got := provider.relationshipReads.Load(); got != 1 {
 		t.Fatalf("relationship snapshot reads = %d, want 1", got)
@@ -1363,9 +1363,9 @@ func TestRelayPlanningListMappingsPreservesFactDifferences(t *testing.T) {
 		{name: "missing Target", groupIDs: []int64{102}, department: "dept-alpha", want: []string{"target group 102 is unavailable"}},
 		{name: "invalid Target", groupIDs: []int64{0}, department: "dept-alpha", want: []string{"mapping contains an invalid target group"}},
 		{name: "no Targets", groupIDs: []int64{}, department: "dept-alpha", want: []string{"mapping has no target groups"}},
-		{name: "missing department", groupIDs: []int64{101}, department: "dept-missing", want: []string{"department dept-missing is unavailable"}},
-		{name: "missing member", groupIDs: []int64{101}, department: "dept-alpha", members: map[string]int64{"7": 101}, want: []string{"mapping member 7 is missing from target group 101"}},
-		{name: "member in multiple mappings", groupIDs: []int64{101}, department: "dept-alpha", members: map[string]int64{"7": 101}, duplicateMember: true, want: []string{"mapping member 7 is missing from target group 101", "user 7 is assigned in multiple mappings"}},
+		{name: "missing department", groupIDs: []int64{101}, department: "dept-missing", want: []string{"department dept-missing (Department Alpha) is unavailable"}},
+		{name: "missing member", groupIDs: []int64{101}, department: "dept-alpha", members: map[string]int64{"7": 101}, want: []string{"mapping member 7 is missing from target group 101 (Group Beta)"}},
+		{name: "member in multiple mappings", groupIDs: []int64{101}, department: "dept-alpha", members: map[string]int64{"7": 101}, duplicateMember: true, want: []string{"mapping member 7 is missing from target group 101 (Group Beta)", "user 7 is assigned in multiple mappings"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ctx := context.Background()
