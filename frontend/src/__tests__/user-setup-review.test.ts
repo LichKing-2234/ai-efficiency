@@ -18,6 +18,8 @@ import {
   buildHooksStatusUploadsCommand,
   buildInstallCommand,
   buildDshProviderSnippet,
+  buildQoderStepsSnippet,
+  buildCursorStepsSnippet,
   buildDshStepsSnippet,
   buildManualConfigSnippets,
   buildLoginCommand,
@@ -535,6 +537,8 @@ describe('userSetupReview command builders', () => {
       'claude-settings',
       'dsh-config',
       'dsh-steps',
+      'qoder-steps',
+      'cursor-steps',
     ])
 
     const codex = snippets.find((item) => item.key === 'codex-config')!
@@ -560,12 +564,43 @@ describe('userSetupReview command builders', () => {
     const steps = snippets.find((item) => item.key === 'dsh-steps')!
     expect(steps.render).toBe('steps')
     expect(steps.path).toBe('')
-    expect(snippets.filter((item) => item.render === 'steps')).toHaveLength(1)
+    expect(snippets.filter((item) => item.render === 'steps')).toHaveLength(3)
     expect(steps.body).toContain('https://deepseek-harness.github.io/deepseek-harness/guide/quickstart')
     expect(steps.body).toContain('https://deepseek-harness.github.io/deepseek-harness/guide/providers')
     expect(steps.body).toContain('探测失败时也可手动填写模型 ID')
     expect(steps.body).toContain('获取可用模型')
     expect(steps.body).toContain('sk-test')
+
+    const qoder = snippets.find((item) => item.key === 'qoder-steps')!
+    expect(qoder.render).toBe('steps')
+    expect(qoder.path).toBe('')
+    expect(qoder.body).toContain('自定义 → OpenAI Compatible')
+    expect(qoder.body).toContain('Chat Completions API')
+    expect(qoder.body).toContain('接口地址: https://relay.example.com/v1')
+    expect(qoder.body).toContain('Model ID: deepseek-v4-pro')
+    expect(qoder.body).toContain('校验通过不代表真的能连通')
+
+    const cursor = snippets.find((item) => item.key === 'cursor-steps')!
+    expect(cursor.render).toBe('steps')
+    expect(cursor.path).toBe('')
+    expect(cursor.body).toContain('Premium')
+    expect(cursor.body).toContain('Override OpenAI Base URL')
+    expect(cursor.body).toContain('https://relay.example.com/v1')
+    expect(cursor.body).toContain('+ Add Model')
+    expect(cursor.body).toContain('Agent / Tab / Composer')
+  })
+
+  it('accepts an explicit model for the Qoder and Cursor steps', () => {
+    const input = {
+      providerName: 'Sub2API',
+      baseUrl: 'https://relay.example.com',
+      platform: 'composite',
+      apiKey: 'sk-test',
+      model: 'deepseek-flash',
+    }
+    expect(buildQoderStepsSnippet(input)).toContain('Model ID: deepseek-flash')
+    expect(buildQoderStepsSnippet(input)).not.toContain('Model ID: deepseek-v4-pro')
+    expect(buildCursorStepsSnippet(input)).toContain('填 deepseek-flash')
   })
 
   it('falls back to a single model when no model list is supplied', () => {

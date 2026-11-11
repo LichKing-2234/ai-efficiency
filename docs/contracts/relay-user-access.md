@@ -173,9 +173,16 @@ group platform maps to one, a CC Switch provider-import method:
 | OpenAI or DeepSeek | Codex config and auth JSON | Codex |
 | Anthropic or Claude | Claude Code settings | Claude Code |
 | Gemini | Gemini environment and shell block | Gemini |
-| Composite | Client selector for Codex, Claude Code, or DSH snippets | Codex and Claude Code |
+| Composite | Client selector for Codex, Claude Code, DSH, Qoder, or Cursor snippets | Codex and Claude Code |
 | Antigravity or Grok | No platform-specific snippets | None |
 | `Agent`-prefixed access groups | Hermes Agent, OpenClaw, and Custom Agent snippets | Hermes and OpenClaw |
+
+Qoder and Cursor have no config file to own: their snippets are numbered UI
+steps only, and neither participates in CC Switch import. The Qoder steps target
+the new Qoder desktop app's custom `OpenAI Compatible` provider; its built-in
+"validate and add model" check is not a connectivity proof, so the steps require
+an actual chat message. The Cursor steps require a paid seat with BYOK and only
+affect Chat/Ask — Agent, Tab, and Composer keep using Cursor's own models.
 
 This mapping is tool configuration only. It does not change Connection Test
 capability, the probe protocol, or the generated configuration ownership
