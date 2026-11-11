@@ -182,13 +182,17 @@ const ccSwitchImports = computed(() => {
   }))
 })
 
-const selectedClient = ref<'codex' | 'claude' | 'dsh'>('codex')
+type ClientId = 'codex' | 'claude' | 'dsh' | 'qoder' | 'cursor'
+
+const selectedClient = ref<ClientId>('codex')
 const showClientSelector = computed(() =>
   !selectedIsAgentGroup.value && (selectedGroup.value?.platform ?? '').trim().toLowerCase() === 'composite',
 )
-function clientSnippetKey(key: string): 'codex' | 'claude' | 'dsh' {
+function clientSnippetKey(key: string): ClientId {
   if (key === 'claude-settings') return 'claude'
   if (key.startsWith('dsh-')) return 'dsh'
+  if (key.startsWith('qoder-')) return 'qoder'
+  if (key.startsWith('cursor-')) return 'cursor'
   return 'codex'
 }
 const clientSnippets = computed(() => {
@@ -197,7 +201,7 @@ const clientSnippets = computed(() => {
 })
 const clientCcSwitchImports = computed(() => {
   if (!showClientSelector.value) return ccSwitchImports.value
-  if (selectedClient.value === 'dsh') return []
+  if (selectedClient.value === 'dsh' || selectedClient.value === 'qoder' || selectedClient.value === 'cursor') return []
   const target = selectedClient.value === 'claude' ? 'claude' : 'codex'
   return ccSwitchImports.value.filter((item) => item.key === target)
 })
@@ -352,6 +356,10 @@ function manualConfigSnippetTitle(snippet: ManualConfigSnippet) {
       return t('user.manualConfigDshConfig')
     case 'dsh-steps':
       return t('user.manualConfigDshSteps')
+    case 'qoder-steps':
+      return t('user.manualConfigQoderSteps')
+    case 'cursor-steps':
+      return t('user.manualConfigCursorSteps')
     default:
       return snippet.path
   }
@@ -883,6 +891,8 @@ onBeforeUnmount(() => {
                     <ElRadioButton value="codex">{{ t('user.clientCodex') }}</ElRadioButton>
                     <ElRadioButton value="claude">{{ t('user.clientClaudeCode') }}</ElRadioButton>
                     <ElRadioButton value="dsh">{{ t('user.clientDsh') }}</ElRadioButton>
+                    <ElRadioButton value="qoder">{{ t('user.clientQoder') }}</ElRadioButton>
+                    <ElRadioButton value="cursor">{{ t('user.clientCursor') }}</ElRadioButton>
                   </ElRadioGroup>
                 </div>
 

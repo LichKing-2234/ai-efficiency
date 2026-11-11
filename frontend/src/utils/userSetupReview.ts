@@ -16,6 +16,8 @@ export type ManualConfigSnippetKey =
   | 'custom-agent-json'
   | 'dsh-config'
   | 'dsh-steps'
+  | 'qoder-steps'
+  | 'cursor-steps'
 
 export type ManualConfigSnippet = {
   key: ManualConfigSnippetKey
@@ -467,6 +469,50 @@ export function buildDshStepsSnippet(input: ManualConfigSnippetInput) {
   ].join('\n')
 }
 
+/** Qoder（新版桌面端）自定义供应商接入步骤 */
+export function buildQoderStepsSnippet(input: ManualConfigSnippetInput) {
+  const baseUrl = buildAgentProviderBaseUrl(input.baseUrl)
+  const model = input.model?.trim() || resolveOnboardingModels(input)[0] || 'deepseek-v4-pro'
+  return [
+    `1. 安装新版 Qoder 桌面端（Qoder IDE / JetBrains 插件 / CLI 都不支持自定义接口）`,
+    ``,
+    `2. 打开 设置 → 模型 → 添加模型`,
+    `   供应商:   自定义 → OpenAI Compatible`,
+    `   API 类型: Chat Completions API`,
+    `   接口地址: ${baseUrl}`,
+    `   API Key:  ${input.apiKey}`,
+    `   Model ID: ${model}`,
+    ``,
+    `3. 上下文窗口勾选 1M 并设为默认；视觉关闭；思考模式按需开启`,
+    ``,
+    `4. 点「校验并添加模型」。注意：这里校验通过不代表真的能连通，请以下一步的实际对话为准`,
+    ``,
+    `5. 新建任务，在模型选择器「自定义」里选中 ${model}，发送 ping；能正常回复即接入成功`,
+  ].join('\n')
+}
+
+/** Cursor 自定义 OpenAI 兼容端点接入步骤（需付费席位，仅 Chat 生效） */
+export function buildCursorStepsSnippet(input: ManualConfigSnippetInput) {
+  const baseUrl = buildAgentProviderBaseUrl(input.baseUrl)
+  const model = input.model?.trim() || resolveOnboardingModels(input)[0] || 'deepseek-v4-pro'
+  return [
+    `0. 前提：Cursor 套餐需 Premium 及以上；Plus 及以下没有自有 API Key 入口`,
+    ``,
+    `1. 打开 Settings → Models，在 OpenAI API Key 里粘贴 ${input.apiKey}`,
+    ``,
+    `2. 打开 Use OpenAI API Key（提示 Tab/Apply/Agent 会改用 Cursor 自己的模型，属预期）`,
+    ``,
+    `3. 打开 Override OpenAI Base URL，Base URL 填 ${baseUrl}`,
+    ``,
+    `4. Model Names → + Add Model，填 ${model}（不要用 Cursor 内置的模型名）`,
+    ``,
+    `5. 在 Chat 里选中 ${model} 发一句话；能正常回复即接入成功`,
+    ``,
+    `注意：这个开关是全局的，开启后 Cursor 所有 OpenAI 系模型的请求都会走这个地址；`,
+    `      Agent / Tab / Composer 仍使用 Cursor 自有模型与额度。`,
+  ].join('\n')
+}
+
 export function buildManualConfigSnippets(input: ManualConfigSnippetInput): ManualConfigSnippet[] {
   if (isAgentAccessGroup(input.groupName)) {
     return buildAgentManualConfigSnippets(input)
@@ -502,6 +548,20 @@ export function buildManualConfigSnippets(input: ManualConfigSnippetInput): Manu
         key: 'dsh-steps',
         path: '',
         body: buildDshStepsSnippet(input),
+        containsSecret: true,
+        render: 'steps',
+      },
+      {
+        key: 'qoder-steps',
+        path: '',
+        body: buildQoderStepsSnippet(input),
+        containsSecret: true,
+        render: 'steps',
+      },
+      {
+        key: 'cursor-steps',
+        path: '',
+        body: buildCursorStepsSnippet(input),
         containsSecret: true,
         render: 'steps',
       },
