@@ -474,7 +474,8 @@ export function buildQoderStepsSnippet(input: ManualConfigSnippetInput) {
   const baseUrl = buildAgentProviderBaseUrl(input.baseUrl)
   const model = input.model?.trim() || resolveOnboardingModels(input)[0] || 'deepseek-v4-pro'
   return [
-    `1. 安装新版 Qoder 桌面端（Qoder IDE / JetBrains 插件 / CLI 都不支持自定义接口）`,
+    `1. 安装并登录新版 Qoder 桌面端（Qoder IDE / JetBrains 插件 / CLI 都不支持自定义接口）`,
+    `   下载：https://qoder.com/download；首次启动会要求登录，在浏览器里确认即可`,
     ``,
     `2. 打开 设置 → 模型 → 添加模型`,
     `   供应商:   自定义 → OpenAI Compatible`,
@@ -483,11 +484,11 @@ export function buildQoderStepsSnippet(input: ManualConfigSnippetInput) {
     `   API Key:  ${input.apiKey}`,
     `   Model ID: ${model}`,
     ``,
-    `3. 上下文窗口勾选 1M 并设为默认；视觉关闭；思考模式按需开启`,
+    `3. 下一步 → 配置模型能力：支持的上下文窗口勾选 1M 并设为默认；视觉关闭；思考模式按需开启`,
     ``,
     `4. 点「校验并添加模型」。注意：这里校验通过不代表真的能连通，请以下一步的实际对话为准`,
     ``,
-    `5. 新建任务，在模型选择器「自定义」里选中 ${model}，发送 ping；能正常回复即接入成功`,
+    `5. 新建任务 → 模型选择器切到「自定义」→ 选中 ${model} → 发送 ping；能正常回复即接入成功`,
   ].join('\n')
 }
 
@@ -496,7 +497,8 @@ export function buildCursorStepsSnippet(input: ManualConfigSnippetInput) {
   const baseUrl = buildAgentProviderBaseUrl(input.baseUrl)
   const model = input.model?.trim() || resolveOnboardingModels(input)[0] || 'deepseek-v4-pro'
   return [
-    `0. 前提：Cursor 套餐需 Premium 及以上；Plus 及以下没有自有 API Key 入口`,
+    `0. 先确认席位够不够：打开 Settings，在搜索框输入 OpenAI`,
+    `   搜不到「OpenAI API Key」说明当前套餐不带自带 Key（Free / Plus 都没有），需要升级到 Premium 及以上`,
     ``,
     `1. 打开 Settings → Models，在 OpenAI API Key 里粘贴 ${input.apiKey}`,
     ``,
@@ -504,7 +506,7 @@ export function buildCursorStepsSnippet(input: ManualConfigSnippetInput) {
     ``,
     `3. 打开 Override OpenAI Base URL，Base URL 填 ${baseUrl}`,
     ``,
-    `4. Model Names → + Add Model，填 ${model}（不要用 Cursor 内置的模型名）`,
+    `4. 回到模型列表点 + Add Model（有些版本显示为 Add Custom Model），填 ${model}（不要用 Cursor 内置的模型名）`,
     ``,
     `5. 在 Chat 里选中 ${model} 发一句话；能正常回复即接入成功`,
     ``,
