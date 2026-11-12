@@ -581,12 +581,17 @@ describe('userSetupReview command builders', () => {
     expect(qoder.body).toContain('Model ID: deepseek-v4-pro')
     expect(qoder.body).toContain('校验通过不代表真的能连通')
     expect(qoder.body).toContain('安装并登录新版 Qoder 桌面端')
+    expect(qoder.body).toContain('Qoder Installer')
+    expect(qoder.body).toContain('重新发起登录')
+    expect(qoder.body).toContain('开始使用')
 
     const cursor = snippets.find((item) => item.key === 'cursor-steps')!
     expect(cursor.render).toBe('steps')
     expect(cursor.path).toBe('')
     expect(cursor.body).toContain('Premium')
     expect(cursor.body).toContain('搜不到「OpenAI API Key」')
+    expect(cursor.body).toContain('https://cursor.com/download')
+    expect(cursor.body).toContain('安装并登录 Cursor')
     expect(cursor.body).toContain('Override OpenAI Base URL')
     expect(cursor.body).toContain('https://relay.example.com/v1')
     expect(cursor.body).toContain('+ Add Model')
