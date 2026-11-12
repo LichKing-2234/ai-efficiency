@@ -26,7 +26,7 @@ deadlines, and frontend loading follow
 | Group Health Snapshot | The verbatim Sub2API ops overview for one Sub2API Group over one explicit UTC window. |
 | Metric alignment | The rule that every number on this surface is a field returned by sub2api, displayed without recomputation. |
 | Account Concurrency Capacity | One Sub2API account's configured `concurrency` limit together with upstream's live `current_concurrency` count, both displayed verbatim. It is the only value an administrator can set on this surface, one account at a time, and the write is verified by a read-back. |
-| Concurrency filter | A client-side row filter on the group collection that keeps only groups with at least one member account whose configured `concurrency` is greater than or equal to the operator's minimum value. It is presentation over joined upstream facts, not a metric and not a server-side query parameter. |
+| Concurrency filter | A client-side row filter on the group collection that keeps only groups with at least one member account whose configured `concurrency` exactly equals the operator's selected value. It is presentation over joined upstream facts, not a metric and not a server-side query parameter. |
 | Fetch failure | The platform outcome for one group whose overview read did not complete. It is not an upstream health fact. |
 
 sub2api remains the authority for every metric, account, proxy, and egress fact
@@ -203,13 +203,15 @@ history, audit table, or cache is added for this write.
 
 ## Concurrency Filter
 
-The group collection can be filtered by a minimum configured account
-concurrency `N`, a whole number from `1` to `10000`; an empty input means the
-filter is off. A group matches when at least one member account's configured
-`concurrency` is greater than or equal to `N`, using the membership returned by
-the account-concurrency index below. The group snapshot's directory membership
-remains the authority for which group rows exist; an index account whose group
-is absent from the snapshot is ignored for filtering.
+The group collection can be filtered by one exact configured account
+concurrency value `N`, a whole number from `1` to `10000`; an empty input means
+the filter is off. A group matches when at least one member account's
+configured `concurrency` equals `N`, using the membership returned by the
+account-concurrency index below. Equality is deliberate: distinct configured
+levels such as `5` and `10` must stay distinguishable, and a group with an
+account at `10` does not match a `5` filter. The group snapshot's directory
+membership remains the authority for which group rows exist; an index account
+whose group is absent from the snapshot is ignored for filtering.
 
 - The filter is client-side and presentation-only. `N` is never sent to the
   groups endpoint, the loaded snapshot is not re-read, and no platform-computed
@@ -224,7 +226,7 @@ is absent from the snapshot is ignored for filtering.
   not window-scoped.
 - If the index read fails, no row is hidden: every loaded group stays visible
   and the page states inline that the filter is not applied. A filter must
-  never render as active while its facts are unavailable; a later threshold
+  never render as active while its facts are unavailable; a later value
   change retries the read, and clearing the filter invalidates an in-flight
   read so a late response cannot apply or report an error after the operator
   cleared it.
@@ -253,7 +255,7 @@ Allowed:
   Beijing time conversion, the relative window label, row ordering, and the
   no-traffic classification.
 - Client-side filtering of rows by joined account facts: hiding a group whose
-  accounts all fall below the active concurrency filter displays no computed
+  accounts do not match the active concurrency value displays no computed
   number. The filtered row set is a presentation of joined upstream facts, not
   a rollup.
 
@@ -271,9 +273,9 @@ Forbidden:
   platform constructs.
 - A dominant-proxy, dominant-error, or most-affected-account rollup.
 - Trends, history, deltas, or comparison against a previous window.
-- A server-side minimum-concurrency groups parameter, a second groups read per
-  filter value, or any displayed per-group count, maximum, minimum, average, or
-  sum of account concurrency.
+- A server-side concurrency groups parameter, a second groups read per filter
+  value, or any displayed per-group count, maximum, minimum, average, or sum of
+  account concurrency.
 
 Account concurrency capacity is configuration, not a metric: `concurrency` is an
 upstream account field and `current_concurrency` is upstream's live count, both
@@ -363,8 +365,8 @@ the projection.
 | Group membership | `account_groups[].group_id`, falling back to `group_ids` | `/admin/accounts` (unfiltered scan) |
 | Configured concurrency | `concurrency` | `/admin/accounts` (unfiltered scan) |
 
-Only membership and the operator's threshold drive the filter; no number from
-the index is displayed. The index projection also carries `account_id`, which
+Only membership and the operator's selected value drive the filter; no
+number from the index is displayed. The index projection also carries `account_id`, which
 is used only to patch the entry after a verified concurrency save.
 
 ### Measured egress probe
@@ -453,7 +455,7 @@ provider change, or a later auto-refresh tick — retries it.
 | Overview returned nothing | Treated as that group's fetch failure, never as no data. |
 | Account concurrency save fails | The requested value is not shown as applied. The account row keeps its last displayed capacity and shows the platform/upstream error inline; other accounts are unaffected. |
 | Account left the group before saving | The service's fresh membership read returns `422` and leaves upstream unchanged; the row keeps its last displayed capacity and shows the error inline. |
-| Concurrency-filter index read fails | Rows stay unfiltered and an inline error states that the filter is not applied; no row is silently hidden, and a later threshold change retries the read. |
+| Concurrency-filter index read fails | Rows stay unfiltered and an inline error states that the filter is not applied; no row is silently hidden, and a later value change retries the read. |
 | No group matches the active concurrency filter | The collection renders a filter-specific empty state, never the provider-has-no-groups state, and never a fabricated zero-traffic row. |
 
 An unfetched group is never rendered as healthy, and a failed group is never
@@ -482,7 +484,7 @@ the same loaded collection and request state. There is no pagination.
 - The platform filter is applied client-side over every loaded group, and it
   resets to all platforms when the selected platform is absent from a new
   snapshot.
-- The concurrency filter is a compact header control: a minimum-value integer
+- The concurrency filter is a compact header control: an exact-value integer
   input from `1` to `10000` (empty = off) and an explicit clear action when a
   value is set. It composes with the platform filter using AND. It shows its
   lazy index loading state, and an index read failure renders inline with every
