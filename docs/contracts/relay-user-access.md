@@ -173,21 +173,23 @@ group platform maps to one, a CC Switch provider-import method:
 | OpenAI or DeepSeek | Codex config and auth JSON | Codex |
 | Anthropic or Claude | Claude Code settings | Claude Code |
 | Gemini | Gemini environment and shell block | Gemini |
-| Composite | Client selector for Codex, Claude Code, DSH, Qoder, or Cursor snippets | Codex and Claude Code |
+| Composite | Client selector for Codex, Claude Code, DSH, or Qoder snippets | Codex and Claude Code |
 | Antigravity or Grok | No platform-specific snippets | None |
 | `Agent`-prefixed access groups | Hermes Agent, OpenClaw, and Custom Agent snippets | Hermes and OpenClaw |
 
-Qoder and Cursor have no config file to own: their snippets are numbered UI
-steps only, and neither participates in CC Switch import. The Qoder steps target
-the new Qoder desktop app's custom `OpenAI Compatible` provider; its built-in
-"validate and add model" check is not a connectivity proof, so the steps require
-an actual chat message. The Cursor steps require a paid seat with BYOK and only
-affect Chat/Ask — Agent, Tab, and Composer keep using Cursor's own models.
+Qoder has no config file to own: its snippet is numbered UI steps only, and it
+does not participate in CC Switch import. The steps target the new Qoder desktop
+app's custom `OpenAI Compatible` provider; its built-in "validate and add model"
+check is not a connectivity proof, so the steps require an actual chat message.
 
-### Qoder and Cursor are Composite-only
+Cursor is intentionally not offered. Its bring-your-own-key surface is a paid
+individual-plan feature (Premium and above); a Free or Plus account renders no
+OpenAI API key field at all, so every Cursor instruction would end at a paywall
+before touching Relay. Verified on a clean install with a Free account.
 
-Both clients speak OpenAI Chat Completions, but protocol capability is not the
-gate. Non-composite groups lock their upstream accounts to the official client:
+### Qoder is Composite-only
+
+Qoder speaks OpenAI Chat Completions, but protocol capability is not the gate. Non-composite groups lock their upstream accounts to the official client:
 
 | Group family | Probe | Result |
 | --- | --- | --- |
@@ -196,9 +198,9 @@ gate. Non-composite groups lock their upstream accounts to the official client:
 | Anthropic (Claude) | `claude-haiku-4-5` on `/v1/chat/completions` | `403 This group is restricted to Claude Code clients (/v1/messages only)` |
 | Anthropic (Claude) | native `/v1/messages` | `503 No available accounts: this group only allows Claude Code clients` |
 
-Re-probed 2026-11-12 with live group keys. Offering Qoder or Cursor snippets for
-those groups would hand users instructions that cannot succeed, so the client
-selector stays scoped to non-Agent `composite` groups (today: the China group).
+Re-probed 2026-11-12 with live group keys. Offering Qoder snippets for those
+groups would hand users instructions that cannot succeed, so the client selector
+stays scoped to non-Agent `composite` groups (today: the China group).
 Enabling other groups requires a Relay-side allowance for non-official clients
 first; this surface must not anticipate it.
 

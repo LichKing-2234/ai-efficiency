@@ -17,7 +17,6 @@ export type ManualConfigSnippetKey =
   | 'dsh-config'
   | 'dsh-steps'
   | 'qoder-steps'
-  | 'cursor-steps'
 
 export type ManualConfigSnippet = {
   key: ManualConfigSnippetKey
@@ -495,33 +494,6 @@ export function buildQoderStepsSnippet(input: ManualConfigSnippetInput) {
   ].join('\n')
 }
 
-/** Cursor 自定义 OpenAI 兼容端点接入步骤（需付费席位，仅 Chat 生效） */
-export function buildCursorStepsSnippet(input: ManualConfigSnippetInput) {
-  const baseUrl = buildAgentProviderBaseUrl(input.baseUrl)
-  const model = input.model?.trim() || resolveOnboardingModels(input)[0] || 'deepseek-v4-pro'
-  return [
-    `1. 安装并登录 Cursor`,
-    `   下载地址：https://cursor.com/download`,
-    `   装好打开并登录账号（没有 Cursor 账号的先注册）`,
-    ``,
-    `2. 确认席位：打开 Settings，在搜索框输入 OpenAI`,
-    `   搜不到「OpenAI API Key」说明当前套餐不带自带 Key（Free / Plus 都没有），需要 Premium 及以上，先到这里`,
-    ``,
-    `3. 打开 Settings → Models，在 OpenAI API Key 里粘贴 ${input.apiKey}`,
-    ``,
-    `4. 打开 Use OpenAI API Key（提示 Tab/Apply/Agent 会改用 Cursor 自己的模型，属预期）`,
-    ``,
-    `5. 打开 Override OpenAI Base URL，Base URL 填 ${baseUrl}`,
-    ``,
-    `6. 回到模型列表点 + Add Model（有些版本显示为 Add Custom Model），填 ${model}（不要用 Cursor 内置的模型名）`,
-    ``,
-    `7. 在 Chat 里选中 ${model} 发一句话；能正常回复即接入成功`,
-    ``,
-    `注意：这个开关是全局的，开启后 Cursor 所有 OpenAI 系模型的请求都会走这个地址，`,
-    `      包括 Cursor 自带的 gpt-* 模型（会失败，属正常）。`,
-  ].join('\n')
-}
-
 export type TextLinkSegment = { text: string; href?: string }
 
 const URL_PATTERN = /https?:\/\/[^\s，。；：！？、（）【】「」《》"'<>]+/g
@@ -595,13 +567,6 @@ export function buildManualConfigSnippets(input: ManualConfigSnippetInput): Manu
         key: 'qoder-steps',
         path: '',
         body: buildQoderStepsSnippet(input),
-        containsSecret: true,
-        render: 'steps',
-      },
-      {
-        key: 'cursor-steps',
-        path: '',
-        body: buildCursorStepsSnippet(input),
         containsSecret: true,
         render: 'steps',
       },
