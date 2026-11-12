@@ -184,6 +184,24 @@ the new Qoder desktop app's custom `OpenAI Compatible` provider; its built-in
 an actual chat message. The Cursor steps require a paid seat with BYOK and only
 affect Chat/Ask — Agent, Tab, and Composer keep using Cursor's own models.
 
+### Qoder and Cursor are Composite-only
+
+Both clients speak OpenAI Chat Completions, but protocol capability is not the
+gate. Non-composite groups lock their upstream accounts to the official client:
+
+| Group family | Probe | Result |
+| --- | --- | --- |
+| Composite (China) | `deepseek-v4-pro` on `/v1/chat/completions` | `200` |
+| OpenAI team group | `gpt-5.5` on `/v1/chat/completions` | `403 This account only allows Codex official clients` |
+| Anthropic (Claude) | `claude-haiku-4-5` on `/v1/chat/completions` | `403 This group is restricted to Claude Code clients (/v1/messages only)` |
+| Anthropic (Claude) | native `/v1/messages` | `503 No available accounts: this group only allows Claude Code clients` |
+
+Re-probed 2026-11-12 with live group keys. Offering Qoder or Cursor snippets for
+those groups would hand users instructions that cannot succeed, so the client
+selector stays scoped to non-Agent `composite` groups (today: the China group).
+Enabling other groups requires a Relay-side allowance for non-official clients
+first; this surface must not anticipate it.
+
 This mapping is tool configuration only. It does not change Connection Test
 capability, the probe protocol, or the generated configuration ownership
 described in the CLI tool-configuration contract.
