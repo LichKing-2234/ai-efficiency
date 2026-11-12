@@ -475,7 +475,8 @@ export function buildQoderStepsSnippet(input: ManualConfigSnippetInput) {
   const model = input.model?.trim() || resolveOnboardingModels(input)[0] || 'deepseek-v4-pro'
   return [
     `1. 安装并登录新版 Qoder 桌面端（Qoder IDE / JetBrains 插件 / CLI 都不支持自定义接口）`,
-    `   下载：https://qoder.com/download；首次启动会要求登录，在浏览器里确认即可`,
+    `   下载地址：https://qoder.com/download`,
+    `   首次启动会要求登录，在浏览器里确认即可`,
     ``,
     `2. 打开 设置 → 模型 → 添加模型`,
     `   供应商:   自定义 → OpenAI Compatible`,
@@ -484,7 +485,7 @@ export function buildQoderStepsSnippet(input: ManualConfigSnippetInput) {
     `   API Key:  ${input.apiKey}`,
     `   Model ID: ${model}`,
     ``,
-    `3. 下一步 → 配置模型能力：支持的上下文窗口勾选 1M 并设为默认；视觉关闭；思考模式按需开启`,
+    `3. 下一步 → 配置模型能力：支持的上下文窗口勾选 1M 并设为默认，其余保持默认`,
     ``,
     `4. 点「校验并添加模型」。注意：这里校验通过不代表真的能连通，请以下一步的实际对话为准`,
     ``,
@@ -510,9 +511,40 @@ export function buildCursorStepsSnippet(input: ManualConfigSnippetInput) {
     ``,
     `5. 在 Chat 里选中 ${model} 发一句话；能正常回复即接入成功`,
     ``,
-    `注意：这个开关是全局的，开启后 Cursor 所有 OpenAI 系模型的请求都会走这个地址；`,
-    `      Agent / Tab / Composer 仍使用 Cursor 自有模型与额度。`,
+    `注意：这个开关是全局的，开启后 Cursor 所有 OpenAI 系模型的请求都会走这个地址，`,
+    `      包括 Cursor 自带的 gpt-* 模型（会失败，属正常）。`,
   ].join('\n')
+}
+
+export type TextLinkSegment = { text: string; href?: string }
+
+const URL_PATTERN = /https?:\/\/[^\s，。；：！？、（）【】「」《》"'<>]+/g
+const TRAILING_PUNCTUATION = /[.,;:!?)\]}]+$/
+
+/**
+ * Split step text into plain and link segments, keeping CJK punctuation outside the link.
+ * `skipHrefs` keeps API endpoints (for example the Relay base URL) as plain text, because
+ * opening them in a browser only returns an auth error.
+ */
+export function buildLinkSegments(text: string, options: { skipHrefs?: string[] } = {}): TextLinkSegment[] {
+  const skip = new Set((options.skipHrefs ?? []).map((item) => item.trim().replace(/\/+$/, '')))
+  const segments: TextLinkSegment[] = []
+  let lastIndex = 0
+  for (const match of text.matchAll(URL_PATTERN)) {
+    const raw = match[0]
+    const href = raw.replace(TRAILING_PUNCTUATION, '')
+    if (!href) continue
+    const index = match.index ?? 0
+    if (index > lastIndex) segments.push({ text: text.slice(lastIndex, index) })
+    if (skip.has(href.replace(/\/+$/, ''))) {
+      segments.push({ text: href })
+    } else {
+      segments.push({ text: href, href })
+    }
+    lastIndex = index + href.length
+  }
+  if (lastIndex < text.length) segments.push({ text: text.slice(lastIndex) })
+  return segments
 }
 
 export function buildManualConfigSnippets(input: ManualConfigSnippetInput): ManualConfigSnippet[] {

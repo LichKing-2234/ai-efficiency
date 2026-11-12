@@ -17,6 +17,7 @@ import type {
 import {
   buildCCSwitchProviderImportLink,
   buildDiscoverCommand,
+  buildLinkSegments,
   buildManualConfigSnippets,
   resolveCCSwitchAppsForGroup,
   isAgentAccessGroup,
@@ -297,19 +298,19 @@ function buildSelectedManualConfigSnippets(apiKey: string) {
   })
 }
 
-function manualConfigLinkSegments(text: string) {
-  const segments: { text: string; href?: string }[] = []
-  const pattern = /(https?:\/\/[^\s]+)/g
-  let lastIndex = 0
-  for (const match of text.matchAll(pattern)) {
-    const index = match.index ?? 0
-    if (index > lastIndex) segments.push({ text: text.slice(lastIndex, index) })
-    segments.push({ text: match[0], href: match[0] })
-    lastIndex = index + match[0].length
+const manualConfigLinkSkipHrefs = computed(() => {
+  const raw = selectedProvider.value?.base_url?.trim()
+  if (!raw) return []
+  const trimmed = raw.replace(/\/+$/, '')
+  return /\/v\d+$/i.test(trimmed) ? [trimmed] : [trimmed, `${trimmed}/v1`]
+})
+
+const manualConfigNoticeLines = computed(() => {
+  if (showClientSelector.value && (selectedClient.value === 'qoder' || selectedClient.value === 'cursor')) {
+    return [t('user.manualConfigLiveApplyHint')]
   }
-  if (lastIndex < text.length) segments.push({ text: text.slice(lastIndex) })
-  return segments
-}
+  return [t('user.manualConfigRestartHint'), t('user.manualConfigEnvHint')]
+})
 
 function manualConfigSteps(snippet: ManualConfigSnippet) {
   const steps: { title: string; lines: string[] }[] = []
@@ -994,7 +995,7 @@ onBeforeUnmount(() => {
                           </span>
                           <div class="min-w-0">
                             <div class="text-sm font-medium text-slate-900">
-                              <template v-for="(segment, segmentIndex) in manualConfigLinkSegments(step.title)" :key="segmentIndex">
+                              <template v-for="(segment, segmentIndex) in buildLinkSegments(step.title, { skipHrefs: manualConfigLinkSkipHrefs })" :key="segmentIndex">
                                 <a
                                   v-if="segment.href"
                                   :href="segment.href"
@@ -1010,7 +1011,7 @@ onBeforeUnmount(() => {
                               :key="lineIndex"
                               class="mt-1 whitespace-pre-wrap break-all font-mono text-xs text-slate-600"
                             >
-                              <template v-for="(segment, segmentIndex) in manualConfigLinkSegments(line)" :key="segmentIndex">
+                              <template v-for="(segment, segmentIndex) in buildLinkSegments(line, { skipHrefs: manualConfigLinkSkipHrefs })" :key="segmentIndex">
                                 <a
                                   v-if="segment.href"
                                   :href="segment.href"
@@ -1055,8 +1056,7 @@ onBeforeUnmount(() => {
                     >
                       <div class="text-xs font-medium text-gray-900">{{ t('user.manualConfigNoticeTitle') }}</div>
                       <ul class="mt-1 list-disc space-y-1 pl-4 text-xs text-gray-600">
-                        <li>{{ t('user.manualConfigRestartHint') }}</li>
-                        <li>{{ t('user.manualConfigEnvHint') }}</li>
+                        <li v-for="line in manualConfigNoticeLines" :key="line">{{ line }}</li>
                       </ul>
                     </div>
                   </div>
