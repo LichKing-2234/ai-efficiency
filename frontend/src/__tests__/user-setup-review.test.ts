@@ -20,6 +20,7 @@ import {
   buildDshProviderSnippet,
   buildQoderStepsSnippet,
   buildCursorStepsSnippet,
+  buildLinkSegments,
   buildDshStepsSnippet,
   buildManualConfigSnippets,
   buildLoginCommand,
@@ -589,7 +590,31 @@ describe('userSetupReview command builders', () => {
     expect(cursor.body).toContain('Override OpenAI Base URL')
     expect(cursor.body).toContain('https://relay.example.com/v1')
     expect(cursor.body).toContain('+ Add Model')
-    expect(cursor.body).toContain('Agent / Tab / Composer')
+    expect(cursor.body).toContain('包括 Cursor 自带的 gpt-* 模型')
+  })
+
+  it('keeps CJK punctuation outside link segments', () => {
+    const segments = buildLinkSegments('下载地址：https://qoder.com/download；首次启动会要求登录')
+    expect(segments.map((item) => item.text)).toEqual([
+      '下载地址：',
+      'https://qoder.com/download',
+      '；首次启动会要求登录',
+    ])
+    expect(segments[1].href).toBe('https://qoder.com/download')
+
+    const trailing = buildLinkSegments('见 https://example.com/docs。')
+    expect(trailing[1].href).toBe('https://example.com/docs')
+    expect(trailing[2].text).toBe('。')
+
+    const skipped = buildLinkSegments('接口地址: https://relay.example.com/v1', {
+      skipHrefs: ['https://relay.example.com/v1'],
+    })
+    expect(skipped[1]).toEqual({ text: 'https://relay.example.com/v1' })
+    expect(skipped[1].href).toBeUndefined()
+
+    const ascii = buildLinkSegments('see https://example.com/a, then continue')
+    expect(ascii[1].href).toBe('https://example.com/a')
+    expect(ascii[2].text).toBe(', then continue')
   })
 
   it('accepts an explicit model for the Qoder and Cursor steps', () => {
