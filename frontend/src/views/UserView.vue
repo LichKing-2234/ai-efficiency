@@ -307,7 +307,7 @@ const manualConfigLinkSkipHrefs = computed(() => {
 
 const manualConfigNoticeLines = computed(() => {
   if (showClientSelector.value && (selectedClient.value === 'qoder' || selectedClient.value === 'cursor')) {
-    return [t('user.manualConfigLiveApplyHint')]
+    return []
   }
   return [t('user.manualConfigRestartHint'), t('user.manualConfigEnvHint')]
 })
@@ -1051,6 +1051,7 @@ onBeforeUnmount(() => {
                       </div>
                     </div>
                     <div
+                      v-if="manualConfigNoticeLines.length > 0"
                       class="rounded-md border border-slate-200 bg-slate-50 p-3"
                       data-testid="manual-config-notice"
                     >
