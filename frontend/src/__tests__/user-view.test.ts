@@ -945,8 +945,8 @@ describe('UserView', () => {
     expect(manualText).toContain('~/.kiro/settings/cli.json')
     expect(manualText).toContain('https://prod.example.com/kiro')
     expect(manualText).toContain('KIRO_API_KEY')
-    expect(wrapper.get('[data-testid="manual-config-copy-kiro-cli-config"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="manual-config-copy-kiro-cli-env"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="manual-config-copy-kiro-cli-config"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="manual-config-copy-kiro-cli-env"]').exists()).toBe(true)
   })
 
   it('shows Agent-only configuration methods and manual snippets for Agent groups', async () => {
