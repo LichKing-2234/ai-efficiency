@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/google/go-cmp/cmp"
 )
 
 type opsProviderStub struct {
@@ -33,6 +34,10 @@ type opsProviderStub struct {
 	updatedAccountIDs    []int64
 	updatedConcurrencies []int
 	currentConcurrency   int
+
+	concurrencyMemberships    []relay.AccountConcurrencyMembership
+	concurrencyMembershipsErr error
+	concurrencyListCalls      int
 }
 
 func (p *opsProviderStub) ListPlatformGroups(context.Context) ([]relay.Group, error) {
@@ -80,6 +85,16 @@ func (p *opsProviderStub) UpdateAccountConcurrency(_ context.Context, accountID 
 		return nil, p.updaterErr
 	}
 	return &relay.AccountCapacity{AccountID: accountID, Concurrency: concurrency, CurrentConcurrency: current}, nil
+}
+
+func (p *opsProviderStub) ListAccountConcurrencyMemberships(context.Context) ([]relay.AccountConcurrencyMembership, error) {
+	p.mu.Lock()
+	p.concurrencyListCalls++
+	p.mu.Unlock()
+	if p.concurrencyMembershipsErr != nil {
+		return nil, p.concurrencyMembershipsErr
+	}
+	return p.concurrencyMemberships, nil
 }
 
 // opsReaderOnlyStub exposes the ops membership read but not the account
@@ -719,6 +734,86 @@ func TestSetAccountConcurrencyRejectsInvalidInputBeforeReadingUpstream(t *testin
 	}
 	if provider.accountListCalls != 0 || provider.updaterCalls != 0 {
 		t.Fatalf("upstream calls = %d list / %d update, want 0/0", provider.accountListCalls, provider.updaterCalls)
+	}
+}
+
+func TestAccountConcurrencyIndexReturnsSortedOnDemandFacts(t *testing.T) {
+	provider := newStubProvider()
+	provider.concurrencyMemberships = []relay.AccountConcurrencyMembership{
+		{AccountID: 30, Concurrency: 5, GroupIDs: []int64{7}},
+		{AccountID: 11, Concurrency: 20, GroupIDs: []int64{4, 5}},
+		{AccountID: 22, Concurrency: 3, GroupIDs: []int64{}},
+	}
+	store := newMemoryStore()
+	cache, err := NewCache(store, CacheOptions{Namespace: "test"})
+	if err != nil {
+		t.Fatalf("NewCache() error = %v", err)
+	}
+	service, clock := newTestService(provider, cache)
+
+	index, err := service.AccountConcurrencyIndex(context.Background(), AccountConcurrencyIndexRequest{ProviderID: 1})
+	if err != nil {
+		t.Fatalf("AccountConcurrencyIndex() error = %v", err)
+	}
+	want := &AccountConcurrencyIndex{
+		ProviderID: 1,
+		AsOf:       clock.Now().UTC(),
+		Accounts: []relay.AccountConcurrencyMembership{
+			{AccountID: 11, Concurrency: 20, GroupIDs: []int64{4, 5}},
+			{AccountID: 22, Concurrency: 3, GroupIDs: []int64{}},
+			{AccountID: 30, Concurrency: 5, GroupIDs: []int64{7}},
+		},
+	}
+	if diff := cmp.Diff(want, index); diff != "" {
+		t.Fatalf("AccountConcurrencyIndex() mismatch (-want +got):\n%s", diff)
+	}
+	if provider.concurrencyListCalls != 1 {
+		t.Fatalf("index scans = %d, want 1", provider.concurrencyListCalls)
+	}
+	// The index is an on-demand read: it must never be written to the read cache.
+	if len(store.items) != 0 {
+		t.Fatalf("cache entries = %d, want the concurrency index uncached", len(store.items))
+	}
+}
+
+func TestAccountConcurrencyIndexReturnsNonNilEmptySlice(t *testing.T) {
+	provider := newStubProvider()
+	provider.concurrencyMemberships = nil
+	service, _ := newTestService(provider, nil)
+
+	index, err := service.AccountConcurrencyIndex(context.Background(), AccountConcurrencyIndexRequest{ProviderID: 1})
+	if err != nil {
+		t.Fatalf("AccountConcurrencyIndex() error = %v", err)
+	}
+	if index == nil || index.Accounts == nil {
+		t.Fatalf("AccountConcurrencyIndex() = %#v, want non-nil empty accounts", index)
+	}
+	if len(index.Accounts) != 0 {
+		t.Fatalf("accounts = %#v, want empty", index.Accounts)
+	}
+}
+
+func TestAccountConcurrencyIndexRejectsProviderWithoutCapability(t *testing.T) {
+	provider := &opsReaderOnlyStub{}
+	service, _ := newTestService(provider, nil)
+
+	_, err := service.AccountConcurrencyIndex(context.Background(), AccountConcurrencyIndexRequest{ProviderID: 1})
+	if err == nil || !strings.Contains(err.Error(), "does not expose an account concurrency index") {
+		t.Fatalf("AccountConcurrencyIndex() error = %v, want missing capability error", err)
+	}
+}
+
+func TestAccountConcurrencyIndexReportsUpstreamScanFailure(t *testing.T) {
+	provider := newStubProvider()
+	provider.concurrencyMembershipsErr = errors.New("upstream account directory unavailable")
+	service, _ := newTestService(provider, nil)
+
+	index, err := service.AccountConcurrencyIndex(context.Background(), AccountConcurrencyIndexRequest{ProviderID: 1})
+	if err == nil || !strings.Contains(err.Error(), "list account concurrency memberships: upstream account directory unavailable") {
+		t.Fatalf("AccountConcurrencyIndex() error = %v, want upstream scan error", err)
+	}
+	if index != nil {
+		t.Fatalf("AccountConcurrencyIndex() = %#v, want nil on error", index)
 	}
 }
 

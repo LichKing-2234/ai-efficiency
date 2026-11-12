@@ -235,8 +235,8 @@ describe('i18n locale loading', () => {
       ...Object.keys(teamAccountsMessages['zh-CN']),
     ].sort()
 
-    expect(englishKeys).toHaveLength(1790)
-    expect(chineseKeys).toHaveLength(1790)
+    expect(englishKeys).toHaveLength(1796)
+    expect(chineseKeys).toHaveLength(1796)
     expect(englishKeys).toContain('user.ccSwitchStep2')
     expect(englishKeys).toContain('user.manualConfigRestartHint')
     expect(englishKeys).toContain('user.ccSwitchSecretHint')
@@ -282,6 +282,9 @@ describe('i18n locale loading', () => {
     expect(englishKeys).toContain('opsMonitoring.concurrencyInvalid')
     expect(englishKeys).toContain('opsMonitoring.concurrencyUpdated')
     expect(englishKeys).toContain('opsMonitoring.concurrencyUpdateFailed')
+    expect(englishKeys).toContain('opsMonitoring.concurrencyFilterLabel')
+    expect(englishKeys).toContain('opsMonitoring.concurrencyFilterFailed')
+    expect(englishKeys).toContain('opsMonitoring.noGroupsForFilter')
     expect(chineseKeys).toEqual(englishKeys)
   })
 

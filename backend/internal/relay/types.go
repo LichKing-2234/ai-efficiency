@@ -141,6 +141,16 @@ type GroupAccount struct {
 	Proxy              *GroupProxy `json:"proxy"`
 }
 
+// AccountConcurrencyMembership is one account's configured concurrency and the
+// positive group IDs it currently belongs to. It is the privacy-safe index entry
+// behind the Ops Monitoring group concurrency filter: credentials, usage, and
+// proxy bindings are intentionally absent.
+type AccountConcurrencyMembership struct {
+	AccountID   int64   `json:"account_id"`
+	Concurrency int     `json:"concurrency"`
+	GroupIDs    []int64 `json:"group_ids"`
+}
+
 // AccountCapacity is one account's configured concurrency and its live request
 // count. Both values are upstream facts passed through verbatim; this platform
 // never derives or adjusts them.

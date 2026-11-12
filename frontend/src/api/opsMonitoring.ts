@@ -105,6 +105,19 @@ export interface OpsMonitoringAccountsData {
   accounts: OpsMonitoringAccount[]
 }
 
+/** One account's configured concurrency plus the groups that currently contain it. */
+export interface OpsMonitoringAccountConcurrency {
+  account_id: number
+  concurrency: number
+  group_ids: number[]
+}
+
+export interface OpsMonitoringAccountConcurrencyData {
+  provider_id: number
+  as_of: string
+  accounts: OpsMonitoringAccountConcurrency[]
+}
+
 // Verified upstream read-back after setting one account's configured concurrency.
 export interface OpsMonitoringAccountCapacity {
   account_id: number
@@ -153,6 +166,15 @@ export function getOpsMonitoringGroups(params: OpsMonitoringGroupsParams) {
 
 export function getOpsMonitoringGroupAccounts(groupId: number, params: { provider_id: number }) {
   return client.get<ApiResponse<OpsMonitoringAccountsData>>(`/admin/ops-monitoring/groups/${groupId}/accounts`, { params })
+}
+
+/**
+ * Reads the whole provider account concurrency index. The page calls this only
+ * when the operator first applies the concurrency filter, and the contract
+ * deliberately caches no part of it on the platform.
+ */
+export function getOpsMonitoringAccountConcurrency(params: { provider_id: number }) {
+  return client.get<ApiResponse<OpsMonitoringAccountConcurrencyData>>('/admin/ops-monitoring/accounts/concurrency', { params })
 }
 
 export function setOpsMonitoringAccountConcurrency(

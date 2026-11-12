@@ -19,6 +19,8 @@ type opsMonitoringProviderStub struct {
 	groups    []relay.Group
 	overviews map[int64]json.RawMessage
 
+	memberships []relay.AccountConcurrencyMembership
+
 	updateCalls        int
 	updatedAccountID   int64
 	updatedConcurrency int
@@ -45,6 +47,10 @@ func (p *opsMonitoringProviderStub) ListGroupAccounts(_ context.Context, _ int64
 		ProxyID:     &proxyID,
 		Proxy:       &relay.GroupProxy{ID: 3, Name: "proxy-alpha", Protocol: "socks5h", Host: "198.51.100.7", Port: 1080, Status: "active"},
 	}}, nil
+}
+
+func (p *opsMonitoringProviderStub) ListAccountConcurrencyMemberships(context.Context) ([]relay.AccountConcurrencyMembership, error) {
+	return p.memberships, nil
 }
 
 func (p *opsMonitoringProviderStub) UpdateAccountConcurrency(_ context.Context, accountID int64, concurrency int) (*relay.AccountCapacity, error) {
@@ -106,6 +112,7 @@ func newOpsMonitoringTestRouter(t *testing.T, provider relay.Provider) *gin.Engi
 	group.GET("/groups", opsHandler.ListGroups)
 	group.GET("/groups/:group_id/accounts", opsHandler.ListGroupAccounts)
 	group.PUT("/groups/:group_id/accounts/:account_id/concurrency", opsHandler.UpdateAccountConcurrency)
+	group.GET("/accounts/concurrency", opsHandler.ListAccountConcurrency)
 	group.POST("/proxies/:proxy_id/test", opsHandler.TestProxy)
 	return engine
 }
@@ -225,6 +232,61 @@ func TestOpsMonitoringGroupAccountsReturnsProxyBinding(t *testing.T) {
 	}
 	if proxy["host"] != "198.51.100.7" || proxy["protocol"] != "socks5h" {
 		t.Fatalf("proxy = %#v", proxy)
+	}
+}
+
+func TestOpsMonitoringAccountConcurrencyReturnsSortedIndex(t *testing.T) {
+	provider := newOpsMonitoringStubProvider()
+	provider.memberships = []relay.AccountConcurrencyMembership{
+		{AccountID: 30, Concurrency: 5, GroupIDs: []int64{7, 9}},
+		{AccountID: 11, Concurrency: 20, GroupIDs: []int64{4, 5}},
+	}
+	engine := newOpsMonitoringTestRouter(t, provider)
+	recorder, body := opsMonitoringGet(t, engine, http.MethodGet, "/api/v1/admin/ops-monitoring/accounts/concurrency?provider_id=1")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", recorder.Code, recorder.Body.String())
+	}
+	data, ok := body["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("response data = %#v", body["data"])
+	}
+	if data["provider_id"].(float64) != 1 {
+		t.Fatalf("provider_id = %v, want 1", data["provider_id"])
+	}
+	if _, ok := data["as_of"].(string); !ok {
+		t.Fatalf("as_of = %#v, want RFC 3339 timestamp", data["as_of"])
+	}
+	accounts, ok := data["accounts"].([]any)
+	if !ok || len(accounts) != 2 {
+		t.Fatalf("accounts = %#v", data["accounts"])
+	}
+	first := accounts[0].(map[string]any)
+	if first["account_id"].(float64) != 11 || first["concurrency"].(float64) != 20 {
+		t.Fatalf("first account = %#v, want account 11 with concurrency 20", first)
+	}
+	groupIDs, ok := first["group_ids"].([]any)
+	if !ok || len(groupIDs) != 2 || groupIDs[0].(float64) != 4 || groupIDs[1].(float64) != 5 {
+		t.Fatalf("group_ids = %#v, want [4 5]", first["group_ids"])
+	}
+}
+
+func TestOpsMonitoringAccountConcurrencyRejectsInvalidProviderID(t *testing.T) {
+	engine := newOpsMonitoringTestRouter(t, newOpsMonitoringStubProvider())
+	recorder, _ := opsMonitoringGet(t, engine, http.MethodGet, "/api/v1/admin/ops-monitoring/accounts/concurrency?provider_id=0")
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (%s)", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestOpsMonitoringAccountConcurrencyRejectsProviderWithoutReader(t *testing.T) {
+	engine := newOpsMonitoringTestRouter(t, &opsMonitoringReaderOnlyProvider{})
+	recorder, body := opsMonitoringGet(t, engine, http.MethodGet, "/api/v1/admin/ops-monitoring/accounts/concurrency?provider_id=1")
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (%s)", recorder.Code, recorder.Body.String())
+	}
+	message, _ := body["message"].(string)
+	if !strings.Contains(message, "does not expose an account concurrency index") {
+		t.Fatalf("message = %q, want missing capability error", message)
 	}
 }
 

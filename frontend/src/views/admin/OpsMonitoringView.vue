@@ -10,11 +10,13 @@ import { formatBeijingClock, formatBeijingDateTime } from '@/utils/opsMonitoring
 import { useWideContentLayout } from '@/composables/useMediaQuery'
 import { listRelayProviders } from '@/api/relayProvider'
 import {
+  getOpsMonitoringAccountConcurrency,
   getOpsMonitoringGroupAccounts,
   getOpsMonitoringGroups,
   setOpsMonitoringAccountConcurrency,
   testOpsMonitoringProxy,
   type OpsMonitoringAccount,
+  type OpsMonitoringAccountConcurrency,
   type OpsMonitoringGroup,
   type OpsMonitoringGroupsData,
   type OpsMonitoringProxyTestResult,
@@ -42,6 +44,12 @@ interface OpsConcurrencyState {
   saved: boolean
 }
 
+interface OpsConcurrencyIndexState {
+  providerID: number
+  asOf: string
+  accounts: OpsMonitoringAccountConcurrency[]
+}
+
 type OpsNumericKey =
   | 'request_count_total'
   | 'sla'
@@ -62,6 +70,8 @@ type OpsSortKey = OpsMetricColumn['key'] | 'group_name' | 'platform'
 const windows: OpsMonitoringWindow[] = ['1h', '6h', '24h']
 const rateKeys = new Set<string>(['sla', 'error_rate', 'upstream_error_rate'])
 const AUTO_REFRESH_MS = 60_000
+const MIN_CONCURRENCY_FILTER = 1
+const MAX_CONCURRENCY_FILTER = 10000
 
 const { t: baseT, locale } = useI18n()
 const t = createFeatureTranslator(locale, baseT, 'opsMonitoring.', opsMonitoringMessages)
@@ -81,6 +91,14 @@ const proxyTests = reactive<Record<string, OpsProxyTestState>>({})
 const concurrencyStates = reactive<Record<number, OpsConcurrencyState>>({})
 const sortKey = ref<OpsSortKey>('upstream_error_rate')
 const sortOrder = ref<'ascending' | 'descending'>('descending')
+// The concurrency filter is applied client-side against a lazy account index.
+// Nothing platform-derived is displayed: the index only decides which loaded
+// groups stay visible.
+const concurrencyFilter = ref<number | null>(null)
+const concurrencyIndex = ref<OpsConcurrencyIndexState | null>(null)
+const concurrencyIndexLoading = ref(false)
+const concurrencyIndexError = ref('')
+let concurrencyIndexRequestID = 0
 let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
 
 const groups = computed(() => data.value?.groups ?? [])
@@ -89,8 +107,36 @@ const failedGroupCount = computed(() => data.value?.failed_group_count ?? 0)
 // state is reserved for a page that has no data at all.
 const hasSnapshot = computed(() => data.value !== null)
 const platforms = computed(() => Array.from(new Set(groups.value.map((group) => group.platform).filter(Boolean))).sort())
-const filteredGroups = computed(() => (
+const platformGroups = computed(() => (
   platform.value ? groups.value.filter((group) => group.platform === platform.value) : groups.value
+))
+const concurrencyIndexReady = computed(() => (
+  concurrencyIndex.value !== null && concurrencyIndex.value.providerID === providerID.value
+))
+// A filter is only applied once a readable index for the current provider
+// exists. While loading, or after a failed read, every row stays visible.
+const concurrencyFilterApplied = computed(() => (
+  concurrencyFilter.value !== null && concurrencyIndexReady.value && !concurrencyIndexError.value
+))
+const concurrencyMatchedGroupIDs = computed<ReadonlySet<number> | null>(() => {
+  const threshold = concurrencyFilter.value
+  if (threshold === null || !concurrencyFilterApplied.value) return null
+  const matched = new Set<number>()
+  for (const account of concurrencyIndex.value?.accounts ?? []) {
+    if (!Number.isFinite(account.concurrency) || account.concurrency < threshold) continue
+    for (const groupID of account.group_ids ?? []) matched.add(groupID)
+  }
+  return matched
+})
+// Platform and concurrency filters compose with AND; the platform filter alone
+// still runs on the loaded payload so it never refetches groups.
+const filteredGroups = computed(() => {
+  const matched = concurrencyMatchedGroupIDs.value
+  if (!matched) return platformGroups.value
+  return platformGroups.value.filter((group) => matched.has(group.group_id))
+})
+const emptyDescription = computed(() => (
+  concurrencyFilterApplied.value ? t('opsMonitoring.noGroupsForFilter') : t('opsMonitoring.noGroups')
 ))
 // Failed fetches stay pinned to the top in directory order, whatever the sort.
 const sortedGroups = computed(() => {
@@ -266,11 +312,95 @@ async function loadGroups(force = false) {
   }
 }
 
+function resetConcurrencyIndex() {
+  // Bump the request id so an in-flight read for the previous provider cannot
+  // land after the switch.
+  concurrencyIndexRequestID += 1
+  concurrencyIndex.value = null
+  concurrencyIndexLoading.value = false
+  concurrencyIndexError.value = ''
+  concurrencyFilter.value = null
+}
+
+async function loadConcurrencyIndex() {
+  if (!providerID.value) return
+  const requestProviderID = providerID.value
+  const requestID = ++concurrencyIndexRequestID
+  concurrencyIndexLoading.value = true
+  concurrencyIndexError.value = ''
+  try {
+    const response = await getOpsMonitoringAccountConcurrency({ provider_id: requestProviderID })
+    if (requestID !== concurrencyIndexRequestID || requestProviderID !== providerID.value) return
+    const payload = response.data.data
+    concurrencyIndex.value = {
+      providerID: requestProviderID,
+      asOf: payload?.as_of ?? '',
+      accounts: payload?.accounts ?? [],
+    }
+  } catch (err: any) {
+    if (requestID !== concurrencyIndexRequestID || requestProviderID !== providerID.value) return
+    // A failed read never filters rows and never pretends it was applied.
+    concurrencyIndex.value = null
+    concurrencyIndexError.value = err.response?.data?.message || err.message || ''
+  } finally {
+    if (requestID === concurrencyIndexRequestID) concurrencyIndexLoading.value = false
+  }
+}
+
+function handleConcurrencyFilterChange(value: number | null | undefined) {
+  const next = typeof value === 'number' && Number.isInteger(value) && value >= MIN_CONCURRENCY_FILTER && value <= MAX_CONCURRENCY_FILTER
+    ? value
+    : null
+  concurrencyFilter.value = next
+  if (next === null) {
+    concurrencyIndexError.value = ''
+    return
+  }
+  // The index loads once per provider on first use; later threshold changes
+  // re-filter locally with no request and no group reload. A failed read is
+  // retried by the next threshold change instead of staying stuck.
+  if (!concurrencyIndexReady.value && !concurrencyIndexLoading.value) {
+    concurrencyIndexError.value = ''
+    void loadConcurrencyIndex()
+  }
+}
+
+function clearConcurrencyFilter() {
+  // Invalidate any in-flight index read: a late success must not populate the
+  // index, and a late failure must not post the "filter is not applied" alert
+  // after the operator already cleared the filter.
+  concurrencyIndexRequestID += 1
+  concurrencyIndexLoading.value = false
+  concurrencyIndexError.value = ''
+  concurrencyFilter.value = null
+}
+
+function patchConcurrencyIndexEntry(groupID: number, accountID: number, concurrency: number) {
+  const index = concurrencyIndex.value
+  if (!index || index.providerID !== providerID.value) return
+  const entry = index.accounts.find((account) => account.account_id === accountID)
+  if (entry) {
+    entry.concurrency = concurrency
+    return
+  }
+  // The verified save is group-scoped, so that group is the known membership.
+  index.accounts.push({ account_id: accountID, concurrency, group_ids: [groupID] })
+}
+
+async function refreshManually() {
+  const tasks: Promise<unknown>[] = [loadGroups(true)]
+  // Only the explicit manual refresh re-reads the filter index; the automatic
+  // tick keeps the existing index and only refreshes the cached group snapshot.
+  if (concurrencyFilter.value !== null) tasks.push(loadConcurrencyIndex())
+  await Promise.all(tasks)
+}
+
 function selectProvider(value: unknown) {
   const next = Number(value)
   if (!Number.isFinite(next) || next === providerID.value) return
   providerID.value = next
   resetDetails()
+  resetConcurrencyIndex()
   void loadGroups()
 }
 
@@ -370,6 +500,9 @@ async function setAccountConcurrency(groupID: number, accountID: number, concurr
       account.concurrency = capacity?.concurrency ?? concurrency
       account.current_concurrency = capacity?.current_concurrency ?? account.current_concurrency
     }
+    // Keep an active filter honest: the verified read-back immediately moves
+    // the account in or out of the threshold without refetching the index.
+    if (capacity) patchConcurrencyIndexEntry(groupID, accountID, capacity.concurrency)
     state.saved = true
   } catch (err: any) {
     // No automatic retry: keep the previous capacity and report the failure.
@@ -439,17 +572,54 @@ onBeforeUnmount(stopAutoRefresh)
             <el-option :label="t('opsMonitoring.allPlatforms')" value="" />
             <el-option v-for="item in platforms" :key="item" :label="item" :value="item" />
           </el-select>
+          <div class="flex items-center gap-1.5">
+            <span class="whitespace-nowrap text-xs font-medium text-slate-500">{{ t('opsMonitoring.concurrencyFilterLabel') }}</span>
+            <el-input-number
+              :model-value="concurrencyFilter ?? undefined"
+              data-testid="ops-concurrency-filter"
+              class="w-28"
+              :min="MIN_CONCURRENCY_FILTER"
+              :max="MAX_CONCURRENCY_FILTER"
+              :step="1"
+              step-strictly
+              controls-position="right"
+              :aria-label="t('opsMonitoring.concurrencyFilterLabel')"
+              :placeholder="t('opsMonitoring.concurrencyFilterPlaceholder')"
+              @change="handleConcurrencyFilterChange"
+            />
+            <el-button
+              v-if="concurrencyFilter !== null"
+              link
+              type="primary"
+              data-testid="ops-concurrency-filter-clear"
+              @click="clearConcurrencyFilter"
+            >
+              {{ t('opsMonitoring.concurrencyFilterClear') }}
+            </el-button>
+          </div>
+          <span v-if="concurrencyIndexLoading" data-testid="ops-concurrency-filter-loading" class="text-xs text-slate-500">
+            {{ t('opsMonitoring.concurrencyFilterLoading') }}
+          </span>
           <el-switch
             :model-value="autoRefresh"
             data-testid="ops-auto-refresh"
             :active-text="t('opsMonitoring.autoRefresh')"
             @change="autoRefresh = $event === true"
           />
-          <el-button data-testid="ops-refresh" type="primary" :icon="Refresh" :loading="loading" @click="loadGroups(true)">
+          <el-button data-testid="ops-refresh" type="primary" :icon="Refresh" :loading="loading" @click="refreshManually">
             {{ t('opsMonitoring.refresh') }}
           </el-button>
         </div>
       </header>
+
+      <el-alert
+        v-if="concurrencyIndexError"
+        data-testid="ops-concurrency-filter-error"
+        type="error"
+        :closable="false"
+        :title="t('opsMonitoring.concurrencyFilterFailed')"
+        :description="concurrencyIndexError"
+      />
 
       <el-alert
         v-if="failedGroupCount > 0"
@@ -473,7 +643,7 @@ onBeforeUnmount(stopAutoRefresh)
       </section>
 
       <section v-else class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <el-empty v-if="!sortedGroups.length" data-testid="ops-empty" :description="t('opsMonitoring.noGroups')" />
+        <el-empty v-if="!sortedGroups.length" data-testid="ops-empty" :description="emptyDescription" />
         <div v-else-if="wideContentLayout" data-testid="ops-group-table-layout">
           <el-table
             :data="sortedGroups"

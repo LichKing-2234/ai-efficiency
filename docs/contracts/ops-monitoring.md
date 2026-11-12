@@ -3,8 +3,9 @@
 This contract describes the current admin-only Ops Monitoring surface: the
 per-group upstream ops facts it presents for every Sub2API Group at once, each
 expanded account's configured concurrency capacity and its one scoped mutation,
-the API and Relay read/write paths that serve them, the display-only metric
-alignment rule, and the fetch, cache, and failure behavior. Read it before
+the client-side group filter on configured account concurrency, the API and
+Relay read/write paths that serve them, the display-only metric alignment rule,
+and the fetch, cache, and failure behavior. Read it before
 changing `/admin/ops-monitoring`, `backend/internal/opsmonitoring`, the Relay
 group ops-health/account/proxy-test/concurrency capability, or the upstream ops
 field mapping.
@@ -25,6 +26,7 @@ deadlines, and frontend loading follow
 | Group Health Snapshot | The verbatim Sub2API ops overview for one Sub2API Group over one explicit UTC window. |
 | Metric alignment | The rule that every number on this surface is a field returned by sub2api, displayed without recomputation. |
 | Account Concurrency Capacity | One Sub2API account's configured `concurrency` limit together with upstream's live `current_concurrency` count, both displayed verbatim. It is the only value an administrator can set on this surface, one account at a time, and the write is verified by a read-back. |
+| Concurrency filter | A client-side row filter on the group collection that keeps only groups with at least one member account whose configured `concurrency` is greater than or equal to the operator's minimum value. It is presentation over joined upstream facts, not a metric and not a server-side query parameter. |
 | Fetch failure | The platform outcome for one group whose overview read did not complete. It is not an upstream health fact. |
 
 sub2api remains the authority for every metric, account, proxy, and egress fact
@@ -54,16 +56,20 @@ and owns no local ops table.
   second ops source can be added without a URL change. Only sub2api implements
   the capability; the service type-asserts the Relay provider's
   `relay.GroupOpsHealthReader` read capability (`ReadGroupOpsHealth`,
-  `ListGroupAccounts`, `TestProxy`) and the optional
-  `relay.AccountConcurrencyUpdater` write capability, and defines no
-  provider-neutral ops abstraction.
+  `ListGroupAccounts`, `TestProxy`), the optional
+  `relay.AccountConcurrencyUpdater` write capability, and the optional
+  `relay.AccountConcurrencyReader` index capability behind the client-side
+  concurrency filter, and defines no provider-neutral ops abstraction.
+- Besides the client-side platform filter, the page exposes one client-side
+  concurrency filter over the loaded group collection. It never adds a groups
+  query parameter and never issues a second groups read.
 - No ops endpoint exists upstream for all groups at once. The backend fans out
   one overview read per group and joins the result with directory and account
   facts sub2api already returns.
 
 ## Upstream Sources
 
-All six calls go through the configured Relay provider's admin HTTP client and
+All seven calls go through the configured Relay provider's admin HTTP client and
 credential. There is no direct sub2api database access.
 
 | Upstream call | Supplies | Behavior |
@@ -74,6 +80,7 @@ credential. There is no direct sub2api database access.
 | `POST /api/v1/admin/proxies/<id>/test` | Measured egress IP and geo for one proxy | An active upstream probe issued only on explicit operator demand. It measures; it mutates no platform or upstream state. |
 | `PUT /api/v1/admin/accounts/<id>` | Writes one account's configured `concurrency` | A partial update: the platform sends only `{"concurrency": N}`, and sub2api's pointer-typed request struct leaves every other account field unchanged. Issued only on an explicit operator save from the account expansion. |
 | `GET /api/v1/admin/accounts/<id>` | Read-back verification of `concurrency` and `current_concurrency` after a write | The platform returns the capacity only after the read-back matches the requested value; a mismatch is an error, not a success with different numbers. |
+| `GET /api/v1/admin/accounts?page=&page_size=1000` | Every account's configured `concurrency` and its group membership, as the on-demand index behind the concurrency filter | One unfiltered directory scan with no `platform`, `group`, or `lite` parameter, paginated until `pages` is exhausted. Only `id`, `concurrency`, `group_ids`, and `account_groups` are decoded; credentials, proxy bindings, usage, and scheduling fields are not. It yields one entry per account — an account repeated across pages keeps the later page's values — and is issued only when an operator applies the filter, never as part of the group snapshot read and never cache-warmed with it. |
 
 The overview `data` object carries 19 scalar keys and 6 sub-objects.
 `system_metrics` and `job_heartbeats` are platform-global rather than
@@ -83,7 +90,7 @@ platform are the displayed authorities.
 
 ## API Surface
 
-All four routes are administrator-gated under `/api/v1`, require the
+All five routes are administrator-gated under `/api/v1`, require the
 `provider_id` query parameter, and return the standard `{"code": 200, "data":
 ...}` envelope. Invalid query or body input returns `400`; a provider-level
 failure (provider resolution, missing ops capability, group membership, or an
@@ -142,6 +149,21 @@ the account's configured `concurrency` together with upstream's live
 `current_concurrency`. This layer loads on demand when a row expands and is never
 cache-warmed with the group table.
 
+### `GET /admin/ops-monitoring/accounts/concurrency`
+
+Query: `provider_id` (required). Returns `{provider_id, as_of, accounts[]}`
+where each entry is `{account_id, concurrency, group_ids[]}` — one account's
+configured upstream `concurrency` (verbatim) and the positive group IDs it
+currently belongs to, derived from upstream `account_groups` with `group_ids`
+as the fallback. There is exactly one entry per account: if upstream pagination
+repeats an account, the later page's entry wins. Entries are sorted by
+`account_id`, so the projection is deterministic. The endpoint is the
+on-demand index behind the client-side concurrency filter: it issues one
+unfiltered account-directory scan, is never cached, and is never part of the
+group snapshot read. A provider without the account-concurrency reader
+capability returns `422`, as does a failed upstream scan; the page then renders
+the filter as not applied rather than hiding rows.
+
 ### `POST /admin/ops-monitoring/proxies/:proxy_id/test`
 
 Query: `provider_id` (required), `force` (optional). Returns the upstream probe
@@ -179,6 +201,42 @@ value. Credentials, proxy binding, status, scheduling priority, and group
 relationships are never included in the write body, and no platform persistence,
 history, audit table, or cache is added for this write.
 
+## Concurrency Filter
+
+The group collection can be filtered by a minimum configured account
+concurrency `N`, a whole number from `1` to `10000`; an empty input means the
+filter is off. A group matches when at least one member account's configured
+`concurrency` is greater than or equal to `N`, using the membership returned by
+the account-concurrency index below. The group snapshot's directory membership
+remains the authority for which group rows exist; an index account whose group
+is absent from the snapshot is ignored for filtering.
+
+- The filter is client-side and presentation-only. `N` is never sent to the
+  groups endpoint, the loaded snapshot is not re-read, and no platform-computed
+  concurrency value, rollup, or summary is added to a group row. Changing `N`
+  after the index is loaded re-filters locally without another request.
+- The index is loaded on demand: one `GET
+  /admin/ops-monitoring/accounts/concurrency` read per provider when the
+  operator first applies the filter, and one refresh when an explicit manual
+  refresh runs while the filter is active. The 60-second auto-refresh tick
+  keeps the loaded index and does not re-read it. A provider change clears the
+  filter and the index; a window change keeps the index, because concurrency is
+  not window-scoped.
+- If the index read fails, no row is hidden: every loaded group stays visible
+  and the page states inline that the filter is not applied. A filter must
+  never render as active while its facts are unavailable; a later threshold
+  change retries the read, and clearing the filter invalidates an in-flight
+  read so a late response cannot apply or report an error after the operator
+  cleared it.
+- When the filter is active and no group matches, the collection renders a
+  filter-specific empty state distinct from a provider that has no groups.
+- A successful account-concurrency save from the expansion patches the loaded
+  index entry with the verified read-back `concurrency`, so the filtered row
+  set reacts immediately to the operator's own write.
+- The filter displays no number of its own: no matched-account count, maximum,
+  minimum, average, sum, or ratio of account concurrency appears in a row, in
+  the filter control, or in the empty state.
+
 ## Metric Alignment
 
 The platform displays; it never computes. Every number shown is a field
@@ -194,6 +252,10 @@ Allowed:
 - Presentation-only transforms: fraction-to-percentage formatting, UTC to
   Beijing time conversion, the relative window label, row ordering, and the
   no-traffic classification.
+- Client-side filtering of rows by joined account facts: hiding a group whose
+  accounts all fall below the active concurrency filter displays no computed
+  number. The filtered row set is a presentation of joined upstream facts, not
+  a rollup.
 
 Forbidden:
 
@@ -209,6 +271,9 @@ Forbidden:
   platform constructs.
 - A dominant-proxy, dominant-error, or most-affected-account rollup.
 - Trends, history, deltas, or comparison against a previous window.
+- A server-side minimum-concurrency groups parameter, a second groups read per
+  filter value, or any displayed per-group count, maximum, minimum, average, or
+  sum of account concurrency.
 
 Account concurrency capacity is configuration, not a metric: `concurrency` is an
 upstream account field and `current_concurrency` is upstream's live count, both
@@ -291,6 +356,17 @@ identity rather than a separate displayed column.
 The account credential blob is never decoded and no credential material enters
 the projection.
 
+### Concurrency filter index
+
+| Filtered fact | Upstream field | Source |
+| --- | --- | --- |
+| Group membership | `account_groups[].group_id`, falling back to `group_ids` | `/admin/accounts` (unfiltered scan) |
+| Configured concurrency | `concurrency` | `/admin/accounts` (unfiltered scan) |
+
+Only membership and the operator's threshold drive the filter; no number from
+the index is displayed. The index projection also carries `account_id`, which
+is used only to patch the entry after a verified concurrency save.
+
 ### Measured egress probe
 
 | Displayed | Upstream field |
@@ -352,11 +428,15 @@ snapshot is the only cache-warmed read: account expansion and the egress probe
 are per-row requests outside the fan-out. Account concurrency capacity is never
 cached: the account list is read on demand per expansion, and the concurrency
 write performs no cache read or write, so a saved value is visible on the next
-expansion without invalidating the group snapshot. No ops read persists history
-or trends.
+expansion without invalidating the group snapshot. The concurrency-filter index
+is the other uncached read: it is issued only on explicit operator demand (first
+application and explicit manual refresh while active), never written into the
+group snapshot cache, and never delays or fails the primary group read. No ops
+read persists history or trends.
 
 Auto-refresh is off by default and re-reads the same window every 60 seconds
-when enabled, through the cached read path. A failed group is never stored as
+when enabled, through the cached read path; it keeps the loaded concurrency
+index and re-reads it only on explicit manual refresh. A failed group is never stored as
 fresh data, so the next read of any kind — an explicit refresh, a window or
 provider change, or a later auto-refresh tick — retries it.
 
@@ -373,6 +453,8 @@ provider change, or a later auto-refresh tick — retries it.
 | Overview returned nothing | Treated as that group's fetch failure, never as no data. |
 | Account concurrency save fails | The requested value is not shown as applied. The account row keeps its last displayed capacity and shows the platform/upstream error inline; other accounts are unaffected. |
 | Account left the group before saving | The service's fresh membership read returns `422` and leaves upstream unchanged; the row keeps its last displayed capacity and shows the error inline. |
+| Concurrency-filter index read fails | Rows stay unfiltered and an inline error states that the filter is not applied; no row is silently hidden, and a later threshold change retries the read. |
+| No group matches the active concurrency filter | The collection renders a filter-specific empty state, never the provider-has-no-groups state, and never a fabricated zero-traffic row. |
 
 An unfetched group is never rendered as healthy, and a failed group is never
 rendered as zero traffic.
@@ -381,7 +463,8 @@ rendered as zero traffic.
 
 The surface is one collection with a window switcher, manual refresh, an
 auto-refresh toggle, a Provider switcher when several Providers exist, a
-client-side platform filter, a failure banner, and the group list. The wide
+client-side platform filter, a client-side concurrency filter, a failure
+banner, and the group list. The wide
 layout uses a table and the narrow layout uses one record card per group from
 the same loaded collection and request state. There is no pagination.
 
@@ -399,6 +482,15 @@ the same loaded collection and request state. There is no pagination.
 - The platform filter is applied client-side over every loaded group, and it
   resets to all platforms when the selected platform is absent from a new
   snapshot.
+- The concurrency filter is a compact header control: a minimum-value integer
+  input from `1` to `10000` (empty = off) and an explicit clear action when a
+  value is set. It composes with the platform filter using AND. It shows its
+  lazy index loading state, and an index read failure renders inline with every
+  row left unfiltered. Failed rows that remain in the filtered set stay pinned
+  above the matching sorted rows and keep their failure presentation; a failed
+  group whose accounts do not satisfy the filter is hidden like any other
+  non-matching row. The failure banner keeps describing the snapshot's failed
+  groups even when the filter hides some of them.
 - Rate fields (`sla`, `error_rate`, `upstream_error_rate`) arrive as fractions
   and are rendered as percentages; only the representation changes.
 - Expanding a group loads its account list and shows the remaining group
@@ -412,7 +504,8 @@ the same loaded collection and request state. There is no pagination.
   value and renders the error inline. A proxy offers an explicit egress probe
   action that shows the measured IP, location, latency, check time, and a cached
   marker. The probe action and the manual refresh both ask for a fresh read
-  rather than replaying a cached one. A group failure does not remove, reorder,
+  rather than replaying a cached one; a manual refresh also reloads the
+  concurrency-filter index when that filter is active. A group failure does not remove, reorder,
   or block any other row's expansion.
 - Account capacity state is scoped to the expansion that started the save:
   switching Provider or window resets it, and an editor closes only after its

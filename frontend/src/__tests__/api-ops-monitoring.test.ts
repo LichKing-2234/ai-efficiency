@@ -11,6 +11,7 @@ vi.mock('@/api/client', () => ({
 
 import client from '@/api/client'
 import {
+  getOpsMonitoringAccountConcurrency,
   getOpsMonitoringGroupAccounts,
   getOpsMonitoringGroups,
   setOpsMonitoringAccountConcurrency,
@@ -59,6 +60,16 @@ describe('opsMonitoring API', () => {
     await getOpsMonitoringGroupAccounts(42, { provider_id: 7 })
 
     expect(mockClient.get).toHaveBeenCalledWith('/admin/ops-monitoring/groups/42/accounts', {
+      params: { provider_id: 7 },
+    })
+  })
+
+  it('getOpsMonitoringAccountConcurrency calls the frozen index endpoint with the provider scope', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: { provider_id: 7, as_of: '', accounts: [] } } })
+
+    await getOpsMonitoringAccountConcurrency({ provider_id: 7 })
+
+    expect(mockClient.get).toHaveBeenCalledWith('/admin/ops-monitoring/accounts/concurrency', {
       params: { provider_id: 7 },
     })
   })
