@@ -2348,3 +2348,22 @@ func TestExecuteGroupWarningLabelsPreferRelayReportedName(t *testing.T) {
 		t.Fatalf("uncreated Group produced label %q", labels[0])
 	}
 }
+
+func TestMappingRelationshipWarningsIgnoreOrganizationAccounts(t *testing.T) {
+	facts := &mappingRelationshipFacts{
+		users: []relay.User{
+			{ID: 447, Email: "team-1684215@invalid.account", Username: "team-1684215"},
+		},
+		localByRelay:             map[int64]int{447: 447},
+		localLabels:              map[int]string{447: "team-1684215@invalid.account"},
+		activeGroupsByUserID:     map[int64][]int64{447: {67}},
+		organizationRelayUserIDs: map[int64]struct{}{447: {}},
+	}
+	warnings := mappingRelationshipWarnings(facts, Mapping{
+		GroupIDs:          []int64{67},
+		MemberAssignments: map[string]int64{},
+	}, map[int64]string{67: "Group Target"})
+	if len(warnings) != 0 {
+		t.Fatalf("organization account produced drift warnings: %v", warnings)
+	}
+}
