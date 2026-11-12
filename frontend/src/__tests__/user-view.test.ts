@@ -931,20 +931,25 @@ describe('UserView', () => {
     })
   })
 
-  it('shows Kiro CLI configuration alongside Claude settings for Claude groups', async () => {
+  it('offers a client selector and Kiro CLI configuration for Claude groups', async () => {
     const { wrapper } = await mountUserView()
 
     await selectAccessGroup(wrapper, '43')
     await openConfigurationMethods(wrapper)
+
+    expect(wrapper.get('[data-testid="client-option-claude"]').text()).toContain('Claude Code')
+    expect(wrapper.get('[data-testid="client-option-kiro"]').text()).toContain('Kiro CLI')
+
+    await wrapper.get('[data-testid="client-option-kiro"] input').setValue(true)
     await wrapper.get('[data-testid="config-method-manual"]').trigger('click')
     await flushPromises()
 
     const manualText = wrapper.text()
-    expect(manualText).toContain('Claude settings')
     expect(manualText).toContain('Kiro CLI config')
     expect(manualText).toContain('~/.kiro/settings/cli.json')
     expect(manualText).toContain('https://prod.example.com/kiro')
     expect(manualText).toContain('KIRO_API_KEY')
+    expect(manualText).not.toContain('~/.claude/settings.json')
     expect(wrapper.find('[data-testid="manual-config-copy-kiro-cli-config"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="manual-config-copy-kiro-cli-env"]').exists()).toBe(true)
   })
