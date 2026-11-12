@@ -6630,22 +6630,31 @@ func mappingAvailabilityWarnings(mapping Mapping, groups []relay.Group) []string
 }
 
 type mappingRelationshipFacts struct {
-	users                []relay.User
-	localByRelay         map[int64]int
-	localLabels          map[int]string
-	activeGroupsByUserID map[int64][]int64
+	users                    []relay.User
+	localByRelay             map[int64]int
+	localLabels              map[int]string
+	activeGroupsByUserID     map[int64][]int64
+	organizationRelayUserIDs map[int64]struct{}
 }
 
 func loadMappingRelationshipFacts(ctx context.Context, client *ent.Client, provider relay.Provider) (*mappingRelationshipFacts, error) {
 	if provider == nil || client == nil {
 		return nil, nil
 	}
+	organizationRelayUserIDs, orgErr := loadOrganizationAccountRelayUserIDs(ctx, client)
+	if orgErr != nil {
+		return nil, orgErr
+	}
 	if _, ok := provider.(relay.UserRelationshipSnapshotReader); ok {
 		snapshot, err := loadProviderRelationshipSnapshot(ctx, provider)
 		if err != nil {
 			return nil, fmt.Errorf("load provider relationship snapshot for mappings: %w", err)
 		}
-		return mappingRelationshipFactsFromSnapshot(ctx, client, snapshot)
+		facts, err := mappingRelationshipFactsFromSnapshot(ctx, client, snapshot)
+		if facts != nil {
+			facts.organizationRelayUserIDs = organizationRelayUserIDs
+		}
+		return facts, err
 	}
 	subsLister, ok := provider.(relay.UserSubscriptionLister)
 	directory, directoryOK := provider.(relay.UserDirectoryProvider)
@@ -6724,7 +6733,21 @@ func loadMappingRelationshipFacts(ctx context.Context, client *ent.Client, provi
 			activeGroupsByUserID[result.relayUserID] = result.groups
 		}
 	}
-	return &mappingRelationshipFacts{users: users, localByRelay: localByRelay, localLabels: localUserWarningLabels(localUsers), activeGroupsByUserID: activeGroupsByUserID}, nil
+	return &mappingRelationshipFacts{users: users, localByRelay: localByRelay, localLabels: localUserWarningLabels(localUsers), activeGroupsByUserID: activeGroupsByUserID, organizationRelayUserIDs: organizationRelayUserIDs}, nil
+}
+
+func loadOrganizationAccountRelayUserIDs(ctx context.Context, client *ent.Client) (map[int64]struct{}, error) {
+	rows, err := client.TeamAccount.Query().All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load organization account relay identities: %w", err)
+	}
+	out := make(map[int64]struct{}, len(rows))
+	for _, row := range rows {
+		if row.RelayUserID > 0 {
+			out[row.RelayUserID] = struct{}{}
+		}
+	}
+	return out, nil
 }
 
 func mappingRelationshipFactsFromSnapshot(ctx context.Context, client *ent.Client, snapshot *providerRelationshipSnapshot) (*mappingRelationshipFacts, error) {
@@ -6774,6 +6797,11 @@ func mappingRelationshipWarnings(facts *mappingRelationshipFacts, mapping Mappin
 			}
 		}
 		if len(groups) == 0 {
+			continue
+		}
+		if _, managed := facts.organizationRelayUserIDs[relayUser.ID]; managed {
+			// Organization accounts are managed by the team-account lifecycle;
+			// Relay planning is not their source of truth.
 			continue
 		}
 		localID, known := facts.localByRelay[relayUser.ID]
