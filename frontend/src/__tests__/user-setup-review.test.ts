@@ -8,6 +8,9 @@ import {
   resolveDiscoverToolForPlatform,
   resolveCCSwitchAppForPlatform,
   buildClaudeSettingsSnippet,
+  buildKiroCliEndpoint,
+  buildKiroCliConfigSnippet,
+  buildKiroCliEnvSnippet,
   buildCodexAuthSnippet,
   buildCodexConfigSnippet,
   buildGeminiEnvSnippet,
@@ -113,7 +116,11 @@ describe('userSetupReview command builders', () => {
       baseUrl: 'https://prod.example.com',
       platform: 'anthropic',
       apiKey: 'sk-claude',
-    }).map((snippet) => snippet.path)).toEqual(['~/.claude/settings.json'])
+    }).map((snippet) => snippet.path)).toEqual([
+      '~/.claude/settings.json',
+      '~/.kiro/settings/cli.json',
+      'Kiro CLI environment',
+    ])
 
     expect(buildManualConfigSnippets({
       providerName: 'prod',
@@ -121,6 +128,29 @@ describe('userSetupReview command builders', () => {
       platform: 'gemini',
       apiKey: 'sk-gemini',
     }).map((snippet) => snippet.path)).toEqual(['~/.ae-cli/env.sh', 'Shell reload', 'Current shell'])
+  })
+
+  it('builds Kiro CLI configuration for Claude groups', () => {
+    expect(buildKiroCliEndpoint('https://prod.example.com')).toBe('https://prod.example.com/kiro')
+    expect(buildKiroCliEndpoint('https://prod.example.com/v1/')).toBe('https://prod.example.com/kiro')
+
+    const config = JSON.parse(buildKiroCliConfigSnippet('https://prod.example.com/v1'))
+    expect(config['api.cps.service']).toEqual({ endpoint: 'https://prod.example.com/kiro', region: 'us-east-1' })
+    expect(config['api.krs.service']).toEqual({ endpoint: 'https://prod.example.com/kiro', region: 'us-east-1' })
+    expect(buildKiroCliEnvSnippet('sk-claude')).toBe('export KIRO_API_KEY="sk-claude"')
+
+    const snippets = buildManualConfigSnippets({
+      providerName: 'prod',
+      baseUrl: 'https://prod.example.com',
+      platform: 'anthropic',
+      apiKey: 'sk-claude',
+    })
+    const kiroConfig = snippets.find((snippet) => snippet.key === 'kiro-cli-config')
+    const kiroEnv = snippets.find((snippet) => snippet.key === 'kiro-cli-env')
+    expect(kiroConfig?.path).toBe('~/.kiro/settings/cli.json')
+    expect(kiroConfig?.containsSecret).toBe(false)
+    expect(kiroEnv?.containsSecret).toBe(true)
+    expect(kiroEnv?.body).toContain('sk-claude')
   })
 
   it('classifies Agent access groups with a strict Agent prefix', () => {

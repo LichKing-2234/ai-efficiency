@@ -931,6 +931,24 @@ describe('UserView', () => {
     })
   })
 
+  it('shows Kiro CLI configuration alongside Claude settings for Claude groups', async () => {
+    const { wrapper } = await mountUserView()
+
+    await selectAccessGroup(wrapper, '43')
+    await openConfigurationMethods(wrapper)
+    await wrapper.get('[data-testid="config-method-manual"]').trigger('click')
+    await flushPromises()
+
+    const manualText = wrapper.text()
+    expect(manualText).toContain('Claude settings')
+    expect(manualText).toContain('Kiro CLI config')
+    expect(manualText).toContain('~/.kiro/settings/cli.json')
+    expect(manualText).toContain('https://prod.example.com/kiro')
+    expect(manualText).toContain('KIRO_API_KEY')
+    expect(wrapper.get('[data-testid="manual-config-copy-kiro-cli-config"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="manual-config-copy-kiro-cli-env"]').exists()).toBe(true)
+  })
+
   it('shows Agent-only configuration methods and manual snippets for Agent groups', async () => {
     const { wrapper } = await mountUserView()
 
