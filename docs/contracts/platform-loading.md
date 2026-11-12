@@ -62,8 +62,11 @@ Refresh behavior preserves these invariants:
 A cache may be fresh-only or may define a soft and hard freshness window. A
 stale value is returned only when its owning contract permits stale-if-error,
 the authoritative refresh fails with an eligible transient error, and the hard
-deadline has not passed. Authorization, credentials, current provider version,
-invalid input, mutation conflicts, and quota decisions are never stale-eligible.
+deadline has not passed. For a read model whose owning contract permits
+stale-if-error, an expiring internal refresh-flight deadline is an eligible
+transient refresh failure, while caller cancellation is never stale-eligible.
+Authorization, credentials, current provider version, invalid input, mutation
+conflicts, and quota decisions are never stale-eligible.
 
 Platform-owned writes advance the relevant persisted version or revision in the
 same transaction as the mutation. Best-effort cache eviction or notification

@@ -46,6 +46,25 @@ Usage, group quota, and OAuth pool are independent sections:
 The combined dashboard remains a compatibility response; dedicated quota and
 pool endpoints own those sections for independent browser loading.
 
+Usage uses a two-window read model: a fresh window of 24-27 seconds and a hard
+stale deadline of 96-108 seconds, both with 10-20 percent jitter. After the
+fresh window the cache performs one collapsed authoritative refresh. A previous
+generation is returned as stale only while the request is still before that
+generation's hard stale deadline.
+
+Stale-if-error applies to usage only: it covers transient Relay failures —
+including Relay login/usage-origin deadline and transport failures — and the
+bounded internal refresh-flight deadline. It never covers caller cancellation,
+invalid Relay credentials, Relay identity-mismatch or binding-integrity
+failures, configuration failures raised before the cache, a cold miss, or a
+generation whose hard stale deadline has passed. A stale response remains a
+successful HTTP response with `usage_freshness.cache_status=stale` and
+`usage_freshness.source_status=error`; it never claims the generation is fresh.
+The refresh-flight deadline stays strictly longer than the bounded Relay
+user-origin deadline, so the flight timer cannot preempt the origin failure that
+stale-if-error classifies. Quota and subscription facts are never copied from a
+stale usage generation.
+
 ## Personal Quota Presentation
 
 Each visible quota row is based on an active personal key and its Access Group.
