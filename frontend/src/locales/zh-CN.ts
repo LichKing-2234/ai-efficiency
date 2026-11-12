@@ -483,6 +483,8 @@ const zhCN = {
   'user.manualConfigCodexConfig': 'Codex 配置',
   'user.manualConfigCodexAuth': 'Codex 认证',
   'user.manualConfigClaudeSettings': 'Claude 配置',
+  'user.manualConfigKiroCliConfig': 'Kiro CLI 配置',
+  'user.manualConfigKiroCliEnv': 'Kiro CLI API Key',
   'user.manualConfigGeminiEnv': 'Gemini 环境变量',
   'user.manualConfigGeminiReload': '重新加载 shell 配置',
   'user.manualConfigGeminiModel': '为当前 shell 设置 Gemini 模型',

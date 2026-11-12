@@ -488,6 +488,8 @@ const enUS = {
   'user.manualConfigCodexConfig': 'Codex config',
   'user.manualConfigCodexAuth': 'Codex auth',
   'user.manualConfigClaudeSettings': 'Claude settings',
+  'user.manualConfigKiroCliConfig': 'Kiro CLI config',
+  'user.manualConfigKiroCliEnv': 'Kiro CLI API key',
   'user.manualConfigGeminiEnv': 'Gemini env',
   'user.manualConfigGeminiReload': 'Reload shell config',
   'user.manualConfigGeminiModel': 'Set Gemini model for current shell',

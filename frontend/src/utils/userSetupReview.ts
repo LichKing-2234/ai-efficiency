@@ -7,6 +7,8 @@ export type ManualConfigSnippetKey =
   | 'codex-auth'
   | 'codex-env'
   | 'claude-settings'
+  | 'kiro-cli-config'
+  | 'kiro-cli-env'
   | 'gemini-env'
   | 'gemini-reload'
   | 'gemini-model'
@@ -231,6 +233,37 @@ export function buildClaudeSettingsSnippet(baseUrl: string, apiKey: string) {
     $schema: 'https://json.schemastore.org/claude-code-settings.json',
     env: buildClaudeSettingsEnv(baseUrl, apiKey),
   }, null, 2)
+}
+
+/**
+ * Kiro CLI native endpoint for a Claude/Anthropic access group.
+ *
+ * The Sub2API native gateway lives at <origin>/kiro. Provider base URLs are
+ * normally origins; if one ends in /v1 (Anthropic client convention), strip it
+ * before appending /kiro.
+ */
+export function buildKiroCliEndpoint(baseUrl: string) {
+  const trimmed = baseUrl.trim().replace(/\/+$/, '')
+  if (!trimmed) return '/kiro'
+  return `${trimmed.replace(/\/v1$/i, '')}/kiro`
+}
+
+export function buildKiroCliConfigSnippet(baseUrl: string) {
+  const endpoint = buildKiroCliEndpoint(baseUrl)
+  return JSON.stringify({
+    'api.cps.service': {
+      endpoint,
+      region: 'us-east-1',
+    },
+    'api.krs.service': {
+      endpoint,
+      region: 'us-east-1',
+    },
+  }, null, 2)
+}
+
+export function buildKiroCliEnvSnippet(apiKey: string) {
+  return `export KIRO_API_KEY=${shellString(apiKey)}`
 }
 
 export function buildGeminiEnvSnippet(baseUrl: string, apiKey: string) {
@@ -594,6 +627,18 @@ export function buildManualConfigSnippets(input: ManualConfigSnippetInput): Manu
         key: 'claude-settings',
         path: '~/.claude/settings.json',
         body: buildClaudeSettingsSnippet(input.baseUrl, input.apiKey),
+        containsSecret: true,
+      },
+      {
+        key: 'kiro-cli-config',
+        path: '~/.kiro/settings/cli.json',
+        body: buildKiroCliConfigSnippet(input.baseUrl),
+        containsSecret: false,
+      },
+      {
+        key: 'kiro-cli-env',
+        path: 'Kiro CLI environment',
+        body: buildKiroCliEnvSnippet(input.apiKey),
         containsSecret: true,
       },
     ]

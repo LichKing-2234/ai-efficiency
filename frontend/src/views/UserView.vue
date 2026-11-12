@@ -338,6 +338,10 @@ function manualConfigSnippetTitle(snippet: ManualConfigSnippet) {
       return t('user.manualConfigCodexEnv')
     case 'claude-settings':
       return t('user.manualConfigClaudeSettings')
+    case 'kiro-cli-config':
+      return t('user.manualConfigKiroCliConfig')
+    case 'kiro-cli-env':
+      return t('user.manualConfigKiroCliEnv')
     case 'gemini-env':
       return t('user.manualConfigGeminiEnv')
     case 'gemini-reload':
