@@ -25,6 +25,7 @@ import {
   buildLinkSegments,
   buildDshStepsSnippet,
   buildManualConfigSnippets,
+  getAvailableClients,
   buildLoginCommand,
   buildPreferredGithubConnectivityCommand,
   buildPreferredInstallCommand,
@@ -151,6 +152,17 @@ describe('userSetupReview command builders', () => {
     expect(kiroConfig?.containsSecret).toBe(false)
     expect(kiroEnv?.containsSecret).toBe(true)
     expect(kiroEnv?.body).toContain('sk-claude')
+  })
+
+  it('derives available clients from the central client catalog', () => {
+    expect(getAvailableClients('openai')).toEqual(['codex'])
+    expect(getAvailableClients('deepseek')).toEqual(['codex'])
+    expect(getAvailableClients('anthropic')).toEqual(['claude', 'kiro'])
+    expect(getAvailableClients('gemini')).toEqual(['gemini'])
+    expect(getAvailableClients('composite')).toEqual(['codex', 'claude', 'dsh', 'qoder'])
+    expect(getAvailableClients('antigravity')).toEqual([])
+    expect(getAvailableClients('grok')).toEqual([])
+    expect(getAvailableClients('anthropic', 'Agentanthropic')).toEqual([])
   })
 
   it('classifies Agent access groups with a strict Agent prefix', () => {

@@ -165,17 +165,23 @@ OpenAI protocol set and the OpenAI tool-configuration path.
 
 ## Configuration Methods
 
-The configuration step offers manual client snippets and, when the selected
-group platform maps to one, a CC Switch provider-import method:
+The configuration step is client-first: every ordinary access group with a
+supported client shows the same client selector, including single-client
+groups. The selector is derived from the central client catalog rather than
+from per-platform UI branches. Manual snippets and, when the selected client
+maps to one, a CC Switch provider-import method are filtered by the selected
+client:
 
-| Group platform | Manual snippets | CC Switch import |
+| Group platform | Client selector | CC Switch import |
 | --- | --- | --- |
-| OpenAI or DeepSeek | Codex config and auth JSON | Codex |
-| Anthropic or Claude | Claude Code settings | Claude Code |
-| Gemini | Gemini environment and shell block | Gemini |
-| Composite | Client selector for Codex, Claude Code, DSH, or Qoder snippets | Codex and Claude Code |
-| Antigravity or Grok | No platform-specific snippets | None |
-| `Agent`-prefixed access groups | Hermes Agent, OpenClaw, and Custom Agent snippets | Hermes and OpenClaw |
+| OpenAI or DeepSeek | Codex | Codex |
+| Anthropic or Claude | Claude Code, Kiro CLI | Claude Code |
+| Gemini | Gemini CLI | Gemini |
+| Composite | Codex, Claude Code, DSH, Qoder | Codex and Claude Code |
+| Antigravity or Grok | No client configuration yet | None |
+| `Agent`-prefixed access groups | Hermes Agent, OpenClaw, Custom Agent (Agent branch) | Hermes and OpenClaw |
+
+Kiro CLI is intentionally not offered to Composite/China groups.
 
 Qoder has no config file to own: its snippet is numbered UI steps only, and it
 does not participate in CC Switch import. The steps target the new Qoder desktop

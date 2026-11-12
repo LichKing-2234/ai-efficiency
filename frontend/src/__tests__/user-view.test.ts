@@ -954,6 +954,16 @@ describe('UserView', () => {
     expect(wrapper.find('[data-testid="manual-config-copy-kiro-cli-env"]').exists()).toBe(true)
   })
 
+  it('shows a single-client selector for single-client access groups', async () => {
+    const { wrapper } = await mountUserView()
+
+    await selectAccessGroup(wrapper, '44')
+    await openConfigurationMethods(wrapper)
+
+    expect(wrapper.get('[data-testid="client-option-codex"]').text()).toContain('Codex')
+    expect(wrapper.find('[data-testid="client-option-claude"]').exists()).toBe(false)
+  })
+
   it('shows Agent-only configuration methods and manual snippets for Agent groups', async () => {
     const { wrapper } = await mountUserView()
 
