@@ -183,7 +183,7 @@ const ccSwitchImports = computed(() => {
   }))
 })
 
-type ClientId = 'codex' | 'claude' | 'dsh' | 'qoder' | 'cursor'
+type ClientId = 'codex' | 'claude' | 'dsh' | 'qoder'
 
 const selectedClient = ref<ClientId>('codex')
 const showClientSelector = computed(() =>
@@ -193,7 +193,6 @@ function clientSnippetKey(key: string): ClientId {
   if (key === 'claude-settings') return 'claude'
   if (key.startsWith('dsh-')) return 'dsh'
   if (key.startsWith('qoder-')) return 'qoder'
-  if (key.startsWith('cursor-')) return 'cursor'
   return 'codex'
 }
 const clientSnippets = computed(() => {
@@ -202,7 +201,7 @@ const clientSnippets = computed(() => {
 })
 const clientCcSwitchImports = computed(() => {
   if (!showClientSelector.value) return ccSwitchImports.value
-  if (selectedClient.value === 'dsh' || selectedClient.value === 'qoder' || selectedClient.value === 'cursor') return []
+  if (selectedClient.value === 'dsh' || selectedClient.value === 'qoder') return []
   const target = selectedClient.value === 'claude' ? 'claude' : 'codex'
   return ccSwitchImports.value.filter((item) => item.key === target)
 })
@@ -306,7 +305,7 @@ const manualConfigLinkSkipHrefs = computed(() => {
 })
 
 const manualConfigNoticeLines = computed(() => {
-  if (showClientSelector.value && (selectedClient.value === 'qoder' || selectedClient.value === 'cursor')) {
+  if (showClientSelector.value && selectedClient.value === 'qoder') {
     return []
   }
   return [t('user.manualConfigRestartHint'), t('user.manualConfigEnvHint')]
@@ -359,8 +358,6 @@ function manualConfigSnippetTitle(snippet: ManualConfigSnippet) {
       return t('user.manualConfigDshSteps')
     case 'qoder-steps':
       return t('user.manualConfigQoderSteps')
-    case 'cursor-steps':
-      return t('user.manualConfigCursorSteps')
     default:
       return snippet.path
   }
@@ -893,7 +890,6 @@ onBeforeUnmount(() => {
                     <ElRadioButton value="claude">{{ t('user.clientClaudeCode') }}</ElRadioButton>
                     <ElRadioButton value="dsh">{{ t('user.clientDsh') }}</ElRadioButton>
                     <ElRadioButton value="qoder">{{ t('user.clientQoder') }}</ElRadioButton>
-                    <ElRadioButton value="cursor">{{ t('user.clientCursor') }}</ElRadioButton>
                   </ElRadioGroup>
                 </div>
 
