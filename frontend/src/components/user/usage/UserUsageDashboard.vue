@@ -55,12 +55,21 @@
       </router-link>
     </ElAlert>
 
-    <ElAlert v-else-if="usageErrorMessage" type="error" :closable="false" show-icon>
-      <template #title>{{ usageErrorMessage }}</template>
-      <p class="text-sm">{{ t('usageDashboard.retryHelp') }}</p>
-      <router-link v-if="credentialError && !props.homeMode" to="/user" class="mt-4 inline-flex rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
+    <ElAlert v-else-if="usageErrorKind" type="error" :closable="false" show-icon>
+      <template #title>{{ usageErrorTitle }}</template>
+      <p class="text-sm">{{ usageErrorHelp }}</p>
+      <router-link v-if="usageErrorKind === 'credential' && !props.homeMode" to="/user" class="mt-4 inline-flex rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
         {{ t('usageDashboard.openSetup') }}
       </router-link>
+      <ElButton
+        v-if="showUsageErrorRetry"
+        data-testid="usage-error-retry"
+        type="primary"
+        class="mt-4"
+        @click="loadDashboard"
+      >
+        {{ t('usageDashboard.errorRetry') }}
+      </ElButton>
     </ElAlert>
 
     <div v-else class="space-y-6">
@@ -174,8 +183,8 @@ const memberRouteSubject = ref<TeamUsageSubject | null>(null)
 const selectedSubjectSubscriptions = ref<SubjectSubscriptionGroup[]>([])
 const usageLoading = ref(!props.initialSnapshot)
 const quotaLoading = ref(false)
-const usageErrorMessage = ref('')
-const credentialError = ref(false)
+type UsageErrorKind = '' | 'credential' | 'transient' | 'unexpected'
+const usageErrorKind = ref<UsageErrorKind>('')
 const quotaResetModalOpen = ref(false)
 const quotaResetOptionsLoading = ref(false)
 const quotaResetSubmitting = ref(false)
@@ -206,6 +215,26 @@ const dashboardSubtitle = computed(() => {
 })
 const selectedMemberSubject = computed(() => props.memberRoute ? memberRouteSubject.value : null)
 const canRequestQuotaReset = computed(() => !props.memberRoute && (currentGroupQuotas.value?.groups?.length ?? 0) > 0)
+const usageErrorTitle = computed(() => {
+  if (usageErrorKind.value === 'credential') return t('usageDashboard.credentialError')
+  if (usageErrorKind.value === 'transient') return t('usageDashboard.transientErrorTitle')
+  if (usageErrorKind.value === 'unexpected') return t('usageDashboard.unavailable')
+  return ''
+})
+const usageErrorHelp = computed(() => {
+  if (usageErrorKind.value === 'credential') return t('usageDashboard.retryHelp')
+  if (usageErrorKind.value === 'transient') return t('usageDashboard.transientErrorHelp')
+  if (usageErrorKind.value === 'unexpected') return t('usageDashboard.unexpectedErrorHelp')
+  return ''
+})
+const showUsageErrorRetry = computed(() => usageErrorKind.value === 'transient' || usageErrorKind.value === 'unexpected')
+
+function classifyUsageError(error: any): UsageErrorKind {
+  const status = error?.response?.status
+  if (status === 409) return 'credential'
+  if (typeof status === 'number' && status >= 500) return 'transient'
+  return 'unexpected'
+}
 
 function rangeLabel(range: UsageWindow) {
   if (range === 'today') return t('usageDashboard.today')
@@ -262,8 +291,7 @@ function loadDashboard(): Promise<void> {
 async function loadMemberDashboard(generation: number, requestedRange: UsageWindow) {
   usageLoading.value = true
   quotaLoading.value = false
-  usageErrorMessage.value = ''
-  credentialError.value = false
+  usageErrorKind.value = ''
   selectedSubjectSubscriptions.value = []
   try {
     const routeUserID = routeSubjectUserID()
@@ -278,8 +306,7 @@ async function loadMemberDashboard(generation: number, requestedRange: UsageWind
     if (generation !== requestGeneration) return
     memberRouteSubject.value = null
     selectedSubjectSubscriptions.value = []
-    credentialError.value = error?.response?.status === 409
-    usageErrorMessage.value = credentialError.value ? t('usageDashboard.credentialError') : t('usageDashboard.unavailable')
+    usageErrorKind.value = classifyUsageError(error)
   } finally {
     if (generation === requestGeneration) usageLoading.value = false
   }
@@ -297,8 +324,7 @@ async function loadPersonalDashboard(generation: number, requestedRange: UsageWi
   quotaLoading.value = true
   personalQuotas.value = null
   personalPoolUsage.value = null
-  usageErrorMessage.value = ''
-  credentialError.value = false
+  usageErrorKind.value = ''
   selectedSubjectSubscriptions.value = []
 
   const usageTask = getUserUsageDashboard(params, nextUsageController.signal)
@@ -311,8 +337,7 @@ async function loadPersonalDashboard(generation: number, requestedRange: UsageWi
     })
     .catch((error: any) => {
       if (generation !== requestGeneration || isCanceled(error, nextUsageController.signal)) return
-      credentialError.value = error?.response?.status === 409
-      usageErrorMessage.value = credentialError.value ? t('usageDashboard.credentialError') : t('usageDashboard.unavailable')
+      usageErrorKind.value = classifyUsageError(error)
     })
     .finally(() => {
       if (generation === requestGeneration) usageLoading.value = false
