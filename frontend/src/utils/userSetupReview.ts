@@ -558,10 +558,7 @@ export function buildLinkSegments(text: string, options: { skipHrefs?: string[] 
   return segments
 }
 
-export function buildManualConfigSnippets(input: ManualConfigSnippetInput): ManualConfigSnippet[] {
-  if (isAgentAccessGroup(input.groupName)) {
-    return buildAgentManualConfigSnippets(input)
-  }
+function buildCodexClientSnippets(input: ManualConfigSnippetInput): ManualConfigSnippet[] {
   const platform = input.platform.trim().toLowerCase()
   if (platform === 'composite') {
     return [
@@ -577,95 +574,197 @@ export function buildManualConfigSnippets(input: ManualConfigSnippetInput): Manu
         body: buildCodexEnvSnippet(input.apiKey),
         containsSecret: true,
       },
-      {
-        key: 'claude-settings',
-        path: '~/.claude/settings.json',
-        body: buildClaudeSettingsSnippet(input.baseUrl, input.apiKey),
-        containsSecret: true,
-      },
-      {
-        key: 'dsh-config',
-        path: '~/.dsh/profiles/desktop/cordis.patch.yml',
-        body: buildDshProviderSnippet(input),
-        containsSecret: false,
-      },
-      {
-        key: 'dsh-steps',
-        path: '',
-        body: buildDshStepsSnippet(input),
-        containsSecret: true,
-        render: 'steps',
-      },
-      {
-        key: 'qoder-steps',
-        path: '',
-        body: buildQoderStepsSnippet(input),
-        containsSecret: true,
-        render: 'steps',
-      },
     ]
   }
-  if (usesOpenAIProtocolPlatform(platform)) {
-    return [
-      {
-        key: 'codex-config',
-        path: '~/.codex/config.toml',
-        body: buildCodexConfigSnippet('OpenAI', input.baseUrl, input.model),
-        containsSecret: false,
-      },
-      {
-        key: 'codex-auth',
-        path: '~/.codex/auth.json',
-        body: buildCodexAuthSnippet(input.apiKey),
-        containsSecret: true,
-      },
-    ]
+  return [
+    {
+      key: 'codex-config',
+      path: '~/.codex/config.toml',
+      body: buildCodexConfigSnippet('OpenAI', input.baseUrl, input.model),
+      containsSecret: false,
+    },
+    {
+      key: 'codex-auth',
+      path: '~/.codex/auth.json',
+      body: buildCodexAuthSnippet(input.apiKey),
+      containsSecret: true,
+    },
+  ]
+}
+
+function buildClaudeClientSnippets(input: ManualConfigSnippetInput): ManualConfigSnippet[] {
+  return [
+    {
+      key: 'claude-settings',
+      path: '~/.claude/settings.json',
+      body: buildClaudeSettingsSnippet(input.baseUrl, input.apiKey),
+      containsSecret: true,
+    },
+  ]
+}
+
+function buildKiroClientSnippets(input: ManualConfigSnippetInput): ManualConfigSnippet[] {
+  return [
+    {
+      key: 'kiro-cli-config',
+      path: '~/.kiro/settings/cli.json',
+      body: buildKiroCliConfigSnippet(input.baseUrl),
+      containsSecret: false,
+    },
+    {
+      key: 'kiro-cli-env',
+      path: 'Kiro CLI environment',
+      body: buildKiroCliEnvSnippet(input.apiKey),
+      containsSecret: true,
+    },
+  ]
+}
+
+function buildGeminiClientSnippets(input: ManualConfigSnippetInput): ManualConfigSnippet[] {
+  return [
+    {
+      key: 'gemini-env',
+      path: '~/.ae-cli/env.sh',
+      body: buildGeminiEnvSnippet(input.baseUrl, input.apiKey),
+      containsSecret: true,
+    },
+    {
+      key: 'gemini-reload',
+      path: 'Shell reload',
+      body: buildGeminiReloadSnippet(),
+      containsSecret: false,
+    },
+    {
+      key: 'gemini-model',
+      path: 'Current shell',
+      body: buildGeminiModelSnippet(),
+      containsSecret: false,
+    },
+  ]
+}
+
+function buildDshClientSnippets(input: ManualConfigSnippetInput): ManualConfigSnippet[] {
+  return [
+    {
+      key: 'dsh-config',
+      path: '~/.dsh/profiles/desktop/cordis.patch.yml',
+      body: buildDshProviderSnippet(input),
+      containsSecret: false,
+    },
+    {
+      key: 'dsh-steps',
+      path: '',
+      body: buildDshStepsSnippet(input),
+      containsSecret: true,
+      render: 'steps',
+    },
+  ]
+}
+
+function buildQoderClientSnippets(input: ManualConfigSnippetInput): ManualConfigSnippet[] {
+  return [
+    {
+      key: 'qoder-steps',
+      path: '',
+      body: buildQoderStepsSnippet(input),
+      containsSecret: true,
+      render: 'steps',
+    },
+  ]
+}
+
+export type ClientId = 'codex' | 'claude' | 'kiro' | 'gemini' | 'dsh' | 'qoder'
+
+export type ClientDefinition = {
+  id: ClientId
+  labelKey: string
+  platforms: string[]
+  snippetPrefixes: string[]
+  ccswitchApp: CCSwitchApp | null
+  build: (input: ManualConfigSnippetInput) => ManualConfigSnippet[]
+}
+
+// Single source of truth for which clients each platform family can use.
+// Antigravity/Grok stop at the connection probe and have no client config yet.
+export const CLIENT_CATALOG: ClientDefinition[] = [
+  {
+    id: 'codex',
+    labelKey: 'user.clientCodex',
+    platforms: ['openai', 'deepseek', 'composite'],
+    snippetPrefixes: ['codex-'],
+    ccswitchApp: 'codex',
+    build: buildCodexClientSnippets,
+  },
+  {
+    id: 'claude',
+    labelKey: 'user.clientClaudeCode',
+    platforms: ['anthropic', 'composite'],
+    snippetPrefixes: ['claude-'],
+    ccswitchApp: 'claude',
+    build: buildClaudeClientSnippets,
+  },
+  {
+    id: 'kiro',
+    labelKey: 'user.clientKiro',
+    // Intentionally not offered to Composite/China groups.
+    platforms: ['anthropic'],
+    snippetPrefixes: ['kiro-cli-'],
+    ccswitchApp: null,
+    build: buildKiroClientSnippets,
+  },
+  {
+    id: 'gemini',
+    labelKey: 'user.clientGemini',
+    platforms: ['gemini'],
+    snippetPrefixes: ['gemini-'],
+    ccswitchApp: 'gemini',
+    build: buildGeminiClientSnippets,
+  },
+  {
+    id: 'dsh',
+    labelKey: 'user.clientDsh',
+    platforms: ['composite'],
+    snippetPrefixes: ['dsh-'],
+    ccswitchApp: null,
+    build: buildDshClientSnippets,
+  },
+  {
+    id: 'qoder',
+    labelKey: 'user.clientQoder',
+    platforms: ['composite'],
+    snippetPrefixes: ['qoder-'],
+    ccswitchApp: null,
+    build: buildQoderClientSnippets,
+  },
+]
+
+export function getClientDefinition(id: ClientId): ClientDefinition | undefined {
+  return CLIENT_CATALOG.find((client) => client.id === id)
+}
+
+export function getAvailableClients(platform: string, groupName?: string | null): ClientId[] {
+  if (isAgentAccessGroup(groupName)) return []
+  const normalized = platform.trim().toLowerCase()
+  return CLIENT_CATALOG
+    .filter((client) => client.platforms.includes(normalized))
+    .map((client) => client.id)
+}
+
+export function clientForSnippetKey(key: string): ClientId | null {
+  for (const client of CLIENT_CATALOG) {
+    if (client.snippetPrefixes.some((prefix) => key.startsWith(prefix))) return client.id
   }
-  if (platform === 'anthropic') {
-    return [
-      {
-        key: 'claude-settings',
-        path: '~/.claude/settings.json',
-        body: buildClaudeSettingsSnippet(input.baseUrl, input.apiKey),
-        containsSecret: true,
-      },
-      {
-        key: 'kiro-cli-config',
-        path: '~/.kiro/settings/cli.json',
-        body: buildKiroCliConfigSnippet(input.baseUrl),
-        containsSecret: false,
-      },
-      {
-        key: 'kiro-cli-env',
-        path: 'Kiro CLI environment',
-        body: buildKiroCliEnvSnippet(input.apiKey),
-        containsSecret: true,
-      },
-    ]
+  return null
+}
+
+export function buildManualConfigSnippets(input: ManualConfigSnippetInput): ManualConfigSnippet[] {
+  if (isAgentAccessGroup(input.groupName)) {
+    return buildAgentManualConfigSnippets(input)
   }
-  if (platform === 'gemini') {
-    return [
-      {
-        key: 'gemini-env',
-        path: '~/.ae-cli/env.sh',
-        body: buildGeminiEnvSnippet(input.baseUrl, input.apiKey),
-        containsSecret: true,
-      },
-      {
-        key: 'gemini-reload',
-        path: 'Shell reload',
-        body: buildGeminiReloadSnippet(),
-        containsSecret: false,
-      },
-      {
-        key: 'gemini-model',
-        path: 'Current shell',
-        body: buildGeminiModelSnippet(),
-        containsSecret: false,
-      },
-    ]
-  }
-  return []
+  return getAvailableClients(input.platform, input.groupName).flatMap((id) => {
+    const client = getClientDefinition(id)
+    return client ? client.build(input) : []
+  })
 }
 
 export function resolveCCSwitchAppForPlatform(platform: string): CCSwitchApp | null {

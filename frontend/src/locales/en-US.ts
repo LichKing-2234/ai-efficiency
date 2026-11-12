@@ -507,6 +507,7 @@ const enUS = {
   'user.clientDsh': 'DSH',
   'user.clientQoder': 'Qoder',
   'user.clientKiro': 'Kiro CLI',
+  'user.clientGemini': 'Gemini CLI',
   'user.openSub2apiKeys': 'Open the sub2api keys page (check group and key)',
   'user.manualConfigUnsupportedPlatform': 'This platform does not have a built-in manual snippet yet. Share the provider URL, platform, group, and API key status with support to confirm the local tool configuration target.',
   'user.copyConfigSnippet': 'Copy snippet',

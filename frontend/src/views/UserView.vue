@@ -22,8 +22,11 @@ import {
   resolveCCSwitchAppsForGroup,
   isAgentAccessGroup,
   resolveDiscoverToolForPlatform,
+  getAvailableClients,
+  getClientDefinition,
+  clientForSnippetKey,
 } from '@/utils/userSetupReview'
-import type { ManualConfigSnippet } from '@/utils/userSetupReview'
+import type { ClientId, ManualConfigSnippet } from '@/utils/userSetupReview'
 
 const auth = useAuthStore()
 const { t } = useI18n()
@@ -183,24 +186,15 @@ const ccSwitchImports = computed(() => {
   }))
 })
 
-type ClientId = 'codex' | 'claude' | 'dsh' | 'qoder' | 'kiro'
-
 function clientLabel(client: ClientId) {
-  if (client === 'claude') return t('user.clientClaudeCode')
-  if (client === 'dsh') return t('user.clientDsh')
-  if (client === 'qoder') return t('user.clientQoder')
-  if (client === 'kiro') return t('user.clientKiro')
-  return t('user.clientCodex')
+  const definition = getClientDefinition(client)
+  return definition ? t(definition.labelKey as MessageKey) : client
 }
 
-const availableClients = computed<ClientId[]>(() => {
-  if (selectedIsAgentGroup.value) return []
-  const platform = (selectedGroup.value?.platform ?? '').trim().toLowerCase()
-  if (platform === 'composite') return ['codex', 'claude', 'dsh', 'qoder']
-  if (platform === 'anthropic') return ['claude', 'kiro']
-  return []
-})
-const showClientSelector = computed(() => availableClients.value.length > 1)
+const availableClients = computed<ClientId[]>(() =>
+  getAvailableClients(selectedGroup.value?.platform ?? '', selectedGroup.value?.group_name),
+)
+const showClientSelector = computed(() => availableClients.value.length > 0)
 const selectedClient = ref<ClientId>('codex')
 watch(
   selectedGroup,
@@ -211,22 +205,14 @@ watch(
   },
   { immediate: true },
 )
-function clientSnippetKey(key: string): ClientId {
-  if (key === 'claude-settings') return 'claude'
-  if (key.startsWith('dsh-')) return 'dsh'
-  if (key.startsWith('qoder-')) return 'qoder'
-  if (key.startsWith('kiro-cli-')) return 'kiro'
-  return 'codex'
-}
 const clientSnippets = computed(() => {
   if (!showClientSelector.value) return manualConfigDisplaySnippets.value
-  return manualConfigDisplaySnippets.value.filter((snippet) => clientSnippetKey(snippet.key) === selectedClient.value)
+  return manualConfigDisplaySnippets.value.filter((snippet) => clientForSnippetKey(snippet.key) === selectedClient.value)
 })
 const clientCcSwitchImports = computed(() => {
   if (!showClientSelector.value) return ccSwitchImports.value
-  if (selectedClient.value === 'dsh' || selectedClient.value === 'qoder' || selectedClient.value === 'kiro') return []
-  const target = selectedClient.value === 'claude' ? 'claude' : 'codex'
-  return ccSwitchImports.value.filter((item) => item.key === target)
+  const app = getClientDefinition(selectedClient.value)?.ccswitchApp ?? null
+  return app ? ccSwitchImports.value.filter((item) => item.key === app) : []
 })
 watch(clientCcSwitchImports, (imports) => {
   if (selectedConfigMethod.value === 'ccswitch' && imports.length === 0) {
