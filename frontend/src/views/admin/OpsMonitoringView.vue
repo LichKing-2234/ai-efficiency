@@ -119,11 +119,13 @@ const concurrencyFilterApplied = computed(() => (
   concurrencyFilter.value !== null && concurrencyIndexReady.value && !concurrencyIndexError.value
 ))
 const concurrencyMatchedGroupIDs = computed<ReadonlySet<number> | null>(() => {
-  const threshold = concurrencyFilter.value
-  if (threshold === null || !concurrencyFilterApplied.value) return null
+  const value = concurrencyFilter.value
+  if (value === null || !concurrencyFilterApplied.value) return null
   const matched = new Set<number>()
   for (const account of concurrencyIndex.value?.accounts ?? []) {
-    if (!Number.isFinite(account.concurrency) || account.concurrency < threshold) continue
+    // Exact-value match: one configured level must stay distinguishable from
+    // another (for example 5 from 10), so this is equality, not a threshold.
+    if (!Number.isFinite(account.concurrency) || account.concurrency !== value) continue
     for (const groupID of account.group_ids ?? []) matched.add(groupID)
   }
   return matched
@@ -356,9 +358,9 @@ function handleConcurrencyFilterChange(value: number | null | undefined) {
     concurrencyIndexError.value = ''
     return
   }
-  // The index loads once per provider on first use; later threshold changes
+  // The index loads once per provider on first use; later value changes
   // re-filter locally with no request and no group reload. A failed read is
-  // retried by the next threshold change instead of staying stuck.
+  // retried by the next value change instead of staying stuck.
   if (!concurrencyIndexReady.value && !concurrencyIndexLoading.value) {
     concurrencyIndexError.value = ''
     void loadConcurrencyIndex()
@@ -501,7 +503,7 @@ async function setAccountConcurrency(groupID: number, accountID: number, concurr
       account.current_concurrency = capacity?.current_concurrency ?? account.current_concurrency
     }
     // Keep an active filter honest: the verified read-back immediately moves
-    // the account in or out of the threshold without refetching the index.
+    // the account in or out of the filtered set without refetching the index.
     if (capacity) patchConcurrencyIndexEntry(groupID, accountID, capacity.concurrency)
     state.saved = true
   } catch (err: any) {
