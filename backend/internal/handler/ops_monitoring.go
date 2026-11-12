@@ -75,6 +75,29 @@ func (h *OpsMonitoringHandler) ListGroupAccounts(c *gin.Context) {
 	pkg.Success(c, snapshot)
 }
 
+// ListAccountConcurrency returns the on-demand account concurrency/membership
+// index that backs the group concurrency filter. The service rejects a provider
+// without the reader capability; that surfaces as a 422.
+func (h *OpsMonitoringHandler) ListAccountConcurrency(c *gin.Context) {
+	if h == nil || h.service == nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, "ops monitoring service is unavailable")
+		return
+	}
+	providerID, ok := parseOpsMonitoringProviderID(c)
+	if !ok {
+		return
+	}
+
+	index, err := h.service.AccountConcurrencyIndex(c.Request.Context(), opsmonitoring.AccountConcurrencyIndexRequest{
+		ProviderID: providerID,
+	})
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	pkg.Success(c, index)
+}
+
 func (h *OpsMonitoringHandler) TestProxy(c *gin.Context) {
 	if h == nil || h.service == nil {
 		pkg.Error(c, http.StatusUnprocessableEntity, "ops monitoring service is unavailable")

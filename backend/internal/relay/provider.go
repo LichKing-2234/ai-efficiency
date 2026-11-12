@@ -121,6 +121,14 @@ type AccountConcurrencyUpdater interface {
 	UpdateAccountConcurrency(ctx context.Context, accountID int64, concurrency int) (*AccountCapacity, error)
 }
 
+// AccountConcurrencyReader scans the provider's whole account directory and
+// returns one privacy-safe concurrency/membership entry per account. It backs
+// the on-demand group concurrency filter and must not be used as a cache-warmed
+// read path.
+type AccountConcurrencyReader interface {
+	ListAccountConcurrencyMemberships(ctx context.Context) ([]AccountConcurrencyMembership, error)
+}
+
 // AccountRelationshipReader exposes only the safe account metadata needed to
 // inspect group relationships for one platform.
 type AccountRelationshipReader interface {

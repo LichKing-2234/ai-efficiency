@@ -68,6 +68,12 @@ export const opsMonitoringMessages = {
     'opsMonitoring.concurrencyInvalid': 'Concurrency must be a whole number between 1 and 10000',
     'opsMonitoring.concurrencyUpdated': 'Concurrency updated',
     'opsMonitoring.concurrencyUpdateFailed': 'Failed to update concurrency',
+    'opsMonitoring.concurrencyFilterLabel': 'Concurrency ≥',
+    'opsMonitoring.concurrencyFilterPlaceholder': 'All',
+    'opsMonitoring.concurrencyFilterClear': 'Clear',
+    'opsMonitoring.concurrencyFilterLoading': 'Loading the account concurrency index…',
+    'opsMonitoring.concurrencyFilterFailed': 'Failed to load the account concurrency index; the concurrency filter is not applied.',
+    'opsMonitoring.noGroupsForFilter': 'No groups match the current filters.',
   },
   'zh-CN': {
     'opsMonitoring.eyebrow': '运维监控',
@@ -138,6 +144,12 @@ export const opsMonitoringMessages = {
     'opsMonitoring.concurrencyInvalid': '并发数必须为 1–10000 的整数',
     'opsMonitoring.concurrencyUpdated': '并发数已更新',
     'opsMonitoring.concurrencyUpdateFailed': '更新并发数失败',
+    'opsMonitoring.concurrencyFilterLabel': '并发数 ≥',
+    'opsMonitoring.concurrencyFilterPlaceholder': '全部',
+    'opsMonitoring.concurrencyFilterClear': '清除',
+    'opsMonitoring.concurrencyFilterLoading': '正在加载账号并发数索引…',
+    'opsMonitoring.concurrencyFilterFailed': '加载账号并发数索引失败，并发数筛选未生效。',
+    'opsMonitoring.noGroupsForFilter': '没有分组满足当前筛选条件。',
   },
 } as const
 

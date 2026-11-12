@@ -5347,6 +5347,171 @@ func TestListGroupAccountsProjectsConfiguredAndCurrentConcurrency(t *testing.T) 
 	}
 }
 
+func TestListAccountConcurrencyMembershipsScansWholeDirectoryAndNormalizesGroups(t *testing.T) {
+	pages := map[string][]any{
+		"1": {
+			map[string]any{
+				"id": 30, "concurrency": 5,
+				"group_ids": []int64{99},
+				"account_groups": []any{
+					map[string]any{"group_id": 7, "priority": 1},
+					map[string]any{"group_id": 9, "priority": 2},
+					map[string]any{"group_id": 7, "priority": 3},
+				},
+				"credentials": map[string]any{"access_token": "must-not-escape"},
+			},
+			map[string]any{
+				"id": 11, "concurrency": 20,
+				"group_ids": []int64{4, -1, 4, 5},
+			},
+		},
+		"2": {
+			map[string]any{
+				"id": 22, "concurrency": 3,
+				"group_ids":      []int64{8},
+				"account_groups": []any{map[string]any{"group_id": 2, "priority": 1}},
+			},
+			map[string]any{"id": 5, "concurrency": 0},
+		},
+	}
+	var requestedPages []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/accounts", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-API-Key"); got != "test-admin-key" {
+			t.Fatalf("X-API-Key = %q, want configured admin key", got)
+		}
+		query := r.URL.Query()
+		for _, filter := range []string{"platform", "group", "lite"} {
+			if got := query.Get(filter); got != "" {
+				t.Fatalf("%s filter = %q, want an unfiltered full-account scan", filter, got)
+			}
+		}
+		if got := query.Get("page_size"); got != "1000" {
+			t.Fatalf("page_size = %q, want 1000", got)
+		}
+		page := query.Get("page")
+		requestedPages = append(requestedPages, page)
+		items, ok := pages[page]
+		if !ok {
+			t.Fatalf("unexpected page %q", page)
+		}
+		writeOriginEnvelope(w, map[string]any{"items": items, "page": 1, "pages": 2})
+	})
+
+	reader := newTestProvider(t, mux).(relay.AccountConcurrencyReader)
+	memberships, err := reader.ListAccountConcurrencyMemberships(context.Background())
+	if err != nil {
+		t.Fatalf("ListAccountConcurrencyMemberships() error = %v", err)
+	}
+	want := []relay.AccountConcurrencyMembership{
+		{AccountID: 5, Concurrency: 0, GroupIDs: []int64{}},
+		{AccountID: 11, Concurrency: 20, GroupIDs: []int64{4, 5}},
+		{AccountID: 22, Concurrency: 3, GroupIDs: []int64{2}},
+		{AccountID: 30, Concurrency: 5, GroupIDs: []int64{7, 9}},
+	}
+	if diff := cmp.Diff(want, memberships); diff != "" {
+		t.Fatalf("memberships mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{"1", "2"}, requestedPages); diff != "" {
+		t.Fatalf("requested pages mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestListAccountConcurrencyMembershipsDeduplicatesAccountsAcrossPages(t *testing.T) {
+	pages := map[string][]any{
+		"1": {
+			map[string]any{
+				"id": 40, "concurrency": 2,
+				"group_ids": []int64{3},
+			},
+			map[string]any{
+				"id": 11, "concurrency": 20,
+				"group_ids": []int64{4},
+			},
+		},
+		"2": {
+			map[string]any{
+				"id": 11, "concurrency": 25,
+				"group_ids":      []int64{9},
+				"account_groups": []any{map[string]any{"group_id": 7, "priority": 1}},
+			},
+			map[string]any{
+				"id": 22, "concurrency": 3,
+				"group_ids": []int64{8},
+			},
+		},
+	}
+	var requestedPages []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/accounts", func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		for _, filter := range []string{"platform", "group", "lite"} {
+			if got := query.Get(filter); got != "" {
+				t.Fatalf("%s filter = %q, want an unfiltered full-account scan", filter, got)
+			}
+		}
+		if got := query.Get("page_size"); got != "1000" {
+			t.Fatalf("page_size = %q, want 1000", got)
+		}
+		page := query.Get("page")
+		requestedPages = append(requestedPages, page)
+		items, ok := pages[page]
+		if !ok {
+			t.Fatalf("unexpected page %q", page)
+		}
+		writeOriginEnvelope(w, map[string]any{"items": items, "page": 1, "pages": 2})
+	})
+
+	reader := newTestProvider(t, mux).(relay.AccountConcurrencyReader)
+	memberships, err := reader.ListAccountConcurrencyMemberships(context.Background())
+	if err != nil {
+		t.Fatalf("ListAccountConcurrencyMemberships() error = %v", err)
+	}
+	want := []relay.AccountConcurrencyMembership{
+		// Account 11 repeats on page 2: exactly one entry, with the later page's
+		// concurrency and its account_groups membership winning over the page-1
+		// group_ids fallback.
+		{AccountID: 11, Concurrency: 25, GroupIDs: []int64{7}},
+		{AccountID: 22, Concurrency: 3, GroupIDs: []int64{8}},
+		{AccountID: 40, Concurrency: 2, GroupIDs: []int64{3}},
+	}
+	if diff := cmp.Diff(want, memberships); diff != "" {
+		t.Fatalf("memberships mismatch (-want +got):\n%s", diff)
+	}
+	repeated := 0
+	for _, membership := range memberships {
+		if membership.AccountID == 11 {
+			repeated++
+		}
+		if membership.GroupIDs == nil {
+			t.Fatalf("account %d GroupIDs = nil, want non-nil JSON array", membership.AccountID)
+		}
+	}
+	if repeated != 1 {
+		t.Fatalf("account 11 entries = %d, want exactly 1 after cross-page dedupe", repeated)
+	}
+	if diff := cmp.Diff([]string{"1", "2"}, requestedPages); diff != "" {
+		t.Fatalf("requested pages mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestListAccountConcurrencyMembershipsReportsUpstreamFailure(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/accounts", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{"message": "upstream account directory is unavailable"})
+	})
+
+	reader := newTestProvider(t, mux).(relay.AccountConcurrencyReader)
+	memberships, err := reader.ListAccountConcurrencyMemberships(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "relay: list account concurrency memberships: unexpected status 500: upstream account directory is unavailable") {
+		t.Fatalf("ListAccountConcurrencyMemberships() error = %v, want complete upstream error", err)
+	}
+	if memberships != nil {
+		t.Fatalf("memberships = %#v, want nil on error", memberships)
+	}
+}
+
 func TestUpdateAccountConcurrencySendsPartialPutAndReturnsVerifiedCapacity(t *testing.T) {
 	var putBody []byte
 	putCalls, getCalls := 0, 0

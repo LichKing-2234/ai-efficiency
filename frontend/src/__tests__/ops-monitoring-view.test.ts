@@ -11,6 +11,7 @@ vi.mock('@/api/relayProvider', () => ({
 vi.mock('@/api/opsMonitoring', () => ({
   getOpsMonitoringGroups: vi.fn(),
   getOpsMonitoringGroupAccounts: vi.fn(),
+  getOpsMonitoringAccountConcurrency: vi.fn(),
   setOpsMonitoringAccountConcurrency: vi.fn(),
   testOpsMonitoringProxy: vi.fn(),
 }))
@@ -76,7 +77,7 @@ const groupsPayload = {
   groups: [
     { group_id: 11, group_name: 'Group Alpha', platform: 'openai', account_count: 5, active_account_count: 3, status: 'ok', error: '', overview: overview() },
     { group_id: 12, group_name: 'Group Beta', platform: 'claude', account_count: 2, active_account_count: 1, status: 'ok', error: '', overview: overview({ upstream_error_rate: 0.42 }) },
-    { group_id: 13, group_name: 'Group Gamma', platform: 'openai', account_count: 0, active_account_count: 0, status: 'failed', error: 'upstream timeout', overview: null },
+    { group_id: 13, group_name: 'Group Gamma', platform: 'openai', account_count: 1, active_account_count: 0, status: 'failed', error: 'upstream timeout', overview: null },
     {
       group_id: 14,
       group_name: 'Group Delta',
@@ -134,6 +135,21 @@ const proxyTestPayload = {
   cached: false,
 }
 
+// Whole-provider account concurrency/membership index read lazily by the
+// concurrency filter. Account 21 is Group Alpha's configured floor, account 22
+// sits exactly on the fixture threshold, account 24 keeps the failed Group
+// Gamma visible under a filter, and account 23 stays below it.
+const concurrencyIndexPayload = {
+  provider_id: 7,
+  as_of: '2026-10-14T14:00:04Z',
+  accounts: [
+    { account_id: 21, concurrency: 5, group_ids: [11] },
+    { account_id: 22, concurrency: 8, group_ids: [11] },
+    { account_id: 23, concurrency: 2, group_ids: [12] },
+    { account_id: 24, concurrency: 30, group_ids: [13] },
+  ],
+}
+
 async function mountView(options: { wide?: boolean; providerList?: typeof providers; groupsData?: unknown; groupsError?: unknown } = {}) {
   const mediaQuery = {
     matches: options.wide ?? true,
@@ -152,6 +168,7 @@ async function mountView(options: { wide?: boolean; providerList?: typeof provid
   // A one-shot failure for the first read, so the page starts with no snapshot.
   if (options.groupsError) ops.getOpsMonitoringGroups.mockRejectedValueOnce(options.groupsError)
   ops.getOpsMonitoringGroupAccounts.mockResolvedValue({ data: { data: structuredClone(accountsPayload) } })
+  ops.getOpsMonitoringAccountConcurrency.mockResolvedValue({ data: { data: structuredClone(concurrencyIndexPayload) } })
   ops.setOpsMonitoringAccountConcurrency.mockResolvedValue({
     data: { data: { account_id: 21, concurrency: 9, current_concurrency: 4 } },
   })
@@ -170,6 +187,17 @@ async function mountView(options: { wide?: boolean; providerList?: typeof provid
 
 function groupNames(container: ReturnType<typeof mount>) {
   return container.findAll('[data-testid^="ops-group-name-"]').map((node) => node.text())
+}
+
+function concurrencyFilterInput(container: ReturnType<typeof mount>) {
+  return container.get('[data-testid="ops-concurrency-filter"]').find('input')
+}
+
+async function applyConcurrencyFilter(container: ReturnType<typeof mount>, value: number) {
+  const input = concurrencyFilterInput(container)
+  await input.setValue(String(value))
+  await input.trigger('change')
+  await flushPromises()
 }
 
 describe('OpsMonitoringView', () => {
@@ -494,6 +522,340 @@ describe('OpsMonitoringView', () => {
     await wrapper.get('[data-testid="ops-group-toggle-11"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-testid="ops-account-11-21"]').text()).toContain('Account Alpha')
+  })
+
+  it('loads the account concurrency index once when the filter is first applied and filters loaded groups', async () => {
+    const { wrapper, ops } = await mountView()
+
+    expect(ops.getOpsMonitoringAccountConcurrency).not.toHaveBeenCalled()
+
+    await applyConcurrencyFilter(wrapper, 8)
+
+    expect(ops.getOpsMonitoringAccountConcurrency).toHaveBeenCalledTimes(1)
+    expect(ops.getOpsMonitoringAccountConcurrency).toHaveBeenCalledWith({ provider_id: 7 })
+    // Group Alpha matches through account 22 (configured concurrency 8); the
+    // failed Group Gamma matches through account 24 (30) and stays pinned.
+    expect(groupNames(wrapper)).toEqual(['Group Gamma', 'Group Alpha'])
+    expect(ops.getOpsMonitoringGroups).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-filters locally when the threshold changes without refetching groups or the index', async () => {
+    const { wrapper, ops } = await mountView()
+
+    await applyConcurrencyFilter(wrapper, 5)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma', 'Group Alpha'])
+
+    await applyConcurrencyFilter(wrapper, 9)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma'])
+
+    expect(ops.getOpsMonitoringAccountConcurrency).toHaveBeenCalledTimes(1)
+    expect(ops.getOpsMonitoringGroups).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears the filter and restores every loaded row without another request', async () => {
+    const { wrapper, ops } = await mountView()
+
+    await applyConcurrencyFilter(wrapper, 9)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma'])
+
+    await wrapper.get('[data-testid="ops-concurrency-filter-clear"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="ops-concurrency-filter-clear"]').exists()).toBe(false)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma', 'Group Beta', 'Group Alpha', 'Group Delta'])
+
+    // Clearing only drops the threshold; the cached index is reused on the next apply.
+    await applyConcurrencyFilter(wrapper, 2)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma', 'Group Beta', 'Group Alpha'])
+    expect(ops.getOpsMonitoringAccountConcurrency).toHaveBeenCalledTimes(1)
+  })
+
+  it('composes the concurrency filter with the platform filter using AND', async () => {
+    const { wrapper, ops } = await mountView()
+
+    await applyConcurrencyFilter(wrapper, 2)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma', 'Group Beta', 'Group Alpha'])
+
+    wrapper.findComponent({ name: 'ElSelect' }).vm.$emit('change', 'claude')
+    await flushPromises()
+
+    expect(groupNames(wrapper)).toEqual(['Group Beta'])
+    expect(ops.getOpsMonitoringGroups).toHaveBeenCalledTimes(1)
+    expect(ops.getOpsMonitoringAccountConcurrency).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a filter-specific empty state when no loaded group matches', async () => {
+    const { wrapper } = await mountView()
+
+    await applyConcurrencyFilter(wrapper, 100)
+
+    expect(wrapper.get('[data-testid="ops-empty"]').text()).toContain('No groups match the current filters.')
+  })
+
+  it('keeps rows unfiltered and shows the loading hint while the first index read is in flight', async () => {
+    const { wrapper, ops } = await mountView()
+    let resolveIndex: (value: unknown) => void = () => {}
+    ops.getOpsMonitoringAccountConcurrency.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveIndex = resolve
+    }))
+
+    const input = concurrencyFilterInput(wrapper)
+    await input.setValue('9')
+    await input.trigger('change')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="ops-concurrency-filter-loading"]').text()).toContain('Loading the account concurrency index')
+    // Until the index arrives no row may be hidden or claimed as filtered.
+    expect(groupNames(wrapper)).toEqual(['Group Gamma', 'Group Beta', 'Group Alpha', 'Group Delta'])
+
+    resolveIndex({ data: { data: structuredClone(concurrencyIndexPayload) } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="ops-concurrency-filter-loading"]').exists()).toBe(false)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma'])
+  })
+
+  it('shows a localized alert and leaves every row unfiltered when the index read fails', async () => {
+    const { wrapper, ops } = await mountView()
+    ops.getOpsMonitoringAccountConcurrency.mockRejectedValueOnce({
+      response: { data: { message: 'relay rejected the concurrency index' } },
+    })
+
+    await applyConcurrencyFilter(wrapper, 9)
+
+    expect(ops.getOpsMonitoringAccountConcurrency).toHaveBeenCalledTimes(1)
+    // The filter was never applied, so no row may be hidden or silently filtered.
+    expect(groupNames(wrapper)).toEqual(['Group Gamma', 'Group Beta', 'Group Alpha', 'Group Delta'])
+    const alert = wrapper.get('[data-testid="ops-concurrency-filter-error"]')
+    expect(alert.text()).toContain('Failed to load the account concurrency index; the concurrency filter is not applied.')
+    expect(alert.text()).toContain('relay rejected the concurrency index')
+    expect(wrapper.find('[data-testid="ops-concurrency-filter-loading"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="ops-concurrency-filter-clear"]').exists()).toBe(true)
+  })
+
+  it('retries the failed index read when the threshold changes and applies it once the retry succeeds', async () => {
+    const { wrapper, ops } = await mountView()
+    ops.getOpsMonitoringAccountConcurrency.mockRejectedValueOnce({
+      response: { data: { message: 'first index read failed' } },
+    })
+
+    await applyConcurrencyFilter(wrapper, 9)
+
+    expect(ops.getOpsMonitoringAccountConcurrency).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-testid="ops-concurrency-filter-error"]').text()).toContain('first index read failed')
+    expect(groupNames(wrapper)).toEqual(['Group Gamma', 'Group Beta', 'Group Alpha', 'Group Delta'])
+
+    // Changing the threshold retries the index; a retry that also fails
+    // re-surfaces the localized alert and still filters nothing.
+    ops.getOpsMonitoringAccountConcurrency.mockRejectedValueOnce({
+      response: { data: { message: 'retry index read failed' } },
+    })
+    await applyConcurrencyFilter(wrapper, 8)
+
+    expect(ops.getOpsMonitoringAccountConcurrency).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('[data-testid="ops-concurrency-filter-error"]').text()).toContain('retry index read failed')
+    expect(groupNames(wrapper)).toEqual(['Group Gamma', 'Group Beta', 'Group Alpha', 'Group Delta'])
+
+    // The next threshold change retries exactly once and applies the readable index.
+    await applyConcurrencyFilter(wrapper, 7)
+
+    expect(ops.getOpsMonitoringAccountConcurrency).toHaveBeenCalledTimes(3)
+    expect(wrapper.find('[data-testid="ops-concurrency-filter-error"]').exists()).toBe(false)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma', 'Group Alpha'])
+    expect(ops.getOpsMonitoringGroups).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores a late index failure after the filter is cleared while loading', async () => {
+    const { wrapper, ops } = await mountView()
+    let rejectIndex: (reason?: unknown) => void = () => {}
+    ops.getOpsMonitoringAccountConcurrency.mockImplementationOnce(() => new Promise((_resolve, reject) => {
+      rejectIndex = reject
+    }))
+
+    await applyConcurrencyFilter(wrapper, 9)
+    expect(wrapper.find('[data-testid="ops-concurrency-filter-loading"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="ops-concurrency-filter-clear"]').trigger('click')
+    await flushPromises()
+
+    // Clearing invalidates the request immediately: no loading hint, no alert.
+    expect(wrapper.find('[data-testid="ops-concurrency-filter-loading"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="ops-concurrency-filter-error"]').exists()).toBe(false)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma', 'Group Beta', 'Group Alpha', 'Group Delta'])
+
+    rejectIndex({ response: { data: { message: 'late index failure' } } })
+    await flushPromises()
+
+    // The late failure must not post the "filter is not applied" alert.
+    expect(wrapper.find('[data-testid="ops-concurrency-filter-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="ops-concurrency-filter-loading"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="ops-concurrency-filter-clear"]').exists()).toBe(false)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma', 'Group Beta', 'Group Alpha', 'Group Delta'])
+  })
+
+  it('ignores a late index success after the filter is cleared while loading and re-reads on the next apply', async () => {
+    const { wrapper, ops } = await mountView()
+    let resolveIndex: (value: unknown) => void = () => {}
+    ops.getOpsMonitoringAccountConcurrency.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveIndex = resolve
+    }))
+
+    await applyConcurrencyFilter(wrapper, 9)
+    expect(wrapper.find('[data-testid="ops-concurrency-filter-loading"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="ops-concurrency-filter-clear"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="ops-concurrency-filter-loading"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="ops-concurrency-filter-error"]').exists()).toBe(false)
+
+    // The invalidated request lands after the clear and must not populate the index.
+    resolveIndex({ data: { data: structuredClone(concurrencyIndexPayload) } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="ops-concurrency-filter-error"]').exists()).toBe(false)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma', 'Group Beta', 'Group Alpha', 'Group Delta'])
+
+    // No index was kept, so the next apply must issue a fresh request.
+    await applyConcurrencyFilter(wrapper, 9)
+    expect(ops.getOpsMonitoringAccountConcurrency).toHaveBeenCalledTimes(2)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma'])
+  })
+
+  it('reloads the index along with forced groups on manual refresh while a filter is active', async () => {
+    const { wrapper, ops } = await mountView()
+
+    await applyConcurrencyFilter(wrapper, 9)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma'])
+
+    // A refreshed index raises Group Alpha's only active capacity above 9.
+    ops.getOpsMonitoringAccountConcurrency.mockResolvedValueOnce({
+      data: {
+        data: {
+          ...concurrencyIndexPayload,
+          accounts: concurrencyIndexPayload.accounts.map((account) => (
+            account.account_id === 22 ? { ...account, concurrency: 10 } : account
+          )),
+        },
+      },
+    })
+    await wrapper.get('[data-testid="ops-refresh"]').trigger('click')
+    await flushPromises()
+
+    expect(ops.getOpsMonitoringGroups).toHaveBeenCalledTimes(2)
+    expect(ops.getOpsMonitoringGroups.mock.calls[1][0]).toMatchObject({ provider_id: 7, window: '1h', force: true })
+    expect(ops.getOpsMonitoringAccountConcurrency).toHaveBeenCalledTimes(2)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma', 'Group Alpha'])
+  })
+
+  it('keeps the existing filter index on the cached auto tick and reloads it only on manual refresh', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const { wrapper, ops } = await mountView()
+
+    await applyConcurrencyFilter(wrapper, 9)
+    expect(ops.getOpsMonitoringAccountConcurrency).toHaveBeenCalledTimes(1)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma'])
+
+    wrapper.findComponent({ name: 'ElSwitch' }).vm.$emit('change', true)
+    await flushPromises()
+    vi.advanceTimersByTime(60_000)
+    await flushPromises()
+
+    // The automatic tick reads the cached group snapshot and never re-reads the
+    // index, so the existing filter keeps applying.
+    expect(ops.getOpsMonitoringGroups).toHaveBeenCalledTimes(2)
+    expect(ops.getOpsMonitoringGroups.mock.calls[1][0].force).toBe(false)
+    expect(ops.getOpsMonitoringAccountConcurrency).toHaveBeenCalledTimes(1)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma'])
+
+    await wrapper.get('[data-testid="ops-refresh"]').trigger('click')
+    await flushPromises()
+
+    // Only the explicit refresh forces groups and reloads the active filter index.
+    expect(ops.getOpsMonitoringGroups).toHaveBeenCalledTimes(3)
+    expect(ops.getOpsMonitoringGroups.mock.calls[2][0]).toMatchObject({ provider_id: 7, window: '1h', force: true })
+    expect(ops.getOpsMonitoringAccountConcurrency).toHaveBeenCalledTimes(2)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma'])
+  })
+
+  it('drops the cached filter index and surfaces the alert when the manual index refresh fails', async () => {
+    const { wrapper, ops } = await mountView()
+
+    await applyConcurrencyFilter(wrapper, 9)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma'])
+
+    ops.getOpsMonitoringAccountConcurrency.mockRejectedValueOnce({
+      response: { data: { message: 'provider read failed' } },
+    })
+    await wrapper.get('[data-testid="ops-refresh"]').trigger('click')
+    await flushPromises()
+
+    expect(ops.getOpsMonitoringGroups).toHaveBeenCalledTimes(2)
+    expect(ops.getOpsMonitoringGroups.mock.calls[1][0]).toMatchObject({ provider_id: 7, window: '1h', force: true })
+    expect(wrapper.get('[data-testid="ops-concurrency-filter-error"]').text()).toContain('provider read failed')
+    expect(groupNames(wrapper)).toEqual(['Group Gamma', 'Group Beta', 'Group Alpha', 'Group Delta'])
+  })
+
+  it('keeps the index for the current provider when the window changes', async () => {
+    const { wrapper, ops } = await mountView()
+
+    await applyConcurrencyFilter(wrapper, 9)
+    await wrapper.get('input[value="6h"]').setValue(true)
+    await flushPromises()
+
+    expect(ops.getOpsMonitoringGroups).toHaveBeenCalledTimes(2)
+    expect(ops.getOpsMonitoringGroups.mock.calls[1][0]).toMatchObject({ provider_id: 7, window: '6h' })
+    expect(ops.getOpsMonitoringAccountConcurrency).toHaveBeenCalledTimes(1)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma'])
+  })
+
+  it('clears the filter and the index when the provider changes', async () => {
+    const { wrapper, ops } = await mountView({ providerList: [providers[0], providers[1]] })
+
+    await applyConcurrencyFilter(wrapper, 9)
+    expect(groupNames(wrapper)).toEqual(['Group Gamma'])
+
+    const selects = wrapper.findAllComponents({ name: 'ElSelect' })
+    expect(selects).toHaveLength(2)
+    selects[0].vm.$emit('change', 3)
+    await flushPromises()
+
+    expect(ops.getOpsMonitoringGroups).toHaveBeenCalledTimes(2)
+    expect(ops.getOpsMonitoringGroups.mock.calls[1][0]).toMatchObject({ provider_id: 3 })
+    expect(wrapper.find('[data-testid="ops-concurrency-filter-clear"]').exists()).toBe(false)
+    // A cleared filter means every row of the new provider is visible.
+    expect(groupNames(wrapper)).toEqual(['Group Gamma', 'Group Beta', 'Group Alpha', 'Group Delta'])
+
+    await applyConcurrencyFilter(wrapper, 9)
+    expect(ops.getOpsMonitoringAccountConcurrency).toHaveBeenCalledTimes(2)
+    expect(ops.getOpsMonitoringAccountConcurrency.mock.calls[1][0]).toEqual({ provider_id: 3 })
+  })
+
+  it('patches the cached index from a verified concurrency save so the active filter reflects it', async () => {
+    const { wrapper, ops } = await mountView()
+    ops.setOpsMonitoringAccountConcurrency.mockResolvedValueOnce({
+      data: { data: { account_id: 22, concurrency: 3, current_concurrency: 0 } },
+    })
+
+    await applyConcurrencyFilter(wrapper, 8)
+    // Group Alpha matches only through account 22 sitting exactly on the threshold.
+    expect(groupNames(wrapper)).toEqual(['Group Gamma', 'Group Alpha'])
+
+    await wrapper.get('[data-testid="ops-group-toggle-11"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="ops-account-concurrency-edit-11-22"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="ops-account-concurrency-input-11-22"]').find('input').setValue('3')
+    await flushPromises()
+    await wrapper.get('[data-testid="ops-account-concurrency-save-11-22"]').trigger('click')
+    await flushPromises()
+
+    expect(ops.setOpsMonitoringAccountConcurrency).toHaveBeenCalledWith(11, 22, 3, { provider_id: 7 })
+    // The verified read-back patched the index: Group Alpha leaves the filtered
+    // set without any extra index or group request.
+    expect(groupNames(wrapper)).toEqual(['Group Gamma'])
+    expect(ops.getOpsMonitoringAccountConcurrency).toHaveBeenCalledTimes(1)
+    expect(ops.getOpsMonitoringGroups).toHaveBeenCalledTimes(1)
   })
 
   it('renders the localized Chinese title and labels', async () => {

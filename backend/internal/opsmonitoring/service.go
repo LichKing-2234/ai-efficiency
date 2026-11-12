@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -105,6 +106,21 @@ type GroupAccountsSnapshot struct {
 	GroupID  int64                `json:"group_id"`
 	AsOf     time.Time            `json:"as_of"`
 	Accounts []relay.GroupAccount `json:"accounts"`
+}
+
+// AccountConcurrencyIndexRequest selects the relay provider whose whole account
+// directory backs the Ops Monitoring group concurrency filter.
+type AccountConcurrencyIndexRequest struct {
+	ProviderID int
+}
+
+// AccountConcurrencyIndex is the on-demand account concurrency/membership index
+// behind the Ops Monitoring group concurrency filter. It is never cached: the
+// operator's filter action is the only caller.
+type AccountConcurrencyIndex struct {
+	ProviderID int                                  `json:"provider_id"`
+	AsOf       time.Time                            `json:"as_of"`
+	Accounts   []relay.AccountConcurrencyMembership `json:"accounts"`
 }
 
 // SetAccountConcurrencyRequest is one explicit account capacity change, scoped
@@ -251,6 +267,41 @@ func (s *Service) GroupAccounts(ctx context.Context, request GroupAccountsReques
 		accounts = []relay.GroupAccount{}
 	}
 	return &GroupAccountsSnapshot{GroupID: request.GroupID, AsOf: s.now().UTC(), Accounts: accounts}, nil
+}
+
+// AccountConcurrencyIndex loads every account's configured concurrency and
+// group membership from upstream. It exists only for the group concurrency
+// filter: the read is issued on explicit operator demand, is never cached, and
+// is never part of the group snapshot. The returned slice is sorted by account
+// ID and always non-nil so the filter can render an empty result deterministically.
+func (s *Service) AccountConcurrencyIndex(ctx context.Context, request AccountConcurrencyIndexRequest) (*AccountConcurrencyIndex, error) {
+	if s == nil || s.resolver == nil {
+		return nil, fmt.Errorf("ops monitoring service is unavailable")
+	}
+	provider, err := s.resolver.Resolve(ctx, request.ProviderID)
+	if err != nil {
+		return nil, err
+	}
+	if provider == nil {
+		return nil, fmt.Errorf("relay provider %d is not configured", request.ProviderID)
+	}
+	reader, ok := provider.(relay.AccountConcurrencyReader)
+	if !ok {
+		return nil, fmt.Errorf("relay provider %d does not expose an account concurrency index", request.ProviderID)
+	}
+	accounts, err := reader.ListAccountConcurrencyMemberships(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list account concurrency memberships: %w", err)
+	}
+	if accounts == nil {
+		accounts = []relay.AccountConcurrencyMembership{}
+	}
+	sort.Slice(accounts, func(i, j int) bool { return accounts[i].AccountID < accounts[j].AccountID })
+	return &AccountConcurrencyIndex{
+		ProviderID: request.ProviderID,
+		AsOf:       s.now().UTC(),
+		Accounts:   accounts,
+	}, nil
 }
 
 // SetAccountConcurrency sets one account's configured concurrency from the

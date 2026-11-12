@@ -2160,6 +2160,113 @@ func (s *sub2apiRelay) ListGroupAccounts(ctx context.Context, groupID int64) ([]
 	return accounts, nil
 }
 
+// ListAccountConcurrencyMemberships scans the whole upstream account directory
+// and returns each account's configured concurrency plus the positive group IDs
+// it belongs to. It backs the on-demand Ops Monitoring group concurrency
+// filter: it is issued only on explicit operator demand, is never cached, and is
+// never part of the group snapshot read. Provider credentials are never decoded.
+func (s *sub2apiRelay) ListAccountConcurrencyMemberships(ctx context.Context) ([]AccountConcurrencyMembership, error) {
+	// The full dto.Account is required for `concurrency` and group membership, so
+	// no `lite` parameter and no platform/group filter are sent.
+	type accountItem struct {
+		ID            int64   `json:"id"`
+		Concurrency   int     `json:"concurrency"`
+		GroupIDs      []int64 `json:"group_ids"`
+		AccountGroups []struct {
+			GroupID int64 `json:"group_id"`
+		} `json:"account_groups"`
+	}
+	type pageData struct {
+		Items []accountItem `json:"items"`
+		Pages int           `json:"pages"`
+	}
+
+	memberships := make([]AccountConcurrencyMembership, 0)
+	membershipIndex := make(map[int64]int)
+	for page := 1; ; page++ {
+		query := url.Values{}
+		query.Set("page", strconv.Itoa(page))
+		query.Set("page_size", "1000")
+
+		resp, err := s.doAdminRequest(ctx, http.MethodGet, "/api/v1/admin/accounts?"+query.Encode(), nil)
+		if err != nil {
+			return nil, fmt.Errorf("relay: list account concurrency memberships: %w", err)
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("relay: list account concurrency memberships: read body: %w", readErr)
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("relay: list account concurrency memberships: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffixFromData(body))
+		}
+
+		var envelope struct {
+			envelopeStatus
+			Data pageData `json:"data"`
+		}
+		if err := json.Unmarshal(body, &envelope); err != nil {
+			return nil, fmt.Errorf("relay: list account concurrency memberships: decode: %w", err)
+		}
+		if !envelope.ok() {
+			return nil, fmt.Errorf("relay: list account concurrency memberships: request failed%s", envelope.messageSuffix())
+		}
+
+		for _, item := range envelope.Data.Items {
+			relationshipGroupIDs := make([]int64, 0, len(item.AccountGroups))
+			for _, relationship := range item.AccountGroups {
+				relationshipGroupIDs = append(relationshipGroupIDs, relationship.GroupID)
+			}
+			membership := AccountConcurrencyMembership{
+				AccountID:   item.ID,
+				Concurrency: item.Concurrency,
+				GroupIDs:    positiveUniqueGroupIDs(relationshipGroupIDs, item.GroupIDs),
+			}
+			// Offset pagination can repeat an account across pages while rows
+			// shift between scans. The index contract is one entry per account,
+			// and the later page is the fresher read, so replace in place rather
+			// than appending a duplicate.
+			if index, ok := membershipIndex[item.ID]; ok {
+				memberships[index] = membership
+				continue
+			}
+			membershipIndex[item.ID] = len(memberships)
+			memberships = append(memberships, membership)
+		}
+
+		if envelope.Data.Pages <= 1 || page >= envelope.Data.Pages {
+			break
+		}
+	}
+
+	sort.Slice(memberships, func(i, j int) bool { return memberships[i].AccountID < memberships[j].AccountID })
+	return memberships, nil
+}
+
+// positiveUniqueGroupIDs prefers the explicit account_groups relationship IDs
+// and falls back to the flat group_ids list. Non-positive IDs are dropped and
+// duplicates collapse in first-seen order. The result is always non-nil so the
+// JSON projection renders `[]`, never `null`.
+func positiveUniqueGroupIDs(primary, fallback []int64) []int64 {
+	source := primary
+	if len(source) == 0 {
+		source = fallback
+	}
+	groupIDs := make([]int64, 0, len(source))
+	seen := make(map[int64]struct{}, len(source))
+	for _, groupID := range source {
+		if groupID <= 0 {
+			continue
+		}
+		if _, ok := seen[groupID]; ok {
+			continue
+		}
+		seen[groupID] = struct{}{}
+		groupIDs = append(groupIDs, groupID)
+	}
+	return groupIDs
+}
+
 // UpdateAccountConcurrency sets one account's configured concurrency and then
 // reads the account back to verify the stored value. A read-back mismatch is an
 // error: the caller is never told a write succeeded with different numbers.
