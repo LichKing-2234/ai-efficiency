@@ -183,16 +183,39 @@ const ccSwitchImports = computed(() => {
   }))
 })
 
-type ClientId = 'codex' | 'claude' | 'dsh' | 'qoder'
+type ClientId = 'codex' | 'claude' | 'dsh' | 'qoder' | 'kiro'
 
+function clientLabel(client: ClientId) {
+  if (client === 'claude') return t('user.clientClaudeCode')
+  if (client === 'dsh') return t('user.clientDsh')
+  if (client === 'qoder') return t('user.clientQoder')
+  if (client === 'kiro') return t('user.clientKiro')
+  return t('user.clientCodex')
+}
+
+const availableClients = computed<ClientId[]>(() => {
+  if (selectedIsAgentGroup.value) return []
+  const platform = (selectedGroup.value?.platform ?? '').trim().toLowerCase()
+  if (platform === 'composite') return ['codex', 'claude', 'dsh', 'qoder']
+  if (platform === 'anthropic') return ['claude', 'kiro']
+  return []
+})
+const showClientSelector = computed(() => availableClients.value.length > 1)
 const selectedClient = ref<ClientId>('codex')
-const showClientSelector = computed(() =>
-  !selectedIsAgentGroup.value && (selectedGroup.value?.platform ?? '').trim().toLowerCase() === 'composite',
+watch(
+  selectedGroup,
+  () => {
+    if (!availableClients.value.includes(selectedClient.value)) {
+      selectedClient.value = availableClients.value[0] ?? 'codex'
+    }
+  },
+  { immediate: true },
 )
 function clientSnippetKey(key: string): ClientId {
   if (key === 'claude-settings') return 'claude'
   if (key.startsWith('dsh-')) return 'dsh'
   if (key.startsWith('qoder-')) return 'qoder'
+  if (key.startsWith('kiro-cli-')) return 'kiro'
   return 'codex'
 }
 const clientSnippets = computed(() => {
@@ -201,12 +224,17 @@ const clientSnippets = computed(() => {
 })
 const clientCcSwitchImports = computed(() => {
   if (!showClientSelector.value) return ccSwitchImports.value
-  if (selectedClient.value === 'dsh' || selectedClient.value === 'qoder') return []
+  if (selectedClient.value === 'dsh' || selectedClient.value === 'qoder' || selectedClient.value === 'kiro') return []
   const target = selectedClient.value === 'claude' ? 'claude' : 'codex'
   return ccSwitchImports.value.filter((item) => item.key === target)
 })
 watch(clientCcSwitchImports, (imports) => {
   if (selectedConfigMethod.value === 'ccswitch' && imports.length === 0) {
+    setConfigMethod('manual')
+  }
+})
+watch(selectedClient, () => {
+  if (selectedConfigMethod.value === 'ccswitch' && clientCcSwitchImports.value.length === 0) {
     setConfigMethod('manual')
   }
 })
@@ -890,10 +918,14 @@ onBeforeUnmount(() => {
                 <div v-if="showClientSelector" class="mt-4">
                   <div class="text-sm font-medium text-gray-900">{{ t('user.selectClientTitle') }}</div>
                   <ElRadioGroup v-model="selectedClient" class="mt-2">
-                    <ElRadioButton value="codex">{{ t('user.clientCodex') }}</ElRadioButton>
-                    <ElRadioButton value="claude">{{ t('user.clientClaudeCode') }}</ElRadioButton>
-                    <ElRadioButton value="dsh">{{ t('user.clientDsh') }}</ElRadioButton>
-                    <ElRadioButton value="qoder">{{ t('user.clientQoder') }}</ElRadioButton>
+                    <ElRadioButton
+                      v-for="client in availableClients"
+                      :key="client"
+                      :value="client"
+                      :data-testid="`client-option-${client}`"
+                    >
+                      {{ clientLabel(client) }}
+                    </ElRadioButton>
                   </ElRadioGroup>
                 </div>
 

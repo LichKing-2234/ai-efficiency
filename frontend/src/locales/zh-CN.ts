@@ -501,6 +501,7 @@ const zhCN = {
   'user.clientClaudeCode': 'Claude Code',
   'user.clientDsh': 'DSH',
   'user.clientQoder': 'Qoder',
+  'user.clientKiro': 'Kiro CLI',
   'user.openSub2apiKeys': '打开 sub2api 的密钥页（核对分组与密钥）',
   'user.manualConfigUnsupportedPlatform': '当前平台还没有内置手动配置片段。请把服务入口、平台、接入组和 API Key 状态发给支持人员确认本地工具配置位置。',
   'user.copyConfigSnippet': '复制片段',
