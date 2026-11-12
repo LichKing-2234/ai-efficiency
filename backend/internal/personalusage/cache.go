@@ -17,7 +17,21 @@ import (
 	"github.com/google/uuid"
 )
 
-const usageCacheSchemaVersion = 1
+const (
+	usageCacheSchemaVersion = 1
+
+	// RefreshTimeoutMargin keeps the refresh flight strictly longer than the
+	// bounded Relay user-usage origin read it encloses. The margin is the time
+	// the flight still has to classify the origin's transient failure and serve
+	// an eligible stale generation instead of being preempted by its own timer.
+	RefreshTimeoutMargin = 3 * time.Second
+
+	// DefaultRefreshTimeout is the production refresh-flight budget for the
+	// personal usage read model. It must stay longer than
+	// relay.UserUsageOriginTimeout so a flight-deadline expiry cannot race the
+	// origin deadline that decides stale-if-error eligibility.
+	DefaultRefreshTimeout = relay.UserUsageOriginTimeout + RefreshTimeoutMargin
+)
 
 var usageCacheNamespaceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
 
@@ -71,7 +85,7 @@ func applyCacheDefaults(options *CacheOptions) {
 		options.CommandTimeout = 100 * time.Millisecond
 	}
 	if options.RefreshTimeout <= 0 {
-		options.RefreshTimeout = 12 * time.Second
+		options.RefreshTimeout = DefaultRefreshTimeout
 	}
 	if options.LeaseTTL <= 0 {
 		options.LeaseTTL = 15 * time.Second
@@ -217,6 +231,9 @@ func (c *Cache) loadWithLease(ctx context.Context, key string, includeQuota bool
 				wait = ttl
 			}
 			if err := c.options.Sleep(ctx, wait); err != nil {
+				if result, ok := c.staleIfError(ctx, stale, err, OriginLoadResult{}); ok {
+					return result, nil
+				}
 				return nil, err
 			}
 		}
@@ -252,22 +269,21 @@ func (c *Cache) loadAuthoritative(ctx context.Context, key string, stale *usageV
 	c.record("refresh")
 	loaded, err := loader(ctx, includeQuota)
 	if err != nil {
+		if result, ok := c.staleIfError(ctx, stale, err, loaded); ok {
+			return result, nil
+		}
 		c.record("error")
 		return nil, err
 	}
 	if loaded.UsageErr != nil {
+		if result, ok := c.staleIfError(ctx, stale, loaded.UsageErr, loaded); ok {
+			return result, nil
+		}
+		c.record("error")
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if stale == nil || c.now().After(stale.StaleUntil) {
-			c.record("error")
-			return nil, loaded.UsageErr
-		}
-		c.record("error")
-		c.record("stale")
-		result := cacheResultFromEnvelope(stale, "stale", "error")
-		applyLoadedQuota(result, loaded)
-		return result, nil
+		return nil, loaded.UsageErr
 	}
 	if loaded.Usage == nil {
 		c.record("error")
@@ -296,6 +312,33 @@ func (c *Cache) loadAuthoritative(ctx context.Context, key string, stale *usageV
 	result := cacheResultFromEnvelope(envelope, "miss", "ok")
 	applyLoadedQuota(result, loaded)
 	return result, nil
+}
+
+// staleIfError returns the eligible stale generation for a transient
+// authoritative-refresh failure. The refresh flight detaches caller context
+// cancellation, so a non-nil flight context error is either the flight's own
+// bounded deadline (a transient condition stale may cover) or every caller
+// leaving (cancellation, never stale-eligible). Invalid credentials and
+// configuration errors never use stale, and a cold miss or a generation past
+// its hard stale deadline has nothing eligible to return.
+func (c *Cache) staleIfError(ctx context.Context, stale *usageValueEnvelope, failure error, loaded OriginLoadResult) (*CacheResult, bool) {
+	if stale == nil || c.now().After(stale.StaleUntil) {
+		return nil, false
+	}
+	if errors.Is(failure, relay.ErrInvalidCredentials) || errors.Is(failure, relay.ErrUsageOriginIdentityMismatch) || errors.Is(failure, ErrConfiguration) {
+		return nil, false
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil && !errors.Is(ctxErr, context.DeadlineExceeded) {
+		return nil, false
+	}
+	if errors.Is(failure, context.Canceled) {
+		return nil, false
+	}
+	c.record("error")
+	c.record("stale")
+	result := cacheResultFromEnvelope(stale, "stale", "error")
+	applyLoadedQuota(result, loaded)
+	return result, true
 }
 
 func applyLoadedQuota(result *CacheResult, loaded OriginLoadResult) {

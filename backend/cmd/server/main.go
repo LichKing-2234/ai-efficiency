@@ -381,7 +381,14 @@ func main() {
 	}
 	personalUsageCache, err := personalusage.NewCache(
 		redisStore,
-		personalusage.CacheOptions{Namespace: cfg.Redis.Namespace, Metrics: cacheMetrics.personalUsage},
+		personalusage.CacheOptions{
+			Namespace: cfg.Redis.Namespace,
+			// The refresh flight must outlive the bounded Relay origin read, so
+			// an origin failure can serve an eligible stale generation instead of
+			// being preempted by the flight deadline.
+			RefreshTimeout: personalusage.DefaultRefreshTimeout,
+			Metrics:        cacheMetrics.personalUsage,
+		},
 	)
 	if err != nil {
 		logger.Fatal("initialize personal usage cache", zap.Error(err))

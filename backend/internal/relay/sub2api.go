@@ -55,7 +55,11 @@ type sub2apiRelay struct {
 	providerWideTrendPointLimit int
 }
 
-const userUsageOriginTimeout = 12 * time.Second
+// UserUsageOriginTimeout bounds one Relay user-usage origin read (login plus
+// the selected usage/quota branches). Read-model refresh flights that wrap this
+// call must outlive it, so an origin deadline failure surfaces as a transient
+// error before the flight's own deadline can preempt it.
+const UserUsageOriginTimeout = 12 * time.Second
 
 type envelopeStatus struct {
 	Success *bool  `json:"success"`
@@ -4217,7 +4221,7 @@ func (s *sub2apiRelay) ReadUserUsageOrigin(ctx context.Context, request UserUsag
 		return nil, fmt.Errorf("relay: user usage quota branch requires a relay user ID")
 	}
 
-	originCtx, cancel := context.WithTimeout(ctx, userUsageOriginTimeout)
+	originCtx, cancel := context.WithTimeout(ctx, UserUsageOriginTimeout)
 	defer cancel()
 
 	var token string
@@ -4229,7 +4233,7 @@ func (s *sub2apiRelay) ReadUserUsageOrigin(ctx context.Context, request UserUsag
 			return nil, fmt.Errorf("relay: login for usage origin: %w", err)
 		}
 		if request.RelayUserID > 0 && authenticatedUser != nil && authenticatedUser.ID != request.RelayUserID {
-			return nil, fmt.Errorf("relay: usage origin authenticated user %d does not match requested user %d", authenticatedUser.ID, request.RelayUserID)
+			return nil, fmt.Errorf("%w: authenticated user %d does not match requested user %d", ErrUsageOriginIdentityMismatch, authenticatedUser.ID, request.RelayUserID)
 		}
 	}
 
