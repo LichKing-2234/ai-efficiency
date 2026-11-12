@@ -229,6 +229,46 @@ func TestRefreshTimeoutOutlivesRelayUsageOriginTimeout(t *testing.T) {
 	if options.RefreshTimeout != DefaultRefreshTimeout {
 		t.Fatalf("implicit RefreshTimeout = %s, want %s", options.RefreshTimeout, DefaultRefreshTimeout)
 	}
+	if options.LeaseTTL != DefaultLeaseTTL {
+		t.Fatalf("implicit LeaseTTL = %s, want %s", options.LeaseTTL, DefaultLeaseTTL)
+	}
+	if options.LeaseTTL <= options.RefreshTimeout {
+		t.Fatalf("implicit LeaseTTL = %s, must stay strictly longer than the refresh flight %s", options.LeaseTTL, options.RefreshTimeout)
+	}
+}
+
+// TestCacheHardLoaderCredentialAndConfigurationErrorsNeverServeStale keeps the
+// production service.go shape for non-transient hard loader errors: invalid
+// credentials and configuration failures must stay hard failures even when a
+// stale generation exists.
+func TestCacheHardLoaderCredentialAndConfigurationErrorsNeverServeStale(t *testing.T) {
+	tests := []struct {
+		name  string
+		error error
+	}{
+		{name: "invalid credentials", error: fmt.Errorf("relay: login for usage origin: %w", relay.ErrInvalidCredentials)},
+		{name: "configuration failure", error: fmt.Errorf("personal usage: %w", ErrConfiguration)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
+			store := newFakeUsageStore(func() time.Time { return now })
+			cache := testCache(t, store, func() time.Time { return now }, 0)
+			if _, err := cache.GetOrLoad(context.Background(), testCacheKey(), false, func(context.Context, bool) (OriginLoadResult, error) {
+				return OriginLoadResult{Usage: testUsageSnapshot(7)}, nil
+			}); err != nil {
+				t.Fatalf("seed cache: %v", err)
+			}
+			now = now.Add(30 * time.Second)
+
+			_, err := cache.GetOrLoad(context.Background(), testCacheKey(), false, func(context.Context, bool) (OriginLoadResult, error) {
+				return OriginLoadResult{}, tt.error
+			})
+			if !errors.Is(err, tt.error) {
+				t.Fatalf("GetOrLoad() error = %v, want %v", err, tt.error)
+			}
+		})
+	}
 }
 
 // TestCacheServesStaleWhenProductionLoaderReturnsFlightDeadline covers the

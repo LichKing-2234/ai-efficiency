@@ -31,6 +31,17 @@ const (
 	// relay.UserUsageOriginTimeout so a flight-deadline expiry cannot race the
 	// origin deadline that decides stale-if-error eligibility.
 	DefaultRefreshTimeout = relay.UserUsageOriginTimeout + RefreshTimeoutMargin
+
+	// RefreshLeaseTTLMargin keeps the cross-replica refresh lease strictly
+	// longer than the refresh flight that owns it. A lease that expires while
+	// its owner is still refreshing lets a second replica start a duplicate
+	// authoritative refresh; the margin preserves refresh ownership for the
+	// whole bounded flight.
+	RefreshLeaseTTLMargin = 5 * time.Second
+
+	// DefaultLeaseTTL is the production cross-replica refresh lease budget. It
+	// must stay longer than DefaultRefreshTimeout.
+	DefaultLeaseTTL = DefaultRefreshTimeout + RefreshLeaseTTLMargin
 )
 
 var usageCacheNamespaceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
@@ -88,7 +99,7 @@ func applyCacheDefaults(options *CacheOptions) {
 		options.RefreshTimeout = DefaultRefreshTimeout
 	}
 	if options.LeaseTTL <= 0 {
-		options.LeaseTTL = 15 * time.Second
+		options.LeaseTTL = DefaultLeaseTTL
 	}
 	if options.PollInterval <= 0 {
 		options.PollInterval = 25 * time.Millisecond
