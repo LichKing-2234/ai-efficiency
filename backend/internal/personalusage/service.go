@@ -73,6 +73,9 @@ func (s *Service) Dashboard(ctx context.Context, request Request) (*Snapshot, er
 		if errors.Is(originResult.UsageErr, relay.ErrInvalidCredentials) {
 			return OriginLoadResult{}, originResult.UsageErr
 		}
+		// Surface a flight deadline or all-waiters cancellation to the cache:
+		// staleIfError treats the bounded flight deadline as stale-eligible and
+		// caller cancellation as never stale-eligible.
 		if loadCtx.Err() != nil {
 			return OriginLoadResult{}, loadCtx.Err()
 		}

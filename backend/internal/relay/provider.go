@@ -12,6 +12,11 @@ var (
 	ErrExtraVerificationRequired   = errors.New("relay: extra verification required")
 	ErrAccountRelationshipsChanged = errors.New("relay: account relationships changed")
 
+	// ErrUsageOriginIdentityMismatch reports that the Relay user authenticated
+	// for a user-usage origin read is not the requested bound Relay user. It is
+	// a binding/integrity failure, not a transient origin failure.
+	ErrUsageOriginIdentityMismatch = errors.New("relay: usage origin identity mismatch")
+
 	// ErrCapabilityUnsupported reports that the upstream does not implement an
 	// optional capability this adapter knows how to call. It is decided by the
 	// endpoint answering 404/405, not by a type assertion.

@@ -356,6 +356,43 @@ func TestReadUserUsageOriginCancellationTerminatesBranches(t *testing.T) {
 	}
 }
 
+func TestReadUserUsageOriginReportsIdentityMismatchAsSentinel(t *testing.T) {
+	var mu sync.Mutex
+	counts := map[string]int{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		counts["login"]++
+		mu.Unlock()
+		writeOriginEnvelope(w, map[string]any{"access_token": "test-user-token"})
+	})
+	mux.HandleFunc("/api/v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		counts["me"]++
+		mu.Unlock()
+		writeOriginEnvelope(w, map[string]any{"id": 99, "username": "bob", "email": "bob@example.org"})
+	})
+	reader := newTestProvider(t, mux).(relay.UserUsageOriginReader)
+
+	_, err := reader.ReadUserUsageOrigin(context.Background(), relay.UserUsageOriginRequest{
+		Login:       "alice@example.com",
+		Password:    "test-password",
+		RelayUserID: 7,
+		Params: relay.UserUsageDashboardParams{
+			StartDate: "2026-07-01", EndDate: "2026-07-15", Granularity: "day", Timezone: "Asia/Shanghai",
+		},
+		Branches: relay.UserUsageOriginBranches{Usage: true},
+	})
+	if !errors.Is(err, relay.ErrUsageOriginIdentityMismatch) {
+		t.Fatalf("ReadUserUsageOrigin() error = %v, want relay.ErrUsageOriginIdentityMismatch", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if counts["login"] != 1 || counts["me"] != 1 {
+		t.Fatalf("login/me count = %d/%d, want 1/1", counts["login"], counts["me"])
+	}
+}
+
 func registerUsageOriginLoginHandlers(mux *http.ServeMux, mu *sync.Mutex, counts map[string]int) {
 	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
