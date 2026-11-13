@@ -216,9 +216,11 @@ accepted). Keys owned by other clients are never attributed.
 - Credits are real Kiro upstream metering; kiro2cc tokens are cl100k estimates.
   Credits are a separate unit: never added to Relay token totals and never
   converted to USD.
-- The personal usage dashboard shows credits as its own section for the selected
-  range. Range totals come from per-key usage records, so the section may be
-  marked partial when record retention truncates the window.
+- The personal usage view offers a Token usage / Kiro Credits switch. The
+  credits view reuses the token layout (stat cards, trend, model distribution)
+  with credit-appropriate metrics and never mixes the two units in one number.
+  Range totals come from per-key usage records, so the view may be marked
+  partial when record retention truncates the window.
 - Day buckets use the dashboard timezone.
 - A missing source, unlinked user, missing key, or unreachable kiro2cc renders an
   explanatory empty state; the rest of the dashboard is unaffected.

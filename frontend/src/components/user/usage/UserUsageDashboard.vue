@@ -19,6 +19,13 @@
         <p class="mt-1 break-words text-sm text-gray-500">{{ dashboardSubtitle }}</p>
       </div>
       <div class="flex max-w-full shrink-0 flex-wrap items-center gap-2 pb-1 sm:flex-nowrap sm:overflow-x-auto">
+        <ElSegmented
+          v-if="props.unitSwitch"
+          v-model="usageUnit"
+          data-testid="usage-unit-switch"
+          :options="unitOptions"
+          class="shrink-0"
+        />
         <ElRadioGroup
           :model-value="selectedRange"
           class="max-w-full shrink-0 flex-wrap sm:flex-nowrap sm:overflow-x-auto"
@@ -34,8 +41,8 @@
           </ElRadioButton>
         </ElRadioGroup>
         <ElButton
-          :disabled="usageLoading"
-          :loading="usageLoading"
+          :disabled="activeLoading"
+          :loading="activeLoading"
           @click="loadDashboard"
         >
           {{ t('usageDashboard.refresh') }}
@@ -43,6 +50,7 @@
       </div>
     </div>
 
+    <template v-if="usageUnit === 'token'">
     <div v-if="usageLoading && !currentSnapshot" class="flex min-h-80 items-center justify-center text-sm text-gray-500">
       {{ t('usageDashboard.loading') }}
     </div>
@@ -116,17 +124,20 @@
         :hide-cost="props.homeMode"
         :loading="usageLoading && !!currentSnapshot"
       />
-      <KiroCreditsPanel
-        v-if="!props.memberRoute"
-        :snapshot="kiroUsage"
-        :loading="kiroLoading"
-        :range-label="snapshotRangeLabel"
-      />
       <div v-if="hasUsableUsage" class="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <UsageTrendChart :data="currentSnapshot?.trend ?? []" :loading="usageLoading" />
         <UsageModelChart :data="currentSnapshot?.models ?? []" :loading="usageLoading" :hide-cost="props.homeMode" />
       </div>
     </div>
+    </template>
+
+    <template v-else>
+      <KiroCreditsDashboard
+        :snapshot="kiroUsage"
+        :loading="kiroLoading"
+        :range-label="snapshotRangeLabel"
+      />
+    </template>
 
     <QuotaResetRequestModal
       v-if="quotaResetModalOpen"
@@ -140,7 +151,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { createQuotaResetRequest, getQuotaResetOptions } from '@/api/quotaReset'
 import { getUserKiroUsage, getUserUsageDashboard, getUserUsageGroupPoolUsage, getUserUsageGroupQuotas } from '@/api/userUsage'
@@ -165,7 +176,7 @@ const UsageTrendChart = defineAsyncComponent(() => import('@/components/user/usa
 const UsageModelChart = defineAsyncComponent(() => import('@/components/user/usage/UsageModelChart.vue'))
 const UsageGroupQuotaSection = defineAsyncComponent(() => import('@/components/user/usage/UsageGroupQuotaSection.vue'))
 const SelectedSubjectSubscriptionRows = defineAsyncComponent(() => import('@/components/user/usage/SelectedSubjectSubscriptionRows.vue'))
-const KiroCreditsPanel = defineAsyncComponent(() => import('@/components/user/usage/KiroCreditsPanel.vue'))
+const KiroCreditsDashboard = defineAsyncComponent(() => import('@/components/user/usage/KiroCreditsDashboard.vue'))
 const loadQuotaResetRequestModal = () => import('@/components/quota-reset/QuotaResetRequestModal.vue')
 const QuotaResetRequestModal = defineAsyncComponent(loadQuotaResetRequestModal)
 
@@ -173,11 +184,13 @@ const props = withDefaults(defineProps<{
   embedded?: boolean
   homeMode?: boolean
   memberRoute?: boolean
+  unitSwitch?: boolean
   initialSnapshot?: UserUsageDashboardSnapshot | null
 }>(), {
   embedded: false,
   homeMode: false,
   memberRoute: false,
+  unitSwitch: false,
   initialSnapshot: null,
 })
 
@@ -192,6 +205,28 @@ const kiroLoading = ref(false)
 const memberRouteSubject = ref<TeamUsageSubject | null>(null)
 const selectedSubjectSubscriptions = ref<SubjectSubscriptionGroup[]>([])
 const usageLoading = ref(!props.initialSnapshot)
+type UsageUnit = 'token' | 'credits'
+const USAGE_UNIT_KEY = 'ae.usage.unit'
+function readUsageUnit(): UsageUnit {
+  try {
+    return localStorage.getItem(USAGE_UNIT_KEY) === 'credits' ? 'credits' : 'token'
+  } catch {
+    return 'token'
+  }
+}
+const usageUnit = ref<UsageUnit>(props.unitSwitch ? readUsageUnit() : 'token')
+const unitOptions = computed(() => [
+  { label: t('usageDashboard.unitToken'), value: 'token' },
+  { label: t('usageDashboard.unitCredits'), value: 'credits' },
+])
+const activeLoading = computed(() => usageUnit.value === 'credits' ? kiroLoading.value : usageLoading.value)
+watch(usageUnit, (value) => {
+  try {
+    localStorage.setItem(USAGE_UNIT_KEY, value)
+  } catch {
+    // Preference persistence is best effort.
+  }
+})
 const quotaLoading = ref(false)
 type UsageErrorKind = '' | 'credential' | 'transient' | 'unexpected'
 const usageErrorKind = ref<UsageErrorKind>('')
