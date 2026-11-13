@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue'
 import { useI18n } from '@/i18n'
-import { formatTokenCount } from '@/utils/formatters'
+import { formatTokenCount, formatUsagePair } from '@/utils/formatters'
 import type { TeamDepartmentTrendState, TeamMemberTrendState, TeamOverviewWindow } from '@/types'
 
 const LineChartCanvas = defineAsyncComponent(() => import('@/components/charts/LineChartCanvas.vue'))
@@ -10,6 +10,8 @@ const props = defineProps<{
   state: TeamMemberTrendState
   departmentTrend?: TeamDepartmentTrendState | null
   window?: TeamOverviewWindow | null
+  tokensTotal?: number | null
+  creditsTotal?: number | null
 }>()
 
 const { t } = useI18n()
@@ -270,6 +272,9 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
   <section data-testid="team-member-trend-chart" class="rounded-lg border border-slate-200 bg-white shadow-sm">
     <div class="border-b border-slate-200 px-4 py-3">
       <h2 class="text-base font-semibold text-slate-950">{{ t('teamUsage.topMembers') }}</h2>
+      <div class="mt-1 text-xs font-medium text-slate-500">
+        {{ t('teamUsage.rangeTokenCredits') }}: {{ formatUsagePair(props.tokensTotal ?? null, props.creditsTotal ?? null) }}
+      </div>
       <div class="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs font-medium text-slate-500">
         <template v-for="(item, index) in chartMetaItems" :key="item">
           <span>{{ item }}</span>
