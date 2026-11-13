@@ -413,6 +413,8 @@ onMounted(loadOverview)
             :state="trend.top_member_trend"
             :department-trend="trend.department_trend"
             :window="trend.window"
+            :tokens-total="summary?.summary.range_total_tokens ?? null"
+            :credits-total="rangeCredits"
           />
         </div>
 
