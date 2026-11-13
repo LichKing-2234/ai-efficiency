@@ -53,7 +53,7 @@ onMounted(() => {
         <p class="mt-1 max-w-3xl text-sm text-slate-600">{{ t('usageDashboard.subtitle') }}</p>
       </header>
       <UsageCenterTabs :active="activeTab" :show-team="hasTeamUsageScope" :show-accounts="hasOwnerAccountsScope" show-quota-reset />
-      <UserUsageDashboard v-if="route.name === 'Usage'" embedded home-mode />
+      <UserUsageDashboard v-if="route.name === 'Usage'" embedded home-mode :unit-switch="true" />
       <RouterView v-else />
     </div>
   </AppLayout>
