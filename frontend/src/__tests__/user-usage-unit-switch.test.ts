@@ -162,7 +162,7 @@ describe('usage unit switch', () => {
 
     expect(getUserKiroUsage).toHaveBeenCalled()
     expect(wrapper.text()).not.toContain('Avg Response')
-    expect(wrapper.text()).toContain('Kiro Credits')
+    expect(wrapper.text()).toContain('Credits')
   })
 
   it('renders credits metrics with token estimates labelled as estimates', async () => {
