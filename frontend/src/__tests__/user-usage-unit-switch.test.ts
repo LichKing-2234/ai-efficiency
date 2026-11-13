@@ -137,6 +137,8 @@ async function mountWithSwitch(kiro: unknown) {
   })
   await flushPromises()
   await nextTick()
+  await vi.dynamicImportSettled()
+  await settleAsyncComponents()
   return wrapper
 }
 
@@ -163,6 +165,8 @@ describe('usage unit switch', () => {
     expect(getUserKiroUsage).toHaveBeenCalled()
     expect(wrapper.text()).not.toContain('Avg Response')
     expect(wrapper.text()).toContain('Credits')
+    await vi.dynamicImportSettled()
+    wrapper.unmount()
   })
 
   it('renders credits metrics with token estimates labelled as estimates', async () => {
@@ -177,6 +181,8 @@ describe('usage unit switch', () => {
     expect(wrapper.text()).toContain('Credits per request')
     expect(wrapper.text()).toContain('Tokens (est.)')
     expect(wrapper.text()).not.toContain('$')
+    await vi.dynamicImportSettled()
+    wrapper.unmount()
   })
 
   it('renders the credits empty state when the user has no Kiro calls', async () => {
@@ -198,5 +204,7 @@ describe('usage unit switch', () => {
     await settleAsyncComponents()
 
     expect(wrapper.text()).toContain('This user has no Kiro CLI calls yet')
+    await vi.dynamicImportSettled()
+    wrapper.unmount()
   })
 })

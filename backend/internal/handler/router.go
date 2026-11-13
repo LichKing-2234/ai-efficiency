@@ -480,7 +480,11 @@ func setupRouter(
 	RegisterWorkItemsRoutes(protected, workItemsHandler)
 	RegisterWebVitalsRoutes(protected, options.WebVitalsHandler)
 
-	teamUsageHandler := NewTeamUsageHandler(teamUsageService)
+	teamUsageHandler := NewTeamUsageHandlerWithCredits(
+		teamUsageService,
+		representativescope.NewWithCache(entClient, options.RepresentativeScopeCache),
+		kiroCreditsService,
+	)
 
 	userGroup := protected.Group("/user")
 	{
@@ -533,6 +537,8 @@ func setupRouter(
 		userGroup.GET("/team-usage/members", teamUsageHandler.Members)
 		userGroup.GET("/team-usage/organization", teamUsageHandler.Organization)
 		userGroup.GET("/team-usage/audit", teamUsageHandler.Audit)
+		userGroup.GET("/team-usage/credits", teamUsageHandler.Credits)
+		userGroup.GET("/team-usage/subjects/:user_id/usage/credits", teamUsageHandler.SubjectCredits)
 		if providerHandler != nil {
 			userGroup.GET("/providers/:id/groups/:group_id/models", providerHandler.Models)
 			userGroup.POST("/providers/:id/test", providerHandler.Test)

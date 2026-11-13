@@ -5,11 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/kirocredits"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/representativescope"
@@ -31,12 +34,118 @@ type teamUsageService interface {
 	ListAdminAudit(context.Context, teamusage.AdminAuditListParams) (*teamusage.AuditListResponse, error)
 }
 
+type representativeScopeResolver interface {
+	Resolve(context.Context, int) (*representativescope.Scope, error)
+}
+
 type TeamUsageHandler struct {
-	service teamUsageService
+	service       teamUsageService
+	scopeResolver representativeScopeResolver
+	credits       *kirocredits.Service
 }
 
 func NewTeamUsageHandler(service teamUsageService) *TeamUsageHandler {
 	return &TeamUsageHandler{service: service}
+}
+
+// NewTeamUsageHandlerWithCredits adds the read-only kiro2cc credits surface.
+func NewTeamUsageHandlerWithCredits(service teamUsageService, scopeResolver representativeScopeResolver, credits *kirocredits.Service) *TeamUsageHandler {
+	return &TeamUsageHandler{service: service, scopeResolver: scopeResolver, credits: credits}
+}
+
+type teamCreditsDepartment struct {
+	DepartmentExternalID string  `json:"department_external_id"`
+	Credits              float64 `json:"credits"`
+	Requests             int64   `json:"requests"`
+}
+
+type teamCreditsResponse struct {
+	kirocredits.TeamCredits
+	Departments []teamCreditsDepartment `json:"departments"`
+}
+
+func (h *TeamUsageHandler) scopeCreditsRefs(scope *representativescope.Scope, actorID int) ([]kirocredits.UserRef, map[int]representativescope.Subject) {
+	refs := make([]kirocredits.UserRef, 0, len(scope.Subjects))
+	subjectsByUser := make(map[int]representativescope.Subject, len(scope.Subjects))
+	for _, subject := range scope.Subjects {
+		if subject.UserID <= 0 || subject.UserID == actorID || subject.RelayUserID == nil {
+			continue
+		}
+		refs = append(refs, kirocredits.UserRef{UserID: subject.UserID, RelayUserID: int64(*subject.RelayUserID)})
+		subjectsByUser[subject.UserID] = subject
+	}
+	return refs, subjectsByUser
+}
+
+func buildTeamCreditsResponse(scope *representativescope.Scope, batch kirocredits.TeamCredits, subjectsByUser map[int]representativescope.Subject) teamCreditsResponse {
+	response := teamCreditsResponse{TeamCredits: batch, Departments: []teamCreditsDepartment{}}
+	if scope == nil {
+		return response
+	}
+	creditsByUser := make(map[int64]kirocredits.UserCredits, len(batch.Users))
+	for _, user := range batch.Users {
+		creditsByUser[user.RelayUserID] = user
+	}
+	direct := map[string]teamCreditsDepartment{}
+	for _, subject := range subjectsByUser {
+		if subject.RelayUserID == nil {
+			continue
+		}
+		entry, ok := creditsByUser[int64(*subject.RelayUserID)]
+		if !ok {
+			continue
+		}
+		departmentID := strings.TrimSpace(subject.DepartmentExternalID)
+		if departmentID == "" {
+			continue
+		}
+		bucket := direct[departmentID]
+		bucket.DepartmentExternalID = departmentID
+		bucket.Credits += entry.Credits
+		bucket.Requests += entry.Requests
+		direct[departmentID] = bucket
+	}
+	for _, bucket := range direct {
+		response.Departments = append(response.Departments, bucket)
+	}
+	// Represented roots carry the subtree total so the organization view can
+	// render department badges that match the subtree token numbers.
+	for _, root := range scope.Departments {
+		subtree, ok := scope.RepresentedSubtreeIDs[root.ExternalID]
+		if !ok {
+			continue
+		}
+		total := teamCreditsDepartment{DepartmentExternalID: root.ExternalID}
+		for _, subject := range subjectsByUser {
+			if subject.RelayUserID == nil {
+				continue
+			}
+			if _, ok := subtree[subject.DepartmentExternalID]; !ok {
+				continue
+			}
+			entry, found := creditsByUser[int64(*subject.RelayUserID)]
+			if !found {
+				continue
+			}
+			total.Credits += entry.Credits
+			total.Requests += entry.Requests
+		}
+		replaced := false
+		for index := range response.Departments {
+			if response.Departments[index].DepartmentExternalID == root.ExternalID {
+				response.Departments[index] = total
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			response.Departments = append(response.Departments, total)
+		}
+	}
+	sort.Slice(response.Departments, func(i, j int) bool {
+		return response.Departments[i].DepartmentExternalID < response.Departments[j].DepartmentExternalID
+	})
+	return response
 }
 
 type teamUsageProviderResolverFunc func(context.Context, int) (relay.Provider, error)
@@ -417,4 +526,92 @@ func teamUsageForbiddenErrorStatus(err error) (int, string, bool) {
 	default:
 		return http.StatusForbidden, forbidden.Error(), true
 	}
+}
+
+// Credits returns read-only kiro2cc credits for the current representative
+// scope. Missing data is expressed in the payload; it never fails the page.
+func (h *TeamUsageHandler) Credits(c *gin.Context) {
+	uc := auth.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if h == nil || h.scopeResolver == nil || h.credits == nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, "team credits service is unavailable")
+		return
+	}
+	scope, err := h.scopeResolver.Resolve(c.Request.Context(), uc.UserID)
+	if err != nil {
+		writeTeamUsageError(c, err)
+		return
+	}
+	if scope == nil || !scope.IsRepresentative {
+		pkg.Error(c, http.StatusForbidden, "representative scope is required")
+		return
+	}
+	refs, subjectsByUser := h.scopeCreditsRefs(scope, uc.UserID)
+	batch := h.credits.Batch(c.Request.Context(), refs, kirocredits.Params{
+		StartDate: c.Query("start_date"),
+		EndDate:   c.Query("end_date"),
+		Timezone:  c.Query("timezone"),
+	})
+	pkg.Success(c, buildTeamCreditsResponse(scope, batch, subjectsByUser))
+}
+
+// SubjectCredits returns credits for one member inside the representative scope.
+func (h *TeamUsageHandler) SubjectCredits(c *gin.Context) {
+	uc := auth.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	targetUserID, ok := parseRequiredIntPathParam(c, "user_id")
+	if !ok {
+		return
+	}
+	if h == nil || h.scopeResolver == nil || h.credits == nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, "team credits service is unavailable")
+		return
+	}
+	scope, err := h.scopeResolver.Resolve(c.Request.Context(), uc.UserID)
+	if err != nil {
+		writeTeamUsageError(c, err)
+		return
+	}
+	if scope == nil || !scope.IsRepresentative {
+		pkg.Error(c, http.StatusForbidden, "representative scope is required")
+		return
+	}
+	var target *representativescope.Subject
+	for index := range scope.Subjects {
+		subject := scope.Subjects[index]
+		if subject.UserID == targetUserID && subject.UserID != uc.UserID {
+			target = &scope.Subjects[index]
+			break
+		}
+	}
+	if target == nil {
+		pkg.Error(c, http.StatusForbidden, "member is outside the representative scope")
+		return
+	}
+	if target.RelayUserID == nil || *target.RelayUserID <= 0 {
+		pkg.Success(c, kirocredits.TeamCredits{
+			AsOf:    time.Now().UTC(),
+			Status:  kirocredits.StatusUnlinked,
+			Message: "该成员未关联 AI 服务用户",
+			Users:   []kirocredits.UserCredits{},
+			ByModel: []kirocredits.ModelCredits{},
+			ByDay:   []kirocredits.DayCredits{},
+		})
+		return
+	}
+	batch := h.credits.Batch(c.Request.Context(), []kirocredits.UserRef{{
+		UserID:      target.UserID,
+		RelayUserID: int64(*target.RelayUserID),
+	}}, kirocredits.Params{
+		StartDate: c.Query("start_date"),
+		EndDate:   c.Query("end_date"),
+		Timezone:  c.Query("timezone"),
+	})
+	pkg.Success(c, batch)
 }

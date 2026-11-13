@@ -123,6 +123,7 @@
         :range-label="snapshotRangeLabel"
         :hide-cost="props.homeMode"
         :loading="usageLoading && !!currentSnapshot"
+        :credits="creditsForCard"
       />
       <div v-if="hasUsableUsage" class="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <UsageTrendChart :data="currentSnapshot?.trend ?? []" :loading="usageLoading" />
@@ -155,7 +156,7 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch 
 import { useRoute } from 'vue-router'
 import { createQuotaResetRequest, getQuotaResetOptions } from '@/api/quotaReset'
 import { getUserKiroUsage, getUserUsageDashboard, getUserUsageGroupPoolUsage, getUserUsageGroupQuotas } from '@/api/userUsage'
-import { getTeamUsageSubjectDashboard, updateTeamUsageRateMultiplier } from '@/api/teamUsage'
+import { getTeamUsageSubjectDashboard, getTeamUsageSubjectCredits, updateTeamUsageRateMultiplier } from '@/api/teamUsage'
 import { useI18n } from '@/i18n'
 import { readUsageWindowPreference, writeUsageWindowPreference } from '@/utils/usageWindowPreference'
 import type { UsageWindow } from '@/utils/usageWindowPreference'
@@ -170,8 +171,8 @@ import type {
   UserUsageGroupQuotaState,
   UserUsageKiroSnapshot,
 } from '@/types'
-import UsageStatsCards from '@/components/user/usage/UsageStatsCards.vue'
 
+const UsageStatsCards = defineAsyncComponent(() => import('@/components/user/usage/UsageStatsCards.vue'))
 const UsageTrendChart = defineAsyncComponent(() => import('@/components/user/usage/UsageTrendChart.vue'))
 const UsageModelChart = defineAsyncComponent(() => import('@/components/user/usage/UsageModelChart.vue'))
 const UsageGroupQuotaSection = defineAsyncComponent(() => import('@/components/user/usage/UsageGroupQuotaSection.vue'))
@@ -202,6 +203,7 @@ const personalQuotas = ref<UserUsageGroupQuotaState | null>(props.initialSnapsho
 const personalPoolUsage = ref<UserUsageGroupPoolUsageState | null>(null)
 const kiroUsage = ref<UserUsageKiroSnapshot | null>(null)
 const kiroLoading = ref(false)
+const memberCredits = ref<number | null>(null)
 const memberRouteSubject = ref<TeamUsageSubject | null>(null)
 const selectedSubjectSubscriptions = ref<SubjectSubscriptionGroup[]>([])
 const usageLoading = ref(!props.initialSnapshot)
@@ -220,6 +222,10 @@ const unitOptions = computed(() => [
   { label: t('usageDashboard.unitCredits'), value: 'credits' },
 ])
 const activeLoading = computed(() => usageUnit.value === 'credits' ? kiroLoading.value : usageLoading.value)
+const creditsForCard = computed(() => {
+  if (props.memberRoute) return memberCredits.value
+  return kiroUsage.value?.available === true ? kiroUsage.value.credits : null
+})
 watch(usageUnit, (value) => {
   try {
     localStorage.setItem(USAGE_UNIT_KEY, value)
@@ -343,6 +349,7 @@ async function loadMemberDashboard(generation: number, requestedRange: UsageWind
   selectedSubjectSubscriptions.value = []
   kiroUsage.value = null
   kiroLoading.value = false
+  memberCredits.value = null
   try {
     const routeUserID = routeSubjectUserID()
     if (routeUserID == null) throw new Error('invalid member route')
@@ -352,6 +359,10 @@ async function loadMemberDashboard(generation: number, requestedRange: UsageWind
     memberRouteSubject.value = (response.data.data as any)?.subject ?? null
     selectedSubjectSubscriptions.value = (response.data.data as any)?.subject_subscription_groups ?? []
     snapshotRange.value = requestedRange
+    const creditsResponse = await getTeamUsageSubjectCredits(routeUserID, buildParams(requestedRange)).catch(() => null)
+    if (generation !== requestGeneration) return
+    const creditsUser = creditsResponse?.data?.data?.users?.[0]
+    memberCredits.value = creditsUser?.key_found ? creditsUser.credits : null
   } catch (error: any) {
     if (generation !== requestGeneration) return
     memberRouteSubject.value = null

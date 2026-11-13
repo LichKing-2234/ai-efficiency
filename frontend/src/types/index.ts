@@ -58,6 +58,45 @@ export interface UserUsageKiroDay {
   credits: number
 }
 
+export interface TeamUserCredits {
+  user_id: number
+  relay_user_id: number
+  key_found: boolean
+  credits: number
+  credits_saved: number
+  requests: number
+  input_tokens: number
+  output_tokens: number
+  by_model: UserUsageKiroModel[]
+  by_day: UserUsageKiroDay[]
+  partial: boolean
+}
+
+export interface TeamDepartmentCredits {
+  department_external_id: string
+  credits: number
+  requests: number
+}
+
+export interface TeamCredits {
+  available: boolean
+  configured: boolean
+  status: 'ok' | 'no_source' | 'unlinked' | 'no_key' | 'error'
+  message?: string
+  as_of: string
+  credits: number
+  credits_saved: number
+  requests: number
+  input_tokens: number
+  output_tokens: number
+  key_count: number
+  by_model: UserUsageKiroModel[]
+  by_day: UserUsageKiroDay[]
+  users: TeamUserCredits[]
+  departments: TeamDepartmentCredits[]
+  partial: boolean
+}
+
 export interface UserUsageKiroSnapshot {
   available: boolean
   configured: boolean

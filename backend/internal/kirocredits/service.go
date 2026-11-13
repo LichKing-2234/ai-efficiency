@@ -38,6 +38,11 @@ type cachedKeys struct {
 	expiresAt time.Time
 }
 
+type cachedTeam struct {
+	value     TeamCredits
+	expiresAt time.Time
+}
+
 // Service resolves the kiro2cc service entry, maps an AI Efficiency user to the
 // gateway-provisioned kiro2cc API key and aggregates that key's credits.
 type Service struct {
@@ -51,6 +56,7 @@ type Service struct {
 	mu        sync.Mutex
 	snapshots map[string]cachedSnapshot
 	keys      map[string]cachedKeys
+	teams     map[string]cachedTeam
 }
 
 // NewService builds a credits service. A nil logger is replaced with a no-op
@@ -81,6 +87,7 @@ func NewService(client *ent.Client, encryptionKey string, options Options) *Serv
 		now:           now,
 		snapshots:     map[string]cachedSnapshot{},
 		keys:          map[string]cachedKeys{},
+		teams:         map[string]cachedTeam{},
 	}
 }
 
@@ -190,35 +197,13 @@ func (s *Service) collect(ctx context.Context, row *ent.RelayProvider, relayUser
 	snapshot.LifetimeCredits = summary.TotalCredits
 	snapshot.LifetimeRequests = summary.TotalRequests
 
-	recordsToAggregate := make([]usageRecord, 0, 128)
-	page := 1
-	for page <= maxRecordPages {
-		records, err := client.usageRecords(ctx, key.ID, page, recordPageSize)
-		if err != nil {
-			s.logger.Warn("kiro credits: read key records", zap.Int("provider_id", row.ID), zap.Error(err))
-			snapshot.Status = StatusError
-			snapshot.Message = "Kiro 用量暂时不可用"
-			return snapshot
-		}
-		reachedOlder := false
-		for _, record := range records.Records {
-			if record.CreatedAt.Before(window.start) {
-				reachedOlder = true
-				continue
-			}
-			if record.CreatedAt.Before(window.endExclusive) {
-				recordsToAggregate = append(recordsToAggregate, record)
-			}
-		}
-		if reachedOlder || page >= records.TotalPages || len(records.Records) == 0 {
-			break
-		}
-		if page == maxRecordPages {
-			snapshot.Partial = true
-		}
-		page++
+	aggregated, rangePartial, err := s.collectRange(ctx, client, key.ID, window)
+	if err != nil {
+		s.logger.Warn("kiro credits: read key records", zap.Int("provider_id", row.ID), zap.Error(err))
+		snapshot.Status = StatusError
+		snapshot.Message = "Kiro 用量暂时不可用"
+		return snapshot
 	}
-	aggregated := aggregateRecords(window, recordsToAggregate)
 	snapshot.Credits = aggregated.credits
 	snapshot.CreditsSaved = aggregated.creditsSaved
 	snapshot.Requests = aggregated.requests
@@ -226,7 +211,7 @@ func (s *Service) collect(ctx context.Context, row *ent.RelayProvider, relayUser
 	snapshot.OutputTokens = aggregated.outputTokens
 	snapshot.ByModel = aggregated.byModel
 	snapshot.ByDay = aggregated.byDay
-	if aggregated.missingCredits {
+	if rangePartial || aggregated.missingCredits {
 		// Records without a real metering value can only be a lower bound.
 		snapshot.Partial = true
 	}
@@ -234,6 +219,39 @@ func (s *Service) collect(ctx context.Context, row *ent.RelayProvider, relayUser
 	snapshot.Available = true
 	snapshot.Status = StatusOK
 	return snapshot
+}
+
+// collectRange reads one key's records inside the window and aggregates them.
+// It returns partial=true when the record page cap is hit before the window's
+// oldest record, so callers can render the totals as a lower bound.
+func (s *Service) collectRange(ctx context.Context, client *adminClient, keyID int64, window window) (aggregateResult, bool, error) {
+	records := make([]usageRecord, 0, 128)
+	partial := false
+	page := 1
+	for page <= maxRecordPages {
+		pageData, err := client.usageRecords(ctx, keyID, page, recordPageSize)
+		if err != nil {
+			return aggregateResult{}, false, err
+		}
+		reachedOlder := false
+		for _, record := range pageData.Records {
+			if record.CreatedAt.Before(window.start) {
+				reachedOlder = true
+				continue
+			}
+			if record.CreatedAt.Before(window.endExclusive) {
+				records = append(records, record)
+			}
+		}
+		if reachedOlder || page >= pageData.TotalPages || len(pageData.Records) == 0 {
+			break
+		}
+		if page == maxRecordPages {
+			partial = true
+		}
+		page++
+	}
+	return aggregateRecords(window, records), partial, nil
 }
 
 type aggregateResult struct {
@@ -426,4 +444,226 @@ func (s *Service) ResetCache() {
 	defer s.mu.Unlock()
 	s.snapshots = map[string]cachedSnapshot{}
 	s.keys = map[string]cachedKeys{}
+	s.teams = map[string]cachedTeam{}
+}
+
+// Batch aggregates credits for a set of users over one dashboard range. It is
+// read-only and fails soft: any upstream failure yields an unavailable
+// TeamCredits instead of an error.
+func (s *Service) Batch(ctx context.Context, users []UserRef, params Params) TeamCredits {
+	now := s.now().UTC()
+	result := TeamCredits{
+		AsOf:    now,
+		Status:  StatusError,
+		ByModel: []ModelCredits{},
+		ByDay:   []DayCredits{},
+		Users:   []UserCredits{},
+	}
+	if s == nil || s.client == nil {
+		result.Message = "Kiro 用量服务未配置"
+		return result
+	}
+	refs := normalizeRefs(users)
+	if len(refs) == 0 {
+		result.Status = StatusOK
+		result.Available = true
+		return result
+	}
+
+	row, err := s.source(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			result.Status = StatusNoSource
+			result.Message = "尚未配置 kiro2cc 服务入口"
+			return result
+		}
+		s.logger.Warn("kiro credits: resolve service entry for batch", zap.Error(err))
+		result.Message = "Kiro 用量暂时不可用"
+		return result
+	}
+	result.Configured = true
+
+	window, err := parseWindow(params, now)
+	if err != nil {
+		s.logger.Warn("kiro credits: invalid team range", zap.Error(err))
+		result.Message = "用量时间范围无效"
+		return result
+	}
+
+	cacheKey := teamCacheKey(row, refs, window)
+	if cached, ok := s.loadTeam(cacheKey, now); ok {
+		return cached
+	}
+
+	token, err := pkg.Decrypt(row.AdminAPIKey, s.encryptionKey)
+	if err != nil || strings.TrimSpace(token) == "" {
+		s.logger.Warn("kiro credits: decrypt admin token for batch", zap.Int("provider_id", row.ID), zap.Error(err))
+		result.Message = "kiro2cc 凭据无法解密"
+		return result
+	}
+	client := newAdminClient(row.BaseURL, token, s.httpTimeout)
+	keys, err := s.listKeys(ctx, client, row)
+	if err != nil {
+		s.logger.Warn("kiro credits: list kiro2cc keys for batch", zap.Int("provider_id", row.ID), zap.Error(err))
+		result.Message = "Kiro 用量暂时不可用"
+		return result
+	}
+
+	perUser := make([]UserCredits, len(refs))
+	errs := make([]error, len(refs))
+	sem := make(chan struct{}, 4)
+	var wg sync.WaitGroup
+	for index := range refs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			ref := refs[i]
+			entry := UserCredits{
+				UserID:      ref.UserID,
+				RelayUserID: ref.RelayUserID,
+				ByModel:     []ModelCredits{},
+				ByDay:       []DayCredits{},
+			}
+			key, found, _ := matchKey(keys, ref.RelayUserID)
+			if !found {
+				perUser[i] = entry
+				return
+			}
+			entry.KeyFound = true
+			aggregated, partial, err := s.collectRange(ctx, client, key.ID, window)
+			if err != nil {
+				errs[i] = err
+				perUser[i] = entry
+				return
+			}
+			entry.Credits = aggregated.credits
+			entry.CreditsSaved = aggregated.creditsSaved
+			entry.Requests = aggregated.requests
+			entry.InputTokens = aggregated.inputTokens
+			entry.OutputTokens = aggregated.outputTokens
+			entry.ByModel = aggregated.byModel
+			entry.ByDay = aggregated.byDay
+			entry.Partial = partial || aggregated.missingCredits
+			perUser[i] = entry
+		}(index)
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			s.logger.Warn("kiro credits: batch user range failed", zap.Error(err))
+			result.Message = "Kiro 用量暂时不可用"
+			return result
+		}
+	}
+
+	modelBuckets := map[string]*ModelCredits{}
+	dayBuckets := map[string]*DayCredits{}
+	for _, entry := range perUser {
+		if entry.KeyFound {
+			result.KeyCount++
+		}
+		result.Credits += entry.Credits
+		result.CreditsSaved += entry.CreditsSaved
+		result.Requests += entry.Requests
+		result.InputTokens += entry.InputTokens
+		result.OutputTokens += entry.OutputTokens
+		result.Partial = result.Partial || entry.Partial
+		for _, model := range entry.ByModel {
+			bucket := modelBuckets[model.Model]
+			if bucket == nil {
+				bucket = &ModelCredits{Model: model.Model}
+				modelBuckets[model.Model] = bucket
+			}
+			bucket.Requests += model.Requests
+			bucket.Credits += model.Credits
+			bucket.InputTokens += model.InputTokens
+			bucket.OutputTokens += model.OutputTokens
+		}
+		for _, day := range entry.ByDay {
+			bucket := dayBuckets[day.Date]
+			if bucket == nil {
+				bucket = &DayCredits{Date: day.Date}
+				dayBuckets[day.Date] = bucket
+			}
+			bucket.Requests += day.Requests
+			bucket.Credits += day.Credits
+		}
+	}
+	for _, bucket := range modelBuckets {
+		result.ByModel = append(result.ByModel, *bucket)
+	}
+	sort.Slice(result.ByModel, func(i, j int) bool {
+		if result.ByModel[i].Credits != result.ByModel[j].Credits {
+			return result.ByModel[i].Credits > result.ByModel[j].Credits
+		}
+		return result.ByModel[i].Model < result.ByModel[j].Model
+	})
+	for _, bucket := range dayBuckets {
+		result.ByDay = append(result.ByDay, *bucket)
+	}
+	sort.Slice(result.ByDay, func(i, j int) bool { return result.ByDay[i].Date < result.ByDay[j].Date })
+	result.Users = perUser
+
+	result.Available = true
+	result.Status = StatusOK
+	s.storeTeam(cacheKey, result, now)
+	return result
+}
+
+func normalizeRefs(users []UserRef) []UserRef {
+	seen := map[int64]struct{}{}
+	refs := make([]UserRef, 0, len(users))
+	for _, user := range users {
+		if user.RelayUserID <= 0 {
+			continue
+		}
+		if _, ok := seen[user.RelayUserID]; ok {
+			continue
+		}
+		seen[user.RelayUserID] = struct{}{}
+		refs = append(refs, user)
+	}
+	sort.Slice(refs, func(i, j int) bool { return refs[i].RelayUserID < refs[j].RelayUserID })
+	return refs
+}
+
+func teamCacheKey(row *ent.RelayProvider, refs []UserRef, window window) string {
+	ids := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		ids = append(ids, strconv.FormatInt(ref.RelayUserID, 10))
+	}
+	return fmt.Sprintf("%d:%d:team:%s:%s:%s:%s",
+		row.ID,
+		row.ConfigurationVersion,
+		strings.Join(ids, ","),
+		window.start.Format(time.RFC3339),
+		window.endExclusive.Format(time.RFC3339),
+		window.location.String(),
+	)
+}
+
+func (s *Service) loadTeam(key string, now time.Time) (TeamCredits, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cached, ok := s.teams[key]
+	if !ok || !now.Before(cached.expiresAt) {
+		if ok {
+			delete(s.teams, key)
+		}
+		return TeamCredits{}, false
+	}
+	return cached.value, true
+}
+
+func (s *Service) storeTeam(key string, value TeamCredits, now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.teams) > 1024 {
+		for existing := range s.teams {
+			delete(s.teams, existing)
+		}
+	}
+	s.teams[key] = cachedTeam{value: value, expiresAt: now.Add(s.cacheTTL)}
 }
