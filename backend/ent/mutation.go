@@ -40913,6 +40913,7 @@ type RelayProviderMutation struct {
 	display_name             *string
 	base_url                 *string
 	relay_type               *string
+	service_type             *string
 	admin_api_key            *string
 	default_model            *string
 	is_primary               *bool
@@ -41167,6 +41168,42 @@ func (m *RelayProviderMutation) OldRelayType(ctx context.Context) (v string, err
 // ResetRelayType resets all changes to the "relay_type" field.
 func (m *RelayProviderMutation) ResetRelayType() {
 	m.relay_type = nil
+}
+
+// SetServiceType sets the "service_type" field.
+func (m *RelayProviderMutation) SetServiceType(s string) {
+	m.service_type = &s
+}
+
+// ServiceType returns the value of the "service_type" field in the mutation.
+func (m *RelayProviderMutation) ServiceType() (r string, exists bool) {
+	v := m.service_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldServiceType returns the old "service_type" field's value of the RelayProvider entity.
+// If the RelayProvider object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayProviderMutation) OldServiceType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldServiceType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldServiceType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldServiceType: %w", err)
+	}
+	return oldValue.ServiceType, nil
+}
+
+// ResetServiceType resets all changes to the "service_type" field.
+func (m *RelayProviderMutation) ResetServiceType() {
+	m.service_type = nil
 }
 
 // SetAdminAPIKey sets the "admin_api_key" field.
@@ -41475,7 +41512,7 @@ func (m *RelayProviderMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RelayProviderMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 12)
 	if m.name != nil {
 		fields = append(fields, relayprovider.FieldName)
 	}
@@ -41487,6 +41524,9 @@ func (m *RelayProviderMutation) Fields() []string {
 	}
 	if m.relay_type != nil {
 		fields = append(fields, relayprovider.FieldRelayType)
+	}
+	if m.service_type != nil {
+		fields = append(fields, relayprovider.FieldServiceType)
 	}
 	if m.admin_api_key != nil {
 		fields = append(fields, relayprovider.FieldAdminAPIKey)
@@ -41525,6 +41565,8 @@ func (m *RelayProviderMutation) Field(name string) (ent.Value, bool) {
 		return m.BaseURL()
 	case relayprovider.FieldRelayType:
 		return m.RelayType()
+	case relayprovider.FieldServiceType:
+		return m.ServiceType()
 	case relayprovider.FieldAdminAPIKey:
 		return m.AdminAPIKey()
 	case relayprovider.FieldDefaultModel:
@@ -41556,6 +41598,8 @@ func (m *RelayProviderMutation) OldField(ctx context.Context, name string) (ent.
 		return m.OldBaseURL(ctx)
 	case relayprovider.FieldRelayType:
 		return m.OldRelayType(ctx)
+	case relayprovider.FieldServiceType:
+		return m.OldServiceType(ctx)
 	case relayprovider.FieldAdminAPIKey:
 		return m.OldAdminAPIKey(ctx)
 	case relayprovider.FieldDefaultModel:
@@ -41606,6 +41650,13 @@ func (m *RelayProviderMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRelayType(v)
+		return nil
+	case relayprovider.FieldServiceType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetServiceType(v)
 		return nil
 	case relayprovider.FieldAdminAPIKey:
 		v, ok := value.(string)
@@ -41731,6 +41782,9 @@ func (m *RelayProviderMutation) ResetField(name string) error {
 		return nil
 	case relayprovider.FieldRelayType:
 		m.ResetRelayType()
+		return nil
+	case relayprovider.FieldServiceType:
+		m.ResetServiceType()
 		return nil
 	case relayprovider.FieldAdminAPIKey:
 		m.ResetAdminAPIKey()

@@ -205,6 +205,26 @@ replaces the full upstream list, and reads it back. A no-op writes no Relay
 mutation and records `changed=false`. A mismatched readback is partial failure,
 not success.
 
+## Kiro Credits
+
+Kiro CLI traffic does not pass through the Relay: the native gateway forwards it
+to kiro2cc, which records credits per API key. A user's credits are read from the
+enabled `kiro2cc` service entry and matched by the gateway-provisioned key name
+`sub2api-<relay user id>-<identity>` (the legacy `sub2api-user-<id>` spelling is
+accepted). Keys owned by other clients are never attributed.
+
+- Credits are real Kiro upstream metering; kiro2cc tokens are cl100k estimates.
+  Credits are a separate unit: never added to Relay token totals and never
+  converted to USD.
+- The personal usage dashboard shows credits as its own section for the selected
+  range. Range totals come from per-key usage records, so the section may be
+  marked partial when record retention truncates the window.
+- Day buckets use the dashboard timezone.
+- A missing source, unlinked user, missing key, or unreachable kiro2cc renders an
+  explanatory empty state; the rest of the dashboard is unaffected.
+- The adapter issues read-only GET requests and never creates, renames, resets,
+  or deletes kiro2cc keys.
+
 ## Failure Boundaries
 
 - Usage authorization, current Directory scope, and current group membership

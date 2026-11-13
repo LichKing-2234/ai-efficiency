@@ -13,6 +13,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/attributionclaim"
 	"github.com/ai-efficiency/backend/internal/attributionledger"
 	"github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/kirocredits"
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/opsmonitoring"
@@ -277,6 +278,8 @@ func setupRouter(
 	if err != nil {
 		return nil, fmt.Errorf("initialize team usage service: %w", err)
 	}
+	kiroCreditsService := kirocredits.NewService(entClient, encryptionKey, kirocredits.Options{Logger: options.RequestLogger})
+
 	var personalUsageService *personalusage.Service
 	if providerHandler != nil {
 		personalUsageService = personalusage.NewService(entClient, providerHandler, encryptionKey, options.PersonalUsageCache)
@@ -539,6 +542,8 @@ func setupRouter(
 			userGroup.GET("/usage/dashboard", userUsageHandler.Dashboard)
 			userGroup.GET("/usage/group-quotas", userUsageHandler.GroupQuotas)
 			userGroup.GET("/usage/group-pool-usage", userUsageHandler.GroupPoolUsage)
+			kiroUsageHandler := NewKiroUsageHandler(kiroCreditsService)
+			userGroup.GET("/usage/kiro", kiroUsageHandler.Get)
 		}
 		userGroup.POST("/providers/:id/groups/:group_id/credential", userSetupHandler.CreateGroupCredential)
 		userGroup.POST("/providers/:id/groups/:group_id/credential/regenerate", userSetupHandler.RegenerateGroupCredential)

@@ -52,6 +52,20 @@ func (rpc *RelayProviderCreate) SetNillableRelayType(s *string) *RelayProviderCr
 	return rpc
 }
 
+// SetServiceType sets the "service_type" field.
+func (rpc *RelayProviderCreate) SetServiceType(s string) *RelayProviderCreate {
+	rpc.mutation.SetServiceType(s)
+	return rpc
+}
+
+// SetNillableServiceType sets the "service_type" field if the given value is not nil.
+func (rpc *RelayProviderCreate) SetNillableServiceType(s *string) *RelayProviderCreate {
+	if s != nil {
+		rpc.SetServiceType(*s)
+	}
+	return rpc
+}
+
 // SetAdminAPIKey sets the "admin_api_key" field.
 func (rpc *RelayProviderCreate) SetAdminAPIKey(s string) *RelayProviderCreate {
 	rpc.mutation.SetAdminAPIKey(s)
@@ -181,6 +195,10 @@ func (rpc *RelayProviderCreate) defaults() {
 		v := relayprovider.DefaultRelayType
 		rpc.mutation.SetRelayType(v)
 	}
+	if _, ok := rpc.mutation.ServiceType(); !ok {
+		v := relayprovider.DefaultServiceType
+		rpc.mutation.SetServiceType(v)
+	}
 	if _, ok := rpc.mutation.DefaultModel(); !ok {
 		v := relayprovider.DefaultDefaultModel
 		rpc.mutation.SetDefaultModel(v)
@@ -235,6 +253,14 @@ func (rpc *RelayProviderCreate) check() error {
 	}
 	if _, ok := rpc.mutation.RelayType(); !ok {
 		return &ValidationError{Name: "relay_type", err: errors.New(`ent: missing required field "RelayProvider.relay_type"`)}
+	}
+	if _, ok := rpc.mutation.ServiceType(); !ok {
+		return &ValidationError{Name: "service_type", err: errors.New(`ent: missing required field "RelayProvider.service_type"`)}
+	}
+	if v, ok := rpc.mutation.ServiceType(); ok {
+		if err := relayprovider.ServiceTypeValidator(v); err != nil {
+			return &ValidationError{Name: "service_type", err: fmt.Errorf(`ent: validator failed for field "RelayProvider.service_type": %w`, err)}
+		}
 	}
 	if _, ok := rpc.mutation.AdminAPIKey(); !ok {
 		return &ValidationError{Name: "admin_api_key", err: errors.New(`ent: missing required field "RelayProvider.admin_api_key"`)}
@@ -303,6 +329,10 @@ func (rpc *RelayProviderCreate) createSpec() (*RelayProvider, *sqlgraph.CreateSp
 	if value, ok := rpc.mutation.RelayType(); ok {
 		_spec.SetField(relayprovider.FieldRelayType, field.TypeString, value)
 		_node.RelayType = value
+	}
+	if value, ok := rpc.mutation.ServiceType(); ok {
+		_spec.SetField(relayprovider.FieldServiceType, field.TypeString, value)
+		_node.ServiceType = value
 	}
 	if value, ok := rpc.mutation.AdminAPIKey(); ok {
 		_spec.SetField(relayprovider.FieldAdminAPIKey, field.TypeString, value)

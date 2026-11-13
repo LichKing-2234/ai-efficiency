@@ -123,7 +123,7 @@ func (s *Service) ListProviders(ctx context.Context, req ListProvidersRequest) (
 	}
 
 	providers, err := s.entClient.RelayProvider.Query().
-		Where(relayprovider.EnabledEQ(true)).
+		Where(relayprovider.EnabledEQ(true), relayprovider.ServiceTypeEQ("sub2api")).
 		Order(ent.Desc(relayprovider.FieldIsPrimary), ent.Asc(relayprovider.FieldID)).
 		All(ctx)
 	if err != nil {
