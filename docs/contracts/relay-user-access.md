@@ -16,6 +16,18 @@ selection and administrator multi-provider management. Each row carries its
 display identity, base URL, encrypted admin key, default model, enabled/primary
 flags, and a monotonically increasing configuration version.
 
+Each row also carries a `service_type` (default `sub2api`):
+
+| service_type | Role |
+| --- | --- |
+| `sub2api` | Full Relay provider: SSO, API key delivery, client configuration, and usage origin reads. |
+| `kiro2cc` | Usage-only source for Kiro credits. It is never primary and never participates in SSO, API key delivery, client configuration, group/model listing, or Connection Tests. |
+
+Only `sub2api` rows resolve as Relay runtime delegates; the runtime rejects any
+other service type instead of sending Relay calls to it. The `kiro2cc` entry is
+read through its own read-only admin API adapter and surfaces only in the usage
+credits presentation.
+
 Runtime configuration may seed the primary provider at startup. The legacy LLM
 settings endpoints remain an admin-only compatibility surface for the
 bootstrapped primary runtime: Relay URL is read-only there, while admin key and

@@ -25,6 +25,8 @@ type RelayProvider struct {
 	BaseURL string `json:"base_url,omitempty"`
 	// RelayType holds the value of the "relay_type" field.
 	RelayType string `json:"relay_type,omitempty"`
+	// ServiceType holds the value of the "service_type" field.
+	ServiceType string `json:"service_type,omitempty"`
 	// AdminAPIKey holds the value of the "admin_api_key" field.
 	AdminAPIKey string `json:"-"`
 	// DefaultModel holds the value of the "default_model" field.
@@ -51,7 +53,7 @@ func (*RelayProvider) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case relayprovider.FieldID, relayprovider.FieldConfigurationVersion:
 			values[i] = new(sql.NullInt64)
-		case relayprovider.FieldName, relayprovider.FieldDisplayName, relayprovider.FieldBaseURL, relayprovider.FieldRelayType, relayprovider.FieldAdminAPIKey, relayprovider.FieldDefaultModel:
+		case relayprovider.FieldName, relayprovider.FieldDisplayName, relayprovider.FieldBaseURL, relayprovider.FieldRelayType, relayprovider.FieldServiceType, relayprovider.FieldAdminAPIKey, relayprovider.FieldDefaultModel:
 			values[i] = new(sql.NullString)
 		case relayprovider.FieldCreatedAt, relayprovider.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -99,6 +101,12 @@ func (rp *RelayProvider) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field relay_type", values[i])
 			} else if value.Valid {
 				rp.RelayType = value.String
+			}
+		case relayprovider.FieldServiceType:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field service_type", values[i])
+			} else if value.Valid {
+				rp.ServiceType = value.String
 			}
 		case relayprovider.FieldAdminAPIKey:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -189,6 +197,9 @@ func (rp *RelayProvider) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("relay_type=")
 	builder.WriteString(rp.RelayType)
+	builder.WriteString(", ")
+	builder.WriteString("service_type=")
+	builder.WriteString(rp.ServiceType)
 	builder.WriteString(", ")
 	builder.WriteString("admin_api_key=<sensitive>")
 	builder.WriteString(", ")

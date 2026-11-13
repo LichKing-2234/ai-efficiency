@@ -38,7 +38,7 @@ func (r *activityDenominatorResolver) ResolveDenominator(ctx context.Context, re
 	var providerVersion int64
 	providerSet := ""
 	if r.client != nil {
-		providers, err := r.client.RelayProvider.Query().Where(relayprovider.EnabledEQ(true)).Order(ent.Asc(relayprovider.FieldID)).All(ctx)
+		providers, err := r.client.RelayProvider.Query().Where(relayprovider.EnabledEQ(true), relayprovider.ServiceTypeEQ("sub2api")).Order(ent.Asc(relayprovider.FieldID)).All(ctx)
 		if err != nil {
 			return activity.V2Denominator{}, fmt.Errorf("resolve Usage provider set: %w", err)
 		}

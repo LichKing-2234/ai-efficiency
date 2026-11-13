@@ -13,6 +13,7 @@ vi.mock('@/api/userUsage', () => ({
   getUserUsageDashboard: vi.fn(),
   getUserUsageGroupQuotas: vi.fn(),
   getUserUsageGroupPoolUsage: vi.fn(),
+  getUserKiroUsage: vi.fn(),
 }))
 
 vi.mock('@/api/teamUsage', () => ({

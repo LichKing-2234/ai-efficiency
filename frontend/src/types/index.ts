@@ -37,10 +37,45 @@ export interface RelayProvider {
   display_name: string
   base_url: string
   relay_type: string
+  service_type?: 'sub2api' | 'kiro2cc'
   admin_api_key: string
   default_model: string
   is_primary: boolean
   enabled: boolean
+}
+
+export interface UserUsageKiroModel {
+  model: string
+  requests: number
+  credits: number
+  input_tokens: number
+  output_tokens: number
+}
+
+export interface UserUsageKiroDay {
+  date: string
+  requests: number
+  credits: number
+}
+
+export interface UserUsageKiroSnapshot {
+  available: boolean
+  configured: boolean
+  key_found: boolean
+  status: 'ok' | 'no_source' | 'unlinked' | 'no_key' | 'error'
+  message?: string
+  as_of: string
+  credits: number
+  credits_saved: number
+  requests: number
+  input_tokens: number
+  output_tokens: number
+  lifetime_credits: number
+  lifetime_requests: number
+  by_model: UserUsageKiroModel[]
+  by_day: UserUsageKiroDay[]
+  partial: boolean
+  ambiguous_key?: boolean
 }
 
 export interface Credential {

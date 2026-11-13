@@ -1,6 +1,8 @@
 package schema
 
 import (
+	"fmt"
+
 	"entgo.io/ent"
 	"entgo.io/ent/schema/field"
 )
@@ -21,6 +23,16 @@ func (RelayProvider) Fields() []ent.Field {
 			NotEmpty(),
 		field.String("relay_type").
 			Default("sub2api"),
+		field.String("service_type").
+			Default("sub2api").
+			Validate(func(value string) error {
+				switch value {
+				case "sub2api", "kiro2cc":
+					return nil
+				default:
+					return fmt.Errorf("unsupported relay provider service type %q", value)
+				}
+			}),
 		field.String("admin_api_key").
 			Sensitive(),
 		field.String("default_model").
