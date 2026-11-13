@@ -160,12 +160,12 @@ import type {
   UserUsageKiroSnapshot,
 } from '@/types'
 import UsageStatsCards from '@/components/user/usage/UsageStatsCards.vue'
-import KiroCreditsPanel from '@/components/user/usage/KiroCreditsPanel.vue'
 
 const UsageTrendChart = defineAsyncComponent(() => import('@/components/user/usage/UsageTrendChart.vue'))
 const UsageModelChart = defineAsyncComponent(() => import('@/components/user/usage/UsageModelChart.vue'))
 const UsageGroupQuotaSection = defineAsyncComponent(() => import('@/components/user/usage/UsageGroupQuotaSection.vue'))
 const SelectedSubjectSubscriptionRows = defineAsyncComponent(() => import('@/components/user/usage/SelectedSubjectSubscriptionRows.vue'))
+const KiroCreditsPanel = defineAsyncComponent(() => import('@/components/user/usage/KiroCreditsPanel.vue'))
 const loadQuotaResetRequestModal = () => import('@/components/quota-reset/QuotaResetRequestModal.vue')
 const QuotaResetRequestModal = defineAsyncComponent(loadQuotaResetRequestModal)
 
