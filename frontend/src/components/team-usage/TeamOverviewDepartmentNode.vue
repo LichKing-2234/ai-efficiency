@@ -19,7 +19,7 @@ const props = defineProps<{
   memberKey: (member: TeamOverviewMember) => string
   memberTestId: (member: TeamOverviewMember) => string
   formatCost: (value: number) => string
-  formatTokens: (value: number | null | undefined) => string
+  formatMemberUsage: (member: TeamOverviewMember) => string
   formatDepartmentTokenSummary: (node: TeamUsageOrganizationDepartment) => string
   departmentMemberCountLabel: (count: number) => string
   connectedMemberCountLabel: (count: number) => string
@@ -128,7 +128,7 @@ function toggleNode() {
         </div>
         <div class="flex shrink-0 flex-wrap items-center gap-2 text-xs text-gray-600">
           <span class="tabular-nums text-gray-900">{{ props.formatCost(member.range_actual_cost) }}</span>
-          <span class="tabular-nums">{{ props.formatTokens(member.total_tokens) }} {{ t('teamUsage.tokens') }}</span>
+          <span class="tabular-nums">{{ props.formatMemberUsage(member) }}</span>
           <ElButton
             :disabled="!props.canOpen(member)"
             @click.stop="props.openMember(member)"
@@ -154,7 +154,7 @@ function toggleNode() {
         :member-key="props.memberKey"
         :member-test-id="props.memberTestId"
         :format-cost="props.formatCost"
-        :format-tokens="props.formatTokens"
+        :format-member-usage="props.formatMemberUsage"
         :format-department-token-summary="props.formatDepartmentTokenSummary"
         :department-member-count-label="props.departmentMemberCountLabel"
         :connected-member-count-label="props.connectedMemberCountLabel"

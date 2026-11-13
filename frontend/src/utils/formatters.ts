@@ -14,3 +14,15 @@ export function formatTokenCount(value: number | null | undefined): string {
 function trimFixed(value: number): string {
   return value.toFixed(2).replace(/\.?0+$/, '')
 }
+
+export function formatCredits(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '--'
+  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+// formatUsagePair renders the Token/Credits pair used outside tables, e.g.
+// "3.49B/0.06". The two units are always shown side by side and never summed.
+export function formatUsagePair(tokens: number | null | undefined, credits: number | null | undefined): string {
+  const tokenText = formatTokenCount(tokens)
+  return `${tokenText === '-' ? '--' : tokenText}/${formatCredits(credits)}`
+}

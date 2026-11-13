@@ -13,6 +13,7 @@ vi.mock('@/api/teamUsage', () => ({
   getTeamUsageOrganization: vi.fn(),
   getTeamUsageSummary: vi.fn(),
   getTeamUsageTrend: vi.fn(),
+  getTeamUsageCredits: vi.fn(() => Promise.resolve({ data: { data: null } })),
 }))
 
 vi.mock('@/components/charts/LineChartCanvas.vue', () => ({
@@ -1520,7 +1521,7 @@ describe('TeamOverviewView', () => {
     expect(ranking.text()).toContain('805.03M')
     await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
     const alpha = wrapper.get('[data-testid="team-overview-department-department-alpha"]')
-    expect(alpha.text()).toContain('12.29B tokens')
+    expect(alpha.text()).toContain('12.29B/--')
     await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')
     await flushPromises()
     const aliceRow = wrapper.get('[data-testid="team-overview-member-user-101"]')
@@ -1556,7 +1557,7 @@ describe('TeamOverviewView', () => {
     expect(alpha.text()).toContain('3 members')
     expect(alpha.text()).toContain('2 connected')
     expect(alpha.text()).toContain('28.00 USD')
-    expect(alpha.text()).toContain('12.9K tokens')
+    expect(alpha.text()).toContain('12.9K/--')
     const alphaToggle = wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]')
     expect(alphaToggle.find('svg').exists()).toBe(true)
     expect(alphaToggle.classes()).toContain('h-7')

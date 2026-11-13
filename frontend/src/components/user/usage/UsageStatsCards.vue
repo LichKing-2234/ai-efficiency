@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import type { UserUsageDashboardStats, UserUsageTrendPoint } from '@/types'
 import { useI18n } from '@/i18n'
-import { formatTokenCount } from '@/utils/formatters'
+import { formatTokenCount, formatUsagePair } from '@/utils/formatters'
 
 const props = withDefaults(defineProps<{
   stats: UserUsageDashboardStats | null
@@ -10,9 +10,11 @@ const props = withDefaults(defineProps<{
   rangeLabel: string
   hideCost?: boolean
   loading?: boolean
+  credits?: number | null
 }>(), {
   hideCost: false,
   loading: false,
+  credits: null,
 })
 
 const { t } = useI18n()
@@ -87,9 +89,9 @@ function formatDuration(ms: number): string {
     </section>
 
     <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-      <p class="text-xs font-medium uppercase text-gray-500">{{ t('usageDashboard.rangeTokens', { range: rangeLabel }) }}</p>
+      <p class="text-xs font-medium uppercase text-gray-500">{{ t('usageDashboard.rangeTokenCredits', { range: rangeLabel }) }}</p>
       <p class="mt-2 text-2xl font-semibold text-gray-900">
-        {{ formatTokenCount(rangeTotals.totalTokens) }}
+        {{ formatUsagePair(rangeTotals.totalTokens, props.credits) }}
       </p>
       <p class="mt-1 text-xs text-gray-500">
         {{ t('usageDashboard.inputShort') }} {{ formatTokenCount(rangeTotals.inputTokens) }} · {{ t('usageDashboard.outputShort') }} {{ formatTokenCount(rangeTotals.outputTokens) }} ·

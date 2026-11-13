@@ -59,11 +59,11 @@ type DayCredits struct {
 // kiro2cc key was found and read successfully; every other state renders as
 // "no data" without failing the dashboard request.
 type Snapshot struct {
-	Available  bool   `json:"available"`
-	Configured bool   `json:"configured"`
-	KeyFound   bool   `json:"key_found"`
-	Status     string `json:"status"`
-	Message    string `json:"message,omitempty"`
+	Available  bool      `json:"available"`
+	Configured bool      `json:"configured"`
+	KeyFound   bool      `json:"key_found"`
+	Status     string    `json:"status"`
+	Message    string    `json:"message,omitempty"`
 	AsOf       time.Time `json:"as_of"`
 
 	Credits      float64 `json:"credits"`
@@ -85,4 +85,49 @@ type Snapshot struct {
 	// AmbiguousKey means more than one kiro2cc key matched this user; the
 	// highest key ID was used.
 	AmbiguousKey bool `json:"ambiguous_key,omitempty"`
+}
+
+// UserRef pairs an AI Efficiency user with the Relay user ID that owns the
+// gateway-provisioned kiro2cc key.
+type UserRef struct {
+	UserID      int   `json:"user_id"`
+	RelayUserID int64 `json:"relay_user_id"`
+}
+
+// UserCredits is one user's credits inside the requested range.
+type UserCredits struct {
+	UserID       int            `json:"user_id"`
+	RelayUserID  int64          `json:"relay_user_id"`
+	KeyFound     bool           `json:"key_found"`
+	Credits      float64        `json:"credits"`
+	CreditsSaved float64        `json:"credits_saved"`
+	Requests     int64          `json:"requests"`
+	InputTokens  int64          `json:"input_tokens"`
+	OutputTokens int64          `json:"output_tokens"`
+	ByModel      []ModelCredits `json:"by_model"`
+	ByDay        []DayCredits   `json:"by_day"`
+	Partial      bool           `json:"partial"`
+}
+
+// TeamCredits aggregates a set of users for one dashboard range. It is
+// presentation-only, exactly like Snapshot: credits never mix with tokens.
+type TeamCredits struct {
+	Available  bool      `json:"available"`
+	Configured bool      `json:"configured"`
+	Status     string    `json:"status"`
+	Message    string    `json:"message,omitempty"`
+	AsOf       time.Time `json:"as_of"`
+
+	Credits      float64 `json:"credits"`
+	CreditsSaved float64 `json:"credits_saved"`
+	Requests     int64   `json:"requests"`
+	InputTokens  int64   `json:"input_tokens"`
+	OutputTokens int64   `json:"output_tokens"`
+	KeyCount     int     `json:"key_count"`
+
+	ByModel []ModelCredits `json:"by_model"`
+	ByDay   []DayCredits   `json:"by_day"`
+	Users   []UserCredits  `json:"users"`
+
+	Partial bool `json:"partial"`
 }

@@ -70,6 +70,7 @@ vi.mock('@/api/teamUsage', () => ({
     },
   })),
   getTeamUsageSubjectDashboard: vi.fn(),
+  getTeamUsageSubjectCredits: vi.fn(() => Promise.resolve({ data: { data: null } })),
   getTeamUsageAudit: vi.fn(() => Promise.resolve({
     data: { data: { items: [], page: 1, page_size: 20, total: 0 } },
   })),
@@ -232,6 +233,8 @@ describe('DashboardView', () => {
     await router.push('/usage')
     await router.isReady()
     const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+    await vi.dynamicImportSettled()
     await flushPromises()
 
     expect(wrapper.text()).toContain('30 Days Requests')

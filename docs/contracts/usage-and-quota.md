@@ -227,6 +227,25 @@ accepted). Keys owned by other clients are never attributed.
 - The adapter issues read-only GET requests and never creates, renames, resets,
   or deletes kiro2cc keys.
 
+### Presentation: pairs and table units
+
+- Outside tables every token metric renders as a Token/Credits pair, for
+  example `3.49B/0.06`: the label carries both units and the value joins the
+  token count and the credit count with `/`. Missing credits render `--`; the
+  two units are never summed or converted.
+- Identity tables (the team member table) carry a Token/Credits switch. The
+  switch changes the metric column, its header and the active sort; the choice
+  is persisted per browser and shared by the tables on the page.
+- Model tables are not switched: the Relay model set and the kiro2cc model set
+  are different row populations, so they stay separate tables.
+- The team overview reads credits from `GET /user/team-usage/credits` (per
+  member, per department, per day) inside the caller's representative scope;
+  member pages read the same data through
+  `GET /user/team-usage/subjects/:user_id/usage/credits`. Both endpoints are
+  read-only and fail soft: missing wiring, missing keys or an unreachable
+  kiro2cc render `--` without failing the page.
+
+
 ## Failure Boundaries
 
 - Usage authorization, current Directory scope, and current group membership

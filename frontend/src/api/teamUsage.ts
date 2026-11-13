@@ -10,6 +10,7 @@ import type {
   TeamUsageOrganizationParams,
   TeamUsageOrganizationResponse,
   TeamUsageOverviewParams,
+  TeamCredits,
   TeamUsageSummaryResponse,
   TeamUsageTrendResponse,
   TeamUsageScopeResponse,
@@ -28,6 +29,20 @@ export function listTeamUsageSubjects(params?: { q?: string; page?: number; page
 
 export function getTeamUsageSubjectDashboard(userID: number, params: UserUsageDashboardParams) {
   return client.get<ApiResponse<SelectedSubjectUsageSnapshot>>(`/user/team-usage/subjects/${userID}/usage/dashboard`, { params })
+}
+
+export function getTeamUsageCredits(params?: TeamUsageOverviewParams) {
+  return client.get<ApiResponse<TeamCredits>>('/user/team-usage/credits', {
+    params,
+    timeout: 45000,
+  })
+}
+
+export function getTeamUsageSubjectCredits(userID: number, params: UserUsageDashboardParams) {
+  return client.get<ApiResponse<TeamCredits>>(`/user/team-usage/subjects/${userID}/usage/credits`, {
+    params: { start_date: params.start_date, end_date: params.end_date, timezone: params.timezone },
+    timeout: 45000,
+  })
 }
 
 export function getTeamUsageSummary(params?: TeamUsageOverviewParams) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatCompactNumber, formatTokenCount } from '@/utils/formatters'
+import { formatCompactNumber, formatCredits, formatTokenCount, formatUsagePair } from '@/utils/formatters'
 
 describe('formatters', () => {
   it('formats token counts with compact K M B suffixes', () => {
@@ -17,5 +17,14 @@ describe('formatters', () => {
     expect(formatCompactNumber(1_500)).toBe('1.5K')
     expect(formatCompactNumber(2_000_000)).toBe('2M')
     expect(formatCompactNumber(2_010_000)).toBe('2.01M')
+  })
+
+  it('formats credits and the Token/Credits pair', () => {
+    expect(formatCredits(null)).toBe('--')
+    expect(formatCredits(0.0556)).toBe('0.06')
+    expect(formatCredits(1234.5)).toBe('1,234.50')
+    expect(formatUsagePair(3_490_000_000, 0.0556)).toBe('3.49B/0.06')
+    expect(formatUsagePair(null, 0.06)).toBe('--/0.06')
+    expect(formatUsagePair(12_900, null)).toBe('12.9K/--')
   })
 })

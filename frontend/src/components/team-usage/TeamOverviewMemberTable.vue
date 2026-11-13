@@ -5,8 +5,10 @@ import { useI18n } from '@/i18n'
 import CursorPager from '@/components/CursorPager.vue'
 import TeamOverviewDepartmentNode from '@/components/team-usage/TeamOverviewDepartmentNode.vue'
 import { useWideContentLayout } from '@/composables/useMediaQuery'
-import { formatTokenCount } from '@/utils/formatters'
-import type { TeamOverviewMember, TeamUsageOrganizationDepartment } from '@/types'
+import { formatCredits, formatTokenCount, formatUsagePair } from '@/utils/formatters'
+import { useUsageUnit } from '@/composables/useUsageUnit'
+import UsageUnitToggle from '@/components/usage/UsageUnitToggle.vue'
+import type { TeamOverviewMember, TeamUsageOrganizationDepartment, TeamUserCredits } from '@/types'
 import type { TeamUsageOrganizationBranchState } from '@/composables/useTeamUsageOrganization'
 
 const props = withDefaults(defineProps<{
@@ -21,6 +23,8 @@ const props = withDefaults(defineProps<{
   memberTotalCount?: number
   hasPreviousPage?: boolean
   hasNextPage?: boolean
+  creditsByUser?: Record<number, TeamUserCredits>
+  creditsByDepartment?: Record<string, number>
 }>(), {
   organizationBranches: () => ({}),
   organizationInvalidatedDepartmentIds: () => [],
@@ -30,6 +34,8 @@ const props = withDefaults(defineProps<{
   memberTotalCount: 0,
   hasPreviousPage: false,
   hasNextPage: false,
+  creditsByUser: () => ({}),
+  creditsByDepartment: () => ({}),
 })
 
 const emit = defineEmits<{
@@ -45,6 +51,8 @@ const emit = defineEmits<{
 const { t } = useI18n()
 type DetailView = 'ranking' | 'organization'
 const detailView = ref<DetailView>('ranking')
+const { unit: usageUnit } = useUsageUnit('ae.usage.team.unit')
+const usageColumnLabel = computed(() => usageUnit.value === 'credits' ? t('usageDashboard.kiroCreditsColumn') : t('teamUsage.rangeTotalTokens'))
 const showDesktopRanking = useWideContentLayout()
 
 function tableMember(row: unknown) {
@@ -94,8 +102,21 @@ function openMember(member: TeamOverviewMember) {
 }
 
 function formatDepartmentTokenSummary(node: TeamUsageOrganizationDepartment) {
-  if (node.range_total_tokens == null) return '-'
-  return `${formatTokenCount(node.range_total_tokens)} ${t('teamUsage.tokens')}`
+  const credits = props.creditsByDepartment[node.department_external_id]
+  return formatUsagePair(node.range_total_tokens, credits ?? null)
+}
+
+function formatMemberUsage(member: TeamOverviewMember) {
+  const credits = props.creditsByUser[member.user_id]
+  return formatUsagePair(member.total_tokens, credits ? credits.credits : null)
+}
+
+function memberUsageValue(member: TeamOverviewMember) {
+  if (usageUnit.value === 'credits') {
+    const credits = props.creditsByUser[member.user_id]
+    return credits ? formatCredits(credits.credits) : '--'
+  }
+  return formatTokenCount(member.total_tokens)
 }
 
 function departmentMemberCountLabel(count: number) {
@@ -171,6 +192,12 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
   <section class="rounded-lg border border-slate-200 bg-white shadow-sm">
     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
       <h2 class="text-base font-semibold text-slate-950">{{ t('teamUsage.memberTable') }}</h2>
+      <div class="flex flex-wrap items-center gap-3">
+      <UsageUnitToggle
+        v-if="detailView === 'ranking'"
+        v-model="usageUnit"
+        data-testid="team-usage-unit-toggle"
+      />
       <ElRadioGroup
         v-if="hasOrganization"
         :model-value="detailView"
@@ -190,6 +217,7 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
           {{ t('teamUsage.organizationView') }}
         </ElRadioButton>
       </ElRadioGroup>
+      </div>
     </div>
 
     <div v-if="detailView === 'organization' && props.organizationRoot" class="p-4" data-testid="team-overview-organization-tree">
@@ -233,7 +261,7 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
             :member-key="memberKey"
             :member-test-id="memberTestID"
             :format-cost="formatCost"
-            :format-tokens="formatTokenCount"
+            :format-member-usage="formatMemberUsage"
             :format-department-token-summary="formatDepartmentTokenSummary"
             :department-member-count-label="departmentMemberCountLabel"
             :connected-member-count-label="connectedMemberCountLabel"
@@ -354,8 +382,8 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
               <dd class="mt-1 break-words text-slate-800">{{ member.department_display_path || '-' }}</dd>
             </div>
             <div>
-              <dt class="text-xs text-slate-500">{{ t('teamUsage.rangeTotalTokens') }}</dt>
-              <dd class="mt-1 tabular-nums text-slate-900">{{ formatTokenCount(member.total_tokens) }}</dd>
+              <dt class="text-xs text-slate-500">{{ usageColumnLabel }}</dt>
+              <dd class="mt-1 tabular-nums text-slate-900">{{ memberUsageValue(member) }}</dd>
             </div>
             <div>
               <dt class="text-xs text-slate-500">{{ t('teamUsage.rangeActualCost') }}</dt>
