@@ -28,6 +28,7 @@ vi.mock('@/api/userUsage', () => ({
       },
     },
   })),
+  getUserKiroUsage: vi.fn(() => Promise.resolve({ data: { data: null } })),
 }))
 
 vi.mock('@/api/ownerAccounts', () => ({

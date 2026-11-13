@@ -68,6 +68,10 @@ declare module 'vue' {
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
     HighlightedText: typeof import('./components/team-accounts/HighlightedText.vue')['default']
     ImpersonationBanner: typeof import('./components/ImpersonationBanner.vue')['default']
+    KiroCreditsDashboard: typeof import('./components/user/usage/KiroCreditsDashboard.vue')['default']
+    KiroModelChart: typeof import('./components/user/usage/KiroModelChart.vue')['default']
+    KiroStatsCards: typeof import('./components/user/usage/KiroStatsCards.vue')['default']
+    KiroTrendChart: typeof import('./components/user/usage/KiroTrendChart.vue')['default']
     LineChartCanvas: typeof import('./components/charts/LineChartCanvas.vue')['default']
     OIDCSettings: typeof import('./components/settings/OIDCSettings.vue')['default']
     OpsMonitoringGroupDetail: typeof import('./components/admin/OpsMonitoringGroupDetail.vue')['default']
@@ -106,6 +110,7 @@ declare module 'vue' {
     UsagePoolSnapshot: typeof import('./components/user/usage/UsagePoolSnapshot.vue')['default']
     UsageStatsCards: typeof import('./components/user/usage/UsageStatsCards.vue')['default']
     UsageTrendChart: typeof import('./components/user/usage/UsageTrendChart.vue')['default']
+    UsageUnitToggle: typeof import('./components/usage/UsageUnitToggle.vue')['default']
     UserUsageDashboard: typeof import('./components/user/usage/UserUsageDashboard.vue')['default']
     UserUsageSubjectSelector: typeof import('./components/user/usage/UserUsageSubjectSelector.vue')['default']
   }

@@ -84,6 +84,20 @@ func (rpu *RelayProviderUpdate) SetNillableRelayType(s *string) *RelayProviderUp
 	return rpu
 }
 
+// SetServiceType sets the "service_type" field.
+func (rpu *RelayProviderUpdate) SetServiceType(s string) *RelayProviderUpdate {
+	rpu.mutation.SetServiceType(s)
+	return rpu
+}
+
+// SetNillableServiceType sets the "service_type" field if the given value is not nil.
+func (rpu *RelayProviderUpdate) SetNillableServiceType(s *string) *RelayProviderUpdate {
+	if s != nil {
+		rpu.SetServiceType(*s)
+	}
+	return rpu
+}
+
 // SetAdminAPIKey sets the "admin_api_key" field.
 func (rpu *RelayProviderUpdate) SetAdminAPIKey(s string) *RelayProviderUpdate {
 	rpu.mutation.SetAdminAPIKey(s)
@@ -225,6 +239,11 @@ func (rpu *RelayProviderUpdate) check() error {
 			return &ValidationError{Name: "base_url", err: fmt.Errorf(`ent: validator failed for field "RelayProvider.base_url": %w`, err)}
 		}
 	}
+	if v, ok := rpu.mutation.ServiceType(); ok {
+		if err := relayprovider.ServiceTypeValidator(v); err != nil {
+			return &ValidationError{Name: "service_type", err: fmt.Errorf(`ent: validator failed for field "RelayProvider.service_type": %w`, err)}
+		}
+	}
 	if v, ok := rpu.mutation.ConfigurationVersion(); ok {
 		if err := relayprovider.ConfigurationVersionValidator(v); err != nil {
 			return &ValidationError{Name: "configuration_version", err: fmt.Errorf(`ent: validator failed for field "RelayProvider.configuration_version": %w`, err)}
@@ -256,6 +275,9 @@ func (rpu *RelayProviderUpdate) sqlSave(ctx context.Context) (n int, err error) 
 	}
 	if value, ok := rpu.mutation.RelayType(); ok {
 		_spec.SetField(relayprovider.FieldRelayType, field.TypeString, value)
+	}
+	if value, ok := rpu.mutation.ServiceType(); ok {
+		_spec.SetField(relayprovider.FieldServiceType, field.TypeString, value)
 	}
 	if value, ok := rpu.mutation.AdminAPIKey(); ok {
 		_spec.SetField(relayprovider.FieldAdminAPIKey, field.TypeString, value)
@@ -350,6 +372,20 @@ func (rpuo *RelayProviderUpdateOne) SetRelayType(s string) *RelayProviderUpdateO
 func (rpuo *RelayProviderUpdateOne) SetNillableRelayType(s *string) *RelayProviderUpdateOne {
 	if s != nil {
 		rpuo.SetRelayType(*s)
+	}
+	return rpuo
+}
+
+// SetServiceType sets the "service_type" field.
+func (rpuo *RelayProviderUpdateOne) SetServiceType(s string) *RelayProviderUpdateOne {
+	rpuo.mutation.SetServiceType(s)
+	return rpuo
+}
+
+// SetNillableServiceType sets the "service_type" field if the given value is not nil.
+func (rpuo *RelayProviderUpdateOne) SetNillableServiceType(s *string) *RelayProviderUpdateOne {
+	if s != nil {
+		rpuo.SetServiceType(*s)
 	}
 	return rpuo
 }
@@ -508,6 +544,11 @@ func (rpuo *RelayProviderUpdateOne) check() error {
 			return &ValidationError{Name: "base_url", err: fmt.Errorf(`ent: validator failed for field "RelayProvider.base_url": %w`, err)}
 		}
 	}
+	if v, ok := rpuo.mutation.ServiceType(); ok {
+		if err := relayprovider.ServiceTypeValidator(v); err != nil {
+			return &ValidationError{Name: "service_type", err: fmt.Errorf(`ent: validator failed for field "RelayProvider.service_type": %w`, err)}
+		}
+	}
 	if v, ok := rpuo.mutation.ConfigurationVersion(); ok {
 		if err := relayprovider.ConfigurationVersionValidator(v); err != nil {
 			return &ValidationError{Name: "configuration_version", err: fmt.Errorf(`ent: validator failed for field "RelayProvider.configuration_version": %w`, err)}
@@ -556,6 +597,9 @@ func (rpuo *RelayProviderUpdateOne) sqlSave(ctx context.Context) (_node *RelayPr
 	}
 	if value, ok := rpuo.mutation.RelayType(); ok {
 		_spec.SetField(relayprovider.FieldRelayType, field.TypeString, value)
+	}
+	if value, ok := rpuo.mutation.ServiceType(); ok {
+		_spec.SetField(relayprovider.FieldServiceType, field.TypeString, value)
 	}
 	if value, ok := rpuo.mutation.AdminAPIKey(); ok {
 		_spec.SetField(relayprovider.FieldAdminAPIKey, field.TypeString, value)

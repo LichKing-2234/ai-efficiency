@@ -21,6 +21,8 @@ const (
 	FieldBaseURL = "base_url"
 	// FieldRelayType holds the string denoting the relay_type field in the database.
 	FieldRelayType = "relay_type"
+	// FieldServiceType holds the string denoting the service_type field in the database.
+	FieldServiceType = "service_type"
 	// FieldAdminAPIKey holds the string denoting the admin_api_key field in the database.
 	FieldAdminAPIKey = "admin_api_key"
 	// FieldDefaultModel holds the string denoting the default_model field in the database.
@@ -46,6 +48,7 @@ var Columns = []string{
 	FieldDisplayName,
 	FieldBaseURL,
 	FieldRelayType,
+	FieldServiceType,
 	FieldAdminAPIKey,
 	FieldDefaultModel,
 	FieldIsPrimary,
@@ -74,6 +77,10 @@ var (
 	BaseURLValidator func(string) error
 	// DefaultRelayType holds the default value on creation for the "relay_type" field.
 	DefaultRelayType string
+	// DefaultServiceType holds the default value on creation for the "service_type" field.
+	DefaultServiceType string
+	// ServiceTypeValidator is a validator for the "service_type" field. It is called by the builders before save.
+	ServiceTypeValidator func(string) error
 	// DefaultDefaultModel holds the default value on creation for the "default_model" field.
 	DefaultDefaultModel string
 	// DefaultIsPrimary holds the default value on creation for the "is_primary" field.
@@ -118,6 +125,11 @@ func ByBaseURL(opts ...sql.OrderTermOption) OrderOption {
 // ByRelayType orders the results by the relay_type field.
 func ByRelayType(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRelayType, opts...).ToFunc()
+}
+
+// ByServiceType orders the results by the service_type field.
+func ByServiceType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldServiceType, opts...).ToFunc()
 }
 
 // ByAdminAPIKey orders the results by the admin_api_key field.

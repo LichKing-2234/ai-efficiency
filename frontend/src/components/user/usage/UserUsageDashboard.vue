@@ -19,6 +19,13 @@
         <p class="mt-1 break-words text-sm text-gray-500">{{ dashboardSubtitle }}</p>
       </div>
       <div class="flex max-w-full shrink-0 flex-wrap items-center gap-2 pb-1 sm:flex-nowrap sm:overflow-x-auto">
+        <ElSegmented
+          v-if="props.unitSwitch"
+          v-model="usageUnit"
+          data-testid="usage-unit-switch"
+          :options="unitOptions"
+          class="shrink-0"
+        />
         <ElRadioGroup
           :model-value="selectedRange"
           class="max-w-full shrink-0 flex-wrap sm:flex-nowrap sm:overflow-x-auto"
@@ -34,8 +41,8 @@
           </ElRadioButton>
         </ElRadioGroup>
         <ElButton
-          :disabled="usageLoading"
-          :loading="usageLoading"
+          :disabled="activeLoading"
+          :loading="activeLoading"
           @click="loadDashboard"
         >
           {{ t('usageDashboard.refresh') }}
@@ -43,6 +50,7 @@
       </div>
     </div>
 
+    <template v-if="usageUnit === 'token'">
     <div v-if="usageLoading && !currentSnapshot" class="flex min-h-80 items-center justify-center text-sm text-gray-500">
       {{ t('usageDashboard.loading') }}
     </div>
@@ -115,12 +123,22 @@
         :range-label="snapshotRangeLabel"
         :hide-cost="props.homeMode"
         :loading="usageLoading && !!currentSnapshot"
+        :credits="creditsForCard"
       />
       <div v-if="hasUsableUsage" class="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <UsageTrendChart :data="currentSnapshot?.trend ?? []" :loading="usageLoading" />
         <UsageModelChart :data="currentSnapshot?.models ?? []" :loading="usageLoading" :hide-cost="props.homeMode" />
       </div>
     </div>
+    </template>
+
+    <template v-else>
+      <KiroCreditsDashboard
+        :snapshot="kiroUsage"
+        :loading="kiroLoading"
+        :range-label="snapshotRangeLabel"
+      />
+    </template>
 
     <QuotaResetRequestModal
       v-if="quotaResetModalOpen"
@@ -134,11 +152,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { createQuotaResetRequest, getQuotaResetOptions } from '@/api/quotaReset'
-import { getUserUsageDashboard, getUserUsageGroupPoolUsage, getUserUsageGroupQuotas } from '@/api/userUsage'
-import { getTeamUsageSubjectDashboard, updateTeamUsageRateMultiplier } from '@/api/teamUsage'
+import { getUserKiroUsage, getUserUsageDashboard, getUserUsageGroupPoolUsage, getUserUsageGroupQuotas } from '@/api/userUsage'
+import { getTeamUsageSubjectDashboard, getTeamUsageSubjectCredits, updateTeamUsageRateMultiplier } from '@/api/teamUsage'
 import { useI18n } from '@/i18n'
 import { readUsageWindowPreference, writeUsageWindowPreference } from '@/utils/usageWindowPreference'
 import type { UsageWindow } from '@/utils/usageWindowPreference'
@@ -151,13 +169,15 @@ import type {
   UserUsageDashboardSnapshot,
   UserUsageGroupPoolUsageState,
   UserUsageGroupQuotaState,
+  UserUsageKiroSnapshot,
 } from '@/types'
-import UsageStatsCards from '@/components/user/usage/UsageStatsCards.vue'
 
+const UsageStatsCards = defineAsyncComponent(() => import('@/components/user/usage/UsageStatsCards.vue'))
 const UsageTrendChart = defineAsyncComponent(() => import('@/components/user/usage/UsageTrendChart.vue'))
 const UsageModelChart = defineAsyncComponent(() => import('@/components/user/usage/UsageModelChart.vue'))
 const UsageGroupQuotaSection = defineAsyncComponent(() => import('@/components/user/usage/UsageGroupQuotaSection.vue'))
 const SelectedSubjectSubscriptionRows = defineAsyncComponent(() => import('@/components/user/usage/SelectedSubjectSubscriptionRows.vue'))
+const KiroCreditsDashboard = defineAsyncComponent(() => import('@/components/user/usage/KiroCreditsDashboard.vue'))
 const loadQuotaResetRequestModal = () => import('@/components/quota-reset/QuotaResetRequestModal.vue')
 const QuotaResetRequestModal = defineAsyncComponent(loadQuotaResetRequestModal)
 
@@ -165,11 +185,13 @@ const props = withDefaults(defineProps<{
   embedded?: boolean
   homeMode?: boolean
   memberRoute?: boolean
+  unitSwitch?: boolean
   initialSnapshot?: UserUsageDashboardSnapshot | null
 }>(), {
   embedded: false,
   homeMode: false,
   memberRoute: false,
+  unitSwitch: false,
   initialSnapshot: null,
 })
 
@@ -179,9 +201,38 @@ const snapshotRange = ref<UsageWindow>(initialRange)
 const snapshot = ref<UserUsageDashboardSnapshot | null>(props.initialSnapshot)
 const personalQuotas = ref<UserUsageGroupQuotaState | null>(props.initialSnapshot?.group_quotas ?? null)
 const personalPoolUsage = ref<UserUsageGroupPoolUsageState | null>(null)
+const kiroUsage = ref<UserUsageKiroSnapshot | null>(null)
+const kiroLoading = ref(false)
+const memberCredits = ref<number | null>(null)
 const memberRouteSubject = ref<TeamUsageSubject | null>(null)
 const selectedSubjectSubscriptions = ref<SubjectSubscriptionGroup[]>([])
 const usageLoading = ref(!props.initialSnapshot)
+type UsageUnit = 'token' | 'credits'
+const USAGE_UNIT_KEY = 'ae.usage.unit'
+function readUsageUnit(): UsageUnit {
+  try {
+    return localStorage.getItem(USAGE_UNIT_KEY) === 'credits' ? 'credits' : 'token'
+  } catch {
+    return 'token'
+  }
+}
+const usageUnit = ref<UsageUnit>(props.unitSwitch ? readUsageUnit() : 'token')
+const unitOptions = computed(() => [
+  { label: t('usageDashboard.unitToken'), value: 'token' },
+  { label: t('usageDashboard.unitCredits'), value: 'credits' },
+])
+const activeLoading = computed(() => usageUnit.value === 'credits' ? kiroLoading.value : usageLoading.value)
+const creditsForCard = computed(() => {
+  if (props.memberRoute) return memberCredits.value
+  return kiroUsage.value?.available === true ? kiroUsage.value.credits : null
+})
+watch(usageUnit, (value) => {
+  try {
+    localStorage.setItem(USAGE_UNIT_KEY, value)
+  } catch {
+    // Preference persistence is best effort.
+  }
+})
 const quotaLoading = ref(false)
 type UsageErrorKind = '' | 'credential' | 'transient' | 'unexpected'
 const usageErrorKind = ref<UsageErrorKind>('')
@@ -195,6 +246,7 @@ let requestGeneration = 0
 let usageController: AbortController | null = null
 let quotaController: AbortController | null = null
 let poolController: AbortController | null = null
+let kiroController: AbortController | null = null
 
 const currentSnapshot = computed(() => snapshot.value)
 const currentGroupQuotas = computed(() => props.memberRoute ? currentSnapshot.value?.group_quotas ?? null : personalQuotas.value)
@@ -270,9 +322,11 @@ function abortPersonalRequests() {
   usageController?.abort()
   quotaController?.abort()
   poolController?.abort()
+  kiroController?.abort()
   usageController = null
   quotaController = null
   poolController = null
+  kiroController = null
 }
 
 function isCanceled(error: any, signal: AbortSignal) {
@@ -293,6 +347,9 @@ async function loadMemberDashboard(generation: number, requestedRange: UsageWind
   quotaLoading.value = false
   usageErrorKind.value = ''
   selectedSubjectSubscriptions.value = []
+  kiroUsage.value = null
+  kiroLoading.value = false
+  memberCredits.value = null
   try {
     const routeUserID = routeSubjectUserID()
     if (routeUserID == null) throw new Error('invalid member route')
@@ -302,6 +359,10 @@ async function loadMemberDashboard(generation: number, requestedRange: UsageWind
     memberRouteSubject.value = (response.data.data as any)?.subject ?? null
     selectedSubjectSubscriptions.value = (response.data.data as any)?.subject_subscription_groups ?? []
     snapshotRange.value = requestedRange
+    const creditsResponse = await getTeamUsageSubjectCredits(routeUserID, buildParams(requestedRange)).catch(() => null)
+    if (generation !== requestGeneration) return
+    const creditsUser = creditsResponse?.data?.data?.users?.[0]
+    memberCredits.value = creditsUser?.key_found ? creditsUser.credits : null
   } catch (error: any) {
     if (generation !== requestGeneration) return
     memberRouteSubject.value = null
@@ -317,13 +378,17 @@ async function loadPersonalDashboard(generation: number, requestedRange: UsageWi
   const nextUsageController = new AbortController()
   const nextQuotaController = new AbortController()
   const nextPoolController = new AbortController()
+  const nextKiroController = new AbortController()
   usageController = nextUsageController
   quotaController = nextQuotaController
   poolController = nextPoolController
+  kiroController = nextKiroController
   usageLoading.value = true
   quotaLoading.value = true
   personalQuotas.value = null
   personalPoolUsage.value = null
+  kiroUsage.value = null
+  kiroLoading.value = true
   usageErrorKind.value = ''
   selectedSubjectSubscriptions.value = []
 
@@ -371,7 +436,20 @@ async function loadPersonalDashboard(generation: number, requestedRange: UsageWi
       personalPoolUsage.value = null
     })
 
-  await Promise.allSettled([usageTask, quotaTask, poolTask])
+  const kiroTask = getUserKiroUsage(params, nextKiroController.signal)
+    .then((response) => {
+      if (generation !== requestGeneration || nextKiroController.signal.aborted) return
+      kiroUsage.value = response.data.data ?? null
+    })
+    .catch((error: any) => {
+      if (generation !== requestGeneration || isCanceled(error, nextKiroController.signal)) return
+      kiroUsage.value = null
+    })
+    .finally(() => {
+      if (generation === requestGeneration) kiroLoading.value = false
+    })
+
+  await Promise.allSettled([usageTask, quotaTask, poolTask, kiroTask])
 }
 
 function selectRange(range: UsageWindow) {

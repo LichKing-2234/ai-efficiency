@@ -201,7 +201,7 @@ func (s *Service) resolveV2Query(ctx context.Context, actorUserID int, query V2Q
 	if err != nil {
 		return nil, time.Time{}, time.Time{}, nil, err
 	}
-	providers, err := s.client.RelayProvider.Query().Where(relayprovider.EnabledEQ(true)).Order(ent.Asc(relayprovider.FieldID)).All(ctx)
+	providers, err := s.client.RelayProvider.Query().Where(relayprovider.EnabledEQ(true), relayprovider.ServiceTypeEQ("sub2api")).Order(ent.Asc(relayprovider.FieldID)).All(ctx)
 	if err != nil {
 		return nil, time.Time{}, time.Time{}, nil, fmt.Errorf("load Activity provider set: %w", err)
 	}

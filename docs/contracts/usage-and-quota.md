@@ -205,6 +205,47 @@ replaces the full upstream list, and reads it back. A no-op writes no Relay
 mutation and records `changed=false`. A mismatched readback is partial failure,
 not success.
 
+## Kiro Credits
+
+Kiro CLI traffic does not pass through the Relay: the native gateway forwards it
+to kiro2cc, which records credits per API key. A user's credits are read from the
+enabled `kiro2cc` service entry and matched by the gateway-provisioned key name
+`sub2api-<relay user id>-<identity>` (the legacy `sub2api-user-<id>` spelling is
+accepted). Keys owned by other clients are never attributed.
+
+- Credits are real Kiro upstream metering; kiro2cc tokens are cl100k estimates.
+  Credits are a separate unit: never added to Relay token totals and never
+  converted to USD.
+- The personal usage view offers a Token usage / Kiro Credits switch. The
+  credits view reuses the token layout (stat cards, trend, model distribution)
+  with credit-appropriate metrics and never mixes the two units in one number.
+  Range totals come from per-key usage records, so the view may be marked
+  partial when record retention truncates the window.
+- Day buckets use the dashboard timezone.
+- A missing source, unlinked user, missing key, or unreachable kiro2cc renders an
+  explanatory empty state; the rest of the dashboard is unaffected.
+- The adapter issues read-only GET requests and never creates, renames, resets,
+  or deletes kiro2cc keys.
+
+### Presentation: pairs and table units
+
+- Outside tables every token metric renders as a Token/Credits pair, for
+  example `3.49B/0.06`: the label carries both units and the value joins the
+  token count and the credit count with `/`. Missing credits render `--`; the
+  two units are never summed or converted.
+- Identity tables (the team member table) carry a Token/Credits switch. The
+  switch changes the metric column, its header and the active sort; the choice
+  is persisted per browser and shared by the tables on the page.
+- Model tables are not switched: the Relay model set and the kiro2cc model set
+  are different row populations, so they stay separate tables.
+- The team overview reads credits from `GET /user/team-usage/credits` (per
+  member, per department, per day) inside the caller's representative scope;
+  member pages read the same data through
+  `GET /user/team-usage/subjects/:user_id/usage/credits`. Both endpoints are
+  read-only and fail soft: missing wiring, missing keys or an unreachable
+  kiro2cc render `--` without failing the page.
+
+
 ## Failure Boundaries
 
 - Usage authorization, current Directory scope, and current group membership

@@ -913,6 +913,7 @@ describe('SettingsView', () => {
       name: 'relay-main',
       display_name: 'Relay Main',
       base_url: 'https://relay.example.com',
+      service_type: 'sub2api',
       admin_api_key: 'admin-test-key',
       is_primary: true,
       enabled: true,
@@ -973,6 +974,7 @@ describe('SettingsView', () => {
     expect(updateRelayProvider).toHaveBeenCalledWith(1, {
       display_name: 'Relay Secondary',
       base_url: 'https://relay.example.com',
+      service_type: 'sub2api',
       admin_api_key: undefined,
       is_primary: true,
       enabled: true,
