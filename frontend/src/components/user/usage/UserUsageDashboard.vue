@@ -121,9 +121,9 @@
         <UsageTrendChart
           :data="currentSnapshot?.trend ?? []"
           :loading="usageLoading"
-          :kiro-by-day="kiroUsage?.status === 'ok' ? kiroUsage.by_day : []"
+          :kiro-by-day="props.memberRoute ? memberKiroByDay : (kiroUsage?.status === 'ok' ? kiroUsage.by_day : [])"
           :kiro-loading="kiroLoading"
-          :kiro-available="kiroUsage?.available === true"
+          :kiro-available="props.memberRoute ? memberKiroAvailable : (kiroUsage?.available === true)"
         />
         <UsageModelChart
           :data="currentSnapshot?.models ?? []"
@@ -165,6 +165,7 @@ import type {
   UserUsageDashboardSnapshot,
   UserUsageGroupPoolUsageState,
   UserUsageGroupQuotaState,
+  UserUsageKiroDay,
   UserUsageKiroModel,
   UserUsageKiroSnapshot,
 } from '@/types'
@@ -199,6 +200,7 @@ const kiroUsage = ref<UserUsageKiroSnapshot | null>(null)
 const kiroLoading = ref(false)
 const memberCredits = ref<number | null>(null)
 const memberKiroModels = ref<UserUsageKiroModel[]>([])
+const memberKiroByDay = ref<UserUsageKiroDay[]>([])
 const memberKiroAvailable = ref(false)
 const memberRouteSubject = ref<TeamUsageSubject | null>(null)
 const selectedSubjectSubscriptions = ref<SubjectSubscriptionGroup[]>([])
@@ -325,6 +327,7 @@ async function loadMemberDashboard(generation: number, requestedRange: UsageWind
   kiroLoading.value = false
   memberCredits.value = null
   memberKiroModels.value = []
+  memberKiroByDay.value = []
   memberKiroAvailable.value = false
   try {
     const routeUserID = routeSubjectUserID()
@@ -340,6 +343,7 @@ async function loadMemberDashboard(generation: number, requestedRange: UsageWind
     const creditsUser = creditsResponse?.data?.data?.users?.[0]
     memberCredits.value = creditsUser?.key_found ? creditsUser.credits : null
     memberKiroModels.value = creditsUser?.by_model ?? []
+    memberKiroByDay.value = creditsUser?.by_day ?? []
     memberKiroAvailable.value = creditsUser?.key_found === true
   } catch (error: any) {
     if (generation !== requestGeneration) return
