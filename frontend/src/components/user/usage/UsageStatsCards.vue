@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import type { UserUsageDashboardStats, UserUsageTrendPoint } from '@/types'
 import { useI18n } from '@/i18n'
 import { formatTokenCount, formatUsagePair } from '@/utils/formatters'
+import UsagePairInfo from '@/components/usage/UsagePairInfo.vue'
 
 const props = withDefaults(defineProps<{
   stats: UserUsageDashboardStats | null
@@ -89,7 +90,9 @@ function formatDuration(ms: number): string {
     </section>
 
     <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-      <p class="text-xs font-medium uppercase text-gray-500">{{ t('usageDashboard.rangeTokenCredits', { range: rangeLabel }) }}</p>
+      <p class="text-xs font-medium uppercase text-gray-500">
+        {{ t('usageDashboard.rangeTokenCredits', { range: rangeLabel }) }}<UsagePairInfo />
+      </p>
       <p class="mt-2 text-2xl font-semibold text-gray-900">
         {{ formatUsagePair(rangeTotals.totalTokens, props.credits) }}
       </p>

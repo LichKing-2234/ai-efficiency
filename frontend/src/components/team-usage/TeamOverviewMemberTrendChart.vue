@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent } from 'vue'
 import { useI18n } from '@/i18n'
 import { useUsageUnit } from '@/composables/useUsageUnit'
 import UsageUnitToggle from '@/components/usage/UsageUnitToggle.vue'
+import UsagePairInfo from '@/components/usage/UsagePairInfo.vue'
 import { formatCredits, formatTokenCount, formatUsagePair } from '@/utils/formatters'
 import type { TeamDepartmentCredits, TeamDepartmentTrendState, TeamMemberTrendState, TeamOverviewWindow, TeamUserCredits, UserUsageKiroDay } from '@/types'
 
@@ -371,7 +372,7 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
         <UsageUnitToggle v-model="trendUnit" data-testid="team-trend-unit-toggle" />
       </div>
       <div class="mt-1 text-xs font-medium text-slate-500">
-        {{ t('teamUsage.rangeTokenCredits') }}: {{ formatUsagePair(props.tokensTotal ?? null, props.creditsTotal ?? null) }}
+        {{ t('teamUsage.rangeTokenCredits') }}: {{ formatUsagePair(props.tokensTotal ?? null, props.creditsTotal ?? null) }}<UsagePairInfo />
       </div>
       <div class="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs font-medium text-slate-500">
         <template v-for="(item, index) in chartMetaItems" :key="item">

@@ -343,6 +343,7 @@ const zhCN = {
   'usageDashboard.errorRetry': '重试',
   'usageDashboard.rangeCost': '{range}费用',
   'usageDashboard.rangeRequests': '{range}请求',
+  'usageDashboard.usagePairHelp': 'Token 是 AI 服务的 token 用量；Credits 是 Kiro CLI 在 kiro2cc 的真实计量。两者是不同口径，不能相加，也不能换算成 USD。',
   'usageDashboard.rangeTokenCredits': '{range} Token/Credits',
   'teamUsage.rangeTokenCredits': 'Token/Credits',
   'usageDashboard.rangeTokens': '{range} Token',
