@@ -28,8 +28,8 @@ func TestBuildTeamCreditsResponseAggregatesDirectAndSubtreeDepartments(t *testin
 		Status:    kirocredits.StatusOK,
 		Credits:   1.5,
 		Users: []kirocredits.UserCredits{
-			{UserID: 1, RelayUserID: 101, KeyFound: true, Credits: 1.0, Requests: 3},
-			{UserID: 2, RelayUserID: 102, KeyFound: true, Credits: 0.5, Requests: 2},
+			{UserID: 1, RelayUserID: 101, KeyFound: true, Credits: 1.0, Requests: 3, ByDay: []kirocredits.DayCredits{{Date: "2026-11-13", Credits: 1.0, Requests: 3}}},
+			{UserID: 2, RelayUserID: 102, KeyFound: true, Credits: 0.5, Requests: 2, ByDay: []kirocredits.DayCredits{{Date: "2026-11-13", Credits: 0.5, Requests: 2}}},
 		},
 	}
 	response := buildTeamCreditsResponse(scope, batch, subjectsByUser)
@@ -48,5 +48,15 @@ func TestBuildTeamCreditsResponseAggregatesDirectAndSubtreeDepartments(t *testin
 	}
 	if response.Credits != 1.5 {
 		t.Fatalf("total credits = %v, want 1.5", response.Credits)
+	}
+	for _, department := range response.Departments {
+		if department.DepartmentExternalID == "dept-root" {
+			if !department.Root {
+				t.Fatal("root department should be marked root")
+			}
+			if len(department.ByDay) != 1 || department.ByDay[0].Credits != 1.5 {
+				t.Fatalf("root by_day = %+v, want one merged 1.5 point", department.ByDay)
+			}
+		}
 	}
 }

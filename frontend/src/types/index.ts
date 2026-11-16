@@ -74,8 +74,12 @@ export interface TeamUserCredits {
 
 export interface TeamDepartmentCredits {
   department_external_id: string
+  name?: string
+  display_path?: string
   credits: number
   requests: number
+  by_day?: UserUsageKiroDay[]
+  root?: boolean
 }
 
 export interface TeamCredits {
