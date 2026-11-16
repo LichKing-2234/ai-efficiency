@@ -63,13 +63,18 @@ const creditTeamSeries = computed<CreditLineSeries[]>(() => (props.creditsTeamBy
   : [])
 const creditTeamChartData = computed(() => buildCreditsLineData(creditTeamSeries.value))
 
-const creditGroupSeries = computed<CreditLineSeries[]>(() => (props.creditsGroups ?? [])
-  .filter((group) => (group.by_day?.length ?? 0) > 0)
-  .map((group, index) => ({
-    label: group.name || group.display_path || group.department_external_id,
-    points: group.by_day ?? [],
-    color: departmentSeriesColors[(index + 1) % departmentSeriesColors.length],
-  })))
+const creditGroupSeries = computed<CreditLineSeries[]>(() => {
+  const teamDates = (props.creditsTeamByDay ?? []).map((point) => point.date)
+  if (teamDates.length === 0) return []
+  return (props.creditsGroups ?? []).map((group, index) => {
+    const byDate = new Map((group.by_day ?? []).map((point) => [point.date, point.credits]))
+    return {
+      label: group.name || group.display_path || group.department_external_id,
+      points: teamDates.map((date) => ({ date, credits: byDate.get(date) ?? 0, requests: 0 })),
+      color: departmentSeriesColors[(index + 1) % departmentSeriesColors.length],
+    }
+  })
+})
 const creditGroupChartData = computed(() => buildCreditsLineData(creditGroupSeries.value))
 const hasCreditsData = computed(() => creditTeamSeries.value.length > 0 || creditGroupSeries.value.length > 0 || creditSeries.value.length > 0)
 
