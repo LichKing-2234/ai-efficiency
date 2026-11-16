@@ -24,7 +24,7 @@ const (
 	defaultTimeout    = 8 * time.Second
 	defaultCacheTTL   = 60 * time.Second
 	defaultKeyTTL     = 30 * time.Second
-	maxRecordPages    = 10
+	maxRecordPages    = 200
 	recordPageSize    = 500
 	maxResponseBytes  = 8 << 20
 	modernKeyNameBase = "sub2api-"
