@@ -551,9 +551,10 @@ func (h *TeamUsageHandler) Credits(c *gin.Context) {
 	}
 	refs, subjectsByUser := h.scopeCreditsRefs(scope, uc.UserID)
 	batch := h.credits.Batch(c.Request.Context(), refs, kirocredits.Params{
-		StartDate: c.Query("start_date"),
-		EndDate:   c.Query("end_date"),
-		Timezone:  c.Query("timezone"),
+		StartDate:   c.Query("start_date"),
+		EndDate:     c.Query("end_date"),
+		Timezone:    c.Query("timezone"),
+		Granularity: c.Query("granularity"),
 	})
 	pkg.Success(c, buildTeamCreditsResponse(scope, batch, subjectsByUser))
 }
@@ -609,9 +610,10 @@ func (h *TeamUsageHandler) SubjectCredits(c *gin.Context) {
 		UserID:      target.UserID,
 		RelayUserID: int64(*target.RelayUserID),
 	}}, kirocredits.Params{
-		StartDate: c.Query("start_date"),
-		EndDate:   c.Query("end_date"),
-		Timezone:  c.Query("timezone"),
+		StartDate:   c.Query("start_date"),
+		EndDate:     c.Query("end_date"),
+		Timezone:    c.Query("timezone"),
+		Granularity: c.Query("granularity"),
 	})
 	pkg.Success(c, batch)
 }

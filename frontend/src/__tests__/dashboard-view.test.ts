@@ -613,7 +613,7 @@ describe('DashboardView', () => {
 
     await flushPromises()
 
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Token Trend'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Usage trend'))
     expect(wrapper.text()).toContain('Model Distribution')
     expect(wrapper.text()).not.toContain('7 Days Cost')
     expect(wrapper.text()).not.toContain('$0.2000')
@@ -652,7 +652,7 @@ describe('DashboardView', () => {
     await flushPromises()
 
     expect(getUserUsageDashboard).toHaveBeenCalledTimes(1)
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Token Trend'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Usage trend'))
     expect(wrapper.text()).toContain('Model Distribution')
     expect(wrapper.text()).toContain('example-model')
     expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(true)
@@ -1599,7 +1599,7 @@ describe('DashboardView', () => {
 
     expect(wrapper.text()).toContain('Monthly Quotas')
     expect(wrapper.text()).toContain('temporarily unavailable')
-    expect(wrapper.text()).toContain('Token Trend')
+    expect(wrapper.text()).toContain('Usage trend')
     expect(wrapper.text()).toContain('Model Distribution')
   })
 

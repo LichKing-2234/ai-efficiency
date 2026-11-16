@@ -70,6 +70,13 @@ const creditsByDepartment = computed(() => {
   return map
 })
 
+const creditTrendUsers = computed(() => (teamCredits.value?.users ?? [])
+  .filter((user) => user.key_found)
+  .map((user) => ({
+    ...user,
+    display_name: membersPage.value?.items.find((member) => member.user_id === user.user_id)?.display_name,
+  })))
+
 const rangeCredits = computed(() => {
   if (!teamCredits.value?.available || (teamCredits.value.key_count ?? 0) === 0) return null
   return teamCredits.value.credits
@@ -415,6 +422,7 @@ onMounted(loadOverview)
             :window="trend.window"
             :tokens-total="summary?.summary.range_total_tokens ?? null"
             :credits-total="rangeCredits"
+            :credits-users="creditTrendUsers"
           />
         </div>
 

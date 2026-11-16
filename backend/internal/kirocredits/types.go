@@ -34,9 +34,10 @@ const (
 // Params is the dashboard range a caller wants credits for. Dates are
 // YYYY-MM-DD in Timezone; the timezone also decides day buckets.
 type Params struct {
-	StartDate string
-	EndDate   string
-	Timezone  string
+	StartDate   string
+	EndDate     string
+	Timezone    string
+	Granularity string
 }
 
 // ModelCredits is one model bucket inside the requested range.

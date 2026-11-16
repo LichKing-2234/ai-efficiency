@@ -1193,7 +1193,7 @@ describe('TeamOverviewView', () => {
     expect(wrapper.text()).toContain('用量趋势')
     expect(wrapper.text()).not.toContain('团队与 Top 12 Token 用量趋势')
     expect(wrapper.find('header h1').exists()).toBe(false)
-    expect(wrapper.text()).toContain('当前范围 Token 用量')
+    expect(wrapper.text()).toContain('当前范围 Token/Credits 用量')
     expect(wrapper.text()).toContain('查看明细')
     expect(wrapper.text()).toContain('Token')
     expect(wrapper.text()).toContain('团队人数')
@@ -1472,7 +1472,7 @@ describe('TeamOverviewView', () => {
     })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Token usage in range')
+    expect(wrapper.text()).toContain('Token/Credits usage in range')
     expect(wrapper.text()).toContain('12.9K')
     const aliceRow = wrapper.get('[data-testid="team-overview-member-user-101"]')
     expect(aliceRow.text()).toContain('12K')

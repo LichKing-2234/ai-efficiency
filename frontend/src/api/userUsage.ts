@@ -24,7 +24,7 @@ export function getUserUsageGroupQuotas(params: UserUsageDashboardParams, signal
 
 export function getUserKiroUsage(params: UserUsageDashboardParams, signal?: AbortSignal) {
   return client.get<ApiResponse<UserUsageKiroSnapshot>>('/user/usage/kiro', {
-    params: { start_date: params.start_date, end_date: params.end_date, timezone: params.timezone },
+    params: { start_date: params.start_date, end_date: params.end_date, granularity: params.granularity, timezone: params.timezone },
     signal,
   })
 }
