@@ -54,9 +54,40 @@ func NewTeamUsageHandlerWithCredits(service teamUsageService, scopeResolver repr
 }
 
 type teamCreditsDepartment struct {
-	DepartmentExternalID string  `json:"department_external_id"`
-	Credits              float64 `json:"credits"`
-	Requests             int64   `json:"requests"`
+	DepartmentExternalID string                   `json:"department_external_id"`
+	Name                 string                   `json:"name,omitempty"`
+	DisplayPath          string                   `json:"display_path,omitempty"`
+	Credits              float64                  `json:"credits"`
+	Requests             int64                    `json:"requests"`
+	ByDay                []kirocredits.DayCredits `json:"by_day,omitempty"`
+	Root                 bool                     `json:"root,omitempty"`
+}
+
+func mergeDayCredits(left, right []kirocredits.DayCredits) []kirocredits.DayCredits {
+	if len(right) == 0 {
+		return left
+	}
+	merged := make(map[string]*kirocredits.DayCredits, len(left)+len(right))
+	for _, point := range left {
+		copied := point
+		merged[point.Date] = &copied
+	}
+	for _, point := range right {
+		bucket := merged[point.Date]
+		if bucket == nil {
+			copied := point
+			merged[point.Date] = &copied
+			continue
+		}
+		bucket.Credits += point.Credits
+		bucket.Requests += point.Requests
+	}
+	result := make([]kirocredits.DayCredits, 0, len(merged))
+	for _, point := range merged {
+		result = append(result, *point)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Date < result[j].Date })
+	return result
 }
 
 type teamCreditsResponse struct {
@@ -103,6 +134,7 @@ func buildTeamCreditsResponse(scope *representativescope.Scope, batch kirocredit
 		bucket.DepartmentExternalID = departmentID
 		bucket.Credits += entry.Credits
 		bucket.Requests += entry.Requests
+		bucket.ByDay = mergeDayCredits(bucket.ByDay, entry.ByDay)
 		direct[departmentID] = bucket
 	}
 	for _, bucket := range direct {
@@ -115,7 +147,12 @@ func buildTeamCreditsResponse(scope *representativescope.Scope, batch kirocredit
 		if !ok {
 			continue
 		}
-		total := teamCreditsDepartment{DepartmentExternalID: root.ExternalID}
+		total := teamCreditsDepartment{
+			DepartmentExternalID: root.ExternalID,
+			Name:                 root.Name,
+			DisplayPath:          root.DisplayPath,
+			Root:                 true,
+		}
 		for _, subject := range subjectsByUser {
 			if subject.RelayUserID == nil {
 				continue
@@ -129,6 +166,7 @@ func buildTeamCreditsResponse(scope *representativescope.Scope, batch kirocredit
 			}
 			total.Credits += entry.Credits
 			total.Requests += entry.Requests
+			total.ByDay = mergeDayCredits(total.ByDay, entry.ByDay)
 		}
 		replaced := false
 		for index := range response.Departments {

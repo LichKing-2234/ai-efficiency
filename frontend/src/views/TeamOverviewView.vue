@@ -70,6 +70,12 @@ const creditsByDepartment = computed(() => {
   return map
 })
 
+const creditGroups = computed(() => (teamCredits.value?.departments ?? [])
+  .filter((department) => department.root === true)
+  .sort((a, b) => b.credits - a.credits))
+
+const creditTeamByDay = computed(() => teamCredits.value?.by_day ?? [])
+
 const creditTrendUsers = computed(() => (teamCredits.value?.users ?? [])
   .filter((user) => user.key_found)
   .map((user) => ({
@@ -423,6 +429,8 @@ onMounted(loadOverview)
             :tokens-total="summary?.summary.range_total_tokens ?? null"
             :credits-total="rangeCredits"
             :credits-users="creditTrendUsers"
+            :credits-groups="creditGroups"
+            :credits-team-by-day="creditTeamByDay"
           />
         </div>
 

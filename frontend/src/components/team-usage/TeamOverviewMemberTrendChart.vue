@@ -4,7 +4,7 @@ import { useI18n } from '@/i18n'
 import { useUsageUnit } from '@/composables/useUsageUnit'
 import UsageUnitToggle from '@/components/usage/UsageUnitToggle.vue'
 import { formatCredits, formatTokenCount, formatUsagePair } from '@/utils/formatters'
-import type { TeamDepartmentTrendState, TeamMemberTrendState, TeamOverviewWindow, TeamUserCredits } from '@/types'
+import type { TeamDepartmentCredits, TeamDepartmentTrendState, TeamMemberTrendState, TeamOverviewWindow, TeamUserCredits, UserUsageKiroDay } from '@/types'
 
 const LineChartCanvas = defineAsyncComponent(() => import('@/components/charts/LineChartCanvas.vue'))
 
@@ -15,6 +15,8 @@ const props = defineProps<{
   tokensTotal?: number | null
   creditsTotal?: number | null
   creditsUsers?: Array<TeamUserCredits & { display_name?: string }>
+  creditsGroups?: TeamDepartmentCredits[]
+  creditsTeamByDay?: UserUsageKiroDay[]
 }>()
 
 const { t } = useI18n()
@@ -32,6 +34,45 @@ const creditLabels = computed(() => {
   }
   return [...labels].sort()
 })
+type CreditLineSeries = { label: string; points: UserUsageKiroDay[]; color: string }
+
+function buildCreditsLineData(series: CreditLineSeries[]) {
+  const labels = new Set<string>()
+  for (const item of series) {
+    for (const point of item.points) labels.add(point.date)
+  }
+  const sorted = [...labels].sort()
+  return {
+    labels: sorted.map((label) => label.includes('T') ? label.slice(11, 16) : label),
+    datasets: series.map((item) => {
+      const byDate = new Map(item.points.map((point) => [point.date, point.credits]))
+      return {
+        label: item.label,
+        data: sorted.map((date) => byDate.get(date) ?? null),
+        borderColor: item.color,
+        backgroundColor: `${item.color}22`,
+        tension: 0.25,
+        spanGaps: true,
+      }
+    }),
+  }
+}
+
+const creditTeamSeries = computed<CreditLineSeries[]>(() => (props.creditsTeamByDay?.length ?? 0) > 0
+  ? [{ label: t('teamUsage.teamTotal'), points: props.creditsTeamByDay ?? [], color: departmentSeriesColors[0] }]
+  : [])
+const creditTeamChartData = computed(() => buildCreditsLineData(creditTeamSeries.value))
+
+const creditGroupSeries = computed<CreditLineSeries[]>(() => (props.creditsGroups ?? [])
+  .filter((group) => (group.by_day?.length ?? 0) > 0)
+  .map((group, index) => ({
+    label: group.name || group.display_path || group.department_external_id,
+    points: group.by_day ?? [],
+    color: departmentSeriesColors[(index + 1) % departmentSeriesColors.length],
+  })))
+const creditGroupChartData = computed(() => buildCreditsLineData(creditGroupSeries.value))
+const hasCreditsData = computed(() => creditTeamSeries.value.length > 0 || creditGroupSeries.value.length > 0 || creditSeries.value.length > 0)
+
 const creditsChartData = computed(() => ({
   labels: creditLabels.value.map((label) => label.includes('T') ? label.slice(11, 16) : label),
   datasets: creditSeries.value.map((user, index) => {
@@ -336,13 +377,27 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
     </div>
 
     <template v-if="creditsMode">
-      <div v-if="creditSeries.length === 0" class="px-4 py-4 text-sm text-slate-500" data-testid="team-trend-credits-empty">
+      <div v-if="!hasCreditsData" class="px-4 py-4 text-sm text-slate-500" data-testid="team-trend-credits-empty">
         {{ t('usageDashboard.kiroCreditsNoKey') }}
       </div>
-      <div v-else class="space-y-3 p-4" data-testid="team-trend-credits">
-        <h3 class="text-sm font-semibold text-slate-900">{{ t('usageDashboard.kiroCreditsTrend') }}</h3>
-        <div class="h-64 min-w-0">
-          <LineChartCanvas :data="creditsChartData" :options="creditsChartOptions" />
+      <div v-else class="space-y-5 p-4" data-testid="team-trend-credits">
+        <div v-if="creditTeamSeries.length > 0" data-testid="team-credits-total-chart">
+          <h3 class="text-sm font-semibold text-slate-900">{{ t('teamUsage.teamTotalTrend') }}</h3>
+          <div class="mt-2 h-52 min-w-0">
+            <LineChartCanvas :data="creditTeamChartData" :options="creditsChartOptions" />
+          </div>
+        </div>
+        <div v-if="creditGroupSeries.length > 1" data-testid="team-credits-group-chart">
+          <h3 class="text-sm font-semibold text-slate-900">{{ t('teamUsage.subteamTrends') }}</h3>
+          <div class="mt-2 h-64 min-w-0">
+            <LineChartCanvas :data="creditGroupChartData" :options="creditsChartOptions" />
+          </div>
+        </div>
+        <div v-if="creditSeries.length > 0" data-testid="team-credits-member-chart">
+          <h3 class="text-sm font-semibold text-slate-900">{{ t('usageDashboard.kiroCreditsTrend') }}</h3>
+          <div class="mt-2 h-64 min-w-0">
+            <LineChartCanvas :data="creditsChartData" :options="creditsChartOptions" />
+          </div>
         </div>
         <p class="text-xs text-slate-500">{{ t('usageDashboard.kiroCreditsNote') }}</p>
       </div>
