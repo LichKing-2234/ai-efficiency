@@ -35,9 +35,10 @@ func (h *KiroUsageHandler) Get(c *gin.Context) {
 		return
 	}
 	params := kirocredits.Params{
-		StartDate: c.Query("start_date"),
-		EndDate:   c.Query("end_date"),
-		Timezone:  c.Query("timezone"),
+		StartDate:   c.Query("start_date"),
+		EndDate:     c.Query("end_date"),
+		Timezone:    c.Query("timezone"),
+		Granularity: c.Query("granularity"),
 	}
 	pkg.Success(c, h.service.Credits(c.Request.Context(), userContext.UserID, params))
 }

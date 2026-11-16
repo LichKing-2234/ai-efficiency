@@ -118,7 +118,13 @@
         :credits="creditsForCard"
       />
       <div v-if="hasUsableUsage" class="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-        <UsageTrendChart :data="currentSnapshot?.trend ?? []" :loading="usageLoading" />
+        <UsageTrendChart
+          :data="currentSnapshot?.trend ?? []"
+          :loading="usageLoading"
+          :kiro-by-day="kiroUsage?.status === 'ok' ? kiroUsage.by_day : []"
+          :kiro-loading="kiroLoading"
+          :kiro-available="kiroUsage?.available === true"
+        />
         <UsageModelChart
           :data="currentSnapshot?.models ?? []"
           :kiro-data="props.memberRoute ? memberKiroModels : (kiroUsage?.status === 'ok' ? kiroUsage.by_model : [])"

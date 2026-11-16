@@ -5,9 +5,7 @@ import { useI18n } from '@/i18n'
 import CursorPager from '@/components/CursorPager.vue'
 import TeamOverviewDepartmentNode from '@/components/team-usage/TeamOverviewDepartmentNode.vue'
 import { useWideContentLayout } from '@/composables/useMediaQuery'
-import { formatCredits, formatTokenCount, formatUsagePair } from '@/utils/formatters'
-import { useUsageUnit } from '@/composables/useUsageUnit'
-import UsageUnitToggle from '@/components/usage/UsageUnitToggle.vue'
+import { formatCredits, formatUsagePair } from '@/utils/formatters'
 import type { TeamOverviewMember, TeamUsageOrganizationDepartment, TeamUserCredits } from '@/types'
 import type { TeamUsageOrganizationBranchState } from '@/composables/useTeamUsageOrganization'
 
@@ -49,10 +47,23 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-type DetailView = 'ranking' | 'organization'
+type DetailView = 'ranking' | 'credits' | 'organization'
 const detailView = ref<DetailView>('ranking')
-const { unit: usageUnit } = useUsageUnit('ae.usage.team.unit')
-const usageColumnLabel = computed(() => usageUnit.value === 'credits' ? t('usageDashboard.kiroCreditsColumn') : t('teamUsage.rangeTotalTokens'))
+
+const creditsRankingMembers = computed(() => [...props.members].sort((a, b) => {
+  const creditsA = props.creditsByUser[a.user_id]?.credits ?? -1
+  const creditsB = props.creditsByUser[b.user_id]?.credits ?? -1
+  if (creditsA !== creditsB) return creditsB - creditsA
+  return a.display_name.localeCompare(b.display_name)
+}))
+
+function memberCredits(member: TeamOverviewMember) {
+  return props.creditsByUser[member.user_id]?.credits ?? null
+}
+
+function memberCreditRequests(member: TeamOverviewMember) {
+  return props.creditsByUser[member.user_id]?.requests ?? null
+}
 const showDesktopRanking = useWideContentLayout()
 
 function tableMember(row: unknown) {
@@ -60,7 +71,7 @@ function tableMember(row: unknown) {
 }
 
 function selectDetailView(value: string | number | boolean | undefined) {
-  if (value === 'ranking' || value === 'organization') detailView.value = value
+  if (value === 'ranking' || value === 'credits' || value === 'organization') detailView.value = value
 }
 
 function formatCost(value: number) {
@@ -111,13 +122,6 @@ function formatMemberUsage(member: TeamOverviewMember) {
   return formatUsagePair(member.total_tokens, credits ? credits.credits : null)
 }
 
-function memberUsageValue(member: TeamOverviewMember) {
-  if (usageUnit.value === 'credits') {
-    const credits = props.creditsByUser[member.user_id]
-    return credits ? formatCredits(credits.credits) : '--'
-  }
-  return formatTokenCount(member.total_tokens)
-}
 
 function departmentMemberCountLabel(count: number) {
   return t(count === 1 ? 'teamUsage.memberCountSingular' : 'teamUsage.memberCountPlural', { count })
@@ -193,13 +197,7 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
       <h2 class="text-base font-semibold text-slate-950">{{ t('teamUsage.memberTable') }}</h2>
       <div class="flex flex-wrap items-center gap-3">
-      <UsageUnitToggle
-        v-if="detailView === 'ranking'"
-        v-model="usageUnit"
-        data-testid="team-usage-unit-toggle"
-      />
       <ElRadioGroup
-        v-if="hasOrganization"
         :model-value="detailView"
         aria-label="Member detail view"
         @change="selectDetailView"
@@ -211,6 +209,13 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
           {{ t('teamUsage.rankingView') }}
         </ElRadioButton>
         <ElRadioButton
+          data-testid="team-overview-credits-view"
+          value="credits"
+        >
+          {{ t('teamUsage.creditsRankingView') }}
+        </ElRadioButton>
+        <ElRadioButton
+          v-if="hasOrganization"
           data-testid="team-overview-organization-view"
           value="organization"
         >
@@ -309,6 +314,94 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
 
     <div v-else-if="props.members.length === 0" class="px-4 py-4 text-sm text-slate-500">-</div>
 
+    <div v-else-if="detailView === 'credits'" data-testid="team-overview-credits-ranking-table">
+      <ElTable
+        v-if="showDesktopRanking"
+        :data="creditsRankingMembers"
+        :row-key="memberKey"
+        :row-class-name="memberRowClassName"
+      >
+        <ElTableColumn :label="t('teamUsage.memberName')" min-width="140">
+          <template #default="{ row: member }">
+            <span v-member-test-id="memberTestID(tableMember(member))" class="inline-flex items-center gap-2 font-medium text-slate-900">
+              {{ member.display_name }}
+              <ElTag v-if="member.subject_type === 'team_account'" size="small" type="info" effect="plain">
+                {{ t('teamUsage.organizationAccount') }}
+              </ElTag>
+            </span>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn prop="email" :label="t('teamUsage.memberEmail')" min-width="200" />
+        <ElTableColumn :label="t('teamUsage.memberDepartment')" min-width="224">
+          <template #default="{ row: member }">
+            <span class="text-slate-600">{{ member.department_display_path || '-' }}</span>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('usageDashboard.kiroCreditsColumn')" min-width="120" align="right">
+          <template #default="{ row: member }">
+            <span class="tabular-nums text-slate-900">{{ memberCredits(tableMember(member)) == null ? '--' : formatCredits(memberCredits(tableMember(member))) }}</span>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('usageDashboard.requests')" min-width="110" align="right">
+          <template #default="{ row: member }">
+            <span class="tabular-nums text-slate-900">{{ memberCreditRequests(tableMember(member)) == null ? '--' : memberCreditRequests(tableMember(member))!.toLocaleString() }}</span>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('teamUsage.memberAction')" min-width="190" align="right">
+          <template #default="{ row: member }">
+            <ElTag v-if="!isConnected(tableMember(member))" type="danger" effect="light" class="mr-2">
+              {{ t('teamUsage.notConnected') }}
+            </ElTag>
+            <ElButton :disabled="!canOpen(tableMember(member))" @click="openMember(tableMember(member))">
+              {{ t('teamUsage.openMember') }}
+            </ElButton>
+          </template>
+        </ElTableColumn>
+      </ElTable>
+
+      <div v-else class="divide-y divide-slate-100">
+        <article
+          v-for="member in creditsRankingMembers"
+          :key="memberKey(member)"
+          :data-testid="memberTestID(member)"
+          class="space-y-3 p-4"
+          :class="isConnected(member) ? '' : 'bg-red-50 text-red-950'"
+        >
+          <div class="flex min-w-0 items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="break-words font-medium text-slate-900">
+                {{ member.display_name }}
+                <ElTag v-if="member.subject_type === 'team_account'" size="small" type="info" effect="plain">
+                  {{ t('teamUsage.organizationAccount') }}
+                </ElTag>
+              </div>
+              <div class="mt-1 break-all text-sm text-slate-600">{{ member.email }}</div>
+            </div>
+            <ElTag v-if="!isConnected(member)" type="danger" effect="light" class="shrink-0">
+              {{ t('teamUsage.notConnected') }}
+            </ElTag>
+          </div>
+          <dl class="grid grid-cols-2 gap-3 text-sm">
+            <div class="col-span-2">
+              <dt class="text-xs text-slate-500">{{ t('teamUsage.memberDepartment') }}</dt>
+              <dd class="mt-1 break-words text-slate-800">{{ member.department_display_path || '-' }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-500">{{ t('usageDashboard.kiroCreditsColumn') }}</dt>
+              <dd class="mt-1 tabular-nums text-slate-900">{{ memberCredits(member) == null ? '--' : formatCredits(memberCredits(member)) }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-500">{{ t('usageDashboard.requests') }}</dt>
+              <dd class="mt-1 tabular-nums text-slate-900">{{ memberCreditRequests(member) == null ? '--' : memberCreditRequests(member)!.toLocaleString() }}</dd>
+            </div>
+          </dl>
+          <ElButton class="w-full" :disabled="!canOpen(member)" @click="openMember(member)">
+            {{ t('teamUsage.openMember') }}
+          </ElButton>
+        </article>
+      </div>
+    </div>
+
     <div v-else data-testid="team-overview-ranking-table">
       <ElTable
         v-if="showDesktopRanking"
@@ -332,9 +425,9 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
             <span class="text-slate-600">{{ member.department_display_path || '-' }}</span>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="t('teamUsage.rangeTotalTokens')" min-width="150" align="right">
+        <ElTableColumn :label="t('teamUsage.rangeTokenCreditsUsage')" min-width="190" align="right">
           <template #default="{ row: member }">
-            <span class="tabular-nums text-slate-900">{{ formatTokenCount(member.total_tokens) }}</span>
+            <span class="tabular-nums text-slate-900">{{ formatMemberUsage(tableMember(member)) }}</span>
           </template>
         </ElTableColumn>
         <ElTableColumn :label="t('teamUsage.rangeActualCost')" min-width="150" align="right">
@@ -382,8 +475,8 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
               <dd class="mt-1 break-words text-slate-800">{{ member.department_display_path || '-' }}</dd>
             </div>
             <div>
-              <dt class="text-xs text-slate-500">{{ usageColumnLabel }}</dt>
-              <dd class="mt-1 tabular-nums text-slate-900">{{ memberUsageValue(member) }}</dd>
+              <dt class="text-xs text-slate-500">{{ t('teamUsage.rangeTokenCreditsUsage') }}</dt>
+              <dd class="mt-1 tabular-nums text-slate-900">{{ formatMemberUsage(member) }}</dd>
             </div>
             <div>
               <dt class="text-xs text-slate-500">{{ t('teamUsage.rangeActualCost') }}</dt>
@@ -398,7 +491,7 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
     </div>
 
     <ElAlert
-      v-if="detailView === 'ranking' && props.memberError && props.members.length > 0"
+      v-if="detailView !== 'organization' && props.memberError && props.members.length > 0"
       data-testid="team-overview-members-error"
       class="m-4"
       type="warning"
@@ -408,7 +501,7 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
     />
 
     <CursorPager
-      v-if="detailView === 'ranking' && showMemberPagination"
+      v-if="detailView !== 'organization' && showMemberPagination"
       data-testid="team-overview-member-pagination"
       :has-previous="props.hasPreviousPage"
       :has-next="props.hasNextPage"

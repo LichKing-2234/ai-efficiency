@@ -232,14 +232,19 @@ accepted). Keys owned by other clients are never attributed.
   example `3.49B/0.06`: the label carries both units and the value joins the
   token count and the credit count with `/`. Missing credits render `--`; the
   two units are never summed or converted.
-- Identity tables (the team member table) carry a Token/Credits switch. The
-  switch changes the metric column, its header and the active sort; the choice
-  is persisted per browser and shared by the tables on the page.
-- The personal model panel carries the same switch. Because the Relay model set
-  and the kiro2cc model set are different row populations, the switch swaps the
-  data source: tokens switch to the Relay models, credits switch to the kiro2cc
-  models with their estimated tokens. The distribution chart switches with the
-  table so chart and rows never disagree.
+- The team member table has two rankings instead of a metric toggle: the Token
+  ranking shows a single `Token/Credits` usage column (one pair per member) and
+  the Credits ranking sorts the same members by credits with credits and Kiro
+  request columns. The organization tree stays on pairs.
+- The personal model panel carries a Token/Credits switch. Because the Relay
+  model set and the kiro2cc model set are different row populations, the switch
+  swaps the data source: tokens switch to the Relay models, credits switch to
+  the kiro2cc models with their estimated tokens. The distribution chart
+  switches with the table so chart and rows never disagree.
+- The personal usage trend and the team top-member trend carry the same switch.
+  Credits mode replaces the series with daily (hourly for today) credits plus
+  request counts; it never overlays credits on token lines. Department/team
+  total trends remain token-only because kiro2cc has no department attribution.
 - The team overview reads credits from `GET /user/team-usage/credits` (per
   member, per department, per day) inside the caller's representative scope;
   member pages read the same data through

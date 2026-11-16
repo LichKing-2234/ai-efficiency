@@ -114,7 +114,7 @@ func TestAggregateRecordsBucketsByModelAndTimezoneDay(t *testing.T) {
 		{Model: "claude-opus-5.5", InputTokens: 100, OutputTokens: 10, CreditsUsed: &credits, CreditsSaved: &saved, CreatedAt: time.Date(2026, 11, 12, 15, 0, 0, 0, time.UTC)},
 		{Model: "claude-opus-5.5", InputTokens: 200, OutputTokens: 20, CreditsUsed: &credits, CreatedAt: time.Date(2026, 11, 12, 17, 0, 0, 0, time.UTC)},
 		{Model: "auto", InputTokens: 50, OutputTokens: 5, CreatedAt: time.Date(2026, 11, 13, 1, 0, 0, 0, time.UTC)},
-	})
+	}, "")
 	if result.requests != 3 {
 		t.Fatalf("requests = %d, want 3", result.requests)
 	}
@@ -138,5 +138,28 @@ func TestAggregateRecordsBucketsByModelAndTimezoneDay(t *testing.T) {
 	}
 	if result.byDay[1].Date != "2026-11-13" || result.byDay[1].Requests != 2 {
 		t.Fatalf("day buckets = %+v", result.byDay)
+	}
+}
+
+func TestAggregateRecordsBucketsByHour(t *testing.T) {
+	location := time.UTC
+	window := window{
+		start:        time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC),
+		endExclusive: time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC),
+		location:     location,
+	}
+	credits := 0.5
+	result := aggregateRecords(window, []usageRecord{
+		{Model: "auto", CreditsUsed: &credits, CreatedAt: time.Date(2026, 11, 13, 9, 10, 0, 0, time.UTC)},
+		{Model: "auto", CreditsUsed: &credits, CreatedAt: time.Date(2026, 11, 13, 10, 5, 0, 0, time.UTC)},
+	}, "hour")
+	if len(result.byDay) != 2 {
+		t.Fatalf("hour buckets = %+v, want 2", result.byDay)
+	}
+	if result.byDay[0].Date != "2026-11-13T09:00" || result.byDay[0].Credits != 0.5 {
+		t.Fatalf("first hour bucket = %+v", result.byDay[0])
+	}
+	if result.byDay[1].Date != "2026-11-13T10:00" {
+		t.Fatalf("second hour bucket = %+v", result.byDay[1])
 	}
 }

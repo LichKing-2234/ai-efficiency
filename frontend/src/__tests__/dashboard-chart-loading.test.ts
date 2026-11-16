@@ -240,7 +240,7 @@ describe('DashboardView chart loading', () => {
     expect(wrapper.text()).toContain('example-model')
     expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="doughnut-chart"]').exists()).toBe(false)
-    const trendSection = wrapper.findAll('section').find((section) => section.text().includes('Token Trend'))
+    const trendSection = wrapper.findAll('section').find((section) => section.text().includes('Usage trend'))
     const modelSection = wrapper.findAll('section').find((section) => section.text().includes('Model Distribution'))
     expect(trendSection?.get('.h-72').classes()).toContain('h-72')
     expect(modelSection?.get('.h-44').classes()).toContain('h-44')

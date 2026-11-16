@@ -139,7 +139,7 @@ func (s *Service) Credits(ctx context.Context, userID int, params Params) Snapsh
 		return cached
 	}
 
-	snapshot = s.collect(ctx, row, relayUserID, window, now)
+	snapshot = s.collect(ctx, row, relayUserID, window, params.Granularity, now)
 	s.storeSnapshot(cacheKey, snapshot, now)
 	return snapshot
 }
@@ -154,7 +154,7 @@ func (s *Service) source(ctx context.Context) (*ent.RelayProvider, error) {
 		First(ctx)
 }
 
-func (s *Service) collect(ctx context.Context, row *ent.RelayProvider, relayUserID int64, window window, now time.Time) Snapshot {
+func (s *Service) collect(ctx context.Context, row *ent.RelayProvider, relayUserID int64, window window, granularity string, now time.Time) Snapshot {
 	snapshot := Snapshot{
 		Configured: true,
 		AsOf:       now,
@@ -197,7 +197,7 @@ func (s *Service) collect(ctx context.Context, row *ent.RelayProvider, relayUser
 	snapshot.LifetimeCredits = summary.TotalCredits
 	snapshot.LifetimeRequests = summary.TotalRequests
 
-	aggregated, rangePartial, err := s.collectRange(ctx, client, key.ID, window)
+	aggregated, rangePartial, err := s.collectRange(ctx, client, key.ID, window, granularity)
 	if err != nil {
 		s.logger.Warn("kiro credits: read key records", zap.Int("provider_id", row.ID), zap.Error(err))
 		snapshot.Status = StatusError
@@ -224,7 +224,7 @@ func (s *Service) collect(ctx context.Context, row *ent.RelayProvider, relayUser
 // collectRange reads one key's records inside the window and aggregates them.
 // It returns partial=true when the record page cap is hit before the window's
 // oldest record, so callers can render the totals as a lower bound.
-func (s *Service) collectRange(ctx context.Context, client *adminClient, keyID int64, window window) (aggregateResult, bool, error) {
+func (s *Service) collectRange(ctx context.Context, client *adminClient, keyID int64, window window, granularity string) (aggregateResult, bool, error) {
 	records := make([]usageRecord, 0, 128)
 	partial := false
 	page := 1
@@ -251,7 +251,7 @@ func (s *Service) collectRange(ctx context.Context, client *adminClient, keyID i
 		}
 		page++
 	}
-	return aggregateRecords(window, records), partial, nil
+	return aggregateRecords(window, records, granularity), partial, nil
 }
 
 type aggregateResult struct {
@@ -268,7 +268,7 @@ type aggregateResult struct {
 // aggregateRecords buckets the in-range kiro2cc records by model and by the
 // caller's timezone day. Nil credits values are treated as unknown (zero) and
 // flagged so callers can render the totals as a lower bound.
-func aggregateRecords(window window, records []usageRecord) aggregateResult {
+func aggregateRecords(window window, records []usageRecord, granularity string) aggregateResult {
 	result := aggregateResult{byModel: []ModelCredits{}, byDay: []DayCredits{}}
 	modelBuckets := map[string]*ModelCredits{}
 	dayBuckets := map[string]*DayCredits{}
@@ -299,7 +299,7 @@ func aggregateRecords(window window, records []usageRecord) aggregateResult {
 		modelBucket.InputTokens += record.InputTokens
 		modelBucket.OutputTokens += record.OutputTokens
 
-		day := record.CreatedAt.In(window.location).Format(dateLayout)
+		day := bucketKey(record.CreatedAt, window.location, granularity)
 		dayBucket := dayBuckets[day]
 		if dayBucket == nil {
 			dayBucket = &DayCredits{Date: day}
@@ -532,7 +532,7 @@ func (s *Service) Batch(ctx context.Context, users []UserRef, params Params) Tea
 				return
 			}
 			entry.KeyFound = true
-			aggregated, partial, err := s.collectRange(ctx, client, key.ID, window)
+			aggregated, partial, err := s.collectRange(ctx, client, key.ID, window, params.Granularity)
 			if err != nil {
 				errs[i] = err
 				perUser[i] = entry
@@ -610,6 +610,14 @@ func (s *Service) Batch(ctx context.Context, users []UserRef, params Params) Tea
 	result.Status = StatusOK
 	s.storeTeam(cacheKey, result, now)
 	return result
+}
+
+func bucketKey(value time.Time, location *time.Location, granularity string) string {
+	local := value.In(location)
+	if granularity == "hour" {
+		return local.Format("2006-01-02T15:00")
+	}
+	return local.Format(dateLayout)
 }
 
 func normalizeRefs(users []UserRef) []UserRef {
