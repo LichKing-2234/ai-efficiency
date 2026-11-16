@@ -52,6 +52,17 @@ func NewProviderHandler(entClient *ent.Client, encryptionKey string, logger *zap
 	}, nil
 }
 
+func normalizeProviderServiceType(value string) (string, error) {
+	switch strings.TrimSpace(value) {
+	case "", "sub2api":
+		return "sub2api", nil
+	case "kiro2cc":
+		return "kiro2cc", nil
+	default:
+		return "", fmt.Errorf("unsupported service_type %q", value)
+	}
+}
+
 func (h *ProviderHandler) getOrCreateRelayProvider(p *ent.RelayProvider) (relay.Provider, error) {
 	return h.runtime.ResolveEntity(p)
 }
@@ -175,6 +186,7 @@ type adminProviderResponse struct {
 	DisplayName  string `json:"display_name"`
 	BaseURL      string `json:"base_url"`
 	RelayType    string `json:"relay_type"`
+	ServiceType  string `json:"service_type"`
 	AdminAPIKey  string `json:"admin_api_key"`
 	DefaultModel string `json:"default_model"`
 	IsPrimary    bool   `json:"is_primary"`
@@ -197,6 +209,7 @@ func toAdminProviderResponse(p *ent.RelayProvider) adminProviderResponse {
 		DisplayName:  p.DisplayName,
 		BaseURL:      p.BaseURL,
 		RelayType:    p.RelayType,
+		ServiceType:  p.ServiceType,
 		AdminAPIKey:  "***",
 		DefaultModel: p.DefaultModel,
 		IsPrimary:    p.IsPrimary,
@@ -226,6 +239,7 @@ func (h *ProviderHandler) Create(c *gin.Context) {
 		DisplayName  string `json:"display_name" binding:"required"`
 		BaseURL      string `json:"base_url" binding:"required"`
 		RelayType    string `json:"relay_type"`
+		ServiceType  string `json:"service_type"`
 		AdminAPIKey  string `json:"admin_api_key" binding:"required"`
 		DefaultModel string `json:"default_model"`
 		IsPrimary    bool   `json:"is_primary"`
@@ -233,6 +247,16 @@ func (h *ProviderHandler) Create(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	serviceType, err := normalizeProviderServiceType(req.ServiceType)
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if serviceType == "kiro2cc" && req.IsPrimary {
+		pkg.Error(c, http.StatusBadRequest, "kiro2cc 服务入口只能用于用量展示，不能设为主入口")
 		return
 	}
 
@@ -249,6 +273,7 @@ func (h *ProviderHandler) Create(c *gin.Context) {
 		SetName(req.Name).
 		SetDisplayName(req.DisplayName).
 		SetBaseURL(req.BaseURL).
+		SetServiceType(serviceType).
 		SetAdminAPIKey(encryptedKey).
 		SetIsPrimary(req.IsPrimary).
 		SetEnabled(req.Enabled)
@@ -284,6 +309,7 @@ func (h *ProviderHandler) Update(c *gin.Context) {
 		DisplayName  string `json:"display_name"`
 		BaseURL      string `json:"base_url"`
 		RelayType    string `json:"relay_type"`
+		ServiceType  string `json:"service_type"`
 		AdminAPIKey  string `json:"admin_api_key"`
 		DefaultModel string `json:"default_model"`
 		IsPrimary    *bool  `json:"is_primary"`
@@ -295,8 +321,35 @@ func (h *ProviderHandler) Update(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+	current, err := h.entClient.RelayProvider.Get(ctx, id)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusNotFound, "provider not found")
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "failed to get provider")
+		return
+	}
+	serviceType := current.ServiceType
+	if strings.TrimSpace(req.ServiceType) != "" {
+		normalized, err := normalizeProviderServiceType(req.ServiceType)
+		if err != nil {
+			pkg.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		serviceType = normalized
+	}
+	if serviceType == "kiro2cc" && req.IsPrimary != nil && *req.IsPrimary {
+		pkg.Error(c, http.StatusBadRequest, "kiro2cc 服务入口只能用于用量展示，不能设为主入口")
+		return
+	}
+
 	update := h.entClient.RelayProvider.UpdateOneID(id).
 		AddConfigurationVersion(1)
+	// A usage-only service entry can never stay the primary relay provider.
+	if serviceType == "kiro2cc" && current.IsPrimary {
+		update.SetIsPrimary(false)
+	}
 
 	if req.DisplayName != "" {
 		update.SetDisplayName(req.DisplayName)
@@ -306,6 +359,9 @@ func (h *ProviderHandler) Update(c *gin.Context) {
 	}
 	if req.RelayType != "" {
 		update.SetRelayType(req.RelayType)
+	}
+	if strings.TrimSpace(req.ServiceType) != "" {
+		update.SetServiceType(serviceType)
 	}
 	if req.AdminAPIKey != "" {
 		encryptedKey, err := encryptAESGCM(req.AdminAPIKey, h.encryptionKey)

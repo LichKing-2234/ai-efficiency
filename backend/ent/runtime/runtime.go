@@ -1055,30 +1055,36 @@ func init() {
 	relayproviderDescRelayType := relayproviderFields[3].Descriptor()
 	// relayprovider.DefaultRelayType holds the default value on creation for the relay_type field.
 	relayprovider.DefaultRelayType = relayproviderDescRelayType.Default.(string)
+	// relayproviderDescServiceType is the schema descriptor for service_type field.
+	relayproviderDescServiceType := relayproviderFields[4].Descriptor()
+	// relayprovider.DefaultServiceType holds the default value on creation for the service_type field.
+	relayprovider.DefaultServiceType = relayproviderDescServiceType.Default.(string)
+	// relayprovider.ServiceTypeValidator is a validator for the "service_type" field. It is called by the builders before save.
+	relayprovider.ServiceTypeValidator = relayproviderDescServiceType.Validators[0].(func(string) error)
 	// relayproviderDescDefaultModel is the schema descriptor for default_model field.
-	relayproviderDescDefaultModel := relayproviderFields[5].Descriptor()
+	relayproviderDescDefaultModel := relayproviderFields[6].Descriptor()
 	// relayprovider.DefaultDefaultModel holds the default value on creation for the default_model field.
 	relayprovider.DefaultDefaultModel = relayproviderDescDefaultModel.Default.(string)
 	// relayproviderDescIsPrimary is the schema descriptor for is_primary field.
-	relayproviderDescIsPrimary := relayproviderFields[6].Descriptor()
+	relayproviderDescIsPrimary := relayproviderFields[7].Descriptor()
 	// relayprovider.DefaultIsPrimary holds the default value on creation for the is_primary field.
 	relayprovider.DefaultIsPrimary = relayproviderDescIsPrimary.Default.(bool)
 	// relayproviderDescEnabled is the schema descriptor for enabled field.
-	relayproviderDescEnabled := relayproviderFields[7].Descriptor()
+	relayproviderDescEnabled := relayproviderFields[8].Descriptor()
 	// relayprovider.DefaultEnabled holds the default value on creation for the enabled field.
 	relayprovider.DefaultEnabled = relayproviderDescEnabled.Default.(bool)
 	// relayproviderDescConfigurationVersion is the schema descriptor for configuration_version field.
-	relayproviderDescConfigurationVersion := relayproviderFields[8].Descriptor()
+	relayproviderDescConfigurationVersion := relayproviderFields[9].Descriptor()
 	// relayprovider.DefaultConfigurationVersion holds the default value on creation for the configuration_version field.
 	relayprovider.DefaultConfigurationVersion = relayproviderDescConfigurationVersion.Default.(int64)
 	// relayprovider.ConfigurationVersionValidator is a validator for the "configuration_version" field. It is called by the builders before save.
 	relayprovider.ConfigurationVersionValidator = relayproviderDescConfigurationVersion.Validators[0].(func(int64) error)
 	// relayproviderDescCreatedAt is the schema descriptor for created_at field.
-	relayproviderDescCreatedAt := relayproviderFields[9].Descriptor()
+	relayproviderDescCreatedAt := relayproviderFields[10].Descriptor()
 	// relayprovider.DefaultCreatedAt holds the default value on creation for the created_at field.
 	relayprovider.DefaultCreatedAt = relayproviderDescCreatedAt.Default.(func() time.Time)
 	// relayproviderDescUpdatedAt is the schema descriptor for updated_at field.
-	relayproviderDescUpdatedAt := relayproviderFields[10].Descriptor()
+	relayproviderDescUpdatedAt := relayproviderFields[11].Descriptor()
 	// relayprovider.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	relayprovider.DefaultUpdatedAt = relayproviderDescUpdatedAt.Default.(func() time.Time)
 	// relayprovider.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
