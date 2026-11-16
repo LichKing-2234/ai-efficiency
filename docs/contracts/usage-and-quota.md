@@ -216,11 +216,10 @@ accepted). Keys owned by other clients are never attributed.
 - Credits are real Kiro upstream metering; kiro2cc tokens are cl100k estimates.
   Credits are a separate unit: never added to Relay token totals and never
   converted to USD.
-- The personal usage view offers a Token usage / Kiro Credits switch. The
-  credits view reuses the token layout (stat cards, trend, model distribution)
-  with credit-appropriate metrics and never mixes the two units in one number.
-  Range totals come from per-key usage records, so the view may be marked
-  partial when record retention truncates the window.
+- There is no dedicated credits page. Credits surface only as the pair format
+  below and as the unit switch on the model panel and the team member table.
+  Range totals come from per-key usage records and may be marked partial when
+  record retention truncates the window.
 - Day buckets use the dashboard timezone.
 - A missing source, unlinked user, missing key, or unreachable kiro2cc renders an
   explanatory empty state; the rest of the dashboard is unaffected.
@@ -236,8 +235,11 @@ accepted). Keys owned by other clients are never attributed.
 - Identity tables (the team member table) carry a Token/Credits switch. The
   switch changes the metric column, its header and the active sort; the choice
   is persisted per browser and shared by the tables on the page.
-- Model tables are not switched: the Relay model set and the kiro2cc model set
-  are different row populations, so they stay separate tables.
+- The personal model panel carries the same switch. Because the Relay model set
+  and the kiro2cc model set are different row populations, the switch swaps the
+  data source: tokens switch to the Relay models, credits switch to the kiro2cc
+  models with their estimated tokens. The distribution chart switches with the
+  table so chart and rows never disagree.
 - The team overview reads credits from `GET /user/team-usage/credits` (per
   member, per department, per day) inside the caller's representative scope;
   member pages read the same data through
