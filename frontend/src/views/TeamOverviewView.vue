@@ -10,6 +10,7 @@ import { getTeamUsageCredits, getTeamUsageMembers, getTeamUsageSummary, getTeamU
 import { useTeamUsageOrganization } from '@/composables/useTeamUsageOrganization'
 import { useI18n } from '@/i18n'
 import { formatTokenCount, formatUsagePair } from '@/utils/formatters'
+import UsagePairInfo from '@/components/usage/UsagePairInfo.vue'
 import { readUsageWindowPreference, writeUsageWindowPreference } from '@/utils/usageWindowPreference'
 import type { UsageWindow } from '@/utils/usageWindowPreference'
 import type { TeamCredits, TeamUsageMembersResponse, TeamUsageOverviewParams, TeamUsageSummaryResponse, TeamUsageTrendResponse } from '@/types'
@@ -375,7 +376,7 @@ onMounted(loadOverview)
               </div>
             </div>
             <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <div class="text-xs font-medium text-slate-500">{{ t('teamUsage.rangeTokenCredits') }}</div>
+              <div class="text-xs font-medium text-slate-500">{{ t('teamUsage.rangeTokenCredits') }}<UsagePairInfo /></div>
               <div class="mt-1 text-xl font-semibold tabular-nums text-slate-950">
                 {{ formatUsagePair(summary.summary.range_total_tokens, rangeCredits) }}
               </div>

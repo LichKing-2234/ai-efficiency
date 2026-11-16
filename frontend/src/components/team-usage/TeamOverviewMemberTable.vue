@@ -6,6 +6,7 @@ import CursorPager from '@/components/CursorPager.vue'
 import TeamOverviewDepartmentNode from '@/components/team-usage/TeamOverviewDepartmentNode.vue'
 import { useWideContentLayout } from '@/composables/useMediaQuery'
 import { formatCredits, formatUsagePair } from '@/utils/formatters'
+import UsagePairInfo from '@/components/usage/UsagePairInfo.vue'
 import type { TeamOverviewMember, TeamUsageOrganizationDepartment, TeamUserCredits } from '@/types'
 import type { TeamUsageOrganizationBranchState } from '@/composables/useTeamUsageOrganization'
 
@@ -426,6 +427,9 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
           </template>
         </ElTableColumn>
         <ElTableColumn :label="t('teamUsage.rangeTokenCreditsUsage')" min-width="190" align="right">
+          <template #header>
+            {{ t('teamUsage.rangeTokenCreditsUsage') }}<UsagePairInfo />
+          </template>
           <template #default="{ row: member }">
             <span class="tabular-nums text-slate-900">{{ formatMemberUsage(tableMember(member)) }}</span>
           </template>
@@ -475,7 +479,7 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
               <dd class="mt-1 break-words text-slate-800">{{ member.department_display_path || '-' }}</dd>
             </div>
             <div>
-              <dt class="text-xs text-slate-500">{{ t('teamUsage.rangeTokenCreditsUsage') }}</dt>
+              <dt class="text-xs text-slate-500">{{ t('teamUsage.rangeTokenCreditsUsage') }}<UsagePairInfo /></dt>
               <dd class="mt-1 tabular-nums text-slate-900">{{ formatMemberUsage(member) }}</dd>
             </div>
             <div>

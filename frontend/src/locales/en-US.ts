@@ -348,6 +348,7 @@ const enUS = {
   'usageDashboard.errorRetry': 'Retry',
   'usageDashboard.rangeCost': '{range} Cost',
   'usageDashboard.rangeRequests': '{range} Requests',
+  'usageDashboard.usagePairHelp': 'Tokens come from AI service usage; Credits are the real Kiro CLI metering in kiro2cc. They are different units and must not be added together or converted to USD.',
   'usageDashboard.rangeTokenCredits': '{range} Token/Credits',
   'teamUsage.rangeTokenCredits': 'Token/Credits',
   'usageDashboard.rangeTokens': '{range} Tokens',
