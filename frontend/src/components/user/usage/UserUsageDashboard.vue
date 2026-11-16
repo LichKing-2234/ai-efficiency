@@ -121,10 +121,10 @@
         <UsageTrendChart :data="currentSnapshot?.trend ?? []" :loading="usageLoading" />
         <UsageModelChart
           :data="currentSnapshot?.models ?? []"
-          :kiro-data="kiroUsage?.status === 'ok' ? kiroUsage.by_model : []"
+          :kiro-data="props.memberRoute ? memberKiroModels : (kiroUsage?.status === 'ok' ? kiroUsage.by_model : [])"
           :loading="usageLoading"
           :kiro-loading="kiroLoading"
-          :kiro-available="kiroUsage?.available === true"
+          :kiro-available="props.memberRoute ? memberKiroAvailable : (kiroUsage?.available === true)"
           :hide-cost="props.homeMode"
         />
       </div>
@@ -159,6 +159,7 @@ import type {
   UserUsageDashboardSnapshot,
   UserUsageGroupPoolUsageState,
   UserUsageGroupQuotaState,
+  UserUsageKiroModel,
   UserUsageKiroSnapshot,
 } from '@/types'
 
@@ -191,6 +192,8 @@ const personalPoolUsage = ref<UserUsageGroupPoolUsageState | null>(null)
 const kiroUsage = ref<UserUsageKiroSnapshot | null>(null)
 const kiroLoading = ref(false)
 const memberCredits = ref<number | null>(null)
+const memberKiroModels = ref<UserUsageKiroModel[]>([])
+const memberKiroAvailable = ref(false)
 const memberRouteSubject = ref<TeamUsageSubject | null>(null)
 const selectedSubjectSubscriptions = ref<SubjectSubscriptionGroup[]>([])
 const usageLoading = ref(!props.initialSnapshot)
@@ -315,6 +318,8 @@ async function loadMemberDashboard(generation: number, requestedRange: UsageWind
   kiroUsage.value = null
   kiroLoading.value = false
   memberCredits.value = null
+  memberKiroModels.value = []
+  memberKiroAvailable.value = false
   try {
     const routeUserID = routeSubjectUserID()
     if (routeUserID == null) throw new Error('invalid member route')
@@ -328,6 +333,8 @@ async function loadMemberDashboard(generation: number, requestedRange: UsageWind
     if (generation !== requestGeneration) return
     const creditsUser = creditsResponse?.data?.data?.users?.[0]
     memberCredits.value = creditsUser?.key_found ? creditsUser.credits : null
+    memberKiroModels.value = creditsUser?.by_model ?? []
+    memberKiroAvailable.value = creditsUser?.key_found === true
   } catch (error: any) {
     if (generation !== requestGeneration) return
     memberRouteSubject.value = null
