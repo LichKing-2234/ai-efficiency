@@ -67,6 +67,9 @@ async function loadScope() {
 }
 
 const canCreate = computed(() => isRepresentative.value)
+// Administrators creating through this section keep the full form; everyone
+// else gets the fixed Agent-only account with a generated name.
+const canChooseCreationOptions = computed(() => auth.isAdmin)
 const groupOptions = ref<{ id: number; name: string; platform: string }[]>([])
 const defaultGroupIDs = ref<number[]>([])
 const grantableGroupIDs = ref<number[]>([])
@@ -147,7 +150,7 @@ function closeCreate() {
 
 async function submitCreate() {
   if (creating.value) return
-  if (!createForm.name.trim()) {
+  if (canChooseCreationOptions.value && !createForm.name.trim()) {
     createError.value = t('teamAccounts.nameRequired')
     return
   }
@@ -155,9 +158,13 @@ async function submitCreate() {
   createError.value = ''
   try {
     const response = await createTeamAccount({
-      name: createForm.name.trim(),
+      // Representatives create Agent-only accounts with a generated name, so
+      // neither the name nor any group is sent from here.
+      name: canChooseCreationOptions.value ? createForm.name.trim() : undefined,
       department_external_id: createForm.departmentExternalId.trim() || undefined,
-      additional_group_ids: additionalGroupIDs.value.filter((id) => !defaultGroupIDs.value.includes(id)),
+      additional_group_ids: canChooseCreationOptions.value
+        ? additionalGroupIDs.value.filter((id) => !defaultGroupIDs.value.includes(id))
+        : [],
     })
     const created = response.data.data
     ElMessage.success(t('teamAccounts.createSuccess'))
@@ -344,7 +351,15 @@ function handleTransferred() {
       </template>
 
       <div class="space-y-4">
-        <label class="block text-sm">
+        <ElAlert
+          v-if="!canChooseCreationOptions"
+          data-testid="team-account-create-agent-only"
+          type="info"
+          :closable="false"
+          show-icon
+          :title="t('teamAccounts.agentOnlyNotice')"
+        />
+        <label v-if="canChooseCreationOptions" class="block text-sm">
           <span class="font-medium text-gray-700">{{ t('teamAccounts.name') }}</span>
           <ElInput
             v-model="createForm.name"
@@ -389,7 +404,7 @@ function handleTransferred() {
             disabled
           />
         </label>
-        <div class="block text-sm">
+        <div v-if="canChooseCreationOptions" class="block text-sm">
           <span class="font-medium text-gray-700">{{ t('teamAccounts.additionalGroups') }}</span>
           <p class="mb-1 text-xs text-slate-500">{{ t('teamAccounts.additionalGroupsHint') }}</p>
           <TeamAccountGroupShuttle

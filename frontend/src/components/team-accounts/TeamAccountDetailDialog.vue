@@ -41,7 +41,9 @@ import {
   teamAccountStatusLabelKey,
   teamAccountStatusTagType,
 } from '@/utils/teamAccounts'
+import { loadGroupOptions, saveAccountGroups } from '@/components/team-accounts/groups'
 import type {
+  TeamAccountAvailableGroup,
   TeamAccountCredentials,
   TeamAccountDetail,
   TeamAccountEvent,
@@ -438,6 +440,52 @@ function requestTransfer() {
   emit('transfer-requested', current)
 }
 
+const groupsDialogOpen = ref(false)
+const groupsSaving = ref(false)
+const groupsSelection = ref<number[]>([])
+const groupOptions = ref<TeamAccountAvailableGroup[]>([])
+
+async function openGroupsDialog() {
+  groupsSelection.value = availableGroups.value.map((group) => group.id)
+  groupsDialogOpen.value = true
+  groupOptions.value = availableGroups.value
+  try {
+    groupOptions.value = await loadGroupOptions()
+  } catch {
+    // Fall back to the groups the account already holds.
+  }
+}
+
+function toggleGroup(groupID: number) {
+  const next = new Set(groupsSelection.value)
+  if (next.has(groupID)) {
+    next.delete(groupID)
+  } else {
+    next.add(groupID)
+  }
+  groupsSelection.value = Array.from(next)
+}
+
+async function saveGroups() {
+  if (groupsSaving.value || !props.accountId) return
+  if (!groupsSelection.value.length) {
+    ElMessage.error(t('teamAccounts.admin.groupsRequired'))
+    return
+  }
+  groupsSaving.value = true
+  try {
+    await saveAccountGroups(props.accountId, groupsSelection.value)
+    ElMessage.success(t('teamAccounts.admin.groupsSaved'))
+    groupsDialogOpen.value = false
+    await loadDetail(props.accountId)
+    await loadEvents(props.accountId)
+  } catch (error: unknown) {
+    ElMessage.error(teamAccountErrorMessage(error, t('teamAccounts.admin.groupsSaveFailed')))
+  } finally {
+    groupsSaving.value = false
+  }
+}
+
 function requestStatusChange() {
   const current = summary.value
   if (!current) return
@@ -541,6 +589,13 @@ function requestStatusChange() {
                 @click="revealCredentials"
               >
                 {{ credentials ? t('teamAccounts.credentials.hide') : t('teamAccounts.credentials.reveal') }}
+              </ElButton>
+              <ElButton
+                v-if="mode === 'admin' && summary"
+                data-testid="team-account-edit-groups"
+                @click="openGroupsDialog"
+              >
+                {{ t('teamAccounts.admin.editGroups') }}
               </ElButton>
               <ElButton v-if="isOwner" data-testid="team-account-transfer" @click="requestTransfer">
                 {{ t('teamAccounts.transfer.button') }}
@@ -677,5 +732,31 @@ function requestStatusChange() {
         
               </template>
     </div>
+  </ElDialog>
+
+  <ElDialog
+    v-model="groupsDialogOpen"
+    data-testid="team-account-groups-dialog"
+    :title="t('teamAccounts.admin.editGroups')"
+    width="min(100%, 34rem)"
+  >
+    <p class="mb-2 text-sm text-slate-500">{{ t('teamAccounts.admin.editGroupsHint') }}</p>
+    <div class="flex max-h-80 flex-col gap-2 overflow-y-auto">
+      <label v-for="group in groupOptions" :key="group.id" class="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          :value="group.id"
+          :checked="groupsSelection.includes(group.id)"
+          @change="toggleGroup(group.id)"
+        />
+        <span>{{ group.platform ? `${group.name} (${group.platform})` : group.name }}</span>
+      </label>
+    </div>
+    <template #footer>
+      <ElButton :disabled="groupsSaving" @click="groupsDialogOpen = false">{{ t('teamAccounts.cancel') }}</ElButton>
+      <ElButton type="primary" :loading="groupsSaving" data-testid="team-account-groups-save" @click="saveGroups">
+        {{ t('teamAccounts.admin.saveGroups') }}
+      </ElButton>
+    </template>
   </ElDialog>
 </template>

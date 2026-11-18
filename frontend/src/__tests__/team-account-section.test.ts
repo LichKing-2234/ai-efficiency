@@ -219,12 +219,15 @@ describe('TeamAccountSection', () => {
     expect((wrapper.get('[data-testid="team-account-create-department-locked"]').element as HTMLInputElement).value)
       .toContain('Engineering / Data Platform')
 
-    await wrapper.get('[data-testid="team-account-create-name"]').setValue('New Account')
+    // Representatives never type a name or pick groups: the account is
+    // Agent-only with a generated name.
+    expect(wrapper.find('[data-testid="team-account-create-name"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="team-account-create-agent-only"]').exists()).toBe(true)
     await wrapper.get('[data-testid="team-account-create-submit"]').trigger('click')
     await flushPromises()
 
     expect(api.createTeamAccount).toHaveBeenCalledWith({
-      name: 'New Account',
+      name: undefined,
       department_external_id: 'dept-data',
       additional_group_ids: [],
     })

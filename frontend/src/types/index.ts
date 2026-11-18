@@ -1592,7 +1592,8 @@ export interface TeamAccountUsageParams {
 }
 
 export interface TeamAccountCreateRequest {
-  name: string
+  /** Omitted for representative creates: the server generates the name. */
+  name?: string
   department_external_id?: string
   additional_group_ids?: number[]
 }

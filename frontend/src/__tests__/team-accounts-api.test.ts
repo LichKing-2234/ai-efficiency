@@ -5,6 +5,7 @@ vi.mock('@/api/client', () => ({
     get: vi.fn(),
     post: vi.fn(),
     delete: vi.fn(),
+    put: vi.fn(),
   },
 }))
 
@@ -19,6 +20,7 @@ import {
   getTeamAccountUsage,
   listAdminTeamAccounts,
   listTeamAccountEvents,
+  updateAdminTeamAccountGroups,
   listTeamAccounts,
   removeTeamAccountManager,
   revealTeamAccountCredentials,
@@ -31,6 +33,7 @@ const mockClient = client as unknown as {
   get: ReturnType<typeof vi.fn>
   post: ReturnType<typeof vi.fn>
   delete: ReturnType<typeof vi.fn>
+  put: ReturnType<typeof vi.fn>
 }
 
 function emptyResponse() {
@@ -42,6 +45,7 @@ beforeEach(() => {
   mockClient.get.mockResolvedValue(emptyResponse())
   mockClient.post.mockResolvedValue(emptyResponse())
   mockClient.delete.mockResolvedValue(emptyResponse())
+  mockClient.put.mockResolvedValue(emptyResponse())
 })
 
 describe('team accounts API', () => {
@@ -109,4 +113,9 @@ describe('team accounts API', () => {
     expect(mockClient.post).toHaveBeenNthCalledWith(2, '/admin/team-accounts/7/status', { status: 'suspended' })
   })
 
+
+  it('replaces the groups of an account from the admin console', async () => {
+    await updateAdminTeamAccountGroups(7, [12, 67])
+    expect(mockClient.put).toHaveBeenCalledWith('/admin/team-accounts/7/groups', { group_ids: [12, 67] })
+  })
 })

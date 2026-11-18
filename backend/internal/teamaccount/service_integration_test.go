@@ -570,3 +570,66 @@ func TestCreateUsesRelayRegistrationConcurrency(t *testing.T) {
 		t.Fatalf("relay concurrency = %+v, want 5", provider.created)
 	}
 }
+
+func TestRepresentativeCreatesAgentOnlyAccount(t *testing.T) {
+	client := testdb.Open(t)
+	ownerID, _ := seedUsers(t, client)
+	provider := newFakeProvider()
+	seedProvider(t, client)
+	seedDepartmentMember(t, client, "department-alpha", "other@example.com")
+	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
+
+	account, err := service.Create(context.Background(), CreateInput{
+		Name:               "ignored",
+		ActorUserID:        ownerID,
+		AgentOnly:          true,
+		AdditionalGroupIDs: []int64{2, 67},
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if got := provider.created[0].Concurrency; got != AgentOnlyConcurrency {
+		t.Fatalf("concurrency = %d, want %d", got, AgentOnlyConcurrency)
+	}
+	if account.Name != "department-alpha" {
+		t.Fatalf("generated name = %q, want the department name", account.Name)
+	}
+	subs := provider.subscriptions[account.RelayUserID]
+	if len(subs) != 1 || !subs[AgentOnlyGroupID] {
+		t.Fatalf("subscriptions = %v, want only the Agent group", subs)
+	}
+}
+
+func TestAdminUpdatesAccountGroups(t *testing.T) {
+	client := testdb.Open(t)
+	ownerID, _ := seedUsers(t, client)
+	provider := newFakeProvider()
+	seedProvider(t, client)
+	seedDepartmentMember(t, client, "department-alpha", "other@example.com")
+	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
+
+	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if _, err := service.UpdateGroups(context.Background(), ownerID, account.ID, []int64{12, 67}); err != nil {
+		t.Fatalf("UpdateGroups() error = %v", err)
+	}
+	subs := provider.subscriptions[account.RelayUserID]
+	if len(subs) != 2 || !subs[12] || !subs[67] {
+		t.Fatalf("subscriptions = %v, want groups 12 and 67", subs)
+	}
+	events, err := service.Events(context.Background(), ownerID, true, account.ID, 10)
+	if err != nil {
+		t.Fatalf("Events() error = %v", err)
+	}
+	found := false
+	for _, event := range events {
+		if event["action"] == "groups_updated" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("groups_updated event missing: %v", events)
+	}
+}

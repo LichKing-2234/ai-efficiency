@@ -118,6 +118,9 @@ func (h *TeamAccountHandler) Create(c *gin.Context) {
 		ActorUserID:          userID,
 		IsAdmin:              isAdmin,
 		AdditionalGroupIDs:   req.AdditionalGroupIDs,
+		// Representatives create Agent-only accounts with a generated name;
+		// administrators keep full control from the console.
+		AgentOnly: !isAdmin,
 	})
 	if err != nil {
 		h.respondError(c, err)
@@ -434,6 +437,31 @@ func (h *TeamAccountHandler) AdminCreate(c *gin.Context) {
 		IsAdmin:              true,
 		AdditionalGroupIDs:   req.AdditionalGroupIDs,
 	})
+	if err != nil {
+		h.respondError(c, err)
+		return
+	}
+	pkg.Success(c, account)
+}
+
+// AdminUpdateGroups handles PUT /api/v1/admin/team-accounts/:id/groups.
+func (h *TeamAccountHandler) AdminUpdateGroups(c *gin.Context) {
+	userID, _, ok := h.actor(c)
+	if !ok {
+		return
+	}
+	id, ok := accountIDParam(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		GroupIDs []int64 `json:"group_ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	account, err := h.service.UpdateGroups(c.Request.Context(), userID, id, req.GroupIDs)
 	if err != nil {
 		h.respondError(c, err)
 		return

@@ -34,6 +34,14 @@ import (
 	"github.com/ai-efficiency/backend/internal/representativescope"
 )
 
+// AgentOnlyConcurrency is granted to accounts a representative creates; they
+// are limited to the Agent group.
+const AgentOnlyConcurrency = 20
+
+// AgentOnlyGroupID is the Relay group a representative-created account keeps.
+// It is the "Agent" group of the default subscription set.
+const AgentOnlyGroupID int64 = 12
+
 // DefaultConcurrency matches sub2api's registration default. It is set
 // explicitly because the admin create API applies 0 (unlimited) when omitted.
 const DefaultConcurrency = 5
@@ -157,8 +165,12 @@ type CreateInput struct {
 	IsAdmin              bool
 	// AdditionalGroupIDs are Relay groups the account should be subscribed to
 	// on top of the provider defaults. A non-administrator may only choose
-	// groups they are subscribed to themselves.
+	// groups they are subscribed to themselves. They are ignored when
+	// AgentOnly is set.
 	AdditionalGroupIDs []int64
+	// AgentOnly restricts a non-administrative create to the Agent group with
+	// the standard member concurrency and a generated account name.
+	AgentOnly bool
 }
 
 // GroupOption is one access group the console may offer for an account.
@@ -273,8 +285,11 @@ func (s *Service) GroupOptionsForActor(ctx context.Context, actorUserID int, isA
 
 // Create provisions a Relay user and records the owning department.
 func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) {
+	if in.AgentOnly {
+		in.AdditionalGroupIDs = nil
+	}
 	name := strings.TrimSpace(in.Name)
-	if name == "" {
+	if !in.AgentOnly && name == "" {
 		return nil, &ValidationError{Message: "account name is required"}
 	}
 	if utf8.RuneCountInString(name) > 64 {
@@ -284,6 +299,9 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 	departmentID, err := s.resolveDepartment(ctx, in)
 	if err != nil {
 		return nil, err
+	}
+	if in.AgentOnly {
+		name = s.generatedTeamAccountName(ctx, departmentID)
 	}
 	if in.IsAdmin {
 		exists, known := s.departmentExists(ctx, departmentID)
@@ -306,6 +324,11 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 	}
 	if providerID == 0 {
 		return nil, &ValidationError{Message: "no enabled relay provider is configured"}
+	}
+
+	concurrency := DefaultConcurrency
+	if in.AgentOnly {
+		concurrency = AgentOnlyConcurrency
 	}
 
 	baseUsername := deriveUsername(departmentID)
@@ -360,7 +383,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 			Password:    password,
 			Role:        "user",
 			Notes:       "provisioned_by_ai_efficiency_team",
-			Concurrency: DefaultConcurrency,
+			Concurrency: concurrency,
 		})
 		if createErr != nil {
 			// A leftover Relay identity reserves the deterministic name; the next
@@ -380,6 +403,12 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 	if err := s.assignAdditionalGroups(ctx, provider, relayUser.ID, in); err != nil {
 		s.disableRelayUser(ctx, provider, relayUser.ID)
 		return nil, err
+	}
+	if in.AgentOnly {
+		if err := s.restrictToAgentGroup(ctx, provider, relayUser.ID); err != nil {
+			s.disableRelayUser(ctx, provider, relayUser.ID)
+			return nil, err
+		}
 	}
 
 	tx, err := s.client.Tx(ctx)
@@ -631,7 +660,7 @@ func (s *Service) activeSubscriptionGroupIDSet(ctx context.Context, provider rel
 // assertAdditionalGroupsAllowed rejects grants that exceed the creator's own
 // subscriptions before any Relay identity is created.
 func (s *Service) assertAdditionalGroupsAllowed(ctx context.Context, provider relay.Provider, in CreateInput) error {
-	if len(in.AdditionalGroupIDs) == 0 || in.IsAdmin {
+	if in.AgentOnly || len(in.AdditionalGroupIDs) == 0 || in.IsAdmin {
 		return nil
 	}
 	actor, err := s.client.User.Get(ctx, in.ActorUserID)
@@ -1877,9 +1906,29 @@ func (s *Service) recordEvent(ctx context.Context, accountID, actorUserID int, a
 }
 
 func recordEvent(ctx context.Context, tx *ent.Tx, accountID, actorUserID int, action string, payload map[string]any) error {
+	if tx == nil {
+		return fmt.Errorf("record event %s: transaction is required", action)
+	}
 	_, err := tx.TeamAccountEvent.Create().
 		SetTeamAccountID(accountID).
 		SetNillableActorUserID(&actorUserID).
+		SetAction(action).
+		SetPayload(payload).
+		Save(ctx)
+	if err != nil {
+		return fmt.Errorf("record event %s: %w", action, err)
+	}
+	return nil
+}
+
+// recordStandaloneEvent appends an audit event outside a surrounding transaction.
+func (s *Service) recordStandaloneEvent(ctx context.Context, accountID, actorUserID, _ int, action string, payload map[string]any) error {
+	builder := s.client.TeamAccountEvent.Create().
+		SetTeamAccountID(accountID)
+	if actorUserID > 0 {
+		builder = builder.SetActorUserID(actorUserID)
+	}
+	_, err := builder.
 		SetAction(action).
 		SetPayload(payload).
 		Save(ctx)
@@ -1920,6 +1969,134 @@ func generatedPassword() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(buf[:]), nil
+}
+
+// generatedTeamAccountName builds the display name of a representative-created
+// account from its department, so the name does not depend on free text input.
+func (s *Service) generatedTeamAccountName(ctx context.Context, departmentID string) string {
+	name := ""
+	view, ok, err := directoryfacts.New(s.client).Current(ctx)
+	if err == nil && ok {
+		if facts, loadErr := view.Load(ctx, directoryfacts.Query{DepartmentIDs: []string{departmentID}}); loadErr == nil {
+			if department := facts.Hierarchy().Department(departmentID); department != nil {
+				name = strings.TrimSpace(department.Name)
+			}
+		}
+	}
+	if name == "" {
+		name = departmentID
+	}
+	return name
+}
+
+// restrictToAgentGroup removes every subscription except the Agent group.
+func (s *Service) restrictToAgentGroup(ctx context.Context, provider relay.Provider, relayUserID int64) error {
+	assigner, ok := provider.(interface {
+		AssignSubscriptionForUser(ctx context.Context, userID, groupID int64, validityDays int) error
+	})
+	if !ok {
+		return fmt.Errorf("relay provider cannot assign subscriptions")
+	}
+	remover, ok := provider.(interface {
+		RemoveSubscriptionForUser(ctx context.Context, userID, groupID int64) error
+	})
+	if !ok {
+		return fmt.Errorf("relay provider cannot remove subscriptions")
+	}
+	existing, err := s.activeSubscriptionGroupIDSet(ctx, provider, relayUserID)
+	if err != nil {
+		return err
+	}
+	if !existing[AgentOnlyGroupID] {
+		if err := assigner.AssignSubscriptionForUser(ctx, relayUserID, AgentOnlyGroupID, SubscriptionValidityDays); err != nil {
+			return fmt.Errorf("assign agent group: %w", err)
+		}
+	}
+	for groupID := range existing {
+		if groupID <= 0 || groupID == AgentOnlyGroupID {
+			continue
+		}
+		if err := remover.RemoveSubscriptionForUser(ctx, relayUserID, groupID); err != nil {
+			return fmt.Errorf("remove group %d: %w", groupID, err)
+		}
+	}
+	return nil
+}
+
+// UpdateGroups reconciles an account's Relay subscriptions with the requested
+// groups: groups missing from the request are removed and new ones are added.
+func (s *Service) UpdateGroups(ctx context.Context, actorUserID int, accountID int, groupIDs []int64) (*Account, error) {
+	row, err := s.loadAccount(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	provider, err := s.resolver.Resolve(ctx, row.RelayProviderID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve relay provider: %w", err)
+	}
+	assigner, hasAssign := provider.(interface {
+		AssignSubscriptionForUser(ctx context.Context, userID, groupID int64, validityDays int) error
+	})
+	remover, hasRemove := provider.(interface {
+		RemoveSubscriptionForUser(ctx context.Context, userID, groupID int64) error
+	})
+	if !hasAssign || !hasRemove {
+		return nil, fmt.Errorf("relay provider cannot manage subscriptions")
+	}
+	desired := make(map[int64]bool, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if groupID > 0 {
+			desired[groupID] = true
+		}
+	}
+	if len(desired) == 0 {
+		return nil, &ValidationError{Message: "at least one group is required"}
+	}
+	current, err := s.activeSubscriptionGroupIDSet(ctx, provider, int64(row.RelayUserID))
+	if err != nil {
+		return nil, err
+	}
+	added := make([]int64, 0)
+	removed := make([]int64, 0)
+	for groupID := range desired {
+		if current[groupID] {
+			continue
+		}
+		if err := assigner.AssignSubscriptionForUser(ctx, int64(row.RelayUserID), groupID, SubscriptionValidityDays); err != nil {
+			return nil, fmt.Errorf("assign group %d: %w", groupID, err)
+		}
+		added = append(added, groupID)
+	}
+	for groupID := range current {
+		if groupID <= 0 || desired[groupID] {
+			continue
+		}
+		if err := remover.RemoveSubscriptionForUser(ctx, int64(row.RelayUserID), groupID); err != nil {
+			return nil, fmt.Errorf("remove group %d: %w", groupID, err)
+		}
+		removed = append(removed, groupID)
+	}
+	sort.Slice(added, func(i, j int) bool { return added[i] < added[j] })
+	sort.Slice(removed, func(i, j int) bool { return removed[i] < removed[j] })
+	if len(added) > 0 || len(removed) > 0 {
+		if err := s.recordStandaloneEvent(ctx, accountID, actorUserID, 0, "groups_updated", map[string]any{
+			"added":   added,
+			"removed": removed,
+			"groups":  sortedInt64Keys(desired),
+		}); err != nil {
+			s.logger.Error("record group update", zap.Int("account_id", accountID), zap.Error(err))
+		}
+	}
+	return s.Get(ctx, actorUserID, true, accountID)
+}
+
+func sortedInt64Keys(set map[int64]bool) []int64 {
+	out := make([]int64, 0, len(set))
+	for key := range set {
+		out = append(out, key)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
 }
 
 func deriveUsername(departmentExternalID string) string {
