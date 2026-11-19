@@ -609,6 +609,8 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
           >
             {{ t('teamAccounts.admin.editGroups') }}
           </ElButton>
+        </template>
+        <template #surface-actions-end="{ account }">
           <ElButton
             v-if="account"
             data-testid="team-account-status-action"
