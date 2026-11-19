@@ -55,10 +55,16 @@ Creating an account for a department:
    groups are granted on top; a non-administrative caller may only grant groups
    they are subscribed to themselves.
 6. Grants Relay user concurrency 5, matching sub2api's registration default;
-   the admin create API would otherwise default to 0 (unlimited). Accounts a
-   representative creates instead get concurrency 20, keep only the Agent group
-   (every other default subscription is revoked), and use a name generated from
-   the department.
+   the admin create API would otherwise default to 0 (unlimited).
+
+The two surfaces are separate code paths, not one path behind a flag:
+
+- `CreateForRepresentative` (`POST /user/team-accounts`) accepts only a
+  department. The account name is generated from the department, the owner is
+  the caller, concurrency is 20 and only the Agent group is kept (every other
+  default subscription is revoked). There is no member group picker.
+- `CreateForAdmin` (`POST /admin/team-accounts`) accepts name, department,
+  owner and any groups; it is the only surface with group choice.
 7. Records the account, the owner row, and an `account_created` event in one
    local transaction. If any step fails, the Relay user is disabled so no orphan
    identity can authenticate.
@@ -78,10 +84,11 @@ id, while the administrator console can still inspect, transfer, and restore it.
 
 ## Groups
 
-Administrators can reconcile an account's subscriptions from the console
+Administrators reconcile an account's subscriptions from the console
 (`PUT /api/v1/admin/team-accounts/:id/groups`): checked groups are assigned,
 unchecked groups are revoked, and the change is recorded as a `groups_updated`
-event. Representative-created accounts start from the Agent group only.
+event. Representative-created accounts start from the Agent group only. Group
+selection and group editing exist only in the administrator surface.
 
 ## Keys
 
@@ -126,10 +133,11 @@ accounts; administrators read every account.
 
 ## Groups
 
-Administrators can reconcile an account's subscriptions from the console
+Administrators reconcile an account's subscriptions from the console
 (`PUT /api/v1/admin/team-accounts/:id/groups`): checked groups are assigned,
 unchecked groups are revoked, and the change is recorded as a `groups_updated`
-event. Representative-created accounts start from the Agent group only.
+event. Representative-created accounts start from the Agent group only. Group
+selection and group editing exist only in the administrator surface.
 
 ## Keys and suspension
 

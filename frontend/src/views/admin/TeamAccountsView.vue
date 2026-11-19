@@ -15,6 +15,7 @@ import {
   getAdminTeamAccountGroupOptions,
   listAdminTeamAccounts,
   setAdminTeamAccountStatus,
+  updateAdminTeamAccountGroups,
 } from '@/api/teamAccounts'
 import { useI18n } from '@/i18n'
 import { teamAccountsMessages } from '@/locales/teamAccounts'
@@ -80,6 +81,55 @@ function openStatusDialog(account: TeamAccountSummary) {
 function closeStatusDialog() {
   if (statusUpdatingID.value !== null) return
   statusDialogOpen.value = false
+}
+
+const groupsDialogOpen = ref(false)
+const groupsSaving = ref(false)
+const groupsTarget = ref<TeamAccountSummary | null>(null)
+const groupsSelection = ref<number[]>([])
+
+async function openGroupsDialog(account: TeamAccountSummary) {
+  if (groupsSaving.value) return
+  groupsTarget.value = account
+  groupsDialogOpen.value = true
+  groupsSelection.value = []
+  try {
+    const response = await getAdminTeamAccountGroupOptions()
+    createGroupOptions.value = response.data.data?.groups ?? []
+    groupsSelection.value = (account as { available_groups?: { id: number }[] }).available_groups?.map((group) => group.id) ?? []
+  } catch {
+    ElMessage.error(t('teamAccounts.admin.groupsSaveFailed'))
+  }
+}
+
+function toggleGroupSelection(groupID: number) {
+  const next = new Set(groupsSelection.value)
+  if (next.has(groupID)) {
+    next.delete(groupID)
+  } else {
+    next.add(groupID)
+  }
+  groupsSelection.value = Array.from(next)
+}
+
+async function saveAccountGroups() {
+  const target = groupsTarget.value
+  if (!target || groupsSaving.value) return
+  if (!groupsSelection.value.length) {
+    ElMessage.error(t('teamAccounts.admin.groupsRequired'))
+    return
+  }
+  groupsSaving.value = true
+  try {
+    await updateAdminTeamAccountGroups(target.id, groupsSelection.value)
+    ElMessage.success(t('teamAccounts.admin.groupsSaved'))
+    groupsDialogOpen.value = false
+    await loadAccounts()
+  } catch (error: unknown) {
+    ElMessage.error(teamAccountErrorMessage(error, t('teamAccounts.admin.groupsSaveFailed')))
+  } finally {
+    groupsSaving.value = false
+  }
 }
 
 const groupOptions = ref<RelayGroupOption[]>([])
@@ -548,10 +598,55 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
         v-model="detailOpen"
         :account-id="selectedAccountID"
         :account="selectedAccount"
-        mode="admin"
+        surface="admin"
         @transfer-requested="openTransfer"
-      @status-requested="openStatusDialog"
-      />
+      >
+        <template #surface-actions="{ account }">
+          <ElButton
+            v-if="account"
+            data-testid="team-account-edit-groups"
+            @click="openGroupsDialog(account)"
+          >
+            {{ t('teamAccounts.admin.editGroups') }}
+          </ElButton>
+          <ElButton
+            v-if="account"
+            data-testid="team-account-status-action"
+            :type="account.status === 'active' ? 'danger' : 'success'"
+            @click="openStatusDialog(account)"
+          >
+            {{ account.status === 'active' ? t('teamAccounts.admin.suspend') : t('teamAccounts.admin.restore') }}
+          </ElButton>
+        </template>
+      </TeamAccountDetailDialog>
+
+      <ElDialog
+        v-model="groupsDialogOpen"
+        data-testid="admin-team-account-groups-dialog"
+        append-to-body
+        align-center
+        :title="t('teamAccounts.admin.editGroups')"
+        width="min(100%, 34rem)"
+      >
+        <p class="mb-2 text-sm text-slate-500">{{ t('teamAccounts.admin.editGroupsHint') }}</p>
+        <div class="flex max-h-80 flex-col gap-2 overflow-y-auto">
+          <label v-for="group in createGroupOptions" :key="group.id" class="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              :value="group.id"
+              :checked="groupsSelection.includes(group.id)"
+              @change="toggleGroupSelection(group.id)"
+            />
+            <span>{{ group.platform ? `${group.name} (${group.platform})` : group.name }}</span>
+          </label>
+        </div>
+        <template #footer>
+          <ElButton :disabled="groupsSaving" @click="groupsDialogOpen = false">{{ t('teamAccounts.cancel') }}</ElButton>
+          <ElButton type="primary" :loading="groupsSaving" data-testid="admin-team-account-groups-save" @click="saveAccountGroups">
+            {{ t('teamAccounts.admin.saveGroups') }}
+          </ElButton>
+        </template>
+      </ElDialog>
 
       <ElDialog
       :model-value="statusDialogOpen"
@@ -614,7 +709,7 @@ function statusActionType(account: TeamAccountSummary): 'warning' | 'success' {
     <TeamAccountTransferDialog
         v-model="transferOpen"
         :account="transferAccount"
-        mode="admin"
+        surface="admin"
         @transferred="handleTransferred"
       />
     </div>

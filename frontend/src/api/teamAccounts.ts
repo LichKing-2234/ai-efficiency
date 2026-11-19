@@ -44,10 +44,6 @@ export function getTeamAccount(id: number) {
   return client.get<ApiResponse<TeamAccountDetail>>(accountPath(USER_BASE, id))
 }
 
-export function getTeamAccountGroupOptions() {
-  return client.get<ApiResponse<TeamAccountGroupOptions>>(`${USER_BASE}/group-options`)
-}
-
 export function getAdminTeamAccountGroupOptions(userID?: number) {
   return client.get<ApiResponse<TeamAccountGroupOptions>>(`${ADMIN_BASE}/group-options`, {
     params: userID ? { user_id: userID } : undefined,

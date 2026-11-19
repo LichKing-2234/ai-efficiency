@@ -2,9 +2,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import TeamAccountDetailDialog from './TeamAccountDetailDialog.vue'
-import TeamAccountGroupShuttle from './TeamAccountGroupShuttle.vue'
 import TeamAccountTransferDialog from './TeamAccountTransferDialog.vue'
-import { createTeamAccount, getTeamAccount, getTeamAccountGroupOptions, listTeamAccounts } from '@/api/teamAccounts'
+import { createTeamAccount, getTeamAccount, listTeamAccounts } from '@/api/teamAccounts'
 import { getTeamUsageScope } from '@/api/teamUsage'
 import { getUserProviders } from '@/api/user'
 import { useTeamAccountLogin } from '@/composables/useTeamAccountLogin'
@@ -28,7 +27,7 @@ const accounts = ref<TeamAccountSummary[]>([])
 const loading = ref(false)
 const error = ref('')
 const createOpen = ref(false)
-const createForm = reactive({ name: '', departmentExternalId: '' })
+const createForm = reactive({ departmentExternalId: '' })
 const creating = ref(false)
 const createError = ref('')
 const detailOpen = ref(false)
@@ -67,27 +66,7 @@ async function loadScope() {
 }
 
 const canCreate = computed(() => isRepresentative.value)
-// Administrators creating through this section keep the full form; everyone
-// else gets the fixed Agent-only account with a generated name.
-const canChooseCreationOptions = computed(() => auth.isAdmin)
-const groupOptions = ref<{ id: number; name: string; platform: string }[]>([])
-const defaultGroupIDs = ref<number[]>([])
-const grantableGroupIDs = ref<number[]>([])
-const additionalGroupIDs = ref<number[]>([])
 
-async function loadGrantableGroups() {
-  try {
-    const response = await getTeamAccountGroupOptions()
-    const options = response.data.data
-    groupOptions.value = options?.groups ?? []
-    defaultGroupIDs.value = options?.default_group_ids ?? []
-    grantableGroupIDs.value = options?.grantable_group_ids ?? []
-  } catch {
-    groupOptions.value = []
-    defaultGroupIDs.value = []
-    grantableGroupIDs.value = []
-  }
-}
 
 // Members who neither manage an account nor represent a department never see the
 // section; showing an empty block would only add noise to their usage page.
@@ -132,15 +111,9 @@ async function hydrateKeyCounts(items: TeamAccountSummary[]) {
 }
 
 async function openCreate() {
-  createForm.name = ''
   createForm.departmentExternalId = singleRepresentedDepartment.value?.external_id ?? ''
-  additionalGroupIDs.value = []
   createError.value = ''
   createOpen.value = true
-  await loadGrantableGroups()
-  // A representative starts from the account defaults plus the groups they
-  // already hold themselves.
-  additionalGroupIDs.value = Array.from(new Set([...defaultGroupIDs.value, ...grantableGroupIDs.value]))
 }
 
 function closeCreate() {
@@ -150,21 +123,13 @@ function closeCreate() {
 
 async function submitCreate() {
   if (creating.value) return
-  if (canChooseCreationOptions.value && !createForm.name.trim()) {
-    createError.value = t('teamAccounts.nameRequired')
-    return
-  }
   creating.value = true
   createError.value = ''
   try {
+    // This surface only ever creates the representative account: the server
+    // derives the name and grants the Agent group.
     const response = await createTeamAccount({
-      // Representatives create Agent-only accounts with a generated name, so
-      // neither the name nor any group is sent from here.
-      name: canChooseCreationOptions.value ? createForm.name.trim() : undefined,
       department_external_id: createForm.departmentExternalId.trim() || undefined,
-      additional_group_ids: canChooseCreationOptions.value
-        ? additionalGroupIDs.value.filter((id) => !defaultGroupIDs.value.includes(id))
-        : [],
     })
     const created = response.data.data
     ElMessage.success(t('teamAccounts.createSuccess'))
@@ -352,23 +317,12 @@ function handleTransferred() {
 
       <div class="space-y-4">
         <ElAlert
-          v-if="!canChooseCreationOptions"
           data-testid="team-account-create-agent-only"
           type="info"
           :closable="false"
           show-icon
           :title="t('teamAccounts.agentOnlyNotice')"
         />
-        <label v-if="canChooseCreationOptions" class="block text-sm">
-          <span class="font-medium text-gray-700">{{ t('teamAccounts.name') }}</span>
-          <ElInput
-            v-model="createForm.name"
-            data-testid="team-account-create-name"
-            class="mt-1"
-            :placeholder="t('teamAccounts.namePlaceholder')"
-            :disabled="creating"
-          />
-        </label>
         <label class="block text-sm">
           <span class="font-medium text-gray-700">{{ t('teamAccounts.admin.departmentSelect') }}</span>
           <ElInput
@@ -404,18 +358,6 @@ function handleTransferred() {
             disabled
           />
         </label>
-        <div v-if="canChooseCreationOptions" class="block text-sm">
-          <span class="font-medium text-gray-700">{{ t('teamAccounts.additionalGroups') }}</span>
-          <p class="mb-1 text-xs text-slate-500">{{ t('teamAccounts.additionalGroupsHint') }}</p>
-          <TeamAccountGroupShuttle
-            v-model="additionalGroupIDs"
-            data-testid="team-account-create-groups"
-            :groups="groupOptions"
-            :default-group-ids="defaultGroupIDs"
-            :grantable-group-ids="grantableGroupIDs"
-            :disabled="creating"
-          />
-        </div>
         <ElAlert
           v-if="createError"
           data-testid="team-account-create-error"

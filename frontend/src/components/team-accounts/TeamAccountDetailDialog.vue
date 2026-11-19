@@ -41,7 +41,6 @@ import {
   teamAccountStatusLabelKey,
   teamAccountStatusTagType,
 } from '@/utils/teamAccounts'
-import { loadGroupOptions, saveAccountGroups } from '@/components/team-accounts/groups'
 import type {
   TeamAccountAvailableGroup,
   TeamAccountCredentials,
@@ -57,17 +56,16 @@ const props = withDefaults(defineProps<{
   modelValue: boolean
   accountId: number | null
   account?: TeamAccountSummary | null
-  mode?: 'user' | 'admin'
+  surface?: 'account' | 'admin'
 }>(), {
   account: null,
-  mode: 'user',
+  surface: 'account',
 })
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   updated: [detail: TeamAccountDetail]
   'transfer-requested': [account: TeamAccountSummary]
-  'status-requested': [account: TeamAccountSummary]
 }>()
 
 const auth = useAuthStore()
@@ -97,7 +95,7 @@ let detailRequestSeq = 0
 let usageRequestSeq = 0
 let eventsRequestSeq = 0
 
-const api = computed(() => props.mode === 'admin'
+const api = computed(() => props.surface === 'admin'
   ? {
       get: getAdminTeamAccount,
       credentials: revealAdminTeamAccountCredentials,
@@ -139,7 +137,7 @@ const canCreateKey = computed(() => (
 const availableGroups = computed(() => detail.value?.available_groups ?? [])
 // Only the owner (or an administrator) may hand over the account or change its
 // managers; managers keep day-to-day key work.
-const isOwner = computed(() => props.mode === 'admin' || (detail.value?.owner_user_id != null && detail.value.owner_user_id === auth.user?.id))
+const isOwner = computed(() => props.surface === 'admin' || (detail.value?.owner_user_id != null && detail.value.owner_user_id === auth.user?.id))
 function groupName(groupID: number | string) {
   const match = availableGroups.value.find((group) => group.id === Number(groupID))
   return match?.name || '—'
@@ -439,58 +437,6 @@ function requestTransfer() {
   if (!current) return
   emit('transfer-requested', current)
 }
-
-const groupsDialogOpen = ref(false)
-const groupsSaving = ref(false)
-const groupsSelection = ref<number[]>([])
-const groupOptions = ref<TeamAccountAvailableGroup[]>([])
-
-async function openGroupsDialog() {
-  groupsSelection.value = availableGroups.value.map((group) => group.id)
-  groupsDialogOpen.value = true
-  groupOptions.value = availableGroups.value
-  try {
-    groupOptions.value = await loadGroupOptions()
-  } catch {
-    // Fall back to the groups the account already holds.
-  }
-}
-
-function toggleGroup(groupID: number) {
-  const next = new Set(groupsSelection.value)
-  if (next.has(groupID)) {
-    next.delete(groupID)
-  } else {
-    next.add(groupID)
-  }
-  groupsSelection.value = Array.from(next)
-}
-
-async function saveGroups() {
-  if (groupsSaving.value || !props.accountId) return
-  if (!groupsSelection.value.length) {
-    ElMessage.error(t('teamAccounts.admin.groupsRequired'))
-    return
-  }
-  groupsSaving.value = true
-  try {
-    await saveAccountGroups(props.accountId, groupsSelection.value)
-    ElMessage.success(t('teamAccounts.admin.groupsSaved'))
-    groupsDialogOpen.value = false
-    await loadDetail(props.accountId)
-    await loadEvents(props.accountId)
-  } catch (error: unknown) {
-    ElMessage.error(teamAccountErrorMessage(error, t('teamAccounts.admin.groupsSaveFailed')))
-  } finally {
-    groupsSaving.value = false
-  }
-}
-
-function requestStatusChange() {
-  const current = summary.value
-  if (!current) return
-  emit('status-requested', current)
-}
 </script>
 
 <template>
@@ -590,25 +536,11 @@ function requestStatusChange() {
               >
                 {{ credentials ? t('teamAccounts.credentials.hide') : t('teamAccounts.credentials.reveal') }}
               </ElButton>
-              <ElButton
-                v-if="mode === 'admin' && summary"
-                data-testid="team-account-edit-groups"
-                @click="openGroupsDialog"
-              >
-                {{ t('teamAccounts.admin.editGroups') }}
-              </ElButton>
               <ElButton v-if="isOwner" data-testid="team-account-transfer" @click="requestTransfer">
                 {{ t('teamAccounts.transfer.button') }}
               </ElButton>
             </div>
-            <ElButton
-              v-if="mode === 'admin' && summary"
-              data-testid="team-account-status-action"
-              :type="summary.status === 'active' ? 'danger' : 'success'"
-              @click="requestStatusChange"
-            >
-              {{ summary.status === 'active' ? t('teamAccounts.admin.suspend') : t('teamAccounts.admin.restore') }}
-            </ElButton>
+            <slot name="surface-actions" :account="summary" />
           </div>
 
           <ElAlert
@@ -679,7 +611,7 @@ function requestStatusChange() {
                 data-testid="team-account-manager-user-id"
                 class="mt-1"
                 :disabled="managerAdding"
-                :mode="mode === 'admin' ? 'admin' : 'account'"
+                :mode="props.surface === 'admin' ? 'admin' : 'account'"
                 :account-id="props.accountId"
               />
             </label>
@@ -734,29 +666,4 @@ function requestStatusChange() {
     </div>
   </ElDialog>
 
-  <ElDialog
-    v-model="groupsDialogOpen"
-    data-testid="team-account-groups-dialog"
-    :title="t('teamAccounts.admin.editGroups')"
-    width="min(100%, 34rem)"
-  >
-    <p class="mb-2 text-sm text-slate-500">{{ t('teamAccounts.admin.editGroupsHint') }}</p>
-    <div class="flex max-h-80 flex-col gap-2 overflow-y-auto">
-      <label v-for="group in groupOptions" :key="group.id" class="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          :value="group.id"
-          :checked="groupsSelection.includes(group.id)"
-          @change="toggleGroup(group.id)"
-        />
-        <span>{{ group.platform ? `${group.name} (${group.platform})` : group.name }}</span>
-      </label>
-    </div>
-    <template #footer>
-      <ElButton :disabled="groupsSaving" @click="groupsDialogOpen = false">{{ t('teamAccounts.cancel') }}</ElButton>
-      <ElButton type="primary" :loading="groupsSaving" data-testid="team-account-groups-save" @click="saveGroups">
-        {{ t('teamAccounts.admin.saveGroups') }}
-      </ElButton>
-    </template>
-  </ElDialog>
 </template>
