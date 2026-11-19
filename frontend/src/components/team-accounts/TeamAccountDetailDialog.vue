@@ -536,11 +536,11 @@ function requestTransfer() {
               >
                 {{ credentials ? t('teamAccounts.credentials.hide') : t('teamAccounts.credentials.reveal') }}
               </ElButton>
+              <slot name="surface-actions" :account="summary" />
               <ElButton v-if="isOwner" data-testid="team-account-transfer" @click="requestTransfer">
                 {{ t('teamAccounts.transfer.button') }}
               </ElButton>
-            </div>
-            <slot name="surface-actions" :account="summary" />
+              <slot name="surface-actions-end" :account="summary" />
           </div>
 
           <ElAlert
