@@ -541,6 +541,7 @@ function requestTransfer() {
                 {{ t('teamAccounts.transfer.button') }}
               </ElButton>
               <slot name="surface-actions-end" :account="summary" />
+            </div>
           </div>
 
           <ElAlert
