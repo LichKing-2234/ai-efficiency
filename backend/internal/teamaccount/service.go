@@ -156,21 +156,36 @@ type Manager struct {
 	Role     string `json:"role"`
 }
 
-// CreateInput is the request to provision a team account.
-type CreateInput struct {
+// RepresentativeCreateInput is everything a department representative may
+// choose: the department. The name, owner, groups (Agent only) and concurrency
+// are policy and are never taken from the caller.
+type RepresentativeCreateInput struct {
+	DepartmentExternalID string
+	ActorUserID          int
+}
+
+// AdminCreateInput is the full administrator console request.
+type AdminCreateInput struct {
 	Name                 string
 	DepartmentExternalID string
 	OwnerUserID          int
 	ActorUserID          int
-	IsAdmin              bool
-	// AdditionalGroupIDs are Relay groups the account should be subscribed to
-	// on top of the provider defaults. A non-administrator may only choose
-	// groups they are subscribed to themselves. They are ignored when
-	// AgentOnly is set.
-	AdditionalGroupIDs []int64
-	// AgentOnly restricts a non-administrative create to the Agent group with
-	// the standard member concurrency and a generated account name.
-	AgentOnly bool
+	AdditionalGroupIDs   []int64
+}
+
+// provisionRequest is the resolved creation request shared by both surfaces.
+// Only CreateForRepresentative and CreateForAdmin construct it, so each
+// surface's rules live in exactly one place.
+type provisionRequest struct {
+	name                 string
+	departmentExternalID string
+	ownerUserID          int
+	actorUserID          int
+	additionalGroupIDs   []int64
+	concurrency          int
+	agentOnly            bool
+	validateDepartment   bool
+	admin                bool
 }
 
 // GroupOption is one access group the console may offer for an account.
@@ -283,29 +298,65 @@ func (s *Service) GroupOptionsForActor(ctx context.Context, actorUserID int, isA
 	return options, nil
 }
 
-// Create provisions a Relay user and records the owning department.
-func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) {
-	if in.AgentOnly {
-		in.AdditionalGroupIDs = nil
+// CreateForRepresentative provisions the one account a representative may own
+// for a department they represent: Agent group only, no group choice, fixed
+// concurrency, generated name and the caller as owner.
+func (s *Service) CreateForRepresentative(ctx context.Context, in RepresentativeCreateInput) (*Account, error) {
+	departmentID, err := s.representativeDepartment(ctx, in.ActorUserID, in.DepartmentExternalID)
+	if err != nil {
+		return nil, err
 	}
+	return s.provision(ctx, provisionRequest{
+		name:                 s.generatedTeamAccountName(ctx, departmentID),
+		departmentExternalID: departmentID,
+		ownerUserID:          in.ActorUserID,
+		actorUserID:          in.ActorUserID,
+		concurrency:          AgentOnlyConcurrency,
+		agentOnly:            true,
+		validateDepartment:   true,
+	})
+}
+
+// CreateForAdmin provisions an account from the administrator console: the
+// caller names it, picks the owner and picks any groups.
+func (s *Service) CreateForAdmin(ctx context.Context, in AdminCreateInput) (*Account, error) {
 	name := strings.TrimSpace(in.Name)
-	if !in.AgentOnly && name == "" {
+	if name == "" {
 		return nil, &ValidationError{Message: "account name is required"}
 	}
 	if utf8.RuneCountInString(name) > 64 {
 		return nil, &ValidationError{Message: "account name must be at most 64 characters"}
 	}
+	departmentID := strings.TrimSpace(in.DepartmentExternalID)
+	if departmentID == "" {
+		return nil, &ValidationError{Message: "department is required"}
+	}
+	ownerID := in.OwnerUserID
+	if ownerID == 0 {
+		ownerID = in.ActorUserID
+	}
+	return s.provision(ctx, provisionRequest{
+		name:                 name,
+		departmentExternalID: departmentID,
+		ownerUserID:          ownerID,
+		actorUserID:          in.ActorUserID,
+		additionalGroupIDs:   in.AdditionalGroupIDs,
+		concurrency:          DefaultConcurrency,
+		validateDepartment:   true,
+		admin:                true,
+	})
+}
 
-	departmentID, err := s.resolveDepartment(ctx, in)
-	if err != nil {
-		return nil, err
-	}
-	if in.AgentOnly {
-		name = s.generatedTeamAccountName(ctx, departmentID)
-	}
-	if in.IsAdmin {
-		exists, known := s.departmentExists(ctx, departmentID)
-		if known && !exists {
+// provision is the shared provisioning pipeline. Callers must have resolved
+// every policy decision (name, owner, groups, concurrency) already.
+func (s *Service) provision(ctx context.Context, in provisionRequest) (*Account, error) {
+	name := in.name
+	departmentID := in.departmentExternalID
+	actorID := in.actorUserID
+	ownerID := in.ownerUserID
+
+	if in.validateDepartment {
+		if exists, known := s.departmentExists(ctx, departmentID); known && !exists {
 			return nil, &ValidationError{Message: "department does not exist in the current directory snapshot"}
 		}
 	}
@@ -326,9 +377,11 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 		return nil, &ValidationError{Message: "no enabled relay provider is configured"}
 	}
 
-	concurrency := DefaultConcurrency
-	if in.AgentOnly {
-		concurrency = AgentOnlyConcurrency
+	if err := s.assertUserExists(ctx, ownerID); err != nil {
+		return nil, err
+	}
+	if err := s.assertPersonUser(ctx, ownerID); err != nil {
+		return nil, err
 	}
 
 	baseUsername := deriveUsername(departmentID)
@@ -345,21 +398,6 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 	provider, err := s.resolver.Resolve(ctx, providerID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve relay provider: %w", err)
-	}
-
-	if err := s.assertAdditionalGroupsAllowed(ctx, provider, in); err != nil {
-		return nil, err
-	}
-
-	ownerID := in.OwnerUserID
-	if ownerID == 0 {
-		ownerID = in.ActorUserID
-	}
-	if err := s.assertUserExists(ctx, ownerID); err != nil {
-		return nil, err
-	}
-	if err := s.assertPersonUser(ctx, ownerID); err != nil {
-		return nil, err
 	}
 
 	var relayUser *relay.User
@@ -383,7 +421,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 			Password:    password,
 			Role:        "user",
 			Notes:       "provisioned_by_ai_efficiency_team",
-			Concurrency: concurrency,
+			Concurrency: in.concurrency,
 		})
 		if createErr != nil {
 			// A leftover Relay identity reserves the deterministic name; the next
@@ -400,11 +438,11 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 		return nil, &ConflictError{Message: "could not allocate a unique relay identity for this department"}
 	}
 
-	if err := s.assignAdditionalGroups(ctx, provider, relayUser.ID, in); err != nil {
+	if err := s.assignAdditionalGroups(ctx, provider, relayUser.ID, in.additionalGroupIDs); err != nil {
 		s.disableRelayUser(ctx, provider, relayUser.ID)
 		return nil, err
 	}
-	if in.AgentOnly {
+	if in.agentOnly {
 		if err := s.restrictToAgentGroup(ctx, provider, relayUser.ID); err != nil {
 			s.disableRelayUser(ctx, provider, relayUser.ID)
 			return nil, err
@@ -429,7 +467,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 		SetRelayAuthPassword(encrypted).
 		SetOwnerUserID(ownerID).
 		SetStatus("active").
-		SetNillableCreatedByUserID(&in.ActorUserID).
+		SetNillableCreatedByUserID(&actorID).
 		Save(ctx)
 	if err != nil {
 		s.disableRelayUser(ctx, provider, relayUser.ID)
@@ -439,15 +477,15 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 		SetTeamAccountID(created.ID).
 		SetUserID(ownerID).
 		SetRole("owner").
-		SetNillableAddedByUserID(&in.ActorUserID).
+		SetNillableAddedByUserID(&actorID).
 		Save(ctx); err != nil {
 		s.disableRelayUser(ctx, provider, relayUser.ID)
 		return nil, fmt.Errorf("record owner: %w", err)
 	}
-	if err := recordEvent(ctx, tx, created.ID, in.ActorUserID, "account_created", map[string]any{
+	if err := recordEvent(ctx, tx, created.ID, actorID, "account_created", map[string]any{
 		"department_external_id": departmentID,
 		"relay_user_id":          relayUser.ID,
-		"additional_group_ids":   in.AdditionalGroupIDs,
+		"additional_group_ids":   in.additionalGroupIDs,
 		"owner_user_id":          ownerID,
 	}); err != nil {
 		s.disableRelayUser(ctx, provider, relayUser.ID)
@@ -461,7 +499,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 		s.logger.Warn("create organization account shadow user", zap.Int("account_id", created.ID), zap.Error(err))
 	}
 
-	account, err := s.Get(ctx, in.ActorUserID, in.IsAdmin, created.ID)
+	account, err := s.Get(ctx, actorID, in.admin, created.ID)
 	if err == nil {
 		return account, nil
 	}
@@ -539,15 +577,11 @@ func (s *Service) departmentDisplayPaths(ctx context.Context, departmentIDs []st
 	return out
 }
 
-func (s *Service) resolveDepartment(ctx context.Context, in CreateInput) (string, error) {
-	departmentID := strings.TrimSpace(in.DepartmentExternalID)
-	if in.IsAdmin {
-		if departmentID == "" {
-			return "", &ValidationError{Message: "department is required"}
-		}
-		return departmentID, nil
-	}
-	scope, err := s.scopes.Resolve(ctx, in.ActorUserID)
+// representativeDepartment resolves the department a representative may create
+// an account for, rejecting departments that left the current snapshot.
+func (s *Service) representativeDepartment(ctx context.Context, actorUserID int, requested string) (string, error) {
+	departmentID := strings.TrimSpace(requested)
+	scope, err := s.scopes.Resolve(ctx, actorUserID)
 	if err != nil {
 		return "", fmt.Errorf("resolve representative scope: %w", err)
 	}
@@ -657,36 +691,11 @@ func (s *Service) activeSubscriptionGroupIDSet(ctx context.Context, provider rel
 	return out, nil
 }
 
-// assertAdditionalGroupsAllowed rejects grants that exceed the creator's own
-// subscriptions before any Relay identity is created.
-func (s *Service) assertAdditionalGroupsAllowed(ctx context.Context, provider relay.Provider, in CreateInput) error {
-	if in.AgentOnly || len(in.AdditionalGroupIDs) == 0 || in.IsAdmin {
-		return nil
-	}
-	actor, err := s.client.User.Get(ctx, in.ActorUserID)
-	if err != nil {
-		return fmt.Errorf("load creator: %w", err)
-	}
-	if actor.RelayUserID == nil {
-		return &PermissionError{Message: "your account has no Relay identity yet, so no group can be granted"}
-	}
-	own, err := s.activeSubscriptionGroupIDSet(ctx, provider, int64(*actor.RelayUserID))
-	if err != nil {
-		return err
-	}
-	for _, groupID := range in.AdditionalGroupIDs {
-		if groupID > 0 && !own[groupID] {
-			return &PermissionError{Message: fmt.Sprintf("you are not subscribed to group %d, so you cannot grant it", groupID)}
-		}
-	}
-	return nil
-}
-
 // assignAdditionalGroups subscribes the new account to the extra groups the
 // caller asked for. Defaults assigned by the Relay stay untouched, so a team
 // account starts with the same groups as any personal account.
-func (s *Service) assignAdditionalGroups(ctx context.Context, provider relay.Provider, relayUserID int64, in CreateInput) error {
-	if len(in.AdditionalGroupIDs) == 0 {
+func (s *Service) assignAdditionalGroups(ctx context.Context, provider relay.Provider, relayUserID int64, groupIDs []int64) error {
+	if len(groupIDs) == 0 {
 		return nil
 	}
 	assigner, ok := provider.(interface {
@@ -701,7 +710,7 @@ func (s *Service) assignAdditionalGroups(ctx context.Context, provider relay.Pro
 		return err
 	}
 	seen := map[int64]bool{}
-	for _, groupID := range in.AdditionalGroupIDs {
+	for _, groupID := range groupIDs {
 		if groupID <= 0 || seen[groupID] {
 			continue
 		}

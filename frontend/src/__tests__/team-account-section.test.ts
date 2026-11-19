@@ -226,10 +226,10 @@ describe('TeamAccountSection', () => {
     await wrapper.get('[data-testid="team-account-create-submit"]').trigger('click')
     await flushPromises()
 
+    // The representative surface sends the department only: the server owns
+    // the generated name and the Agent group.
     expect(api.createTeamAccount).toHaveBeenCalledWith({
-      name: undefined,
       department_external_id: 'dept-data',
-      additional_group_ids: [],
     })
   })
 

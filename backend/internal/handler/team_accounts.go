@@ -99,28 +99,22 @@ func (h *TeamAccountHandler) AdminList(c *gin.Context) {
 
 // Create handles POST /api/v1/user/team-accounts.
 func (h *TeamAccountHandler) Create(c *gin.Context) {
-	userID, isAdmin, ok := h.actor(c)
+	userID, _, ok := h.actor(c)
 	if !ok {
 		return
 	}
 	var req struct {
-		Name                 string  `json:"name"`
-		DepartmentExternalID string  `json:"department_external_id"`
-		AdditionalGroupIDs   []int64 `json:"additional_group_ids"`
+		DepartmentExternalID string `json:"department_external_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		pkg.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	account, err := h.service.Create(c.Request.Context(), teamaccount.CreateInput{
-		Name:                 req.Name,
+	// This route is the representative surface: the department is the only
+	// input that matters.
+	account, err := h.service.CreateForRepresentative(c.Request.Context(), teamaccount.RepresentativeCreateInput{
 		DepartmentExternalID: req.DepartmentExternalID,
 		ActorUserID:          userID,
-		IsAdmin:              isAdmin,
-		AdditionalGroupIDs:   req.AdditionalGroupIDs,
-		// Representatives create Agent-only accounts with a generated name;
-		// administrators keep full control from the console.
-		AgentOnly: !isAdmin,
 	})
 	if err != nil {
 		h.respondError(c, err)
@@ -384,20 +378,6 @@ func (h *TeamAccountHandler) UserOptions(c *gin.Context) {
 	pkg.Success(c, gin.H{"items": options})
 }
 
-// GroupOptions handles GET /api/v1/user/team-accounts/group-options.
-func (h *TeamAccountHandler) GroupOptions(c *gin.Context) {
-	userID, isAdmin, ok := h.actor(c)
-	if !ok {
-		return
-	}
-	options, err := h.service.GroupOptionsForActor(c.Request.Context(), userID, isAdmin, 0)
-	if err != nil {
-		h.respondError(c, err)
-		return
-	}
-	pkg.Success(c, options)
-}
-
 // AdminGroupOptions handles GET /api/v1/admin/team-accounts/group-options.
 func (h *TeamAccountHandler) AdminGroupOptions(c *gin.Context) {
 	userID, _, ok := h.actor(c)
@@ -429,12 +409,11 @@ func (h *TeamAccountHandler) AdminCreate(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	account, err := h.service.Create(c.Request.Context(), teamaccount.CreateInput{
+	account, err := h.service.CreateForAdmin(c.Request.Context(), teamaccount.AdminCreateInput{
 		Name:                 req.Name,
 		DepartmentExternalID: req.DepartmentExternalID,
 		OwnerUserID:          req.OwnerUserID,
 		ActorUserID:          userID,
-		IsAdmin:              true,
 		AdditionalGroupIDs:   req.AdditionalGroupIDs,
 	})
 	if err != nil {

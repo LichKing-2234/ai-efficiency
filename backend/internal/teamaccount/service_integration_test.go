@@ -163,6 +163,24 @@ func seedProvider(t *testing.T, client *ent.Client) int {
 	return row.ID
 }
 
+// createTestAccount drives the shared provisioning pipeline directly. These
+// tests cover provisioning mechanics; the per-surface policy (representative
+// vs administrator) is covered by CreateForRepresentative/CreateForAdmin tests.
+func createTestAccount(t *testing.T, service *Service, in provisionRequest) (*Account, error) {
+	t.Helper()
+	if in.departmentExternalID == "" {
+		in.departmentExternalID = "department-alpha"
+	}
+	if in.ownerUserID == 0 {
+		in.ownerUserID = in.actorUserID
+	}
+	if in.concurrency == 0 {
+		in.concurrency = DefaultConcurrency
+	}
+	in.validateDepartment = true
+	return service.provision(context.Background(), in)
+}
+
 func TestCreateProvisionsRelayIdentityAndOwnership(t *testing.T) {
 	client := testdb.Open(t)
 	ownerID, _ := seedUsers(t, client)
@@ -170,7 +188,7 @@ func TestCreateProvisionsRelayIdentityAndOwnership(t *testing.T) {
 	seedProvider(t, client)
 
 	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
-	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha Team", ActorUserID: ownerID})
+	account, err := createTestAccount(t, service, provisionRequest{name: "Alpha Team", actorUserID: ownerID})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -206,7 +224,7 @@ func TestCreateProvisionsRelayIdentityAndOwnership(t *testing.T) {
 		t.Errorf("owner manager row missing: %+v", account.Managers)
 	}
 
-	if _, err := service.Create(context.Background(), CreateInput{Name: "Alpha Again", ActorUserID: ownerID}); err == nil {
+	if _, err := createTestAccount(t, service, provisionRequest{name: "Alpha Again", actorUserID: ownerID}); err == nil {
 		t.Fatal("second account for the same department must fail")
 	}
 }
@@ -218,7 +236,7 @@ func TestCreateRequiresRepresentative(t *testing.T) {
 	seedProvider(t, client)
 
 	service := New(client, fakeResolver{provider}, fakeScope{}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
-	if _, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID}); err == nil {
+	if _, err := service.CreateForRepresentative(context.Background(), RepresentativeCreateInput{ActorUserID: ownerID}); err == nil {
 		t.Fatal("non-representative must not create an account")
 	}
 	if len(provider.created) != 0 {
@@ -234,7 +252,7 @@ func TestTransferRemovesPreviousOwner(t *testing.T) {
 	seedDepartmentMember(t, client, "department-alpha", "other@example.com")
 
 	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
-	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
+	account, err := createTestAccount(t, service, provisionRequest{name: "Alpha", actorUserID: ownerID})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -265,7 +283,7 @@ func TestTransferRejectsNonOwnerManager(t *testing.T) {
 	seedProvider(t, client)
 	seedDepartmentMember(t, client, "department-alpha", "other@example.com")
 	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
-	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
+	account, err := createTestAccount(t, service, provisionRequest{name: "Alpha", actorUserID: ownerID})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -277,63 +295,6 @@ func TestTransferRejectsNonOwnerManager(t *testing.T) {
 	}
 }
 
-func TestAdditionalGroupsRespectCreatorSubscriptions(t *testing.T) {
-	client := testdb.Open(t)
-	ownerID, _ := seedUsers(t, client)
-	seedProvider(t, client)
-	provider := newFakeProvider()
-	// The creator's own account holds China (10) and Claude (4) only.
-	creatorRelayID := int64(2001)
-	if _, err := client.User.UpdateOneID(ownerID).SetRelayUserID(int(creatorRelayID)).Save(context.Background()); err != nil {
-		t.Fatalf("bind creator relay identity: %v", err)
-	}
-	provider.subscriptions[creatorRelayID] = map[int64]bool{4: true, 10: true}
-	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
-
-	if _, err := service.Create(context.Background(), CreateInput{
-		Name: "Alpha", ActorUserID: ownerID, AdditionalGroupIDs: []int64{10},
-	}); err != nil {
-		t.Fatalf("creator may grant a group they hold: %v", err)
-	}
-	accounts, err := service.List(context.Background(), ownerID, false)
-	if err != nil || len(accounts) != 1 {
-		t.Fatalf("list accounts: %v %d", err, len(accounts))
-	}
-	if !provider.subscriptions[accounts[0].RelayUserID][10] {
-		t.Fatalf("additional group was not subscribed: %v", provider.subscriptions[accounts[0].RelayUserID])
-	}
-	if !provider.subscriptions[accounts[0].RelayUserID][2] {
-		t.Fatalf("default subscriptions must stay: %v", provider.subscriptions[accounts[0].RelayUserID])
-	}
-}
-
-func TestAdditionalGroupsRejectGroupsTheCreatorDoesNotHold(t *testing.T) {
-	client := testdb.Open(t)
-	ownerID, _ := seedUsers(t, client)
-	seedProvider(t, client)
-	provider := newFakeProvider()
-	creatorRelayID := int64(2002)
-	if _, err := client.User.UpdateOneID(ownerID).SetRelayUserID(int(creatorRelayID)).Save(context.Background()); err != nil {
-		t.Fatalf("bind creator relay identity: %v", err)
-	}
-	provider.subscriptions[creatorRelayID] = map[int64]bool{10: true}
-	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
-
-	_, err := service.Create(context.Background(), CreateInput{
-		Name: "Alpha", ActorUserID: ownerID, AdditionalGroupIDs: []int64{25},
-	})
-	if err == nil {
-		t.Fatal("granting a group the creator does not hold must fail")
-	}
-	var permission *PermissionError
-	if !errors.As(err, &permission) {
-		t.Fatalf("expected a permission error, got %v", err)
-	}
-	if len(provider.created) != 0 {
-		t.Fatal("relay user must not be created for a rejected grant")
-	}
-}
-
 func TestAdminMayGrantAnyGroup(t *testing.T) {
 	client := testdb.Open(t)
 	adminID, _ := seedUsers(t, client)
@@ -341,8 +302,8 @@ func TestAdminMayGrantAnyGroup(t *testing.T) {
 	provider := newFakeProvider()
 	service := New(client, fakeResolver{provider}, fakeScope{}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
 
-	account, err := service.Create(context.Background(), CreateInput{
-		Name: "Alpha", DepartmentExternalID: "department-alpha", ActorUserID: adminID, IsAdmin: true,
+	account, err := service.CreateForAdmin(context.Background(), AdminCreateInput{
+		Name: "Alpha", DepartmentExternalID: "department-alpha", ActorUserID: adminID,
 		AdditionalGroupIDs: []int64{25},
 	})
 	if err != nil {
@@ -359,7 +320,7 @@ func TestCreateKeyRejectsGroupsWithoutSubscription(t *testing.T) {
 	seedProvider(t, client)
 	provider := newFakeProvider()
 	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
-	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
+	account, err := createTestAccount(t, service, provisionRequest{name: "Alpha", actorUserID: ownerID})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -379,7 +340,7 @@ func TestRepresentativeCannotTransferOutsideDepartment(t *testing.T) {
 	seedProvider(t, client)
 	seedDepartmentMember(t, client, "department-alpha", "owner@example.com")
 	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
-	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
+	account, err := createTestAccount(t, service, provisionRequest{name: "Alpha", actorUserID: ownerID})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -398,7 +359,7 @@ func TestRepresentativeCannotAddManagerOutsideDepartment(t *testing.T) {
 	seedProvider(t, client)
 	seedDepartmentMember(t, client, "department-alpha", "owner@example.com")
 	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
-	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
+	account, err := createTestAccount(t, service, provisionRequest{name: "Alpha", actorUserID: ownerID})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -431,7 +392,7 @@ func TestCreateKeyRetriesAfterPasswordRotation(t *testing.T) {
 	provider.keyAuthFailures = 1
 	seedProvider(t, client)
 	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
-	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
+	account, err := createTestAccount(t, service, provisionRequest{name: "Alpha", actorUserID: ownerID})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -455,7 +416,7 @@ func TestAddManagerIsIdempotent(t *testing.T) {
 	seedProvider(t, client)
 	seedDepartmentMember(t, client, "department-alpha", "other@example.com")
 	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
-	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
+	account, err := createTestAccount(t, service, provisionRequest{name: "Alpha", actorUserID: ownerID})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -497,7 +458,7 @@ func TestReplacementAccountAfterSuspension(t *testing.T) {
 	seedProvider(t, client)
 	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
 
-	first, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
+	first, err := createTestAccount(t, service, provisionRequest{name: "Alpha", actorUserID: ownerID})
 	if err != nil {
 		t.Fatalf("Create() first error = %v", err)
 	}
@@ -505,7 +466,7 @@ func TestReplacementAccountAfterSuspension(t *testing.T) {
 		t.Fatalf("SetStatus(suspended) error = %v", err)
 	}
 
-	second, err := service.Create(context.Background(), CreateInput{Name: "Alpha replacement", ActorUserID: ownerID})
+	second, err := createTestAccount(t, service, provisionRequest{name: "Alpha replacement", actorUserID: ownerID})
 	if err != nil {
 		t.Fatalf("Create() replacement error = %v", err)
 	}
@@ -513,7 +474,7 @@ func TestReplacementAccountAfterSuspension(t *testing.T) {
 		t.Fatalf("replacement reused relay identity %q", second.RelayUsername)
 	}
 
-	if _, err := service.Create(context.Background(), CreateInput{Name: "Third", ActorUserID: ownerID}); err == nil {
+	if _, err := createTestAccount(t, service, provisionRequest{name: "Third", actorUserID: ownerID}); err == nil {
 		t.Fatal("Create() while another account is active must fail")
 	}
 	if err := service.SetStatus(context.Background(), ownerID, first.ID, "active"); err == nil {
@@ -528,7 +489,7 @@ func TestSuspendedAccountHiddenFromMembers(t *testing.T) {
 	seedProvider(t, client)
 	seedDepartmentMember(t, client, "department-alpha", "other@example.com")
 	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
-	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
+	account, err := createTestAccount(t, service, provisionRequest{name: "Alpha", actorUserID: ownerID})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -563,7 +524,7 @@ func TestCreateUsesRelayRegistrationConcurrency(t *testing.T) {
 	seedProvider(t, client)
 	seedDepartmentMember(t, client, "department-alpha", "other@example.com")
 	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
-	if _, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID}); err != nil {
+	if _, err := createTestAccount(t, service, provisionRequest{name: "Alpha", actorUserID: ownerID}); err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
 	if len(provider.created) != 1 || provider.created[0].Concurrency != 5 {
@@ -579,14 +540,12 @@ func TestRepresentativeCreatesAgentOnlyAccount(t *testing.T) {
 	seedDepartmentMember(t, client, "department-alpha", "other@example.com")
 	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
 
-	account, err := service.Create(context.Background(), CreateInput{
-		Name:               "ignored",
-		ActorUserID:        ownerID,
-		AgentOnly:          true,
-		AdditionalGroupIDs: []int64{2, 67},
+	account, err := service.CreateForRepresentative(context.Background(), RepresentativeCreateInput{
+		DepartmentExternalID: "department-alpha",
+		ActorUserID:          ownerID,
 	})
 	if err != nil {
-		t.Fatalf("Create() error = %v", err)
+		t.Fatalf("CreateForRepresentative() error = %v", err)
 	}
 	if got := provider.created[0].Concurrency; got != AgentOnlyConcurrency {
 		t.Fatalf("concurrency = %d, want %d", got, AgentOnlyConcurrency)
@@ -608,7 +567,7 @@ func TestAdminUpdatesAccountGroups(t *testing.T) {
 	seedDepartmentMember(t, client, "department-alpha", "other@example.com")
 	service := New(client, fakeResolver{provider}, fakeScope{departments: []string{"department-alpha"}}, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
 
-	account, err := service.Create(context.Background(), CreateInput{Name: "Alpha", ActorUserID: ownerID})
+	account, err := createTestAccount(t, service, provisionRequest{name: "Alpha", actorUserID: ownerID})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
