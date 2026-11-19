@@ -55,7 +55,10 @@ Creating an account for a department:
    groups are granted on top; a non-administrative caller may only grant groups
    they are subscribed to themselves.
 6. Grants Relay user concurrency 5, matching sub2api's registration default;
-   the admin create API would otherwise default to 0 (unlimited).
+   the admin create API would otherwise default to 0 (unlimited). Accounts a
+   representative creates instead get concurrency 20, keep only the Agent group
+   (every other default subscription is revoked), and use a name generated from
+   the department.
 7. Records the account, the owner row, and an `account_created` event in one
    local transaction. If any step fails, the Relay user is disabled so no orphan
    identity can authenticate.
@@ -72,6 +75,13 @@ identity and audit history.
 A suspended account is an administrator-only surface: representatives and
 managers no longer see it in account lists, member details, usage trends, or by
 id, while the administrator console can still inspect, transfer, and restore it.
+
+## Groups
+
+Administrators can reconcile an account's subscriptions from the console
+(`PUT /api/v1/admin/team-accounts/:id/groups`): checked groups are assigned,
+unchecked groups are revoked, and the change is recorded as a `groups_updated`
+event. Representative-created accounts start from the Agent group only.
 
 ## Keys
 
@@ -113,6 +123,13 @@ never included in member counts of the directory itself.
 `team_account_events` is append-only. Payloads never contain plaintext
 credentials or full key secrets. Owners and managers read events for their own
 accounts; administrators read every account.
+
+## Groups
+
+Administrators can reconcile an account's subscriptions from the console
+(`PUT /api/v1/admin/team-accounts/:id/groups`): checked groups are assigned,
+unchecked groups are revoked, and the change is recorded as a `groups_updated`
+event. Representative-created accounts start from the Agent group only.
 
 ## Keys and suspension
 

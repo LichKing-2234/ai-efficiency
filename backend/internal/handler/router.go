@@ -591,6 +591,7 @@ func setupRouter(
 			adminTeamAccountsGroup.GET("/group-options", teamAccountAdminHandler.AdminGroupOptions)
 			adminTeamAccountsGroup.POST("", teamAccountAdminHandler.AdminCreate)
 			adminTeamAccountsGroup.GET("/:id", teamAccountAdminHandler.Get)
+			adminTeamAccountsGroup.PUT("/:id/groups", teamAccountAdminHandler.AdminUpdateGroups)
 			adminTeamAccountsGroup.GET("/:id/usage", teamAccountAdminHandler.Usage)
 			adminTeamAccountsGroup.GET("/:id/events", teamAccountAdminHandler.Events)
 			adminTeamAccountsGroup.GET("/:id/user-options", teamAccountAdminHandler.UserOptions)

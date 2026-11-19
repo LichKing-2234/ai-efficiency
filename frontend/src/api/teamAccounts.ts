@@ -106,6 +106,12 @@ export function createAdminTeamAccount(data: AdminTeamAccountCreateRequest) {
   return client.post<ApiResponse<TeamAccountSummary>>(ADMIN_BASE, data)
 }
 
+export function updateAdminTeamAccountGroups(id: number, groupIDs: number[]) {
+  return client.put<ApiResponse<TeamAccountSummary>>(accountPath(ADMIN_BASE, id, '/groups'), {
+    group_ids: groupIDs,
+  })
+}
+
 export function getAdminTeamAccount(id: number) {
   return client.get<ApiResponse<TeamAccountDetail>>(accountPath(ADMIN_BASE, id))
 }
