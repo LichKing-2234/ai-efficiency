@@ -107,7 +107,7 @@ func defaultQuotaPayload() map[string]any {
 		"rate_limit_reset_credits": map[string]any{
 			"available_count": 2,
 			"credits": []map[string]any{
-				{"expires_at": "2026-11-20T00:00:00Z"},
+				{"expires_at": "2099-01-01T00:00:00Z"},
 			},
 		},
 		"credits": map[string]any{
@@ -591,7 +591,7 @@ type unsupportedProvider struct {
 func TestListReturnsObservationsAndSnapshotFallback(t *testing.T) {
 	balance := "7.50"
 	observedAt := time.Date(2026, 11, 1, 8, 0, 0, 0, time.UTC)
-	expiry := time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)
+	expiry := time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
 	accounts := []relay.OwnerAccount{
 		{
 			ID: 1, Name: "alice", Email: "alice@example.com", Platform: PlatformOpenAI, Type: "oauth", Status: "active", Schedulable: true,
@@ -612,7 +612,7 @@ func TestListReturnsObservationsAndSnapshotFallback(t *testing.T) {
 			Credits:    &Credits{HasCredits: true, Balance: &balance},
 			ResetCredits: &ResetCredits{
 				Available: 1,
-				ExpiresAt: []string{"2026-11-10T00:00:00Z"},
+				ExpiresAt: []string{"2099-01-01T00:00:00Z"},
 			},
 		},
 	}
