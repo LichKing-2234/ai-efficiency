@@ -832,16 +832,6 @@ export interface UserUsageDashboardParams {
   end_date?: string
   granularity?: 'day' | 'hour'
   timezone?: string
-  /** Pins the group-quota window when the range is not a plain day/week/month span. */
-  quota_window?: 'daily' | 'weekly' | 'monthly'
-}
-
-export interface UserUsageOpenAICycle {
-  status: 'ok' | 'unavailable' | string
-  message?: string
-  group_id?: string
-  reset_at?: string | null
-  start_at?: string | null
 }
 
 export interface UserUsageDashboardRange {

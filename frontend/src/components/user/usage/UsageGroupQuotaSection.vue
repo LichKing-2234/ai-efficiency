@@ -10,6 +10,8 @@ const props = defineProps<{
   poolUsage?: UserUsageGroupPoolUsageState | null
   loading?: boolean
   rangeLabel?: string
+  /** Enforcement window the parent requested; wins over the label heuristic. */
+  window?: 'daily' | 'weekly' | 'monthly' | ''
   showResetRequest?: boolean
   resetRequestLoading?: boolean
 }>()
@@ -65,11 +67,13 @@ function quotaValueClass(group: NonNullable<UserUsageGroupQuotaState['groups']>[
   return 'text-green-600'
 }
 
-function quotaTitle(rangeLabel?: string) {
+function quotaTitle(rangeLabel?: string, window?: string) {
+  if (window === 'daily') return t('usageDashboard.dailyQuotaTitle')
+  if (window === 'weekly') return t('usageDashboard.weeklyQuotaTitle')
+  if (window === 'monthly') return t('usageDashboard.monthlyQuotaTitle')
   if (!rangeLabel) return t('usageDashboard.groupQuotasTitle')
   if (rangeLabel === t('usageDashboard.today')) return t('usageDashboard.dailyQuotaTitle')
   if (rangeLabel === t('usageDashboard.sevenDays')) return t('usageDashboard.weeklyQuotaTitle')
-  if (rangeLabel === t('usageDashboard.fromOpenaiReset')) return t('usageDashboard.weeklyQuotaTitle')
   return t('usageDashboard.monthlyQuotaTitle')
 }
 
@@ -113,7 +117,7 @@ onBeforeUnmount(() => {
   <section v-if="!shouldHide" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" data-testid="usage-group-quotas">
     <div class="flex items-start justify-between gap-3">
       <div>
-        <h2 class="text-base font-semibold text-gray-900">{{ quotaTitle(props.rangeLabel) }}</h2>
+        <h2 class="text-base font-semibold text-gray-900">{{ quotaTitle(props.rangeLabel, props.window) }}</h2>
         <p class="mt-1 text-sm text-gray-500">{{ t('usageDashboard.groupQuotasHelp') }}</p>
       </div>
       <ElButton

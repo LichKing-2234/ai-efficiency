@@ -20,7 +20,6 @@
       </div>
       <div class="flex max-w-full shrink-0 flex-wrap items-center gap-2 pb-1 sm:flex-nowrap sm:overflow-x-auto">
         <ElRadioGroup
-          :key="rangeVersion"
           :model-value="selectedRange"
           class="max-w-full shrink-0 flex-wrap sm:flex-nowrap sm:overflow-x-auto"
         >
@@ -33,10 +32,17 @@
           <ElRadioButton data-test="range-30d" value="30d" @click="selectRange('30d')">
             {{ t('usageDashboard.thirtyDays') }}
           </ElRadioButton>
-          <ElRadioButton data-test="range-cycle" value="cycle" :disabled="cycleLoading" @click="selectRange('cycle')">
-            {{ t('usageDashboard.fromOpenaiReset') }}
-          </ElRadioButton>
         </ElRadioGroup>
+        <ElDatePicker
+          v-model="customRange"
+          data-test="range-custom"
+          type="daterange"
+          value-format="YYYY-MM-DD"
+          :clearable="false"
+          :disabled-date="isFutureDate"
+          class="w-full shrink-0 sm:w-[250px]"
+          @change="onCustomRangeChange"
+        />
         <ElButton
           :disabled="usageLoading"
           :loading="usageLoading"
@@ -103,6 +109,7 @@
           :pool-usage="props.memberRoute ? null : personalPoolUsage"
           :loading="quotaLoading && !currentGroupQuotas"
           :range-label="selectedRangeLabel"
+          :window="selectedQuotaWindow"
           :show-reset-request="canRequestQuotaReset"
           :reset-request-loading="quotaResetOptionsLoading"
           @request-reset="openQuotaResetModal"
@@ -155,8 +162,7 @@
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { createQuotaResetRequest, getQuotaResetOptions } from '@/api/quotaReset'
-import { ElMessage } from 'element-plus'
-import { getUserKiroUsage, getUserUsageDashboard, getUserUsageGroupPoolUsage, getUserUsageGroupQuotas, getUserUsageOpenAICycle } from '@/api/userUsage'
+import { getUserKiroUsage, getUserUsageDashboard, getUserUsageGroupPoolUsage, getUserUsageGroupQuotas } from '@/api/userUsage'
 import { getTeamUsageSubjectDashboard, getTeamUsageSubjectCredits, updateTeamUsageRateMultiplier } from '@/api/teamUsage'
 import { useI18n } from '@/i18n'
 import { readUsageWindowPreference, writeUsageWindowPreference } from '@/utils/usageWindowPreference'
@@ -173,7 +179,6 @@ import type {
   UserUsageKiroDay,
   UserUsageKiroModel,
   UserUsageKiroSnapshot,
-  UserUsageOpenAICycle,
 } from '@/types'
 
 const UsageStatsCards = defineAsyncComponent(() => import('@/components/user/usage/UsageStatsCards.vue'))
@@ -196,14 +201,12 @@ const props = withDefaults(defineProps<{
   initialSnapshot: null,
 })
 
-type DashboardWindow = UsageWindow | 'cycle'
+type DashboardWindow = UsageWindow | 'custom'
 
 const initialRange = readUsageWindowPreference()
 const selectedRange = ref<DashboardWindow>(initialRange)
 const snapshotRange = ref<DashboardWindow>(initialRange)
-const cycleStart = ref<string | null>(null)
-const cycleLoading = ref(false)
-const rangeVersion = ref(0)
+const customRange = ref<string[] | null>(null)
 const snapshot = ref<UserUsageDashboardSnapshot | null>(props.initialSnapshot)
 const personalQuotas = ref<UserUsageGroupQuotaState | null>(props.initialSnapshot?.group_quotas ?? null)
 const personalPoolUsage = ref<UserUsageGroupPoolUsageState | null>(null)
@@ -241,6 +244,7 @@ const setupRequired = computed(() => !props.homeMode && currentSnapshot.value?.c
 const usageIsStale = computed(() => currentSnapshot.value?.usage_freshness?.cache_status === 'stale')
 const hasUsableUsage = computed(() => currentSnapshot.value?.configured === true && currentSnapshot.value?.stats != null)
 const selectedRangeLabel = computed(() => rangeLabel(selectedRange.value))
+const selectedQuotaWindow = computed(() => quotaWindowFor(selectedRange.value))
 const snapshotRangeLabel = computed(() => rangeLabel(snapshotRange.value))
 const dashboardTitle = computed(() => {
   if (props.memberRoute) return t('usageDashboard.memberTitle')
@@ -278,8 +282,35 @@ function classifyUsageError(error: any): UsageErrorKind {
 function rangeLabel(range: DashboardWindow) {
   if (range === 'today') return t('usageDashboard.today')
   if (range === '7d') return t('usageDashboard.sevenDays')
-  if (range === 'cycle') return t('usageDashboard.fromOpenaiReset')
+  if (range === '30d') return t('usageDashboard.thirtyDays')
+  const [start, end] = customRange.value ?? []
+  if (start && end) return `${start.slice(5)} ~ ${end.slice(5)}`
   return t('usageDashboard.thirtyDays')
+}
+
+function quotaWindowFor(range: DashboardWindow): 'daily' | 'weekly' | 'monthly' {
+  if (range === 'today') return 'daily'
+  if (range === '7d') return 'weekly'
+  if (range === '30d') return 'monthly'
+  const [start, end] = customRange.value ?? []
+  if (start && end) {
+    const days = Math.round((Date.parse(end) - Date.parse(start)) / 86_400_000) + 1
+    if (days <= 1) return 'daily'
+    if (days <= 7) return 'weekly'
+  }
+  return 'monthly'
+}
+
+function isFutureDate(date: Date) {
+  const today = new Date()
+  today.setHours(23, 59, 59, 999)
+  return date.getTime() > today.getTime()
+}
+
+function onCustomRangeChange(value: string[] | null) {
+  if (!Array.isArray(value) || value.length !== 2 || !value[0] || !value[1]) return
+  selectedRange.value = 'custom'
+  void loadDashboard()
 }
 
 function formatDate(date: Date): string {
@@ -291,17 +322,17 @@ function formatDate(date: Date): string {
 
 function buildParams(range: DashboardWindow): UserUsageDashboardParams {
   const end = new Date()
-  const start = new Date(end)
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
   if (range === 'today') {
-    return { start_date: formatDate(start), end_date: formatDate(end), granularity: 'hour', timezone }
+    return { start_date: formatDate(end), end_date: formatDate(end), granularity: 'hour', timezone }
   }
-  if (range === 'cycle') {
-    // The OpenAI quota cycle usually spans eight calendar days, so the quota
-    // window has to be pinned to weekly instead of being derived from the span.
-    const cycleStartDate = cycleStart.value ?? formatDate(end)
-    return { start_date: cycleStartDate, end_date: formatDate(end), granularity: 'day', timezone, quota_window: 'weekly' }
+  if (range === 'custom') {
+    const [start, endDate] = customRange.value ?? []
+    if (start && endDate) {
+      return { start_date: start, end_date: endDate, granularity: start === endDate ? 'hour' : 'day', timezone }
+    }
   }
+  const start = new Date(end)
   start.setDate(end.getDate() - (range === '7d' ? 6 : 29))
   return { start_date: formatDate(start), end_date: formatDate(end), granularity: 'day', timezone }
 }
@@ -452,40 +483,9 @@ async function loadPersonalDashboard(generation: number, requestedRange: Dashboa
   await Promise.allSettled([usageTask, quotaTask, poolTask, kiroTask])
 }
 
-async function ensureCycleStart(): Promise<boolean> {
-  if (cycleStart.value) return true
-  cycleLoading.value = true
-  try {
-    const response = await getUserUsageOpenAICycle()
-    const cycle: UserUsageOpenAICycle | null | undefined = response.data.data
-    if (cycle?.status !== 'ok' || !cycle.start_at) {
-      ElMessage.warning(t('usageDashboard.openaiCycleUnavailable'))
-      return false
-    }
-    const startAt = new Date(cycle.start_at)
-    if (Number.isNaN(startAt.getTime())) {
-      ElMessage.warning(t('usageDashboard.openaiCycleUnavailable'))
-      return false
-    }
-    cycleStart.value = formatDate(startAt)
-    return true
-  } catch {
-    ElMessage.warning(t('usageDashboard.openaiCycleUnavailable'))
-    return false
-  } finally {
-    cycleLoading.value = false
-  }
-}
-
-async function selectRange(range: DashboardWindow) {
-  if (range === 'cycle' && !(await ensureCycleStart())) {
-    // Remount the controlled radio group so the rejected option does not stay
-    // visually selected.
-    rangeVersion.value += 1
-    return
-  }
+function selectRange(range: UsageWindow) {
   selectedRange.value = range
-  if (range !== 'cycle') writeUsageWindowPreference(range)
+  writeUsageWindowPreference(range)
   void loadDashboard()
 }
 

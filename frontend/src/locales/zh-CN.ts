@@ -328,8 +328,6 @@ const zhCN = {
   'usageDashboard.today': '今天',
   'usageDashboard.sevenDays': '7 天',
   'usageDashboard.thirtyDays': '30 天',
-  'usageDashboard.fromOpenaiReset': '距 OpenAI 上次重置',
-  'usageDashboard.openaiCycleUnavailable': '暂时拿不到 OpenAI 账号的重置时间',
   'usageDashboard.refresh': '刷新',
   'usageDashboard.loading': '正在加载用量概览...',
   'usageDashboard.setupTitle': '完成 AI 服务配置',

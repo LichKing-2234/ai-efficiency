@@ -5,7 +5,7 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import DashboardView from '@/views/DashboardView.vue'
 import { setLocale } from '@/i18n'
-import { getUserUsageDashboard, getUserUsageGroupPoolUsage, getUserUsageGroupQuotas, getUserUsageOpenAICycle } from '@/api/userUsage'
+import { getUserUsageDashboard, getUserUsageGroupPoolUsage, getUserUsageGroupQuotas } from '@/api/userUsage'
 import { getTeamUsageScope } from '@/api/teamUsage'
 import { withTeleportedContent } from './helpers/teleport'
 
@@ -42,16 +42,6 @@ vi.mock('@/api/userUsage', () => ({
     },
   })),
   getUserKiroUsage: vi.fn(() => Promise.resolve({ data: { data: null } })),
-  getUserUsageOpenAICycle: vi.fn(() => Promise.resolve({
-    data: {
-      data: {
-        status: 'ok',
-        group_id: '42',
-        reset_at: '2026-06-10T12:00:00Z',
-        start_at: '2026-06-03T12:00:00Z',
-      },
-    },
-  })),
 }))
 
 vi.mock('@/api/ownerAccounts', () => ({
@@ -228,16 +218,6 @@ describe('DashboardView', () => {
     ;(getTeamUsageScope as any).mockReset().mockResolvedValue({
       data: { data: { is_representative: true, departments: [] } },
     })
-    ;(getUserUsageOpenAICycle as any).mockReset().mockResolvedValue({
-      data: {
-        data: {
-          status: 'ok',
-          group_id: '42',
-          reset_at: '2026-06-10T12:00:00Z',
-          start_at: '2026-06-03T12:00:00Z',
-        },
-      },
-    })
   })
 
   it('renders usage before representative scope and quota finish loading', async () => {
@@ -293,7 +273,7 @@ describe('DashboardView', () => {
     expect((wrapper.get('[data-test="range-7d"] input').element as HTMLInputElement).checked).toBe(true)
   })
 
-  it('requests the OpenAI cycle range with the pinned weekly quota window', async () => {
+  it('requests the picked custom date range with the span-derived quota window', async () => {
     localStorage.setItem('ae.usage.window', '30d')
     const router = createTestRouter()
     await router.push('/usage')
@@ -302,32 +282,17 @@ describe('DashboardView', () => {
     await flushPromises()
     ;(getUserUsageDashboard as any).mockClear()
 
-    await wrapper.get('[data-test="range-cycle"]').trigger('click')
+    const picker = wrapper.getComponent({ name: 'ElDatePicker' })
+    await picker.vm.$emit('update:modelValue', ['2026-06-01', '2026-06-03'])
+    await picker.vm.$emit('change', ['2026-06-01', '2026-06-03'])
     await flushPromises()
 
     const params = (getUserUsageDashboard as any).mock.calls.at(-1)[0]
-    expect(params.start_date).toBe('2026-06-03')
-    expect(params.quota_window).toBe('weekly')
+    expect(params.start_date).toBe('2026-06-01')
+    expect(params.end_date).toBe('2026-06-03')
+    expect(params.granularity).toBe('day')
     expect((getUserUsageGroupQuotas as any).mock.calls.at(-1)[0]).toEqual(params)
     expect(localStorage.getItem('ae.usage.window')).toBe('30d')
-  })
-
-  it('keeps the current range when the OpenAI cycle is unavailable', async () => {
-    ;(getUserUsageOpenAICycle as any).mockResolvedValueOnce({
-      data: { data: { status: 'unavailable', message: 'no OpenAI group' } },
-    })
-    const router = createTestRouter()
-    await router.push('/usage')
-    await router.isReady()
-    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
-    await flushPromises()
-    ;(getUserUsageDashboard as any).mockClear()
-
-    await wrapper.get('[data-test="range-cycle"]').trigger('click')
-    await flushPromises()
-
-    expect(getUserUsageDashboard).not.toHaveBeenCalled()
-    expect((wrapper.get('[data-test="range-30d"] input').element as HTMLInputElement).checked).toBe(true)
   })
 
   it('keeps an explicit window preference when the new personal request fails', async () => {

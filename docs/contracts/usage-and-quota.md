@@ -28,17 +28,16 @@ identity or usage data.
 Activity ranges remain URL-owned with their separate presets/custom dates.
 Activity never reads or writes the AI Usage preference.
 
-Personal AI Usage adds one derived, personal-only selection that is never
-persisted: `cycle` ("From OpenAI's last reset"). It is not a preference value,
-so restoring a profile always yields one of the three stored windows, and Team
-Usage keeps its three-value preference. Selecting the cycle reads
-`GET /api/v1/user/usage/openai-cycle`, which projects the caller's OpenAI
-groups onto the upstream OAuth pool and returns the earliest upcoming
-`next_reset_at`; the cycle started exactly one seven-day window before that
-instant. When the projection is unavailable the selection is rejected and the
-previous range stays active. Because a cycle usually spans eight calendar days,
-the request pins `quota_window=weekly` instead of letting the quota window be
-derived from the span.
+Personal AI Usage adds one personal-only selection that is never persisted: a
+custom `start_date`/`end_date` pair picked from the date range control on the
+dashboard toolbar. It is not a preference value, so restoring a browser profile
+always yields one of the three stored windows, Team Usage never sees it, and an
+explicit custom selection never rewrites the stored preference. Both endpoints
+are inclusive dates; a single-day pick uses hourly granularity and any longer
+pick uses daily granularity. Future dates are not selectable. The quota card
+window for a custom range follows the same span rule as the backend, so a
+one-day pick shows the daily quota, up to seven days shows the weekly quota, and
+longer picks show the monthly quota.
 
 ## Personal Usage
 
@@ -91,12 +90,13 @@ The dashboard range maps to subscription enforcement windows:
 | `today` or hourly range | Daily |
 | `7d` | Weekly |
 | `30d` | Monthly |
-| `cycle` (pinned `quota_window=weekly`) | Weekly |
+| custom range of one day | Daily |
+| custom range of up to seven days | Weekly |
+| custom range longer than seven days | Monthly |
 
-`quota_window` is an explicit override of the span-derived mapping: the backend
-honours `daily`, `weekly`, or `monthly` and otherwise falls back to the table's
-date-span derivation. It never changes the returned usage range; it only picks
-which subscription enforcement window supplies Used/Quota.
+Custom ranges are the only selections whose enforcement window is not fixed by
+a preset; the span rule above keeps the quota card consistent with the backend
+derivation instead of relying on a pin parameter.
 
 A subscription reset timestamp appears only when the matching window returns a
 valid reset. API-key quota rows and subscriptions without that timestamp retain
