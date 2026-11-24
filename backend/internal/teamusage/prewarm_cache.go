@@ -32,7 +32,7 @@ const (
 	prewarmSegmentMaxBytes             = 8 << 20
 	prewarmManifestMaxBytes            = 64 << 10
 	prewarmTimezoneGenerationMaxBytes  = 16 << 20
-	prewarmDefaultReadCommandBudget    = 250 * time.Millisecond
+	prewarmDefaultReadCommandBudget    = 1500 * time.Millisecond
 	prewarmDefaultWriteCommandBudget   = 250 * time.Millisecond
 	prewarmDefaultLeaseCommandBudget   = 250 * time.Millisecond
 	prewarmDefaultReleaseCommandBudget = 250 * time.Millisecond
