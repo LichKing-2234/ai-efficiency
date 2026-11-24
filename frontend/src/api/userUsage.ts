@@ -6,7 +6,6 @@ import type {
   UserUsageGroupPoolUsageResponse,
   UserUsageGroupQuotaResponse,
   UserUsageKiroSnapshot,
-  UserUsageOpenAICycle,
 } from '@/types'
 
 export function getUserUsageDashboard(params: UserUsageDashboardParams, signal?: AbortSignal) {
@@ -28,10 +27,6 @@ export function getUserKiroUsage(params: UserUsageDashboardParams, signal?: Abor
     params: { start_date: params.start_date, end_date: params.end_date, granularity: params.granularity, timezone: params.timezone },
     signal,
   })
-}
-
-export function getUserUsageOpenAICycle(signal?: AbortSignal) {
-  return client.get<ApiResponse<UserUsageOpenAICycle>>('/user/usage/openai-cycle', { signal })
 }
 
 export function getUserUsageGroupPoolUsage(params: UserUsageDashboardParams, signal?: AbortSignal) {

@@ -547,7 +547,6 @@ func setupRouter(
 			userGroup.GET("/usage/dashboard", userUsageHandler.Dashboard)
 			userGroup.GET("/usage/group-quotas", userUsageHandler.GroupQuotas)
 			userGroup.GET("/usage/group-pool-usage", userUsageHandler.GroupPoolUsage)
-		userGroup.GET("/usage/openai-cycle", userUsageHandler.OpenAICycle)
 			kiroUsageHandler := NewKiroUsageHandler(kiroCreditsService)
 			userGroup.GET("/usage/kiro", kiroUsageHandler.Get)
 		}

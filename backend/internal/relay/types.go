@@ -429,11 +429,6 @@ type UserUsageDashboardParams struct {
 	EndDate     string `json:"end_date"`
 	Granularity string `json:"granularity"`
 	Timezone    string `json:"timezone"`
-	// QuotaWindow pins the group-quota window independently of the date span.
-	// Callers use it when the selected range is not a plain day/week/month
-	// window (for example an account quota cycle that spans eight calendar
-	// days).
-	QuotaWindow string `json:"quota_window,omitempty"`
 }
 
 type UserUsageOriginBranches struct {
