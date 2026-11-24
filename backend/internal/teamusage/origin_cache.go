@@ -101,7 +101,7 @@ func applyOriginCacheDefaults(options *OriginCacheOptions) {
 		options.CommandTimeout = 100 * time.Millisecond
 	}
 	if options.RefreshTimeout <= 0 {
-		options.RefreshTimeout = 40 * time.Second
+		options.RefreshTimeout = 10 * time.Second
 	}
 	if options.LeaseTTL <= 0 {
 		options.LeaseTTL = 45 * time.Second
