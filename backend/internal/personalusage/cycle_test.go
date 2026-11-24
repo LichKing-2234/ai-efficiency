@@ -41,12 +41,22 @@ func TestOpenAICyclePicksTheEarliestResetAndIgnoresForeignGroups(t *testing.T) {
 	service, origin, userID, _ := createPersonalUsageFixture(t, true)
 	early := time.Date(2026, 7, 21, 3, 0, 0, 0, time.UTC)
 	late := time.Date(2026, 7, 23, 3, 0, 0, 0, time.UTC)
+	resolver := service.resolver.(*providerResolverStub)
+	resolver.provider = &cycleGroupProviderStub{
+		originProviderStub: origin,
+		groups: []relay.Group{
+			{ID: 42, Name: "Group Alpha", Platform: "openai"},
+			{ID: 43, Name: "Group Beta", Platform: "openai"},
+			{ID: 44, Name: "Group Gamma", Platform: "anthropic"},
+		},
+	}
 	origin.pool = relay.UserUsageGroupPoolUsageState{
 		Status: "ok",
 		Groups: []relay.UserUsageGroupPoolUsageGroupItem{
 			{GroupID: "42", Status: "ok", NextResetAt: &late},
 			{GroupID: "43", Status: "ok", NextResetAt: &early},
-			{GroupID: "77", Status: "ok", NextResetAt: timePtr(time.Date(2026, 7, 19, 0, 0, 0, 0, time.UTC))},
+			{GroupID: "44", Status: "ok", NextResetAt: timePtr(time.Date(2026, 7, 19, 0, 0, 0, 0, time.UTC))},
+			{GroupID: "77", Status: "ok", NextResetAt: timePtr(time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC))},
 		},
 	}
 
@@ -57,9 +67,21 @@ func TestOpenAICyclePicksTheEarliestResetAndIgnoresForeignGroups(t *testing.T) {
 	if response.Status != "ok" {
 		t.Fatalf("status = %q, want ok (%s)", response.Status, response.Message)
 	}
-	if response.ResetAt == nil || !response.ResetAt.Equal(late) {
-		t.Fatalf("reset at = %v, want the allowed group reset %v", response.ResetAt, late)
+	if response.GroupID != "43" {
+		t.Fatalf("group id = %q, want the earliest allowed OpenAI group 43", response.GroupID)
 	}
+	if response.ResetAt == nil || !response.ResetAt.Equal(early) {
+		t.Fatalf("reset at = %v, want the earliest allowed reset %v", response.ResetAt, early)
+	}
+}
+
+type cycleGroupProviderStub struct {
+	*originProviderStub
+	groups []relay.Group
+}
+
+func (s *cycleGroupProviderStub) ListAllowedGroupsForUser(context.Context, int64) ([]relay.Group, error) {
+	return s.groups, nil
 }
 
 func TestOpenAICycleReportsUnavailableWithoutAReset(t *testing.T) {
