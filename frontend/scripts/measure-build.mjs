@@ -174,9 +174,11 @@ const rows = [
 for (const [row, maximum] of [
   [initialShellRow, 76_800],
   // Raised once for the organization-account console, which added UI to the
-  // usage route. Keep this budget tight; split the feature into an async chunk
-  // before asking for more room.
-  [defaultUsageRow, 166_400],
+  // usage route, and once for the custom AI Usage date range (two native date
+  // inputs; the Element Plus date picker was rejected for this exact budget).
+  // Keep this budget tight; split larger features into an async chunk before
+  // asking for more room.
+  [defaultUsageRow, 167_936],
   // Slightly raised for the organization-account admin console controls.
   [adminUsersRow, 264_192],
 ]) {

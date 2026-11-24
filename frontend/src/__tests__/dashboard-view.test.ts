@@ -282,9 +282,11 @@ describe('DashboardView', () => {
     await flushPromises()
     ;(getUserUsageDashboard as any).mockClear()
 
-    const picker = wrapper.getComponent({ name: 'ElDatePicker' })
-    await picker.vm.$emit('update:modelValue', ['2026-06-01', '2026-06-03'])
-    await picker.vm.$emit('change', ['2026-06-01', '2026-06-03'])
+    const startInput = wrapper.get('[data-test="range-custom-start"]')
+    const endInput = wrapper.get('[data-test="range-custom-end"]')
+    await startInput.setValue('2026-06-01')
+    await endInput.setValue('2026-06-03')
+    await endInput.trigger('change')
     await flushPromises()
 
     const params = (getUserUsageDashboard as any).mock.calls.at(-1)[0]

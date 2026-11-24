@@ -33,16 +33,26 @@
             {{ t('usageDashboard.thirtyDays') }}
           </ElRadioButton>
         </ElRadioGroup>
-        <ElDatePicker
-          v-model="customRange"
-          data-test="range-custom"
-          type="daterange"
-          value-format="YYYY-MM-DD"
-          :clearable="false"
-          :disabled-date="isFutureDate"
-          class="w-full shrink-0 sm:w-[250px]"
-          @change="onCustomRangeChange"
-        />
+        <div class="flex shrink-0 items-center gap-1">
+          <input
+            v-model="customStart"
+            data-test="range-custom-start"
+            type="date"
+            :max="todayDate"
+            :aria-label="t('activity.from')"
+            class="rounded border border-gray-300 px-2 py-1 text-sm"
+            @change="onCustomDateChange"
+          >
+          <input
+            v-model="customEnd"
+            data-test="range-custom-end"
+            type="date"
+            :max="todayDate"
+            :aria-label="t('activity.to')"
+            class="rounded border border-gray-300 px-2 py-1 text-sm"
+            @change="onCustomDateChange"
+          >
+        </div>
         <ElButton
           :disabled="usageLoading"
           :loading="usageLoading"
@@ -206,7 +216,10 @@ type DashboardWindow = UsageWindow | 'custom'
 const initialRange = readUsageWindowPreference()
 const selectedRange = ref<DashboardWindow>(initialRange)
 const snapshotRange = ref<DashboardWindow>(initialRange)
-const customRange = ref<string[] | null>(null)
+const customStart = ref('')
+const customEnd = ref('')
+const customRange = ref<[string, string] | null>(null)
+const todayDate = computed(() => formatDate(new Date()))
 const snapshot = ref<UserUsageDashboardSnapshot | null>(props.initialSnapshot)
 const personalQuotas = ref<UserUsageGroupQuotaState | null>(props.initialSnapshot?.group_quotas ?? null)
 const personalPoolUsage = ref<UserUsageGroupPoolUsageState | null>(null)
@@ -301,14 +314,12 @@ function quotaWindowFor(range: DashboardWindow): 'daily' | 'weekly' | 'monthly' 
   return 'monthly'
 }
 
-function isFutureDate(date: Date) {
-  const today = new Date()
-  today.setHours(23, 59, 59, 999)
-  return date.getTime() > today.getTime()
-}
-
-function onCustomRangeChange(value: string[] | null) {
-  if (!Array.isArray(value) || value.length !== 2 || !value[0] || !value[1]) return
+function onCustomDateChange() {
+  const start = customStart.value
+  const end = customEnd.value
+  if (!start || !end) return
+  if (start > end) customStart.value = end
+  customRange.value = start > end ? [end, end] : [start, end]
   selectedRange.value = 'custom'
   void loadDashboard()
 }
