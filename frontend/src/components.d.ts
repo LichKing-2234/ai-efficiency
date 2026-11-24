@@ -105,6 +105,7 @@ declare module 'vue' {
     UsageModelChart: typeof import('./components/user/usage/UsageModelChart.vue')['default']
     UsagePairInfo: typeof import('./components/usage/UsagePairInfo.vue')['default']
     UsagePoolSnapshot: typeof import('./components/user/usage/UsagePoolSnapshot.vue')['default']
+    UsageRangePicker: typeof import('./components/usage/UsageRangePicker.vue')['default']
     UsageStatsCards: typeof import('./components/user/usage/UsageStatsCards.vue')['default']
     UsageTrendChart: typeof import('./components/user/usage/UsageTrendChart.vue')['default']
     UsageUnitToggle: typeof import('./components/usage/UsageUnitToggle.vue')['default']

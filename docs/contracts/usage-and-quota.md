@@ -34,7 +34,11 @@ dashboard toolbar. It is not a preference value, so restoring a browser profile
 always yields one of the three stored windows, Team Usage never sees it, and an
 explicit custom selection never rewrites the stored preference. Both endpoints
 are inclusive dates; a single-day pick uses hourly granularity and any longer
-pick uses daily granularity. Future dates are not selectable. The quota card
+pick uses daily granularity. Future dates are not selectable. The two date
+controls always mirror the effective range, so selecting 今天/7 天/30 天 fills
+them with the corresponding start and end dates, and editing either date moves
+the selection to the custom range. Both AI Usage and Team Overview share one
+range control component. The quota card
 window for a custom range follows the same span rule as the backend, so a
 one-day pick shows the daily quota, up to seven days shows the weekly quota, and
 longer picks show the monthly quota.
