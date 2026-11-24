@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	entsql "entgo.io/ent/dialect/sql"
@@ -44,6 +45,14 @@ type Service struct {
 	prewarmReader            *PrewarmReader
 	memberCursorCodec        *memberCursorCodec
 	organizationCursorCodec  *organizationCursorCodec
+
+	// Relay directory cache. Every overview endpoint resolves the caller's
+	// subjects against the relay user directory, and the four sections load
+	// concurrently; without this each section pages the whole directory.
+	directoryMu       sync.Mutex
+	directoryKey      string
+	directoryUsers    []relay.User
+	directoryLoadedAt time.Time
 }
 
 type ServiceOptions struct {
@@ -887,6 +896,8 @@ type overviewRelayUserResolver struct {
 	usersByEmail map[string]relay.User
 }
 
+const overviewDirectoryTTL = 60 * time.Second
+
 func (s *Service) newOverviewRelayUserResolver(ctx context.Context, provider relay.Provider) (*overviewRelayUserResolver, error) {
 	resolver := &overviewRelayUserResolver{
 		service:  s,
@@ -896,7 +907,7 @@ func (s *Service) newOverviewRelayUserResolver(ctx context.Context, provider rel
 	if !ok {
 		return resolver, nil
 	}
-	users, err := directoryProvider.ListUsers(ctx)
+	users, err := s.loadOverviewDirectory(ctx, provider, directoryProvider)
 	if err != nil {
 		return nil, fmt.Errorf("list relay users for team overview: %w", err)
 	}
@@ -912,6 +923,31 @@ func (s *Service) newOverviewRelayUserResolver(ctx context.Context, provider rel
 		}
 	}
 	return resolver, nil
+}
+
+// loadOverviewDirectory serves the relay user directory from a short-lived
+// process cache. The cache is refreshed under the same lock, so the concurrent
+// overview sections share one fetch instead of each paging the directory.
+func (s *Service) loadOverviewDirectory(ctx context.Context, provider relay.Provider, directoryProvider relay.UserDirectoryProvider) ([]relay.User, error) {
+	key := provider.Name()
+	now := time.Now()
+
+	s.directoryMu.Lock()
+	if s.directoryUsers != nil && s.directoryKey == key && now.Sub(s.directoryLoadedAt) < overviewDirectoryTTL {
+		users := s.directoryUsers
+		s.directoryMu.Unlock()
+		return users, nil
+	}
+	users, err := directoryProvider.ListUsers(ctx)
+	if err != nil {
+		s.directoryMu.Unlock()
+		return nil, err
+	}
+	s.directoryUsers = users
+	s.directoryKey = key
+	s.directoryLoadedAt = time.Now()
+	s.directoryMu.Unlock()
+	return users, nil
 }
 
 func (r *overviewRelayUserResolver) Resolve(ctx context.Context, subject representativescope.Subject) (int64, representativescope.Subject, error) {
