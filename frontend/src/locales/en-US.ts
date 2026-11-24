@@ -333,6 +333,8 @@ const enUS = {
   'usageDashboard.today': 'Today',
   'usageDashboard.sevenDays': '7 Days',
   'usageDashboard.thirtyDays': '30 Days',
+  'usageDashboard.fromOpenaiReset': "From OpenAI's last reset",
+  'usageDashboard.openaiCycleUnavailable': 'OpenAI account reset time is unavailable right now',
   'usageDashboard.refresh': 'Refresh',
   'usageDashboard.loading': 'Loading usage dashboard...',
   'usageDashboard.setupTitle': 'Complete AI service configuration',

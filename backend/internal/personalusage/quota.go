@@ -171,6 +171,9 @@ func quotaForWindow(group *relay.Group, selectedWindow string) *float64 {
 }
 
 func quotaWindow(params relay.UserUsageDashboardParams) string {
+	if pinned := strings.ToLower(strings.TrimSpace(params.QuotaWindow)); pinned == "daily" || pinned == "weekly" || pinned == "monthly" {
+		return pinned
+	}
 	if strings.EqualFold(strings.TrimSpace(params.Granularity), "hour") {
 		return "daily"
 	}
