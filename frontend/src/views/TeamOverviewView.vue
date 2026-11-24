@@ -6,13 +6,14 @@ import { useRouter } from 'vue-router'
 // the usage bundle budget.
 const TeamAccountSection = defineAsyncComponent(() => import('@/components/team-accounts/TeamAccountSection.vue'))
 import TeamOverviewMemberTable from '@/components/team-usage/TeamOverviewMemberTable.vue'
-import { getTeamUsageMembers, getTeamUsageSummary, getTeamUsageTrend } from '@/api/teamUsage'
+import { getTeamUsageCredits, getTeamUsageMembers, getTeamUsageSummary, getTeamUsageTrend } from '@/api/teamUsage'
 import { useTeamUsageOrganization } from '@/composables/useTeamUsageOrganization'
 import { useI18n } from '@/i18n'
-import { formatTokenCount } from '@/utils/formatters'
+import { formatTokenCount, formatUsagePair } from '@/utils/formatters'
+import UsagePairInfo from '@/components/usage/UsagePairInfo.vue'
 import { readUsageWindowPreference, writeUsageWindowPreference } from '@/utils/usageWindowPreference'
 import type { UsageWindow } from '@/utils/usageWindowPreference'
-import type { TeamUsageMembersResponse, TeamUsageOverviewParams, TeamUsageSummaryResponse, TeamUsageTrendResponse } from '@/types'
+import type { TeamCredits, TeamUsageMembersResponse, TeamUsageOverviewParams, TeamUsageSummaryResponse, TeamUsageTrendResponse } from '@/types'
 
 const TeamOverviewMemberTrendChart = defineAsyncComponent(
   () => import('@/components/team-usage/TeamOverviewMemberTrendChart.vue'),
@@ -21,6 +22,8 @@ const TeamOverviewMemberTrendChart = defineAsyncComponent(
 const { t } = useI18n()
 const router = useRouter()
 const summary = ref<TeamUsageSummaryResponse | null>(null)
+const teamCredits = ref<TeamCredits | null>(null)
+const creditsLoading = ref(false)
 const trend = ref<TeamUsageTrendResponse | null>(null)
 const membersPage = ref<TeamUsageMembersResponse | null>(null)
 const summaryLoading = ref(false)
@@ -31,6 +34,7 @@ const trendError = ref<'no_scope' | 'unavailable' | null>(null)
 const membersError = ref<'no_scope' | 'unavailable' | null>(null)
 const selectedRange = ref<UsageWindow>(readUsageWindowPreference())
 let summaryRequestSeq = 0
+let creditsRequestSeq = 0
 let trendRequestSeq = 0
 let membersRequestSeq = 0
 const memberPageCursors = ref<Array<string | null>>([null])
@@ -49,7 +53,41 @@ const {
   retryBranch: retryOrganizationBranch,
 } = useTeamUsageOrganization()
 
-const loading = computed(() => summaryLoading.value || membersLoading.value)
+const loading = computed(() => summaryLoading.value || membersLoading.value || creditsLoading.value)
+
+const creditsByUser = computed(() => {
+  const map: Record<number, TeamCredits['users'][number]> = {}
+  for (const user of teamCredits.value?.users ?? []) {
+    if (user.key_found) map[user.user_id] = user
+  }
+  return map
+})
+
+const creditsByDepartment = computed(() => {
+  const map: Record<string, number> = {}
+  for (const department of teamCredits.value?.departments ?? []) {
+    map[department.department_external_id] = department.credits
+  }
+  return map
+})
+
+const creditGroups = computed(() => (teamCredits.value?.departments ?? [])
+  .filter((department) => department.root === true)
+  .sort((a, b) => b.credits - a.credits))
+
+const creditTeamByDay = computed(() => teamCredits.value?.by_day ?? [])
+
+const creditTrendUsers = computed(() => (teamCredits.value?.users ?? [])
+  .filter((user) => user.key_found)
+  .map((user) => ({
+    ...user,
+    display_name: membersPage.value?.items.find((member) => member.user_id === user.user_id)?.display_name,
+  })))
+
+const rangeCredits = computed(() => {
+  if (!teamCredits.value?.available || (teamCredits.value.key_count ?? 0) === 0) return null
+  return teamCredits.value.credits
+})
 
 const scopeTooLarge = computed(() => {
   return summary.value?.summary.unavailable_reason === 'scope_too_large'
@@ -78,6 +116,26 @@ async function loadSummary(params: TeamUsageOverviewParams) {
     if (requestSeq === summaryRequestSeq) {
       summaryLoading.value = false
     }
+  }
+}
+
+async function loadCredits(params: TeamUsageOverviewParams) {
+  const requestSeq = ++creditsRequestSeq
+  creditsLoading.value = true
+  try {
+    const response = await getTeamUsageCredits({
+      start_date: params.start_date,
+      end_date: params.end_date,
+      granularity: params.granularity,
+      timezone: params.timezone,
+    } as TeamUsageOverviewParams)
+    if (requestSeq !== creditsRequestSeq) return
+    teamCredits.value = response.data.data ?? null
+  } catch {
+    if (requestSeq !== creditsRequestSeq) return
+    teamCredits.value = null
+  } finally {
+    if (requestSeq === creditsRequestSeq) creditsLoading.value = false
   }
 }
 
@@ -143,6 +201,7 @@ function loadOverview() {
   resetMemberPagination()
   memberPageParams = { ...params }
   void loadSummary(params)
+  void loadCredits(params)
   void loadTrend(params)
   void loadMembers(params, null, 0)
   resetOrganization(params)
@@ -317,9 +376,9 @@ onMounted(loadOverview)
               </div>
             </div>
             <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <div class="text-xs font-medium text-slate-500">{{ t('teamUsage.rangeTotalTokens') }}</div>
+              <div class="text-xs font-medium text-slate-500">{{ t('teamUsage.rangeTokenCredits') }}<UsagePairInfo /></div>
               <div class="mt-1 text-xl font-semibold tabular-nums text-slate-950">
-                {{ formatTokenCount(summary.summary.range_total_tokens) }}
+                {{ formatUsagePair(summary.summary.range_total_tokens, rangeCredits) }}
               </div>
             </div>
           </section>
@@ -368,6 +427,11 @@ onMounted(loadOverview)
             :state="trend.top_member_trend"
             :department-trend="trend.department_trend"
             :window="trend.window"
+            :tokens-total="summary?.summary.range_total_tokens ?? null"
+            :credits-total="rangeCredits"
+            :credits-users="creditTrendUsers"
+            :credits-groups="creditGroups"
+            :credits-team-by-day="creditTeamByDay"
           />
         </div>
 
@@ -389,6 +453,8 @@ onMounted(loadOverview)
           :organization-branch-for="organizationBranchFor"
           :member-loading="membersLoading"
           :member-error="membersError != null"
+          :credits-by-user="creditsByUser"
+          :credits-by-department="creditsByDepartment"
           :member-total-count="membersPage?.total_count ?? 0"
           :has-previous-page="memberPageIndex > 0"
           :has-next-page="Boolean(membersPage?.next_cursor)"

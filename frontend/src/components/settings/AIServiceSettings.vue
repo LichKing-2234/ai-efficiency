@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { createRelayProvider, deleteRelayProvider, listRelayProviders, updateRelayProvider } from '@/api/relayProvider'
 import { useWideContentLayout } from '@/composables/useMediaQuery'
 import { useI18n } from '@/i18n'
@@ -17,9 +17,14 @@ const relayForm = ref({
   name: '',
   display_name: '',
   base_url: '',
+  service_type: 'sub2api' as 'sub2api' | 'kiro2cc',
   admin_api_key: '',
   is_primary: false,
   enabled: true,
+})
+const isKiro2CC = computed(() => relayForm.value.service_type === 'kiro2cc')
+watch(isKiro2CC, (value) => {
+  if (value) relayForm.value.is_primary = false
 })
 const relayFormError = ref('')
 const relayFormLoading = ref(false)
@@ -53,6 +58,7 @@ function openAddRelayDialog() {
     name: '',
     display_name: '',
     base_url: '',
+    service_type: 'sub2api',
     admin_api_key: '',
     is_primary: relayProviders.value.length === 0,
     enabled: true,
@@ -67,6 +73,7 @@ function openEditRelayDialog(provider: RelayProvider) {
     name: provider.name,
     display_name: provider.display_name,
     base_url: provider.base_url,
+    service_type: provider.service_type ?? 'sub2api',
     admin_api_key: '',
     is_primary: provider.is_primary,
     enabled: provider.enabled,
@@ -88,8 +95,9 @@ async function handleRelaySubmit() {
       await updateRelayProvider(editingRelayId.value, {
         display_name: relayForm.value.display_name,
         base_url: relayForm.value.base_url,
+        service_type: relayForm.value.service_type,
         admin_api_key: relayForm.value.admin_api_key.trim() || undefined,
-        is_primary: relayForm.value.is_primary,
+        is_primary: isKiro2CC.value ? false : relayForm.value.is_primary,
         enabled: relayForm.value.enabled,
       })
     } else {
@@ -97,8 +105,9 @@ async function handleRelaySubmit() {
         name: relayForm.value.name,
         display_name: relayForm.value.display_name,
         base_url: relayForm.value.base_url,
+        service_type: relayForm.value.service_type,
         admin_api_key: relayForm.value.admin_api_key,
-        is_primary: relayForm.value.is_primary,
+        is_primary: isKiro2CC.value ? false : relayForm.value.is_primary,
         enabled: relayForm.value.enabled,
       })
     }
@@ -181,8 +190,17 @@ function cancelRelayDelete(event: MouseEvent, close: (event: MouseEvent) => void
           </div>
           <dl class="mt-3 space-y-2 text-xs">
             <div>
+              <dt class="text-gray-400">{{ t('settings.serviceType') }}</dt>
+              <dd class="mt-1 text-gray-800">
+                {{ (provider.service_type ?? 'sub2api') === 'kiro2cc' ? t('settings.serviceTypeKiro2cc') : 'sub2api' }}
+              </dd>
+            </div>
+            <div>
               <dt class="text-gray-400">{{ t('settings.primary') }}</dt>
-              <dd class="mt-1 text-gray-800">{{ provider.is_primary ? t('settings.primary') : t('settings.secondary') }}</dd>
+              <dd class="mt-1 text-gray-800">
+                <template v-if="(provider.service_type ?? 'sub2api') === 'kiro2cc'">{{ t('settings.usageOnly') }}</template>
+                <template v-else>{{ provider.is_primary ? t('settings.primary') : t('settings.secondary') }}</template>
+              </dd>
             </div>
             <div>
               <dt class="text-gray-400">{{ t('settings.baseUrl') }}</dt>
@@ -233,9 +251,17 @@ function cancelRelayDelete(event: MouseEvent, close: (event: MouseEvent) => void
             <div class="mt-1 font-mono text-xs text-gray-500">{{ provider.name }}</div>
           </template>
         </ElTableColumn>
+        <ElTableColumn :label="t('settings.serviceType')" width="150">
+          <template #default="{ row: provider }">
+            <ElTag :type="(provider.service_type ?? 'sub2api') === 'kiro2cc' ? 'warning' : 'info'">
+              {{ (provider.service_type ?? 'sub2api') === 'kiro2cc' ? t('settings.serviceTypeKiro2cc') : 'sub2api' }}
+            </ElTag>
+          </template>
+        </ElTableColumn>
         <ElTableColumn :label="t('settings.primary')" width="110">
           <template #default="{ row: provider }">
-            <ElTag v-if="provider.is_primary" type="success">{{ t('settings.primary') }}</ElTag>
+            <span v-if="(provider.service_type ?? 'sub2api') === 'kiro2cc'" class="text-xs text-gray-400">{{ t('settings.usageOnly') }}</span>
+            <ElTag v-else-if="provider.is_primary" type="success">{{ t('settings.primary') }}</ElTag>
             <ElTag v-else type="info">{{ t('settings.secondary') }}</ElTag>
           </template>
         </ElTableColumn>
@@ -310,6 +336,14 @@ function cancelRelayDelete(event: MouseEvent, close: (event: MouseEvent) => void
           <ElInput name="relay-provider-display-name" v-model="relayForm.display_name" placeholder="Relay Main" class="mt-1" />
         </div>
         <div>
+          <label class="block text-sm font-medium text-gray-700">{{ t('settings.serviceType') }}</label>
+          <ElSelect v-model="relayForm.service_type" name="relay-provider-service-type" class="mt-1 w-full" :disabled="!!editingRelayId">
+            <ElOption label="sub2api" value="sub2api" />
+            <ElOption :label="t('settings.serviceTypeKiro2cc')" value="kiro2cc" />
+          </ElSelect>
+          <p class="mt-1 text-xs text-gray-400">{{ isKiro2CC ? t('settings.kiro2ccUsageOnlyHelp') : t('settings.serviceTypeHelp') }}</p>
+        </div>
+        <div>
           <label class="block text-sm font-medium text-gray-700">{{ t('settings.baseUrl') }}</label>
           <ElInput name="relay-provider-base-url" v-model="relayForm.base_url" placeholder="https://relay.example.com" class="mt-1" />
         </div>
@@ -319,7 +353,7 @@ function cancelRelayDelete(event: MouseEvent, close: (event: MouseEvent) => void
           <p class="mt-1 text-xs text-gray-400">{{ t('settings.relayKeyHelp') }}</p>
         </div>
         <div class="flex items-center">
-          <ElSwitch id="relay-primary" v-model="relayForm.is_primary" />
+          <ElSwitch id="relay-primary" v-model="relayForm.is_primary" :disabled="isKiro2CC" />
           <label for="relay-primary" class="ml-2 text-sm text-gray-700">{{ t('settings.primaryProvider') }}</label>
         </div>
         <div class="flex items-center">

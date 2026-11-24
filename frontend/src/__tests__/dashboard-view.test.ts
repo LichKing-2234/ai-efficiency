@@ -41,6 +41,7 @@ vi.mock('@/api/userUsage', () => ({
       },
     },
   })),
+  getUserKiroUsage: vi.fn(() => Promise.resolve({ data: { data: null } })),
 }))
 
 vi.mock('@/api/ownerAccounts', () => ({
@@ -69,6 +70,7 @@ vi.mock('@/api/teamUsage', () => ({
     },
   })),
   getTeamUsageSubjectDashboard: vi.fn(),
+  getTeamUsageSubjectCredits: vi.fn(() => Promise.resolve({ data: { data: null } })),
   getTeamUsageAudit: vi.fn(() => Promise.resolve({
     data: { data: { items: [], page: 1, page_size: 20, total: 0 } },
   })),
@@ -231,6 +233,8 @@ describe('DashboardView', () => {
     await router.push('/usage')
     await router.isReady()
     const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+    await vi.dynamicImportSettled()
     await flushPromises()
 
     expect(wrapper.text()).toContain('30 Days Requests')
@@ -609,7 +613,7 @@ describe('DashboardView', () => {
 
     await flushPromises()
 
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Token Trend'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Usage trend'))
     expect(wrapper.text()).toContain('Model Distribution')
     expect(wrapper.text()).not.toContain('7 Days Cost')
     expect(wrapper.text()).not.toContain('$0.2000')
@@ -648,7 +652,7 @@ describe('DashboardView', () => {
     await flushPromises()
 
     expect(getUserUsageDashboard).toHaveBeenCalledTimes(1)
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Token Trend'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Usage trend'))
     expect(wrapper.text()).toContain('Model Distribution')
     expect(wrapper.text()).toContain('example-model')
     expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(true)
@@ -1595,7 +1599,7 @@ describe('DashboardView', () => {
 
     expect(wrapper.text()).toContain('Monthly Quotas')
     expect(wrapper.text()).toContain('temporarily unavailable')
-    expect(wrapper.text()).toContain('Token Trend')
+    expect(wrapper.text()).toContain('Usage trend')
     expect(wrapper.text()).toContain('Model Distribution')
   })
 

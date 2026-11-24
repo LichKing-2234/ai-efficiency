@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import DepartmentTreeToggle from '@/components/DepartmentTreeToggle.vue'
 import { useI18n } from '@/i18n'
+import UsagePairInfo from '@/components/usage/UsagePairInfo.vue'
 import type { TeamOverviewMember, TeamUsageOrganizationDepartment } from '@/types'
 import type { TeamUsageOrganizationBranchState } from '@/composables/useTeamUsageOrganization'
 
@@ -19,7 +20,7 @@ const props = defineProps<{
   memberKey: (member: TeamOverviewMember) => string
   memberTestId: (member: TeamOverviewMember) => string
   formatCost: (value: number) => string
-  formatTokens: (value: number | null | undefined) => string
+  formatMemberUsage: (member: TeamOverviewMember) => string
   formatDepartmentTokenSummary: (node: TeamUsageOrganizationDepartment) => string
   departmentMemberCountLabel: (count: number) => string
   connectedMemberCountLabel: (count: number) => string
@@ -74,7 +75,7 @@ function toggleNode() {
       <span class="rounded-full bg-gray-100 px-2 py-0.5">{{ props.departmentMemberCountLabel(props.node.aggregate_member_count) }}</span>
       <span class="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700">{{ props.connectedMemberCountLabel(props.node.connected_member_count) }}</span>
       <span class="rounded-full bg-blue-50 px-2 py-0.5 text-blue-700">{{ props.formatCost(props.node.range_actual_cost) }}</span>
-      <span class="rounded-full bg-violet-50 px-2 py-0.5 text-violet-700">{{ props.formatDepartmentTokenSummary(props.node) }}</span>
+      <span class="rounded-full bg-violet-50 px-2 py-0.5 text-violet-700">{{ props.formatDepartmentTokenSummary(props.node) }}<UsagePairInfo /></span>
     </div>
   </div>
 
@@ -128,7 +129,7 @@ function toggleNode() {
         </div>
         <div class="flex shrink-0 flex-wrap items-center gap-2 text-xs text-gray-600">
           <span class="tabular-nums text-gray-900">{{ props.formatCost(member.range_actual_cost) }}</span>
-          <span class="tabular-nums">{{ props.formatTokens(member.total_tokens) }} {{ t('teamUsage.tokens') }}</span>
+          <span class="tabular-nums">{{ props.formatMemberUsage(member) }}<UsagePairInfo /></span>
           <ElButton
             :disabled="!props.canOpen(member)"
             @click.stop="props.openMember(member)"
@@ -154,7 +155,7 @@ function toggleNode() {
         :member-key="props.memberKey"
         :member-test-id="props.memberTestId"
         :format-cost="props.formatCost"
-        :format-tokens="props.formatTokens"
+        :format-member-usage="props.formatMemberUsage"
         :format-department-token-summary="props.formatDepartmentTokenSummary"
         :department-member-count-label="props.departmentMemberCountLabel"
         :connected-member-count-label="props.connectedMemberCountLabel"

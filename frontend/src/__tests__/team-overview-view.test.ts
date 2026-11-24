@@ -13,6 +13,7 @@ vi.mock('@/api/teamUsage', () => ({
   getTeamUsageOrganization: vi.fn(),
   getTeamUsageSummary: vi.fn(),
   getTeamUsageTrend: vi.fn(),
+  getTeamUsageCredits: vi.fn(() => Promise.resolve({ data: { data: null } })),
 }))
 
 vi.mock('@/components/charts/LineChartCanvas.vue', () => ({
@@ -1192,7 +1193,7 @@ describe('TeamOverviewView', () => {
     expect(wrapper.text()).toContain('用量趋势')
     expect(wrapper.text()).not.toContain('团队与 Top 12 Token 用量趋势')
     expect(wrapper.find('header h1').exists()).toBe(false)
-    expect(wrapper.text()).toContain('当前范围 Token 用量')
+    expect(wrapper.text()).toContain('当前范围 Token/Credits 用量')
     expect(wrapper.text()).toContain('查看明细')
     expect(wrapper.text()).toContain('Token')
     expect(wrapper.text()).toContain('团队人数')
@@ -1471,7 +1472,7 @@ describe('TeamOverviewView', () => {
     })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Token usage in range')
+    expect(wrapper.text()).toContain('Token/Credits usage in range')
     expect(wrapper.text()).toContain('12.9K')
     const aliceRow = wrapper.get('[data-testid="team-overview-member-user-101"]')
     expect(aliceRow.text()).toContain('12K')
@@ -1520,7 +1521,7 @@ describe('TeamOverviewView', () => {
     expect(ranking.text()).toContain('805.03M')
     await selectElementRadio(wrapper, '[data-testid="team-overview-organization-view"]')
     const alpha = wrapper.get('[data-testid="team-overview-department-department-alpha"]')
-    expect(alpha.text()).toContain('12.29B tokens')
+    expect(alpha.text()).toContain('12.29B/--')
     await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')
     await flushPromises()
     const aliceRow = wrapper.get('[data-testid="team-overview-member-user-101"]')
@@ -1556,7 +1557,7 @@ describe('TeamOverviewView', () => {
     expect(alpha.text()).toContain('3 members')
     expect(alpha.text()).toContain('2 connected')
     expect(alpha.text()).toContain('28.00 USD')
-    expect(alpha.text()).toContain('12.9K tokens')
+    expect(alpha.text()).toContain('12.9K/--')
     const alphaToggle = wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]')
     expect(alphaToggle.find('svg').exists()).toBe(true)
     expect(alphaToggle.classes()).toContain('h-7')

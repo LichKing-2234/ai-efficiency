@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue'
 import { useI18n } from '@/i18n'
-import { formatTokenCount } from '@/utils/formatters'
-import type { TeamDepartmentTrendState, TeamMemberTrendState, TeamOverviewWindow } from '@/types'
+import { useUsageUnit } from '@/composables/useUsageUnit'
+import UsageUnitToggle from '@/components/usage/UsageUnitToggle.vue'
+import UsagePairInfo from '@/components/usage/UsagePairInfo.vue'
+import { formatCredits, formatTokenCount, formatUsagePair } from '@/utils/formatters'
+import type { TeamDepartmentCredits, TeamDepartmentTrendState, TeamMemberTrendState, TeamOverviewWindow, TeamUserCredits, UserUsageKiroDay } from '@/types'
 
 const LineChartCanvas = defineAsyncComponent(() => import('@/components/charts/LineChartCanvas.vue'))
 
@@ -10,9 +13,104 @@ const props = defineProps<{
   state: TeamMemberTrendState
   departmentTrend?: TeamDepartmentTrendState | null
   window?: TeamOverviewWindow | null
+  tokensTotal?: number | null
+  creditsTotal?: number | null
+  creditsUsers?: Array<TeamUserCredits & { display_name?: string }>
+  creditsGroups?: TeamDepartmentCredits[]
+  creditsTeamByDay?: UserUsageKiroDay[]
 }>()
 
 const { t } = useI18n()
+const { unit: trendUnit } = useUsageUnit('ae.usage.team-trend.unit')
+
+const creditsMode = computed(() => trendUnit.value === 'credits')
+const creditSeries = computed(() => (props.creditsUsers ?? [])
+  .filter((user) => user.key_found && user.by_day.length > 0)
+  .sort((a, b) => b.credits - a.credits)
+  .slice(0, 12))
+const creditLabels = computed(() => {
+  const labels = new Set<string>()
+  for (const user of creditSeries.value) {
+    for (const point of user.by_day) labels.add(point.date)
+  }
+  return [...labels].sort()
+})
+type CreditLineSeries = { label: string; points: UserUsageKiroDay[]; color: string }
+
+function buildCreditsLineData(series: CreditLineSeries[]) {
+  const labels = new Set<string>()
+  for (const item of series) {
+    for (const point of item.points) labels.add(point.date)
+  }
+  const sorted = [...labels].sort()
+  return {
+    labels: sorted.map((label) => label.includes('T') ? label.slice(11, 16) : label),
+    datasets: series.map((item) => {
+      const byDate = new Map(item.points.map((point) => [point.date, point.credits]))
+      return {
+        label: item.label,
+        data: sorted.map((date) => byDate.get(date) ?? null),
+        borderColor: item.color,
+        backgroundColor: `${item.color}22`,
+        tension: 0.25,
+        spanGaps: true,
+      }
+    }),
+  }
+}
+
+const creditTeamSeries = computed<CreditLineSeries[]>(() => (props.creditsTeamByDay?.length ?? 0) > 0
+  ? [{ label: t('teamUsage.teamTotal'), points: props.creditsTeamByDay ?? [], color: departmentSeriesColors[0] }]
+  : [])
+const creditTeamChartData = computed(() => buildCreditsLineData(creditTeamSeries.value))
+
+const creditGroupSeries = computed<CreditLineSeries[]>(() => {
+  const teamDates = (props.creditsTeamByDay ?? []).map((point) => point.date)
+  if (teamDates.length === 0) return []
+  return (props.creditsGroups ?? []).map((group, index) => {
+    const byDate = new Map((group.by_day ?? []).map((point) => [point.date, point.credits]))
+    return {
+      label: group.name || group.display_path || group.department_external_id,
+      points: teamDates.map((date) => ({ date, credits: byDate.get(date) ?? 0, requests: 0 })),
+      color: departmentSeriesColors[(index + 1) % departmentSeriesColors.length],
+    }
+  })
+})
+const creditGroupChartData = computed(() => buildCreditsLineData(creditGroupSeries.value))
+const hasCreditsData = computed(() => creditTeamSeries.value.length > 0 || creditGroupSeries.value.length > 0 || creditSeries.value.length > 0)
+
+const creditsChartData = computed(() => ({
+  labels: creditLabels.value.map((label) => label.includes('T') ? label.slice(11, 16) : label),
+  datasets: creditSeries.value.map((user, index) => {
+    const byDate = new Map(user.by_day.map((point) => [point.date, point.credits]))
+    const color = seriesColors[index % seriesColors.length]
+    return {
+      label: user.display_name || `#${user.user_id}`,
+      data: creditLabels.value.map((date) => byDate.get(date) ?? null),
+      borderColor: color,
+      backgroundColor: `${color}22`,
+      tension: 0.25,
+      spanGaps: true,
+    }
+  }),
+}))
+const creditsChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: { intersect: false, mode: 'index' as const },
+  plugins: {
+    legend: { display: false },
+    tooltip: { callbacks: { label: (context: any) => `${context.dataset.label}: ${formatCredits(Number(context.raw ?? 0))}` } },
+  },
+  scales: {
+    y: {
+      beginAtZero: true,
+      title: { display: true, text: t('usageDashboard.kiroCreditsColumn'), color: '#64748b' },
+      ticks: { callback: (value: string | number) => formatCredits(Number(value)) },
+    },
+    x: { title: { display: true, text: timeDimensionLabel.value, color: '#64748b' } },
+  },
+}))
 
 const seriesColors = [
   '#2563eb',
@@ -72,7 +170,7 @@ const timeDimensionLabel = computed(() => {
   return t('teamUsage.daily')
 })
 
-const tokenUnitLabel = computed(() => t('teamUsage.tokens'))
+const tokenUnitLabel = computed(() => creditsMode.value ? t('usageDashboard.kiroCreditsColumn') : t('teamUsage.tokens'))
 
 const windowRangeLabel = computed(() => {
   if (!props.window?.start_date || !props.window.end_date) return ''
@@ -269,7 +367,13 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
 <template>
   <section data-testid="team-member-trend-chart" class="rounded-lg border border-slate-200 bg-white shadow-sm">
     <div class="border-b border-slate-200 px-4 py-3">
-      <h2 class="text-base font-semibold text-slate-950">{{ t('teamUsage.topMembers') }}</h2>
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h2 class="text-base font-semibold text-slate-950">{{ t('teamUsage.topMembers') }}</h2>
+        <UsageUnitToggle v-model="trendUnit" data-testid="team-trend-unit-toggle" />
+      </div>
+      <div class="mt-1 text-xs font-medium text-slate-500">
+        {{ t('teamUsage.rangeTokenCredits') }}: {{ formatUsagePair(props.tokensTotal ?? null, props.creditsTotal ?? null) }}<UsagePairInfo />
+      </div>
       <div class="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs font-medium text-slate-500">
         <template v-for="(item, index) in chartMetaItems" :key="item">
           <span>{{ item }}</span>
@@ -278,6 +382,34 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
       </div>
     </div>
 
+    <template v-if="creditsMode">
+      <div v-if="!hasCreditsData" class="px-4 py-4 text-sm text-slate-500" data-testid="team-trend-credits-empty">
+        {{ t('usageDashboard.kiroCreditsNoKey') }}
+      </div>
+      <div v-else class="space-y-5 p-4" data-testid="team-trend-credits">
+        <div v-if="creditTeamSeries.length > 0" data-testid="team-credits-total-chart">
+          <h3 class="text-sm font-semibold text-slate-900">{{ t('teamUsage.teamTotalTrend') }}</h3>
+          <div class="mt-2 h-52 min-w-0">
+            <LineChartCanvas :data="creditTeamChartData" :options="creditsChartOptions" />
+          </div>
+        </div>
+        <div v-if="creditGroupSeries.length > 1" data-testid="team-credits-group-chart">
+          <h3 class="text-sm font-semibold text-slate-900">{{ t('teamUsage.subteamTrends') }}</h3>
+          <div class="mt-2 h-64 min-w-0">
+            <LineChartCanvas :data="creditGroupChartData" :options="creditsChartOptions" />
+          </div>
+        </div>
+        <div v-if="creditSeries.length > 0" data-testid="team-credits-member-chart">
+          <h3 class="text-sm font-semibold text-slate-900">{{ t('usageDashboard.kiroCreditsTrend') }}</h3>
+          <div class="mt-2 h-64 min-w-0">
+            <LineChartCanvas :data="creditsChartData" :options="creditsChartOptions" />
+          </div>
+        </div>
+        <p class="text-xs text-slate-500">{{ t('usageDashboard.kiroCreditsNote') }}</p>
+      </div>
+    </template>
+
+    <template v-else>
     <div v-if="props.state.unavailable" class="px-4 py-4 text-sm text-slate-500">
       {{ reasonLabel(props.state.unavailable_reason) }}
     </div>
@@ -500,5 +632,6 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
         </div>
       </div>
     </div>
+    </template>
   </section>
 </template>

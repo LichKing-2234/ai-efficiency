@@ -222,6 +222,9 @@ func (m *Manager) resolveEntity(row *ent.RelayProvider, longRunning bool) (relay
 	if row == nil || row.ID <= 0 || row.ConfigurationVersion <= 0 {
 		return nil, fmt.Errorf("valid relay provider row is required")
 	}
+	if row.ServiceType != "" && row.ServiceType != "sub2api" {
+		return nil, fmt.Errorf("relay provider %d has service type %q; only sub2api entries can act as relay providers", row.ID, row.ServiceType)
+	}
 	key := clientKey{providerID: row.ID, version: row.ConfigurationVersion}
 	now := m.options.Now()
 	clients := m.clients

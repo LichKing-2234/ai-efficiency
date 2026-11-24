@@ -205,6 +205,54 @@ replaces the full upstream list, and reads it back. A no-op writes no Relay
 mutation and records `changed=false`. A mismatched readback is partial failure,
 not success.
 
+## Kiro Credits
+
+Kiro CLI traffic does not pass through the Relay: the native gateway forwards it
+to kiro2cc, which records credits per API key. A user's credits are read from the
+enabled `kiro2cc` service entry and matched by the gateway-provisioned key name
+`sub2api-<relay user id>-<identity>` (the legacy `sub2api-user-<id>` spelling is
+accepted). Keys owned by other clients are never attributed.
+
+- Credits are real Kiro upstream metering; kiro2cc tokens are cl100k estimates.
+  Credits are a separate unit: never added to Relay token totals and never
+  converted to USD.
+- There is no dedicated credits page. Credits surface only as the pair format
+  below and as the unit switch on the model panel and the team member table.
+  Range totals come from per-key usage records and may be marked partial when
+  record retention truncates the window.
+- Day buckets use the dashboard timezone.
+- A missing source, unlinked user, missing key, or unreachable kiro2cc renders an
+  explanatory empty state; the rest of the dashboard is unaffected.
+- The adapter issues read-only GET requests and never creates, renames, resets,
+  or deletes kiro2cc keys.
+
+### Presentation: pairs and table units
+
+- Outside tables every token metric renders as a Token/Credits pair, for
+  example `3.49B/0.06`: the label carries both units and the value joins the
+  token count and the credit count with `/`. Missing credits render `--`; the
+  two units are never summed or converted.
+- The team member table has two rankings instead of a metric toggle: the Token
+  ranking shows a single `Token/Credits` usage column (one pair per member) and
+  the Credits ranking sorts the same members by credits with credits and Kiro
+  request columns. The organization tree stays on pairs.
+- The personal model panel carries a Token/Credits switch. Because the Relay
+  model set and the kiro2cc model set are different row populations, the switch
+  swaps the data source: tokens switch to the Relay models, credits switch to
+  the kiro2cc models with their estimated tokens. The distribution chart
+  switches with the table so chart and rows never disagree.
+- The personal usage trend and the team top-member trend carry the same switch.
+  Credits mode replaces the series with daily (hourly for today) credits plus
+  request counts; it never overlays credits on token lines. Department/team
+  total trends remain token-only because kiro2cc has no department attribution.
+- The team overview reads credits from `GET /user/team-usage/credits` (per
+  member, per department, per day) inside the caller's representative scope;
+  member pages read the same data through
+  `GET /user/team-usage/subjects/:user_id/usage/credits`. Both endpoints are
+  read-only and fail soft: missing wiring, missing keys or an unreachable
+  kiro2cc render `--` without failing the page.
+
+
 ## Failure Boundaries
 
 - Usage authorization, current Directory scope, and current group membership

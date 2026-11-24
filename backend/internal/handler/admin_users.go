@@ -419,7 +419,7 @@ func (h *AdminUsersHandler) ListSubscriptionOptions(c *gin.Context) {
 	}
 
 	providers, err := h.entClient.RelayProvider.Query().
-		Where(relayprovider.EnabledEQ(true)).
+		Where(relayprovider.EnabledEQ(true), relayprovider.ServiceTypeEQ("sub2api")).
 		Order(ent.Desc(relayprovider.FieldIsPrimary), ent.Asc(relayprovider.FieldID)).
 		All(c.Request.Context())
 	if err != nil {
