@@ -19,7 +19,7 @@ import (
 
 const (
 	systemDefaultMultiplier              = 1.0
-	defaultTeamOverviewTrendTimeout      = 40 * time.Second
+	defaultTeamOverviewTrendTimeout      = 10 * time.Second
 	multiplierMetadataUnavailableMessage = "Multiplier metadata is temporarily unavailable."
 )
 
