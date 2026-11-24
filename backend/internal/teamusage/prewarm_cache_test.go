@@ -954,13 +954,19 @@ func TestPrewarmCacheDefaultCommandBudgets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPrewarmCache() error = %v", err)
 	}
-	const selectedBudget = 250 * time.Millisecond
-	for name, got := range map[string]time.Duration{
-		"read": cache.options.ReadTimeout, "write": cache.options.WriteTimeout,
-		"lease": cache.options.LeaseTimeout, "release": cache.options.ReleaseTimeout,
+	// Reads fetch the manifest plus every referenced segment in one MGET, so
+	// they get a wider budget than the short write/lease commands.
+	for name, want := range map[string]struct {
+		got  time.Duration
+		want time.Duration
+	}{
+		"read":    {cache.options.ReadTimeout, 1500 * time.Millisecond},
+		"write":   {cache.options.WriteTimeout, 250 * time.Millisecond},
+		"lease":   {cache.options.LeaseTimeout, 250 * time.Millisecond},
+		"release": {cache.options.ReleaseTimeout, 250 * time.Millisecond},
 	} {
-		if got != selectedBudget {
-			t.Errorf("default %s command budget = %s, want %s", name, got, selectedBudget)
+		if want.got != want.want {
+			t.Errorf("default %s command budget = %s, want %s", name, want.got, want.want)
 		}
 	}
 }
