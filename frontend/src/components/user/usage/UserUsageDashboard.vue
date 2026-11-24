@@ -20,6 +20,7 @@
       </div>
       <div class="flex max-w-full shrink-0 flex-wrap items-center gap-2 pb-1 sm:flex-nowrap sm:overflow-x-auto">
         <ElRadioGroup
+          :key="rangeVersion"
           :model-value="selectedRange"
           class="max-w-full shrink-0 flex-wrap sm:flex-nowrap sm:overflow-x-auto"
         >
@@ -31,6 +32,9 @@
           </ElRadioButton>
           <ElRadioButton data-test="range-30d" value="30d" @click="selectRange('30d')">
             {{ t('usageDashboard.thirtyDays') }}
+          </ElRadioButton>
+          <ElRadioButton data-test="range-cycle" value="cycle" :disabled="cycleLoading" @click="selectRange('cycle')">
+            {{ t('usageDashboard.fromOpenaiReset') }}
           </ElRadioButton>
         </ElRadioGroup>
         <ElButton
@@ -151,7 +155,8 @@
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { createQuotaResetRequest, getQuotaResetOptions } from '@/api/quotaReset'
-import { getUserKiroUsage, getUserUsageDashboard, getUserUsageGroupPoolUsage, getUserUsageGroupQuotas } from '@/api/userUsage'
+import { ElMessage } from 'element-plus'
+import { getUserKiroUsage, getUserUsageDashboard, getUserUsageGroupPoolUsage, getUserUsageGroupQuotas, getUserUsageOpenAICycle } from '@/api/userUsage'
 import { getTeamUsageSubjectDashboard, getTeamUsageSubjectCredits, updateTeamUsageRateMultiplier } from '@/api/teamUsage'
 import { useI18n } from '@/i18n'
 import { readUsageWindowPreference, writeUsageWindowPreference } from '@/utils/usageWindowPreference'
@@ -168,6 +173,7 @@ import type {
   UserUsageKiroDay,
   UserUsageKiroModel,
   UserUsageKiroSnapshot,
+  UserUsageOpenAICycle,
 } from '@/types'
 
 const UsageStatsCards = defineAsyncComponent(() => import('@/components/user/usage/UsageStatsCards.vue'))
@@ -190,9 +196,14 @@ const props = withDefaults(defineProps<{
   initialSnapshot: null,
 })
 
+type DashboardWindow = UsageWindow | 'cycle'
+
 const initialRange = readUsageWindowPreference()
-const selectedRange = ref<UsageWindow>(initialRange)
-const snapshotRange = ref<UsageWindow>(initialRange)
+const selectedRange = ref<DashboardWindow>(initialRange)
+const snapshotRange = ref<DashboardWindow>(initialRange)
+const cycleStart = ref<string | null>(null)
+const cycleLoading = ref(false)
+const rangeVersion = ref(0)
 const snapshot = ref<UserUsageDashboardSnapshot | null>(props.initialSnapshot)
 const personalQuotas = ref<UserUsageGroupQuotaState | null>(props.initialSnapshot?.group_quotas ?? null)
 const personalPoolUsage = ref<UserUsageGroupPoolUsageState | null>(null)
@@ -264,9 +275,10 @@ function classifyUsageError(error: any): UsageErrorKind {
   return 'unexpected'
 }
 
-function rangeLabel(range: UsageWindow) {
+function rangeLabel(range: DashboardWindow) {
   if (range === 'today') return t('usageDashboard.today')
   if (range === '7d') return t('usageDashboard.sevenDays')
+  if (range === 'cycle') return t('usageDashboard.fromOpenaiReset')
   return t('usageDashboard.thirtyDays')
 }
 
@@ -277,12 +289,18 @@ function formatDate(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
-function buildParams(range: UsageWindow): UserUsageDashboardParams {
+function buildParams(range: DashboardWindow): UserUsageDashboardParams {
   const end = new Date()
   const start = new Date(end)
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
   if (range === 'today') {
     return { start_date: formatDate(start), end_date: formatDate(end), granularity: 'hour', timezone }
+  }
+  if (range === 'cycle') {
+    // The OpenAI quota cycle usually spans eight calendar days, so the quota
+    // window has to be pinned to weekly instead of being derived from the span.
+    const cycleStartDate = cycleStart.value ?? formatDate(end)
+    return { start_date: cycleStartDate, end_date: formatDate(end), granularity: 'day', timezone, quota_window: 'weekly' }
   }
   start.setDate(end.getDate() - (range === '7d' ? 6 : 29))
   return { start_date: formatDate(start), end_date: formatDate(end), granularity: 'day', timezone }
@@ -318,7 +336,7 @@ function loadDashboard(): Promise<void> {
     : loadPersonalDashboard(generation, requestedRange)
 }
 
-async function loadMemberDashboard(generation: number, requestedRange: UsageWindow) {
+async function loadMemberDashboard(generation: number, requestedRange: DashboardWindow) {
   usageLoading.value = true
   quotaLoading.value = false
   usageErrorKind.value = ''
@@ -355,7 +373,7 @@ async function loadMemberDashboard(generation: number, requestedRange: UsageWind
   }
 }
 
-async function loadPersonalDashboard(generation: number, requestedRange: UsageWindow) {
+async function loadPersonalDashboard(generation: number, requestedRange: DashboardWindow) {
   const params = buildParams(requestedRange)
   const nextUsageController = new AbortController()
   const nextQuotaController = new AbortController()
@@ -434,9 +452,40 @@ async function loadPersonalDashboard(generation: number, requestedRange: UsageWi
   await Promise.allSettled([usageTask, quotaTask, poolTask, kiroTask])
 }
 
-function selectRange(range: UsageWindow) {
+async function ensureCycleStart(): Promise<boolean> {
+  if (cycleStart.value) return true
+  cycleLoading.value = true
+  try {
+    const response = await getUserUsageOpenAICycle()
+    const cycle: UserUsageOpenAICycle | null | undefined = response.data.data
+    if (cycle?.status !== 'ok' || !cycle.start_at) {
+      ElMessage.warning(t('usageDashboard.openaiCycleUnavailable'))
+      return false
+    }
+    const startAt = new Date(cycle.start_at)
+    if (Number.isNaN(startAt.getTime())) {
+      ElMessage.warning(t('usageDashboard.openaiCycleUnavailable'))
+      return false
+    }
+    cycleStart.value = formatDate(startAt)
+    return true
+  } catch {
+    ElMessage.warning(t('usageDashboard.openaiCycleUnavailable'))
+    return false
+  } finally {
+    cycleLoading.value = false
+  }
+}
+
+async function selectRange(range: DashboardWindow) {
+  if (range === 'cycle' && !(await ensureCycleStart())) {
+    // Remount the controlled radio group so the rejected option does not stay
+    // visually selected.
+    rangeVersion.value += 1
+    return
+  }
   selectedRange.value = range
-  writeUsageWindowPreference(range)
+  if (range !== 'cycle') writeUsageWindowPreference(range)
   void loadDashboard()
 }
 

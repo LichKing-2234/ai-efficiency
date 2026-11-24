@@ -105,6 +105,25 @@ func (h *UserUsageHandler) GroupPoolUsage(c *gin.Context) {
 	pkg.Success(c, response)
 }
 
+func (h *UserUsageHandler) OpenAICycle(c *gin.Context) {
+	userContext := auth.GetUserContext(c)
+	if userContext == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if h == nil || h.service == nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, "personal usage service is unavailable")
+		return
+	}
+
+	response, err := h.service.OpenAICycle(c.Request.Context(), userContext.UserID)
+	if err != nil {
+		writeUserUsageError(c, "get usage openai cycle", err)
+		return
+	}
+	pkg.Success(c, response)
+}
+
 func parseIncludeGroupQuotas(c *gin.Context) (bool, bool) {
 	raw, exists := c.GetQuery("include_group_quotas")
 	if !exists {
@@ -137,11 +156,18 @@ func parseUserUsageDashboardParams(c *gin.Context) (relay.UserUsageDashboardPara
 		return relay.UserUsageDashboardParams{}, false
 	}
 
+	quotaWindow := strings.ToLower(strings.TrimSpace(c.Query("quota_window")))
+	if quotaWindow != "" && quotaWindow != "daily" && quotaWindow != "weekly" && quotaWindow != "monthly" {
+		pkg.Error(c, http.StatusBadRequest, "quota_window must be daily, weekly or monthly")
+		return relay.UserUsageDashboardParams{}, false
+	}
+
 	params := relay.UserUsageDashboardParams{
 		StartDate:   strings.TrimSpace(c.Query("start_date")),
 		EndDate:     strings.TrimSpace(c.Query("end_date")),
 		Granularity: granularity,
 		Timezone:    strings.TrimSpace(c.Query("timezone")),
+		QuotaWindow: quotaWindow,
 	}
 	if params.StartDate == "" || params.EndDate == "" {
 		start, end := defaultUserUsageRange(time.Now())
