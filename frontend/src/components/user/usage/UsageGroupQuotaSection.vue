@@ -69,6 +69,7 @@ function quotaTitle(rangeLabel?: string) {
   if (!rangeLabel) return t('usageDashboard.groupQuotasTitle')
   if (rangeLabel === t('usageDashboard.today')) return t('usageDashboard.dailyQuotaTitle')
   if (rangeLabel === t('usageDashboard.sevenDays')) return t('usageDashboard.weeklyQuotaTitle')
+  if (rangeLabel === t('usageDashboard.fromOpenaiReset')) return t('usageDashboard.weeklyQuotaTitle')
   return t('usageDashboard.monthlyQuotaTitle')
 }
 
