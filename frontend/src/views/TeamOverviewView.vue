@@ -11,8 +11,10 @@ import { useTeamUsageOrganization } from '@/composables/useTeamUsageOrganization
 import { useI18n } from '@/i18n'
 import { formatTokenCount, formatUsagePair } from '@/utils/formatters'
 import UsagePairInfo from '@/components/usage/UsagePairInfo.vue'
+import UsageRangePicker from '@/components/usage/UsageRangePicker.vue'
+import { presetSelection, rangeGranularity } from '@/utils/usageRange'
+import type { UsageRangeSelection } from '@/utils/usageRange'
 import { readUsageWindowPreference, writeUsageWindowPreference } from '@/utils/usageWindowPreference'
-import type { UsageWindow } from '@/utils/usageWindowPreference'
 import type { TeamCredits, TeamUsageMembersResponse, TeamUsageOverviewParams, TeamUsageSummaryResponse, TeamUsageTrendResponse } from '@/types'
 
 const TeamOverviewMemberTrendChart = defineAsyncComponent(
@@ -32,7 +34,7 @@ const membersLoading = ref(false)
 const summaryError = ref<'no_scope' | 'unavailable' | null>(null)
 const trendError = ref<'no_scope' | 'unavailable' | null>(null)
 const membersError = ref<'no_scope' | 'unavailable' | null>(null)
-const selectedRange = ref<UsageWindow>(readUsageWindowPreference())
+const rangeSelection = ref<UsageRangeSelection>(presetSelection(readUsageWindowPreference()))
 let summaryRequestSeq = 0
 let creditsRequestSeq = 0
 let trendRequestSeq = 0
@@ -197,7 +199,7 @@ async function loadMembers(
 }
 
 function loadOverview() {
-  const params = buildOverviewParams(selectedRange.value)
+  const params = buildOverviewParams(rangeSelection.value)
   resetMemberPagination()
   memberPageParams = { ...params }
   void loadSummary(params)
@@ -244,34 +246,19 @@ function formatDate(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
-function buildOverviewParams(range: UsageWindow): TeamUsageOverviewParams {
-  const end = new Date()
-  const start = new Date(end)
-  if (range === 'today') {
-    return {
-      start_date: formatDate(start),
-      end_date: formatDate(end),
-      granularity: 'hour',
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    }
-  }
-  start.setDate(end.getDate() - (range === '7d' ? 6 : 29))
+function buildOverviewParams(selection: UsageRangeSelection): TeamUsageOverviewParams {
   return {
-    start_date: formatDate(start),
-    end_date: formatDate(end),
-    granularity: 'day',
+    start_date: selection.startDate,
+    end_date: selection.endDate,
+    granularity: rangeGranularity(selection),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   }
 }
 
-function selectRange(range: UsageWindow) {
-  selectedRange.value = range
-  writeUsageWindowPreference(range)
+function handleRangeSelection(selection: UsageRangeSelection) {
+  rangeSelection.value = selection
+  if (selection.range !== 'custom') writeUsageWindowPreference(selection.range)
   void loadOverview()
-}
-
-function handleRangeChange(range: string | number | boolean | undefined) {
-  if (range === 'today' || range === '7d' || range === '30d') selectRange(range)
 }
 
 function formatSummaryCost(value: number | null | undefined, unitLabel: string) {
@@ -291,21 +278,11 @@ onMounted(loadOverview)
       <TeamAccountSection />
 
       <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <ElRadioGroup
-          :model-value="selectedRange"
+        <UsageRangePicker
+          :model-value="rangeSelection"
           :disabled="loading"
-          @change="handleRangeChange"
-        >
-          <ElRadioButton data-test="range-today" value="today">
-            {{ t('usageDashboard.today') }}
-          </ElRadioButton>
-          <ElRadioButton data-test="range-7d" value="7d">
-            {{ t('usageDashboard.sevenDays') }}
-          </ElRadioButton>
-          <ElRadioButton data-test="range-30d" value="30d">
-            {{ t('usageDashboard.thirtyDays') }}
-          </ElRadioButton>
-        </ElRadioGroup>
+          @update:model-value="handleRangeSelection"
+        />
       </div>
 
       <ElAlert

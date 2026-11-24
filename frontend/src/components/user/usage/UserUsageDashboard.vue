@@ -19,40 +19,10 @@
         <p class="mt-1 break-words text-sm text-gray-500">{{ dashboardSubtitle }}</p>
       </div>
       <div class="flex max-w-full shrink-0 flex-wrap items-center gap-2 pb-1 sm:flex-nowrap sm:overflow-x-auto">
-        <ElRadioGroup
-          :model-value="selectedRange"
-          class="max-w-full shrink-0 flex-wrap sm:flex-nowrap sm:overflow-x-auto"
-        >
-          <ElRadioButton data-test="range-today" value="today" @click="selectRange('today')">
-            {{ t('usageDashboard.today') }}
-          </ElRadioButton>
-          <ElRadioButton data-test="range-7d" value="7d" @click="selectRange('7d')">
-            {{ t('usageDashboard.sevenDays') }}
-          </ElRadioButton>
-          <ElRadioButton data-test="range-30d" value="30d" @click="selectRange('30d')">
-            {{ t('usageDashboard.thirtyDays') }}
-          </ElRadioButton>
-        </ElRadioGroup>
-        <div class="flex shrink-0 items-center gap-1">
-          <input
-            v-model="customStart"
-            data-test="range-custom-start"
-            type="date"
-            :max="todayDate"
-            :aria-label="t('activity.from')"
-            class="rounded border border-gray-300 px-2 py-1 text-sm"
-            @change="onCustomDateChange"
-          >
-          <input
-            v-model="customEnd"
-            data-test="range-custom-end"
-            type="date"
-            :max="todayDate"
-            :aria-label="t('activity.to')"
-            class="rounded border border-gray-300 px-2 py-1 text-sm"
-            @change="onCustomDateChange"
-          >
-        </div>
+        <UsageRangePicker
+          :model-value="rangeSelection"
+          @update:model-value="handleRangeSelection"
+        />
         <ElButton
           :disabled="usageLoading"
           :loading="usageLoading"
@@ -173,6 +143,9 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 
 import { useRoute } from 'vue-router'
 import { createQuotaResetRequest, getQuotaResetOptions } from '@/api/quotaReset'
 import { getUserKiroUsage, getUserUsageDashboard, getUserUsageGroupPoolUsage, getUserUsageGroupQuotas } from '@/api/userUsage'
+import UsageRangePicker from '@/components/usage/UsageRangePicker.vue'
+import { presetSelection, quotaWindowForSelection, rangeGranularity } from '@/utils/usageRange'
+import type { UsageRangeSelection } from '@/utils/usageRange'
 import { getTeamUsageSubjectDashboard, getTeamUsageSubjectCredits, updateTeamUsageRateMultiplier } from '@/api/teamUsage'
 import { useI18n } from '@/i18n'
 import { readUsageWindowPreference, writeUsageWindowPreference } from '@/utils/usageWindowPreference'
@@ -211,15 +184,9 @@ const props = withDefaults(defineProps<{
   initialSnapshot: null,
 })
 
-type DashboardWindow = UsageWindow | 'custom'
-
-const initialRange = readUsageWindowPreference()
-const selectedRange = ref<DashboardWindow>(initialRange)
-const snapshotRange = ref<DashboardWindow>(initialRange)
-const customStart = ref('')
-const customEnd = ref('')
-const customRange = ref<[string, string] | null>(null)
-const todayDate = computed(() => formatDate(new Date()))
+const initialSelection = presetSelection(readUsageWindowPreference())
+const rangeSelection = ref<UsageRangeSelection>(initialSelection)
+const snapshotSelection = ref<UsageRangeSelection>(initialSelection)
 const snapshot = ref<UserUsageDashboardSnapshot | null>(props.initialSnapshot)
 const personalQuotas = ref<UserUsageGroupQuotaState | null>(props.initialSnapshot?.group_quotas ?? null)
 const personalPoolUsage = ref<UserUsageGroupPoolUsageState | null>(null)
@@ -256,9 +223,9 @@ const currentGroupQuotas = computed(() => props.memberRoute ? currentSnapshot.va
 const setupRequired = computed(() => !props.homeMode && currentSnapshot.value?.configured === false)
 const usageIsStale = computed(() => currentSnapshot.value?.usage_freshness?.cache_status === 'stale')
 const hasUsableUsage = computed(() => currentSnapshot.value?.configured === true && currentSnapshot.value?.stats != null)
-const selectedRangeLabel = computed(() => rangeLabel(selectedRange.value))
-const selectedQuotaWindow = computed(() => quotaWindowFor(selectedRange.value))
-const snapshotRangeLabel = computed(() => rangeLabel(snapshotRange.value))
+const selectedRangeLabel = computed(() => rangeLabel(rangeSelection.value))
+const selectedQuotaWindow = computed(() => quotaWindowForSelection(rangeSelection.value))
+const snapshotRangeLabel = computed(() => rangeLabel(snapshotSelection.value))
 const dashboardTitle = computed(() => {
   if (props.memberRoute) return t('usageDashboard.memberTitle')
   return props.embedded ? t('usageDashboard.embeddedTitle') : t('usageDashboard.title')
@@ -292,60 +259,20 @@ function classifyUsageError(error: any): UsageErrorKind {
   return 'unexpected'
 }
 
-function rangeLabel(range: DashboardWindow) {
-  if (range === 'today') return t('usageDashboard.today')
-  if (range === '7d') return t('usageDashboard.sevenDays')
-  if (range === '30d') return t('usageDashboard.thirtyDays')
-  const [start, end] = customRange.value ?? []
-  if (start && end) return `${start.slice(5)} ~ ${end.slice(5)}`
-  return t('usageDashboard.thirtyDays')
+function rangeLabel(selection: UsageRangeSelection) {
+  if (selection.range === 'today') return t('usageDashboard.today')
+  if (selection.range === '7d') return t('usageDashboard.sevenDays')
+  if (selection.range === '30d') return t('usageDashboard.thirtyDays')
+  return `${selection.startDate.slice(5)} ~ ${selection.endDate.slice(5)}`
 }
 
-function quotaWindowFor(range: DashboardWindow): 'daily' | 'weekly' | 'monthly' {
-  if (range === 'today') return 'daily'
-  if (range === '7d') return 'weekly'
-  if (range === '30d') return 'monthly'
-  const [start, end] = customRange.value ?? []
-  if (start && end) {
-    const days = Math.round((Date.parse(end) - Date.parse(start)) / 86_400_000) + 1
-    if (days <= 1) return 'daily'
-    if (days <= 7) return 'weekly'
+function buildParams(selection: UsageRangeSelection): UserUsageDashboardParams {
+  return {
+    start_date: selection.startDate,
+    end_date: selection.endDate,
+    granularity: rangeGranularity(selection),
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   }
-  return 'monthly'
-}
-
-function onCustomDateChange() {
-  const start = customStart.value
-  const end = customEnd.value
-  if (!start || !end) return
-  if (start > end) customStart.value = end
-  customRange.value = start > end ? [end, end] : [start, end]
-  selectedRange.value = 'custom'
-  void loadDashboard()
-}
-
-function formatDate(date: Date): string {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function buildParams(range: DashboardWindow): UserUsageDashboardParams {
-  const end = new Date()
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
-  if (range === 'today') {
-    return { start_date: formatDate(end), end_date: formatDate(end), granularity: 'hour', timezone }
-  }
-  if (range === 'custom') {
-    const [start, endDate] = customRange.value ?? []
-    if (start && endDate) {
-      return { start_date: start, end_date: endDate, granularity: start === endDate ? 'hour' : 'day', timezone }
-    }
-  }
-  const start = new Date(end)
-  start.setDate(end.getDate() - (range === '7d' ? 6 : 29))
-  return { start_date: formatDate(start), end_date: formatDate(end), granularity: 'day', timezone }
 }
 
 function routeSubjectUserID() {
@@ -369,8 +296,14 @@ function isCanceled(error: any, signal: AbortSignal) {
   return signal.aborted || error?.name === 'AbortError' || error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED'
 }
 
+function handleRangeSelection(selection: UsageRangeSelection) {
+  rangeSelection.value = selection
+  if (selection.range !== 'custom') writeUsageWindowPreference(selection.range)
+  void loadDashboard()
+}
+
 function loadDashboard(): Promise<void> {
-  const requestedRange = selectedRange.value
+  const requestedRange = rangeSelection.value
   const generation = ++requestGeneration
   abortPersonalRequests()
   return props.memberRoute
@@ -378,7 +311,7 @@ function loadDashboard(): Promise<void> {
     : loadPersonalDashboard(generation, requestedRange)
 }
 
-async function loadMemberDashboard(generation: number, requestedRange: DashboardWindow) {
+async function loadMemberDashboard(generation: number, requestedRange: UsageRangeSelection) {
   usageLoading.value = true
   quotaLoading.value = false
   usageErrorKind.value = ''
@@ -397,7 +330,7 @@ async function loadMemberDashboard(generation: number, requestedRange: Dashboard
     snapshot.value = response.data.data ?? null
     memberRouteSubject.value = (response.data.data as any)?.subject ?? null
     selectedSubjectSubscriptions.value = (response.data.data as any)?.subject_subscription_groups ?? []
-    snapshotRange.value = requestedRange
+    snapshotSelection.value = requestedRange
     const creditsResponse = await getTeamUsageSubjectCredits(routeUserID, buildParams(requestedRange)).catch(() => null)
     if (generation !== requestGeneration) return
     const creditsUser = creditsResponse?.data?.data?.users?.[0]
@@ -415,7 +348,7 @@ async function loadMemberDashboard(generation: number, requestedRange: Dashboard
   }
 }
 
-async function loadPersonalDashboard(generation: number, requestedRange: DashboardWindow) {
+async function loadPersonalDashboard(generation: number, requestedRange: UsageRangeSelection) {
   const params = buildParams(requestedRange)
   const nextUsageController = new AbortController()
   const nextQuotaController = new AbortController()
@@ -440,7 +373,7 @@ async function loadPersonalDashboard(generation: number, requestedRange: Dashboa
       const nextSnapshot = response.data.data ?? null
       snapshot.value = nextSnapshot
       if (nextSnapshot?.group_quotas) personalQuotas.value = nextSnapshot.group_quotas
-      snapshotRange.value = requestedRange
+      snapshotSelection.value = requestedRange
     })
     .catch((error: any) => {
       if (generation !== requestGeneration || isCanceled(error, nextUsageController.signal)) return
@@ -494,12 +427,6 @@ async function loadPersonalDashboard(generation: number, requestedRange: Dashboa
   await Promise.allSettled([usageTask, quotaTask, poolTask, kiroTask])
 }
 
-function selectRange(range: UsageWindow) {
-  selectedRange.value = range
-  writeUsageWindowPreference(range)
-  void loadDashboard()
-}
-
 async function handleMultiplierConfirm(event: { subjectUserId: number; groupID: string; payload: UpdateTeamUsageRateMultiplierRequest }) {
   await updateTeamUsageRateMultiplier(event.subjectUserId, event.groupID, event.payload)
   await loadDashboard()
@@ -538,7 +465,7 @@ async function submitQuotaResetRequest(payload: { group_id: string; reason: stri
 
 onMounted(() => {
   if (props.initialSnapshot) {
-    snapshotRange.value = selectedRange.value
+    snapshotSelection.value = rangeSelection.value
     return
   }
   void loadDashboard()
