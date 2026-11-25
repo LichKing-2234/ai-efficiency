@@ -603,7 +603,7 @@ const zhCN = {
   'user.manualConfigMultiClientHint': '只配置实际在用的那个客户端即可。',
   'user.manualConfigNoticeTitle': '配置后还需要做',
   'user.manualConfigRestartHint': '重启对应客户端后新配置才生效。',
-  'user.manualConfigEnvHint': '环境变量要写进 shell 配置文件（~/.zshrc、~/.bashrc；Windows 为 $PROFILE）并重开终端；只粘贴到当前终端，关掉窗口就失效。',
+  'user.manualConfigEnvHint': '环境变量要写进当前 shell 的配置文件才长期有效（zsh 用 ~/.zshrc，bash 用 ~/.bashrc；Windows 为 $PROFILE），改完重开终端；只粘贴到当前终端，关掉窗口就失效。',
   'user.ccSwitchSecretHint': '导入链接里带着你的 API Key，请勿转发或截图外传。',
   'user.ccSwitchStep1': '在 CC Switch 确认框里核对配置，保持「导入后立即切换到这个供应商」开启后点「导入」——关掉它就得回 CC Switch 手动切换一次',
   'user.ccSwitchStep2': '重启对应客户端（Codex 只在启动时读取配置和模型列表）',

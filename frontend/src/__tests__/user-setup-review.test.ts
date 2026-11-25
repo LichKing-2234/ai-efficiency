@@ -53,9 +53,6 @@ describe('userSetupReview command builders', () => {
       'model_provider = "prod"',
       'model = "gpt-5.4"',
       'review_model = "gpt-5.4"',
-      'disable_response_storage = true',
-      'network_access = "enabled"',
-      'windows_wsl_setup_acknowledged = true',
       '',
       '[model_providers.prod]',
       'name = "prod"',
@@ -434,9 +431,6 @@ describe('userSetupReview command builders', () => {
         'model_provider = "custom"',
         'model = "gpt-5.4"',
         'review_model = "gpt-5.4"',
-        'disable_response_storage = true',
-        'network_access = "enabled"',
-        'windows_wsl_setup_acknowledged = true',
         '',
         '[model_providers.custom]',
         'name = "Production / Group Alpha"',
@@ -575,6 +569,7 @@ describe('userSetupReview command builders', () => {
     })
     expect(snippets.map((item) => item.key)).toEqual([
       'codex-config',
+      'codex-dotenv',
       'codex-env',
       'claude-settings',
       'dsh-config',
@@ -589,6 +584,14 @@ describe('userSetupReview command builders', () => {
     expect(codex.body).toContain('model_catalog_url = "https://relay.example.com/v1/models"')
     expect(codex.body).toContain('env_key = "SUB2API_API_KEY"')
     expect(codex.body).toContain('requires_openai_auth = false')
+
+    const dotenv = snippets.find((item) => item.key === 'codex-dotenv')!
+    expect(dotenv.path).toBe('~/.codex/.env')
+    expect(dotenv.containsSecret).toBe(true)
+    expect(dotenv.body).toContain('SUB2API_API_KEY="sk-test"')
+    expect(dotenv.body).toContain('VS Code Codex 插件')
+    expect(dotenv.body).toContain('优先于终端里的环境变量')
+    expect(dotenv.body).not.toContain('export SUB2API_API_KEY')
 
     const env = snippets.find((item) => item.key === 'codex-env')!
     expect(env.body).toContain('export SUB2API_API_KEY="sk-test"')
