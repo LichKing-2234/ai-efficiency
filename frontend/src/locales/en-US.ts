@@ -608,7 +608,7 @@ const enUS = {
   'user.manualConfigMultiClientHint': 'Configure only the client you actually use.',
   'user.manualConfigNoticeTitle': 'After configuring',
   'user.manualConfigRestartHint': 'Restart the client for the new configuration to take effect.',
-  'user.manualConfigEnvHint': 'Put the environment export in your shell profile (~/.zshrc, ~/.bashrc, or $PROFILE on Windows) and reopen the terminal; pasting it into the current terminal only lasts until you close it.',
+  'user.manualConfigEnvHint': 'Put the export in your shell\'s own config file (zsh: ~/.zshrc, bash: ~/.bashrc, Windows: $PROFILE) and reopen the terminal; pasting it into the current terminal only lasts until you close it.',
   'user.ccSwitchSecretHint': 'The import link carries your API key — do not forward it or post screenshots of it.',
   'user.ccSwitchStep1': 'Check the configuration in the CC Switch dialog, keep "Switch to this provider after import" on, then click "Import" — turn that switch off and you have to switch to the provider manually in CC Switch',
   'user.ccSwitchStep2': 'Restart the client (Codex reads its configuration and model list only at startup)',

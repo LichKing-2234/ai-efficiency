@@ -5,6 +5,7 @@ export type DiscoverTool = 'codex' | 'claude' | 'gemini'
 export type ManualConfigSnippetKey =
   | 'codex-config'
   | 'codex-auth'
+  | 'codex-dotenv'
   | 'codex-env'
   | 'claude-settings'
   | 'kiro-cli-config'
@@ -149,9 +150,6 @@ function buildCodexCCSwitchConfig(name: string, baseUrl: string, apiKey: string,
     `model_provider = "custom"`,
     `model = ${tomlString(selectedModel)}`,
     `review_model = ${tomlString(selectedModel)}`,
-    `disable_response_storage = true`,
-    `network_access = "enabled"`,
-    `windows_wsl_setup_acknowledged = true`,
     ``,
     `[model_providers.custom]`,
     `name = ${tomlString(name)}`,
@@ -207,9 +205,6 @@ export function buildCodexConfigSnippet(providerName: string, baseUrl: string, m
     `model_provider = ${tomlString(provider)}`,
     `model = ${tomlString(selectedModel)}`,
     `review_model = ${tomlString(selectedModel)}`,
-    `disable_response_storage = true`,
-    `network_access = "enabled"`,
-    `windows_wsl_setup_acknowledged = true`,
     ``,
     `[model_providers.${tomlTableKey(provider)}]`,
     `name = ${tomlString(provider)}`,
@@ -402,7 +397,6 @@ export function buildCompositeCodexConfigSnippet(input: ManualConfigSnippetInput
     `model_provider = ${tomlString(providerId)}`,
     `model = ${tomlString(model)}`,
     `review_model = ${tomlString(model)}`,
-    `disable_response_storage = true`,
     ``,
     `[model_providers.${tomlTableKey(providerId)}]`,
     `name = "Sub2API Composite"`,
@@ -426,6 +420,18 @@ export function buildCodexEnvSnippet(apiKey: string) {
     ``,
     `# Windows PowerShell`,
     `$env:SUB2API_API_KEY="${apiKey}"`,
+  ].join('\n')
+}
+
+/**
+ * 编辑器与桌面客户端不继承终端的环境变量，它们读 `$CODEX_HOME/.env`（默认
+ * `~/.codex/.env`）。该文件优先于进程环境变量，换 key 时两处要一起改。
+ */
+export function buildCodexDotenvSnippet(apiKey: string) {
+  return [
+    `# VS Code Codex 插件、Codex 桌面端不读 shell 配置，从这里取密钥`,
+    `# 本文件优先于终端里的环境变量；换 key 时这里和终端环境变量要一起改`,
+    `SUB2API_API_KEY="${apiKey}"`,
   ].join('\n')
 }
 
@@ -567,6 +573,12 @@ function buildCodexClientSnippets(input: ManualConfigSnippetInput): ManualConfig
         path: '~/.codex/config.toml',
         body: buildCompositeCodexConfigSnippet(input),
         containsSecret: false,
+      },
+      {
+        key: 'codex-dotenv',
+        path: '~/.codex/.env',
+        body: buildCodexDotenvSnippet(input.apiKey),
+        containsSecret: true,
       },
       {
         key: 'codex-env',
