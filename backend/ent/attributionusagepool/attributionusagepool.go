@@ -35,6 +35,8 @@ const (
 	FieldCacheReadTokens = "cache_read_tokens"
 	// FieldTotalTokens holds the string denoting the total_tokens field in the database.
 	FieldTotalTokens = "total_tokens"
+	// FieldCreditUsage holds the string denoting the credit_usage field in the database.
+	FieldCreditUsage = "credit_usage"
 	// FieldRequestCount holds the string denoting the request_count field in the database.
 	FieldRequestCount = "request_count"
 	// FieldCoverageGapCount holds the string denoting the coverage_gap_count field in the database.
@@ -61,6 +63,7 @@ var Columns = []string{
 	FieldCacheCreationTokens,
 	FieldCacheReadTokens,
 	FieldTotalTokens,
+	FieldCreditUsage,
 	FieldRequestCount,
 	FieldCoverageGapCount,
 	FieldCreatedAt,
@@ -96,6 +99,8 @@ var (
 	DefaultCacheReadTokens int64
 	// DefaultTotalTokens holds the default value on creation for the "total_tokens" field.
 	DefaultTotalTokens int64
+	// DefaultCreditUsage holds the default value on creation for the "credit_usage" field.
+	DefaultCreditUsage float64
 	// DefaultRequestCount holds the default value on creation for the "request_count" field.
 	DefaultRequestCount int
 	// DefaultCoverageGapCount holds the default value on creation for the "coverage_gap_count" field.
@@ -169,6 +174,11 @@ func ByCacheReadTokens(opts ...sql.OrderTermOption) OrderOption {
 // ByTotalTokens orders the results by the total_tokens field.
 func ByTotalTokens(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTotalTokens, opts...).ToFunc()
+}
+
+// ByCreditUsage orders the results by the credit_usage field.
+func ByCreditUsage(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreditUsage, opts...).ToFunc()
 }
 
 // ByRequestCount orders the results by the request_count field.

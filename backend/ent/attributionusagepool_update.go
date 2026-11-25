@@ -231,6 +231,27 @@ func (aupu *AttributionUsagePoolUpdate) AddTotalTokens(i int64) *AttributionUsag
 	return aupu
 }
 
+// SetCreditUsage sets the "credit_usage" field.
+func (aupu *AttributionUsagePoolUpdate) SetCreditUsage(f float64) *AttributionUsagePoolUpdate {
+	aupu.mutation.ResetCreditUsage()
+	aupu.mutation.SetCreditUsage(f)
+	return aupu
+}
+
+// SetNillableCreditUsage sets the "credit_usage" field if the given value is not nil.
+func (aupu *AttributionUsagePoolUpdate) SetNillableCreditUsage(f *float64) *AttributionUsagePoolUpdate {
+	if f != nil {
+		aupu.SetCreditUsage(*f)
+	}
+	return aupu
+}
+
+// AddCreditUsage adds f to the "credit_usage" field.
+func (aupu *AttributionUsagePoolUpdate) AddCreditUsage(f float64) *AttributionUsagePoolUpdate {
+	aupu.mutation.AddCreditUsage(f)
+	return aupu
+}
+
 // SetRequestCount sets the "request_count" field.
 func (aupu *AttributionUsagePoolUpdate) SetRequestCount(i int) *AttributionUsagePoolUpdate {
 	aupu.mutation.ResetRequestCount()
@@ -400,6 +421,12 @@ func (aupu *AttributionUsagePoolUpdate) sqlSave(ctx context.Context) (n int, err
 	}
 	if value, ok := aupu.mutation.AddedTotalTokens(); ok {
 		_spec.AddField(attributionusagepool.FieldTotalTokens, field.TypeInt64, value)
+	}
+	if value, ok := aupu.mutation.CreditUsage(); ok {
+		_spec.SetField(attributionusagepool.FieldCreditUsage, field.TypeFloat64, value)
+	}
+	if value, ok := aupu.mutation.AddedCreditUsage(); ok {
+		_spec.AddField(attributionusagepool.FieldCreditUsage, field.TypeFloat64, value)
 	}
 	if value, ok := aupu.mutation.RequestCount(); ok {
 		_spec.SetField(attributionusagepool.FieldRequestCount, field.TypeInt, value)
@@ -639,6 +666,27 @@ func (aupuo *AttributionUsagePoolUpdateOne) AddTotalTokens(i int64) *Attribution
 	return aupuo
 }
 
+// SetCreditUsage sets the "credit_usage" field.
+func (aupuo *AttributionUsagePoolUpdateOne) SetCreditUsage(f float64) *AttributionUsagePoolUpdateOne {
+	aupuo.mutation.ResetCreditUsage()
+	aupuo.mutation.SetCreditUsage(f)
+	return aupuo
+}
+
+// SetNillableCreditUsage sets the "credit_usage" field if the given value is not nil.
+func (aupuo *AttributionUsagePoolUpdateOne) SetNillableCreditUsage(f *float64) *AttributionUsagePoolUpdateOne {
+	if f != nil {
+		aupuo.SetCreditUsage(*f)
+	}
+	return aupuo
+}
+
+// AddCreditUsage adds f to the "credit_usage" field.
+func (aupuo *AttributionUsagePoolUpdateOne) AddCreditUsage(f float64) *AttributionUsagePoolUpdateOne {
+	aupuo.mutation.AddCreditUsage(f)
+	return aupuo
+}
+
 // SetRequestCount sets the "request_count" field.
 func (aupuo *AttributionUsagePoolUpdateOne) SetRequestCount(i int) *AttributionUsagePoolUpdateOne {
 	aupuo.mutation.ResetRequestCount()
@@ -838,6 +886,12 @@ func (aupuo *AttributionUsagePoolUpdateOne) sqlSave(ctx context.Context) (_node 
 	}
 	if value, ok := aupuo.mutation.AddedTotalTokens(); ok {
 		_spec.AddField(attributionusagepool.FieldTotalTokens, field.TypeInt64, value)
+	}
+	if value, ok := aupuo.mutation.CreditUsage(); ok {
+		_spec.SetField(attributionusagepool.FieldCreditUsage, field.TypeFloat64, value)
+	}
+	if value, ok := aupuo.mutation.AddedCreditUsage(); ok {
+		_spec.AddField(attributionusagepool.FieldCreditUsage, field.TypeFloat64, value)
 	}
 	if value, ok := aupuo.mutation.RequestCount(); ok {
 		_spec.SetField(attributionusagepool.FieldRequestCount, field.TypeInt, value)

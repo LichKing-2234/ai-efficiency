@@ -52,6 +52,7 @@ type LocalUsageBucket struct {
 	CacheCreationTokens int64     `json:"cache_creation_tokens"`
 	CacheReadTokens     int64     `json:"cache_read_tokens"`
 	TotalTokens         int64     `json:"total_tokens"`
+	CreditUsage         float64   `json:"credit_usage,omitempty"`
 	RequestCount        int       `json:"request_count"`
 }
 
@@ -417,7 +418,16 @@ func validate(claim Request) error {
 		if usage.RequestedModel == "" || len(usage.RequestedModel) > MaxIdentitySize || usage.BucketStartUTC.IsZero() || !usage.BucketStartUTC.Equal(usage.BucketStartUTC.UTC().Truncate(15*time.Minute)) || usage.RequestCount <= 0 {
 			return fmt.Errorf("local_usage model, aligned UTC bucket, and positive request_count are required")
 		}
-		if usage.InputTokens < 0 || usage.OutputTokens < 0 || usage.CacheCreationTokens < 0 || usage.CacheReadTokens < 0 || usage.TotalTokens <= 0 ||
+		// A bucket must carry an amount in at least one unit. Credit is the unit
+		// some agents bill in instead of tokens — Kiro CLI reports only credit —
+		// so a zero-token bucket is valid when it carries credit. This mirrors
+		// attributionpool.localGroupContributions, which already accepted it;
+		// requiring positive tokens here rejected the whole claim before the
+		// pool ever saw it.
+		if usage.CreditUsage < 0 || (usage.TotalTokens <= 0 && usage.CreditUsage <= 0) {
+			return fmt.Errorf("local_usage must carry tokens or credit")
+		}
+		if usage.InputTokens < 0 || usage.OutputTokens < 0 || usage.CacheCreationTokens < 0 || usage.CacheReadTokens < 0 || usage.TotalTokens < 0 ||
 			usage.InputTokens > math.MaxInt64-usage.OutputTokens || usage.InputTokens+usage.OutputTokens > math.MaxInt64-usage.CacheCreationTokens ||
 			usage.InputTokens+usage.OutputTokens+usage.CacheCreationTokens > math.MaxInt64-usage.CacheReadTokens ||
 			usage.InputTokens+usage.OutputTokens+usage.CacheCreationTokens+usage.CacheReadTokens != usage.TotalTokens {
@@ -505,7 +515,8 @@ func compatibleLocalUsage(existing, incoming []map[string]any) (bool, bool) {
 		incoming, found := byKey[strings.TrimSpace(old.RequestedModel)+"\x00"+old.BucketStartUTC.UTC().Format(time.RFC3339)]
 		if !found || incoming.InputTokens < old.InputTokens || incoming.OutputTokens < old.OutputTokens ||
 			incoming.CacheCreationTokens < old.CacheCreationTokens || incoming.CacheReadTokens < old.CacheReadTokens ||
-			incoming.TotalTokens < old.TotalTokens || incoming.RequestCount < old.RequestCount {
+			incoming.TotalTokens < old.TotalTokens || incoming.CreditUsage < old.CreditUsage ||
+			incoming.RequestCount < old.RequestCount {
 			return false, false
 		}
 		changed = changed || incoming != old

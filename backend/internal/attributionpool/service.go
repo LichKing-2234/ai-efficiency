@@ -41,6 +41,7 @@ type contribution struct {
 	cacheCreate int64
 	cacheRead   int64
 	total       int64
+	credit      float64
 	count       int
 }
 
@@ -72,7 +73,7 @@ func ApplyLocalGroupChange(ctx context.Context, client *ent.Client, ledgerEpoch 
 			if err != nil {
 				return err
 			}
-			if delta.input != 0 || delta.output != 0 || delta.cacheCreate != 0 || delta.cacheRead != 0 || delta.total != 0 || delta.count != 0 {
+			if delta.input != 0 || delta.output != 0 || delta.cacheCreate != 0 || delta.cacheRead != 0 || delta.total != 0 || delta.credit != 0 || delta.count != 0 {
 				if err := addContribution(ctx, client, pool.ID, delta); err != nil {
 					return err
 				}
@@ -142,7 +143,7 @@ func preserveOrphanedRelations(ctx context.Context, client *ent.Client, poolID i
 
 func localContributionGrowth(old, next contribution) (contribution, error) {
 	if old.key != next.key || next.input < old.input || next.output < old.output || next.cacheCreate < old.cacheCreate ||
-		next.cacheRead < old.cacheRead || next.total < old.total || next.count < old.count {
+		next.cacheRead < old.cacheRead || next.total < old.total || next.credit < old.credit || next.count < old.count {
 		return contribution{}, fmt.Errorf("local attribution contribution regressed")
 	}
 	next.input -= old.input
@@ -150,6 +151,7 @@ func localContributionGrowth(old, next contribution) (contribution, error) {
 	next.cacheCreate -= old.cacheCreate
 	next.cacheRead -= old.cacheRead
 	next.total -= old.total
+	next.credit -= old.credit
 	next.count -= old.count
 	return next, nil
 }
@@ -162,6 +164,7 @@ type localUsage struct {
 	CacheCreationTokens int64     `json:"cache_creation_tokens"`
 	CacheReadTokens     int64     `json:"cache_read_tokens"`
 	TotalTokens         int64     `json:"total_tokens"`
+	CreditUsage         float64   `json:"credit_usage"`
 	RequestCount        int       `json:"request_count"`
 }
 
@@ -189,7 +192,13 @@ func localGroupContributions(ledgerEpoch string, providerID, userID int, allocat
 		if item.RequestedModel == "" || item.BucketStartUTC.IsZero() || !item.BucketStartUTC.Equal(item.BucketStartUTC.Truncate(15*time.Minute)) || item.RequestCount <= 0 {
 			return nil, fmt.Errorf("local usage model, aligned UTC bucket, and positive request count are required")
 		}
-		if item.InputTokens < 0 || item.OutputTokens < 0 || item.CacheCreationTokens < 0 || item.CacheReadTokens < 0 || item.TotalTokens <= 0 ||
+		// A bucket must carry an amount in at least one unit. Credit is the
+		// unit some agents bill in instead of tokens — Kiro CLI reports only
+		// credit — so a zero-token bucket is valid when it carries credit.
+		if item.CreditUsage < 0 || (item.TotalTokens <= 0 && item.CreditUsage <= 0) {
+			return nil, fmt.Errorf("local usage must carry tokens or credit")
+		}
+		if item.InputTokens < 0 || item.OutputTokens < 0 || item.CacheCreationTokens < 0 || item.CacheReadTokens < 0 || item.TotalTokens < 0 ||
 			item.InputTokens > math.MaxInt64-item.OutputTokens || item.InputTokens+item.OutputTokens > math.MaxInt64-item.CacheCreationTokens ||
 			item.InputTokens+item.OutputTokens+item.CacheCreationTokens > math.MaxInt64-item.CacheReadTokens ||
 			item.InputTokens+item.OutputTokens+item.CacheCreationTokens+item.CacheReadTokens != item.TotalTokens {
@@ -204,7 +213,7 @@ func localGroupContributions(ledgerEpoch string, providerID, userID int, allocat
 			key: key, ledgerEpoch: ledgerEpoch, providerID: providerID, userID: userID,
 			model: item.RequestedModel, bucketStart: item.BucketStartUTC, commits: commits,
 			input: item.InputTokens, output: item.OutputTokens, cacheCreate: item.CacheCreationTokens,
-			cacheRead: item.CacheReadTokens, total: item.TotalTokens, count: item.RequestCount,
+			cacheRead: item.CacheReadTokens, total: item.TotalTokens, credit: item.CreditUsage, count: item.RequestCount,
 		})
 	}
 	return result, nil
@@ -520,7 +529,7 @@ func addContribution(ctx context.Context, client *ent.Client, poolID int, value 
 		attributionusagepool.TotalTokensLTE(math.MaxInt64-value.total),
 		attributionusagepool.RequestCountLTE(math.MaxInt-value.count),
 	).AddInputTokens(value.input).AddOutputTokens(value.output).AddCacheCreationTokens(value.cacheCreate).
-		AddCacheReadTokens(value.cacheRead).AddTotalTokens(value.total).AddRequestCount(value.count).Save(ctx)
+		AddCacheReadTokens(value.cacheRead).AddTotalTokens(value.total).AddCreditUsage(value.credit).AddRequestCount(value.count).Save(ctx)
 	if err != nil {
 		return fmt.Errorf("add attribution pool contribution: %w", err)
 	}
@@ -539,9 +548,10 @@ func subtractContribution(ctx context.Context, client *ent.Client, poolID int, v
 		attributionusagepool.IDEQ(poolID), attributionusagepool.InputTokensGTE(value.input),
 		attributionusagepool.OutputTokensGTE(value.output), attributionusagepool.CacheCreationTokensGTE(value.cacheCreate),
 		attributionusagepool.CacheReadTokensGTE(value.cacheRead), attributionusagepool.TotalTokensGTE(value.total),
+		attributionusagepool.CreditUsageGTE(value.credit),
 		attributionusagepool.RequestCountGTE(value.count),
 	).AddInputTokens(-value.input).AddOutputTokens(-value.output).AddCacheCreationTokens(-value.cacheCreate).
-		AddCacheReadTokens(-value.cacheRead).AddTotalTokens(-value.total).AddRequestCount(-value.count).Save(ctx)
+		AddCacheReadTokens(-value.cacheRead).AddTotalTokens(-value.total).AddCreditUsage(-value.credit).AddRequestCount(-value.count).Save(ctx)
 	if err != nil {
 		return fmt.Errorf("subtract attribution pool contribution: %w", err)
 	}
@@ -809,7 +819,7 @@ func migrateDurablePools(ctx context.Context, client *ent.Client, userID, repoCo
 			ledgerEpoch: pool.LedgerEpoch,
 			providerID:  pool.RelayProviderID, userID: pool.UserID, model: pool.RequestedModel, bucketStart: pool.BucketStartUtc, commits: counting,
 			input: pool.InputTokens, output: pool.OutputTokens, cacheCreate: pool.CacheCreationTokens,
-			cacheRead: pool.CacheReadTokens, total: pool.TotalTokens,
+			cacheRead: pool.CacheReadTokens, total: pool.TotalTokens, credit: pool.CreditUsage,
 		}
 		target, err := ensurePool(ctx, client, desired)
 		if err != nil {
@@ -917,7 +927,7 @@ func mergePoolTotals(ctx context.Context, client *ent.Client, targetID int, sour
 		attributionusagepool.CoverageGapCountLTE(math.MaxInt-source.CoverageGapCount),
 	).AddInputTokens(source.InputTokens).AddOutputTokens(source.OutputTokens).
 		AddCacheCreationTokens(source.CacheCreationTokens).AddCacheReadTokens(source.CacheReadTokens).
-		AddTotalTokens(source.TotalTokens).AddRequestCount(source.RequestCount).
+		AddTotalTokens(source.TotalTokens).AddCreditUsage(source.CreditUsage).AddRequestCount(source.RequestCount).
 		AddCoverageGapCount(source.CoverageGapCount).Save(ctx)
 	if err != nil {
 		return fmt.Errorf("merge rewritten attribution pool: %w", err)
