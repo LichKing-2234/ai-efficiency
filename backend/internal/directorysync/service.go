@@ -1208,7 +1208,7 @@ func (s *Service) primaryRelayProviderID(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 	p, err := s.client.RelayProvider.Query().
-		Where(relayprovider.EnabledEQ(true), relayprovider.IsPrimaryEQ(true)).
+		Where(relayprovider.EnabledEQ(true), relayprovider.IsPrimaryEQ(true), relayprovider.ServiceTypeEQ("sub2api")).
 		Order(ent.Asc(relayprovider.FieldID)).
 		First(ctx)
 	if err == nil {
@@ -1217,8 +1217,10 @@ func (s *Service) primaryRelayProviderID(ctx context.Context) (int, error) {
 	if !ent.IsNotFound(err) {
 		return 0, err
 	}
+	// The fallback must stay sub2api-only: a usage-only entry such as kiro2cc
+	// is not a relay provider and would fail every downstream Relay call.
 	p, err = s.client.RelayProvider.Query().
-		Where(relayprovider.EnabledEQ(true)).
+		Where(relayprovider.EnabledEQ(true), relayprovider.ServiceTypeEQ("sub2api")).
 		Order(ent.Asc(relayprovider.FieldID)).
 		First(ctx)
 	if ent.IsNotFound(err) {

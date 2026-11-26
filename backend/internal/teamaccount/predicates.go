@@ -37,8 +37,14 @@ func teamAccountEventAccountID(accountID int) predicate.TeamAccountEvent {
 	return entteamaccountevent.TeamAccountIDEQ(accountID)
 }
 
+// relayProviderEnabled scopes provider lookups to enabled sub2api entries.
+// Usage-only entries (service_type=kiro2cc) are not relay providers and must
+// never be picked by the primary-provider fallback.
 func relayProviderEnabled() predicate.RelayProvider {
-	return entrelayprovider.EnabledEQ(true)
+	return entrelayprovider.And(
+		entrelayprovider.EnabledEQ(true),
+		entrelayprovider.ServiceTypeEQ("sub2api"),
+	)
 }
 
 func teamAccountKeyStatus(status string) predicate.TeamAccountKey {

@@ -859,7 +859,7 @@ func (h *AdminUsersHandler) RevealRelayPassword(c *gin.Context) {
 
 func (h *AdminUsersHandler) primaryRelayProviderID(ctx context.Context) (int, error) {
 	p, err := h.entClient.RelayProvider.Query().
-		Where(relayprovider.EnabledEQ(true), relayprovider.IsPrimaryEQ(true)).
+		Where(relayprovider.EnabledEQ(true), relayprovider.IsPrimaryEQ(true), relayprovider.ServiceTypeEQ("sub2api")).
 		Order(ent.Asc(relayprovider.FieldID)).
 		First(ctx)
 	if err == nil {
@@ -868,8 +868,10 @@ func (h *AdminUsersHandler) primaryRelayProviderID(ctx context.Context) (int, er
 	if !ent.IsNotFound(err) {
 		return 0, err
 	}
+	// The fallback must stay sub2api-only: a usage-only entry such as kiro2cc
+	// is not a relay provider and would fail every downstream Relay call.
 	p, err = h.entClient.RelayProvider.Query().
-		Where(relayprovider.EnabledEQ(true)).
+		Where(relayprovider.EnabledEQ(true), relayprovider.ServiceTypeEQ("sub2api")).
 		Order(ent.Asc(relayprovider.FieldID)).
 		First(ctx)
 	if ent.IsNotFound(err) {
