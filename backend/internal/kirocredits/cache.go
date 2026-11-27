@@ -206,6 +206,12 @@ func (c *Cache) GetOrLoad(ctx context.Context, key string, load func(context.Con
 			}
 			return nil, err
 		}
+		// A truncated refresh must not replace a complete value: the page walk
+		// can run out of budget under load, and caching that lower bound would
+		// serve an understated number until the next refresh.
+		if value.partial() && hasStale && !stale.partial() && c.usable(stale, now) {
+			return stale, nil
+		}
 		c.write(flightCtx, key, value)
 		return &value, nil
 	})

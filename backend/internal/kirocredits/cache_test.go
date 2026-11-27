@@ -136,6 +136,29 @@ func TestCacheKeepsStaleValueWhenRefreshFails(t *testing.T) {
 	}
 }
 
+func TestCacheKeepsCompleteValueWhenRefreshIsTruncated(t *testing.T) {
+	cache, _ := testCache(t)
+	now := time.Date(2026, 11, 27, 3, 0, 0, 0, time.UTC)
+	cache.now = func() time.Time { return now }
+	params := Params{StartDate: "2026-11-27", EndDate: "2026-11-27", Granularity: "day", Timezone: "Asia/Shanghai"}
+	key := cache.creditsKey(3, 2, 42, params)
+	cache.write(context.Background(), key, sampleValue(t))
+
+	cache.now = func() time.Time { return now.Add(2 * time.Minute) }
+	truncated := sampleValue(t)
+	truncated.Credits = 3
+	truncated.MissingCredits = true
+	value, err := cache.GetOrLoad(context.Background(), key, func(context.Context) (cachedCredits, error) {
+		return truncated, nil
+	})
+	if err != nil {
+		t.Fatalf("GetOrLoad() error = %v", err)
+	}
+	if value.Credits != 12.5 || value.partial() {
+		t.Fatalf("credits = %v partial = %v, want the complete 12.5", value.Credits, value.partial())
+	}
+}
+
 func TestCacheReturnsLoaderErrorWithoutValue(t *testing.T) {
 	cache, _ := testCache(t)
 	params := Params{StartDate: "2026-11-27", EndDate: "2026-11-27", Granularity: "day", Timezone: "Asia/Shanghai"}
