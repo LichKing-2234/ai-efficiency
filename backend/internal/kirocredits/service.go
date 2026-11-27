@@ -300,6 +300,78 @@ func (s *Service) collect(ctx context.Context, row *ent.RelayProvider, relayUser
 // collectRange reads one key's records inside the window and aggregates them.
 // It returns partial=true when the record page cap is hit before the window's
 // oldest record, so callers can render the totals as a lower bound.
+// collectAggregate prefers kiro2cc's daily-store aggregation (one request) and
+// falls back to the record walk when the endpoint is missing on older kiro2cc
+// builds or the requested dimension cannot be expressed by it.
+func (s *Service) collectAggregate(ctx context.Context, client *adminClient, keyID int64, window window, granularity string) (aggregateResult, error) {
+	aggregated, ok, err := s.collectFromRange(ctx, client, keyID, window, granularity)
+	if err != nil {
+		return aggregateResult{}, err
+	}
+	if ok {
+		return aggregated, nil
+	}
+	walked, partial, err := s.collectRange(ctx, client, keyID, window, granularity)
+	if err != nil {
+		return aggregateResult{}, err
+	}
+	if partial {
+		walked.missingCredits = true
+	}
+	return walked, nil
+}
+
+// collectFromRange asks kiro2cc for the window in one call. The daily store is
+// keyed by CST dates and has no hourly buckets, so hourly views and callers in
+// other timezones keep using the record walk.
+func (s *Service) collectFromRange(ctx context.Context, client *adminClient, keyID int64, window window, granularity string) (aggregateResult, bool, error) {
+	if granularity == "hour" || window.location.String() != defaultWarmTimezone {
+		return aggregateResult{}, false, nil
+	}
+	start := window.start.In(window.location).Format(dateLayout)
+	end := window.endExclusive.Add(-time.Nanosecond).In(window.location).Format(dateLayout)
+	summary, err := client.usageRange(ctx, keyID, start, end)
+	if err != nil {
+		if errors.Is(err, errAdminRouteMissing) {
+			return aggregateResult{}, false, nil
+		}
+		return aggregateResult{}, false, err
+	}
+	return aggregateFromRange(summary), true, nil
+}
+
+// aggregateFromRange maps kiro2cc's daily aggregation onto the internal shape.
+// Its credits already fall back to the per-model estimate, so the value is
+// complete rather than a lower bound.
+func aggregateFromRange(summary *usageRangeSummary) aggregateResult {
+	result := aggregateResult{
+		credits:      summary.TotalCredits,
+		creditsSaved: summary.TotalCreditsSaved,
+		requests:     summary.TotalRequests,
+		inputTokens:  summary.TotalInputTokens,
+		outputTokens: summary.TotalOutputTokens,
+		byModel:      make([]ModelCredits, 0, len(summary.ByModel)),
+		byDay:        make([]DayCredits, 0, len(summary.ByDay)),
+	}
+	for _, day := range summary.ByDay {
+		result.byDay = append(result.byDay, DayCredits{
+			Date:     day.Date,
+			Requests: day.Requests,
+			Credits:  day.Credits,
+		})
+	}
+	for _, model := range summary.ByModel {
+		result.byModel = append(result.byModel, ModelCredits{
+			Model:        model.Model,
+			Requests:     model.Requests,
+			InputTokens:  model.InputTokens,
+			OutputTokens: model.OutputTokens,
+			Credits:      model.Credits,
+		})
+	}
+	return result
+}
+
 func (s *Service) collectRange(ctx context.Context, client *adminClient, keyID int64, window window, granularity string) (aggregateResult, bool, error) {
 	records := make([]usageRecord, 0, 128)
 	partial := false

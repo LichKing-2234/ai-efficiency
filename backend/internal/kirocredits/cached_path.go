@@ -58,7 +58,7 @@ func (s *Service) creditsValue(ctx context.Context, client *adminClient, row *en
 	value.LifetimeCredits = summary.TotalCredits
 	value.LifetimeRequests = summary.TotalRequests
 
-	aggregated, rangePartial, err := s.collectRange(ctx, client, key.ID, window, params.Granularity)
+	aggregated, err := s.collectAggregate(ctx, client, key.ID, window, params.Granularity)
 	if err != nil {
 		return cachedCredits{}, err
 	}
@@ -69,7 +69,7 @@ func (s *Service) creditsValue(ctx context.Context, client *adminClient, row *en
 	value.OutputTokens = aggregated.outputTokens
 	value.ByModel = aggregated.byModel
 	value.ByDay = aggregated.byDay
-	value.MissingCredits = rangePartial || aggregated.missingCredits
+	value.MissingCredits = aggregated.missingCredits
 	return value, nil
 }
 

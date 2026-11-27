@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -246,6 +247,111 @@ func TestBudgetForGivesLongWindowsTheLongBudget(t *testing.T) {
 	}
 	if got := service.budgetFor(month); got != 30*time.Second {
 		t.Fatalf("month budget = %v, want 30s", got)
+	}
+}
+
+func TestCollectAggregateUsesRangeEndpointWithoutPaging(t *testing.T) {
+	records := 0
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/usage/records") {
+			records++
+			_ = json.NewEncoder(w).Encode(usageRecordsPage{Page: 1, PageSize: recordPageSize, TotalPages: 1})
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/usage/range") {
+			if got, want := r.URL.Query().Get("start"), "2026-11-21"; got != want {
+				t.Errorf("start = %q, want %q", got, want)
+			}
+			if got, want := r.URL.Query().Get("end"), "2026-11-27"; got != want {
+				t.Errorf("end = %q, want %q", got, want)
+			}
+			_ = json.NewEncoder(w).Encode(usageRangeSummary{
+				APIKeyID:          5,
+				TotalRequests:     120,
+				TotalInputTokens:  1000,
+				TotalOutputTokens: 50,
+				TotalCredits:      42.5,
+				TotalCreditsSaved: 3.25,
+				ByDay:             []usageRangeDay{{Date: "2026-11-27", Requests: 120, Credits: 42.5}},
+				ByModel:           []usageRangeModel{{Model: "claude", Requests: 120, InputTokens: 1000, OutputTokens: 50, Credits: 42.5}},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	service := &Service{logger: zap.NewNop(), now: time.Now}
+	client := newAdminClient(server.URL, "token", 2*time.Second, 0)
+	location, err := time.LoadLocation(defaultWarmTimezone)
+	if err != nil {
+		t.Fatalf("LoadLocation() error = %v", err)
+	}
+	window, err := parseWindow(Params{StartDate: "2026-11-21", EndDate: "2026-11-27", Timezone: defaultWarmTimezone}, time.Now())
+	if err != nil {
+		t.Fatalf("parseWindow() error = %v", err)
+	}
+
+	aggregated, err := service.collectAggregate(context.Background(), client, 5, window, "day")
+	if err != nil {
+		t.Fatalf("collectAggregate() error = %v", err)
+	}
+	if records != 0 {
+		t.Fatalf("record pages = %d, want 0 when the range endpoint answers", records)
+	}
+	if aggregated.credits != 42.5 || aggregated.requests != 120 || aggregated.missingCredits {
+		t.Fatalf("aggregate = %+v", aggregated)
+	}
+	if len(aggregated.byDay) != 1 || aggregated.byDay[0].Date != "2026-11-27" {
+		t.Fatalf("byDay = %+v", aggregated.byDay)
+	}
+	if len(aggregated.byModel) != 1 || aggregated.byModel[0].Model != "claude" {
+		t.Fatalf("byModel = %+v", aggregated.byModel)
+	}
+	_ = location
+}
+
+func TestCollectAggregateFallsBackWhenRangeEndpointIsMissing(t *testing.T) {
+	credits := 2.0
+	records := 0
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/usage/range") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		records++
+		_ = json.NewEncoder(w).Encode(usageRecordsPage{
+			Page:       1,
+			PageSize:   recordPageSize,
+			TotalPages: 1,
+			Records: []usageRecord{{
+				Model:       "claude",
+				InputTokens: 10,
+				CreditsUsed: &credits,
+				CreatedAt:   time.Date(2026, 11, 27, 3, 0, 0, 0, time.UTC),
+			}},
+		})
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	service := &Service{logger: zap.NewNop(), now: time.Now}
+	client := newAdminClient(server.URL, "token", 2*time.Second, 0)
+	window, err := parseWindow(Params{StartDate: "2026-11-21", EndDate: "2026-11-27", Timezone: defaultWarmTimezone}, time.Now())
+	if err != nil {
+		t.Fatalf("parseWindow() error = %v", err)
+	}
+
+	aggregated, err := service.collectAggregate(context.Background(), client, 5, window, "day")
+	if err != nil {
+		t.Fatalf("collectAggregate() error = %v", err)
+	}
+	if records == 0 {
+		t.Fatal("record pages = 0, want the pagination fallback")
+	}
+	if aggregated.credits != 2.0 || aggregated.requests != 1 {
+		t.Fatalf("aggregate = %+v", aggregated)
 	}
 }
 
