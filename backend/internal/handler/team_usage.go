@@ -28,6 +28,7 @@ type teamUsageService interface {
 	Summary(context.Context, int, teamusage.OverviewParams) (*teamusage.SummaryResponse, error)
 	Trend(context.Context, int, teamusage.OverviewParams) (*teamusage.TrendResponse, error)
 	Members(context.Context, int, teamusage.MembersParams) (*teamusage.MembersResponse, error)
+	CreditsSubjects(context.Context, int) ([]representativescope.Subject, error)
 	Organization(context.Context, int, teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error)
 	UpdateMultiplier(context.Context, int, int, int64, teamusage.UpdateMultiplierRequest) (*teamusage.UpdateMultiplierResponse, error)
 	ListAudit(context.Context, int, teamusage.AuditListParams) (*teamusage.AuditListResponse, error)
@@ -95,19 +96,11 @@ type teamCreditsResponse struct {
 	Departments []teamCreditsDepartment `json:"departments"`
 }
 
-func (h *TeamUsageHandler) scopeCreditsRefs(scope *representativescope.Scope, actorID int) ([]kirocredits.UserRef, map[int]representativescope.Subject) {
-	refs := make([]kirocredits.UserRef, 0, len(scope.Subjects))
-	subjectsByUser := make(map[int]representativescope.Subject, len(scope.Subjects))
-	// The members table and summary are built from Subjects + OverviewSubjects;
-	// credits must use the same population or a represented manager receives a
-	// row but no credit value.
-	subjects := make([]representativescope.Subject, 0, len(scope.Subjects)+len(scope.OverviewSubjects))
-	subjects = append(subjects, scope.Subjects...)
-	subjects = append(subjects, scope.OverviewSubjects...)
+func creditsRefs(subjects []representativescope.Subject) ([]kirocredits.UserRef, map[int]representativescope.Subject) {
+	refs := make([]kirocredits.UserRef, 0, len(subjects))
+	subjectsByUser := make(map[int]representativescope.Subject, len(subjects))
 	seenRelayUserIDs := make(map[int64]struct{}, len(subjects))
 	for _, subject := range subjects {
-		// The representative is part of the team: excluding the actor silently
-		// dropped their own credits from every team total.
 		if subject.UserID <= 0 || subject.RelayUserID == nil {
 			continue
 		}
@@ -601,7 +594,12 @@ func (h *TeamUsageHandler) Credits(c *gin.Context) {
 		pkg.Error(c, http.StatusForbidden, "representative scope is required")
 		return
 	}
-	refs, subjectsByUser := h.scopeCreditsRefs(scope, uc.UserID)
+	subjects, err := h.service.CreditsSubjects(c.Request.Context(), uc.UserID)
+	if err != nil {
+		writeTeamUsageError(c, err)
+		return
+	}
+	refs, subjectsByUser := creditsRefs(subjects)
 	batch := h.credits.Batch(c.Request.Context(), refs, kirocredits.Params{
 		StartDate:   c.Query("start_date"),
 		EndDate:     c.Query("end_date"),
