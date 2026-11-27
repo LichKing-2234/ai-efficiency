@@ -1918,4 +1918,84 @@ describe('TeamOverviewMemberTrendChart', () => {
     }
     expect(wrapper.get('[data-testid="top-member-trend-legend"]').text()).toContain('#12 Member 12')
   })
+
+  it('gives the credits trend the same legend panels as the token trend', async () => {
+    localStorage.setItem('ae.usage.team-trend.unit', 'credits')
+    try {
+      const wrapper = mount(TeamOverviewMemberTrendChart, {
+        props: {
+          state: {
+            unit_label: 'USD',
+            rank_basis: 'range_total_tokens',
+            unavailable: false,
+            unavailable_reason: null,
+            series: [],
+          },
+          window: null,
+          creditsTeamByDay: [
+            { date: '2026-06-28', requests: 3, credits: 1.5 },
+            { date: '2026-06-29', requests: 2, credits: 2.25 },
+          ],
+          creditsGroups: [
+            {
+              department_external_id: 'group-alpha',
+              name: 'Group Alpha',
+              credits: 2,
+              requests: 3,
+              by_day: [
+                { date: '2026-06-28', requests: 2, credits: 1.5 },
+                { date: '2026-06-29', requests: 1, credits: 0.5 },
+              ],
+            },
+            {
+              department_external_id: 'group-beta',
+              name: 'Group Beta',
+              credits: 1.75,
+              requests: 2,
+              by_day: [
+                { date: '2026-06-28', requests: 1, credits: 0.75 },
+                { date: '2026-06-29', requests: 1, credits: 1 },
+              ],
+            },
+          ],
+          creditsUsers: [
+            {
+              user_id: 11,
+              relay_user_id: 111,
+              key_found: true,
+              credits: 3.75,
+              credits_saved: 0,
+              requests: 5,
+              input_tokens: 10,
+              output_tokens: 2,
+              by_model: [],
+              by_day: [
+                { date: '2026-06-28', requests: 2, credits: 1.5 },
+                { date: '2026-06-29', requests: 3, credits: 2.25 },
+              ],
+              partial: false,
+              display_name: 'Alice',
+            },
+          ],
+        },
+      })
+      await flushPromises()
+
+      for (const testId of ['team-credits-total-legend', 'team-credits-group-legend', 'team-credits-member-legend']) {
+        const legend = wrapper.get(`[data-testid="${testId}"]`)
+        expect(legend.classes()).toContain('max-h-64')
+        expect(legend.classes()).toContain('overflow-y-auto')
+      }
+
+      // 图例必须把颜色对上名字，并给出与折线同源的窗口合计
+      expect(wrapper.get('[data-testid="team-credits-total-legend"]').text()).toContain('Team total')
+      expect(wrapper.get('[data-testid="team-credits-total-legend"]').text()).toContain('3.75')
+      expect(wrapper.get('[data-testid="team-credits-group-legend"]').text()).toContain('Group Alpha')
+      expect(wrapper.get('[data-testid="team-credits-group-legend"]').text()).toContain('2.00')
+      expect(wrapper.get('[data-testid="team-credits-member-legend"]').text()).toContain('Alice')
+      expect(wrapper.get('[data-testid="team-credits-member-legend"]').text()).toContain('3.75')
+    } finally {
+      localStorage.removeItem('ae.usage.team-trend.unit')
+    }
+  })
 })
