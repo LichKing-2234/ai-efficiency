@@ -183,12 +183,46 @@ func TestWarmPresetsCoverDashboardRanges(t *testing.T) {
 		t.Fatalf("LoadLocation() error = %v", err)
 	}
 	now := time.Date(2026, 11, 27, 10, 0, 0, 0, location)
-	presets := warmPresets(now, location)
+
+	// Short pass: today + 7d only. The default 30d window costs dozens of
+	// kiro2cc pages per heavy key, so it is refreshed on its own slower cadence.
+	presets := warmPresets(now, location, false)
 	if len(presets) != 2 {
 		t.Fatalf("presets = %d, want 2", len(presets))
 	}
 	if presets[0].StartDate != "2026-11-27" || presets[1].StartDate != "2026-11-21" {
 		t.Fatalf("presets = %+v", presets)
+	}
+
+	// Long pass adds the 30d window so the default dashboard view is served
+	// from the cache instead of paying pagination on the request path.
+	long := warmPresets(now, location, true)
+	if len(long) != 3 {
+		t.Fatalf("long presets = %d, want 3", len(long))
+	}
+	if long[2].StartDate != "2026-10-29" || long[2].EndDate != "2026-11-27" {
+		t.Fatalf("long preset = %+v", long[2])
+	}
+}
+
+func TestBudgetForGivesLongWindowsTheLongBudget(t *testing.T) {
+	service := &Service{collectBudget: 6 * time.Second, longBudget: 30 * time.Second}
+	now := time.Date(2026, 11, 27, 10, 0, 0, 0, time.UTC)
+
+	week, err := parseWindow(Params{StartDate: "2026-11-21", EndDate: "2026-11-27"}, now)
+	if err != nil {
+		t.Fatalf("parseWindow() error = %v", err)
+	}
+	if got := service.budgetFor(week); got != 6*time.Second {
+		t.Fatalf("week budget = %v, want 6s", got)
+	}
+
+	month, err := parseWindow(Params{StartDate: "2026-10-29", EndDate: "2026-11-27"}, now)
+	if err != nil {
+		t.Fatalf("parseWindow() error = %v", err)
+	}
+	if got := service.budgetFor(month); got != 30*time.Second {
+		t.Fatalf("month budget = %v, want 30s", got)
 	}
 }
 

@@ -28,6 +28,14 @@ const (
 	defaultCollectBudget  = 6 * time.Second
 	defaultPerCallTimeout = 2500 * time.Millisecond
 	defaultWarmTimezone   = "Asia/Shanghai"
+	// defaultLongCollectBudget covers windows longer than a week. A heavy key
+	// needs dozens of 500-record pages for a 30-day range, which cannot finish
+	// inside the short batch budget.
+	defaultLongCollectBudget = 30 * time.Second
+	// defaultWarmLongInterval refreshes the long preset off the request path.
+	defaultWarmLongInterval = 20 * time.Minute
+	// longWindowSpan is the span above which a window is treated as long.
+	longWindowSpan = 7 * 24 * time.Hour
 	recordPageSize        = 500
 	maxResponseBytes      = 8 << 20
 	modernKeyNameBase     = "sub2api-"

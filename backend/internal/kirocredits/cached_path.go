@@ -117,8 +117,10 @@ func snapshotFromValue(value cachedCredits, now time.Time) Snapshot {
 	return snapshot
 }
 
-// StartWarmer keeps the three dashboard presets warm for every kiro2cc key, so
-// a page load does not pay the record pagination cost. It stops with ctx.
+// StartWarmer keeps the dashboard presets warm for every kiro2cc key, so a
+// page load does not pay the record pagination cost. The short windows follow
+// warmInterval; the long window costs far more kiro2cc pages, so it is
+// refreshed on its own slower interval. It stops with ctx.
 func (s *Service) StartWarmer(ctx context.Context) {
 	if s == nil || s.cache == nil || s.warmInterval <= 0 {
 		return
@@ -128,6 +130,10 @@ func (s *Service) StartWarmer(ctx context.Context) {
 		s.logger.Warn("kiro credits: warmer timezone invalid", zap.String("timezone", s.warmTimezone), zap.Error(err))
 		location = time.UTC
 	}
+	// Warm once before the first tick: a rollout should not leave the
+	// dashboards cold for a whole interval.
+	s.warmOnce(ctx, location, true)
+	lastLong := s.now()
 	ticker := time.NewTicker(s.warmInterval)
 	defer ticker.Stop()
 	for {
@@ -135,12 +141,16 @@ func (s *Service) StartWarmer(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.warmOnce(ctx, location)
+			includeLong := s.warmLongInterval > 0 && s.now().Sub(lastLong) >= s.warmLongInterval
+			if includeLong {
+				lastLong = s.now()
+			}
+			s.warmOnce(ctx, location, includeLong)
 		}
 	}
 }
 
-func (s *Service) warmOnce(ctx context.Context, location *time.Location) {
+func (s *Service) warmOnce(ctx context.Context, location *time.Location, includeLong bool) {
 	row, err := s.source(ctx)
 	if err != nil {
 		return
@@ -159,7 +169,7 @@ func (s *Service) warmOnce(ctx context.Context, location *time.Location) {
 	if len(userIDs) == 0 {
 		return
 	}
-	presets := warmPresets(s.now(), location)
+	presets := warmPresets(s.now(), location, includeLong)
 	sem := newSemaphore(4)
 	var wg sync.WaitGroup
 	for _, userID := range userIDs {
@@ -175,7 +185,7 @@ func (s *Service) warmOnce(ctx context.Context, location *time.Location) {
 				if err != nil {
 					return
 				}
-				loadCtx, cancel := context.WithTimeout(ctx, 2*s.collectBudget)
+				loadCtx, cancel := context.WithTimeout(ctx, 2*s.budgetFor(window))
 				defer cancel()
 				value, err := s.creditsValue(loadCtx, client, row, relayUserID, window, preset)
 				if err != nil {
@@ -194,17 +204,23 @@ func (s *Service) warmOnce(ctx context.Context, location *time.Location) {
 	wg.Wait()
 }
 
-func warmPresets(now time.Time, location *time.Location) []Params {
+func warmPresets(now time.Time, location *time.Location, includeLong bool) []Params {
 	local := now.In(location)
 	today := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, location)
-	// Only the two short windows are pre-generated: the 30-day range needs an
-	// order of magnitude more kiro2cc pages than it is worth on the idle path.
 	ranges := []struct {
 		start time.Time
 		end   time.Time
 	}{
 		{today, today},
 		{today.AddDate(0, 0, -6), today},
+	}
+	// The 30-day range is the default dashboard window; it also needs dozens of
+	// kiro2cc pages per heavy key, so it is refreshed on warmLongInterval only.
+	if includeLong {
+		ranges = append(ranges, struct {
+			start time.Time
+			end   time.Time
+		}{today.AddDate(0, 0, -29), today})
 	}
 	presets := make([]Params, 0, len(ranges))
 	for _, item := range ranges {

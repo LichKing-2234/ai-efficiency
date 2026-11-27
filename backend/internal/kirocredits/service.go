@@ -36,8 +36,15 @@ type Options struct {
 	CollectBudget time.Duration
 	// PerCallTimeout bounds one kiro2cc admin HTTP call.
 	PerCallTimeout time.Duration
+	// LongCollectBudget bounds a fan-out over a window longer than a week.
+	// Those reads need an order of magnitude more kiro2cc pages than a week,
+	// so they get their own budget instead of failing every heavy key.
+	LongCollectBudget time.Duration
 	// WarmInterval enables the background warmer when positive.
 	WarmInterval time.Duration
+	// WarmLongInterval pre-generates the long window when positive. Long
+	// windows cost far more page reads, so they are refreshed less often.
+	WarmLongInterval time.Duration
 	// WarmTimezone is the IANA timezone the warmer pre-generates for.
 	WarmTimezone string
 }
@@ -72,11 +79,13 @@ type Service struct {
 	keys      map[string]cachedKeys
 	teams     map[string]cachedTeam
 
-	cache          *Cache
-	collectBudget  time.Duration
-	perCallTimeout time.Duration
-	warmInterval   time.Duration
-	warmTimezone   string
+	cache            *Cache
+	collectBudget    time.Duration
+	longBudget       time.Duration
+	perCallTimeout   time.Duration
+	warmInterval     time.Duration
+	warmLongInterval time.Duration
+	warmTimezone     string
 }
 
 // NewService builds a credits service. A nil logger is replaced with a no-op
@@ -102,9 +111,17 @@ func NewService(client *ent.Client, encryptionKey string, options Options) *Serv
 	if collectBudget <= 0 {
 		collectBudget = defaultCollectBudget
 	}
+	longBudget := options.LongCollectBudget
+	if longBudget <= 0 {
+		longBudget = defaultLongCollectBudget
+	}
 	perCallTimeout := options.PerCallTimeout
 	if perCallTimeout <= 0 {
 		perCallTimeout = defaultPerCallTimeout
+	}
+	warmLongInterval := options.WarmLongInterval
+	if warmLongInterval <= 0 {
+		warmLongInterval = defaultWarmLongInterval
 	}
 	warmTimezone := options.WarmTimezone
 	if warmTimezone == "" {
@@ -120,11 +137,13 @@ func NewService(client *ent.Client, encryptionKey string, options Options) *Serv
 		snapshots:      map[string]cachedSnapshot{},
 		keys:           map[string]cachedKeys{},
 		teams:          map[string]cachedTeam{},
-		cache:          options.Cache,
-		collectBudget:  collectBudget,
-		perCallTimeout: perCallTimeout,
-		warmInterval:   options.WarmInterval,
-		warmTimezone:   warmTimezone,
+		cache:            options.Cache,
+		collectBudget:    collectBudget,
+		longBudget:       longBudget,
+		perCallTimeout:   perCallTimeout,
+		warmInterval:     options.WarmInterval,
+		warmLongInterval: warmLongInterval,
+		warmTimezone:     warmTimezone,
 	}
 }
 
@@ -436,6 +455,16 @@ type window struct {
 	location     *time.Location
 }
 
+// budgetFor bounds one collection. Long windows need an order of magnitude
+// more kiro2cc pages than a week, so they get the long budget; everything else
+// keeps the short one that also protects the team fan-out latency.
+func (s *Service) budgetFor(w window) time.Duration {
+	if s.longBudget > 0 && w.endExclusive.Sub(w.start) > longWindowSpan {
+		return s.longBudget
+	}
+	return s.collectBudget
+}
+
 func parseWindow(params Params, now time.Time) (window, error) {
 	location := time.UTC
 	if tz := strings.TrimSpace(params.Timezone); tz != "" {
@@ -556,9 +585,9 @@ func (s *Service) Batch(ctx context.Context, users []UserRef, params Params) Tea
 		result.Message = "用量时间范围无效"
 		return result
 	}
-	if s.collectBudget > 0 {
+	if budget := s.budgetFor(window); budget > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, s.collectBudget)
+		ctx, cancel = context.WithTimeout(ctx, budget)
 		defer cancel()
 	}
 
