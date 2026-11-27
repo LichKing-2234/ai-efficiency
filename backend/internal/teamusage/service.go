@@ -761,6 +761,29 @@ func trendUnavailableSnapshot(params OverviewParams, unavailableReason string) *
 	}
 }
 
+// CreditsSubjects returns the same resolved member population the overview
+// members table uses: Subjects + OverviewSubjects with relay ids resolved by
+// the provider directory, deduped by relay user id. Credits must cover every
+// row the table renders, not only subjects that already carry a relay id.
+func (s *Service) CreditsSubjects(ctx context.Context, actorUserID int) ([]representativescope.Subject, error) {
+	scope, err := s.requireRepresentativeScope(ctx, actorUserID)
+	if err != nil {
+		return nil, err
+	}
+	_, provider, err := s.resolvePrimaryProvider(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve primary relay provider: %w", err)
+	}
+	source := make([]representativescope.Subject, 0, len(scope.Subjects)+len(scope.OverviewSubjects))
+	source = append(source, scope.Subjects...)
+	source = append(source, scope.OverviewSubjects...)
+	resolved, _, err := s.resolveSubjects(ctx, source, provider)
+	if err != nil {
+		return nil, err
+	}
+	return resolved, nil
+}
+
 func (s *Service) resolveOverviewSubjects(ctx context.Context, scope *representativescope.Scope, provider relay.Provider) ([]representativescope.Subject, []int64, error) {
 	overviewSubjects := scope.OverviewSubjects
 	if len(overviewSubjects) == 0 {

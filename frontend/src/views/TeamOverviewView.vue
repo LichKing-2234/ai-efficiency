@@ -55,12 +55,17 @@ const {
   retryBranch: retryOrganizationBranch,
 } = useTeamUsageOrganization()
 
-const loading = computed(() => summaryLoading.value || membersLoading.value || creditsLoading.value)
+// Credits is an optional add-on that fans out to kiro2cc: keep it out of the
+// page-level loading state so a slow credit read cannot dim or block the
+// summary/trend/members sections.
+const loading = computed(() => summaryLoading.value || membersLoading.value)
 
 const creditsByUser = computed(() => {
   const map: Record<number, TeamCredits['users'][number]> = {}
   for (const user of teamCredits.value?.users ?? []) {
-    if (user.key_found) map[user.user_id] = user
+    // Keep members whose read failed or who have no kiro key: the table shows
+    // the reason instead of a bare placeholder.
+    map[user.user_id] = user
   }
   return map
 })
@@ -85,6 +90,20 @@ const creditTrendUsers = computed(() => (teamCredits.value?.users ?? [])
     ...user,
     display_name: membersPage.value?.items.find((member) => member.user_id === user.user_id)?.display_name,
   })))
+
+// Credits fan out per member; when some members do not report, the total is a
+// lower bound and must say so instead of reading as the team total.
+const creditsCoverage = computed(() => {
+  const credits = teamCredits.value
+  if (!credits) return null
+  const requested = credits.requested_users ?? 0
+  const counted = credits.counted_users ?? 0
+  if (requested <= 0) return null
+  // A truncated value is already marked per member (>=), so the coverage note
+  // is only about members that did not report at all.
+  if (counted >= requested) return null
+  return { requested, counted }
+})
 
 const rangeCredits = computed(() => {
   if (!teamCredits.value?.available || (teamCredits.value.key_count ?? 0) === 0) return null
@@ -399,6 +418,14 @@ onMounted(loadOverview)
             :closable="false"
             show-icon
             :title="t('usageDashboard.staleSnapshot')"
+          />
+          <ElAlert
+            v-if="creditsCoverage"
+            data-testid="team-credits-coverage"
+            type="warning"
+            :closable="false"
+            show-icon
+            :title="t('teamUsage.creditsCoverage', creditsCoverage)"
           />
           <TeamOverviewMemberTrendChart
             :state="trend.top_member_trend"

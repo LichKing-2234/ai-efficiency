@@ -28,6 +28,7 @@ const mockGetTeamUsageMembers = vi.mocked((await import('@/api/teamUsage')).getT
 const mockGetTeamUsageOrganization = vi.mocked((await import('@/api/teamUsage')).getTeamUsageOrganization)
 const mockGetTeamUsageSummary = vi.mocked((await import('@/api/teamUsage')).getTeamUsageSummary)
 const mockGetTeamUsageTrend = vi.mocked((await import('@/api/teamUsage')).getTeamUsageTrend)
+const mockGetTeamUsageCredits = vi.mocked((await import('@/api/teamUsage')).getTeamUsageCredits)
 
 async function selectElementRadio(wrapper: any, selector: string) {
   const control = wrapper.get(selector)
@@ -346,6 +347,158 @@ describe('TeamOverviewView', () => {
     mockGetTeamUsageTrend.mockResolvedValue({ data: { data: trendFixture } } as any)
     mockGetTeamUsageMembers.mockResolvedValue({ data: { data: membersFixture } } as any)
     mockGetTeamUsageOrganization.mockImplementation(async (params?: TeamUsageOrganizationParams) => ({ data: { data: defaultOrganizationResponse(params) } } as any))
+  })
+
+  it('explains missing credits instead of rendering a placeholder', async () => {
+    mockGetTeamUsageCredits.mockResolvedValueOnce({
+      data: {
+        data: {
+          available: true,
+          configured: true,
+          status: 'ok',
+          as_of: '2026-11-27T03:00:00Z',
+          credits: 0,
+          credits_saved: 0,
+          requests: 0,
+          input_tokens: 0,
+          output_tokens: 0,
+          key_count: 0,
+          by_model: [],
+          by_day: [],
+          users: [
+            {
+              user_id: 101,
+              relay_user_id: 1,
+              key_found: false,
+              credits: 0,
+              credits_saved: 0,
+              requests: 0,
+              input_tokens: 0,
+              output_tokens: 0,
+              by_model: [],
+              by_day: [],
+              partial: true,
+              error: 'timeout',
+            },
+          ],
+          departments: [],
+          requested_users: 1,
+          counted_users: 0,
+          partial: true,
+        },
+      },
+    } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('<timeout>')
+  })
+
+  it('marks a truncated member credit value as a lower bound', async () => {
+    mockGetTeamUsageCredits.mockResolvedValueOnce({
+      data: {
+        data: {
+          available: true,
+          configured: true,
+          status: 'ok',
+          as_of: '2026-11-27T03:00:00Z',
+          credits: 42,
+          credits_saved: 0,
+          requests: 10,
+          input_tokens: 0,
+          output_tokens: 0,
+          key_count: 1,
+          by_model: [],
+          by_day: [],
+          users: [
+            {
+              user_id: 101,
+              relay_user_id: 1,
+              key_found: true,
+              credits: 42,
+              credits_saved: 0,
+              requests: 10,
+              input_tokens: 0,
+              output_tokens: 0,
+              by_model: [],
+              by_day: [],
+              partial: true,
+            },
+          ],
+          departments: [],
+          requested_users: 1,
+          counted_users: 1,
+          partial: true,
+        },
+      },
+    } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('≥42.00')
+  })
+
+  it('labels an incomplete credits total as a lower bound', async () => {
+    mockGetTeamUsageCredits.mockResolvedValueOnce({
+      data: {
+        data: {
+          available: true,
+          configured: true,
+          status: 'ok',
+          as_of: '2026-11-27T03:00:00Z',
+          credits: 0.51,
+          credits_saved: 0,
+          requests: 1,
+          input_tokens: 0,
+          output_tokens: 0,
+          key_count: 1,
+          by_model: [],
+          by_day: [],
+          users: [],
+          departments: [],
+          requested_users: 10,
+          counted_users: 8,
+          partial: true,
+        },
+      },
+    } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    const note = wrapper.get('[data-testid="team-credits-coverage"]')
+    expect(note.text()).toContain('8/10')
+  })
+
+  it('keeps the page interactive while credits are still loading', async () => {
+    let resolveCredits: (value: any) => void = () => {}
+    mockGetTeamUsageCredits.mockReturnValueOnce(new Promise((resolve) => { resolveCredits = resolve }) as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    // A pending kiro2cc credit read must not dim the page or block the other sections.
+    expect(wrapper.get('[data-testid="team-overview-content"]').attributes('aria-busy')).toBe('false')
+    expect(wrapper.get('[data-testid="team-overview-content"]').classes()).toContain('opacity-100')
+    expect(wrapper.get('[data-test="range-today"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-testid="team-overview-refreshing"]').exists()).toBe(false)
+
+    resolveCredits({ data: { data: null } })
+    await flushPromises()
   })
 
   it('keeps all authorized usage-center destinations visible', async () => {
@@ -1812,5 +1965,85 @@ describe('TeamOverviewMemberTrendChart', () => {
       expect(legend.classes()).toContain('overflow-y-auto')
     }
     expect(wrapper.get('[data-testid="top-member-trend-legend"]').text()).toContain('#12 Member 12')
+  })
+
+  it('gives the credits trend the same legend panels as the token trend', async () => {
+    localStorage.setItem('ae.usage.team-trend.unit', 'credits')
+    try {
+      const wrapper = mount(TeamOverviewMemberTrendChart, {
+        props: {
+          state: {
+            unit_label: 'USD',
+            rank_basis: 'range_total_tokens',
+            unavailable: false,
+            unavailable_reason: null,
+            series: [],
+          },
+          window: null,
+          creditsTeamByDay: [
+            { date: '2026-06-28', requests: 3, credits: 1.5 },
+            { date: '2026-06-29', requests: 2, credits: 2.25 },
+          ],
+          creditsGroups: [
+            {
+              department_external_id: 'group-alpha',
+              name: 'Group Alpha',
+              credits: 2,
+              requests: 3,
+              by_day: [
+                { date: '2026-06-28', requests: 2, credits: 1.5 },
+                { date: '2026-06-29', requests: 1, credits: 0.5 },
+              ],
+            },
+            {
+              department_external_id: 'group-beta',
+              name: 'Group Beta',
+              credits: 1.75,
+              requests: 2,
+              by_day: [
+                { date: '2026-06-28', requests: 1, credits: 0.75 },
+                { date: '2026-06-29', requests: 1, credits: 1 },
+              ],
+            },
+          ],
+          creditsUsers: [
+            {
+              user_id: 11,
+              relay_user_id: 111,
+              key_found: true,
+              credits: 3.75,
+              credits_saved: 0,
+              requests: 5,
+              input_tokens: 10,
+              output_tokens: 2,
+              by_model: [],
+              by_day: [
+                { date: '2026-06-28', requests: 2, credits: 1.5 },
+                { date: '2026-06-29', requests: 3, credits: 2.25 },
+              ],
+              partial: false,
+              display_name: 'Alice',
+            },
+          ],
+        },
+      })
+      await flushPromises()
+
+      for (const testId of ['team-credits-total-legend', 'team-credits-group-legend', 'team-credits-member-legend']) {
+        const legend = wrapper.get(`[data-testid="${testId}"]`)
+        expect(legend.classes()).toContain('max-h-64')
+        expect(legend.classes()).toContain('overflow-y-auto')
+      }
+
+      // 图例必须把颜色对上名字，并给出与折线同源的窗口合计
+      expect(wrapper.get('[data-testid="team-credits-total-legend"]').text()).toContain('Team total')
+      expect(wrapper.get('[data-testid="team-credits-total-legend"]').text()).toContain('3.75')
+      expect(wrapper.get('[data-testid="team-credits-group-legend"]').text()).toContain('Group Alpha')
+      expect(wrapper.get('[data-testid="team-credits-group-legend"]').text()).toContain('2.00')
+      expect(wrapper.get('[data-testid="team-credits-member-legend"]').text()).toContain('Alice')
+      expect(wrapper.get('[data-testid="team-credits-member-legend"]').text()).toContain('3.75')
+    } finally {
+      localStorage.removeItem('ae.usage.team-trend.unit')
+    }
   })
 })

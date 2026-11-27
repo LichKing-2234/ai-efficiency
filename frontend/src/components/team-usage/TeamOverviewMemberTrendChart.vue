@@ -59,8 +59,13 @@ function buildCreditsLineData(series: CreditLineSeries[]) {
   }
 }
 
-const creditTeamSeries = computed<CreditLineSeries[]>(() => (props.creditsTeamByDay?.length ?? 0) > 0
-  ? [{ label: t('teamUsage.teamTotal'), points: props.creditsTeamByDay ?? [], color: departmentSeriesColors[0] }]
+// creditSeriesTotal is the legend figure for a credits chart: the window total
+// of the same series the chart plots, so a colour can be read without hovering.
+function creditSeriesTotal(points: UserUsageKiroDay[]) {
+  return formatCredits(points.reduce((total, point) => total + (point.credits ?? 0), 0))
+}
+
+const creditTeamSeries = computed<CreditLineSeries[]>(() => (props.creditsTeamByDay?.length ?? 0) > 0  ? [{ label: t('teamUsage.teamTotal'), points: props.creditsTeamByDay ?? [], color: departmentSeriesColors[0] }]
   : [])
 const creditTeamChartData = computed(() => buildCreditsLineData(creditTeamSeries.value))
 
@@ -389,20 +394,82 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
       <div v-else class="space-y-5 p-4" data-testid="team-trend-credits">
         <div v-if="creditTeamSeries.length > 0" data-testid="team-credits-total-chart">
           <h3 class="text-sm font-semibold text-slate-900">{{ t('teamUsage.teamTotalTrend') }}</h3>
-          <div class="mt-2 h-52 min-w-0">
-            <LineChartCanvas :data="creditTeamChartData" :options="creditsChartOptions" />
+          <div class="mt-2 grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+            <div class="h-52 min-w-0">
+              <LineChartCanvas :data="creditTeamChartData" :options="creditsChartOptions" />
+            </div>
+            <div data-testid="team-credits-total-legend" :class="trendLegendPanelClasses">
+              <div
+                v-for="series in creditTeamSeries"
+                :key="series.label"
+                class="flex items-start gap-3 px-3 py-2"
+              >
+                <span
+                  class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+                  :style="{ backgroundColor: series.color }"
+                />
+                <div class="min-w-0 flex-1">
+                  <div class="truncate text-sm font-medium text-slate-900">{{ series.label }}</div>
+                  <div class="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                    <span>{{ creditSeriesTotal(series.points) }} {{ t('usageDashboard.kiroCreditsColumn') }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <div v-if="creditGroupSeries.length > 1" data-testid="team-credits-group-chart">
           <h3 class="text-sm font-semibold text-slate-900">{{ t('teamUsage.subteamTrends') }}</h3>
-          <div class="mt-2 h-64 min-w-0">
-            <LineChartCanvas :data="creditGroupChartData" :options="creditsChartOptions" />
+          <div class="mt-2 grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+            <div class="h-64 min-w-0">
+              <LineChartCanvas :data="creditGroupChartData" :options="creditsChartOptions" />
+            </div>
+            <div data-testid="team-credits-group-legend" :class="trendLegendPanelClasses">
+              <div
+                v-for="series in creditGroupSeries"
+                :key="series.label"
+                class="flex items-start gap-3 px-3 py-2"
+              >
+                <span
+                  class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+                  :style="{ backgroundColor: series.color }"
+                />
+                <div class="min-w-0 flex-1">
+                  <div class="truncate text-sm font-medium text-slate-900">{{ series.label }}</div>
+                  <div class="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                    <span>{{ creditSeriesTotal(series.points) }} {{ t('usageDashboard.kiroCreditsColumn') }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <div v-if="creditSeries.length > 0" data-testid="team-credits-member-chart">
           <h3 class="text-sm font-semibold text-slate-900">{{ t('usageDashboard.kiroCreditsTrend') }}</h3>
-          <div class="mt-2 h-64 min-w-0">
-            <LineChartCanvas :data="creditsChartData" :options="creditsChartOptions" />
+          <div class="mt-2 grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+            <div class="h-64 min-w-0">
+              <LineChartCanvas :data="creditsChartData" :options="creditsChartOptions" />
+            </div>
+            <div data-testid="team-credits-member-legend" :class="trendLegendPanelClasses">
+              <div
+                v-for="(user, index) in creditSeries"
+                :key="user.user_id"
+                class="flex items-start gap-3 px-3 py-2"
+              >
+                <span
+                  class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+                  :style="{ backgroundColor: seriesColors[index % seriesColors.length] }"
+                />
+                <div class="min-w-0 flex-1">
+                  <div class="truncate text-sm font-medium text-slate-900">
+                    {{ user.display_name || `#${user.user_id}` }}
+                  </div>
+                  <div class="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                    <span>{{ creditSeriesTotal(user.by_day) }} {{ t('usageDashboard.kiroCreditsColumn') }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <p class="text-xs text-slate-500">{{ t('usageDashboard.kiroCreditsNote') }}</p>

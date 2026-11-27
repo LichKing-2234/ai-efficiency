@@ -94,6 +94,10 @@ func (f *fakeTeamUsageService) Members(ctx context.Context, actorUserID int, par
 	return f.membersFn(ctx, actorUserID, params)
 }
 
+func (f *fakeTeamUsageService) CreditsSubjects(ctx context.Context, actorUserID int) ([]representativescope.Subject, error) {
+	return nil, nil
+}
+
 func (f *fakeTeamUsageService) Organization(ctx context.Context, actorUserID int, params teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error) {
 	return f.organizationFn(ctx, actorUserID, params)
 }
@@ -1326,5 +1330,27 @@ func TestAdminTeamUsageAuditRejectsNonAdminUser(t *testing.T) {
 	rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/admin/team-usage/audit", env.token, "")
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403 for non-admin user", rec.Code)
+	}
+}
+
+func TestCreditsRefsKeepsEveryResolvedSubjectOnce(t *testing.T) {
+	relayOne := 1
+	relayTwo := 2
+
+	refs, subjectsByUser := creditsRefs([]representativescope.Subject{
+		{UserID: 196, RelayUserID: &relayOne}, // the representative
+		{UserID: 2, RelayUserID: &relayTwo},   // another member
+		{UserID: 3, RelayUserID: &relayTwo},   // duplicate relay identity
+		{UserID: 4, RelayUserID: nil},         // unresolved member
+	})
+
+	if len(refs) != 2 {
+		t.Fatalf("refs = %+v, want two unique relay ids", refs)
+	}
+	if refs[0].RelayUserID != 1 || refs[1].RelayUserID != 2 {
+		t.Fatalf("relay ids = %d,%d, want 1,2", refs[0].RelayUserID, refs[1].RelayUserID)
+	}
+	if _, ok := subjectsByUser[196]; !ok {
+		t.Fatal("the representative must keep a credits row")
 	}
 }

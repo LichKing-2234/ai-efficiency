@@ -45,7 +45,7 @@
       </router-link>
     </ElAlert>
 
-    <ElAlert v-else-if="usageErrorKind" type="error" :closable="false" show-icon>
+    <ElAlert v-else-if="usageErrorKind && !currentSnapshot" type="error" :closable="false" show-icon>
       <template #title>{{ usageErrorTitle }}</template>
       <p class="text-sm">{{ usageErrorHelp }}</p>
       <router-link v-if="usageErrorKind === 'credential' && !props.homeMode" to="/user" class="mt-4 inline-flex rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
@@ -63,6 +63,25 @@
     </ElAlert>
 
     <div v-else class="space-y-6">
+      <ElAlert
+        v-if="usageErrorKind"
+        data-testid="usage-partial-error"
+        type="warning"
+        :closable="false"
+        show-icon
+      >
+        <template #title>{{ usageErrorTitle }}</template>
+        <p class="text-sm">{{ usageErrorHelp }}</p>
+        <ElButton
+          v-if="showUsageErrorRetry"
+          data-testid="usage-partial-retry"
+          type="primary"
+          class="mt-4"
+          @click="loadDashboard"
+        >
+          {{ t('usageDashboard.errorRetry') }}
+        </ElButton>
+      </ElAlert>
       <ElAlert
         v-if="usageIsStale"
         data-testid="usage-stale-marker"

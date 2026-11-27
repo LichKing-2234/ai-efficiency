@@ -43,6 +43,7 @@ var ginDefaultNotFoundBody = []byte("404 page not found")
 type RouterOptions struct {
 	DirectoryService              DirectoryAdminService
 	PersonalUsageCache            *personalusage.Cache
+	KiroCredits                   *kirocredits.Service
 	WorkItemsCache                *workitems.CountsCache
 	WorkItemsRevisionStore        *workitems.RevisionStore
 	RepresentativeScopeCache      *representativescope.Cache
@@ -278,7 +279,10 @@ func setupRouter(
 	if err != nil {
 		return nil, fmt.Errorf("initialize team usage service: %w", err)
 	}
-	kiroCreditsService := kirocredits.NewService(entClient, encryptionKey, kirocredits.Options{Logger: options.RequestLogger})
+	kiroCreditsService := options.KiroCredits
+	if kiroCreditsService == nil {
+		kiroCreditsService = kirocredits.NewService(entClient, encryptionKey, kirocredits.Options{Logger: options.RequestLogger})
+	}
 
 	var personalUsageService *personalusage.Service
 	if providerHandler != nil {

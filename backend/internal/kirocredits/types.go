@@ -21,14 +21,37 @@ const (
 )
 
 const (
-	defaultTimeout    = 8 * time.Second
-	defaultCacheTTL   = 60 * time.Second
-	defaultKeyTTL     = 30 * time.Second
-	maxRecordPages    = 200
-	recordPageSize    = 500
-	maxResponseBytes  = 8 << 20
-	modernKeyNameBase = "sub2api-"
-	legacyKeyNameBase = "sub2api-user-"
+	defaultTimeout        = 8 * time.Second
+	defaultCacheTTL       = 60 * time.Second
+	defaultKeyTTL         = 30 * time.Second
+	maxRecordPages        = 200
+	defaultCollectBudget  = 6 * time.Second
+	defaultPerCallTimeout = 2500 * time.Millisecond
+	defaultWarmTimezone   = "Asia/Shanghai"
+	// defaultLongCollectBudget covers windows longer than a week. A heavy key
+	// needs dozens of 500-record pages for a 30-day range, which cannot finish
+	// inside the short batch budget.
+	defaultLongCollectBudget = 30 * time.Second
+	// defaultWarmLongInterval refreshes the long preset off the request path.
+	defaultWarmLongInterval = 20 * time.Minute
+	// longWindowSpan is the span above which a window is treated as long.
+	longWindowSpan = 7 * 24 * time.Hour
+	// warmShortBudget / warmLongBudget bound one background refresh. They are
+	// far larger than the request budgets on purpose: the warmer may spend
+	// minutes paginating a heavy key so the request path never has to.
+	warmShortBudget = 180 * time.Second
+	warmLongBudget  = 600 * time.Second
+	// warmCallTimeout bounds one admin page read from the warmer. A heavy key's
+	// pages measured up to ~5s, so the request-path 2.5s is too tight here.
+	warmCallTimeout = 20 * time.Second
+	// warmLeaseTTL guards a warming pass from running on two replicas at once.
+	warmLeaseTTL = 30 * time.Minute
+	// warmConcurrency keeps the warmer from slowing down the pages it reads.
+	warmConcurrency = 2
+	recordPageSize        = 500
+	maxResponseBytes      = 8 << 20
+	modernKeyNameBase     = "sub2api-"
+	legacyKeyNameBase     = "sub2api-user-"
 )
 
 // Params is the dashboard range a caller wants credits for. Dates are
@@ -108,6 +131,10 @@ type UserCredits struct {
 	ByModel      []ModelCredits `json:"by_model"`
 	ByDay        []DayCredits   `json:"by_day"`
 	Partial      bool           `json:"partial"`
+	// Error carries a short reason ("timeout" / "error") when this member's
+	// credits could not be read, so the UI can explain the gap instead of
+	// rendering a bare placeholder.
+	Error string `json:"error,omitempty"`
 }
 
 // TeamCredits aggregates a set of users for one dashboard range. It is
@@ -129,6 +156,11 @@ type TeamCredits struct {
 	ByModel []ModelCredits `json:"by_model"`
 	ByDay   []DayCredits   `json:"by_day"`
 	Users   []UserCredits  `json:"users"`
+
+	// RequestedUsers/CountedUsers expose fan-out coverage so the UI can label
+	// an incomplete total as a lower bound instead of showing it as final.
+	RequestedUsers int `json:"requested_users"`
+	CountedUsers   int `json:"counted_users"`
 
 	Partial bool `json:"partial"`
 }

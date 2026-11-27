@@ -70,6 +70,7 @@ export interface TeamUserCredits {
   by_model: UserUsageKiroModel[]
   by_day: UserUsageKiroDay[]
   partial: boolean
+  error?: string
 }
 
 export interface TeamDepartmentCredits {
@@ -98,6 +99,8 @@ export interface TeamCredits {
   by_day: UserUsageKiroDay[]
   users: TeamUserCredits[]
   departments: TeamDepartmentCredits[]
+  requested_users: number
+  counted_users: number
   partial: boolean
 }
 
