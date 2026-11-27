@@ -185,7 +185,11 @@ func (s *Service) warmOnce(ctx context.Context, location *time.Location, include
 				if err != nil {
 					return
 				}
-				loadCtx, cancel := context.WithTimeout(ctx, 2*s.budgetFor(window))
+				timeout := warmShortBudget
+				if window.endExclusive.Sub(window.start) > longWindowSpan {
+					timeout = warmLongBudget
+				}
+				loadCtx, cancel := context.WithTimeout(ctx, timeout)
 				defer cancel()
 				value, err := s.creditsValue(loadCtx, client, row, relayUserID, window, preset)
 				if err != nil {

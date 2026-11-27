@@ -36,6 +36,11 @@ const (
 	defaultWarmLongInterval = 20 * time.Minute
 	// longWindowSpan is the span above which a window is treated as long.
 	longWindowSpan = 7 * 24 * time.Hour
+	// warmShortBudget / warmLongBudget bound one background refresh. They are
+	// far larger than the request budgets on purpose: the warmer may spend
+	// minutes paginating a heavy key so the request path never has to.
+	warmShortBudget = 90 * time.Second
+	warmLongBudget  = 240 * time.Second
 	recordPageSize        = 500
 	maxResponseBytes      = 8 << 20
 	modernKeyNameBase     = "sub2api-"
