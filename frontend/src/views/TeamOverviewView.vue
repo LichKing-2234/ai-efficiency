@@ -55,7 +55,10 @@ const {
   retryBranch: retryOrganizationBranch,
 } = useTeamUsageOrganization()
 
-const loading = computed(() => summaryLoading.value || membersLoading.value || creditsLoading.value)
+// Credits is an optional add-on that fans out to kiro2cc: keep it out of the
+// page-level loading state so a slow credit read cannot dim or block the
+// summary/trend/members sections.
+const loading = computed(() => summaryLoading.value || membersLoading.value)
 
 const creditsByUser = computed(() => {
   const map: Record<number, TeamCredits['users'][number]> = {}

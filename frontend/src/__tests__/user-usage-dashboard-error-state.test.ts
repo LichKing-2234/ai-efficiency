@@ -150,6 +150,26 @@ describe('UserUsageDashboard failure states', () => {
     expect(wrapper.get('[data-testid="usage-error-retry"]').text()).toBe('重试')
   })
 
+  it('keeps the last good snapshot visible when a refresh fails', async () => {
+    ;(getUserUsageDashboard as any)
+      .mockResolvedValueOnce({ data: { data: configuredSnapshot } })
+      .mockRejectedValueOnce(httpError(502))
+
+    const wrapper = await mountDashboard()
+    expect(getUserUsageDashboard).toHaveBeenCalledTimes(1)
+
+    const refresh = wrapper.findAll('button').find((button) => button.text() === 'Refresh')
+    expect(refresh).toBeTruthy()
+    await refresh!.trigger('click')
+    await flushPromises()
+
+    expect(getUserUsageDashboard).toHaveBeenCalledTimes(2)
+    // The failed refresh must not replace already-rendered data with a full-page error.
+    expect(wrapper.find('[data-testid="usage-partial-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="usage-error-retry"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Usage service is temporarily busy')
+  })
+
   it('does not tell a member route to check personal AI setup on a transient failure', async () => {
     const { getTeamUsageSubjectDashboard } = await import('@/api/teamUsage')
     ;(getTeamUsageSubjectDashboard as any).mockRejectedValue(httpError(502))

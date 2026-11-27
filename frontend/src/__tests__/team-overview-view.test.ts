@@ -28,6 +28,7 @@ const mockGetTeamUsageMembers = vi.mocked((await import('@/api/teamUsage')).getT
 const mockGetTeamUsageOrganization = vi.mocked((await import('@/api/teamUsage')).getTeamUsageOrganization)
 const mockGetTeamUsageSummary = vi.mocked((await import('@/api/teamUsage')).getTeamUsageSummary)
 const mockGetTeamUsageTrend = vi.mocked((await import('@/api/teamUsage')).getTeamUsageTrend)
+const mockGetTeamUsageCredits = vi.mocked((await import('@/api/teamUsage')).getTeamUsageCredits)
 
 async function selectElementRadio(wrapper: any, selector: string) {
   const control = wrapper.get(selector)
@@ -346,6 +347,26 @@ describe('TeamOverviewView', () => {
     mockGetTeamUsageTrend.mockResolvedValue({ data: { data: trendFixture } } as any)
     mockGetTeamUsageMembers.mockResolvedValue({ data: { data: membersFixture } } as any)
     mockGetTeamUsageOrganization.mockImplementation(async (params?: TeamUsageOrganizationParams) => ({ data: { data: defaultOrganizationResponse(params) } } as any))
+  })
+
+  it('keeps the page interactive while credits are still loading', async () => {
+    let resolveCredits: (value: any) => void = () => {}
+    mockGetTeamUsageCredits.mockReturnValueOnce(new Promise((resolve) => { resolveCredits = resolve }) as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    // A pending kiro2cc credit read must not dim the page or block the other sections.
+    expect(wrapper.get('[data-testid="team-overview-content"]').attributes('aria-busy')).toBe('false')
+    expect(wrapper.get('[data-testid="team-overview-content"]').classes()).toContain('opacity-100')
+    expect(wrapper.get('[data-test="range-today"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-testid="team-overview-refreshing"]').exists()).toBe(false)
+
+    resolveCredits({ data: { data: null } })
+    await flushPromises()
   })
 
   it('keeps all authorized usage-center destinations visible', async () => {
