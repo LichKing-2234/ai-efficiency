@@ -1328,3 +1328,30 @@ func TestAdminTeamUsageAuditRejectsNonAdminUser(t *testing.T) {
 		t.Fatalf("status = %d, want 403 for non-admin user", rec.Code)
 	}
 }
+
+func TestScopeCreditsRefsIncludesRepresentativeAndDedupesRelayIDs(t *testing.T) {
+	relayOne := 1
+	relayTwo := 2
+
+	handler := &TeamUsageHandler{}
+	scope := &representativescope.Scope{
+		Subjects: []representativescope.Subject{
+			{UserID: 196, RelayUserID: &relayOne}, // the representative
+			{UserID: 2, RelayUserID: &relayTwo},   // another member
+			{UserID: 3, RelayUserID: &relayTwo},   // duplicate relay identity
+			{UserID: 4, RelayUserID: nil},         // no relay mapping
+		},
+	}
+
+	refs, subjects := handler.scopeCreditsRefs(scope, 196)
+
+	if len(refs) != 2 {
+		t.Fatalf("refs = %+v, want the representative plus one deduped member", refs)
+	}
+	if refs[0].RelayUserID != 1 || refs[1].RelayUserID != 2 {
+		t.Fatalf("relay ids = %d,%d, want 1,2", refs[0].RelayUserID, refs[1].RelayUserID)
+	}
+	if _, ok := subjects[196]; !ok {
+		t.Fatal("the representative must stay in the team credits subjects")
+	}
+}

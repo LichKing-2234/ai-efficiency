@@ -644,13 +644,21 @@ func (s *Service) Batch(ctx context.Context, users []UserRef, params Params) Tea
 		}(index)
 	}
 	wg.Wait()
+	result.RequestedUsers = len(refs)
+	counted := 0
 	for index, err := range errs {
 		if err != nil {
 			// One slow user must not blank the whole team table: keep the users
-			// that answered and mark the rest partial.
+			// that answered, mark the rest partial and keep the coverage honest.
 			s.logger.Warn("kiro credits: batch user range failed", zap.Int64("relay_user_id", refs[index].RelayUserID), zap.Error(err))
 			perUser[index].Partial = true
+			continue
 		}
+		counted++
+	}
+	result.CountedUsers = counted
+	if counted < len(refs) {
+		result.Partial = true
 	}
 
 	modelBuckets := map[string]*ModelCredits{}

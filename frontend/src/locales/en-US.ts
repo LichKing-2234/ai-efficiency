@@ -362,6 +362,7 @@ const enUS = {
   'usageDashboard.tpm': 'TPM',
   'usageDashboard.usageTrend': 'Usage trend',
   'teamUsage.creditsRankingView': 'Credits ranking',
+  'teamUsage.creditsCoverage': 'Credits cover {counted}/{requested} members; the rest did not report, so this is a lower bound.',
   'teamUsage.rangeTokenCreditsUsage': 'Token/Credits usage in range',
   'usageDashboard.tokenTrend': 'Token Trend',
   'usageDashboard.loadingTrend': 'Loading trend...',

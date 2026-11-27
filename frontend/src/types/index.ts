@@ -98,6 +98,8 @@ export interface TeamCredits {
   by_day: UserUsageKiroDay[]
   users: TeamUserCredits[]
   departments: TeamDepartmentCredits[]
+  requested_users: number
+  counted_users: number
   partial: boolean
 }
 

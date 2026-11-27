@@ -133,5 +133,10 @@ type TeamCredits struct {
 	ByDay   []DayCredits   `json:"by_day"`
 	Users   []UserCredits  `json:"users"`
 
+	// RequestedUsers/CountedUsers expose fan-out coverage so the UI can label
+	// an incomplete total as a lower bound instead of showing it as final.
+	RequestedUsers int `json:"requested_users"`
+	CountedUsers   int `json:"counted_users"`
+
 	Partial bool `json:"partial"`
 }

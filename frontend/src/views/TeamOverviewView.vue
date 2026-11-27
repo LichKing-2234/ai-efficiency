@@ -89,6 +89,18 @@ const creditTrendUsers = computed(() => (teamCredits.value?.users ?? [])
     display_name: membersPage.value?.items.find((member) => member.user_id === user.user_id)?.display_name,
   })))
 
+// Credits fan out per member; when some members do not report, the total is a
+// lower bound and must say so instead of reading as the team total.
+const creditsCoverage = computed(() => {
+  const credits = teamCredits.value
+  if (!credits) return null
+  const requested = credits.requested_users ?? 0
+  const counted = credits.counted_users ?? 0
+  if (requested <= 0) return null
+  if (!credits.partial && counted >= requested) return null
+  return { requested, counted }
+})
+
 const rangeCredits = computed(() => {
   if (!teamCredits.value?.available || (teamCredits.value.key_count ?? 0) === 0) return null
   return teamCredits.value.credits
@@ -402,6 +414,14 @@ onMounted(loadOverview)
             :closable="false"
             show-icon
             :title="t('usageDashboard.staleSnapshot')"
+          />
+          <ElAlert
+            v-if="creditsCoverage"
+            data-testid="team-credits-coverage"
+            type="warning"
+            :closable="false"
+            show-icon
+            :title="t('teamUsage.creditsCoverage', creditsCoverage)"
           />
           <TeamOverviewMemberTrendChart
             :state="trend.top_member_trend"

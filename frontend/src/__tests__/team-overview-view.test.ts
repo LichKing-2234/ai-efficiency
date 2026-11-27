@@ -349,6 +349,41 @@ describe('TeamOverviewView', () => {
     mockGetTeamUsageOrganization.mockImplementation(async (params?: TeamUsageOrganizationParams) => ({ data: { data: defaultOrganizationResponse(params) } } as any))
   })
 
+  it('labels an incomplete credits total as a lower bound', async () => {
+    mockGetTeamUsageCredits.mockResolvedValueOnce({
+      data: {
+        data: {
+          available: true,
+          configured: true,
+          status: 'ok',
+          as_of: '2026-11-27T03:00:00Z',
+          credits: 0.51,
+          credits_saved: 0,
+          requests: 1,
+          input_tokens: 0,
+          output_tokens: 0,
+          key_count: 1,
+          by_model: [],
+          by_day: [],
+          users: [],
+          departments: [],
+          requested_users: 10,
+          counted_users: 8,
+          partial: true,
+        },
+      },
+    } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    const note = wrapper.get('[data-testid="team-credits-coverage"]')
+    expect(note.text()).toContain('8/10')
+  })
+
   it('keeps the page interactive while credits are still loading', async () => {
     let resolveCredits: (value: any) => void = () => {}
     mockGetTeamUsageCredits.mockReturnValueOnce(new Promise((resolve) => { resolveCredits = resolve }) as any)

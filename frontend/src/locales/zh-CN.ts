@@ -357,6 +357,7 @@ const zhCN = {
   'usageDashboard.tpm': 'TPM',
   'usageDashboard.usageTrend': '用量趋势',
   'teamUsage.creditsRankingView': 'Credits 排名',
+  'teamUsage.creditsCoverage': 'Credits 仅统计 {counted}/{requested} 人（其余成员未返回，数值为下限）',
   'teamUsage.rangeTokenCreditsUsage': '当前范围 Token/Credits 用量',
   'usageDashboard.tokenTrend': 'Token 趋势',
   'usageDashboard.loadingTrend': '正在加载趋势...',
