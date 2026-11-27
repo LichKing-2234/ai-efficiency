@@ -26,6 +26,19 @@ type Options struct {
 	CacheTTL    time.Duration
 	HTTPTimeout time.Duration
 	Now         func() time.Time
+
+	// Cache is the optional Redis read model. When nil the service keeps its
+	// process-local caches (tests and deployments without Redis).
+	Cache *Cache
+	// CollectBudget bounds one team batch fan-out. When it expires the batch
+	// returns the users it already aggregated instead of failing as a whole.
+	CollectBudget time.Duration
+	// PerCallTimeout bounds one kiro2cc admin HTTP call.
+	PerCallTimeout time.Duration
+	// WarmInterval enables the background warmer when positive.
+	WarmInterval time.Duration
+	// WarmTimezone is the IANA timezone the warmer pre-generates for.
+	WarmTimezone string
 }
 
 type cachedSnapshot struct {
@@ -57,6 +70,12 @@ type Service struct {
 	snapshots map[string]cachedSnapshot
 	keys      map[string]cachedKeys
 	teams     map[string]cachedTeam
+
+	cache          *Cache
+	collectBudget  time.Duration
+	perCallTimeout time.Duration
+	warmInterval   time.Duration
+	warmTimezone   string
 }
 
 // NewService builds a credits service. A nil logger is replaced with a no-op
@@ -78,16 +97,33 @@ func NewService(client *ent.Client, encryptionKey string, options Options) *Serv
 	if now == nil {
 		now = time.Now
 	}
+	collectBudget := options.CollectBudget
+	if collectBudget <= 0 {
+		collectBudget = defaultCollectBudget
+	}
+	perCallTimeout := options.PerCallTimeout
+	if perCallTimeout <= 0 {
+		perCallTimeout = defaultPerCallTimeout
+	}
+	warmTimezone := options.WarmTimezone
+	if warmTimezone == "" {
+		warmTimezone = defaultWarmTimezone
+	}
 	return &Service{
-		client:        client,
-		encryptionKey: encryptionKey,
-		logger:        logger,
-		cacheTTL:      cacheTTL,
-		httpTimeout:   httpTimeout,
-		now:           now,
-		snapshots:     map[string]cachedSnapshot{},
-		keys:          map[string]cachedKeys{},
-		teams:         map[string]cachedTeam{},
+		client:         client,
+		encryptionKey:  encryptionKey,
+		logger:         logger,
+		cacheTTL:       cacheTTL,
+		httpTimeout:    httpTimeout,
+		now:            now,
+		snapshots:      map[string]cachedSnapshot{},
+		keys:           map[string]cachedKeys{},
+		teams:          map[string]cachedTeam{},
+		cache:          options.Cache,
+		collectBudget:  collectBudget,
+		perCallTimeout: perCallTimeout,
+		warmInterval:   options.WarmInterval,
+		warmTimezone:   warmTimezone,
 	}
 }
 
@@ -134,6 +170,23 @@ func (s *Service) Credits(ctx context.Context, userID int, params Params) Snapsh
 		return snapshot
 	}
 
+	if s.cache != nil {
+		token, err := pkg.Decrypt(row.AdminAPIKey, s.encryptionKey)
+		if err != nil || strings.TrimSpace(token) == "" {
+			s.logger.Warn("kiro credits: decrypt admin token", zap.Int("provider_id", row.ID), zap.Error(err))
+			snapshot.Message = "kiro2cc 凭据无法解密"
+			return snapshot
+		}
+		client := newAdminClient(row.BaseURL, token, s.httpTimeout, s.perCallTimeout)
+		value, err := s.cachedCreditsFor(ctx, client, row, relayUserID, params)
+		if err != nil {
+			s.logger.Warn("kiro credits: cached read", zap.Int("provider_id", row.ID), zap.Error(err))
+			snapshot.Message = "Kiro 用量暂时不可用"
+			return snapshot
+		}
+		return snapshotFromValue(value, now)
+	}
+
 	cacheKey := cacheKeyFor(row, relayUserID, window)
 	if cached, ok := s.loadSnapshot(cacheKey, now); ok {
 		return cached
@@ -169,7 +222,7 @@ func (s *Service) collect(ctx context.Context, row *ent.RelayProvider, relayUser
 		snapshot.Message = "kiro2cc 凭据无法解密"
 		return snapshot
 	}
-	client := newAdminClient(row.BaseURL, token, s.httpTimeout)
+	client := newAdminClient(row.BaseURL, token, s.httpTimeout, s.perCallTimeout)
 
 	keys, err := s.listKeys(ctx, client, row)
 	if err != nil {
@@ -229,8 +282,21 @@ func (s *Service) collectRange(ctx context.Context, client *adminClient, keyID i
 	partial := false
 	page := 1
 	for page <= maxRecordPages {
+		if ctx.Err() != nil {
+			// The per-request budget ran out: return what we already aggregated
+			// as a lower bound instead of failing the whole user.
+			if len(records) == 0 {
+				return aggregateResult{}, false, ctx.Err()
+			}
+			partial = true
+			break
+		}
 		pageData, err := client.usageRecords(ctx, keyID, page, recordPageSize)
 		if err != nil {
+			if ctx.Err() != nil && len(records) > 0 {
+				partial = true
+				break
+			}
 			return aggregateResult{}, false, err
 		}
 		reachedOlder := false
@@ -489,6 +555,11 @@ func (s *Service) Batch(ctx context.Context, users []UserRef, params Params) Tea
 		result.Message = "用量时间范围无效"
 		return result
 	}
+	if s.collectBudget > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, s.collectBudget)
+		defer cancel()
+	}
 
 	cacheKey := teamCacheKey(row, refs, window)
 	if cached, ok := s.loadTeam(cacheKey, now); ok {
@@ -501,12 +572,15 @@ func (s *Service) Batch(ctx context.Context, users []UserRef, params Params) Tea
 		result.Message = "kiro2cc 凭据无法解密"
 		return result
 	}
-	client := newAdminClient(row.BaseURL, token, s.httpTimeout)
-	keys, err := s.listKeys(ctx, client, row)
-	if err != nil {
-		s.logger.Warn("kiro credits: list kiro2cc keys for batch", zap.Int("provider_id", row.ID), zap.Error(err))
-		result.Message = "Kiro 用量暂时不可用"
-		return result
+	client := newAdminClient(row.BaseURL, token, s.httpTimeout, s.perCallTimeout)
+	var keys []adminKey
+	if s.cache == nil {
+		keys, err = s.listKeys(ctx, client, row)
+		if err != nil {
+			s.logger.Warn("kiro credits: list kiro2cc keys for batch", zap.Int("provider_id", row.ID), zap.Error(err))
+			result.Message = "Kiro 用量暂时不可用"
+			return result
+		}
 	}
 
 	perUser := make([]UserCredits, len(refs))
@@ -525,6 +599,26 @@ func (s *Service) Batch(ctx context.Context, users []UserRef, params Params) Tea
 				RelayUserID: ref.RelayUserID,
 				ByModel:     []ModelCredits{},
 				ByDay:       []DayCredits{},
+			}
+			if s.cache != nil {
+				value, readErr := s.cachedCreditsFor(ctx, client, row, ref.RelayUserID, params)
+				if readErr != nil {
+					errs[i] = readErr
+					entry.Partial = true
+					perUser[i] = entry
+					return
+				}
+				entry.KeyFound = value.KeyFound
+				entry.Credits = value.Credits
+				entry.CreditsSaved = value.CreditsSaved
+				entry.Requests = value.Requests
+				entry.InputTokens = value.InputTokens
+				entry.OutputTokens = value.OutputTokens
+				entry.ByModel = value.ByModel
+				entry.ByDay = value.ByDay
+				entry.Partial = value.partial()
+				perUser[i] = entry
+				return
 			}
 			key, found, _ := matchKey(keys, ref.RelayUserID)
 			if !found {
@@ -550,11 +644,12 @@ func (s *Service) Batch(ctx context.Context, users []UserRef, params Params) Tea
 		}(index)
 	}
 	wg.Wait()
-	for _, err := range errs {
+	for index, err := range errs {
 		if err != nil {
-			s.logger.Warn("kiro credits: batch user range failed", zap.Error(err))
-			result.Message = "Kiro 用量暂时不可用"
-			return result
+			// One slow user must not blank the whole team table: keep the users
+			// that answered and mark the rest partial.
+			s.logger.Warn("kiro credits: batch user range failed", zap.Int64("relay_user_id", refs[index].RelayUserID), zap.Error(err))
+			perUser[index].Partial = true
 		}
 	}
 

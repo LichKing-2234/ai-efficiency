@@ -21,14 +21,17 @@ const (
 )
 
 const (
-	defaultTimeout    = 8 * time.Second
-	defaultCacheTTL   = 60 * time.Second
-	defaultKeyTTL     = 30 * time.Second
-	maxRecordPages    = 200
-	recordPageSize    = 500
-	maxResponseBytes  = 8 << 20
-	modernKeyNameBase = "sub2api-"
-	legacyKeyNameBase = "sub2api-user-"
+	defaultTimeout        = 8 * time.Second
+	defaultCacheTTL       = 60 * time.Second
+	defaultKeyTTL         = 30 * time.Second
+	maxRecordPages        = 200
+	defaultCollectBudget  = 6 * time.Second
+	defaultPerCallTimeout = 2500 * time.Millisecond
+	defaultWarmTimezone   = "Asia/Shanghai"
+	recordPageSize        = 500
+	maxResponseBytes      = 8 << 20
+	modernKeyNameBase     = "sub2api-"
+	legacyKeyNameBase     = "sub2api-user-"
 )
 
 // Params is the dashboard range a caller wants credits for. Dates are

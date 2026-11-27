@@ -34,7 +34,7 @@ func TestAdminClientReadsSummaryAndRecords(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newAdminClient(server.URL+"/", "test-admin-token", 2*time.Second)
+	client := newAdminClient(server.URL+"/", "test-admin-token", 2*time.Second, 0)
 
 	keys, err := client.listKeys(context.Background())
 	if err != nil {
@@ -70,7 +70,7 @@ func TestAdminClientReturnsErrorOnNonOK(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newAdminClient(server.URL, "test-admin-token", 2*time.Second)
+	client := newAdminClient(server.URL, "test-admin-token", 2*time.Second, 0)
 	if _, err := client.listKeys(context.Background()); err == nil {
 		t.Fatal("listKeys error = nil, want non-200 error")
 	}

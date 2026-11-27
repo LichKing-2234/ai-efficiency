@@ -31,6 +31,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/handler"
 	"github.com/ai-efficiency/backend/internal/health"
 	"github.com/ai-efficiency/backend/internal/httpclient"
+	"github.com/ai-efficiency/backend/internal/kirocredits"
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/opsmonitoring"
@@ -393,6 +394,19 @@ func main() {
 	if err != nil {
 		logger.Fatal("initialize personal usage cache", zap.Error(err))
 	}
+	kiroCreditsCache, err := kirocredits.NewCache(redisStore, kirocredits.CacheOptions{Namespace: cfg.Redis.Namespace})
+	if err != nil {
+		logger.Fatal("initialize kiro credits cache", zap.Error(err))
+	}
+	kiroWarmerCtx, stopKiroWarmer := context.WithCancel(context.Background())
+	defer stopKiroWarmer()
+	kiroCreditsService := kirocredits.NewService(entClient, cfg.Encryption.Key, kirocredits.Options{
+		Logger:       logger,
+		Cache:        kiroCreditsCache,
+		WarmInterval: 4 * time.Minute,
+	})
+	go kiroCreditsService.StartWarmer(kiroWarmerCtx)
+
 	representativeScopeCache, err := representativescope.NewCache(
 		redisStore,
 		representativescope.CacheOptions{Namespace: cfg.Redis.Namespace, Metrics: cacheMetrics.representativeScope},
@@ -658,6 +672,7 @@ func main() {
 			TeamAccounts:             teamaccount.New(entClient, providerHandler, representativescope.NewWithCache(entClient, representativeScopeCache), cfg.Encryption.Key, logger),
 			DirectoryService:         directoryService,
 			PersonalUsageCache:       personalUsageCache,
+			KiroCredits:              kiroCreditsService,
 			WorkItemsCache:           workItemsCache,
 			WorkItemsRevisionStore:   workItemsRevisionStore,
 			RepresentativeScopeCache: representativeScopeCache,

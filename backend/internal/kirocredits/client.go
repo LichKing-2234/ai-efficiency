@@ -40,11 +40,11 @@ type usageSummary struct {
 }
 
 type usageRecord struct {
-	Model        string   `json:"model"`
-	InputTokens  int64    `json:"inputTokens"`
-	OutputTokens int64    `json:"outputTokens"`
-	CreditsUsed  *float64 `json:"creditsUsed"`
-	CreditsSaved *float64 `json:"creditsSaved"`
+	Model        string    `json:"model"`
+	InputTokens  int64     `json:"inputTokens"`
+	OutputTokens int64     `json:"outputTokens"`
+	CreditsUsed  *float64  `json:"creditsUsed"`
+	CreditsSaved *float64  `json:"creditsSaved"`
 	CreatedAt    time.Time `json:"createdAt"`
 }
 
@@ -59,19 +59,24 @@ type usageRecordsPage struct {
 // adminClient is a read-only kiro2cc admin API client. Every method issues a
 // GET; there is intentionally no method that can mutate kiro2cc state.
 type adminClient struct {
-	baseURL    string
-	adminToken string
-	httpClient *http.Client
+	baseURL     string
+	adminToken  string
+	httpClient  *http.Client
+	callTimeout time.Duration
 }
 
-func newAdminClient(baseURL, adminToken string, timeout time.Duration) *adminClient {
+// newAdminClient builds the read-only kiro2cc admin client. callTimeout bounds
+// a single HTTP attempt; timeout still bounds the whole client. Zero keeps the
+// historical behaviour (no per-call deadline).
+func newAdminClient(baseURL, adminToken string, timeout, callTimeout time.Duration) *adminClient {
 	if timeout <= 0 {
 		timeout = defaultTimeout
 	}
 	return &adminClient{
-		baseURL:    strings.TrimRight(strings.TrimSpace(baseURL), "/"),
-		adminToken: strings.TrimSpace(adminToken),
-		httpClient: &http.Client{Timeout: timeout},
+		baseURL:     strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		adminToken:  strings.TrimSpace(adminToken),
+		httpClient:  &http.Client{Timeout: timeout},
+		callTimeout: callTimeout,
 	}
 }
 
@@ -117,6 +122,11 @@ func (c *adminClient) get(ctx context.Context, path string, query url.Values, ou
 	target := c.baseURL + path
 	if len(query) > 0 {
 		target += "?" + query.Encode()
+	}
+	if c.callTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.callTimeout)
+		defer cancel()
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
