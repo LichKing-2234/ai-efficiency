@@ -5,7 +5,7 @@ import { useI18n } from '@/i18n'
 import CursorPager from '@/components/CursorPager.vue'
 import TeamOverviewDepartmentNode from '@/components/team-usage/TeamOverviewDepartmentNode.vue'
 import { useWideContentLayout } from '@/composables/useMediaQuery'
-import { formatCredits, formatUsagePair } from '@/utils/formatters'
+import { formatCredits, formatTokenCount, formatUsagePair } from '@/utils/formatters'
 import UsagePairInfo from '@/components/usage/UsagePairInfo.vue'
 import type { TeamOverviewMember, TeamUsageOrganizationDepartment, TeamUserCredits } from '@/types'
 import type { TeamUsageOrganizationBranchState } from '@/composables/useTeamUsageOrganization'
@@ -51,19 +51,44 @@ const { t } = useI18n()
 type DetailView = 'ranking' | 'credits' | 'organization'
 const detailView = ref<DetailView>('ranking')
 
+function rankedCredits(member: TeamOverviewMember) {
+  const entry = props.creditsByUser[member.user_id]
+  if (!entry || entry.error || !entry.key_found) return -1
+  return entry.credits
+}
+
 const creditsRankingMembers = computed(() => [...props.members].sort((a, b) => {
-  const creditsA = props.creditsByUser[a.user_id]?.credits ?? -1
-  const creditsB = props.creditsByUser[b.user_id]?.credits ?? -1
+  const creditsA = rankedCredits(a)
+  const creditsB = rankedCredits(b)
   if (creditsA !== creditsB) return creditsB - creditsA
   return a.display_name.localeCompare(b.display_name)
 }))
 
 function memberCredits(member: TeamOverviewMember) {
-  return props.creditsByUser[member.user_id]?.credits ?? null
+  const entry = props.creditsByUser[member.user_id]
+  if (!entry || entry.error || !entry.key_found) return null
+  return entry.credits
 }
 
 function memberCreditRequests(member: TeamOverviewMember) {
-  return props.creditsByUser[member.user_id]?.requests ?? null
+  const entry = props.creditsByUser[member.user_id]
+  if (!entry || entry.error || !entry.key_found) return null
+  return entry.requests
+}
+
+// A missing value is a state, not a number: say why instead of rendering "--".
+function memberCreditsReason(member: TeamOverviewMember): string {
+  const entry = props.creditsByUser[member.user_id]
+  if (entry?.error === 'timeout') return t('teamUsage.creditsTimeout')
+  if (entry?.error) return t('teamUsage.creditsError')
+  if (entry && !entry.key_found) return t('teamUsage.creditsNoKey')
+  return t('teamUsage.creditsUnreturned')
+}
+
+function creditsCellText(member: TeamOverviewMember): string {
+  const credits = memberCredits(member)
+  if (credits != null) return formatCredits(credits)
+  return `<${memberCreditsReason(member)}>`
 }
 const showDesktopRanking = useWideContentLayout()
 
@@ -119,8 +144,10 @@ function formatDepartmentTokenSummary(node: TeamUsageOrganizationDepartment) {
 }
 
 function formatMemberUsage(member: TeamOverviewMember) {
-  const credits = props.creditsByUser[member.user_id]
-  return formatUsagePair(member.total_tokens, credits ? credits.credits : null)
+  const tokens = formatTokenCount(member.total_tokens)
+  const credits = memberCredits(member)
+  const creditsText = credits == null ? `<${memberCreditsReason(member)}>` : formatCredits(credits)
+  return `${tokens}/${creditsText}`
 }
 
 
@@ -340,12 +367,12 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
         </ElTableColumn>
         <ElTableColumn :label="t('usageDashboard.kiroCreditsColumn')" min-width="120" align="right">
           <template #default="{ row: member }">
-            <span class="tabular-nums text-slate-900">{{ memberCredits(tableMember(member)) == null ? '--' : formatCredits(memberCredits(tableMember(member))) }}</span>
+            <span class="tabular-nums text-slate-900">{{ creditsCellText(tableMember(member)) }}</span>
           </template>
         </ElTableColumn>
         <ElTableColumn :label="t('usageDashboard.requests')" min-width="110" align="right">
           <template #default="{ row: member }">
-            <span class="tabular-nums text-slate-900">{{ memberCreditRequests(tableMember(member)) == null ? '--' : memberCreditRequests(tableMember(member))!.toLocaleString() }}</span>
+            <span class="tabular-nums text-slate-900">{{ memberCreditRequests(tableMember(member))?.toLocaleString() ?? '' }}</span>
           </template>
         </ElTableColumn>
         <ElTableColumn :label="t('teamUsage.memberAction')" min-width="190" align="right">
@@ -389,7 +416,7 @@ function toggleDepartment(node: TeamUsageOrganizationDepartment) {
             </div>
             <div>
               <dt class="text-xs text-slate-500">{{ t('usageDashboard.kiroCreditsColumn') }}</dt>
-              <dd class="mt-1 tabular-nums text-slate-900">{{ memberCredits(member) == null ? '--' : formatCredits(memberCredits(member)) }}</dd>
+              <dd class="mt-1 tabular-nums text-slate-900">{{ creditsCellText(member) }}</dd>
             </div>
             <div>
               <dt class="text-xs text-slate-500">{{ t('usageDashboard.requests') }}</dt>

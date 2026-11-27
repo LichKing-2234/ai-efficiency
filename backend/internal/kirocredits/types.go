@@ -111,6 +111,10 @@ type UserCredits struct {
 	ByModel      []ModelCredits `json:"by_model"`
 	ByDay        []DayCredits   `json:"by_day"`
 	Partial      bool           `json:"partial"`
+	// Error carries a short reason ("timeout" / "error") when this member's
+	// credits could not be read, so the UI can explain the gap instead of
+	// rendering a bare placeholder.
+	Error string `json:"error,omitempty"`
 }
 
 // TeamCredits aggregates a set of users for one dashboard range. It is

@@ -63,7 +63,9 @@ const loading = computed(() => summaryLoading.value || membersLoading.value)
 const creditsByUser = computed(() => {
   const map: Record<number, TeamCredits['users'][number]> = {}
   for (const user of teamCredits.value?.users ?? []) {
-    if (user.key_found) map[user.user_id] = user
+    // Keep members whose read failed or who have no kiro key: the table shows
+    // the reason instead of a bare placeholder.
+    map[user.user_id] = user
   }
   return map
 })

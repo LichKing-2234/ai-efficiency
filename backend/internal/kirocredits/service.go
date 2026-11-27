@@ -2,6 +2,7 @@ package kirocredits
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -605,6 +606,7 @@ func (s *Service) Batch(ctx context.Context, users []UserRef, params Params) Tea
 				if readErr != nil {
 					errs[i] = readErr
 					entry.Partial = true
+					entry.Error = creditsErrorReason(readErr)
 					perUser[i] = entry
 					return
 				}
@@ -629,6 +631,8 @@ func (s *Service) Batch(ctx context.Context, users []UserRef, params Params) Tea
 			aggregated, partial, err := s.collectRange(ctx, client, key.ID, window, params.Granularity)
 			if err != nil {
 				errs[i] = err
+				entry.Partial = true
+				entry.Error = creditsErrorReason(err)
 				perUser[i] = entry
 				return
 			}
@@ -777,4 +781,13 @@ func (s *Service) storeTeam(key string, value TeamCredits, now time.Time) {
 		}
 	}
 	s.teams[key] = cachedTeam{value: value, expiresAt: now.Add(s.cacheTTL)}
+}
+
+// creditsErrorReason maps a per-member read failure to the short reason the
+// dashboard renders inside the credits cell.
+func creditsErrorReason(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return "timeout"
+	}
+	return "error"
 }
