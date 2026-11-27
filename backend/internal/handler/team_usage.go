@@ -98,8 +98,14 @@ type teamCreditsResponse struct {
 func (h *TeamUsageHandler) scopeCreditsRefs(scope *representativescope.Scope, actorID int) ([]kirocredits.UserRef, map[int]representativescope.Subject) {
 	refs := make([]kirocredits.UserRef, 0, len(scope.Subjects))
 	subjectsByUser := make(map[int]representativescope.Subject, len(scope.Subjects))
-	seenRelayUserIDs := make(map[int64]struct{}, len(scope.Subjects))
-	for _, subject := range scope.Subjects {
+	// The members table and summary are built from Subjects + OverviewSubjects;
+	// credits must use the same population or a represented manager receives a
+	// row but no credit value.
+	subjects := make([]representativescope.Subject, 0, len(scope.Subjects)+len(scope.OverviewSubjects))
+	subjects = append(subjects, scope.Subjects...)
+	subjects = append(subjects, scope.OverviewSubjects...)
+	seenRelayUserIDs := make(map[int64]struct{}, len(subjects))
+	for _, subject := range subjects {
 		// The representative is part of the team: excluding the actor silently
 		// dropped their own credits from every team total.
 		if subject.UserID <= 0 || subject.RelayUserID == nil {

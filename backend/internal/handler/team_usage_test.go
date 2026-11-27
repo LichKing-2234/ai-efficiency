@@ -1355,3 +1355,33 @@ func TestScopeCreditsRefsIncludesRepresentativeAndDedupesRelayIDs(t *testing.T) 
 		t.Fatal("the representative must stay in the team credits subjects")
 	}
 }
+
+func TestScopeCreditsRefsCoversOverviewOnlySubjects(t *testing.T) {
+	relayMember := 2
+	relayManager := 1
+
+	handler := &TeamUsageHandler{}
+	scope := &representativescope.Scope{
+		Subjects: []representativescope.Subject{
+			{UserID: 2, RelayUserID: &relayMember},
+		},
+		// Represented managers only appear in OverviewSubjects, while the
+		// members table lists them; credits has to cover them too.
+		OverviewSubjects: []representativescope.Subject{
+			{UserID: 1, RelayUserID: &relayManager},
+			{UserID: 2, RelayUserID: &relayMember},
+		},
+	}
+
+	refs, subjects := handler.scopeCreditsRefs(scope, 196)
+
+	if len(refs) != 2 {
+		t.Fatalf("refs = %+v, want the member plus the overview-only manager", refs)
+	}
+	if refs[0].RelayUserID != 2 || refs[1].RelayUserID != 1 {
+		t.Fatalf("relay ids = %d,%d, want 2,1", refs[0].RelayUserID, refs[1].RelayUserID)
+	}
+	if _, ok := subjects[1]; !ok {
+		t.Fatal("overview-only subjects must be credited too")
+	}
+}
