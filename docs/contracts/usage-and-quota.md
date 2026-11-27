@@ -240,9 +240,11 @@ accepted). Keys owned by other clients are never attributed.
   converted to USD.
 - There is no dedicated credits page. Credits surface only as the pair format
   below and as the unit switch on the model panel and the team member table.
-  Range totals come from per-key usage records: kiro2cc ignores date filters on
-  that endpoint and exposes no range aggregation, so AI Efficiency aggregates
-  the pages itself (see "Read model and cost").
+  Range totals come from kiro2cc: day-granularity reads in the CST dashboard use
+  `GET /api/admin/api-keys/{id}/usage/range` (daily store aggregation, one
+  request); hourly views, other timezones and kiro2cc builds without that route
+  fall back to per-key usage records, which kiro2cc does not filter by date, so
+  AI Efficiency aggregates those pages itself (see "Read model and cost").
 - Day buckets use the dashboard timezone.
 - A missing source, unlinked user, missing key, or unreachable kiro2cc renders an
   explanatory empty state; the rest of the dashboard is unaffected.
@@ -258,6 +260,9 @@ accepted). Keys owned by other clients are never attributed.
 - A truncated walk never replaces a complete value: when the fresh aggregate is
   only a lower bound (`missing_credits`) and the cached one was complete, the
   complete value survives.
+- The range endpoint returns totals plus per-day and per-model buckets, so the
+  cache stores the same shape either way. Its credits already fall back to the
+  per-model estimate, so an answer from it is complete rather than a lower bound.
 - Request budgets: 6s for a window of a week or less, 30s for a longer window
   (the default dashboard window is 30 days, which needs an order of magnitude
   more pages); 2.5s per kiro2cc call. A user whose walk hits the budget is
@@ -267,10 +272,10 @@ accepted). Keys owned by other clients are never attributed.
   across replicas (Redis lease), with 20s per page and 180s/600s budgets. It
   publishes flagged lower bounds too; refusing them left heavy keys uncached and
   every visit timing out.
-- Measured cost of the unaggregated path: one heavy key with 50k records needs
-  101 pages at ~2s each (about 140s) for 30 days. The 30s request budget cannot
-  finish that, so such a value is served from the warmer or as a flagged lower
-  bound. Exposing range aggregation in kiro2cc removes the dependency.
+- Measured cost: one heavy key with 50k records needs 101 pages at ~2s each
+  (about 140s) for 30 days, while the range endpoint answers in ~0.5s with the
+  same totals. On a kiro2cc build without the endpoint the value is served from
+  the warmer or as a flagged lower bound instead of timing out.
 
 ### Presentation: pairs and table units
 
