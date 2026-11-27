@@ -87,8 +87,8 @@ function memberCreditsReason(member: TeamOverviewMember): string {
 
 function creditsCellText(member: TeamOverviewMember): string {
   const credits = memberCredits(member)
-  if (credits != null) return formatCredits(credits)
-  return `<${memberCreditsReason(member)}>`
+  if (credits == null) return `<${memberCreditsReason(member)}>`
+  return creditsValueText(member, credits)
 }
 const showDesktopRanking = useWideContentLayout()
 
@@ -146,8 +146,14 @@ function formatDepartmentTokenSummary(node: TeamUsageOrganizationDepartment) {
 function formatMemberUsage(member: TeamOverviewMember) {
   const tokens = formatTokenCount(member.total_tokens)
   const credits = memberCredits(member)
-  const creditsText = credits == null ? `<${memberCreditsReason(member)}>` : formatCredits(credits)
+  const creditsText = credits == null ? `<${memberCreditsReason(member)}>` : creditsValueText(member, credits)
   return `${tokens}/${creditsText}`
+}
+
+// A truncated range read is a lower bound, not a point estimate: mark it.
+function creditsValueText(member: TeamOverviewMember, credits: number) {
+  const entry = props.creditsByUser[member.user_id]
+  return entry?.partial ? `≥${formatCredits(credits)}` : formatCredits(credits)
 }
 
 

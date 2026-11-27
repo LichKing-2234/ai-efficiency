@@ -240,20 +240,46 @@ accepted). Keys owned by other clients are never attributed.
   converted to USD.
 - There is no dedicated credits page. Credits surface only as the pair format
   below and as the unit switch on the model panel and the team member table.
-  Range totals come from per-key usage records and may be marked partial when
-  record retention truncates the window.
+  Range totals come from per-key usage records: kiro2cc ignores date filters on
+  that endpoint and exposes no range aggregation, so AI Efficiency aggregates
+  the pages itself (see "Read model and cost").
 - Day buckets use the dashboard timezone.
 - A missing source, unlinked user, missing key, or unreachable kiro2cc renders an
   explanatory empty state; the rest of the dashboard is unaffected.
 - The adapter issues read-only GET requests and never creates, renames, resets,
   or deletes kiro2cc keys.
 
+### Read model and cost
+
+- Reads go through a Redis read model keyed by provider, provider version, relay
+  user, and the requested window/dimension. Entries are fresh for 5 minutes and
+  servable as stale for 30 more; a refresh is single-flight per key and
+  stale-if-error, so a kiro2cc hiccup costs freshness, not availability.
+- A truncated walk never replaces a complete value: when the fresh aggregate is
+  only a lower bound (`missing_credits`) and the cached one was complete, the
+  complete value survives.
+- Request budgets: 6s for a window of a week or less, 30s for a longer window
+  (the default dashboard window is 30 days, which needs an order of magnitude
+  more pages); 2.5s per kiro2cc call. A user whose walk hits the budget is
+  returned as a lower bound instead of failing the batch.
+- A background warmer pre-generates today and the trailing 7 days every 4
+  minutes and the trailing 30 days every 20 minutes, one warming pass at a time
+  across replicas (Redis lease), with 20s per page and 180s/600s budgets. It
+  publishes flagged lower bounds too; refusing them left heavy keys uncached and
+  every visit timing out.
+- Measured cost of the unaggregated path: one heavy key with 50k records needs
+  101 pages at ~2s each (about 140s) for 30 days. The 30s request budget cannot
+  finish that, so such a value is served from the warmer or as a flagged lower
+  bound. Exposing range aggregation in kiro2cc removes the dependency.
+
 ### Presentation: pairs and table units
 
 - Outside tables every token metric renders as a Token/Credits pair, for
   example `3.49B/0.06`: the label carries both units and the value joins the
-  token count and the credit count with `/`. Missing credits render `--`; the
-  two units are never summed or converted.
+  token count and the credit count with `/`. The two units are never summed or
+  converted. A credit value that could not be read renders its reason in angle
+  brackets (localized `<读取超时>` / `<读取失败>` / `<未接入 Kiro>`), never a bare
+  placeholder that reads as zero.
 - The team member table has two rankings instead of a metric toggle: the Token
   ranking shows a single `Token/Credits` usage column (one pair per member) and
   the Credits ranking sorts the same members by credits with credits and Kiro
@@ -272,7 +298,9 @@ accepted). Keys owned by other clients are never attributed.
   member pages read the same data through
   `GET /user/team-usage/subjects/:user_id/usage/credits`. Both endpoints are
   read-only and fail soft: missing wiring, missing keys or an unreachable
-  kiro2cc render `--` without failing the page.
+  kiro2cc render per-member reasons without failing the page, and a batch that
+  could not count every member is surfaced as a coverage note instead of a
+  silently smaller team total.
 
 
 ## Failure Boundaries

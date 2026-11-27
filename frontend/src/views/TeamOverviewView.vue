@@ -99,7 +99,9 @@ const creditsCoverage = computed(() => {
   const requested = credits.requested_users ?? 0
   const counted = credits.counted_users ?? 0
   if (requested <= 0) return null
-  if (!credits.partial && counted >= requested) return null
+  // A truncated value is already marked per member (>=), so the coverage note
+  // is only about members that did not report at all.
+  if (counted >= requested) return null
   return { requested, counted }
 })
 

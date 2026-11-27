@@ -398,6 +398,54 @@ describe('TeamOverviewView', () => {
     expect(wrapper.text()).toContain('<timeout>')
   })
 
+  it('marks a truncated member credit value as a lower bound', async () => {
+    mockGetTeamUsageCredits.mockResolvedValueOnce({
+      data: {
+        data: {
+          available: true,
+          configured: true,
+          status: 'ok',
+          as_of: '2026-11-27T03:00:00Z',
+          credits: 42,
+          credits_saved: 0,
+          requests: 10,
+          input_tokens: 0,
+          output_tokens: 0,
+          key_count: 1,
+          by_model: [],
+          by_day: [],
+          users: [
+            {
+              user_id: 101,
+              relay_user_id: 1,
+              key_found: true,
+              credits: 42,
+              credits_saved: 0,
+              requests: 10,
+              input_tokens: 0,
+              output_tokens: 0,
+              by_model: [],
+              by_day: [],
+              partial: true,
+            },
+          ],
+          departments: [],
+          requested_users: 1,
+          counted_users: 1,
+          partial: true,
+        },
+      },
+    } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('≥42.00')
+  })
+
   it('labels an incomplete credits total as a lower bound', async () => {
     mockGetTeamUsageCredits.mockResolvedValueOnce({
       data: {
