@@ -39,8 +39,15 @@ const (
 	// warmShortBudget / warmLongBudget bound one background refresh. They are
 	// far larger than the request budgets on purpose: the warmer may spend
 	// minutes paginating a heavy key so the request path never has to.
-	warmShortBudget = 90 * time.Second
-	warmLongBudget  = 240 * time.Second
+	warmShortBudget = 180 * time.Second
+	warmLongBudget  = 600 * time.Second
+	// warmCallTimeout bounds one admin page read from the warmer. A heavy key's
+	// pages measured up to ~5s, so the request-path 2.5s is too tight here.
+	warmCallTimeout = 20 * time.Second
+	// warmLeaseTTL guards a warming pass from running on two replicas at once.
+	warmLeaseTTL = 30 * time.Minute
+	// warmConcurrency keeps the warmer from slowing down the pages it reads.
+	warmConcurrency = 2
 	recordPageSize        = 500
 	maxResponseBytes      = 8 << 20
 	modernKeyNameBase     = "sub2api-"

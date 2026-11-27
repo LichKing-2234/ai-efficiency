@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -86,6 +87,7 @@ type Service struct {
 	warmInterval     time.Duration
 	warmLongInterval time.Duration
 	warmTimezone     string
+	warmToken        string
 }
 
 // NewService builds a credits service. A nil logger is replaced with a no-op
@@ -144,6 +146,7 @@ func NewService(client *ent.Client, encryptionKey string, options Options) *Serv
 		warmInterval:     options.WarmInterval,
 		warmLongInterval: warmLongInterval,
 		warmTimezone:     warmTimezone,
+		warmToken:        fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano()),
 	}
 }
 

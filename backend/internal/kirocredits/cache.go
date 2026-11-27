@@ -122,6 +122,10 @@ func (c *Cache) creditsKey(providerID int, providerVersion int64, relayUserID in
 		params.StartDate, params.EndDate, params.Granularity, params.Timezone)
 }
 
+func (c *Cache) warmLeaseKey() string {
+	return fmt.Sprintf("ae:%s:kiro-credits:warm", c.ns)
+}
+
 func (c *Cache) keysKey(providerID int, providerVersion int64) string {
 	return fmt.Sprintf("ae:%s:kiro-api-keys:v%d:%d:%d", c.ns, cacheSchemaVersion, providerID, providerVersion)
 }

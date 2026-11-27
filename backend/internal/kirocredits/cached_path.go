@@ -151,6 +151,18 @@ func (s *Service) StartWarmer(ctx context.Context) {
 }
 
 func (s *Service) warmOnce(ctx context.Context, location *time.Location, includeLong bool) {
+	// One warming pass at a time: a heavy key takes minutes of pagination, so a
+	// second replica warming in parallel only makes the pages it reads slower.
+	leaseKey := s.cache.warmLeaseKey()
+	if s.cache.store != nil {
+		acquired, err := s.cache.store.TryAcquireLease(ctx, leaseKey, s.warmToken, warmLeaseTTL)
+		if err != nil || !acquired {
+			return
+		}
+		defer func() {
+			_, _ = s.cache.store.ReleaseLease(context.WithoutCancel(ctx), leaseKey, s.warmToken)
+		}()
+	}
 	row, err := s.source(ctx)
 	if err != nil {
 		return
@@ -159,7 +171,7 @@ func (s *Service) warmOnce(ctx context.Context, location *time.Location, include
 	if err != nil || strings.TrimSpace(token) == "" {
 		return
 	}
-	client := newAdminClient(row.BaseURL, token, s.httpTimeout, s.perCallTimeout)
+	client := newAdminClient(row.BaseURL, token, s.httpTimeout, warmCallTimeout)
 	keys, err := s.keysFor(ctx, client, row)
 	if err != nil {
 		s.logger.Warn("kiro credits: warmer list keys", zap.Int("provider_id", row.ID), zap.Error(err))
@@ -170,7 +182,7 @@ func (s *Service) warmOnce(ctx context.Context, location *time.Location, include
 		return
 	}
 	presets := warmPresets(s.now(), location, includeLong)
-	sem := newSemaphore(4)
+	sem := newSemaphore(warmConcurrency)
 	var wg sync.WaitGroup
 	for _, userID := range userIDs {
 		for _, params := range presets {
