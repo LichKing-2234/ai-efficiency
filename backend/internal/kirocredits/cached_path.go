@@ -208,11 +208,10 @@ func (s *Service) warmOnce(ctx context.Context, location *time.Location, include
 					s.logger.Warn("kiro credits: warmer refresh", zap.Int64("relay_user_id", relayUserID), zap.Error(err))
 					return
 				}
-				// Never publish a truncated aggregate: a lower bound cached for
-				// the whole fresh window would understate every dashboard.
-				if value.partial() {
-					return
-				}
+				// Publish even a lower bound: it carries missing_credits, so the
+				// dashboard can mark it, and a fast lower bound beats a timeout.
+				// (Only a truncated page walk used to be skipped, which left every
+				// heavy key uncached and timing out on each visit.)
 				s.cache.write(ctx, s.cache.creditsKey(row.ID, row.ConfigurationVersion, relayUserID, preset), value)
 			}(userID, params)
 		}
